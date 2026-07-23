@@ -1,0 +1,30 @@
+/* style.css — palet warna & style dasar diambil 1:1 dari ui_theme.py (Dark Mode,
+   Modern, Minimalis, Industrial) supaya tampilan PWA konsisten dengan app Desktop.
+   Detail komponen per halaman akan ditambahkan bertahap sesuai modulnya. */
+:root {
+  --bg: #121212;
+  --bg-card: #1c1c1e;
+  --bg-sidebar: #0a0a0b;
+  --bg-input: #232326;
+  --border: #2e2e32;
+  --text: #eaeaea;
+  --text-dim: #9a9a9e;
+  --accent: #c9a24b;
+  --accent-hover: #dab663;
+  --danger: #e5484d;
+  --success: #4caf6d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.status-placeholder {
+  padding: 24px;
+  color: var(--text-dim);
+}

@@ -1,0 +1,19 @@
+# Kredensial — JANGAN PERNAH di-commit
+backend/app/credentials.json
+backend/credentials.json
+credentials.json
+
+# Database — biarkan tetap di server, jangan ikut ke git (berisi data asli toko)
+backend/app/mugen_hair.db
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
