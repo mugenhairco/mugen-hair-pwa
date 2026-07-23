@@ -15,17 +15,35 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
       rumus (komisi, chemical, bonus, uang harian, dst) dijamin identik.
       Tabel `users` untuk login ditambahkan lewat file **terpisah**
       (`auth_db.py`), supaya `database.py` tetap murni tidak tersentuh.
-- [ ] Tahap 3 — Login & Hak Akses
-- [ ] Tahap 4 — API
-- [ ] Tahap 5 — Dashboard
-- [ ] Tahap 6 — Input Data
-- [ ] Tahap 7 — Rekap
-- [ ] Tahap 8 — Produk
-- [ ] Tahap 9 — Pengeluaran
-- [ ] Tahap 10 — Setting
-- [ ] Tahap 11 — Dashboard Barber
-- [ ] Tahap 12 — Testing
-- [ ] Tahap 13 — Deployment
+- [x] **Tahap 3 — Login & Hak Akses**: `backend/app/auth.py` (token via
+      itsdangerous, dependency `get_current_user` / `require_admin` /
+      `require_barber`), `routers/auth_router.py` (`POST /api/auth/login`,
+      `GET /api/auth/me`), plus bootstrap akun admin pertama otomatis saat
+      startup (dari env var `ADMIN_BOOTSTRAP_USERNAME`/`_PASSWORD`).
+- [x] **Tahap 4-5 — API & Dashboard**: `routers/dashboard.py` —
+      `/api/dashboard/owner` (semua barber, khusus admin) dan
+      `/api/dashboard/barber` (data sendiri saja, barber_id dipaksa dari akun
+      login, bukan dari parameter request).
+- [x] **Tahap 6 — Input Data**: `routers/input_data.py` — services, daftar
+      barber, preview total, CRUD transaksi (simpan/koreksi/hapus), tandai/
+      batalkan libur. Barber hanya bisa mengakses transaksi miliknya sendiri
+      (divalidasi di backend, bukan cuma disembunyikan di frontend).
+- [x] **Tahap 7 — Rekap**: `routers/rekap.py` — Rekap Transaksi, Rekap
+      Bulanan (dibatasi ke barber sendiri untuk role barber), Rekap
+      Pengeluaran (khusus admin, baca saja — CRUD pengeluaran menyusul).
+- [x] Frontend: SPA hash-router (`js/router.js`) + halaman Login, Dashboard
+      Owner, Dashboard Barber, Input Data, Rekap (3 tab). Offline cache
+      GET terakhir per endpoint via localStorage (`js/state.js`, `js/api.js`).
+- [ ] Tahap 8 — Produk (belum ada router/halaman)
+- [ ] Tahap 9 — Pengeluaran: CRUD (baru Rekap/baca yang ada)
+- [ ] Tahap 10 — Setting (aturan bisnis, kelola barber/service/akun user)
+- [ ] Sinkronisasi Google Sheets: `sync_helper.sync_async()` masih **no-op**
+      (placeholder) — `sync.py` dari aplikasi Desktop belum disalin ke repo
+      ini, jadi belum ada isinya untuk dipanggil. Lihat komentar TODO di
+      `backend/app/sync_helper.py`.
+- [ ] Tahap 12 — Testing dengan `uvicorn` (belum bisa dijalankan di sandbox
+      pengembangan ini karena tidak ada akses internet untuk `pip install`)
+- [ ] Tahap 13 — Deployment (render.yaml, vercel.json, runtime.txt, CORS env)
 
 ## Struktur Project
 

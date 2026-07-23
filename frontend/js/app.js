@@ -1,7 +1,6 @@
 // app.js — entry point JS frontend.
-// TAHAP 1 (skeleton): baru mendaftarkan service worker. Logika Login, Dashboard,
-// Input Data, dst akan ditambahkan bertahap di file terpisah per modul supaya
-// mudah dibandingkan satu-per-satu dengan aplikasi Desktop.
+// TAHAP 3-7: mendaftarkan service worker lalu menjalankan router (login,
+// dashboard, input data, rekap). Produk/Pengeluaran/Setting menyusul.
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -10,3 +9,7 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+window.addEventListener("DOMContentLoaded", () => {
+  MugenRouter.init();
+});
