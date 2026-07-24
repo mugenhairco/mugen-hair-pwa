@@ -1,4 +1,4 @@
-// pages/produk.js — TAHAP 8
+// pages/produk.js — ditulis di Tahap 10, dihubungkan ke router/nav di Tahap 11.
 // Khusus Owner (admin), sama seperti backend routers/produk.py: data produk
 // adalah persediaan barang dagang milik TOKO, bukan milik barber manapun.
 //

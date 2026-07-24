@@ -5,7 +5,10 @@ TAHAP 3-7: login & hak akses, router Dashboard (Owner + Barber), Input Data,
 dan Rekap sudah terpasang.
 TAHAP 9: routers/pengeluaran.py (CRUD Pengeluaran, khusus admin) terpasang.
 TAHAP 10: routers/pengaturan.py (Setting — identitas, komisi, barber,
-layanan, user, backup) terpasang. Endpoint Produk (Tahap 8) menyusul.
+layanan, user, backup) terpasang.
+TAHAP 11: routers/produk.py (Persediaan — restock/jual/riwayat mutasi,
+khusus admin) terpasang. Router & halaman frontend-nya sudah disiapkan sejak
+Tahap 10 tapi belum dihubungkan; Tahap 11 menghubungkannya.
 """
 
 import os
@@ -17,7 +20,7 @@ import database as db
 import auth_db
 from pengeluaran_migrasi import migrasi_pengeluaran
 from pengaturan_migrasi import migrasi_pengaturan
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -41,6 +44,7 @@ app.include_router(input_data.router)
 app.include_router(rekap.router)
 app.include_router(pengeluaran.router)
 app.include_router(pengaturan.router)
+app.include_router(produk.router)
 
 
 @app.on_event("startup")

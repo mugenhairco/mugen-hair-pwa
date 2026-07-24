@@ -62,8 +62,6 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
       - Rekap Pengeluaran (Tahap 7) sekarang otomatis menampilkan data yang
         sama dengan CRUD ini (termasuk kategori & nama barber), bukan lagi
         baca terpisah.
-- [ ] Tahap 8 — Produk (belum ada router/halaman — di luar cakupan Tahap 9
-      & 10, tidak disentuh)
 - [x] **Tahap 10 — Setting**: `routers/pengaturan.py` +
       `frontend/js/pages/pengaturan.js` (tab: Identitas Barbershop, Komisi &
       Bonus, Barber, Layanan, User, Backup). Semua endpoint KHUSUS admin
@@ -112,6 +110,39 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
       - Dashboard, Login-flow, Input Data, Rekap, Pengeluaran, Produk, dan
         seluruh rumus komisi/bonus di `database.py` **TIDAK disentuh** sama
         sekali oleh Tahap 10.
+- [x] **Tahap 11 — Produk (Persediaan)**: `routers/produk.py` +
+      `frontend/js/pages/produk.js` sudah ditulis sejak Tahap 10 tapi belum
+      dihubungkan (belum ada di `main.py`, belum ada rute frontend, menu
+      sidebar masih ditandai "segera") — Tahap 11 menghubungkan semuanya:
+      - `backend/app/main.py`: `app.include_router(produk.router)`
+        ditambahkan, sehingga seluruh endpoint `/api/produk/*` (daftar
+        produk, tambah/ubah nama/nonaktifkan, restock, jual, riwayat mutasi,
+        koreksi, hapus mutasi) aktif.
+      - `frontend/js/router.js`: rute `#/produk` ditambahkan, dengan
+        perlindungan frontend yang sama seperti Pengeluaran/Setting (barber
+        yang mencoba buka `#/produk` langsung lewat URL dilempar balik ke
+        dashboard) — perlindungan sebenarnya tetap di backend lewat
+        `require_admin` yang sudah ada di `routers/produk.py` sejak ditulis.
+      - `frontend/js/nav.js`: menu "Produk" dipindah dari daftar "segera" ke
+        menu aktif (`roles: ["admin"]`), sehingga hanya tampil untuk Owner.
+      - `frontend/index.html`, `frontend/service-worker.js`: `produk.js`
+        didaftarkan sebagai script & masuk app-shell cache PWA (cache version
+        dinaikkan ke v5 supaya file baru ter-cache di instalasi yang sudah
+        ada).
+      - **Tidak ada logika bisnis yang diubah** — seluruh perhitungan stok
+        (`get_stok_produk`, validasi saldo tidak boleh negatif di
+        `jual_produk`/`koreksi_mutasi_produk`/`hapus_mutasi_produk`) berasal
+        dari `database.py` (Tahap 2, verbatim) dan dipakai apa adanya.
+      - **Hak akses**: KHUSUS Owner (admin), sama seperti Pengeluaran — data
+        produk adalah persediaan milik TOKO, bukan milik barber manapun.
+        Barber tidak melihat menunya di sidebar, request langsung ke
+        `/api/produk/*` ditolak 403 oleh backend, dan navigasi langsung ke
+        `#/produk` lewat URL dilempar balik ke dashboard oleh frontend.
+      - Diuji end-to-end (lihat bagian Pengujian Tahap 11 di bawah): login
+        Owner & Barber, tambah/ubah/nonaktifkan produk, restock, jual
+        (termasuk penolakan saat stok tidak cukup), riwayat mutasi +
+        filter, koreksi & hapus mutasi (stok terhitung ulang otomatis),
+        serta penolakan akses barber di level backend maupun frontend.
 - [ ] Sinkronisasi Google Sheets: `sync_helper.sync_async()` masih **no-op**
       (placeholder) — `sync.py` dari aplikasi Desktop belum disalin ke repo
       ini, jadi belum ada isinya untuk dipanggil. Lihat komentar TODO di
@@ -153,6 +184,78 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
 **Tidak disentuh sama sekali:** `database.py`, `auth_db.py` (hanya dipakai,
 tidak diubah), serta seluruh Tahap 1–9 (Dashboard, Login, Input Data, Rekap,
 Pengeluaran).
+
+## CHANGELOG — Tahap 11
+
+**Diedit minimal (menghubungkan file yang sudah ditulis di Tahap 10):**
+- `backend/app/main.py` — import + `app.include_router(produk.router)`,
+  komentar diperbarui.
+- `backend/app/routers/produk.py` — komentar header diperbarui (kode
+  endpoint tidak diubah sama sekali).
+- `frontend/js/pages/produk.js` — komentar header diperbarui (kode halaman
+  tidak diubah sama sekali).
+- `frontend/js/router.js` — rute `#/produk` (khusus admin, pola sama persis
+  dengan `#/pengeluaran`/`#/pengaturan`).
+- `frontend/js/nav.js` — menu "Produk" dipindah dari `MENU_SEGERA` ke `MENU`
+  aktif (`roles: ["admin"]`).
+- `frontend/index.html` — tambah `<script src="js/pages/produk.js">`.
+- `frontend/service-worker.js` — tambah `produk.js` ke `APP_SHELL`, naikkan
+  `CACHE_NAME` ke `v5`.
+- `README.md` — dokumentasi ini.
+
+**Bug yang diperbaiki (di luar kode Tahap 11, ditemukan saat audit):**
+- `backend/requirements.txt` — `passlib[bcrypt]>=1.7.4` tanpa batas atas
+  membuat pip menginstal `bcrypt` versi terbaru (5.x), yang **tidak
+  kompatibel** dengan `passlib` 1.7.4 (proyek `passlib` sudah tidak
+  dikembangkan lagi) — backend gagal start sama sekali (`ValueError:
+  password cannot be longer than 72 bytes`) saat `auth_db.py` memanggil
+  `CryptContext(schemes=["bcrypt"])` pertama kali. Diperbaiki dengan
+  mengunci `bcrypt<4.0` di `requirements.txt`. Ini murni batasan versi
+  dependency, **bukan perubahan logika bisnis** — hash password tetap bcrypt
+  seperti sebelumnya, hanya sekarang instalasi `pip install -r
+  requirements.txt` benar-benar bisa jalan.
+
+**Tidak disentuh sama sekali:** `database.py`, `auth_db.py`, seluruh Tahap
+1–10 (Dashboard, Login, Input Data, Rekap, Pengeluaran, Setting) — halaman
+`produk.js` dan router `produk.py` itu sendiri sudah selesai ditulis sejak
+Tahap 10 dan isinya tidak diubah, Tahap 11 hanya menghubungkannya.
+
+### Pengujian Tahap 11
+
+Diuji langsung lewat backend berjalan (`uvicorn`) + browser (Playwright),
+memakai database SQLite kosong (bootstrap admin baru):
+
+1. **Backend nyala tanpa error** setelah `produk.router` dipasang, endpoint
+   `/api/health` normal.
+2. **Login Owner** → `GET /api/produk` awalnya `[]`, `POST /api/produk`
+   (tambah "Pomade") berhasil, muncul di daftar dengan `stok: 0`.
+3. **Restock** 10 lalu **Jual** 3 → stok terhitung benar (7). **Jual**
+   melebihi stok (999) ditolak `422` dengan pesan jelas dari
+   `database.py` (`jual_produk`), stok tidak berubah.
+4. **Koreksi mutasi** (ubah jumlah jual dari 3 → 5) → stok otomatis
+   terhitung ulang (10 → 5). **Hapus mutasi** itu → stok kembali ke 10.
+   Riwayat mutasi terurut tanggal terbaru dulu, filter tahun/bulan/tipe/
+   produk berfungsi.
+5. **Akun Barber** (dibuat lewat `/api/pengaturan/user`) mencoba semua
+   endpoint `/api/produk/*` (GET, POST tambah, POST restock) → **ditolak
+   403** ("Khusus Owner (admin).") di setiap kasus. Endpoint dashboard
+   barber sendiri (`/api/dashboard/barber`) tetap normal (kontrol positif —
+   memastikan 403 di atas memang soal role, bukan token rusak).
+6. **Regresi Tahap 1–10**: `dashboard/owner`, `dashboard/barber` (403 untuk
+   barber), `pengeluaran` (403 untuk barber), `pengaturan/identitas`
+   (publik), `input-data/services`, `rekap/transaksi` — semua masih
+   merespons `200`/`403` sesuai perannya masing-masing, tidak ada regresi.
+7. **UI end-to-end** (Playwright, Chromium headless): login Owner → menu
+   sidebar menampilkan "Produk" (bukan lagi "(segera)") → buka halaman →
+   tambah produk baru lewat form → toast sukses → klik "Restock" pada
+   baris produk → isi form → simpan → toast sukses → tabel daftar produk
+   & riwayat mutasi ter-update otomatis tanpa reload manual. Login Barber
+   → menu sidebar **tidak** menampilkan Produk/Pengeluaran/Setting sama
+   sekali → navigasi paksa ke `#/produk` lewat address bar otomatis
+   dilempar balik ke `#/dashboard`.
+8. `python3 -m py_compile` untuk seluruh file backend yang disentuh, dan
+   `node --check` untuk seluruh file frontend yang disentuh — tidak ada
+   syntax error.
 
 
 ## Struktur Project

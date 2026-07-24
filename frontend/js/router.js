@@ -62,6 +62,15 @@ const MugenRouter = (() => {
         return;
       }
       PagePengaturan.render(content);
+    } else if (hash.startsWith("#/produk")) {
+      // Tahap 11: halaman khusus admin (persediaan toko, bukan milik barber
+      // manapun). Perlindungan sebenarnya tetap di backend (require_admin di
+      // setiap endpoint /api/produk/*).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PageProduk.render(content);
     } else {
       location.hash = "#/dashboard";
     }
