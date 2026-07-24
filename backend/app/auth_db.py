@@ -78,14 +78,45 @@ def init_auth_db():
         """)
 
 
+def _pesan_diagnosa_bcrypt(exc: Exception) -> str:
+    """Kode ini (auth_db.py) sudah TIDAK memanggil passlib sama sekali sejak
+    bugfix sebelumnya -- diverifikasi lewat reproduksi persis kombinasi
+    paket yang dilaporkan (bcrypt 5.0.0 + passlib 1.7.4 terpasang
+    berdampingan) dan backend tetap start normal. Kalau error semacam ini
+    masih muncul, penyebab paling mungkin BUKAN kode ini, melainkan
+    instalasi paket `bcrypt` yang rusak/tidak bersih di virtual environment
+    lokal (paling sering di Windows: file ekstensi native `.pyd` versi lama
+    gagal terhapus/tertimpa saat `pip install --upgrade`, karena Windows
+    mengunci file yang sedang dipakai proses lain). Pesan ini mengubah
+    traceback kriptis dari dalam library `bcrypt` menjadi langkah perbaikan
+    yang jelas."""
+    return (
+        f"Gagal memanggil library 'bcrypt' ({exc.__class__.__name__}: {exc}). "
+        "Kode aplikasi ini TIDAK memakai passlib lagi, jadi kemungkinan besar "
+        "virtual environment lokal Anda punya sisa instalasi 'bcrypt' yang "
+        "rusak/tidak bersih (sering terjadi di Windows saat upgrade paket "
+        "berekstensi native). Perbaikan: HAPUS TOTAL folder virtual "
+        "environment lama (mis. .venv/venv/env), buat baru "
+        "('python -m venv .venv'), lalu 'pip install -r requirements.txt' "
+        "dari kosong -- jangan install di atas venv lama. Lihat bagian "
+        "'Instalasi' / 'Troubleshooting Windows' di README.md."
+    )
+
+
 def hash_password(password: str) -> str:
     pw_bytes = password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
-    return bcrypt.hashpw(pw_bytes, bcrypt.gensalt()).decode("utf-8")
+    try:
+        return bcrypt.hashpw(pw_bytes, bcrypt.gensalt()).decode("utf-8")
+    except Exception as e:
+        raise RuntimeError(_pesan_diagnosa_bcrypt(e)) from e
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     pw_bytes = password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
-    return bcrypt.checkpw(pw_bytes, password_hash.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(pw_bytes, password_hash.encode("utf-8"))
+    except Exception as e:
+        raise RuntimeError(_pesan_diagnosa_bcrypt(e)) from e
 
 
 def tambah_user(username: str, password: str, role: str, barber_id: int = None) -> int:
