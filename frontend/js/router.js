@@ -66,6 +66,13 @@ const MugenRouter = (() => {
     if (hash.startsWith("#/dashboard")) {
       resolveDashboardPage(user).render(content);
     } else if (hash.startsWith("#/input-data")) {
+      // REVISI: khusus admin sekarang (Barber tidak lagi mengakses Input
+      // Data). Perlindungan sebenarnya tetap di backend (require_admin di
+      // setiap endpoint /api/input-data/*).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
       PageInputData.render(content);
     } else if (hash.startsWith("#/rekap")) {
       PageRekap.render(content);

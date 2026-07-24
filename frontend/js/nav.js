@@ -8,7 +8,8 @@
 const MugenNav = (() => {
   const MENU = [
     { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "barber"] },
-    { hash: "#/input-data", label: "Input Data", roles: ["admin", "barber"] },
+    // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
+    { hash: "#/input-data", label: "Input Data", roles: ["admin"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
     { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin"] },
     { hash: "#/produk", label: "Produk", roles: ["admin"] },

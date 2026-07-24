@@ -10,6 +10,7 @@ ATURAN PENTING (jangan dilanggar saat maintenance):
 - database.py TIDAK berkomunikasi dengan Google API. Itu tugas sync.py.
 """
 
+import json
 import sqlite3
 import os
 from datetime import datetime, date
@@ -259,16 +260,17 @@ def get_barber(barber_id: int):
         return dict(row) if row else None
 
 
-def add_barber(nama: str, is_rafiq: bool = False):
+def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0):
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO barbers (nama, is_rafiq) VALUES (?, ?)",
-            (nama.strip(), 1 if is_rafiq else 0),
+            "INSERT INTO barbers (nama, is_rafiq, uang_harian) VALUES (?, ?, ?)",
+            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian)),
         )
         return cur.lastrowid
 
 
-def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None):
+def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None,
+                   uang_harian: int = None):
     fields, values = [], []
     if nama is not None:
         fields.append("nama = ?"); values.append(nama.strip())
@@ -276,6 +278,8 @@ def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif
         fields.append("is_rafiq = ?"); values.append(1 if is_rafiq else 0)
     if aktif is not None:
         fields.append("aktif = ?"); values.append(1 if aktif else 0)
+    if uang_harian is not None:
+        fields.append("uang_harian = ?"); values.append(int(uang_harian))
     if not fields:
         return
     values.append(barber_id)
@@ -623,6 +627,10 @@ def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
 # Dihitung hanya dari Dry Cut / Cut & Wash (gabungan keduanya), dan hanya jika
 # di HARI itu jumlah kedua service tsb minimal 3. Jika kurang dari 3, uang
 # harian hari itu = 0.
+# REVISI: nominal harian sekarang per-barber (kolom barbers.uang_harian,
+# diatur bebas oleh admin lewat menu Setting > Barber), BUKAN lagi dari dua
+# setting global uang_harian_barber/uang_harian_rafiq berdasarkan is_rafiq
+# (lihat revisi_bonus_migrasi.py untuk migrasi kolomnya).
 # ---------------------------------------------------------------------------
 
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
@@ -636,17 +644,16 @@ def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     jumlah_service_utama = sum(r["jumlah"] for r in rows if r["nama_service"] in SERVICE_UANG_HARIAN)
     if jumlah_service_utama < 3:
         return 0
-    if barber["is_rafiq"]:
-        return int(_setting_float("uang_harian_rafiq"))
-    return int(_setting_float("uang_harian_barber"))
+    return int(barber["uang_harian"] or 0)
 
 
 def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     """Dioptimalkan (performa): SATU query untuk ambil seluruh transaksi_detail barber
     ini pada bulan tsb (bukan satu query terpisah PER HARI seperti sebelumnya), lalu
-    dikelompokkan per tanggal di Python. Aturan & hasil akhirnya SAMA PERSIS dengan
-    sebelumnya: Uang Harian hari itu cair hanya jika total Dry Cut + Cut & Wash hari
-    itu >= 3, nominalnya dari uang_harian_rafiq/uang_harian_barber tergantung barber."""
+    dikelompokkan per tanggal di Python. Aturan tetap SAMA PERSIS dengan sebelumnya:
+    Uang Harian hari itu cair hanya jika total Dry Cut + Cut & Wash hari itu >= 3,
+    nominalnya dari kolom uang_harian milik barber itu sendiri (REVISI: per-barber,
+    lihat komentar di atas hitung_uang_harian_per_hari)."""
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT t.tanggal AS tanggal, td.nama_service AS nama_service, td.jumlah AS jumlah
@@ -660,23 +667,29 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
         if r["nama_service"] in SERVICE_UANG_HARIAN:
             jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
 
-    nominal = (
-        int(_setting_float("uang_harian_rafiq")) if barber["is_rafiq"]
-        else int(_setting_float("uang_harian_barber"))
-    )
+    nominal = int(barber["uang_harian"] or 0)
     return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= 3)
 
 
 # ---------------------------------------------------------------------------
-# BONUS CUSTOMER (bulanan)
+# BONUS CUSTOMER / TARGET BONUS SERVICE (bulanan)
 # Syarat dapat Bonus Customer:
-#   1. Jumlah service Dry Cut + Cut & Wash (gabungan keduanya) bulan itu >=
-#      target_bonus_customer dari Setting (targetnya berupa JUMLAH SERVICE,
-#      bukan jumlah customer/kunjungan).
+#   1. Jumlah service Dry Cut + Cut & Wash (gabungan keduanya) bulan itu
+#      mencapai SATU ATAU LEBIH tier target dari daftar `bonus_customer_tiers`
+#      (Setting > Komisi & Bonus > Target Bonus Service) -- bonus yang
+#      dipakai adalah dari tier TERTINGGI yang tercapai (bertingkat, mis.
+#      100 service -> Rp100.000, 115 service -> Rp150.000, dst; kalau
+#      tercapai 120 service, dapat bonus tier 115 karena itu tier tertinggi
+#      yang masih terpenuhi).
 #   2. Jumlah hari libur barber tsb bulan itu <= maksimal_hari_libur_bonus_customer.
 #      - Jika hari libur melebihi batas ini, bonus TIDAK hangus, tapi dipotong
 #        sebesar potongan_bonus_customer_persen (default 50%).
-#      - Jika syarat #1 (target service) tidak tercapai, bonus tetap 0 berapa pun hari liburnya.
+#      - Jika syarat #1 (tidak ada satu tier pun tercapai) tidak terpenuhi,
+#        bonus tetap 0 berapa pun hari liburnya.
+# REVISI: sebelumnya cuma SATU target (target_bonus_customer/
+# nominal_bonus_customer) -- diganti daftar tier bertingkat yang bisa
+# ditambah/diubah/dihapus admin lewat menu Setting, tanpa nilai hardcode
+# apa pun (lihat get_bonus_customer_tiers/set_bonus_customer_tiers).
 # ---------------------------------------------------------------------------
 
 def get_jumlah_service_dry_cut_cut_wash_bulan(barber_id: int, tahun: int, bulan: int) -> int:
@@ -723,15 +736,61 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
+def get_bonus_customer_tiers() -> list:
+    """Daftar tier {target, bonus} untuk Bonus Customer/Target Bonus Service,
+    terurut naik berdasarkan target. Disimpan sebagai JSON di tabel
+    `settings` (key 'bonus_customer_tiers', key-value generik yang sudah ada
+    sejak Tahap 2) -- tidak perlu tabel baru."""
+    raw = get_setting("bonus_customer_tiers", "[]")
+    try:
+        mentah = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        mentah = []
+    hasil = []
+    for t in mentah:
+        try:
+            hasil.append({"target": int(t["target"]), "bonus": int(t["bonus"])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(hasil, key=lambda t: t["target"])
+
+
+def set_bonus_customer_tiers(tiers: list) -> None:
+    """Timpa PENUH daftar tier (dipakai lewat pengaturan_bonus.py, yang
+    menjaga aturan tambah/ubah/hapus per-target). Validasi dasar di sini
+    supaya data yang tersimpan selalu konsisten apa pun jalur pemanggilnya."""
+    bersih = []
+    target_terpakai = set()
+    for t in tiers:
+        target = int(t["target"])
+        bonus = int(t["bonus"])
+        if target <= 0:
+            raise ValueError("Target service harus lebih dari 0.")
+        if bonus < 0:
+            raise ValueError("Nominal bonus tidak boleh negatif.")
+        if target in target_terpakai:
+            raise ValueError(f"Target {target} service sudah ada, tidak boleh duplikat.")
+        target_terpakai.add(target)
+        bersih.append({"target": target, "bonus": bonus})
+    bersih.sort(key=lambda t: t["target"])
+    set_setting("bonus_customer_tiers", json.dumps(bersih))
+
+
 def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: int = None) -> dict:
     jumlah_service = get_jumlah_service_dry_cut_cut_wash_bulan(barber_id, tahun, bulan)
-    target = int(_setting_float("target_bonus_customer"))
-    nominal = int(_setting_float("nominal_bonus_customer"))
-    tercapai = jumlah_service >= target
+    tiers = get_bonus_customer_tiers()
 
-    # `hari_libur` boleh dikirim langsung oleh pemanggil (mis. get_ringkasan_barber_bulan)
-    # supaya tidak query dua kali dengan hitung_bonus_kehadiran(); kalau tidak dikirim,
-    # dihitung sendiri di sini (perilaku lama, tetap kompatibel untuk pemanggil lain).
+    tier_tercapai = None
+    tier_berikutnya = None
+    for tier in tiers:  # sudah terurut naik dari get_bonus_customer_tiers()
+        if jumlah_service >= tier["target"]:
+            tier_tercapai = tier
+        elif tier_berikutnya is None:
+            tier_berikutnya = tier
+
+    tercapai = tier_tercapai is not None
+    nominal = tier_tercapai["bonus"] if tier_tercapai else 0
+
     if hari_libur is None:
         hari_libur = get_hari_libur(barber_id, tahun, bulan)
     maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer"))
@@ -745,9 +804,21 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
     else:
         bonus = nominal
 
+    # "target" untuk keperluan progress bar: tier BERIKUTNYA yang belum
+    # tercapai (supaya progress % masuk akal, mis. "72/100 menuju tier
+    # berikutnya"); kalau semua tier sudah tercapai, pakai tier tertinggi
+    # (progress otomatis 100%+ -- maksimal tercapai).
+    target_progress = (
+        tier_berikutnya["target"] if tier_berikutnya
+        else (tier_tercapai["target"] if tier_tercapai else 0)
+    )
+
     return {
         "jumlah_service": jumlah_service,
-        "target": target,
+        "tiers": tiers,
+        "tier_tercapai": tier_tercapai,
+        "tier_berikutnya": tier_berikutnya,
+        "target": target_progress,
         "tercapai": tercapai,
         "hari_libur": hari_libur,
         "maksimal_hari_libur": maksimal_libur,
@@ -758,33 +829,15 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
 
 
 # ---------------------------------------------------------------------------
-# BONUS KEHADIRAN (bulanan)
-# ---------------------------------------------------------------------------
-
-def hitung_bonus_kehadiran(barber_id: int, tahun: int, bulan: int, hari_libur: int = None) -> dict:
-    # Sama seperti hitung_bonus_customer(): `hari_libur` boleh dikirim langsung supaya
-    # tidak query dua kali; kalau tidak dikirim, dihitung sendiri (tetap kompatibel).
-    if hari_libur is None:
-        hari_libur = get_hari_libur(barber_id, tahun, bulan)
-    maksimal = int(_setting_float("maksimal_hari_libur"))
-    nominal = int(_setting_float("bonus_kehadiran"))
-    memenuhi = hari_libur <= maksimal
-    return {
-        "hari_libur": hari_libur,
-        "maksimal_hari_libur": maksimal,
-        "memenuhi": memenuhi,
-        "bonus": nominal if memenuhi else 0,
-    }
-
-
-# ---------------------------------------------------------------------------
 # RINGKASAN BULANAN (dipakai Dashboard & Rekap)
 # ---------------------------------------------------------------------------
 
 def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
     """
     Mengembalikan semua komponen pendapatan seorang barber untuk satu bulan.
-    Total Pendapatan = Komisi + Tips + Uang Harian + Bonus Customer + Bonus Kehadiran
+    Total Pendapatan = Komisi + Tips + Uang Harian + Bonus Customer
+    REVISI: Bonus Kehadiran dihapus total dari perhitungan/tampilan (lihat
+    catatan revisi di README) -- tidak lagi ikut dijumlahkan di sini.
     """
     barber = get_barber(barber_id)
     if barber is None:
@@ -798,16 +851,10 @@ def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
     uang_harian = hitung_uang_harian_bulan(barber, tahun, bulan)
     jumlah_service_bulan = get_jumlah_service_bulan(barber_id, tahun, bulan)
     rincian_service = get_rincian_service_bulan(barber_id, tahun, bulan)
-    # Dihitung SEKALI di sini lalu dikirim ke kedua fungsi bonus di bawah, supaya
-    # tidak query "hari libur" dua kali (dulu masing-masing hitung_bonus_customer &
-    # hitung_bonus_kehadiran query sendiri-sendiri, padahal barber/bulan sama).
     hari_libur = get_hari_libur(barber_id, tahun, bulan)
     bonus_customer = hitung_bonus_customer(barber_id, tahun, bulan, hari_libur=hari_libur)
-    bonus_kehadiran = hitung_bonus_kehadiran(barber_id, tahun, bulan, hari_libur=hari_libur)
 
-    total_pendapatan = (
-        komisi + tips + uang_harian + bonus_customer["bonus"] + bonus_kehadiran["bonus"]
-    )
+    total_pendapatan = komisi + tips + uang_harian + bonus_customer["bonus"]
 
     return {
         "barber": barber,
@@ -822,8 +869,6 @@ def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
         "uang_harian": uang_harian,
         "bonus_customer": bonus_customer["bonus"],
         "bonus_customer_detail": bonus_customer,
-        "bonus_kehadiran": bonus_kehadiran["bonus"],
-        "bonus_kehadiran_detail": bonus_kehadiran,
         "total_pendapatan": total_pendapatan,
         "target_bonus_customer": bonus_customer["target"],
         "progress_target": (
@@ -951,7 +996,6 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> lis
             continue
         ringkasan = get_ringkasan_barber_bulan(barber["id"], tahun, bulan)
         bonus_customer = ringkasan["bonus_customer_detail"]
-        bonus_kehadiran = ringkasan["bonus_kehadiran_detail"]
         hasil.append({
             "tahun": tahun,
             "bulan": bulan,
@@ -968,7 +1012,6 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> lis
             "jumlah_service_dc_cw": bonus_customer["jumlah_service"],
             "target_tercapai": bonus_customer["tercapai"],
             "bonus_customer": ringkasan["bonus_customer"],
-            "bonus_kehadiran": ringkasan["bonus_kehadiran"],
             "total_pendapatan": ringkasan["total_pendapatan"],
         })
     return hasil
