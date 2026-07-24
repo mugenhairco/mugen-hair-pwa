@@ -41,6 +41,21 @@ const MugenApi = (() => {
       if (method === "GET" && useCache) {
         const cached = MugenState.cacheGet(cacheKey);
         if (cached) {
+          // TAHAP 13 (bugfix): banyak endpoint GET (services, transaksi,
+          // produk, pengeluaran, rekap, dst) balas ARRAY, bukan object.
+          // Sebelumnya di sini dipakai spread langsung ({...cached.data,
+          // __offline:true}) -- kalau cached.data adalah array, hasil
+          // spread-nya jadi PLAIN OBJECT (key "0","1",...), bukan array
+          // lagi, sehingga Array.isArray(data) di setiap halaman menjadi
+          // false dan cache offline yang sebenarnya sudah tersimpan malah
+          // ditampilkan sebagai KOSONG. Untuk array, tandai __offline
+          // langsung di object array itu sendiri (array tetap array).
+          if (Array.isArray(cached.data)) {
+            const arr = cached.data.slice();
+            arr.__offline = true;
+            arr.__cachedAt = cached.savedAt;
+            return arr;
+          }
           return { ...cached.data, __offline: true, __cachedAt: cached.savedAt };
         }
       }

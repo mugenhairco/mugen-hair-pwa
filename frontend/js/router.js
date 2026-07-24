@@ -2,6 +2,10 @@
 // 1. Kalau belum login -> paksa ke #/login.
 // 2. Kalau sudah login tapi buka #/login -> lempar ke #/dashboard.
 // 3. Render ulang sidebar (nav.js) + halaman yang sesuai ke <main id="content">.
+// TAHAP 13: tombol hamburger (buka/tutup sidebar di layar sempit) + backdrop
+// dipasang di sini -- CSS-nya (.hamburger/.sidebar.open/.sidebar-backdrop)
+// sudah ada sejak awal tapi belum pernah dihubungkan ke elemen/JS apa pun,
+// jadi di layar tablet/HP sidebar sebelumnya tidak bisa dibuka sama sekali.
 
 const MugenRouter = (() => {
   const appRoot = document.getElementById("app");
@@ -10,8 +14,28 @@ const MugenRouter = (() => {
     appRoot.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "app-shell" });
     const sidebar = MugenNav.render(location.hash || "#/dashboard");
+    const backdrop = MugenUI.el("div", { class: "sidebar-backdrop" });
+    const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button" }, "☰");
     const main = MugenUI.el("main", { class: "content", id: "content" });
+
+    function closeSidebar() {
+      sidebar.classList.remove("open");
+      backdrop.classList.remove("open");
+    }
+    hamburger.addEventListener("click", () => {
+      sidebar.classList.toggle("open");
+      backdrop.classList.toggle("open");
+    });
+    backdrop.addEventListener("click", closeSidebar);
+    // Tutup otomatis begitu satu menu dipilih (layar sempit) supaya user
+    // tidak perlu tap backdrop lagi tiap pindah halaman.
+    sidebar.addEventListener("click", (e) => {
+      if (e.target.tagName === "A") closeSidebar();
+    });
+
     wrap.appendChild(sidebar);
+    wrap.appendChild(backdrop);
+    wrap.appendChild(hamburger);
     wrap.appendChild(main);
     appRoot.appendChild(wrap);
     MugenBrand.refresh(); // TAHAP 10: sinkronkan nama/logo terbaru ke sidebar setiap pindah halaman

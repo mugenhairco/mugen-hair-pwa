@@ -35,7 +35,15 @@ const PageLogin = (() => {
           password: inputPassword.value,
         });
         MugenState.setSession(res.token, res.user);
+        // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
+        // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah
+        // kedaluwarsa), set location.hash ke nilai yang sama TIDAK memicu
+        // event "hashchange" (perilaku standar browser) -- akibatnya
+        // MugenRouter.handle() tidak pernah dipanggil ulang dan halaman
+        // Login tetap tampil walau login sebenarnya berhasil. Panggil
+        // handle() langsung supaya kasus ini tetap pindah ke dashboard.
         location.hash = "#/dashboard";
+        MugenRouter.handle();
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {

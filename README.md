@@ -5,7 +5,13 @@ Python Desktop adalah satu-satunya acuan** — seluruh logika bisnis, alur
 kerja, hasil perhitungan, dan struktur menu HARUS identik. PWA ini hanya
 berbeda platform (Desktop → web/installable app), bukan produk baru.
 
-## Status Pengerjaan (bertahap, sesuai rencana 13 tahap)
+## Status Pengerjaan (bertahap, sesuai rencana 13 tahap) — v1.0 Final Release
+
+Seluruh 13 tahap telah selesai. Aplikasi ini sudah dalam status **v1.0,
+siap dipakai sebagai versi produksi** — deployment sungguhan ke server
+(bagian **Deployment (Produksi)** di bawah) adalah satu-satunya langkah
+yang tersisa dan bergantung pada platform hosting yang dipilih, di luar
+kendali sandbox pengembangan ini.
 
 - [x] **Tahap 1 — Struktur Project**: folder `backend/` (FastAPI) & `frontend/`
       (HTML/CSS/JS + PWA shell) sudah dibuat.
@@ -148,14 +154,22 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
       `google_sheets_client.py`, `sync_meta_db.py`, `sync_migrasi.py`,
       `routers/sync.py`, `frontend/js/pages/sinkronisasi.js`. Lihat
       CHANGELOG — Tahap 12 di bawah untuk detail lengkap.
-- [ ] Pengujian menyeluruh dengan `uvicorn` yang sebenarnya, di lingkungan
-      deploy sungguhan (bukan sandbox pengembangan) — sejak Tahap 11, sandbox
-      pengembangan ini TERNYATA sudah bisa menjalankan `pip install` +
-      `uvicorn` sungguhan (lihat bagian Pengujian di CHANGELOG Tahap 11/12),
-      jadi catatan lama di sini ("tidak ada akses internet untuk pip
-      install") sudah tidak berlaku — tapi pengujian di server produksi
-      sungguhan (Render/dsb) tetap belum pernah dilakukan.
-- [ ] Deployment (render.yaml, vercel.json, runtime.txt, CORS env)
+- [x] **Tahap 13 — Final Release (v1.0)**: audit menyeluruh, bersih-bersih
+      kode tak terpakai, perbaikan bug (termasuk 2 bug nyata di alur
+      offline-cache & mobile navigation — lihat CHANGELOG Tahap 13), ikon
+      PWA lengkap (sebelumnya tidak ada sama sekali), dokumentasi instalasi/
+      deployment/backup/restore/sinkronisasi yang lengkap. Lihat CHANGELOG —
+      Tahap 13 di bawah untuk detail lengkap. **Tidak ada fitur baru** dan
+      **tidak ada perubahan logika bisnis** — murni pemantapan untuk rilis
+      v1.0.
+- [ ] Deployment sungguhan ke server produksi (Render/Railway/VPS/dsb) —
+      panduannya sudah ditulis lengkap (lihat bagian **Deployment (Produksi)**
+      di bawah), tapi belum pernah benar-benar dieksekusi ke server
+      sungguhan dari sandbox pengembangan ini (tidak ada akses ke platform
+      hosting eksternal dari sini). File konfigurasi spesifik-platform
+      (`render.yaml`/dsb) sengaja tidak dibuat karena platform hosting akhir
+      belum ditentukan — instruksi generik di bawah berlaku untuk platform
+      mana pun yang bisa menjalankan ASGI Python + hosting statis.
 
 ## CHANGELOG — Tahap 10
 
@@ -465,6 +479,171 @@ menyentuh kode aslinya sama sekali:
     ataupun file frontend Tahap 1–11 manapun — bukti langsung bahwa Tahap
     12 tidak mengubah fitur-fitur itu.
 
+## CHANGELOG — Tahap 13 (Final Release v1.0)
+
+Tahap terakhir: audit menyeluruh, bersih-bersih, perbaikan bug, kelengkapan
+PWA, dan dokumentasi — **tanpa fitur baru dan tanpa perubahan logika
+bisnis**. `database.py` dan seluruh rumus komisi/bonus/absensi TIDAK
+disentuh sama sekali (0 baris) — sama seperti Tahap 12.
+
+### Audit yang dilakukan
+
+- Baca ulang seluruh file backend (22 file `.py`) dan frontend (19 file
+  `.js`) satu per satu.
+- Cek import tak terpakai secara otomatis (skrip AST Python) di seluruh
+  modul backend.
+- Cek setiap endpoint API (35+ endpoint di 9 router) benar-benar memakai
+  dependency otorisasi (`Depends(get_current_user)` / `require_admin` /
+  `require_barber`) — tidak ada satu pun endpoint bisnis yang tanpa
+  proteksi (hanya `/api/health`, `/api/auth/login`, `GET
+  /api/pengaturan/identitas`, dan `GET /api/pengaturan/logo` yang memang
+  sengaja publik, dan itu pun tidak membocorkan data bisnis apa pun).
+- Cek folder struktur — diputuskan **TIDAK** melakukan reorganisasi besar
+  (mis. memecah `backend/app/*.py` yang flat jadi sub-package) karena
+  risiko regresi (harus mengubah banyak baris `import` di banyak file)
+  tidak sebanding manfaatnya untuk rilis final — struktur flat saat ini
+  konsisten dengan pola aplikasi Desktop asal dan sudah rapi lewat
+  penamaan `pengaturan_*`/`pengeluaran_*`/`sync_*` + folder `routers/`.
+  Perubahan struktur yang dilakukan: tambah folder `frontend/icons/` (baru,
+  lihat bagian Bug di bawah).
+- Uji responsif di 3 lebar layar (1440px desktop, 820px tablet, 390px HP)
+  + uji mode offline + uji instalabilitas PWA (lihat bagian Pengujian).
+
+### Bug yang diperbaiki
+
+1. **[Kritis] Ikon PWA tidak pernah ada sama sekali.** `manifest.json` dan
+   `index.html` sejak Tahap 1 sudah menunjuk ke `icons/icon-192.png` dan
+   `icons/icon-512.png`, tapi folder `frontend/icons/` tidak pernah dibuat
+   — aplikasi tidak bisa di-install dengan benar sebagai PWA di banyak
+   browser/OS (ikon rusak/hilang di homescreen, splash screen kosong).
+   Diperbaiki: dibuat set ikon lengkap (72–512px, 2 varian maskable untuk
+   Android adaptive icon, apple-touch-icon, favicon.ico multi-resolusi),
+   `manifest.json` diperbarui dengan seluruh ukuran + `purpose`, dan
+   `index.html` mendapat tag `apple-touch-icon`/`apple-mobile-web-app-*`
+   supaya Safari iOS 15+ bisa membuat splash screen otomatis dari ikon +
+   `background_color` manifest.
+2. **[Signifikan] Sidebar tidak bisa dibuka sama sekali di tablet/HP.**
+   CSS `.hamburger`/`.sidebar.open` sudah ada sejak awal (media query
+   `max-width: 820px` menyembunyikan sidebar di luar layar), tapi tidak
+   pernah ada elemen `<button class="hamburger">` ataupun JS yang
+   menambahkan/menghapus class `.open` — di layar ≤820px (semua tablet
+   portrait & HP), menu navigasi benar-benar tidak bisa diakses. Diperbaiki
+   di `router.js` (`shell()`): tombol hamburger + backdrop ditambahkan,
+   dengan auto-close saat memilih menu atau tap area gelap di luar sidebar.
+3. **[Signifikan] Cache offline untuk data berbentuk ARRAY selalu tampil
+   kosong.** `api.js` menyimpan fallback offline dengan
+   `{...cached.data, __offline:true}` — kalau `cached.data` berupa array
+   (services, daftar transaksi, daftar produk, daftar pengeluaran, riwayat
+   mutasi, rekap, dst — hampir semua endpoint GET di aplikasi ini), hasil
+   spread jadi PLAIN OBJECT (key `"0"`,`"1"`,...), BUKAN array lagi.
+   Setiap halaman yang mengecek `Array.isArray(data)` sebelum menampilkan
+   isinya (pola yang dipakai konsisten di semua halaman) jadi selalu jatuh
+   ke cabang kosong `[]` saat offline — walau data SUDAH tersimpan benar
+   di cache. Efeknya: mode offline PWA terlihat seolah "tidak ada data"
+   padahal sebenarnya cache-nya ada. Diperbaiki: kalau `cached.data` adalah
+   array, tandai `__offline`/`__cachedAt` langsung di object array itu
+   sendiri (array tetap array, `Array.isArray()` tetap `true`) alih-alih
+   men-spread ke object baru. Diverifikasi lewat Playwright dengan
+   mensimulasikan mode offline sungguhan (`context.set_offline(True)`) —
+   sebelum fix: 0 baris tampil; sesudah fix: seluruh baris yang sudah
+   di-cache tampil normal lengkap dengan banner "Sedang offline".
+4. **[Minor] Login bisa "diam" tanpa pindah ke Dashboard.** Di
+   `login.js`, setelah login sukses kode hanya melakukan
+   `location.hash = "#/dashboard"`. Kalau hash URL kebetulan SUDAH persis
+   `"#/dashboard"` (skenario nyata: reload/buka bookmark `#/dashboard`
+   setelah sesi login kedaluwarsa), browser TIDAK memicu event
+   `hashchange` untuk perubahan ke nilai yang sama — router tidak pernah
+   dipanggil ulang, halaman Login tetap tertampil walau login sebenarnya
+   berhasil (token sudah tersimpan). Diperbaiki: panggil
+   `MugenRouter.handle()` langsung setelah set hash, tidak bergantung pada
+   event `hashchange` saja.
+5. **[Minor] Import tak terpakai** di `routers/dashboard.py`
+   (`get_current_user` diimpor tapi kedua endpoint memakai
+   `require_admin`/`require_barber` langsung) — dihapus, murni
+   pembersihan, tidak mengubah perilaku apa pun.
+6. **[Kosmetik] Toast notifikasi bisa meluber di layar sangat sempit** —
+   `.toast` tidak punya batas lebar; pesan panjang di layar <375px bisa
+   terpotong di tepi layar. Ditambah `max-width: calc(100vw - 32px)`.
+
+### Baru
+
+- `frontend/icons/` — ikon PWA lengkap (lihat Bug #1).
+
+### Diedit minimal
+
+- `frontend/manifest.json` — daftar ikon lengkap + `purpose`, tambah
+  `id`/`lang`.
+- `frontend/index.html` — link ikon lengkap, meta tag Apple/PWA, tambah
+  `viewport-fit=cover` + `meta description`.
+- `frontend/css/style.css` — safe-area padding (notch iPhone), styling
+  hamburger/backdrop untuk layar sempit, `.toast` max-width. Semua
+  PENAMBAHAN aturan CSS baru atau perluasan media query yang sudah ada;
+  tidak ada rule yang sudah berfungsi normal yang diubah/dihapus.
+- `frontend/js/router.js` — tombol hamburger + backdrop (Bug #2).
+- `frontend/js/api.js` — fix cache offline array (Bug #3).
+- `frontend/js/pages/login.js` — fix navigasi setelah login (Bug #4).
+- `backend/app/routers/dashboard.py` — hapus import tak terpakai (Bug #5).
+- `frontend/service-worker.js` — daftarkan seluruh file ikon baru ke
+  app-shell cache, naikkan `CACHE_NAME` ke v7.
+- `README.md` — dokumentasi Instalasi, Deployment, Backup & Restore,
+  Sinkronisasi Google Sheets yang lengkap (sebelumnya sebagian besar hanya
+  ada di CHANGELOG per-tahap, tidak ada panduan operasional terpusat).
+
+### Tidak disentuh sama sekali
+
+`database.py`, `auth.py`, `auth_db.py`, seluruh fungsi hitung komisi/bonus/
+absensi, `routers/input_data.py`, `routers/pengeluaran.py`,
+`routers/produk.py`, `routers/pengaturan.py`, `routers/rekap.py`,
+`pengaturan_backup.py`, `pengeluaran_db.py`, dan seluruh halaman frontend
+Dashboard/Input Data/Rekap/Produk/Pengeluaran/Pengaturan/Sinkronisasi
+(logika, bukan CSS pembungkusnya) — nol perubahan fungsional.
+
+### Pengujian Tahap 13
+
+Backend dijalankan sungguhan (instalasi bersih `requirements.txt`) +
+browser (Playwright), database SQLite kosong (bootstrap admin baru):
+
+1. **Login Owner & Login Barber** — keduanya berhasil, data & hak akses
+   masing-masing benar.
+2. **Dashboard Owner & Dashboard Barber** — data tampil benar, barber
+   tidak bisa mengakses endpoint dashboard Owner (403).
+3. **Input Data, Rekap, Produk, Pengeluaran, Pengaturan** — CRUD & filter
+   di semua modul diuji ulang lewat API, nilai komisi (mis. Dry Cut
+   Rp35.000 → komisi Rp14.000) tetap identik seperti sebelum Tahap 13.
+4. **Sinkronisasi Google Sheets, Backup, Restore** — status sinkron,
+   export `.db` (diverifikasi signature SQLite valid), import/restore
+   (data terverifikasi utuh setelah restore) — semua tetap normal.
+5. **Permission**: seluruh endpoint admin-only diverifikasi ulang menolak
+   barber dengan `403`; tanpa token ditolak `401`.
+6. **Responsif** — diuji dengan Playwright di 3 viewport:
+   - **Desktop** (1440×900): sidebar tetap, semua 7 menu Owner dapat
+     dibuka tanpa error console.
+   - **Tablet** (820×1180, breakpoint persis di batas media query):
+     hamburger muncul & berfungsi, sidebar terbuka lewat tombol, otomatis
+     tertutup begitu memilih menu.
+   - **Mobile** (390×844, setara iPhone 12): hamburger + backdrop
+     berfungsi, tap area gelap menutup menu, login Barber di lebar ini
+     juga diverifikasi (menu Owner-only tetap tersembunyi).
+7. **PWA**: diverifikasi lewat browser sungguhan (bukan cuma baca kode) —
+   `navigator.serviceWorker` berstatus `activated`, `manifest.json`
+   valid & bisa diambil, seluruh 10 entri ikon di manifest + apple-touch-
+   icon + favicon.ico dikonfirmasi termuat (`HTTP 200`), meta
+   `apple-mobile-web-app-capable` ada.
+8. **Offline** (Bug #3 di atas): halaman Produk dibuka saat online (data
+   ter-cache), lalu koneksi dimatikan sungguhan lewat
+   `browser_context.set_offline(True)` dan halaman di-reload — service
+   worker menyajikan app-shell dari cache, DAN data (Daftar Produk +
+   Riwayat Mutasi, dua tabel berbeda di halaman yang sama) tetap tampil
+   lengkap dengan banner "Sedang offline", tidak lagi kosong.
+9. `python3 -m py_compile` untuk **seluruh** file `.py` di `backend/app/`
+   (bukan cuma yang disentuh Tahap 13) dan `node --check` untuk **seluruh**
+   file `.js` di `frontend/` — tidak ada syntax error di manapun.
+10. `git diff --stat` dari base `master` (setelah Tahap 12 merge)
+    dikonfirmasi **tidak menyertakan** `database.py`, `auth.py`,
+    `auth_db.py`, atau file logika bisnis Tahap 1–12 manapun kecuali daftar
+    "Diedit minimal" di atas (murni bugfix/dokumentasi/ikon) — bukti
+    langsung tidak ada regresi logika bisnis.
+
 
 ## Struktur Project
 
@@ -499,7 +678,13 @@ mugen-hair-pwa/
     ├── index.html
     ├── manifest.json        # PWA manifest
     ├── service-worker.js
+    ├── config.js             # SATU-SATUNYA tempat yang diedit untuk arahkan ke backend saat deploy
     ├── css/style.css        # palet warna sama dengan ui_theme.py (Dark Mode)
+    ├── icons/                # TAHAP 13: ikon PWA lengkap (baru dibuat, sebelumnya tidak ada)
+    │   ├── favicon.ico
+    │   ├── icon-{72,96,128,144,152,192,384,512}.png
+    │   ├── icon-maskable-{192,512}.png     # ikon adaptif Android
+    │   └── apple-touch-icon.png            # ikon Home Screen iOS
     └── js/
         ├── app.js
         ├── brand.js              # TAHAP 10: identitas barbershop lintas halaman
@@ -510,31 +695,225 @@ mugen-hair-pwa/
             └── sinkronisasi.js   # TAHAP 12: halaman Status Sinkronisasi + Backup/Restore (khusus admin)
 ```
 
-## Menjalankan di Lokal (development)
+## Instalasi
+
+Prasyarat:
+- **Python 3.11+** (dipakai untuk mengembangkan & menguji versi ini — versi
+  3.9+ kemungkinan besar juga jalan, tapi belum diuji).
+- **pip**.
+- Browser modern (Chrome/Edge/Firefox/Safari) untuk menjalankan frontend
+  dan menguji instalasi PWA-nya.
+- Tidak perlu Node.js/npm — frontend murni HTML/CSS/JS tanpa build step.
+
+Langkah instalasi (sekali saja, atau tiap kali `requirements.txt` berubah):
 
 ```bash
-cd backend
+git clone <url-repo-ini>
+cd mugen-hair-pwa/backend
+
+# (opsional tapi disarankan) buat virtual environment supaya dependency
+# tidak campur dengan Python sistem:
+python3 -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
-cd app
+```
+
+Kalau `pip install` sukses tanpa error, instalasi selesai — lanjut ke
+bagian **Menjalankan di Lokal** di bawah.
+
+## Menjalankan di Lokal (development)
+
+**1. Jalankan backend** (dari folder `backend/app/`, dengan venv yang sama
+dari langkah Instalasi):
+
+```bash
+cd backend/app
 uvicorn main:app --reload --port 8000
 ```
 
-Buka `http://localhost:8000/api/health` — harus muncul `{"status":"ok"}`.
+Buka `http://localhost:8000/api/health` di browser — harus muncul
+`{"status":"ok"}`. Saat pertama kali dijalankan (database masih kosong),
+backend otomatis membuat SATU akun Owner lewat environment variable
+`ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` (default:
+`owner` / `ganti-password-ini` kalau env var tidak diisi — **wajib diganti**
+sebelum dipakai sungguhan, lihat bagian Deployment).
 
-Frontend (Tahap 1, masih shell kosong) bisa dibuka langsung dari
-`frontend/index.html`, atau nanti di-serve oleh FastAPI di tahap lanjut.
+Environment variable lain yang bisa diisi (semua opsional untuk development
+lokal, sudah ada nilai default yang aman):
+
+| Variable | Kegunaan | Default (lokal) |
+|---|---|---|
+| `ADMIN_BOOTSTRAP_USERNAME` | Username Owner pertama (hanya dipakai sekali saat database masih kosong) | `owner` |
+| `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
+| `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
+| `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` |
+| `GOOGLE_SHEET_ID` | ID spreadsheet Google Sheets tujuan sinkron (Tahap 12) | kosong (sinkron nonaktif) |
+| `GOOGLE_CREDENTIALS_JSON` | Isi mentah file JSON service account Google (alternatif dari file `credentials.json`) | kosong |
+| `SYNC_RETRY_INTERVAL_DETIK` | Jeda antar percobaan retry sinkron otomatis | `60` |
+
+**2. Jalankan frontend** — karena murni file statis, bisa dibuka dengan
+server statis apa saja. Contoh paling sederhana (dari folder `frontend/`):
+
+```bash
+cd frontend
+python3 -m http.server 5500
+```
+
+Buka `http://localhost:5500/index.html` — `js/api.js` otomatis mengarah ke
+`http://localhost:8000` saat diakses dari `localhost`/`127.0.0.1`, jadi
+**tidak perlu edit apa pun** untuk development lokal (asal backend jalan di
+port 8000 seperti langkah 1). Login dengan akun Owner dari langkah 1.
+
+Alternatif lain untuk men-serve frontend saat development: ekstensi "Live
+Server" di VS Code, atau `npx serve`, atau `php -S localhost:5500` — apa
+saja yang bisa menyajikan file statis di localhost.
+
+## Deployment (Produksi)
+
+Backend (FastAPI) dan frontend (statis) adalah **dua layanan terpisah** —
+bisa dideploy ke platform yang sama atau berbeda. Panduan di bawah ini
+generik (berlaku untuk Render, Railway, Fly.io, VPS biasa, dst) karena
+platform hosting akhir belum ditentukan; sesuaikan istilah dengan platform
+pilihan Anda.
+
+### Backend
+
+1. Deploy folder `backend/` sebagai layanan Python/ASGI (`uvicorn main:app`
+   dari folder `backend/app/`, atau `gunicorn -k uvicorn.workers.UvicornWorker
+   main:app` untuk beberapa worker sekaligus).
+2. **Disk persisten wajib** — `mugen_hair.db` (SQLite) hidup di filesystem
+   lokal container/server, BUKAN di database eksternal. Kalau platform
+   hosting memakai container ephemeral (isi disk hilang tiap deploy/restart),
+   pastikan `backend/app/` (atau minimal file `.db`-nya) di-mount ke volume
+   persisten, atau data akan hilang setiap kali container di-restart.
+3. Set environment variable produksi (lihat tabel di atas) — **WAJIB**
+   diganti dari default:
+   - `SECRET_KEY`: string acak & rahasia (mis. `python3 -c "import secrets;
+     print(secrets.token_hex(32))"`).
+   - `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`: kredensial
+     Owner pertama yang sungguhan (ganti password ini lewat menu Setting >
+     User begitu berhasil login pertama kali).
+   - `ALLOWED_ORIGINS`: domain tempat frontend dideploy (mis.
+     `https://mugenhair.example.com`), dipisah koma kalau lebih dari satu.
+   - (opsional) `GOOGLE_SHEET_ID` / `GOOGLE_CREDENTIALS_JSON` — lihat bagian
+     **Sinkronisasi Google Sheets** di bawah.
+4. Kalau sudah pernah pakai aplikasi Desktop dan ingin membawa data lama:
+   copy manual file `mugen_hair.db` dari aplikasi Desktop ke
+   `backend/app/mugen_hair.db` di server SEBELUM pertama kali dijalankan
+   (lihat bagian **Backup & Restore Database** untuk cara lain memindahkan
+   data lewat menu, tanpa akses langsung ke server).
+5. Buka `https://<domain-backend>/api/health` — harus `{"status":"ok"}`.
+
+### Frontend
+
+1. Deploy folder `frontend/` apa adanya ke hosting statis mana pun
+   (Netlify, Vercel, GitHub Pages, S3+CloudFront, Nginx, dst) — tidak ada
+   proses build, semua file HTML/CSS/JS sudah siap pakai langsung.
+2. Edit **satu baris** di `frontend/config.js` supaya frontend tahu alamat
+   backend yang benar:
+   ```js
+   window.MUGEN_API_BASE = "https://<domain-backend-anda>";
+   ```
+   (Ini satu-satunya file yang perlu diedit manual setelah deploy — semua
+   pemanggilan API di seluruh aplikasi lewat `js/api.js` yang membaca nilai
+   ini.)
+3. **HTTPS wajib** untuk PWA (installable + service worker) di produksi —
+   browser hanya mengizinkan Service Worker aktif di origin HTTPS (kecuali
+   `localhost`, yang dikecualikan khusus untuk development). Hampir semua
+   hosting statis modern (Netlify/Vercel/GitHub Pages/dst) sudah otomatis
+   HTTPS; kalau self-host di VPS, pasang sertifikat (mis. Let's Encrypt via
+   Certbot/Caddy).
+4. Pastikan `ALLOWED_ORIGINS` di backend (langkah 3 di atas) sudah memuat
+   domain frontend ini — kalau tidak, browser akan memblokir semua request
+   API karena CORS.
+
+## Backup & Restore Database
+
+Dua tempat di aplikasi yang melakukan hal yang SAMA (memanggil endpoint
+backend yang sama, `/api/pengaturan/backup/*`) — pakai yang mana saja
+sesuai kenyamanan:
+- Menu **Setting > Backup** (tab terakhir), atau
+- Menu **Sinkronisasi** (bagian bawah halaman, di luar status sinkron).
+
+**Backup (Export)**:
+1. Login sebagai Owner.
+2. Buka menu Setting atau Sinkronisasi, klik **Backup Database** / **Export
+   Database**.
+3. File `.db` (SQLite, salinan PERSIS database yang sedang berjalan,
+   termasuk semua transaksi/komisi/produk/pengeluaran/pengaturan/dst) akan
+   otomatis terunduh ke perangkat Anda. Simpan file ini di tempat aman
+   (Google Drive, hard disk eksternal, dst) — inilah cara paling aman
+   memindahkan/mengamankan seluruh data toko.
+
+**Restore (Import)**:
+1. Login sebagai Owner, buka menu Setting atau Sinkronisasi.
+2. Pilih file `.db` hasil Backup sebelumnya di bagian **Restore Database** /
+   **Import Database**.
+3. Konfirmasi peringatan yang muncul (aksi ini MENGGANTI seluruh data yang
+   sedang berjalan).
+4. Backend otomatis membuat backup dari database yang SEDANG aktif ke
+   `backend/app/backups/` (bertimestamp) SEBELUM menimpanya — jadi data
+   sebelum restore tidak pernah hilang total walau ternyata salah pilih
+   file. File yang diupload juga divalidasi harus benar-benar file SQLite
+   valid (bukan sembarang file) sebelum diterima.
+5. Halaman otomatis reload setelah restore berhasil, menampilkan data dari
+   file yang baru diupload.
+
+## Sinkronisasi Google Sheets
+
+Fitur ini (Tahap 12) OPSIONAL — aplikasi berjalan 100% normal tanpa ini,
+data selalu aman tersimpan lokal di SQLite terlepas dari status sinkron.
+Kalau ingin mengaktifkannya (backup otomatis ke cloud + bisa dilihat dari
+perangkat lain):
+
+1. **Buat Service Account Google**:
+   - Buka [Google Cloud Console](https://console.cloud.google.com/) →
+     buat/pilih project → aktifkan **Google Sheets API** dan **Google
+     Drive API**.
+   - Buka menu *IAM & Admin > Service Accounts* → **Create Service
+     Account** → buat key baru bertipe **JSON** → file JSON-nya terunduh
+     otomatis.
+2. **Siapkan spreadsheet tujuan**:
+   - Buat spreadsheet Google Sheets baru (boleh kosong, tab-nya dibuat
+     otomatis oleh aplikasi saat sinkron pertama kali berhasil).
+   - Share spreadsheet itu ke alamat email service account (ada di dalam
+     file JSON, field `client_email`, formatnya
+     `...@...iam.gserviceaccount.com`) dengan akses **Editor**.
+   - Salin ID spreadsheet dari URL-nya:
+     `https://docs.google.com/spreadsheets/d/`**`<ID INI>`**`/edit`.
+3. **Set environment variable di server backend**:
+   - `GOOGLE_SHEET_ID` = ID spreadsheet dari langkah 2.
+   - Kredensial service account, SALAH SATU dari:
+     - `GOOGLE_CREDENTIALS_JSON` = isi mentah file JSON dari langkah 1
+       (cocok untuk platform hosting yang tidak mendukung upload file,
+       mis. Render/Railway — tempel seluruh isi file JSON sebagai satu
+       environment variable), **atau**
+     - upload file JSON itu langsung ke `backend/app/credentials.json` di
+       server (kalau punya akses filesystem, mis. VPS).
+4. Restart backend supaya environment variable baru terbaca.
+5. Buka menu **Sinkronisasi** di aplikasi (Owner) — kartu **Status
+   Sinkronisasi** akan menunjukkan `dikonfigurasi: true` dan tidak lagi
+   menampilkan banner "belum dikonfigurasi". Klik **Sinkronkan Sekarang**
+   untuk memicu sinkron pertama secara manual, atau tunggu sinkron otomatis
+   berikutnya (dipicu setiap ada data baru tersimpan, dan dicoba ulang
+   berkala tiap `SYNC_RETRY_INTERVAL_DETIK` detik kalau sempat gagal).
+6. Setelah sinkron pertama berhasil, spreadsheet akan berisi 5 tab
+   (`transaksi`, `absensi_libur`, `pengeluaran`, `produk`, `produk_mutasi`)
+   — masing-masing selalu berisi snapshot TERBARU dari data lokal (ditimpa
+   penuh tiap sinkron berhasil, bukan ditambah baris terus-menerus).
+
+Kalau sinkron gagal (kredensial salah, spreadsheet belum di-share, kuota
+API habis, dst), halaman Sinkronisasi akan menampilkan pesan error yang
+jelas dan data tetap 100% aman di SQLite lokal — tidak ada risiko
+kehilangan data walau sinkron cloud bermasalah.
 
 ## Database & Kredensial — TIDAK ikut ke Git
 
 `mugen_hair.db` dan `credentials.json` **sengaja tidak di-commit** (lihat
-`.gitignore`) — karena isinya data asli toko / kredensial rahasia. Saat
-deploy ke server:
-
-1. Push kode ini ke GitHub seperti biasa (`git push`).
-2. Di server, **copy manual** `mugen_hair.db` (dari aplikasi Desktop Anda,
-   supaya semua data lama ikut terbawa) ke `backend/app/mugen_hair.db`.
-3. Kalau memakai sinkronisasi Google Sheets, copy juga `credentials.json` ke
-   `backend/app/credentials.json`.
+`.gitignore`) — karena isinya data asli toko / kredensial rahasia. Lihat
+bagian **Deployment** dan **Sinkronisasi Google Sheets** di atas untuk cara
+menyiapkannya di server.
 
 ## Catatan Penting
 
@@ -544,3 +923,6 @@ deploy ke server:
   keduanya tetap identik.
 - Setiap tahap diuji dan dibandingkan hasilnya dengan aplikasi Desktop
   sebelum lanjut ke tahap berikutnya.
+- Ganti `ADMIN_BOOTSTRAP_PASSWORD` dan `SECRET_KEY` dari nilai default
+  SEBELUM aplikasi ini dipakai dengan data sungguhan (lihat bagian
+  Deployment) — nilai default hanya aman untuk development lokal.

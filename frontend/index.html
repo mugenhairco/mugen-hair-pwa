@@ -2,14 +2,32 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>MUGEN Hair Co.</title>
   <!-- TAHAP 10: judul di atas hanya fallback awal sebelum JS jalan — brand.js
        akan menimpa document.title dengan nama barbershop dari database begitu
        halaman selesai dimuat, jadi tidak lagi hardcode di alur aplikasi. -->
   <meta name="theme-color" content="#121212" />
+  <meta name="description" content="Aplikasi manajemen komisi, uang harian, bonus barber, produk, dan pengeluaran — MUGEN Hair Co." />
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icons/icon-192.png" />
+
+  <!-- TAHAP 13: set ikon lengkap (sebelumnya manifest.json/tag di bawah ini
+       menunjuk ke file icons/* yang belum pernah ada di repo -- PWA jadi
+       tidak bisa di-install dengan benar di banyak browser/OS). -->
+  <link rel="icon" type="image/x-icon" href="icons/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+
+  <!-- Splash screen iOS: Safari modern (15+) otomatis membuat launch screen
+       dari ikon + background_color manifest begitu tag "web-app-capable" di
+       bawah ini ada, tanpa perlu puluhan gambar apple-touch-startup-image
+       per resolusi device. -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MUGEN Hair" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>

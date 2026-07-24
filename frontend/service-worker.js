@@ -6,7 +6,7 @@
 // data supaya tidak menampilkan data basi/salah ke user (data transaksi &
 // stok harus selalu akurat, bukan dari cache lama).
 
-const CACHE_NAME = "mugen-hair-shell-v6";
+const CACHE_NAME = "mugen-hair-shell-v7";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -29,6 +29,19 @@ const APP_SHELL = [
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/sinkronisasi.js",
+  // TAHAP 13: ikon PWA (sebelumnya file-file ini belum ada sama sekali)
+  "/icons/favicon.ico",
+  "/icons/icon-72.png",
+  "/icons/icon-96.png",
+  "/icons/icon-128.png",
+  "/icons/icon-144.png",
+  "/icons/icon-152.png",
+  "/icons/icon-192.png",
+  "/icons/icon-384.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {

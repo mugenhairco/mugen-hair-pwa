@@ -22,6 +22,11 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
+  /* TAHAP 13: viewport-fit=cover (index.html) supaya dark background mengisi
+     penuh sampai ke tepi layar iPhone bertakik/Dynamic Island -- konten
+     interaktif tetap dijauhkan dari area itu lewat safe-area-inset di bawah. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .status-placeholder {
@@ -242,6 +247,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--bg-card); border: 1px solid var(--border);
   padding: 12px 16px; border-radius: 8px; color: var(--text);
   box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  /* TAHAP 13: batasi lebar supaya pesan panjang tidak meluber ke luar
+     layar sempit (HP kecil, mis. iPhone SE 375px atau lebih kecil). */
+  max-width: calc(100vw - 32px);
 }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 .toast.success { border-color: var(--success); color: var(--success); }
@@ -287,8 +295,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .actions-cell { display: flex; gap: 6px; }
 .actions-cell button { padding: 5px 10px; font-size: 12px; }
 
+.sidebar-backdrop { display: none; }
+
 @media (max-width: 820px) {
-  .hamburger { display: block; }
+  .hamburger {
+    display: block;
+    position: fixed; top: env(safe-area-inset-top); left: 0; z-index: 60;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-radius: 0 0 8px 0;
+  }
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 50;
     transform: translateX(-100%);
@@ -296,5 +313,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     height: 100vh;
   }
   .sidebar.open { transform: translateX(0); }
-  .content { padding: 16px; }
+  .content { padding: 16px; padding-top: 64px; }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
 }
