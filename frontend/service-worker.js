@@ -6,7 +6,7 @@
 // data supaya tidak menampilkan data basi/salah ke user (data transaksi &
 // stok harus selalu akurat, bukan dari cache lama).
 
-const CACHE_NAME = "mugen-hair-shell-v2";
+const CACHE_NAME = "mugen-hair-shell-v4";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -16,6 +16,7 @@ const APP_SHELL = [
   "/js/state.js",
   "/js/api.js",
   "/js/ui.js",
+  "/js/brand.js",
   "/js/nav.js",
   "/js/router.js",
   "/js/app.js",
@@ -24,6 +25,8 @@ const APP_SHELL = [
   "/js/pages/dashboard_barber.js",
   "/js/pages/input_data.js",
   "/js/pages/rekap.js",
+  "/js/pages/pengeluaran.js",
+  "/js/pages/pengaturan.js",
 ];
 
 self.addEventListener("install", (event) => {

@@ -14,6 +14,7 @@ const MugenRouter = (() => {
     wrap.appendChild(sidebar);
     wrap.appendChild(main);
     appRoot.appendChild(wrap);
+    MugenBrand.refresh(); // TAHAP 10: sinkronkan nama/logo terbaru ke sidebar setiap pindah halaman
     return main;
   }
 
@@ -44,6 +45,23 @@ const MugenRouter = (() => {
       PageInputData.render(content);
     } else if (hash.startsWith("#/rekap")) {
       PageRekap.render(content);
+    } else if (hash.startsWith("#/pengeluaran")) {
+      // Tahap 9: halaman khusus admin. Barber tidak diberi link ini di nav.js,
+      // tapi kalau nekat buka lewat URL langsung, lempar ke dashboard di sini
+      // juga (perlindungan sebenarnya tetap di backend: require_admin).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PagePengeluaran.render(content);
+    } else if (hash.startsWith("#/pengaturan")) {
+      // Tahap 10: halaman khusus admin. Perlindungan sebenarnya tetap di
+      // backend (require_admin di setiap endpoint /api/pengaturan/*).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PagePengaturan.render(content);
     } else {
       location.hash = "#/dashboard";
     }

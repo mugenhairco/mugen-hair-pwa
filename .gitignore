@@ -7,6 +7,12 @@ credentials.json
 backend/app/mugen_hair.db
 *.db
 
+# TAHAP 10: file logo yang diupload & backup database — spesifik per instalasi,
+# jangan ikut ke git (folder tetap dipertahankan lewat .gitkeep)
+backend/app/static/logo/*
+!backend/app/static/logo/.gitkeep
+backend/app/backups/
+
 # Python
 __pycache__/
 *.pyc

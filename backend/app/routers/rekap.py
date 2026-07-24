@@ -2,11 +2,14 @@
 - Rekap Transaksi & Rekap Bulanan: Owner bisa lihat semua barber (atau filter
   satu barber), Barber otomatis dibatasi ke data miliknya sendiri saja.
 - Rekap Pengeluaran: data operasional TOKO (bukan milik barber manapun),
-  jadi khusus Owner."""
+  jadi khusus Owner. TAHAP 9: diarahkan ke pengeluaran_db (sumber yang sama
+  dipakai CRUD Pengeluaran) supaya rekap ini otomatis ikut kategori & nama
+  barber, bukan lagi hanya baca kolom dasar dari database.py."""
 
 from fastapi import APIRouter, Depends
 
 import database as db
+import pengeluaran_db
 from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/rekap", tags=["rekap"])
@@ -29,6 +32,6 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
 
 @router.get("/pengeluaran")
 def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_admin)):
-    daftar = db.get_pengeluaran_list(tahun=tahun, bulan=bulan)
-    total = db.get_total_pengeluaran(tahun=tahun, bulan=bulan)
+    daftar = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan)
+    total = sum(p["jumlah"] for p in daftar)
     return {"daftar": daftar, "total": total}

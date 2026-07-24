@@ -158,7 +158,9 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.buildTable(
             [
               { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+              { key: "kategori", label: "Kategori", format: (v) => v || "-" },
               { key: "keterangan", label: "Keterangan" },
+              { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
               { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
             ],
             data.daftar,

@@ -1,20 +1,30 @@
-// nav.js — sidebar. Menu Produk/Pengeluaran/Setting sengaja ditandai
-// "(segera)" dan tidak diberi link aktif dulu karena router/API-nya belum
-// dibuat di tahap ini (baru Dashboard, Input Data, Rekap).
+// nav.js — sidebar. Menu Produk sengaja ditandai "(segera)" karena
+// router/API-nya belum dibuat (Tahap 8 menyusul). Menu Pengeluaran (Tahap 9)
+// dan Setting (Tahap 10) sudah aktif, KHUSUS admin — backend juga menolak
+// barber lewat require_admin, ini bukan satu-satunya lapis perlindungan.
+// Nama & logo barbershop (TAHAP 10) TIDAK hardcode di sini — dibaca lewat
+// brand.js (MugenBrand) dari /api/pengaturan/identitas.
 
 const MugenNav = (() => {
   const MENU = [
     { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "barber"] },
     { hash: "#/input-data", label: "Input Data", roles: ["admin", "barber"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
+    { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin"] },
+    { hash: "#/pengaturan", label: "Setting", roles: ["admin"] },
   ];
-  const MENU_SEGERA = ["Produk", "Pengeluaran", "Setting"];
+  const MENU_SEGERA = ["Produk"];
 
   function render(activeHash) {
     const user = MugenState.getUser();
     const sidebar = MugenUI.el("aside", { class: "sidebar" });
 
-    sidebar.appendChild(MugenUI.el("div", { class: "brand" }, "MUGEN HAIR CO."));
+    const brandBox = MugenUI.el("div", { class: "brand" }, [
+      MugenUI.el("img", { class: "brand-logo", style: "display:none;", alt: "Logo" }),
+      MugenUI.el("span", { class: "brand-name" }, MugenBrand.get().nama_barbershop),
+    ]);
+    sidebar.appendChild(brandBox);
+    MugenBrand.applyToDom();
 
     const nav = MugenUI.el("nav");
     for (const item of MENU) {

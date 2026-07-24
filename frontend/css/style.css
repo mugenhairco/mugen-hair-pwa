@@ -58,6 +58,40 @@ a { color: var(--accent); }
   color: var(--accent);
   border-bottom: 1px solid var(--border);
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.login-logo {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 8px;
+  display: block;
+}
+
+.logo-preview {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  display: block;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 12px;
 }
 
 .sidebar nav a {

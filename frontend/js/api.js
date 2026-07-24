@@ -71,11 +71,39 @@ const MugenApi = (() => {
     return payload;
   }
 
+  async function uploadFile(path, file) {
+    const headers = {};
+    const token = MugenState.getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const form = new FormData();
+    form.append("file", file);
+
+    let response;
+    try {
+      response = await fetch(MUGEN_API_BASE + path, { method: "POST", headers, body: form });
+    } catch (networkErr) {
+      throw new ApiError("Tidak bisa terhubung ke server. Periksa koneksi internet Anda.", 0, null);
+    }
+    if (response.status === 401) {
+      MugenState.clearSession();
+      location.hash = "#/login";
+      throw new ApiError("Sesi login berakhir, silakan login lagi.", 401, null);
+    }
+    let payload = null;
+    try { payload = await response.json(); } catch (e) { /* tanpa body */ }
+    if (!response.ok) {
+      const detail = payload && payload.detail ? payload.detail : "Terjadi kesalahan pada server.";
+      throw new ApiError(detail, response.status, payload);
+    }
+    return payload;
+  }
+
   return {
     ApiError,
     get: (path, opts) => request("GET", path, undefined, opts),
     post: (path, body, opts) => request("POST", path, body, opts),
     put: (path, body, opts) => request("PUT", path, body, opts),
     del: (path, body, opts) => request("DELETE", path, body, opts),
+    uploadFile,
   };
 })();

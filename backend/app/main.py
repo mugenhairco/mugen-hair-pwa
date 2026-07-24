@@ -2,9 +2,10 @@
 main.py — Entry point backend PWA MUGEN Hair Co.
 
 TAHAP 3-7: login & hak akses, router Dashboard (Owner + Barber), Input Data,
-dan Rekap sudah terpasang. Endpoint Produk / Pengeluaran(CRUD) / Setting
-menyusul di tahap berikutnya (belum ada router-nya di folder routers/ saat ini
-— Rekap Pengeluaran (baca saja) sudah ada, CRUD-nya belum).
+dan Rekap sudah terpasang.
+TAHAP 9: routers/pengeluaran.py (CRUD Pengeluaran, khusus admin) terpasang.
+TAHAP 10: routers/pengaturan.py (Setting — identitas, komisi, barber,
+layanan, user, backup) terpasang. Endpoint Produk (Tahap 8) menyusul.
 """
 
 import os
@@ -14,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import database as db
 import auth_db
-from routers import auth_router, dashboard, input_data, rekap
+from pengeluaran_migrasi import migrasi_pengeluaran
+from pengaturan_migrasi import migrasi_pengaturan
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -36,6 +39,8 @@ app.include_router(auth_router.router)
 app.include_router(dashboard.router)
 app.include_router(input_data.router)
 app.include_router(rekap.router)
+app.include_router(pengeluaran.router)
+app.include_router(pengaturan.router)
 
 
 @app.on_event("startup")
@@ -44,6 +49,8 @@ def on_startup():
     # main.py Tkinter dijalankan, tidak pernah menimpa data yang sudah ada.
     db.init_db()
     auth_db.init_auth_db()
+    migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
+    migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
     _bootstrap_admin_pertama()
 
 
