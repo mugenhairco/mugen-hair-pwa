@@ -11,9 +11,27 @@ khusus admin) terpasang. Router & halaman frontend-nya sudah disiapkan sejak
 Tahap 10 tapi belum dihubungkan; Tahap 11 menghubungkannya.
 TAHAP 12: routers/sync.py (Status Sinkronisasi Google Sheets, khusus admin)
 terpasang + loop retry sinkron otomatis di background (lihat sync_helper.py).
-"""
+
+BUGFIX startup lokal (`uvicorn app.main:app`): seluruh modul di folder ini
+(database.py, auth.py, auth_db.py, routers/, dst) memakai import "flat"
+(`import database`, bukan `from . import database`), yang hanya berfungsi
+kalau folder file ini sendiri (backend/app/) ada di sys.path. `app/__init__.py`
+sudah menambahkan folder itu ke sys.path begitu paket `app` diimpor -- baris
+di bawah ini MENGULANGI hal yang sama secara mandiri, langsung di baris
+paling atas file ini (sebelum `import database` dkk di bawah), supaya tidak
+bergantung sama sekali pada urutan/mekanisme import package Python maupun
+cara proses child di-spawn ulang oleh `--reload` (beberapa platform, mis.
+Windows, memakai metode 'spawn' untuk proses reload yang tidak selalu
+mewarisi state se-transparan 'fork' di Linux/Mac) -- aman dipanggil
+berkali-kali (idempotent, lihat `if ... not in sys.path`), dan TIDAK
+mengubah satu pun logika bisnis/import module lain."""
 
 import os
+import sys
+
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+if _APP_DIR not in sys.path:
+    sys.path.insert(0, _APP_DIR)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
