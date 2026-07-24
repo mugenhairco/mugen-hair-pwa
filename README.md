@@ -143,15 +143,19 @@ berbeda platform (Desktop → web/installable app), bukan produk baru.
         (termasuk penolakan saat stok tidak cukup), riwayat mutasi +
         filter, koreksi & hapus mutasi (stok terhitung ulang otomatis),
         serta penolakan akses barber di level backend maupun frontend.
-- [ ] Sinkronisasi Google Sheets: `sync_helper.sync_async()` masih **no-op**
-      (placeholder) — `sync.py` dari aplikasi Desktop belum disalin ke repo
-      ini, jadi belum ada isinya untuk dipanggil. Lihat komentar TODO di
-      `backend/app/sync_helper.py`.
-- [ ] Tahap 12 — Testing dengan `uvicorn` (belum bisa dijalankan di sandbox
-      pengembangan ini karena tidak ada akses internet untuk `pip install` —
-      logika inti (migrasi, CRUD, validasi) sudah diuji langsung lewat
-      `sqlite3`/stdlib, lihat catatan pengujian di percakapan pengembangan)
-- [ ] Tahap 13 — Deployment (render.yaml, vercel.json, runtime.txt, CORS env)
+- [x] **Tahap 12 — Sinkronisasi Google Sheets & Backup Cloud**:
+      `sync_helper.py` (sebelumnya no-op sejak Tahap 1) diisi sungguhan +
+      `google_sheets_client.py`, `sync_meta_db.py`, `sync_migrasi.py`,
+      `routers/sync.py`, `frontend/js/pages/sinkronisasi.js`. Lihat
+      CHANGELOG — Tahap 12 di bawah untuk detail lengkap.
+- [ ] Pengujian menyeluruh dengan `uvicorn` yang sebenarnya, di lingkungan
+      deploy sungguhan (bukan sandbox pengembangan) — sejak Tahap 11, sandbox
+      pengembangan ini TERNYATA sudah bisa menjalankan `pip install` +
+      `uvicorn` sungguhan (lihat bagian Pengujian di CHANGELOG Tahap 11/12),
+      jadi catatan lama di sini ("tidak ada akses internet untuk pip
+      install") sudah tidak berlaku — tapi pengujian di server produksi
+      sungguhan (Render/dsb) tetap belum pernah dilakukan.
+- [ ] Deployment (render.yaml, vercel.json, runtime.txt, CORS env)
 
 ## CHANGELOG — Tahap 10
 
@@ -257,6 +261,210 @@ memakai database SQLite kosong (bootstrap admin baru):
    `node --check` untuk seluruh file frontend yang disentuh — tidak ada
    syntax error.
 
+## CHANGELOG — Tahap 12
+
+**Tujuan**: sinkronisasi cloud (Google Sheets) + status sinkron yang
+terlihat, tanpa mengubah satu pun logika bisnis atau fitur Tahap 1–11.
+
+### Cara kerja
+
+`sync_async()` dipanggil di titik yang **sudah ada sejak Tahap 6/9/11**
+(setelah simpan/koreksi/hapus di Input Data, Pengeluaran, dan Produk) —
+**tidak ada satu baris pun** yang ditambah/diubah di `routers/input_data.py`,
+`routers/pengeluaran.py`, atau `routers/produk.py` untuk Tahap 12 ini (lihat
+`git diff --stat`, ketiga file itu tidak muncul). Sebelumnya `sync_async()`
+adalah no-op; sekarang:
+
+1. **Simpan lokal SELALU jalan lebih dulu** dan SELALU berhasil terlepas
+   dari apa pun yang terjadi pada langkah sinkron — `sync_async()` dipanggil
+   SETELAH baris `db.tambah_transaksi(...)` dkk selesai, dan seluruh isi
+   `sync_async()` dibungkus try/except sehingga **tidak pernah** melempar
+   error balik ke request API pemanggil.
+2. Setiap panggilan menaikkan `write_counter` (tabel baru `sync_meta`,
+   terpisah dari `database.py`) — inilah dasar hitungan **"jumlah data
+   belum sinkron"** (`write_counter - synced_counter`, dari sisi status
+   selalu ≥ 0).
+3. Percobaan kirim ke Google Sheets berjalan di **background thread**
+   (`threading.Thread(daemon=True)`) supaya request penyimpanan (`POST
+   /api/input-data/transaksi` dsb) tidak ikut menunggu proses upload yang
+   bisa lambat.
+4. Kalau Google Sheets **belum dikonfigurasi** (`GOOGLE_SHEET_ID` /
+   kredensial service account belum diisi) **atau** sedang tidak bisa
+   dihubungi (offline, quota, dll) — percobaan itu gagal dengan aman: status
+   dicatat `"gagal"` + pesan errornya, `synced_counter` TIDAK naik, data
+   tetap 100% aman di SQLite lokal seperti sebelum Tahap 12 ada.
+5. **Retry otomatis berkala**: satu thread background lain (mulai jalan
+   sekali saat startup lewat `sync_helper.start_background_retry_loop()`)
+   memeriksa tiap `SYNC_RETRY_INTERVAL_DETIK` (default 60 detik, bisa
+   diubah lewat environment variable) — kalau ada data belum sinkron, coba
+   kirim lagi. Ini yang memenuhi "saat koneksi kembali normal, data yang
+   belum tersinkron dikirim otomatis" tanpa perlu user membuka halaman
+   apa pun.
+6. **Sinkron ulang penuh, bukan diff per baris**: setiap kali sinkron
+   berhasil, SELURUH isi 5 tabel (`transaksi`, `absensi_libur`,
+   `pengeluaran`, `produk`, `produk_mutasi`) dibaca ulang lewat fungsi baca
+   yang **sudah ada** (`db.get_transaksi_list()`, `db.get_libur_list()`,
+   `pengeluaran_db.get_pengeluaran_list()`, `db.get_produk_list()`,
+   `db.get_mutasi_produk_list()` — semua read-only, tidak ada satu query
+   tulis pun yang ditambah ke `database.py`) lalu MENIMPA PENUH tab Google
+   Sheets yang bersangkutan. Ini sengaja dipilih dibanding sinkron per-baris
+   supaya data yang **dihapus** di lokal (mis. hapus transaksi/mutasi
+   produk) otomatis ikut hilang dari Sheets juga, tanpa perlu logika hapus
+   terpisah yang bisa meleset.
+
+### Konfigurasi (diisi saat deploy, TIDAK ikut git)
+
+- `GOOGLE_SHEET_ID` — ID spreadsheet tujuan (bagian di URL spreadsheet).
+- Kredensial service account, salah satu dari:
+  - `GOOGLE_CREDENTIALS_JSON` (environment variable, isi mentah file JSON
+    service account — cocok untuk Render/dsb tanpa upload file), atau
+  - file `backend/app/credentials.json` (sudah disebut sejak README
+    Tahap 1, di-gitignore, harus di-copy manual saat deploy).
+- `SYNC_RETRY_INTERVAL_DETIK` (opsional, default `60`) — jeda antar
+  percobaan retry otomatis.
+
+Kalau `GOOGLE_SHEET_ID`/kredensial belum diisi, aplikasi tetap berjalan
+normal 100% (semua fitur Tahap 1–11 tidak terpengaruh) — hanya halaman
+Sinkronisasi yang menampilkan status "belum dikonfigurasi" dan data
+menumpuk sebagai "belum sinkron" sampai dikonfigurasi.
+
+### Baru
+
+- `backend/app/sync_migrasi.py` — migrasi idempotent: tabel `sync_meta`
+  (key-value status sinkron, TIDAK menyimpan data bisnis apa pun).
+- `backend/app/sync_meta_db.py` — baca/tulis `sync_meta` (write_counter,
+  synced_counter, last_sync_at, last_sync_status, last_sync_message).
+- `backend/app/google_sheets_client.py` — klien tipis gspread + google-auth
+  (`is_configured()`, `push_snapshot(entity, rows)`), dipakai HANYA oleh
+  `sync_helper.py`.
+- `backend/app/routers/sync.py` — `/api/sync/status` (GET) & `/api/sync/sekarang`
+  (POST), KHUSUS admin (`require_admin`, pola sama seperti Pengeluaran/
+  Produk/Setting).
+- `frontend/js/pages/sinkronisasi.js` — halaman "Sinkronisasi": kartu status
+  (jumlah belum sinkron, waktu sinkron terakhir, status berhasil/gagal +
+  pesan error), tombol **Sinkronkan Sekarang**, dan menu **Backup
+  Database**/**Restore Database** (lihat bawah — memanggil endpoint lama).
+
+### Diedit minimal
+
+- `backend/app/sync_helper.py` — dari no-op menjadi implementasi sungguhan
+  (lihat "Cara kerja" di atas). Ini SATU-SATUNYA file "logika sinkron" yang
+  diedit; tanda tangan fungsi `sync_async()` (nama, tanpa parameter) TIDAK
+  berubah, jadi seluruh pemanggilnya (Tahap 6/9/11) tidak perlu disentuh.
+- `backend/app/main.py` — import + `app.include_router(sync.router)`,
+  panggil `migrasi_sync()` & `sync_helper.start_background_retry_loop()`
+  saat startup.
+- `frontend/js/nav.js` — menu "Sinkronisasi" (khusus admin).
+- `frontend/js/router.js` — rute `#/sinkronisasi` (khusus admin, pola sama
+  persis dengan `#/pengeluaran`/`#/produk`/`#/pengaturan`).
+- `frontend/index.html`, `frontend/service-worker.js` — daftarkan
+  `sinkronisasi.js`, naikkan cache PWA ke v6.
+- `frontend/css/style.css` — 2 baris CSS baru (`.badge-success`,
+  `.badge-danger`) untuk badge status di halaman Sinkronisasi — murni
+  penambahan class baru, tidak ada satu pun rule/class yang sudah ada
+  diubah.
+- `README.md` — dokumentasi ini.
+
+### Menu Backup Database & Restore Database
+
+**Tidak dibuat ulang dari nol** — endpoint `/api/pengaturan/backup/export`
+& `/api/pengaturan/backup/import` sudah ada sejak Tahap 10
+(`routers/pengaturan.py`, `pengaturan_backup.py`) dan **TIDAK disentuh sama
+sekali** di Tahap 12 (0 baris diubah — lihat `git diff --stat`). Yang baru
+di Tahap 12 hanyalah **menu/tombol tambahan** di halaman Sinkronisasi yang
+memanggil endpoint yang SAMA PERSIS itu, supaya Backup/Restore juga bisa
+diakses dari halaman ini tanpa harus pindah ke Setting. Tab Backup yang
+sudah ada di halaman Setting (Tahap 10) tetap ada dan tetap berfungsi
+seperti sebelumnya, tidak dihapus.
+
+### Tidak disentuh sama sekali
+
+`database.py`, `auth.py`, `auth_db.py`, `routers/input_data.py`,
+`routers/pengeluaran.py`, `routers/produk.py`, `routers/pengaturan.py`,
+`pengaturan_backup.py`, dan seluruh frontend Tahap 1–11 (Dashboard, Login,
+Input Data, Rekap, Pengeluaran, Produk, Setting) — **0 baris diubah** di
+semua file itu (diverifikasi lewat `git diff --stat`, lihat daftar file di
+laporan commit). Komisi, bonus, absensi, rekap, produk, dan pengeluaran
+tetap dihitung 100% oleh fungsi yang sama di `database.py`/`pengeluaran_db.py`
+seperti sebelum Tahap 12 ada.
+
+### Bug yang diperbaiki
+
+Tidak ada bug baru ditemukan di kode Tahap 1–11 selama audit Tahap 12 ini
+(sudah diaudit tuntas di Tahap 11 sebelumnya). `bcrypt<4.0` dari Tahap 11
+tetap berlaku dan tetap perlu (diverifikasi ulang: instalasi bersih dari
+`requirements.txt` di sandbox pengujian Tahap 12 berhasil tanpa masalah).
+
+### Pengujian Tahap 12
+
+Diuji lewat backend berjalan sungguhan (`uvicorn`, instalasi bersih dari
+`requirements.txt` termasuk `gspread`/`google-auth`) + browser (Playwright),
+memakai database SQLite kosong (bootstrap admin baru). Google Sheets
+SUNGGUHAN tidak tersedia di sandbox ini (tidak ada kredensial asli/akses
+internet ke Google API) — jalur "belum dikonfigurasi" diuji langsung
+terhadap server sungguhan, dan jalur "berhasil sinkron ke Sheets" diuji
+lewat dependency-injection (mengganti `google_sheets_client.is_configured`/
+`push_snapshot` dengan versi tiruan di proses Python terpisah yang
+mengakses database yang sama) untuk memverifikasi seluruh pipeline
+(snapshot 5 tabel → kirim → tandai `synced_counter`) berjalan benar tanpa
+menyentuh kode aslinya sama sekali:
+
+1. **Simpan data saat online** (baca: Google Sheets berhasil dikonfigurasi
+   & dapat dihubungi, disimulasikan lewat dependency-injection di atas) —
+   `sync_now()` membaca snapshot dari 5 tabel dengan benar (termasuk field
+   hasil hitung seperti `total_komisi`), mengirimkannya, lalu
+   `jumlah_belum_sinkron` turun ke 0 dan status jadi `"berhasil"`.
+2. **Simpan data saat offline** (disimulasikan: Google Sheets belum
+   dikonfigurasi, kondisi paling realistis untuk sandbox ini dan secara
+   fungsional identik dari sudut pandang aplikasi — sama-sama "tidak bisa
+   kirim ke cloud sekarang") — `POST /api/input-data/transaksi` tetap balas
+   `200` dengan data transaksi lengkap (komisi Dry Cut `35000` → `14000`,
+   sesuai rumus yang sudah ada, tidak berubah); `GET /api/sync/status`
+   langsung menunjukkan `jumlah_belum_sinkron: 1`, `last_sync_status:
+   "gagal"`, dengan pesan jelas — data tidak pernah hilang.
+3. **Sinkron ulang setelah online**: `POST /api/sync/sekarang` (tombol
+   "Sinkronkan Sekarang") dipanggil pada server yang masih belum
+   dikonfigurasi → tetap balas `200` dengan status `"gagal"` (bukan error
+   500) — membuktikan endpoint ini aman dipanggil kapan pun. Loop retry
+   otomatis latar belakang (`SYNC_RETRY_INTERVAL_DETIK=5` saat pengujian)
+   dibiarkan berjalan beberapa siklus tanpa membuat server crash atau
+   macet.
+4. **Backup Database**: `GET /api/pengaturan/backup/export` mengunduh file
+   `.db` valid (diverifikasi lewat signature SQLite `SQLite 3.x database`).
+5. **Restore Database**: file hasil export di atas di-upload ulang lewat
+   `POST /api/pengaturan/backup/import` → berhasil, backup otomatis dibuat
+   dulu sebelum menimpa, dan data (mis. produk yang sudah ditambah)
+   terverifikasi tetap ada persis sama setelah restore.
+6. **Login Owner** & **Login Barber**: keduanya berhasil, role & data
+   masing-masing benar (`GET /api/dashboard/owner` vs
+   `/api/dashboard/barber`).
+7. **Hak akses `/api/sync/*`**: barber ditolak `403` di `GET /status` dan
+   `POST /sekarang`; request tanpa token ditolak `401`.
+8. **Rekap**: `/api/rekap/transaksi` dan `/api/rekap/pengeluaran` tetap
+   mengembalikan data yang benar setelah Tahap 12 terpasang.
+9. **Produk**: tambah produk + daftar produk tetap berfungsi normal.
+10. **Pengeluaran**: tambah pengeluaran + daftar pengeluaran tetap
+    berfungsi normal.
+11. **Pengaturan**: `/api/pengaturan/identitas` (publik) dan
+    `/api/pengaturan/komisi` (admin) tetap merespons benar — nilai komisi
+    (persentase, potongan modal, dst) tidak berubah sedikit pun.
+12. **UI end-to-end** (Playwright, Chromium headless): login Owner → menu
+    sidebar menampilkan "Sinkronisasi" → halaman menampilkan status yang
+    benar + banner "belum dikonfigurasi" → klik "Sinkronkan Sekarang" →
+    toast error yang jelas + status ter-refresh. Login Barber → menu
+    "Sinkronisasi" **tidak** muncul di sidebar sama sekali → navigasi paksa
+    ke `#/sinkronisasi` lewat address bar otomatis dilempar balik ke
+    `#/dashboard`.
+13. `python3 -m py_compile` untuk seluruh file backend yang disentuh/baru,
+    dan `node --check` untuk seluruh file frontend yang disentuh/baru —
+    tidak ada syntax error.
+14. `git diff --stat` dari base `master` (setelah Tahap 11 merge)
+    dikonfirmasi **tidak menyertakan** `database.py`, `auth.py`,
+    `auth_db.py`, `routers/input_data.py`, `routers/pengeluaran.py`,
+    `routers/produk.py`, `routers/pengaturan.py`, `pengaturan_backup.py`,
+    ataupun file frontend Tahap 1–11 manapun — bukti langsung bahwa Tahap
+    12 tidak mengubah fitur-fitur itu.
+
 
 ## Struktur Project
 
@@ -276,10 +484,16 @@ mugen-hair-pwa/
 │       ├── pengaturan_service.py   # TAHAP 10: field Modal + validasi layanan
 │       ├── pengaturan_user.py      # TAHAP 10: ganti username + aktifkan user
 │       ├── pengaturan_backup.py    # TAHAP 10: export/import database
+│       ├── sync_migrasi.py         # TAHAP 12: migrasi tabel sync_meta (idempotent)
+│       ├── sync_meta_db.py         # TAHAP 12: baca/tulis status sinkron (sync_meta)
+│       ├── google_sheets_client.py # TAHAP 12: klien gspread, dipakai HANYA oleh sync_helper.py
+│       ├── sync_helper.py          # TAHAP 12: isi sungguhan sync_async()/sync_now() (sebelumnya no-op)
 │       ├── static/logo/            # TAHAP 10: file logo barbershop yang diupload
 │       ├── backups/                # TAHAP 10: backup otomatis sebelum import database
 │       ├── routers/pengeluaran.py  # TAHAP 9: /api/pengeluaran/* — khusus admin
 │       ├── routers/pengaturan.py   # TAHAP 10: /api/pengaturan/* — khusus admin (kec. identitas & logo)
+│       ├── routers/produk.py       # TAHAP 8/11: /api/produk/* — khusus admin
+│       ├── routers/sync.py         # TAHAP 12: /api/sync/* — khusus admin
 │       └── mugen_hair.db           # database (TIDAK ikut git — lihat bagian Deployment)
 └── frontend/
     ├── index.html
@@ -291,7 +505,9 @@ mugen-hair-pwa/
         ├── brand.js              # TAHAP 10: identitas barbershop lintas halaman
         └── pages/
             ├── pengeluaran.js    # TAHAP 9: halaman CRUD Pengeluaran (khusus admin)
-            └── pengaturan.js     # TAHAP 10: halaman Setting (khusus admin)
+            ├── pengaturan.js     # TAHAP 10: halaman Setting (khusus admin)
+            ├── produk.js         # TAHAP 8/11: halaman Produk (khusus admin)
+            └── sinkronisasi.js   # TAHAP 12: halaman Status Sinkronisasi + Backup/Restore (khusus admin)
 ```
 
 ## Menjalankan di Lokal (development)

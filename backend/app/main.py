@@ -9,6 +9,8 @@ layanan, user, backup) terpasang.
 TAHAP 11: routers/produk.py (Persediaan — restock/jual/riwayat mutasi,
 khusus admin) terpasang. Router & halaman frontend-nya sudah disiapkan sejak
 Tahap 10 tapi belum dihubungkan; Tahap 11 menghubungkannya.
+TAHAP 12: routers/sync.py (Status Sinkronisasi Google Sheets, khusus admin)
+terpasang + loop retry sinkron otomatis di background (lihat sync_helper.py).
 """
 
 import os
@@ -18,9 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import database as db
 import auth_db
+import sync_helper
 from pengeluaran_migrasi import migrasi_pengeluaran
 from pengaturan_migrasi import migrasi_pengaturan
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk
+from sync_migrasi import migrasi_sync
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, sync
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -45,6 +49,7 @@ app.include_router(rekap.router)
 app.include_router(pengeluaran.router)
 app.include_router(pengaturan.router)
 app.include_router(produk.router)
+app.include_router(sync.router)
 
 
 @app.on_event("startup")
@@ -55,7 +60,9 @@ def on_startup():
     auth_db.init_auth_db()
     migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
     migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
+    migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
     _bootstrap_admin_pertama()
+    sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala
 
 
 def _bootstrap_admin_pertama():
