@@ -80,6 +80,7 @@ def on_startup():
     migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
     migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
     _bootstrap_admin_pertama()
+    _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala
 
 
@@ -94,6 +95,43 @@ def _bootstrap_admin_pertama():
     username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "owner")
     password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "ganti-password-ini")
     auth_db.tambah_user(username=username, password=password, role="admin")
+
+
+def _reset_admin_darurat():
+    """'Break-glass' pemulihan akses admin untuk server yang SUDAH berjalan
+    (beda dengan _bootstrap_admin_pertama() di atas, yang hanya jalan kalau
+    users benar-benar kosong). Dipakai kalau admin lupa username/password di
+    production dan tidak ada cara lain masuk (chicken-and-egg: reset password
+    lewat menu Setting butuh sudah login sebagai admin).
+
+    HANYA berjalan kalau DUA environment variable di bawah diisi eksplisit
+    oleh operator (mis. lewat dashboard Render) -- default keduanya kosong,
+    jadi fungsi ini no-op total di semua deployment lain, TIDAK PERNAH
+    otomatis/diam-diam mengubah akun siapa pun:
+    - ADMIN_RESET_USERNAME
+    - ADMIN_RESET_PASSWORD
+
+    Kalau username itu sudah ada, password-nya di-reset (+ dipaksa jadi role
+    admin & diaktifkan lagi kalau sempat nonaktif). Kalau belum ada, dibuat
+    baru sebagai admin. Baris user lain dan seluruh tabel bisnis lain TIDAK
+    disentuh sama sekali (lihat auth_db.reset_atau_buat_admin_darurat()).
+
+    PENTING (dicetak juga saat startup): setelah berhasil login, SEGERA
+    hapus kedua environment variable ini dari server lalu ganti password
+    lewat menu Setting > User -- kalau dibiarkan, TIAP KALI server restart
+    akan mereset ulang ke password yang sama."""
+    username = os.environ.get("ADMIN_RESET_USERNAME", "").strip()
+    password = os.environ.get("ADMIN_RESET_PASSWORD", "")
+    if not username or not password:
+        return
+    hasil = auth_db.reset_atau_buat_admin_darurat(username, password)
+    print(
+        f"[ADMIN_RESET] Akun admin '{username}' berhasil {hasil}. "
+        "SEGERA hapus environment variable ADMIN_RESET_USERNAME dan "
+        "ADMIN_RESET_PASSWORD dari server, lalu ganti password lewat menu "
+        "Setting > User setelah berhasil login -- kalau dibiarkan, restart "
+        "berikutnya akan mereset ulang ke password yang sama."
+    )
 
 
 @app.get("/api/health")
