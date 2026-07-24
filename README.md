@@ -646,6 +646,8 @@ browser (Playwright), database SQLite kosong (bootstrap admin baru):
 
 ## BUGFIX (pasca-Tahap 13) — Startup Backend Lokal Gagal
 
+### Ronde 1
+
 Ditemukan setelah Tahap 13 merge: menjalankan backend secara lokal bisa
 gagal start dengan dua error sekaligus:
 
@@ -708,6 +710,48 @@ berubah), serta regresi Produk/Pengeluaran/Rekap/Pengaturan/Sinkronisasi.
 error. `git diff --stat` mengonfirmasi hanya 3 file yang tersentuh:
 `auth_db.py`, `requirements.txt`, dan `app/__init__.py` (baru) — tidak ada
 perubahan di `database.py` atau file logika bisnis manapun.
+
+### Ronde 2 — masih gagal di Windows dengan `bcrypt==5.0.0` + `passlib==1.7.4`
+
+Setelah Ronde 1 di-merge, dilaporkan backend MASIH gagal start di sebuah
+mesin Windows lokal dengan pesan yang sama
+(`ValueError: password cannot be longer than 72 bytes`), sementara venv
+lokal tercatat punya `bcrypt==5.0.0` dan `passlib==1.7.4` terpasang
+berdampingan.
+
+**Investigasi**: kombinasi paket yang persis sama (`bcrypt==5.0.0` +
+`passlib==1.7.4`, plus seluruh isi `requirements.txt` lain) direproduksi
+di environment terpisah, menjalankan `uvicorn main:app` dengan kode
+`master` hasil Ronde 1 apa adanya — **backend start normal, tidak ada
+error**. Diperiksa juga ulang seluruh repository (`grep -r passlib`) —
+tidak ada satu baris kode pun (di luar komentar/dokumentasi) yang masih
+memanggil `passlib`. Kesimpulan: kode di repository ini sudah benar;
+kegagalan di mesin Windows yang dilaporkan kemungkinan besar disebabkan
+oleh environment lokal itu sendiri (kode versi lama yang masih
+ter-cache/venv yang belum benar-benar bersih terpasang ulang, atau
+instalasi `bcrypt` yang rusak sebagian — pola yang dikenal luas terjadi
+di Windows karena file ekstensi native `.pyd` bisa gagal diganti bersih
+oleh `pip install --upgrade` kalau sedang terkunci proses lain).
+
+**Yang ditambahkan** (tetap murni dependency/startup, tidak menyentuh
+logika bisnis apa pun):
+
+1. `backend/app/auth_db.py` — `hash_password()`/`verify_password()`
+   sekarang membungkus pemanggilan `bcrypt` dengan pesan diagnosa yang
+   jelas kalau sampai gagal (`RuntimeError` dengan penjelasan penyebab +
+   langkah perbaikan), menggantikan traceback kriptis dari dalam library
+   pihak ketiga.
+2. `README.md` — bagian baru **Troubleshooting Windows** di bawah
+   **Instalasi**: langkah verifikasi cepat (`python -c "import auth_db;
+   print(auth_db.hash_password('tes'))"`) untuk memastikan apakah masalah
+   ada di kode atau di environment, plus langkah membuat ulang virtual
+   environment dari nol.
+
+**Diuji ulang**: reproduksi persis `bcrypt==5.0.0` + `passlib==1.7.4` +
+seluruh `requirements.txt` lain → backend start normal & `/api/health`
+merespons `200`. Diagnosa `RuntimeError` diverifikasi muncul dengan benar
+lewat simulasi kegagalan `bcrypt` (monkeypatch). Regresi penuh login,
+permission, dan seluruh modul tidak terpengaruh.
 
 
 ## Struktur Project
@@ -787,6 +831,63 @@ pip install -r requirements.txt
 
 Kalau `pip install` sukses tanpa error, instalasi selesai — lanjut ke
 bagian **Menjalankan di Lokal** di bawah.
+
+### Troubleshooting Windows: `bcrypt`/`passlib` error saat startup
+
+Kode di `auth_db.py` sejak bugfix ini **tidak lagi memakai passlib sama
+sekali** — hashing password langsung lewat library `bcrypt`, dan sudah
+diverifikasi berjalan normal walau `passlib` masih ikut terpasang di
+environment (dites persis dengan kombinasi `bcrypt==5.0.0` +
+`passlib==1.7.4` berdampingan). Kalau setelah menarik kode terbaru masih
+muncul error seperti:
+
+```
+AttributeError: module 'bcrypt' has no attribute '__about__'
+ValueError: password cannot be longer than 72 bytes
+```
+
+itu HAMPIR PASTI berarti **kode yang sedang berjalan bukan kode
+terbaru**, atau **instalasi `bcrypt` di virtual environment lokal
+rusak/tidak bersih** — bukan bug di repository ini. Penyebab paling umum
+di Windows: `pip install --upgrade` gagal mengganti file ekstensi native
+(`.pyd`) versi lama dengan bersih kalau file itu sedang terkunci
+(dipakai proses Python lain / antivirus / IDE), sehingga `pip show
+bcrypt` melaporkan versi baru padahal file yang sebenarnya dimuat masih
+versi lama yang rusak sebagian.
+
+**Langkah verifikasi cepat** (jalankan dari `backend/app/`, dengan venv
+yang aktif):
+
+```bash
+python -c "import auth_db; print(auth_db.hash_password('tes'))"
+```
+
+- Kalau baris ini mencetak hash (`$2b$...`) tanpa error → `auth_db.py`
+  dan `bcrypt` di environment Anda sudah benar; masalah startup ada di
+  tempat lain (cek langkah lain di bawah).
+- Kalau baris ini SENDIRI sudah gagal dengan error yang sama → environment
+  lokal Anda yang bermasalah, ikuti langkah perbaikan di bawah.
+
+**Perbaikan (buat ulang virtual environment dari nol — JANGAN install di
+atas venv lama)**:
+
+```bash
+# Windows (cmd/PowerShell), dari folder backend/:
+rmdir /s /q .venv
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Pastikan juga:
+1. Kode yang dijalankan benar-benar dari commit terbaru (`git log -1`,
+   `git status` harus bersih dari perubahan lokal yang tidak disengaja).
+2. Tidak ada folder `__pycache__` basi ikut ter-commit/tersalin manual di
+   luar kendali git (hapus `backend/app/__pycache__/` kalau ada, aman
+   dihapus kapan saja — akan dibuat ulang otomatis oleh Python).
+3. Venv yang diaktifkan (`.venv\Scripts\activate`) benar-benar venv yang
+   baru saja dipakai `pip install -r requirements.txt`, bukan venv/Python
+   lain (umum kalau ada lebih dari satu instalasi Python di PATH).
 
 ## Menjalankan di Lokal (development)
 
