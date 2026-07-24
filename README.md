@@ -879,6 +879,56 @@ disentuh (Produk, Pengeluaran, Manajemen User, Backup/Restore,
 Sinkronisasi, Login) diverifikasi tetap berfungsi normal lewat regresi
 API langsung.
 
+### BUGFIX (pasca-REVISI) — PWA Menampilkan Tampilan Lama Setelah Deploy
+
+Ditemukan setelah revisi di atas di-deploy ke production: backend
+ter-deploy dengan benar (kode baru ada di server), tapi tampilan yang
+dilihat user (Dashboard Owner/Barber, Setting) masih perilaku LAMA
+(kartu Bonus Kehadiran masih ada, kartu Total Customer belum muncul, dst).
+
+**Akar masalah**: `frontend/service-worker.js` men-cache seluruh app-shell
+(termasuk semua file di `js/pages/*.js`, `js/nav.js`, `js/router.js`) di
+bawah SATU nama, `CACHE_NAME`. Strategi fetch-nya cache-first (`caches.
+match(request) || fetch(request)`), jadi selama `CACHE_NAME` tidak
+berubah, browser yang PWA-nya sudah pernah dibuka sebelumnya TIDAK akan
+pernah mengambil ulang file-file itu dari server, walau server sudah
+di-deploy ulang dengan isi baru — persis gejala "deploy sukses tapi
+tampilan masih lama". Revisi sebelumnya mengubah 6 file yang ikut
+di-cache (`nav.js`, `router.js`, `dashboard_owner.js`,
+`dashboard_barber.js`, `pengaturan.js`, `rekap.js`) TANPA menaikkan
+`CACHE_NAME` — padahal ini adalah konvensi yang sudah dipakai konsisten
+di riwayat project ini (`CACHE_NAME` naik dari v1 sampai v7 di
+tahap-tahap sebelumnya, setiap kali ada file app-shell yang berubah).
+Dibuktikan ulang dengan simulasi: deploy disimulasikan (file diganti di
+disk, server & URL tetap sama), lalu tab dimuat ulang berkali-kali —
+tampilan tetap menunjukkan versi lama selama `CACHE_NAME` tidak berubah.
+
+**Perbaikan** (murni cache-busting, TIDAK mengubah logika bisnis apa pun
+dari revisi sebelumnya):
+
+1. `frontend/service-worker.js` — `CACHE_NAME` dinaikkan `v7` → `v8`,
+   supaya browser mendeteksi `service-worker.js` berubah, meng-install
+   cache baru dari network (isi terbaru), lalu menghapus cache lama
+   (mekanisme `activate` yang sudah ada sebelumnya, tidak diubah).
+2. `frontend/js/app.js` — setelah registrasi, sekarang juga memanggil
+   `registration.update()` supaya aplikasi AKTIF meminta browser mengecek
+   versi `service-worker.js` terbaru setiap kali dibuka (sebelumnya cuma
+   mengandalkan jadwal pengecekan otomatis bawaan browser).
+
+**Untuk user yang PWA-nya SUDAH terlanjur ter-install dan stuck di
+tampilan lama** (sebelum deploy fix ini): setelah deploy fix ini,
+kunjungan berikutnya akan otomatis mendapat versi baru begitu browser
+selesai mengecek update (biasanya di reload berikutnya). Kalau ingin
+langsung tanpa menunggu: hard refresh (Ctrl+Shift+R / Cmd+Shift+R), atau
+uninstall lalu install ulang PWA-nya, atau hapus data situs
+(`chrome://settings` → Privacy → Site settings → cari domain frontend →
+Clear data) lalu buka lagi.
+
+**Catatan konvensi untuk revisi berikutnya**: setiap kali mengubah isi
+file yang terdaftar di `APP_SHELL` (`frontend/service-worker.js`), WAJIB
+menaikkan `CACHE_NAME` di commit yang sama -- kalau tidak, deploy tidak
+akan terlihat oleh user yang sudah pernah membuka PWA sebelumnya.
+
 
 ## Struktur Project
 
