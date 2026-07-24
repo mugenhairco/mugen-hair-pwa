@@ -753,6 +753,43 @@ merespons `200`. Diagnosa `RuntimeError` diverifikasi muncul dengan benar
 lewat simulasi kegagalan `bcrypt` (monkeypatch). Regresi penuh login,
 permission, dan seluruh modul tidak terpengaruh.
 
+### Ronde 3 — `ModuleNotFoundError: No module named 'database'` (lagi) di `uvicorn app.main:app --reload`
+
+Dilaporkan lagi: `uvicorn app.main:app --reload` gagal dengan
+`ModuleNotFoundError: No module named 'database'` di `main.py` baris
+`import database as db` — persis error yang seharusnya sudah diperbaiki
+`app/__init__.py` di Ronde 1.
+
+**Analisis**: `app/__init__.py` menambahkan folder `backend/app/` ke
+`sys.path` begitu paket `app` diimpor — ini terbukti benar di semua
+pengujian sebelumnya (termasuk dengan `--reload`, lihat Ronde 1 & 2). TAPI
+mekanisme itu bergantung pada Python selalu menjalankan `app/__init__.py`
+lebih dulu sebelum `app/main.py`, di PROSES MANAPUN yang mengimpornya —
+termasuk proses worker yang di-*restart* oleh `--reload` tiap kali ada
+perubahan file. Di beberapa platform (terutama **Windows**, yang memakai
+metode `spawn` untuk membuat proses baru — bukan `fork` seperti
+Linux/Mac), proses worker hasil restart itu dibuat dengan cara yang
+berbeda dan tidak selalu menjamin urutan import package se-transparan di
+Linux. Supaya TIDAK bergantung sama sekali pada jaminan urutan itu,
+`sys.path` sekarang JUGA diperbaiki langsung di baris paling atas
+`main.py` sendiri (sebelum `import database` dkk di file yang sama) --
+dijalankan otomatis kapan pun modul `main.py` mulai dieksekusi, di proses
+manapun, terlepas dari bagaimana ia diimpor (`main` flat, `app.main`,
+proses awal, atau proses hasil `--reload`). `app/__init__.py` dari Ronde 1
+TETAP ada (tidak dihapus, tidak saling bertentangan — pengecekan
+`if ... not in sys.path` di kedua tempat membuat keduanya aman dijalankan
+berulang/bersamaan).
+
+**Diuji ulang**: instalasi bersih `requirements.txt` + `bcrypt==5.0.0` +
+`passlib==1.7.4` (kombinasi yang dilaporkan) → `uvicorn app.main:app
+--reload` start normal, `/api/health` → `200`, login berhasil. **Diuji
+juga siklus reload sungguhan**: file `main.py` disentuh (`touch`) saat
+server berjalan untuk memicu `--reload` (memaksa `WatchFiles`
+me-restart proses worker, skenario paling dekat yang bisa disimulasikan
+di sandbox Linux untuk meniru proses baru gaya `spawn`) — proses worker
+baru berhasil start ulang tanpa error, dan `/api/health` + login tetap
+berfungsi normal setelahnya.
+
 
 ## Struktur Project
 
