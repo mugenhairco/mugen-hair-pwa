@@ -791,6 +791,95 @@ baru berhasil start ulang tanpa error, dan `/api/health` + login tetap
 berfungsi normal setelahnya.
 
 
+## CHANGELOG — REVISI (pasca-Tahap 13) — Bonus Bertingkat, Uang Harian per-Barber, Hak Akses Barber
+
+Revisi ini mengubah **logika bisnis** (`database.py`) atas permintaan
+eksplisit — bukan pelanggaran aturan "jangan diedit" di kepala file
+tersebut, melainkan pengecualian yang diminta langsung untuk revisi ini.
+Semua perubahan lain (arsitektur, struktur folder, database schema lewat
+migrasi idempotent, API existing yang tidak disebut di bawah, tampilan
+yang sudah benar) SENGAJA tidak disentuh.
+
+**Ringkasan perubahan:**
+
+1. **Target Bonus Service jadi bertingkat (banyak tier)** — sebelumnya
+   cuma satu target/nominal hardcoded-via-setting. Sekarang Owner bisa
+   tambah/ubah/hapus tier sebanyak yang dibutuhkan lewat **Setting >
+   Komisi & Bonus > Target Bonus Service** (mis. 100 service → Rp100rb,
+   115 service → Rp150rb, dst). Barber dapat bonus dari tier TERTINGGI
+   yang tercapai bulan itu. Tetap dihitung HANYA dari Dry Cut + Cut &
+   Wash (tidak berubah — memang sudah begitu sejak awal).
+   - Backend: `database.py` (`get_bonus_customer_tiers`,
+     `set_bonus_customer_tiers`, `hitung_bonus_customer` dirombak),
+     `pengaturan_bonus.py` (baru), endpoint baru
+     `GET/POST /api/pengaturan/bonus-tiers`,
+     `PUT/DELETE /api/pengaturan/bonus-tiers/{target}`.
+   - Disimpan sebagai JSON di tabel `settings` yang sudah ada (key
+     `bonus_customer_tiers`) — tidak ada tabel baru.
+
+2. **Uang Harian jadi per-barber, bukan lagi 2 setting global** —
+   sebelumnya nominal ditentukan dari flag `is_rafiq` (dua setting global
+   `uang_harian_barber`/`uang_harian_rafiq`). Sekarang tiap barber punya
+   kolom `uang_harian` sendiri, diisi bebas oleh Owner lewat **Setting >
+   Barber** saat tambah/edit barber. Aturan pencairan (≥3 Dry Cut + Cut &
+   Wash di hari itu) TIDAK berubah. Checkbox "RAFIQ" masih ada tapi
+   sekarang murni label, tidak lagi memengaruhi nominal apa pun.
+   - Migrasi (`revisi_bonus_migrasi.py`, idempotent): menambah kolom
+     `barbers.uang_harian`, lalu backfill dari nilai efektif LAMA
+     (`is_rafiq ? uang_harian_rafiq : uang_harian_barber`) supaya gaji
+     barber manapun TIDAK berubah otomatis saat migrasi jalan — Owner
+     baru mengubahnya kalau memang mau.
+
+3. **Fitur Bonus Kehadiran dihapus total** — kartu di kedua Dashboard,
+   field di Setting, fungsi `hitung_bonus_kehadiran()`, dan field
+   `bonus_kehadiran`/`bonus_kehadiran_detail` di semua response API
+   (`get_ringkasan_barber_bulan`, `get_rekap_bulanan_list`) dihapus.
+   Kolom "Bonus Hadir" di Rekap Bulanan juga dihapus.
+
+4. **Dashboard Owner**: tambah kartu "Total Customer", tambah bagian
+   "Service Bulan Ini" dengan dropdown pilih barber (Semua Barber =
+   gabungan, atau satu barber = data barber itu saja) — daftar dropdown
+   otomatis mengikuti barber aktif, daftar service otomatis mengikuti
+   service aktif di Setting, hanya menampilkan service dengan jumlah > 0.
+
+5. **Dashboard Barber**: kartu "Bonus Kehadiran" dan "Jumlah Service"
+   dihapus (Jumlah Service tetap terlihat rinciannya di tabel "Service
+   Bulan Ini", cuma kartu ringkasannya yang dihapus). Progress tier bonus
+   ditampilkan menuju tier berikutnya yang belum tercapai.
+
+6. **Hak akses Barber diperketat** — sebelumnya Barber bisa akses Input
+   Data (untuk input/koreksi transaksi miliknya sendiri). Sekarang Barber
+   HANYA punya akses ke Dashboard dan Rekap; Input Data jadi khusus
+   Owner/admin. Diberlakukan di backend (`routers/input_data.py`, semua
+   endpoint diganti `Depends(require_admin)`) dan di frontend (`nav.js`
+   menu, `router.js` route guard) — backend tetap lapisan penegakan yang
+   sebenarnya.
+
+**Tidak diubah** (sengaja, sesuai instruksi revisi): arsitektur, struktur
+folder, skema tabel lewat `CREATE TABLE` (kolom baru lewat migrasi
+idempotent seperti pola Tahap 12), endpoint/hak akses Produk, Pengeluaran,
+Manajemen User, Sinkronisasi, dan seluruh tampilan yang sudah sesuai
+spesifikasi. `DEFAULT_SETTINGS` di `database.py` masih menyisakan
+key lama (`uang_harian_barber`, `uang_harian_rafiq`, `bonus_kehadiran`,
+`maksimal_hari_libur`, `target_bonus_customer`, `nominal_bonus_customer`)
+sebagai entri tak terpakai — dibiarkan sengaja untuk meminimalkan diff,
+tidak lagi dibaca oleh kode manapun.
+
+**Diuji**: regresi penuh lewat browser (Playwright) untuk Dashboard Owner
+(dropdown barber, kartu Total Customer, tier progress, tabel Per Barber
+tanpa kolom Bonus Kehadiran), Dashboard Barber (kartu terhapus, tier
+progress), Setting > Komisi & Bonus (field lama terhapus, tambah/ubah/
+hapus tier lewat UI end-to-end), Setting > Barber (tambah/edit uang
+harian per-barber), Rekap (kolom Bonus Hadir terhapus, filter Bulan/
+Tahun), dan penegakan hak akses (Barber dapat 403 dari backend untuk
+`dashboard/owner`, `input-data/*`, `pengeluaran`, `produk`,
+`pengaturan/*`, `sync/status`; dan tidak bisa memaksa lihat data barber
+lain lewat parameter `barber_id` di `/api/rekap/*`). Modul yang tidak
+disentuh (Produk, Pengeluaran, Manajemen User, Backup/Restore,
+Sinkronisasi, Login) diverifikasi tetap berfungsi normal lewat regresi
+API langsung.
+
+
 ## Struktur Project
 
 ```

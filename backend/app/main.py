@@ -42,6 +42,7 @@ import sync_helper
 from pengeluaran_migrasi import migrasi_pengeluaran
 from pengaturan_migrasi import migrasi_pengaturan
 from sync_migrasi import migrasi_sync
+from revisi_bonus_migrasi import migrasi_revisi_bonus
 from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, sync
 
 app = FastAPI(title="MUGEN Hair Co. API")
@@ -79,6 +80,7 @@ def on_startup():
     migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
     migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
     migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
+    migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala

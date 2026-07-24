@@ -1,14 +1,18 @@
 """routers/input_data.py — /api/input-data/*
-Dipakai halaman Input Data. Owner boleh input/koreksi/hapus untuk barber
-manapun. Barber HANYA boleh input/koreksi/hapus transaksi miliknya sendiri
-(barber_id dipaksa dari akun login, dan setiap koreksi/hapus divalidasi
-bahwa transaksi itu memang milik barber yang login)."""
+Dipakai halaman Input Data. REVISI: seluruh endpoint di sini sekarang
+KHUSUS Owner/admin (require_admin) -- Barber TIDAK LAGI punya akses ke
+Input Data sama sekali (hak akses Barber sekarang hanya Dashboard +
+Rekap). Sebelumnya Barber boleh input/koreksi/hapus transaksi miliknya
+sendiri; logika `_resolve_barber_id`/`_pastikan_pemilik` di bawah masih
+punya cabang untuk role 'barber' (kode itu sengaja TIDAK dihapus supaya
+diff seminimal mungkin) tapi sudah tidak pernah tereksekusi lagi karena
+`require_admin` menolak permintaan barber sebelum mencapai kode itu."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import database as db
-from auth import get_current_user
+from auth import require_admin
 from sync_helper import sync_async
 
 router = APIRouter(prefix="/api/input-data", tags=["input-data"])
@@ -69,12 +73,12 @@ def _pastikan_pemilik(user: dict, transaksi_id: int) -> dict:
 
 
 @router.get("/services")
-def services(user: dict = Depends(get_current_user)):
+def services(user: dict = Depends(require_admin)):
     return db.get_services()
 
 
 @router.get("/barbers")
-def barbers(user: dict = Depends(get_current_user)):
+def barbers(user: dict = Depends(require_admin)):
     """Untuk dropdown pilih barber di form Input Data (Owner). Barber tidak
     butuh ini (barber_id-nya sudah otomatis dari akun), tapi tidak dilarang
     memanggilnya juga (hanya daftar nama, bukan data sensitif)."""
@@ -82,19 +86,19 @@ def barbers(user: dict = Depends(get_current_user)):
 
 
 @router.post("/preview")
-def preview(body: PreviewBody, user: dict = Depends(get_current_user)):
+def preview(body: PreviewBody, user: dict = Depends(require_admin)):
     return db.hitung_preview_items([it.model_dump() for it in body.items])
 
 
 @router.get("/transaksi")
 def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
-                    user: dict = Depends(get_current_user)):
+                    user: dict = Depends(require_admin)):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
     return db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
 
 
 @router.post("/transaksi")
-def tambah_transaksi(body: TransaksiBody, user: dict = Depends(get_current_user)):
+def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_admin)):
     barber_id = _resolve_barber_id(user, body.barber_id)
     try:
         transaksi_id = db.tambah_transaksi(
@@ -109,7 +113,7 @@ def tambah_transaksi(body: TransaksiBody, user: dict = Depends(get_current_user)
 
 
 @router.put("/transaksi/{transaksi_id}")
-def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends(get_current_user)):
+def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends(require_admin)):
     _pastikan_pemilik(user, transaksi_id)
     barber_id = body.barber_id
     if user["role"] == "barber":
@@ -127,7 +131,7 @@ def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends
 
 
 @router.delete("/transaksi/{transaksi_id}")
-def hapus_transaksi(transaksi_id: int, user: dict = Depends(get_current_user)):
+def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_admin)):
     _pastikan_pemilik(user, transaksi_id)
     db.hapus_transaksi(transaksi_id)
     sync_async()
@@ -135,13 +139,13 @@ def hapus_transaksi(transaksi_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/libur")
-def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(get_current_user)):
+def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_admin)):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
     return db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
 
 
 @router.post("/libur")
-def tandai_libur(body: LiburBody, user: dict = Depends(get_current_user)):
+def tandai_libur(body: LiburBody, user: dict = Depends(require_admin)):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.tandai_libur(barber_id, body.tanggal)
     sync_async()
@@ -149,7 +153,7 @@ def tandai_libur(body: LiburBody, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/libur")
-def batalkan_libur(body: LiburBody, user: dict = Depends(get_current_user)):
+def batalkan_libur(body: LiburBody, user: dict = Depends(require_admin)):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.batalkan_libur(barber_id, body.tanggal)
     sync_async()

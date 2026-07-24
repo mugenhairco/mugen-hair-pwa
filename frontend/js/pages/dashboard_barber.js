@@ -39,23 +39,44 @@ const PageDashboardBarber = (() => {
         body.innerHTML = "";
         if (r.__offline) body.appendChild(MugenUI.offlineBanner(r.__cachedAt));
 
+        // REVISI: kartu "Bonus Kehadiran" dan "Jumlah Service" dihapus dari
+        // Dashboard Barber (fitur Bonus Kehadiran dihapus total; Jumlah
+        // Service masih ada rinciannya di tabel "Service Bulan Ini" di bawah,
+        // hanya kartu ringkasan totalnya yang dihapus).
         body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
           card("Total Pendapatan", r.total_pendapatan),
           card("Komisi", r.komisi),
           card("Tips", r.tips),
           card("Uang Harian", r.uang_harian),
           card("Bonus Customer", r.bonus_customer),
-          card("Bonus Kehadiran", r.bonus_kehadiran),
           card("Jumlah Customer", r.jumlah_customer),
-          card("Jumlah Service", r.jumlah_service_bulan),
         ]));
 
+        // REVISI: Target Bonus Service sekarang bertingkat (banyak tier,
+        // diatur lewat Setting) -- progress ditampilkan menuju tier
+        // berikutnya yang belum tercapai (dari Dry Cut + Cut & Wash saja).
+        const bd = r.bonus_customer_detail;
+        const progressLines = [
+          MugenUI.el("div", {}, `${bd.jumlah_service} service (Dry Cut + Cut & Wash) bulan ini.`),
+        ];
+        if (bd.tier_tercapai) {
+          progressLines.push(MugenUI.el("div", {},
+            `Tier tercapai: ${bd.tier_tercapai.target} service → Bonus ${MugenUI.formatRupiah(bd.tier_tercapai.bonus)}.`));
+        }
+        if (bd.tier_berikutnya) {
+          progressLines.push(MugenUI.el("div", {},
+            `${r.progress_target}% menuju tier berikutnya (${bd.tier_berikutnya.target} service → Bonus ${MugenUI.formatRupiah(bd.tier_berikutnya.bonus)}).`));
+        } else if (bd.tier_tercapai) {
+          progressLines.push(MugenUI.el("div", {}, "Sudah mencapai tier tertinggi."));
+        } else if (!bd.tiers.length) {
+          progressLines.push(MugenUI.el("div", {}, "Belum ada target bonus diatur oleh Owner."));
+        }
         body.appendChild(MugenUI.el("div", { class: "card" }, [
-          MugenUI.el("h2", {}, "Progress Target Bonus Customer"),
-          MugenUI.el("div", {}, `${r.progress_target}% dari target ${r.target_bonus_customer} service`),
+          MugenUI.el("h2", {}, "Progress Target Service"),
+          ...progressLines,
         ]));
 
-        body.appendChild(MugenUI.el("h2", {}, "Rincian Service Bulan Ini"));
+        body.appendChild(MugenUI.el("h2", {}, "Service Bulan Ini"));
         body.appendChild(MugenUI.buildTable(
           [
             { key: "nama_service", label: "Service" },

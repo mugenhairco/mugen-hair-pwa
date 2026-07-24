@@ -126,12 +126,16 @@ const PagePengaturan = (() => {
     }
 
     // ================= TAB: KOMISI & BONUS =================
+    // REVISI: Uang Harian dipindah jadi per-barber (lihat tab Barber di
+    // bawah), Bonus Kehadiran dihapus total, dan Target Bonus Customer
+    // sekarang bertingkat (banyak tier, dikelola terpisah lewat
+    // /api/pengaturan/bonus-tiers) -- bukan lagi satu target/nominal saja.
     async function renderKomisi() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Pengaturan Komisi"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Nilai ini langsung dipakai oleh rumus komisi/bonus yang sudah berjalan (Tahap 2) — tidak ada perubahan rumus, hanya nilainya jadi bisa diubah tanpa edit kode."));
+        "Nilai ini langsung dipakai oleh rumus komisi/bonus yang sudah berjalan — tidak ada perubahan rumus, hanya nilainya jadi bisa diubah tanpa edit kode."));
 
       let s;
       try {
@@ -150,16 +154,6 @@ const PagePengaturan = (() => {
 
       const inPersen = field("Persentase Komisi", "persentase_komisi", "%");
       const inPotonganChemical = field("Potongan Modal Chemical", "potongan_modal_chemical", "Rp/transaksi");
-      const inUangHarian = field("Uang Harian (Barber biasa)", "uang_harian_barber", "Rp/hari");
-      const inUangHarianRafiq = field("Uang Harian (Rafiq)", "uang_harian_rafiq", "Rp/hari");
-      const inBonusKehadiran = field("Bonus Kehadiran", "bonus_kehadiran", "Rp/bulan");
-      const inMaksLibur = field("Maksimal Hari Libur (utk Bonus Kehadiran)", "maksimal_hari_libur", "hari/bulan");
-
-      card.appendChild(MugenUI.el("h2", { style: "margin-top:24px;" }, "Bonus Bulanan (Bonus Customer)"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Catatan: perhitungan bonus bulanan yang sudah berjalan mendukung SATU target (bukan bertingkat 85/100/130/150) — mengubahnya jadi bertingkat berarti mengubah rumus di Tahap 2, di luar cakupan Tahap 10 ini. Target & nominal di bawah bisa diubah bebas."));
-      const inTarget = field("Target Jumlah Customer/Bulan", "target_bonus_customer", "customer");
-      const inNominalBonus = field("Nominal Bonus jika Target Tercapai", "nominal_bonus_customer", "Rp");
       const inMaksLiburBonus = field("Maksimal Hari Libur (utk Bonus Customer)", "maksimal_hari_libur_bonus_customer", "hari/bulan");
       const inPotonganBonus = field("Potongan Bonus jika Libur Melebihi Batas", "potongan_bonus_customer_persen", "%");
 
@@ -173,12 +167,6 @@ const PagePengaturan = (() => {
         const body2 = {
           persentase_komisi: Number(inPersen.value),
           potongan_modal_chemical: Number(inPotonganChemical.value),
-          uang_harian_barber: Number(inUangHarian.value),
-          uang_harian_rafiq: Number(inUangHarianRafiq.value),
-          bonus_kehadiran: Number(inBonusKehadiran.value),
-          maksimal_hari_libur: Number(inMaksLibur.value),
-          target_bonus_customer: Number(inTarget.value),
-          nominal_bonus_customer: Number(inNominalBonus.value),
           maksimal_hari_libur_bonus_customer: Number(inMaksLiburBonus.value),
           potongan_bonus_customer_persen: Number(inPotonganBonus.value),
         };
@@ -195,6 +183,119 @@ const PagePengaturan = (() => {
           btnSimpan.disabled = false;
         }
       });
+
+      // ================= TARGET BONUS SERVICE (tier bertingkat) =================
+      const tierCard = MugenUI.el("div", { class: "card" });
+      body.appendChild(tierCard);
+      tierCard.appendChild(MugenUI.el("h2", {}, "Target Bonus Service"));
+      tierCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Dihitung dari jumlah service Dry Cut + Cut & Wash per barber per bulan. Tambah tier sebanyak yang " +
+        "dibutuhkan (mis. 100 service → Rp100.000, 115 service → Rp150.000, dst) — barber dapat bonus dari " +
+        "tier TERTINGGI yang tercapai bulan itu."));
+
+      const tierListBody = MugenUI.el("div");
+      tierCard.appendChild(tierListBody);
+
+      let editingTarget = null; // null = mode Tambah, angka = mode Edit (target lama)
+      const tierFormTitle = MugenUI.el("h2", { style: "margin-top:20px;" }, "Tambah Tier");
+      const inTierTarget = MugenUI.el("input", { type: "number", min: "1", placeholder: "Jumlah service" });
+      const inTierBonus = MugenUI.el("input", { type: "number", min: "0", placeholder: "Nominal bonus (Rp)" });
+      const btnTierSimpan = MugenUI.el("button", { class: "btn-primary" }, "Tambah Tier");
+      const btnTierBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
+      const tierFormError = MugenUI.el("div", { class: "login-error" });
+      tierCard.appendChild(tierFormTitle);
+      tierCard.appendChild(MugenUI.el("label", {}, "Target (jumlah service)"));
+      tierCard.appendChild(inTierTarget);
+      tierCard.appendChild(MugenUI.el("label", {}, "Nominal Bonus (Rp)"));
+      tierCard.appendChild(inTierBonus);
+      tierCard.appendChild(tierFormError);
+      tierCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnTierSimpan, btnTierBatal]));
+
+      function resetTierForm() {
+        editingTarget = null;
+        tierFormTitle.textContent = "Tambah Tier";
+        btnTierSimpan.textContent = "Tambah Tier";
+        btnTierBatal.style.display = "none";
+        inTierTarget.value = "";
+        inTierBonus.value = "";
+        tierFormError.textContent = "";
+      }
+      btnTierBatal.addEventListener("click", resetTierForm);
+
+      async function loadTiers() {
+        tierListBody.innerHTML = "Memuat...";
+        try {
+          const tiers = await MugenApi.get("/api/pengaturan/bonus-tiers");
+          tierListBody.innerHTML = "";
+          tierListBody.appendChild(MugenUI.buildTable(
+            [
+              { key: "target", label: "Target (service)" },
+              { key: "bonus", label: "Nominal Bonus", format: MugenUI.formatRupiah },
+              {
+                key: "aksi", label: "Aksi", format: (_, tier) => {
+                  const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  const btnEdit = MugenUI.el("button", {}, "Edit");
+                  btnEdit.addEventListener("click", () => {
+                    editingTarget = tier.target;
+                    tierFormTitle.textContent = `Edit Tier — ${tier.target} service`;
+                    btnTierSimpan.textContent = "Simpan Perubahan";
+                    btnTierBatal.style.display = "";
+                    inTierTarget.value = String(tier.target);
+                    inTierBonus.value = String(tier.bonus);
+                    tierFormError.textContent = "";
+                    tierCard.scrollIntoView({ behavior: "smooth" });
+                  });
+                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                  btnHapus.addEventListener("click", async () => {
+                    if (!confirm(`Hapus tier ${tier.target} service?`)) return;
+                    try {
+                      await MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`);
+                      MugenUI.toast("Tier dihapus.", "success");
+                      loadTiers();
+                    } catch (e) {
+                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnEdit);
+                  wrap.appendChild(btnHapus);
+                  return wrap;
+                },
+              },
+            ],
+            tiers,
+            { emptyText: "Belum ada target bonus diatur." },
+          ));
+        } catch (e) {
+          tierListBody.innerHTML = "";
+          tierListBody.appendChild(MugenUI.el("div", {}, e.message));
+        }
+      }
+
+      btnTierSimpan.addEventListener("click", async () => {
+        tierFormError.textContent = "";
+        const target = Number(inTierTarget.value);
+        const bonusNilai = Number(inTierBonus.value);
+        if (!target || target <= 0) { tierFormError.textContent = "Target service harus lebih dari 0."; return; }
+        if (Number.isNaN(bonusNilai) || bonusNilai < 0) { tierFormError.textContent = "Nominal bonus tidak valid."; return; }
+        btnTierSimpan.disabled = true;
+        try {
+          if (editingTarget !== null) {
+            await MugenApi.put(`/api/pengaturan/bonus-tiers/${editingTarget}`, { target, bonus: bonusNilai });
+            MugenUI.toast("Tier diperbarui.", "success");
+          } else {
+            await MugenApi.post("/api/pengaturan/bonus-tiers", { target, bonus: bonusNilai });
+            MugenUI.toast("Tier ditambahkan.", "success");
+          }
+          resetTierForm();
+          loadTiers();
+        } catch (e) {
+          tierFormError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        } finally {
+          btnTierSimpan.disabled = false;
+        }
+      });
+
+      loadTiers();
     }
 
     // ================= TAB: BARBER =================
@@ -209,13 +310,18 @@ const PagePengaturan = (() => {
       const formTitle = formCard.lastChild;
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama barber" });
       const inputRafiq = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+      // REVISI: Uang Harian sekarang per-barber (sebelumnya dua setting global
+      // uang_harian_barber/uang_harian_rafiq dipilih dari status RAFIQ).
+      const inputUangHarian = MugenUI.el("input", { type: "number", min: "0", value: "0" });
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
       const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
       const formError = MugenUI.el("div", { class: "login-error" });
 
       formCard.appendChild(MugenUI.el("label", {}, "Nama Barber"));
       formCard.appendChild(inputNama);
-      formCard.appendChild(MugenUI.el("label", {}, [inputRafiq, " Barber RAFIQ (uang harian & aturan khusus)"]));
+      formCard.appendChild(MugenUI.el("label", {}, "Uang Harian (Rp/hari, cair kalau Dry Cut + Cut & Wash hari itu ≥ 3)"));
+      formCard.appendChild(inputUangHarian);
+      formCard.appendChild(MugenUI.el("label", {}, [inputRafiq, " Barber RAFIQ (label saja, tidak lagi memengaruhi nominal apa pun)"]));
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
@@ -226,6 +332,7 @@ const PagePengaturan = (() => {
         btnBatal.style.display = "none";
         inputNama.value = "";
         inputRafiq.checked = false;
+        inputUangHarian.value = "0";
         formError.textContent = "";
       }
       btnBatal.addEventListener("click", resetForm);
@@ -233,13 +340,16 @@ const PagePengaturan = (() => {
       btnSubmit.addEventListener("click", async () => {
         formError.textContent = "";
         if (!inputNama.value.trim()) { formError.textContent = "Nama barber tidak boleh kosong."; return; }
+        const uangHarian = Number(inputUangHarian.value);
+        if (Number.isNaN(uangHarian) || uangHarian < 0) { formError.textContent = "Uang harian tidak valid."; return; }
         btnSubmit.disabled = true;
         try {
+          const body2 = { nama: inputNama.value.trim(), is_rafiq: inputRafiq.checked, uang_harian: uangHarian };
           if (editingId) {
-            await MugenApi.put(`/api/pengaturan/barber/${editingId}`, { nama: inputNama.value.trim(), is_rafiq: inputRafiq.checked });
+            await MugenApi.put(`/api/pengaturan/barber/${editingId}`, body2);
             MugenUI.toast("Barber diperbarui.", "success");
           } else {
-            await MugenApi.post("/api/pengaturan/barber", { nama: inputNama.value.trim(), is_rafiq: inputRafiq.checked });
+            await MugenApi.post("/api/pengaturan/barber", body2);
             MugenUI.toast("Barber ditambahkan.", "success");
           }
           resetForm();
@@ -263,6 +373,7 @@ const PagePengaturan = (() => {
           listBody.appendChild(MugenUI.buildTable(
             [
               { key: "nama", label: "Nama" },
+              { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
               { key: "is_rafiq", label: "Rafiq", format: (v) => v ? "Ya" : "-" },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
@@ -276,6 +387,7 @@ const PagePengaturan = (() => {
                     btnBatal.style.display = "";
                     inputNama.value = r.nama;
                     inputRafiq.checked = !!r.is_rafiq;
+                    inputUangHarian.value = String(r.uang_harian || 0);
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });
                   });

@@ -18,6 +18,7 @@ import auth_db
 import database as db
 import pengaturan_barber
 import pengaturan_backup
+import pengaturan_bonus
 import pengaturan_identitas
 import pengaturan_service
 import pengaturan_user
@@ -28,11 +29,13 @@ router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
 # Key setting yang boleh diubah lewat menu "Pengaturan Komisi" (semuanya
 # SUDAH ADA di database.DEFAULT_SETTINGS sejak Tahap 2 — router ini cuma
 # membuka jalan untuk mengedit, TIDAK menambah/mengubah rumus apapun).
+# REVISI: uang_harian_barber/uang_harian_rafiq dipindah jadi per-barber
+# (lihat endpoint /barber di bawah); bonus_kehadiran/maksimal_hari_libur
+# dihapus total (fitur Bonus Kehadiran dihapus); target_bonus_customer/
+# nominal_bonus_customer diganti daftar tier bertingkat (lihat endpoint
+# /bonus-tiers di bawah) — semua itu TIDAK ADA lagi di sini.
 KOMISI_KEYS = [
     "persentase_komisi", "potongan_modal_chemical",
-    "uang_harian_barber", "uang_harian_rafiq",
-    "bonus_kehadiran", "maksimal_hari_libur",
-    "target_bonus_customer", "nominal_bonus_customer",
     "maksimal_hari_libur_bonus_customer", "potongan_bonus_customer_persen",
 ]
 
@@ -85,12 +88,6 @@ def ambil_logo(v: str | None = None):
 class KomisiBody(BaseModel):
     persentase_komisi: float
     potongan_modal_chemical: float
-    uang_harian_barber: float
-    uang_harian_rafiq: float
-    bonus_kehadiran: float
-    maksimal_hari_libur: float
-    target_bonus_customer: float
-    nominal_bonus_customer: float
     maksimal_hari_libur_bonus_customer: float
     potongan_bonus_customer_persen: float
 
@@ -112,17 +109,63 @@ def simpan_komisi(body: KomisiBody, user: dict = Depends(require_admin)):
     return {k: semua.get(k) for k in KOMISI_KEYS}
 
 
+# ================= TARGET BONUS SERVICE (tier bertingkat) — REVISI =================
+# Sebelumnya cuma satu target/nominal (di /komisi) -- diganti daftar tier
+# bertingkat (mis. 100 service -> Rp100.000, 115 service -> Rp150.000, dst),
+# supaya admin bisa tambah/ubah/hapus target sebebas mungkin tanpa hardcode.
+
+class BonusTierBody(BaseModel):
+    target: int
+    bonus: int
+
+
+class BonusTierUpdateBody(BaseModel):
+    target: int
+    bonus: int
+
+
+@router.get("/bonus-tiers")
+def list_bonus_tiers(user: dict = Depends(require_admin)):
+    return db.get_bonus_customer_tiers()
+
+
+@router.post("/bonus-tiers")
+def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_admin)):
+    try:
+        return pengaturan_bonus.tambah_tier(body.target, body.bonus)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.put("/bonus-tiers/{target}")
+def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends(require_admin)):
+    try:
+        return pengaturan_bonus.ubah_tier(target, body.target, body.bonus)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.delete("/bonus-tiers/{target}")
+def hapus_bonus_tier(target: int, user: dict = Depends(require_admin)):
+    try:
+        return pengaturan_bonus.hapus_tier(target)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ================= MANAJEMEN BARBER =================
 
 class BarberBody(BaseModel):
     nama: str
     is_rafiq: bool = False
+    uang_harian: int = 0
 
 
 class BarberUpdateBody(BaseModel):
     nama: str | None = None
     is_rafiq: bool | None = None
     aktif: bool | None = None
+    uang_harian: int | None = None
 
 
 @router.get("/barber")
@@ -133,7 +176,7 @@ def list_barber(user: dict = Depends(require_admin)):
 @router.post("/barber")
 def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
     try:
-        new_id = pengaturan_barber.tambah_barber_validated(body.nama, body.is_rafiq)
+        new_id = pengaturan_barber.tambah_barber_validated(body.nama, body.is_rafiq, body.uang_harian)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_barber(new_id)
@@ -144,6 +187,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
     try:
         pengaturan_barber.update_barber_validated(
             barber_id, nama=body.nama, is_rafiq=body.is_rafiq, aktif=body.aktif,
+            uang_harian=body.uang_harian,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

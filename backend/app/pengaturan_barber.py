@@ -41,21 +41,26 @@ def hapus_barber(barber_id: int):
         conn.execute("DELETE FROM barbers WHERE id = ?", (barber_id,))
 
 
-def tambah_barber_validated(nama: str, is_rafiq: bool = False) -> int:
+def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int = 0) -> int:
     if not (nama or "").strip():
         raise ValueError("Nama barber tidak boleh kosong.")
+    if uang_harian < 0:
+        raise ValueError("Uang harian tidak boleh negatif.")
     try:
-        return db.add_barber(nama, is_rafiq)
+        return db.add_barber(nama, is_rafiq, uang_harian)
     except sqlite3.IntegrityError:
         raise ValueError(f"Nama barber '{nama.strip()}' sudah dipakai.")
 
 
-def update_barber_validated(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None):
+def update_barber_validated(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None,
+                             uang_harian: int = None):
     if db.get_barber(barber_id) is None:
         raise ValueError("Barber tidak ditemukan.")
     if nama is not None and not nama.strip():
         raise ValueError("Nama barber tidak boleh kosong.")
+    if uang_harian is not None and uang_harian < 0:
+        raise ValueError("Uang harian tidak boleh negatif.")
     try:
-        db.update_barber(barber_id, nama=nama, is_rafiq=is_rafiq, aktif=aktif)
+        db.update_barber(barber_id, nama=nama, is_rafiq=is_rafiq, aktif=aktif, uang_harian=uang_harian)
     except sqlite3.IntegrityError:
         raise ValueError(f"Nama barber '{(nama or '').strip()}' sudah dipakai.")

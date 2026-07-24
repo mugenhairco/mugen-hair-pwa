@@ -121,7 +121,6 @@ const PageRekap = (() => {
               { key: "hari_libur", label: "Hari Libur" },
               { key: "target_tercapai", label: "Target Bonus", format: (v) => v ? "Tercapai" : "Belum" },
               { key: "bonus_customer", label: "Bonus Cust.", format: MugenUI.formatRupiah },
-              { key: "bonus_kehadiran", label: "Bonus Hadir", format: MugenUI.formatRupiah },
               { key: "total_pendapatan", label: "Total", format: MugenUI.formatRupiah },
             ],
             rows,
