@@ -2,6 +2,11 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 passlib[bcrypt]>=1.7.4
+# TAHAP 11 (bugfix): passlib 1.7.4 (tidak dikembangkan lagi) tidak kompatibel
+# dengan bcrypt>=4.0 (backend gagal start — lihat CHANGELOG Tahap 11 di
+# README.md). Dikunci di bawah 4.0 supaya "pip install -r requirements.txt"
+# menghasilkan instalasi yang benar-benar bisa jalan.
+bcrypt<4.0
 python-multipart>=0.0.9
 itsdangerous>=2.1.2
 

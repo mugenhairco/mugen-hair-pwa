@@ -1,5 +1,6 @@
 """routers/produk.py — /api/produk/*
-TAHAP 8 — Produk (penjualan, restock, sisa stok).
+Produk (penjualan, restock, sisa stok). Ditulis di Tahap 10 tapi belum
+dihubungkan ke main.py; Tahap 11 menghubungkannya (lihat README).
 
 Produk adalah data operasional TOKO (persediaan barang dagang), bukan milik
 barber manapun — sama seperti Rekap Pengeluaran (lihat routers/rekap.py),
