@@ -233,6 +233,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
 .badge-libur { background: rgba(201,162,75,0.15); color: var(--accent); }
+/* TAHAP 12: badge status sinkron (Berhasil/Gagal) di halaman Sinkronisasi */
+.badge-success { background: rgba(76,175,109,0.15); color: var(--success); }
+.badge-danger { background: rgba(229,72,77,0.15); color: var(--danger); }
 
 .toast {
   position: fixed; top: 16px; right: 16px; z-index: 999;

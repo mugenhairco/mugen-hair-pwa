@@ -1,6 +1,7 @@
-// nav.js — sidebar. Menu Pengeluaran (Tahap 9), Setting (Tahap 10), dan
-// Produk (Tahap 11) sudah aktif, KHUSUS admin — backend juga menolak barber
-// lewat require_admin, ini bukan satu-satunya lapis perlindungan.
+// nav.js — sidebar. Menu Pengeluaran (Tahap 9), Setting (Tahap 10), Produk
+// (Tahap 11), dan Sinkronisasi (Tahap 12) sudah aktif, KHUSUS admin —
+// backend juga menolak barber lewat require_admin, ini bukan satu-satunya
+// lapis perlindungan.
 // Nama & logo barbershop (TAHAP 10) TIDAK hardcode di sini — dibaca lewat
 // brand.js (MugenBrand) dari /api/pengaturan/identitas.
 
@@ -11,6 +12,7 @@ const MugenNav = (() => {
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
     { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin"] },
     { hash: "#/produk", label: "Produk", roles: ["admin"] },
+    { hash: "#/sinkronisasi", label: "Sinkronisasi", roles: ["admin"] },
     { hash: "#/pengaturan", label: "Setting", roles: ["admin"] },
   ];
   const MENU_SEGERA = [];

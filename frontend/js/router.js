@@ -71,6 +71,16 @@ const MugenRouter = (() => {
         return;
       }
       PageProduk.render(content);
+    } else if (hash.startsWith("#/sinkronisasi")) {
+      // Tahap 12: halaman khusus admin (status sinkron & backup/restore
+      // adalah operasional toko, bukan milik barber manapun). Perlindungan
+      // sebenarnya tetap di backend (require_admin di setiap endpoint
+      // /api/sync/* dan /api/pengaturan/backup/*).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PageSinkronisasi.render(content);
     } else {
       location.hash = "#/dashboard";
     }
