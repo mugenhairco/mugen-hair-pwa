@@ -174,6 +174,50 @@ def ganti_password(user_id: int, password_baru: str):
                      (hash_password(password_baru), user_id))
 
 
+def reset_atau_buat_admin_darurat(username: str, password: str) -> str:
+    """'Break-glass' pemulihan akses admin -- dipanggil HANYA lewat
+    main.py._reset_admin_darurat(), yang sendiri hanya berjalan kalau dua
+    environment variable (ADMIN_RESET_USERNAME/ADMIN_RESET_PASSWORD) diisi
+    eksplisit oleh operator (mis. lewat dashboard Render), tidak pernah
+    otomatis/diam-diam. Beda dengan _bootstrap_admin_pertama() yang HANYA
+    jalan kalau tabel users benar-benar kosong (instalasi baru), fungsi ini
+    dipakai untuk server yang SUDAH berjalan tapi admin-nya lupa kredensial.
+
+    - Kalau `username` itu SUDAH ada (aktif ataupun sudah dinonaktifkan):
+      password-nya di-reset, dipaksa role='admin' & aktif=1 (jadi juga
+      memulihkan akun yang kebetulan sempat dinonaktifkan).
+    - Kalau `username` itu BELUM ada: dibuat baru sebagai admin.
+
+    Baris user LAIN, dan seluruh tabel bisnis lain (barbers/transaksi/
+    produk/pengeluaran/settings/dst di database.py), TIDAK disentuh sama
+    sekali -- hanya SATU baris di tabel `users` yang diubah/ditambah.
+    Return "direset" atau "dibuat" (bukan password) untuk keperluan log."""
+    from datetime import datetime
+
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("Username untuk reset admin tidak boleh kosong.")
+    if not password or len(password) < 4:
+        raise ValueError("Password untuk reset admin minimal 4 karakter.")
+
+    pw_hash = hash_password(password)
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if row is None:
+            now = datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, barber_id, aktif, created_at) "
+                "VALUES (?, ?, 'admin', NULL, 1, ?)",
+                (username, pw_hash, now),
+            )
+            return "dibuat"
+        conn.execute(
+            "UPDATE users SET password_hash = ?, role = 'admin', barber_id = NULL, aktif = 1 WHERE id = ?",
+            (pw_hash, row["id"]),
+        )
+        return "direset"
+
+
 def autentikasi(username: str, password: str):
     """Return dict user (tanpa password_hash) kalau username+password benar, None kalau salah."""
     user = get_user_by_username(username)

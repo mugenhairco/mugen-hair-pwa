@@ -960,6 +960,7 @@ lokal, sudah ada nilai default yang aman):
 | `GOOGLE_SHEET_ID` | ID spreadsheet Google Sheets tujuan sinkron (Tahap 12) | kosong (sinkron nonaktif) |
 | `GOOGLE_CREDENTIALS_JSON` | Isi mentah file JSON service account Google (alternatif dari file `credentials.json`) | kosong |
 | `SYNC_RETRY_INTERVAL_DETIK` | Jeda antar percobaan retry sinkron otomatis | `60` |
+| `ADMIN_RESET_USERNAME` / `ADMIN_RESET_PASSWORD` | Buat/reset SATU akun admin di server yang sudah berjalan (lupa kredensial) — lihat bagian **Reset / Buat Akun Admin** di bawah | kosong (no-op) |
 
 **2. Jalankan frontend** — karena murni file statis, bisa dibuka dengan
 server statis apa saja. Contoh paling sederhana (dari folder `frontend/`):
@@ -1036,6 +1037,52 @@ pilihan Anda.
 4. Pastikan `ALLOWED_ORIGINS` di backend (langkah 3 di atas) sudah memuat
    domain frontend ini — kalau tidak, browser akan memblokir semua request
    API karena CORS.
+
+## Reset / Buat Akun Admin (Lupa Username/Password di Production)
+
+Kalau server SUDAH berjalan (bukan instalasi baru) dan Owner lupa username
+atau password, tidak ada cara reset lewat menu aplikasi itu sendiri
+(ayam-telur: reset password lewat Setting > User butuh sudah login sebagai
+admin). Untuk kasus ini, backend punya mekanisme "break-glass" yang HANYA
+aktif kalau Anda mengisi dua environment variable secara eksplisit —
+**default keduanya kosong, jadi tidak pernah otomatis/diam-diam mengubah
+akun siapa pun** di deployment mana pun yang tidak sengaja mengisinya:
+
+| Variable | Isi |
+|---|---|
+| `ADMIN_RESET_USERNAME` | Username admin yang mau dibuat/direset (mis. `admin`) |
+| `ADMIN_RESET_PASSWORD` | Password baru untuk username itu (mis. `Admin123!`) |
+
+**Langkah di Render** (berlaku sama untuk platform hosting lain, hanya
+tempat mengisi environment variable-nya yang beda):
+
+1. Buka dashboard Render → service backend → tab **Environment**.
+2. Tambahkan dua environment variable di atas dengan nilai pilihan Anda.
+3. Simpan — Render otomatis restart service dengan environment variable
+   baru (kalau tidak otomatis, trigger **Manual Deploy > Restart**).
+4. Cek log deploy: akan muncul baris
+   `[ADMIN_RESET] Akun admin '<username>' berhasil dibuat/direset.` — ini
+   konfirmasi berhasil TANPA menampilkan password di log.
+5. Login ke aplikasi dengan username & password yang baru saja diisi.
+6. **SEGERA setelah berhasil login** (langkah wajib, jangan dilewati):
+   - Hapus KEMBALI kedua environment variable (`ADMIN_RESET_USERNAME` &
+     `ADMIN_RESET_PASSWORD`) dari Render, lalu restart sekali lagi —
+     kalau dibiarkan, **setiap restart server berikutnya akan mereset
+     ulang ke password yang sama**, dan siapa pun yang tahu nilai
+     environment variable itu (mis. tim lain yang punya akses dashboard
+     Render) bisa memakainya untuk login.
+   - Ganti password ke yang benar-benar rahasia lewat menu
+     **Setting > User > Ganti Password**.
+
+**Yang terjadi di balik layar** (`backend/app/auth_db.py`,
+`reset_atau_buat_admin_darurat()`):
+- Kalau username itu **sudah ada**: password-nya diganti, dipaksa jadi
+  role `admin`, dan diaktifkan lagi kalau sebelumnya sempat dinonaktifkan.
+- Kalau username itu **belum ada**: dibuat baru sebagai akun admin.
+- **Data lain sama sekali tidak disentuh** — user lain, seluruh data
+  barber/transaksi/produk/pengeluaran/pengaturan/riwayat sinkron tetap
+  utuh persis seperti sebelumnya. Hanya SATU baris di tabel `users` yang
+  diubah/ditambah.
 
 ## Backup & Restore Database
 
