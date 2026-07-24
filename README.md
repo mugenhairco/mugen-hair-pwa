@@ -644,6 +644,71 @@ browser (Playwright), database SQLite kosong (bootstrap admin baru):
     "Diedit minimal" di atas (murni bugfix/dokumentasi/ikon) — bukti
     langsung tidak ada regresi logika bisnis.
 
+## BUGFIX (pasca-Tahap 13) — Startup Backend Lokal Gagal
+
+Ditemukan setelah Tahap 13 merge: menjalankan backend secara lokal bisa
+gagal start dengan dua error sekaligus:
+
+```
+AttributeError: module 'bcrypt' has no attribute '__about__'
+ValueError: password cannot be longer than 72 bytes
+```
+
+**Akar masalah**: `auth_db.py` melakukan hashing password lewat
+`passlib.context.CryptContext(schemes=["bcrypt"])`. Passlib 1.7.4 (rilis
+terakhirnya, sudah tidak dikembangkan lagi) melakukan self-test internal
+yang membaca atribut `bcrypt.__about__` dan memverifikasi hash memakai
+string uji sepanjang 255 byte — dua-duanya TIDAK kompatibel dengan
+`bcrypt` versi 4.0 ke atas (atribut `__about__` sudah dihapus, dan
+`hashpw`/`checkpw` versi baru sengaja menolak input >72 byte alih-alih
+memotongnya diam-diam seperti versi lama). Tahap 11 sempat menambal ini
+dengan mengunci `bcrypt<4.0` di `requirements.txt`, tapi tambalan itu
+rapuh: kalau environment lokal (venv lama, cache pip, instalasi global)
+sudah lebih dulu punya `bcrypt` versi baru terpasang, `pip install -r
+requirements.txt` berikutnya tidak selalu menggantinya, dan error yang
+sama muncul lagi.
+
+**Perbaikan** (murni dependency/startup, TIDAK menyentuh logika bisnis/
+komisi/bonus/database/hak akses/fitur apa pun):
+
+1. `backend/app/auth_db.py` — hashing password sekarang memanggil library
+   `bcrypt` LANGSUNG (`bcrypt.hashpw`/`bcrypt.checkpw`), tidak lagi lewat
+   passlib. Format hash yang dihasilkan identik (awalan `$2b$`), jadi
+   **hash yang sudah tersimpan di database dari sebelumnya tetap valid
+   diverifikasi** — tidak perlu migrasi data, tidak ada user yang perlu
+   reset password. Password dipotong ke 72 byte sebelum di-hash/diverifikasi
+   (batas bawaan algoritma bcrypt itu sendiri, simetris di kedua fungsi)
+   supaya perilakunya konsisten di semua versi bcrypt.
+2. `backend/requirements.txt` — `passlib[bcrypt]` dihapus (tidak
+   dibutuhkan lagi sama sekali), pin `bcrypt<4.0` diganti `bcrypt>=4.0`
+   (sekarang aman pakai versi bcrypt terbaru, karena kode tidak lagi
+   bergantung pada internal passlib yang rapuh itu).
+3. `backend/app/__init__.py` (baru) — memperbaiki cara lain backend bisa
+   gagal start: modul-modul di `backend/app/` memakai import "flat"
+   (`import database`, `from routers import ...`), yang hanya berfungsi
+   kalau folder `backend/app/` ada di `sys.path`. Itu otomatis terjadi
+   kalau dijalankan `cd backend/app && uvicorn main:app`, TAPI TIDAK kalau
+   dijalankan `uvicorn app.main:app` dari folder `backend/` (folder yang
+   otomatis masuk `sys.path` jadinya `backend/`, bukan `backend/app/`) —
+   gagal dengan `ModuleNotFoundError: No module named 'database'`. File
+   baru ini menambahkan folder `backend/app/` ke `sys.path` begitu paket
+   `app` diimpor, TANPA mengubah satu pun baris import yang sudah ada di
+   modul lain. Kedua cara menjalankan backend sekarang sama-sama berfungsi
+   (lihat bagian **Menjalankan di Lokal** di atas).
+
+**Diuji**: instalasi bersih `requirements.txt` (mendapat `bcrypt` versi
+terbaru, terverifikasi tanpa error saat startup), kedua cara menjalankan
+backend (`uvicorn main:app` dari `backend/app/`, dan `uvicorn app.main:app
+--reload` dari `backend/`), login Owner & Barber, ganti password lalu
+login ulang dengan password lama (ditolak) dan password baru (berhasil) —
+membuktikan hash lama & baru dua-duanya tetap berfungsi benar, permission
+Owner/Barber, nilai komisi (Dry Cut Rp35.000 → komisi Rp14.000, tidak
+berubah), serta regresi Produk/Pengeluaran/Rekap/Pengaturan/Sinkronisasi.
+`python3 -m py_compile` untuk seluruh file backend — tidak ada syntax
+error. `git diff --stat` mengonfirmasi hanya 3 file yang tersentuh:
+`auth_db.py`, `requirements.txt`, dan `app/__init__.py` (baru) — tidak ada
+perubahan di `database.py` atau file logika bisnis manapun.
+
 
 ## Struktur Project
 
@@ -652,6 +717,7 @@ mugen-hair-pwa/
 ├── backend/
 │   ├── requirements.txt
 │   └── app/
+│       ├── __init__.py             # BUGFIX: supaya `uvicorn app.main:app` dari backend/ juga bisa jalan
 │       ├── main.py                 # entry point FastAPI
 │       ├── database.py             # SALINAN VERBATIM dari app Desktop — jangan diubah
 │       ├── auth_db.py              # tabel & fungsi login (terpisah dari database.py)
@@ -724,12 +790,17 @@ bagian **Menjalankan di Lokal** di bawah.
 
 ## Menjalankan di Lokal (development)
 
-**1. Jalankan backend** (dari folder `backend/app/`, dengan venv yang sama
-dari langkah Instalasi):
+**1. Jalankan backend** — dua cara berikut SAMA-SAMA berfungsi (dengan
+venv yang sama dari langkah Instalasi), pilih mana yang lebih nyaman:
 
 ```bash
+# Cara 1: dari folder backend/app/
 cd backend/app
 uvicorn main:app --reload --port 8000
+
+# Cara 2: dari folder backend/ (module path)
+cd backend
+uvicorn app.main:app --reload --port 8000
 ```
 
 Buka `http://localhost:8000/api/health` di browser — harus muncul
