@@ -12,19 +12,38 @@ Tabel 'users' terpisah dari tabel 'barbers' (di database.py) karena:
   barber_id kalau role-nya 'barber'). Satu baris barbers BOLEH tidak punya
   akun (belum dibuatkan login), dan sebaliknya.
 
-Password disimpan sebagai HASH (bcrypt via passlib), tidak pernah plaintext.
-"""
+Password disimpan sebagai HASH (bcrypt), tidak pernah plaintext.
+
+BUGFIX startup lokal: sebelumnya hashing memakai passlib
+(`passlib.context.CryptContext(schemes=["bcrypt"])`), yang TIDAK
+kompatibel dengan bcrypt>=4.0 -- passlib 1.7.4 (sudah tidak dikembangkan
+lagi) melakukan self-test versi bcrypt lewat atribut `bcrypt.__about__`
+yang sudah dihapus dari bcrypt sejak versi 4.0, menyebabkan
+`AttributeError: module 'bcrypt' has no attribute '__about__'` dan/atau
+`ValueError: password cannot be longer than 72 bytes` (dari self-test lain
+milik passlib, `detect_wrap_bug`, bukan dari password pengguna yang
+sebenarnya) begitu fungsi hash/verify pertama kali dipanggil -- gagal
+walau `bcrypt<4.0` sudah dikunci di requirements.txt, kalau environment
+lokal kebetulan sudah lebih dulu punya bcrypt versi lebih baru terpasang.
+Diperbaiki dengan memanggil library `bcrypt` LANGSUNG (tanpa passlib) --
+algoritma & format hash yang dihasilkan identik (awalan `$2b$`), jadi hash
+yang sudah tersimpan di database dari versi sebelumnya (dibuat lewat
+passlib) tetap valid diverifikasi lewat kode ini tanpa perlu migrasi data
+apa pun."""
 
 import sqlite3
 from contextlib import contextmanager
 
+import bcrypt
+
 from database import DB_PATH  # pakai path database yang SAMA dengan database.py (satu file .db yang sama)
 
-try:
-    from passlib.context import CryptContext
-    _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-except ImportError:
-    _pwd_context = None
+# Batas bawaan algoritma bcrypt itu sendiri: byte setelah yang ke-72 pada
+# password diabaikan. bcrypt versi lama memotongnya diam-diam; versi >=4.0
+# melempar ValueError kalau tidak dipotong duluan -- dipotong manual di
+# sini (simetris di hash & verify) supaya perilakunya konsisten di semua
+# versi bcrypt, sesuai saran pesan error resminya sendiri.
+_BCRYPT_MAX_BYTES = 72
 
 
 @contextmanager
@@ -60,15 +79,13 @@ def init_auth_db():
 
 
 def hash_password(password: str) -> str:
-    if _pwd_context is None:
-        raise RuntimeError("Library 'passlib' belum terinstall. Jalankan: pip install passlib bcrypt")
-    return _pwd_context.hash(password)
+    pw_bytes = password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+    return bcrypt.hashpw(pw_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    if _pwd_context is None:
-        raise RuntimeError("Library 'passlib' belum terinstall. Jalankan: pip install passlib bcrypt")
-    return _pwd_context.verify(password, password_hash)
+    pw_bytes = password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+    return bcrypt.checkpw(pw_bytes, password_hash.encode("utf-8"))
 
 
 def tambah_user(username: str, password: str, role: str, barber_id: int = None) -> int:
