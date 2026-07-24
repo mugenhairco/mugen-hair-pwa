@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 
 import database as db
-from auth import get_current_user, require_admin, require_barber
+from auth import require_admin, require_barber
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
