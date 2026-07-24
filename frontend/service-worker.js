@@ -6,7 +6,16 @@
 // data supaya tidak menampilkan data basi/salah ke user (data transaksi &
 // stok harus selalu akurat, bukan dari cache lama).
 
-const CACHE_NAME = "mugen-hair-shell-v7";
+// REVISI: dinaikkan v7 -> v8 karena revisi ini mengubah isi beberapa file
+// yang ikut di-cache app-shell (nav.js, router.js, dashboard_owner.js,
+// dashboard_barber.js, pengaturan.js, rekap.js). TANPA menaikkan
+// CACHE_NAME, browser tidak akan menganggap service-worker.js berubah
+// (byte-nya identik), jadi service worker LAMA yang sudah ter-install di
+// perangkat user akan terus menyajikan versi JS LAMA dari Cache Storage
+// selamanya walau server sudah di-deploy ulang dengan kode baru -- persis
+// gejala "deploy sukses tapi tampilan masih perilaku lama". Setiap revisi
+// berikutnya yang mengubah file di APP_SHELL WAJIB menaikkan angka ini.
+const CACHE_NAME = "mugen-hair-shell-v8";
 const APP_SHELL = [
   "/",
   "/index.html",
