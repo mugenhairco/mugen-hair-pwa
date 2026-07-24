@@ -5,4 +5,4 @@
 // memakai http://localhost:8000 kalau nilai ini kosong dan diakses dari
 // localhost/127.0.0.1.
 
-window.MUGEN_API_BASE = null;
+window.MUGEN_API_BASE = "https://mugen-hair-api.onrender.com";
