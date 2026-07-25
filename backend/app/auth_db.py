@@ -182,6 +182,19 @@ def nonaktifkan_user(user_id: int):
         conn.execute("UPDATE users SET aktif = 0 WHERE id = ?", (user_id,))
 
 
+# REVISI UI/UX: preferensi Dark/Light Mode disimpan PER AKUN (kolom
+# users.tema, lihat tampilan_migrasi.py) -- setiap user (admin maupun
+# barber) mengatur tema-nya sendiri, tidak memengaruhi user lain.
+TEMA_VALID = {"terang", "gelap"}
+
+
+def set_tema_user(user_id: int, tema: str):
+    if tema not in TEMA_VALID:
+        raise ValueError("Tema harus 'terang' atau 'gelap'.")
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tema = ? WHERE id = ?", (tema, user_id))
+
+
 def ganti_password(user_id: int, password_baru: str):
     if not password_baru or len(password_baru) < 4:
         raise ValueError("Password minimal 4 karakter.")

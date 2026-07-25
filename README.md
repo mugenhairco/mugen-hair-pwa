@@ -1443,6 +1443,107 @@ tata letak tetap optimal.
 `frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v14` → `v15` untuk
 `style.css`/`index.html`/`manifest.json`/`pengaturan.js` yang berubah.
 
+### CHANGELOG — REVISI UI/UX: Dark Mode per Akun, Transisi Halaman, Animasi Login & Web Booking, Penyederhanaan Dashboard
+
+Revisi UI/UX lanjutan (TANPA mengubah logika bisnis maupun menghapus data
+yang sudah ada -- migrasi baru bersifat aditif, lihat `tampilan_migrasi.py`).
+
+**Dark Mode & Light Mode per akun**: kolom baru `users.tema` (`'terang'`
+default, migrasi idempotent lewat `tampilan_migrasi.py`, dipanggil dari
+`main.py`) + endpoint `PUT /api/auth/tema` (`auth_router.py`/`auth_db.py`).
+Preferensi tersimpan PER AKUN di server (bukan per-perangkat) supaya tetap
+sama walau login dari perangkat lain, dengan cache lokal (`localStorage`)
+sebagai lapis anti-flash sebelum data user selesai dimuat (`theme.js`
+baru, `MugenTheme`). Palet gelap baru ditambahkan sebagai blok
+`:root[data-theme="dark"] { ... }` di `style.css` (tidak mengganti token
+terang yang sudah ada, hanya override tambahan), diaktifkan lewat atribut
+`data-theme="dark"` di `<html>`. Switch modern (durasi 200ms, dalam
+rentang 150-250ms yang diminta) ditaruh di **Setting > Tampilan** khusus
+Owner/Admin (`pengaturan.js`, tab baru) dan di sidebar tepat di atas
+tombol Keluar khusus Barber (`nav.js`, karena Barber tidak punya akses ke
+menu Setting sama sekali). **Web Booking (`/book`) SENGAJA TIDAK mengikuti
+Dark Mode** -- dipaksa tema terang lewat DUA lapis: `MugenTheme.forceLight()`
+di `router.js` (titik masuk `#/book`) DAN di `book_public.js` sendiri,
+plus lapis pertahanan CSS (`:root[data-theme="dark"] .book-public {...}`
+meng-override ulang seluruh variabel ke nilai terang) supaya tetap benar
+walau ada race condition SPA.
+
+**Loading & Toast**: toast sukses/info DIHAPUS TOTAL (`ui.js`, `toast()`
+jadi no-op kecuali `type === "error"` -- satu perubahan terpusat, bukan
+menghapus tiap pemanggilan `toast(...,"success")` satu per satu di
+puluhan file, supaya tidak ada yang terlewat). Spinner loading + teks
+proses kontekstual (mis. "Menyimpan…", "Menghapus…", "Memproses
+transaksi…", "Mengunggah…") ditambahkan ke hampir seluruh aksi yang
+memanggil server yang sebelumnya belum punya teks (Login, Booking,
+Simpan/Edit/Hapus di Setting/Input Data/Pengeluaran/Produk, Restock &
+Transaksi Produk, Sinkronisasi) lewat parameter `opts.message` yang
+sudah ada di `withLoading()` sejak revisi Sign Out sebelumnya -- tombol
+tetap dinonaktifkan selama proses seperti sebelumnya, hanya kombinasi
+teksnya yang diperkaya.
+
+**Transisi antar menu**: Fade In murni opacity (300ms, dalam rentang
+250-400ms) pada `<main class="content">` saja lewat satu aturan CSS
+(`@keyframes mugen-content-fade-in`) -- `router.js` sudah selalu membuat
+elemen `<main>` baru tiap navigasi lewat `shell()`, jadi tidak perlu
+sentuhan JS tambahan. Sidebar TIDAK ikut animasi ini sama sekali.
+
+**Animasi masuk halaman Login**: Slide+Fade pada logo, judul, dan form
+(termasuk tombol Login) HANYA diputar saat aplikasi pertama dibuka atau
+tepat setelah Logout -- BUKAN di trigger lain seperti sesi kedaluwarsa.
+Dikendalikan lewat penanda in-memory `MugenState.markLoginEntrance()` /
+`consumeLoginEntrance()`: `router.js` menandainya sekali di panggilan
+`handle()` PERTAMA (hanya kalau saat itu belum ada sesi tersimpan sama
+sekali), `nav.js` menandainya lagi tepat sebelum redirect setelah
+Logout, dan `login.js` membaca+mereset penanda itu tiap kali dirender
+(class `.login-entrance` ditambahkan secara kondisional). Sesi kedaluwarsa
+(redirect otomatis dari `api.js` saat 401) TIDAK pernah menandai ini,
+jadi Login yang muncul akibat sesi habis tampil tanpa animasi masuk.
+
+**Halaman Awal Web Booking**: sebelum wizard booking (Step 1-7 yang
+SUDAH ADA, TIDAK diubah logikanya, sekarang berada di `renderWizard()`),
+ditambahkan layar awal baru (`render()`) berupa HANYA satu tombol besar
+bertuliskan "BOOKING" (tanpa logo). Tombol "terbang" cepat (900ms) dari
+sudut layar menuju tengah lewat lintasan berbentuk Z (`@keyframes
+book-intro-fly` di `style.css`, kombinasi `transform: translate()` +
+`filter: blur()` yang memuncak saat bergerak cepat lalu hilang begitu
+berhenti di tengah, plus `text-shadow` sebagai jejak kecepatan/motion
+trail) -- tombol dinonaktifkan sampai animasi selesai supaya tidak bisa
+ditekan di tengah jalan. Setelah ditekan, layar awal memudar (220ms) dan
+wizard booking muncul dengan Slide+Fade (`.book-wizard-enter`). Semua
+animasi ini menghormati `prefers-reduced-motion` (langsung tampil diam
+di tempat kalau diaktifkan). Halaman ini tetap dipaksa tema terang sama
+seperti sebelumnya.
+
+**Dashboard Owner**: judul & deskripsi/progress bonus pada bagian
+"Service Bulan Ini" dihapus dari tampilan (data & logika perhitungan
+bonus TIDAK dihapus dari backend -- tetap bisa dilihat di Dashboard
+Barber & Setting > Bonus Service), HANYA dropdown barber dan tabel
+Service/Jumlah yang dipertahankan, dengan judul baru huruf besar
+"SERVICE BULAN INI" langsung di atas tabel. Header kolom "Customer" pada
+tabel "Per Barber" diganti jadi "Service" (murni label tampilan -- kunci
+data `jumlah_customer` dan nilainya tidak berubah sama sekali).
+
+**Kompatibilitas & pengujian**: migrasi database aditif (tidak menghapus
+kolom/tabel/data lama), tidak ada logika bisnis yang berubah. Diuji
+menyeluruh lewat Playwright: Dark Mode tersimpan per akun (bertahan
+lintas navigasi & reload penuh, terverifikasi lewat database), switch
+tampil di tempat yang benar sesuai role (Setting > Tampilan untuk Admin,
+sidebar untuk Barber; dikonfirmasi dengan login sebagai kedua role),
+Web Booking dikonfirmasi TETAP terang walau akun Owner sedang Dark Mode,
+toast sukses hilang total tapi toast error tetap tampil, aksi Simpan
+(mis. Tambah Barber) dikonfirmasi tetap benar-benar tersimpan (data
+mutasi tidak terganggu oleh penghapusan toast), animasi masuk Login
+terkonfirmasi TIDAK muncul saat sesi kedaluwarsa tapi MUNCUL saat
+aplikasi pertama dibuka & setelah Logout, animasi awal Web Booking
+(terbang + motion blur + settle di tengah) dan transisi ke wizard
+terverifikasi lewat tangkapan layar, serta regresi menyeluruh ke seluruh
+menu (Dashboard, Input Data, Rekap, Booking, Pengeluaran, Produk,
+Sinkronisasi, Setting) tanpa error konsol/backend.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v15` → `v16` untuk
+seluruh file JS/CSS yang berubah (lihat komentar changelog di file
+tersebut untuk daftar lengkap), termasuk file baru `js/theme.js`.
+
 
 ## Struktur Project
 

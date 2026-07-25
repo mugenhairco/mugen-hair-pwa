@@ -117,12 +117,18 @@ const PageBooking = (() => {
           const wrap = MugenUI.el("div", { class: "actions-cell" });
           if (onVerifikasi && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", {}, "Verifikasi");
-            btn.addEventListener("click", () => onVerifikasi(r));
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try { await onVerifikasi(r); } finally { btn.disabled = false; }
+            });
             wrap.appendChild(btn);
           }
           if (onBatalkan && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
-            btn.addEventListener("click", () => onBatalkan(r));
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try { await onBatalkan(r); } finally { btn.disabled = false; }
+            });
             wrap.appendChild(btn);
           }
           return wrap;
@@ -173,7 +179,7 @@ const PageBooking = (() => {
         tableWrap.appendChild(bookingTable(rows, {
           onVerifikasi: async (r) => {
             try {
-              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/verifikasi`));
+              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/verifikasi`), { message: "Memverifikasi pembayaran…" });
               MugenUI.toast("Pembayaran diverifikasi.", "success");
               load();
             } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -181,7 +187,7 @@ const PageBooking = (() => {
           onBatalkan: async (r) => {
             if (!confirm(`Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`)) return;
             try {
-              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/batalkan`));
+              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/batalkan`), { message: "Membatalkan booking…" });
               MugenUI.toast("Booking dibatalkan.", "success");
               load();
             } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -322,7 +328,7 @@ const PageBooking = (() => {
       const hari_operasional = Object.entries(hariChecks).filter(([, cb]) => cb.checked).map(([k]) => k);
       if (!hari_operasional.length) { errorBox.textContent = "Pilih minimal satu hari operasional."; return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value, hari_operasional }));
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value, hari_operasional }), { message: "Menyimpan…" });
         MugenUI.toast("Jam operasional disimpan.", "success");
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -369,7 +375,7 @@ const PageBooking = (() => {
                 btn.addEventListener("click", async () => {
                   if (!confirm(`Hapus libur toko ${r.tanggal}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/toko-libur/${r.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/toko-libur/${r.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Libur toko dihapus.", "success");
                     loadLiburToko();
                   } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -393,7 +399,7 @@ const PageBooking = (() => {
       try {
         await MugenUI.withLoading(() => MugenApi.post("/api/booking/toko-libur", {
           tanggal: inLiburTanggal.value, keterangan: inLiburKeterangan.value.trim() || null,
-        }));
+        }), { message: "Menyimpan…" });
         MugenUI.toast("Libur toko ditambahkan.", "success");
         inLiburKeterangan.value = "";
         loadLiburToko();
@@ -454,7 +460,7 @@ const PageBooking = (() => {
     btnTandai.addEventListener("click", async () => {
       errorBox.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
+        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }), { message: "Menyimpan…" });
         MugenUI.toast("Ditandai libur.", "success");
         loadList();
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
@@ -462,7 +468,7 @@ const PageBooking = (() => {
     btnBatalkan.addEventListener("click", async () => {
       errorBox.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
+        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }), { message: "Menghapus…" });
         MugenUI.toast("Libur dibatalkan.", "success");
         loadList();
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
@@ -525,7 +531,7 @@ const PageBooking = (() => {
                 btn.addEventListener("click", async () => {
                   if (!confirm(`Hapus tutup slot ${r.tanggal} ${r.jam_mulai}-${r.jam_selesai}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/closed-slot/${r.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/closed-slot/${r.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Slot dibuka kembali.", "success");
                     loadList();
                   } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -551,7 +557,7 @@ const PageBooking = (() => {
           barber_id: Number(selBarber.value), tanggal: inputTanggal.value,
           jam_mulai: inputJamMulai.value, jam_selesai: inputJamSelesai.value,
           keterangan: inputKeterangan.value || null,
-        }));
+        }), { message: "Menyimpan…" });
         MugenUI.toast("Slot ditutup.", "success");
         inputJamMulai.value = ""; inputJamSelesai.value = ""; inputKeterangan.value = "";
         loadList();
@@ -588,7 +594,7 @@ const PageBooking = (() => {
       errorBox1.textContent = "";
       const metode_aktif = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([k]) => k);
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_aktif }));
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_aktif }), { message: "Menyimpan…" });
         MugenUI.toast("Metode pembayaran disimpan.", "success");
       } catch (e) { errorBox1.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -620,7 +626,7 @@ const PageBooking = (() => {
         if (inInstruksi[key].value.trim()) metode_instruksi[key] = inInstruksi[key].value.trim();
       }
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }));
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }), { message: "Menyimpan…" });
         MugenUI.toast("Label & instruksi metode pembayaran disimpan.", "success");
       } catch (e) { errorBoxLabel.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -647,7 +653,7 @@ const PageBooking = (() => {
       try {
         await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", {
           bank_nama: inBankNama.value, bank_nomor_rekening: inBankRek.value, bank_nama_pemilik: inBankAtasNama.value,
-        }));
+        }), { message: "Menyimpan…" });
         MugenUI.toast("Info transfer bank disimpan.", "success");
       } catch (e) { errorBox2.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -685,14 +691,14 @@ const PageBooking = (() => {
             qrisPreview.src = MUGEN_API_BASE + hasil.qris_url + "&t=" + Date.now();
             qrisPreview.style.display = "";
           }
-        });
+        }, { message: "Mengunggah…" });
         MugenUI.toast("QRIS disimpan.", "success");
       } catch (e) { errorBox3.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
     btnHapusQris.addEventListener("click", async () => {
       if (!confirm("Hapus QRIS yang sedang aktif?")) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/booking/qris"));
+        await MugenUI.withLoading(() => MugenApi.del("/api/booking/qris"), { message: "Menghapus…" });
         qrisPreview.style.display = "none";
         MugenUI.toast("QRIS dihapus.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -748,7 +754,7 @@ const PageBooking = (() => {
       try {
         await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", {
           interval_menit: Number(inInterval.value), maksimal_hari_kedepan: Number(inMaksHari.value),
-        }));
+        }), { message: "Menyimpan…" });
         MugenUI.toast("Pengaturan booking disimpan.", "success");
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -797,7 +803,7 @@ const PageBooking = (() => {
           pesan_penutup: inPenutup.value.trim(),
           pesan_nama_kosong: inNamaKosong.value.trim(),
           pesan_whatsapp_invalid: inWaInvalid.value.trim(),
-        }));
+        }), { message: "Menyimpan…" });
         MugenUI.toast("Header, footer & pesan booking disimpan.", "success");
       } catch (e) { errorBoxHeader.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });

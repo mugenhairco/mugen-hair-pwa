@@ -32,6 +32,24 @@ const MugenState = (() => {
     return !!getToken();
   }
 
+  // REVISI UI/UX: penanda in-memory (SENGAJA bukan localStorage -- cukup
+  // hidup selama satu kali muat halaman) untuk mengontrol kapan animasi
+  // Slide+Fade di halaman Login boleh diputar: hanya saat aplikasi
+  // pertama kali dibuka (ditandai router.js di panggilan handle() pertama)
+  // atau tepat setelah Logout (ditandai nav.js) -- BUKAN setiap kali
+  // halaman Login tampil (mis. gara-gara sesi kedaluwarsa di api.js).
+  let _animateLoginEntrance = false;
+
+  function markLoginEntrance() {
+    _animateLoginEntrance = true;
+  }
+
+  function consumeLoginEntrance() {
+    const v = _animateLoginEntrance;
+    _animateLoginEntrance = false;
+    return v;
+  }
+
   function cacheSet(key, data) {
     try {
       localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, savedAt: Date.now() }));
@@ -45,5 +63,8 @@ const MugenState = (() => {
     return raw ? JSON.parse(raw) : null;
   }
 
-  return { getToken, getUser, setSession, clearSession, isLoggedIn, cacheSet, cacheGet };
+  return {
+    getToken, getUser, setSession, clearSession, isLoggedIn, cacheSet, cacheGet,
+    markLoginEntrance, consumeLoginEntrance,
+  };
 })();

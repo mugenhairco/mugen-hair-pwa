@@ -7,7 +7,7 @@ const PagePengaturan = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Setting"));
 
-    const tabs = ["Identitas Barbershop", "Komisi & Bonus", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
+    const tabs = ["Identitas Barbershop", "Tampilan", "Komisi & Bonus", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
     let activeTab = tabs[0];
 
     const tabBar = MugenUI.el("div", { class: "tabs" });
@@ -27,6 +27,7 @@ const PagePengaturan = (() => {
     async function renderBody() {
       body.innerHTML = "";
       if (activeTab === "Identitas Barbershop") await renderIdentitas();
+      else if (activeTab === "Tampilan") await renderTampilan();
       else if (activeTab === "Komisi & Bonus") await renderKomisi();
       else if (activeTab === "Bonus Service") await renderAcuanService("Bonus Service", "/api/pengaturan/bonus-service-acuan",
         "Pilih service mana saja yang jadi acuan Target Bonus Service (tier bulanan, diatur di tab Komisi & Bonus). Pengaturan ini TERPISAH dari Uang Harian -- mengubah salah satu tidak memengaruhi yang lain.");
@@ -81,7 +82,7 @@ const PagePengaturan = (() => {
         errorBox.textContent = "";
         const service_ids = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([id]) => Number(id));
         try {
-          await MugenUI.withLoading(() => MugenApi.put(endpoint, { service_ids }));
+          await MugenUI.withLoading(() => MugenApi.put(endpoint, { service_ids }), { message: "Menyimpan…" });
           MugenUI.toast(`Pengaturan ${judul} disimpan.`, "success");
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -116,7 +117,7 @@ const PagePengaturan = (() => {
         logoError.textContent = "";
         btnUploadLogo.disabled = true;
         try {
-          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/logo", inputLogo.files[0]));
+          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/logo", inputLogo.files[0]), { message: "Mengunggah…" });
           logoPreview.src = MUGEN_API_BASE + hasil.logo_url + "&t=" + Date.now();
           logoPreview.style.display = "";
           MugenUI.toast("Logo berhasil diganti.", "success");
@@ -144,7 +145,7 @@ const PagePengaturan = (() => {
         bannerError.textContent = "";
         btnUploadBanner.disabled = true;
         try {
-          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/banner", inputBanner.files[0]));
+          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/banner", inputBanner.files[0]), { message: "Mengunggah…" });
           bannerPreview.src = MUGEN_API_BASE + hasil.banner_url + "&t=" + Date.now();
           bannerPreview.style.cssText = "max-width:320px;";
           MugenUI.toast("Banner berhasil diganti.", "success");
@@ -209,7 +210,7 @@ const PagePengaturan = (() => {
             instagram: inputIG.value.trim(),
             website: inputWebsite.value.trim(),
             jam_operasional: inputJam.value.trim(),
-          }));
+          }), { message: "Menyimpan…" });
           MugenUI.toast("Identitas barbershop disimpan.", "success");
           MugenBrand.refresh();
         } catch (e) {
@@ -218,6 +219,23 @@ const PagePengaturan = (() => {
           btnSimpan.disabled = false;
         }
       });
+    }
+
+    // ================= TAB: TAMPILAN (REVISI UI/UX: Dark Mode) =================
+    // Khusus Owner/Admin (lihat spesifikasi) -- user lain (Barber) mengatur
+    // tema-nya sendiri lewat switch di sidebar (di atas tombol Keluar,
+    // lihat nav.js), bukan lewat menu Setting ini (Barber tidak punya
+    // akses ke Setting sama sekali).
+    async function renderTampilan() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Tampilan"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Preferensi ini tersimpan untuk akun Anda sendiri (bukan pengaturan toko) -- tetap sama walau login dari perangkat lain. Tidak berlaku untuk halaman Web Booking (/book), yang selalu memakai tampilan terang."));
+      card.appendChild(MugenUI.el("div", { class: "theme-switch-row", style: "margin-top:14px;" }, [
+        MugenUI.el("span", {}, "Dark Mode"),
+        MugenUI.themeSwitch(),
+      ]));
     }
 
     // ================= TAB: KOMISI & BONUS =================
@@ -270,7 +288,7 @@ const PagePengaturan = (() => {
         }
         btnSimpan.disabled = true;
         try {
-          await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/komisi", body2));
+          await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/komisi", body2), { message: "Menyimpan…" });
           MugenUI.toast("Pengaturan komisi & bonus disimpan.", "success");
         } catch (e) {
           formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -344,7 +362,7 @@ const PagePengaturan = (() => {
                   btnHapus.addEventListener("click", async () => {
                     if (!confirm(`Hapus tier ${tier.target} service?`)) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`));
+                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`), { message: "Menghapus…" });
                       MugenUI.toast("Tier dihapus.", "success");
                       loadTiers();
                     } catch (e) {
@@ -382,7 +400,7 @@ const PagePengaturan = (() => {
               await MugenApi.post("/api/pengaturan/bonus-tiers", { target, bonus: bonusNilai });
               MugenUI.toast("Tier ditambahkan.", "success");
             }
-          });
+          }, { message: "Menyimpan…" });
           resetTierForm();
           loadTiers();
         } catch (e) {
@@ -453,7 +471,7 @@ const PagePengaturan = (() => {
               await MugenApi.post("/api/pengaturan/barber", body2);
               MugenUI.toast("Barber ditambahkan.", "success");
             }
-          });
+          }, { message: "Menyimpan…" });
           resetForm();
           loadList();
         } catch (e) {
@@ -493,7 +511,7 @@ const PagePengaturan = (() => {
                   sel.value = v || "aktif";
                   sel.addEventListener("change", async () => {
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/booking/barber/${r.id}/status`, { status_booking: sel.value }));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/booking/barber/${r.id}/status`, { status_booking: sel.value }), { message: "Menyimpan…" });
                       MugenUI.toast("Status booking diperbarui.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); sel.value = v || "aktif"; }
@@ -519,7 +537,7 @@ const PagePengaturan = (() => {
                   const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
                   btnToggle.addEventListener("click", async () => {
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/barber/${r.id}`, { aktif: !r.aktif }));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/barber/${r.id}`, { aktif: !r.aktif }), { message: "Menyimpan…" });
                       MugenUI.toast(r.aktif ? "Barber dinonaktifkan." : "Barber diaktifkan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -528,7 +546,7 @@ const PagePengaturan = (() => {
                   btnHapus.addEventListener("click", async () => {
                     if (!confirm(`Hapus barber "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`)) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/barber/${r.id}`));
+                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/barber/${r.id}`), { message: "Menghapus…" });
                       MugenUI.toast("Barber dihapus.", "success");
                       loadList();
                     } catch (e) {
@@ -544,7 +562,7 @@ const PagePengaturan = (() => {
                       await MugenUI.withLoading(async () => {
                         await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
                         await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
+                      }, { message: "Menyimpan…" });
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
@@ -556,7 +574,7 @@ const PagePengaturan = (() => {
                       await MugenUI.withLoading(async () => {
                         await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
                         await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
+                      }, { message: "Menyimpan…" });
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
@@ -566,7 +584,7 @@ const PagePengaturan = (() => {
                   inFoto.addEventListener("change", async () => {
                     if (!inFoto.files || !inFoto.files[0]) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.uploadFile(`/api/booking/barber/${r.id}/foto`, inFoto.files[0]));
+                      await MugenUI.withLoading(() => MugenApi.uploadFile(`/api/booking/barber/${r.id}/foto`, inFoto.files[0]), { message: "Mengunggah…" });
                       MugenUI.toast("Foto barber disimpan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -656,7 +674,7 @@ const PagePengaturan = (() => {
               await MugenApi.post("/api/pengaturan/service", body2);
               MugenUI.toast("Layanan ditambahkan.", "success");
             }
-          });
+          }, { message: "Menyimpan…" });
           resetForm();
           loadList();
         } catch (e) {
@@ -703,7 +721,7 @@ const PagePengaturan = (() => {
                   const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
                   btnToggle.addEventListener("click", async () => {
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/service/${r.id}`, { aktif: !r.aktif }));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/service/${r.id}`, { aktif: !r.aktif }), { message: "Menyimpan…" });
                       MugenUI.toast(r.aktif ? "Layanan dinonaktifkan." : "Layanan diaktifkan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -712,7 +730,7 @@ const PagePengaturan = (() => {
                   btnHapus.addEventListener("click", async () => {
                     if (!confirm(`Hapus layanan "${r.nama}"? Hanya bisa dihapus kalau belum pernah dipakai transaksi.`)) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/service/${r.id}`));
+                      await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/service/${r.id}`), { message: "Menghapus…" });
                       MugenUI.toast("Layanan dihapus.", "success");
                       loadList();
                     } catch (e) {
@@ -728,7 +746,7 @@ const PagePengaturan = (() => {
                       await MugenUI.withLoading(async () => {
                         await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
                         await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
+                      }, { message: "Menyimpan…" });
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
@@ -740,7 +758,7 @@ const PagePengaturan = (() => {
                       await MugenUI.withLoading(async () => {
                         await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
                         await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
+                      }, { message: "Menyimpan…" });
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
@@ -810,7 +828,7 @@ const PagePengaturan = (() => {
             password: inputPassword.value,
             role: selRole.value,
             barber_id: selRole.value === "barber" ? Number(selBarberAkun.value) : null,
-          }));
+          }), { message: "Menyimpan…" });
           MugenUI.toast("User ditambahkan.", "success");
           inputUsername.value = ""; inputPassword.value = ""; selRole.value = "admin"; selBarberAkun.style.display = "none";
           loadList();
@@ -843,7 +861,7 @@ const PagePengaturan = (() => {
                     const baru = prompt(`Username baru untuk "${r.username}":`, r.username);
                     if (!baru || !baru.trim() || baru.trim() === r.username) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() }));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() }), { message: "Menyimpan…" });
                       MugenUI.toast("Username diperbarui.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -853,14 +871,14 @@ const PagePengaturan = (() => {
                     const baru = prompt(`Password baru untuk "${r.username}" (min. 4 karakter):`);
                     if (!baru) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/password`, { password: baru }));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/password`, { password: baru }), { message: "Menyimpan…" });
                       MugenUI.toast("Password diperbarui.", "success");
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
                   const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
                   btnToggle.addEventListener("click", async () => {
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/${r.aktif ? "nonaktifkan" : "aktifkan"}`, {}));
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/${r.aktif ? "nonaktifkan" : "aktifkan"}`, {}), { message: "Menyimpan…" });
                       MugenUI.toast(r.aktif ? "User dinonaktifkan." : "User diaktifkan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -933,7 +951,7 @@ const PagePengaturan = (() => {
         if (!confirm("Yakin ingin mengganti seluruh database yang sedang berjalan dengan file ini? Tindakan ini tidak mudah dibatalkan.")) return;
         btnImport.disabled = true;
         try {
-          await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/backup/import", inputImport.files[0]));
+          await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/backup/import", inputImport.files[0]), { message: "Memulihkan backup…" });
           MugenUI.toast("Database berhasil diganti. Memuat ulang halaman...", "success");
           setTimeout(() => location.reload(), 1500);
         } catch (e) {

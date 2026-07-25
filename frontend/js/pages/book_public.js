@@ -30,9 +30,55 @@ const PageBookPublic = (() => {
     ]);
   }
 
-  async function render(root) {
+  function prefersReducedMotionGlobal() {
+    return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  // REVISI UI/UX: Halaman Awal Web Booking -- HANYA tombol besar "BOOKING"
+  // (tanpa logo), kata "BOOKING" terbang cepat dari sudut layar ke tengah
+  // lewat lintasan Z dengan motion blur (lihat @keyframes book-intro-fly di
+  // style.css), lalu setelah ditekan baru wizard booking yang sudah ada
+  // (renderWizard, TIDAK diubah logikanya) dimuat dengan Slide+Fade.
+  function render(root) {
     root.innerHTML = "";
-    const page = MugenUI.el("div", { class: "book-public" });
+    // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
+    // sudah memanggil MugenTheme.forceLight() sebelum PageBookPublic.render()
+    // dipanggil, tapi dipanggil ulang di sini juga supaya halaman ini tetap
+    // benar walau suatu saat dipanggil dari jalur lain.
+    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+
+    const intro = MugenUI.el("div", { class: "book-public book-intro" });
+    root.appendChild(intro);
+
+    const btnBooking = MugenUI.el("button", { class: "book-intro-btn", type: "button", disabled: true }, "BOOKING");
+    intro.appendChild(btnBooking);
+
+    const reduced = prefersReducedMotionGlobal();
+    if (reduced) {
+      btnBooking.disabled = false;
+    } else {
+      btnBooking.classList.add("book-intro-flying");
+      const siap = () => {
+        btnBooking.classList.add("book-intro-settled");
+        btnBooking.disabled = false;
+      };
+      btnBooking.addEventListener("animationend", siap, { once: true });
+      // jaga-jaga kalau animationend tidak pernah terpicu (mis. tab background)
+      setTimeout(siap, 1100);
+    }
+
+    btnBooking.addEventListener("click", () => {
+      if (btnBooking.disabled) return;
+      intro.classList.add("book-intro-leaving");
+      setTimeout(() => {
+        intro.remove();
+        renderWizard(root);
+      }, reduced ? 0 : 220);
+    });
+  }
+
+  async function renderWizard(root) {
+    const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
     root.appendChild(page);
 
     const header = MugenUI.el("div", { class: "book-header" });
@@ -369,10 +415,11 @@ const PageBookPublic = (() => {
         // Validasi ulang: total durasi dari service yang dipilih mungkin butuh
         // lebih dari satu slot -- pastikan span PENUH dari jam yang sudah
         // dipilih di Step 3 masih benar-benar kosong semua.
+        btnLanjut.disabled = true;
         try {
           const cek = await MugenUI.withLoading(() => MugenApi.get(
             `/api/public/booking/slot?barber_id=${state.barberId}&tanggal=${state.tanggal}&service_ids=${state.serviceIds.join(",")}`,
-          ));
+          ), { message: "Memeriksa ketersediaan jam…" });
           const slotJam = cek.slots.find((s) => s.jam === state.jam);
           if (!slotJam || slotJam.status !== "available") {
             errorBox.textContent = `Durasi total service ini (${cek.durasi_menit} menit) butuh jam yang sudah terpakai. Silakan pilih jam lain.`;
@@ -381,6 +428,8 @@ const PageBookPublic = (() => {
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
           return;
+        } finally {
+          btnLanjut.disabled = false;
         }
         goto(5);
       });
@@ -509,7 +558,7 @@ const PageBookPublic = (() => {
             barber_id: state.barberId, tanggal: state.tanggal, jam_mulai: state.jam,
             service_ids: state.serviceIds, customer_nama: state.nama, customer_whatsapp: state.whatsapp,
             metode_pembayaran: state.metode,
-          }));
+          }), { message: "Memproses booking…" });
           state.bookingResult = hasil;
           goto(7);
         } catch (e) {

@@ -96,7 +96,7 @@ const PageSinkronisasi = (() => {
       btnSyncSekarang.disabled = true;
       btnSyncSekarang.textContent = "Menyinkronkan...";
       try {
-        const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/sync/sekarang", {}));
+        const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/sync/sekarang", {}), { message: "Menyinkronkan…" });
         if (hasil.last_sync_status === "berhasil") {
           MugenUI.toast("Sinkronisasi berhasil.", "success");
         } else {
@@ -162,7 +162,7 @@ const PageSinkronisasi = (() => {
       if (!confirm("Yakin ingin mengganti seluruh database yang sedang berjalan dengan file ini? Tindakan ini tidak mudah dibatalkan.")) return;
       btnRestore.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/backup/import", inputRestore.files[0]));
+        await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/backup/import", inputRestore.files[0]), { message: "Memulihkan backup…" });
         MugenUI.toast("Database berhasil di-restore. Memuat ulang halaman...", "success");
         setTimeout(() => location.reload(), 1500);
       } catch (e) {

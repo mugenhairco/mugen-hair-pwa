@@ -74,13 +74,19 @@ const PageDashboardOwner = (() => {
           card("Laba Kotor Toko", data.laba_kotor),
         ]));
 
-        // ================= PROGRESS TARGET SERVICE + SERVICE BULAN INI =================
+        // ================= SERVICE BULAN INI =================
+        // REVISI UI/UX: judul & deskripsi lama ("Service Bulan Ini" + teks
+        // progress/tier bonus) DIHAPUS -- HANYA dropdown barber dan tabel
+        // yang dipertahankan (data/logika progress bonus TIDAK dihapus dari
+        // backend, lihat Dashboard Barber & Setting > Bonus Service untuk
+        // itu -- di sini murni penyederhanaan tampilan). Judul tabel jadi
+        // "SERVICE BULAN INI" (huruf besar) langsung di atas tabel.
         // Dropdown: "Semua Barber" (gabungan) atau satu barber tertentu.
         // Isi dropdown otomatis dari barber AKTIF yang sama seperti dipakai
         // untuk data di atas (data.per_barber) -- tidak ada barber di-hardcode.
         const serviceCard = MugenUI.el("div", { class: "card" });
         const serviceHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
-        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "Service Bulan Ini"));
+        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "SERVICE BULAN INI"));
         const selBarberFilter = MugenUI.el("select", { style: "max-width:220px;" });
         selBarberFilter.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
         for (const r of data.per_barber) {
@@ -89,33 +95,14 @@ const PageDashboardOwner = (() => {
         serviceHeader.appendChild(selBarberFilter);
         serviceCard.appendChild(serviceHeader);
 
-        const progressBox = MugenUI.el("div", { style: "margin:12px 0;" });
-        serviceCard.appendChild(progressBox);
         const serviceTableBox = MugenUI.el("div");
         serviceCard.appendChild(serviceTableBox);
         body.appendChild(serviceCard);
 
-        function renderProgressDanRincian() {
-          progressBox.innerHTML = "";
+        function renderRincianService() {
           serviceTableBox.innerHTML = "";
-
-          // REVISI: acuan service Target Bonus Service sekarang dipilih Owner
-          // sendiri lewat Setting > Bonus Service (bukan hardcode Dry Cut +
-          // Cut & Wash lagi) -- label ini mengikuti pilihan yang SEDANG
-          // aktif (sama untuk semua barber, jadi cukup ambil dari barber
-          // manapun kalau ada).
-          const acuanNama = (data.per_barber[0] && data.per_barber[0].bonus_customer_detail.nama_service_acuan) || [];
-          const labelAcuan = acuanNama.length ? `(${acuanNama.join(" + ")})` : "(belum diatur — lihat Setting > Bonus Service)";
-
           if (!selBarberFilter.value) {
             // ---- Semua Barber: gabungan ----
-            const totalServiceUtama = data.per_barber.reduce(
-              (acc, r) => acc + r.bonus_customer_detail.jumlah_service, 0,
-            );
-            progressBox.appendChild(MugenUI.el("div", {},
-              `Total ${totalServiceUtama} service ${labelAcuan} — gabungan seluruh barber. ` +
-              `Target Bonus Service dihitung per barber (lihat tabel "Per Barber" di bawah), pilih satu barber ` +
-              `di dropdown untuk melihat progress target barber tersebut.`));
             serviceTableBox.appendChild(MugenUI.buildTable(
               [
                 { key: "nama_service", label: "Service" },
@@ -128,21 +115,6 @@ const PageDashboardOwner = (() => {
             // ---- Satu barber tertentu ----
             const r = data.per_barber.find((x) => String(x.barber.id) === selBarberFilter.value);
             if (!r) return;
-            const bd = r.bonus_customer_detail;
-            const lines = [MugenUI.el("div", {}, `${bd.jumlah_service} service ${labelAcuan} bulan ini.`)];
-            if (bd.tier_tercapai) {
-              lines.push(MugenUI.el("div", {},
-                `Tier tercapai: ${bd.tier_tercapai.target} service → Bonus ${MugenUI.formatRupiah(bd.tier_tercapai.bonus)}.`));
-            }
-            if (bd.tier_berikutnya) {
-              lines.push(MugenUI.el("div", {},
-                `${r.progress_target}% menuju tier berikutnya (${bd.tier_berikutnya.target} service → Bonus ${MugenUI.formatRupiah(bd.tier_berikutnya.bonus)}).`));
-            } else if (bd.tier_tercapai) {
-              lines.push(MugenUI.el("div", {}, "Sudah mencapai tier tertinggi."));
-            } else if (!bd.tiers.length) {
-              lines.push(MugenUI.el("div", {}, "Belum ada target bonus diatur (Setting > Komisi & Bonus)."));
-            }
-            for (const l of lines) progressBox.appendChild(l);
             serviceTableBox.appendChild(MugenUI.buildTable(
               [
                 { key: "nama_service", label: "Service" },
@@ -153,14 +125,14 @@ const PageDashboardOwner = (() => {
             ));
           }
         }
-        selBarberFilter.addEventListener("change", renderProgressDanRincian);
-        renderProgressDanRincian();
+        selBarberFilter.addEventListener("change", renderRincianService);
+        renderRincianService();
 
         body.appendChild(MugenUI.el("h2", {}, "Per Barber"));
         body.appendChild(MugenUI.buildTable(
           [
             { key: "barber", label: "Barber", format: (_, r) => r.barber.nama },
-            { key: "jumlah_customer", label: "Customer" },
+            { key: "jumlah_customer", label: "Service" },
             { key: "komisi", label: "Komisi", format: MugenUI.formatRupiah },
             { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
             { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },

@@ -7,7 +7,13 @@ const PageLogin = (() => {
   function render(root) {
     root.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "login-wrap" });
-    const card = MugenUI.el("div", { class: "login-card" });
+    // REVISI UI/UX: animasi Slide+Fade (logo, judul, form, tombol Login)
+    // HANYA diputar saat aplikasi pertama dibuka atau tepat setelah Logout
+    // (lihat state.js/router.js/nav.js) -- consumeLoginEntrance() sekaligus
+    // me-reset penandanya supaya render() berikutnya (mis. sesi kedaluwarsa)
+    // TIDAK ikut animasi lagi.
+    const animateEntrance = MugenState.consumeLoginEntrance();
+    const card = MugenUI.el("div", { class: "login-card" + (animateEntrance ? " login-entrance" : "") });
     card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
     card.appendChild(MugenUI.el("h1", { class: "brand-name" }, MugenBrand.get().nama_barbershop));
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Masuk ke akun Anda"));
@@ -44,7 +50,7 @@ const PageLogin = (() => {
         const res = await MugenUI.withLoading(() => MugenApi.post("/api/auth/login", {
           username: inputUsername.value.trim(),
           password: inputPassword.value,
-        }));
+        }), { message: "Memproses login…" });
         MugenState.setSession(res.token, res.user);
         // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
         // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah

@@ -100,7 +100,7 @@ const PageProduk = (() => {
             await MugenApi.post("/api/produk", { nama, harga_modal: hargaModal, harga_jual: hargaJual });
             MugenUI.toast("Produk ditambahkan.", "success");
           }
-        });
+        }, { message: "Menyimpan produk…" });
         resetProdukForm();
         loadProdukList();
       } catch (e) {
@@ -145,7 +145,7 @@ const PageProduk = (() => {
                 btnNonaktif.addEventListener("click", async () => {
                   if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/${p.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/${p.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Produk dinonaktifkan.", "success");
                     loadProdukList();
                   } catch (e) {
@@ -229,7 +229,7 @@ const PageProduk = (() => {
       };
       btnSimpanMutasi.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body));
+        await MugenUI.withLoading(() => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body), { message: `Memproses ${MUTASI_TIPE_LABEL[mutasiTipeAktif]}…` });
         MugenUI.toast(`${MUTASI_TIPE_LABEL[mutasiTipeAktif]} disimpan.`, "success");
         mutasiFormCard.style.display = "none";
         mutasiProdukAktif = null;
@@ -287,7 +287,7 @@ const PageProduk = (() => {
             tanggal: tanggalBaru,
             jumlah: Number(jumlahBaru),
             catatan: catatanBaru || null,
-          }));
+          }), { message: "Memproses transaksi…" });
           MugenUI.toast("Mutasi dikoreksi.", "success");
           loadProdukList();
           loadRiwayat();
@@ -328,7 +328,7 @@ const PageProduk = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/mutasi/${m.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/mutasi/${m.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Data mutasi dihapus.", "success");
                     loadProdukList();
                     loadRiwayat();

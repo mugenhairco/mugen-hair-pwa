@@ -27,6 +27,33 @@
   --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* REVISI UI/UX: Dark Mode per akun (lihat frontend/js/theme.js) -- attribute
+   data-theme="dark" ditaruh di <html> lewat JS, TIDAK PERNAH dipaksa aktif
+   di halaman Web Booking (/book) apa pun preferensi akun (lihat
+   book_public.js: forceLight()), sesuai instruksi "Web Booking tidak
+   mengikuti Dark Mode". Warna Success/Danger/Warning/Info dinaikkan
+   sedikit tingkat terangnya supaya kontrasnya tetap baik di atas latar
+   gelap (praktik umum dark-mode palette, BUKAN warna baru di luar konsep
+   token yang sudah ada). */
+:root[data-theme="dark"] {
+  --bg: #0F172A;
+  --bg-card: #1E293B;
+  --bg-sidebar: #1E293B;
+  --bg-input: #0F172A;
+  --border: #334155;
+  --text: #F1F5F9;
+  --text-dim: #94A3B8;
+  --accent: #475569;         /* Primary (dark) */
+  --accent-hover: #64748B;   /* Hover (dark, lebih terang) */
+  --accent-pressed: #334155; /* Pressed (dark, lebih gelap) */
+  --danger: #F87171;
+  --success: #4ADE80;
+  --warning: #FB923C;
+  --info: #60A5FA;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.24);
+  --shadow-elevated: 0 8px 24px rgba(0,0,0,0.40);
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -216,6 +243,23 @@ a { color: var(--accent); }
 }
 
 /* ---------------------------------------------------------------------
+   REVISI UI/UX: Transisi Antar Menu -- Fade In MURNI opacity (TANPA
+   translate/slide, beda dengan mugen-fade-slide-in di atas yang dipakai
+   .card) di elemen <main class="content"> setiap pindah menu. router.js
+   selalu bikin <main> BARU lewat shell() tiap navigasi (bukan reuse
+   elemen lama), jadi cukup satu aturan animasi di sini -- TIDAK menyentuh
+   .sidebar sama sekali (spec: hanya area konten yang dianimasikan).
+   --------------------------------------------------------------------- */
+@keyframes mugen-content-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.content { animation: mugen-content-fade-in 300ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .content { animation: none !important; }
+}
+
+/* ---------------------------------------------------------------------
    Komponen umum
    --------------------------------------------------------------------- */
 .card {
@@ -285,6 +329,11 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(51,65,85,0.12);
 }
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  box-shadow: 0 0 0 3px rgba(148,163,184,0.20);
+}
 
 /* ---------------------------------------------------------------------
    Tombol -- radius 14px, tinggi 48-52px (tombol utama), efek tekan
@@ -342,12 +391,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .badge-danger { background: rgba(220,38,38,0.10); color: var(--danger); }
 /* REVISI: badge tipe transaksi Produk "Tester" (beda dari Restock/Jual) */
 .badge-tester { background: rgba(37,99,235,0.10); color: var(--info); }
+/* REVISI UI/UX: tint badge di atas dihitung dari hex tema TERANG -- di atas
+   kartu gelap kombinasi itu nyaris tidak terlihat, jadi tint-nya diganti
+   versi lebih terang & sedikit lebih pekat supaya tetap kontras. */
+:root[data-theme="dark"] .badge-libur { background: rgba(148,163,184,0.16); }
+:root[data-theme="dark"] .badge-success { background: rgba(74,222,128,0.16); }
+:root[data-theme="dark"] .badge-danger { background: rgba(248,113,113,0.16); }
+:root[data-theme="dark"] .badge-tester { background: rgba(96,165,250,0.16); }
 
 /* REVISI: checklist service (Setting > Bonus Service / Uang Harian) */
 .checklist-service {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px 16px; margin: 8px 0 4px;
 }
+
+/* REVISI UI/UX: switch Dark Mode modern (Setting > Tampilan untuk
+   Owner/Admin, di atas tombol Keluar untuk user lain -- lihat nav.js).
+   Animasi 200ms (dalam rentang 150-250ms yang diminta). */
+.theme-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.theme-switch {
+  position: relative; display: inline-block; width: 46px; height: 26px;
+  flex-shrink: 0; cursor: pointer;
+}
+.theme-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.theme-switch-track {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--border);
+  transition: background-color 200ms var(--ease-press);
+}
+.theme-switch-thumb {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  transition: transform 200ms var(--ease-press);
+}
+.theme-switch input:checked ~ .theme-switch-track { background: var(--accent); }
+.theme-switch input:checked ~ .theme-switch-thumb { transform: translateX(20px); }
+.theme-switch input:focus-visible ~ .theme-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .toast {
   position: fixed; top: 16px; right: 16px; z-index: 999;
@@ -422,7 +500,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-elevated);
   padding: 32px 28px;
-  animation: mugen-fade-slide-in 220ms ease-out both;
+}
+
+/* REVISI UI/UX: Slide+Fade In di halaman Login -- HANYA dipasang lewat
+   class .login-entrance ini (ditambahkan oleh login.js SECARA KONDISIONAL,
+   hanya saat aplikasi pertama dibuka atau tepat setelah Logout, BUKAN
+   setiap kali halaman Login tampil -- mis. TIDAK saat sesi kedaluwarsa
+   melempar user kembali ke Login). Sebelumnya animasi ini terpasang
+   permanen di .login-card sehingga selalu muncul di trigger APAPUN --
+   sekarang dipisah supaya bisa dikontrol dari JS.
+   Logo & judul muncul duluan, form+tombol menyusul sedikit belakangan. */
+@keyframes mugen-login-entrance {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.login-entrance .login-logo { animation: mugen-login-entrance 320ms var(--ease-press) both; }
+.login-entrance .brand-name { animation: mugen-login-entrance 320ms var(--ease-press) 70ms both; }
+.login-entrance .subtitle { animation: mugen-login-entrance 320ms var(--ease-press) 70ms both; }
+.login-entrance form { animation: mugen-login-entrance 320ms var(--ease-press) 140ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .login-entrance .login-logo, .login-entrance .brand-name,
+  .login-entrance .subtitle, .login-entrance form { animation: none !important; }
 }
 
 .login-card h1 {
@@ -487,7 +585,34 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    Memakai variabel CSS yang SAMA dengan aplikasi utama (lihat :root di
    atas) supaya temanya otomatis konsisten -- REVISI UI/UX ini sengaja
    tidak menambah palet terpisah untuk Web Booking.
-   --------------------------------------------------------------------- */
+
+   REVISI UI/UX (Dark Mode): Web Booking SENGAJA TIDAK mengikuti Dark
+   Mode akun (instruksi eksplisit) -- book_public.js sudah memaksa hapus
+   attribute data-theme sebelum merender halaman ini (lihat
+   MugenTheme.forceLight()), tapi override di bawah ini jadi lapis
+   pertahanan KEDUA di level CSS supaya Web Booking tetap terang APAPUN
+   yang terjadi di sisi JS (mis. race condition saat SPA berpindah rute
+   tanpa reload penuh). */
+:root[data-theme="dark"] .book-public {
+  --bg: #F5F7FA;
+  --bg-card: #FFFFFF;
+  --bg-input: #F8FAFC;
+  --border: #E2E8F0;
+  --text: #0F172A;
+  --text-dim: #64748B;
+  --accent: #334155;
+  --accent-hover: #1E293B;
+  --accent-pressed: #0F172A;
+  --danger: #DC2626;
+  --success: #16A34A;
+  --warning: #EA580C;
+  --info: #2563EB;
+  --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
+  --shadow-elevated: 0 8px 24px rgba(15,23,42,0.10);
+  background: var(--bg);
+  color: var(--text);
+}
+
 .book-public {
   max-width: 480px;
   margin: 0 auto;
@@ -619,4 +744,81 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .book-anim-out-maju, .book-anim-out-mundur, .book-anim-in-maju, .book-anim-in-mundur {
     animation: none !important;
   }
+}
+
+/* ---------------------------------------------------------------------
+   REVISI UI/UX: Halaman Awal Web Booking -- HANYA tombol besar "BOOKING",
+   tanpa logo. Kata "BOOKING" bergerak cepat dari salah satu sudut layar
+   menuju tengah lewat lintasan berbentuk Z (atas kiri -> atas kanan ->
+   bawah kiri -> tengah), dengan efek motion blur/speed trail SELAMA
+   bergerak yang hilang begitu berhenti di tengah. Sesudah ditekan, form
+   wizard (renderWizard di book_public.js) muncul dengan Slide+Fade.
+   book-intro dipasang DI DALAM .book-public supaya ikut variabel tema
+   terang yang dipaksa di sana (Web Booking tidak mengikuti Dark Mode).
+   --------------------------------------------------------------------- */
+.book-intro {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+.book-intro-btn {
+  font-size: clamp(30px, 9vw, 52px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: clamp(18px, 5vw, 28px) clamp(28px, 8vw, 52px);
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-elevated);
+  cursor: pointer;
+  will-change: transform, filter;
+}
+.book-intro-btn:disabled { cursor: default; }
+.book-intro-btn:hover:not(:disabled) { background: var(--accent-hover); }
+
+@keyframes book-intro-fly {
+  0%   { transform: translate(-42vw, -34vh) scale(0.8); filter: blur(0px); }
+  10%  { filter: blur(12px); }
+  28%  { transform: translate(42vw, -34vh) scale(0.86); filter: blur(12px); }
+  38%  { filter: blur(12px); }
+  56%  { transform: translate(-42vw, 34vh) scale(0.92); filter: blur(12px); }
+  66%  { filter: blur(10px); }
+  85%  { transform: translate(0, 0) scale(1.1); filter: blur(2px); }
+  100% { transform: translate(0, 0) scale(1); filter: blur(0px); }
+}
+.book-intro-btn.book-intro-flying {
+  animation: book-intro-fly 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  text-shadow:
+    -16px 0 20px rgba(15,23,42,0.30),
+    -32px 0 30px rgba(15,23,42,0.16),
+    16px 0 20px rgba(15,23,42,0.12);
+  animation-fill-mode: both;
+}
+.book-intro-btn.book-intro-flying.book-intro-settled {
+  text-shadow: none;
+}
+@keyframes book-intro-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.book-intro.book-intro-leaving { animation: book-intro-fade-out 220ms ease-in both; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .book-intro-btn.book-intro-flying { animation: none !important; text-shadow: none !important; }
+  .book-intro.book-intro-leaving { animation: none !important; }
+}
+
+/* Form wizard muncul dengan Slide+Fade setelah tombol BOOKING ditekan. */
+@keyframes book-wizard-enter {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.book-wizard-enter { animation: book-wizard-enter 320ms var(--ease-press) both; }
+@media (prefers-reduced-motion: reduce) {
+  .book-wizard-enter { animation: none !important; }
 }

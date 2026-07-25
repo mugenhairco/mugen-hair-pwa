@@ -47,7 +47,23 @@
 // menyeluruh termasuk Web Booking), watermark developer + theme-color baru
 // (index.html, manifest.json), label RAFIQ dihapus dari tampilan Barber
 // (pengaturan.js, data/logika is_rafiq tidak berubah).
-const CACHE_NAME = "mugen-hair-shell-v15";
+// v15 -> v16: REVISI UI/UX -- Dark Mode & Light Mode per akun (theme.js
+// baru, style.css token gelap + switch, endpoint /api/auth/tema,
+// Setting > Tampilan di pengaturan.js, switch di sidebar untuk Barber di
+// nav.js, router.js memaksa tema TERANG khusus di halaman Web Booking);
+// toast sukses/info dihilangkan total, hanya toast error yang tampil
+// (ui.js), teks proses ditambahkan di banyak withLoading() (login.js,
+// book_public.js, booking.js, produk.js, pengaturan.js, input_data.js,
+// pengeluaran.js, sinkronisasi.js); transisi Fade In murni opacity di
+// area konten tiap pindah menu (style.css, .content); animasi Slide+Fade
+// di halaman Login HANYA saat aplikasi pertama dibuka/setelah Logout
+// (state.js, router.js, nav.js, login.js); halaman awal Web Booking kini
+// tombol besar "BOOKING" dengan animasi terbang lintasan Z + motion blur
+// sebelum form wizard muncul (book_public.js, style.css); Dashboard Owner:
+// judul/deskripsi "Service Bulan Ini" disederhanakan jadi judul tabel
+// "SERVICE BULAN INI", header "Customer" di tabel Per Barber jadi
+// "Service" (dashboard_owner.js).
+const CACHE_NAME = "mugen-hair-shell-v16";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -55,6 +71,7 @@ const APP_SHELL = [
   "/config.js",
   "/css/style.css",
   "/js/state.js",
+  "/js/theme.js",
   "/js/api.js",
   "/js/ui.js",
   "/js/brand.js",

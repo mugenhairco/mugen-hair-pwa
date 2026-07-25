@@ -128,7 +128,7 @@ const PagePengeluaran = (() => {
             await MugenApi.post("/api/pengeluaran", body);
             MugenUI.toast("Pengeluaran disimpan.", "success");
           }
-        });
+        }, { message: "Menyimpan…" });
         // Kategori baru yang baru saja diketik langsung ikut jadi saran berikutnya.
         if (!kategoriOptions.includes(body.kategori)) {
           kategoriOptions.push(body.kategori);
@@ -200,7 +200,7 @@ const PagePengeluaran = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/pengeluaran/${r.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/pengeluaran/${r.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Pengeluaran dihapus.", "success");
                     loadList();
                   } catch (e) {
