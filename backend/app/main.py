@@ -44,6 +44,7 @@ from pengaturan_migrasi import migrasi_pengaturan
 from sync_migrasi import migrasi_sync
 from revisi_bonus_migrasi import migrasi_revisi_bonus
 from booking_migrasi import migrasi_booking
+from booking_form_migrasi import migrasi_booking_form
 import booking_db
 from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, sync, booking
 
@@ -87,6 +88,7 @@ def on_startup():
     migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
     migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
     migrasi_booking()      # BOOKING: kolom durasi_menit di services + seed setting booking (idempotent)
+    migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala

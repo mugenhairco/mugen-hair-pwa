@@ -1136,6 +1136,97 @@ Setting, Sinkronisasi, Backup) dikonfirmasi tetap berfungsi normal.
 `router.js`/`style.css`.
 
 
+### CHANGELOG — Penyempurnaan Form Booking Customer
+
+Penambahan murni (extend, bukan rewrite) di atas Modul BOOKING yang sudah
+ada -- seluruh fitur lama (struktur booking, Login, Dashboard, Role, API,
+database lama) TIDAK diubah/dihapus, hanya ditambahkan. Migrasi baru
+`backend/app/booking_form_migrasi.py` (idempotent, `ALTER TABLE`), skema
+lama tidak disentuh.
+
+**Informasi Bisnis** (Setting > Identitas Barbershop): field baru Tagline,
+Deskripsi, Website, dan Banner (upload, pola SAMA PERSIS seperti Logo --
+`pengaturan_identitas.py` di-refactor supaya Logo & Banner berbagi helper
+`_simpan_gambar`/`_get_gambar_file_path` yang sama, perilaku Logo tidak
+berubah). Semua field ini otomatis tampil di header halaman `/book`.
+
+**Link Booking**: TIDAK ada setting URL baru -- selalu diturunkan otomatis
+dari `window.location.origin` (`Setting > Booking > Booking Settings`,
+tombol "Salin Link"), jadi otomatis ikut kalau domain aplikasi berganti,
+tanpa perlu ubah kode apa pun.
+
+**Header halaman booking**: Judul, Subtitle, Footer, Pesan Pembuka, Pesan
+Penutup semua bisa diubah Owner (`booking.js` tab Booking Settings; default
+teksnya SAMA PERSIS dengan yang sebelumnya hardcode di frontend, supaya
+tampilan tidak berubah sampai Owner sengaja menggantinya).
+
+**Barber**: field baru `status_booking` (`aktif`/`cuti`) -- TERPISAH dari
+`aktif` (Active/Non-Active) yang sudah ada, jadi sekarang ada 3 status
+efektif: Aktif, On Vacation (cuti -- tetap tampil di `/book`, abu-abu,
+tidak bisa dipilih, TAPI beda dari Barber Holiday per-tanggal yang sudah
+ada -- cuti tidak terikat tanggal tertentu), Non Active (`aktif=false`,
+tidak tampil sama sekali, perilaku lama tidak berubah). Ditambah upload
+foto (`barber-{id}.<ext>`, pola sama seperti Logo/QRIS) dan urutan tampil
+(diatur naik/turun di Setting > Barber, dipakai untuk mengurutkan kartu
+barber di `/book`).
+
+**Service**: field baru `urutan` (naik/turun di Setting > Layanan), dipakai
+untuk mengurutkan daftar service di `/book`. Field lama (harga, durasi,
+modal, aktif) tidak berubah.
+
+**Jam Operasional**: field baru `hari_operasional` (checkbox 7 hari,
+default semua aktif) -- tanggal di luar hari operasional otomatis
+disilang di kalender `/book`. Ditambah **Hari Libur Toko** (tabel baru
+`toko_libur`, terpisah dari Barber Holiday): menutup SEMUA barber
+sekaligus untuk tanggal tertentu (mis. libur nasional), dicek PALING
+AWAL di prioritas ketersediaan slot (lihat di bawah) karena tutup toko
+mengalahkan ketersediaan barber manapun.
+
+**Prioritas ketersediaan slot** (diperbarui dari Modul BOOKING): Toko
+Libur/Hari Operasional (toko tutup) → Barber Holiday/Cuti (barber
+libur) → Closed Slot → Sudah dibooking → Available.
+
+**Form Customer**: TETAP hanya Nama + WhatsApp (wajib, tidak ada
+opsi Email/Catatan, tidak ada pengaturan wajib/opsional per field --
+sesuai instruksi eksplisit, di luar itu dianggap di luar cakupan).
+Validasi nomor WhatsApp diperketat (regex `^\+?[0-9]{8,15}$`, sebelumnya
+hanya cek panjang ≥ 8 karakter), pesan validasi (nama kosong & WhatsApp
+tidak valid) sekarang bisa diubah Owner lewat Setting > Booking.
+
+**Payment**: field baru per metode `metode_nama` (label tombol) dan
+`metode_instruksi` (pesan detail yang dilihat customer) -- disimpan
+sebagai merge, bukan overwrite (mengubah label Cash tidak menghapus
+kustomisasi Transfer/QRIS/Gateway yang sudah ada). Default-nya SAMA
+PERSIS dengan teks yang sebelumnya hardcode di frontend.
+
+**Database**: seluruhnya tabel/kolom TAMBAHAN (`barbers.status_booking`,
+`barbers.foto_filename`, `barbers.urutan`, `services.urutan`, tabel baru
+`toko_libur`) lewat migrasi idempotent -- tidak ada kolom/tabel lama yang
+diubah maupun dihapus, data lama tidak tersentuh.
+
+**Diuji menyeluruh via Playwright** (53 pemeriksaan lolos di 3 skrip
+end-to-end terpisah): halaman publik `/book` -- banner/judul/subtitle/
+pesan pembuka/footer custom tampil benar, kartu barber menampilkan foto &
+status "On Vacation" untuk barber cuti, kalender otomatis menyilang
+tanggal Hari Libur Toko & hari di luar Hari Operasional, pesan validasi
+custom tampil di Step Data Diri, label & instruksi metode pembayaran
+custom tampil di Step Ringkasan, alur booking penuh sampai selesai
+berhasil disubmit; admin -- Setting > Identitas menampilkan preview
+Banner + field Tagline/Deskripsi/Website, Setting > Barber menampilkan
+dropdown Status Booking yang perubahannya persist setelah reload, Setting
+> Layanan menampilkan kontrol urutan, Booking > Operating Hours
+menampilkan checkbox hari & daftar Hari Libur Toko, Booking > Payment
+Settings menampilkan form label/instruksi custom, Booking > Booking
+Settings menampilkan Link Booking yang otomatis mengikuti domain +
+field header/footer/pesan tersimpan; regresi -- login, Dashboard, Input
+Data, Rekap, Komisi & Bonus, CRUD Barber lama, Booking List/Calendar/
+Closed Slot/Barber Holiday, dan alur booking publik end-to-end semuanya
+dikonfirmasi tetap berfungsi normal tanpa error konsol.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v11` → `v12` untuk
+`book_public.js`/`booking.js`/`pengaturan.js`/`style.css` yang berubah.
+
+
 ## Struktur Project
 
 ```

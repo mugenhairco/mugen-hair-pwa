@@ -362,6 +362,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .book-header { text-align: center; margin-bottom: 8px; }
 .book-header h1 { margin-bottom: 2px; font-size: 20px; }
+.book-banner-img { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+.book-pesan-pembuka { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
+.book-footer { text-align: center; color: var(--text-dim); font-size: 12px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--border); }
 .book-progress {
   text-align: center;
   color: var(--text-dim);
@@ -379,6 +382,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .book-barber-card:hover:not(.disabled) { border-color: var(--accent); }
 .book-barber-card.disabled { opacity: 0.45; cursor: not-allowed; }
+.book-barber-foto {
+  width: 64px; height: 64px; border-radius: 50%; object-fit: cover; margin: 0 auto 8px; display: block;
+}
+.book-barber-foto-kosong {
+  width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center;
+  justify-content: center; background: var(--bg-input); color: var(--text-dim); font-size: 22px; font-weight: 700;
+}
 .book-barber-nama { font-weight: 700; }
 .book-barber-status { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 

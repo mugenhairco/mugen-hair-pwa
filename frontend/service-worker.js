@@ -24,7 +24,14 @@
 // v10 -> v11: Modul BOOKING baru -- halaman publik /book (book_public.js)
 // dan halaman internal Booking (booking.js) ditambahkan ke APP_SHELL,
 // nav.js/router.js/style.css berubah untuk mendukungnya.
-const CACHE_NAME = "mugen-hair-shell-v11";
+// v11 -> v12: Penyempurnaan Form Booking Customer -- book_public.js (header/
+// banner/footer/pesan dari Setting, kalender ikut Hari Operasional & Hari
+// Libur Toko, foto barber, label/instruksi metode pembayaran custom),
+// booking.js (Hari Operasional, Hari Libur Toko, Label & Instruksi Metode
+// Pembayaran, Link Booking, kontrol status/foto/urutan barber & urutan
+// service), pengaturan.js (Tagline/Deskripsi/Website/Banner di Identitas,
+// kontrol status/foto/urutan barber, urutan layanan), style.css berubah.
+const CACHE_NAME = "mugen-hair-shell-v12";
 const APP_SHELL = [
   "/",
   "/index.html",

@@ -31,6 +31,7 @@ selalu dipakai dan tidak boleh dibalik):
 
 import json
 import os
+import re
 from datetime import date, datetime, timedelta
 
 import database as db
@@ -45,6 +46,16 @@ PAYMENT_SETTINGS_KEYS = [
     "booking_bank_nama", "booking_bank_nomor_rekening", "booking_bank_nama_pemilik",
 ]
 METODE_VALID = {"cash", "transfer", "qris", "gateway"}
+
+# PENYEMPURNAAN FORM BOOKING: hari dalam seminggu (index Python-style,
+# senin=0 .. minggu=6, sama seperti datetime.weekday()) yang toko buka.
+# Default SEMUA hari aktif (7 hari) supaya migrasi tidak diam-diam menutup
+# toko di hari yang sebelumnya bisa dibooking -- Owner yang mempersempit
+# sendiri lewat Setting kalau memang ada hari libur rutin.
+HARI_LIST = ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]
+_DEFAULT_HARI_OPERASIONAL = json.dumps(HARI_LIST)
+_DEFAULT_METODE_NAMA = json.dumps({})
+_DEFAULT_METODE_INSTRUKSI = json.dumps({})
 
 
 def init_booking_db():
@@ -94,6 +105,17 @@ def init_booking_db():
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
+        # PENYEMPURNAAN FORM BOOKING: hari libur TOKO (semua barber sekaligus,
+        # mis. libur nasional/lebaran) -- BEDA dari closed_slot (per-barber,
+        # per-jam) dan absensi_libur/Barber Holiday (per-barber, per-hari).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS toko_libur (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                tanggal     TEXT NOT NULL UNIQUE,
+                keterangan  TEXT,
+                created_at  TEXT NOT NULL
+            )
+        """)
 
 
 # ---------------------------------------------------------------------------
@@ -126,22 +148,56 @@ def _validasi_jam(jam: str):
         raise ValueError("Jam tidak valid.")
 
 
+_WHATSAPP_RE = re.compile(r"^\+?[0-9]{8,15}$")
+
+
+def _whatsapp_valid(nomor: str) -> bool:
+    """Validasi longgar (nomor Indonesia bisa diawali 08/+62/62) -- hanya
+    memastikan formatnya masuk akal (digit + tanda + di depan, 8-15
+    digit), bukan verifikasi nomor itu benar-benar aktif."""
+    nomor = (nomor or "").strip().replace(" ", "").replace("-", "")
+    return bool(_WHATSAPP_RE.match(nomor))
+
+
 # ---------------------------------------------------------------------------
 # SETTING BOOKING (jam operasional, interval, maks. hari ke depan)
 # ---------------------------------------------------------------------------
 
 def get_booking_settings() -> dict:
     s = {k: db.get_setting(k) for k in BOOKING_SETTINGS_KEYS}
+    try:
+        hari_operasional = json.loads(db.get_setting("booking_hari_operasional", _DEFAULT_HARI_OPERASIONAL))
+    except (TypeError, ValueError):
+        hari_operasional = list(HARI_LIST)
     return {
         "jam_buka": s["booking_jam_buka"],
         "jam_tutup": s["booking_jam_tutup"],
         "interval_menit": int(s["booking_interval_menit"]),
         "maksimal_hari_kedepan": int(s["booking_maksimal_hari_kedepan"]),
+        "hari_operasional": hari_operasional,
+        # PENYEMPURNAAN FORM BOOKING: teks Header/Footer halaman /book, dan
+        # pesan validasi -- semua bisa diubah Owner, default-nya SAMA PERSIS
+        # dengan teks yang sebelumnya hardcode di frontend supaya tampilan
+        # tidak berubah sampai Owner sengaja menggantinya.
+        "header_judul": db.get_setting("booking_header_judul", ""),
+        "header_subtitle": db.get_setting("booking_header_subtitle", "Booking Online"),
+        "header_footer": db.get_setting("booking_header_footer", ""),
+        "pesan_pembuka": db.get_setting("booking_pesan_pembuka", ""),
+        "pesan_penutup": db.get_setting(
+            "booking_pesan_penutup",
+            "Terima kasih! Kami akan segera menghubungi Anda lewat WhatsApp untuk konfirmasi.",
+        ),
+        "pesan_nama_kosong": db.get_setting("booking_pesan_nama_kosong", "Nama tidak boleh kosong."),
+        "pesan_whatsapp_invalid": db.get_setting("booking_pesan_whatsapp_invalid", "Nomor WhatsApp tidak valid."),
     }
 
 
 def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
-                             interval_menit: int = None, maksimal_hari_kedepan: int = None):
+                             interval_menit: int = None, maksimal_hari_kedepan: int = None,
+                             hari_operasional: list = None, header_judul: str = None,
+                             header_subtitle: str = None, header_footer: str = None,
+                             pesan_pembuka: str = None, pesan_penutup: str = None,
+                             pesan_nama_kosong: str = None, pesan_whatsapp_invalid: str = None):
     if jam_buka is not None:
         _validasi_jam(jam_buka)
     if jam_tutup is not None:
@@ -152,12 +208,24 @@ def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
         raise ValueError("Interval slot harus lebih dari 0 menit.")
     if maksimal_hari_kedepan is not None and maksimal_hari_kedepan <= 0:
         raise ValueError("Maksimal hari booking ke depan harus lebih dari 0.")
+    if hari_operasional is not None:
+        tidak_valid = [h for h in hari_operasional if h not in HARI_LIST]
+        if tidak_valid:
+            raise ValueError(f"Hari tidak dikenal: {', '.join(tidak_valid)}.")
 
     data = {}
     if jam_buka is not None: data["booking_jam_buka"] = jam_buka
     if jam_tutup is not None: data["booking_jam_tutup"] = jam_tutup
     if interval_menit is not None: data["booking_interval_menit"] = str(int(interval_menit))
     if maksimal_hari_kedepan is not None: data["booking_maksimal_hari_kedepan"] = str(int(maksimal_hari_kedepan))
+    if hari_operasional is not None: data["booking_hari_operasional"] = json.dumps(hari_operasional)
+    if header_judul is not None: data["booking_header_judul"] = header_judul.strip()
+    if header_subtitle is not None: data["booking_header_subtitle"] = header_subtitle.strip()
+    if header_footer is not None: data["booking_header_footer"] = header_footer.strip()
+    if pesan_pembuka is not None: data["booking_pesan_pembuka"] = pesan_pembuka.strip()
+    if pesan_penutup is not None: data["booking_pesan_penutup"] = pesan_penutup.strip()
+    if pesan_nama_kosong is not None: data["booking_pesan_nama_kosong"] = pesan_nama_kosong.strip()
+    if pesan_whatsapp_invalid is not None: data["booking_pesan_whatsapp_invalid"] = pesan_whatsapp_invalid.strip()
     if data:
         db.set_settings_bulk(data)
 
@@ -166,15 +234,41 @@ def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
 # PAYMENT SETTINGS (metode aktif, QRIS, transfer bank)
 # ---------------------------------------------------------------------------
 
+# PENYEMPURNAAN FORM BOOKING: label & teks instruksi bawaan per metode
+# pembayaran -- dipakai kalau Owner belum menimpanya lewat Setting (nilai
+# ini SAMA PERSIS dengan teks yang sebelumnya hardcode di frontend, supaya
+# tampilan tidak berubah sampai Owner sengaja menggantinya).
+DEFAULT_METODE_NAMA = {
+    "cash": "Cash (bayar di tempat)", "transfer": "Transfer Bank",
+    "qris": "QRIS", "gateway": "Payment Gateway",
+}
+DEFAULT_METODE_INSTRUKSI = {
+    "cash": "Silakan bayar tunai langsung di tempat saat kedatangan.",
+    "transfer": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi transfer Anda.",
+    "qris": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi pembayaran Anda.",
+    "gateway": "Payment Gateway segera hadir. Silakan pilih metode pembayaran lain.",
+}
+
+
 def get_payment_settings() -> dict:
     s = {k: db.get_setting(k) for k in PAYMENT_SETTINGS_KEYS}
     try:
         metode_aktif = json.loads(s["booking_metode_aktif"] or "[]")
     except (TypeError, ValueError):
         metode_aktif = []
+    try:
+        metode_nama_custom = json.loads(db.get_setting("booking_metode_nama", _DEFAULT_METODE_NAMA))
+    except (TypeError, ValueError):
+        metode_nama_custom = {}
+    try:
+        metode_instruksi_custom = json.loads(db.get_setting("booking_metode_instruksi", _DEFAULT_METODE_INSTRUKSI))
+    except (TypeError, ValueError):
+        metode_instruksi_custom = {}
     qris_filename = db.get_setting("booking_qris_filename", "")
     return {
         "metode_aktif": metode_aktif,
+        "metode_nama": {**DEFAULT_METODE_NAMA, **metode_nama_custom},
+        "metode_instruksi": {**DEFAULT_METODE_INSTRUKSI, **metode_instruksi_custom},
         "qris_merchant_nama": s["booking_qris_merchant_nama"],
         "qris_url": f"/api/public/booking/qris?v={qris_filename}" if qris_filename else None,
         "bank_nama": s["booking_bank_nama"],
@@ -185,7 +279,8 @@ def get_payment_settings() -> dict:
 
 def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str = None,
                              bank_nama: str = None, bank_nomor_rekening: str = None,
-                             bank_nama_pemilik: str = None):
+                             bank_nama_pemilik: str = None, metode_nama: dict = None,
+                             metode_instruksi: dict = None):
     data = {}
     if metode_aktif is not None:
         tidak_valid = [m for m in metode_aktif if m not in METODE_VALID]
@@ -200,6 +295,23 @@ def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str =
         data["booking_bank_nomor_rekening"] = bank_nomor_rekening.strip()
     if bank_nama_pemilik is not None:
         data["booking_bank_nama_pemilik"] = bank_nama_pemilik.strip()
+    if metode_nama is not None:
+        tidak_valid = [m for m in metode_nama if m not in METODE_VALID]
+        if tidak_valid:
+            raise ValueError(f"Metode pembayaran tidak dikenal: {', '.join(tidak_valid)}.")
+        # Gabung dengan yang sudah tersimpan (bukan timpa penuh) supaya
+        # menyimpan SATU label tidak menghapus label metode lain yang
+        # sudah pernah diatur Owner sebelumnya.
+        existing = json.loads(db.get_setting("booking_metode_nama", _DEFAULT_METODE_NAMA))
+        existing.update({k: v.strip() for k, v in metode_nama.items()})
+        data["booking_metode_nama"] = json.dumps(existing)
+    if metode_instruksi is not None:
+        tidak_valid = [m for m in metode_instruksi if m not in METODE_VALID]
+        if tidak_valid:
+            raise ValueError(f"Metode pembayaran tidak dikenal: {', '.join(tidak_valid)}.")
+        existing = json.loads(db.get_setting("booking_metode_instruksi", _DEFAULT_METODE_INSTRUKSI))
+        existing.update({k: v.strip() for k, v in metode_instruksi.items()})
+        data["booking_metode_instruksi"] = json.dumps(existing)
     if data:
         db.set_settings_bulk(data)
 
@@ -322,6 +434,66 @@ def is_barber_libur(barber_id: int, tanggal: str) -> bool:
         return row is not None
 
 
+def is_barber_cuti(barber_id: int) -> bool:
+    """Status 'cuti' (On Vacation) di kolom barbers.status_booking -- cuti
+    PANJANG/tidak tentu (barber tidak bisa dibooking di SEMUA tanggal
+    sampai Owner mengembalikan status-nya ke 'aktif'). BEDA dari
+    is_barber_libur() di atas yang per-TANGGAL (Barber Holiday)."""
+    barber = db.get_barber(barber_id)
+    return barber is not None and barber.get("status_booking") == "cuti"
+
+
+# ---------------------------------------------------------------------------
+# TOKO LIBUR -- hari libur TOKO (SEMUA barber sekaligus), BEDA dari
+# Barber Holiday (absensi_libur, per-barber) dan Closed Slot (closed_slot,
+# per-barber per-jam). Tabel dibuat di init_booking_db() di atas.
+# ---------------------------------------------------------------------------
+
+def is_toko_libur(tanggal: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute("SELECT 1 FROM toko_libur WHERE tanggal = ?", (tanggal,)).fetchone()
+        return row is not None
+
+
+def is_hari_operasional(tanggal: str) -> bool:
+    """Cek pola hari operasional mingguan (mis. toko tidak buka hari Minggu).
+    `tanggal.weekday()`: Senin=0 .. Minggu=6, sama urutan dengan HARI_LIST."""
+    hari_aktif = get_booking_settings()["hari_operasional"]
+    hari_ini = HARI_LIST[datetime.strptime(tanggal, "%Y-%m-%d").weekday()]
+    return hari_ini in hari_aktif
+
+
+def tambah_toko_libur(tanggal: str, keterangan: str = None) -> int:
+    _validasi_tanggal(tanggal)
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        existing = conn.execute("SELECT id FROM toko_libur WHERE tanggal = ?", (tanggal,)).fetchone()
+        if existing is not None:
+            raise ValueError(f"Tanggal {tanggal} sudah ditandai libur toko.")
+        cur = conn.execute(
+            "INSERT INTO toko_libur (tanggal, keterangan, created_at) VALUES (?, ?, ?)",
+            (tanggal, (keterangan or "").strip() or None, now),
+        )
+        return cur.lastrowid
+
+
+def hapus_toko_libur(toko_libur_id: int):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM toko_libur WHERE id = ?", (toko_libur_id,))
+
+
+def get_toko_libur_list(tahun: int = None, bulan: int = None) -> list:
+    q = "SELECT * FROM toko_libur WHERE 1=1"
+    params = []
+    if tahun is not None:
+        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+    if bulan is not None:
+        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+    q += " ORDER BY tanggal DESC"
+    with get_conn() as conn:
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+
 # ---------------------------------------------------------------------------
 # BOOKING -- daftar terpakai (untuk cek tumpang tindih) & CRUD
 # ---------------------------------------------------------------------------
@@ -341,7 +513,17 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None) -> dict:
     SATU interval (dipakai tampilan awal pilih jam, sebelum service
     dipilih); diisi = cek span PENUH sesuai total durasi service yang
     dipilih (dipakai validasi ulang setelah Pilih Service, dan sekali lagi
-    saat submit booking)."""
+    saat submit booking).
+
+    PENYEMPURNAAN FORM BOOKING: prioritas pengecekan sekarang, urutan ini
+    harus selalu dipakai dan tidak boleh dibalik:
+      0. Toko Libur / di luar Hari Operasional (SEMUA barber tutup)
+      1. Barber Holiday (per-tanggal) ATAU status_booking='cuti' (jangka
+         panjang) -- keduanya sama-sama berarti barber itu tidak bisa
+         dibooking
+      2. Closed Slot
+      3. Sudah dibooking
+      4. Available"""
     _validasi_tanggal(tanggal)
     barber = db.get_barber(barber_id)
     if barber is None:
@@ -357,7 +539,8 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None) -> dict:
     else:
         durasi = interval
 
-    barber_libur = is_barber_libur(barber_id, tanggal)
+    toko_tutup = is_toko_libur(tanggal) or not is_hari_operasional(tanggal)
+    barber_libur = is_barber_libur(barber_id, tanggal) or barber.get("status_booking") == "cuti"
 
     with get_conn() as conn:
         closed = _get_closed_slots_tanggal(conn, barber_id, tanggal)
@@ -374,7 +557,7 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None) -> dict:
         akhir = t + durasi
         if akhir > jam_tutup_menit:
             break  # durasi service tidak muat lagi sebelum tutup, kandidat berikutnya juga pasti tidak muat
-        if barber_libur:
+        if toko_tutup or barber_libur:
             status = "closed"
         elif sekarang_menit is not None and t < sekarang_menit:
             status = "closed"  # jam yang sudah lewat hari ini, bukan slot yang benar-benar "ditutup" Owner
@@ -388,6 +571,7 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None) -> dict:
         t += interval
 
     return {
+        "toko_libur": toko_tutup,
         "barber_libur": barber_libur,
         "durasi_menit": durasi,
         **pengaturan,
@@ -409,8 +593,15 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
     """Validasi FINAL (dipanggil sekali lagi tepat sebelum booking benar-benar
     disimpan, terlepas dari apa pun yang sudah dicek di frontend) -- jaga-jaga
     dua customer booking slot yang sama nyaris bersamaan. Urutan pengecekan
-    mengikuti prioritas di spek: Barber Holiday -> Closed Slot -> Sudah
-    dibooking -> Available."""
+    mengikuti prioritas: Toko Libur/Hari Operasional -> Barber Holiday/Cuti
+    -> Closed Slot -> Sudah dibooking -> Available."""
+    if is_toko_libur(tanggal):
+        raise ValueError("Toko sedang libur pada tanggal ini.")
+    if not is_hari_operasional(tanggal):
+        raise ValueError("Toko tidak buka pada hari ini.")
+    barber = db.get_barber(barber_id)
+    if barber is not None and barber.get("status_booking") == "cuti":
+        raise ValueError("Barber sedang cuti/On Vacation.")
     if is_barber_libur(barber_id, tanggal):
         raise ValueError("Barber sedang libur pada tanggal ini.")
 
@@ -443,12 +634,13 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
                   catatan: str = None) -> dict:
+    pesan = get_booking_settings()
     if not service_ids:
         raise ValueError("Pilih minimal satu service.")
     if not (customer_nama or "").strip():
-        raise ValueError("Nama tidak boleh kosong.")
-    if not (customer_whatsapp or "").strip():
-        raise ValueError("Nomor WhatsApp tidak boleh kosong.")
+        raise ValueError(pesan["pesan_nama_kosong"])
+    if not _whatsapp_valid(customer_whatsapp):
+        raise ValueError(pesan["pesan_whatsapp_invalid"])
     if metode_pembayaran not in METODE_VALID:
         raise ValueError("Metode pembayaran tidak dikenal.")
     metode_aktif = get_payment_settings()["metode_aktif"]
@@ -566,3 +758,90 @@ def verifikasi_pembayaran(booking_id: int):
         raise ValueError("Booking ini sudah dibatalkan.")
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_pembayaran = 'terverifikasi' WHERE id = ?", (booking_id,))
+
+
+# ---------------------------------------------------------------------------
+# BARBER & SERVICE -- field TAMBAHAN khusus tampilan Booking (status
+# Active/On Vacation, foto, urutan). Kolom `nama`/`harga`/`aktif`/dst di
+# tabel barbers/services TETAP dikelola lewat db.update_barber/
+# update_service & pengaturan_barber.py/pengaturan_service.py yang SUDAH
+# ADA -- fungsi di bawah ini HANYA menyentuh kolom baru milik modul
+# Booking, lewat UPDATE langsung (pola sama seperti pengaturan_service.py
+# set_modal()/set_durasi()), supaya tidak menduplikasi validasi yang
+# sudah ada di db.update_barber/update_service.
+# ---------------------------------------------------------------------------
+
+STATUS_BOOKING_VALID = {"aktif", "cuti"}
+FOTO_EXT_KE_CONTENT_TYPE = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+BARBER_FOTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "barber_foto")
+
+
+def set_status_booking_barber(barber_id: int, status_booking: str):
+    if db.get_barber(barber_id) is None:
+        raise ValueError("Barber tidak ditemukan.")
+    if status_booking not in STATUS_BOOKING_VALID:
+        raise ValueError("Status tidak dikenal.")
+    with get_conn() as conn:
+        conn.execute("UPDATE barbers SET status_booking = ? WHERE id = ?", (status_booking, barber_id))
+
+
+def set_urutan_barber(barber_id: int, urutan: int):
+    if db.get_barber(barber_id) is None:
+        raise ValueError("Barber tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute("UPDATE barbers SET urutan = ? WHERE id = ?", (int(urutan), barber_id))
+
+
+def simpan_foto_barber(barber_id: int, filename_asli: str, konten: bytes) -> str:
+    if db.get_barber(barber_id) is None:
+        raise ValueError("Barber tidak ditemukan.")
+    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
+    if ext not in FOTO_EXT_KE_CONTENT_TYPE:
+        raise ValueError("Format foto harus JPG, PNG, atau WEBP.")
+    if not konten:
+        raise ValueError("File foto kosong.")
+    os.makedirs(BARBER_FOTO_DIR, exist_ok=True)
+    for f in os.listdir(BARBER_FOTO_DIR):
+        if f.startswith(f"barber-{barber_id}."):
+            try:
+                os.remove(os.path.join(BARBER_FOTO_DIR, f))
+            except OSError:
+                pass
+    nama_file = f"barber-{barber_id}.{ext}"
+    with open(os.path.join(BARBER_FOTO_DIR, nama_file), "wb") as fh:
+        fh.write(konten)
+    with get_conn() as conn:
+        conn.execute("UPDATE barbers SET foto_filename = ? WHERE id = ?", (nama_file, barber_id))
+    return nama_file
+
+
+def hapus_foto_barber(barber_id: int):
+    barber = db.get_barber(barber_id)
+    if barber is None:
+        raise ValueError("Barber tidak ditemukan.")
+    nama_file = barber.get("foto_filename")
+    if nama_file:
+        path = os.path.join(BARBER_FOTO_DIR, nama_file)
+        if os.path.isfile(path):
+            os.remove(path)
+    with get_conn() as conn:
+        conn.execute("UPDATE barbers SET foto_filename = NULL WHERE id = ?", (barber_id,))
+
+
+def get_foto_barber_file_path(barber_id: int):
+    barber = db.get_barber(barber_id)
+    nama_file = barber.get("foto_filename") if barber else None
+    if not nama_file:
+        return None, None
+    path = os.path.join(BARBER_FOTO_DIR, nama_file)
+    if not os.path.isfile(path):
+        return None, None
+    ext = nama_file.rsplit(".", 1)[-1].lower()
+    return path, FOTO_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+
+
+def set_urutan_service(service_id: int, urutan: int):
+    if db.get_service(service_id) is None:
+        raise ValueError("Layanan tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (int(urutan), service_id))
