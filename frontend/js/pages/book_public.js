@@ -22,6 +22,14 @@ const PageBookPublic = (() => {
     return d.toISOString().slice(0, 10);
   }
 
+  function fieldRow(label, value, tebal) {
+    return MugenUI.el("div", { class: "book-field-row" + (tebal ? " book-field-row-total" : "") }, [
+      MugenUI.el("span", { class: "book-field-label" }, label),
+      MugenUI.el("span", { class: "book-field-colon" }, ":"),
+      MugenUI.el("span", { class: "book-field-value" }, value),
+    ]);
+  }
+
   async function render(root) {
     root.innerHTML = "";
     const page = MugenUI.el("div", { class: "book-public" });
@@ -31,10 +39,12 @@ const PageBookPublic = (() => {
     page.appendChild(header);
 
     const progressBox = MugenUI.el("div", { class: "book-progress" });
+    const bodyViewport = MugenUI.el("div", { class: "book-body-viewport" });
     const body = MugenUI.el("div", { class: "book-body" });
+    bodyViewport.appendChild(body);
     const footer = MugenUI.el("div", { class: "book-footer" });
     page.appendChild(progressBox);
-    page.appendChild(body);
+    page.appendChild(bodyViewport);
     page.appendChild(footer);
 
     // ---- state ----
@@ -85,14 +95,27 @@ const PageBookPublic = (() => {
       progressBox.appendChild(MugenUI.el("div", {}, `Langkah ${Math.min(step, TOTAL_STEP)} dari ${TOTAL_STEP}`));
     }
 
-    function goto(n) {
-      step = n;
-      renderAll();
+    // ---- animasi perpindahan step: slide + fade, ~300ms, arah mengikuti
+    // maju/mundurnya nomor step (goto ke step lebih besar = "Lanjut" = slide
+    // dari kanan, goto ke step lebih kecil = "Kembali" = slide dari kiri).
+    // Selama animasi berjalan, transitioning=true membuat goto() lain
+    // diabaikan -- ini SATU-SATUNYA tempat penjagaan double-klik perlu
+    // ditambahkan karena semua tombol navigasi step memanggil goto().
+    let transitioning = false;
+    const ANIM_MS = 300;
+
+    function prefersReducedMotion() {
+      return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
-    function renderAll() {
-      renderProgress();
-      body.innerHTML = "";
+    function goto(n) {
+      if (transitioning || n === step) return;
+      const arah = n > step ? "maju" : "mundur";
+      step = n;
+      renderAll(arah);
+    }
+
+    function renderStepBody() {
       if (step === 1) renderPilihBarber();
       else if (step === 2) renderPilihTanggal();
       else if (step === 3) renderPilihJam();
@@ -100,7 +123,45 @@ const PageBookPublic = (() => {
       else if (step === 5) renderDataDiri();
       else if (step === 6) renderRingkasanBayar();
       else if (step === 7) renderSelesai();
+    }
+
+    function renderAll(arah) {
+      renderProgress();
+      if (!arah || prefersReducedMotion()) {
+        body.innerHTML = "";
+        renderStepBody();
+      } else {
+        animasiTransisi(arah);
+      }
       window.scrollTo(0, 0);
+    }
+
+    function animasiTransisi(arah) {
+      transitioning = true;
+      bodyViewport.classList.add("book-transitioning");
+      page.classList.add("book-nav-disabled");
+
+      const klonLama = body.cloneNode(true);
+      klonLama.classList.add("book-step-outgoing", arah === "maju" ? "book-anim-out-maju" : "book-anim-out-mundur");
+      bodyViewport.appendChild(klonLama);
+
+      body.innerHTML = "";
+      renderStepBody();
+      body.classList.add(arah === "maju" ? "book-anim-in-maju" : "book-anim-in-mundur");
+
+      let selesai = false;
+      function bersihkan() {
+        if (selesai) return;
+        selesai = true;
+        klonLama.remove();
+        body.classList.remove("book-anim-in-maju", "book-anim-in-mundur");
+        bodyViewport.classList.remove("book-transitioning");
+        page.classList.remove("book-nav-disabled");
+        transitioning = false;
+      }
+      klonLama.addEventListener("animationend", bersihkan);
+      // jaga-jaga kalau animationend tidak pernah terpicu (mis. tab di background)
+      setTimeout(bersihkan, ANIM_MS + 150);
     }
 
     // ================= STEP 1: PILIH BARBER =================
@@ -467,12 +528,18 @@ const PageBookPublic = (() => {
     // ================= STEP 7: SELESAI =================
     function renderSelesai() {
       const r = state.bookingResult;
+      const detail = MugenUI.el("div", { class: "book-selesai-detail" }, [
+        fieldRow("Barber", r.nama_barber),
+        fieldRow("Tanggal", MugenUI.formatTanggal(r.tanggal)),
+        fieldRow("Jam", r.jam_mulai),
+        fieldRow("Service", r.daftar_service),
+        MugenUI.el("hr"),
+        fieldRow("Total", MugenUI.formatRupiah(r.total_harga), true),
+      ]);
       body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
         MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
         MugenUI.el("h2", {}, "Booking Berhasil!"),
-        MugenUI.el("div", {}, `${r.nama_barber} — ${MugenUI.formatTanggal(r.tanggal)}, ${r.jam_mulai}-${r.jam_selesai}`),
-        MugenUI.el("div", {}, r.daftar_service),
-        MugenUI.el("div", { style: "font-weight:700;margin-top:8px;" }, MugenUI.formatRupiah(r.total_harga)),
+        detail,
         MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" },
           pengaturan.pesan_penutup || "Terima kasih! Kami akan segera menghubungi Anda lewat WhatsApp untuk konfirmasi."),
       ]));
