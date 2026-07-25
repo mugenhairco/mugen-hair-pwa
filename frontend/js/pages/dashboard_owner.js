@@ -160,14 +160,76 @@ const PageDashboardOwner = (() => {
           ],
           data.per_barber,
         ));
+
+        // ================= GRAFIK PENDAPATAN (khusus Dashboard Owner) =================
+        // Dua diagram batang: harian (mengikuti bulan/tahun yang sedang
+        // dipilih di atas) dan bulanan (Jan-Des tahun yang sedang dipilih).
+        // Dropdown "Semua Barber" (gabungan) / satu barber tertentu -- daftar
+        // barber sama seperti dropdown "Service Bulan Ini" di atas (barber
+        // aktif dari data.per_barber, tidak ada yang di-hardcode).
+        const grafikCard = MugenUI.el("div", { class: "card" });
+        const grafikHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
+        grafikHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "Grafik Pendapatan"));
+        const selBarberGrafik = MugenUI.el("select", { style: "max-width:220px;" });
+        selBarberGrafik.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+        for (const r of data.per_barber) {
+          selBarberGrafik.appendChild(MugenUI.el("option", { value: String(r.barber.id) }, r.barber.nama));
+        }
+        grafikHeader.appendChild(selBarberGrafik);
+        grafikCard.appendChild(grafikHeader);
+
+        grafikCard.appendChild(MugenUI.el("h3", { style: "margin-bottom:4px;" },
+          `Harian — ${MugenUI.namaBulan(bulan)} ${tahun}`));
+        grafikCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:6px;" },
+          "Komisi + Tips + Uang Harian per tanggal. Bonus Customer tidak diikutkan di sini karena itu " +
+          "perhitungan bulanan, bukan harian (lihat grafik Bulanan di bawah)."));
+        const grafikHarianBox = MugenUI.el("div");
+        grafikCard.appendChild(grafikHarianBox);
+
+        grafikCard.appendChild(MugenUI.el("h3", { style: "margin-bottom:4px;margin-top:20px;" }, `Bulanan — ${tahun}`));
+        grafikCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:6px;" },
+          "Total Pendapatan penuh (Komisi + Tips + Uang Harian + Bonus Customer) per bulan."));
+        const grafikBulananBox = MugenUI.el("div");
+        grafikCard.appendChild(grafikBulananBox);
+
+        body.appendChild(grafikCard);
+
+        async function renderGrafik() {
+          grafikHarianBox.innerHTML = "Memuat...";
+          grafikBulananBox.innerHTML = "Memuat...";
+          const barberIdGrafik = selBarberGrafik.value;
+          const qsBarber = barberIdGrafik ? `&barber_id=${barberIdGrafik}` : "";
+          try {
+            const [harian, bulananData] = await Promise.all([
+              MugenApi.get(`/api/dashboard/owner/grafik-harian?tahun=${tahun}&bulan=${bulan}${qsBarber}`, { useCache: true }),
+              MugenApi.get(`/api/dashboard/owner/grafik-bulanan?tahun=${tahun}${qsBarber}`, { useCache: true }),
+            ]);
+            grafikHarianBox.innerHTML = "";
+            grafikHarianBox.appendChild(MugenUI.barChart(
+              harian.map((h) => ({ value: h.pendapatan, tanggal: h.tanggal })),
+              { xLabel: (d) => String(d.tanggal), yFormat: MugenUI.formatRupiah },
+            ));
+            grafikBulananBox.innerHTML = "";
+            grafikBulananBox.appendChild(MugenUI.barChart(
+              bulananData.map((b) => ({ value: b.pendapatan, bulan: b.bulan })),
+              { xLabel: (d) => MugenUI.namaBulan(d.bulan).slice(0, 3), yFormat: MugenUI.formatRupiah },
+            ));
+          } catch (e) {
+            grafikHarianBox.innerHTML = "";
+            grafikBulananBox.innerHTML = "";
+            grafikHarianBox.appendChild(MugenUI.el("div", {}, e.message));
+          }
+        }
+        selBarberGrafik.addEventListener("change", () => MugenUI.withLoading(renderGrafik));
+        renderGrafik();
       } catch (e) {
         body.innerHTML = "";
         body.appendChild(MugenUI.el("div", { class: "card" }, e.message));
       }
     }
 
-    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
-    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
+    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); MugenUI.withLoading(load); });
+    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); MugenUI.withLoading(load); });
     load();
   }
 

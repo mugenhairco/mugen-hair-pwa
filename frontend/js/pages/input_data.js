@@ -150,13 +150,15 @@ const PageInputData = (() => {
       };
       btnSubmit.disabled = true;
       try {
-        if (editingId) {
-          await MugenApi.put(`/api/input-data/transaksi/${editingId}`, body);
-          MugenUI.toast("Transaksi dikoreksi.", "success");
-        } else {
-          await MugenApi.post("/api/input-data/transaksi", body);
-          MugenUI.toast("Transaksi disimpan.", "success");
-        }
+        await MugenUI.withLoading(async () => {
+          if (editingId) {
+            await MugenApi.put(`/api/input-data/transaksi/${editingId}`, body);
+            MugenUI.toast("Transaksi dikoreksi.", "success");
+          } else {
+            await MugenApi.post("/api/input-data/transaksi", body);
+            MugenUI.toast("Transaksi disimpan.", "success");
+          }
+        });
         resetForm();
         loadList();
       } catch (e) {
@@ -198,7 +200,7 @@ const PageInputData = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus transaksi #${r.id} tanggal ${r.tanggal}?`)) return;
                   try {
-                    await MugenApi.del(`/api/input-data/transaksi/${r.id}`);
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/input-data/transaksi/${r.id}`));
                     MugenUI.toast("Transaksi dihapus.", "success");
                     loadList();
                   } catch (e) {
@@ -243,14 +245,14 @@ const PageInputData = (() => {
     btnTandaiLibur.addEventListener("click", async () => {
       if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
       try {
-        await MugenApi.post("/api/input-data/libur", liburBody());
+        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", liburBody()));
         MugenUI.toast("Ditandai libur.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });
     btnBatalkanLibur.addEventListener("click", async () => {
       if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
       try {
-        await MugenApi.del("/api/input-data/libur", liburBody());
+        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", liburBody()));
         MugenUI.toast("Libur dibatalkan.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });

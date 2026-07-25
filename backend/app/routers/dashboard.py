@@ -4,6 +4,7 @@ Barber: HANYA bisa lihat ringkasan miliknya sendiri (barber_id diambil dari
 akun login-nya di tabel users, bukan dari parameter request — supaya Barber
 tidak bisa mengintip data barber lain hanya dengan mengubah query string)."""
 
+import calendar
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -71,3 +72,61 @@ def dashboard_barber(tahun: int = None, bulan: int = None, user: dict = Depends(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Akun ini belum dikaitkan ke data Barber. Hubungi Owner.")
     return db.get_ringkasan_barber_bulan(barber_id, tahun, bulan)
+
+
+def _barber_terpilih(barber_id: int):
+    """Dipakai kedua endpoint grafik di bawah: barber_id kosong (None) berarti
+    gabungan SEMUA barber aktif; kalau diisi, hanya barber itu (dicari
+    langsung by id, bukan cuma dari daftar aktif -- konsisten dengan endpoint
+    lain yang tetap bisa menampilkan data historis barber yang sudah
+    dinonaktifkan)."""
+    if barber_id is not None:
+        barber = db.get_barber(barber_id)
+        return [barber] if barber else []
+    return db.get_barbers()
+
+
+@router.get("/owner/grafik-harian")
+def grafik_harian(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(require_admin)):
+    """Diagram batang PENDAPATAN HARIAN (khusus Owner) untuk satu bulan --
+    satu batang per tanggal (1 s.d. jumlah hari di bulan itu), termasuk
+    tanggal yang belum ada transaksi (nilainya 0, supaya sumbu tanggal tetap
+    utuh/tidak "loncat"). barber_id kosong = gabungan SEMUA barber.
+
+    Pendapatan di sini = Komisi + Tips + Uang Harian hari itu (memakai
+    hitung_uang_harian_per_hari yang sudah ada, aturan >=3 Dry Cut/Cut & Wash
+    per hari TIDAK diubah sama sekali). Bonus Customer SENGAJA tidak
+    diikutkan -- itu perhitungan BULANAN (lihat hitung_bonus_customer), tidak
+    ada cara membaginya secara berarti per tanggal, jadi disertakan penuh di
+    /owner/grafik-bulanan (total_pendapatan bulan itu) supaya tidak ada
+    angka yang menyesatkan di kedua grafik."""
+    jumlah_hari = calendar.monthrange(tahun, bulan)[1]
+    barbers = _barber_terpilih(barber_id)
+
+    pendapatan_per_hari = {h: 0 for h in range(1, jumlah_hari + 1)}
+    for b in barbers:
+        for t in db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=b["id"]):
+            hari = int(t["tanggal"][8:10])
+            pendapatan_per_hari[hari] = pendapatan_per_hari.get(hari, 0) + t["total_komisi"] + t["tips"]
+        for hari in range(1, jumlah_hari + 1):
+            tanggal_iso = f"{tahun:04d}-{bulan:02d}-{hari:02d}"
+            pendapatan_per_hari[hari] += db.hitung_uang_harian_per_hari(b, tanggal_iso)
+
+    return [{"tanggal": h, "pendapatan": pendapatan_per_hari[h]} for h in range(1, jumlah_hari + 1)]
+
+
+@router.get("/owner/grafik-bulanan")
+def grafik_bulanan(tahun: int, barber_id: int = None, user: dict = Depends(require_admin)):
+    """Diagram batang PENDAPATAN BULANAN (khusus Owner) untuk satu tahun --
+    satu batang per bulan (Januari s.d. Desember), termasuk bulan yang belum
+    ada data (nilainya 0). barber_id kosong = gabungan SEMUA barber.
+    Pendapatan di sini = total_pendapatan PENUH (Komisi + Tips + Uang Harian
+    + Bonus Customer) dari get_ringkasan_barber_bulan yang sudah ada --
+    bonus wajar diikutkan di sini karena memang perhitungan bulanan."""
+    barbers = _barber_terpilih(barber_id)
+
+    hasil = []
+    for bulan in range(1, 13):
+        total = sum(db.get_ringkasan_barber_bulan(b["id"], tahun, bulan)["total_pendapatan"] for b in barbers)
+        hasil.append({"bulan": bulan, "pendapatan": total})
+    return hasil

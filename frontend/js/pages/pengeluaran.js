@@ -120,13 +120,15 @@ const PagePengeluaran = (() => {
 
       btnSubmit.disabled = true;
       try {
-        if (editingId) {
-          await MugenApi.put(`/api/pengeluaran/${editingId}`, body);
-          MugenUI.toast("Pengeluaran diperbarui.", "success");
-        } else {
-          await MugenApi.post("/api/pengeluaran", body);
-          MugenUI.toast("Pengeluaran disimpan.", "success");
-        }
+        await MugenUI.withLoading(async () => {
+          if (editingId) {
+            await MugenApi.put(`/api/pengeluaran/${editingId}`, body);
+            MugenUI.toast("Pengeluaran diperbarui.", "success");
+          } else {
+            await MugenApi.post("/api/pengeluaran", body);
+            MugenUI.toast("Pengeluaran disimpan.", "success");
+          }
+        });
         // Kategori baru yang baru saja diketik langsung ikut jadi saran berikutnya.
         if (!kategoriOptions.includes(body.kategori)) {
           kategoriOptions.push(body.kategori);
@@ -198,7 +200,7 @@ const PagePengeluaran = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
                   try {
-                    await MugenApi.del(`/api/pengeluaran/${r.id}`);
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/pengeluaran/${r.id}`));
                     MugenUI.toast("Pengeluaran dihapus.", "success");
                     loadList();
                   } catch (e) {
@@ -219,9 +221,9 @@ const PagePengeluaran = (() => {
       }
     }
 
-    selBulan.addEventListener("change", loadList);
-    selTahun.addEventListener("change", loadList);
-    selKategori.addEventListener("change", loadList);
+    selBulan.addEventListener("change", () => MugenUI.withLoading(loadList));
+    selTahun.addEventListener("change", () => MugenUI.withLoading(loadList));
+    selKategori.addEventListener("change", () => MugenUI.withLoading(loadList));
     inputCari.addEventListener("input", loadListDebounced);
 
     resetForm();

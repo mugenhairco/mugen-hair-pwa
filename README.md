@@ -976,6 +976,77 @@ password).
 catatan konvensi di atas) karena revisi ini mengubah `dashboard_owner.js`,
 `dashboard_barber.js`, dan `login.js`.
 
+### CHANGELOG — Konfirmasi Keluar, Loading Global, Bugfix Pesan Login, Grafik Pendapatan (Owner)
+
+**1. Konfirmasi sebelum Keluar** — tombol "Keluar" di sidebar sekarang
+menampilkan dialog konfirmasi ("Yakin ingin keluar?") lebih dulu, memakai
+`confirm()` bawaan browser -- pola yang sama seperti seluruh aksi hapus
+lain di aplikasi ini (Hapus Barber, Hapus Layanan, Hapus Transaksi, dst).
+Batal = tetap di halaman, tidak logout. `frontend/js/nav.js`.
+
+**2. Loading spinner global + jeda 1,5 detik di setiap tombol yang
+memanggil server, dan setiap filter Bulan/Tahun/Barber (dropdown).**
+Spinner melingkar modern muncul di tengah aplikasi (overlay), dengan jeda
+MINIMAL 1,5 detik sebelum hasilnya tampil (kalau server-nya lebih cepat
+dari itu, tetap ditahan sampai 1,5 detik; kalau lebih lambat, spinner tetap
+tampil sampai benar-benar selesai -- tidak dipotong paksa). Navigasi menu
+sidebar dan pindah tab (Rekap/Setting) TIDAK memakai jeda ini (tetap
+instan), sesuai konfirmasi: hanya aksi yang benar-benar memanggil server
+(submit/simpan/hapus/tambah/upload, dan ganti filter bulan/tahun/barber)
+yang dapat perlakuan ini.
+- `frontend/js/ui.js` — utilitas baru `MugenUI.showLoading()` /
+  `hideLoading()` / `withLoading(asyncFn)` (dengan hitungan referensi
+  supaya tidak berkedip kalau ada beberapa proses tumpang tindih).
+- `frontend/css/style.css` — style `.loading-overlay` / `.loading-spinner`
+  (animasi CSS murni, tanpa GIF/library eksternal).
+- Dipasang di SEMUA tombol yang memanggil `MugenApi.post/put/del/
+  uploadFile` di seluruh halaman (`login.js`, `input_data.js`,
+  `pengeluaran.js`, `produk.js`, `pengaturan.js`, `sinkronisasi.js`), dan
+  di semua dropdown filter Bulan/Tahun/Barber yang men-trigger `MugenApi.
+  get` ulang (`dashboard_owner.js`, `dashboard_barber.js`, `rekap.js`,
+  `pengeluaran.js`, `produk.js`). Pengecualian yang SENGAJA tidak dipasangi
+  (bukan "tombol"/filter, supaya tidak mengganggu): live-preview saat
+  mengetik jumlah service di Input Data, dan pencarian teks langsung di
+  Pengeluaran (keduanya trigger per keystroke, bukan per klik/pilih).
+
+**3. Bugfix: pesan error login salah kredensial.** Sebelumnya SETIAP
+respons 401 dari server (termasuk dari percobaan login yang salah) selalu
+ditampilkan sebagai "Sesi login berakhir, silakan login lagi." -- padahal
+untuk percobaan login yang gagal, pesan yang seharusnya tampil (dan
+memang sudah dikirim backend) adalah "Username atau password salah."
+Endpoint `/api/auth/login` sekarang dikecualikan dari penanganan 401
+"sesi berakhir" itu, sehingga pesan asli dari backend yang tampil.
+`frontend/js/api.js`.
+
+**4. Grafik Pendapatan (diagram batang) — KHUSUS Dashboard Owner.** Dua
+diagram batang baru di bagian bawah Dashboard Owner, dengan dropdown
+"Semua Barber" (gabungan) / satu barber tertentu (daftar sama seperti
+dropdown "Service Bulan Ini"):
+- **Harian** — satu batang per tanggal pada bulan/tahun yang sedang
+  dipilih (termasuk tanggal tanpa transaksi, nilainya 0, supaya sumbu
+  tanggal tidak "loncat"). Nilainya Komisi + Tips + Uang Harian hari itu
+  -- Bonus Customer SENGAJA tidak diikutkan karena itu perhitungan
+  BULANAN, tidak ada cara membaginya secara berarti per tanggal.
+- **Bulanan** — satu batang per bulan (Jan-Des) pada tahun yang sedang
+  dipilih. Nilainya Total Pendapatan PENUH (Komisi + Tips + Uang Harian +
+  Bonus Customer), sama seperti kartu "Total Pendapatan Barber" di atas.
+- Backend: dua endpoint baru `GET /api/dashboard/owner/grafik-harian` dan
+  `GET /api/dashboard/owner/grafik-bulanan` (khusus admin) di
+  `routers/dashboard.py` -- KEDUANYA murni menyusun ulang data dari
+  fungsi yang SUDAH ADA di `database.py` (`get_transaksi_list`,
+  `hitung_uang_harian_per_hari`, `get_ringkasan_barber_bulan`), tidak ada
+  satu baris pun logika bisnis baru/diubah di `database.py`.
+- Frontend: chart digambar manual pakai SVG (`MugenUI.barChart()` di
+  `ui.js`), SENGAJA tanpa library grafik dari CDN apa pun -- supaya PWA
+  ini tetap bisa dibuka offline (kalau pakai library dari CDN, chart akan
+  gagal dimuat begitu tidak ada koneksi internet).
+- Dashboard Barber TIDAK mendapat grafik ini (sesuai permintaan, khusus
+  Owner).
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v9` → `v10` (lihat
+catatan konvensi di atas) karena revisi ini mengubah `ui.js`, `api.js`,
+`nav.js`, `login.js`, `style.css`, dan hampir semua `pages/*.js`.
+
 
 ## Struktur Project
 

@@ -76,5 +76,103 @@ const MugenUI = (() => {
       `Sedang offline — menampilkan data tersimpan terakhir (${waktu}).`);
   }
 
-  return { formatRupiah, formatTanggal, namaBulan, toast, el, buildTable, offlineBanner };
+  // Diagram batang SVG sederhana, dibuat manual TANPA library eksternal --
+  // sengaja begitu supaya PWA tetap bisa dipakai offline (kalau pakai
+  // library dari CDN, chart akan gagal dimuat begitu tidak ada internet).
+  // data: [{ value: number, ...apapun }]. `xLabel(d, i)` -> teks di bawah
+  // tiap batang, `yFormat(value)` -> teks di tooltip (hover/tap batang).
+  function barChart(data, { xLabel = (d, i) => String(i + 1), yFormat = String } = {}) {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const barW = 26, gap = 6, height = 190;
+    const padding = { top: 10, bottom: 32 };
+    const width = Math.max(1, data.length) * (barW + gap) + gap;
+    const chartH = height - padding.top - padding.bottom;
+    const maxVal = Math.max(1, ...data.map((d) => Number(d.value) || 0));
+
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+    if (!data.length) {
+      const empty = el("div", { style: "color:var(--text-dim);padding:12px 0;" }, "Belum ada data.");
+      return empty;
+    }
+
+    data.forEach((d, i) => {
+      const nilai = Number(d.value) || 0;
+      const barH = Math.max(0, (nilai / maxVal) * chartH);
+      const x = gap + i * (barW + gap);
+      const y = padding.top + (chartH - barH);
+
+      const rect = document.createElementNS(svgNS, "rect");
+      rect.setAttribute("x", String(x));
+      rect.setAttribute("y", String(y));
+      rect.setAttribute("width", String(barW));
+      rect.setAttribute("height", String(barH));
+      rect.setAttribute("rx", "3");
+      rect.setAttribute("fill", "var(--accent)");
+      const title = document.createElementNS(svgNS, "title");
+      title.textContent = `${xLabel(d, i)}: ${yFormat(nilai)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", String(x + barW / 2));
+      label.setAttribute("y", String(height - padding.bottom + 16));
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("font-size", "10");
+      label.setAttribute("fill", "var(--text-dim)");
+      label.textContent = xLabel(d, i);
+      svg.appendChild(label);
+    });
+
+    return el("div", { style: "overflow-x:auto;" }, svg);
+  }
+
+  // Overlay loading global (spinner melingkar di tengah aplikasi). Pakai
+  // hitungan referensi (bukan boolean) supaya kalau beberapa withLoading()
+  // kebetulan tumpang tindih, overlay-nya baru hilang setelah SEMUANYA
+  // selesai -- tidak berkedip hilang di tengah proses yang lain.
+  let _loadingCount = 0;
+  let _loadingEl = null;
+
+  function showLoading() {
+    _loadingCount++;
+    if (_loadingEl) return;
+    _loadingEl = el("div", { class: "loading-overlay" }, el("div", { class: "loading-spinner" }));
+    document.body.appendChild(_loadingEl);
+  }
+
+  function hideLoading() {
+    _loadingCount = Math.max(0, _loadingCount - 1);
+    if (_loadingCount > 0 || !_loadingEl) return;
+    _loadingEl.remove();
+    _loadingEl = null;
+  }
+
+  // Bungkus SATU aksi yang memanggil server (klik tombol submit/simpan/
+  // hapus/tambah, atau ganti filter bulan/tahun) supaya menampilkan
+  // spinner di tengah aplikasi dengan jeda MINIMAL 1,5 detik -- kalau
+  // server-nya kebetulan lebih cepat dari itu, tetap ditahan sampai 1,5
+  // detik supaya transisinya terasa "penuh", bukan cuma kedip sekilas.
+  // Kalau server lebih lambat dari 1,5 detik, spinner tetap tampil sampai
+  // benar-benar selesai (tidak dipotong paksa di 1,5 detik).
+  async function withLoading(asyncFn) {
+    showLoading();
+    try {
+      const [hasil] = await Promise.all([
+        asyncFn(),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+      return hasil;
+    } finally {
+      hideLoading();
+    }
+  }
+
+  return {
+    formatRupiah, formatTanggal, namaBulan, toast, el, buildTable, offlineBanner, barChart,
+    showLoading, hideLoading, withLoading,
+  };
 })();

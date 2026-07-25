@@ -41,10 +41,10 @@ const PageLogin = (() => {
       btnSubmit.disabled = true;
       btnSubmit.textContent = "Memproses...";
       try {
-        const res = await MugenApi.post("/api/auth/login", {
+        const res = await MugenUI.withLoading(() => MugenApi.post("/api/auth/login", {
           username: inputUsername.value.trim(),
           password: inputPassword.value,
-        });
+        }));
         MugenState.setSession(res.token, res.user);
         // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
         // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah

@@ -254,6 +254,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 .toast.success { border-color: var(--success); color: var(--success); }
 
+/* Overlay loading global -- dipakai MugenUI.withLoading() (lihat ui.js)
+   setiap kali tombol yang memanggil server ditekan, atau filter
+   bulan/tahun (dropdown) diganti. Ditaruh di tengah aplikasi, di atas
+   semua elemen lain. */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.loading-spinner {
+  width: 52px;
+  height: 52px;
+  border: 5px solid rgba(234, 234, 234, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mugen-spin 0.7s linear infinite;
+}
+@keyframes mugen-spin {
+  to { transform: rotate(360deg); }
+}
+
 .offline-banner {
   background: var(--danger); color: #fff; text-align: center;
   padding: 6px; font-size: 13px;

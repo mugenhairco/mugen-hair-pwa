@@ -96,7 +96,7 @@ const PageSinkronisasi = (() => {
       btnSyncSekarang.disabled = true;
       btnSyncSekarang.textContent = "Menyinkronkan...";
       try {
-        const hasil = await MugenApi.post("/api/sync/sekarang", {});
+        const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/sync/sekarang", {}));
         if (hasil.last_sync_status === "berhasil") {
           MugenUI.toast("Sinkronisasi berhasil.", "success");
         } else {
@@ -122,20 +122,22 @@ const PageSinkronisasi = (() => {
     btnExport.addEventListener("click", async () => {
       btnExport.disabled = true;
       try {
-        const token = MugenState.getToken();
-        const res = await fetch(MUGEN_API_BASE + "/api/pengaturan/backup/export", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        await MugenUI.withLoading(async () => {
+          const token = MugenState.getToken();
+          const res = await fetch(MUGEN_API_BASE + "/api/pengaturan/backup/export", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) throw new Error("Gagal mengunduh backup.");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `mugen_hair_backup_${new Date().toISOString().slice(0, 10)}.db`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
         });
-        if (!res.ok) throw new Error("Gagal mengunduh backup.");
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `mugen_hair_backup_${new Date().toISOString().slice(0, 10)}.db`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
         MugenUI.toast("Backup berhasil diunduh.", "success");
       } catch (e) {
         MugenUI.toast(e.message, "error");
@@ -160,7 +162,7 @@ const PageSinkronisasi = (() => {
       if (!confirm("Yakin ingin mengganti seluruh database yang sedang berjalan dengan file ini? Tindakan ini tidak mudah dibatalkan.")) return;
       btnRestore.disabled = true;
       try {
-        await MugenApi.uploadFile("/api/pengaturan/backup/import", inputRestore.files[0]);
+        await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/backup/import", inputRestore.files[0]));
         MugenUI.toast("Database berhasil di-restore. Memuat ulang halaman...", "success");
         setTimeout(() => location.reload(), 1500);
       } catch (e) {

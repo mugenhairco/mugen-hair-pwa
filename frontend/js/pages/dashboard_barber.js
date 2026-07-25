@@ -118,8 +118,8 @@ const PageDashboardBarber = (() => {
       }
     }
 
-    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
-    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
+    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); MugenUI.withLoading(load); });
+    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); MugenUI.withLoading(load); });
     load();
   }
 

@@ -62,7 +62,15 @@ const MugenApi = (() => {
       throw new ApiError("Tidak bisa terhubung ke server. Periksa koneksi internet Anda.", 0, null);
     }
 
-    if (response.status === 401) {
+    // BUGFIX: sebelumnya SETIAP 401 (termasuk dari /api/auth/login sendiri
+    // saat username/password salah) dianggap "sesi berakhir" dan pesan
+    // asli dari backend ("Username atau password salah.") tertimpa jadi
+    // "Sesi login berakhir, silakan login lagi." -- padahal saat itu user
+    // memang belum pernah punya sesi sama sekali (baru mencoba login).
+    // Endpoint login sendiri dikecualikan di sini supaya pesan error yang
+    // benar (dari payload.detail, ditangani di blok !response.ok di bawah)
+    // yang sampai ke halaman Login.
+    if (response.status === 401 && path !== "/api/auth/login") {
       MugenState.clearSession();
       location.hash = "#/login";
       throw new ApiError("Sesi login berakhir, silakan login lagi.", 401, null);
