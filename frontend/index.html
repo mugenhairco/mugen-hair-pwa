@@ -7,7 +7,7 @@
   <!-- TAHAP 10: judul di atas hanya fallback awal sebelum JS jalan — brand.js
        akan menimpa document.title dengan nama barbershop dari database begitu
        halaman selesai dimuat, jadi tidak lagi hardcode di alur aplikasi. -->
-  <meta name="theme-color" content="#121212" />
+  <meta name="theme-color" content="#F5F7FA" />
   <meta name="description" content="Aplikasi manajemen komisi, uang harian, bonus barber, produk, dan pengeluaran — MUGEN Hair Co." />
   <link rel="manifest" href="manifest.json" />
 
@@ -24,16 +24,24 @@
        bawah ini ada, tanpa perlu puluhan gambar apple-touch-startup-image
        per resolusi device. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="MUGEN Hair" />
   <meta name="mobile-web-app-capable" content="yes" />
 
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
+       supaya tidak pernah ikut terhapus/tertimpa render ulang SPA (setiap
+       halaman melakukan root.innerHTML = "" pada #app saja) dan tidak ada
+       jalan untuk menonaktifkannya lewat menu Setting mana pun. -->
+  <div class="dev-watermark-bg" aria-hidden="true">Developer</div>
+
   <div id="app">
     <p class="status-placeholder">Memuat aplikasi...</p>
   </div>
+
+  <div class="dev-watermark-footer" aria-hidden="true">Powered by Developer</div>
 
   <!-- Ganti nilai ini ke URL backend Render setelah deploy, contoh:
        <script>window.MUGEN_API_BASE = "https://mugen-hair-api.onrender.com";</script>

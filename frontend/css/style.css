@@ -1,18 +1,30 @@
-/* style.css — palet warna & style dasar diambil 1:1 dari ui_theme.py (Dark Mode,
-   Modern, Minimalis, Industrial) supaya tampilan PWA konsisten dengan app Desktop.
-   Detail komponen per halaman akan ditambahkan bertahap sesuai modulnya. */
+/* style.css — REVISI UI/UX Modern: tema TERANG (netral, profesional, premium)
+   menggantikan tema gelap+emas sebelumnya. Seluruh nilai warna/radius/shadow
+   diambil dari variabel CSS di :root supaya SATU sumber kebenaran dipakai
+   konsisten di seluruh aplikasi TERMASUK Web Booking (frontend/js/pages/
+   book_public.js) -- ganti nilai token di :root otomatis menjalar ke semua
+   komponen tanpa perlu sentuh file JS mana pun (arsitektur var(--...) yang
+   sudah dipakai sejak awal justru mempermudah revisi total ini). */
 :root {
-  --bg: #121212;
-  --bg-card: #1c1c1e;
-  --bg-sidebar: #0a0a0b;
-  --bg-input: #232326;
-  --border: #2e2e32;
-  --text: #eaeaea;
-  --text-dim: #9a9a9e;
-  --accent: #c9a24b;
-  --accent-hover: #dab663;
-  --danger: #e5484d;
-  --success: #4caf6d;
+  --bg: #F5F7FA;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #FFFFFF;
+  --bg-input: #F8FAFC;
+  --border: #E2E8F0;
+  --text: #0F172A;
+  --text-dim: #64748B;
+  --accent: #334155;         /* Primary */
+  --accent-hover: #1E293B;   /* Hover */
+  --accent-pressed: #0F172A; /* Pressed */
+  --danger: #DC2626;
+  --success: #16A34A;
+  --warning: #EA580C;
+  --info: #2563EB;
+  --radius-card: 16px;
+  --radius-btn: 14px;
+  --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
+  --shadow-elevated: 0 8px 24px rgba(15,23,42,0.10);
+  --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -21,10 +33,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, sans-serif;
-  /* TAHAP 13: viewport-fit=cover (index.html) supaya dark background mengisi
-     penuh sampai ke tepi layar iPhone bertakik/Dynamic Island -- konten
-     interaktif tetap dijauhkan dari area itu lewat safe-area-inset di bawah. */
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -35,11 +45,49 @@ body {
 }
 
 /* ---------------------------------------------------------------------
+   Watermark developer -- di luar #app SENGAJA (lihat index.html), supaya
+   tidak pernah ikut terhapus/tertimpa oleh render ulang SPA (setiap
+   halaman melakukan root.innerHTML = "" pada #app, bukan pada <body>) dan
+   tidak ada jalan untuk menonaktifkannya lewat menu Setting mana pun.
+   --------------------------------------------------------------------- */
+.dev-watermark-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+  font-size: 13vw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.03;
+  white-space: nowrap;
+}
+.dev-watermark-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  z-index: 5;
+  text-align: center;
+  font-size: 11px;
+  color: #94A3B8;
+  pointer-events: none;
+  user-select: none;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---------------------------------------------------------------------
    Layout app (sidebar + konten), dipakai setelah login.
    --------------------------------------------------------------------- */
 a { color: var(--accent); }
 
-#app { min-height: 100vh; }
+#app { min-height: 100vh; position: relative; z-index: 1; }
 
 .app-shell {
   display: flex;
@@ -59,7 +107,7 @@ a { color: var(--accent); }
 .sidebar .brand {
   padding: 0 20px 20px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
   margin-bottom: 10px;
@@ -87,7 +135,7 @@ a { color: var(--accent); }
   width: 96px;
   height: 96px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-input);
   display: block;
@@ -101,19 +149,21 @@ a { color: var(--accent); }
 
 .sidebar nav a {
   display: block;
-  padding: 12px 20px;
+  margin: 2px 10px;
+  padding: 11px 14px;
   color: var(--text-dim);
   text-decoration: none;
-  border-left: 3px solid transparent;
+  border-radius: 10px;
   font-size: 14px;
+  font-weight: 500;
+  transition: background-color 150ms var(--ease-press), color 150ms var(--ease-press);
 }
 
-.sidebar nav a:hover { color: var(--text); background: var(--bg-card); }
+.sidebar nav a:hover { color: var(--text); background: var(--bg); }
 
 .sidebar nav a.active {
-  color: var(--text);
-  border-left-color: var(--accent);
-  background: var(--bg-card);
+  color: #fff;
+  background: var(--accent);
 }
 
 .sidebar .user-box {
@@ -131,13 +181,15 @@ a { color: var(--accent); }
 
 .content {
   flex: 1;
-  padding: 24px;
+  padding: 28px;
   overflow-x: auto;
 }
 
 .content h1 {
   margin-top: 0;
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .hamburger {
@@ -151,23 +203,38 @@ a { color: var(--accent); }
 }
 
 /* ---------------------------------------------------------------------
+   Animasi umum: fade + slide ringan (12px, ~220ms), dipakai konsisten di
+   seluruh aplikasi TERMASUK Web Booking lewat SATU aturan pada .card --
+   otomatis menjalar ke hampir semua blok konten tanpa perlu ubah JS.
+   --------------------------------------------------------------------- */
+@keyframes mugen-fade-slide-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .login-card { animation: none !important; }
+}
+
+/* ---------------------------------------------------------------------
    Komponen umum
    --------------------------------------------------------------------- */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 18px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 22px;
   margin-bottom: 18px;
+  animation: mugen-fade-slide-in 220ms ease-out both;
 }
 
-.card h2 { margin-top: 0; font-size: 15px; color: var(--text-dim); font-weight: 600; }
-.card .big-number { font-size: 26px; font-weight: 700; color: var(--accent); }
+.card h2 { margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
+.card .big-number { font-size: 28px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em; }
 
 .grid-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
+  gap: 16px;
   margin-bottom: 18px;
 }
 
@@ -178,7 +245,7 @@ table.data-table {
 }
 
 table.data-table th, table.data-table td {
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   white-space: nowrap;
@@ -187,62 +254,94 @@ table.data-table th, table.data-table td {
 table.data-table th {
   color: var(--text-dim);
   font-weight: 600;
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
   position: sticky;
   top: 0;
   background: var(--bg-card);
 }
 
-table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
+table.data-table tr:hover td { background: var(--bg); }
 
 .table-wrap { overflow-x: auto; }
 
-label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--text-dim); }
+label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
 
 input, select, textarea {
   width: 100%;
-  padding: 9px 10px;
+  padding: 11px 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   color: var(--text);
   font-size: 14px;
+  font-family: inherit;
+  transition: border-color 150ms var(--ease-press), box-shadow 150ms var(--ease-press);
 }
 
-input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(51,65,85,0.12);
+}
 
+/* ---------------------------------------------------------------------
+   Tombol -- radius 14px, tinggi 48-52px (tombol utama), efek tekan
+   (scale 97-98%, shadow mengecil, warna sedikit lebih gelap, 120-180ms).
+   Tombol kecil di dalam tabel (.actions-cell) & tab (.tabs) SENGAJA tetap
+   kompak (override di bawah) supaya tabel/tab tidak jadi terlalu tinggi.
+   --------------------------------------------------------------------- */
 button {
   cursor: pointer;
   font-size: 14px;
-  border-radius: 6px;
-  padding: 9px 16px;
+  font-family: inherit;
+  font-weight: 500;
+  border-radius: var(--radius-btn);
+  min-height: 46px;
+  padding: 10px 18px;
   border: 1px solid var(--border);
-  background: var(--bg-input);
+  background: var(--bg-card);
   color: var(--text);
+  box-shadow: var(--shadow-card);
+  transition: transform 150ms var(--ease-press), box-shadow 150ms var(--ease-press),
+              background-color 150ms var(--ease-press), border-color 150ms var(--ease-press);
 }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:active:not(:disabled) { transform: scale(0.97); box-shadow: none; }
 
-button.btn-primary { background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
-button.btn-primary:hover { background: var(--accent-hover); }
-button.btn-danger { border-color: var(--danger); color: var(--danger); }
-button.btn-danger:hover { background: rgba(229,72,77,0.1); }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.btn-primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 600; min-height: 48px;
+}
+button.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.btn-primary:active:not(:disabled) { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+
+button.btn-danger { border-color: var(--danger); color: var(--danger); background: var(--bg-card); }
+button.btn-danger:hover:not(:disabled) { background: rgba(220,38,38,0.06); }
+button.btn-danger:active:not(:disabled) { background: rgba(220,38,38,0.12); }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 140px; }
 
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .tabs button {
   background: none; border: none; border-bottom: 2px solid transparent;
-  border-radius: 0; padding: 10px 14px; color: var(--text-dim);
+  border-radius: 0; box-shadow: none; min-height: auto;
+  padding: 10px 14px; color: var(--text-dim); white-space: nowrap;
 }
-.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tabs button:active:not(:disabled) { transform: none; }
+.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-.badge-libur { background: rgba(201,162,75,0.15); color: var(--accent); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.badge-libur { background: rgba(51,65,85,0.08); color: var(--accent); }
 /* TAHAP 12: badge status sinkron (Berhasil/Gagal) di halaman Sinkronisasi */
-.badge-success { background: rgba(76,175,109,0.15); color: var(--success); }
-.badge-danger { background: rgba(229,72,77,0.15); color: var(--danger); }
+.badge-success { background: rgba(22,163,74,0.10); color: var(--success); }
+.badge-danger { background: rgba(220,38,38,0.10); color: var(--danger); }
 /* REVISI: badge tipe transaksi Produk "Tester" (beda dari Restock/Jual) */
-.badge-tester { background: rgba(90,140,220,0.15); color: #5a8cdc; }
+.badge-tester { background: rgba(37,99,235,0.10); color: var(--info); }
 
 /* REVISI: checklist service (Setting > Bonus Service / Uang Harian) */
 .checklist-service {
@@ -253,8 +352,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .toast {
   position: fixed; top: 16px; right: 16px; z-index: 999;
   background: var(--bg-card); border: 1px solid var(--border);
-  padding: 12px 16px; border-radius: 8px; color: var(--text);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  padding: 12px 16px; border-radius: 12px; color: var(--text);
+  box-shadow: var(--shadow-elevated);
+  animation: mugen-fade-slide-in 200ms ease-out both;
   /* TAHAP 13: batasi lebar supaya pesan panjang tidak meluber ke luar
      layar sempit (HP kecil, mis. iPhone SE 375px atau lebih kecil). */
   max-width: calc(100vw - 32px);
@@ -265,11 +365,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Overlay loading global -- dipakai MugenUI.withLoading() (lihat ui.js)
    setiap kali tombol yang memanggil server ditekan, atau filter
    bulan/tahun (dropdown) diganti. Ditaruh di tengah aplikasi, di atas
-   semua elemen lain. */
+   semua elemen lain. Scrim gelap dipertahankan meski tema utama terang --
+   overlay butuh kontras tinggi terlepas dari tema, pola umum di banyak
+   aplikasi modern. */
 .loading-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(15, 23, 42, 0.45);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -278,10 +380,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   z-index: 9999;
 }
 .loading-spinner {
-  width: 52px;
-  height: 52px;
-  border: 5px solid rgba(234, 234, 234, 0.2);
-  border-top-color: var(--accent);
+  width: 44px;
+  height: 44px;
+  border: 4px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: mugen-spin 0.7s linear infinite;
 }
@@ -301,7 +403,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .offline-banner {
   background: var(--danger); color: #fff; text-align: center;
-  padding: 6px; font-size: 13px;
+  padding: 8px; font-size: 13px; border-radius: 10px; margin-bottom: 12px;
 }
 
 .login-wrap {
@@ -314,17 +416,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .login-card {
   width: 100%;
-  max-width: 340px;
+  max-width: 360px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 28px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: 32px 28px;
+  animation: mugen-fade-slide-in 220ms ease-out both;
 }
 
 .login-card h1 {
   text-align: center;
   color: var(--accent);
-  font-size: 20px;
+  font-size: 21px;
+  font-weight: 700;
   margin-bottom: 4px;
 }
 
@@ -337,8 +442,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .login-error { color: var(--danger); font-size: 13px; margin-top: 10px; }
 
-.actions-cell { display: flex; gap: 6px; }
-.actions-cell button { padding: 5px 10px; font-size: 12px; }
+.actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+.actions-cell button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; box-shadow: none; border-radius: 10px; }
 
 .sidebar-backdrop { display: none; }
 
@@ -356,22 +461,32 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     transform: translateX(-100%);
     transition: transform 0.2s ease;
     height: 100vh;
+    box-shadow: var(--shadow-elevated);
   }
   .sidebar.open { transform: translateX(0); }
   .content { padding: 16px; padding-top: 64px; }
   .sidebar-backdrop {
     display: block;
     position: fixed; inset: 0; z-index: 40;
-    background: rgba(0,0,0,0.5);
+    background: rgba(15,23,42,0.35);
     opacity: 0; pointer-events: none;
     transition: opacity 0.2s ease;
   }
   .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  .dev-watermark-bg { font-size: 22vw; }
+}
+
+@media (min-width: 821px) and (max-width: 1100px) {
+  .content { padding: 22px; }
+  .grid-cards { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 }
 
 /* ---------------------------------------------------------------------
    Halaman publik Booking (/book, frontend/js/pages/book_public.js) --
    mobile-first, tanpa sidebar (bukan bagian shell aplikasi internal).
+   Memakai variabel CSS yang SAMA dengan aplikasi utama (lihat :root di
+   atas) supaya temanya otomatis konsisten -- REVISI UI/UX ini sengaja
+   tidak menambah palet terpisah untuk Web Booking.
    --------------------------------------------------------------------- */
 .book-public {
   max-width: 480px;
@@ -381,8 +496,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
 .book-header { text-align: center; margin-bottom: 8px; }
-.book-header h1 { margin-bottom: 2px; font-size: 20px; }
-.book-banner-img { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
+.book-header h1 { margin-bottom: 2px; font-size: 21px; font-weight: 700; letter-spacing: -0.01em; }
+.book-banner-img { width: 100%; max-height: 160px; object-fit: cover; border-radius: var(--radius-card); margin-bottom: 10px; }
 .book-pesan-pembuka { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
 .book-footer { text-align: center; color: var(--text-dim); font-size: 12px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--border); }
 .book-progress {
@@ -392,12 +507,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   margin-bottom: 16px;
 }
 .book-nav-row { margin-top: 16px; }
-.book-nav-row button { background: transparent; border: none; color: var(--text-dim); padding: 6px 0; }
+.book-nav-row button { background: transparent; border: none; box-shadow: none; min-height: auto; color: var(--text-dim); padding: 6px 0; }
 .book-nav-row button:hover { color: var(--accent); }
 
 .book-barber-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
 .book-barber-card {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card); min-height: auto;
   padding: 18px 10px; text-align: center; cursor: pointer; color: var(--text);
 }
 .book-barber-card:hover:not(.disabled) { border-color: var(--accent); }
@@ -412,27 +528,29 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .book-barber-nama { font-weight: 700; }
 .book-barber-status { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 
-.book-calendar { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.book-calendar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 16px; }
 .book-calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 700; }
-.book-calendar-nav button { background: transparent; border: none; color: var(--accent); font-size: 20px; padding: 0 10px; }
+.book-calendar-nav button { background: transparent; border: none; box-shadow: none; min-height: auto; color: var(--accent); font-size: 20px; padding: 0 10px; }
 .book-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .book-calendar-dow { text-align: center; font-size: 11px; color: var(--text-dim); padding: 4px 0; }
 .book-calendar-cell {
-  aspect-ratio: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px;
+  aspect-ratio: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+  min-height: auto; box-shadow: none;
   color: var(--text); cursor: pointer; font-size: 13px;
 }
 .book-calendar-cell.empty { background: transparent; border: none; }
 .book-calendar-cell.disabled { opacity: 0.3; cursor: not-allowed; }
-.book-calendar-cell.selected { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 700; }
+.book-calendar-cell.selected { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .book-calendar-cell:hover:not(.disabled):not(.selected) { border-color: var(--accent); }
 
 .book-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
 .book-slot-btn {
-  padding: 10px 4px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+  min-height: auto; box-shadow: none;
+  padding: 10px 4px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; font-weight: 600;
 }
-.book-slot-available { background: rgba(76,175,109,0.15); color: var(--success); border-color: var(--success); cursor: pointer; }
-.book-slot-available.selected { background: var(--success); color: #0a0a0a; }
-.book-slot-booked { background: rgba(229,72,77,0.12); color: var(--danger); border-color: var(--danger); opacity: 0.7; cursor: not-allowed; }
+.book-slot-available { background: rgba(22,163,74,0.10); color: var(--success); border-color: var(--success); cursor: pointer; }
+.book-slot-available.selected { background: var(--success); color: #fff; }
+.book-slot-booked { background: rgba(220,38,38,0.08); color: var(--danger); border-color: var(--danger); opacity: 0.7; cursor: not-allowed; }
 .book-slot-closed { background: var(--bg-input); color: var(--text-dim); opacity: 0.6; cursor: not-allowed; }
 .book-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-dim); }
 .book-legend-item { display: inline-flex; align-items: center; gap: 5px; }
@@ -442,14 +560,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .book-dot.book-slot-closed { background: var(--text-dim); border: none; }
 
 .book-warning {
-  background: rgba(229,72,77,0.1); border: 1px solid var(--danger); color: var(--danger);
-  border-radius: 8px; padding: 12px; margin-bottom: 12px;
+  background: rgba(220,38,38,0.06); border: 1px solid var(--danger); color: var(--danger);
+  border-radius: 10px; padding: 12px; margin-bottom: 12px;
 }
 
 .book-service-list { display: flex; flex-direction: column; gap: 8px; }
 .book-service-row {
   display: flex; align-items: center; gap: 10px; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 12px; cursor: pointer;
+  border-radius: 12px; padding: 12px 14px; cursor: pointer;
 }
 .book-service-row input { width: auto; }
 .book-service-info { flex: 1; }
@@ -457,15 +575,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .book-metode-list { display: flex; flex-direction: column; gap: 8px; }
 .book-metode-btn {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  min-height: auto; box-shadow: none;
   text-align: left; color: var(--text); cursor: pointer;
 }
-.book-metode-btn.selected { border-color: var(--accent); background: rgba(201,162,75,0.12); }
-.book-qris-img { max-width: 220px; display: block; margin: 8px auto; border-radius: 8px; }
+.book-metode-btn.selected { border-color: var(--accent); background: rgba(51,65,85,0.06); }
+.book-qris-img { max-width: 220px; display: block; margin: 8px auto; border-radius: 10px; }
 
 .book-selesai { text-align: center; }
 .book-selesai-icon {
-  width: 56px; height: 56px; border-radius: 50%; background: var(--success); color: #0a0a0a;
+  width: 56px; height: 56px; border-radius: 50%; background: var(--success); color: #fff;
   font-size: 28px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;
 }
 .book-selesai-detail { text-align: left; margin: 18px 0; }
@@ -478,21 +597,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .book-field-row-total .book-field-value { font-weight: 700; font-size: 17px; color: var(--accent); }
 .book-selesai-detail hr { margin: 6px 0 10px; border-color: var(--border); }
 
-/* ---- Animasi perpindahan step: slide + fade (lihat book_public.js) ---- */
+/* ---- Animasi perpindahan step: slide + fade ringan (12px, ~225ms) --
+   disamakan dengan animasi umum aplikasi (lihat mugen-fade-slide-in di
+   atas), lihat book_public.js untuk logika arah maju/mundur. ---- */
 .book-body-viewport { position: relative; }
 .book-body-viewport.book-transitioning { overflow: hidden; }
 .book-step-outgoing { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
 .book-nav-disabled button { pointer-events: none; }
 
-@keyframes book-slide-out-maju { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-36px); opacity: 0; } }
-@keyframes book-slide-out-mundur { from { transform: translateX(0); opacity: 1; } to { transform: translateX(36px); opacity: 0; } }
-@keyframes book-slide-in-maju { from { transform: translateX(36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes book-slide-in-mundur { from { transform: translateX(-36px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes book-slide-out-maju { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-12px); opacity: 0; } }
+@keyframes book-slide-out-mundur { from { transform: translateX(0); opacity: 1; } to { transform: translateX(12px); opacity: 0; } }
+@keyframes book-slide-in-maju { from { transform: translateX(12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes book-slide-in-mundur { from { transform: translateX(-12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-.book-anim-out-maju { animation: book-slide-out-maju 300ms cubic-bezier(0.4, 0, 0.2, 1) both; }
-.book-anim-out-mundur { animation: book-slide-out-mundur 300ms cubic-bezier(0.4, 0, 0.2, 1) both; }
-.book-anim-in-maju { animation: book-slide-in-maju 300ms cubic-bezier(0.4, 0, 0.2, 1) both; }
-.book-anim-in-mundur { animation: book-slide-in-mundur 300ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.book-anim-out-maju { animation: book-slide-out-maju 225ms var(--ease-press) both; }
+.book-anim-out-mundur { animation: book-slide-out-mundur 225ms var(--ease-press) both; }
+.book-anim-in-maju { animation: book-slide-in-maju 225ms var(--ease-press) both; }
+.book-anim-in-mundur { animation: book-slide-in-mundur 225ms var(--ease-press) both; }
 
 @media (prefers-reduced-motion: reduce) {
   .book-anim-out-maju, .book-anim-out-mundur, .book-anim-in-maju, .book-anim-in-mundur {
