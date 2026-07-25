@@ -70,6 +70,7 @@ const PageDashboardOwner = (() => {
           card("Bonus Customer", t.bonus_customer),
           cardJumlahService(data.rincian_service_semua_barber),
           card("Pengeluaran Toko", data.total_pengeluaran),
+          card("Penjualan Produk", data.penjualan_produk),
           card("Laba Kotor Toko", data.laba_kotor),
         ]));
 
@@ -98,13 +99,21 @@ const PageDashboardOwner = (() => {
           progressBox.innerHTML = "";
           serviceTableBox.innerHTML = "";
 
+          // REVISI: acuan service Target Bonus Service sekarang dipilih Owner
+          // sendiri lewat Setting > Bonus Service (bukan hardcode Dry Cut +
+          // Cut & Wash lagi) -- label ini mengikuti pilihan yang SEDANG
+          // aktif (sama untuk semua barber, jadi cukup ambil dari barber
+          // manapun kalau ada).
+          const acuanNama = (data.per_barber[0] && data.per_barber[0].bonus_customer_detail.nama_service_acuan) || [];
+          const labelAcuan = acuanNama.length ? `(${acuanNama.join(" + ")})` : "(belum diatur — lihat Setting > Bonus Service)";
+
           if (!selBarberFilter.value) {
             // ---- Semua Barber: gabungan ----
             const totalServiceUtama = data.per_barber.reduce(
               (acc, r) => acc + r.bonus_customer_detail.jumlah_service, 0,
             );
             progressBox.appendChild(MugenUI.el("div", {},
-              `Total ${totalServiceUtama} service (Dry Cut + Cut & Wash) — gabungan seluruh barber. ` +
+              `Total ${totalServiceUtama} service ${labelAcuan} — gabungan seluruh barber. ` +
               `Target Bonus Service dihitung per barber (lihat tabel "Per Barber" di bawah), pilih satu barber ` +
               `di dropdown untuk melihat progress target barber tersebut.`));
             serviceTableBox.appendChild(MugenUI.buildTable(
@@ -120,7 +129,7 @@ const PageDashboardOwner = (() => {
             const r = data.per_barber.find((x) => String(x.barber.id) === selBarberFilter.value);
             if (!r) return;
             const bd = r.bonus_customer_detail;
-            const lines = [MugenUI.el("div", {}, `${bd.jumlah_service} service (Dry Cut + Cut & Wash) bulan ini.`)];
+            const lines = [MugenUI.el("div", {}, `${bd.jumlah_service} service ${labelAcuan} bulan ini.`)];
             if (bd.tier_tercapai) {
               lines.push(MugenUI.el("div", {},
                 `Tier tercapai: ${bd.tier_tercapai.target} service → Bonus ${MugenUI.formatRupiah(bd.tier_tercapai.bonus)}.`));

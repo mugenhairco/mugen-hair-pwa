@@ -134,13 +134,21 @@ const MugenUI = (() => {
   // hitungan referensi (bukan boolean) supaya kalau beberapa withLoading()
   // kebetulan tumpang tindih, overlay-nya baru hilang setelah SEMUANYA
   // selesai -- tidak berkedip hilang di tengah proses yang lain.
+  // REVISI: showLoading(message) sekarang menerima teks OPSIONAL (mis.
+  // "Sedang keluar dari aplikasi…" untuk Sign Out) -- kalau tidak diisi,
+  // perilaku SAMA PERSIS seperti sebelumnya (spinner polos tanpa teks).
   let _loadingCount = 0;
   let _loadingEl = null;
+  let _loadingMsgEl = null;
 
-  function showLoading() {
+  function showLoading(message) {
     _loadingCount++;
-    if (_loadingEl) return;
-    _loadingEl = el("div", { class: "loading-overlay" }, el("div", { class: "loading-spinner" }));
+    if (_loadingEl) {
+      if (message) _loadingMsgEl.textContent = message;
+      return;
+    }
+    _loadingMsgEl = el("div", { class: "loading-message" }, message || "");
+    _loadingEl = el("div", { class: "loading-overlay" }, [el("div", { class: "loading-spinner" }), _loadingMsgEl]);
     document.body.appendChild(_loadingEl);
   }
 
@@ -149,6 +157,7 @@ const MugenUI = (() => {
     if (_loadingCount > 0 || !_loadingEl) return;
     _loadingEl.remove();
     _loadingEl = null;
+    _loadingMsgEl = null;
   }
 
   // Bungkus SATU aksi yang memanggil server (klik tombol submit/simpan/
@@ -158,12 +167,17 @@ const MugenUI = (() => {
   // detik supaya transisinya terasa "penuh", bukan cuma kedip sekilas.
   // Kalau server lebih lambat dari 1,5 detik, spinner tetap tampil sampai
   // benar-benar selesai (tidak dipotong paksa di 1,5 detik).
-  async function withLoading(asyncFn) {
-    showLoading();
+  // REVISI: opts opsional -- { message, minMs } -- dipakai Sign Out untuk
+  // teks kustom + jeda lebih pendek (800-1200ms, lihat nav.js). Tanpa opts
+  // (semua pemanggilan lama), perilaku SAMA PERSIS seperti sebelumnya
+  // (tanpa teks, jeda minimal 1500ms).
+  async function withLoading(asyncFn, opts) {
+    const { message = null, minMs = 1500 } = opts || {};
+    showLoading(message);
     try {
       const [hasil] = await Promise.all([
         asyncFn(),
-        new Promise((resolve) => setTimeout(resolve, 1500)),
+        new Promise((resolve) => setTimeout(resolve, minMs)),
       ]);
       return hasil;
     } finally {

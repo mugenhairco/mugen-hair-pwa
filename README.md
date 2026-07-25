@@ -1279,6 +1279,81 @@ Setting, Booking internal, CRUD lama) dikonfirmasi ulang tetap lolos.
 `book_public.js`/`style.css` yang berubah.
 
 
+### CHANGELOG — REVISI: Modul Produk (Harga & Tester), Dashboard Penjualan Produk, Setting Bonus Service & Uang Harian, Loading Sign Out
+
+Penambahan murni di atas fitur yang sudah berjalan (extend, bukan rewrite)
+sesuai instruksi eksplisit ("tambahkan hanya fitur yang disebutkan, fitur
+lain tetap seperti saat ini") -- seluruh perubahan database lewat migrasi
+ADDITIVE baru (`produk_migrasi.py`, `bonus_service_migrasi.py`), tidak ada
+kolom/tabel lama yang diubah/dihapus, dan diverifikasi (restart server
+dengan data yang sudah ada) bahwa migrasi idempotent tidak menduplikasi
+atau mereset data apa pun.
+
+**Modul Produk**: kolom baru `produk.harga_modal` / `produk.harga_jual`
+(diedit dari form Tambah/Ubah Produk yang sudah ada, tampil di kolom baru
+pada Daftar Produk). Tipe transaksi baru **Tester** (tombol baru di
+samping Restock/Jual) -- mengurangi stok sama seperti Jual, TIDAK
+menambah nilai penjualan, tetap tercatat penuh di Riwayat Mutasi (badge
+biru "Tester" membedakannya dari Restock/Jual). Harga Modal/Harga Jual
+produk **disnapshot ke baris mutasi** (`harga_modal_saat_itu`/
+`harga_jual_saat_itu`) setiap kali Jual/Tester dicatat -- diverifikasi
+lewat pengujian: mengubah harga produk SEKARANG tidak mengubah angka
+omzet bulan-bulan sebelumnya, transaksi baru otomatis pakai harga baru.
+
+**Dashboard**: kartu baru **Penjualan Produk** (Dashboard Owner, mengikuti
+filter bulan/tahun yang sudah ada) -- total omzet HANYA dari transaksi
+Produk bertipe Jual (Restock bukan penjualan, Tester sengaja tidak
+dihitung). Sengaja TIDAK diikutkan ke rumus Laba Kotor Toko yang sudah
+ada (bukan diminta, rumus lama dipertahankan persis).
+
+**Setting Bonus Service & Setting Uang Harian**: menghilangkan hardcode
+lama (`SERVICE_UANG_HARIAN = {"Dry Cut", "Cut & Wash"}` di database.py,
+dipakai untuk DUA keperluan berbeda sekaligus) -- diganti **DUA
+pengaturan independen**: Setting > Bonus Service (acuan Target Bonus
+Service bulanan) dan Setting > Uang Harian (acuan syarat cair Uang
+Harian, >= 3 service/hari), masing-masing checklist seluruh service yang
+bisa dipilih bebas oleh Owner. Mengubah salah satu TIDAK memengaruhi yang
+lain (diverifikasi lewat pengujian: ubah acuan Uang Harian, konfirmasi
+acuan Bonus Service tetap sama persis setelah reload). Disimpan sebagai
+`service_id` (bukan nama) supaya tidak ikut berubah kalau nama service
+diedit belakangan. Nilai awal KEDUA pengaturan di-seed otomatis dari
+service "Dry Cut" + "Cut & Wash" yang sedang ada (migrasi idempotent) --
+perilaku Uang Harian & Bonus Service yang sedang berjalan TIDAK BERUBAH
+SEDIKIT PUN sampai Owner sengaja mengubahnya. Label di Dashboard Owner
+("Progress Target Service") dan Dashboard Barber yang sebelumnya hardcode
+teks "(Dry Cut + Cut & Wash)" sekarang mengikuti pilihan Owner secara
+dinamis.
+
+**Loading & Animasi**: proses Sign Out sekarang menampilkan loading
+animation + teks "Sedang keluar dari aplikasi…" (jeda ~1 detik, tombol
+Keluar dinonaktifkan selama proses) sebelum diarahkan ke halaman Login --
+sebelumnya langsung pindah halaman tanpa umpan balik apa pun.
+`MugenUI.withLoading()` diperluas menerima opsi `{ message, minMs }`
+opsional (default tetap sama persis seperti sebelumnya -- tanpa teks,
+jeda minimal 1,5 detik -- untuk SEMUA pemanggilan lama yang sudah ada).
+Login, Booking, Simpan Data, Hapus Data, dan Transaksi Produk diaudit
+menyeluruh dan sudah konsisten memakai `withLoading()` sejak PR
+sebelumnya; satu celah ditemukan & diperbaiki (`booking.js`: menyimpan
+Nama Merchant QRIS sebelumnya tidak memakai loading spinner sama sekali).
+
+**Diuji menyeluruh** (16 pemeriksaan Playwright baru + regresi 25
+pemeriksaan dari PR-PR sebelumnya, semua lolos): kartu Penjualan Produk
+menampilkan angka benar, checklist Bonus Service/Uang Harian ter-seed
+dari hardcode lama dan independen satu sama lain, tabel Produk
+menampilkan Harga Modal/Harga Jual, tombol Tester berfungsi & badge-nya
+tampil di Riwayat Mutasi, loading + teks + tombol nonaktif saat Sign Out
+lalu redirect ke Login; migrasi diverifikasi idempotent lewat restart
+server dengan data yang sudah ada (data byte-identik sebelum/sesudah);
+regresi -- login, seluruh fitur Booking (termasuk animasi step & kartu
+Booking Berhasil dari revisi sebelumnya), CRUD Barber, Setting lama, dan
+alur booking publik end-to-end dikonfirmasi tetap berfungsi normal tanpa
+error konsol maupun error backend.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v13` → `v14` untuk
+`produk.js`/`dashboard_owner.js`/`dashboard_barber.js`/`pengaturan.js`/
+`nav.js`/`ui.js`/`booking.js`/`style.css` yang berubah.
+
+
 ## Struktur Project
 
 ```

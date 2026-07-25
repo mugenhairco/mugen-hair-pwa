@@ -51,10 +51,23 @@ const MugenNav = (() => {
       MugenUI.el("div", {}, user.role === "admin" ? "Owner" : "Barber"),
     ]);
     const btnLogout = MugenUI.el("button", { class: "btn-logout" }, "Keluar");
-    btnLogout.addEventListener("click", () => {
+    btnLogout.addEventListener("click", async () => {
       if (!confirm("Yakin ingin keluar?")) return;
-      MugenState.clearSession();
-      location.hash = "#/login";
+      // REVISI: setelah konfirmasi, tampilkan loading animation + teks
+      // "Sedang keluar dari aplikasi…" (jeda ~1 detik, dalam rentang
+      // 800-1200ms yang diminta -- LEBIH PENDEK dari jeda minimal 1,5 detik
+      // default withLoading(), lihat opts.minMs di ui.js) supaya proses
+      // sign out terasa nyata, bukan langsung lompat ke halaman Login.
+      btnLogout.disabled = true;
+      try {
+        await MugenUI.withLoading(() => Promise.resolve(), {
+          message: "Sedang keluar dari aplikasi…",
+          minMs: 1000,
+        });
+      } finally {
+        MugenState.clearSession();
+        location.hash = "#/login";
+      }
     });
     userBox.appendChild(btnLogout);
     sidebar.appendChild(userBox);

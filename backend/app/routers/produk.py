@@ -24,6 +24,14 @@ router = APIRouter(prefix="/api/produk", tags=["produk"])
 
 class ProdukBody(BaseModel):
     nama: str
+    harga_modal: int = 0
+    harga_jual: int = 0
+
+
+class ProdukUpdateBody(BaseModel):
+    nama: str | None = None
+    harga_modal: int | None = None
+    harga_jual: int | None = None
 
 
 class MutasiBody(BaseModel):
@@ -46,18 +54,18 @@ def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_admin)):
 @router.post("")
 def tambah_produk(body: ProdukBody, user: dict = Depends(require_admin)):
     try:
-        produk_id = db.tambah_produk(body.nama)
+        produk_id = db.tambah_produk(body.nama, body.harga_modal, body.harga_jual)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_produk(produk_id)
 
 
 @router.put("/{produk_id}")
-def update_nama_produk(produk_id: int, body: ProdukBody, user: dict = Depends(require_admin)):
+def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_admin)):
     if db.get_produk(produk_id) is None:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     try:
-        db.update_nama_produk(produk_id, body.nama)
+        db.update_produk(produk_id, nama=body.nama, harga_modal=body.harga_modal, harga_jual=body.harga_jual)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_produk(produk_id)
@@ -89,6 +97,21 @@ def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_a
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     try:
         mutasi_id = db.jual_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    sync_async()
+    return db.get_mutasi_produk(mutasi_id)
+
+
+@router.post("/{produk_id}/tester")
+def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_admin)):
+    """REVISI: tipe transaksi baru 'Tester' -- mengurangi stok sama seperti
+    Jual, TAPI TIDAK menambah omzet (lihat db.tester_produk/
+    db.get_omzet_penjualan_produk), tetap tercatat penuh di riwayat mutasi."""
+    if db.get_produk(produk_id) is None:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    try:
+        mutasi_id = db.tester_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     sync_async()

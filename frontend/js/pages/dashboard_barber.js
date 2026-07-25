@@ -70,11 +70,16 @@ const PageDashboardBarber = (() => {
         ]));
 
         // REVISI: Target Bonus Service sekarang bertingkat (banyak tier,
-        // diatur lewat Setting) -- progress ditampilkan menuju tier
-        // berikutnya yang belum tercapai (dari Dry Cut + Cut & Wash saja).
+        // diatur lewat Setting), DAN acuan service-nya sekarang dipilih
+        // Owner sendiri lewat Setting > Bonus Service (bukan hardcode Dry
+        // Cut + Cut & Wash lagi) -- progress ditampilkan menuju tier
+        // berikutnya yang belum tercapai.
         const bd = r.bonus_customer_detail;
+        const labelAcuan = bd.nama_service_acuan.length
+          ? `(${bd.nama_service_acuan.join(" + ")})`
+          : "(belum diatur Owner)";
         const progressLines = [
-          MugenUI.el("div", {}, `${bd.jumlah_service} service (Dry Cut + Cut & Wash) bulan ini.`),
+          MugenUI.el("div", {}, `${bd.jumlah_service} service ${labelAcuan} bulan ini.`),
         ];
         if (bd.tier_tercapai) {
           progressLines.push(MugenUI.el("div", {},

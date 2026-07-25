@@ -676,14 +676,16 @@ const PageBooking = (() => {
     btnUploadQris.addEventListener("click", async () => {
       errorBox3.textContent = "";
       try {
-        if (inMerchant.value !== (s.qris_merchant_nama || "")) {
-          await MugenApi.put("/api/booking/payment-settings", { qris_merchant_nama: inMerchant.value });
-        }
-        if (inQrisFile.files && inQrisFile.files[0]) {
-          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/booking/qris", inQrisFile.files[0]));
-          qrisPreview.src = MUGEN_API_BASE + hasil.qris_url + "&t=" + Date.now();
-          qrisPreview.style.display = "";
-        }
+        await MugenUI.withLoading(async () => {
+          if (inMerchant.value !== (s.qris_merchant_nama || "")) {
+            await MugenApi.put("/api/booking/payment-settings", { qris_merchant_nama: inMerchant.value });
+          }
+          if (inQrisFile.files && inQrisFile.files[0]) {
+            const hasil = await MugenApi.uploadFile("/api/booking/qris", inQrisFile.files[0]);
+            qrisPreview.src = MUGEN_API_BASE + hasil.qris_url + "&t=" + Date.now();
+            qrisPreview.style.display = "";
+          }
+        });
         MugenUI.toast("QRIS disimpan.", "success");
       } catch (e) { errorBox3.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });

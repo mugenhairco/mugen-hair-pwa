@@ -41,6 +41,12 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         "jumlah_customer": sum(r["jumlah_customer"] for r in ringkasan_per_barber),
     }
     total_pengeluaran = db.get_total_pengeluaran(tahun=tahun, bulan=bulan)
+    # REVISI: kartu "Penjualan Produk" -- omzet HANYA dari transaksi produk
+    # bertipe Jual (Restock bukan penjualan, Tester sengaja tidak dihitung,
+    # lihat database.get_omzet_penjualan_produk). SENGAJA TIDAK diikutkan ke
+    # laba_kotor di bawah -- bukan diminta, rumus laba kotor toko lama tetap
+    # sama persis seperti sebelumnya.
+    penjualan_produk = db.get_omzet_penjualan_produk(tahun=tahun, bulan=bulan)
 
     rincian_gabungan = {}
     for r in ringkasan_per_barber:
@@ -57,6 +63,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         "per_barber": ringkasan_per_barber,
         "total_toko": total_toko,
         "total_pengeluaran": total_pengeluaran,
+        "penjualan_produk": penjualan_produk,
         "rincian_service_semua_barber": rincian_service_semua_barber,
         "laba_kotor": total_toko["nilai_service"] - total_toko["komisi"] - total_toko["uang_harian"]
         - total_toko["bonus_customer"] - total_pengeluaran,

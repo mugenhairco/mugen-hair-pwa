@@ -7,7 +7,7 @@ const PagePengaturan = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Setting"));
 
-    const tabs = ["Identitas Barbershop", "Komisi & Bonus", "Barber", "Layanan", "User", "Backup"];
+    const tabs = ["Identitas Barbershop", "Komisi & Bonus", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
     let activeTab = tabs[0];
 
     const tabBar = MugenUI.el("div", { class: "tabs" });
@@ -28,10 +28,65 @@ const PagePengaturan = (() => {
       body.innerHTML = "";
       if (activeTab === "Identitas Barbershop") await renderIdentitas();
       else if (activeTab === "Komisi & Bonus") await renderKomisi();
+      else if (activeTab === "Bonus Service") await renderAcuanService("Bonus Service", "/api/pengaturan/bonus-service-acuan",
+        "Pilih service mana saja yang jadi acuan Target Bonus Service (tier bulanan, diatur di tab Komisi & Bonus). Pengaturan ini TERPISAH dari Uang Harian -- mengubah salah satu tidak memengaruhi yang lain.");
+      else if (activeTab === "Uang Harian") await renderAcuanService("Uang Harian", "/api/pengaturan/uang-harian-acuan",
+        "Pilih service mana saja yang jadi acuan syarat cair Uang Harian (cair kalau total service acuan ini pada satu hari yang sama mencapai minimal 3). Pengaturan ini TERPISAH dari Bonus Service -- mengubah salah satu tidak memengaruhi yang lain.");
       else if (activeTab === "Barber") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
       else if (activeTab === "User") await renderUser();
       else await renderBackup();
+    }
+
+    // ================= TAB: BONUS SERVICE / UANG HARIAN (acuan service) =================
+    // REVISI: dua pengaturan independen menggantikan hardcode lama (Dry Cut +
+    // Cut & Wash) -- SATU fungsi dipakai untuk kedua tab karena bentuknya
+    // identik (checklist seluruh service + tombol Simpan), hanya endpoint &
+    // teks penjelasannya beda.
+    async function renderAcuanService(judul, endpoint, penjelasan) {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, judul));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" }, penjelasan));
+
+      let services, acuan;
+      try {
+        [services, acuan] = await Promise.all([
+          MugenApi.get("/api/pengaturan/service"),
+          MugenApi.get(endpoint),
+        ]);
+      } catch (e) {
+        card.appendChild(MugenUI.el("div", {}, e.message));
+        return;
+      }
+
+      const idAktif = new Set(acuan.service_ids || []);
+      const checkboxes = {};
+      const listBox = MugenUI.el("div", { class: "checklist-service" });
+      for (const s of services) {
+        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        cb.checked = idAktif.has(s.id);
+        checkboxes[s.id] = cb;
+        listBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" },
+          [cb, s.nama + (s.aktif ? "" : " (nonaktif)")]));
+      }
+      card.appendChild(listBox);
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
+      card.appendChild(errorBox);
+      card.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const service_ids = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([id]) => Number(id));
+        try {
+          await MugenUI.withLoading(() => MugenApi.put(endpoint, { service_ids }));
+          MugenUI.toast(`Pengaturan ${judul} disimpan.`, "success");
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
     }
 
     // ================= TAB: IDENTITAS BARBERSHOP =================

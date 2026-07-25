@@ -177,6 +177,39 @@ def hapus_bonus_tier(target: int, user: dict = Depends(require_admin)):
         raise HTTPException(status_code=422, detail=str(e))
 
 
+# ================= REVISI: SETTING BONUS SERVICE & SETTING UANG HARIAN =================
+# Menggantikan hardcode lama (konstanta SERVICE_UANG_HARIAN di database.py,
+# selalu "Dry Cut" + "Cut & Wash") -- Owner sekarang memilih SENDIRI service
+# mana saja yang jadi acuan Target Bonus Service (tier bulanan) dan service
+# mana saja yang jadi acuan syarat cair Uang Harian (>= 3/hari). Keduanya
+# pengaturan INDEPENDEN (lihat database.py bagian "ACUAN SERVICE").
+
+class AcuanServiceBody(BaseModel):
+    service_ids: list[int]
+
+
+@router.get("/bonus-service-acuan")
+def ambil_bonus_service_acuan(user: dict = Depends(require_admin)):
+    return {"service_ids": db.get_bonus_service_acuan_ids()}
+
+
+@router.put("/bonus-service-acuan")
+def simpan_bonus_service_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
+    db.set_bonus_service_acuan_ids(body.service_ids)
+    return {"service_ids": db.get_bonus_service_acuan_ids()}
+
+
+@router.get("/uang-harian-acuan")
+def ambil_uang_harian_acuan(user: dict = Depends(require_admin)):
+    return {"service_ids": db.get_uang_harian_acuan_ids()}
+
+
+@router.put("/uang-harian-acuan")
+def simpan_uang_harian_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
+    db.set_uang_harian_acuan_ids(body.service_ids)
+    return {"service_ids": db.get_uang_harian_acuan_ids()}
+
+
 # ================= MANAJEMEN BARBER =================
 
 class BarberBody(BaseModel):
