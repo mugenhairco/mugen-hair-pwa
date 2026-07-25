@@ -61,6 +61,12 @@ const PageLogin = (() => {
         // handle() langsung supaya kasus ini tetap pindah ke dashboard.
         location.hash = "#/dashboard";
         MugenRouter.handle();
+        // REVISI: badge notifikasi booking langsung terisi begitu login
+        // berhasil (bukan menunggu poll berkala berikutnya yang jaraknya
+        // bisa sampai 15 detik, lihat booking_notif.js) -- dipanggil
+        // SETELAH handle() supaya sidebar (elemen #booking-badge) sudah
+        // pasti ada di DOM saat badge-nya di-update.
+        if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {

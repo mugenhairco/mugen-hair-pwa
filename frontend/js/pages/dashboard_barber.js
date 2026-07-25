@@ -74,12 +74,12 @@ const PageDashboardBarber = (() => {
         // Owner sendiri lewat Setting > Bonus Service (bukan hardcode Dry
         // Cut + Cut & Wash lagi) -- progress ditampilkan menuju tier
         // berikutnya yang belum tercapai.
+        // REVISI Struktur Setting: teks baris pertama TIDAK lagi menyebut
+        // nama service acuan secara eksplisit (aturan sudah sepenuhnya bisa
+        // dikonfigurasi Owner, tidak perlu diulang di sini).
         const bd = r.bonus_customer_detail;
-        const labelAcuan = bd.nama_service_acuan.length
-          ? `(${bd.nama_service_acuan.join(" + ")})`
-          : "(belum diatur Owner)";
         const progressLines = [
-          MugenUI.el("div", {}, `${bd.jumlah_service} service ${labelAcuan} bulan ini.`),
+          MugenUI.el("div", {}, `${bd.jumlah_service} service memenuhi target bonus bulan ini.`),
         ];
         if (bd.tier_tercapai) {
           progressLines.push(MugenUI.el("div", {},

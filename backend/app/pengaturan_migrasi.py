@@ -12,9 +12,11 @@ dan TIDAK PERNAH menghapus data lama:
    default kalau belum ada (INSERT OR IGNORE, tidak pernah menimpa nilai
    yang sudah diubah admin).
 2. Tabel `services` mendapat kolom baru `modal` (dibutuhkan field "Modal"
-   di CRUD Layanan Tahap 10) lewat ALTER TABLE. Kolom ini TIDAK dipakai di
-   `hitung_komisi_service` / logika komisi manapun di database.py — jadi
-   menambahkannya tidak mengubah satu pun hasil perhitungan yang sudah ada.
+   di CRUD Layanan Tahap 10) lewat ALTER TABLE. Saat kolom ini pertama kali
+   dibuat, nilainya 0 untuk semua service (default ALTER TABLE) sehingga
+   tidak mengubah hasil komisi yang berjalan SAAT ITU. Sejak REVISI Struktur
+   Setting (lihat revisi_setting_migrasi.py), kolom ini mulai dipakai oleh
+   `hitung_komisi_service` di database.py sebagai "Harga Modal" per-service.
 """
 
 from database import get_conn

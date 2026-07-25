@@ -35,10 +35,20 @@ const MugenNav = (() => {
     const nav = MugenUI.el("nav");
     for (const item of MENU) {
       if (!item.roles.includes(user.role)) continue;
+      // REVISI: badge jumlah booking belum dikonfirmasi, KHUSUS admin --
+      // hanya Admin yang bisa verifikasi/batalkan booking (lihat
+      // routers/booking.py), Barber tidak punya kegunaan untuk badge ini.
+      // id="booking-badge" dicari & di-update oleh booking_notif.js tiap
+      // polling -- sengaja dibuat ulang di sini (bukan disimpan sekali)
+      // karena seluruh sidebar di-render ulang tiap pindah menu.
+      const linkChildren = [MugenUI.el("span", {}, item.label)];
+      if (item.hash === "#/booking" && user.role === "admin") {
+        linkChildren.push(MugenUI.el("span", { class: "nav-badge", id: "booking-badge", style: "display:none;" }));
+      }
       nav.appendChild(MugenUI.el("a", {
         href: item.hash,
         class: activeHash.startsWith(item.hash) ? "active" : "",
-      }, item.label));
+      }, linkChildren));
     }
     for (const label of MENU_SEGERA) {
       nav.appendChild(MugenUI.el("a", { href: "#", class: "disabled",

@@ -1544,6 +1544,118 @@ Sinkronisasi, Setting) tanpa error konsol/backend.
 seluruh file JS/CSS yang berubah (lihat komentar changelog di file
 tersebut untuk daftar lengkap), termasuk file baru `js/theme.js`.
 
+### CHANGELOG — Revisi Struktur Setting (Final): Komisi/Bonus Service/Layanan/Uang Harian, Notifikasi Booking Baru
+
+Perapihan menu Setting supaya lebih sederhana, konsisten, dan fleksibel
+(TANPA menghapus database/histori/data lama -- migrasi baru bersifat
+aditif, lihat `revisi_setting_migrasi.py`), ditambah fitur baru Notifikasi
+Booking Baru.
+
+**Tab Komisi** (sebelumnya "Komisi & Bonus"): disederhanakan jadi HANYA
+Persentase Komisi, Maksimal Hari Libur (utk Bonus Customer), dan Potongan
+Bonus jika Libur Melebihi Batas. Target Bonus Service (tier bertingkat)
+dipindah seluruhnya ke tab Bonus Service.
+
+**Tab Bonus Service**: sekarang pusat SELURUH pengaturan bonus -- checklist
+service acuan (sudah ada sebelumnya) DIGABUNG dengan Target Bonus Service
+(tier bertingkat, dipindah dari tab Komisi) dalam satu tab. Teks hardcoded
+"Dry Cut + Cut & Wash" pada subtitle dihapus (sudah sepenuhnya bisa
+dikonfigurasi Owner sejak revisi sebelumnya, di sini murni rapikan sisa
+teksnya).
+
+**Tab Layanan & Potongan Modal Chemical**: field "Potongan Modal Chemical"
+(select per-service + setting global `potongan_modal_chemical`) DIHAPUS
+dari form/tabel Layanan dan dari Tab Komisi. Field "Modal" yang sudah ada
+sejak Tahap 10 (sebelumnya murni tampilan, TIDAK memengaruhi komisi sama
+sekali -- lihat komentar lama di `pengaturan_service.py`) sekarang benar-
+benar DIPAKAI sebagai "Harga Modal" di rumus komisi: `hitung_komisi_service`
+di `database.py` diubah dari skema lama (nama service tertentu dikecualikan
+dari potongan chemical global) menjadi `(Harga - Harga Modal) x Persentase
+Komisi`, dengan Harga Modal boleh dikosongkan (dianggap Rp0). Supaya
+NOMINAL KOMISI YANG SEDANG BERJALAN TIDAK BERUBAH SEDIKIT PUN akibat
+pergantian skema ini, `revisi_setting_migrasi.py` melakukan backfill
+SEKALI SAJA (dijaga idempotent lewat setting penanda, bukan re-cek modal
+== 0 -- supaya aman kalau Owner nanti sengaja mengembalikan modal suatu
+layanan ke 0): setiap layanan yang SEBELUM revisi ini memang dikenai
+potongan chemical (menurut aturan lama) DAN modal-nya masih 0 (belum
+pernah diisi Owner untuk keperluan lain) di-set modal-nya sama dengan
+nilai Potongan Modal Chemical lama -- diverifikasi hasil komisinya SAMA
+PERSIS sebelum & sesudah migrasi lewat pengujian langsung. Tabel Layanan
+mendapat kolom baru "Nilai Komisi Barber" (murni tampilan, dihitung
+otomatis dari Harga/Harga Modal/Persentase Komisi saat itu) supaya Owner
+bisa langsung melihat komisi tiap layanan tanpa hitung manual.
+
+**Tab Uang Harian**: target jumlah service/hari supaya Uang Harian cair
+(sebelumnya hardcode 3 di `database.py`) sekarang punya field tersendiri
+("Target Jumlah Service Harian") yang bisa diatur bebas Owner lewat
+endpoint baru `/api/pengaturan/uang-harian-target` -- default tetap 3
+(di-seed lewat migrasi) supaya nominal yang sedang berjalan tidak berubah
+sampai Owner sengaja menggantinya. Teks hardcoded "cair kalau Dry Cut +
+Cut & Wash hari itu >= 3" dihapus dari UI.
+
+**Dashboard Barber**: baris pertama Progress Target Service disederhanakan
+dari `"{n} service (Nama Layanan) bulan ini."` menjadi `"{n} service
+memenuhi target bonus bulan ini."` (tidak lagi menyebut nama service acuan
+secara eksplisit, sejalan dengan seluruh aturan yang sudah bisa
+dikonfigurasi Owner).
+
+**Notifikasi Booking Baru** (fitur baru, khusus Admin/Owner -- hanya Admin
+yang bisa verifikasi/batalkan booking):
+- **Badge menu Booking**: menampilkan jumlah booking yang belum
+  dikonfirmasi (`status_pembayaran='menunggu_verifikasi'` dan
+  `status_booking='aktif'`), bertambah otomatis saat ada booking baru,
+  berkurang setelah dikonfirmasi/dibatalkan, hilang total kalau semua
+  sudah dikonfirmasi. Real-time TANPA reload dicapai lewat POLLING ringan
+  (endpoint baru `GET /api/booking/belum-dikonfirmasi`, satu angka
+  `COUNT(*)`) setiap 15 detik selama aplikasi terbuka (dimulai app-wide
+  dari `app.js`, TIDAK terikat ke halaman Booking manapun), plus refresh
+  seketika setelah Login dan setelah aksi Verifikasi/Batalkan supaya badge
+  tidak perlu menunggu jadwal poll berikutnya.
+- **Notifikasi suara**: diputar SATU KALI saat jumlah booking belum
+  dikonfirmasi bertambah (bukan di poll pertama setelah Login/buka
+  aplikasi -- supaya tunggakan booking lama tidak dikira "baru masuk").
+  Selama masih ada booking belum dikonfirmasi, bunyi pengingat diputar
+  ulang tiap 1 menit dan otomatis berhenti begitu semuanya sudah
+  dikonfirmasi. SATU jenis bunyi dipakai baik untuk satu maupun banyak
+  booking tertunggak sekaligus.
+- **Karakter suara**: TIDAK ADA akses legal untuk menyertakan file suara
+  asli iPhone (aset berhak cipta Apple) di dalam aplikasi ini, jadi suara
+  disintesis LANGSUNG lewat Web Audio API (`js/booking_notif.js`, dua nada
+  lonceng sine wave menaik dengan amplop volume landai) yang meniru
+  KARAKTERNYA (lembut, jernih, elegan, durasi sedikit lebih panjang ~1
+  detik) tanpa menyalin melodi/aset asli apa pun -- konsisten dengan
+  filosofi PWA ini yang lain (grafik SVG, animasi CSS) yang tidak memuat
+  aset eksternal, tetap berfungsi offline.
+
+**Bugfix yang ditemukan & diperbaiki saat pengujian**: `MugenRouter` di
+`router.js` sebelumnya HANYA mengekspos `init` (bukan `handle`), padahal
+`login.js` sudah lama memanggil `MugenRouter.handle()` secara eksplisit
+untuk edge-case saat hash URL sudah persis `#/dashboard` sehingga event
+`hashchange` tidak akan terpicu (lihat komentar di `login.js`). Panggilan
+itu selalu melempar `TypeError` diam-diam (langsung tertangkap try/catch
+`login.js`, tidak pernah terlihat sebagai error nyata di konsol) dan kode
+APA PUN yang diletakkan setelah baris itu di `login.js` tidak pernah
+sempat berjalan -- selama ini "diselamatkan" secara visual oleh fallback
+listener `hashchange` untuk kasus normal (hash yang benar-benar berubah),
+sehingga bug ini tidak pernah terlihat sampai fitur refresh-badge-setelah-
+login di atas butuh baris kode SETELAH `MugenRouter.handle()` benar-benar
+tereksekusi. Diperbaiki dengan mengekspos `handle` di `return` `router.js`.
+
+**Diuji menyeluruh**: kontinuitas komisi diverifikasi backend-level
+(sebelum & sesudah migrasi menghasilkan nominal identik untuk service
+contoh), seluruh tab Setting yang direstrukturisasi diuji lewat Playwright
+(label field, teks hardcoded hilang, nilai tersimpan benar), Layanan diuji
+kolom Nilai Komisi Barber menghitung benar, Uang Harian diuji target bisa
+diubah & tersimpan, badge Booking diuji real-time (booking baru dari
+endpoint publik terdeteksi tanpa reload, badge app-wide tetap tampil di
+halaman lain, hilang setelah dikonfirmasi) DAN notifikasi suara diuji
+terpicu tepat satu kali saat booking baru masuk (diinstrumentasi lewat
+Web Audio API), serta regresi menyeluruh ke seluruh menu tanpa error
+konsol/backend.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v16` → `v17` untuk
+file baru `js/booking_notif.js` dan seluruh file JS/CSS yang berubah.
+
 
 ## Struktur Project
 

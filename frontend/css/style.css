@@ -175,7 +175,10 @@ a { color: var(--accent); }
 }
 
 .sidebar nav a {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin: 2px 10px;
   padding: 11px 14px;
   color: var(--text-dim);
@@ -191,6 +194,24 @@ a { color: var(--accent); }
 .sidebar nav a.active {
   color: #fff;
   background: var(--accent);
+}
+
+/* REVISI: badge jumlah booking belum dikonfirmasi (menu Booking, khusus
+   admin) -- lihat nav.js/booking_notif.js. */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .sidebar .user-box {

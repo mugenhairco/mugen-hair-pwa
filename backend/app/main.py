@@ -48,6 +48,7 @@ from booking_form_migrasi import migrasi_booking_form
 from produk_migrasi import migrasi_produk
 from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
+from revisi_setting_migrasi import migrasi_revisi_setting
 import booking_db
 from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, sync, booking
 
@@ -95,6 +96,7 @@ def on_startup():
     migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
     migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
     migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
+    migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala

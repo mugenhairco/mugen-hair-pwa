@@ -743,6 +743,20 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         return headers
 
 
+def hitung_booking_belum_dikonfirmasi() -> int:
+    """REVISI: Notifikasi Booking Baru -- jumlah booking yang masih
+    'menunggu_verifikasi' DAN belum dibatalkan (status_booking='aktif').
+    Dipakai badge menu Booking + polling notifikasi suara di sisi Admin
+    (Depends(require_admin) di router, HANYA Admin yang bisa
+    verifikasi/batalkan booking -- lihat routers/booking.py)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS jumlah FROM bookings "
+            "WHERE status_pembayaran = 'menunggu_verifikasi' AND status_booking = 'aktif'"
+        ).fetchone()
+        return row["jumlah"]
+
+
 def batalkan_booking(booking_id: int):
     if get_booking(booking_id) is None:
         raise ValueError("Booking tidak ditemukan.")
