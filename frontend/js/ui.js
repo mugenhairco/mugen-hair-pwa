@@ -20,9 +20,19 @@ const MugenUI = (() => {
     return nama[bulan] || bulan;
   }
 
+  // REVISI UI/UX: toast SUKSES/INFO dihilangkan total sesuai instruksi
+  // ("Hilangkan seluruh toast/snackbar sukses. Toast hanya muncul jika
+  // terjadi error") -- diubah SATU tempat ini (bukan menghapus tiap
+  // pemanggilan toast(...,"success") satu-satu di puluhan file) supaya
+  // perilakunya konsisten di mana pun toast() dipanggil, dan pemanggilan
+  // yang sudah ada tidak perlu diubah/dihapus satu per satu (aman kalau
+  // ada yang terlewat). Loading spinner + teks proses (lihat withLoading
+  // di bawah) sudah cukup jadi umpan balik sukses -- perubahan langsung
+  // terlihat di UI (list ter-refresh, dst) tanpa perlu snackbar tambahan.
   function toast(message, type = "info") {
+    if (type !== "error") return;
     const el = document.createElement("div");
-    el.className = "toast" + (type !== "info" ? " " + type : "");
+    el.className = "toast " + type;
     el.textContent = message;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 3500);
@@ -185,8 +195,26 @@ const MugenUI = (() => {
     }
   }
 
+  // REVISI UI/UX: switch Dark Mode dipakai di DUA tempat (Setting >
+  // Tampilan untuk Owner/Admin, dan di atas tombol Keluar untuk user
+  // lain -- lihat nav.js/pengaturan.js), satu builder di sini supaya
+  // markup & perilakunya SAMA PERSIS di kedua tempat.
+  function themeSwitch() {
+    const input = el("input", { type: "checkbox" });
+    input.checked = MugenTheme.current() === "gelap";
+    const label = el("label", { class: "theme-switch" }, [
+      input,
+      el("span", { class: "theme-switch-track" }),
+      el("span", { class: "theme-switch-thumb" }),
+    ]);
+    input.addEventListener("change", () => {
+      MugenTheme.setTema(input.checked ? "gelap" : "terang");
+    });
+    return label;
+  }
+
   return {
     formatRupiah, formatTanggal, namaBulan, toast, el, buildTable, offlineBanner, barChart,
-    showLoading, hideLoading, withLoading,
+    showLoading, hideLoading, withLoading, themeSwitch,
   };
 })();

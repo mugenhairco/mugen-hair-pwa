@@ -50,6 +50,18 @@ const MugenNav = (() => {
       MugenUI.el("div", {}, user.username),
       MugenUI.el("div", {}, user.role === "admin" ? "Owner" : "Barber"),
     ]);
+
+    // REVISI UI/UX: switch Dark Mode di sidebar HANYA untuk user selain
+    // admin (Barber) -- admin mengatur tema lewat Setting > Tampilan
+    // (lihat pengaturan.js), karena Barber tidak punya akses ke menu
+    // Setting sama sekali (lihat MENU di atas, roles: ["admin"]).
+    if (user.role !== "admin") {
+      userBox.appendChild(MugenUI.el("div", { class: "theme-switch-row", style: "margin-top:10px;" }, [
+        MugenUI.el("span", {}, "Dark Mode"),
+        MugenUI.themeSwitch(),
+      ]));
+    }
+
     const btnLogout = MugenUI.el("button", { class: "btn-logout" }, "Keluar");
     btnLogout.addEventListener("click", async () => {
       if (!confirm("Yakin ingin keluar?")) return;
@@ -66,6 +78,10 @@ const MugenNav = (() => {
         });
       } finally {
         MugenState.clearSession();
+        // REVISI UI/UX: tandai supaya halaman Login yang muncul SETELAH
+        // Logout ini memutar animasi Slide+Fade (lihat state.js/login.js) --
+        // trigger yang SAH selain "aplikasi pertama dibuka".
+        MugenState.markLoginEntrance();
         location.hash = "#/login";
       }
     });

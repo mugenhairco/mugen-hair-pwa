@@ -158,7 +158,7 @@ const PageInputData = (() => {
             await MugenApi.post("/api/input-data/transaksi", body);
             MugenUI.toast("Transaksi disimpan.", "success");
           }
-        });
+        }, { message: "Memproses transaksi…" });
         resetForm();
         loadList();
       } catch (e) {
@@ -200,7 +200,7 @@ const PageInputData = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus transaksi #${r.id} tanggal ${r.tanggal}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/input-data/transaksi/${r.id}`));
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/input-data/transaksi/${r.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Transaksi dihapus.", "success");
                     loadList();
                   } catch (e) {
@@ -245,14 +245,14 @@ const PageInputData = (() => {
     btnTandaiLibur.addEventListener("click", async () => {
       if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", liburBody()));
+        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", liburBody()), { message: "Menyimpan…" });
         MugenUI.toast("Ditandai libur.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });
     btnBatalkanLibur.addEventListener("click", async () => {
       if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", liburBody()));
+        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", liburBody()), { message: "Menghapus…" });
         MugenUI.toast("Libur dibatalkan.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });

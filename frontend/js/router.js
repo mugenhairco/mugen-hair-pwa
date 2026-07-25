@@ -10,6 +10,12 @@
 const MugenRouter = (() => {
   const appRoot = document.getElementById("app");
 
+  // REVISI UI/UX: true HANYA untuk panggilan handle() PERTAMA sejak
+  // halaman dimuat -- dipakai untuk membedakan "aplikasi baru dibuka"
+  // dari navigasi/redirect internal berikutnya (termasuk lempar ke Login
+  // gara-gara sesi kedaluwarsa, lihat api.js).
+  let _firstHandle = true;
+
   function shell() {
     appRoot.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "app-shell" });
@@ -49,6 +55,17 @@ const MugenRouter = (() => {
   function handle() {
     const hash = location.hash || "#/dashboard";
 
+    // REVISI UI/UX: dicek SEKALI SAJA (panggilan handle() pertama). Kalau
+    // saat itu belum ada sesi tersimpan sama sekali, ini benar-benar
+    // "aplikasi baru dibuka" -- tandai supaya halaman Login memutar
+    // animasi Slide+Fade. Kalau ADA sesi tersimpan (walau nanti ternyata
+    // kedaluwarsa di server), JANGAN ditandai -- biar kalau ujung-ujungnya
+    // dilempar ke Login karena 401, itu tidak dianggap "pertama dibuka".
+    if (_firstHandle) {
+      _firstHandle = false;
+      if (!MugenState.isLoggedIn()) MugenState.markLoginEntrance();
+    }
+
     // BOOKING: halaman publik /book, TANPA login sama sekali -- dicek PALING
     // AWAL, sebelum pengecekan isLoggedIn() di bawah (yang sebelumnya selalu
     // memaksa ke halaman Login untuk hash APAPUN kalau belum login). Render
@@ -60,10 +77,23 @@ const MugenRouter = (() => {
     // karena "booking" kebetulan diawali huruf "book", sehingga halaman
     // Booking internal itu jadi ikut ditampilkan tanpa login sama sekali.
     if (hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
+      // REVISI UI/UX: Web Booking SENGAJA TIDAK mengikuti Dark Mode akun,
+      // dipaksa di sini (bukan hanya di dalam book_public.js) supaya
+      // benar dari titik NAVIGASI manapun -- termasuk kalau sebelumnya
+      // sempat di halaman internal ber-Dark Mode lalu pindah ke sini
+      // tanpa reload penuh (perilaku SPA biasa).
+      MugenTheme.forceLight();
       appRoot.innerHTML = "";
       PageBookPublic.render(appRoot);
       return;
     }
+
+    // REVISI UI/UX: terapkan ulang tema tersimpan setiap kali masuk ke
+    // halaman INTERNAL (Login maupun setelah login) -- perlu diulang di
+    // sini (bukan cukup sekali di boot lewat theme.js) supaya kalau user
+    // sebelumnya sempat membuka Web Booking (dipaksa terang di atas) lalu
+    // kembali ke aplikasi utama, Dark Mode akunnya aktif lagi dengan benar.
+    MugenTheme.applyStored();
 
     const loggedIn = MugenState.isLoggedIn();
 

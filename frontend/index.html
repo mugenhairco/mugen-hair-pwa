@@ -50,6 +50,12 @@
   <script src="config.js"></script>
 
   <script src="js/state.js"></script>
+  <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
+       state.js) dan langsung menerapkan atribut data-theme begitu file
+       ini selesai dieksekusi (lihat applyStored() di baris terakhir
+       theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
+       #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
+  <script src="js/theme.js"></script>
   <script src="js/api.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/brand.js"></script>
