@@ -35,6 +35,8 @@ const PageProduk = (() => {
     // ---------------------------------------------------------------
     const produkFormTitle = MugenUI.el("h2", {}, "Tambah Produk");
     const inputNamaProduk = MugenUI.el("input", { type: "text", placeholder: "Nama produk" });
+    const inputHargaModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputHargaJual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const btnSimpanProduk = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const btnBatalUbahProduk = MugenUI.el("button", { style: "display:none;" }, "Batal");
     const produkFormError = MugenUI.el("div", { class: "login-error" });
@@ -42,6 +44,10 @@ const PageProduk = (() => {
     produkFormCard.appendChild(produkFormTitle);
     produkFormCard.appendChild(MugenUI.el("label", {}, "Nama Produk"));
     produkFormCard.appendChild(inputNamaProduk);
+    produkFormCard.appendChild(MugenUI.el("label", {}, "Harga Modal (Rp)"));
+    produkFormCard.appendChild(inputHargaModal);
+    produkFormCard.appendChild(MugenUI.el("label", {}, "Harga Jual (Rp)"));
+    produkFormCard.appendChild(inputHargaJual);
     produkFormCard.appendChild(produkFormError);
     produkFormCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" },
       [btnSimpanProduk, btnBatalUbahProduk]));
@@ -52,15 +58,19 @@ const PageProduk = (() => {
       btnSimpanProduk.textContent = "Simpan";
       btnBatalUbahProduk.style.display = "none";
       inputNamaProduk.value = "";
+      inputHargaModal.value = "0";
+      inputHargaJual.value = "0";
       produkFormError.textContent = "";
     }
 
     function isiFormUbahProduk(p) {
       editingProdukId = p.id;
-      produkFormTitle.textContent = `Ubah Nama Produk #${p.id}`;
+      produkFormTitle.textContent = `Ubah Produk #${p.id}`;
       btnSimpanProduk.textContent = "Simpan Perubahan";
       btnBatalUbahProduk.style.display = "";
       inputNamaProduk.value = p.nama;
+      inputHargaModal.value = String(p.harga_modal || 0);
+      inputHargaJual.value = String(p.harga_jual || 0);
       produkFormError.textContent = "";
       produkFormCard.scrollIntoView({ behavior: "smooth" });
     }
@@ -70,18 +80,24 @@ const PageProduk = (() => {
     btnSimpanProduk.addEventListener("click", async () => {
       produkFormError.textContent = "";
       const nama = inputNamaProduk.value.trim();
+      const hargaModal = Number(inputHargaModal.value);
+      const hargaJual = Number(inputHargaJual.value);
       if (!nama) {
         produkFormError.textContent = "Nama produk tidak boleh kosong.";
+        return;
+      }
+      if (Number.isNaN(hargaModal) || hargaModal < 0 || Number.isNaN(hargaJual) || hargaJual < 0) {
+        produkFormError.textContent = "Harga Modal/Harga Jual tidak valid.";
         return;
       }
       btnSimpanProduk.disabled = true;
       try {
         await MugenUI.withLoading(async () => {
           if (editingProdukId) {
-            await MugenApi.put(`/api/produk/${editingProdukId}`, { nama });
-            MugenUI.toast("Nama produk diubah.", "success");
+            await MugenApi.put(`/api/produk/${editingProdukId}`, { nama, harga_modal: hargaModal, harga_jual: hargaJual });
+            MugenUI.toast("Produk diubah.", "success");
           } else {
-            await MugenApi.post("/api/produk", { nama });
+            await MugenApi.post("/api/produk", { nama, harga_modal: hargaModal, harga_jual: hargaJual });
             MugenUI.toast("Produk ditambahkan.", "success");
           }
         });
@@ -111,6 +127,8 @@ const PageProduk = (() => {
         produkListBody.appendChild(MugenUI.buildTable(
           [
             { key: "nama", label: "Nama Produk" },
+            { key: "harga_modal", label: "Harga Modal", format: MugenUI.formatRupiah },
+            { key: "harga_jual", label: "Harga Jual", format: MugenUI.formatRupiah },
             { key: "stok", label: "Sisa Stok" },
             {
               key: "aksi", label: "Aksi", format: (_, p) => {
@@ -119,7 +137,9 @@ const PageProduk = (() => {
                 btnRestock.addEventListener("click", () => bukaFormMutasi(p, "restock"));
                 const btnJual = MugenUI.el("button", {}, "Jual");
                 btnJual.addEventListener("click", () => bukaFormMutasi(p, "jual"));
-                const btnUbah = MugenUI.el("button", {}, "Ubah Nama");
+                const btnTester = MugenUI.el("button", {}, "Tester");
+                btnTester.addEventListener("click", () => bukaFormMutasi(p, "tester"));
+                const btnUbah = MugenUI.el("button", {}, "Ubah");
                 btnUbah.addEventListener("click", () => isiFormUbahProduk(p));
                 const btnNonaktif = MugenUI.el("button", { class: "btn-danger" }, "Nonaktifkan");
                 btnNonaktif.addEventListener("click", async () => {
@@ -134,6 +154,7 @@ const PageProduk = (() => {
                 });
                 wrap.appendChild(btnRestock);
                 wrap.appendChild(btnJual);
+                wrap.appendChild(btnTester);
                 wrap.appendChild(btnUbah);
                 wrap.appendChild(btnNonaktif);
                 return wrap;
@@ -174,12 +195,12 @@ const PageProduk = (() => {
     mutasiFormCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" },
       [btnSimpanMutasi, btnTutupMutasi]));
 
+    const MUTASI_TIPE_LABEL = { restock: "Restock", jual: "Jual", tester: "Tester" };
+
     function bukaFormMutasi(produk, tipe) {
       mutasiProdukAktif = produk;
       mutasiTipeAktif = tipe;
-      mutasiFormTitle.textContent = tipe === "restock"
-        ? `Restock — ${produk.nama} (stok saat ini: ${produk.stok})`
-        : `Jual — ${produk.nama} (stok saat ini: ${produk.stok})`;
+      mutasiFormTitle.textContent = `${MUTASI_TIPE_LABEL[tipe]} — ${produk.nama} (stok saat ini: ${produk.stok})`;
       inputMutasiTanggal.value = todayIso();
       inputMutasiJumlah.value = "1";
       inputMutasiCatatan.value = "";
@@ -209,7 +230,7 @@ const PageProduk = (() => {
       btnSimpanMutasi.disabled = true;
       try {
         await MugenUI.withLoading(() => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body));
-        MugenUI.toast(mutasiTipeAktif === "restock" ? "Restock disimpan." : "Penjualan disimpan.", "success");
+        MugenUI.toast(`${MUTASI_TIPE_LABEL[mutasiTipeAktif]} disimpan.`, "success");
         mutasiFormCard.style.display = "none";
         mutasiProdukAktif = null;
         loadProdukList();
@@ -231,6 +252,7 @@ const PageProduk = (() => {
     selTipeFilter.appendChild(MugenUI.el("option", { value: "" }, "Semua Tipe"));
     selTipeFilter.appendChild(MugenUI.el("option", { value: "restock" }, "Restock"));
     selTipeFilter.appendChild(MugenUI.el("option", { value: "jual" }, "Jual"));
+    selTipeFilter.appendChild(MugenUI.el("option", { value: "tester" }, "Tester"));
     const selBulanFilter = MugenUI.el("select");
     for (let m = 1; m <= 12; m++) selBulanFilter.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
     selBulanFilter.value = String(today.getMonth() + 1);
@@ -291,7 +313,9 @@ const PageProduk = (() => {
             { key: "nama_produk", label: "Produk" },
             {
               key: "tipe", label: "Tipe",
-              format: (v) => MugenUI.el("span", { class: "badge" + (v === "restock" ? "" : " badge-libur") }, v === "restock" ? "Restock" : "Jual"),
+              format: (v) => MugenUI.el("span", {
+                class: "badge" + (v === "restock" ? "" : v === "tester" ? " badge-tester" : " badge-libur"),
+              }, MUTASI_TIPE_LABEL[v] || v),
             },
             { key: "jumlah", label: "Jumlah" },
             { key: "catatan", label: "Catatan" },

@@ -34,7 +34,15 @@
 // v12 -> v13: Perbaikan UI/UX halaman booking -- book_public.js (animasi
 // slide+fade antar step, kartu "Booking Berhasil" dirapikan jadi field
 // berlabel), style.css berubah.
-const CACHE_NAME = "mugen-hair-shell-v13";
+// v13 -> v14: REVISI -- Modul Produk (Harga Modal/Harga Jual, tipe transaksi
+// Tester) di produk.js; kartu "Penjualan Produk" di dashboard_owner.js;
+// label acuan Bonus Service dinamis (bukan hardcode Dry Cut + Cut & Wash
+// lagi) di dashboard_owner.js/dashboard_barber.js; tab Setting > Bonus
+// Service & Setting > Uang Harian baru di pengaturan.js; loading animation
+// + teks kustom saat Sign Out (nav.js) dan withLoading() diperluas
+// (ui.js); bugfix konsistensi loading di booking.js (QRIS merchant);
+// style.css berubah.
+const CACHE_NAME = "mugen-hair-shell-v14";
 const APP_SHELL = [
   "/",
   "/index.html",

@@ -241,6 +241,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* TAHAP 12: badge status sinkron (Berhasil/Gagal) di halaman Sinkronisasi */
 .badge-success { background: rgba(76,175,109,0.15); color: var(--success); }
 .badge-danger { background: rgba(229,72,77,0.15); color: var(--danger); }
+/* REVISI: badge tipe transaksi Produk "Tester" (beda dari Restock/Jual) */
+.badge-tester { background: rgba(90,140,220,0.15); color: #5a8cdc; }
+
+/* REVISI: checklist service (Setting > Bonus Service / Uang Harian) */
+.checklist-service {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 16px; margin: 8px 0 4px;
+}
 
 .toast {
   position: fixed; top: 16px; right: 16px; z-index: 999;
@@ -263,8 +271,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
   z-index: 9999;
 }
 .loading-spinner {
@@ -278,6 +288,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 @keyframes mugen-spin {
   to { transform: rotate(360deg); }
 }
+/* REVISI: teks opsional di bawah spinner (mis. "Sedang keluar dari
+   aplikasi…" saat Sign Out, lihat nav.js) -- kosong & tidak makan
+   ruang kalau withLoading() dipanggil tanpa message (perilaku lama). */
+.loading-message {
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+  max-width: 280px;
+}
+.loading-message:empty { display: none; }
 
 .offline-banner {
   background: var(--danger); color: #fff; text-align: center;

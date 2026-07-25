@@ -21,8 +21,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mugen_hair.d
 # Nama-nama service yang memakai skema komisi "Harga x Persentase" (tanpa potongan chemical)
 SERVICE_TANPA_POTONGAN = {"Dry Cut", "Cut & Wash", "Hair Do", "Beard Trim", "Wet Shave"}
 
-# Service yang dihitung untuk syarat "minimal 3 transaksi/hari" pada Uang Harian
-SERVICE_UANG_HARIAN = {"Dry Cut", "Cut & Wash"}
+# REVISI: konstanta SERVICE_UANG_HARIAN (dulu di sini) DIHAPUS -- acuan
+# service untuk Target Bonus Service dan syarat Uang Harian sekarang
+# masing-masing pengaturan independen milik Owner lewat Setting > Bonus
+# Service / Setting > Uang Harian (lihat get_bonus_service_acuan_ids() /
+# get_uang_harian_acuan_ids() di bagian "ACUAN SERVICE" di bawah).
 
 DEFAULT_SETTINGS = {
     "persentase_komisi": "40",          # dalam persen, misal 40 = 40%
@@ -623,10 +626,65 @@ def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# ACUAN SERVICE: BONUS SERVICE & UANG HARIAN (REVISI)
+# Sebelumnya Target Bonus Service (tier bulanan) DAN syarat cair Uang Harian
+# (>= 3 service/hari) SAMA-SAMA hardcode ke konstanta SERVICE_UANG_HARIAN =
+# {"Dry Cut", "Cut & Wash"}. Revisi ini memisahkan jadi DUA pengaturan
+# INDEPENDEN yang bisa diatur Owner sendiri lewat menu Setting > Bonus
+# Service dan Setting > Uang Harian (masing-masing daftar service_id
+# pilihan sendiri) -- mengubah salah satu TIDAK memengaruhi yang lain.
+# Disimpan di tabel `settings` (JSON list of service id, dipilih lewat id
+# bukan nama supaya tidak ikut berubah kalau nama service diedit
+# belakangan). Nilai awal (di-seed lewat bonus_service_migrasi.py) SAMA
+# PERSIS dengan konstanta lama supaya tidak ada perubahan perilaku sampai
+# Owner sengaja mengubahnya.
+# ---------------------------------------------------------------------------
+
+def get_bonus_service_acuan_ids() -> list:
+    raw = get_setting("bonus_service_acuan_service_ids", "[]")
+    try:
+        return [int(x) for x in json.loads(raw)] if raw else []
+    except (TypeError, ValueError):
+        return []
+
+
+def set_bonus_service_acuan_ids(service_ids: list) -> None:
+    bersih = sorted({int(x) for x in service_ids})
+    set_setting("bonus_service_acuan_service_ids", json.dumps(bersih))
+
+
+def get_bonus_service_acuan_nama() -> list:
+    """Nama service acuan Bonus Service SAAT INI (mengikuti pilihan Owner di
+    Setting > Bonus Service) -- dipakai frontend supaya label di Dashboard
+    ('X service (...) bulan ini') tidak lagi hardcode 'Dry Cut + Cut & Wash'."""
+    ids = get_bonus_service_acuan_ids()
+    if not ids:
+        return []
+    placeholder = ", ".join("?" for _ in ids)
+    with get_conn() as conn:
+        rows = conn.execute(f"SELECT nama FROM services WHERE id IN ({placeholder}) ORDER BY nama", ids).fetchall()
+        return [r["nama"] for r in rows]
+
+
+def get_uang_harian_acuan_ids() -> list:
+    raw = get_setting("uang_harian_acuan_service_ids", "[]")
+    try:
+        return [int(x) for x in json.loads(raw)] if raw else []
+    except (TypeError, ValueError):
+        return []
+
+
+def set_uang_harian_acuan_ids(service_ids: list) -> None:
+    bersih = sorted({int(x) for x in service_ids})
+    set_setting("uang_harian_acuan_service_ids", json.dumps(bersih))
+
+
+# ---------------------------------------------------------------------------
 # UANG HARIAN
-# Dihitung hanya dari Dry Cut / Cut & Wash (gabungan keduanya), dan hanya jika
-# di HARI itu jumlah kedua service tsb minimal 3. Jika kurang dari 3, uang
-# harian hari itu = 0.
+# Dihitung dari service yang dipilih Owner lewat Setting > Uang Harian
+# (get_uang_harian_acuan_ids, lihat komentar "ACUAN SERVICE" di atas), dan
+# hanya jika di HARI itu jumlah service-service tsb (gabungan) minimal 3.
+# Jika kurang dari 3, uang harian hari itu = 0.
 # REVISI: nominal harian sekarang per-barber (kolom barbers.uang_harian,
 # diatur bebas oleh admin lewat menu Setting > Barber), BUKAN lagi dari dua
 # setting global uang_harian_barber/uang_harian_rafiq berdasarkan is_rafiq
@@ -634,14 +692,15 @@ def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
 # ---------------------------------------------------------------------------
 
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
+    acuan_ids = set(get_uang_harian_acuan_ids())
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT td.nama_service, td.jumlah FROM transaksi_detail td
+            """SELECT td.service_id, td.jumlah FROM transaksi_detail td
                JOIN transaksi t ON t.id = td.transaksi_id
                WHERE t.barber_id = ? AND t.tanggal = ?""",
             (barber["id"], tanggal),
         ).fetchall()
-    jumlah_service_utama = sum(r["jumlah"] for r in rows if r["nama_service"] in SERVICE_UANG_HARIAN)
+    jumlah_service_utama = sum(r["jumlah"] for r in rows if r["service_id"] in acuan_ids)
     if jumlah_service_utama < 3:
         return 0
     return int(barber["uang_harian"] or 0)
@@ -650,13 +709,14 @@ def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
 def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     """Dioptimalkan (performa): SATU query untuk ambil seluruh transaksi_detail barber
     ini pada bulan tsb (bukan satu query terpisah PER HARI seperti sebelumnya), lalu
-    dikelompokkan per tanggal di Python. Aturan tetap SAMA PERSIS dengan sebelumnya:
-    Uang Harian hari itu cair hanya jika total Dry Cut + Cut & Wash hari itu >= 3,
-    nominalnya dari kolom uang_harian milik barber itu sendiri (REVISI: per-barber,
-    lihat komentar di atas hitung_uang_harian_per_hari)."""
+    dikelompokkan per tanggal di Python. Aturan tetap SAMA: Uang Harian hari itu cair
+    hanya jika total service acuan (Setting > Uang Harian) hari itu >= 3, nominalnya
+    dari kolom uang_harian milik barber itu sendiri (REVISI: per-barber, lihat
+    komentar di atas hitung_uang_harian_per_hari)."""
+    acuan_ids = set(get_uang_harian_acuan_ids())
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT t.tanggal AS tanggal, td.nama_service AS nama_service, td.jumlah AS jumlah
+            """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
                FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
                WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?""",
             (barber["id"], f"{tahun:04d}", f"{bulan:02d}"),
@@ -664,7 +724,7 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
 
     jumlah_per_hari = {}
     for r in rows:
-        if r["nama_service"] in SERVICE_UANG_HARIAN:
+        if r["service_id"] in acuan_ids:
             jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
 
     nominal = int(barber["uang_harian"] or 0)
@@ -674,13 +734,14 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
 # ---------------------------------------------------------------------------
 # BONUS CUSTOMER / TARGET BONUS SERVICE (bulanan)
 # Syarat dapat Bonus Customer:
-#   1. Jumlah service Dry Cut + Cut & Wash (gabungan keduanya) bulan itu
-#      mencapai SATU ATAU LEBIH tier target dari daftar `bonus_customer_tiers`
-#      (Setting > Komisi & Bonus > Target Bonus Service) -- bonus yang
-#      dipakai adalah dari tier TERTINGGI yang tercapai (bertingkat, mis.
-#      100 service -> Rp100.000, 115 service -> Rp150.000, dst; kalau
-#      tercapai 120 service, dapat bonus tier 115 karena itu tier tertinggi
-#      yang masih terpenuhi).
+#   1. Jumlah service acuan (dipilih Owner lewat Setting > Bonus Service,
+#      lihat get_bonus_service_acuan_ids/komentar "ACUAN SERVICE" di atas)
+#      bulan itu mencapai SATU ATAU LEBIH tier target dari daftar
+#      `bonus_customer_tiers` (Setting > Komisi & Bonus > Target Bonus
+#      Service) -- bonus yang dipakai adalah dari tier TERTINGGI yang
+#      tercapai (bertingkat, mis. 100 service -> Rp100.000, 115 service ->
+#      Rp150.000, dst; kalau tercapai 120 service, dapat bonus tier 115
+#      karena itu tier tertinggi yang masih terpenuhi).
 #   2. Jumlah hari libur barber tsb bulan itu <= maksimal_hari_libur_bonus_customer.
 #      - Jika hari libur melebihi batas ini, bonus TIDAK hangus, tapi dipotong
 #        sebesar potongan_bonus_customer_persen (default 50%).
@@ -693,17 +754,21 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
 # ---------------------------------------------------------------------------
 
 def get_jumlah_service_dry_cut_cut_wash_bulan(barber_id: int, tahun: int, bulan: int) -> int:
-    """Total jumlah service Dry Cut + Cut & Wash (gabungan) seorang barber dalam satu bulan.
-    Dipakai sebagai acuan Target Service pada Bonus Customer."""
-    service_list = tuple(SERVICE_UANG_HARIAN)
-    placeholder = ", ".join("?" for _ in service_list)
+    """Total jumlah service ACUAN (dipilih Owner lewat Setting > Bonus Service,
+    BUKAN lagi hardcode Dry Cut + Cut & Wash -- nama fungsi dipertahankan
+    supaya pemanggil lain tidak perlu diubah) seorang barber dalam satu
+    bulan. Dipakai sebagai acuan Target Service pada Bonus Customer."""
+    acuan_ids = get_bonus_service_acuan_ids()
+    if not acuan_ids:
+        return 0
+    placeholder = ", ".join("?" for _ in acuan_ids)
     with get_conn() as conn:
         row = conn.execute(
             f"""SELECT COALESCE(SUM(td.jumlah), 0) AS jumlah
                 FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
                 WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?
-                AND td.nama_service IN ({placeholder})""",
-            (barber_id, f"{tahun:04d}", f"{bulan:02d}", *service_list),
+                AND td.service_id IN ({placeholder})""",
+            (barber_id, f"{tahun:04d}", f"{bulan:02d}", *acuan_ids),
         ).fetchone()
     return row["jumlah"]
 
@@ -815,6 +880,7 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
 
     return {
         "jumlah_service": jumlah_service,
+        "nama_service_acuan": get_bonus_service_acuan_nama(),
         "tiers": tiers,
         "tier_tercapai": tier_tercapai,
         "tier_berikutnya": tier_berikutnya,
@@ -1133,27 +1199,50 @@ def _saldo_valid(mutasi_list: list) -> bool:
     return True
 
 
-def tambah_produk(nama: str) -> int:
+def tambah_produk(nama: str, harga_modal: int = 0, harga_jual: int = 0) -> int:
     nama = (nama or "").strip()
     if not nama:
         raise ValueError("Nama produk tidak boleh kosong.")
+    if harga_modal < 0 or harga_jual < 0:
+        raise ValueError("Harga tidak boleh negatif.")
     with get_conn() as conn:
         try:
-            cur = conn.execute("INSERT INTO produk (nama) VALUES (?)", (nama,))
+            cur = conn.execute(
+                "INSERT INTO produk (nama, harga_modal, harga_jual) VALUES (?, ?, ?)",
+                (nama, int(harga_modal), int(harga_jual)),
+            )
         except sqlite3.IntegrityError:
             raise ValueError(f"Produk dengan nama '{nama}' sudah ada.")
         return cur.lastrowid
 
 
-def update_nama_produk(produk_id: int, nama_baru: str):
-    nama_baru = (nama_baru or "").strip()
-    if not nama_baru:
-        raise ValueError("Nama produk tidak boleh kosong.")
+def update_produk(produk_id: int, nama: str = None, harga_modal: int = None, harga_jual: int = None):
+    """REVISI: sebelumnya update_nama_produk() (hanya nama) -- diperluas jadi
+    update parsial (nama/harga_modal/harga_jual semuanya opsional) supaya
+    Owner bisa mengubah harga tanpa mengubah nama, atau sebaliknya, lewat
+    SATU form yang sama di menu Produk."""
+    fields, values = [], []
+    if nama is not None:
+        nama = nama.strip()
+        if not nama:
+            raise ValueError("Nama produk tidak boleh kosong.")
+        fields.append("nama = ?"); values.append(nama)
+    if harga_modal is not None:
+        if harga_modal < 0:
+            raise ValueError("Harga Modal tidak boleh negatif.")
+        fields.append("harga_modal = ?"); values.append(int(harga_modal))
+    if harga_jual is not None:
+        if harga_jual < 0:
+            raise ValueError("Harga Jual tidak boleh negatif.")
+        fields.append("harga_jual = ?"); values.append(int(harga_jual))
+    if not fields:
+        return
+    values.append(produk_id)
     with get_conn() as conn:
         try:
-            conn.execute("UPDATE produk SET nama = ? WHERE id = ?", (nama_baru, produk_id))
+            conn.execute(f"UPDATE produk SET {', '.join(fields)} WHERE id = ?", values)
         except sqlite3.IntegrityError:
-            raise ValueError(f"Produk dengan nama '{nama_baru}' sudah ada.")
+            raise ValueError(f"Produk dengan nama '{nama}' sudah ada.")
 
 
 def nonaktifkan_produk(produk_id: int):
@@ -1206,28 +1295,55 @@ def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = Non
         return cur.lastrowid
 
 
-def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
-    """Penjualan = mengurangi stok. DITOLAK kalau membuat saldo stok jadi negatif
-    di titik manapun secara kronologis (bukan cuma dicek di akhir)."""
+def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
+                          catatan: str = None, kata_kerja: str = "dipakai") -> int:
+    """Dipakai bersama oleh jual_produk() dan tester_produk() -- keduanya
+    MENGURANGI stok dan divalidasi kronologis dengan cara SAMA PERSIS (lihat
+    get_stok_produk/_saldo_valid: tipe apa pun SELAIN 'restock' otomatis
+    dihitung mengurangi stok, jadi 'tester' bekerja tanpa perlu ubah logika
+    saldo sama sekali). Harga modal/jual produk SAAT INI ikut disimpan
+    (snapshot) di baris mutasi supaya laporan omzet (get_omzet_penjualan_produk,
+    hanya menjumlahkan tipe='jual') bulan lalu TIDAK berubah kalau harga
+    produk diedit belakangan."""
     _validasi_tanggal(tanggal)
     if jumlah is None or jumlah <= 0:
-        raise ValueError("Jumlah penjualan harus lebih dari 0.")
+        raise ValueError("Jumlah harus lebih dari 0.")
+    produk = get_produk(produk_id)
     with get_conn() as conn:
         mutasi = _ambil_semua_mutasi(conn, produk_id)
-        mutasi.append({"id": None, "tanggal": tanggal, "tipe": "jual", "jumlah": int(jumlah)})
+        mutasi.append({"id": None, "tanggal": tanggal, "tipe": tipe, "jumlah": int(jumlah)})
         if not _saldo_valid(mutasi):
             stok_sekarang = get_stok_produk(produk_id)
             raise ValueError(
                 f"Stok tidak mencukupi. Sisa stok saat ini: {stok_sekarang}, "
-                f"jumlah yang mau dijual: {jumlah}."
+                f"jumlah yang mau {kata_kerja}: {jumlah}."
             )
         now = datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
-            """INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, catatan, created_at)
-               VALUES (?, ?, 'jual', ?, ?, ?)""",
-            (produk_id, tanggal, int(jumlah), catatan, now),
+            """INSERT INTO produk_mutasi
+               (produk_id, tanggal, tipe, jumlah, catatan, created_at,
+                harga_modal_saat_itu, harga_jual_saat_itu)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (produk_id, tanggal, tipe, int(jumlah), catatan, now,
+             produk["harga_modal"], produk["harga_jual"]),
         )
         return cur.lastrowid
+
+
+def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
+    """Penjualan = mengurangi stok DAN menambah omzet (lihat
+    get_omzet_penjualan_produk). DITOLAK kalau membuat saldo stok jadi
+    negatif di titik manapun secara kronologis (bukan cuma dicek di akhir)."""
+    return _catat_keluar_produk(produk_id, tanggal, jumlah, "jual", catatan, kata_kerja="dijual")
+
+
+def tester_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
+    """Tester = mengurangi stok SAMA PERSIS seperti Jual (dipakai untuk
+    dicoba customer, sample, dsb), TAPI TIDAK menambah nilai penjualan --
+    get_omzet_penjualan_produk() hanya menjumlahkan tipe='jual', tipe
+    'tester' sengaja dilewati. Tetap tercatat penuh di riwayat mutasi
+    (GET /api/produk/mutasi) seperti tipe lainnya."""
+    return _catat_keluar_produk(produk_id, tanggal, jumlah, "tester", catatan, kata_kerja="dipakai tester")
 
 
 def koreksi_mutasi_produk(mutasi_id: int, tanggal: str, jumlah: int, catatan: str = None):
@@ -1307,6 +1423,26 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None) -> int:
+    """Total omzet (nilai penjualan) SELURUH produk dari transaksi bertipe
+    'jual' SAJA -- Restock tidak relevan (bukan penjualan), Tester SENGAJA
+    tidak dihitung (tidak menambah nilai penjualan, lihat tester_produk())
+    meski tetap mengurangi stok & tercatat di riwayat. Pakai
+    harga_jual_saat_itu (snapshot per transaksi, lihat _catat_keluar_produk),
+    BUKAN harga_jual produk saat ini, supaya angka bulan lalu tidak berubah
+    kalau harga produk diedit belakangan. Dipakai kartu 'Penjualan Produk'
+    di Dashboard Owner."""
+    q = """SELECT COALESCE(SUM(jumlah * COALESCE(harga_jual_saat_itu, 0)), 0) AS omzet
+           FROM produk_mutasi WHERE tipe = 'jual'"""
+    params = []
+    if tahun is not None:
+        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+    if bulan is not None:
+        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+    with get_conn() as conn:
+        return conn.execute(q, params).fetchone()["omzet"]
 
 
 if __name__ == "__main__":
