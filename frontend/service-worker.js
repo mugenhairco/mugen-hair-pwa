@@ -17,7 +17,11 @@
 // berikutnya yang mengubah file di APP_SHELL WAJIB menaikkan angka ini.
 // v8 -> v9: kartu "Jumlah Service" (dashboard_owner.js, dashboard_barber.js)
 // dan perbaikan login.js (autocapitalize).
-const CACHE_NAME = "mugen-hair-shell-v9";
+// v9 -> v10: konfirmasi Keluar, spinner loading global + delay 1,5 detik di
+// semua tombol yang memanggil server (ui.js, api.js, nav.js, login.js, dan
+// semua pages/*.js), bugfix pesan error login (api.js), grafik pendapatan
+// harian/bulanan khusus Dashboard Owner (dashboard_owner.js, style.css).
+const CACHE_NAME = "mugen-hair-shell-v10";
 const APP_SHELL = [
   "/",
   "/index.html",

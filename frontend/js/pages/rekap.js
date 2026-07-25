@@ -90,9 +90,9 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.el("div", {}, e.message));
         }
       }
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
-      if (selBarber) selBarber.addEventListener("change", load);
+      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
+      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
+      if (selBarber) selBarber.addEventListener("change", () => MugenUI.withLoading(load));
       load();
     }
 
@@ -130,9 +130,9 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.el("div", {}, e.message));
         }
       }
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
-      if (selBarber) selBarber.addEventListener("change", load);
+      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
+      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
+      if (selBarber) selBarber.addEventListener("change", () => MugenUI.withLoading(load));
       load();
     }
 
@@ -169,8 +169,8 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.el("div", {}, e.message));
         }
       }
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
+      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
+      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
       load();
     }
 

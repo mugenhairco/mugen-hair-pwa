@@ -76,13 +76,15 @@ const PageProduk = (() => {
       }
       btnSimpanProduk.disabled = true;
       try {
-        if (editingProdukId) {
-          await MugenApi.put(`/api/produk/${editingProdukId}`, { nama });
-          MugenUI.toast("Nama produk diubah.", "success");
-        } else {
-          await MugenApi.post("/api/produk", { nama });
-          MugenUI.toast("Produk ditambahkan.", "success");
-        }
+        await MugenUI.withLoading(async () => {
+          if (editingProdukId) {
+            await MugenApi.put(`/api/produk/${editingProdukId}`, { nama });
+            MugenUI.toast("Nama produk diubah.", "success");
+          } else {
+            await MugenApi.post("/api/produk", { nama });
+            MugenUI.toast("Produk ditambahkan.", "success");
+          }
+        });
         resetProdukForm();
         loadProdukList();
       } catch (e) {
@@ -123,7 +125,7 @@ const PageProduk = (() => {
                 btnNonaktif.addEventListener("click", async () => {
                   if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
                   try {
-                    await MugenApi.del(`/api/produk/${p.id}`);
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/${p.id}`));
                     MugenUI.toast("Produk dinonaktifkan.", "success");
                     loadProdukList();
                   } catch (e) {
@@ -206,7 +208,7 @@ const PageProduk = (() => {
       };
       btnSimpanMutasi.disabled = true;
       try {
-        await MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body);
+        await MugenUI.withLoading(() => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body));
         MugenUI.toast(mutasiTipeAktif === "restock" ? "Restock disimpan." : "Penjualan disimpan.", "success");
         mutasiFormCard.style.display = "none";
         mutasiProdukAktif = null;
@@ -259,11 +261,11 @@ const PageProduk = (() => {
       if (catatanBaru === null) return;
       (async () => {
         try {
-          await MugenApi.put(`/api/produk/mutasi/${m.id}`, {
+          await MugenUI.withLoading(() => MugenApi.put(`/api/produk/mutasi/${m.id}`, {
             tanggal: tanggalBaru,
             jumlah: Number(jumlahBaru),
             catatan: catatanBaru || null,
-          });
+          }));
           MugenUI.toast("Mutasi dikoreksi.", "success");
           loadProdukList();
           loadRiwayat();
@@ -302,7 +304,7 @@ const PageProduk = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`)) return;
                   try {
-                    await MugenApi.del(`/api/produk/mutasi/${m.id}`);
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/mutasi/${m.id}`));
                     MugenUI.toast("Data mutasi dihapus.", "success");
                     loadProdukList();
                     loadRiwayat();
@@ -325,10 +327,10 @@ const PageProduk = (() => {
       }
     }
 
-    selProdukFilter.addEventListener("change", loadRiwayat);
-    selTipeFilter.addEventListener("change", loadRiwayat);
-    selBulanFilter.addEventListener("change", loadRiwayat);
-    selTahunFilter.addEventListener("change", loadRiwayat);
+    selProdukFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
+    selTipeFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
+    selBulanFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
+    selTahunFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
 
     resetProdukForm();
     await loadProdukList();

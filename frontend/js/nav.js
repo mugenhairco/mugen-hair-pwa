@@ -49,6 +49,7 @@ const MugenNav = (() => {
     ]);
     const btnLogout = MugenUI.el("button", { class: "btn-logout" }, "Keluar");
     btnLogout.addEventListener("click", () => {
+      if (!confirm("Yakin ingin keluar?")) return;
       MugenState.clearSession();
       location.hash = "#/login";
     });
