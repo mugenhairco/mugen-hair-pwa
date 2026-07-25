@@ -32,6 +32,25 @@ const PageDashboardBarber = (() => {
       ]);
     }
 
+    // REVISI: kartu "Jumlah Customer" diganti kartu "Jumlah Service" berisi
+    // rincian per jenis service milik barber ini sendiri (mis. "Dry Cut" = 7,
+    // "Cut & Wash" = 3, dst), service dengan jumlah 0 tidak ditampilkan
+    // (backend sudah memfilternya lewat rincian_service).
+    function cardJumlahService(rincian) {
+      const children = [MugenUI.el("h2", {}, "Jumlah Service")];
+      if (!rincian || rincian.length === 0) {
+        children.push(MugenUI.el("div", { style: "color:var(--text-dim);" }, "Belum ada service bulan ini."));
+      } else {
+        for (const item of rincian) {
+          children.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:2px 0;" }, [
+            MugenUI.el("span", {}, item.nama_service),
+            MugenUI.el("span", { style: "font-weight:600;" }, String(item.jumlah)),
+          ]));
+        }
+      }
+      return MugenUI.el("div", { class: "card" }, children);
+    }
+
     async function load() {
       body.innerHTML = "Memuat...";
       try {
@@ -39,17 +58,15 @@ const PageDashboardBarber = (() => {
         body.innerHTML = "";
         if (r.__offline) body.appendChild(MugenUI.offlineBanner(r.__cachedAt));
 
-        // REVISI: kartu "Bonus Kehadiran" dan "Jumlah Service" dihapus dari
-        // Dashboard Barber (fitur Bonus Kehadiran dihapus total; Jumlah
-        // Service masih ada rinciannya di tabel "Service Bulan Ini" di bawah,
-        // hanya kartu ringkasan totalnya yang dihapus).
+        // REVISI: kartu "Bonus Kehadiran" dihapus total (fitur dihapus);
+        // kartu "Jumlah Customer" diganti kartu rincian "Jumlah Service".
         body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
           card("Total Pendapatan", r.total_pendapatan),
           card("Komisi", r.komisi),
           card("Tips", r.tips),
           card("Uang Harian", r.uang_harian),
           card("Bonus Customer", r.bonus_customer),
-          card("Jumlah Customer", r.jumlah_customer),
+          cardJumlahService(r.rincian_service),
         ]));
 
         // REVISI: Target Bonus Service sekarang bertingkat (banyak tier,

@@ -13,7 +13,18 @@ const PageLogin = (() => {
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Masuk ke akun Anda"));
     MugenBrand.refresh();
 
-    const inputUsername = MugenUI.el("input", { type: "text", placeholder: "Username", autocomplete: "username" });
+    // BUGFIX: tanpa atribut ini, keyboard HP (iOS/Android) otomatis
+    // meng-kapital-kan huruf pertama username yang diketik user (perilaku
+    // bawaan autocapitalize pada <input type="text">). Karena pencocokan
+    // username di backend case-sensitive, ini menyebabkan login GAGAL
+    // dengan pesan "username/password salah" padahal yang diketik user
+    // sudah benar -- gejalanya terlihat "kadang" karena tergantung
+    // keyboard/perangkat yang dipakai. Lihat juga auth_db.py
+    // (get_user_by_username) untuk perbaikan sisi backend-nya.
+    const inputUsername = MugenUI.el("input", {
+      type: "text", placeholder: "Username", autocomplete: "username",
+      autocapitalize: "off", autocorrect: "off", spellcheck: "false",
+    });
     const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password", autocomplete: "current-password" });
     const errorBox = MugenUI.el("div", { class: "login-error" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Masuk");

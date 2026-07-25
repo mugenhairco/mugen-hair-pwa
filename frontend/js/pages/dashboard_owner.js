@@ -33,11 +33,24 @@ const PageDashboardOwner = (() => {
       ]);
     }
 
-    function cardNumber(label, value) {
-      return MugenUI.el("div", { class: "card" }, [
-        MugenUI.el("h2", {}, label),
-        MugenUI.el("div", { class: "big-number" }, String(value)),
-      ]);
+    // REVISI: kartu "Total Customer" diganti kartu "Jumlah Service" berisi
+    // rincian per jenis service (mis. "Dry Cut" = 7, "Cut & Wash" = 3, dst),
+    // service dengan jumlah 0 tidak ditampilkan (backend sudah memfilternya
+    // lewat rincian_service_semua_barber). Gabungan seluruh barber, sama
+    // seperti kartu lain di baris ini yang semuanya total toko.
+    function cardJumlahService(rincian) {
+      const children = [MugenUI.el("h2", {}, "Jumlah Service")];
+      if (!rincian || rincian.length === 0) {
+        children.push(MugenUI.el("div", { style: "color:var(--text-dim);" }, "Belum ada service bulan ini."));
+      } else {
+        for (const item of rincian) {
+          children.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:2px 0;" }, [
+            MugenUI.el("span", {}, item.nama_service),
+            MugenUI.el("span", { style: "font-weight:600;" }, String(item.jumlah)),
+          ]));
+        }
+      }
+      return MugenUI.el("div", { class: "card" }, children);
     }
 
     async function load() {
@@ -55,7 +68,7 @@ const PageDashboardOwner = (() => {
           card("Total Tips", t.tips),
           card("Uang Harian", t.uang_harian),
           card("Bonus Customer", t.bonus_customer),
-          cardNumber("Total Customer", t.jumlah_customer),
+          cardJumlahService(data.rincian_service_semua_barber),
           card("Pengeluaran Toko", data.total_pengeluaran),
           card("Laba Kotor Toko", data.laba_kotor),
         ]));
