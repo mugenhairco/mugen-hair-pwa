@@ -21,7 +21,10 @@
 // semua tombol yang memanggil server (ui.js, api.js, nav.js, login.js, dan
 // semua pages/*.js), bugfix pesan error login (api.js), grafik pendapatan
 // harian/bulanan khusus Dashboard Owner (dashboard_owner.js, style.css).
-const CACHE_NAME = "mugen-hair-shell-v10";
+// v10 -> v11: Modul BOOKING baru -- halaman publik /book (book_public.js)
+// dan halaman internal Booking (booking.js) ditambahkan ke APP_SHELL,
+// nav.js/router.js/style.css berubah untuk mendukungnya.
+const CACHE_NAME = "mugen-hair-shell-v11";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -44,6 +47,8 @@ const APP_SHELL = [
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/sinkronisasi.js",
+  "/js/pages/booking.js",
+  "/js/pages/book_public.js",
   // TAHAP 13: ikon PWA (sebelumnya file-file ini belum ada sama sekali)
   "/icons/favicon.ico",
   "/icons/icon-72.png",

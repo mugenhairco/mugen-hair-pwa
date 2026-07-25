@@ -11,6 +11,9 @@ backend/app/mugen_hair.db
 # jangan ikut ke git (folder tetap dipertahankan lewat .gitkeep)
 backend/app/static/logo/*
 !backend/app/static/logo/.gitkeep
+# BOOKING: file QRIS yang diupload — sama seperti logo di atas
+backend/app/static/qris/*
+!backend/app/static/qris/.gitkeep
 backend/app/backups/
 
 # Python
