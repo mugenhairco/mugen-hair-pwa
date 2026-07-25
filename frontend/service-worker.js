@@ -31,7 +31,10 @@
 // Pembayaran, Link Booking, kontrol status/foto/urutan barber & urutan
 // service), pengaturan.js (Tagline/Deskripsi/Website/Banner di Identitas,
 // kontrol status/foto/urutan barber, urutan layanan), style.css berubah.
-const CACHE_NAME = "mugen-hair-shell-v12";
+// v12 -> v13: Perbaikan UI/UX halaman booking -- book_public.js (animasi
+// slide+fade antar step, kartu "Booking Berhasil" dirapikan jadi field
+// berlabel), style.css berubah.
+const CACHE_NAME = "mugen-hair-shell-v13";
 const APP_SHELL = [
   "/",
   "/index.html",

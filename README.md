@@ -1227,6 +1227,58 @@ dikonfirmasi tetap berfungsi normal tanpa error konsol.
 `book_public.js`/`booking.js`/`pengaturan.js`/`style.css` yang berubah.
 
 
+### CHANGELOG — Perbaikan UI/UX Halaman Booking (animasi step + kartu Booking Berhasil)
+
+Dua perbaikan tampilan murni di atas halaman publik `/book`, TIDAK
+mengubah logika booking, struktur database, maupun alur booking sama
+sekali -- hanya `book_public.js` dan `style.css` yang berubah.
+
+**Animasi perpindahan antar step**: setiap pindah step (baik lewat
+tombol "Lanjut"/klik kartu-tanggal-jam-service, maupun tombol
+"‹ Ganti .../Kembali") sekarang memakai animasi slide + fade ~300ms
+(rentang 250-350ms sesuai permintaan) -- maju (step naik) slide dari
+kanan, mundur (step turun) slide dari kiri. Cara kerja: `goto(n)`
+membandingkan `n` dengan step saat ini untuk menentukan arah, lalu
+`animasiTransisi()` men-clone konten step LAMA (`body.cloneNode`),
+menaruhnya absolute di atas konten BARU yang langsung dirender ke
+`body`, dan keduanya dianimasikan berlawanan arah lewat CSS
+`@keyframes` (`transform: translateX` + `opacity`, GPU-accelerated,
+tidak menyentuh `layout`/reflow berat) -- klon lama dibuang otomatis
+saat `animationend` (dengan `setTimeout` jaga-jaga kalau event itu
+tidak terpicu, mis. tab di background).
+
+Selama animasi berlangsung: `transitioning=true` membuat `goto()`
+mengabaikan panggilan lain (SATU-SATUNYA tempat penjagaan double-klik
+perlu ditambahkan, karena semua navigasi step -- 7 step: Pilih Barber,
+Pilih Tanggal, Pilih Jam, Pilih Service, Data Diri, Ringkasan+Pembayaran,
+Booking Berhasil -- memanggil `goto()`), DAN class `book-nav-disabled`
+menonaktifkan `pointer-events` semua tombol di halaman lewat CSS,
+mencegah double-klik/perpindahan ganda dari dua sisi sekaligus (logika
++ CSS). `prefers-reduced-motion: reduce` dihormati (animasi otomatis
+dimatikan, step tetap berpindah normal tanpa delay).
+
+**Kartu "Booking Berhasil" dirapikan**: sebelumnya barber/tanggal/jam
+ditampilkan digabung satu baris dengan rentang jam (`11:00-12:00`),
+sekarang dipecah jadi field berlabel terpisah (Barber, Tanggal, Jam,
+Service, Total) dengan alignment kolom yang konsisten (grid 3 kolom:
+label — titik dua — nilai), DAN jam HANYA menampilkan jam mulai yang
+dipilih customer (`jam_mulai`, bukan rentang `jam_mulai-jam_selesai`)
+sesuai permintaan. Baris Total ditebalkan + warna aksen supaya menonjol.
+Tema warna & komponen (`card`, `--text-dim`, `--accent`, dst) memakai
+variabel CSS yang sudah ada, tidak ada palet baru.
+
+**Diuji lewat Playwright** (18 pemeriksaan baru): animasi maju/mundur
+menghasilkan class & arah yang benar lalu dibersihkan otomatis setelah
+selesai, double-klik saat transisi tidak menyebabkan lompat step ganda,
+`prefers-reduced-motion` dihormati, kartu Booking Berhasil menampilkan
+5 field berlabel dengan urutan benar dan jam tanpa rentang waktu.
+Regresi 52 pemeriksaan dari PR sebelumnya (alur booking publik penuh,
+Setting, Booking internal, CRUD lama) dikonfirmasi ulang tetap lolos.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v12` → `v13` untuk
+`book_public.js`/`style.css` yang berubah.
+
+
 ## Struktur Project
 
 ```
