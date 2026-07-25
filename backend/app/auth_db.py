@@ -144,8 +144,24 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None) 
 
 
 def get_user_by_username(username: str):
+    """BUGFIX (login 'kadang' gagal dengan kredensial benar): pencocokan
+    username sekarang case-INSENSITIVE (COLLATE NOCASE). Sebelumnya exact
+    match case-sensitive -- kalau keyboard HP user kebetulan meng-kapital-
+    kan huruf pertama (perilaku default autocapitalize banyak browser
+    mobile, lihat juga perbaikan di frontend/js/pages/login.js), lookup ini
+    tidak menemukan usernya sama sekali dan login ditolak walau password
+    benar. `ORDER BY (username = ?) DESC` memprioritaskan exact match kalau
+    kebetulan ada dua username yang hanya beda huruf besar/kecil (username
+    tetap disimpan case-sensitive & unique persis seperti diketik saat
+    dibuat -- ini HANYA mengubah cara mencari/mencocokkan saat login)."""
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username = ? AND aktif = 1", (username,)).fetchone()
+        row = conn.execute(
+            """SELECT * FROM users
+               WHERE username = ? COLLATE NOCASE AND aktif = 1
+               ORDER BY (username = ?) DESC
+               LIMIT 1""",
+            (username, username),
+        ).fetchone()
         return dict(row) if row else None
 
 

@@ -929,6 +929,53 @@ file yang terdaftar di `APP_SHELL` (`frontend/service-worker.js`), WAJIB
 menaikkan `CACHE_NAME` di commit yang sama -- kalau tidak, deploy tidak
 akan terlihat oleh user yang sudah pernah membuka PWA sebelumnya.
 
+### CHANGELOG — Kartu "Jumlah Service" + Bugfix Login "Kadang Gagal"
+
+**1. Dashboard (Owner & Barber): kartu "Total Customer"/"Jumlah Customer"
+diganti kartu "Jumlah Service".** Sebelumnya kartu ringkasan itu hanya
+angka tunggal jumlah customer; sekarang berisi rincian per jenis service
+bulan berjalan (mis. "Dry Cut = 7", "Cut & Wash = 3", dst), memakai data
+`rincian_service`/`rincian_service_semua_barber` yang backend memang sudah
+menghitung (jumlah 0 otomatis tidak ikut, tanpa perlu perubahan backend).
+Dashboard Owner: gabungan seluruh barber (konsisten dengan kartu lain di
+baris yang sama, semuanya total toko). Dashboard Barber: rincian milik
+barber yang login saja. `frontend/js/pages/dashboard_owner.js`,
+`frontend/js/pages/dashboard_barber.js`.
+
+**2. Bugfix: login kadang gagal ("username/password salah") padahal
+kredensial benar.** Akar masalah: pencocokan username di backend
+case-SENSITIVE (`WHERE username = ?` tanpa `COLLATE NOCASE`), sementara
+banyak keyboard HP (iOS/Android) secara default meng-kapital-kan huruf
+pertama input teks (autocapitalize) -- kalau user mengetik "budi" tapi
+keyboard mengirim "Budi", lookup user gagal total dan login ditolak walau
+password benar. Gejalanya terlihat "kadang" karena tergantung
+keyboard/perangkat yang dipakai saat itu, bukan konsisten di semua
+percobaan. Dikonfirmasi lewat pengujian: login dengan variasi huruf besar/
+kecil pada username yang sama ("owner", "Owner", "OWNER") sebelumnya hanya
+salah satu yang berhasil.
+
+Perbaikan (dua lapis, saling melengkapi):
+- `backend/app/auth_db.py` (`get_user_by_username`) — pencocokan username
+  sekarang case-insensitive (`COLLATE NOCASE`), dengan exact match tetap
+  diprioritaskan lewat `ORDER BY (username = ?) DESC` untuk kasus langka
+  ada dua username yang hanya beda huruf besar/kecil. Username tetap
+  disimpan case-sensitive persis seperti diketik saat akun dibuat -- ini
+  HANYA mengubah cara mencari/mencocokkan saat login, bukan penyimpanan.
+- `frontend/js/pages/login.js` — input username diberi
+  `autocapitalize="off"` (+ `autocorrect="off"`, `spellcheck="false"`)
+  supaya keyboard HP tidak lagi mengubah huruf yang diketik user sejak
+  awal.
+
+Diuji: login dengan kombinasi huruf besar/kecil berbeda pada username yang
+sama (`owner`/`Owner`/`OWNER`, `budi`/`BUDI`) berhasil semua dan
+menghasilkan sesi yang sama; password salah & username tidak ada tetap
+ditolak seperti sebelumnya (tidak ada pelonggaran pada pengecekan
+password).
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v8` → `v9` (lihat
+catatan konvensi di atas) karena revisi ini mengubah `dashboard_owner.js`,
+`dashboard_barber.js`, dan `login.js`.
+
 
 ## Struktur Project
 

@@ -15,7 +15,9 @@
 // selamanya walau server sudah di-deploy ulang dengan kode baru -- persis
 // gejala "deploy sukses tapi tampilan masih perilaku lama". Setiap revisi
 // berikutnya yang mengubah file di APP_SHELL WAJIB menaikkan angka ini.
-const CACHE_NAME = "mugen-hair-shell-v8";
+// v8 -> v9: kartu "Jumlah Service" (dashboard_owner.js, dashboard_barber.js)
+// dan perbaikan login.js (autocapitalize).
+const CACHE_NAME = "mugen-hair-shell-v9";
 const APP_SHELL = [
   "/",
   "/index.html",
