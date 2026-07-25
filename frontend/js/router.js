@@ -48,6 +48,23 @@ const MugenRouter = (() => {
 
   function handle() {
     const hash = location.hash || "#/dashboard";
+
+    // BOOKING: halaman publik /book, TANPA login sama sekali -- dicek PALING
+    // AWAL, sebelum pengecekan isLoggedIn() di bawah (yang sebelumnya selalu
+    // memaksa ke halaman Login untuk hash APAPUN kalau belum login). Render
+    // langsung ke appRoot (bukan lewat shell()/sidebar), sama seperti
+    // PageLogin -- customer yang booking bukan bagian dari aplikasi internal.
+    // BUGFIX: match harus PRESIS "#/book" (atau "#/book/..."), BUKAN
+    // startsWith("#/book") saja -- kalau tidak, "#/booking" (menu internal
+    // admin+barber, lihat bagian bawah handle()) ikut ketangkap di sini juga
+    // karena "booking" kebetulan diawali huruf "book", sehingga halaman
+    // Booking internal itu jadi ikut ditampilkan tanpa login sama sekali.
+    if (hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
+      appRoot.innerHTML = "";
+      PageBookPublic.render(appRoot);
+      return;
+    }
+
     const loggedIn = MugenState.isLoggedIn();
 
     if (!loggedIn) {
@@ -112,6 +129,15 @@ const MugenRouter = (() => {
         return;
       }
       PageSinkronisasi.render(content);
+    } else if (hash.startsWith("#/booking")) {
+      // BOOKING: halaman internal (admin+barber). Admin/Owner full access
+      // (Booking List, Calendar, Operating Hours, Barber Holiday, Closed
+      // Slot, Payment Settings, Booking Settings); Barber hanya lihat
+      // booking miliknya sendiri -- pembagian tab persis dilakukan DI
+      // DALAM booking.js sendiri (mengikuti user.role), bukan di sini.
+      // Perlindungan sebenarnya tetap di backend (require_admin/
+      // require_barber di setiap endpoint /api/booking/*).
+      PageBooking.render(content);
     } else {
       location.hash = "#/dashboard";
     }

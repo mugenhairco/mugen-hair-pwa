@@ -1047,6 +1047,94 @@ dropdown "Service Bulan Ini"):
 catatan konvensi di atas) karena revisi ini mengubah `ui.js`, `api.js`,
 `nav.js`, `login.js`, `style.css`, dan hampir semua `pages/*.js`.
 
+### CHANGELOG — Modul BOOKING (Booking Online)
+
+Modul baru, terpisah total dari `database.py` (yang tetap salinan verbatim
+logika bisnis aplikasi Desktop) -- pola yang sama seperti `auth_db.py`:
+tabel & logika sendiri di `backend/app/booking_db.py`, migrasi sendiri di
+`backend/app/booking_migrasi.py`, router sendiri di
+`backend/app/routers/booking.py`.
+
+**Halaman publik `#/book`** (frontend/js/pages/book_public.js) — TANPA
+LOGIN sama sekali, wizard 7 langkah sesuai spek: Pilih Barber (barber yang
+sedang libur tetap tampil, abu-abu, "On Vacation", tidak bisa dipilih) →
+Pilih Tanggal (kalender visual, bukan input teks, dibatasi
+`maksimal_hari_kedepan`) → Pilih Jam (tombol hijau/merah/abu-abu =
+tersedia/sudah dibooking/tutup, bukan input teks) → Pilih Service (boleh
+lebih dari satu -- durasi dijumlahkan) → Data Diri (nama + WhatsApp) →
+Ringkasan + Full Payment (tidak ada DP) → Booking Berhasil.
+
+**Auto-block slot**: durasi total service yang dipilih dibulatkan ke atas
+ke kelipatan interval slot, lalu SEMUA slot yang tercakup ditandai
+terpakai (mis. interval 60 menit + service 150 menit mulai 10:00 ->
+10:00/11:00/12:00 sama-sama terkunci untuk customer lain, persis contoh
+di spek). Ketersediaan dicek ulang di TIGA titik (tampilan awal jam,
+setelah Pilih Service, dan sekali lagi tepat sebelum booking disimpan)
+supaya tidak mungkin dua customer kebetulan dapat slot yang sama.
+
+**Prioritas ketersediaan slot** (urutan ini konsisten di semua
+pengecekan): Barber Holiday → Closed Slot → Sudah dibooking → Available.
+
+**Barber Holiday memakai tabel `absensi_libur` yang SUDAH ADA**
+(database.py, dipakai juga untuk Bonus Customer di Dashboard) -- SENGAJA
+TIDAK membuat tabel "holiday" baru yang terpisah, supaya "barber ini libur
+tanggal ini" tetap SATU sumber kebenaran (kalau ada dua tabel terpisah,
+keduanya bisa saling tidak sinkron). Menu Barber Holiday di halaman
+Booking internal memakai endpoint `/api/input-data/libur` yang sudah ada
+sejak Tahap 5, bukan endpoint baru.
+
+**Durasi service**: kolom baru `services.durasi_menit` (default 60 menit,
+migrasi idempotent), diedit di menu Setting > Layanan yang SUDAH ADA
+(bukan menu baru) — field baru di sebelah harga/modal, mengikuti pola
+persis yang sama seperti field `modal` sebelumnya.
+
+**Metode Pembayaran**: Cash, Transfer Bank, QRIS aktif & berfungsi penuh
+sekarang (booking berstatus "Menunggu Verifikasi" sampai Owner/Admin
+menekan tombol Verifikasi di Booking List). QRIS statis (upload/ganti/
+hapus gambar + nama merchant, pola upload SAMA PERSIS seperti logo
+barbershop), desain modular untuk nanti diganti QRIS Dynamic/API. Payment
+Gateway HANYA muncul sebagai toggle di Payment Settings -- kalau
+diaktifkan, customer yang memilihnya mendapat pesan "segera hadir" dan
+tidak bisa menyelesaikan booking lewat metode itu (belum ada integrasi
+provider sungguhan).
+
+**Menu internal `#/booking`** (frontend/js/pages/booking.js) — Owner/Admin
+full access lewat 7 tab: Booking List (filter bulan/tahun/barber/status,
+tombol Verifikasi & Batalkan), Calendar (kalender visual + badge jumlah
+booking per tanggal, klik tanggal untuk lihat detail), Operating Hours
+(jam buka/tutup), Barber Holiday, Closed Slot (tutup jam tertentu untuk
+meeting/training/reservasi offline/istirahat/keperluan pribadi), Payment
+Settings, Booking Settings (interval slot + maksimal hari booking ke
+depan). Barber: HANYA daftar booking miliknya sendiri (barber_id dari
+akun login lewat `/api/booking/mine`, sama pola seperti
+`/api/dashboard/barber` -- bukan dari parameter apa pun yang bisa
+dimanipulasi lewat client).
+
+**Bugfix ditemukan saat pengujian**: pengecekan rute publik di
+`router.js` awalnya `hash.startsWith("#/book")`, yang TANPA SENGAJA juga
+cocok dengan `#/booking` (menu internal admin/barber) karena "booking"
+kebetulan diawali "book" -- akibatnya menu Booking internal ikut
+ter-render tanpa login sama sekali. Diperbaiki jadi pencocokan presis
+(`hash === "#/book"` atau diawali `#/book/`/`#/book?`) sebelum PR ini
+dibuka, ditemukan & diperbaiki lewat pengujian end-to-end.
+
+**Diuji menyeluruh via Playwright**: alur booking publik penuh (barber →
+tanggal → jam → 2 service sekaligus → data diri → ringkasan → QRIS →
+selesai) tanpa error konsol; auto-block 2 slot dari service 150 menit
+diverifikasi lewat API DAN lewat UI (slot yang sama muncul merah/terkunci
+untuk customer berikutnya); double-booking & booking ke closed
+slot/barber libur ditolak (422) baik lewat API maupun lewat UI (slot
+tidak bisa diklik); admin: verifikasi pembayaran, Calendar menampilkan
+booking yang benar, Barber Holiday & Closed Slot bisa ditambah/dihapus,
+Payment Settings + upload QRIS berfungsi; barber: hanya melihat booking
+miliknya, tidak ada tab admin, dan mendapat 403 kalau mencoba endpoint
+admin langsung; regresi modul lama (Dashboard, Produk, Pengeluaran,
+Setting, Sinkronisasi, Backup) dikonfirmasi tetap berfungsi normal.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v10` → `v11` untuk
+`book_public.js`/`booking.js` yang baru serta perubahan `nav.js`/
+`router.js`/`style.css`.
+
 
 ## Struktur Project
 

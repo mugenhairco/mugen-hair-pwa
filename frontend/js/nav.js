@@ -11,6 +11,9 @@ const MugenNav = (() => {
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
     { hash: "#/input-data", label: "Input Data", roles: ["admin"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
+    // BOOKING: Owner/Admin full access; Barber hanya lihat booking miliknya
+    // sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
+    { hash: "#/booking", label: "Booking", roles: ["admin", "barber"] },
     { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin"] },
     { hash: "#/produk", label: "Produk", roles: ["admin"] },
     { hash: "#/sinkronisasi", label: "Sinkronisasi", roles: ["admin"] },

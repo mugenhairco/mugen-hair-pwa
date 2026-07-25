@@ -210,6 +210,7 @@ class ServiceBody(BaseModel):
     harga: int
     modal: int = 0
     pakai_potongan_chemical: bool | None = None
+    durasi_menit: int = 60  # BOOKING: durasi standar (menit) untuk hitung slot jadwal
 
 
 class ServiceUpdateBody(BaseModel):
@@ -218,6 +219,7 @@ class ServiceUpdateBody(BaseModel):
     modal: int | None = None
     pakai_potongan_chemical: bool | None = None
     aktif: bool | None = None
+    durasi_menit: int | None = None
 
 
 @router.get("/service")
@@ -229,7 +231,7 @@ def list_service(user: dict = Depends(require_admin)):
 def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
     try:
         new_id = pengaturan_service.tambah_service_lengkap(
-            body.nama, body.harga, body.modal, body.pakai_potongan_chemical,
+            body.nama, body.harga, body.modal, body.pakai_potongan_chemical, body.durasi_menit,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -242,6 +244,7 @@ def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depend
         pengaturan_service.update_service_lengkap(
             service_id, nama=body.nama, harga=body.harga, modal=body.modal,
             pakai_potongan_chemical=body.pakai_potongan_chemical, aktif=body.aktif,
+            durasi_menit=body.durasi_menit,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
