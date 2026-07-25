@@ -281,17 +281,30 @@ const PageBooking = (() => {
   }
 
   // ================= TAB: OPERATING HOURS =================
+  const HARI_OPERASIONAL_LABEL = {
+    senin: "Senin", selasa: "Selasa", rabu: "Rabu", kamis: "Kamis", jumat: "Jumat", sabtu: "Sabtu", minggu: "Minggu",
+  };
+
   async function renderOperatingHours(body) {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Jam Operasional"));
-    card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Semua slot booking mengikuti jam ini."));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Semua slot booking mengikuti jam & hari ini."));
 
     let s;
     try { s = await MugenApi.get("/api/booking/pengaturan"); } catch (e) { card.appendChild(MugenUI.el("div", {}, e.message)); return; }
 
     const inBuka = MugenUI.el("input", { type: "time", value: s.jam_buka });
     const inTutup = MugenUI.el("input", { type: "time", value: s.jam_tutup });
+    const hariAktif = new Set(s.hari_operasional || Object.keys(HARI_OPERASIONAL_LABEL));
+    const hariChecks = {};
+    const hariBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:14px;" });
+    for (const [key, label] of Object.entries(HARI_OPERASIONAL_LABEL)) {
+      const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+      cb.checked = hariAktif.has(key);
+      hariChecks[key] = cb;
+      hariBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;width:auto;" }, [cb, label]));
+    }
     const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const errorBox = MugenUI.el("div", { class: "login-error" });
 
@@ -299,18 +312,95 @@ const PageBooking = (() => {
     card.appendChild(inBuka);
     card.appendChild(MugenUI.el("label", {}, "Jam Tutup"));
     card.appendChild(inTutup);
+    card.appendChild(MugenUI.el("label", {}, "Hari Operasional"));
+    card.appendChild(hariBox);
     card.appendChild(errorBox);
     card.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
 
     btnSimpan.addEventListener("click", async () => {
       errorBox.textContent = "";
+      const hari_operasional = Object.entries(hariChecks).filter(([, cb]) => cb.checked).map(([k]) => k);
+      if (!hari_operasional.length) { errorBox.textContent = "Pilih minimal satu hari operasional."; return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value }));
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value, hari_operasional }));
         MugenUI.toast("Jam operasional disimpan.", "success");
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
     });
+
+    // --- Hari Libur Toko (kalender libur seluruh toko, semua barber sekaligus) ---
+    const liburFormCard = MugenUI.el("div", { class: "card" });
+    const liburListCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(liburFormCard);
+    body.appendChild(liburListCard);
+
+    liburFormCard.appendChild(MugenUI.el("h2", {}, "Hari Libur Toko"));
+    liburFormCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Berbeda dengan Barber Holiday (per-barber): tanggal di sini menutup SELURUH barber sekaligus, mis. hari libur nasional."));
+    const inLiburTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+    const inLiburKeterangan = MugenUI.el("input", { type: "text", placeholder: "mis. Libur Lebaran, Tahun Baru" });
+    const btnTambahLibur = MugenUI.el("button", { class: "btn-primary" }, "Tambah Libur Toko");
+    const liburError = MugenUI.el("div", { class: "login-error" });
+
+    liburFormCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
+    liburFormCard.appendChild(inLiburTanggal);
+    liburFormCard.appendChild(MugenUI.el("label", {}, "Keterangan (opsional)"));
+    liburFormCard.appendChild(inLiburKeterangan);
+    liburFormCard.appendChild(liburError);
+    liburFormCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnTambahLibur));
+
+    liburListCard.appendChild(MugenUI.el("h2", {}, "Daftar Libur Toko"));
+    const liburListBody = MugenUI.el("div");
+    liburListCard.appendChild(liburListBody);
+
+    async function loadLiburToko() {
+      liburListBody.innerHTML = "Memuat...";
+      try {
+        const data = await MugenApi.get("/api/booking/toko-libur", { useCache: true });
+        liburListBody.innerHTML = "";
+        liburListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+            { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
+            {
+              key: "aksi", label: "Aksi", format: (_, r) => {
+                const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btn.addEventListener("click", async () => {
+                  if (!confirm(`Hapus libur toko ${r.tanggal}?`)) return;
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/toko-libur/${r.id}`));
+                    MugenUI.toast("Libur toko dihapus.", "success");
+                    loadLiburToko();
+                  } catch (e) { MugenUI.toast(e.message, "error"); }
+                });
+                return btn;
+              },
+            },
+          ],
+          Array.isArray(data) ? data : [],
+          { emptyText: "Belum ada libur toko yang dijadwalkan." },
+        ));
+      } catch (e) {
+        liburListBody.innerHTML = "";
+        liburListBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    btnTambahLibur.addEventListener("click", async () => {
+      liburError.textContent = "";
+      if (!inLiburTanggal.value) { liburError.textContent = "Pilih tanggal dulu."; return; }
+      try {
+        await MugenUI.withLoading(() => MugenApi.post("/api/booking/toko-libur", {
+          tanggal: inLiburTanggal.value, keterangan: inLiburKeterangan.value.trim() || null,
+        }));
+        MugenUI.toast("Libur toko ditambahkan.", "success");
+        inLiburKeterangan.value = "";
+        loadLiburToko();
+      } catch (e) { liburError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    loadLiburToko();
   }
 
   // ================= TAB: BARBER HOLIDAY (pakai endpoint libur yg SUDAH ADA) =================
@@ -503,6 +593,38 @@ const PageBooking = (() => {
       } catch (e) { errorBox1.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
+    // --- Label & Instruksi per Metode (tampil di halaman booking Step 6) ---
+    const labelCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(labelCard);
+    labelCard.appendChild(MugenUI.el("h2", {}, "Label & Instruksi Metode Pembayaran"));
+    labelCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Nama tombol & pesan yang dilihat customer per metode di halaman booking. Kosongkan untuk pakai default."));
+    const inNama = {}, inInstruksi = {};
+    for (const [key, label] of Object.entries(METODE_LABEL)) {
+      inNama[key] = MugenUI.el("input", { type: "text", value: (s.metode_nama && s.metode_nama[key]) || "" });
+      inInstruksi[key] = MugenUI.el("textarea", {}, (s.metode_instruksi && s.metode_instruksi[key]) || "");
+      labelCard.appendChild(MugenUI.el("label", {}, `Nama Tampilan — ${label}`));
+      labelCard.appendChild(inNama[key]);
+      labelCard.appendChild(MugenUI.el("label", {}, `Instruksi — ${label}`));
+      labelCard.appendChild(inInstruksi[key]);
+    }
+    const errorBoxLabel = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanLabel = MugenUI.el("button", { class: "btn-primary" }, "Simpan Label & Instruksi");
+    labelCard.appendChild(errorBoxLabel);
+    labelCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanLabel));
+    btnSimpanLabel.addEventListener("click", async () => {
+      errorBoxLabel.textContent = "";
+      const metode_nama = {}, metode_instruksi = {};
+      for (const key of Object.keys(METODE_LABEL)) {
+        if (inNama[key].value.trim()) metode_nama[key] = inNama[key].value.trim();
+        if (inInstruksi[key].value.trim()) metode_instruksi[key] = inInstruksi[key].value.trim();
+      }
+      try {
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }));
+        MugenUI.toast("Label & instruksi metode pembayaran disimpan.", "success");
+      } catch (e) { errorBoxLabel.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
     // --- Transfer Bank ---
     const bankCard = MugenUI.el("div", { class: "card" });
     body.appendChild(bankCard);
@@ -577,6 +699,27 @@ const PageBooking = (() => {
 
   // ================= TAB: BOOKING SETTINGS =================
   async function renderBookingSettings(body) {
+    // Link Booking: SELALU mengikuti domain saat ini (window.location.origin),
+    // bukan setting yang disimpan -- otomatis benar begitu domain berganti,
+    // tidak perlu ubah kode apa pun (lihat klarifikasi #4 spesifikasi).
+    const linkCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(linkCard);
+    linkCard.appendChild(MugenUI.el("h2", {}, "Link Booking"));
+    linkCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Link ini otomatis mengikuti domain aplikasi -- bagikan ke customer."));
+    const linkBooking = `${window.location.origin}/#/book`;
+    const inLink = MugenUI.el("input", { type: "text", value: linkBooking, readOnly: true });
+    const btnSalinLink = MugenUI.el("button", {}, "Salin Link");
+    btnSalinLink.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(linkBooking);
+        MugenUI.toast("Link booking disalin.", "success");
+      } catch (e) {
+        inLink.select();
+        MugenUI.toast("Gagal menyalin otomatis -- link sudah disorot, salin manual (Ctrl+C).", "error");
+      }
+    });
+    linkCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;" }, [inLink, btnSalinLink]));
+
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Pengaturan Booking"));
@@ -606,6 +749,55 @@ const PageBooking = (() => {
         }));
         MugenUI.toast("Pengaturan booking disimpan.", "success");
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Header, Footer & Pesan Halaman Booking ---
+    const headerCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(headerCard);
+    headerCard.appendChild(MugenUI.el("h2", {}, "Header, Footer & Pesan Halaman Booking"));
+    headerCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Banner tampilan header memakai Banner di Setting > Identitas Barbershop."));
+
+    const inJudul = MugenUI.el("input", { type: "text", value: s.header_judul || "", placeholder: "mis. Nama Barbershop (default: Nama Barbershop)" });
+    const inSubtitle = MugenUI.el("input", { type: "text", value: s.header_subtitle || "", placeholder: "mis. Booking Online" });
+    const inFooter = MugenUI.el("input", { type: "text", value: s.header_footer || "" });
+    const inPembuka = MugenUI.el("textarea", {}, s.pesan_pembuka || "");
+    const inPenutup = MugenUI.el("textarea", {}, s.pesan_penutup || "");
+    const inNamaKosong = MugenUI.el("input", { type: "text", value: s.pesan_nama_kosong || "" });
+    const inWaInvalid = MugenUI.el("input", { type: "text", value: s.pesan_whatsapp_invalid || "" });
+    const errorBoxHeader = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanHeader = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
+
+    headerCard.appendChild(MugenUI.el("label", {}, "Judul Header"));
+    headerCard.appendChild(inJudul);
+    headerCard.appendChild(MugenUI.el("label", {}, "Subtitle Header"));
+    headerCard.appendChild(inSubtitle);
+    headerCard.appendChild(MugenUI.el("label", {}, "Footer"));
+    headerCard.appendChild(inFooter);
+    headerCard.appendChild(MugenUI.el("label", {}, "Pesan Pembuka (tampil di bawah judul)"));
+    headerCard.appendChild(inPembuka);
+    headerCard.appendChild(MugenUI.el("label", {}, "Pesan Penutup (tampil setelah booking berhasil)"));
+    headerCard.appendChild(inPenutup);
+    headerCard.appendChild(MugenUI.el("label", {}, "Pesan Validasi: Nama Kosong"));
+    headerCard.appendChild(inNamaKosong);
+    headerCard.appendChild(MugenUI.el("label", {}, "Pesan Validasi: WhatsApp Tidak Valid"));
+    headerCard.appendChild(inWaInvalid);
+    headerCard.appendChild(errorBoxHeader);
+    headerCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanHeader));
+
+    btnSimpanHeader.addEventListener("click", async () => {
+      errorBoxHeader.textContent = "";
+      try {
+        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", {
+          header_judul: inJudul.value.trim(),
+          header_subtitle: inSubtitle.value.trim(),
+          header_footer: inFooter.value.trim(),
+          pesan_pembuka: inPembuka.value.trim(),
+          pesan_penutup: inPenutup.value.trim(),
+          pesan_nama_kosong: inNamaKosong.value.trim(),
+          pesan_whatsapp_invalid: inWaInvalid.value.trim(),
+        }));
+        MugenUI.toast("Header, footer & pesan booking disimpan.", "success");
+      } catch (e) { errorBoxHeader.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
   }
 

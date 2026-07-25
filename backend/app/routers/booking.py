@@ -21,7 +21,7 @@ file terpisah, supaya mudah dilihat sekali baca):
 Barber Holiday SENGAJA tidak punya endpoint baru di sini -- dikelola
 lewat /api/input-data/libur yang SUDAH ADA (lihat catatan di booking_db.py)."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -54,33 +54,60 @@ def _parse_service_ids(service_ids: str | None) -> list:
 @public_router.get("/barbers")
 def public_barbers():
     """Semua barber AKTIF ditampilkan (barber non-aktif/dihapus Owner tidak
-    relevan untuk booking baru). Status 'libur hari ini' disertakan untuk
-    tampilan awal (abu-abu/On Vacation) sebelum tanggal dipilih -- validasi
-    yang SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
+    relevan untuk booking baru), diurutkan sesuai `urutan` yang diatur
+    Owner. Status 'libur hari ini' / 'cuti' disertakan untuk tampilan awal
+    (abu-abu/On Vacation) sebelum tanggal dipilih -- validasi yang
+    SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
     hari_ini = date.today().isoformat()
+    barbers = sorted(db.get_barbers(hanya_aktif=True), key=lambda b: (b.get("urutan") or 0, b["nama"]))
     hasil = []
-    for b in db.get_barbers(hanya_aktif=True):
+    for b in barbers:
+        cuti = b.get("status_booking") == "cuti"
         hasil.append({
             "id": b["id"], "nama": b["nama"],
-            "libur_hari_ini": booking_db.is_barber_libur(b["id"], hari_ini),
+            "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}" if b.get("foto_filename") else None,
+            "libur_hari_ini": cuti or booking_db.is_barber_libur(b["id"], hari_ini),
         })
     return hasil
 
 
+@public_router.get("/barber-foto/{barber_id}")
+def public_barber_foto(barber_id: int):
+    path, content_type = booking_db.get_foto_barber_file_path(barber_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Foto belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
 @public_router.get("/services")
 def public_services():
+    services = sorted(db.get_services(hanya_aktif=True), key=lambda s: (s.get("urutan") or 0, s["nama"]))
     return [
         {"id": s["id"], "nama": s["nama"], "harga": s["harga"], "durasi_menit": s.get("durasi_menit") or 60}
-        for s in db.get_services(hanya_aktif=True)
+        for s in services
     ]
 
 
 @public_router.get("/pengaturan")
 def public_pengaturan():
-    """Semua yang dibutuhkan wizard /book: jam operasional, interval slot,
-    maksimal hari booking ke depan, metode pembayaran aktif + info QRIS/
-    transfer bank (kalau aktif)."""
-    return {**booking_db.get_booking_settings(), **booking_db.get_payment_settings()}
+    """Semua yang dibutuhkan wizard /book: jam operasional, hari operasional,
+    interval slot, maksimal hari booking ke depan, teks header/footer/pesan,
+    metode pembayaran aktif + label/instruksi + info QRIS/transfer bank
+    (kalau aktif), dan daftar tanggal Toko Libur dalam rentang kalender yang
+    terlihat (supaya kalender bisa langsung meng-abu-kan tanggal itu tanpa
+    perlu tebak-tebakan per tanggal)."""
+    booking_settings = booking_db.get_booking_settings()
+    hari_ini = date.today()
+    batas = hari_ini + timedelta(days=booking_settings["maksimal_hari_kedepan"])
+    toko_libur_tanggal = [
+        tl["tanggal"] for tl in booking_db.get_toko_libur_list()
+        if hari_ini.isoformat() <= tl["tanggal"] <= batas.isoformat()
+    ]
+    return {
+        **booking_settings,
+        **booking_db.get_payment_settings(),
+        "toko_libur_tanggal": toko_libur_tanggal,
+    }
 
 
 @public_router.get("/slot")
@@ -191,6 +218,14 @@ class BookingSettingsBody(BaseModel):
     jam_tutup: str | None = None
     interval_menit: int | None = None
     maksimal_hari_kedepan: int | None = None
+    hari_operasional: list[str] | None = None
+    header_judul: str | None = None
+    header_subtitle: str | None = None
+    header_footer: str | None = None
+    pesan_pembuka: str | None = None
+    pesan_penutup: str | None = None
+    pesan_nama_kosong: str | None = None
+    pesan_whatsapp_invalid: str | None = None
 
 
 @router.get("/pengaturan")
@@ -213,6 +248,8 @@ class PaymentSettingsBody(BaseModel):
     bank_nama: str | None = None
     bank_nomor_rekening: str | None = None
     bank_nama_pemilik: str | None = None
+    metode_nama: dict[str, str] | None = None
+    metode_instruksi: dict[str, str] | None = None
 
 
 @router.get("/payment-settings")
@@ -243,6 +280,97 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 def hapus_qris_endpoint(user: dict = Depends(require_admin)):
     booking_db.hapus_qris()
     return booking_db.get_payment_settings()
+
+
+# ---- TOKO LIBUR (hari libur SELURUH toko, beda dari Barber Holiday) ----
+
+class TokoLiburBody(BaseModel):
+    tanggal: str
+    keterangan: str | None = None
+
+
+@router.get("/toko-libur")
+def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_admin)):
+    return booking_db.get_toko_libur_list(tahun=tahun, bulan=bulan)
+
+
+@router.post("/toko-libur")
+def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_admin)):
+    try:
+        new_id = booking_db.tambah_toko_libur(body.tanggal, body.keterangan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"id": new_id}
+
+
+@router.delete("/toko-libur/{toko_libur_id}")
+def hapus_toko_libur(toko_libur_id: int, user: dict = Depends(require_admin)):
+    booking_db.hapus_toko_libur(toko_libur_id)
+    return {"ok": True}
+
+
+# ---- BARBER: status booking, foto, urutan (field TAMBAHAN modul Booking;
+# nama/harga/aktif/dst tetap lewat /api/pengaturan/barber yang sudah ada) ----
+
+class BarberStatusBody(BaseModel):
+    status_booking: str
+
+
+class BarberUrutanBody(BaseModel):
+    urutan: int
+
+
+@router.put("/barber/{barber_id}/status")
+def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_admin)):
+    try:
+        booking_db.set_status_booking_barber(barber_id, body.status_booking)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return db.get_barber(barber_id)
+
+
+@router.put("/barber/{barber_id}/urutan")
+def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depends(require_admin)):
+    try:
+        booking_db.set_urutan_barber(barber_id, body.urutan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return db.get_barber(barber_id)
+
+
+@router.post("/barber/{barber_id}/foto")
+async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        booking_db.simpan_foto_barber(barber_id, file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return db.get_barber(barber_id)
+
+
+@router.delete("/barber/{barber_id}/foto")
+def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_admin)):
+    try:
+        booking_db.hapus_foto_barber(barber_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return db.get_barber(barber_id)
+
+
+# ---- SERVICE: urutan (field TAMBAHAN modul Booking; nama/harga/durasi/dst
+# tetap lewat /api/pengaturan/service yang sudah ada) ----
+
+class ServiceUrutanBody(BaseModel):
+    urutan: int
+
+
+@router.put("/service/{service_id}/urutan")
+def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = Depends(require_admin)):
+    try:
+        booking_db.set_urutan_service(service_id, body.urutan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return db.get_service(service_id)
 
 
 # =====================================================================

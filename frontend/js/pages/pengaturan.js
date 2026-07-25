@@ -78,17 +78,52 @@ const PagePengaturan = (() => {
       card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputLogo, btnUploadLogo]));
       card.appendChild(logoError);
 
+      const bannerPreview = MugenUI.el("img", { class: "book-banner-img", style: data.banner_url ? "max-width:320px;" : "display:none;", alt: "Banner saat ini" });
+      if (data.banner_url) bannerPreview.src = MUGEN_API_BASE + data.banner_url;
+      const inputBanner = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
+      const btnUploadBanner = MugenUI.el("button", {}, "Upload Banner Baru");
+      const bannerError = MugenUI.el("div", { class: "login-error" });
+
+      btnUploadBanner.addEventListener("click", async () => {
+        if (!inputBanner.files || !inputBanner.files[0]) { bannerError.textContent = "Pilih file banner dulu (JPG/PNG/WEBP)."; return; }
+        bannerError.textContent = "";
+        btnUploadBanner.disabled = true;
+        try {
+          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/banner", inputBanner.files[0]));
+          bannerPreview.src = MUGEN_API_BASE + hasil.banner_url + "&t=" + Date.now();
+          bannerPreview.style.cssText = "max-width:320px;";
+          MugenUI.toast("Banner berhasil diganti.", "success");
+          MugenBrand.refresh();
+        } catch (e) {
+          bannerError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        } finally {
+          btnUploadBanner.disabled = false;
+        }
+      });
+
+      card.appendChild(MugenUI.el("label", {}, "Banner Booking (JPG/PNG/WEBP, tampil di atas halaman booking)"));
+      card.appendChild(bannerPreview);
+      card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputBanner, btnUploadBanner]));
+      card.appendChild(bannerError);
+
       const inputNama = MugenUI.el("input", { type: "text", value: data.nama_barbershop || "" });
+      const inputTagline = MugenUI.el("input", { type: "text", value: data.tagline || "", placeholder: "mis. Sharp Cuts, Sharp Look" });
+      const inputDeskripsi = MugenUI.el("textarea", {}, data.deskripsi || "");
       const inputAlamat = MugenUI.el("input", { type: "text", value: data.alamat || "" });
       const inputWA = MugenUI.el("input", { type: "text", value: data.whatsapp || "" });
       const inputEmail = MugenUI.el("input", { type: "text", value: data.email || "" });
       const inputIG = MugenUI.el("input", { type: "text", value: data.instagram || "" });
+      const inputWebsite = MugenUI.el("input", { type: "text", value: data.website || "" });
       const inputJam = MugenUI.el("input", { type: "text", value: data.jam_operasional || "", placeholder: "mis. 09:00 - 21:00" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Identitas");
       const formError = MugenUI.el("div", { class: "login-error" });
 
       card.appendChild(MugenUI.el("label", {}, "Nama Barbershop"));
       card.appendChild(inputNama);
+      card.appendChild(MugenUI.el("label", {}, "Tagline"));
+      card.appendChild(inputTagline);
+      card.appendChild(MugenUI.el("label", {}, "Deskripsi"));
+      card.appendChild(inputDeskripsi);
       card.appendChild(MugenUI.el("label", {}, "Alamat"));
       card.appendChild(inputAlamat);
       card.appendChild(MugenUI.el("label", {}, "Nomor WhatsApp"));
@@ -97,6 +132,8 @@ const PagePengaturan = (() => {
       card.appendChild(inputEmail);
       card.appendChild(MugenUI.el("label", {}, "Instagram"));
       card.appendChild(inputIG);
+      card.appendChild(MugenUI.el("label", {}, "Website"));
+      card.appendChild(inputWebsite);
       card.appendChild(MugenUI.el("label", {}, "Jam Operasional"));
       card.appendChild(inputJam);
       card.appendChild(formError);
@@ -109,10 +146,13 @@ const PagePengaturan = (() => {
         try {
           await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/identitas", {
             nama_barbershop: inputNama.value.trim(),
+            tagline: inputTagline.value.trim(),
+            deskripsi: inputDeskripsi.value.trim(),
             alamat: inputAlamat.value.trim(),
             whatsapp: inputWA.value.trim(),
             email: inputEmail.value.trim(),
             instagram: inputIG.value.trim(),
+            website: inputWebsite.value.trim(),
             jam_operasional: inputJam.value.trim(),
           }));
           MugenUI.toast("Identitas barbershop disimpan.", "success");
@@ -373,15 +413,40 @@ const PagePengaturan = (() => {
         listBody.innerHTML = "Memuat...";
         try {
           const rows = await MugenApi.get("/api/pengaturan/barber");
+          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
           listBody.innerHTML = "";
           listBody.appendChild(MugenUI.buildTable(
             [
+              {
+                key: "foto_filename", label: "Foto", format: (v, r) => v
+                  ? MugenUI.el("img", { src: MUGEN_API_BASE + `/api/public/booking/barber-foto/${r.id}` + `?v=${v}`, class: "book-barber-foto", style: "width:40px;height:40px;margin:0;" })
+                  : MugenUI.el("div", { class: "book-barber-foto-kosong", style: "width:40px;height:40px;margin:0;font-size:14px;" }, r.nama.charAt(0).toUpperCase()),
+              },
               { key: "nama", label: "Nama" },
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
               { key: "is_rafiq", label: "Rafiq", format: (v) => v ? "Ya" : "-" },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
-                key: "aksi", label: "Aksi", format: (_, r) => {
+                key: "status_booking", label: "Status Booking", format: (v, r) => {
+                  if (!r.aktif) return "-";
+                  const sel = MugenUI.el("select", { style: "width:auto;" }, [
+                    MugenUI.el("option", { value: "aktif" }, "Aktif"),
+                    MugenUI.el("option", { value: "cuti" }, "On Vacation"),
+                  ]);
+                  sel.value = v || "aktif";
+                  sel.addEventListener("change", async () => {
+                    try {
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/booking/barber/${r.id}/status`, { status_booking: sel.value }));
+                      MugenUI.toast("Status booking diperbarui.", "success");
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); sel.value = v || "aktif"; }
+                  });
+                  return sel;
+                },
+              },
+              { key: "urutan", label: "Urutan" },
+              {
+                key: "aksi", label: "Aksi", format: (_, r, idx, allRows) => {
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
                   const btnEdit = MugenUI.el("button", {}, "Edit");
                   btnEdit.addEventListener("click", () => {
@@ -414,8 +479,48 @@ const PagePengaturan = (() => {
                       MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                     }
                   });
+                  const idxInList = rows.findIndex((x) => x.id === r.id);
+                  const btnNaik = MugenUI.el("button", { title: "Naikkan urutan" }, "↑");
+                  btnNaik.disabled = idxInList <= 0;
+                  btnNaik.addEventListener("click", async () => {
+                    const other = rows[idxInList - 1];
+                    try {
+                      await MugenUI.withLoading(async () => {
+                        await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                        await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                      });
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
+                  const btnTurun = MugenUI.el("button", { title: "Turunkan urutan" }, "↓");
+                  btnTurun.disabled = idxInList >= rows.length - 1;
+                  btnTurun.addEventListener("click", async () => {
+                    const other = rows[idxInList + 1];
+                    try {
+                      await MugenUI.withLoading(async () => {
+                        await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                        await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                      });
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
+                  const inFoto = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", style: "display:none;" });
+                  const btnFoto = MugenUI.el("button", {}, "Foto");
+                  btnFoto.addEventListener("click", () => inFoto.click());
+                  inFoto.addEventListener("change", async () => {
+                    if (!inFoto.files || !inFoto.files[0]) return;
+                    try {
+                      await MugenUI.withLoading(() => MugenApi.uploadFile(`/api/booking/barber/${r.id}/foto`, inFoto.files[0]));
+                      MugenUI.toast("Foto barber disimpan.", "success");
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
                   wrap.appendChild(btnEdit);
                   wrap.appendChild(btnToggle);
+                  wrap.appendChild(btnFoto);
+                  wrap.appendChild(inFoto);
+                  wrap.appendChild(btnNaik);
+                  wrap.appendChild(btnTurun);
                   wrap.appendChild(btnHapus);
                   return wrap;
                 },
@@ -513,6 +618,7 @@ const PagePengaturan = (() => {
         listBody.innerHTML = "Memuat...";
         try {
           const rows = await MugenApi.get("/api/pengaturan/service");
+          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
           listBody.innerHTML = "";
           listBody.appendChild(MugenUI.buildTable(
             [
@@ -521,6 +627,7 @@ const PagePengaturan = (() => {
               { key: "modal", label: "Modal", format: MugenUI.formatRupiah },
               { key: "pakai_potongan_chemical", label: "Potongan Chemical", format: (v) => v ? "Ya" : "Tidak" },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
+              { key: "urutan", label: "Urutan" },
               {
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
@@ -556,8 +663,35 @@ const PagePengaturan = (() => {
                       MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                     }
                   });
+                  const idxInList = rows.findIndex((x) => x.id === r.id);
+                  const btnNaik = MugenUI.el("button", { title: "Naikkan urutan" }, "↑");
+                  btnNaik.disabled = idxInList <= 0;
+                  btnNaik.addEventListener("click", async () => {
+                    const other = rows[idxInList - 1];
+                    try {
+                      await MugenUI.withLoading(async () => {
+                        await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                        await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                      });
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
+                  const btnTurun = MugenUI.el("button", { title: "Turunkan urutan" }, "↓");
+                  btnTurun.disabled = idxInList >= rows.length - 1;
+                  btnTurun.addEventListener("click", async () => {
+                    const other = rows[idxInList + 1];
+                    try {
+                      await MugenUI.withLoading(async () => {
+                        await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                        await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                      });
+                      loadList();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
                   wrap.appendChild(btnEdit);
                   wrap.appendChild(btnToggle);
+                  wrap.appendChild(btnNaik);
+                  wrap.appendChild(btnTurun);
                   wrap.appendChild(btnHapus);
                   return wrap;
                 },

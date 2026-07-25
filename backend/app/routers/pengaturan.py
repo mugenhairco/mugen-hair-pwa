@@ -49,6 +49,10 @@ class IdentitasBody(BaseModel):
     email: str = ""
     instagram: str = ""
     jam_operasional: str = ""
+    # PENYEMPURNAAN FORM BOOKING: field baru, dipakai halaman /book
+    tagline: str = ""
+    deskripsi: str = ""
+    website: str = ""
 
 
 @router.get("/identitas")
@@ -80,6 +84,26 @@ def ambil_logo(v: str | None = None):
     path, content_type = pengaturan_identitas.get_logo_file_path()
     if path is None:
         raise HTTPException(status_code=404, detail="Logo belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
+# PENYEMPURNAAN FORM BOOKING: Banner, pola SAMA PERSIS seperti Logo di atas
+# (upload khusus admin, GET publik -- dipakai header halaman booking /book).
+@router.post("/banner")
+async def upload_banner(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        pengaturan_identitas.simpan_banner(file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return pengaturan_identitas.get_identitas()
+
+
+@router.get("/banner")
+def ambil_banner(v: str | None = None):
+    path, content_type = pengaturan_identitas.get_banner_file_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="Banner belum diatur.")
     return FileResponse(path, media_type=content_type)
 
 
