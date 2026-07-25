@@ -42,7 +42,12 @@
 // + teks kustom saat Sign Out (nav.js) dan withLoading() diperluas
 // (ui.js); bugfix konsistensi loading di booking.js (QRIS merchant);
 // style.css berubah.
-const CACHE_NAME = "mugen-hair-shell-v14";
+// v14 -> v15: REVISI UI/UX Modern -- tema TERANG baru menggantikan tema
+// gelap+emas (style.css, palet warna/radius/shadow/tipografi/animasi
+// menyeluruh termasuk Web Booking), watermark developer + theme-color baru
+// (index.html, manifest.json), label RAFIQ dihapus dari tampilan Barber
+// (pengaturan.js, data/logika is_rafiq tidak berubah).
+const CACHE_NAME = "mugen-hair-shell-v15";
 const APP_SHELL = [
   "/",
   "/index.html",

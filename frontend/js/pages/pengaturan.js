@@ -406,7 +406,6 @@ const PagePengaturan = (() => {
       formCard.appendChild(MugenUI.el("h2", {}, "Tambah Barber"));
       const formTitle = formCard.lastChild;
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama barber" });
-      const inputRafiq = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
       // REVISI: Uang Harian sekarang per-barber (sebelumnya dua setting global
       // uang_harian_barber/uang_harian_rafiq dipilih dari status RAFIQ).
       const inputUangHarian = MugenUI.el("input", { type: "number", min: "0", value: "0" });
@@ -418,7 +417,6 @@ const PagePengaturan = (() => {
       formCard.appendChild(inputNama);
       formCard.appendChild(MugenUI.el("label", {}, "Uang Harian (Rp/hari, cair kalau Dry Cut + Cut & Wash hari itu ≥ 3)"));
       formCard.appendChild(inputUangHarian);
-      formCard.appendChild(MugenUI.el("label", {}, [inputRafiq, " Barber RAFIQ (label saja, tidak lagi memengaruhi nominal apa pun)"]));
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
@@ -428,7 +426,6 @@ const PagePengaturan = (() => {
         btnSubmit.textContent = "Simpan";
         btnBatal.style.display = "none";
         inputNama.value = "";
-        inputRafiq.checked = false;
         inputUangHarian.value = "0";
         formError.textContent = "";
       }
@@ -441,7 +438,13 @@ const PagePengaturan = (() => {
         if (Number.isNaN(uangHarian) || uangHarian < 0) { formError.textContent = "Uang harian tidak valid."; return; }
         btnSubmit.disabled = true;
         try {
-          const body2 = { nama: inputNama.value.trim(), is_rafiq: inputRafiq.checked, uang_harian: uangHarian };
+          // REVISI UI/UX: field is_rafiq SENGAJA tidak dikirim lagi dari form
+          // ini (label RAFIQ dihapus dari tampilan) -- backend tetap
+          // menyimpan nilai is_rafiq yang sudah ada tanpa berubah (endpoint
+          // PUT memperlakukan field yang tidak dikirim sebagai "jangan
+          // diubah", endpoint POST default-nya False untuk barber baru),
+          // jadi data/logika lama tidak tersentuh sama sekali.
+          const body2 = { nama: inputNama.value.trim(), uang_harian: uangHarian };
           await MugenUI.withLoading(async () => {
             if (editingId) {
               await MugenApi.put(`/api/pengaturan/barber/${editingId}`, body2);
@@ -479,7 +482,6 @@ const PagePengaturan = (() => {
               },
               { key: "nama", label: "Nama" },
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-              { key: "is_rafiq", label: "Rafiq", format: (v) => v ? "Ya" : "-" },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
                 key: "status_booking", label: "Status Booking", format: (v, r) => {
@@ -510,7 +512,6 @@ const PagePengaturan = (() => {
                     btnSubmit.textContent = "Simpan Perubahan";
                     btnBatal.style.display = "";
                     inputNama.value = r.nama;
-                    inputRafiq.checked = !!r.is_rafiq;
                     inputUangHarian.value = String(r.uang_harian || 0);
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });

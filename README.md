@@ -1354,6 +1354,96 @@ error konsol maupun error backend.
 `nav.js`/`ui.js`/`booking.js`/`style.css` yang berubah.
 
 
+### CHANGELOG — REVISI UI/UX Modern: Tema Terang, Tipografi, Kartu/Tombol, Animasi, Watermark, Hapus Label RAFIQ
+
+Penyempurnaan tampilan MENYELURUH (murni UI/UX, TIDAK ada logika bisnis
+atau alur kerja yang berubah) -- satu-satunya file JS yang disentuh
+adalah `pengaturan.js` (menghapus label RAFIQ, lihat di bawah); seluruh
+perubahan lain murni `style.css`/`index.html`/`manifest.json`. Karena
+arsitektur variabel CSS (`var(--accent)`, `var(--bg-card)`, dst) sudah
+dipakai konsisten sejak Tahap 10, mengganti nilai token di satu tempat
+(`:root`) otomatis menjalar ke SELURUH aplikasi TERMASUK Web Booking
+(`book_public.js`) tanpa perlu menyentuh file JS halaman mana pun.
+
+**Tema warna**: tema gelap + aksen emas sebelumnya diganti TOTAL dengan
+tema terang, netral, profesional sesuai kode warna yang diminta --
+Background `#F5F7FA`, Card `#FFFFFF`, Border `#E2E8F0`, Teks Utama
+`#0F172A`, Teks Sekunder `#64748B`, Primary `#334155` (Hover `#1E293B`,
+Pressed `#0F172A`), Success `#16A34A`, Danger `#DC2626`, Warning
+`#EA580C`, Info `#2563EB` (dipakai badge "Tester" di Produk). Seluruh
+warna hardcode lama yang mengasumsikan latar gelap (mis. teks `#1a1a1a`/
+`#0a0a0a` di atas tombol/badge terang, tint `rgba(201,162,75,...)` gaya
+emas) ikut diperbaiki supaya kontrasnya tetap benar di tema baru.
+
+**Tipografi**: font stack diganti ke `Inter` dengan fallback sistem
+modern (`-apple-system, Segoe UI, Roboto, ...` -- tanpa memuat font dari
+CDN eksternal, supaya PWA tetap berfungsi penuh offline), hierarki
+diperjelas (judul halaman & nominal kartu lebih besar/tebal, label lebih
+kecil, letter-spacing disesuaikan).
+
+**Kartu**: radius `16px`, border tipis, shadow lembut (`--shadow-card`),
+padding lebih lega.
+
+**Tombol**: radius `14px`, tinggi `48-52px` untuk tombol utama (Simpan,
+Masuk, Konfirmasi Booking, dst). Tombol kecil di dalam tabel
+(`.actions-cell`) & tab SENGAJA dipertahankan kompak (tidak ikut jadi
+48px) supaya tabel data tidak jadi terlalu tinggi -- keputusan desain
+yang tetap konsisten dengan pola compact-table-action yang sudah ada.
+Efek tekan: scale 97%, shadow mengecil, warna sedikit lebih gelap
+(`--accent-hover`/`--accent-pressed`), durasi 150ms.
+
+**Loading**: spinner + teks proses (mis. "Sedang keluar dari
+aplikasi…") dipertahankan SAMA PERSIS dari revisi sebelumnya, hanya
+warna scrim & style disesuaikan ke tema baru -- sudah konsisten di
+seluruh aplikasi dan Web Booking sejak revisi Sign Out sebelumnya.
+
+**Animasi**: fade + slide ringan 12px, durasi ~220ms, dipakai lewat SATU
+aturan CSS pada `.card`/`.login-card`/`.toast` (menjalar ke hampir
+seluruh blok konten aplikasi tanpa perlu ubah JS satu per satu, tetap
+menghormati `prefers-reduced-motion`). Animasi perpindahan step halaman
+Booking (dari revisi sebelumnya, sebelumnya 36px/300ms) diselaraskan ke
+parameter yang sama (12px/225ms) sesuai instruksi konsistensi.
+
+**Watermark Developer**: watermark besar bertuliskan "Developer" di
+background (opacity 0.03, sangat rendah) + watermark kecil "Powered by
+Developer" di bagian bawah, KEDUANYA ditaruh di `index.html` DI LUAR
+`#app` (root SPA) supaya tidak pernah ikut terhapus/tertimpa saat
+halaman berpindah (setiap halaman hanya me-render ulang isi `#app`) dan
+tidak ada jalan menonaktifkannya lewat menu Setting mana pun.
+
+**Hapus Label RAFIQ**: checkbox "Barber RAFIQ" pada form Tambah/Ubah
+Barber dan kolom "Rafiq" pada tabel Daftar Barber dihapus dari tampilan
+(Setting > Barber). Kolom database `barbers.is_rafiq` dan nilai yang
+sudah tersimpan pada barber manapun TIDAK disentuh sama sekali -- form
+sekarang tidak mengirim field itu lagi (endpoint PUT memperlakukan field
+yang tidak dikirim sebagai "jangan diubah", endpoint POST barber baru
+tetap default `False` seperti sebelumnya), jadi data & logika lama
+persis sama, hanya elemen visualnya yang hilang.
+
+**Tanpa ikon baru**: tidak ada aset ikon baru ditambahkan (karakter
+seperti "✓"/"‹"/"›"/"↑"/"↓" yang sudah dipakai sejak revisi-revisi
+sebelumnya dipertahankan apa adanya, bukan ikon baru).
+
+**Responsif**: breakpoint mobile (sidebar overlay + hamburger, sudah ada
+sejak Tahap 13) dan tablet (`821px-1100px`, padding & grid kartu
+disesuaikan) diuji ulang dengan tema baru, termasuk watermark besar yang
+otomatis membesar di layar sempit.
+
+**Diuji menyeluruh** (18 pemeriksaan Playwright baru -- warna/radius/
+shadow/tinggi tombol/efek tekan sesuai token baru, watermark ada &
+bertahan lintas-navigasi, label RAFIQ hilang tapi data barber tetap
+utuh -- plus regresi 12 pemeriksaan lintas seluruh modul, semua lolos):
+Dashboard, Setting (semua tab termasuk Bonus Service/Uang Harian baru
+dari revisi sebelumnya), CRUD Barber, Produk (Tester), Booking internal,
+alur booking publik end-to-end, dan Sign Out dikonfirmasi tampil dengan
+tema baru DAN tetap berfungsi normal tanpa error konsol/backend; diuji
+juga pada viewport mobile (390px) untuk memastikan sidebar/hamburger dan
+tata letak tetap optimal.
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v14` → `v15` untuk
+`style.css`/`index.html`/`manifest.json`/`pengaturan.js` yang berubah.
+
+
 ## Struktur Project
 
 ```
