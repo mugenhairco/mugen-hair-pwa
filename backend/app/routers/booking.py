@@ -10,7 +10,7 @@ file terpisah, supaya mudah dilihat sekali baca):
    toko (omzet, komisi, dst) yang bocor lewat endpoint ini.
 2. `router` (prefix `/api/booking`) — dua tingkat akses lewat dependency
    berbeda per endpoint:
-   - `Depends(require_admin)`: Owner/Admin, full access (lihat semua
+   - `Depends(require_owner_or_staff)`: Owner/Admin, full access (lihat semua
      booking, kalender, tutup slot, jam operasional, payment settings,
      QRIS).
    - `Depends(require_barber)` (hanya endpoint `/mine`): Barber, HANYA
@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 import booking_db
 import database as db
-from auth import require_admin, require_barber
+from auth import require_owner_or_staff, require_barber
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
@@ -157,7 +157,7 @@ def public_buat_booking(body: BookingCreateBody):
 
 @router.get("")
 def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
-                  status_booking: str = None, user: dict = Depends(require_admin)):
+                  status_booking: str = None, user: dict = Depends(require_owner_or_staff)):
     """Dipakai Booking List & Calendar (Calendar cukup mengelompokkan hasil
     yang sama per tanggal di frontend, tidak perlu endpoint terpisah)."""
     return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
@@ -165,7 +165,7 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
 
 
 @router.get("/belum-dikonfirmasi")
-def jumlah_belum_dikonfirmasi(user: dict = Depends(require_admin)):
+def jumlah_belum_dikonfirmasi(user: dict = Depends(require_owner_or_staff)):
     """REVISI: Notifikasi Booking Baru -- di-poll berkala oleh frontend
     (nav.js) untuk badge menu Booking + pemicu notifikasi suara. Ringan
     (SATU angka COUNT(*), bukan daftar booking) supaya aman dipanggil
@@ -174,7 +174,7 @@ def jumlah_belum_dikonfirmasi(user: dict = Depends(require_admin)):
 
 
 @router.post("/{booking_id}/verifikasi")
-def verifikasi_booking(booking_id: int, user: dict = Depends(require_admin)):
+def verifikasi_booking(booking_id: int, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.verifikasi_pembayaran(booking_id)
     except ValueError as e:
@@ -183,7 +183,7 @@ def verifikasi_booking(booking_id: int, user: dict = Depends(require_admin)):
 
 
 @router.post("/{booking_id}/batalkan")
-def batalkan_booking(booking_id: int, user: dict = Depends(require_admin)):
+def batalkan_booking(booking_id: int, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.batalkan_booking(booking_id)
     except ValueError as e:
@@ -201,12 +201,12 @@ class ClosedSlotBody(BaseModel):
 
 @router.get("/closed-slot")
 def list_closed_slot(barber_id: int = None, tahun: int = None, bulan: int = None,
-                      user: dict = Depends(require_admin)):
+                      user: dict = Depends(require_owner_or_staff)):
     return booking_db.get_closed_slot_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
 
 
 @router.post("/closed-slot")
-def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_admin)):
+def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_owner_or_staff)):
     try:
         new_id = booking_db.tambah_closed_slot(
             body.barber_id, body.tanggal, body.jam_mulai, body.jam_selesai, body.keterangan,
@@ -217,7 +217,7 @@ def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_admin)
 
 
 @router.delete("/closed-slot/{closed_slot_id}")
-def hapus_closed_slot(closed_slot_id: int, user: dict = Depends(require_admin)):
+def hapus_closed_slot(closed_slot_id: int, user: dict = Depends(require_owner_or_staff)):
     booking_db.hapus_closed_slot(closed_slot_id)
     return {"ok": True}
 
@@ -238,12 +238,12 @@ class BookingSettingsBody(BaseModel):
 
 
 @router.get("/pengaturan")
-def ambil_booking_settings(user: dict = Depends(require_admin)):
+def ambil_booking_settings(user: dict = Depends(require_owner_or_staff)):
     return booking_db.get_booking_settings()
 
 
 @router.put("/pengaturan")
-def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(require_admin)):
+def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.update_booking_settings(**body.model_dump())
     except ValueError as e:
@@ -262,12 +262,12 @@ class PaymentSettingsBody(BaseModel):
 
 
 @router.get("/payment-settings")
-def ambil_payment_settings(user: dict = Depends(require_admin)):
+def ambil_payment_settings(user: dict = Depends(require_owner_or_staff)):
     return booking_db.get_payment_settings()
 
 
 @router.put("/payment-settings")
-def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(require_admin)):
+def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.update_payment_settings(**body.model_dump())
     except ValueError as e:
@@ -276,7 +276,7 @@ def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(requ
 
 
 @router.post("/qris")
-async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
     konten = await file.read()
     try:
         booking_db.simpan_qris(file.filename, konten)
@@ -286,7 +286,7 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 
 
 @router.delete("/qris")
-def hapus_qris_endpoint(user: dict = Depends(require_admin)):
+def hapus_qris_endpoint(user: dict = Depends(require_owner_or_staff)):
     booking_db.hapus_qris()
     return booking_db.get_payment_settings()
 
@@ -299,12 +299,12 @@ class TokoLiburBody(BaseModel):
 
 
 @router.get("/toko-libur")
-def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_admin)):
+def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
     return booking_db.get_toko_libur_list(tahun=tahun, bulan=bulan)
 
 
 @router.post("/toko-libur")
-def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_admin)):
+def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_owner_or_staff)):
     try:
         new_id = booking_db.tambah_toko_libur(body.tanggal, body.keterangan)
     except ValueError as e:
@@ -313,7 +313,7 @@ def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_admin)):
 
 
 @router.delete("/toko-libur/{toko_libur_id}")
-def hapus_toko_libur(toko_libur_id: int, user: dict = Depends(require_admin)):
+def hapus_toko_libur(toko_libur_id: int, user: dict = Depends(require_owner_or_staff)):
     booking_db.hapus_toko_libur(toko_libur_id)
     return {"ok": True}
 
@@ -330,7 +330,7 @@ class BarberUrutanBody(BaseModel):
 
 
 @router.put("/barber/{barber_id}/status")
-def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_admin)):
+def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.set_status_booking_barber(barber_id, body.status_booking)
     except ValueError as e:
@@ -339,7 +339,7 @@ def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depe
 
 
 @router.put("/barber/{barber_id}/urutan")
-def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depends(require_admin)):
+def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.set_urutan_barber(barber_id, body.urutan)
     except ValueError as e:
@@ -348,7 +348,7 @@ def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depe
 
 
 @router.post("/barber/{barber_id}/foto")
-async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
     konten = await file.read()
     try:
         booking_db.simpan_foto_barber(barber_id, file.filename, konten)
@@ -358,7 +358,7 @@ async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user:
 
 
 @router.delete("/barber/{barber_id}/foto")
-def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_admin)):
+def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.hapus_foto_barber(barber_id)
     except ValueError as e:
@@ -374,7 +374,7 @@ class ServiceUrutanBody(BaseModel):
 
 
 @router.put("/service/{service_id}/urutan")
-def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = Depends(require_admin)):
+def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.set_urutan_service(service_id, body.urutan)
     except ValueError as e:

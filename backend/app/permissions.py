@@ -36,10 +36,10 @@ PERMISSION_DEFS = [
     ("izin_user_tambah", "user", "Membuat User Barber", False),
     ("izin_user_hapus", "user", "Menghapus (menonaktifkan) User Barber", False),
     ("izin_user_ganti_password", "user", "Mengubah Password User Barber", False),
-    # ---- Pengeluaran ----
-    ("izin_pengeluaran_tambah", "pengeluaran", "Tambah Pengeluaran", False),
-    ("izin_pengeluaran_edit", "pengeluaran", "Edit Pengeluaran", False),
-    ("izin_pengeluaran_hapus", "pengeluaran", "Hapus Pengeluaran", False),
+    # REVISI (kedua): grup "Pengeluaran" DIHAPUS dari sini -- menu
+    # Pengeluaran tidak lagi memakai sistem izin sama sekali, 'staff' (Admin)
+    # selalu punya akses PENUH sama persis seperti Owner (lihat
+    # routers/pengeluaran.py).
     # ---- Backup ----
     ("izin_backup_export", "backup", "Export Database", False),
     ("izin_backup_import", "backup", "Import Database", False),

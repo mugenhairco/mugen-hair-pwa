@@ -3,10 +3,11 @@ Produk (penjualan, restock, sisa stok). Ditulis di Tahap 10 tapi belum
 dihubungkan ke main.py; Tahap 11 menghubungkannya (lihat README).
 
 Produk adalah data operasional TOKO (persediaan barang dagang), bukan milik
-barber manapun — sama seperti Rekap Pengeluaran (lihat routers/rekap.py),
-jadi seluruh endpoint di sini KHUSUS Owner (admin). Barber tetap bisa
+barber manapun — seluruh endpoint di sini KHUSUS Owner ('admin') dan Admin
+('staff', akses PENUH sama persis seperti Owner -- lihat REVISI Hak Akses
+Admin, menu ini tidak memakai sistem izin sama sekali). Barber tetap bisa
 melihat/menjual produk lewat halaman Input Data di tahap lanjut kalau nanti
-diminta eksplisit; untuk saat ini, kelola stok sepenuhnya di tangan Owner.
+diminta eksplisit; untuk saat ini, kelola stok sepenuhnya di tangan Owner/Admin.
 
 Semua logika hitung stok (validasi saldo tidak boleh negatif, dsb) ada di
 database.py (TIDAK diubah di sini) — router ini hanya meneruskan request ke
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import database as db
-from auth import require_admin
+from auth import require_owner_or_staff
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
 
@@ -46,12 +47,12 @@ class KoreksiMutasiBody(BaseModel):
 
 
 @router.get("")
-def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_admin)):
+def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_owner_or_staff)):
     return db.get_produk_list(hanya_aktif=hanya_aktif)
 
 
 @router.post("")
-def tambah_produk(body: ProdukBody, user: dict = Depends(require_admin)):
+def tambah_produk(body: ProdukBody, user: dict = Depends(require_owner_or_staff)):
     try:
         produk_id = db.tambah_produk(body.nama, body.harga_modal, body.harga_jual)
     except ValueError as e:
@@ -60,7 +61,7 @@ def tambah_produk(body: ProdukBody, user: dict = Depends(require_admin)):
 
 
 @router.put("/{produk_id}")
-def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_admin)):
+def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_owner_or_staff)):
     if db.get_produk(produk_id) is None:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     try:
@@ -71,7 +72,7 @@ def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(r
 
 
 @router.delete("/{produk_id}")
-def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_admin)):
+def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_owner_or_staff)):
     if db.get_produk(produk_id) is None:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     db.nonaktifkan_produk(produk_id)
@@ -79,7 +80,7 @@ def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_admin)):
 
 
 @router.post("/{produk_id}/restock")
-def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_admin)):
+def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
     if db.get_produk(produk_id) is None:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     try:
@@ -90,7 +91,7 @@ def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(requir
 
 
 @router.post("/{produk_id}/jual")
-def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_admin)):
+def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
     if db.get_produk(produk_id) is None:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
     try:
@@ -101,7 +102,7 @@ def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_a
 
 
 @router.post("/{produk_id}/tester")
-def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_admin)):
+def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
     """REVISI: tipe transaksi baru 'Tester' -- mengurangi stok sama seperti
     Jual, TAPI TIDAK menambah omzet (lihat db.tester_produk/
     db.get_omzet_penjualan_produk), tetap tercatat penuh di riwayat mutasi."""
@@ -116,12 +117,12 @@ def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require
 
 @router.get("/mutasi")
 def list_mutasi(produk_id: int = None, tipe: str = None, tahun: int = None,
-                bulan: int = None, user: dict = Depends(require_admin)):
+                bulan: int = None, user: dict = Depends(require_owner_or_staff)):
     return db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan)
 
 
 @router.put("/mutasi/{mutasi_id}")
-def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_admin)):
+def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_owner_or_staff)):
     if db.get_mutasi_produk(mutasi_id) is None:
         raise HTTPException(status_code=404, detail="Data mutasi tidak ditemukan.")
     try:
@@ -132,7 +133,7 @@ def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends
 
 
 @router.delete("/mutasi/{mutasi_id}")
-def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_admin)):
+def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_owner_or_staff)):
     if db.get_mutasi_produk(mutasi_id) is None:
         raise HTTPException(status_code=404, detail="Data mutasi tidak ditemukan.")
     try:

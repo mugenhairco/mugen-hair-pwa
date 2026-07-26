@@ -105,7 +105,7 @@ const MugenBookingNotif = (() => {
   function _bolehPoll() {
     if (typeof MugenState === "undefined" || !MugenState.isLoggedIn()) return false;
     const user = MugenState.getUser();
-    return !!user && user.role === "admin";
+    return !!user && (user.role === "admin" || user.role === "staff");
   }
 
   function _hentikanReminder() {

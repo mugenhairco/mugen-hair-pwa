@@ -117,29 +117,26 @@ const MugenRouter = (() => {
     if (hash.startsWith("#/dashboard")) {
       resolveDashboardPage(user).render(content);
     } else if (hash.startsWith("#/input-data")) {
-      // REVISI: khusus admin sekarang (Barber tidak lagi mengakses Input
-      // Data). Perlindungan sebenarnya tetap di backend (require_admin di
-      // setiap endpoint /api/input-data/*).
-      if (user.role !== "admin") {
+      // REVISI: khusus Owner/Admin (Barber tidak lagi mengakses Input Data).
+      // REVISI Hak Akses Admin (kedua): 'staff' (Admin) sekarang akses PENUH
+      // sama persis seperti Owner, tanpa sistem izin. Perlindungan
+      // sebenarnya tetap di backend (require_owner_or_staff di setiap
+      // endpoint /api/input-data/*).
+      if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
       }
       PageInputData.render(content);
     } else if (hash.startsWith("#/rekap")) {
-      // REVISI Hak Akses Admin: Rekap BUKAN bagian dari hak akses yang bisa
-      // diberikan Owner ke 'staff' (Admin) -- lihat permissions.py.
-      // Perlindungan sebenarnya tetap di backend (routers/rekap.py menolak
-      // role 'staff' secara eksplisit).
-      if (user.role === "staff") {
-        location.hash = "#/dashboard";
-        return;
-      }
+      // REVISI Hak Akses Admin (kedua): Rekap sekarang akses PENUH untuk
+      // 'staff' (Admin) sama persis seperti Owner, tanpa sistem izin --
+      // Barber tetap dibatasi ke data miliknya sendiri (lihat routers/rekap.py).
       PageRekap.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
-      // Tahap 9 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
-      // boleh MASUK halamannya (lihat/CRUD sesuai izin masing-masing diatur
-      // Owner), Barber tidak. Perlindungan sebenarnya tetap di backend
-      // (require_admin/require_permission di setiap endpoint /api/pengeluaran/*).
+      // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
+      // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.
+      // Perlindungan sebenarnya tetap di backend (require_owner_or_staff di
+      // setiap endpoint /api/pengeluaran/*).
       if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
@@ -157,29 +154,25 @@ const MugenRouter = (() => {
       }
       PagePengaturan.render(content);
     } else if (hash.startsWith("#/produk")) {
-      // Tahap 11: halaman khusus admin (persediaan toko, bukan milik barber
-      // manapun). Perlindungan sebenarnya tetap di backend (require_admin di
+      // Tahap 11: halaman khusus Owner/Admin (persediaan toko, bukan milik
+      // barber manapun). REVISI Hak Akses Admin (kedua): 'staff' (Admin)
+      // sekarang akses PENUH sama persis seperti Owner, tanpa sistem izin.
+      // Perlindungan sebenarnya tetap di backend (require_owner_or_staff di
       // setiap endpoint /api/produk/*).
-      if (user.role !== "admin") {
+      if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
       }
       PageProduk.render(content);
     } else if (hash.startsWith("#/booking")) {
-      // BOOKING: halaman internal (admin+barber). Admin/Owner full access
-      // (Booking List, Calendar, Operating Hours, Barber Holiday, Closed
-      // Slot, Payment Settings, Booking Settings); Barber hanya lihat
-      // booking miliknya sendiri -- pembagian tab persis dilakukan DI
-      // DALAM booking.js sendiri (mengikuti user.role), bukan di sini.
-      // REVISI Hak Akses Admin: Booking BUKAN bagian dari hak akses yang
-      // bisa diberikan Owner ke 'staff' (Admin) -- lihat permissions.py.
-      // Perlindungan sebenarnya tetap di backend (require_admin/
-      // require_barber di setiap endpoint /api/booking/*, keduanya
-      // menolak role 'staff').
-      if (user.role === "staff") {
-        location.hash = "#/dashboard";
-        return;
-      }
+      // BOOKING: halaman internal (Owner/Admin/Barber). Owner dan 'staff'
+      // (Admin) full access SAMA PERSIS (Booking List, Calendar, Operating
+      // Hours, Barber Holiday, Closed Slot, Payment Settings, Booking
+      // Settings -- REVISI Hak Akses Admin kedua: tanpa sistem izin sama
+      // sekali); Barber hanya lihat booking miliknya sendiri -- pembagian
+      // tab persis dilakukan DI DALAM booking.js sendiri (mengikuti
+      // user.role), bukan di sini. Perlindungan sebenarnya tetap di backend
+      // (require_owner_or_staff/require_barber di setiap endpoint /api/booking/*).
       PageBooking.render(content);
     } else {
       location.hash = "#/dashboard";
