@@ -23,8 +23,7 @@ jadi kolom `modal`/`durasi_menit` otomatis ikut ke luar begitu kolom itu
 ada — tidak perlu fungsi baca terpisah.
 """
 
-import sqlite3
-
+from db_compat import IntegrityError
 import database as db
 from database import get_conn
 
@@ -54,7 +53,7 @@ def tambah_service_lengkap(nama: str, harga: int, modal: int = 0,
         raise ValueError("Durasi harus lebih dari 0 menit.")
     try:
         service_id = db.add_service(nama, harga, pakai_potongan_chemical)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise ValueError(f"Nama layanan '{nama.strip()}' sudah dipakai.")
     set_modal(service_id, modal)
     set_durasi(service_id, durasi_menit)
@@ -75,7 +74,7 @@ def update_service_lengkap(service_id: int, nama: str = None, harga: int = None,
     try:
         db.update_service(service_id, nama=nama, harga=harga,
                            pakai_potongan_chemical=pakai_potongan_chemical, aktif=aktif)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise ValueError(f"Nama layanan '{(nama or '').strip()}' sudah dipakai.")
     if modal is not None:
         set_modal(service_id, modal)

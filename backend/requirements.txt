@@ -15,3 +15,10 @@ itsdangerous>=2.1.2
 # Tetap dibutuhkan untuk fitur sinkronisasi Google Sheets (dipindah dari aplikasi Python)
 gspread>=6.0.0
 google-auth>=2.28.0
+
+# TAHAP migrasi PostgreSQL (Neon): dipakai db_compat.py HANYA kalau environment
+# variable DATABASE_URL diisi -- kalau kosong (default, jalur SQLite), library
+# ini tidak pernah diimpor sama sekali. Tetap dicantumkan di sini (bukan
+# opsional) supaya siap dipakai begitu Owner mengisi DATABASE_URL, tanpa perlu
+# instalasi ulang.
+psycopg2-binary>=2.9.9

@@ -15,6 +15,7 @@ dipakai khusus oleh router Tahap 9 (routers/pengeluaran.py).
 
 from datetime import datetime
 
+import db_compat
 from database import get_conn
 
 # Daftar kategori default yang selalu muncul di dropdown filter/formulir,
@@ -104,15 +105,19 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
            FROM pengeluaran p LEFT JOIN barbers b ON b.id = p.barber_id WHERE 1=1"""
     params = []
     if tahun is not None:
-        q += " AND strftime('%Y', p.tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', p.tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND p.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND p.tanggal = ?"; params.append(tanggal)
     if kategori:
         q += " AND p.kategori = ?"; params.append(kategori)
     if cari:
-        q += " AND (p.keterangan LIKE ? OR p.kategori LIKE ?)"
+        # SQLite: LIKE tidak peka huruf besar/kecil secara default (ASCII).
+        # PostgreSQL: LIKE PEKA huruf besar/kecil -- ILIKE dipakai supaya
+        # perilaku pencarian identik di kedua dialek.
+        operator = "ILIKE" if db_compat.IS_POSTGRES else "LIKE"
+        q += f" AND (p.keterangan {operator} ? OR p.kategori {operator} ?)"
         like = f"%{cari}%"
         params.append(like)
         params.append(like)

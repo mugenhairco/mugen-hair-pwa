@@ -1,0 +1,267 @@
+"""
+postgres_schema.py — Skema PostgreSQL LENGKAP (TAHAP migrasi Neon)
+=============================================================================
+HANYA dipanggil dari main.py saat DATABASE_URL diisi (db_compat.IS_POSTGRES
+True) -- lihat on_startup(). Ditulis TERPISAH dari 11 file *_migrasi.py yang
+sudah ada (bukan menjalankannya satu per satu di atas Postgres) karena
+file-file itu isinya "ALTER TABLE" bertahap dipandu "PRAGMA table_info" --
+mekanisme cek kolom KHUSUS SQLite yang tidak berlaku di PostgreSQL. Untuk
+instalasi PostgreSQL yang benar-benar baru, tidak ada gunanya mereplay
+sejarah 11 tahap itu satu per satu -- lebih aman & lebih sederhana membuat
+LANGSUNG skema akhir (hasil gabungan seluruh migrasi itu) dalam satu langkah,
+idempotent (aman dipanggil ulang tiap kali proses restart, lewat
+"CREATE TABLE IF NOT EXISTS" + "ON CONFLICT DO NOTHING" -- TIDAK PERNAH
+menghapus/menimpa data yang sudah ada).
+
+Kolom & default di bawah ini disalin PERSIS dari akumulasi seluruh
+database.py + auth_db.py + booking_db.py + 11 file *_migrasi.py di jalur
+SQLite, supaya perilaku aplikasi di atas PostgreSQL identik dengan di atas
+SQLite (lihat README bagian Migrasi PostgreSQL untuk pemetaan lengkapnya).
+"""
+
+import json
+
+import db_compat
+
+DEFAULT_SETTINGS = {
+    "persentase_komisi": "40",
+    "potongan_modal_chemical": "15000",
+    "uang_harian_barber": "50000",
+    "uang_harian_rafiq": "75000",
+    "bonus_kehadiran": "100000",
+    "maksimal_hari_libur": "2",
+    "target_bonus_customer": "60",
+    "nominal_bonus_customer": "150000",
+    "maksimal_hari_libur_bonus_customer": "5",
+    "potongan_bonus_customer_persen": "50",
+    "uang_harian_target_service_harian": "3",
+}
+
+IDENTITAS_DEFAULT = {
+    "nama_barbershop": "MUGEN Hair Co.",
+    "alamat": "",
+    "whatsapp": "",
+    "email": "",
+    "instagram": "",
+    "jam_operasional": "",
+    "logo_filename": "",
+}
+
+DEFAULT_BOOKING_SETTINGS = {
+    "booking_jam_buka": "10:00",
+    "booking_jam_tutup": "20:00",
+    "booking_interval_menit": "60",
+    "booking_maksimal_hari_kedepan": "30",
+    "booking_metode_aktif": '["cash", "transfer"]',
+    "booking_qris_merchant_nama": "",
+    "booking_qris_filename": "",
+    "booking_bank_nama": "",
+    "booking_bank_nomor_rekening": "",
+    "booking_bank_nama_pemilik": "",
+}
+
+DEFAULT_SERVICES = [
+    ("Dry Cut", 35000, 0),
+    ("Cut & Wash", 45000, 0),
+    ("Hair Do", 60000, 0),
+    ("Beard Trim", 25000, 0),
+    ("Wet Shave", 30000, 0),
+    ("Hair Coloring", 150000, 1),
+    ("Smoothing", 250000, 1),
+    ("Keratin Treatment", 300000, 1),
+]
+
+# Setara satu tier dari skema lama (target_bonus_customer/nominal_bonus_customer)
+# -- lihat revisi_bonus_migrasi.py::_migrasi_bonus_tiers untuk versi SQLite.
+DEFAULT_BONUS_TIERS = [{"target": 60, "bonus": 150000}]
+
+# Service acuan Bonus Service & Uang Harian default -- lihat
+# bonus_service_migrasi.py untuk versi SQLite (nama yang sama persis).
+_SEED_ACUAN_NAMA = ("Dry Cut", "Cut & Wash")
+
+_TABLES = """
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS barbers (
+    id              SERIAL PRIMARY KEY,
+    nama            TEXT NOT NULL UNIQUE,
+    is_rafiq        INTEGER NOT NULL DEFAULT 0,
+    aktif           INTEGER NOT NULL DEFAULT 1,
+    uang_harian     INTEGER NOT NULL DEFAULT 0,
+    status_booking  TEXT NOT NULL DEFAULT 'aktif',
+    foto_filename   TEXT,
+    urutan          INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS services (
+    id                      SERIAL PRIMARY KEY,
+    nama                    TEXT NOT NULL UNIQUE,
+    harga                   INTEGER NOT NULL,
+    pakai_potongan_chemical INTEGER NOT NULL DEFAULT 0,
+    aktif                   INTEGER NOT NULL DEFAULT 1,
+    modal                   INTEGER NOT NULL DEFAULT 0,
+    durasi_menit            INTEGER NOT NULL DEFAULT 60,
+    urutan                  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS transaksi (
+    id          SERIAL PRIMARY KEY,
+    tanggal     TEXT NOT NULL,
+    barber_id   INTEGER NOT NULL REFERENCES barbers(id),
+    tips        INTEGER NOT NULL DEFAULT 0,
+    catatan     TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS transaksi_detail (
+    id            SERIAL PRIMARY KEY,
+    transaksi_id  INTEGER NOT NULL REFERENCES transaksi(id) ON DELETE CASCADE,
+    service_id    INTEGER NOT NULL REFERENCES services(id),
+    nama_service  TEXT NOT NULL,
+    harga         INTEGER NOT NULL,
+    jumlah        INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS absensi_libur (
+    id        SERIAL PRIMARY KEY,
+    barber_id INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal   TEXT NOT NULL,
+    UNIQUE(barber_id, tanggal)
+);
+
+CREATE TABLE IF NOT EXISTS pengeluaran (
+    id          SERIAL PRIMARY KEY,
+    tanggal     TEXT NOT NULL,
+    keterangan  TEXT NOT NULL,
+    jumlah      INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT,
+    kategori    TEXT,
+    barber_id   INTEGER REFERENCES barbers(id),
+    aktif       INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS produk (
+    id           SERIAL PRIMARY KEY,
+    nama         TEXT NOT NULL UNIQUE,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    harga_modal  INTEGER NOT NULL DEFAULT 0,
+    harga_jual   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS produk_mutasi (
+    id                      SERIAL PRIMARY KEY,
+    produk_id               INTEGER NOT NULL REFERENCES produk(id),
+    tanggal                 TEXT NOT NULL,
+    tipe                    TEXT NOT NULL,
+    jumlah                  INTEGER NOT NULL,
+    catatan                 TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT,
+    harga_modal_saat_itu    INTEGER,
+    harga_jual_saat_itu     INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    barber_id     INTEGER REFERENCES barbers(id),
+    aktif         INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    tema          TEXT NOT NULL DEFAULT 'terang'
+);
+
+CREATE TABLE IF NOT EXISTS sync_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+    id                  SERIAL PRIMARY KEY,
+    barber_id           INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal             TEXT NOT NULL,
+    jam_mulai           TEXT NOT NULL,
+    jam_selesai         TEXT NOT NULL,
+    customer_nama       TEXT NOT NULL,
+    customer_whatsapp   TEXT NOT NULL,
+    total_harga         INTEGER NOT NULL,
+    total_durasi_menit  INTEGER NOT NULL,
+    metode_pembayaran   TEXT NOT NULL,
+    status_pembayaran   TEXT NOT NULL DEFAULT 'menunggu_verifikasi',
+    status_booking      TEXT NOT NULL DEFAULT 'aktif',
+    catatan             TEXT,
+    created_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS booking_items (
+    id            SERIAL PRIMARY KEY,
+    booking_id    INTEGER NOT NULL REFERENCES bookings(id),
+    service_id    INTEGER NOT NULL REFERENCES services(id),
+    nama_service  TEXT NOT NULL,
+    harga         INTEGER NOT NULL,
+    durasi_menit  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS closed_slot (
+    id          SERIAL PRIMARY KEY,
+    barber_id   INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal     TEXT NOT NULL,
+    jam_mulai   TEXT NOT NULL,
+    jam_selesai TEXT NOT NULL,
+    keterangan  TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS toko_libur (
+    id          SERIAL PRIMARY KEY,
+    tanggal     TEXT NOT NULL UNIQUE,
+    keterangan  TEXT,
+    created_at  TEXT NOT NULL
+);
+"""
+
+
+def create_all():
+    """Idempotent -- aman dipanggil tiap kali proses ini boot (sama seperti
+    init_db() di jalur SQLite). TIDAK PERNAH menghapus/menimpa data yang
+    sudah ada (CREATE TABLE IF NOT EXISTS + ON CONFLICT DO NOTHING)."""
+    with db_compat.get_conn() as conn:
+        for statement in _TABLES.strip().split(";\n\n"):
+            statement = statement.strip()
+            if statement:
+                conn.execute(statement)
+
+        for key, value in DEFAULT_SETTINGS.items():
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+        for key, value in IDENTITAS_DEFAULT.items():
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+        for key, value in DEFAULT_BOOKING_SETTINGS.items():
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('bonus_customer_tiers', ?) ON CONFLICT DO NOTHING",
+            (json.dumps(DEFAULT_BONUS_TIERS),),
+        )
+
+        jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services").fetchone()["n"]
+        if jumlah_service == 0:
+            for nama, harga, pakai_potongan in DEFAULT_SERVICES:
+                conn.execute(
+                    "INSERT INTO services (nama, harga, pakai_potongan_chemical) VALUES (?, ?, ?)",
+                    (nama, harga, pakai_potongan),
+                )
+
+        for key in ("bonus_service_acuan_service_ids", "uang_harian_acuan_service_ids"):
+            existing = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            if existing is not None:
+                continue
+            placeholder = ", ".join("?" for _ in _SEED_ACUAN_NAMA)
+            rows = conn.execute(f"SELECT id FROM services WHERE nama IN ({placeholder})", _SEED_ACUAN_NAMA).fetchall()
+            service_ids = [r["id"] for r in rows]
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                         (key, json.dumps(service_ids)))

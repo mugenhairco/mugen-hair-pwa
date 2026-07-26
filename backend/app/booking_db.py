@@ -403,9 +403,9 @@ def get_closed_slot_list(barber_id: int = None, tahun: int = None, bulan: int = 
     if barber_id is not None:
         q += " AND cs.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND strftime('%Y', cs.tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND cs.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', cs.tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND cs.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY cs.tanggal DESC, cs.jam_mulai"
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
@@ -486,9 +486,9 @@ def get_toko_libur_list(tahun: int = None, bulan: int = None) -> list:
     q = "SELECT * FROM toko_libur WHERE 1=1"
     params = []
     if tahun is not None:
-        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY tanggal DESC"
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
@@ -717,9 +717,9 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
     if barber_id is not None:
         q += " AND bk.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND strftime('%Y', bk.tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND bk.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', bk.tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND bk.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND bk.tanggal = ?"; params.append(tanggal)
     if status_booking is not None:

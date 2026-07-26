@@ -16,6 +16,9 @@ import os
 from datetime import datetime, date
 from contextlib import contextmanager
 
+import db_compat
+from db_compat import IntegrityError
+
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mugen_hair.db")
 
 # Nama-nama service yang memakai skema komisi "Harga x Persentase" (tanpa potongan chemical)
@@ -61,7 +64,16 @@ def get_conn():
     kerja aplikasi ini. busy_timeout dinaikkan ke 30 detik sebagai jaring
     pengaman tambahan untuk kasus penulis-vs-penulis yang tetap bisa terjadi
     (mis. dua device menyimpan transaksi persis di detik yang sama).
+
+    TAHAP migrasi Postgres: kalau DATABASE_URL diisi, seluruh fungsi di file
+    ini (dan auth_db.py/booking_db.py/dst yang memakai get_conn() yang sama
+    ini) otomatis jalan di atas PostgreSQL lewat db_compat.get_conn(), tanpa
+    satu baris pun di bawah sini perlu diubah -- lihat db_compat.py.
     """
+    if db_compat.IS_POSTGRES:
+        with db_compat.get_conn() as conn:
+            yield conn
+        return
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -203,8 +215,10 @@ def init_db():
         """)
 
         # isi setting default hanya jika belum ada key tersebut (tidak menimpa yang sudah diubah user)
+        # "ON CONFLICT DO NOTHING" (tanpa target) -- dialek-netral, berlaku sama
+        # persis dengan "INSERT OR IGNORE" di SQLite 3.24+ maupun PostgreSQL.
         for key, value in DEFAULT_SETTINGS.items():
-            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
+            c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
 
         # seed service default (hanya jika tabel masih kosong)
         c.execute("SELECT COUNT(*) FROM services")
@@ -586,9 +600,9 @@ def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = No
     q = "SELECT t.*, b.nama AS nama_barber FROM transaksi t JOIN barbers b ON b.id = t.barber_id WHERE 1=1"
     params = []
     if tahun is not None:
-        q += " AND strftime('%Y', t.tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND t.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', t.tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND t.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if barber_id is not None:
         q += " AND t.barber_id = ?"; params.append(barber_id)
     if tanggal is not None:
@@ -635,7 +649,7 @@ def tandai_libur(barber_id: int, tanggal: str):
     _validasi_tanggal(tanggal)
     with get_conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO absensi_libur (barber_id, tanggal) VALUES (?, ?)",
+            "INSERT INTO absensi_libur (barber_id, tanggal) VALUES (?, ?) ON CONFLICT DO NOTHING",
             (barber_id, tanggal),
         )
 
@@ -652,8 +666,8 @@ def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
     with get_conn() as conn:
         row = conn.execute(
             """SELECT COUNT(*) AS jumlah FROM absensi_libur
-               WHERE barber_id = ? AND strftime('%Y', tanggal) = ? AND strftime('%m', tanggal) = ?""",
-            (barber_id, f"{tahun:04d}", f"{bulan:02d}"),
+               WHERE barber_id = ? AND tanggal LIKE ?""",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchone()
         return row["jumlah"]
 
@@ -761,8 +775,8 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
         rows = conn.execute(
             """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
                FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-               WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?""",
-            (barber["id"], f"{tahun:04d}", f"{bulan:02d}"),
+               WHERE t.barber_id = ? AND t.tanggal LIKE ?""",
+            (barber["id"], f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchall()
 
     jumlah_per_hari = {}
@@ -809,9 +823,9 @@ def get_jumlah_service_dry_cut_cut_wash_bulan(barber_id: int, tahun: int, bulan:
         row = conn.execute(
             f"""SELECT COALESCE(SUM(td.jumlah), 0) AS jumlah
                 FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-                WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?
+                WHERE t.barber_id = ? AND t.tanggal LIKE ?
                 AND td.service_id IN ({placeholder})""",
-            (barber_id, f"{tahun:04d}", f"{bulan:02d}", *acuan_ids),
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%", *acuan_ids),
         ).fetchone()
     return row["jumlah"]
 
@@ -822,8 +836,8 @@ def get_jumlah_service_bulan(barber_id: int, tahun: int, bulan: int) -> int:
         row = conn.execute(
             """SELECT COALESCE(SUM(td.jumlah), 0) AS jumlah
                FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-               WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?""",
-            (barber_id, f"{tahun:04d}", f"{bulan:02d}"),
+               WHERE t.barber_id = ? AND t.tanggal LIKE ?""",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchone()
     return row["jumlah"]
 
@@ -836,10 +850,10 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
         rows = conn.execute(
             """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
                FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-               WHERE t.barber_id = ? AND strftime('%Y', t.tanggal) = ? AND strftime('%m', t.tanggal) = ?
+               WHERE t.barber_id = ? AND t.tanggal LIKE ?
                GROUP BY td.nama_service
                ORDER BY jumlah DESC, td.nama_service ASC""",
-            (barber_id, f"{tahun:04d}", f"{bulan:02d}"),
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchall()
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
@@ -1008,9 +1022,9 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
     if barber_id is not None:
         q += " AND barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
     q += " ORDER BY tanggal DESC"
@@ -1180,9 +1194,9 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
     q = "SELECT * FROM pengeluaran WHERE 1=1"
     params = []
     if tahun is not None:
-        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
     q += " ORDER BY tanggal DESC, id DESC"
@@ -1255,7 +1269,7 @@ def tambah_produk(nama: str, harga_modal: int = 0, harga_jual: int = 0) -> int:
                 "INSERT INTO produk (nama, harga_modal, harga_jual) VALUES (?, ?, ?)",
                 (nama, int(harga_modal), int(harga_jual)),
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             raise ValueError(f"Produk dengan nama '{nama}' sudah ada.")
         return cur.lastrowid
 
@@ -1285,7 +1299,7 @@ def update_produk(produk_id: int, nama: str = None, harga_modal: int = None, har
     with get_conn() as conn:
         try:
             conn.execute(f"UPDATE produk SET {', '.join(fields)} WHERE id = ?", values)
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             raise ValueError(f"Produk dengan nama '{nama}' sudah ada.")
 
 
@@ -1460,9 +1474,9 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
     if tipe is not None:
         q += " AND pm.tipe = ?"; params.append(tipe)
     if tahun is not None:
-        q += " AND strftime('%Y', pm.tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND pm.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', pm.tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY pm.tanggal DESC, pm.id DESC"
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
@@ -1482,9 +1496,9 @@ def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None) -> int:
            FROM produk_mutasi WHERE tipe = 'jual'"""
     params = []
     if tahun is not None:
-        q += " AND strftime('%Y', tanggal) = ?"; params.append(f"{tahun:04d}")
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND strftime('%m', tanggal) = ?"; params.append(f"{bulan:02d}")
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     with get_conn() as conn:
         return conn.execute(q, params).fetchone()["omzet"]
 

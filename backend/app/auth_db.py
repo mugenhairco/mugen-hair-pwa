@@ -36,6 +36,8 @@ from contextlib import contextmanager
 
 import bcrypt
 
+import db_compat
+from db_compat import IntegrityError
 from database import DB_PATH  # pakai path database yang SAMA dengan database.py (satu file .db yang sama)
 
 # Batas bawaan algoritma bcrypt itu sendiri: byte setelah yang ke-72 pada
@@ -52,6 +54,13 @@ def get_conn():
     # .db yang sama) -- WAL mode + busy_timeout 30 detik supaya pembaca/
     # penulis dari device lain tidak saling memblokir/gagal "database is
     # locked" saat request bersamaan. Lihat komentar lengkap di database.py.
+    # TAHAP migrasi Postgres: sama seperti get_conn() di database.py, kalau
+    # DATABASE_URL diisi seluruh fungsi di file ini otomatis jalan di atas
+    # PostgreSQL lewat db_compat.get_conn() -- lihat db_compat.py.
+    if db_compat.IS_POSTGRES:
+        with db_compat.get_conn() as conn:
+            yield conn
+        return
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -144,26 +153,29 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None) 
                 "INSERT INTO users (username, password_hash, role, barber_id, created_at) VALUES (?, ?, ?, ?, ?)",
                 (username, hash_password(password), role, barber_id, now),
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             raise ValueError(f"Username '{username}' sudah dipakai.")
         return cur.lastrowid
 
 
 def get_user_by_username(username: str):
     """BUGFIX (login 'kadang' gagal dengan kredensial benar): pencocokan
-    username sekarang case-INSENSITIVE (COLLATE NOCASE). Sebelumnya exact
-    match case-sensitive -- kalau keyboard HP user kebetulan meng-kapital-
-    kan huruf pertama (perilaku default autocapitalize banyak browser
-    mobile, lihat juga perbaikan di frontend/js/pages/login.js), lookup ini
-    tidak menemukan usernya sama sekali dan login ditolak walau password
-    benar. `ORDER BY (username = ?) DESC` memprioritaskan exact match kalau
-    kebetulan ada dua username yang hanya beda huruf besar/kecil (username
-    tetap disimpan case-sensitive & unique persis seperti diketik saat
-    dibuat -- ini HANYA mengubah cara mencari/mencocokkan saat login)."""
+    username sekarang case-INSENSITIVE. Sebelumnya exact match case-sensitive
+    -- kalau keyboard HP user kebetulan meng-kapitalkan huruf pertama
+    (perilaku default autocapitalize banyak browser mobile, lihat juga
+    perbaikan di frontend/js/pages/login.js), lookup ini tidak menemukan
+    usernya sama sekali dan login ditolak walau password benar.
+    `LOWER(username) = LOWER(?)` dipakai (bukan `COLLATE NOCASE`, kolasi
+    khusus SQLite yang tidak dikenal PostgreSQL) supaya perbandingan case-
+    insensitive-nya identik di kedua dialek database. `ORDER BY
+    (username = ?) DESC` memprioritaskan exact match kalau kebetulan ada dua
+    username yang hanya beda huruf besar/kecil (username tetap disimpan
+    case-sensitive & unique persis seperti diketik saat dibuat -- ini HANYA
+    mengubah cara mencari/mencocokkan saat login)."""
     with get_conn() as conn:
         row = conn.execute(
             """SELECT * FROM users
-               WHERE username = ? COLLATE NOCASE AND aktif = 1
+               WHERE LOWER(username) = LOWER(?) AND aktif = 1
                ORDER BY (username = ?) DESC
                LIMIT 1""",
             (username, username),
