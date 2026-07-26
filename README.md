@@ -1808,6 +1808,176 @@ waktu, jadi tidak mengalami masalah konkurensi yang sama).
 
 `frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v17` → `v18`.
 
+### AUDIT KRITIS: Seluruh Data Kembali ke Kondisi Instalasi Baru Setelah Restart
+
+Laporan lanjutan (lebih parah dari audit sinkronisasi di atas): setelah
+login, SELURUH data (transaksi, setting, password yang sudah diubah)
+kembali seperti instalasi baru sama sekali -- bukan lagi "kadang beda
+antar device", tapi database di server benar-benar KOSONG.
+
+**Batasan investigasi ini (penting, harus disampaikan jujur)**: sesi
+audit ini berjalan di lingkungan sandbox yang TIDAK punya akses jaringan
+ke backend production (`mugen-hair-api.onrender.com` diblokir kebijakan
+egress sandbox) -- tidak bisa membaca log Render, dashboard Render, atau
+database production secara langsung. Kesimpulan di bawah ini murni dari
+**bukti kode** (bagaimana aplikasi ini pasti berperilaku, dibuktikan lewat
+pembacaan source code dan pengujian lokal), BUKAN dari log production
+sungguhan -- Owner perlu menjalankan langkah verifikasi di bagian paling
+bawah section ini untuk memastikan dari sisi Render.
+
+#### Bukti dari kode: kenapa ini PASTI terjadi kalau disk tidak persisten
+
+`database.py`:
+```python
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mugen_hair.db")
+```
+Path database dihitung RELATIF terhadap lokasi source code (`backend/app/`)
+itu sendiri -- bukan folder terpisah yang sengaja dipisah dari kode.
+`.gitignore` sudah benar mengecualikan `mugen_hair.db` dari git (memang
+seharusnya begitu, isinya data asli toko) -- tapi konsekuensinya: **file
+ini TIDAK PERNAH ikut ter-deploy dari git**. Setiap deploy (auto-deploy
+Render saat ada push/merge ke branch yang di-deploy, restart manual,
+maupun restart otomatis platform) menjalankan ulang `on_startup()` di
+`main.py`:
+
+```python
+db.init_db()          # CREATE TABLE IF NOT EXISTS -- tabel baru = ISI KOSONG
+...
+_bootstrap_admin_pertama()   # tabel users kosong -> buat admin BARU dari
+                              # ADMIN_BOOTSTRAP_USERNAME/PASSWORD (default:
+                              # "owner" / "ganti-password-ini")
+```
+
+Kalau folder `backend/app/` tempat file `.db` ini seharusnya hidup TIDAK
+di-mount ke **Persistent Disk** Render (sudah diperingatkan eksplisit di
+README bagian **Deployment (Produksi)** sejak awal proyek ini ditulis),
+maka SETIAP deploy/restart mendapat filesystem KOSONG dari awal --
+`init_db()` membuat tabel-tabel baru yang isinya kosong (bukan menimpa
+data lama, tapi karena file lama memang sudah tidak ada), dan
+`_bootstrap_admin_pertama()` otomatis membuat akun admin BARU dengan
+password DEFAULT -- **ini PERSIS cocok dengan seluruh gejala yang
+dilaporkan**: transaksi hilang (tabel baru, kosong), setting kembali
+default (tabel `settings` baru, diisi ulang dari `DEFAULT_SETTINGS` lewat
+`INSERT OR IGNORE`), dan password kembali ke awal (akun admin baru dibuat
+dari environment variable default, BUKAN password yang sudah diubah
+Owner sebelumnya lewat Setting > User -- akun LAMA beserta hash password
+barunya sudah tidak ada lagi sama sekali di tabel `users` yang baru).
+
+**Timeline yang cocok**: dua PR sebelumnya (perbaikan sinkronisasi &
+restrukturisasi Setting) baru saja di-merge ke `master` -- kalau Render
+mengaktifkan auto-deploy dari branch itu, kedua merge tsb masing-masing
+memicu deploy baru (container baru). Kalau disk tidak persisten, deploy
+itulah momen datanya ter-reset.
+
+#### Kemungkinan kedua (lebih jarang, tapi juga cocok untuk gejala password): `ADMIN_RESET_USERNAME`/`ADMIN_RESET_PASSWORD` masih terisi
+
+`main.py` (`_reset_admin_darurat`) punya mekanisme break-glass yang
+SUDAH ADA sejak awal: kalau DUA environment variable ini diisi eksplisit
+di Render, SETIAP restart akan mereset password admin ke nilai yang sama
+persis -- didokumentasikan sejak awal ("kalau dibiarkan, TIAP KALI server
+restart akan mereset ulang ke password yang sama"). Kalau Owner (atau
+siapa pun) pernah memakai mekanisme darurat ini dan LUPA menghapus kedua
+env var itu dari Render setelah berhasil login, gejala "password kembali
+ke password awal" bisa disebabkan MURNI oleh ini -- TANPA database
+kosong sama sekali (transaksi/setting harusnya tetap utuh kalau ini
+penyebabnya, HANYA password admin yang kembali).
+**Cara membedakan dari Penyebab #1 di atas**: kalau transaksi & setting
+JUGA hilang, itu Penyebab #1 (disk tidak persisten). Kalau HANYA
+password yang kembali tapi transaksi/setting tetap ada, itu Penyebab #2
+(env var darurat masih terisi) -- solusinya tinggal hapus
+`ADMIN_RESET_USERNAME`/`ADMIN_RESET_PASSWORD` dari Environment Variables
+di dashboard Render.
+
+#### Yang SUDAH dipastikan BUKAN penyebab (diperiksa langsung di kode)
+
+- **Tidak ada kode yang menghapus/mengganti file database secara
+  otomatis.** Diperiksa SELURUH kode backend untuk `os.remove`/
+  `os.unlink`/`shutil.rmtree`/`DROP TABLE` yang menyentuh file `.db` --
+  nihil. Satu-satunya kode yang MENGGANTI isi file database adalah
+  `pengaturan_backup.py` (`import_database`, endpoint
+  `POST /api/pengaturan/backup/import`) -- ini BUTUH aksi eksplisit admin
+  (login + upload file .db + klik "Restore Database" di menu
+  Sinkronisasi/Setting), TIDAK bisa terpicu otomatis/diam-diam, dan
+  bahkan endpoint ini SELALU membuat backup file yang sedang aktif dulu
+  sebelum menimpanya. Kalau ini yang terjadi, cek folder
+  `backend/app/backups/` di server (kalau kebetulan ikut persisten) untuk
+  file `mugen_hair_sebelum_import_*.db`.
+- **`init_db()` tidak menimpa data yang sudah ada** -- seluruhnya memakai
+  `CREATE TABLE IF NOT EXISTS` dan `INSERT OR IGNORE`, aman dipanggil
+  berkali-kali pada database yang SUDAH BERISI data (diverifikasi lewat
+  pengujian lokal: restart proses pada database yang sudah ada data tidak
+  mengubah satu baris pun, lihat bagian "BOOT: file database SUDAH ADA"
+  di bawah). Masalahnya BUKAN "init_db() menimpa data", tapi "file
+  database itu sendiri sudah tidak ada lagi sebelum init_db() sempat
+  jalan".
+- **Migrasi (`revisi_setting_migrasi.py` dkk) tidak menghapus apa pun** --
+  seluruhnya idempotent, dijaga penanda (lihat kode masing-masing file
+  `*_migrasi.py`), tidak ada satu pun yang men-drop tabel atau menghapus
+  baris.
+
+#### Perbaikan yang diterapkan: logging boot yang tidak bisa dilewatkan
+
+Kode aplikasi TIDAK BISA memaksa Render memasang Persistent Disk -- itu
+murni pengaturan platform hosting, di luar kendali source code. Yang BISA
+dilakukan: memastikan kejadian ini TIDAK PERNAH lagi terjadi tanpa jejak
+yang jelas. `main.py` (`on_startup()`) sekarang mencatat, SEBELUM
+`init_db()` sempat dipanggil sama sekali:
+
+- Kalau file `.db` **sudah ada**: log `INFO` singkat "melanjutkan data
+  yang sudah ada" (kondisi normal, tidak mengkhawatirkan).
+- Kalau file `.db` **tidak ditemukan**: log `CRITICAL` yang menjelaskan
+  PERSIS apa yang akan terjadi dan kenapa (disk tidak persisten), dengan
+  path lengkap yang dipakai.
+
+`_bootstrap_admin_pertama()` (pembuatan akun admin baru) dan
+`_reset_admin_darurat()` (reset password lewat env var darurat) SEKARANG
+JUGA mencatat log `CRITICAL` setiap kali benar-benar jalan (sebelumnya
+`_bootstrap_admin_pertama()` sama sekali tidak mencatat apa-apa, dan
+`_reset_admin_darurat()` cuma `print()` biasa) -- di instalasi yang sehat,
+kedua fungsi ini HARUSNYA nyaris tidak pernah terlihat di log setelah
+setup awal; begitu terlihat lagi, itu sendiri sudah jadi bukti insiden.
+Ditutup dengan log ringkasan jumlah baris tabel inti (`users`, `barbers`,
+`transaksi`, `bookings`) di akhir tiap boot, supaya riwayat log Render
+bisa dibandingkan dari waktu ke waktu.
+
+Diverifikasi lewat dua skenario pengujian lokal (file `.db` dihapus vs
+dipertahankan sebelum restart) -- log yang dihasilkan PERSIS sesuai
+rancangan di atas untuk kedua kondisi.
+
+#### LANGKAH YANG PERLU Owner lakukan (tidak bisa diselesaikan dari kode)
+
+1. **Cek Render Dashboard > (nama service backend) > Settings > Disks.**
+   Pastikan ADA persistent disk terpasang, dan **Mount Path**-nya
+   menunjuk tepat ke folder tempat kode ini berjalan (biasanya sesuatu
+   seperti `/opt/render/project/src/backend/app`, sesuaikan dengan Start
+   Command yang dipakai) -- BUKAN folder lain atau kosong. Kalau belum
+   ada, tambahkan (Render: New Disk, minimal 1GB cukup untuk SQLite skala
+   satu barbershop), redeploy, lalu masukkan kembali data lewat Restore
+   Database (kalau punya file backup lama) atau input manual.
+2. **Cek Render Dashboard > Settings > Environment.** Cari
+   `ADMIN_RESET_USERNAME`/`ADMIN_RESET_PASSWORD` -- kalau ADA isinya,
+   HAPUS keduanya (ini kemungkinan #2 di atas untuk gejala password).
+3. **Cek Render Dashboard > Settings.** Pastikan **Number of Instances =
+   1** (relevan untuk audit sinkronisasi sebelumnya juga).
+4. Setelah disk persisten terpasang dengan benar, buka
+   `GET /api/health` dari browser BEBERAPA KALI dengan jeda -- `boot_time`
+   HARUS tetap sama selama tidak ada deploy baru yang disengaja. Kalau
+   berubah sendiri, disk masih belum persisten dengan benar.
+5. **Soal data yang sudah hilang**: kode aplikasi ini tidak bisa
+   mengembalikan data yang sudah benar-benar tertimpa di server. Cek dua
+   kemungkinan pemulihan:
+   - File `.db` di folder `backend/app/backups/` di server (dibuat
+     otomatis setiap kali ada yang pakai fitur Restore Database) -- kalau
+     kebetulan folder ini ikut berada di disk yang sama yang baru saja
+     hilang, ini juga sudah tidak ada.
+   - Google Sheets, KALAU fitur Sinkronisasi sempat aktif & berhasil
+     sebelum insiden ini (cek menu Sinkronisasi > Status Sinkronisasi,
+     atau langsung buka spreadsheet-nya kalau tahu link-nya) -- tab
+     `transaksi`/`pengeluaran`/`produk`/`produk_mutasi` di sana berisi
+     snapshot data SAAT sinkron terakhir berhasil (CATATAN: sinkronisasi
+     ini TIDAK menyertakan `settings`/`barbers`/`users`/`bookings`, jadi
+     paling banter cuma sebagian data yang bisa dipulihkan dari sini).
+
 
 ## Struktur Project
 
