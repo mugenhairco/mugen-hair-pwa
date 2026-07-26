@@ -123,7 +123,15 @@ const PageBookPublic = (() => {
 
     header.innerHTML = "";
     if (identitas.banner_url) {
-      header.appendChild(MugenUI.el("img", { src: MUGEN_API_BASE + identitas.banner_url, class: "book-banner-img", alt: "Banner" }));
+      // REVISI: sembunyikan dulu sampai TERBUKTI berhasil dimuat (onload),
+      // dan tetap sembunyi (bukan ikon broken-image) kalau gagal (onerror) --
+      // banner sudah di-preload lewat brand.js sejak identitas didapat, jadi
+      // pada praktiknya ini biasanya langsung "onload" instan dari cache.
+      const bannerImg = MugenUI.el("img", { class: "book-banner-img", style: "display:none;", alt: "Banner" });
+      bannerImg.onload = () => { bannerImg.style.display = ""; };
+      bannerImg.onerror = () => { bannerImg.style.display = "none"; bannerImg.removeAttribute("src"); };
+      bannerImg.src = MUGEN_API_BASE + identitas.banner_url;
+      header.appendChild(bannerImg);
     }
     header.appendChild(MugenUI.el("h1", {}, pengaturan.header_judul || identitas.nama_barbershop || "MUGEN Hair Co."));
     header.appendChild(MugenUI.el("div", { class: "subtitle" }, pengaturan.header_subtitle || identitas.tagline || "Booking Online"));

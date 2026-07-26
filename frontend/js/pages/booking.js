@@ -17,6 +17,30 @@ const PageBooking = (() => {
   const STATUS_BOOKING_LABEL = { aktif: "Aktif", dibatalkan: "Dibatalkan" };
   const METODE_LABEL = { cash: "Cash", transfer: "Transfer Bank", qris: "QRIS", gateway: "Payment Gateway" };
 
+  // REVISI: nomor WhatsApp customer di Menu Booking ditampilkan sebagai link
+  // wa.me yang bisa langsung diklik admin (buka chat, tanpa pesan otomatis),
+  // supaya admin tidak perlu copy-paste nomor manual. wa.me mewajibkan format
+  // internasional tanpa "+"/spasi/tanda baca, jadi nomor lokal (awalan 0)
+  // dikonversi ke 62 dulu di sini sebelum dipakai sebagai href.
+  function nomorKeFormatInternasional(nomorMentah) {
+    const digits = String(nomorMentah).replace(/[^\d+]/g, "");
+    if (digits.startsWith("+62")) return digits.slice(1);
+    if (digits.startsWith("62")) return digits;
+    if (digits.startsWith("0")) return "62" + digits.slice(1);
+    return digits.replace(/^\+/, "");
+  }
+
+  function waLinkCell(nomorMentah) {
+    if (!nomorMentah) return "-";
+    const intl = nomorKeFormatInternasional(nomorMentah);
+    if (!intl) return String(nomorMentah);
+    return MugenUI.el("a", {
+      href: `https://wa.me/${intl}`,
+      target: "_blank",
+      rel: "noopener noreferrer",
+    }, "+" + intl);
+  }
+
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
@@ -106,7 +130,7 @@ const PageBooking = (() => {
       { key: "jam_mulai", label: "Jam", format: (_, r) => `${r.jam_mulai}-${r.jam_selesai}` },
       ...(withBarber ? [{ key: "nama_barber", label: "Barber" }] : []),
       { key: "customer_nama", label: "Customer" },
-      { key: "customer_whatsapp", label: "WhatsApp" },
+      { key: "customer_whatsapp", label: "WhatsApp", format: (v) => waLinkCell(v) },
       { key: "daftar_service", label: "Service" },
       { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
       { key: "metode_pembayaran", label: "Metode", format: (v) => METODE_LABEL[v] || v },

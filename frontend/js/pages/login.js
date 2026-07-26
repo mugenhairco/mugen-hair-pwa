@@ -17,6 +17,12 @@ const PageLogin = (() => {
     card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
     card.appendChild(MugenUI.el("h1", { class: "brand-name" }, MugenBrand.get().nama_barbershop));
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Masuk ke akun Anda"));
+    // REVISI: terapkan dulu dari cache localStorage (lewat applyToDom(), bukan
+    // langsung tunggu refresh() yang butuh roundtrip ke server) supaya logo
+    // yang sudah pernah tersimpan langsung tampil tanpa delay/flash kosong
+    // saat halaman Login pertama kali dibuka -- refresh() tetap dipanggil
+    // sesudahnya untuk menyegarkan data di background.
+    MugenBrand.applyToDom();
     MugenBrand.refresh();
 
     // BUGFIX: tanpa atribut ini, keyboard HP (iOS/Android) otomatis

@@ -89,7 +89,14 @@
 // perubahan backend (database.py WAL mode, main.py logging + endpoint
 // /api/health/diagnostik) di CHANGELOG README -- tidak memengaruhi
 // APP_SHELL frontend tapi bagian dari perbaikan yang sama.
-const CACHE_NAME = "mugen-hair-shell-v20";
+// v20 -> v21: REVISI Menu Booking & Aset PWA -- nomor WhatsApp customer di
+// Menu Booking (booking.js) sekarang link wa.me yang bisa langsung diklik;
+// perbaikan logo/banner yang kadang tidak muncul/rusak/lambat saat aplikasi
+// pertama dibuka (brand.js: preload + sembunyikan sampai TERBUKTI berhasil
+// dimuat alih-alih tampil sebagai ikon rusak; login.js: terapkan cache
+// lebih dulu sebelum menunggu refresh dari server; book_public.js: banner
+// booking pakai pola sama; index.html: preconnect ke backend Render).
+const CACHE_NAME = "mugen-hair-shell-v21";
 const APP_SHELL = [
   "/",
   "/index.html",
