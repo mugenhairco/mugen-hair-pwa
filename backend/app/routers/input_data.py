@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 import database as db
 from auth import require_admin
-from sync_helper import sync_async
 
 router = APIRouter(prefix="/api/input-data", tags=["input-data"])
 
@@ -108,7 +107,6 @@ def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_admin)):
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_transaksi(transaksi_id)
 
 
@@ -126,7 +124,6 @@ def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_transaksi(transaksi_id)
 
 
@@ -134,7 +131,6 @@ def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends
 def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_admin)):
     _pastikan_pemilik(user, transaksi_id)
     db.hapus_transaksi(transaksi_id)
-    sync_async()
     return {"ok": True}
 
 
@@ -148,7 +144,6 @@ def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(requir
 def tandai_libur(body: LiburBody, user: dict = Depends(require_admin)):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.tandai_libur(barber_id, body.tanggal)
-    sync_async()
     return {"ok": True}
 
 
@@ -156,5 +151,4 @@ def tandai_libur(body: LiburBody, user: dict = Depends(require_admin)):
 def batalkan_libur(body: LiburBody, user: dict = Depends(require_admin)):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.batalkan_libur(barber_id, body.tanggal)
-    sync_async()
     return {"ok": True}

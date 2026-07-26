@@ -3,11 +3,44 @@
 // Mengikuti pola tab seperti pages/rekap.js.
 
 const PagePengaturan = (() => {
+  // REVISI Hak Akses Admin: tab yang dilihat 'staff' (Admin) HANYA yang
+  // diizinkan Owner lewat Setting > Hak Akses Admin -- Komisi/Bonus Service/
+  // Uang Harian/Barber/Layanan/Hak Akses Admin itu sendiri BUKAN bagian
+  // dari hak akses yang bisa diberikan (lihat backend/permissions.py),
+  // jadi tetap Owner-murni. Pemetaan tab -> key izin Setting-nya:
+  const TAB_KE_IZIN_SETTING = {
+    "Identitas Barbershop": "izin_setting_identitas",
+    "Tampilan": "izin_setting_tampilan",
+    "User": "izin_setting_user",
+    "Backup": "izin_setting_backup",
+  };
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Setting"));
 
-    const tabs = ["Identitas Barbershop", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
+    const user = MugenState.getUser();
+    const isOwner = user.role === "admin";
+
+    let izinAdmin = {};
+    if (!isOwner) {
+      try {
+        izinAdmin = await MugenApi.get("/api/pengaturan/hak-akses-admin");
+      } catch (e) {
+        izinAdmin = {};
+      }
+    }
+
+    const tabs = isOwner
+      ? ["Identitas Barbershop", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup", "Hak Akses Admin"]
+      : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
+
+    if (tabs.length === 0) {
+      root.appendChild(MugenUI.el("div", { class: "card" },
+        "Belum ada tab Setting yang diizinkan untuk akun Admin ini. Hubungi Owner untuk mengatur hak akses lewat Setting > Hak Akses Admin."));
+      return;
+    }
+
     let activeTab = tabs[0];
 
     const tabBar = MugenUI.el("div", { class: "tabs" });
@@ -34,7 +67,8 @@ const PagePengaturan = (() => {
       else if (activeTab === "Barber") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
       else if (activeTab === "User") await renderUser();
-      else await renderBackup();
+      else if (activeTab === "Backup") await renderBackup();
+      else await renderHakAksesAdmin();
     }
 
     // ================= BONUS SERVICE / UANG HARIAN (checklist acuan service) =================
@@ -500,7 +534,7 @@ const PagePengaturan = (() => {
 
       formCard.appendChild(MugenUI.el("label", {}, "Nama Barber"));
       formCard.appendChild(inputNama);
-      formCard.appendChild(MugenUI.el("label", {}, "Uang Harian (Rp/hari, cair kalau Dry Cut + Cut & Wash hari itu ≥ 3)"));
+      formCard.appendChild(MugenUI.el("label", {}, "Uang Harian"));
       formCard.appendChild(inputUangHarian);
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
@@ -862,6 +896,15 @@ const PagePengaturan = (() => {
 
     // ================= TAB: USER =================
     async function renderUser() {
+      // REVISI Hak Akses Admin: role 'admin' (Owner) dan 'staff' (Admin,
+      // BARU) sekarang dua peran berbeda -- lihat backend/permissions.py.
+      // Akun ber-role 'staff' HANYA boleh mengelola user ber-role 'barber'
+      // (ditegakkan di backend, lihat routers/pengaturan.py -- form/tombol
+      // di sini disesuaikan supaya tidak menampilkan aksi yang pasti
+      // ditolak backend).
+      const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber" };
+      const isStaffActor = user.role === "staff";
+
       const formCard = MugenUI.el("div", { class: "card" });
       const listCard = MugenUI.el("div", { class: "card" });
       body.appendChild(formCard);
@@ -874,9 +917,13 @@ const PagePengaturan = (() => {
       const inputUsername = MugenUI.el("input", { type: "text", placeholder: "Username" });
       const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password (min. 4 karakter)" });
       const selRole = MugenUI.el("select");
-      selRole.appendChild(MugenUI.el("option", { value: "admin" }, "Admin"));
+      if (!isStaffActor) {
+        selRole.appendChild(MugenUI.el("option", { value: "admin" }, "Owner"));
+        selRole.appendChild(MugenUI.el("option", { value: "staff" }, "Admin"));
+      }
       selRole.appendChild(MugenUI.el("option", { value: "barber" }, "Barber"));
-      const selBarberAkun = MugenUI.el("select", { style: "display:none;" });
+      if (isStaffActor) selRole.value = "barber";
+      const selBarberAkun = MugenUI.el("select", { style: isStaffActor ? "" : "display:none;" });
       selBarberAkun.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
       for (const b of barbers) selBarberAkun.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
       selRole.addEventListener("change", () => { selBarberAkun.style.display = selRole.value === "barber" ? "" : "none"; });
@@ -909,7 +956,8 @@ const PagePengaturan = (() => {
             barber_id: selRole.value === "barber" ? Number(selBarberAkun.value) : null,
           }), { message: "Menyimpan…" });
           MugenUI.toast("User ditambahkan.", "success");
-          inputUsername.value = ""; inputPassword.value = ""; selRole.value = "admin"; selBarberAkun.style.display = "none";
+          inputUsername.value = ""; inputPassword.value = "";
+          if (isStaffActor) { selBarberAkun.style.display = ""; } else { selRole.value = "admin"; selBarberAkun.style.display = "none"; }
           loadList();
         } catch (e) {
           formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -930,21 +978,33 @@ const PagePengaturan = (() => {
           listBody.appendChild(MugenUI.buildTable(
             [
               { key: "username", label: "Username" },
-              { key: "role", label: "Role", format: (v) => v === "admin" ? "Admin" : "Barber" },
+              { key: "role", label: "Role", format: (v) => LABEL_ROLE[v] || v },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnUsername = MugenUI.el("button", {}, "Ganti Username");
-                  btnUsername.addEventListener("click", async () => {
-                    const baru = prompt(`Username baru untuk "${r.username}":`, r.username);
-                    if (!baru || !baru.trim() || baru.trim() === r.username) return;
-                    try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() }), { message: "Menyimpan…" });
-                      MugenUI.toast("Username diperbarui.", "success");
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-                  });
+                  // REVISI Hak Akses Admin: 'staff' (Admin) hanya boleh
+                  // menyasar user ber-role 'barber' -- tombol aksi untuk
+                  // baris Owner/Admin lain disembunyikan sama sekali di sini
+                  // (bukan hanya ditolak backend) supaya tidak ada tombol
+                  // yang pasti berujung error 403.
+                  if (isStaffActor && r.role !== "barber") {
+                    wrap.appendChild(MugenUI.el("span", { style: "color:var(--text-dim);" }, "-"));
+                    return wrap;
+                  }
+                  if (!isStaffActor) {
+                    const btnUsername = MugenUI.el("button", {}, "Ganti Username");
+                    btnUsername.addEventListener("click", async () => {
+                      const baru = prompt(`Username baru untuk "${r.username}":`, r.username);
+                      if (!baru || !baru.trim() || baru.trim() === r.username) return;
+                      try {
+                        await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() }), { message: "Menyimpan…" });
+                        MugenUI.toast("Username diperbarui.", "success");
+                        loadList();
+                      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                    });
+                    wrap.appendChild(btnUsername);
+                  }
                   const btnPassword = MugenUI.el("button", {}, "Ganti Password");
                   btnPassword.addEventListener("click", async () => {
                     const baru = prompt(`Password baru untuk "${r.username}" (min. 4 karakter):`);
@@ -962,7 +1022,6 @@ const PagePengaturan = (() => {
                       loadList();
                     } catch (e) { MugenUI.toast(e.message, "error"); }
                   });
-                  wrap.appendChild(btnUsername);
                   wrap.appendChild(btnPassword);
                   wrap.appendChild(btnToggle);
                   return wrap;
@@ -981,11 +1040,20 @@ const PagePengaturan = (() => {
 
     // ================= TAB: BACKUP =================
     async function renderBackup() {
+      // REVISI Hak Akses Admin: Export/Import/Laporan PDF masing-masing
+      // permission TERPISAH (bukan hanya izin_setting_backup, yang cuma
+      // mengatur akses ke TAB-nya) -- Owner selalu boleh semuanya.
+      const bolehExport = isOwner || !!izinAdmin.izin_backup_export;
+      const bolehImport = isOwner || !!izinAdmin.izin_backup_import;
+      const bolehLaporan = isOwner || !!izinAdmin.izin_laporan_pdf;
+
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Export Database"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Unduh salinan file database saat ini (.db)."));
       const btnExport = MugenUI.el("button", { class: "btn-primary" }, "Export Database");
+      btnExport.disabled = !bolehExport;
+      if (!bolehExport) card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Admin tidak punya izin untuk Export Database. Hubungi Owner."));
       card.appendChild(MugenUI.el("div", { style: "margin:12px 0 24px;" }, btnExport));
 
       btnExport.addEventListener("click", async () => {
@@ -1020,6 +1088,7 @@ const PagePengaturan = (() => {
         "PERHATIAN: ini akan MENGGANTI seluruh data yang sedang berjalan dengan isi file yang diupload. Database yang sedang aktif otomatis di-backup dulu sebelum diganti, tapi tetap lakukan ini dengan hati-hati."));
       const inputImport = MugenUI.el("input", { type: "file", accept: ".db" });
       const btnImport = MugenUI.el("button", { class: "btn-danger" }, "Import & Ganti Database");
+      btnImport.disabled = !bolehImport;
       const importError = MugenUI.el("div", { class: "login-error" });
       card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:12px 0;" }, [inputImport, btnImport]));
       card.appendChild(importError);
@@ -1037,6 +1106,173 @@ const PagePengaturan = (() => {
           importError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         } finally {
           btnImport.disabled = false;
+        }
+      });
+
+      // ================= LAPORAN PDF =================
+      const laporanCard = MugenUI.el("div", { class: "card" });
+      body.appendChild(laporanCard);
+      laporanCard.appendChild(MugenUI.el("h2", {}, "Download Laporan PDF"));
+      laporanCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "PDF berisi nama & logo barbershop, judul laporan, periode, tanggal cetak, nomor halaman, dan nama Anda sebagai pencetak."));
+
+      const today = new Date();
+      const selJenis = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "transaksi" }, "Laporan Transaksi"),
+        MugenUI.el("option", { value: "pengeluaran" }, "Laporan Pengeluaran"),
+        MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
+      ]);
+      const selTahunLaporan = MugenUI.el("select");
+      for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahunLaporan.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
+      selTahunLaporan.value = String(today.getFullYear());
+      const selBulanLaporan = MugenUI.el("select");
+      selBulanLaporan.appendChild(MugenUI.el("option", { value: "" }, "Semua Bulan"));
+      for (let m = 1; m <= 12; m++) selBulanLaporan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
+      selBulanLaporan.value = String(today.getMonth() + 1);
+      const selBarberLaporan = MugenUI.el("select");
+      selBarberLaporan.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+      try {
+        const barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
+        for (const b of barbers) selBarberLaporan.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+      } catch (e) { /* opsional -- filter barber tetap bisa "Semua Barber" */ }
+
+      laporanCard.appendChild(MugenUI.el("label", {}, "Jenis Laporan"));
+      laporanCard.appendChild(selJenis);
+      laporanCard.appendChild(MugenUI.el("label", {}, "Tahun"));
+      laporanCard.appendChild(selTahunLaporan);
+      laporanCard.appendChild(MugenUI.el("label", {}, "Bulan"));
+      laporanCard.appendChild(selBulanLaporan);
+      laporanCard.appendChild(MugenUI.el("label", {}, "Barber"));
+      laporanCard.appendChild(selBarberLaporan);
+
+      const laporanError = MugenUI.el("div", { class: "login-error" });
+      const btnLaporan = MugenUI.el("button", { class: "btn-primary" }, "Download PDF");
+      btnLaporan.disabled = !bolehLaporan;
+      if (!bolehLaporan) laporanCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Admin tidak punya izin untuk Download Laporan PDF. Hubungi Owner."));
+      laporanCard.appendChild(laporanError);
+      laporanCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnLaporan));
+
+      btnLaporan.addEventListener("click", async () => {
+        laporanError.textContent = "";
+        if (selJenis.value === "rekap_bulanan" && !selBulanLaporan.value) {
+          laporanError.textContent = "Rekap Bulanan Barber wajib memilih satu bulan tertentu.";
+          return;
+        }
+        btnLaporan.disabled = true;
+        try {
+          await MugenUI.withLoading(async () => {
+            const qs = new URLSearchParams({ jenis: selJenis.value, tahun: selTahunLaporan.value });
+            if (selBulanLaporan.value) qs.set("bulan", selBulanLaporan.value);
+            if (selBarberLaporan.value) qs.set("barber_id", selBarberLaporan.value);
+            const token = MugenState.getToken();
+            const res = await fetch(`${MUGEN_API_BASE}/api/pengaturan/laporan/pdf?${qs.toString()}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            if (!res.ok) {
+              let pesan = "Gagal mengunduh laporan.";
+              try { pesan = (await res.json()).detail || pesan; } catch (e) { /* body bukan JSON */ }
+              throw new Error(pesan);
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `laporan_${selJenis.value}_${selTahunLaporan.value}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          });
+          MugenUI.toast("Laporan PDF berhasil diunduh.", "success");
+        } catch (e) {
+          laporanError.textContent = e.message;
+        } finally {
+          btnLaporan.disabled = false;
+        }
+      });
+    }
+
+    // ================= TAB: HAK AKSES ADMIN (Owner-only) =================
+    async function renderHakAksesAdmin() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Hak Akses Admin"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Atur apa saja yang boleh dilihat/dilakukan akun ber-role Admin (role 'staff'). Owner selalu memiliki akses penuh " +
+        "tanpa batasan apa pun -- pengaturan di bawah ini TIDAK berlaku untuk Owner."));
+
+      let izin;
+      try {
+        izin = await MugenApi.get("/api/pengaturan/hak-akses-admin");
+      } catch (e) {
+        card.appendChild(MugenUI.el("div", {}, e.message));
+        return;
+      }
+
+      const GRUP = [
+        { judul: "Dashboard", keys: [
+          ["izin_dashboard_nilai_service", "Nilai Service"],
+          ["izin_dashboard_jumlah_service", "Jumlah Service"],
+          ["izin_dashboard_pengeluaran_toko", "Pengeluaran Toko"],
+          ["izin_dashboard_penjualan_produk", "Penjualan Produk"],
+          ["izin_dashboard_total_komisi", "Total Komisi Barber"],
+          ["izin_dashboard_total_tips", "Total Tips"],
+          ["izin_dashboard_uang_harian", "Uang Harian"],
+          ["izin_dashboard_bonus_customer", "Bonus Customer"],
+          ["izin_dashboard_laba_kotor", "Laba Kotor Toko"],
+        ]},
+        { judul: "User (khusus akun ber-role Barber)", keys: [
+          ["izin_user_tambah", "Membuat User Barber"],
+          ["izin_user_hapus", "Menghapus (menonaktifkan) User Barber"],
+          ["izin_user_ganti_password", "Mengubah Password User Barber"],
+        ]},
+        { judul: "Pengeluaran", keys: [
+          ["izin_pengeluaran_tambah", "Tambah"],
+          ["izin_pengeluaran_edit", "Edit"],
+          ["izin_pengeluaran_hapus", "Hapus"],
+        ]},
+        { judul: "Backup", keys: [
+          ["izin_backup_export", "Export Database"],
+          ["izin_backup_import", "Import Database"],
+        ]},
+        { judul: "Laporan", keys: [
+          ["izin_laporan_pdf", "Download PDF"],
+        ]},
+        { judul: "Setting (akses tab)", keys: [
+          ["izin_setting_identitas", "Identitas Barbershop"],
+          ["izin_setting_tampilan", "Tampilan"],
+          ["izin_setting_user", "User"],
+          ["izin_setting_backup", "Backup"],
+        ]},
+      ];
+
+      const checkboxes = {};
+      for (const grup of GRUP) {
+        card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, grup.judul));
+        const listBox = MugenUI.el("div", { class: "checklist-service" });
+        for (const [key, label] of grup.keys) {
+          const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+          cb.checked = !!izin[key];
+          checkboxes[key] = cb;
+          listBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" }, [cb, label]));
+        }
+        card.appendChild(listBox);
+      }
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Hak Akses");
+      card.appendChild(errorBox);
+      card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const body2 = {};
+        for (const [key, cb] of Object.entries(checkboxes)) body2[key] = cb.checked;
+        try {
+          await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/hak-akses-admin", { izin: body2 }), { message: "Menyimpan…" });
+          MugenUI.toast("Hak akses Admin disimpan.", "success");
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
     }

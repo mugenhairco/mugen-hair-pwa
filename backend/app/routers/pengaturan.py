@@ -10,21 +10,45 @@ Tahap 10 TIDAK mengubah Dashboard/Login-flow/Input Data/Rekap/Pengeluaran/
 Produk/Perhitungan Komisi/struktur API yang sudah ada — router ini murni
 tambahan baru di path /api/pengaturan/*."""
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import auth_db
 import database as db
+import db_compat
+import laporan_pdf
 import pengaturan_barber
 import pengaturan_backup
 import pengaturan_bonus
 import pengaturan_identitas
 import pengaturan_service
 import pengaturan_user
-from auth import require_admin
+import permissions
+from auth import require_admin, require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
+
+
+def _cek_target_barber_untuk_staff(user: dict, target: dict, aksi: str):
+    """'staff' (Admin) HANYA boleh menyasar user ber-role 'barber' -- tidak
+    pernah 'admin' (Owner) maupun 'staff' lain, apa pun izin yang diberikan
+    Owner (izin di Setting > Hak Akses Admin hanya mengatur AKSI-nya, bukan
+    menaikkan siapa yang boleh disasar). 'admin' (Owner) tidak dibatasi di
+    sini -- aturan Owner-terakhir tetap berlaku terpisah, lihat
+    _cek_bukan_owner_terakhir."""
+    if user["role"] == "staff" and target["role"] != "barber":
+        raise HTTPException(status_code=403, detail=f"Admin hanya boleh {aksi} akun ber-role Barber.")
+
+
+def _cek_bukan_owner_terakhir(target: dict):
+    """Berlaku untuk SIAPA PUN pemanggilnya (termasuk Owner) -- minimal
+    harus selalu ada satu akun Owner aktif."""
+    if target["role"] == "admin" and auth_db.hitung_owner_aktif() <= 1:
+        raise HTTPException(status_code=403,
+                             detail="Tidak bisa menonaktifkan Owner terakhir. Minimal harus ada satu akun Owner aktif.")
 
 # Key setting yang boleh diubah lewat menu "Pengaturan Komisi" (semuanya
 # SUDAH ADA di database.DEFAULT_SETTINGS sejak Tahap 2 — router ini cuma
@@ -66,7 +90,7 @@ def ambil_identitas():
 
 
 @router.put("/identitas")
-def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_admin)):
+def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_permission("izin_setting_identitas"))):
     try:
         pengaturan_identitas.update_identitas(body.model_dump())
     except ValueError as e:
@@ -75,7 +99,7 @@ def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_admin)):
 
 
 @router.post("/logo")
-async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_identitas"))):
     konten = await file.read()
     try:
         pengaturan_identitas.simpan_logo(file.filename, konten)
@@ -95,7 +119,7 @@ def ambil_logo(v: str | None = None):
 # PENYEMPURNAAN FORM BOOKING: Banner, pola SAMA PERSIS seperti Logo di atas
 # (upload khusus admin, GET publik -- dipakai header halaman booking /book).
 @router.post("/banner")
-async def upload_banner(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def upload_banner(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_identitas"))):
     konten = await file.read()
     try:
         pengaturan_identitas.simpan_banner(file.filename, konten)
@@ -360,7 +384,9 @@ class PasswordBody(BaseModel):
 
 
 @router.get("/user")
-def list_user(user: dict = Depends(require_admin)):
+def list_user(user: dict = Depends(require_owner_or_staff)):
+    if user["role"] == "staff" and not permissions.has("izin_setting_user"):
+        raise HTTPException(status_code=403, detail="Admin tidak punya akses ke tab User.")
     daftar = auth_db.get_user_list()
     for u in daftar:
         u.pop("password_hash", None)  # jangan pernah kirim hash ke frontend
@@ -368,7 +394,12 @@ def list_user(user: dict = Depends(require_admin)):
 
 
 @router.post("/user")
-def tambah_user(body: UserBody, user: dict = Depends(require_admin)):
+def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_tambah"):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk membuat user.")
+        if body.role != "barber":
+            raise HTTPException(status_code=403, detail="Admin hanya boleh membuat user ber-role Barber.")
     try:
         new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id)
     except ValueError as e:
@@ -378,6 +409,9 @@ def tambah_user(body: UserBody, user: dict = Depends(require_admin)):
     return hasil
 
 
+# Ganti Username SENGAJA TETAP Owner-murni (require_admin) -- bukan bagian
+# dari daftar izin yang bisa diberikan ke Admin (spesifikasi hanya menyebut
+# Membuat/Menghapus/Mengubah Password untuk grup "User").
 @router.put("/user/{user_id}/username")
 def ganti_username(user_id: int, body: UsernameBody, user: dict = Depends(require_admin)):
     try:
@@ -388,7 +422,14 @@ def ganti_username(user_id: int, body: UsernameBody, user: dict = Depends(requir
 
 
 @router.put("/user/{user_id}/password")
-def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(require_admin)):
+def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(require_owner_or_staff)):
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_ganti_password"):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengubah password user.")
+        _cek_target_barber_untuk_staff(user, target, "mengubah password")
     try:
         auth_db.ganti_password(user_id, body.password)
     except ValueError as e:
@@ -397,13 +438,28 @@ def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(requir
 
 
 @router.put("/user/{user_id}/nonaktifkan")
-def nonaktifkan_user(user_id: int, user: dict = Depends(require_admin)):
+def nonaktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menonaktifkan user.")
+        _cek_target_barber_untuk_staff(user, target, "menonaktifkan")
+    _cek_bukan_owner_terakhir(target)
     auth_db.nonaktifkan_user(user_id)
     return {"ok": True}
 
 
 @router.put("/user/{user_id}/aktifkan")
-def aktifkan_user(user_id: int, user: dict = Depends(require_admin)):
+def aktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengaktifkan user.")
+        _cek_target_barber_untuk_staff(user, target, "mengaktifkan")
     try:
         pengaturan_user.aktifkan_user(user_id)
     except ValueError as e:
@@ -411,19 +467,77 @@ def aktifkan_user(user_id: int, user: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+# ================= HAK AKSES ADMIN (REVISI) =================
+# Menu Setting > Hak Akses Admin, HANYA Owner (require_admin murni, bukan
+# require_owner_or_staff -- Admin TIDAK BOLEH mengatur hak aksesnya sendiri
+# ataupun Admin lain). Lihat permissions.py untuk daftar lengkap key & default.
+
+class HakAksesAdminBody(BaseModel):
+    izin: dict[str, bool]
+
+
+# GET boleh dibaca 'staff' JUGA (bukan hanya Owner) -- staff perlu tahu hak
+# aksesnya sendiri supaya frontend-nya bisa menampilkan tab/aksi yang sesuai
+# (lihat pages/pengaturan.js). Mengubahnya (PUT di bawah) TETAP Owner-murni.
+@router.get("/hak-akses-admin")
+def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
+    return permissions.get_all()
+
+
+@router.put("/hak-akses-admin")
+def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require_admin)):
+    try:
+        return permissions.set_bulk(body.izin)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ================= BACKUP DATABASE =================
 
+def _cek_izin_backup(user: dict, key: str, aksi: str):
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_backup") or not permissions.has(key):
+            raise HTTPException(status_code=403, detail=f"Admin tidak punya izin untuk {aksi} database.")
+
+
 @router.get("/backup/export")
-def export_database(user: dict = Depends(require_admin)):
+def export_database(user: dict = Depends(require_owner_or_staff)):
+    _cek_izin_backup(user, "izin_backup_export", "export")
+    if db_compat.IS_POSTGRES:
+        konten = pengaturan_backup.export_database_postgres()
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        return Response(
+            content=konten, media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="mugen_hair_backup_{stamp}.json"'},
+        )
     return FileResponse(db.DB_PATH, media_type="application/octet-stream",
                          filename="mugen_hair_backup.db")
 
 
 @router.post("/backup/import")
-async def import_database(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def import_database(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
+    _cek_izin_backup(user, "izin_backup_import", "import")
     konten = await file.read()
     try:
-        backup_path = pengaturan_backup.import_database(konten)
+        if db_compat.IS_POSTGRES:
+            backup_path = pengaturan_backup.import_database_postgres(konten)
+        else:
+            backup_path = pengaturan_backup.import_database(konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True, "backup_sebelumnya": backup_path}
+
+
+# ================= LAPORAN PDF =================
+
+@router.get("/laporan/pdf")
+def download_laporan_pdf(jenis: str, tahun: int, bulan: int | None = None, barber_id: int | None = None,
+                          user: dict = Depends(require_owner_or_staff)):
+    if user["role"] == "staff" and not permissions.has("izin_laporan_pdf"):
+        raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
+    try:
+        konten, filename = laporan_pdf.buat_laporan(jenis, tahun, bulan, barber_id, dicetak_oleh=user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})

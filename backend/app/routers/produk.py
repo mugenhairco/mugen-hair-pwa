@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 import database as db
 from auth import require_admin
-from sync_helper import sync_async
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
 
@@ -87,7 +86,6 @@ def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(requir
         mutasi_id = db.restock_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_mutasi_produk(mutasi_id)
 
 
@@ -99,7 +97,6 @@ def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_a
         mutasi_id = db.jual_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_mutasi_produk(mutasi_id)
 
 
@@ -114,7 +111,6 @@ def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require
         mutasi_id = db.tester_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_mutasi_produk(mutasi_id)
 
 
@@ -132,7 +128,6 @@ def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends
         db.koreksi_mutasi_produk(mutasi_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return db.get_mutasi_produk(mutasi_id)
 
 
@@ -144,5 +139,4 @@ def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_admin)):
         db.hapus_mutasi_produk(mutasi_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    sync_async()
     return {"ok": True}

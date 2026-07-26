@@ -10,7 +10,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 
 import database as db
-from auth import require_admin, require_barber
+import permissions
+from auth import require_admin, require_barber, require_owner_or_staff
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -20,8 +21,37 @@ def _bulan_ini():
     return today.year, today.month
 
 
+def _filter_dashboard_untuk_staff(hasil: dict) -> dict:
+    """'staff' (Admin) HANYA melihat kartu ringkasan toko yang diizinkan
+    Owner lewat Setting > Hak Akses Admin (lihat permissions.py) -- rincian
+    per-barber (komisi/tips/dst masing-masing orang) dan grafik pendapatan
+    TIDAK PERNAH ikut dikirim untuk role ini sama sekali, sesuai spesifikasi
+    Dashboard Admin (hanya 4 kartu ringkasan toko, bukan rincian per orang)."""
+    izin = permissions.get_all()
+    if not izin.get("izin_dashboard_nilai_service"):
+        hasil["total_toko"]["nilai_service"] = None
+    if not izin.get("izin_dashboard_total_komisi"):
+        hasil["total_toko"]["komisi"] = None
+    if not izin.get("izin_dashboard_total_tips"):
+        hasil["total_toko"]["tips"] = None
+    if not izin.get("izin_dashboard_uang_harian"):
+        hasil["total_toko"]["uang_harian"] = None
+    if not izin.get("izin_dashboard_bonus_customer"):
+        hasil["total_toko"]["bonus_customer"] = None
+    if not izin.get("izin_dashboard_pengeluaran_toko"):
+        hasil["total_pengeluaran"] = None
+    if not izin.get("izin_dashboard_penjualan_produk"):
+        hasil["penjualan_produk"] = None
+    if not izin.get("izin_dashboard_laba_kotor"):
+        hasil["laba_kotor"] = None
+    if not izin.get("izin_dashboard_jumlah_service"):
+        hasil["rincian_service_semua_barber"] = []
+    hasil["per_barber"] = []  # rincian per-barber: di luar cakupan Dashboard Admin
+    return hasil
+
+
 @router.get("/owner")
-def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(require_admin)):
+def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
     """Ringkasan SEMUA barber aktif untuk satu bulan, plus total keseluruhan toko.
     REVISI: Bonus Kehadiran dihapus total (lihat database.get_ringkasan_barber_bulan).
     `rincian_service_semua_barber` ditambahkan (gabungan rincian_service seluruh
@@ -57,7 +87,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         key=lambda x: (-x["jumlah"], x["nama_service"]),
     )
 
-    return {
+    hasil = {
         "tahun": tahun,
         "bulan": bulan,
         "per_barber": ringkasan_per_barber,
@@ -68,6 +98,9 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         "laba_kotor": total_toko["nilai_service"] - total_toko["komisi"] - total_toko["uang_harian"]
         - total_toko["bonus_customer"] - total_pengeluaran,
     }
+    if user["role"] == "staff":
+        hasil = _filter_dashboard_untuk_staff(hasil)
+    return hasil
 
 
 @router.get("/barber")

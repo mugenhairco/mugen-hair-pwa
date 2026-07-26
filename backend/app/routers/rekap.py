@@ -6,7 +6,7 @@
   dipakai CRUD Pengeluaran) supaya rekap ini otomatis ikut kategori & nama
   barber, bukan lagi hanya baca kolom dasar dari database.py."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 import database as db
 import pengeluaran_db
@@ -15,9 +15,19 @@ from auth import get_current_user, require_admin
 router = APIRouter(prefix="/api/rekap", tags=["rekap"])
 
 
+def _tolak_staff(user: dict):
+    # REVISI Hak Akses Admin: Rekap TIDAK termasuk dalam daftar hak akses
+    # yang bisa diberikan Owner ke 'staff' (Admin) -- lihat permissions.py.
+    # Tanpa pengecekan eksplisit ini, 'staff' akan ikut lolos lewat cabang
+    # "bukan barber" di bawah dan melihat SELURUH data seperti Owner.
+    if user["role"] == "staff":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tidak punya akses ke Rekap.")
+
+
 @router.get("/transaksi")
 def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
                      tanggal: str = None, user: dict = Depends(get_current_user)):
+    _tolak_staff(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     return db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
@@ -25,6 +35,7 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
 
 @router.get("/bulanan")
 def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
+    _tolak_staff(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     return db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id)

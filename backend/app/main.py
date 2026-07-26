@@ -9,8 +9,12 @@ layanan, user, backup) terpasang.
 TAHAP 11: routers/produk.py (Persediaan — restock/jual/riwayat mutasi,
 khusus admin) terpasang. Router & halaman frontend-nya sudah disiapkan sejak
 Tahap 10 tapi belum dihubungkan; Tahap 11 menghubungkannya.
-TAHAP 12: routers/sync.py (Status Sinkronisasi Google Sheets, khusus admin)
-terpasang + loop retry sinkron otomatis di background (lihat sync_helper.py).
+REVISI: fitur Sinkronisasi Google Sheets (dulu TAHAP 12) DIHAPUS TOTAL --
+PostgreSQL adalah satu-satunya sumber data sejak migrasi Neon selesai,
+jadi tidak ada lagi kebutuhan menyalin data ke Google Sheets sebagai
+cadangan. routers/sync.py, sync_helper.py, sync_meta_db.py,
+google_sheets_client.py, sync_migrasi.py, dan halaman frontend
+Sinkronisasi sudah dihapus seluruhnya.
 
 BUGFIX startup lokal (`uvicorn app.main:app`): seluruh modul di folder ini
 (database.py, auth.py, auth_db.py, routers/, dst) memakai import "flat"
@@ -43,11 +47,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import database as db
 import auth_db
 import db_compat
-import sync_helper
 from auth import require_admin
 from pengeluaran_migrasi import migrasi_pengeluaran
 from pengaturan_migrasi import migrasi_pengaturan
-from sync_migrasi import migrasi_sync
 from revisi_bonus_migrasi import migrasi_revisi_bonus
 from booking_migrasi import migrasi_booking
 from booking_form_migrasi import migrasi_booking_form
@@ -56,7 +58,7 @@ from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 import booking_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, sync, booking
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -144,7 +146,6 @@ app.include_router(rekap.router)
 app.include_router(pengeluaran.router)
 app.include_router(pengaturan.router)
 app.include_router(produk.router)
-app.include_router(sync.router)
 app.include_router(booking.router)
 app.include_router(booking.public_router)
 
@@ -208,7 +209,6 @@ def on_startup():
         booking_db.init_booking_db()  # BOOKING: tabel bookings/booking_items/closed_slot (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
-        migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
         migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
         migrasi_booking()      # BOOKING: kolom durasi_menit di services + seed setting booking (idempotent)
         migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
@@ -219,7 +219,6 @@ def on_startup():
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
-    sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala
 
     # AUDIT DATA HILANG SETELAH RESTART: ringkasan jumlah baris tabel inti,
     # dicetak SETELAH seluruh migrasi/bootstrap di atas selesai -- log ini

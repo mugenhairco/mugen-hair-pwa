@@ -49,7 +49,11 @@ const MugenRouter = (() => {
   }
 
   function resolveDashboardPage(user) {
-    return user.role === "admin" ? PageDashboardOwner : PageDashboardBarber;
+    // REVISI Hak Akses Admin: 'staff' (Admin) melihat versi Dashboard Owner
+    // yang sudah difilter kartunya oleh backend sesuai hak akses yang
+    // diatur Owner (lihat routers/dashboard.py::_filter_dashboard_untuk_staff)
+    // -- BUKAN Dashboard Barber (itu khusus akun ber-role 'barber').
+    return (user.role === "admin" || user.role === "staff") ? PageDashboardOwner : PageDashboardBarber;
   }
 
   function handle() {
@@ -122,20 +126,32 @@ const MugenRouter = (() => {
       }
       PageInputData.render(content);
     } else if (hash.startsWith("#/rekap")) {
+      // REVISI Hak Akses Admin: Rekap BUKAN bagian dari hak akses yang bisa
+      // diberikan Owner ke 'staff' (Admin) -- lihat permissions.py.
+      // Perlindungan sebenarnya tetap di backend (routers/rekap.py menolak
+      // role 'staff' secara eksplisit).
+      if (user.role === "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
       PageRekap.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
-      // Tahap 9: halaman khusus admin. Barber tidak diberi link ini di nav.js,
-      // tapi kalau nekat buka lewat URL langsung, lempar ke dashboard di sini
-      // juga (perlindungan sebenarnya tetap di backend: require_admin).
-      if (user.role !== "admin") {
+      // Tahap 9 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
+      // boleh MASUK halamannya (lihat/CRUD sesuai izin masing-masing diatur
+      // Owner), Barber tidak. Perlindungan sebenarnya tetap di backend
+      // (require_admin/require_permission di setiap endpoint /api/pengeluaran/*).
+      if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
       }
       PagePengeluaran.render(content);
     } else if (hash.startsWith("#/pengaturan")) {
-      // Tahap 10: halaman khusus admin. Perlindungan sebenarnya tetap di
-      // backend (require_admin di setiap endpoint /api/pengaturan/*).
-      if (user.role !== "admin") {
+      // Tahap 10 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
+      // boleh MASUK menu Setting (tab yang tampil difilter di dalam
+      // pengaturan.js sesuai hak akses yang diatur Owner), Barber tidak.
+      // Perlindungan sebenarnya tetap di backend (require_admin/
+      // require_permission di setiap endpoint /api/pengaturan/*).
+      if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
       }
@@ -149,24 +165,21 @@ const MugenRouter = (() => {
         return;
       }
       PageProduk.render(content);
-    } else if (hash.startsWith("#/sinkronisasi")) {
-      // Tahap 12: halaman khusus admin (status sinkron & backup/restore
-      // adalah operasional toko, bukan milik barber manapun). Perlindungan
-      // sebenarnya tetap di backend (require_admin di setiap endpoint
-      // /api/sync/* dan /api/pengaturan/backup/*).
-      if (user.role !== "admin") {
-        location.hash = "#/dashboard";
-        return;
-      }
-      PageSinkronisasi.render(content);
     } else if (hash.startsWith("#/booking")) {
       // BOOKING: halaman internal (admin+barber). Admin/Owner full access
       // (Booking List, Calendar, Operating Hours, Barber Holiday, Closed
       // Slot, Payment Settings, Booking Settings); Barber hanya lihat
       // booking miliknya sendiri -- pembagian tab persis dilakukan DI
       // DALAM booking.js sendiri (mengikuti user.role), bukan di sini.
+      // REVISI Hak Akses Admin: Booking BUKAN bagian dari hak akses yang
+      // bisa diberikan Owner ke 'staff' (Admin) -- lihat permissions.py.
       // Perlindungan sebenarnya tetap di backend (require_admin/
-      // require_barber di setiap endpoint /api/booking/*).
+      // require_barber di setiap endpoint /api/booking/*, keduanya
+      // menolak role 'staff').
+      if (user.role === "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
       PageBooking.render(content);
     } else {
       location.hash = "#/dashboard";
