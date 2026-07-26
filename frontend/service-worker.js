@@ -89,7 +89,7 @@
 // perubahan backend (database.py WAL mode, main.py logging + endpoint
 // /api/health/diagnostik) di CHANGELOG README -- tidak memengaruhi
 // APP_SHELL frontend tapi bagian dari perbaikan yang sama.
-const CACHE_NAME = "mugen-hair-shell-v19";
+const CACHE_NAME = "mugen-hair-shell-v20";
 const APP_SHELL = [
   "/",
   "/index.html",
