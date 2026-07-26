@@ -164,6 +164,15 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
                                         status_booking=status_booking)
 
 
+@router.get("/belum-dikonfirmasi")
+def jumlah_belum_dikonfirmasi(user: dict = Depends(require_admin)):
+    """REVISI: Notifikasi Booking Baru -- di-poll berkala oleh frontend
+    (nav.js) untuk badge menu Booking + pemicu notifikasi suara. Ringan
+    (SATU angka COUNT(*), bukan daftar booking) supaya aman dipanggil
+    tiap beberapa detik tanpa membebani server."""
+    return {"jumlah": booking_db.hitung_booking_belum_dikonfirmasi()}
+
+
 @router.post("/{booking_id}/verifikasi")
 def verifikasi_booking(booking_id: int, user: dict = Depends(require_admin)):
     try:

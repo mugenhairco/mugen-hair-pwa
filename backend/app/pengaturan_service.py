@@ -4,9 +4,12 @@ pengaturan_service.py — Manajemen Layanan tambahan (TAHAP 10)
 `database.py` (Tahap 2) SUDAH punya get_services/add_service/update_service/
 hapus_service/service_sudah_dipakai — dipakai APA ADANYA (tidak diduplikasi).
 File ini hanya menambah:
-1. Field `modal` per layanan (kolom baru dari pengaturan_migrasi.py) — TIDAK
-   dipakai di hitung_komisi_service manapun, jadi murni field tambahan untuk
-   dicatat/ditampilkan, tidak mengubah hasil komisi yang sudah berjalan.
+1. Field `modal` per layanan (kolom baru dari pengaturan_migrasi.py) — sejak
+   REVISI Struktur Setting (lihat revisi_setting_migrasi.py), field ini
+   DIPAKAI oleh hitung_komisi_service() di database.py sebagai "Harga Modal"
+   yang dikurangkan dari harga sebelum dikali Persentase Komisi (mengganti
+   skema lama Potongan Modal Chemical berbasis nama service) — jadi bukan
+   lagi field murni tampilan seperti sebelumnya.
 2. Field `durasi_menit` per layanan (kolom baru dari booking_migrasi.py,
    modul BOOKING) — dipakai untuk menghitung berapa slot jadwal yang perlu
    diblokir saat customer booking online, TIDAK dipakai di hitung_komisi_service

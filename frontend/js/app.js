@@ -22,4 +22,10 @@ if ("serviceWorker" in navigator) {
 window.addEventListener("DOMContentLoaded", () => {
   MugenBrand.refresh();
   MugenRouter.init();
+  // REVISI: Notifikasi Booking Baru -- dimulai SEKALI di sini (bukan di
+  // dalam halaman Booking) supaya badge + suara tetap aktif app-wide,
+  // TIDAK terikat ke halaman mana pun yang sedang dibuka Admin. Modul ini
+  // sendiri yang memeriksa (tiap poll) apakah user sedang login sebagai
+  // admin -- aman dipanggil walau saat ini masih di halaman Login.
+  MugenBookingNotif.init();
 });

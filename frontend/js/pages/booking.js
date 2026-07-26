@@ -182,6 +182,7 @@ const PageBooking = (() => {
               await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/verifikasi`), { message: "Memverifikasi pembayaran…" });
               MugenUI.toast("Pembayaran diverifikasi.", "success");
               load();
+              MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
           onBatalkan: async (r) => {
@@ -190,6 +191,7 @@ const PageBooking = (() => {
               await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/batalkan`), { message: "Membatalkan booking…" });
               MugenUI.toast("Booking dibatalkan.", "success");
               load();
+              MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
         }));

@@ -34,8 +34,13 @@ router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
 # dihapus total (fitur Bonus Kehadiran dihapus); target_bonus_customer/
 # nominal_bonus_customer diganti daftar tier bertingkat (lihat endpoint
 # /bonus-tiers di bawah) — semua itu TIDAK ADA lagi di sini.
+# REVISI Struktur Setting: potongan_modal_chemical DIHAPUS dari sini --
+# digantikan Harga Modal PER-SERVICE (kolom services.modal, lihat endpoint
+# /service di bawah dan hitung_komisi_service di database.py). Nilai lama
+# setting ini TETAP tersimpan di tabel settings (tidak dihapus), hanya
+# tidak lagi dipakai/diedit lewat sini.
 KOMISI_KEYS = [
-    "persentase_komisi", "potongan_modal_chemical",
+    "persentase_komisi",
     "maksimal_hari_libur_bonus_customer", "potongan_bonus_customer_persen",
 ]
 
@@ -111,7 +116,6 @@ def ambil_banner(v: str | None = None):
 
 class KomisiBody(BaseModel):
     persentase_komisi: float
-    potongan_modal_chemical: float
     maksimal_hari_libur_bonus_customer: float
     potongan_bonus_customer_persen: float
 
@@ -208,6 +212,27 @@ def ambil_uang_harian_acuan(user: dict = Depends(require_admin)):
 def simpan_uang_harian_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
     db.set_uang_harian_acuan_ids(body.service_ids)
     return {"service_ids": db.get_uang_harian_acuan_ids()}
+
+
+# REVISI Struktur Setting: target jumlah service/hari supaya Uang Harian cair
+# sekarang bisa diatur bebas Owner (dulu hardcode 3, lihat
+# revisi_setting_migrasi.py untuk migrasi default-nya & database.py
+# target_uang_harian_per_hari() untuk pemakaiannya).
+class UangHarianTargetBody(BaseModel):
+    target: int
+
+
+@router.get("/uang-harian-target")
+def ambil_uang_harian_target(user: dict = Depends(require_admin)):
+    return {"target": db.target_uang_harian_per_hari()}
+
+
+@router.put("/uang-harian-target")
+def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(require_admin)):
+    if body.target <= 0:
+        raise HTTPException(status_code=422, detail="Target harus lebih dari 0.")
+    db.set_setting("uang_harian_target_service_harian", body.target)
+    return {"target": db.target_uang_harian_per_hari()}
 
 
 # ================= MANAJEMEN BARBER =================

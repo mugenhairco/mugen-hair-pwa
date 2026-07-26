@@ -369,16 +369,19 @@ def hapus_service(service_id: int):
 # PERHITUNGAN KOMISI (per transaksi)
 # ---------------------------------------------------------------------------
 
-def hitung_komisi_service(nama_service: str, harga: int) -> float:
+def hitung_komisi_service(harga: int, modal: int = 0) -> float:
     """
-    Dry Cut, Cut & Wash, Hair Do, Beard Trim, Wet Shave  -> Harga x Persentase Komisi
-    Service lainnya                                      -> (Harga - Potongan Modal Chemical) x Persentase Komisi
+    REVISI Struktur Setting: Komisi = (Harga - Harga Modal) x Persentase Komisi.
+    `modal` datang dari Harga Modal per-service (Setting > Layanan, kolom
+    `services.modal`) -- default 0 kalau tidak diisi Owner (service dianggap
+    tanpa biaya modal, komisi dihitung penuh dari Harga x Persentase).
+    Menggantikan skema lama (nama service tertentu dikecualikan dari
+    Potongan Modal Chemical global) -- lihat revisi_setting_migrasi.py untuk
+    migrasi yang menjaga nominal komisi service yang sudah berjalan TIDAK
+    berubah akibat pergantian skema ini.
     """
     persentase = _setting_float("persentase_komisi") / 100.0
-    if nama_service in SERVICE_TANPA_POTONGAN:
-        return round(harga * persentase)
-    potongan = _setting_float("potongan_modal_chemical")
-    dasar = max(0, harga - potongan)
+    dasar = max(0, harga - modal)
     return round(dasar * persentase)
 
 
@@ -484,17 +487,25 @@ def hapus_transaksi(transaksi_id: int):
         conn.execute("DELETE FROM transaksi WHERE id = ?", (transaksi_id,))
 
 
+def _peta_modal_service(conn) -> dict:
+    """Peta {service_id: modal} SEKALI ambil (tabel services kecil, jumlah layanan
+    barbershop biasanya belasan) -- dipakai _lengkapi_transaksi/_lengkapi_transaksi_batch/
+    hitung_preview_items supaya hitung_komisi_service() tidak perlu query per item."""
+    return {r["id"]: (r["modal"] or 0) for r in conn.execute("SELECT id, modal FROM services").fetchall()}
+
+
 def _lengkapi_transaksi(conn, header: dict) -> dict:
     """Tambahkan daftar item + total (harga, komisi) yang dihitung dari transaksi_detail
     ke satu dict header transaksi. Dipakai oleh get_transaksi & get_transaksi_list."""
     items = [dict(r) for r in conn.execute(
         "SELECT * FROM transaksi_detail WHERE transaksi_id = ? ORDER BY id", (header["id"],)
     ).fetchall()]
+    modal_map = _peta_modal_service(conn)
     header["items"] = items
     header["jumlah_item"] = sum(it["jumlah"] for it in items)
     header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
     header["total_komisi"] = sum(
-        hitung_komisi_service(it["nama_service"], it["harga"]) * it["jumlah"] for it in items
+        hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0)) * it["jumlah"] for it in items
     )
     header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
     return header
@@ -524,13 +535,14 @@ def _lengkapi_transaksi_batch(conn, headers: list) -> list:
         for r in rows:
             detail_per_transaksi[r["transaksi_id"]].append(dict(r))
 
+    modal_map = _peta_modal_service(conn)  # SATU query untuk seluruh batch (bukan per transaksi)
     for header in headers:
         items = detail_per_transaksi.get(header["id"], [])
         header["items"] = items
         header["jumlah_item"] = sum(it["jumlah"] for it in items)
         header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
         header["total_komisi"] = sum(
-            hitung_komisi_service(it["nama_service"], it["harga"]) * it["jumlah"] for it in items
+            hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0)) * it["jumlah"] for it in items
         )
         header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
     return headers
@@ -582,7 +594,7 @@ def hitung_preview_items(items: list) -> dict:
             if service is None:
                 continue
             jumlah = it["jumlah"]
-            komisi_satuan = hitung_komisi_service(service["nama"], service["harga"])
+            komisi_satuan = hitung_komisi_service(service["harga"], service["modal"] or 0)
             subtotal = service["harga"] * jumlah
             komisi = komisi_satuan * jumlah
             total_harga += subtotal
@@ -683,16 +695,24 @@ def set_uang_harian_acuan_ids(service_ids: list) -> None:
 # UANG HARIAN
 # Dihitung dari service yang dipilih Owner lewat Setting > Uang Harian
 # (get_uang_harian_acuan_ids, lihat komentar "ACUAN SERVICE" di atas), dan
-# hanya jika di HARI itu jumlah service-service tsb (gabungan) minimal 3.
-# Jika kurang dari 3, uang harian hari itu = 0.
+# hanya jika di HARI itu jumlah service-service tsb (gabungan) minimal
+# target_uang_harian_per_hari() (REVISI Struktur Setting: dulu hardcode 3,
+# sekarang bisa diatur bebas Owner lewat Setting > Uang Harian -- default
+# tetap 3 lewat revisi_setting_migrasi.py supaya nominal yang sedang
+# berjalan TIDAK berubah sampai Owner sengaja menggantinya).
 # REVISI: nominal harian sekarang per-barber (kolom barbers.uang_harian,
 # diatur bebas oleh admin lewat menu Setting > Barber), BUKAN lagi dari dua
 # setting global uang_harian_barber/uang_harian_rafiq berdasarkan is_rafiq
 # (lihat revisi_bonus_migrasi.py untuk migrasi kolomnya).
 # ---------------------------------------------------------------------------
 
+def target_uang_harian_per_hari() -> int:
+    return int(_setting_float("uang_harian_target_service_harian") or 3)
+
+
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     acuan_ids = set(get_uang_harian_acuan_ids())
+    target = target_uang_harian_per_hari()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT td.service_id, td.jumlah FROM transaksi_detail td
@@ -701,7 +721,7 @@ def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
             (barber["id"], tanggal),
         ).fetchall()
     jumlah_service_utama = sum(r["jumlah"] for r in rows if r["service_id"] in acuan_ids)
-    if jumlah_service_utama < 3:
+    if jumlah_service_utama < target:
         return 0
     return int(barber["uang_harian"] or 0)
 
@@ -710,10 +730,12 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     """Dioptimalkan (performa): SATU query untuk ambil seluruh transaksi_detail barber
     ini pada bulan tsb (bukan satu query terpisah PER HARI seperti sebelumnya), lalu
     dikelompokkan per tanggal di Python. Aturan tetap SAMA: Uang Harian hari itu cair
-    hanya jika total service acuan (Setting > Uang Harian) hari itu >= 3, nominalnya
-    dari kolom uang_harian milik barber itu sendiri (REVISI: per-barber, lihat
-    komentar di atas hitung_uang_harian_per_hari)."""
+    hanya jika total service acuan (Setting > Uang Harian) hari itu >= target
+    (lihat target_uang_harian_per_hari()), nominalnya dari kolom uang_harian milik
+    barber itu sendiri (REVISI: per-barber, lihat komentar di atas
+    hitung_uang_harian_per_hari)."""
     acuan_ids = set(get_uang_harian_acuan_ids())
+    target = target_uang_harian_per_hari()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
@@ -728,7 +750,7 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
             jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
 
     nominal = int(barber["uang_harian"] or 0)
-    return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= 3)
+    return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= target)
 
 
 # ---------------------------------------------------------------------------
@@ -988,8 +1010,9 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     baris keterangan "Libur" untuk tanggal yang barber-nya ditandai libur di Input
     Data tapi tidak punya transaksi (supaya hari libur tetap kelihatan di rekap).
     Setiap baris transaksi juga membawa Uang Harian HARI itu (dihitung dari total
-    Dry Cut + Cut & Wash hari itu, lihat hitung_uang_harian_per_hari) dan Jumlah
-    Service (total qty seluruh service di transaksi itu). Urutan: tanggal terbaru dulu."""
+    service acuan Setting > Uang Harian hari itu, lihat hitung_uang_harian_per_hari)
+    dan Jumlah Service (total qty seluruh service di transaksi itu). Urutan: tanggal
+    terbaru dulu."""
     transaksi_list = get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
     libur_list = get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal)
     libur_set = {(l["barber_id"], l["tanggal"]) for l in libur_list}
@@ -1053,7 +1076,7 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
 def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> list:
     """Satu baris = satu barber untuk satu bulan, akumulasi dari transaksi sebulan
     (termasuk total Uang Harian), lengkap dengan detail Bonus Customer (target
-    berupa jumlah service Dry Cut + Cut & Wash, dan syarat hari libur) yang
+    berupa jumlah service acuan Setting > Bonus Service, dan syarat hari libur) yang
     menentukan bonus itu cair atau tidak."""
     barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers()
     hasil = []

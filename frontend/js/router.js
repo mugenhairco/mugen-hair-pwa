@@ -178,5 +178,17 @@ const MugenRouter = (() => {
     handle();
   }
 
-  return { init };
+  // BUGFIX: `handle` sebelumnya TIDAK diekspos di sini (hanya `init`),
+  // padahal login.js SUDAH lama memanggil MugenRouter.handle() secara
+  // eksplisit untuk kasus edge-case yang dijelaskan di komentarnya (hash
+  // sudah persis "#/dashboard" sehingga event "hashchange" tidak akan
+  // terpicu) -- akibatnya panggilan itu selalu throw TypeError diam-diam
+  // (langsung tertangkap try/catch login.js, tidak pernah terlihat sebagai
+  // error nyata) dan kode SETELAH panggilan itu di login.js tidak pernah
+  // sempat jalan. Selama ini "diselamatkan" oleh fallback: hash yang
+  // BERUBAH (kasus normal, dari "#/login" ke "#/dashboard") tetap memicu
+  // listener hashchange di atas secara terpisah, jadi navigasinya terlihat
+  // berhasil -- tapi kasus edge-case yang komentar itu maksudkan (dan kode
+  // apa pun yang taruh SETELAH baris itu) diam-diam tidak pernah berjalan.
+  return { init, handle };
 })();

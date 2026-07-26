@@ -7,7 +7,7 @@ const PagePengaturan = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Setting"));
 
-    const tabs = ["Identitas Barbershop", "Tampilan", "Komisi & Bonus", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
+    const tabs = ["Identitas Barbershop", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup"];
     let activeTab = tabs[0];
 
     const tabBar = MugenUI.el("div", { class: "tabs" });
@@ -28,23 +28,24 @@ const PagePengaturan = (() => {
       body.innerHTML = "";
       if (activeTab === "Identitas Barbershop") await renderIdentitas();
       else if (activeTab === "Tampilan") await renderTampilan();
-      else if (activeTab === "Komisi & Bonus") await renderKomisi();
-      else if (activeTab === "Bonus Service") await renderAcuanService("Bonus Service", "/api/pengaturan/bonus-service-acuan",
-        "Pilih service mana saja yang jadi acuan Target Bonus Service (tier bulanan, diatur di tab Komisi & Bonus). Pengaturan ini TERPISAH dari Uang Harian -- mengubah salah satu tidak memengaruhi yang lain.");
-      else if (activeTab === "Uang Harian") await renderAcuanService("Uang Harian", "/api/pengaturan/uang-harian-acuan",
-        "Pilih service mana saja yang jadi acuan syarat cair Uang Harian (cair kalau total service acuan ini pada satu hari yang sama mencapai minimal 3). Pengaturan ini TERPISAH dari Bonus Service -- mengubah salah satu tidak memengaruhi yang lain.");
+      else if (activeTab === "Komisi") await renderKomisi();
+      else if (activeTab === "Bonus Service") await renderBonusService();
+      else if (activeTab === "Uang Harian") await renderUangHarian();
       else if (activeTab === "Barber") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
       else if (activeTab === "User") await renderUser();
       else await renderBackup();
     }
 
-    // ================= TAB: BONUS SERVICE / UANG HARIAN (acuan service) =================
+    // ================= BONUS SERVICE / UANG HARIAN (checklist acuan service) =================
     // REVISI: dua pengaturan independen menggantikan hardcode lama (Dry Cut +
-    // Cut & Wash) -- SATU fungsi dipakai untuk kedua tab karena bentuknya
-    // identik (checklist seluruh service + tombol Simpan), hanya endpoint &
-    // teks penjelasannya beda.
-    async function renderAcuanService(judul, endpoint, penjelasan) {
+    // Cut & Wash) -- SATU helper dipakai di tab Bonus Service dan tab Uang
+    // Harian karena bagian checklist-nya identik (checklist seluruh service +
+    // tombol Simpan), hanya endpoint & teks penjelasannya beda. Masing-masing
+    // tab menambahkan bagian lain SETELAH checklist ini (tier bonus untuk
+    // Bonus Service, target harian untuk Uang Harian -- lihat renderBonusService/
+    // renderUangHarian di bawah).
+    async function renderAcuanServiceChecklist(judul, endpoint, penjelasan) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, judul));
@@ -243,6 +244,13 @@ const PagePengaturan = (() => {
     // bawah), Bonus Kehadiran dihapus total, dan Target Bonus Customer
     // sekarang bertingkat (banyak tier, dikelola terpisah lewat
     // /api/pengaturan/bonus-tiers) -- bukan lagi satu target/nominal saja.
+    // ================= TAB: KOMISI =================
+    // REVISI Struktur Setting: disederhanakan -- HANYA persentase komisi +
+    // aturan potongan Bonus Customer akibat libur berlebih. Potongan Modal
+    // Chemical DIHAPUS dari sini (digantikan Harga Modal per-service di tab
+    // Layanan). Target Bonus Service (tier bertingkat) DIPINDAH ke tab
+    // Bonus Service (lihat renderBonusService di bawah) -- tab ini sekarang
+    // murni tiga angka global.
     async function renderKomisi() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
@@ -266,7 +274,6 @@ const PagePengaturan = (() => {
       };
 
       const inPersen = field("Persentase Komisi", "persentase_komisi", "%");
-      const inPotonganChemical = field("Potongan Modal Chemical", "potongan_modal_chemical", "Rp/transaksi");
       const inMaksLiburBonus = field("Maksimal Hari Libur (utk Bonus Customer)", "maksimal_hari_libur_bonus_customer", "hari/bulan");
       const inPotonganBonus = field("Potongan Bonus jika Libur Melebihi Batas", "potongan_bonus_customer_persen", "%");
 
@@ -279,7 +286,6 @@ const PagePengaturan = (() => {
         formError.textContent = "";
         const body2 = {
           persentase_komisi: Number(inPersen.value),
-          potongan_modal_chemical: Number(inPotonganChemical.value),
           maksimal_hari_libur_bonus_customer: Number(inMaksLiburBonus.value),
           potongan_bonus_customer_persen: Number(inPotonganBonus.value),
         };
@@ -289,20 +295,30 @@ const PagePengaturan = (() => {
         btnSimpan.disabled = true;
         try {
           await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/komisi", body2), { message: "Menyimpan…" });
-          MugenUI.toast("Pengaturan komisi & bonus disimpan.", "success");
+          MugenUI.toast("Pengaturan komisi disimpan.", "success");
         } catch (e) {
           formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         } finally {
           btnSimpan.disabled = false;
         }
       });
+    }
 
-      // ================= TARGET BONUS SERVICE (tier bertingkat) =================
+    // ================= TAB: BONUS SERVICE (pusat seluruh pengaturan bonus) =================
+    // REVISI Struktur Setting: sekarang berisi DUA bagian -- checklist acuan
+    // service (sudah ada sebelumnya) DAN Target Bonus Service/tier bertingkat
+    // (dipindah dari tab Komisi). Teks hardcoded "Dry Cut + Cut & Wash"
+    // dihilangkan -- seluruh aturan sudah bisa dikonfigurasi Owner sendiri.
+    async function renderBonusService() {
+      await renderAcuanServiceChecklist("Bonus Service", "/api/pengaturan/bonus-service-acuan",
+        "Pilih service mana saja yang jadi acuan Target Bonus Service (tier bulanan, diatur di bawah). " +
+        "Bonus HANYA menghitung service yang dicentang di sini.");
+
       const tierCard = MugenUI.el("div", { class: "card" });
       body.appendChild(tierCard);
       tierCard.appendChild(MugenUI.el("h2", {}, "Target Bonus Service"));
       tierCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Dihitung dari jumlah service Dry Cut + Cut & Wash per barber per bulan. Tambah tier sebanyak yang " +
+        "Dihitung dari jumlah service acuan (checklist di atas) per barber per bulan. Tambah tier sebanyak yang " +
         "dibutuhkan (mis. 100 service → Rp100.000, 115 service → Rp150.000, dst) — barber dapat bonus dari " +
         "tier TERTINGGI yang tercapai bulan itu."));
 
@@ -411,6 +427,57 @@ const PagePengaturan = (() => {
       });
 
       loadTiers();
+    }
+
+    // ================= TAB: UANG HARIAN =================
+    // REVISI Struktur Setting: ditambah field Target Jumlah Service Harian
+    // (dulu hardcode 3, sekarang bebas diatur Owner lewat
+    // /api/pengaturan/uang-harian-target -- lihat database.py
+    // target_uang_harian_per_hari()), di bawah checklist acuan service yang
+    // sudah ada.
+    async function renderUangHarian() {
+      await renderAcuanServiceChecklist("Uang Harian", "/api/pengaturan/uang-harian-acuan",
+        "Pilih service mana saja yang jadi acuan syarat cair Uang Harian (cair kalau total service acuan ini " +
+        "pada satu hari yang sama mencapai target di bawah).");
+
+      const targetCard = MugenUI.el("div", { class: "card" });
+      body.appendChild(targetCard);
+      targetCard.appendChild(MugenUI.el("h2", {}, "Target Jumlah Service Harian"));
+      targetCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Uang Harian cair kalau total service acuan (checklist di atas) pada SATU hari yang sama mencapai " +
+        "target ini. Atur bebas sesuai kebijakan toko."));
+
+      let targetSaatIni = 3;
+      try {
+        const t = await MugenApi.get("/api/pengaturan/uang-harian-target");
+        targetSaatIni = t.target;
+      } catch (e) {
+        targetCard.appendChild(MugenUI.el("div", {}, e.message));
+        return;
+      }
+
+      const inTarget = MugenUI.el("input", { type: "number", min: "1", value: String(targetSaatIni) });
+      targetCard.appendChild(MugenUI.el("label", {}, "Target (jumlah service/hari)"));
+      targetCard.appendChild(inTarget);
+      const targetError = MugenUI.el("div", { class: "login-error" });
+      targetCard.appendChild(targetError);
+      const btnSimpanTarget = MugenUI.el("button", { class: "btn-primary" }, "Simpan Target");
+      targetCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanTarget));
+
+      btnSimpanTarget.addEventListener("click", async () => {
+        targetError.textContent = "";
+        const target = Number(inTarget.value);
+        if (!target || target <= 0) { targetError.textContent = "Target harus lebih dari 0."; return; }
+        btnSimpanTarget.disabled = true;
+        try {
+          await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/uang-harian-target", { target }), { message: "Menyimpan…" });
+          MugenUI.toast("Target Uang Harian disimpan.", "success");
+        } catch (e) {
+          targetError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        } finally {
+          btnSimpanTarget.disabled = false;
+        }
+      });
     }
 
     // ================= TAB: BARBER =================
@@ -611,11 +678,29 @@ const PagePengaturan = (() => {
     }
 
     // ================= TAB: LAYANAN =================
+    // REVISI Struktur Setting: "Potongan Modal Chemical" (select per-service)
+    // dihapus dari sini -- digantikan "Harga Modal" (field `modal` yang sudah
+    // ada, sekarang benar-benar dipakai hitung_komisi_service di backend,
+    // lihat revisi_setting_migrasi.py/database.py). Ditambah kolom "Nilai
+    // Komisi Barber" (READ-ONLY, dihitung (Harga - Harga Modal) x Persentase
+    // Komisi) supaya Owner bisa langsung lihat komisi tiap layanan tanpa
+    // hitung manual -- murni tampilan, tidak mengubah data apa pun.
     async function renderLayanan() {
       const formCard = MugenUI.el("div", { class: "card" });
       const listCard = MugenUI.el("div", { class: "card" });
       body.appendChild(formCard);
       body.appendChild(listCard);
+
+      let persentaseKomisi = 0;
+      try {
+        const k = await MugenApi.get("/api/pengaturan/komisi");
+        persentaseKomisi = Number(k.persentase_komisi) || 0;
+      } catch (e) { /* kalau gagal, kolom Nilai Komisi Barber tampil 0 -- tidak menghalangi CRUD layanan */ }
+
+      function hitungKomisi(harga, modal) {
+        const dasar = Math.max(0, Number(harga || 0) - Number(modal || 0));
+        return Math.round(dasar * (persentaseKomisi / 100));
+      }
 
       let editingId = null;
       const formTitle = MugenUI.el("h2", {}, "Tambah Layanan");
@@ -623,10 +708,6 @@ const PagePengaturan = (() => {
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama layanan" });
       const inputHarga = MugenUI.el("input", { type: "number", min: "0", value: "0" });
       const inputModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const selChemical = MugenUI.el("select");
-      selChemical.appendChild(MugenUI.el("option", { value: "auto" }, "Otomatis (berdasarkan nama layanan)"));
-      selChemical.appendChild(MugenUI.el("option", { value: "ya" }, "Ya, pakai potongan modal chemical"));
-      selChemical.appendChild(MugenUI.el("option", { value: "tidak" }, "Tidak"));
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
       const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
       const formError = MugenUI.el("div", { class: "login-error" });
@@ -635,10 +716,11 @@ const PagePengaturan = (() => {
       formCard.appendChild(inputNama);
       formCard.appendChild(MugenUI.el("label", {}, "Harga (Rp)"));
       formCard.appendChild(inputHarga);
-      formCard.appendChild(MugenUI.el("label", {}, "Modal (Rp)"));
+      formCard.appendChild(MugenUI.el("label", {}, "Harga Modal (Rp, opsional)"));
       formCard.appendChild(inputModal);
-      formCard.appendChild(MugenUI.el("label", {}, "Potongan Modal Chemical"));
-      formCard.appendChild(selChemical);
+      formCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:-6px;" },
+        "Kosongkan/isi 0 kalau layanan ini tidak punya biaya modal. Kalau diisi, nilainya dikurangkan dari " +
+        "Harga sebelum dikali Persentase Komisi (Setting > Komisi)."));
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
@@ -650,7 +732,6 @@ const PagePengaturan = (() => {
         inputNama.value = "";
         inputHarga.value = "0";
         inputModal.value = "0";
-        selChemical.value = "auto";
         formError.textContent = "";
       }
       btnBatal.addEventListener("click", resetForm);
@@ -661,11 +742,10 @@ const PagePengaturan = (() => {
         const harga = Number(inputHarga.value);
         const modal = Number(inputModal.value);
         if (Number.isNaN(harga) || harga < 0) { formError.textContent = "Harga tidak valid."; return; }
-        if (Number.isNaN(modal) || modal < 0) { formError.textContent = "Modal tidak valid."; return; }
-        const pakai = selChemical.value === "auto" ? null : selChemical.value === "ya";
+        if (Number.isNaN(modal) || modal < 0) { formError.textContent = "Harga Modal tidak valid."; return; }
         btnSubmit.disabled = true;
         try {
-          const body2 = { nama: inputNama.value.trim(), harga, modal, pakai_potongan_chemical: pakai };
+          const body2 = { nama: inputNama.value.trim(), harga, modal };
           await MugenUI.withLoading(async () => {
             if (editingId) {
               await MugenApi.put(`/api/pengaturan/service/${editingId}`, body2);
@@ -698,8 +778,8 @@ const PagePengaturan = (() => {
             [
               { key: "nama", label: "Nama" },
               { key: "harga", label: "Harga", format: MugenUI.formatRupiah },
-              { key: "modal", label: "Modal", format: MugenUI.formatRupiah },
-              { key: "pakai_potongan_chemical", label: "Potongan Chemical", format: (v) => v ? "Ya" : "Tidak" },
+              { key: "modal", label: "Harga Modal", format: (v) => MugenUI.formatRupiah(v || 0) },
+              { key: "nilai_komisi", label: "Nilai Komisi Barber", format: (_, r) => MugenUI.formatRupiah(hitungKomisi(r.harga, r.modal)) },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               { key: "urutan", label: "Urutan" },
               {
@@ -714,7 +794,6 @@ const PagePengaturan = (() => {
                     inputNama.value = r.nama;
                     inputHarga.value = String(r.harga);
                     inputModal.value = String(r.modal || 0);
-                    selChemical.value = r.pakai_potongan_chemical ? "ya" : "tidak";
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });
                   });

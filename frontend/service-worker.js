@@ -63,7 +63,20 @@
 // judul/deskripsi "Service Bulan Ini" disederhanakan jadi judul tabel
 // "SERVICE BULAN INI", header "Customer" di tabel Per Barber jadi
 // "Service" (dashboard_owner.js).
-const CACHE_NAME = "mugen-hair-shell-v16";
+// v16 -> v17: REVISI Struktur Setting -- tab "Komisi & Bonus" disederhanakan
+// jadi "Komisi" (persentase komisi + aturan potongan Bonus Customer saja),
+// Target Bonus Service (tier) pindah ke tab Bonus Service jadi satu pusat
+// pengaturan bonus, Potongan Modal Chemical dihapus digantikan Harga Modal
+// per-service (dipakai langsung oleh hitung_komisi_service, lihat
+// database.py/revisi_setting_migrasi.py), tab Layanan dapat kolom "Nilai
+// Komisi Barber" (tampilan, dihitung otomatis), tab Uang Harian dapat field
+// Target Jumlah Service Harian yang bisa diatur bebas (dulu hardcode 3)
+// (semua di pengaturan.js); teks progress Dashboard Barber disederhanakan
+// (dashboard_barber.js); Notifikasi Booking Baru -- badge jumlah booking
+// belum dikonfirmasi di menu Booking + suara pengingat sintesis Web Audio
+// (khusus Admin), modul baru js/booking_notif.js ditambahkan ke APP_SHELL,
+// nav.js/app.js/booking.js/style.css berubah untuk mendukungnya.
+const CACHE_NAME = "mugen-hair-shell-v17";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -76,6 +89,7 @@ const APP_SHELL = [
   "/js/ui.js",
   "/js/brand.js",
   "/js/nav.js",
+  "/js/booking_notif.js",
   "/js/router.js",
   "/js/app.js",
   "/js/pages/login.js",

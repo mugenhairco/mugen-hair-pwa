@@ -101,8 +101,9 @@ def grafik_harian(tahun: int, bulan: int, barber_id: int = None, user: dict = De
     utuh/tidak "loncat"). barber_id kosong = gabungan SEMUA barber.
 
     Pendapatan di sini = Komisi + Tips + Uang Harian hari itu (memakai
-    hitung_uang_harian_per_hari yang sudah ada, aturan >=3 Dry Cut/Cut & Wash
-    per hari TIDAK diubah sama sekali). Bonus Customer SENGAJA tidak
+    hitung_uang_harian_per_hari yang sudah ada, aturan target service acuan
+    per hari -- lihat Setting > Uang Harian -- TIDAK diubah sama sekali).
+    Bonus Customer SENGAJA tidak
     diikutkan -- itu perhitungan BULANAN (lihat hitung_bonus_customer), tidak
     ada cara membaginya secara berarti per tanggal, jadi disertakan penuh di
     /owner/grafik-bulanan (total_pendapatan bulan itu) supaya tidak ada
