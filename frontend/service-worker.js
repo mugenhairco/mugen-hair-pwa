@@ -102,7 +102,15 @@
 // biasa kalau 2+ metode aktif; tombol "Download QRIS" baru (fetch->blob->
 // anchor download, dengan fallback buka tab baru) supaya customer bisa
 // unduh gambar QRIS kualitas asli, kompatibel browser & PWA Android/iPhone.
-const CACHE_NAME = "mugen-hair-shell-v22";
+// v22 -> v23: REVISI Penyempurnaan Sistem Booking -- alur Metode Pembayaran
+// diubah jadi Ringkasan+Metode -> tombol Konfirmasi -> loading -> Halaman
+// Pembayaran (QRIS/transfer/cash) yang baru terpisah, tombol Download QRIS
+// didesain ulang modern (ikon + ripple, style.css) dengan nama file rapi
+// "<Nama-Barbershop>-QRIS.<ext>" (book_public.js). Slot jam booking hari
+// ini kini dihitung memakai zona waktu Asia/Jakarta (WIB) di backend
+// (booking_db.py, requirements.txt: tzdata) supaya konsisten dengan jam
+// WIB customer, bukan jam server (Render defaultnya UTC).
+const CACHE_NAME = "mugen-hair-shell-v23";
 const APP_SHELL = [
   "/",
   "/index.html",

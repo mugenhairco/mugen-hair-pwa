@@ -21,3 +21,10 @@ psycopg2-binary>=2.9.9
 
 # Download Laporan PDF (Menu Backup) -- lihat laporan_pdf.py.
 reportlab>=4.0.0
+
+# Pembatasan Slot Jam Booking (booking_db.py, WIB = ZoneInfo("Asia/Jakarta")):
+# zoneinfo (stdlib sejak Python 3.9) butuh database IANA tzdata di sistem --
+# tidak semua image OS/container menyediakannya bawaan. Paket tzdata ini
+# (murni data, dari PyPI) memastikan ZoneInfo("Asia/Jakarta") selalu berhasil
+# di server manapun (termasuk Render), tidak bergantung tzdata sistem.
+tzdata>=2024.1

@@ -33,9 +33,27 @@ import json
 import os
 import re
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import database as db
 from database import get_conn
+
+# PENYEMPURNAAN: "hari ini"/"jam sekarang" untuk keperluan slot booking HARUS
+# selalu dihitung memakai zona waktu Asia/Jakarta (WIB) -- BUKAN zona waktu
+# jam sistem server (yang di Render defaultnya UTC), dan BUKAN jam perangkat
+# customer. Sebelumnya kode ini memakai date.today()/datetime.now() polos,
+# yang diam-diam mengikuti zona waktu server -- karena Render biasanya UTC
+# (7 jam di belakang WIB), ini bisa salah tanggal (dekat tengah malam WIB)
+# maupun salah menentukan jam yang "sudah lewat".
+WIB = ZoneInfo("Asia/Jakarta")
+
+
+def _sekarang_wib() -> datetime:
+    return datetime.now(WIB)
+
+
+def _hari_ini_wib() -> date:
+    return _sekarang_wib().date()
 
 BOOKING_SETTINGS_KEYS = [
     "booking_jam_buka", "booking_jam_tutup", "booking_interval_menit",
@@ -547,8 +565,8 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None) -> dict:
         booked = _get_booking_aktif_tanggal(conn, barber_id, tanggal)
 
     sekarang_menit = None
-    if tanggal == date.today().isoformat():
-        now = datetime.now()
+    if tanggal == _hari_ini_wib().isoformat():
+        now = _sekarang_wib()
         sekarang_menit = now.hour * 60 + now.minute
 
     slots = []
@@ -612,13 +630,13 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
     akhir = mulai + durasi_menit
     if mulai < jam_buka_menit or akhir > jam_tutup_menit:
         raise ValueError("Jam booking di luar jam operasional.")
-    if tanggal == date.today().isoformat():
-        now = datetime.now()
+    if tanggal == _hari_ini_wib().isoformat():
+        now = _sekarang_wib()
         if mulai < now.hour * 60 + now.minute:
             raise ValueError("Jam yang dipilih sudah lewat.")
 
     maks_hari = pengaturan["maksimal_hari_kedepan"]
-    batas = date.today() + timedelta(days=maks_hari)
+    batas = _hari_ini_wib() + timedelta(days=maks_hari)
     if datetime.strptime(tanggal, "%Y-%m-%d").date() > batas:
         raise ValueError(f"Booking hanya bisa dilakukan maksimal {maks_hari} hari ke depan.")
 
