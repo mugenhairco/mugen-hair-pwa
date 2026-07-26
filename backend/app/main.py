@@ -150,6 +150,39 @@ app.include_router(booking.public_router)
 
 @app.on_event("startup")
 def on_startup():
+    # AUDIT DATA HILANG SETELAH RESTART: dicatat SEBELUM init_db() dipanggil
+    # (init_db() memakai CREATE TABLE IF NOT EXISTS -- begitu dipanggil, file
+    # .db langsung ADA walau sebelumnya tidak ada sama sekali, jadi urutan di
+    # sini penting supaya log ini benar-benar mencerminkan kondisi DI AWAL
+    # proses ini boot, bukan sesudahnya). Dicetak dengan level CRITICAL dan
+    # format yang gampang di-grep di log Render (atau platform hosting lain
+    # mana pun -- semua menangkap stdout/stderr proses ini sebagai log
+    # otomatis) supaya kalau ada insiden "data hilang setelah restart"
+    # berikutnya, BUKTINYA langsung ada di log tanpa perlu menebak: apakah
+    # file .db sudah ADA (proses ini melanjutkan data lama, normal) atau
+    # BARU DIBUAT (proses ini mulai dari nol -- disk yang dipakai TIDAK
+    # persisten lintas restart/deploy, lihat README bagian Deployment).
+    db_ada_sebelum_boot = os.path.isfile(db.DB_PATH)
+    db_size_sebelum_boot = os.path.getsize(db.DB_PATH) if db_ada_sebelum_boot else 0
+    if db_ada_sebelum_boot:
+        logger.info(
+            "[%s] BOOT: file database SUDAH ADA di %s (%s bytes) -- melanjutkan data yang sudah ada.",
+            _INSTANCE_ID, db.DB_PATH, db_size_sebelum_boot,
+        )
+    else:
+        logger.critical(
+            "[%s] BOOT: file database TIDAK DITEMUKAN di %s -- proses ini akan membuat "
+            "database KOSONG dari awal (CREATE TABLE IF NOT EXISTS pada tabel yang belum "
+            "ada = tabel baru, ISI KOSONG). Kalau ini BUKAN instalasi pertama kali, ini "
+            "BUKTI LANGSUNG bahwa disk tempat file ini seharusnya tersimpan TIDAK PERSISTEN "
+            "lintas restart/deploy (lihat README bagian 'Deployment (Produksi)' -- Persistent "
+            "Disk WAJIB di-mount tepat ke folder backend/app/). SEMUA data (transaksi, "
+            "setting, user, password yang sudah diubah) sebelum restart ini TIDAK BISA "
+            "dipulihkan dari sini -- cek folder backups/ (kalau kebetulan ikut persisten) "
+            "atau Google Sheets (kalau Sinkronisasi sempat aktif) untuk pemulihan.",
+            _INSTANCE_ID, db.DB_PATH,
+        )
+
     # init_db() dari database.py: CREATE TABLE IF NOT EXISTS — sama seperti saat
     # main.py Tkinter dijalankan, tidak pernah menimpa data yang sudah ada.
     db.init_db()
@@ -169,18 +202,46 @@ def on_startup():
     _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala
 
+    # AUDIT DATA HILANG SETELAH RESTART: ringkasan jumlah baris tabel inti,
+    # dicetak SETELAH seluruh migrasi/bootstrap di atas selesai -- log ini
+    # jadi "sidik jari" kondisi database tiap kali proses ini boot, gampang
+    # dibandingkan dari waktu ke waktu di riwayat log Render.
+    with db.get_conn() as conn:
+        jumlah = {
+            "users": conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"],
+            "barbers": conn.execute("SELECT COUNT(*) AS n FROM barbers").fetchone()["n"],
+            "transaksi": conn.execute("SELECT COUNT(*) AS n FROM transaksi").fetchone()["n"],
+            "bookings": conn.execute("SELECT COUNT(*) AS n FROM bookings").fetchone()["n"],
+        }
+    logger.info("[%s] BOOT selesai: jumlah_baris=%s", _INSTANCE_ID, jumlah)
+
 
 def _bootstrap_admin_pertama():
     """Kalau tabel users masih benar-benar kosong (instalasi baru), buatkan
     SATU akun admin dari environment variable, supaya ada cara login pertama
     kali tanpa akses langsung ke database (ayam-telur: tanpa user tidak bisa
     login, tanpa login tidak bisa membuat user). Hanya jalan kalau users
-    kosong — tidak akan pernah menimpa/duplikat akun yang sudah dibuat manual."""
+    kosong — tidak akan pernah menimpa/duplikat akun yang sudah dibuat manual.
+
+    AUDIT DATA HILANG SETELAH RESTART: fungsi ini SEHARUSNYA hanya pernah
+    jalan SEKALI sepanjang umur satu instalasi (saat benar-benar pertama
+    kali dipasang). Kalau fungsi ini jalan LAGI di kemudian hari (log
+    CRITICAL di bawah akan menyebutkannya), itu BUKTI tabel users kosong
+    padahal seharusnya sudah berisi akun yang dibuat sebelumnya -- lihat log
+    "BOOT: file database TIDAK DITEMUKAN" di on_startup() di atas untuk
+    akar masalahnya."""
     if auth_db.get_user_list():
         return
     username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "owner")
     password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "ganti-password-ini")
     auth_db.tambah_user(username=username, password=password, role="admin")
+    logger.critical(
+        "[%s] BOOTSTRAP: tabel users KOSONG saat proses ini boot -- akun admin baru '%s' "
+        "dibuat dari ADMIN_BOOTSTRAP_USERNAME/PASSWORD. Kalau ini bukan instalasi pertama "
+        "kali, SEMUA user/password yang sudah pernah dibuat sebelumnya TIDAK ADA LAGI di "
+        "database ini (lihat log BOOT di atas).",
+        _INSTANCE_ID, username,
+    )
 
 
 def _reset_admin_darurat():
@@ -211,12 +272,23 @@ def _reset_admin_darurat():
     if not username or not password:
         return
     hasil = auth_db.reset_atau_buat_admin_darurat(username, password)
-    print(
-        f"[ADMIN_RESET] Akun admin '{username}' berhasil {hasil}. "
-        "SEGERA hapus environment variable ADMIN_RESET_USERNAME dan "
-        "ADMIN_RESET_PASSWORD dari server, lalu ganti password lewat menu "
-        "Setting > User setelah berhasil login -- kalau dibiarkan, restart "
-        "berikutnya akan mereset ulang ke password yang sama."
+    # AUDIT DATA HILANG SETELAH RESTART: dinaikkan ke logger.critical() (dari
+    # sebelumnya print() biasa) -- kalau kedua environment variable ini
+    # TIDAK SENGAJA dibiarkan terisi di server (lihat peringatan di
+    # docstring di atas), fungsi ini akan diam-diam MERESET PASSWORD admin
+    # ke nilai yang sama SETIAP KALI proses ini restart, persis cocok
+    # dengan gejala "password kembali ke password awal setelah login" --
+    # log CRITICAL ini supaya kejadian itu langsung terlihat jelas di log
+    # Render (atau platform lain) setiap kali terjadi, bukan cuma print()
+    # biasa yang gampang terlewat di antara log lain.
+    logger.critical(
+        "[%s] ADMIN_RESET: akun admin '%s' berhasil %s lewat environment variable "
+        "ADMIN_RESET_USERNAME/ADMIN_RESET_PASSWORD. SEGERA hapus KEDUA environment "
+        "variable ini dari server lalu ganti password lewat menu Setting > User -- "
+        "SELAMA env var ini masih terisi, SETIAP restart proses akan mereset ulang "
+        "password ke nilai yang sama persis (ini KEMUNGKINAN BESAR penyebab kalau ada "
+        "laporan 'password kembali ke password awal setelah restart/deploy').",
+        _INSTANCE_ID, username, hasil,
     )
 
 
