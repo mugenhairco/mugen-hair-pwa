@@ -2302,6 +2302,43 @@ Harian" yang tersisa, field & logika backend tidak disentuh sama sekali.
 - Seluruh fitur yang diuji LULUS di kedua role (Owner tidak terpengaruh
   sama sekali, staff dibatasi persis sesuai izin yang diberikan).
 
+### REVISI KEDUA: Input Data/Booking/Pengeluaran/Produk/Rekap dibuka penuh untuk Admin
+
+Menindaklanjuti umpan balik: LIMA menu di atas (Input Data, Booking,
+Pengeluaran, Produk, Rekap) sekarang bisa diakses 'staff' (Admin) **PENUH
+sama persis seperti Owner**, TANPA sistem izin sama sekali -- bukan lagi
+diblokir total (Input Data/Booking/Produk/Rekap) ataupun diatur granular
+per-aksi (Pengeluaran, grup `izin_pengeluaran_*` dihapus total dari
+`permissions.py`/tab Hak Akses Admin). Dashboard (kartu difilter) dan
+Setting (tab difilter) TIDAK berubah -- tetap satu-satunya area yang diatur
+lewat Hak Akses Admin.
+
+Backend: seluruh endpoint di `routers/input_data.py`, `routers/booking.py`
+(kecuali `/mine`, tetap `require_barber`), `routers/produk.py` diganti dari
+`require_admin` menjadi `require_owner_or_staff`; `routers/pengeluaran.py`
+POST/PUT/DELETE diganti dari `require_permission("izin_pengeluaran_*")`
+menjadi `require_owner_or_staff`; `routers/rekap.py` — penolakan eksplisit
+untuk role 'staff' (ditambahkan di revisi sebelumnya) dihapus.
+
+Frontend: `nav.js` (kelima menu ditambahkan ke `roles` masing-masing),
+`router.js` (gate disesuaikan/dihapus), dan — penting — variabel `isAdmin`
+di `pages/booking.js`/`pages/input_data.js`/`pages/rekap.js` (sebelumnya
+`user.role === "admin"` murni, mengontrol apakah tampilan Owner-lengkap
+atau tampilan terbatas yang dirender) diperluas jadi
+`user.role === "admin" || user.role === "staff"` -- tanpa ini, staff akan
+tetap melihat tampilan versi terbatas walau endpoint backend-nya sudah
+dibuka, karena ketiga halaman itu sebelumnya hanya pernah punya DUA jenis
+tampilan (Owner-lengkap vs Barber-terbatas), belum pernah punya kasus role
+ketiga yang butuh tampilan Owner-lengkap juga.
+
+Diuji ulang end-to-end (curl): staff tanpa satu pun izin Pengeluaran
+diberikan tetap bisa tambah/edit/hapus pengeluaran (200, bukan lagi 403);
+staff bisa mengakses seluruh endpoint Input Data/Booking/Produk/Rekap
+(200). Browser (Playwright): sidebar staff menampilkan keenam menu
+(Dashboard/Input Data/Rekap/Booking/Pengeluaran/Produk/Setting), halaman
+Booking/Rekap staff menampilkan tab LENGKAP sama seperti Owner (bukan versi
+Barber), tab "Hak Akses Admin" tetap tidak pernah muncul untuk staff.
+
 
 ## Struktur Project
 

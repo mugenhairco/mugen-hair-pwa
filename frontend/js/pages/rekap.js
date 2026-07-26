@@ -3,7 +3,7 @@
 const PageRekap = (() => {
   async function render(root) {
     const user = MugenState.getUser();
-    const isAdmin = user.role === "admin";
+    const isAdmin = user.role === "admin" || user.role === "staff";
     const today = new Date();
 
     root.innerHTML = "";

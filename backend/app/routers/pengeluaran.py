@@ -5,16 +5,16 @@ Router KHUSUS untuk CRUD Pengeluaran, sengaja dipisah dari router lain
 Hak akses: Pengeluaran adalah data operasional TOKO (bukan milik barber
 manapun). Barber TETAP ditolak total DI BACKEND (require_owner_or_staff
 menolak role 'barber', bukan cuma disembunyikan di menu frontend).
-REVISI Hak Akses Admin: Owner ('admin') selalu akses penuh; 'staff' (Admin)
-boleh MELIHAT (GET) tanpa syarat tambahan, tapi Tambah/Edit/Hapus masing-
-masing butuh izin_pengeluaran_tambah/edit/hapus yang diatur Owner lewat
-Setting > Hak Akses Admin (lihat permissions.py/require_permission)."""
+REVISI (kedua) Hak Akses Admin: Pengeluaran TIDAK LAGI memakai sistem izin
+sama sekali -- Admin ('staff') sekarang punya akses PENUH sama persis
+seperti Owner ('admin') di seluruh endpoint di sini (lihat permissions.py,
+grup izin_pengeluaran_* sudah dihapus dari daftar izin yang bisa diatur)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import pengeluaran_db as db_pengeluaran
-from auth import require_owner_or_staff, require_permission
+from auth import require_owner_or_staff
 
 router = APIRouter(prefix="/api/pengeluaran", tags=["pengeluaran"])
 
@@ -54,7 +54,7 @@ def detail_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_o
 
 
 @router.post("")
-def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_permission("izin_pengeluaran_tambah"))):
+def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_owner_or_staff)):
     try:
         new_id = db_pengeluaran.tambah_pengeluaran(
             tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
@@ -66,7 +66,7 @@ def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_permi
 
 
 @router.put("/{pengeluaran_id}")
-def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict = Depends(require_permission("izin_pengeluaran_edit"))):
+def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict = Depends(require_owner_or_staff)):
     try:
         db_pengeluaran.koreksi_pengeluaran(
             pengeluaran_id, tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
@@ -78,6 +78,6 @@ def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict =
 
 
 @router.delete("/{pengeluaran_id}")
-def hapus_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_permission("izin_pengeluaran_hapus"))):
+def hapus_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_or_staff)):
     db_pengeluaran.hapus_pengeluaran(pengeluaran_id)
     return {"ok": True}

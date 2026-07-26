@@ -6,23 +6,22 @@
 // brand.js (MugenBrand) dari /api/pengaturan/identitas.
 
 const MugenNav = (() => {
-  // REVISI Hak Akses Admin: 'staff' (label UI "Admin") HANYA melihat
-  // Dashboard, Pengeluaran, dan Setting -- Input Data/Rekap/Booking/Produk
-  // BUKAN bagian dari hak akses yang bisa diberikan Owner ke role ini
-  // (lihat permissions.py). Menu Pengeluaran/Setting tetap tampil untuk
-  // 'staff' apa pun hak aksesnya (supaya bisa masuk & melihat kenapa
-  // aksinya dibatasi) -- pembatasan SEBENARNYA per-aksi terjadi di dalam
-  // halamannya masing-masing + backend (require_permission).
+  // REVISI Hak Akses Admin (kedua): 'staff' (label UI "Admin") sekarang
+  // punya akses PENUH sama persis seperti Owner ke Input Data/Booking/
+  // Pengeluaran/Produk/Rekap -- kelima menu ini TIDAK memakai sistem izin
+  // sama sekali (lihat permissions.py). HANYA menu Dashboard (kartu
+  // difilter) dan Setting (tab difilter) yang tetap diatur lewat Hak
+  // Akses Admin.
   const MENU = [
     { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"] },
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
-    { hash: "#/input-data", label: "Input Data", roles: ["admin"] },
-    { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
-    // BOOKING: Owner/Admin(Owner) full access; Barber hanya lihat booking
+    { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"] },
+    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"] },
+    // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
-    { hash: "#/booking", label: "Booking", roles: ["admin", "barber"] },
+    { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"] },
     { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
-    { hash: "#/produk", label: "Produk", roles: ["admin"] },
+    { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
     { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
   ];
   const MENU_SEGERA = [];
@@ -41,14 +40,14 @@ const MugenNav = (() => {
     const nav = MugenUI.el("nav");
     for (const item of MENU) {
       if (!item.roles.includes(user.role)) continue;
-      // REVISI: badge jumlah booking belum dikonfirmasi, KHUSUS admin --
-      // hanya Admin yang bisa verifikasi/batalkan booking (lihat
+      // REVISI: badge jumlah booking belum dikonfirmasi, KHUSUS Owner/Admin --
+      // hanya mereka yang bisa verifikasi/batalkan booking (lihat
       // routers/booking.py), Barber tidak punya kegunaan untuk badge ini.
       // id="booking-badge" dicari & di-update oleh booking_notif.js tiap
       // polling -- sengaja dibuat ulang di sini (bukan disimpan sekali)
       // karena seluruh sidebar di-render ulang tiap pindah menu.
       const linkChildren = [MugenUI.el("span", {}, item.label)];
-      if (item.hash === "#/booking" && user.role === "admin") {
+      if (item.hash === "#/booking" && (user.role === "admin" || user.role === "staff")) {
         linkChildren.push(MugenUI.el("span", { class: "nav-badge", id: "booking-badge", style: "display:none;" }));
       }
       nav.appendChild(MugenUI.el("a", {

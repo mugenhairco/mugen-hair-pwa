@@ -10,7 +10,7 @@ const PageInputData = (() => {
 
   async function render(root) {
     const user = MugenState.getUser();
-    const isAdmin = user.role === "admin";
+    const isAdmin = user.role === "admin" || user.role === "staff";
 
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Input Data"));

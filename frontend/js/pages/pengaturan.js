@@ -1226,11 +1226,9 @@ const PagePengaturan = (() => {
           ["izin_user_hapus", "Menghapus (menonaktifkan) User Barber"],
           ["izin_user_ganti_password", "Mengubah Password User Barber"],
         ]},
-        { judul: "Pengeluaran", keys: [
-          ["izin_pengeluaran_tambah", "Tambah"],
-          ["izin_pengeluaran_edit", "Edit"],
-          ["izin_pengeluaran_hapus", "Hapus"],
-        ]},
+        // REVISI (kedua): grup "Pengeluaran" dihapus dari sini -- menu
+        // Pengeluaran tidak lagi memakai sistem izin sama sekali, Admin
+        // selalu punya akses penuh sama persis seperti Owner.
         { judul: "Backup", keys: [
           ["izin_backup_export", "Export Database"],
           ["izin_backup_import", "Import Database"],
