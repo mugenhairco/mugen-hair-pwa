@@ -34,13 +34,43 @@ const PageBookPublic = (() => {
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
-  // REVISI: tombol "Download QRIS" -- ambil filename asli (dengan ekstensi
-  // asli, sama seperti file yang diunggah admin lewat Setting) dari query
+  // REVISI: tombol "Download QRIS" -- ambil EKSTENSI file asli dari query
   // string "?v=" pada qris_url (lihat booking_db.py: qris_url selalu
-  // berformat "/api/public/booking/qris?v=<nama_file_asli>").
-  function namaFileDariUrl(qrisUrl) {
+  // berformat "/api/public/booking/qris?v=<nama_file_asli>"), lalu susun
+  // nama file unduhan yang rapi berbasis nama barbershop (BUKAN hardcode
+  // "MUGEN Hair Co." di source -- lihat brand.js/Tahap 10 -- supaya tetap
+  // benar walau nama barbershop diganti lewat Setting), contoh hasil:
+  // "MUGEN-Hair-Co-QRIS.png".
+  function namaFileQris(qrisUrl, namaBarbershop) {
     const q = (qrisUrl || "").split("?")[1] || "";
-    return new URLSearchParams(q).get("v") || "qris.png";
+    const namaAsli = new URLSearchParams(q).get("v") || "qris.png";
+    const ext = (namaAsli.split(".").pop() || "png").toLowerCase();
+    const dasar = (namaBarbershop || "QRIS").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "QRIS";
+    return `${dasar}-QRIS.${ext}`;
+  }
+
+  // Ikon download (SVG inline, tanpa dependency CDN) untuk tombol Download QRIS.
+  const IKON_DOWNLOAD_SVG =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/>' +
+    '<path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+
+  // Efek ripple ringan (murni CSS animasi + JS posisi klik) saat tombol
+  // Download QRIS ditekan, supaya terasa modern tanpa perlu library apa pun.
+  function tambahkanEfekRipple(tombol) {
+    tombol.addEventListener("click", (e) => {
+      const rect = tombol.getBoundingClientRect();
+      const ukuran = Math.max(rect.width, rect.height);
+      const ripple = document.createElement("span");
+      ripple.className = "book-ripple";
+      ripple.style.width = ripple.style.height = ukuran + "px";
+      const x = (e.clientX || rect.left + rect.width / 2) - rect.left - ukuran / 2;
+      const y = (e.clientY || rect.top + rect.height / 2) - rect.top - ukuran / 2;
+      ripple.style.left = x + "px";
+      ripple.style.top = y + "px";
+      tombol.appendChild(ripple);
+      ripple.addEventListener("animationend", () => ripple.remove());
+    });
   }
 
   // Unduh gambar lewat fetch->blob->anchor[download] supaya file benar-benar
@@ -513,24 +543,20 @@ const PageBookPublic = (() => {
       ]));
     }
 
-    // ================= STEP 6: RINGKASAN + FULL PAYMENT =================
+    // ================= STEP 6: RINGKASAN -> PILIH METODE -> KONFIRMASI -> HALAMAN PEMBAYARAN =================
+    // REVISI: dipecah jadi 2 fase TANPA menambah step/goto baru (indikator
+    // "Langkah 6 dari 6" tetap benar) -- fase "pilih" (Ringkasan + Metode
+    // Pembayaran + tombol Konfirmasi, yang ini yang benar-benar mengirim
+    // booking ke server lewat MugenUI.withLoading seperti sebelumnya) lalu
+    // fase "bayar" (Halaman Pembayaran sesuai metode terpilih, termasuk
+    // Download QRIS) baru muncul SETELAH booking berhasil dibuat.
     function renderRingkasanBayar() {
-      body.appendChild(MugenUI.el("h2", {}, "Ringkasan Booking"));
-
+      let fase = "pilih";
       const dipilih = services.filter((s) => state.serviceIds.includes(s.id));
       const totalHarga = dipilih.reduce((a, s) => a + s.harga, 0);
-
-      const ringkasan = MugenUI.el("div", { class: "card" }, [
-        baris("Barber", state.barberNama),
-        baris("Tanggal", MugenUI.formatTanggal(state.tanggal)),
-        baris("Jam", state.jam),
-        baris("Service", dipilih.map((s) => s.nama).join(", ")),
-        baris("Nama", state.nama),
-        baris("WhatsApp", state.whatsapp),
-        MugenUI.el("hr"),
-        baris("Total Pembayaran", MugenUI.formatRupiah(totalHarga), true),
-      ]);
-      body.appendChild(ringkasan);
+      const metodeNama = pengaturan.metode_nama || {};
+      const metodeInstruksi = pengaturan.metode_instruksi || {};
+      const metodeAktif = pengaturan.metode_aktif || [];
 
       function baris(label, value, tebal) {
         return MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:4px 0;" + (tebal ? "font-weight:700;" : "") }, [
@@ -539,96 +565,145 @@ const PageBookPublic = (() => {
         ]);
       }
 
-      body.appendChild(MugenUI.el("h2", { style: "margin-top:24px;" }, "Metode Pembayaran (Full Payment)"));
-      const metodeBox = MugenUI.el("div", { class: "book-metode-list" });
-      body.appendChild(metodeBox);
-      const detailBox = MugenUI.el("div", { style: "margin-top:12px;" });
-      body.appendChild(detailBox);
-      const errorBox = MugenUI.el("div", { class: "login-error" });
-
-      const metodeNama = pengaturan.metode_nama || {};
-      const metodeInstruksi = pengaturan.metode_instruksi || {};
-
-      function renderDetailMetode() {
-        detailBox.innerHTML = "";
+      function isiKontenMetode() {
+        // Konten pembayaran per metode -- SAMA persis dengan detail yang
+        // dulu ditampilkan inline, hanya sekarang muncul di fase "bayar"
+        // (Halaman Pembayaran), bukan langsung saat metode dipilih.
+        const items = [];
         if (state.metode === "transfer") {
-          detailBox.appendChild(MugenUI.el("div", { class: "card" }, [
+          items.push(
             MugenUI.el("div", {}, `Bank: ${pengaturan.bank_nama || "-"}`),
             MugenUI.el("div", {}, `No. Rekening: ${pengaturan.bank_nomor_rekening || "-"}`),
             MugenUI.el("div", {}, `A/N: ${pengaturan.bank_nama_pemilik || "-"}`),
             MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, metodeInstruksi.transfer || ""),
-          ]));
+          );
         } else if (state.metode === "qris") {
-          const items = [];
           if (pengaturan.qris_url) {
             const qrisFullUrl = MUGEN_API_BASE + pengaturan.qris_url;
             items.push(MugenUI.el("img", { src: qrisFullUrl, class: "book-qris-img", alt: "QRIS" }));
-            const btnDownload = MugenUI.el("button", { type: "button", style: "display:block;margin:8px auto 0;" }, "Download QRIS");
-            btnDownload.addEventListener("click", () => unduhGambar(qrisFullUrl, namaFileDariUrl(pengaturan.qris_url)));
+            const btnDownload = MugenUI.el("button", {
+              type: "button",
+              class: "book-download-qris-btn",
+            }, [
+              MugenUI.el("span", { class: "book-download-qris-icon", html: IKON_DOWNLOAD_SVG }),
+              "Download QRIS",
+            ]);
+            tambahkanEfekRipple(btnDownload);
+            btnDownload.addEventListener("click", () => unduhGambar(qrisFullUrl, namaFileQris(pengaturan.qris_url, identitas.nama_barbershop)));
             items.push(btnDownload);
           }
-          items.push(MugenUI.el("div", {}, pengaturan.qris_merchant_nama || ""));
-          items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, metodeInstruksi.qris || ""));
-          detailBox.appendChild(MugenUI.el("div", { class: "card" }, items));
+          items.push(MugenUI.el("div", { style: "margin-top:8px;" }, pengaturan.qris_merchant_nama || ""));
+          items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, metodeInstruksi.qris || ""));
         } else if (state.metode === "cash") {
-          detailBox.appendChild(MugenUI.el("div", { class: "card" }, metodeInstruksi.cash || ""));
+          items.push(MugenUI.el("div", {}, metodeInstruksi.cash || ""));
         } else if (state.metode === "gateway") {
-          detailBox.appendChild(MugenUI.el("div", { class: "card" }, metodeInstruksi.gateway || ""));
+          items.push(MugenUI.el("div", {}, metodeInstruksi.gateway || ""));
         }
+        return items;
       }
 
-      // REVISI: kalau hanya SATU metode pembayaran yang aktif, langsung
-      // pakai itu tanpa customer perlu memilih -- selector metode (metodeBox)
-      // hanya ditampilkan kalau ada 2+ metode aktif. Dengan 0 metode aktif,
-      // perilaku lama (pesan "Belum ada metode aktif") dipertahankan persis.
-      const metodeAktif = pengaturan.metode_aktif || [];
-      if (!metodeAktif.length) {
-        metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada metode pembayaran aktif. Hubungi barbershop."));
-      } else if (metodeAktif.length === 1) {
-        state.metode = metodeAktif[0];
-        renderDetailMetode();
-      } else {
-        for (const m of metodeAktif) {
-          const btn = MugenUI.el("button", {
+      function renderFasePilihMetode() {
+        body.appendChild(MugenUI.el("h2", {}, "Ringkasan Booking"));
+        body.appendChild(MugenUI.el("div", { class: "card" }, [
+          baris("Barber", state.barberNama),
+          baris("Tanggal", MugenUI.formatTanggal(state.tanggal)),
+          baris("Jam", state.jam),
+          baris("Service", dipilih.map((s) => s.nama).join(", ")),
+          baris("Nama", state.nama),
+          baris("WhatsApp", state.whatsapp),
+          MugenUI.el("hr"),
+          baris("Total Pembayaran", MugenUI.formatRupiah(totalHarga), true),
+        ]));
+
+        body.appendChild(MugenUI.el("h2", { style: "margin-top:24px;" }, "Metode Pembayaran"));
+        const metodeBox = MugenUI.el("div", { class: "book-metode-list" });
+        body.appendChild(metodeBox);
+        const errorBox = MugenUI.el("div", { class: "login-error" });
+
+        // REVISI: kalau cuma SATU metode aktif, customer TETAP diarahkan ke
+        // halaman metode pembayaran ini (bukan langsung lompat ke halaman
+        // pembayaran) -- hanya saja satu-satunya pilihan itu ditampilkan
+        // otomatis terpilih (tidak perlu diklik) karena memang tidak ada
+        // pilihan lain. Kalau 2+ metode aktif, customer tetap harus memilih
+        // sendiri seperti sebelumnya. 0 metode aktif: pesan lama dipertahankan.
+        if (!metodeAktif.length) {
+          metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada metode pembayaran aktif. Hubungi barbershop."));
+        } else if (metodeAktif.length === 1) {
+          state.metode = metodeAktif[0];
+          metodeBox.appendChild(MugenUI.el("button", {
             type: "button",
-            class: "book-metode-btn" + (state.metode === m ? " selected" : ""),
-          }, metodeNama[m] || m);
-          btn.addEventListener("click", () => {
-            state.metode = m;
-            for (const el of metodeBox.children) el.classList.remove("selected");
-            btn.classList.add("selected");
-            renderDetailMetode();
-          });
-          metodeBox.appendChild(btn);
+            class: "book-metode-btn selected",
+            disabled: "disabled",
+          }, metodeNama[state.metode] || state.metode));
+        } else {
+          for (const m of metodeAktif) {
+            const btn = MugenUI.el("button", {
+              type: "button",
+              class: "book-metode-btn" + (state.metode === m ? " selected" : ""),
+            }, metodeNama[m] || m);
+            btn.addEventListener("click", () => {
+              state.metode = m;
+              for (const el of metodeBox.children) el.classList.remove("selected");
+              btn.classList.add("selected");
+            });
+            metodeBox.appendChild(btn);
+          }
         }
+        body.appendChild(errorBox);
+
+        const btnKonfirmasi = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Konfirmasi");
+        btnKonfirmasi.addEventListener("click", async () => {
+          errorBox.textContent = "";
+          if (!state.metode) { errorBox.textContent = "Pilih metode pembayaran dulu."; return; }
+          if (state.metode === "gateway") { errorBox.textContent = "Payment Gateway belum tersedia, pilih metode lain."; return; }
+          btnKonfirmasi.disabled = true;
+          try {
+            const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/public/booking", {
+              barber_id: state.barberId, tanggal: state.tanggal, jam_mulai: state.jam,
+              service_ids: state.serviceIds, customer_nama: state.nama, customer_whatsapp: state.whatsapp,
+              metode_pembayaran: state.metode,
+            }), { message: "Memproses booking…" });
+            state.bookingResult = hasil;
+            fase = "bayar";
+            gantiFase();
+          } catch (e) {
+            errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+          } finally {
+            btnKonfirmasi.disabled = false;
+          }
+        });
+        body.appendChild(btnKonfirmasi);
+
+        body.appendChild(MugenUI.el("div", { class: "row book-nav-row" }, [
+          MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "‹ Ganti Data Diri"),
+        ]));
       }
-      body.appendChild(errorBox);
 
-      const btnKonfirmasi = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Konfirmasi Booking");
-      btnKonfirmasi.addEventListener("click", async () => {
-        errorBox.textContent = "";
-        if (!state.metode) { errorBox.textContent = "Pilih metode pembayaran dulu."; return; }
-        if (state.metode === "gateway") { errorBox.textContent = "Payment Gateway belum tersedia, pilih metode lain."; return; }
-        btnKonfirmasi.disabled = true;
-        try {
-          const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/public/booking", {
-            barber_id: state.barberId, tanggal: state.tanggal, jam_mulai: state.jam,
-            service_ids: state.serviceIds, customer_nama: state.nama, customer_whatsapp: state.whatsapp,
-            metode_pembayaran: state.metode,
-          }), { message: "Memproses booking…" });
-          state.bookingResult = hasil;
-          goto(7);
-        } catch (e) {
-          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        } finally {
-          btnKonfirmasi.disabled = false;
-        }
-      });
-      body.appendChild(btnKonfirmasi);
+      function renderFasePembayaran() {
+        // Booking SUDAH tersimpan di server pada titik ini (dibuat saat
+        // tombol Konfirmasi di fase sebelumnya ditekan) -- halaman ini
+        // murni menampilkan instruksi/QRIS untuk diselesaikan pembayarannya,
+        // TIDAK mengirim apa pun lagi ke server.
+        const judul = state.metode === "qris" ? "Halaman Pembayaran QRIS" : "Halaman Pembayaran";
+        body.appendChild(MugenUI.el("h2", {}, judul));
+        body.appendChild(MugenUI.el("div", { class: "card" }, [
+          baris("Total Pembayaran", MugenUI.formatRupiah(totalHarga), true),
+          MugenUI.el("hr"),
+          ...isiKontenMetode(),
+        ]));
 
-      body.appendChild(MugenUI.el("div", { class: "row book-nav-row" }, [
-        MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "‹ Ganti Data Diri"),
-      ]));
+        const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Selesai");
+        btnLanjut.addEventListener("click", () => goto(7));
+        body.appendChild(btnLanjut);
+      }
+
+      function gantiFase() {
+        body.innerHTML = "";
+        if (fase === "bayar") renderFasePembayaran();
+        else renderFasePilihMetode();
+      }
+
+      gantiFase();
     }
 
     // ================= STEP 7: SELESAI =================

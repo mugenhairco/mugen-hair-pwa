@@ -732,7 +732,36 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   text-align: left; color: var(--text); cursor: pointer;
 }
 .book-metode-btn.selected { border-color: var(--accent); background: rgba(51,65,85,0.06); }
-.book-qris-img { max-width: 220px; display: block; margin: 8px auto; border-radius: 10px; }
+.book-metode-btn:disabled { cursor: default; opacity: 1; }
+/* Halaman Pembayaran QRIS: gambar tetap tajam (tidak diperbesar melebihi
+   ukuran aslinya lewat CSS, hanya dibatasi lebar maksimum) di semua ukuran
+   layar, plus hint rendering tajam untuk browser yang mendukungnya. */
+.book-qris-img {
+  max-width: 240px; width: 100%; display: block; margin: 8px auto; border-radius: 10px;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* REVISI: tombol "Download QRIS" -- desain modern (aksen solid + ikon +
+   hover terangkat + ripple saat ditekan), konsisten dengan token warna
+   .btn-primary yang sudah ada (bukan warna baru). */
+.book-download-qris-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 10px auto 0; position: relative; overflow: hidden;
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+.book-download-qris-btn:hover:not(:disabled) {
+  background: var(--accent-hover); border-color: var(--accent-hover);
+  transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.14);
+}
+.book-download-qris-btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+.book-download-qris-icon { display: inline-flex; line-height: 0; }
+.book-ripple {
+  position: absolute; border-radius: 50%; background: rgba(255,255,255,0.55);
+  transform: scale(0); animation: book-ripple-anim 550ms ease-out forwards; pointer-events: none;
+}
+@keyframes book-ripple-anim {
+  to { transform: scale(2.6); opacity: 0; }
+}
 
 .book-selesai { text-align: center; }
 .book-selesai-icon {
