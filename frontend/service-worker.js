@@ -96,7 +96,13 @@
 // dimuat alih-alih tampil sebagai ikon rusak; login.js: terapkan cache
 // lebih dulu sebelum menunggu refresh dari server; book_public.js: banner
 // booking pakai pola sama; index.html: preconnect ke backend Render).
-const CACHE_NAME = "mugen-hair-shell-v21";
+// v21 -> v22: Penyempurnaan Metode Pembayaran Booking (book_public.js) --
+// kalau cuma 1 metode pembayaran aktif, customer langsung diarahkan ke
+// detailnya tanpa perlu memilih; selector metode tetap tampil seperti
+// biasa kalau 2+ metode aktif; tombol "Download QRIS" baru (fetch->blob->
+// anchor download, dengan fallback buka tab baru) supaya customer bisa
+// unduh gambar QRIS kualitas asli, kompatibel browser & PWA Android/iPhone.
+const CACHE_NAME = "mugen-hair-shell-v22";
 const APP_SHELL = [
   "/",
   "/index.html",

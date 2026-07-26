@@ -34,6 +34,41 @@ const PageBookPublic = (() => {
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
+  // REVISI: tombol "Download QRIS" -- ambil filename asli (dengan ekstensi
+  // asli, sama seperti file yang diunggah admin lewat Setting) dari query
+  // string "?v=" pada qris_url (lihat booking_db.py: qris_url selalu
+  // berformat "/api/public/booking/qris?v=<nama_file_asli>").
+  function namaFileDariUrl(qrisUrl) {
+    const q = (qrisUrl || "").split("?")[1] || "";
+    return new URLSearchParams(q).get("v") || "qris.png";
+  }
+
+  // Unduh gambar lewat fetch->blob->anchor[download] supaya file benar-benar
+  // TERSIMPAN (bukan cuma membuka gambar di tab baru) walau URL-nya beda
+  // origin (frontend Render static vs backend Render API) -- atribut
+  // download pada <a> TIDAK dihormati browser untuk URL cross-origin
+  // langsung, tapi SELALU dihormati untuk blob: URL (dianggap same-origin).
+  // Kalau fetch/blob gagal (offline, browser lawas, dsb.), fallback buka
+  // gambar di tab baru supaya customer tetap bisa simpan manual (tekan lama
+  // di HP / klik kanan "Simpan Gambar" di desktop).
+  async function unduhGambar(url, namaFile) {
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("gagal mengambil gambar");
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = namaFile;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (e) {
+      window.open(url, "_blank");
+    }
+  }
+
   // REVISI UI/UX: Halaman Awal Web Booking -- HANYA tombol besar "BOOKING"
   // (tanpa logo), kata "BOOKING" terbang cepat dari sudut layar ke tengah
   // lewat lintasan Z dengan motion blur (lihat @keyframes book-intro-fly di
@@ -525,7 +560,13 @@ const PageBookPublic = (() => {
           ]));
         } else if (state.metode === "qris") {
           const items = [];
-          if (pengaturan.qris_url) items.push(MugenUI.el("img", { src: MUGEN_API_BASE + pengaturan.qris_url, class: "book-qris-img", alt: "QRIS" }));
+          if (pengaturan.qris_url) {
+            const qrisFullUrl = MUGEN_API_BASE + pengaturan.qris_url;
+            items.push(MugenUI.el("img", { src: qrisFullUrl, class: "book-qris-img", alt: "QRIS" }));
+            const btnDownload = MugenUI.el("button", { type: "button", style: "display:block;margin:8px auto 0;" }, "Download QRIS");
+            btnDownload.addEventListener("click", () => unduhGambar(qrisFullUrl, namaFileDariUrl(pengaturan.qris_url)));
+            items.push(btnDownload);
+          }
           items.push(MugenUI.el("div", {}, pengaturan.qris_merchant_nama || ""));
           items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, metodeInstruksi.qris || ""));
           detailBox.appendChild(MugenUI.el("div", { class: "card" }, items));
@@ -536,22 +577,30 @@ const PageBookPublic = (() => {
         }
       }
 
+      // REVISI: kalau hanya SATU metode pembayaran yang aktif, langsung
+      // pakai itu tanpa customer perlu memilih -- selector metode (metodeBox)
+      // hanya ditampilkan kalau ada 2+ metode aktif. Dengan 0 metode aktif,
+      // perilaku lama (pesan "Belum ada metode aktif") dipertahankan persis.
       const metodeAktif = pengaturan.metode_aktif || [];
       if (!metodeAktif.length) {
         metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada metode pembayaran aktif. Hubungi barbershop."));
-      }
-      for (const m of metodeAktif) {
-        const btn = MugenUI.el("button", {
-          type: "button",
-          class: "book-metode-btn" + (state.metode === m ? " selected" : ""),
-        }, metodeNama[m] || m);
-        btn.addEventListener("click", () => {
-          state.metode = m;
-          for (const el of metodeBox.children) el.classList.remove("selected");
-          btn.classList.add("selected");
-          renderDetailMetode();
-        });
-        metodeBox.appendChild(btn);
+      } else if (metodeAktif.length === 1) {
+        state.metode = metodeAktif[0];
+        renderDetailMetode();
+      } else {
+        for (const m of metodeAktif) {
+          const btn = MugenUI.el("button", {
+            type: "button",
+            class: "book-metode-btn" + (state.metode === m ? " selected" : ""),
+          }, metodeNama[m] || m);
+          btn.addEventListener("click", () => {
+            state.metode = m;
+            for (const el of metodeBox.children) el.classList.remove("selected");
+            btn.classList.add("selected");
+            renderDetailMetode();
+          });
+          metodeBox.appendChild(btn);
+        }
       }
       body.appendChild(errorBox);
 
