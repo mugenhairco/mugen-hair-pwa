@@ -1979,6 +1979,190 @@ rancangan di atas untuk kedua kondisi.
      paling banter cuma sebagian data yang bisa dipulihkan dari sini).
 
 
+## TAHAP Migrasi PostgreSQL (Neon) — Implementasi (BELUM cutover)
+
+Menindaklanjuti "AUDIT KRITIS" di atas (root cause: Render Free instance
+tidak mendukung Persistent Disk sama sekali), Owner menyetujui migrasi ke
+PostgreSQL terkelola (Neon) sebagai solusi jangka panjang, dikerjakan di
+branch terpisah dengan aturan ketat: jangan deploy ke Render dulu, jangan
+ubah frontend/endpoint/format JSON, SQLite tetap berfungsi penuh sampai
+migrasi benar-benar selesai, backup SQLite sebelum mulai, dan **tidak ada
+cutover** sampai Owner memeriksa seluruh implementasi ini dan menyetujuinya.
+
+### Arsitektur
+
+Dialek database aktif ditentukan SATU environment variable, `DATABASE_URL`:
+- **Kosong (default)** -> SQLite, 100% seperti sebelumnya. `psycopg2` tidak
+  pernah diimpor sama sekali di jalur ini.
+- **Diisi** -> PostgreSQL, lewat connection pool + lapisan kompatibilitas.
+
+File baru `backend/app/db_compat.py` adalah satu-satunya tempat yang tahu
+soal psycopg2. Ia menyediakan `get_conn()` versi PostgreSQL yang:
+- Menerjemahkan placeholder `?` -> `%s` (sadar string literal, bukan regex naif).
+- Meng-emulasi `cursor.lastrowid` (tidak ada secara native di psycopg2) lewat
+  otomatis menambahkan `RETURNING *` pada setiap `INSERT` tanpa `RETURNING`
+  eksplisit, lalu mengambil kolom `id` dari hasilnya KALAU ADA (aman untuk
+  tabel `settings`/`sync_meta` yang primary key-nya `key`, bukan `id`).
+- Rollback otomatis kalau ada exception di dalam blok `with get_conn()`
+  (penting di PostgreSQL: satu error yang tidak di-rollback akan membuat
+  SELURUH transaksi berikutnya gagal dengan "current transaction is
+  aborted" -- sudah diuji lewat skenario nama barber duplikat, lihat
+  "Hasil Testing" di bawah).
+- Mengekspos `IntegrityError` yang otomatis merujuk ke exception yang benar
+  sesuai dialek aktif (`sqlite3.IntegrityError` atau `psycopg2.IntegrityError`).
+
+`database.py`/`auth_db.py` (get_conn() masing-masing) tinggal delegasi satu
+baris ke `db_compat.get_conn()` kalau `IS_POSTGRES` — SELURUH ~200 titik
+pemanggilan `conn.execute(...)` di 19 file lain **tidak ada yang diubah**.
+
+### Query yang ditulis ulang (supaya jalan di KEDUA dialek)
+
+Sebagian kecil query memakai sintaks yang berbeda total antar dialek --
+ini SATU-SATUNYA bagian yang disentuh langsung di file aslinya:
+
+| Pola lama (SQLite-only) | Pola baru (dialek-netral, jalan di keduanya) | Lokasi |
+|---|---|---|
+| `strftime('%Y', tgl)=? AND strftime('%m', tgl)=?` | `tgl LIKE ?` dengan param `'YYYY-MM-%'` | database.py, booking_db.py, pengeluaran_db.py (~20 titik) |
+| `strftime('%Y', tgl)=?` (filter tahun saja) | `tgl LIKE ?` dengan param `'YYYY-%'` | idem |
+| `strftime('%m', tgl)=?` (filter bulan saja) | `tgl LIKE ?` dengan param `'%-MM-%'` | idem |
+| `INSERT OR IGNORE ...` | `INSERT ... ON CONFLICT DO NOTHING` (didukung SQLite 3.24+ maupun PostgreSQL 9.5+) | database.py |
+| `WHERE username = ? COLLATE NOCASE` | `WHERE LOWER(username) = LOWER(?)` | auth_db.py (login case-insensitive) |
+| `sqlite3.IntegrityError` | `db_compat.IntegrityError` (alias per-dialek) | database.py, auth_db.py, pengaturan_barber/service/user.py |
+
+Satu pola sengaja dibuat **dialek-AWARE** (bukan netral) karena perilaku
+bawaannya sendiri berbeda: `LIKE` di SQLite tidak peka huruf besar/kecil
+untuk ASCII secara default, sedangkan `LIKE` di PostgreSQL PEKA huruf
+besar/kecil -- pencarian pengeluaran (`pengeluaran_db.py`) memakai `ILIKE`
+kalau `db_compat.IS_POSTGRES`, supaya hasil pencarian identik di kedua
+dialek.
+
+Query yang **TIDAK disentuh** karena sudah dialek-netral sejak awal:
+`INSERT ... ON CONFLICT(key) DO UPDATE SET ...` (upsert `settings`/`sync_meta`,
+sudah didukung kedua dialek).
+
+Query yang **TIDAK PERNAH jalan di PostgreSQL** (bukan berarti dihapus):
+11 file `*_migrasi.py` (berisi `PRAGMA table_info` -- mekanisme cek kolom
+khusus SQLite) tetap ada apa adanya untuk jalur SQLite, tapi di-gate di
+`main.py::on_startup()` supaya sama sekali tidak dipanggil kalau
+`DATABASE_URL` diisi -- lihat bagian Skema di bawah.
+
+### Skema PostgreSQL (`backend/app/postgres_schema.py`, file baru)
+
+Alih-alih mereplay 11 migrasi inkremental SQLite di atas PostgreSQL,
+`postgres_schema.create_all()` langsung membuat skema AKHIR (hasil gabungan
+seluruh migrasi itu) dalam satu langkah, idempotent (`CREATE TABLE IF NOT
+EXISTS` + `ON CONFLICT DO NOTHING` untuk seed default) — 15 tabel total,
+kolom & default disalin persis dari akumulasi seluruh migrasi SQLite. Kolom
+boolean-as-integer (`aktif`, `is_rafiq`, dst) SENGAJA tetap `INTEGER`
+(bukan `BOOLEAN` native Postgres) supaya nilai `1 if x else 0` yang sudah
+ada di 9 titik kode tidak perlu diubah. `main.py::on_startup()` memanggil
+`postgres_schema.create_all()` SEBAGAI GANTI (bukan tambahan) dari
+`db.init_db()` + `auth_db.init_auth_db()` + `booking_db.init_booking_db()` +
+11 migrasi SQLite, HANYA kalau `DATABASE_URL` diisi — jalur SQLite (default)
+tidak diubah sama sekali.
+
+### Script migrasi data (`backend/app/migrate_to_postgres.py`, file baru)
+
+Script MANUAL (dijalankan lewat command line, **tidak pernah** dipanggil
+otomatis dari `main.py`/proses lain mana pun):
+
+```bash
+cd backend/app
+DATABASE_URL="postgresql://..." python migrate_to_postgres.py --dry-run   # lihat jumlah baris dulu, tidak menulis apa pun
+DATABASE_URL="postgresql://..." python migrate_to_postgres.py             # migrasi sungguhan
+```
+
+- Backup SQLite OTOMATIS (salinan bertanda waktu ke `backend/backups/`)
+  sebelum satu baris pun dibaca. SQLite sumber dibuka **read-only**
+  sepanjang proses, tidak pernah ditulis.
+- Menyalin 15 tabel sesuai urutan dependensi foreign key, mempertahankan
+  `id` asli dari SQLite (supaya relasi antar tabel tetap valid), lalu
+  menyamakan ulang sequence `SERIAL` PostgreSQL ke `MAX(id)` setelahnya.
+- Memakai **UPSERT** (`ON CONFLICT (pk) DO UPDATE`, bukan sekadar
+  `DO NOTHING`) — data SQLite selalu menang menimpa baris yang kebetulan
+  sudah ada (mis. default `settings`/`services` yang otomatis diisi
+  `postgres_schema.create_all()`) — sekaligus membuat script ini aman
+  dijalankan ulang berkali-kali (idempotent per baris, sudah diuji).
+- Menolak berjalan (kecuali `--force`) kalau tabel data bisnis di
+  PostgreSQL (transaksi/users/bookings/dst — TIDAK termasuk
+  `settings`/`services` yang memang selalu diisi default) sudah tidak
+  kosong, supaya tidak dijalankan tidak sengaja dua kali ke database yang
+  salah.
+- **TIDAK melakukan cutover** — aplikasi baru benar-benar memakai
+  PostgreSQL kalau `DATABASE_URL` diisi di environment proses backend
+  (mis. Render) DAN proses backend di-restart, langkah terpisah yang
+  sengaja tidak dilakukan script ini.
+
+### File yang diubah/ditambah
+
+**Baru:**
+- `backend/app/db_compat.py` — lapisan kompatibilitas dialek.
+- `backend/app/postgres_schema.py` — skema PostgreSQL lengkap + seed default.
+- `backend/app/migrate_to_postgres.py` — script migrasi data manual.
+
+**Diubah** (seluruhnya kompatibel-mundur, jalur SQLite byte-identik seperti sebelumnya):
+- `backend/app/database.py` — `get_conn()` delegasi dialek; `INSERT OR IGNORE`→`ON CONFLICT DO NOTHING`; `strftime`→`LIKE` (12 titik); `sqlite3.IntegrityError`→`IntegrityError` (2 titik).
+- `backend/app/auth_db.py` — `get_conn()` delegasi dialek; `COLLATE NOCASE`→`LOWER()`; `IntegrityError` alias.
+- `backend/app/booking_db.py` — `strftime`→`LIKE` (3 pasang).
+- `backend/app/pengeluaran_db.py` — `strftime`→`LIKE`; `LIKE`→`ILIKE` dialek-aware untuk pencarian.
+- `backend/app/pengaturan_barber.py`, `pengaturan_service.py`, `pengaturan_user.py` — `IntegrityError` alias.
+- `backend/app/main.py` — `on_startup()` cabang PostgreSQL (`postgres_schema.create_all()`) vs SQLite (seperti sebelumnya, tidak diubah).
+- `backend/requirements.txt` — tambah `psycopg2-binary` (hanya diimpor kalau `DATABASE_URL` diisi).
+
+**Tidak diubah sama sekali** (sesuai aturan): seluruh `frontend/`, seluruh signature/response endpoint API, 11 file `*_migrasi.py` (tetap dipakai apa adanya di jalur SQLite), `pengaturan_backup.py` (backup/restore file `.db` — TETAP hanya jalan untuk SQLite; PostgreSQL punya jalur backup sendiri lewat `pg_dump`/provider terkelola seperti Neon, di luar cakupan tahap ini).
+
+### Hasil Testing
+
+Diuji dengan PostgreSQL 16 lokal (bukan Neon — sandbox pengembangan tidak
+punya akses jaringan keluar ke host eksternal manapun, jadi verifikasi
+konektivitas ke Neon yang sesungguhnya baru bisa dilakukan Owner sendiri
+setelah `DATABASE_URL` diisi) — DUA server backend dijalankan berdampingan
+(satu SQLite, satu PostgreSQL) dengan skenario IDENTIK pada keduanya, hasil
+byte-for-byte sama:
+- Login (termasuk username case-insensitive), tambah barber, **nama
+  barber duplikat (IntegrityError -> pesan error ramah) diikuti tambah
+  barber lain langsung sesudahnya** (membuktikan rollback PostgreSQL tidak
+  membuat koneksi pool "macet").
+- Transaksi (header + detail, komisi terhitung benar: Rp50.000 untuk
+  Dry Cut + 2x Cut & Wash @ komisi 40%).
+- Tandai libur dua kali berturut-turut (membuktikan `ON CONFLICT DO
+  NOTHING` mencegah duplikat, sama seperti `INSERT OR IGNORE` lama).
+- Rekap transaksi & rekap bulanan dengan filter tahun+bulan gabungan
+  maupun tahun-saja/bulan-saja terpisah (membuktikan seluruh varian
+  rewrite `strftime`→`LIKE` benar, termasuk uji negatif: filter bulan=7
+  TIDAK ikut mengembalikan data bertanggal Agustus).
+- Pencarian pengeluaran case-insensitive ("shampoo" menemukan "Beli Shampoo").
+- Restock & jual produk (stok terhitung benar: restock 10, jual 3, sisa 7).
+- `migrate_to_postgres.py --dry-run` (baca SQLite, tanpa PostgreSQL) dan
+  jalur sungguhan (42 baris tersalin ke PostgreSQL lokal kosong), termasuk
+  uji dijalankan DUA KALI berturut-turut (`--force`) untuk membuktikan
+  upsert tidak menghasilkan duplikat.
+- `python -m py_compile` seluruh file backend: lulus.
+- Boot backend SQLite (file lama & baru) tanpa `DATABASE_URL`: log & hasil
+  byte-identik dengan sebelum tahap ini (regresi nihil).
+
+Satu bug ditemukan & diperbaiki SELAMA testing (bukan lolos ke commit
+akhir): `db_compat.py` awalnya selalu menambahkan `RETURNING id` ke setiap
+`INSERT`, gagal untuk tabel `settings`/`sync_meta` yang primary key-nya
+`key` bukan `id` (`UndefinedColumn`) — diperbaiki jadi `RETURNING *` lalu
+mengambil `id` HANYA kalau kolom itu ada di hasil.
+
+### Status & Langkah Berikutnya
+
+- **Seluruh fitur yang diuji LULUS** di kedua dialek dengan hasil identik.
+- **Migrasi data SIAP dijalankan** (`migrate_to_postgres.py`) begitu Owner
+  menyiapkan `DATABASE_URL` Neon dan ingin mencobanya — script sudah diuji
+  penuh terhadap PostgreSQL sungguhan (lokal), termasuk idempotensi.
+- **BELUM cutover** — `DATABASE_URL` belum diminta/diisi di Render, sesuai
+  instruksi. Backend produksi di Render TIDAK terpengaruh sama sekali oleh
+  perubahan tahap ini sampai Owner secara eksplisit mengisi `DATABASE_URL`
+  di environment Render dan me-restart service-nya.
+- Belum dikerjakan (di luar cakupan tahap yang disetujui sekarang, butuh
+  persetujuan terpisah): redesain fitur Backup & Restore Database untuk
+  PostgreSQL (`pengaturan_backup.py` saat ini murni file `.db`, tidak
+  berlaku untuk PostgreSQL), dan verifikasi konektivitas nyata ke Neon.
+
+
 ## Struktur Project
 
 ```

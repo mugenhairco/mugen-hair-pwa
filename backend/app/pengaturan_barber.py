@@ -12,8 +12,7 @@ menambah dua hal yang belum ada di database.py:
    hanya mengandalkan UNIQUE constraint di level SQLite untuk itu).
 """
 
-import sqlite3
-
+from db_compat import IntegrityError
 import database as db
 from database import get_conn
 
@@ -48,7 +47,7 @@ def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int 
         raise ValueError("Uang harian tidak boleh negatif.")
     try:
         return db.add_barber(nama, is_rafiq, uang_harian)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise ValueError(f"Nama barber '{nama.strip()}' sudah dipakai.")
 
 
@@ -62,5 +61,5 @@ def update_barber_validated(barber_id: int, nama: str = None, is_rafiq: bool = N
         raise ValueError("Uang harian tidak boleh negatif.")
     try:
         db.update_barber(barber_id, nama=nama, is_rafiq=is_rafiq, aktif=aktif, uang_harian=uang_harian)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise ValueError(f"Nama barber '{(nama or '').strip()}' sudah dipakai.")

@@ -12,8 +12,7 @@ Password TETAP di-hash lewat auth_db.hash_password/ganti_password — file
 ini tidak pernah menyentuh atau menyimpan password dalam bentuk plain text.
 """
 
-import sqlite3
-
+from db_compat import IntegrityError
 import auth_db
 from auth_db import get_conn
 
@@ -27,7 +26,7 @@ def ganti_username(user_id: int, username_baru: str):
     try:
         with get_conn() as conn:
             conn.execute("UPDATE users SET username = ? WHERE id = ?", (username_baru, user_id))
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         raise ValueError(f"Username '{username_baru}' sudah dipakai.")
 
 

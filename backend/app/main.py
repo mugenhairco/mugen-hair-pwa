@@ -42,6 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import database as db
 import auth_db
+import db_compat
 import sync_helper
 from auth import require_admin
 from pengeluaran_migrasi import migrasi_pengeluaran
@@ -150,54 +151,72 @@ app.include_router(booking.public_router)
 
 @app.on_event("startup")
 def on_startup():
-    # AUDIT DATA HILANG SETELAH RESTART: dicatat SEBELUM init_db() dipanggil
-    # (init_db() memakai CREATE TABLE IF NOT EXISTS -- begitu dipanggil, file
-    # .db langsung ADA walau sebelumnya tidak ada sama sekali, jadi urutan di
-    # sini penting supaya log ini benar-benar mencerminkan kondisi DI AWAL
-    # proses ini boot, bukan sesudahnya). Dicetak dengan level CRITICAL dan
-    # format yang gampang di-grep di log Render (atau platform hosting lain
-    # mana pun -- semua menangkap stdout/stderr proses ini sebagai log
-    # otomatis) supaya kalau ada insiden "data hilang setelah restart"
-    # berikutnya, BUKTINYA langsung ada di log tanpa perlu menebak: apakah
-    # file .db sudah ADA (proses ini melanjutkan data lama, normal) atau
-    # BARU DIBUAT (proses ini mulai dari nol -- disk yang dipakai TIDAK
-    # persisten lintas restart/deploy, lihat README bagian Deployment).
-    db_ada_sebelum_boot = os.path.isfile(db.DB_PATH)
-    db_size_sebelum_boot = os.path.getsize(db.DB_PATH) if db_ada_sebelum_boot else 0
-    if db_ada_sebelum_boot:
+    # TAHAP migrasi Postgres: kalau DATABASE_URL diisi, seluruh proses "buat
+    # tabel kalau belum ada" di bawah ini digantikan SATU LANGKAH oleh
+    # postgres_schema.create_all() -- skema PostgreSQL dibuat LENGKAP sekali
+    # jadi (bukan direplay dari 11 file migrasi inkremental SQLite di atas,
+    # yang isinya penuh "PRAGMA table_info" & "ALTER TABLE" khusus SQLite).
+    # Jalur SQLite (DATABASE_URL kosong) di bawah ini TIDAK diubah sama
+    # sekali -- byte-identik dengan sebelum tahap ini, termasuk seluruh log
+    # AUDIT DATA HILANG SETELAH RESTART.
+    if db_compat.IS_POSTGRES:
+        import postgres_schema
         logger.info(
-            "[%s] BOOT: file database SUDAH ADA di %s (%s bytes) -- melanjutkan data yang sudah ada.",
-            _INSTANCE_ID, db.DB_PATH, db_size_sebelum_boot,
+            "[%s] BOOT: DATABASE_URL diisi -- proses ini terhubung ke PostgreSQL "
+            "(bukan file SQLite lokal). Menjalankan postgres_schema.create_all().",
+            _INSTANCE_ID,
         )
+        postgres_schema.create_all()
     else:
-        logger.critical(
-            "[%s] BOOT: file database TIDAK DITEMUKAN di %s -- proses ini akan membuat "
-            "database KOSONG dari awal (CREATE TABLE IF NOT EXISTS pada tabel yang belum "
-            "ada = tabel baru, ISI KOSONG). Kalau ini BUKAN instalasi pertama kali, ini "
-            "BUKTI LANGSUNG bahwa disk tempat file ini seharusnya tersimpan TIDAK PERSISTEN "
-            "lintas restart/deploy (lihat README bagian 'Deployment (Produksi)' -- Persistent "
-            "Disk WAJIB di-mount tepat ke folder backend/app/). SEMUA data (transaksi, "
-            "setting, user, password yang sudah diubah) sebelum restart ini TIDAK BISA "
-            "dipulihkan dari sini -- cek folder backups/ (kalau kebetulan ikut persisten) "
-            "atau Google Sheets (kalau Sinkronisasi sempat aktif) untuk pemulihan.",
-            _INSTANCE_ID, db.DB_PATH,
-        )
+        # AUDIT DATA HILANG SETELAH RESTART: dicatat SEBELUM init_db() dipanggil
+        # (init_db() memakai CREATE TABLE IF NOT EXISTS -- begitu dipanggil, file
+        # .db langsung ADA walau sebelumnya tidak ada sama sekali, jadi urutan di
+        # sini penting supaya log ini benar-benar mencerminkan kondisi DI AWAL
+        # proses ini boot, bukan sesudahnya). Dicetak dengan level CRITICAL dan
+        # format yang gampang di-grep di log Render (atau platform hosting lain
+        # mana pun -- semua menangkap stdout/stderr proses ini sebagai log
+        # otomatis) supaya kalau ada insiden "data hilang setelah restart"
+        # berikutnya, BUKTINYA langsung ada di log tanpa perlu menebak: apakah
+        # file .db sudah ADA (proses ini melanjutkan data lama, normal) atau
+        # BARU DIBUAT (proses ini mulai dari nol -- disk yang dipakai TIDAK
+        # persisten lintas restart/deploy, lihat README bagian Deployment).
+        db_ada_sebelum_boot = os.path.isfile(db.DB_PATH)
+        db_size_sebelum_boot = os.path.getsize(db.DB_PATH) if db_ada_sebelum_boot else 0
+        if db_ada_sebelum_boot:
+            logger.info(
+                "[%s] BOOT: file database SUDAH ADA di %s (%s bytes) -- melanjutkan data yang sudah ada.",
+                _INSTANCE_ID, db.DB_PATH, db_size_sebelum_boot,
+            )
+        else:
+            logger.critical(
+                "[%s] BOOT: file database TIDAK DITEMUKAN di %s -- proses ini akan membuat "
+                "database KOSONG dari awal (CREATE TABLE IF NOT EXISTS pada tabel yang belum "
+                "ada = tabel baru, ISI KOSONG). Kalau ini BUKAN instalasi pertama kali, ini "
+                "BUKTI LANGSUNG bahwa disk tempat file ini seharusnya tersimpan TIDAK PERSISTEN "
+                "lintas restart/deploy (lihat README bagian 'Deployment (Produksi)' -- Persistent "
+                "Disk WAJIB di-mount tepat ke folder backend/app/). SEMUA data (transaksi, "
+                "setting, user, password yang sudah diubah) sebelum restart ini TIDAK BISA "
+                "dipulihkan dari sini -- cek folder backups/ (kalau kebetulan ikut persisten) "
+                "atau Google Sheets (kalau Sinkronisasi sempat aktif) untuk pemulihan.",
+                _INSTANCE_ID, db.DB_PATH,
+            )
 
-    # init_db() dari database.py: CREATE TABLE IF NOT EXISTS — sama seperti saat
-    # main.py Tkinter dijalankan, tidak pernah menimpa data yang sudah ada.
-    db.init_db()
-    auth_db.init_auth_db()
-    booking_db.init_booking_db()  # BOOKING: tabel bookings/booking_items/closed_slot (idempotent)
-    migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
-    migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
-    migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
-    migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
-    migrasi_booking()      # BOOKING: kolom durasi_menit di services + seed setting booking (idempotent)
-    migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
-    migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
-    migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
-    migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
-    migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
+        # init_db() dari database.py: CREATE TABLE IF NOT EXISTS — sama seperti saat
+        # main.py Tkinter dijalankan, tidak pernah menimpa data yang sudah ada.
+        db.init_db()
+        auth_db.init_auth_db()
+        booking_db.init_booking_db()  # BOOKING: tabel bookings/booking_items/closed_slot (idempotent)
+        migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
+        migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
+        migrasi_sync()         # TAHAP 12: tabel sync_meta (status sinkronisasi, idempotent)
+        migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
+        migrasi_booking()      # BOOKING: kolom durasi_menit di services + seed setting booking (idempotent)
+        migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
+        migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
+        migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
+        migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
+        migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
+
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     sync_helper.start_background_retry_loop()  # TAHAP 12: retry sinkron otomatis berkala
