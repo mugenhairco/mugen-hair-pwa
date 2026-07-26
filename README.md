@@ -2157,10 +2157,150 @@ mengambil `id` HANYA kalau kolom itu ada di hasil.
   instruksi. Backend produksi di Render TIDAK terpengaruh sama sekali oleh
   perubahan tahap ini sampai Owner secara eksplisit mengisi `DATABASE_URL`
   di environment Render dan me-restart service-nya.
-- Belum dikerjakan (di luar cakupan tahap yang disetujui sekarang, butuh
-  persetujuan terpisah): redesain fitur Backup & Restore Database untuk
-  PostgreSQL (`pengaturan_backup.py` saat ini murni file `.db`, tidak
-  berlaku untuk PostgreSQL), dan verifikasi konektivitas nyata ke Neon.
+- ~~Belum dikerjakan: redesain fitur Backup & Restore Database untuk
+  PostgreSQL~~ — **sudah dikerjakan**, lihat bagian "Backup & Restore" di
+  changelog REVISI Hak Akses Admin di bawah. Verifikasi konektivitas nyata
+  ke Neon tetap belum dilakukan dari sandbox pengembangan (lihat catatan di
+  bagian yang sama).
+
+
+## REVISI: Dashboard Collapse/Expand, Hak Akses Admin, Hapus Google Sheets, Laporan PDF
+
+Tahap besar menindaklanjuti migrasi PostgreSQL di atas (yang saat itu sudah
+di-cutover sendiri oleh Owner ke Render + Neon dan dikonfirmasi berhasil).
+Delapan area, dikerjakan sekaligus dalam satu rangkaian kerja:
+
+### 1. Dashboard Owner — hapus kartu duplikat + Collapse/Expand
+
+Kartu **"Total Pendapatan Barber"** dihapus (kartu "Total Komisi Barber"
+tetap ada). Setiap kartu Dashboard sekarang bisa di-collapse/expand
+(klik judulnya) plus tombol **Collapse All**/**Expand All** — status
+collapse per kartu tersimpan di `localStorage`
+(`mugen_dashboard_owner_collapse_v1`), bertahan lintas refresh/login ulang.
+Diuji lewat browser sungguhan (Playwright): klik collapse → cek
+`localStorage` → reload halaman → panah kartu tetap collapsed.
+
+### 2-3. Role baru: 'staff' (Admin) — Hak Akses Admin dinamis
+
+**Sebelum revisi ini, aplikasi cuma punya DUA role**: `admin` (label UI
+"Owner", akses penuh) dan `barber`. Spesifikasi minta tingkat AKSES BARU
+("Admin") yang hak aksesnya diatur bebas oleh Owner, bukan hardcode --
+ini secara arsitektur adalah ROLE KETIGA, bukan sekadar Owner yang
+dibatasi. Ditambahkan role `staff` (nilai database, BUKAN `admin` --
+supaya tidak menimpa arti `admin`/Owner yang sudah ada di ~70 tempat kode)
+yang tampil sebagai **"Admin"** di seluruh UI.
+
+**`backend/app/permissions.py`** (baru): 22 key izin (`izin_dashboard_*`
+×9, `izin_user_*` ×3, `izin_pengeluaran_*` ×3, `izin_backup_*` ×2,
+`izin_laporan_pdf`, `izin_setting_*` ×4), disimpan sebagai baris di tabel
+`settings` yang SUDAH ADA (bukan tabel baru — otomatis dialek-netral lewat
+`db_compat.py`/PostgreSQL yang sudah ada). Default: 4 kartu Dashboard
+(Nilai Service/Jumlah Service/Pengeluaran Toko/Penjualan Produk) ON,
+SISANYA off sampai Owner mengaktifkan sendiri lewat Setting > Hak Akses
+Admin (menu baru, Owner-murni).
+
+**`auth.py`**: `require_owner_or_staff` (role 'admin' atau 'staff') dan
+`require_permission(key)` (dependency factory — Owner SELALU lolos tanpa
+syarat; 'staff' hanya lolos kalau Owner mengaktifkan `key` itu; 'barber'
+selalu ditolak). Setiap endpoint yang relevan (Dashboard, User,
+Pengeluaran, Backup, Laporan PDF, sebagian Setting) diubah memakainya.
+
+**Deny-list KERAS** (tidak bisa di-override lewat toggle izin apa pun,
+ditegakkan di `routers/pengaturan.py`): 'staff' tidak pernah boleh
+menyasar akun ber-role 'admin' (Owner) ATAU 'staff' lain (hanya 'barber')
+di endpoint ganti-password/nonaktifkan/aktifkan/buat-user; Owner terakhir
+(role 'admin' aktif, hitung lewat `auth_db.hitung_owner_aktif()`) tidak
+bisa dinonaktifkan oleh SIAPA PUN. Diuji end-to-end lewat curl: staff
+dengan SELURUH izin User diberikan tetap mendapat 403 saat mencoba
+menonaktifkan/ganti password akun Owner atau staff lain, atau membuat user
+ber-role Owner/Admin baru; Owner mencoba menonaktifkan dirinya sendiri
+sebagai Owner terakhir juga 403.
+
+**Dashboard Admin** (`routers/dashboard.py::_filter_dashboard_untuk_staff`):
+endpoint `GET /api/dashboard/owner` sekarang juga menerima 'staff', tapi
+field yang tidak diizinkan Owner di-set `null` di response (bukan
+disembunyikan di frontend saja) dan `per_barber`/grafik SAMA SEKALI tidak
+dikirim (di luar cakupan Dashboard Admin sesuai spesifikasi). Frontend
+(`dashboard_owner.js`) melewati kartu bernilai `null` sepenuhnya.
+
+**Setting** (`pages/pengaturan.js`): tab yang dilihat 'staff' difilter
+sesuai `izin_setting_*` (Identitas/Tampilan/User/Backup) — Komisi/Bonus
+Service/Uang Harian/Barber/Layanan/Hak Akses Admin TETAP Owner-murni,
+tidak pernah ada di daftar izin yang bisa diberikan. Tab User: dropdown
+Role menampilkan "Owner"/"Admin"/"Barber" untuk Owner, HANYA "Barber"
+untuk staff; tombol aksi pada baris Owner/Admin lain disembunyikan sama
+sekali untuk aktor staff (bukan hanya ditolak backend).
+
+**`routers/rekap.py`**: ditemukan SAAT audit -- endpoint ini sebelumnya
+memakai `get_current_user` generik dengan logika "kalau bukan barber,
+anggap seperti Owner" (tanpa mengenal role 'staff' yang baru dibuat), jadi
+'staff' akan otomatis dapat akses PENUH tanpa batasan ke seluruh Rekap
+begitu role ini ada, padahal Rekap tidak termasuk hak akses yang bisa
+diberikan Owner. Ditambahkan penolakan eksplisit untuk role 'staff'.
+
+### 4. Hapus total fitur Google Sheets
+
+`google_sheets_client.py`, `sync_helper.py`, `sync_meta_db.py`,
+`sync_migrasi.py`, `routers/sync.py`, `frontend/js/pages/sinkronisasi.js`
+dihapus permanen; seluruh pemanggil `sync_async()` (input_data.py/
+pengeluaran.py/produk.py) dan referensi di main.py/index.html/nav.js/
+router.js/service-worker.js dibersihkan; `gspread`/`google-auth` dihapus
+dari requirements.txt. Tabel `sync_meta` di `postgres_schema.py` tidak lagi
+dibuat (tabel lama yang mungkin sudah ada di database produksi TIDAK
+dihapus paksa -- dibiarkan sebagai sisa yang tidak dipakai lagi, sesuai
+prinsip tidak melakukan operasi destruktif tanpa perlu).
+
+### 5. Menu Backup: Laporan PDF + Backup PostgreSQL (perbaikan bug lama)
+
+**`backend/app/laporan_pdf.py`** (baru, pakai `reportlab`): 3 jenis laporan
+(Transaksi/Pengeluaran/Rekap Bulanan Barber), setiap halaman punya nama +
+logo barbershop (kalau ada), judul, periode, tanggal cetak, nomor halaman,
+dan nama akun yang mencetak (lihat `_header_footer_factory`). Endpoint
+`GET /api/pengaturan/laporan/pdf` (Owner selalu boleh; staff butuh
+`izin_laporan_pdf`). Diuji: PDF tervalidasi asli (`file` command +
+`pypdf` text extraction mengonfirmasi seluruh elemen wajib ada), validasi
+"bulan wajib diisi untuk Rekap Bulanan" mengembalikan 422 yang tepat.
+
+**Bug ditemukan & diperbaiki SAAT audit (bukan diminta eksplisit, tapi
+langsung relevan ke tahap ini)**: `pengaturan_backup.py` (Export/Import
+Database) HANYA pernah menangani SQLite (`FileResponse(db.DB_PATH)`) --
+sejak Postgres jadi database aktif di produksi, endpoint ini akan
+mengunduh/menimpa file lokal yang TIDAK LAGI dipakai aplikasi sama sekali
+(silently broken). Diperbaiki dengan jalur PostgreSQL terpisah
+(`export_database_postgres()`/`import_database_postgres()`): snapshot
+JSON seluruh tabel (bukan `pg_dump` biner, supaya tidak butuh binary
+client Postgres terpasang di proses backend), dengan backup-otomatis-
+sebelum-import yang sama seperti jalur SQLite. Jalur SQLite sendiri TIDAK
+diubah sama sekali. Diuji lewat PostgreSQL 16 lokal (bukan Neon -- lihat
+keterbatasan jaringan sandbox di bagian migrasi Postgres di atas): export
+menghasilkan JSON valid, import mengembalikan seluruh isi tabel dengan
+benar.
+
+### 6. Setting → Tab Barber: hapus helper text basi
+
+Teks "Uang Harian (Rp/hari, cair kalau Dry Cut + Cut & Wash hari itu ≥ 3)"
+dihapus (sudah tidak akurat sejak Setting > Uang Harian punya acuan
+service & target yang bisa diatur bebas Owner) — hanya label "Uang
+Harian" yang tersisa, field & logika backend tidak disentuh sama sekali.
+
+### Hasil Testing
+
+- `python -m py_compile` seluruh backend, `node --check` seluruh file
+  frontend yang diubah: lulus.
+- Backend booted (SQLite) dan diuji lewat `curl` end-to-end: role staff
+  dibuat, permission default-deny dikonfirmasi, setiap toggle izin diuji
+  (grant → aksi berhasil, revoke → 403), seluruh deny-list (Owner-terakhir,
+  staff-tidak-boleh-sasar-Owner/staff-lain) dikonfirmasi.
+- **Browser sungguhan (Playwright + Chromium)**: login Owner → kartu
+  "Total Pendapatan Barber" TIDAK ADA, "Total Komisi Barber" ADA → klik
+  collapse → cek localStorage → reload → status collapse bertahan →
+  Expand All berfungsi → tab "Hak Akses Admin" merender seluruh grup izin.
+  Login staff → judul halaman "Dashboard Admin" (bukan "Dashboard
+  Owner") → hanya kartu yang diizinkan tampil → sidebar HANYA
+  Dashboard/Pengeluaran/Setting (Input Data/Rekap/Produk tersembunyi) →
+  tab Setting HANYA "User" (satu-satunya yang diizinkan dalam skenario uji).
+- Seluruh fitur yang diuji LULUS di kedua role (Owner tidak terpengaruh
+  sama sekali, staff dibatasi persis sesuai izin yang diberikan).
 
 
 ## Struktur Project
@@ -2488,59 +2628,21 @@ sesuai kenyamanan:
 5. Halaman otomatis reload setelah restore berhasil, menampilkan data dari
    file yang baru diupload.
 
-## Sinkronisasi Google Sheets
+## Sinkronisasi Google Sheets — DIHAPUS
 
-Fitur ini (Tahap 12) OPSIONAL — aplikasi berjalan 100% normal tanpa ini,
-data selalu aman tersimpan lokal di SQLite terlepas dari status sinkron.
-Kalau ingin mengaktifkannya (backup otomatis ke cloud + bisa dilihat dari
-perangkat lain):
-
-1. **Buat Service Account Google**:
-   - Buka [Google Cloud Console](https://console.cloud.google.com/) →
-     buat/pilih project → aktifkan **Google Sheets API** dan **Google
-     Drive API**.
-   - Buka menu *IAM & Admin > Service Accounts* → **Create Service
-     Account** → buat key baru bertipe **JSON** → file JSON-nya terunduh
-     otomatis.
-2. **Siapkan spreadsheet tujuan**:
-   - Buat spreadsheet Google Sheets baru (boleh kosong, tab-nya dibuat
-     otomatis oleh aplikasi saat sinkron pertama kali berhasil).
-   - Share spreadsheet itu ke alamat email service account (ada di dalam
-     file JSON, field `client_email`, formatnya
-     `...@...iam.gserviceaccount.com`) dengan akses **Editor**.
-   - Salin ID spreadsheet dari URL-nya:
-     `https://docs.google.com/spreadsheets/d/`**`<ID INI>`**`/edit`.
-3. **Set environment variable di server backend**:
-   - `GOOGLE_SHEET_ID` = ID spreadsheet dari langkah 2.
-   - Kredensial service account, SALAH SATU dari:
-     - `GOOGLE_CREDENTIALS_JSON` = isi mentah file JSON dari langkah 1
-       (cocok untuk platform hosting yang tidak mendukung upload file,
-       mis. Render/Railway — tempel seluruh isi file JSON sebagai satu
-       environment variable), **atau**
-     - upload file JSON itu langsung ke `backend/app/credentials.json` di
-       server (kalau punya akses filesystem, mis. VPS).
-4. Restart backend supaya environment variable baru terbaca.
-5. Buka menu **Sinkronisasi** di aplikasi (Owner) — kartu **Status
-   Sinkronisasi** akan menunjukkan `dikonfigurasi: true` dan tidak lagi
-   menampilkan banner "belum dikonfigurasi". Klik **Sinkronkan Sekarang**
-   untuk memicu sinkron pertama secara manual, atau tunggu sinkron otomatis
-   berikutnya (dipicu setiap ada data baru tersimpan, dan dicoba ulang
-   berkala tiap `SYNC_RETRY_INTERVAL_DETIK` detik kalau sempat gagal).
-6. Setelah sinkron pertama berhasil, spreadsheet akan berisi 5 tab
-   (`transaksi`, `absensi_libur`, `pengeluaran`, `produk`, `produk_mutasi`)
-   — masing-masing selalu berisi snapshot TERBARU dari data lokal (ditimpa
-   penuh tiap sinkron berhasil, bukan ditambah baris terus-menerus).
-
-Kalau sinkron gagal (kredensial salah, spreadsheet belum di-share, kuota
-API habis, dst), halaman Sinkronisasi akan menampilkan pesan error yang
-jelas dan data tetap 100% aman di SQLite lokal — tidak ada risiko
-kehilangan data walau sinkron cloud bermasalah.
+Fitur ini (dulu Tahap 12) sudah dihapus total (lihat bagian "REVISI:
+Dashboard Collapse/Expand, Hak Akses Admin, Hapus Google Sheets, Laporan
+PDF" di bawah) sejak migrasi ke PostgreSQL selesai dan menjadi satu-satunya
+sumber data aplikasi ini — tidak ada lagi kebutuhan menyalin data ke Google
+Sheets sebagai cadangan. `GOOGLE_SHEET_ID`/`GOOGLE_CREDENTIALS_JSON`/
+`credentials.json`/`SYNC_RETRY_INTERVAL_DETIK` TIDAK dipakai lagi di
+mana pun — aman dihapus dari environment variable server kalau sebelumnya
+sempat diisi.
 
 ## Database & Kredensial — TIDAK ikut ke Git
 
-`mugen_hair.db` dan `credentials.json` **sengaja tidak di-commit** (lihat
-`.gitignore`) — karena isinya data asli toko / kredensial rahasia. Lihat
-bagian **Deployment** dan **Sinkronisasi Google Sheets** di atas untuk cara
+`mugen_hair.db` **sengaja tidak di-commit** (lihat `.gitignore`) — karena
+isinya data asli toko. Lihat bagian **Deployment** di atas untuk cara
 menyiapkannya di server.
 
 ## Catatan Penting

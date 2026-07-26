@@ -50,8 +50,8 @@ import postgres_schema  # noqa: E402
 
 # Urutan menyalin WAJIB mengikuti dependensi foreign key (tabel yang
 # direferensikan disalin lebih dulu). Kolom kedua = nama kolom primary key
-# ('id' ber-SERIAL untuk sebagian besar tabel, 'key' untuk dua tabel
-# key-value settings/sync_meta yang primary key-nya bukan SERIAL).
+# ('id' ber-SERIAL untuk sebagian besar tabel, 'key' untuk tabel key-value
+# 'settings' yang primary key-nya bukan SERIAL).
 TABEL_URUTAN = [
     ("settings", "key"),
     ("barbers", "id"),
@@ -63,7 +63,6 @@ TABEL_URUTAN = [
     ("produk", "id"),
     ("produk_mutasi", "id"),
     ("users", "id"),
-    ("sync_meta", "key"),
     ("bookings", "id"),
     ("booking_items", "id"),
     ("closed_slot", "id"),

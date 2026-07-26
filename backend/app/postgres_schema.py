@@ -177,11 +177,6 @@ CREATE TABLE IF NOT EXISTS users (
     tema          TEXT NOT NULL DEFAULT 'terang'
 );
 
-CREATE TABLE IF NOT EXISTS sync_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
-
 CREATE TABLE IF NOT EXISTS bookings (
     id                  SERIAL PRIMARY KEY,
     barber_id           INTEGER NOT NULL REFERENCES barbers(id),

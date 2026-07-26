@@ -139,8 +139,8 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None) 
     username = (username or "").strip()
     if not username:
         raise ValueError("Username tidak boleh kosong.")
-    if role not in ("admin", "barber"):
-        raise ValueError("Role harus 'admin' atau 'barber'.")
+    if role not in ("admin", "staff", "barber"):
+        raise ValueError("Role harus 'admin' (Owner), 'staff' (Admin), atau 'barber'.")
     if role == "barber" and barber_id is None:
         raise ValueError("User dengan role 'barber' wajib dikaitkan ke barber_id.")
     if not password or len(password) < 4:
@@ -193,6 +193,17 @@ def get_user_list():
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM users ORDER BY role, username").fetchall()
         return [dict(r) for r in rows]
+
+
+def hitung_owner_aktif() -> int:
+    """Jumlah akun Owner (role='admin') yang masih aktif -- dipakai untuk
+    menegakkan aturan 'Owner terakhir tidak boleh dihapus atau diturunkan
+    rolenya' (lihat pengaturan_user.py/routers/pengaturan.py)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS jumlah FROM users WHERE role = 'admin' AND aktif = 1"
+        ).fetchone()
+        return row["jumlah"]
 
 
 def nonaktifkan_user(user_id: int):

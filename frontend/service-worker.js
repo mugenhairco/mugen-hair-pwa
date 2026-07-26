@@ -89,7 +89,7 @@
 // perubahan backend (database.py WAL mode, main.py logging + endpoint
 // /api/health/diagnostik) di CHANGELOG README -- tidak memengaruhi
 // APP_SHELL frontend tapi bagian dari perbaikan yang sama.
-const CACHE_NAME = "mugen-hair-shell-v18";
+const CACHE_NAME = "mugen-hair-shell-v19";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -113,7 +113,6 @@ const APP_SHELL = [
   "/js/pages/pengeluaran.js",
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
-  "/js/pages/sinkronisasi.js",
   "/js/pages/booking.js",
   "/js/pages/book_public.js",
   // TAHAP 13: ikon PWA (sebelumnya file-file ini belum ada sama sekali)

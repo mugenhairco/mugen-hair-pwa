@@ -6,18 +6,24 @@
 // brand.js (MugenBrand) dari /api/pengaturan/identitas.
 
 const MugenNav = (() => {
+  // REVISI Hak Akses Admin: 'staff' (label UI "Admin") HANYA melihat
+  // Dashboard, Pengeluaran, dan Setting -- Input Data/Rekap/Booking/Produk
+  // BUKAN bagian dari hak akses yang bisa diberikan Owner ke role ini
+  // (lihat permissions.py). Menu Pengeluaran/Setting tetap tampil untuk
+  // 'staff' apa pun hak aksesnya (supaya bisa masuk & melihat kenapa
+  // aksinya dibatasi) -- pembatasan SEBENARNYA per-aksi terjadi di dalam
+  // halamannya masing-masing + backend (require_permission).
   const MENU = [
-    { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "barber"] },
+    { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"] },
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
     { hash: "#/input-data", label: "Input Data", roles: ["admin"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "barber"] },
-    // BOOKING: Owner/Admin full access; Barber hanya lihat booking miliknya
-    // sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
+    // BOOKING: Owner/Admin(Owner) full access; Barber hanya lihat booking
+    // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "barber"] },
-    { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin"] },
+    { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
     { hash: "#/produk", label: "Produk", roles: ["admin"] },
-    { hash: "#/sinkronisasi", label: "Sinkronisasi", roles: ["admin"] },
-    { hash: "#/pengaturan", label: "Setting", roles: ["admin"] },
+    { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
   ];
   const MENU_SEGERA = [];
 
@@ -56,16 +62,19 @@ const MugenNav = (() => {
     }
     sidebar.appendChild(nav);
 
+    const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber" };
     const userBox = MugenUI.el("div", { class: "user-box" }, [
       MugenUI.el("div", {}, user.username),
-      MugenUI.el("div", {}, user.role === "admin" ? "Owner" : "Barber"),
+      MugenUI.el("div", {}, LABEL_ROLE[user.role] || user.role),
     ]);
 
-    // REVISI UI/UX: switch Dark Mode di sidebar HANYA untuk user selain
-    // admin (Barber) -- admin mengatur tema lewat Setting > Tampilan
-    // (lihat pengaturan.js), karena Barber tidak punya akses ke menu
-    // Setting sama sekali (lihat MENU di atas, roles: ["admin"]).
-    if (user.role !== "admin") {
+    // REVISI UI/UX: switch Dark Mode di sidebar HANYA untuk Barber -- Owner
+    // mengatur tema lewat Setting > Tampilan (lihat pengaturan.js). REVISI
+    // Hak Akses Admin: 'staff' (Admin) JUGA lewat Setting > Tampilan (bukan
+    // sidebar) -- supaya tab ini benar-benar bisa dibatasi Owner lewat
+    // izin_setting_tampilan (kalau sidebar selalu tampil, izin ini jadi
+    // tidak berarti apa-apa karena staff tetap selalu bisa ganti tema).
+    if (user.role === "barber") {
       userBox.appendChild(MugenUI.el("div", { class: "theme-switch-row", style: "margin-top:10px;" }, [
         MugenUI.el("span", {}, "Dark Mode"),
         MugenUI.themeSwitch(),

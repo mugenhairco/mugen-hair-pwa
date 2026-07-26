@@ -70,3 +70,31 @@ def require_barber(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] != "barber":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus akun Barber.")
     return user
+
+
+def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
+    """'admin' (Owner, akses penuh) atau 'staff' (Admin, akses dibatasi hak
+    akses yang diatur Owner lewat Setting > Hak Akses Admin -- lihat
+    permissions.py). Dipakai sebagai dasar untuk require_permission() di
+    bawah; endpoint yang butuh Owner MURNI (tanpa pengecualian apa pun,
+    mis. menu Hak Akses Admin itu sendiri) tetap memakai require_admin di atas."""
+    if user["role"] not in ("admin", "staff"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus Owner atau Admin.")
+    return user
+
+
+def require_permission(key: str):
+    """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
+    penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).
+    'staff' hanya lolos kalau Owner sudah mengaktifkan permission `key` ini
+    lewat Setting > Hak Akses Admin. 'barber' selalu ditolak (permission
+    Admin tidak berlaku untuk akun Barber)."""
+    def _dep(user: dict = Depends(require_owner_or_staff)) -> dict:
+        if user["role"] == "admin":
+            return user
+        import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
+        if not permissions.has(key):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                 detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
+        return user
+    return _dep
