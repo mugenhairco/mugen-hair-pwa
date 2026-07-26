@@ -48,6 +48,18 @@
        Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
        saat development, dan bisa dioverride lewat env saat build/deploy. -->
   <script src="config.js"></script>
+  <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
+       (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
+       bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
+       supaya logo/banner tersedia lebih cepat saat aplikasi pertama dibuka. -->
+  <script>
+    if (window.MUGEN_API_BASE) {
+      const preconnect = document.createElement("link");
+      preconnect.rel = "preconnect";
+      preconnect.href = window.MUGEN_API_BASE;
+      document.head.appendChild(preconnect);
+    }
+  </script>
 
   <script src="js/state.js"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah

@@ -19,6 +19,20 @@ const MugenBrand = (() => {
     if (cached) current = cached;
   } catch (e) { /* cache rusak/tidak ada, pakai default */ }
 
+  // REVISI: logo/banner sempat "tidak muncul/rusak" saat aplikasi pertama
+  // dibuka -- warm up cache gambar milik browser sedini mungkin (begitu modul
+  // ini dimuat, memakai data cache localStorage yang sudah ada) supaya saat
+  // <img class="brand-logo"> nanti benar-benar butuh src ini, gambarnya
+  // kemungkinan besar sudah ada di cache HTTP browser, bukan baru mulai
+  // diunduh dari nol.
+  function preload(url) {
+    if (!url) return;
+    const img = new Image();
+    img.src = MUGEN_API_BASE + url;
+  }
+  preload(current.logo_url);
+  preload(current.banner_url);
+
   function get() {
     return current;
   }
@@ -30,9 +44,19 @@ const MugenBrand = (() => {
     });
     document.querySelectorAll(".brand-logo").forEach((el) => {
       if (current.logo_url) {
+        // REVISI: sembunyikan dulu elemen sampai gambar TERBUKTI berhasil
+        // dimuat (onload), dan tetap sembunyikan (bukan ikon broken-image)
+        // kalau ternyata gagal dimuat (onerror) -- sebelumnya display
+        // langsung diset "tampil" bersamaan dengan src diisi, jadi kalau
+        // gambar gagal/lambat dimuat yang terlihat pengguna adalah ikon
+        // gambar rusak, bukan placeholder kosong.
+        el.style.display = "none";
+        el.onload = () => { el.style.display = ""; };
+        el.onerror = () => { el.style.display = "none"; el.removeAttribute("src"); };
         el.src = MUGEN_API_BASE + current.logo_url;
-        el.style.display = "";
       } else {
+        el.onload = null;
+        el.onerror = null;
         el.removeAttribute("src");
         el.style.display = "none";
       }
@@ -44,6 +68,8 @@ const MugenBrand = (() => {
       const data = await MugenApi.get("/api/pengaturan/identitas");
       current = data;
       localStorage.setItem(KEY, JSON.stringify(data));
+      preload(current.logo_url);
+      preload(current.banner_url);
     } catch (e) {
       // offline / gagal -> tetap pakai cache/default yang sudah ada, jangan error-kan halaman
     }
