@@ -1656,6 +1656,158 @@ konsol/backend.
 `frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v16` → `v17` untuk
 file baru `js/booking_notif.js` dan seluruh file JS/CSS yang berubah.
 
+### AUDIT & PERBAIKAN: Sinkronisasi Data Antar Device
+
+Laporan: login dengan akun yang sama di dua device, data KADANG sinkron,
+KADANG tidak. Audit menyeluruh dilakukan terhadap seluruh jalur penyimpanan
+& pengambilan data (SQLite, localStorage, Service Worker, header HTTP,
+endpoint FastAPI). Ditemukan **dua penyebab konkret** (dibuktikan lewat
+kode, bukan dugaan) yang SAMA-SAMA cocok dengan gejala "kadang, tidak
+selalu" -- keduanya diperbaiki secara permanen di revisi ini, plus satu
+faktor arsitektur (di luar kendali kode aplikasi) yang harus diverifikasi
+langsung oleh Owner di pengaturan hosting.
+
+#### Penyebab #1 (bug kode, DIPERBAIKI): banner "sedang offline" tidak konsisten dipasang
+
+`js/api.js` (`MugenApi.get(..., {useCache:true})`) SUDAH punya mekanisme
+fallback yang benar sejak lama: kalau `fetch()` ke server gagal karena
+jaringan (`catch (networkErr)`, BUKAN respons error dari server), data
+GET terakhir yang berhasil diambil disimpan di `localStorage` (per
+device/browser) dipakai sebagai fallback, ditandai `__offline: true` +
+`__cachedAt`. Pola yang benar (dipakai konsisten di `dashboard_owner.js`,
+`dashboard_barber.js`, `rekap.js`, `input_data.js`, `pengeluaran.js`,
+`produk.js`) adalah menampilkan `MugenUI.offlineBanner(data.__cachedAt)`
+setiap kali flag ini `true`, supaya user TAHU sedang melihat data lama.
+
+**Bukti**: `booking.js` (Booking List, Calendar, Toko Libur, Barber
+Holiday, Closed Slot, "Booking Saya" untuk Barber -- 6 titik fetch, SEMUA
+memakai `useCache:true`) dan grafik harian/bulanan di `dashboard_owner.js`
+TIDAK PERNAH memeriksa flag ini sama sekali (`grep __offline` di
+`booking.js` sebelum revisi ini: 0 hasil, padahal `useCache:true` muncul
+7 kali). Akibatnya: begitu koneksi jaringan device tertentu putus SESAAT
+sekalipun (umum terjadi di jaringan seluler/WiFi toko yang naik-turun),
+device itu diam-diam menampilkan data booking/grafik LAMA dari cache
+lokalnya sendiri TANPA tanda apa pun -- terlihat persis seperti "device
+ini belum menerima booking baru yang sudah dibuat dari device lain",
+padahal sebenarnya cuma cache lokal yang belum sempat diperbarui. **Ini
+menjelaskan kenapa "kadang" (bergantung kapan tepatnya jaringan sempat
+putus) dan kenapa Booking module yang paling sering dikeluhkan (data
+paling sering berubah, paling sering dibuka dari lebih dari satu
+device).** Diperbaiki: seluruh 6 titik fetch di `booking.js` dan 2 grafik
+di `dashboard_owner.js` sekarang konsisten menampilkan `offlineBanner`
+(diverifikasi lewat Playwright: mensimulasikan jaringan gagal ->
+banner merah "Sedang offline — menampilkan data tersimpan terakhir
+(...)" langsung muncul, sebelumnya tidak muncul sama sekali).
+
+#### Penyebab #2 (bug kode, DIPERBAIKI): SQLite tanpa mode WAL rentan "database is locked" saat diakses bersamaan
+
+`database.py` (`get_conn()`, dipakai SELURUH modul lewat satu titik yang
+sama -- `auth_db.py`/`booking_db.py`/`pengeluaran_db.py`/`sync_meta_db.py`
+semuanya membuka file `.db` YANG SAMA) sebelumnya membuka SQLite dengan
+mode jurnal default (rollback journal) TANPA `busy_timeout` eksplisit.
+Di bawah mode itu, SETIAP transaksi tulis (Simpan/Edit/Hapus apa pun)
+mengunci SELURUH file database -- koneksi lain (baik untuk membaca
+MAUPUN menulis, dari device lain yang kebetulan memanggil API di detik
+yang sama, TERMASUK polling badge notifikasi booking setiap 15 detik yang
+berjalan otomatis dari REVISI sebelumnya) harus menunggu, dan kalau lebih
+lama dari 5 detik (default Python) akan gagal dengan error
+`database is locked` -- request itu gagal dengan HTTP 500. **Ini
+menjelaskan kenapa "kadang" (hanya terjadi kalau dua request kebetulan
+tumpang tindih persis di waktu yang sama) dan kenapa gejalanya baru
+terasa setelah dipakai dari DUA device sekaligus (jauh lebih sering ada
+dua request bersamaan dibanding satu device sendirian).** Diperbaiki:
+`get_conn()` di `database.py` DAN salinannya di `auth_db.py` sekarang
+mengaktifkan `PRAGMA journal_mode = WAL` (penulis TIDAK memblokir
+pembaca sama sekali, hanya penulis-vs-penulis yang masih bergiliran --
+jauh lebih jarang) + `busy_timeout` dinaikkan ke 30 detik sebagai jaring
+pengaman tambahan. Diverifikasi lewat stress test 60 request
+baca+tulis bersamaan (30 PUT + 30 GET ke endpoint yang sama, dari thread
+paralel) -- SEBELUMNYA berisiko `database is locked`, SESUDAHNYA seluruh
+60 request selesai dalam 0,3 detik tanpa satu pun error.
+
+#### Faktor arsitektur (PERLU DIVERIFIKASI Owner, di luar kendali kode)
+
+SQLite adalah database **satu file**, bukan server terpusat -- konsekuensi
+langsungnya (sudah diperingatkan di README bagian **Deployment** sejak
+awal): kalau backend di-deploy dengan (a) **disk yang TIDAK persisten**
+(isi hilang tiap container restart/redeploy) dan/atau (b) **lebih dari
+satu instance sekaligus** (mis. Render "Number of Instances" > 1), maka
+device yang berbeda BISA jadi sedang bicara dengan SALINAN file database
+yang BERBEDA -- inilah kelas penyebab paling parah untuk "kadang sinkron
+kadang tidak" (bukan cuma tampilan yang basi seperti Penyebab #1, tapi
+data yang BENAR-BENAR berbeda di server). Kode aplikasi ini TIDAK bisa
+memverifikasi/memperbaiki pengaturan hosting dari dalam dirinya sendiri,
+tapi revisi ini menambahkan alat diagnostik supaya Owner bisa
+MEMBUKTIKANNYA LANGSUNG:
+
+- `GET /api/health` (publik, tanpa login) sekarang menyertakan
+  `instance_id` (dibuat sekali per proses backend, acak) dan `boot_time`.
+  **Cara pakai**: buka endpoint ini dari device A dan device B secara
+  bersamaan (atau buka dua kali berturut-turut dalam beberapa detik) --
+  kalau `instance_id` BERBEDA, itu bukti ada lebih dari satu instance
+  backend berjalan. Kalau `boot_time` berubah setiap dicek ulang padahal
+  tidak ada deploy baru yang disengaja, itu bukti disk TIDAK persisten
+  (proses restart sendiri, data ikut ter-reset ke default).
+- `GET /api/health/diagnostik` (khusus admin/login) menambahkan
+  `db_path`, `db_size_bytes`, `db_mtime`, dan `jumlah_baris` (hitungan
+  baris tabel `users`/`barbers`/`transaksi`/`bookings`). Device A dan
+  device B HARUS melihat angka `jumlah_baris` yang SAMA PERSIS kalau
+  memang satu database yang sama -- kalau berbeda, itu bukti langsung
+  kedua device bicara dengan salinan database yang berbeda.
+
+Kalau `instance_id` atau `jumlah_baris` ternyata berbeda antar device:
+periksa pengaturan Render (dashboard) -- pastikan **Number of Instances =
+1** dan **Persistent Disk terpasang, di-mount tepat ke folder
+`backend/app/`** (lihat bagian **Deployment (Produksi)** di atas, sudah
+diperingatkan sejak awal). Ini murni konfigurasi platform hosting, tidak
+ada baris kode yang bisa memperbaikinya dari sisi aplikasi.
+
+#### Yang sudah diperiksa dan DIPASTIKAN BUKAN penyebab
+
+- **Service Worker**: `/api/*` sudah 100% dibiarkan lewat tanpa disentuh
+  cache Service Worker sama sekali sejak awal (`service-worker.js`,
+  `if (url.pathname.startsWith("/api/")) return;`) -- dikonfirmasi ulang,
+  bukan sumber masalah. Ditambahkan lapis pertahanan HTTP tambahan (lihat
+  di bawah) sebagai jaga-jaga, bukan karena ditemukan bug di sini.
+- **Race condition simpan-lalu-baca**: diaudit satu per satu seluruh
+  handler tombol Simpan/Edit/Hapus di semua halaman -- polanya SUDAH
+  benar (tunggu respons sukses lewat `await`, baru panggil ulang fungsi
+  refresh data) di hampir semua tempat. Ditemukan SATU celah kecil:
+  `produk.js` menambah/mengubah produk sudah me-refresh tabel Daftar
+  Produk, tapi dropdown filter "Riwayat Mutasi" baru ikut ter-refresh
+  setelah halaman dibuka ulang -- diperbaiki (dipanggil ulang di titik
+  yang sama).
+- **Sesi/token ganda**: token login (itsdangerous, `auth.py`) sengaja
+  STATELESS (tidak disimpan di server) -- login dari device kedua TIDAK
+  membatalkan token device pertama, keduanya tetap valid independen.
+  Bukan sumber masalah.
+- **Commit transaksi SQLite**: `get_conn()` sudah benar (commit hanya
+  kalau blok `with` selesai tanpa exception, rollback otomatis kalau
+  gagal) -- tidak ditemukan write yang silently gagal tanpa exception.
+
+#### Perubahan tambahan (pengerasan/hardening, bukan bug tapi lapis pertahanan)
+
+- **`Cache-Control: no-store`** ditambahkan ke SETIAP respons `/api/*`
+  (middleware baru `_log_dan_no_store` di `main.py`) -- sebelumnya tidak
+  ada header cache sama sekali (browser modern umumnya sudah tidak agresif
+  meng-cache respons tanpa header semacam ini, tapi eksplisit lebih aman
+  daripada bergantung pada perilaku default).
+- **Logging terstruktur** setiap request `/api/*` (method, path, status,
+  durasi, `instance_id`) ke stdout lewat modul `logging` bawaan Python --
+  Render (atau hosting lain) menangkap stdout sebagai log platform secara
+  otomatis. Kalau ada laporan "data tidak tersimpan" berikutnya, log ini
+  bisa langsung menunjukkan apakah request-nya benar-benar sampai ke
+  server, berhasil, atau gagal (dan durasinya -- durasi tinggi bisa jadi
+  tanda kontensi lock database).
+
+**Catatan untuk Desktop app**: perubahan `get_conn()` (WAL mode) di
+`database.py` murni konfigurasi KONEKSI (bagaimana file dibuka), BUKAN
+perubahan rumus/logika bisnis apa pun -- tidak perlu disamakan ke
+aplikasi Desktop (yang notabene cuma dipakai satu proses/user pada satu
+waktu, jadi tidak mengalami masalah konkurensi yang sama).
+
+`frontend/service-worker.js`: `CACHE_NAME` dinaikkan `v17` → `v18`.
+
 
 ## Struktur Project
 

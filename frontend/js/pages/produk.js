@@ -102,7 +102,15 @@ const PageProduk = (() => {
           }
         }, { message: "Menyimpan produk…" });
         resetProdukForm();
-        loadProdukList();
+        await loadProdukList();
+        // AUDIT SINKRONISASI: sebelumnya dropdown filter "Riwayat Mutasi"
+        // TIDAK ikut di-refresh di sini (hanya diisi sekali saat halaman
+        // pertama dibuka) -- produk yang BARU ditambahkan sudah benar
+        // muncul di tabel Daftar Produk (loadProdukList di atas) tapi
+        // belum muncul di dropdown filter riwayat sampai halaman dibuka
+        // ulang. isiOpsiProdukFilter() aman dipanggil ulang (isi ulang
+        // total dari produkList yang baru saja di-refresh di atas).
+        isiOpsiProdukFilter();
       } catch (e) {
         produkFormError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {

@@ -76,7 +76,20 @@
 // belum dikonfirmasi di menu Booking + suara pengingat sintesis Web Audio
 // (khusus Admin), modul baru js/booking_notif.js ditambahkan ke APP_SHELL,
 // nav.js/app.js/booking.js/style.css berubah untuk mendukungnya.
-const CACHE_NAME = "mugen-hair-shell-v17";
+// v17 -> v18: AUDIT SINKRONISASI ANTAR DEVICE -- booking.js (Booking List,
+// Calendar, Toko Libur, Barber Holiday, Closed Slot, "booking saya" untuk
+// Barber) dan dashboard_owner.js (grafik harian/bulanan) sebelumnya TIDAK
+// PERNAH menampilkan offlineBanner walau semua fetch-nya memakai
+// useCache:true -- kalau jaringan sempat putus sesaat, halaman-halaman itu
+// diam-diam menampilkan data cache lokal LAMA tanpa tanda apa pun, salah
+// satu penyebab gejala "kadang sinkron kadang tidak" yang dilaporkan.
+// Sekarang semuanya konsisten menampilkan offlineBanner. produk.js: dropdown
+// filter Riwayat Mutasi sekarang ikut di-refresh setelah Tambah/Ubah Produk
+// (sebelumnya baru muncul setelah halaman dibuka ulang). Lihat juga
+// perubahan backend (database.py WAL mode, main.py logging + endpoint
+// /api/health/diagnostik) di CHANGELOG README -- tidak memengaruhi
+// APP_SHELL frontend tapi bagian dari perbaikan yang sama.
+const CACHE_NAME = "mugen-hair-shell-v18";
 const APP_SHELL = [
   "/",
   "/index.html",
