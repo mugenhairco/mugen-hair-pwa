@@ -186,11 +186,16 @@ const PageDashboardOwner = (() => {
               MugenApi.get(`/api/dashboard/owner/grafik-bulanan?tahun=${tahun}${qsBarber}`, { useCache: true }),
             ]);
             grafikHarianBox.innerHTML = "";
+            // AUDIT SINKRONISASI: kedua grafik ini sebelumnya TIDAK pernah
+            // menandai __offline walau memakai useCache:true -- lihat
+            // komentar serupa di booking.js untuk penjelasan lengkap.
+            if (harian.__offline) grafikHarianBox.appendChild(MugenUI.offlineBanner(harian.__cachedAt));
             grafikHarianBox.appendChild(MugenUI.barChart(
               harian.map((h) => ({ value: h.pendapatan, tanggal: h.tanggal })),
               { xLabel: (d) => String(d.tanggal), yFormat: MugenUI.formatRupiah },
             ));
             grafikBulananBox.innerHTML = "";
+            if (bulananData.__offline) grafikBulananBox.appendChild(MugenUI.offlineBanner(bulananData.__cachedAt));
             grafikBulananBox.appendChild(MugenUI.barChart(
               bulananData.map((b) => ({ value: b.pendapatan, bulan: b.bulan })),
               { xLabel: (d) => MugenUI.namaBulan(d.bulan).slice(0, 3), yFormat: MugenUI.formatRupiah },

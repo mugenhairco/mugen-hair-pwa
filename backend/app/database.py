@@ -43,9 +43,30 @@ DEFAULT_SETTINGS = {
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    """
+    AUDIT SINKRONISASI (lihat README/CHANGELOG untuk detail lengkap):
+    sebelumnya SQLite dibuka dengan mode jurnal default (rollback journal)
+    dan tanpa busy_timeout eksplisit -- di bawah mode itu, SETIAP transaksi
+    tulis mengunci SELURUH file database sehingga koneksi lain (baik mau
+    membaca maupun menulis, dari device lain mana pun yang sedang memanggil
+    API di saat bersamaan) harus menunggu, dan kalau menunggu lebih lama
+    dari batas waktu default Python (5 detik) akan gagal dengan
+    "database is locked" -- request itu gagal, dan kalau requestnya adalah
+    GET yang dipanggil dengan useCache=true, frontend akan diam-diam jatuh
+    ke data cache lokal yang lama (lihat js/api.js) alih-alih menunjukkan
+    error, persis gejala "kadang sinkron kadang tidak" antar device.
+    Diperbaiki dengan mode WAL (Write-Ahead Logging): penulis TIDAK
+    memblokir pembaca (dan sebaliknya) sama sekali, hanya penulis-vs-penulis
+    yang masih perlu bergiliran -- jauh lebih jarang terjadi untuk beban
+    kerja aplikasi ini. busy_timeout dinaikkan ke 30 detik sebagai jaring
+    pengaman tambahan untuk kasus penulis-vs-penulis yang tetap bisa terjadi
+    (mis. dua device menyimpan transaksi persis di detik yang sama).
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         yield conn
         conn.commit()

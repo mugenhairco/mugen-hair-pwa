@@ -80,6 +80,14 @@ const PageBooking = (() => {
       try {
         const data = await MugenApi.get(`/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`, { useCache: true });
         card.innerHTML = "";
+        // AUDIT SINKRONISASI: sebelumnya __offline TIDAK pernah dicek di
+        // seluruh halaman ini walau semua fetch memakai useCache:true --
+        // kalau jaringan sempat putus sesaat, halaman diam-diam menampilkan
+        // data cache lokal LAMA tanpa tanda apa pun, persis gejala "kadang
+        // sinkron kadang tidak" yang dilaporkan. Sekarang tiap fetch di
+        // halaman ini menampilkan offlineBanner kalau datanya bukan dari
+        // server yang baru saja dipanggil.
+        if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false }));
       } catch (e) {
         card.innerHTML = "";
@@ -175,6 +183,8 @@ const PageBooking = (() => {
         if (selStatus.value) qs.set("status_booking", selStatus.value);
         const data = await MugenApi.get(`/api/booking?${qs}`, { useCache: true });
         tableWrap.innerHTML = "";
+        // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
+        if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         const rows = Array.isArray(data) ? data : [];
         tableWrap.appendChild(bookingTable(rows, {
           onVerifikasi: async (r) => {
@@ -218,8 +228,10 @@ const PageBooking = (() => {
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [selBarber]));
 
+    const calOfflineBox = MugenUI.el("div"); // AUDIT SINKRONISASI: lihat komentar renderBarberList()
     const calBox = MugenUI.el("div", { class: "book-calendar", style: "max-width:520px;" });
     const detailBox = MugenUI.el("div", { style: "margin-top:16px;" });
+    body.appendChild(calOfflineBox);
     body.appendChild(calBox);
     body.appendChild(detailBox);
 
@@ -233,6 +245,8 @@ const PageBooking = (() => {
         const qs = new URLSearchParams({ tahun: String(shown.getFullYear()), bulan: String(shown.getMonth() + 1) });
         if (selBarber.value) qs.set("barber_id", selBarber.value);
         const data = await MugenApi.get(`/api/booking?${qs}`, { useCache: true });
+        calOfflineBox.innerHTML = "";
+        if (data.__offline) calOfflineBox.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         bookingPerTanggal = {};
         for (const b of Array.isArray(data) ? data : []) {
           if (b.status_booking !== "aktif") continue;
@@ -367,6 +381,7 @@ const PageBooking = (() => {
       try {
         const data = await MugenApi.get("/api/booking/toko-libur", { useCache: true });
         liburListBody.innerHTML = "";
+        if (data.__offline) liburListBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         liburListBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
@@ -445,6 +460,7 @@ const PageBooking = (() => {
       try {
         const data = await MugenApi.get(`/api/input-data/libur?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
         listBody.innerHTML = "";
+        if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         listBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
@@ -521,6 +537,7 @@ const PageBooking = (() => {
       try {
         const data = await MugenApi.get(`/api/booking/closed-slot?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
         listBody.innerHTML = "";
+        if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         listBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },

@@ -48,9 +48,15 @@ _BCRYPT_MAX_BYTES = 72
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # AUDIT SINKRONISASI: konsisten dengan get_conn() di database.py (file
+    # .db yang sama) -- WAL mode + busy_timeout 30 detik supaya pembaca/
+    # penulis dari device lain tidak saling memblokir/gagal "database is
+    # locked" saat request bersamaan. Lihat komentar lengkap di database.py.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         yield conn
         conn.commit()
