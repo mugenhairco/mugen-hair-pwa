@@ -118,7 +118,18 @@
 // website_content.py + routers/website.py (/api/website/*), tabel baru
 // website_gallery (postgres_schema.py sekaligus). style.css: grid
 // thumbnail Gallery drag & drop.
-const CACHE_NAME = "mugen-hair-shell-v24";
+// v24 -> v25: PR 2 "Revisi Konsep Website Booking" -- book_public.js
+// dibangun ulang total: halaman awal "BOOKING" terbang diganti landing
+// page penuh (Hero/About/Gallery/Visit Us/Connect With Us/Closing,
+// konsumsi /api/website/* dari PR 1), wizard booking hanya muncul setelah
+// tombol "Book Appointment" ditekan, urutan step diubah (Choose Barber ->
+// Choose Service -> Select Date -> Select Time -> Your Details -> Payment
+// -- Service sekarang SEBELUM Date/Time supaya slot langsung
+// duration-aware sejak awal), SELURUH teks UI diterjemahkan ke Bahasa
+// Inggris, indikator "Langkah X dari Y" diganti pagination dots di bawah
+// konten. style.css: CSS landing page baru, CSS "BOOKING" terbang lama
+// dihapus (sudah tidak dipakai), durasi animasi step disamakan ke 300ms.
+const CACHE_NAME = "mugen-hair-shell-v25";
 const APP_SHELL = [
   "/",
   "/index.html",
