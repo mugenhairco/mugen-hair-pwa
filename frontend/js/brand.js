@@ -31,7 +31,6 @@ const MugenBrand = (() => {
     img.src = MUGEN_API_BASE + url;
   }
   preload(current.logo_url);
-  preload(current.banner_url);
 
   function get() {
     return current;
@@ -69,7 +68,6 @@ const MugenBrand = (() => {
       current = data;
       localStorage.setItem(KEY, JSON.stringify(data));
       preload(current.logo_url);
-      preload(current.banner_url);
     } catch (e) {
       // offline / gagal -> tetap pakai cache/default yang sudah ada, jangan error-kan halaman
     }

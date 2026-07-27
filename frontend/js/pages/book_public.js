@@ -2,23 +2,35 @@
 // Dirender LANGSUNG ke #app (bukan lewat MugenRouter.shell()) -- tidak ada
 // sidebar/menu, karena ini bukan bagian dari aplikasi internal.
 //
-// PR 2 "Revisi Konsep Website Booking": halaman ini SEKARANG website resmi
-// MUGEN Hair Co. (Hero/About/Gallery/Visit Us/Connect With Us/Closing),
-// dikonsumsi dari /api/website/* (PR 1) + /api/pengaturan/identitas +
-// /api/public/booking/pengaturan (Opening Hours -- REUSE data yang sama
-// dipakai slot booking, BUKAN sistem jam kedua). Wizard booking yang sudah
-// ada (renderWizard) HANYA muncul setelah tombol "Book Appointment"
-// ditekan -- urutan step-nya diubah (Service sekarang SEBELUM Date/Time,
-// supaya slot yang ditampilkan langsung duration-aware sejak awal) dan
-// SELURUH teks UI diterjemahkan ke Bahasa Inggris. Teks yang datang dari
-// database (pesan custom Owner lewat Setting/Booking Settings) SENGAJA
-// TIDAK diterjemahkan otomatis -- tetap apa adanya sesuai yang Owner isi.
+// REVISI STRUKTUR WEBSITE CONTENT: halaman ini SEKARANG mengikuti urutan
+// section tetap Hero / About / Gallery / Visit Us / Opening Hours / Book
+// Appointment / Connect With Us / Footer (watermark developer saja -- lihat
+// index.html), dikonsumsi dari /api/website/content (SATU-SATUNYA sumber
+// tampilan, lihat website_content.py) + /api/pengaturan/identitas (lewat
+// brand.js, HANYA nama/email/logo -- identitas inti) + /api/public/booking/
+// pengaturan (Opening Hours -- REUSE data yang sama dipakai slot booking,
+// BUKAN sistem jam kedua). SEO meta/Favicon/Branding warna/Splash Screen/
+// Footer legal (Privacy Policy/Terms)/CTA sebagai link eksternal SUDAH
+// DIHAPUS TOTAL sesuai instruksi -- tidak ada penggantinya di halaman ini.
+// Background Website (Light/Dark preset atau Image+Opacity) DITERAPKAN lewat
+// terapkanBackground() di bawah, scoped ke root .book-public saja (teknik
+// custom-property inline style yang sama dipakai PR 3 untuk warna branding,
+// sekarang dipakai untuk ini).
 //
-// Data diambil dari endpoint /api/public/booking/* & /api/website/* --
-// endpoint itu sengaja hanya membocorkan info yang memang boleh dilihat
-// siapa saja -- TIDAK ADA data toko yang sensitif (Rating Google, Review
-// pelanggan, dan Profil barber SENGAJA tidak ditampilkan di halaman utama,
-// sesuai instruksi -- barber baru muncul di dalam wizard booking).
+// Setiap section WAJIB dinamis -- section/elemen yang datanya kosong TIDAK
+// PERNAH dirender sama sekali (bukan disembunyikan lewat CSS), supaya tidak
+// pernah ada kotak/jarak kosong tersisa di halaman. HANYA tombol Book
+// Appointment (satu-satunya di seluruh halaman, di bawah Opening Hours, di
+// atas Connect With Us) yang selalu tampil apa pun isi Heading/Subheading-nya.
+//
+// Wizard booking yang sudah ada (renderWizard) HANYA muncul setelah tombol
+// Book Appointment ditekan -- urutan step-nya English, Service SEBELUM
+// Date/Time (duration-aware sejak awal). Teks yang datang dari database
+// (pesan custom Owner) SENGAJA TIDAK diterjemahkan otomatis.
+//
+// Data toko yang sensitif (Rating Google, Review pelanggan, Profil barber)
+// SENGAJA tidak ditampilkan di landing page, sesuai instruksi -- barber baru
+// muncul di dalam wizard booking.
 
 const PageBookPublic = (() => {
   // Nama hari/bulan Bahasa Inggris KHUSUS untuk halaman publik ini -- TIDAK
@@ -52,10 +64,6 @@ const PageBookPublic = (() => {
       MugenUI.el("span", { class: "book-field-colon" }, ":"),
       MugenUI.el("span", { class: "book-field-value" }, value),
     ]);
-  }
-
-  function prefersReducedMotionGlobal() {
-    return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
   // Konversi nomor WhatsApp ke format internasional untuk link wa.me --
@@ -101,6 +109,18 @@ const PageBookPublic = (() => {
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/>' +
     '<path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+
+  // Ikon Connect With Us (SVG inline monokrom, ikut warna teks/aksen lewat
+  // currentColor -- tidak butuh file/CDN apa pun, konsisten dengan ikon
+  // Download QRIS di atas). Instagram/TikTok/WhatsApp SAJA sesuai instruksi.
+  const IKON_INSTAGRAM_SVG =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/>' +
+    '<circle cx="12" cy="12" r="4"/><circle cx="17.4" cy="6.6" r="0.9" fill="currentColor" stroke="none"/></svg>';
+  const IKON_TIKTOK_SVG =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 5.82c-.9-.98-1.4-2.24-1.4-3.57h-3.02v13.44a3.03 3.03 0 1 1-2.14-2.9V9.68a6.04 6.04 0 1 0 5.16 5.98V9.4a8.7 8.7 0 0 0 5.1 1.63V8.02a5.6 5.6 0 0 1-3.7-2.2Z"/></svg>';
+  const IKON_WHATSAPP_SVG =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.35a9.87 9.87 0 0 0 4.62 1.16h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.63 14.02c-.24.67-1.4 1.28-1.93 1.35-.5.07-1.12.1-1.8-.11-.42-.13-.96-.31-1.65-.6-2.9-1.25-4.79-4.16-4.94-4.35-.14-.19-1.18-1.57-1.18-3 0-1.43.75-2.13 1.02-2.42.27-.29.58-.36.78-.36.2 0 .39 0 .56.01.18.01.42-.07.65.5.24.58.82 2 .89 2.14.07.14.11.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.86-1.06.18-.27.36-.22.6-.13.24.09 1.52.72 1.78.85.26.13.43.2.5.31.07.11.07.63-.17 1.3Z"/></svg>';
 
   // Efek ripple ringan (murni CSS animasi + JS posisi klik) saat tombol
   // Download QRIS ditekan, supaya terasa modern tanpa perlu library apa pun.
@@ -157,69 +177,53 @@ const PageBookPublic = (() => {
     return img;
   }
 
-  // PR 3: Primary/Secondary Color HANYA berlaku di halaman publik /book --
-  // di-set sebagai inline style di elemen root landing/wizard (bukan
-  // :root global), jadi otomatis ter-scope ke subtree ini saja dan TIDAK
-  // pernah menjalar ke tema aplikasi admin internal.
-  function terapkanWarnaBranding(rootEl, content) {
-    if (content.branding_warna_primer) {
-      rootEl.style.setProperty("--accent", content.branding_warna_primer);
-      rootEl.style.setProperty("--accent-pressed", content.branding_warna_primer);
-    }
-    if (content.branding_warna_sekunder) {
-      rootEl.style.setProperty("--accent-hover", content.branding_warna_sekunder);
-    }
-  }
+  // Preset warna Background Website "Light"/"Dark" -- SAMA PERSIS dengan
+  // palet Light/Dark yang sudah dipakai aplikasi admin (:root & :root[data-
+  // theme="dark"] di style.css), supaya kontras teks/ikon/tombol/kartu tetap
+  // terjamin baik tanpa perlu palet baru terpisah. Diterapkan sebagai inline
+  // custom property di elemen root (page) -- SCOPED ke subtree halaman
+  // publik ini saja (teknik yang sama dipakai PR 3 untuk Primary/Secondary
+  // Color, yang sekarang sudah dihapus), tidak pernah menjalar ke tema
+  // aplikasi admin internal.
+  const BG_PRESET = {
+    light: {
+      "--bg": "#F5F7FA", "--bg-card": "#FFFFFF", "--bg-input": "#F8FAFC", "--border": "#E2E8F0",
+      "--text": "#0F172A", "--text-dim": "#64748B", "--accent": "#334155", "--accent-hover": "#1E293B",
+      "--accent-pressed": "#0F172A",
+      "--shadow-card": "0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06)",
+      "--shadow-elevated": "0 8px 24px rgba(15,23,42,0.10)",
+    },
+    dark: {
+      "--bg": "#0F172A", "--bg-card": "#1E293B", "--bg-input": "#0F172A", "--border": "#334155",
+      "--text": "#F1F5F9", "--text-dim": "#94A3B8", "--accent": "#475569", "--accent-hover": "#64748B",
+      "--accent-pressed": "#334155",
+      "--shadow-card": "0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.24)",
+      "--shadow-elevated": "0 8px 24px rgba(0,0,0,0.40)",
+    },
+  };
 
-  // PR 3: SEO -- di-inject ke <head> saat landing page dibuka. CATATAN
-  // JUJUR: halaman ini SPA client-rendered, jadi crawler yang TIDAK
-  // menjalankan JavaScript tidak akan melihat meta ini -- tetap berguna
-  // untuk preview link (WhatsApp/Facebook/dst yang menjalankan JS atau
-  // punya bot pembaca Open Graph).
-  function terapkanSeoMeta(content, identitas) {
-    function setMeta(attr, name, value) {
-      if (!value) return;
-      let el = document.head.querySelector(`meta[${attr}="${name}"]`);
-      if (!el) {
-        el = document.createElement("meta");
-        el.setAttribute(attr, name);
-        document.head.appendChild(el);
-      }
-      el.setAttribute("content", value);
+  // Background Website: "light"/"dark" (preset polos) ATAU "image" (foto
+  // Owner + slider opacity, memakai preset Light sebagai dasar kontras teks
+  // -- pilihan Light/Dark TIDAK dipakai lagi kalau tipe-nya "image", sesuai
+  // instruksi). Layer gambar ditaruh sebagai elemen ANAK PERTAMA rootEl,
+  // position:absolute + z-index:-1 -- tetap di BELAKANG seluruh konten
+  // halaman (dan tetap di ATAS dev-watermark-bg, karena #app sendiri sudah
+  // z-index:1 lebih tinggi, lihat style.css) tanpa perlu z-index tinggi.
+  function terapkanBackground(rootEl, content) {
+    const preset = content.background_tipe === "dark" ? BG_PRESET.dark : BG_PRESET.light;
+    for (const [prop, nilai] of Object.entries(preset)) rootEl.style.setProperty(prop, nilai);
+
+    const layerLama = rootEl.querySelector(":scope > .book-bg-layer");
+    if (layerLama) layerLama.remove();
+    rootEl.classList.remove("book-bg-image");
+
+    if (content.background_tipe === "image" && content.background_image_url) {
+      rootEl.classList.add("book-bg-image");
+      const layer = MugenUI.el("div", { class: "book-bg-layer", "aria-hidden": "true" });
+      layer.style.backgroundImage = `url("${MUGEN_API_BASE}${content.background_image_url}")`;
+      layer.style.opacity = String(Math.max(0, Math.min(100, content.background_opacity ?? 20)) / 100);
+      rootEl.insertBefore(layer, rootEl.firstChild);
     }
-    const judul = content.seo_title || identitas.nama_barbershop;
-    if (judul) document.title = judul;
-    setMeta("name", "description", content.seo_deskripsi);
-    setMeta("name", "keywords", content.seo_keywords);
-    setMeta("property", "og:title", judul);
-    setMeta("property", "og:description", content.seo_deskripsi);
-    if (content.seo_og_image_url) setMeta("property", "og:image", MUGEN_API_BASE + content.seo_og_image_url);
-  }
-
-  // PR 3: Favicon -- berlaku untuk kunjungan/tab BARU. Perangkat yang
-  // SUDAH meng-install PWA ini sebelumnya TIDAK akan otomatis memperbarui
-  // ikon yang sudah terlanjur tersimpan di home screen mereka
-  // (keterbatasan bawaan browser/OS, lihat juga catatan yang sama di
-  // routers/website.py & booking.js).
-  function terapkanFavicon(content) {
-    if (!content.branding_favicon_url) return;
-    const url = MUGEN_API_BASE + content.branding_favicon_url;
-    document.querySelectorAll('link[rel="icon"]').forEach((el) => { el.href = url; });
-  }
-
-  // Overlay sederhana untuk menampilkan Privacy Policy / Terms and
-  // Conditions (teks panjang dari CMS) -- tanpa perlu route/hash baru.
-  function tampilkanTeksLegal(judul, teks) {
-    const overlay = MugenUI.el("div", { class: "book-legal-overlay" });
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-    const panel = MugenUI.el("div", { class: "book-legal-panel" });
-    const btnClose = MugenUI.el("button", { type: "button", class: "book-legal-close" }, "✕");
-    btnClose.addEventListener("click", () => overlay.remove());
-    panel.appendChild(btnClose);
-    panel.appendChild(MugenUI.el("h2", {}, judul));
-    panel.appendChild(MugenUI.el("div", { class: "book-legal-text" }, teks));
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
   }
 
   function render(root) {
@@ -229,6 +233,12 @@ const PageBookPublic = (() => {
     // dipanggil, tapi dipanggil ulang di sini juga supaya halaman ini tetap
     // benar walau suatu saat dipanggil dari jalur lain.
     if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    // REVISI STRUKTUR WEBSITE CONTENT: watermark developer BESAR (dev-
+    // watermark-bg) disembunyikan KHUSUS selama di /book -- lapis
+    // pertahanan KEDUA yang sama seperti forceLight() di atas (router.js
+    // sudah menandai body.book-public-active lebih dulu). Watermark KECIL
+    // footer (dev-watermark-footer) TIDAK disentuh sama sekali di mana pun.
+    document.body.classList.add("book-public-active");
     renderLanding(root);
   }
 
@@ -253,52 +263,47 @@ const PageBookPublic = (() => {
       return;
     }
     page.innerHTML = "";
-    terapkanWarnaBranding(page, content);
-    terapkanSeoMeta(content, identitas);
-    terapkanFavicon(content);
+    terapkanBackground(page, content);
 
-    function bukaBooking(link) {
-      const nilai = (link || "").trim();
-      if (!nilai) { root.innerHTML = ""; renderWizard(root); return; }
-      window.location.href = nilai;
+    function bukaWizard() {
+      root.innerHTML = "";
+      renderWizard(root);
     }
 
-    // ---- Hero ----
+    // ---- Hero -- hanya salah satu (Gambar ATAU Video) sesuai hero_tipe,
+    // area media disembunyikan total kalau yang dipilih belum diisi. Tidak
+    // ada lagi tombol CTA di sini -- SATU-SATUNYA tombol Book Appointment
+    // ada di section tersendiri di bawah (lihat instruksi #7). ----
     const hero = MugenUI.el("section", { class: "book-hero" });
-    const heroMedia = MugenUI.el("div", { class: "book-hero-media" });
+    let heroMediaEl = null;
     if (content.hero_tipe === "video" && content.hero_video_url) {
-      heroMedia.appendChild(MugenUI.el("video", {
+      heroMediaEl = MugenUI.el("video", {
         src: MUGEN_API_BASE + content.hero_video_url,
         autoplay: "autoplay", muted: "muted", loop: "loop", playsinline: "playsinline",
-      }));
-    } else if (identitas.banner_url) {
-      heroMedia.appendChild(gambarAman(MUGEN_API_BASE + identitas.banner_url, { alt: "Hero", class: "book-hero-img" }));
+      });
+    } else if (content.hero_tipe === "image" && content.hero_image_url) {
+      heroMediaEl = gambarAman(MUGEN_API_BASE + content.hero_image_url, { alt: "Hero", class: "book-hero-img" });
     }
-    hero.appendChild(heroMedia);
+    if (heroMediaEl) hero.appendChild(MugenUI.el("div", { class: "book-hero-media" }, heroMediaEl));
     const heroContent = MugenUI.el("div", { class: "book-hero-content" });
     if (identitas.logo_url) {
       heroContent.appendChild(gambarAman(MUGEN_API_BASE + identitas.logo_url, { alt: "Logo", class: "book-hero-logo" }));
     }
-    heroContent.appendChild(MugenUI.el("h1", {}, identitas.nama_barbershop || "MUGEN Hair Co."));
-    heroContent.appendChild(MugenUI.el("div", { class: "book-hero-tagline" },
-      identitas.tagline || "We don't fix hair. We fix egos."));
-    const btnHeroCta = MugenUI.el("button", { class: "btn-primary book-hero-cta", type: "button" },
-      content.hero_cta_teks || "Book Appointment");
-    btnHeroCta.addEventListener("click", () => bukaBooking(content.hero_cta_link));
-    heroContent.appendChild(btnHeroCta);
-    hero.appendChild(heroContent);
-    page.appendChild(hero);
+    if (identitas.nama_barbershop) heroContent.appendChild(MugenUI.el("h1", {}, identitas.nama_barbershop));
+    if (content.tagline) heroContent.appendChild(MugenUI.el("div", { class: "book-hero-tagline" }, content.tagline));
+    if (heroContent.children.length) hero.appendChild(heroContent);
+    if (heroMediaEl || heroContent.children.length) page.appendChild(hero);
 
-    // ---- About ----
+    // ---- About -- section (dan judulnya) hanya tampil kalau ADA isinya. ----
     if (content.about_judul || content.about_deskripsi || content.about_foto_url) {
       const about = MugenUI.el("section", { class: "book-section book-about" });
       if (content.about_foto_url) {
         about.appendChild(gambarAman(MUGEN_API_BASE + content.about_foto_url, { alt: "About", class: "book-about-foto" }));
       }
       const aboutText = MugenUI.el("div", { class: "book-about-text" });
-      aboutText.appendChild(MugenUI.el("h2", {}, content.about_judul || "About Us"));
+      if (content.about_judul) aboutText.appendChild(MugenUI.el("h2", {}, content.about_judul));
       if (content.about_deskripsi) aboutText.appendChild(MugenUI.el("p", {}, content.about_deskripsi));
-      about.appendChild(aboutText);
+      if (aboutText.children.length) about.appendChild(aboutText);
       page.appendChild(about);
     }
 
@@ -316,44 +321,66 @@ const PageBookPublic = (() => {
       page.appendChild(gallerySec);
     }
 
-    // ---- Visit Us ----
-    const visit = MugenUI.el("section", { class: "book-section book-visit" });
-    visit.appendChild(MugenUI.el("h2", {}, "Visit Us"));
-    if (content.visit_maps_embed_url) {
-      visit.appendChild(MugenUI.el("iframe", {
-        src: content.visit_maps_embed_url, class: "book-maps-embed", loading: "lazy",
-        referrerpolicy: "no-referrer-when-downgrade", allowfullscreen: "allowfullscreen",
-      }));
+    // ---- Visit Us -- HANYA peta/alamat/link (Opening Hours sekarang
+    // section tersendiri di bawah, TIDAK lagi digabung ke sini). ----
+    if (content.visit_maps_embed_url || content.alamat || content.visit_maps_link) {
+      const visit = MugenUI.el("section", { class: "book-section book-visit" });
+      visit.appendChild(MugenUI.el("h2", {}, "Visit Us"));
+      if (content.visit_maps_embed_url) {
+        visit.appendChild(MugenUI.el("iframe", {
+          src: content.visit_maps_embed_url, class: "book-maps-embed", loading: "lazy",
+          referrerpolicy: "no-referrer-when-downgrade", allowfullscreen: "allowfullscreen",
+        }));
+      }
+      if (content.alamat) visit.appendChild(MugenUI.el("div", { class: "book-visit-alamat" }, content.alamat));
+      if (content.visit_maps_link) {
+        visit.appendChild(MugenUI.el("a", {
+          href: content.visit_maps_link, target: "_blank", rel: "noopener noreferrer", class: "book-maps-link",
+        }, "Open in Google Maps"));
+      }
+      page.appendChild(visit);
     }
-    if (identitas.alamat) visit.appendChild(MugenUI.el("div", { class: "book-visit-alamat" }, identitas.alamat));
-    if (content.visit_maps_link) {
-      visit.appendChild(MugenUI.el("a", {
-        href: content.visit_maps_link, target: "_blank", rel: "noopener noreferrer", class: "book-maps-link",
-      }, "Open in Google Maps"));
-    }
+
+    // ---- Opening Hours -- section tersendiri (bukan lagi bagian dari
+    // Visit Us), tetap SATU sumber data yang sama dengan slot booking
+    // (booking_db.py, tab Operating Hours) -- tidak ada input terpisah. ----
     const hariAktif = pengaturan.hari_operasional || [];
     if (hariAktif.length) {
       const aktifTerurut = URUTAN_HARI_TAMPIL.filter((h) => hariAktif.includes(h));
       const liburTerurut = URUTAN_HARI_TAMPIL.filter((h) => !hariAktif.includes(h));
-      const hoursBox = MugenUI.el("div", { class: "book-opening-hours" });
-      hoursBox.appendChild(MugenUI.el("div", { class: "book-opening-hours-title" }, "Opening Hours"));
-      hoursBox.appendChild(MugenUI.el("div", {},
+      const hours = MugenUI.el("section", { class: "book-section book-hours" });
+      hours.appendChild(MugenUI.el("h2", {}, "Opening Hours"));
+      hours.appendChild(MugenUI.el("div", {},
         `${aktifTerurut.map((h) => LABEL_HARI_EN[h]).join(", ")}: ${pengaturan.jam_buka} – ${pengaturan.jam_tutup}`));
       if (liburTerurut.length) {
-        hoursBox.appendChild(MugenUI.el("div", { class: "subtitle" },
+        hours.appendChild(MugenUI.el("div", { class: "subtitle" },
           `Closed: ${liburTerurut.map((h) => LABEL_HARI_EN[h]).join(", ")}`));
       }
-      visit.appendChild(hoursBox);
+      page.appendChild(hours);
     }
-    page.appendChild(visit);
 
-    // ---- Connect With Us ----
+    // ---- Book Appointment -- SATU-SATUNYA tombol booking di seluruh
+    // halaman, di bawah Opening Hours & di atas Connect With Us. Heading/
+    // Subheading boleh kosong (layout menyesuaikan tanpa jarak kosong),
+    // TAPI tombolnya SELALU tampil apa pun isinya, dan SELALU menuju
+        // halaman booking (bukan link yang bisa diatur Owner). ----
+    const bookCta = MugenUI.el("section", { class: "book-section book-cta" });
+    if (content.booking_cta_judul) bookCta.appendChild(MugenUI.el("h2", {}, content.booking_cta_judul));
+    if (content.booking_cta_subjudul) bookCta.appendChild(MugenUI.el("div", { class: "subtitle" }, content.booking_cta_subjudul));
+    const btnCta = MugenUI.el("button", { class: "btn-primary book-cta-btn", type: "button" },
+      content.booking_cta_tombol_teks || "Book Appointment");
+    btnCta.addEventListener("click", bukaWizard);
+    bookCta.appendChild(btnCta);
+    page.appendChild(bookCta);
+
+    // ---- Connect With Us -- section kecil (heading lebih kecil, layout
+    // horizontal), HANYA Instagram/TikTok/WhatsApp, ikon HANYA tampil kalau
+    // link-nya terisi, section-nya sendiri disembunyikan total kalau
+    // semuanya kosong. ----
     const social = [];
-    if (identitas.instagram) social.push({ label: "Instagram", href: identitas.instagram });
-    if (content.tiktok) social.push({ label: "TikTok", href: content.tiktok });
-    if (identitas.whatsapp) social.push({ label: "WhatsApp", href: `https://wa.me/${nomorKeFormatInternasional(identitas.whatsapp)}` });
-    if (content.facebook) social.push({ label: "Facebook", href: content.facebook });
-    if (content.youtube) social.push({ label: "YouTube", href: content.youtube });
+    if (content.instagram) social.push({ label: "Instagram", href: content.instagram, svg: IKON_INSTAGRAM_SVG });
+    if (content.tiktok) social.push({ label: "TikTok", href: content.tiktok, svg: IKON_TIKTOK_SVG });
+    if (content.whatsapp) social.push({ label: "WhatsApp", href: `https://wa.me/${nomorKeFormatInternasional(content.whatsapp)}`, svg: IKON_WHATSAPP_SVG });
     if (social.length) {
       const connect = MugenUI.el("section", { class: "book-section book-connect" });
       connect.appendChild(MugenUI.el("h2", {}, "Connect With Us"));
@@ -361,46 +388,24 @@ const PageBookPublic = (() => {
       for (const s of social) {
         row.appendChild(MugenUI.el("a", {
           href: s.href, target: "_blank", rel: "noopener noreferrer", class: "book-connect-link",
-        }, s.label));
+          "aria-label": s.label, title: s.label, html: s.svg,
+        }));
       }
       connect.appendChild(row);
       page.appendChild(connect);
     }
 
-    // ---- Closing ----
-    const closing = MugenUI.el("section", { class: "book-section book-closing" });
-    closing.appendChild(MugenUI.el("h2", {}, content.booking_cta_judul || "Ready for a fresh look?"));
-    if (content.booking_cta_subjudul) closing.appendChild(MugenUI.el("div", { class: "subtitle" }, content.booking_cta_subjudul));
-    const btnClosingCta = MugenUI.el("button", { class: "btn-primary book-closing-cta", type: "button" },
-      content.booking_cta_tombol_teks || "Book Appointment");
-    btnClosingCta.addEventListener("click", () => bukaBooking(content.booking_cta_tombol_link));
-    closing.appendChild(btnClosingCta);
-    page.appendChild(closing);
-
-    // ---- Footer ----
-    if (content.footer_copyright || content.footer_pesan || content.footer_privacy_policy || content.footer_terms) {
-      const footerSec = MugenUI.el("footer", { class: "book-landing-footer" });
-      if (content.footer_pesan) footerSec.appendChild(MugenUI.el("div", {}, content.footer_pesan));
-      const legalLinks = [];
-      if (content.footer_privacy_policy) {
-        const btn = MugenUI.el("button", { type: "button", class: "book-legal-link" }, "Privacy Policy");
-        btn.addEventListener("click", () => tampilkanTeksLegal("Privacy Policy", content.footer_privacy_policy));
-        legalLinks.push(btn);
-      }
-      if (content.footer_terms) {
-        const btn = MugenUI.el("button", { type: "button", class: "book-legal-link" }, "Terms and Conditions");
-        btn.addEventListener("click", () => tampilkanTeksLegal("Terms and Conditions", content.footer_terms));
-        legalLinks.push(btn);
-      }
-      if (legalLinks.length) footerSec.appendChild(MugenUI.el("div", { class: "book-legal-links" }, legalLinks));
-      if (content.footer_copyright) footerSec.appendChild(MugenUI.el("div", { class: "subtitle" }, content.footer_copyright));
-      page.appendChild(footerSec);
-    }
+    // ---- Footer -- TIDAK ada lagi konten CMS (copyright/pesan/Privacy
+    // Policy/Terms, semua sudah dihapus total sesuai instruksi). Kredit
+    // developer sudah ditangani GLOBAL lewat .dev-watermark-footer
+    // (index.html, tampil di semua halaman termasuk ini) -- tidak perlu
+    // elemen footer tambahan apa pun di sini.
   }
 
   // ================= WIZARD BOOKING =================
   async function renderWizard(root) {
     if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    document.body.classList.add("book-public-active");
     const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
     root.appendChild(page);
 
@@ -410,9 +415,7 @@ const PageBookPublic = (() => {
     const bodyViewport = MugenUI.el("div", { class: "book-body-viewport" });
     const body = MugenUI.el("div", { class: "book-body" });
     bodyViewport.appendChild(body);
-    const footer = MugenUI.el("div", { class: "book-footer" });
     page.appendChild(bodyViewport);
-    page.appendChild(footer);
 
     // ---- state ----
     let step = 1;
@@ -443,12 +446,11 @@ const PageBookPublic = (() => {
     }
 
     const identitas = MugenBrand.get();
-    terapkanWarnaBranding(page, websiteContent);
+    terapkanBackground(page, websiteContent);
 
     // Header wizard SENGAJA ringkas (logo/nama kecil + link kembali ke
-    // Beranda) -- Hero/Banner besar sudah ditampilkan di landing page,
-    // tidak perlu diulang di sini. pesan_pembuka (Booking Settings, field
-    // LAMA yang sudah ada) tetap ditampilkan di sini kalau diisi Owner.
+    // Beranda) -- Hero besar sudah ditampilkan di landing page, tidak perlu
+    // diulang di sini.
     wizardHeader.innerHTML = "";
     const btnKembali = MugenUI.el("button", { type: "button", class: "book-back-home" }, "‹ Back to Home");
     btnKembali.addEventListener("click", () => { root.innerHTML = ""; render(root); });
@@ -459,14 +461,6 @@ const PageBookPublic = (() => {
     }
     wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "MUGEN Hair Co."));
     wizardHeader.appendChild(wizardBrandRow);
-    if (pengaturan.pesan_pembuka) {
-      wizardHeader.appendChild(MugenUI.el("div", { class: "book-pesan-pembuka" }, pengaturan.pesan_pembuka));
-    }
-
-    footer.innerHTML = "";
-    if (pengaturan.header_footer) {
-      footer.appendChild(MugenUI.el("div", {}, pengaturan.header_footer));
-    }
 
     // ---- animasi perpindahan step: slide + fade, 300ms, arah mengikuti
     // maju/mundurnya nomor step (goto ke step lebih besar = "Continue" =

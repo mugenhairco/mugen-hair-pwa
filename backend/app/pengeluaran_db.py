@@ -99,8 +99,12 @@ def get_pengeluaran(pengeluaran_id: int):
 
 
 def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = None,
+                          tanggal_mulai: str = None, tanggal_selesai: str = None,
                           kategori: str = None, cari: str = None, hanya_aktif: bool = None) -> list:
-    """Urutan: tanggal terbaru dulu. `cari` mencari di keterangan & kategori."""
+    """Urutan: tanggal terbaru dulu. `cari` mencari di keterangan & kategori.
+    tanggal_mulai/tanggal_selesai (format 'YYYY-MM-DD', inklusif di kedua
+    ujung) dipakai Laporan PDF untuk rentang tanggal bebas -- BEDA dari
+    tahun/bulan (satu bulan/tahun penuh)."""
     q = """SELECT p.*, b.nama AS nama_barber
            FROM pengeluaran p LEFT JOIN barbers b ON b.id = p.barber_id WHERE 1=1"""
     params = []
@@ -110,6 +114,10 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
         q += " AND p.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND p.tanggal = ?"; params.append(tanggal)
+    if tanggal_mulai is not None:
+        q += " AND p.tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND p.tanggal <= ?"; params.append(tanggal_selesai)
     if kategori:
         q += " AND p.kategori = ?"; params.append(kategori)
     if cari:

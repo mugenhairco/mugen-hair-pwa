@@ -73,15 +73,7 @@ KOMISI_KEYS = [
 
 class IdentitasBody(BaseModel):
     nama_barbershop: str
-    alamat: str = ""
-    whatsapp: str = ""
     email: str = ""
-    instagram: str = ""
-    jam_operasional: str = ""
-    # PENYEMPURNAAN FORM BOOKING: field baru, dipakai halaman /book
-    tagline: str = ""
-    deskripsi: str = ""
-    website: str = ""
 
 
 @router.get("/identitas")
@@ -113,26 +105,6 @@ def ambil_logo(v: str | None = None):
     path, content_type = pengaturan_identitas.get_logo_file_path()
     if path is None:
         raise HTTPException(status_code=404, detail="Logo belum diatur.")
-    return FileResponse(path, media_type=content_type)
-
-
-# PENYEMPURNAAN FORM BOOKING: Banner, pola SAMA PERSIS seperti Logo di atas
-# (upload khusus admin, GET publik -- dipakai header halaman booking /book).
-@router.post("/banner")
-async def upload_banner(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_identitas"))):
-    konten = await file.read()
-    try:
-        pengaturan_identitas.simpan_banner(file.filename, konten)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return pengaturan_identitas.get_identitas()
-
-
-@router.get("/banner")
-def ambil_banner(v: str | None = None):
-    path, content_type = pengaturan_identitas.get_banner_file_path()
-    if path is None:
-        raise HTTPException(status_code=404, detail="Banner belum diatur.")
     return FileResponse(path, media_type=content_type)
 
 
@@ -531,12 +503,17 @@ async def import_database(file: UploadFile = File(...), user: dict = Depends(req
 # ================= LAPORAN PDF =================
 
 @router.get("/laporan/pdf")
-def download_laporan_pdf(jenis: str, tahun: int, bulan: int | None = None, barber_id: int | None = None,
+def download_laporan_pdf(jenis: str, barber_id: int | None = None,
+                          tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
+                          tahun: int | None = None, bulan: int | None = None,
                           user: dict = Depends(require_owner_or_staff)):
     if user["role"] == "staff" and not permissions.has("izin_laporan_pdf"):
         raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
     try:
-        konten, filename = laporan_pdf.buat_laporan(jenis, tahun, bulan, barber_id, dicetak_oleh=user["username"])
+        konten, filename = laporan_pdf.buat_laporan(
+            jenis, barber_id, dicetak_oleh=user["username"],
+            tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tahun=tahun, bulan=bulan,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return Response(content=konten, media_type="application/pdf",

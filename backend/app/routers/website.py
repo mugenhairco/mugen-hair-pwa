@@ -1,5 +1,5 @@
-"""routers/website.py — /api/website/*  (PR 1: fondasi CMS "Website Content")
-==================================================================================
+"""routers/website.py — /api/website/*  (CMS "Website Content")
+====================================================================
 SEMUA endpoint tulis (PUT/POST/DELETE) di sini KHUSUS Owner (require_admin),
 BUKAN lewat sistem izin permissions.py -- staff TIDAK PERNAH bisa diberi
 akses ke Website Content, sama seperti tab Komisi/Bonus Service/Hak Akses
@@ -7,8 +7,13 @@ Admin di Setting (lihat frontend/js/pages/booking.js: tab ini hanya masuk
 daftar tab kalau user.role === "admin").
 
 Endpoint GET (konten & gambar/video/gallery) sengaja PUBLIC (tanpa login) --
-ini persis tujuan datanya: ditampilkan di halaman publik /book (PR 2).
-Tidak ada data sensitif toko yang bocor lewat sini."""
+ini persis tujuan datanya: ditampilkan di halaman publik /book. Tidak ada
+data sensitif toko yang bocor lewat sini.
+
+REVISI STRUKTUR WEBSITE CONTENT: endpoint SEO/Branding warna/Favicon/
+Splash Screen DIHAPUS TOTAL (fitur-fitur itu sudah tidak ada lagi). Endpoint
+baru: Hero Image (terpisah dari Hero Video, dulu memakai Banner di
+pengaturan.py -- sekarang aset sendiri di sini) dan Background Image."""
 
 from typing import List
 
@@ -24,29 +29,21 @@ router = APIRouter(prefix="/api/website", tags=["website"])
 
 class WebsiteContentBody(BaseModel):
     hero_tipe: str = "image"
-    hero_cta_teks: str = ""
-    hero_cta_link: str = ""
+    tagline: str = ""
     about_judul: str = ""
     about_deskripsi: str = ""
+    alamat: str = ""
     visit_maps_embed_url: str = ""
     visit_maps_link: str = ""
+    instagram: str = ""
     tiktok: str = ""
-    facebook: str = ""
-    youtube: str = ""
-    footer_copyright: str = ""
-    footer_pesan: str = ""
+    whatsapp: str = ""
+    telepon: str = ""
+    background_tipe: str = "light"
+    background_opacity: int = 20
     booking_cta_judul: str = ""
     booking_cta_subjudul: str = ""
     booking_cta_tombol_teks: str = ""
-    booking_cta_tombol_link: str = ""
-    telepon: str = ""
-    footer_privacy_policy: str = ""
-    footer_terms: str = ""
-    seo_title: str = ""
-    seo_deskripsi: str = ""
-    seo_keywords: str = ""
-    branding_warna_primer: str = ""
-    branding_warna_sekunder: str = ""
 
 
 class GalleryReorderBody(BaseModel):
@@ -68,6 +65,34 @@ def simpan_content(body: WebsiteContentBody, user: dict = Depends(require_admin)
         website_content.update_content(body.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    return website_content.get_content()
+
+
+# ---------------------------------------------------------------------------
+# Hero Image
+# ---------------------------------------------------------------------------
+
+@router.post("/hero-image")
+async def upload_hero_image(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        website_content.simpan_hero_image(file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return website_content.get_content()
+
+
+@router.get("/hero-image")
+def ambil_hero_image(v: str | None = None):
+    path, content_type = website_content.get_hero_image_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="Hero Image belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
+@router.delete("/hero-image")
+def hapus_hero_image_endpoint(user: dict = Depends(require_admin)):
+    website_content.hapus_hero_image()
     return website_content.get_content()
 
 
@@ -128,90 +153,30 @@ def hapus_about_foto_endpoint(user: dict = Depends(require_admin)):
 
 
 # ---------------------------------------------------------------------------
-# SEO: Open Graph Image
+# Background Website
 # ---------------------------------------------------------------------------
 
-@router.post("/og-image")
-async def upload_og_image(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+@router.post("/background-image")
+async def upload_background_image(file: UploadFile = File(...), user: dict = Depends(require_admin)):
     konten = await file.read()
     try:
-        website_content.simpan_og_image(file.filename, konten)
+        website_content.simpan_background_image(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return website_content.get_content()
 
 
-@router.get("/og-image")
-def ambil_og_image(v: str | None = None):
-    path, content_type = website_content.get_og_image_path()
+@router.get("/background-image")
+def ambil_background_image(v: str | None = None):
+    path, content_type = website_content.get_background_image_path()
     if path is None:
-        raise HTTPException(status_code=404, detail="Open Graph Image belum diatur.")
+        raise HTTPException(status_code=404, detail="Background Website belum diatur.")
     return FileResponse(path, media_type=content_type)
 
 
-@router.delete("/og-image")
-def hapus_og_image_endpoint(user: dict = Depends(require_admin)):
-    website_content.hapus_og_image()
-    return website_content.get_content()
-
-
-# ---------------------------------------------------------------------------
-# Branding: Favicon & Splash Screen
-# ---------------------------------------------------------------------------
-# CATATAN JUJUR (lihat juga catatan di UI Owner, booking.js): favicon &
-# splash screen PWA pada dasarnya dibaca SEKALI oleh browser/OS saat
-# install/kunjungan baru (manifest.json + <link rel="icon">). Upload di
-# sini akan langsung berlaku untuk kunjungan/instalasi BARU, TAPI perangkat
-# yang SUDAH meng-install PWA ini sebelumnya TIDAK akan otomatis
-# memperbarui ikon yang sudah terlanjur tersimpan di home screen mereka --
-# itu keterbatasan bawaan browser/OS, bukan sesuatu yang bisa diperbaiki
-# lewat kode di sisi manapun.
-
-@router.post("/favicon")
-async def upload_favicon(file: UploadFile = File(...), user: dict = Depends(require_admin)):
-    konten = await file.read()
-    try:
-        website_content.simpan_favicon(file.filename, konten)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return website_content.get_content()
-
-
-@router.get("/favicon")
-def ambil_favicon(v: str | None = None):
-    path, content_type = website_content.get_favicon_path()
-    if path is None:
-        raise HTTPException(status_code=404, detail="Favicon belum diatur.")
-    return FileResponse(path, media_type=content_type)
-
-
-@router.delete("/favicon")
-def hapus_favicon_endpoint(user: dict = Depends(require_admin)):
-    website_content.hapus_favicon()
-    return website_content.get_content()
-
-
-@router.post("/splash")
-async def upload_splash(file: UploadFile = File(...), user: dict = Depends(require_admin)):
-    konten = await file.read()
-    try:
-        website_content.simpan_splash(file.filename, konten)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return website_content.get_content()
-
-
-@router.get("/splash")
-def ambil_splash(v: str | None = None):
-    path, content_type = website_content.get_splash_path()
-    if path is None:
-        raise HTTPException(status_code=404, detail="Splash Screen belum diatur.")
-    return FileResponse(path, media_type=content_type)
-
-
-@router.delete("/splash")
-def hapus_splash_endpoint(user: dict = Depends(require_admin)):
-    website_content.hapus_splash()
+@router.delete("/background-image")
+def hapus_background_image_endpoint(user: dict = Depends(require_admin)):
+    website_content.hapus_background_image()
     return website_content.get_content()
 
 
@@ -226,12 +191,11 @@ def ambil_gallery():
 
 @router.post("/gallery")
 async def upload_gallery_foto(file: UploadFile = File(...), user: dict = Depends(require_admin)):
-    # REVISI: satu file per request (SAMA seperti seluruh endpoint upload lain
-    # di aplikasi ini -- logo/banner/qris/hero-video/about-foto) supaya
-    # frontend cukup pakai MugenApi.uploadFile() yang sudah ada apa adanya,
-    # tanpa perlu helper multi-file baru. "Upload banyak foto sekaligus" di
-    # sisi UI cukup memanggil endpoint ini berkali-kali (satu per file yang
-    # dipilih) -- lihat booking.js renderWebsiteContent().
+    # Satu file per request (SAMA seperti seluruh endpoint upload lain di
+    # aplikasi ini) supaya frontend cukup pakai MugenApi.uploadFile() yang
+    # sudah ada apa adanya. "Upload banyak foto sekaligus" di sisi UI cukup
+    # memanggil endpoint ini berkali-kali (satu per file yang dipilih) --
+    # lihat booking.js renderWebsiteContent().
     konten = await file.read()
     try:
         website_content.tambah_gallery_foto(file.filename, konten)
