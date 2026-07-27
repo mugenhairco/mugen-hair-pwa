@@ -177,9 +177,11 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
 
 # Lebar kolom Laporan Transaksi (mm), total 194mm = lebar A4 dikurangi
 # margin kiri+kanan 8mm masing-masing (lihat _bangun_pdf topMargin/dst) --
-# kelebihan lebar dari revisi "tabel full" dialokasikan ke kolom Ket (yang
-# isinya paling mungkin panjang), kolom lain tetap sama seperti sebelumnya.
-_LEBAR_KOLOM_TRANSAKSI = [26 * mm, 22 * mm, 24 * mm, 22 * mm, 13 * mm, 24 * mm, 63 * mm]
+# Tanggal/Barber/UangHarian/Komisi/Tips/Libur/Total/Ket. Uang Harian/Komisi/
+# Tips/Total disamakan 20mm (semuanya "Rp X.XXX.XXX", perlu lebar yang
+# sama supaya tidak membungkus jadi 2 baris), Ket kebagian sisa lebar
+# terbanyak (yang isinya paling mungkin panjang).
+_LEBAR_KOLOM_TRANSAKSI = [24 * mm, 16 * mm, 20 * mm, 20 * mm, 20 * mm, 10 * mm, 20 * mm, 64 * mm]
 
 
 def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None,
@@ -194,18 +196,18 @@ def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int 
     Return (header, baris, ringkasan_tambahan) -- 3-tuple KHUSUS jenis ini
     (beda dari _laporan_pengeluaran/_laporan_rekap_bulanan yang tetap
     2-tuple) karena ada baris ringkasan di bawah tabel: Total Semua
-    Pendapatan (jumlah kolom Total seluruh baris di atas) dan Total Jumlah
-    per Service (lintas barber yang tampil, hormat filter barber_id yang
-    sama dengan tabelnya)."""
+    Pendapatan (jumlah kolom Total seluruh baris di atas, sudah termasuk
+    Tips) dan Total Jumlah per Service (lintas barber yang tampil, hormat
+    filter barber_id yang sama dengan tabelnya)."""
     data = db.get_laporan_transaksi_rekap(tanggal_mulai, tanggal_selesai, barber_id=barber_id)
-    header = ["Tanggal", "Barber", "Uang Harian", "Komisi", "Libur", "Total", "Ket"]
+    header = ["Tanggal", "Barber", "Uang Harian", "Komisi", "Tips", "Libur", "Total", "Ket"]
     baris = []
     for r in data:
         keterangan = "; ".join(f"{_tgl_pendek(c['tanggal'])}: {c['catatan']}" for c in r["catatan_list"])
         baris.append([
             _sel(periode), _sel(r["nama_barber"]), _sel(_rupiah(r["uang_harian"])),
-            _sel(_rupiah(r["komisi"])), _sel(str(r["hari_libur"])), _sel(_rupiah(r["total"])),
-            _sel(keterangan),
+            _sel(_rupiah(r["komisi"])), _sel(_rupiah(r["tips"])), _sel(str(r["hari_libur"])),
+            _sel(_rupiah(r["total"])), _sel(keterangan),
         ])
 
     total_pendapatan = sum(r["total"] for r in data)
