@@ -680,6 +680,18 @@ def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
         return row["jumlah"]
 
 
+def get_hari_libur_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> int:
+    """Versi rentang tanggal bebas dari get_hari_libur() di atas -- dipakai
+    Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS jumlah FROM absensi_libur
+               WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ?""",
+            (barber_id, tanggal_mulai, tanggal_selesai),
+        ).fetchone()
+        return row["jumlah"]
+
+
 # ---------------------------------------------------------------------------
 # ACUAN SERVICE: BONUS SERVICE & UANG HARIAN (REVISI)
 # Sebelumnya Target Bonus Service (tier bulanan) DAN syarat cair Uang Harian
@@ -796,6 +808,29 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= target)
 
 
+def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> int:
+    """Versi rentang tanggal bebas dari hitung_uang_harian_bulan() di atas --
+    dipakai Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom,
+    BUKAN satu bulan kalender penuh). Aturan hitungnya SAMA PERSIS."""
+    acuan_ids = set(get_uang_harian_acuan_ids())
+    target = target_uang_harian_per_hari()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
+               FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+               WHERE t.barber_id = ? AND t.tanggal >= ? AND t.tanggal <= ?""",
+            (barber["id"], tanggal_mulai, tanggal_selesai),
+        ).fetchall()
+
+    jumlah_per_hari = {}
+    for r in rows:
+        if r["service_id"] in acuan_ids:
+            jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
+
+    nominal = int(barber["uang_harian"] or 0)
+    return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= target)
+
+
 # ---------------------------------------------------------------------------
 # BONUS CUSTOMER / TARGET BONUS SERVICE (bulanan)
 # Syarat dapat Bonus Customer:
@@ -863,6 +898,26 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
                ORDER BY jumlah DESC, td.nama_service ASC""",
             (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchall()
+    return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
+
+
+def get_rincian_service_rentang(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
+    """Versi rentang tanggal bebas dari get_rincian_service_bulan() di atas --
+    BEDA juga karena bisa LINTAS BARBER (barber_id=None = seluruh barber
+    digabung), dipakai Laporan PDF > Laporan Transaksi untuk baris ringkasan
+    'Total Jumlah per Service' di bawah tabel rekap. Sama seperti fungsi di
+    atas: hanya service yang jumlahnya > 0 yang dikembalikan, terurut dari
+    yang jumlahnya paling banyak."""
+    q = """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
+           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+           WHERE t.tanggal >= ? AND t.tanggal <= ?"""
+    params = [tanggal_mulai, tanggal_selesai]
+    if barber_id is not None:
+        q += " AND t.barber_id = ?"
+        params.append(barber_id)
+    q += " GROUP BY td.nama_service ORDER BY jumlah DESC, td.nama_service ASC"
+    with get_conn() as conn:
+        rows = conn.execute(q, params).fetchall()
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
@@ -1145,6 +1200,50 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> lis
             "target_tercapai": bonus_customer["tercapai"],
             "bonus_customer": ringkasan["bonus_customer"],
             "total_pendapatan": ringkasan["total_pendapatan"],
+        })
+    return hasil
+
+
+def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
+    """Satu baris = satu barber, akumulasi dari transaksi pada RENTANG TANGGAL
+    BEBAS (dipakai Laporan PDF > Laporan Transaksi -- BEDA dari
+    get_rekap_bulanan_list() di atas yang selalu satu bulan kalender penuh,
+    dan formatnya juga beda: Laporan Transaksi tidak lagi satu baris per
+    kunjungan customer, tapi dirangkum per barber untuk seluruh periode).
+    'catatan_list' = daftar {'tanggal','catatan'} dari catatan manual per
+    transaksi yang diisi Owner/Admin lewat Input Data (kolom 'catatan' yang
+    sudah ada di tabel transaksi, lihat tambah_transaksi()/update_transaksi())
+    -- format tampilannya (gabung jadi satu teks kolom Ket) diserahkan ke
+    laporan_pdf.py, di sini murni data mentah apa adanya."""
+    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers()
+    hasil = []
+    for barber in barbers:
+        if barber is None:
+            continue
+        transaksi_list = get_transaksi_list(
+            tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, barber_id=barber["id"],
+        )
+        komisi = sum(t["total_komisi"] for t in transaksi_list)
+        uang_harian = hitung_uang_harian_rentang(barber, tanggal_mulai, tanggal_selesai)
+        hari_libur = get_hari_libur_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
+        # get_transaksi_list() urutannya tanggal TERBARU dulu (lihat docstring-nya) --
+        # dibalik di sini supaya catatan di kolom Ket terbaca kronologis (tanggal
+        # tertua dulu), bukan mundur.
+        catatan_list = sorted(
+            (
+                {"tanggal": t["tanggal"], "catatan": t["catatan"].strip()}
+                for t in transaksi_list if (t.get("catatan") or "").strip()
+            ),
+            key=lambda c: c["tanggal"],
+        )
+        hasil.append({
+            "barber_id": barber["id"],
+            "nama_barber": barber["nama"],
+            "komisi": komisi,
+            "uang_harian": uang_harian,
+            "hari_libur": hari_libur,
+            "total": komisi + uang_harian,
+            "catatan_list": catatan_list,
         })
     return hasil
 
