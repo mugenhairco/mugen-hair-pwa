@@ -14,25 +14,22 @@ backend/app/static/logo/*
 # BOOKING: file QRIS yang diupload — sama seperti logo di atas
 backend/app/static/qris/*
 !backend/app/static/qris/.gitkeep
-# PENYEMPURNAAN FORM BOOKING: file Banner & foto barber yang diupload — sama seperti logo/QRIS
-backend/app/static/banner/*
-!backend/app/static/banner/.gitkeep
+# PENYEMPURNAAN FORM BOOKING: foto barber yang diupload — sama seperti logo/QRIS
 backend/app/static/barber_foto/*
 !backend/app/static/barber_foto/.gitkeep
-# PR 1 Website Content: Hero Video, Foto About, Gallery — sama seperti logo/QRIS/banner di atas
+# Website Content: Hero Image, Hero Video, Foto About, Gallery, Background Website
+# — sama seperti logo/QRIS di atas. Banner (Setting > Identitas) DIHAPUS
+# (dipindah jadi Hero Image di sini, lihat REVISI STRUKTUR WEBSITE CONTENT).
+backend/app/static/hero_image/*
+!backend/app/static/hero_image/.gitkeep
 backend/app/static/hero_video/*
 !backend/app/static/hero_video/.gitkeep
 backend/app/static/about/*
 !backend/app/static/about/.gitkeep
 backend/app/static/gallery/*
 !backend/app/static/gallery/.gitkeep
-# PR 3 Website Content: Open Graph Image, Favicon, Splash Screen — sama seperti di atas
-backend/app/static/seo/*
-!backend/app/static/seo/.gitkeep
-backend/app/static/favicon/*
-!backend/app/static/favicon/.gitkeep
-backend/app/static/splash/*
-!backend/app/static/splash/.gitkeep
+backend/app/static/background/*
+!backend/app/static/background/.gitkeep
 backend/app/backups/
 
 # Python

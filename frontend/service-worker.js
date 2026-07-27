@@ -139,7 +139,29 @@
 // routers/website.py bertambah field/endpoint baru (reuse tabel settings
 // yang sudah ada, tidak ada skema baru), booking.js (tab Website Content)
 // dapat card SEO & Branding baru.
-const CACHE_NAME = "mugen-hair-shell-v26";
+// v26 -> v27: REVISI STRUKTUR WEBSITE CONTENT -- Tagline/Deskripsi/Alamat/
+// Nomor WA/Website/Jam Operasional/Header/Footer dipindah TOTAL dari Setting
+// > Identitas Barbershop & Booking Settings ke Booking > Website Content
+// (pengaturan_identitas.py, booking_db.py, pengaturan.js, booking.js);
+// SEO/Branding warna/Favicon/Splash Screen/Footer legal DIHAPUS TOTAL, tidak
+// ada penggantinya (website_content.py, routers/website.py, booking.js).
+// Hero sekarang mendukung Gambar ATAU Video (hero-image endpoint baru,
+// format video fleksibel MP4/MOV/WEBM/dst). Background Website baru --
+// Image (upload + slider opacity) atau Light/Dark preset polos, kontras
+// otomatis menyesuaikan (background-image endpoint baru, book_public.js
+// terapkanBackground()). book_public.js dibangun ulang total: urutan
+// section Hero/About/Gallery/Visit Us/Opening Hours/Book Appointment/
+// Connect With Us/Footer, SATU tombol Book Appointment saja (link selalu ke
+// wizard, tidak bisa diatur), Connect With Us jadi ikon kecil horizontal
+// (Instagram/TikTok/WhatsApp saja, auto-hide kalau semua kosong), setiap
+// section/elemen kosong TIDAK PERNAH dirender (bukan disembunyikan CSS) --
+// tidak ada lagi kotak/jarak kosong. Watermark developer BESAR disembunyikan
+// khusus di /book (router.js + book_public.js, class body.book-public-
+// active), watermark KECIL footer tetap tampil di mana pun tanpa perubahan.
+// style.css: preset warna Light/Dark background, layer gambar background +
+// opacity, styling Connect With Us baru, CSS legal/SEO/Branding/Closing lama
+// yang sudah tidak terpakai dihapus.
+const CACHE_NAME = "mugen-hair-shell-v27";
 const APP_SHELL = [
   "/",
   "/index.html",

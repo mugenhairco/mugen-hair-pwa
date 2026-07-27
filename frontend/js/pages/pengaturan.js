@@ -126,12 +126,19 @@ const PagePengaturan = (() => {
     }
 
     // ================= TAB: IDENTITAS BARBERSHOP =================
+    // REVISI STRUKTUR WEBSITE CONTENT: Tagline/Deskripsi/Alamat/WhatsApp/
+    // Instagram/Website/Jam Operasional/Banner DIPINDAHKAN ke Booking >
+    // Website Content (lihat renderWebsiteContent() di booking.js) --
+    // BUKAN diduplikasi di sini. Tab ini sekarang hanya menyisakan
+    // identitas inti yang dipakai DI LUAR halaman publik /book juga
+    // (sidebar, halaman Login, judul tab browser): Nama Barbershop, Email,
+    // Logo.
     async function renderIdentitas() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Identitas Barbershop"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Nama & logo di sini otomatis dipakai di halaman Login dan sidebar seluruh aplikasi."));
+        "Nama & logo di sini otomatis dipakai di halaman Login dan sidebar seluruh aplikasi. Konten halaman Website (Tagline, About, Alamat, Kontak, dst) dikelola di Booking → Website Content."));
 
       let data;
       try {
@@ -169,64 +176,15 @@ const PagePengaturan = (() => {
       card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputLogo, btnUploadLogo]));
       card.appendChild(logoError);
 
-      const bannerPreview = MugenUI.el("img", { class: "book-banner-img", style: data.banner_url ? "max-width:320px;" : "display:none;", alt: "Banner saat ini" });
-      if (data.banner_url) bannerPreview.src = MUGEN_API_BASE + data.banner_url;
-      const inputBanner = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-      const btnUploadBanner = MugenUI.el("button", {}, "Upload Banner Baru");
-      const bannerError = MugenUI.el("div", { class: "login-error" });
-
-      btnUploadBanner.addEventListener("click", async () => {
-        if (!inputBanner.files || !inputBanner.files[0]) { bannerError.textContent = "Pilih file banner dulu (JPG/PNG/WEBP)."; return; }
-        bannerError.textContent = "";
-        btnUploadBanner.disabled = true;
-        try {
-          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/banner", inputBanner.files[0]), { message: "Mengunggah…" });
-          bannerPreview.src = MUGEN_API_BASE + hasil.banner_url + "&t=" + Date.now();
-          bannerPreview.style.cssText = "max-width:320px;";
-          MugenUI.toast("Banner berhasil diganti.", "success");
-          MugenBrand.refresh();
-        } catch (e) {
-          bannerError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        } finally {
-          btnUploadBanner.disabled = false;
-        }
-      });
-
-      card.appendChild(MugenUI.el("label", {}, "Banner Booking (JPG/PNG/WEBP, tampil di atas halaman booking)"));
-      card.appendChild(bannerPreview);
-      card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputBanner, btnUploadBanner]));
-      card.appendChild(bannerError);
-
       const inputNama = MugenUI.el("input", { type: "text", value: data.nama_barbershop || "" });
-      const inputTagline = MugenUI.el("input", { type: "text", value: data.tagline || "", placeholder: "mis. Sharp Cuts, Sharp Look" });
-      const inputDeskripsi = MugenUI.el("textarea", {}, data.deskripsi || "");
-      const inputAlamat = MugenUI.el("input", { type: "text", value: data.alamat || "" });
-      const inputWA = MugenUI.el("input", { type: "text", value: data.whatsapp || "" });
       const inputEmail = MugenUI.el("input", { type: "text", value: data.email || "" });
-      const inputIG = MugenUI.el("input", { type: "text", value: data.instagram || "" });
-      const inputWebsite = MugenUI.el("input", { type: "text", value: data.website || "" });
-      const inputJam = MugenUI.el("input", { type: "text", value: data.jam_operasional || "", placeholder: "mis. 09:00 - 21:00" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Identitas");
       const formError = MugenUI.el("div", { class: "login-error" });
 
       card.appendChild(MugenUI.el("label", {}, "Nama Barbershop"));
       card.appendChild(inputNama);
-      card.appendChild(MugenUI.el("label", {}, "Tagline"));
-      card.appendChild(inputTagline);
-      card.appendChild(MugenUI.el("label", {}, "Deskripsi"));
-      card.appendChild(inputDeskripsi);
-      card.appendChild(MugenUI.el("label", {}, "Alamat"));
-      card.appendChild(inputAlamat);
-      card.appendChild(MugenUI.el("label", {}, "Nomor WhatsApp"));
-      card.appendChild(inputWA);
       card.appendChild(MugenUI.el("label", {}, "Email"));
       card.appendChild(inputEmail);
-      card.appendChild(MugenUI.el("label", {}, "Instagram"));
-      card.appendChild(inputIG);
-      card.appendChild(MugenUI.el("label", {}, "Website"));
-      card.appendChild(inputWebsite);
-      card.appendChild(MugenUI.el("label", {}, "Jam Operasional"));
-      card.appendChild(inputJam);
       card.appendChild(formError);
       card.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
 
@@ -237,14 +195,7 @@ const PagePengaturan = (() => {
         try {
           await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/identitas", {
             nama_barbershop: inputNama.value.trim(),
-            tagline: inputTagline.value.trim(),
-            deskripsi: inputDeskripsi.value.trim(),
-            alamat: inputAlamat.value.trim(),
-            whatsapp: inputWA.value.trim(),
             email: inputEmail.value.trim(),
-            instagram: inputIG.value.trim(),
-            website: inputWebsite.value.trim(),
-            jam_operasional: inputJam.value.trim(),
           }), { message: "Menyimpan…" });
           MugenUI.toast("Identitas barbershop disimpan.", "success");
           MugenBrand.refresh();

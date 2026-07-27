@@ -228,10 +228,6 @@ class BookingSettingsBody(BaseModel):
     interval_menit: int | None = None
     maksimal_hari_kedepan: int | None = None
     hari_operasional: list[str] | None = None
-    header_judul: str | None = None
-    header_subtitle: str | None = None
-    header_footer: str | None = None
-    pesan_pembuka: str | None = None
     pesan_penutup: str | None = None
     pesan_nama_kosong: str | None = None
     pesan_whatsapp_invalid: str | None = None

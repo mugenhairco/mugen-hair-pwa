@@ -193,14 +193,12 @@ def get_booking_settings() -> dict:
         "interval_menit": int(s["booking_interval_menit"]),
         "maksimal_hari_kedepan": int(s["booking_maksimal_hari_kedepan"]),
         "hari_operasional": hari_operasional,
-        # PENYEMPURNAAN FORM BOOKING: teks Header/Footer halaman /book, dan
-        # pesan validasi -- semua bisa diubah Owner, default-nya SAMA PERSIS
-        # dengan teks yang sebelumnya hardcode di frontend supaya tampilan
-        # tidak berubah sampai Owner sengaja menggantinya.
-        "header_judul": db.get_setting("booking_header_judul", ""),
-        "header_subtitle": db.get_setting("booking_header_subtitle", "Booking Online"),
-        "header_footer": db.get_setting("booking_header_footer", ""),
-        "pesan_pembuka": db.get_setting("booking_pesan_pembuka", ""),
+        # REVISI STRUKTUR WEBSITE CONTENT: header_judul/header_subtitle/
+        # header_footer/pesan_pembuka (teks tampilan halaman /book) DIHAPUS
+        # dari sini -- digantikan Hero/Footer di Booking > Website Content.
+        # Pesan di bawah ini TETAP di sini karena bukan "konten tampilan
+        # website", melainkan pesan transaksional alur booking (konfirmasi
+        # sukses & validasi form), beda kategori.
         "pesan_penutup": db.get_setting(
             "booking_pesan_penutup",
             "Terima kasih! Kami akan segera menghubungi Anda lewat WhatsApp untuk konfirmasi.",
@@ -212,9 +210,8 @@ def get_booking_settings() -> dict:
 
 def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
                              interval_menit: int = None, maksimal_hari_kedepan: int = None,
-                             hari_operasional: list = None, header_judul: str = None,
-                             header_subtitle: str = None, header_footer: str = None,
-                             pesan_pembuka: str = None, pesan_penutup: str = None,
+                             hari_operasional: list = None,
+                             pesan_penutup: str = None,
                              pesan_nama_kosong: str = None, pesan_whatsapp_invalid: str = None):
     if jam_buka is not None:
         _validasi_jam(jam_buka)
@@ -237,10 +234,6 @@ def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
     if interval_menit is not None: data["booking_interval_menit"] = str(int(interval_menit))
     if maksimal_hari_kedepan is not None: data["booking_maksimal_hari_kedepan"] = str(int(maksimal_hari_kedepan))
     if hari_operasional is not None: data["booking_hari_operasional"] = json.dumps(hari_operasional)
-    if header_judul is not None: data["booking_header_judul"] = header_judul.strip()
-    if header_subtitle is not None: data["booking_header_subtitle"] = header_subtitle.strip()
-    if header_footer is not None: data["booking_header_footer"] = header_footer.strip()
-    if pesan_pembuka is not None: data["booking_pesan_pembuka"] = pesan_pembuka.strip()
     if pesan_penutup is not None: data["booking_pesan_penutup"] = pesan_penutup.strip()
     if pesan_nama_kosong is not None: data["booking_pesan_nama_kosong"] = pesan_nama_kosong.strip()
     if pesan_whatsapp_invalid is not None: data["booking_pesan_whatsapp_invalid"] = pesan_whatsapp_invalid.strip()

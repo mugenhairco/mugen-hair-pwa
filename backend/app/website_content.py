@@ -1,39 +1,37 @@
 """
-website_content.py — CMS "Website Content" untuk halaman publik /book (PR 1)
-=============================================================================
+website_content.py — CMS "Website Content" untuk halaman publik /book
+=======================================================================
 Owner-only (lihat routers/website.py: require_admin di semua endpoint tulis,
 BUKAN lewat sistem izin permissions.py -- staff tidak pernah bisa diberi
-akses ke sini, sama seperti tab Komisi/Bonus Service/Hak Akses Admin di
-Setting). Mengikuti pola pengaturan_identitas.py PERSIS:
+akses ke sini). Mengikuti pola pengaturan_identitas.py:
 - Field skalar (teks/link) -> tabel `settings` key-value yang sudah ada.
-- Field gambar/video tunggal (Hero Video, Foto About) -> helper generik
-  simpan/hapus/get-path, pola sama seperti _simpan_gambar() di
-  pengaturan_identitas.py (direplikasi di sini, bukan di-import silang,
-  konsisten dengan gaya modul lain yang tidak saling pakai helper privat).
+- Field gambar/video tunggal -> helper generik simpan/hapus/get-path.
 
-Field yang SUDAH ADA sengaja TIDAK diduplikasi di sini, langsung dipakai
-lewat pengaturan_identitas.get_identitas() / booking_db.get_booking_settings()
-oleh routers/website.py saat menyusun payload gabungan GET /api/website/content:
-- Logo Header, Hero Image, Nama Brand, Tagline, Alamat, Instagram, WhatsApp
-  (pengaturan_identitas.py)
-- Opening Hours / hari libur (booking_db.py) -- SATU sumber kebenaran yang
-  sama dipakai untuk slot booking maupun tampilan jam operasional di
-  website, supaya tidak mungkin saling tidak sinkron.
+REVISI STRUKTUR WEBSITE CONTENT: SATU-SATUNYA tempat pengaturan tampilan
+halaman publik /book -- Tagline, Deskripsi, Alamat, Nomor WhatsApp,
+Instagram, dan Hero Image DIPINDAHKAN ke sini dari pengaturan_identitas.py
+(BUKAN diduplikasi -- sudah dihapus total dari sana). Header/Footer/Pesan
+Pembuka lama (booking_db.py) juga sudah dihapus, digantikan Hero di sini.
 
-Gallery (daftar foto, BEDA dari slot tunggal di atas -- bisa banyak foto
-sekaligus) memakai tabel baru `website_gallery` (lihat init_website_db()
-untuk jalur SQLite, postgres_schema.py untuk jalur PostgreSQL -- KEDUANYA
-harus diubah bersamaan kalau skema tabel ini berubah lagi nanti).
+Field yang TETAP di luar modul ini (supaya tidak ada pengaturan duplikat):
+- Nama Barbershop, Email, Logo (pengaturan_identitas.py) -- identitas inti
+  yang dipakai di LUAR /book juga (sidebar, Login, judul tab browser).
+- Opening Hours / hari libur (booking_db.py, tab Operating Hours) -- SATU
+  sumber kebenaran yang sama dipakai untuk slot booking maupun tampilan
+  Opening Hours di website, supaya tidak mungkin saling tidak sinkron.
+- Pesan konfirmasi & validasi form booking (booking_db.py, tab Booking
+  Settings) -- pesan TRANSAKSIONAL alur booking, bukan konten tampilan.
 
-PR 3 menambahkan: SEO (judul/deskripsi/keywords/OG Image), Footer legal
-(Privacy Policy/Terms and Conditions -- teks panjang, Bahasa Indonesia
-diperbolehkan di sini), dan Branding (Warna Primer/Sekunder -- HANYA
-berlaku di halaman publik /book, lihat book_public.js; Favicon & Splash
-Screen -- lihat catatan jujur di routers/website.py soal keterbatasan PWA
-yang SUDAH ter-install)."""
+Fitur SEO/Branding (warna/Favicon/Splash Screen)/Booking CTA sebagai link
+eksternal/Footer legal (Privacy Policy/Terms) yang SEMPAT ada di iterasi
+sebelumnya SUDAH DIHAPUS TOTAL sesuai instruksi revisi -- tidak ada
+pengaturan untuk fitur-fitur itu lagi.
+
+Gallery (daftar foto) memakai tabel `website_gallery` (lihat
+init_website_db() untuk jalur SQLite, postgres_schema.py untuk jalur
+PostgreSQL -- KEDUANYA harus diubah bersamaan kalau skema ini berubah lagi)."""
 
 import os
-import re
 import uuid
 from datetime import datetime
 
@@ -43,58 +41,53 @@ from database import get_conn
 WEBSITE_CONTENT_KEYS = [
     # Hero
     "hero_tipe",              # "image" | "video" -- yang ditampilkan hanya salah satu
-    "hero_cta_teks", "hero_cta_link",
+    "tagline",                 # dipindahkan dari Identitas
     # About
     "about_judul", "about_deskripsi",
     # Visit Us
-    "visit_maps_embed_url",   # src iframe Google Maps (bukan raw HTML embed, hindari XSS)
-    "visit_maps_link",        # link "Buka di Google Maps"
-    # Social (tambahan di luar instagram/whatsapp yang sudah ada di Identitas)
-    "tiktok", "facebook", "youtube",
-    # Footer
-    "footer_copyright", "footer_pesan",
-    # Booking CTA (closing section)
-    "booking_cta_judul", "booking_cta_subjudul", "booking_cta_tombol_teks", "booking_cta_tombol_link",
-    # Contact tambahan
+    "alamat",                  # dipindahkan dari Identitas
+    "visit_maps_embed_url",    # src iframe Google Maps (bukan raw HTML embed, hindari XSS)
+    "visit_maps_link",         # link "Buka di Google Maps"
+    # Social Media -- HANYA Instagram/TikTok/WhatsApp (lihat instruksi #8)
+    "instagram", "tiktok", "whatsapp",  # instagram & whatsapp dipindahkan dari Identitas
+    # Contact
     "telepon",
-    # PR 3: Footer -- halaman legal (teks panjang sederhana, Bahasa
-    # Indonesia diperbolehkan di sini sesuai instruksi -- BEDA dari
-    # aturan "seluruh tampilan Bahasa Inggris" yang khusus untuk UI wizard).
-    "footer_privacy_policy", "footer_terms",
-    # PR 3: SEO -- di-inject ke <head> saat landing page render. CATATAN:
-    # karena halaman ini SPA client-rendered, crawler yang TIDAK
-    # menjalankan JavaScript tidak akan melihat meta ini -- tetap
-    # dikerjakan sesuai permintaan, tapi bukan solusi SEO teknis penuh.
-    "seo_title", "seo_deskripsi", "seo_keywords",
-    # PR 3: Branding -- warna HANYA berlaku di halaman publik /book (lihat
-    # book_public.js: CSS custom property di-set di root landing/wizard,
-    # BUKAN global), tidak menyentuh tema aplikasi admin internal.
-    "branding_warna_primer", "branding_warna_sekunder",
+    # Background Website
+    "background_tipe",         # "image" | "light" | "dark"
+    "background_opacity",      # "0".."100", HANYA relevan kalau background_tipe == "image"
+    # Book Appointment (CTA satu-satunya di halaman, lihat instruksi #7)
+    "booking_cta_judul", "booking_cta_subjudul", "booking_cta_tombol_teks",
 ]
 
 DEFAULT_VALUES = {
     "hero_tipe": "image",
-    "hero_cta_teks": "Book Appointment",
+    "background_tipe": "light",
+    "background_opacity": "20",
+    "booking_cta_judul": "Ready for your next cut?",
     "booking_cta_tombol_teks": "Book Appointment",
 }
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+HERO_IMAGE_DIR = os.path.join(STATIC_DIR, "hero_image")
 HERO_VIDEO_DIR = os.path.join(STATIC_DIR, "hero_video")
 ABOUT_FOTO_DIR = os.path.join(STATIC_DIR, "about")
 GALLERY_DIR = os.path.join(STATIC_DIR, "gallery")
-OG_IMAGE_DIR = os.path.join(STATIC_DIR, "seo")
-FAVICON_DIR = os.path.join(STATIC_DIR, "favicon")
-SPLASH_DIR = os.path.join(STATIC_DIR, "splash")
+BACKGROUND_DIR = os.path.join(STATIC_DIR, "background")
 
 EXT_KE_CONTENT_TYPE_GAMBAR = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
 }
+# Instruksi: "Format video dibuat fleksibel selama didukung browser modern
+# (MP4, MOV, WebM, dan format umum lainnya)" -- daftar di bawah ini sengaja
+# mencakup format umum yang didukung SETIDAKNYA satu browser modern utama
+# (Chrome/Safari/Firefox/Edge); MOV/QuickTime terutama dari upload iPhone.
 EXT_KE_CONTENT_TYPE_VIDEO = {
-    "mp4": "video/mp4", "webm": "video/webm",
+    "mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
+    "m4v": "video/x-m4v", "ogv": "video/ogg", "ogg": "video/ogg",
 }
 # Cap ukuran video supaya Persistent Disk Render (kapasitas terbatas) tidak
 # habis oleh satu file -- validasi baru yang wajar, bukan perubahan fitur lain.
-MAKS_UKURAN_VIDEO_BYTES = 25 * 1024 * 1024  # 25MB
+MAKS_UKURAN_VIDEO_BYTES = 50 * 1024 * 1024  # 50MB
 
 
 def init_website_db():
@@ -119,38 +112,43 @@ def init_website_db():
 
 def get_content() -> dict:
     data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, "")) for k in WEBSITE_CONTENT_KEYS}
+    data["background_opacity"] = int(data["background_opacity"] or 20)
+    hero_image_filename = db.get_setting("hero_image_filename", "")
+    data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}" if hero_image_filename else None
     hero_video_filename = db.get_setting("hero_video_filename", "")
     data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
     about_foto_filename = db.get_setting("about_foto_filename", "")
     data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
-    og_image_filename = db.get_setting("og_image_filename", "")
-    data["seo_og_image_url"] = f"/api/website/og-image?v={og_image_filename}" if og_image_filename else None
-    favicon_filename = db.get_setting("favicon_filename", "")
-    data["branding_favicon_url"] = f"/api/website/favicon?v={favicon_filename}" if favicon_filename else None
-    splash_filename = db.get_setting("splash_filename", "")
-    data["branding_splash_url"] = f"/api/website/splash?v={splash_filename}" if splash_filename else None
+    background_image_filename = db.get_setting("background_image_filename", "")
+    data["background_image_url"] = f"/api/website/background-image?v={background_image_filename}" if background_image_filename else None
     return data
 
 
-_HEX_WARNA_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-
-
 def update_content(data: dict):
-    bersih = {k: (v or "").strip() for k, v in data.items() if k in WEBSITE_CONTENT_KEYS}
+    bersih = {k: (v if v is not None else "") for k, v in data.items() if k in WEBSITE_CONTENT_KEYS}
+    for k in bersih:
+        if isinstance(bersih[k], str):
+            bersih[k] = bersih[k].strip()
     if "hero_tipe" in bersih and bersih["hero_tipe"] not in ("image", "video"):
         raise ValueError("hero_tipe harus 'image' atau 'video'.")
-    for key in ("branding_warna_primer", "branding_warna_sekunder"):
-        if bersih.get(key) and not _HEX_WARNA_RE.match(bersih[key]):
-            raise ValueError(f"{key} harus format warna hex, contoh: #334155.")
+    if "background_tipe" in bersih and bersih["background_tipe"] not in ("image", "light", "dark"):
+        raise ValueError("background_tipe harus 'image', 'light', atau 'dark'.")
+    if "background_opacity" in bersih:
+        try:
+            opasitas = int(bersih["background_opacity"])
+        except (TypeError, ValueError):
+            raise ValueError("background_opacity harus angka 0-100.")
+        if not (0 <= opasitas <= 100):
+            raise ValueError("background_opacity harus antara 0-100.")
+        bersih["background_opacity"] = str(opasitas)
     if not bersih:
         return
     db.set_settings_bulk(bersih)
 
 
 # ---------------------------------------------------------------------------
-# Aset gambar/video slot tunggal (Hero Video, Foto About) -- pola generik
-# sama seperti _simpan_gambar()/_get_gambar_file_path() di
-# pengaturan_identitas.py.
+# Aset gambar/video slot tunggal -- pola generik sama seperti
+# _simpan_gambar()/_get_gambar_file_path() di pengaturan_identitas.py.
 # ---------------------------------------------------------------------------
 
 def _ekstensi_valid(filename: str, mapping: dict):
@@ -199,6 +197,19 @@ def _hapus_aset(direktori: str, setting_key: str):
     db.set_setting(setting_key, "")
 
 
+def simpan_hero_image(filename_asli: str, konten: bytes) -> str:
+    return _simpan_aset(HERO_IMAGE_DIR, "hero_image", "hero_image_filename", filename_asli, konten,
+                         EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image")
+
+
+def get_hero_image_path():
+    return _get_aset_path(HERO_IMAGE_DIR, "hero_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+
+
+def hapus_hero_image():
+    _hapus_aset(HERO_IMAGE_DIR, "hero_image_filename")
+
+
 def simpan_hero_video(filename_asli: str, konten: bytes) -> str:
     if len(konten) > MAKS_UKURAN_VIDEO_BYTES:
         raise ValueError(f"Ukuran video Hero maksimal {MAKS_UKURAN_VIDEO_BYTES // (1024 * 1024)}MB.")
@@ -227,45 +238,17 @@ def hapus_about_foto():
     _hapus_aset(ABOUT_FOTO_DIR, "about_foto_filename")
 
 
-# PR 3: SEO Open Graph Image, Branding Favicon & Splash Screen -- pola
-# generik yang SAMA seperti Hero Video/Foto About di atas.
-def simpan_og_image(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(OG_IMAGE_DIR, "og_image", "og_image_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Open Graph Image")
+def simpan_background_image(filename_asli: str, konten: bytes) -> str:
+    return _simpan_aset(BACKGROUND_DIR, "background", "background_image_filename", filename_asli, konten,
+                         EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website")
 
 
-def get_og_image_path():
-    return _get_aset_path(OG_IMAGE_DIR, "og_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+def get_background_image_path():
+    return _get_aset_path(BACKGROUND_DIR, "background_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
 
 
-def hapus_og_image():
-    _hapus_aset(OG_IMAGE_DIR, "og_image_filename")
-
-
-def simpan_favicon(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(FAVICON_DIR, "favicon", "favicon_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Favicon")
-
-
-def get_favicon_path():
-    return _get_aset_path(FAVICON_DIR, "favicon_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
-
-
-def hapus_favicon():
-    _hapus_aset(FAVICON_DIR, "favicon_filename")
-
-
-def simpan_splash(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(SPLASH_DIR, "splash", "splash_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Splash Screen")
-
-
-def get_splash_path():
-    return _get_aset_path(SPLASH_DIR, "splash_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
-
-
-def hapus_splash():
-    _hapus_aset(SPLASH_DIR, "splash_filename")
+def hapus_background_image():
+    _hapus_aset(BACKGROUND_DIR, "background_image_filename")
 
 
 # ---------------------------------------------------------------------------
