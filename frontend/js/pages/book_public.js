@@ -157,6 +157,71 @@ const PageBookPublic = (() => {
     return img;
   }
 
+  // PR 3: Primary/Secondary Color HANYA berlaku di halaman publik /book --
+  // di-set sebagai inline style di elemen root landing/wizard (bukan
+  // :root global), jadi otomatis ter-scope ke subtree ini saja dan TIDAK
+  // pernah menjalar ke tema aplikasi admin internal.
+  function terapkanWarnaBranding(rootEl, content) {
+    if (content.branding_warna_primer) {
+      rootEl.style.setProperty("--accent", content.branding_warna_primer);
+      rootEl.style.setProperty("--accent-pressed", content.branding_warna_primer);
+    }
+    if (content.branding_warna_sekunder) {
+      rootEl.style.setProperty("--accent-hover", content.branding_warna_sekunder);
+    }
+  }
+
+  // PR 3: SEO -- di-inject ke <head> saat landing page dibuka. CATATAN
+  // JUJUR: halaman ini SPA client-rendered, jadi crawler yang TIDAK
+  // menjalankan JavaScript tidak akan melihat meta ini -- tetap berguna
+  // untuk preview link (WhatsApp/Facebook/dst yang menjalankan JS atau
+  // punya bot pembaca Open Graph).
+  function terapkanSeoMeta(content, identitas) {
+    function setMeta(attr, name, value) {
+      if (!value) return;
+      let el = document.head.querySelector(`meta[${attr}="${name}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, name);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("content", value);
+    }
+    const judul = content.seo_title || identitas.nama_barbershop;
+    if (judul) document.title = judul;
+    setMeta("name", "description", content.seo_deskripsi);
+    setMeta("name", "keywords", content.seo_keywords);
+    setMeta("property", "og:title", judul);
+    setMeta("property", "og:description", content.seo_deskripsi);
+    if (content.seo_og_image_url) setMeta("property", "og:image", MUGEN_API_BASE + content.seo_og_image_url);
+  }
+
+  // PR 3: Favicon -- berlaku untuk kunjungan/tab BARU. Perangkat yang
+  // SUDAH meng-install PWA ini sebelumnya TIDAK akan otomatis memperbarui
+  // ikon yang sudah terlanjur tersimpan di home screen mereka
+  // (keterbatasan bawaan browser/OS, lihat juga catatan yang sama di
+  // routers/website.py & booking.js).
+  function terapkanFavicon(content) {
+    if (!content.branding_favicon_url) return;
+    const url = MUGEN_API_BASE + content.branding_favicon_url;
+    document.querySelectorAll('link[rel="icon"]').forEach((el) => { el.href = url; });
+  }
+
+  // Overlay sederhana untuk menampilkan Privacy Policy / Terms and
+  // Conditions (teks panjang dari CMS) -- tanpa perlu route/hash baru.
+  function tampilkanTeksLegal(judul, teks) {
+    const overlay = MugenUI.el("div", { class: "book-legal-overlay" });
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    const panel = MugenUI.el("div", { class: "book-legal-panel" });
+    const btnClose = MugenUI.el("button", { type: "button", class: "book-legal-close" }, "✕");
+    btnClose.addEventListener("click", () => overlay.remove());
+    panel.appendChild(btnClose);
+    panel.appendChild(MugenUI.el("h2", {}, judul));
+    panel.appendChild(MugenUI.el("div", { class: "book-legal-text" }, teks));
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  }
+
   function render(root) {
     root.innerHTML = "";
     // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
@@ -188,6 +253,9 @@ const PageBookPublic = (() => {
       return;
     }
     page.innerHTML = "";
+    terapkanWarnaBranding(page, content);
+    terapkanSeoMeta(content, identitas);
+    terapkanFavicon(content);
 
     function bukaBooking(link) {
       const nilai = (link || "").trim();
@@ -310,9 +378,21 @@ const PageBookPublic = (() => {
     page.appendChild(closing);
 
     // ---- Footer ----
-    if (content.footer_copyright || content.footer_pesan) {
+    if (content.footer_copyright || content.footer_pesan || content.footer_privacy_policy || content.footer_terms) {
       const footerSec = MugenUI.el("footer", { class: "book-landing-footer" });
       if (content.footer_pesan) footerSec.appendChild(MugenUI.el("div", {}, content.footer_pesan));
+      const legalLinks = [];
+      if (content.footer_privacy_policy) {
+        const btn = MugenUI.el("button", { type: "button", class: "book-legal-link" }, "Privacy Policy");
+        btn.addEventListener("click", () => tampilkanTeksLegal("Privacy Policy", content.footer_privacy_policy));
+        legalLinks.push(btn);
+      }
+      if (content.footer_terms) {
+        const btn = MugenUI.el("button", { type: "button", class: "book-legal-link" }, "Terms and Conditions");
+        btn.addEventListener("click", () => tampilkanTeksLegal("Terms and Conditions", content.footer_terms));
+        legalLinks.push(btn);
+      }
+      if (legalLinks.length) footerSec.appendChild(MugenUI.el("div", { class: "book-legal-links" }, legalLinks));
       if (content.footer_copyright) footerSec.appendChild(MugenUI.el("div", { class: "subtitle" }, content.footer_copyright));
       page.appendChild(footerSec);
     }
@@ -348,11 +428,13 @@ const PageBookPublic = (() => {
       metode: null,
     };
 
+    let websiteContent = null;
     try {
-      [pengaturan, barbers, services] = await Promise.all([
+      [pengaturan, barbers, services, websiteContent] = await Promise.all([
         MugenApi.get("/api/public/booking/pengaturan"),
         MugenApi.get("/api/public/booking/barbers"),
         MugenApi.get("/api/public/booking/services"),
+        MugenApi.get("/api/website/content"),
         MugenBrand.refresh(),
       ]);
     } catch (e) {
@@ -361,6 +443,7 @@ const PageBookPublic = (() => {
     }
 
     const identitas = MugenBrand.get();
+    terapkanWarnaBranding(page, websiteContent);
 
     // Header wizard SENGAJA ringkas (logo/nama kecil + link kembali ke
     // Beranda) -- Hero/Banner besar sudah ditampilkan di landing page,

@@ -129,7 +129,17 @@
 // Inggris, indikator "Langkah X dari Y" diganti pagination dots di bawah
 // konten. style.css: CSS landing page baru, CSS "BOOKING" terbang lama
 // dihapus (sudah tidak dipakai), durasi animasi step disamakan ke 300ms.
-const CACHE_NAME = "mugen-hair-shell-v25";
+// v25 -> v26: PR 3 "Revisi Konsep Website Booking" (terakhir dari 3 PR) --
+// SEO (title/meta description/keywords/OG Image, di-inject ke <head> saat
+// landing page dibuka), Branding (Primary/Secondary Color HANYA berlaku
+// di halaman publik /book lewat CSS custom property scoped, Favicon &
+// Splash Screen upload dengan catatan jujur soal PWA yang sudah
+// ter-install), Footer legal (Privacy Policy & Terms and Conditions,
+// tampil lewat overlay tanpa route baru). Backend: website_content.py +
+// routers/website.py bertambah field/endpoint baru (reuse tabel settings
+// yang sudah ada, tidak ada skema baru), booking.js (tab Website Content)
+// dapat card SEO & Branding baru.
+const CACHE_NAME = "mugen-hair-shell-v26";
 const APP_SHELL = [
   "/",
   "/index.html",

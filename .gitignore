@@ -26,6 +26,13 @@ backend/app/static/about/*
 !backend/app/static/about/.gitkeep
 backend/app/static/gallery/*
 !backend/app/static/gallery/.gitkeep
+# PR 3 Website Content: Open Graph Image, Favicon, Splash Screen — sama seperti di atas
+backend/app/static/seo/*
+!backend/app/static/seo/.gitkeep
+backend/app/static/favicon/*
+!backend/app/static/favicon/.gitkeep
+backend/app/static/splash/*
+!backend/app/static/splash/.gitkeep
 backend/app/backups/
 
 # Python

@@ -40,6 +40,13 @@ class WebsiteContentBody(BaseModel):
     booking_cta_tombol_teks: str = ""
     booking_cta_tombol_link: str = ""
     telepon: str = ""
+    footer_privacy_policy: str = ""
+    footer_terms: str = ""
+    seo_title: str = ""
+    seo_deskripsi: str = ""
+    seo_keywords: str = ""
+    branding_warna_primer: str = ""
+    branding_warna_sekunder: str = ""
 
 
 class GalleryReorderBody(BaseModel):
@@ -117,6 +124,94 @@ def ambil_about_foto(v: str | None = None):
 @router.delete("/about-foto")
 def hapus_about_foto_endpoint(user: dict = Depends(require_admin)):
     website_content.hapus_about_foto()
+    return website_content.get_content()
+
+
+# ---------------------------------------------------------------------------
+# SEO: Open Graph Image
+# ---------------------------------------------------------------------------
+
+@router.post("/og-image")
+async def upload_og_image(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        website_content.simpan_og_image(file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return website_content.get_content()
+
+
+@router.get("/og-image")
+def ambil_og_image(v: str | None = None):
+    path, content_type = website_content.get_og_image_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="Open Graph Image belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
+@router.delete("/og-image")
+def hapus_og_image_endpoint(user: dict = Depends(require_admin)):
+    website_content.hapus_og_image()
+    return website_content.get_content()
+
+
+# ---------------------------------------------------------------------------
+# Branding: Favicon & Splash Screen
+# ---------------------------------------------------------------------------
+# CATATAN JUJUR (lihat juga catatan di UI Owner, booking.js): favicon &
+# splash screen PWA pada dasarnya dibaca SEKALI oleh browser/OS saat
+# install/kunjungan baru (manifest.json + <link rel="icon">). Upload di
+# sini akan langsung berlaku untuk kunjungan/instalasi BARU, TAPI perangkat
+# yang SUDAH meng-install PWA ini sebelumnya TIDAK akan otomatis
+# memperbarui ikon yang sudah terlanjur tersimpan di home screen mereka --
+# itu keterbatasan bawaan browser/OS, bukan sesuatu yang bisa diperbaiki
+# lewat kode di sisi manapun.
+
+@router.post("/favicon")
+async def upload_favicon(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        website_content.simpan_favicon(file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return website_content.get_content()
+
+
+@router.get("/favicon")
+def ambil_favicon(v: str | None = None):
+    path, content_type = website_content.get_favicon_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="Favicon belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
+@router.delete("/favicon")
+def hapus_favicon_endpoint(user: dict = Depends(require_admin)):
+    website_content.hapus_favicon()
+    return website_content.get_content()
+
+
+@router.post("/splash")
+async def upload_splash(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    konten = await file.read()
+    try:
+        website_content.simpan_splash(file.filename, konten)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return website_content.get_content()
+
+
+@router.get("/splash")
+def ambil_splash(v: str | None = None):
+    path, content_type = website_content.get_splash_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="Splash Screen belum diatur.")
+    return FileResponse(path, media_type=content_type)
+
+
+@router.delete("/splash")
+def hapus_splash_endpoint(user: dict = Depends(require_admin)):
+    website_content.hapus_splash()
     return website_content.get_content()
 
 

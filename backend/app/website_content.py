@@ -24,9 +24,16 @@ Gallery (daftar foto, BEDA dari slot tunggal di atas -- bisa banyak foto
 sekaligus) memakai tabel baru `website_gallery` (lihat init_website_db()
 untuk jalur SQLite, postgres_schema.py untuk jalur PostgreSQL -- KEDUANYA
 harus diubah bersamaan kalau skema tabel ini berubah lagi nanti).
-"""
+
+PR 3 menambahkan: SEO (judul/deskripsi/keywords/OG Image), Footer legal
+(Privacy Policy/Terms and Conditions -- teks panjang, Bahasa Indonesia
+diperbolehkan di sini), dan Branding (Warna Primer/Sekunder -- HANYA
+berlaku di halaman publik /book, lihat book_public.js; Favicon & Splash
+Screen -- lihat catatan jujur di routers/website.py soal keterbatasan PWA
+yang SUDAH ter-install)."""
 
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -50,6 +57,19 @@ WEBSITE_CONTENT_KEYS = [
     "booking_cta_judul", "booking_cta_subjudul", "booking_cta_tombol_teks", "booking_cta_tombol_link",
     # Contact tambahan
     "telepon",
+    # PR 3: Footer -- halaman legal (teks panjang sederhana, Bahasa
+    # Indonesia diperbolehkan di sini sesuai instruksi -- BEDA dari
+    # aturan "seluruh tampilan Bahasa Inggris" yang khusus untuk UI wizard).
+    "footer_privacy_policy", "footer_terms",
+    # PR 3: SEO -- di-inject ke <head> saat landing page render. CATATAN:
+    # karena halaman ini SPA client-rendered, crawler yang TIDAK
+    # menjalankan JavaScript tidak akan melihat meta ini -- tetap
+    # dikerjakan sesuai permintaan, tapi bukan solusi SEO teknis penuh.
+    "seo_title", "seo_deskripsi", "seo_keywords",
+    # PR 3: Branding -- warna HANYA berlaku di halaman publik /book (lihat
+    # book_public.js: CSS custom property di-set di root landing/wizard,
+    # BUKAN global), tidak menyentuh tema aplikasi admin internal.
+    "branding_warna_primer", "branding_warna_sekunder",
 ]
 
 DEFAULT_VALUES = {
@@ -62,6 +82,9 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 HERO_VIDEO_DIR = os.path.join(STATIC_DIR, "hero_video")
 ABOUT_FOTO_DIR = os.path.join(STATIC_DIR, "about")
 GALLERY_DIR = os.path.join(STATIC_DIR, "gallery")
+OG_IMAGE_DIR = os.path.join(STATIC_DIR, "seo")
+FAVICON_DIR = os.path.join(STATIC_DIR, "favicon")
+SPLASH_DIR = os.path.join(STATIC_DIR, "splash")
 
 EXT_KE_CONTENT_TYPE_GAMBAR = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
@@ -100,13 +123,25 @@ def get_content() -> dict:
     data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
     about_foto_filename = db.get_setting("about_foto_filename", "")
     data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
+    og_image_filename = db.get_setting("og_image_filename", "")
+    data["seo_og_image_url"] = f"/api/website/og-image?v={og_image_filename}" if og_image_filename else None
+    favicon_filename = db.get_setting("favicon_filename", "")
+    data["branding_favicon_url"] = f"/api/website/favicon?v={favicon_filename}" if favicon_filename else None
+    splash_filename = db.get_setting("splash_filename", "")
+    data["branding_splash_url"] = f"/api/website/splash?v={splash_filename}" if splash_filename else None
     return data
+
+
+_HEX_WARNA_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def update_content(data: dict):
     bersih = {k: (v or "").strip() for k, v in data.items() if k in WEBSITE_CONTENT_KEYS}
     if "hero_tipe" in bersih and bersih["hero_tipe"] not in ("image", "video"):
         raise ValueError("hero_tipe harus 'image' atau 'video'.")
+    for key in ("branding_warna_primer", "branding_warna_sekunder"):
+        if bersih.get(key) and not _HEX_WARNA_RE.match(bersih[key]):
+            raise ValueError(f"{key} harus format warna hex, contoh: #334155.")
     if not bersih:
         return
     db.set_settings_bulk(bersih)
@@ -190,6 +225,47 @@ def get_about_foto_path():
 
 def hapus_about_foto():
     _hapus_aset(ABOUT_FOTO_DIR, "about_foto_filename")
+
+
+# PR 3: SEO Open Graph Image, Branding Favicon & Splash Screen -- pola
+# generik yang SAMA seperti Hero Video/Foto About di atas.
+def simpan_og_image(filename_asli: str, konten: bytes) -> str:
+    return _simpan_aset(OG_IMAGE_DIR, "og_image", "og_image_filename", filename_asli, konten,
+                         EXT_KE_CONTENT_TYPE_GAMBAR, "Open Graph Image")
+
+
+def get_og_image_path():
+    return _get_aset_path(OG_IMAGE_DIR, "og_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+
+
+def hapus_og_image():
+    _hapus_aset(OG_IMAGE_DIR, "og_image_filename")
+
+
+def simpan_favicon(filename_asli: str, konten: bytes) -> str:
+    return _simpan_aset(FAVICON_DIR, "favicon", "favicon_filename", filename_asli, konten,
+                         EXT_KE_CONTENT_TYPE_GAMBAR, "Favicon")
+
+
+def get_favicon_path():
+    return _get_aset_path(FAVICON_DIR, "favicon_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+
+
+def hapus_favicon():
+    _hapus_aset(FAVICON_DIR, "favicon_filename")
+
+
+def simpan_splash(filename_asli: str, konten: bytes) -> str:
+    return _simpan_aset(SPLASH_DIR, "splash", "splash_filename", filename_asli, konten,
+                         EXT_KE_CONTENT_TYPE_GAMBAR, "Splash Screen")
+
+
+def get_splash_path():
+    return _get_aset_path(SPLASH_DIR, "splash_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+
+
+def hapus_splash():
+    _hapus_aset(SPLASH_DIR, "splash_filename")
 
 
 # ---------------------------------------------------------------------------
