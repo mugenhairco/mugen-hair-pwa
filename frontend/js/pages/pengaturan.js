@@ -1068,18 +1068,41 @@ const PagePengaturan = (() => {
         "PDF berisi nama & logo barbershop, judul laporan, periode, tanggal cetak, nomor halaman, dan nama Anda sebagai pencetak."));
 
       const today = new Date();
+      const todayIso = today.toISOString().slice(0, 10);
+      const awalBulanIso = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+
       const selJenis = MugenUI.el("select", {}, [
         MugenUI.el("option", { value: "transaksi" }, "Laporan Transaksi"),
         MugenUI.el("option", { value: "pengeluaran" }, "Laporan Pengeluaran"),
         MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
       ]);
+
+      // Rekap Bulanan Barber: TETAP Tahun+Bulan (perhitungan komisi/bonus/
+      // uang harian bertumpu pada batas bulan kalender, lihat
+      // database.py get_ringkasan_barber_bulan() -- tidak bisa dipotong ke
+      // rentang tanggal bebas). Transaksi & Pengeluaran: rentang tanggal
+      // bebas (Dari - Sampai) supaya Periode di PDF menunjukkan tanggal
+      // sebenarnya, bukan cuma "Bulan Tahun".
+      const wrapTahunBulan = MugenUI.el("div");
       const selTahunLaporan = MugenUI.el("select");
       for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahunLaporan.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
       selTahunLaporan.value = String(today.getFullYear());
       const selBulanLaporan = MugenUI.el("select");
-      selBulanLaporan.appendChild(MugenUI.el("option", { value: "" }, "Semua Bulan"));
       for (let m = 1; m <= 12; m++) selBulanLaporan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
       selBulanLaporan.value = String(today.getMonth() + 1);
+      wrapTahunBulan.appendChild(MugenUI.el("label", {}, "Tahun"));
+      wrapTahunBulan.appendChild(selTahunLaporan);
+      wrapTahunBulan.appendChild(MugenUI.el("label", {}, "Bulan"));
+      wrapTahunBulan.appendChild(selBulanLaporan);
+
+      const wrapRentang = MugenUI.el("div");
+      const inputDari = MugenUI.el("input", { type: "date", value: awalBulanIso, max: todayIso });
+      const inputSampai = MugenUI.el("input", { type: "date", value: todayIso, max: todayIso });
+      wrapRentang.appendChild(MugenUI.el("label", {}, "Dari Tanggal"));
+      wrapRentang.appendChild(inputDari);
+      wrapRentang.appendChild(MugenUI.el("label", {}, "Sampai Tanggal"));
+      wrapRentang.appendChild(inputSampai);
+
       const selBarberLaporan = MugenUI.el("select");
       selBarberLaporan.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
       try {
@@ -1089,12 +1112,18 @@ const PagePengaturan = (() => {
 
       laporanCard.appendChild(MugenUI.el("label", {}, "Jenis Laporan"));
       laporanCard.appendChild(selJenis);
-      laporanCard.appendChild(MugenUI.el("label", {}, "Tahun"));
-      laporanCard.appendChild(selTahunLaporan);
-      laporanCard.appendChild(MugenUI.el("label", {}, "Bulan"));
-      laporanCard.appendChild(selBulanLaporan);
+      laporanCard.appendChild(wrapTahunBulan);
+      laporanCard.appendChild(wrapRentang);
       laporanCard.appendChild(MugenUI.el("label", {}, "Barber"));
       laporanCard.appendChild(selBarberLaporan);
+
+      function terapkanTampilanJenis() {
+        const rekap = selJenis.value === "rekap_bulanan";
+        wrapTahunBulan.style.display = rekap ? "" : "none";
+        wrapRentang.style.display = rekap ? "none" : "";
+      }
+      terapkanTampilanJenis();
+      selJenis.addEventListener("change", terapkanTampilanJenis);
 
       const laporanError = MugenUI.el("div", { class: "login-error" });
       const btnLaporan = MugenUI.el("button", { class: "btn-primary" }, "Download PDF");
@@ -1105,15 +1134,26 @@ const PagePengaturan = (() => {
 
       btnLaporan.addEventListener("click", async () => {
         laporanError.textContent = "";
-        if (selJenis.value === "rekap_bulanan" && !selBulanLaporan.value) {
-          laporanError.textContent = "Rekap Bulanan Barber wajib memilih satu bulan tertentu.";
+        const rekap = selJenis.value === "rekap_bulanan";
+        if (!rekap && (!inputDari.value || !inputSampai.value)) {
+          laporanError.textContent = "Tanggal Dari dan Sampai wajib diisi.";
+          return;
+        }
+        if (!rekap && inputDari.value > inputSampai.value) {
+          laporanError.textContent = "Tanggal Dari tidak boleh setelah Tanggal Sampai.";
           return;
         }
         btnLaporan.disabled = true;
         try {
           await MugenUI.withLoading(async () => {
-            const qs = new URLSearchParams({ jenis: selJenis.value, tahun: selTahunLaporan.value });
-            if (selBulanLaporan.value) qs.set("bulan", selBulanLaporan.value);
+            const qs = new URLSearchParams({ jenis: selJenis.value });
+            if (rekap) {
+              qs.set("tahun", selTahunLaporan.value);
+              qs.set("bulan", selBulanLaporan.value);
+            } else {
+              qs.set("tanggal_mulai", inputDari.value);
+              qs.set("tanggal_selesai", inputSampai.value);
+            }
             if (selBarberLaporan.value) qs.set("barber_id", selBarberLaporan.value);
             const token = MugenState.getToken();
             const res = await fetch(`${MUGEN_API_BASE}/api/pengaturan/laporan/pdf?${qs.toString()}`, {
@@ -1128,7 +1168,8 @@ const PagePengaturan = (() => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `laporan_${selJenis.value}_${selTahunLaporan.value}.pdf`;
+            const stamp = rekap ? `${selTahunLaporan.value}-${selBulanLaporan.value}` : `${inputDari.value}_${inputSampai.value}`;
+            a.download = `laporan_${selJenis.value}_${stamp}.pdf`;
             document.body.appendChild(a);
             a.click();
             a.remove();

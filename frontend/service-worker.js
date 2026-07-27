@@ -161,7 +161,15 @@
 // style.css: preset warna Light/Dark background, layer gambar background +
 // opacity, styling Connect With Us baru, CSS legal/SEO/Branding/Closing lama
 // yang sudah tidak terpakai dihapus.
-const CACHE_NAME = "mugen-hair-shell-v27";
+// v27 -> v28: Laporan PDF (Setting > Backup) -- Laporan Transaksi & Laporan
+// Pengeluaran sekarang dipilih lewat rentang tanggal bebas (Dari - Sampai,
+// pengaturan.js) alih-alih Bulan/Tahun, supaya teks "Periode:" di PDF
+// menunjukkan rentang tanggal sebenarnya (mis. "3 - 25 Juli 2026"), bukan
+// cuma nama bulan & tahun (laporan_pdf.py, database.py get_transaksi_list(),
+// pengeluaran_db.py get_pengeluaran_list(), routers/pengaturan.py). Rekap
+// Bulanan Barber TETAP Tahun+Bulan (perhitungan bonus/komisi/uang harian
+// bertumpu pada batas bulan kalender, tidak diubah).
+const CACHE_NAME = "mugen-hair-shell-v28";
 const APP_SHELL = [
   "/",
   "/index.html",

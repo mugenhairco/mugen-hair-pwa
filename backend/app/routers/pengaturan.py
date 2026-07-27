@@ -503,12 +503,17 @@ async def import_database(file: UploadFile = File(...), user: dict = Depends(req
 # ================= LAPORAN PDF =================
 
 @router.get("/laporan/pdf")
-def download_laporan_pdf(jenis: str, tahun: int, bulan: int | None = None, barber_id: int | None = None,
+def download_laporan_pdf(jenis: str, barber_id: int | None = None,
+                          tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
+                          tahun: int | None = None, bulan: int | None = None,
                           user: dict = Depends(require_owner_or_staff)):
     if user["role"] == "staff" and not permissions.has("izin_laporan_pdf"):
         raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
     try:
-        konten, filename = laporan_pdf.buat_laporan(jenis, tahun, bulan, barber_id, dicetak_oleh=user["username"])
+        konten, filename = laporan_pdf.buat_laporan(
+            jenis, barber_id, dicetak_oleh=user["username"],
+            tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tahun=tahun, bulan=bulan,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return Response(content=konten, media_type="application/pdf",

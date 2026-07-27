@@ -593,10 +593,14 @@ def get_transaksi(transaksi_id: int):
 
 
 def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = None,
-                        tanggal: str = None, limit: int = None):
-    """Dipakai oleh Rekap dan Dashboard. Urutan default: tanggal terbaru dulu.
-    Setiap baris hasil = satu transaksi (kunjungan customer) lengkap dengan daftar
-    service & totalnya (lihat _lengkapi_transaksi_batch)."""
+                        tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None,
+                        limit: int = None):
+    """Dipakai oleh Rekap, Dashboard, dan Laporan PDF. Urutan default: tanggal
+    terbaru dulu. Setiap baris hasil = satu transaksi (kunjungan customer)
+    lengkap dengan daftar service & totalnya (lihat _lengkapi_transaksi_batch).
+    tanggal_mulai/tanggal_selesai (format 'YYYY-MM-DD', inklusif di kedua
+    ujung) dipakai Laporan PDF untuk rentang tanggal bebas -- BEDA dari
+    tahun/bulan (satu bulan/tahun penuh) yang dipakai Rekap."""
     q = "SELECT t.*, b.nama AS nama_barber FROM transaksi t JOIN barbers b ON b.id = t.barber_id WHERE 1=1"
     params = []
     if tahun is not None:
@@ -607,6 +611,10 @@ def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = No
         q += " AND t.barber_id = ?"; params.append(barber_id)
     if tanggal is not None:
         q += " AND t.tanggal = ?"; params.append(tanggal)
+    if tanggal_mulai is not None:
+        q += " AND t.tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND t.tanggal <= ?"; params.append(tanggal_selesai)
     q += " ORDER BY t.tanggal DESC, t.id DESC"
     if limit is not None:
         q += " LIMIT ?"; params.append(limit)
