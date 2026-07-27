@@ -110,7 +110,36 @@
 // ini kini dihitung memakai zona waktu Asia/Jakarta (WIB) di backend
 // (booking_db.py, requirements.txt: tzdata) supaya konsisten dengan jam
 // WIB customer, bukan jam server (Render defaultnya UTC).
-const CACHE_NAME = "mugen-hair-shell-v23";
+// v23 -> v24: PR 1 "Revisi Konsep Website Booking" -- tab baru "Website
+// Content" di Booking Panel (booking.js, KHUSUS Owner/'admin', TIDAK
+// pernah untuk staff) untuk mengelola konten CMS halaman publik /book yang
+// akan dibangun ulang jadi landing page penuh di PR 2 (Hero/About/Gallery/
+// Visit Us/Social/Footer/Booking CTA/Contact) -- backend baru
+// website_content.py + routers/website.py (/api/website/*), tabel baru
+// website_gallery (postgres_schema.py sekaligus). style.css: grid
+// thumbnail Gallery drag & drop.
+// v24 -> v25: PR 2 "Revisi Konsep Website Booking" -- book_public.js
+// dibangun ulang total: halaman awal "BOOKING" terbang diganti landing
+// page penuh (Hero/About/Gallery/Visit Us/Connect With Us/Closing,
+// konsumsi /api/website/* dari PR 1), wizard booking hanya muncul setelah
+// tombol "Book Appointment" ditekan, urutan step diubah (Choose Barber ->
+// Choose Service -> Select Date -> Select Time -> Your Details -> Payment
+// -- Service sekarang SEBELUM Date/Time supaya slot langsung
+// duration-aware sejak awal), SELURUH teks UI diterjemahkan ke Bahasa
+// Inggris, indikator "Langkah X dari Y" diganti pagination dots di bawah
+// konten. style.css: CSS landing page baru, CSS "BOOKING" terbang lama
+// dihapus (sudah tidak dipakai), durasi animasi step disamakan ke 300ms.
+// v25 -> v26: PR 3 "Revisi Konsep Website Booking" (terakhir dari 3 PR) --
+// SEO (title/meta description/keywords/OG Image, di-inject ke <head> saat
+// landing page dibuka), Branding (Primary/Secondary Color HANYA berlaku
+// di halaman publik /book lewat CSS custom property scoped, Favicon &
+// Splash Screen upload dengan catatan jujur soal PWA yang sudah
+// ter-install), Footer legal (Privacy Policy & Terms and Conditions,
+// tampil lewat overlay tanpa route baru). Backend: website_content.py +
+// routers/website.py bertambah field/endpoint baru (reuse tabel settings
+// yang sudah ada, tidak ada skema baru), booking.js (tab Website Content)
+// dapat card SEO & Branding baru.
+const CACHE_NAME = "mugen-hair-shell-v26";
 const APP_SHELL = [
   "/",
   "/index.html",

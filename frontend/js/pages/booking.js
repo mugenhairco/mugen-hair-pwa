@@ -52,7 +52,15 @@ const PageBooking = (() => {
       return;
     }
 
-    const tabs = ["Booking List", "Calendar", "Operating Hours", "Barber Holiday", "Closed Slot", "Payment Settings", "Booking Settings"];
+    // REVISI Website Content (PR 1): tab "Website Content" HANYA untuk Owner
+    // ('admin'), TIDAK PERNAH untuk staff ('Admin') -- sama seperti pola tab
+    // Owner-murni di pengaturan.js (Komisi/Bonus Service/Hak Akses Admin),
+    // BUKAN lewat sistem izin permissions.py.
+    const isOwner = user.role === "admin";
+    const tabs = [
+      "Booking List", "Calendar", "Operating Hours", "Barber Holiday", "Closed Slot", "Payment Settings", "Booking Settings",
+      ...(isOwner ? ["Website Content"] : []),
+    ];
     let activeTab = tabs[0];
     const tabBar = MugenUI.el("div", { class: "tabs" });
     const body = MugenUI.el("div");
@@ -80,6 +88,7 @@ const PageBooking = (() => {
       else if (activeTab === "Closed Slot") await renderClosedSlot(body, barbers);
       else if (activeTab === "Payment Settings") await renderPaymentSettings(body);
       else if (activeTab === "Booking Settings") await renderBookingSettings(body);
+      else if (activeTab === "Website Content") await renderWebsiteContent(body);
     }
 
     renderTabs();
@@ -850,6 +859,529 @@ const PageBooking = (() => {
         MugenUI.toast("Header, footer & pesan booking disimpan.", "success");
       } catch (e) { errorBoxHeader.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
+  }
+
+  // ================= TAB: WEBSITE CONTENT (PR 1, Owner-only) =================
+  // Semua field yang SUDAH punya rumah di tab lain (Identitas Barbershop:
+  // logo/hero image/nama/tagline/alamat/instagram/whatsapp/email; Operating
+  // Hours: jam & hari libur) SENGAJA ditampilkan sebagai ringkasan
+  // read-only + arahan ke tab aslinya -- BUKAN diduplikasi jadi form kedua,
+  // supaya tidak ada dua tempat berbeda untuk data yang sama yang bisa
+  // saling tidak sinkron. Field yang genuinely baru di PR ini (Hero Video,
+  // CTA, About, Visit Us maps, Social tambahan, Footer, Booking CTA,
+  // Contact tambahan, Gallery) dikelola penuh di sini.
+  async function renderWebsiteContent(body) {
+    let content, gallery, identitas;
+    try {
+      [content, gallery, identitas] = await Promise.all([
+        MugenApi.get("/api/website/content"),
+        MugenApi.get("/api/website/gallery"),
+        MugenApi.get("/api/pengaturan/identitas"),
+      ]);
+    } catch (e) {
+      body.appendChild(MugenUI.el("div", {}, e.message));
+      return;
+    }
+
+    async function simpanContent(patch) {
+      Object.assign(content, patch);
+      await MugenApi.put("/api/website/content", {
+        hero_tipe: content.hero_tipe, hero_cta_teks: content.hero_cta_teks, hero_cta_link: content.hero_cta_link,
+        about_judul: content.about_judul, about_deskripsi: content.about_deskripsi,
+        visit_maps_embed_url: content.visit_maps_embed_url, visit_maps_link: content.visit_maps_link,
+        tiktok: content.tiktok, facebook: content.facebook, youtube: content.youtube,
+        footer_copyright: content.footer_copyright, footer_pesan: content.footer_pesan,
+        booking_cta_judul: content.booking_cta_judul, booking_cta_subjudul: content.booking_cta_subjudul,
+        booking_cta_tombol_teks: content.booking_cta_tombol_teks, booking_cta_tombol_link: content.booking_cta_tombol_link,
+        telepon: content.telepon,
+        footer_privacy_policy: content.footer_privacy_policy, footer_terms: content.footer_terms,
+        seo_title: content.seo_title, seo_deskripsi: content.seo_deskripsi, seo_keywords: content.seo_keywords,
+        branding_warna_primer: content.branding_warna_primer, branding_warna_sekunder: content.branding_warna_sekunder,
+      });
+    }
+
+    body.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Seluruh konten di sini tampil di halaman Website publik (/book). Field yang bertanda \"dikelola di ...\" diedit dari tab/menu lain supaya tidak ada dua tempat berbeda untuk data yang sama."));
+
+    // --- Hero ---
+    const heroCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(heroCard);
+    heroCard.appendChild(MugenUI.el("h2", {}, "Hero"));
+    heroCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `Logo, Hero Image & Nama Brand dikelola di Setting → Identitas Barbershop. Tagline saat ini: "${identitas.tagline || "(kosong)"}"`));
+
+    const selHeroTipe = MugenUI.el("select");
+    selHeroTipe.appendChild(MugenUI.el("option", { value: "image" }, "Gambar (Hero Image dari Identitas)"));
+    selHeroTipe.appendChild(MugenUI.el("option", { value: "video" }, "Video (Hero Video di bawah)"));
+    selHeroTipe.value = content.hero_tipe || "image";
+    heroCard.appendChild(MugenUI.el("label", {}, "Yang Ditampilkan di Hero"));
+    heroCard.appendChild(selHeroTipe);
+
+    const heroVideoPreview = MugenUI.el("video", {
+      controls: "controls",
+      style: content.hero_video_url ? "max-width:320px;display:block;margin:8px 0;border-radius:10px;" : "display:none;",
+    });
+    if (content.hero_video_url) heroVideoPreview.src = MUGEN_API_BASE + content.hero_video_url;
+    const inHeroVideoFile = MugenUI.el("input", { type: "file", accept: "video/mp4,video/webm" });
+    const btnUploadHeroVideo = MugenUI.el("button", { type: "button" }, "Upload / Ganti Hero Video");
+    const btnHapusHeroVideo = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus Hero Video");
+    const errorHeroVideo = MugenUI.el("div", { class: "login-error" });
+    heroCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Hero Video (MP4/WEBM, maks 25MB)"));
+    heroCard.appendChild(heroVideoPreview);
+    heroCard.appendChild(inHeroVideoFile);
+    heroCard.appendChild(errorHeroVideo);
+    heroCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadHeroVideo, btnHapusHeroVideo]));
+
+    btnUploadHeroVideo.addEventListener("click", async () => {
+      errorHeroVideo.textContent = "";
+      if (!inHeroVideoFile.files || !inHeroVideoFile.files[0]) { errorHeroVideo.textContent = "Pilih file video dulu."; return; }
+      try {
+        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/hero-video", inHeroVideoFile.files[0]), { message: "Mengunggah…" });
+        content.hero_video_url = hasil.hero_video_url;
+        heroVideoPreview.src = MUGEN_API_BASE + hasil.hero_video_url + "&t=" + Date.now();
+        heroVideoPreview.style.display = "block";
+        MugenUI.toast("Hero Video disimpan.", "success");
+      } catch (e) { errorHeroVideo.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+    btnHapusHeroVideo.addEventListener("click", async () => {
+      if (!confirm("Hapus Hero Video yang sedang aktif?")) return;
+      try {
+        await MugenUI.withLoading(() => MugenApi.del("/api/website/hero-video"), { message: "Menghapus…" });
+        content.hero_video_url = null;
+        heroVideoPreview.style.display = "none";
+        MugenUI.toast("Hero Video dihapus.", "success");
+      } catch (e) { MugenUI.toast(e.message, "error"); }
+    });
+
+    const inHeroCtaTeks = MugenUI.el("input", { type: "text", value: content.hero_cta_teks || "" });
+    const inHeroCtaLink = MugenUI.el("input", { type: "text", value: content.hero_cta_link || "", placeholder: "Kosongkan untuk langsung buka form booking" });
+    heroCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tulisan Tombol CTA"));
+    heroCard.appendChild(inHeroCtaTeks);
+    heroCard.appendChild(MugenUI.el("label", {}, "Link Tombol CTA"));
+    heroCard.appendChild(inHeroCtaLink);
+
+    const errorHero = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanHero = MugenUI.el("button", { class: "btn-primary" }, "Simpan Hero");
+    heroCard.appendChild(errorHero);
+    heroCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanHero));
+    btnSimpanHero.addEventListener("click", async () => {
+      errorHero.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({
+          hero_tipe: selHeroTipe.value, hero_cta_teks: inHeroCtaTeks.value.trim(), hero_cta_link: inHeroCtaLink.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Hero disimpan.", "success");
+      } catch (e) { errorHero.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- About ---
+    const aboutCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(aboutCard);
+    aboutCard.appendChild(MugenUI.el("h2", {}, "About"));
+    const inAboutJudul = MugenUI.el("input", { type: "text", value: content.about_judul || "" });
+    const inAboutDeskripsi = MugenUI.el("textarea", {}, content.about_deskripsi || "");
+    aboutCard.appendChild(MugenUI.el("label", {}, "Judul"));
+    aboutCard.appendChild(inAboutJudul);
+    aboutCard.appendChild(MugenUI.el("label", {}, "Deskripsi"));
+    aboutCard.appendChild(inAboutDeskripsi);
+
+    const aboutFotoPreview = MugenUI.el("img", { class: "logo-preview", style: content.about_foto_url ? "" : "display:none;", alt: "Foto About" });
+    if (content.about_foto_url) aboutFotoPreview.src = MUGEN_API_BASE + content.about_foto_url;
+    const inAboutFotoFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
+    const btnUploadAboutFoto = MugenUI.el("button", { type: "button" }, "Upload / Ganti Foto");
+    const btnHapusAboutFoto = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus Foto");
+    const errorAboutFoto = MugenUI.el("div", { class: "login-error" });
+    aboutCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Foto About"));
+    aboutCard.appendChild(aboutFotoPreview);
+    aboutCard.appendChild(inAboutFotoFile);
+    aboutCard.appendChild(errorAboutFoto);
+    aboutCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadAboutFoto, btnHapusAboutFoto]));
+
+    btnUploadAboutFoto.addEventListener("click", async () => {
+      errorAboutFoto.textContent = "";
+      if (!inAboutFotoFile.files || !inAboutFotoFile.files[0]) { errorAboutFoto.textContent = "Pilih file foto dulu."; return; }
+      try {
+        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/about-foto", inAboutFotoFile.files[0]), { message: "Mengunggah…" });
+        aboutFotoPreview.src = MUGEN_API_BASE + hasil.about_foto_url + "&t=" + Date.now();
+        aboutFotoPreview.style.display = "";
+        MugenUI.toast("Foto About disimpan.", "success");
+      } catch (e) { errorAboutFoto.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+    btnHapusAboutFoto.addEventListener("click", async () => {
+      if (!confirm("Hapus Foto About yang sedang aktif?")) return;
+      try {
+        await MugenUI.withLoading(() => MugenApi.del("/api/website/about-foto"), { message: "Menghapus…" });
+        aboutFotoPreview.style.display = "none";
+        MugenUI.toast("Foto About dihapus.", "success");
+      } catch (e) { MugenUI.toast(e.message, "error"); }
+    });
+
+    const errorAbout = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanAbout = MugenUI.el("button", { class: "btn-primary" }, "Simpan About");
+    aboutCard.appendChild(errorAbout);
+    aboutCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanAbout));
+    btnSimpanAbout.addEventListener("click", async () => {
+      errorAbout.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({ about_judul: inAboutJudul.value.trim(), about_deskripsi: inAboutDeskripsi.value.trim() }), { message: "Menyimpan…" });
+        MugenUI.toast("About disimpan.", "success");
+      } catch (e) { errorAbout.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Gallery ---
+    const galleryCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(galleryCard);
+    galleryCard.appendChild(MugenUI.el("h2", {}, "Gallery"));
+    galleryCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Seret (drag) foto untuk mengubah urutan, atau pakai tombol ↑/↓ (lebih andal di layar sentuh)."));
+    const galleryGrid = MugenUI.el("div", { class: "website-gallery-grid" });
+    galleryCard.appendChild(galleryGrid);
+
+    async function simpanUrutanGallery(disusun) {
+      try {
+        gallery = await MugenUI.withLoading(
+          () => MugenApi.put("/api/website/gallery/reorder", { ordered_ids: disusun.map((f) => f.id) }),
+          { message: "Menyimpan urutan…" },
+        );
+        renderGalleryGrid();
+      } catch (e) { MugenUI.toast(e.message, "error"); }
+    }
+
+    function renderGalleryGrid() {
+      galleryGrid.innerHTML = "";
+      gallery.forEach((foto, idx) => {
+        const item = MugenUI.el("div", { class: "website-gallery-item", draggable: "true" });
+        item.appendChild(MugenUI.el("img", { src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery" }));
+        const btnNaik = MugenUI.el("button", { type: "button", title: "Naikkan urutan" }, "↑");
+        if (idx === 0) btnNaik.disabled = true;
+        btnNaik.addEventListener("click", () => {
+          const disusun = gallery.slice();
+          [disusun[idx - 1], disusun[idx]] = [disusun[idx], disusun[idx - 1]];
+          simpanUrutanGallery(disusun);
+        });
+        const btnTurun = MugenUI.el("button", { type: "button", title: "Turunkan urutan" }, "↓");
+        if (idx === gallery.length - 1) btnTurun.disabled = true;
+        btnTurun.addEventListener("click", () => {
+          const disusun = gallery.slice();
+          [disusun[idx], disusun[idx + 1]] = [disusun[idx + 1], disusun[idx]];
+          simpanUrutanGallery(disusun);
+        });
+        const btnHapus = MugenUI.el("button", { type: "button", class: "btn-danger", title: "Hapus foto" }, "✕");
+        btnHapus.addEventListener("click", async () => {
+          if (!confirm("Hapus foto ini dari Gallery?")) return;
+          try {
+            gallery = await MugenUI.withLoading(() => MugenApi.del(`/api/website/gallery/${foto.id}`), { message: "Menghapus…" });
+            renderGalleryGrid();
+            MugenUI.toast("Foto dihapus.", "success");
+          } catch (e) { MugenUI.toast(e.message, "error"); }
+        });
+        item.appendChild(MugenUI.el("div", { class: "website-gallery-item-aksi" }, [btnNaik, btnTurun, btnHapus]));
+
+        item.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", String(idx));
+          e.dataTransfer.effectAllowed = "move";
+        });
+        item.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+        item.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const dariIdx = Number(e.dataTransfer.getData("text/plain"));
+          if (Number.isNaN(dariIdx) || dariIdx === idx) return;
+          const disusun = gallery.slice();
+          const [dipindah] = disusun.splice(dariIdx, 1);
+          disusun.splice(idx, 0, dipindah);
+          simpanUrutanGallery(disusun);
+        });
+
+        galleryGrid.appendChild(item);
+      });
+    }
+    renderGalleryGrid();
+
+    const inGalleryFiles = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", multiple: "multiple" });
+    const btnUploadGallery = MugenUI.el("button", { class: "btn-primary" }, "Upload Foto");
+    const errorGallery = MugenUI.el("div", { class: "login-error" });
+    galleryCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tambah Foto (bisa pilih banyak sekaligus)"));
+    galleryCard.appendChild(inGalleryFiles);
+    galleryCard.appendChild(errorGallery);
+    galleryCard.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, btnUploadGallery));
+    btnUploadGallery.addEventListener("click", async () => {
+      errorGallery.textContent = "";
+      if (!inGalleryFiles.files || !inGalleryFiles.files.length) { errorGallery.textContent = "Pilih minimal satu foto dulu."; return; }
+      try {
+        await MugenUI.withLoading(async () => {
+          for (const file of inGalleryFiles.files) {
+            gallery = await MugenApi.uploadFile("/api/website/gallery", file);
+          }
+        }, { message: "Mengunggah…" });
+        inGalleryFiles.value = "";
+        renderGalleryGrid();
+        MugenUI.toast("Foto Gallery ditambahkan.", "success");
+      } catch (e) { errorGallery.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Visit Us ---
+    const visitCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(visitCard);
+    visitCard.appendChild(MugenUI.el("h2", {}, "Visit Us"));
+    visitCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `Alamat dikelola di Setting → Identitas Barbershop (saat ini: "${identitas.alamat || "(kosong)"}"). Jam operasional & hari libur dikelola di tab Operating Hours di atas.`));
+    const inMapsEmbed = MugenUI.el("input", { type: "text", value: content.visit_maps_embed_url || "", placeholder: "URL src iframe Google Maps Embed" });
+    const inMapsLink = MugenUI.el("input", { type: "text", value: content.visit_maps_link || "", placeholder: "Link “Buka di Google Maps”" });
+    visitCard.appendChild(MugenUI.el("label", {}, "Google Maps Embed URL"));
+    visitCard.appendChild(inMapsEmbed);
+    visitCard.appendChild(MugenUI.el("label", {}, "Link Google Maps"));
+    visitCard.appendChild(inMapsLink);
+    const errorVisit = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanVisit = MugenUI.el("button", { class: "btn-primary" }, "Simpan Visit Us");
+    visitCard.appendChild(errorVisit);
+    visitCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanVisit));
+    btnSimpanVisit.addEventListener("click", async () => {
+      errorVisit.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({ visit_maps_embed_url: inMapsEmbed.value.trim(), visit_maps_link: inMapsLink.value.trim() }), { message: "Menyimpan…" });
+        MugenUI.toast("Visit Us disimpan.", "success");
+      } catch (e) { errorVisit.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Social Media ---
+    const socialCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(socialCard);
+    socialCard.appendChild(MugenUI.el("h2", {}, "Social Media"));
+    socialCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `Instagram & WhatsApp dikelola di Setting → Identitas Barbershop (saat ini Instagram: "${identitas.instagram || "(kosong)"}", WhatsApp: "${identitas.whatsapp || "(kosong)"}").`));
+    const inTiktok = MugenUI.el("input", { type: "text", value: content.tiktok || "" });
+    const inFacebook = MugenUI.el("input", { type: "text", value: content.facebook || "" });
+    const inYoutube = MugenUI.el("input", { type: "text", value: content.youtube || "" });
+    socialCard.appendChild(MugenUI.el("label", {}, "TikTok"));
+    socialCard.appendChild(inTiktok);
+    socialCard.appendChild(MugenUI.el("label", {}, "Facebook (opsional)"));
+    socialCard.appendChild(inFacebook);
+    socialCard.appendChild(MugenUI.el("label", {}, "YouTube (opsional)"));
+    socialCard.appendChild(inYoutube);
+    const errorSocial = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanSocial = MugenUI.el("button", { class: "btn-primary" }, "Simpan Social Media");
+    socialCard.appendChild(errorSocial);
+    socialCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSocial));
+    btnSimpanSocial.addEventListener("click", async () => {
+      errorSocial.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({ tiktok: inTiktok.value.trim(), facebook: inFacebook.value.trim(), youtube: inYoutube.value.trim() }), { message: "Menyimpan…" });
+        MugenUI.toast("Social Media disimpan.", "success");
+      } catch (e) { errorSocial.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Footer ---
+    const footerCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(footerCard);
+    footerCard.appendChild(MugenUI.el("h2", {}, "Footer"));
+    const inFooterCopyright = MugenUI.el("input", { type: "text", value: content.footer_copyright || "" });
+    const inFooterPesan = MugenUI.el("textarea", {}, content.footer_pesan || "");
+    footerCard.appendChild(MugenUI.el("label", {}, "Copyright"));
+    footerCard.appendChild(inFooterCopyright);
+    footerCard.appendChild(MugenUI.el("label", {}, "Pesan Penutup Footer"));
+    footerCard.appendChild(inFooterPesan);
+    // REVISI PR 3: Privacy Policy & Terms and Conditions -- teks panjang
+    // sederhana, Bahasa Indonesia diperbolehkan di sini (BEDA dari aturan
+    // "seluruh tampilan Bahasa Inggris" yang khusus untuk UI wizard).
+    const inFooterPrivacy = MugenUI.el("textarea", { rows: "6" }, content.footer_privacy_policy || "");
+    const inFooterTerms = MugenUI.el("textarea", { rows: "6" }, content.footer_terms || "");
+    footerCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Privacy Policy"));
+    footerCard.appendChild(inFooterPrivacy);
+    footerCard.appendChild(MugenUI.el("label", {}, "Terms and Conditions"));
+    footerCard.appendChild(inFooterTerms);
+    const errorFooter = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanFooter = MugenUI.el("button", { class: "btn-primary" }, "Simpan Footer");
+    footerCard.appendChild(errorFooter);
+    footerCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanFooter));
+    btnSimpanFooter.addEventListener("click", async () => {
+      errorFooter.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({
+          footer_copyright: inFooterCopyright.value.trim(), footer_pesan: inFooterPesan.value.trim(),
+          footer_privacy_policy: inFooterPrivacy.value.trim(), footer_terms: inFooterTerms.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Footer disimpan.", "success");
+      } catch (e) { errorFooter.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Booking CTA (Closing Section) ---
+    const ctaCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(ctaCard);
+    ctaCard.appendChild(MugenUI.el("h2", {}, "Booking CTA (Closing Section)"));
+    const inCtaJudul = MugenUI.el("input", { type: "text", value: content.booking_cta_judul || "" });
+    const inCtaSubjudul = MugenUI.el("input", { type: "text", value: content.booking_cta_subjudul || "" });
+    const inCtaTombolTeks = MugenUI.el("input", { type: "text", value: content.booking_cta_tombol_teks || "" });
+    const inCtaTombolLink = MugenUI.el("input", { type: "text", value: content.booking_cta_tombol_link || "", placeholder: "Kosongkan untuk langsung buka form booking" });
+    ctaCard.appendChild(MugenUI.el("label", {}, "Judul"));
+    ctaCard.appendChild(inCtaJudul);
+    ctaCard.appendChild(MugenUI.el("label", {}, "Subjudul"));
+    ctaCard.appendChild(inCtaSubjudul);
+    ctaCard.appendChild(MugenUI.el("label", {}, "Tulisan Tombol"));
+    ctaCard.appendChild(inCtaTombolTeks);
+    ctaCard.appendChild(MugenUI.el("label", {}, "Link Tombol"));
+    ctaCard.appendChild(inCtaTombolLink);
+    const errorCta = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanCta = MugenUI.el("button", { class: "btn-primary" }, "Simpan Booking CTA");
+    ctaCard.appendChild(errorCta);
+    ctaCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanCta));
+    btnSimpanCta.addEventListener("click", async () => {
+      errorCta.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({
+          booking_cta_judul: inCtaJudul.value.trim(), booking_cta_subjudul: inCtaSubjudul.value.trim(),
+          booking_cta_tombol_teks: inCtaTombolTeks.value.trim(), booking_cta_tombol_link: inCtaTombolLink.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Booking CTA disimpan.", "success");
+      } catch (e) { errorCta.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Contact ---
+    const contactCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(contactCard);
+    contactCard.appendChild(MugenUI.el("h2", {}, "Contact"));
+    contactCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `WhatsApp, Email & Alamat dikelola di Setting → Identitas Barbershop (saat ini Email: "${identitas.email || "(kosong)"}").`));
+    const inTelepon = MugenUI.el("input", { type: "text", value: content.telepon || "" });
+    contactCard.appendChild(MugenUI.el("label", {}, "Nomor Telepon"));
+    contactCard.appendChild(inTelepon);
+    const errorContact = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanContact = MugenUI.el("button", { class: "btn-primary" }, "Simpan Contact");
+    contactCard.appendChild(errorContact);
+    contactCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanContact));
+    btnSimpanContact.addEventListener("click", async () => {
+      errorContact.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({ telepon: inTelepon.value.trim() }), { message: "Menyimpan…" });
+        MugenUI.toast("Contact disimpan.", "success");
+      } catch (e) { errorContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- SEO ---
+    const seoCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(seoCard);
+    seoCard.appendChild(MugenUI.el("h2", {}, "SEO"));
+    seoCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Karena halaman ini dibuat dengan JavaScript (SPA), mesin pencari yang tidak menjalankan JavaScript tidak akan membaca info ini -- tetap membantu untuk preview link di WhatsApp/Facebook/dst yang mendukung Open Graph."));
+    const inSeoTitle = MugenUI.el("input", { type: "text", value: content.seo_title || "" });
+    const inSeoDeskripsi = MugenUI.el("textarea", {}, content.seo_deskripsi || "");
+    const inSeoKeywords = MugenUI.el("input", { type: "text", value: content.seo_keywords || "", placeholder: "pisahkan dengan koma" });
+    seoCard.appendChild(MugenUI.el("label", {}, "Website Title"));
+    seoCard.appendChild(inSeoTitle);
+    seoCard.appendChild(MugenUI.el("label", {}, "Meta Description"));
+    seoCard.appendChild(inSeoDeskripsi);
+    seoCard.appendChild(MugenUI.el("label", {}, "Meta Keywords"));
+    seoCard.appendChild(inSeoKeywords);
+
+    const ogPreview = MugenUI.el("img", { class: "logo-preview", style: content.seo_og_image_url ? "" : "display:none;", alt: "Open Graph Image" });
+    if (content.seo_og_image_url) ogPreview.src = MUGEN_API_BASE + content.seo_og_image_url;
+    const inOgFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
+    const btnUploadOg = MugenUI.el("button", { type: "button" }, "Upload / Ganti");
+    const btnHapusOg = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus");
+    const errorOg = MugenUI.el("div", { class: "login-error" });
+    seoCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Open Graph Image"));
+    seoCard.appendChild(ogPreview);
+    seoCard.appendChild(inOgFile);
+    seoCard.appendChild(errorOg);
+    seoCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadOg, btnHapusOg]));
+    btnUploadOg.addEventListener("click", async () => {
+      errorOg.textContent = "";
+      if (!inOgFile.files || !inOgFile.files[0]) { errorOg.textContent = "Pilih file gambar dulu."; return; }
+      try {
+        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/og-image", inOgFile.files[0]), { message: "Mengunggah…" });
+        ogPreview.src = MUGEN_API_BASE + hasil.seo_og_image_url + "&t=" + Date.now();
+        ogPreview.style.display = "";
+        MugenUI.toast("Open Graph Image disimpan.", "success");
+      } catch (e) { errorOg.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+    btnHapusOg.addEventListener("click", async () => {
+      if (!confirm("Hapus Open Graph Image yang sedang aktif?")) return;
+      try {
+        await MugenUI.withLoading(() => MugenApi.del("/api/website/og-image"), { message: "Menghapus…" });
+        ogPreview.style.display = "none";
+        MugenUI.toast("Open Graph Image dihapus.", "success");
+      } catch (e) { MugenUI.toast(e.message, "error"); }
+    });
+
+    const errorSeo = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanSeo = MugenUI.el("button", { class: "btn-primary" }, "Simpan SEO");
+    seoCard.appendChild(errorSeo);
+    seoCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSeo));
+    btnSimpanSeo.addEventListener("click", async () => {
+      errorSeo.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({
+          seo_title: inSeoTitle.value.trim(), seo_deskripsi: inSeoDeskripsi.value.trim(), seo_keywords: inSeoKeywords.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("SEO disimpan.", "success");
+      } catch (e) { errorSeo.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // --- Branding ---
+    const brandingCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(brandingCard);
+    brandingCard.appendChild(MugenUI.el("h2", {}, "Branding"));
+    brandingCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Logo Header dikelola di Setting → Identitas Barbershop. Warna Primer/Sekunder di bawah ini HANYA berlaku di halaman Website publik (/book), tidak mengubah tampilan aplikasi admin ini."));
+
+    const inWarnaPrimer = MugenUI.el("input", { type: "color", value: content.branding_warna_primer || "#334155" });
+    const inWarnaSekunder = MugenUI.el("input", { type: "color", value: content.branding_warna_sekunder || "#1e293b" });
+    brandingCard.appendChild(MugenUI.el("label", {}, "Primary Color"));
+    brandingCard.appendChild(inWarnaPrimer);
+    brandingCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Secondary Color"));
+    brandingCard.appendChild(inWarnaSekunder);
+
+    const errorWarna = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanWarna = MugenUI.el("button", { class: "btn-primary", style: "margin-top:12px;" }, "Simpan Warna");
+    brandingCard.appendChild(errorWarna);
+    brandingCard.appendChild(btnSimpanWarna);
+    btnSimpanWarna.addEventListener("click", async () => {
+      errorWarna.textContent = "";
+      try {
+        await MugenUI.withLoading(() => simpanContent({
+          branding_warna_primer: inWarnaPrimer.value, branding_warna_sekunder: inWarnaSekunder.value,
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Warna Branding disimpan.", "success");
+      } catch (e) { errorWarna.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
+
+    // Favicon & Splash Screen: catatan jujur soal keterbatasan PWA yang
+    // sudah ter-install, lihat komentar di routers/website.py.
+    function bagianAsetPwa(judul, endpointDasar, urlSekarang, fieldContent) {
+      const wrap = MugenUI.el("div", { style: "margin-top:20px;padding-top:16px;border-top:1px solid var(--border);" });
+      wrap.appendChild(MugenUI.el("label", {}, judul));
+      wrap.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Berlaku untuk kunjungan/instalasi BARU. Perangkat yang sudah meng-install PWA ini sebelumnya tidak akan otomatis memperbarui ikon di layar utama mereka (keterbatasan browser/OS, bukan bug)."));
+      const preview = MugenUI.el("img", { class: "logo-preview", style: urlSekarang ? "" : "display:none;", alt: judul });
+      if (urlSekarang) preview.src = MUGEN_API_BASE + urlSekarang;
+      const inFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
+      const btnUpload = MugenUI.el("button", { type: "button" }, "Upload / Ganti");
+      const btnHapus = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus");
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      wrap.appendChild(preview);
+      wrap.appendChild(inFile);
+      wrap.appendChild(errorBox);
+      wrap.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUpload, btnHapus]));
+      btnUpload.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        if (!inFile.files || !inFile.files[0]) { errorBox.textContent = "Pilih file gambar dulu."; return; }
+        try {
+          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile(`/api/website/${endpointDasar}`, inFile.files[0]), { message: "Mengunggah…" });
+          preview.src = MUGEN_API_BASE + hasil[fieldContent] + "&t=" + Date.now();
+          preview.style.display = "";
+          MugenUI.toast(`${judul} disimpan.`, "success");
+        } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+      btnHapus.addEventListener("click", async () => {
+        if (!confirm(`Hapus ${judul} yang sedang aktif?`)) return;
+        try {
+          await MugenUI.withLoading(() => MugenApi.del(`/api/website/${endpointDasar}`), { message: "Menghapus…" });
+          preview.style.display = "none";
+          MugenUI.toast(`${judul} dihapus.`, "success");
+        } catch (e) { MugenUI.toast(e.message, "error"); }
+      });
+      return wrap;
+    }
+    brandingCard.appendChild(bagianAsetPwa("Favicon", "favicon", content.branding_favicon_url, "branding_favicon_url"));
+    brandingCard.appendChild(bagianAsetPwa("Splash Screen", "splash", content.branding_splash_url, "branding_splash_url"));
   }
 
   return { render };
