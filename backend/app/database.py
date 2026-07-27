@@ -1214,7 +1214,8 @@ def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber
     transaksi yang diisi Owner/Admin lewat Input Data (kolom 'catatan' yang
     sudah ada di tabel transaksi, lihat tambah_transaksi()/update_transaksi())
     -- format tampilannya (gabung jadi satu teks kolom Ket) diserahkan ke
-    laporan_pdf.py, di sini murni data mentah apa adanya."""
+    laporan_pdf.py, di sini murni data mentah apa adanya. 'total' = Komisi +
+    Tips + Uang Harian."""
     barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers()
     hasil = []
     for barber in barbers:
@@ -1224,6 +1225,7 @@ def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber
             tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, barber_id=barber["id"],
         )
         komisi = sum(t["total_komisi"] for t in transaksi_list)
+        tips = sum(t["tips"] for t in transaksi_list)
         uang_harian = hitung_uang_harian_rentang(barber, tanggal_mulai, tanggal_selesai)
         hari_libur = get_hari_libur_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
         # get_transaksi_list() urutannya tanggal TERBARU dulu (lihat docstring-nya) --
@@ -1240,9 +1242,10 @@ def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber
             "barber_id": barber["id"],
             "nama_barber": barber["nama"],
             "komisi": komisi,
+            "tips": tips,
             "uang_harian": uang_harian,
             "hari_libur": hari_libur,
-            "total": komisi + uang_harian,
+            "total": komisi + tips + uang_harian,
             "catatan_list": catatan_list,
         })
     return hasil
