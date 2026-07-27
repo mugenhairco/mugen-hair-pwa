@@ -901,6 +901,26 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
+def get_rincian_service_rentang(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
+    """Versi rentang tanggal bebas dari get_rincian_service_bulan() di atas --
+    BEDA juga karena bisa LINTAS BARBER (barber_id=None = seluruh barber
+    digabung), dipakai Laporan PDF > Laporan Transaksi untuk baris ringkasan
+    'Total Jumlah per Service' di bawah tabel rekap. Sama seperti fungsi di
+    atas: hanya service yang jumlahnya > 0 yang dikembalikan, terurut dari
+    yang jumlahnya paling banyak."""
+    q = """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
+           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+           WHERE t.tanggal >= ? AND t.tanggal <= ?"""
+    params = [tanggal_mulai, tanggal_selesai]
+    if barber_id is not None:
+        q += " AND t.barber_id = ?"
+        params.append(barber_id)
+    q += " GROUP BY td.nama_service ORDER BY jumlah DESC, td.nama_service ASC"
+    with get_conn() as conn:
+        rows = conn.execute(q, params).fetchall()
+    return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
+
+
 def get_bonus_customer_tiers() -> list:
     """Daftar tier {target, bonus} untuk Bonus Customer/Target Bonus Service,
     terurut naik berdasarkan target. Disimpan sebagai JSON di tabel
