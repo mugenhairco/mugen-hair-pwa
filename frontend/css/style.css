@@ -670,6 +670,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 }
 .book-barber-card:hover:not(.disabled) { border-color: var(--accent); }
 .book-barber-card.disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* PR 1 Website Content: grid thumbnail Gallery (Booking > Website Content,
+   Owner-only) -- drag & drop antar item + tombol ↑/↓/✕ sebagai fallback. */
+.website-gallery-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin: 10px 0;
+}
+.website-gallery-item {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card); padding: 8px; cursor: grab;
+}
+.website-gallery-item img { width: 100%; height: 100px; object-fit: cover; border-radius: 10px; display: block; }
+.website-gallery-item-aksi { display: flex; gap: 4px; margin-top: 6px; }
+.website-gallery-item-aksi button { min-height: 32px; padding: 4px 8px; font-size: 12px; flex: 1; }
 .book-barber-foto {
   width: 64px; height: 64px; border-radius: 50%; object-fit: cover; margin: 0 auto 8px; display: block;
 }

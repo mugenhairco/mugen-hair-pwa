@@ -110,7 +110,15 @@
 // ini kini dihitung memakai zona waktu Asia/Jakarta (WIB) di backend
 // (booking_db.py, requirements.txt: tzdata) supaya konsisten dengan jam
 // WIB customer, bukan jam server (Render defaultnya UTC).
-const CACHE_NAME = "mugen-hair-shell-v23";
+// v23 -> v24: PR 1 "Revisi Konsep Website Booking" -- tab baru "Website
+// Content" di Booking Panel (booking.js, KHUSUS Owner/'admin', TIDAK
+// pernah untuk staff) untuk mengelola konten CMS halaman publik /book yang
+// akan dibangun ulang jadi landing page penuh di PR 2 (Hero/About/Gallery/
+// Visit Us/Social/Footer/Booking CTA/Contact) -- backend baru
+// website_content.py + routers/website.py (/api/website/*), tabel baru
+// website_gallery (postgres_schema.py sekaligus). style.css: grid
+// thumbnail Gallery drag & drop.
+const CACHE_NAME = "mugen-hair-shell-v24";
 const APP_SHELL = [
   "/",
   "/index.html",

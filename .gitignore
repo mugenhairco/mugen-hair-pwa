@@ -19,6 +19,13 @@ backend/app/static/banner/*
 !backend/app/static/banner/.gitkeep
 backend/app/static/barber_foto/*
 !backend/app/static/barber_foto/.gitkeep
+# PR 1 Website Content: Hero Video, Foto About, Gallery — sama seperti logo/QRIS/banner di atas
+backend/app/static/hero_video/*
+!backend/app/static/hero_video/.gitkeep
+backend/app/static/about/*
+!backend/app/static/about/.gitkeep
+backend/app/static/gallery/*
+!backend/app/static/gallery/.gitkeep
 backend/app/backups/
 
 # Python

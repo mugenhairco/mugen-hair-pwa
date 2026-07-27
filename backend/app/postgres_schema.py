@@ -219,6 +219,13 @@ CREATE TABLE IF NOT EXISTS toko_libur (
     keterangan  TEXT,
     created_at  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS website_gallery (
+    id          SERIAL PRIMARY KEY,
+    filename    TEXT NOT NULL,
+    urutan      INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
 """
 
 
