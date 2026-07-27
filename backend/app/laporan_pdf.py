@@ -19,7 +19,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import database as db
 import pengeluaran_db
@@ -29,6 +29,19 @@ _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
 JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan"}
+
+# Dipakai HANYA untuk kolom Laporan Transaksi yang bisa berisi teks panjang
+# (Ket, gabungan beberapa catatan) -- sel string biasa di reportlab Table
+# TIDAK auto-wrap (bisa meluber ke luar lebar kolom/halaman), jadi dibungkus
+# Paragraph supaya ikut membungkus baris. Header tabel TETAP string biasa
+# (judul kolom selalu pendek, dan supaya style bold+putih dari TableStyle di
+# _bangun_pdf() tetap berlaku apa adanya -- TableStyle tidak bisa menimpa
+# style internal sebuah Paragraph).
+_SEL_STYLE = ParagraphStyle("sel-laporan", fontName="Helvetica", fontSize=8, leading=10)
+
+
+def _sel(nilai) -> Paragraph:
+    return Paragraph(str(nilai), _SEL_STYLE)
 
 
 def _rupiah(v) -> str:
@@ -41,6 +54,14 @@ def _periode_text(tahun: int, bulan: int | None) -> str:
 
 def _tgl(iso: str) -> datetime:
     return datetime.strptime(iso, "%Y-%m-%d")
+
+
+def _tgl_pendek(iso: str) -> str:
+    """Format 'DD/MM' -- dipakai sebagai label tanggal di kolom Ket (Laporan
+    Transaksi), yang isinya sudah dirangkum per barber untuk SELURUH periode
+    (bukan per hari lagi), supaya setiap catatan tetap jelas tanggalnya."""
+    d = _tgl(iso)
+    return f"{d.day}/{d.month}"
 
 
 def _periode_text_rentang(tanggal_mulai: str, tanggal_selesai: str) -> str:
@@ -105,7 +126,8 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
     return _on_page
 
 
-def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list) -> bytes:
+def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list,
+                 col_widths: list | None = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -119,7 +141,7 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
         elemen.append(Paragraph("Tidak ada data pada periode ini.", styles["Normal"]))
     else:
         data_tabel = [header_kolom] + baris
-        tabel = Table(data_tabel, repeatRows=1)
+        tabel = Table(data_tabel, colWidths=col_widths, repeatRows=1)
         tabel.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#222222")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -136,11 +158,29 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
     return buf.getvalue()
 
 
-def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
-    data = db.get_transaksi_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, barber_id=barber_id)
-    header = ["Tanggal", "Barber", "Service", "Harga", "Komisi", "Tips"]
-    baris = [[t["tanggal"], t["nama_barber"], t["daftar_service"],
-              _rupiah(t["total_harga"]), _rupiah(t["total_komisi"]), _rupiah(t["tips"])] for t in data]
+# Lebar kolom Laporan Transaksi (mm), total 180mm = lebar A4 dikurangi
+# margin kiri+kanan 15mm masing-masing (lihat _bangun_pdf topMargin/dst).
+_LEBAR_KOLOM_TRANSAKSI = [26 * mm, 22 * mm, 24 * mm, 22 * mm, 13 * mm, 24 * mm, 49 * mm]
+
+
+def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None,
+                        dicetak_oleh: str, periode: str):
+    """Laporan Transaksi = REKAP per barber untuk seluruh rentang tanggal
+    (BUKAN daftar per kunjungan customer lagi) -- kolom Libur (hari) & Ket
+    (gabungan catatan manual dari Input Data, masing-masing berlabel
+    tanggal) ditambahkan supaya satu baris per barber tetap informatif walau
+    sudah dirangkum. Kolom Tanggal berisi teks periode yang SAMA di setiap
+    baris (rentang yang dipilih), bukan tanggal per baris seperti dulu."""
+    data = db.get_laporan_transaksi_rekap(tanggal_mulai, tanggal_selesai, barber_id=barber_id)
+    header = ["Tanggal", "Barber", "Uang Harian", "Komisi", "Libur", "Total", "Ket"]
+    baris = []
+    for r in data:
+        keterangan = "; ".join(f"{_tgl_pendek(c['tanggal'])}: {c['catatan']}" for c in r["catatan_list"])
+        baris.append([
+            _sel(periode), _sel(r["nama_barber"]), _sel(_rupiah(r["uang_harian"])),
+            _sel(_rupiah(r["komisi"])), _sel(str(r["hari_libur"])), _sel(_rupiah(r["total"])),
+            _sel(keterangan),
+        ])
     return header, baris
 
 
@@ -177,6 +217,7 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis laporan tidak dikenal: {jenis}")
 
+    col_widths = None
     if jenis == "rekap_bulanan":
         if not tahun or not bulan:
             raise ValueError("Tahun dan Bulan wajib diisi untuk Rekap Bulanan Barber.")
@@ -187,14 +228,15 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
             raise ValueError("Tanggal Dari dan Tanggal Sampai wajib diisi.")
         if tanggal_mulai > tanggal_selesai:
             raise ValueError("Tanggal Dari tidak boleh setelah Tanggal Sampai.")
+        periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
         if jenis == "transaksi":
-            header, baris = _laporan_transaksi(tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh)
+            header, baris = _laporan_transaksi(tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, periode)
+            col_widths = _LEBAR_KOLOM_TRANSAKSI
         else:
             header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh)
-        periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
 
     judul = _judul(jenis)
-    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris)
+    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"laporan_{jenis}_{stamp}.pdf"
     return konten, filename
