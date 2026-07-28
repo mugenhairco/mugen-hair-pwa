@@ -186,7 +186,11 @@
 // v30: Modul Karyawan Fase 2 (Kasbon Karyawan) -- halaman baru
 // pages/kasbon.js, grup sidebar "Karyawan" sekarang punya 2 child (Slip
 // Gaji + Kasbon) jadi benar-benar dirender sebagai dropdown (lihat nav.js).
-const CACHE_NAME = "mugen-hair-shell-v30";
+// v31: Modul Karyawan Fase 3 (Komisi -- Audit & Penyesuaian) -- halaman baru
+// pages/komisi.js (penyesuaian bonus/potongan komisi manual + audit trail,
+// terintegrasi ke Slip Gaji lewat kolom penyesuaian_komisi), grup sidebar
+// "Karyawan" sekarang punya 3 child (Slip Gaji/Kasbon/Komisi).
+const CACHE_NAME = "mugen-hair-shell-v31";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -210,6 +214,7 @@ const APP_SHELL = [
   "/js/pages/pengeluaran.js",
   "/js/pages/slip_gaji.js",
   "/js/pages/kasbon.js",
+  "/js/pages/komisi.js",
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/booking.js",

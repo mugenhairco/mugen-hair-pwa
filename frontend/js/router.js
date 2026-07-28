@@ -158,6 +158,14 @@ const MugenRouter = (() => {
       // slip_gaji.js. Perlindungan sebenarnya tetap di backend
       // (routers/kasbon.py).
       PageKasbon.render(content);
+    } else if (hash.startsWith("#/karyawan/komisi")) {
+      // Modul Karyawan (Fase 3): Owner/'staff' (kalau diberi izin
+      // izin_komisi) mengelola penyesuaian komisi SEMUA barber; Barber
+      // hanya lihat riwayat & penyesuaian miliknya sendiri, read-only --
+      // dibedakan DI DALAM komisi.js lewat user.role, sama seperti
+      // kasbon.js. Perlindungan sebenarnya tetap di backend
+      // (routers/komisi.py).
+      PageKomisi.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

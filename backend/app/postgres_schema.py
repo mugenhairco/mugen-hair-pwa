@@ -283,6 +283,25 @@ CREATE TABLE IF NOT EXISTS kasbon_pembayaran (
     dibuat_oleh   TEXT,
     created_at    TEXT NOT NULL
 );
+
+-- Modul Karyawan (Fase 3): Komisi (Audit & Penyesuaian). penyesuaian_komisi
+-- lewat ALTER TABLE terpisah (pola sama seperti barbers.gaji_pokok di atas)
+-- karena tabel slip_gaji sudah ada sejak Fase 1 -- CREATE TABLE IF NOT
+-- EXISTS jadi no-op untuk instalasi yang sudah berjalan.
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS penyesuaian_komisi INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS komisi_penyesuaian (
+    id           SERIAL PRIMARY KEY,
+    barber_id    INTEGER NOT NULL REFERENCES barbers(id),
+    tahun        INTEGER NOT NULL,
+    bulan        INTEGER NOT NULL,
+    jenis        TEXT NOT NULL,
+    jumlah       INTEGER NOT NULL,
+    keterangan   TEXT NOT NULL,
+    dibuat_oleh  TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
 """
 
 

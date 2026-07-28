@@ -48,6 +48,7 @@ PERMISSION_DEFS = [
     # ---- Karyawan (Modul Karyawan, Fase 1: Slip Gaji, Fase 2: Kasbon) ----
     ("izin_slip_gaji", "karyawan", "Kelola Slip Gaji", False),
     ("izin_kasbon", "karyawan", "Kelola Kasbon Karyawan", False),
+    ("izin_komisi", "karyawan", "Kelola Penyesuaian Komisi", False),
     # ---- Setting: akses ke tab-nya sendiri ----
     ("izin_setting_identitas", "setting", "Tab Identitas Barbershop", False),
     ("izin_setting_tampilan", "setting", "Tab Tampilan", False),
