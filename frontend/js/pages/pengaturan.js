@@ -1228,6 +1228,9 @@ const PagePengaturan = (() => {
         { judul: "Laporan", keys: [
           ["izin_laporan_pdf", "Download PDF"],
         ]},
+        { judul: "Karyawan", keys: [
+          ["izin_slip_gaji", "Kelola Slip Gaji"],
+        ]},
         { judul: "Setting (akses tab)", keys: [
           ["izin_setting_identitas", "Identitas Barbershop"],
           ["izin_setting_tampilan", "Tampilan"],

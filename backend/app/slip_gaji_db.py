@@ -1,0 +1,204 @@
+"""
+slip_gaji_db.py — Modul Karyawan: Slip Gaji Otomatis
+=============================================================================
+Fase 1 dari permintaan besar "Modul Karyawan/Keuangan/Pembayaran" (lihat
+riwayat komit terkait) -- HANYA Slip Gaji yang dibangun di fase ini. Kasbon,
+Reimburse, audit Komisi, Izin & Cuti, dsb SENGAJA belum ada.
+
+Slip Gaji = Gaji Pokok (field baru per-barber, opsional, default 0) + Komisi
++ Tips + Uang Harian + Bonus Customer (SEMUA diambil apa adanya lewat
+database.get_ringkasan_barber_bulan() yang SUDAH ADA -- file ini TIDAK
+menghitung ulang satu angka pun sendiri, sama seperti prinsip laporan_pdf.py)
+dikurangi Potongan Kasbon (SELALU 0/manual di fase ini -- modul Kasbon belum
+ada, field-nya sudah disiapkan supaya PR Kasbon nanti tinggal mengisi tanpa
+migrasi skema lagi) dan Potongan Lain (nominal + catatan, diisi manual saat
+generate) = Total Diterima.
+
+Satu slip per barber per bulan (UNIQUE(barber_id, tahun, bulan)). Slip yang
+sudah berstatus 'sudah_dibayar' TERKUNCI -- tidak bisa di-generate ulang
+(supaya angka slip yang sudah dibayar tidak diam-diam berubah kalau ada
+koreksi transaksi belakangan) -- harus dibatalkan statusnya dulu lewat
+tandai_status().
+
+Tabel baru murni milik modul ini (pola yang sama seperti booking_db.py
+punya init_booking_db() sendiri, TIDAK lewat database.py init_db()) --
+dipanggil dari main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel
+yang SAMA dibuat di postgres_schema.py (create_all() TIDAK memanggil fungsi
+ini sama sekali di jalur itu).
+"""
+
+from datetime import datetime
+
+from database import get_conn, get_barber, get_ringkasan_barber_bulan
+
+STATUS_VALID = {"belum_dibayar", "sudah_dibayar"}
+
+
+def init_slip_gaji_db():
+    """CREATE TABLE IF NOT EXISTS slip_gaji + ALTER TABLE barbers ADD COLUMN
+    gaji_pokok (idempotent, SQLite -- PRAGMA table_info dulu karena SQLite
+    tidak punya ADD COLUMN IF NOT EXISTS)."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(barbers)").fetchall()]
+        if "gaji_pokok" not in kolom:
+            conn.execute("ALTER TABLE barbers ADD COLUMN gaji_pokok INTEGER NOT NULL DEFAULT 0")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS slip_gaji (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                barber_id         INTEGER NOT NULL,
+                tahun             INTEGER NOT NULL,
+                bulan             INTEGER NOT NULL,
+                gaji_pokok        INTEGER NOT NULL DEFAULT 0,
+                komisi            INTEGER NOT NULL DEFAULT 0,
+                tips              INTEGER NOT NULL DEFAULT 0,
+                uang_harian       INTEGER NOT NULL DEFAULT 0,
+                bonus_customer    INTEGER NOT NULL DEFAULT 0,
+                potongan_kasbon   INTEGER NOT NULL DEFAULT 0,
+                potongan_lain     INTEGER NOT NULL DEFAULT 0,
+                catatan_potongan  TEXT,
+                total_diterima    INTEGER NOT NULL DEFAULT 0,
+                status            TEXT NOT NULL DEFAULT 'belum_dibayar',
+                tanggal_dibayar   TEXT,
+                dibuat_oleh       TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT,
+                UNIQUE(barber_id, tahun, bulan),
+                FOREIGN KEY (barber_id) REFERENCES barbers(id)
+            )
+        """)
+
+
+def _lengkapi(row: dict) -> dict:
+    barber = get_barber(row["barber_id"])
+    row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    return row
+
+
+def get_slip_gaji_by_periode(barber_id: int, tahun: int, bulan: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM slip_gaji WHERE barber_id = ? AND tahun = ? AND bulan = ?",
+            (barber_id, tahun, bulan),
+        ).fetchone()
+        return _lengkapi(dict(row)) if row else None
+
+
+def get_slip_gaji(slip_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM slip_gaji WHERE id = ?", (slip_id,)).fetchone()
+        return _lengkapi(dict(row)) if row else None
+
+
+def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = None) -> list:
+    q = "SELECT * FROM slip_gaji WHERE 1=1"
+    params = []
+    if tahun is not None:
+        q += " AND tahun = ?"; params.append(tahun)
+    if bulan is not None:
+        q += " AND bulan = ?"; params.append(bulan)
+    if barber_id is not None:
+        q += " AND barber_id = ?"; params.append(barber_id)
+    q += " ORDER BY tahun DESC, bulan DESC, id DESC"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    return [_lengkapi(r) for r in rows]
+
+
+def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = None, potongan_kasbon: int = 0,
+                    potongan_lain: int = 0, catatan_potongan: str = "", dibuat_oleh: str = "") -> dict:
+    """Generate (atau hitung ulang, kalau belum berstatus Sudah Dibayar) slip
+    gaji satu barber untuk satu bulan. Komponen income (komisi/tips/uang
+    harian/bonus) SELALU dihitung ULANG dari get_ringkasan_barber_bulan()
+    apa adanya -- hanya potongan yang manual/diisi Owner.
+
+    gaji_pokok: kalau diisi (bukan None), NILAI INI DISIMPAN PERMANEN ke
+    barbers.gaji_pokok (bukan cuma dipakai sekali untuk slip ini) -- belum
+    ada UI tersendiri untuk mengatur Gaji Pokok per-barber di fase ini
+    (lihat catatan revisi), jadi form Generate Slip Gaji SEKALIAN jadi
+    tempat mengatur/mengubahnya, otomatis "nempel" untuk bulan-bulan
+    berikutnya. Kalau None (tidak dikirim), pakai nilai yang sudah
+    tersimpan di barbers.gaji_pokok apa adanya."""
+    barber = get_barber(barber_id)
+    if barber is None:
+        raise ValueError("Barber tidak ditemukan.")
+    if not (1 <= bulan <= 12):
+        raise ValueError("Bulan tidak valid.")
+
+    existing = get_slip_gaji_by_periode(barber_id, tahun, bulan)
+    if existing and existing["status"] == "sudah_dibayar":
+        raise ValueError(
+            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
+            "batalkan statusnya dulu kalau perlu generate ulang."
+        )
+
+    if gaji_pokok is not None:
+        gaji_pokok = int(gaji_pokok)
+        if gaji_pokok < 0:
+            raise ValueError("Gaji Pokok tidak boleh negatif.")
+        with get_conn() as conn:
+            conn.execute("UPDATE barbers SET gaji_pokok = ? WHERE id = ?", (gaji_pokok, barber_id))
+    else:
+        gaji_pokok = int(barber.get("gaji_pokok") or 0)
+
+    ringkasan = get_ringkasan_barber_bulan(barber_id, tahun, bulan)
+    komisi = ringkasan["komisi"]
+    tips = ringkasan["tips"]
+    uang_harian = ringkasan["uang_harian"]
+    bonus_customer = ringkasan["bonus_customer"]
+    potongan_kasbon = int(potongan_kasbon or 0)
+    potongan_lain = int(potongan_lain or 0)
+    if potongan_kasbon < 0 or potongan_lain < 0:
+        raise ValueError("Potongan tidak boleh negatif.")
+    total_diterima = gaji_pokok + komisi + tips + uang_harian + bonus_customer - potongan_kasbon - potongan_lain
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        if existing:
+            conn.execute(
+                """UPDATE slip_gaji SET gaji_pokok = ?, komisi = ?, tips = ?, uang_harian = ?,
+                       bonus_customer = ?, potongan_kasbon = ?, potongan_lain = ?, catatan_potongan = ?,
+                       total_diterima = ?, dibuat_oleh = ?, updated_at = ?
+                   WHERE id = ?""",
+                (gaji_pokok, komisi, tips, uang_harian, bonus_customer, potongan_kasbon, potongan_lain,
+                 catatan_potongan, total_diterima, dibuat_oleh, now, existing["id"]),
+            )
+            slip_id = existing["id"]
+        else:
+            cur = conn.execute(
+                """INSERT INTO slip_gaji
+                       (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
+                        potongan_kasbon, potongan_lain, catatan_potongan, total_diterima, status,
+                        dibuat_oleh, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
+                (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
+                 potongan_kasbon, potongan_lain, catatan_potongan, total_diterima, dibuat_oleh, now),
+            )
+            slip_id = cur.lastrowid
+    return get_slip_gaji(slip_id)
+
+
+def tandai_status(slip_id: int, status: str) -> dict:
+    if status not in STATUS_VALID:
+        raise ValueError(f"Status tidak dikenal: {status}")
+    existing = get_slip_gaji(slip_id)
+    if existing is None:
+        raise ValueError("Slip Gaji tidak ditemukan.")
+    now = datetime.now().isoformat(timespec="seconds")
+    tanggal_dibayar = now[:10] if status == "sudah_dibayar" else None
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE slip_gaji SET status = ?, tanggal_dibayar = ?, updated_at = ? WHERE id = ?",
+            (status, tanggal_dibayar, now, slip_id),
+        )
+    return get_slip_gaji(slip_id)
+
+
+def hapus_slip_gaji(slip_id: int):
+    existing = get_slip_gaji(slip_id)
+    if existing is None:
+        raise ValueError("Slip Gaji tidak ditemukan.")
+    if existing["status"] == "sudah_dibayar":
+        raise ValueError("Slip Gaji yang sudah berstatus Sudah Dibayar tidak bisa dihapus.")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM slip_gaji WHERE id = ?", (slip_id,))

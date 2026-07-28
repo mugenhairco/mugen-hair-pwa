@@ -237,6 +237,44 @@ def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     return header, baris
 
 
+# Lebar kolom Slip Gaji (mm), total 194mm sama seperti tabel lain di file
+# ini (lihat _LEBAR_KOLOM_TRANSAKSI) -- Komponen lebih lebar karena baris
+# "Potongan Lain" bisa memuat catatan bebas dari Owner.
+_LEBAR_KOLOM_SLIP_GAJI = [110 * mm, 84 * mm]
+
+
+def buat_slip_gaji_pdf(slip: dict) -> bytes:
+    """Slip Gaji satu barber satu bulan -- MEMAKAI ULANG tata letak
+    _bangun_pdf() yang sama persis dengan Laporan PDF lain di file ini
+    (tabel Komponen|Nominal + baris ringkasan Total Diterima di bawahnya),
+    TIDAK menghitung ulang satu angka pun sendiri -- seluruh angka `slip`
+    sudah final dari slip_gaji_db.buat_slip_gaji()/get_slip_gaji()."""
+    periode = f"{_NAMA_BULAN[slip['bulan']]} {slip['tahun']} -- {slip['nama_barber']}"
+    label_potongan_lain = "Potongan Lain"
+    if slip.get("catatan_potongan"):
+        label_potongan_lain += f" ({slip['catatan_potongan']})"
+    header = ["Komponen", "Nominal"]
+    baris = [
+        [_sel("Gaji Pokok"), _rupiah(slip["gaji_pokok"])],
+        [_sel("Komisi"), _rupiah(slip["komisi"])],
+        [_sel("Tips"), _rupiah(slip["tips"])],
+        [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
+        [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
+        [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
+        [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
+    ]
+    status_label = "Sudah Dibayar" if slip["status"] == "sudah_dibayar" else "Belum Dibayar"
+    ringkasan_tambahan = [
+        f"<b>Total Diterima: {_rupiah(slip['total_diterima'])}</b>",
+        f"Status: {status_label}",
+    ]
+    if slip.get("tanggal_dibayar"):
+        ringkasan_tambahan.append(f"Tanggal Dibayar: {slip['tanggal_dibayar']}")
+    dicetak_oleh = slip.get("dibuat_oleh") or "-"
+    return _bangun_pdf("Slip Gaji", periode, dicetak_oleh, header, baris,
+                        col_widths=_LEBAR_KOLOM_SLIP_GAJI, ringkasan_tambahan=ringkasan_tambahan)
+
+
 def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
                   tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
                   tahun: int | None = None, bulan: int | None = None):

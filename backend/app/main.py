@@ -59,7 +59,8 @@ from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 import booking_db
 import website_content
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website
+import slip_gaji_db
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -150,6 +151,7 @@ app.include_router(produk.router)
 app.include_router(booking.router)
 app.include_router(booking.public_router)
 app.include_router(website.router)
+app.include_router(slip_gaji.router)
 
 
 @app.on_event("startup")
@@ -210,6 +212,7 @@ def on_startup():
         auth_db.init_auth_db()
         booking_db.init_booking_db()  # BOOKING: tabel bookings/booking_items/closed_slot (idempotent)
         website_content.init_website_db()  # PR 1 Website Content: tabel website_gallery (idempotent)
+        slip_gaji_db.init_slip_gaji_db()  # Modul Karyawan Fase 1: kolom barbers.gaji_pokok + tabel slip_gaji (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
         migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
