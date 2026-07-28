@@ -166,6 +166,19 @@ const MugenRouter = (() => {
       // kasbon.js. Perlindungan sebenarnya tetap di backend
       // (routers/komisi.py).
       PageKomisi.render(content);
+    } else if (hash.startsWith("#/karyawan/reimburse")) {
+      // Modul Karyawan (Fase 4): self-service -- Barber boleh mengajukan/
+      // mengedit/menghapus klaim MILIKNYA SENDIRI (selama Pending) TANPA
+      // perlu izin apa pun; Owner/'staff' (izin_reimburse) melihat &
+      // menyetujui/menolak klaim SEMUA barber. Dibedakan DI DALAM
+      // reimburse.js lewat user.role. Perlindungan sebenarnya tetap di
+      // backend (routers/reimburse.py).
+      PageReimburse.render(content);
+    } else if (hash.startsWith("#/karyawan/izin-cuti")) {
+      // Modul Karyawan (Fase 5): pola akses SAMA PERSIS reimburse.js
+      // (self-service). Perlindungan sebenarnya tetap di backend
+      // (routers/izin_cuti.py).
+      PageIzinCuti.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

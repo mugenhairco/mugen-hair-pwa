@@ -28,4 +28,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // sendiri yang memeriksa (tiap poll) apakah user sedang login sebagai
   // admin -- aman dipanggil walau saat ini masih di halaman Login.
   MugenBookingNotif.init();
+  // Modul Karyawan Fase 5: Notifikasi Izin & Cuti -- pola sama seperti
+  // MugenBookingNotif di atas (badge jumlah pengajuan Pending, app-wide).
+  MugenIzinNotif.init();
 });

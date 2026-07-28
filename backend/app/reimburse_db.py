@@ -1,0 +1,273 @@
+"""
+reimburse_db.py — Modul Karyawan: Reimburse (Fase 4)
+=============================================================================
+Fase 4 dari permintaan besar "Modul Karyawan/Keuangan/Pembayaran" (Fase 1:
+slip_gaji_db.py, Fase 2: kasbon_db.py, Fase 3: komisi_penyesuaian_db.py).
+Reimburse = klaim penggantian biaya yang DIAJUKAN barber sendiri (kategori,
+nominal, bukti foto/dokumen), disetujui/ditolak Owner/Admin (`status`
+'pending'/'disetujui'/'ditolak', `catatan_approval`). BEDA dari Kasbon/
+Komisi: langsung bisa dibuat oleh akun Barber sendiri (self-service), bukan
+hanya Owner/Admin.
+
+Integrasi dengan Slip Gaji: field `slip_gaji.reimburse` (SELALU >= 0, lihat
+slip_gaji_db.py) hanya nilai auto-fill di frontend saat Generate (dari
+get_saldo_periode() di bawah -- total klaim BERSTATUS DISETUJUI barber+
+periode itu), disalin ke slip. Sama seperti Komisi (bukan seperti Kasbon):
+tidak ada hook dua-arah/FIFO, cukup dikunci begitu Slip Gaji periode itu
+'sudah_dibayar' -- dicek LIVE ke tabel slip_gaji (_slip_terkunci()), bukan
+flag tersimpan. BEDA dari Komisi: mengedit/menghapus/mengubah status klaim
+YANG SUDAH DIBUAT untuk periode terkunci ditolak, TAPI membuat klaim BARU
+tetap diizinkan (klaim reimburse yang telat diajukan untuk bulan yang sudah
+digajikan adalah kasus wajar -- cukup tidak otomatis masuk ke slip yang
+sudah terlanjur dibayar itu).
+
+File bukti disimpan di disk (pola sama seperti booking_db.py
+simpan_foto_barber(), TAPI satu file PER KLAIM bukan per-barber -- nama file
+`reimburse-{id}.{ext}`, bukan `barber-{barber_id}.{ext}`).
+
+Tabel baru murni milik modul ini -- init_reimburse_db() dipanggil dari
+main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA dibuat
+di postgres_schema.py.
+"""
+
+import os
+from datetime import datetime
+
+from database import get_conn, get_barber
+
+STATUS_VALID = {"pending", "disetujui", "ditolak"}
+BUKTI_EXT_KE_CONTENT_TYPE = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "pdf": "application/pdf",
+}
+BUKTI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "reimburse_bukti")
+
+KATEGORI_DEFAULT = ["Transportasi", "Alat/Perlengkapan", "Makan", "Lainnya"]
+
+
+def init_reimburse_db():
+    with get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reimburse (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                barber_id          INTEGER NOT NULL,
+                tanggal            TEXT NOT NULL,
+                kategori           TEXT NOT NULL,
+                keterangan         TEXT,
+                nominal            INTEGER NOT NULL,
+                bukti_filename     TEXT,
+                status             TEXT NOT NULL DEFAULT 'pending',
+                catatan_approval   TEXT,
+                diajukan_oleh      TEXT,
+                disetujui_oleh     TEXT,
+                tanggal_approval   TEXT,
+                created_at         TEXT NOT NULL,
+                updated_at         TEXT,
+                FOREIGN KEY (barber_id) REFERENCES barbers(id)
+            )
+        """)
+
+
+def _lengkapi(row: dict) -> dict:
+    barber = get_barber(row["barber_id"])
+    row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    tahun, bulan = int(row["tanggal"][:4]), int(row["tanggal"][5:7])
+    row["terkunci"] = _slip_terkunci(row["barber_id"], tahun, bulan)
+    return row
+
+
+def _slip_terkunci(barber_id: int, tahun: int, bulan: int) -> bool:
+    """True kalau Slip Gaji barber+periode ini sudah berstatus
+    'sudah_dibayar' -- query LANGSUNG ke tabel slip_gaji (bukan import
+    slip_gaji_db), sama seperti pola komisi_penyesuaian_db.py."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM slip_gaji WHERE barber_id = ? AND tahun = ? AND bulan = ?",
+            (barber_id, tahun, bulan),
+        ).fetchone()
+    return row is not None and row["status"] == "sudah_dibayar"
+
+
+def get_reimburse(reimburse_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM reimburse WHERE id = ?", (reimburse_id,)).fetchone()
+        return _lengkapi(dict(row)) if row else None
+
+
+def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = None,
+                        bulan: int = None, kategori: str = None) -> list:
+    q = "SELECT * FROM reimburse WHERE 1=1"
+    params = []
+    if barber_id is not None:
+        q += " AND barber_id = ?"; params.append(barber_id)
+    if status is not None:
+        q += " AND status = ?"; params.append(status)
+    if tahun is not None:
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+    if bulan is not None:
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if kategori:
+        q += " AND kategori = ?"; params.append(kategori)
+    q += " ORDER BY tanggal DESC, id DESC"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    return [_lengkapi(r) for r in rows]
+
+
+def get_kategori_list() -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT kategori FROM reimburse WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori"
+        ).fetchall()
+    dinamis = [r["kategori"] for r in rows]
+    return list(dict.fromkeys(KATEGORI_DEFAULT + dinamis))
+
+
+def buat_reimburse(barber_id: int, tanggal: str, kategori: str, nominal: int,
+                    keterangan: str = "", diajukan_oleh: str = "") -> dict:
+    barber = get_barber(barber_id)
+    if barber is None:
+        raise ValueError("Barber tidak ditemukan.")
+    kategori = (kategori or "").strip()
+    if not kategori:
+        raise ValueError("Kategori tidak boleh kosong.")
+    nominal = int(nominal or 0)
+    if nominal <= 0:
+        raise ValueError("Nominal harus lebih dari 0.")
+    datetime.strptime(tanggal, "%Y-%m-%d")  # raise ValueError kalau format salah
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO reimburse (barber_id, tanggal, kategori, keterangan, nominal, status,
+                                       diajukan_oleh, created_at)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (barber_id, tanggal, kategori, (keterangan or "").strip(), nominal, diajukan_oleh, now),
+        )
+        reimburse_id = cur.lastrowid
+    return get_reimburse(reimburse_id)
+
+
+def edit_reimburse(reimburse_id: int, tanggal: str = None, kategori: str = None,
+                    nominal: int = None, keterangan: str = None) -> dict:
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Klaim yang sudah diproses (Disetujui/Ditolak) tidak bisa diedit lagi.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
+            "batalkan statusnya dulu kalau perlu mengubah klaim ini."
+        )
+    tanggal_baru = tanggal if tanggal is not None else existing["tanggal"]
+    if tanggal is not None:
+        datetime.strptime(tanggal_baru, "%Y-%m-%d")
+    kategori_baru = kategori.strip() if kategori is not None else existing["kategori"]
+    if kategori is not None and not kategori_baru:
+        raise ValueError("Kategori tidak boleh kosong.")
+    nominal_baru = int(nominal) if nominal is not None else existing["nominal"]
+    if nominal is not None and nominal_baru <= 0:
+        raise ValueError("Nominal harus lebih dari 0.")
+    keterangan_baru = keterangan.strip() if keterangan is not None else existing["keterangan"]
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE reimburse SET tanggal = ?, kategori = ?, nominal = ?, keterangan = ?, updated_at = ?
+               WHERE id = ?""",
+            (tanggal_baru, kategori_baru, nominal_baru, keterangan_baru, now, reimburse_id),
+        )
+    return get_reimburse(reimburse_id)
+
+
+def hapus_reimburse(reimburse_id: int):
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Klaim yang sudah diproses (Disetujui/Ditolak) tidak bisa dihapus lagi.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
+            "batalkan statusnya dulu kalau perlu menghapus klaim ini."
+        )
+    if existing.get("bukti_filename"):
+        path = os.path.join(BUKTI_DIR, existing["bukti_filename"])
+        if os.path.isfile(path):
+            os.remove(path)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+
+
+def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str = "",
+                          disetujui_oleh: str = "") -> dict:
+    if status not in {"disetujui", "ditolak"}:
+        raise ValueError(f"Status tidak dikenal: {status}")
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
+            "batalkan statusnya dulu kalau perlu mengubah status klaim ini."
+        )
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE reimburse SET status = ?, catatan_approval = ?, disetujui_oleh = ?,
+                   tanggal_approval = ?, updated_at = ? WHERE id = ?""",
+            (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, reimburse_id),
+        )
+    return get_reimburse(reimburse_id)
+
+
+def simpan_bukti_reimburse(reimburse_id: int, filename_asli: str, konten: bytes) -> str:
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
+    if ext not in BUKTI_EXT_KE_CONTENT_TYPE:
+        raise ValueError("Format bukti harus JPG, PNG, WEBP, atau PDF.")
+    if not konten:
+        raise ValueError("File bukti kosong.")
+    os.makedirs(BUKTI_DIR, exist_ok=True)
+    for f in os.listdir(BUKTI_DIR):
+        if f.startswith(f"reimburse-{reimburse_id}."):
+            try:
+                os.remove(os.path.join(BUKTI_DIR, f))
+            except OSError:
+                pass
+    nama_file = f"reimburse-{reimburse_id}.{ext}"
+    with open(os.path.join(BUKTI_DIR, nama_file), "wb") as fh:
+        fh.write(konten)
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute("UPDATE reimburse SET bukti_filename = ?, updated_at = ? WHERE id = ?",
+                      (nama_file, now, reimburse_id))
+    return nama_file
+
+
+def get_bukti_file_path(reimburse_id: int):
+    existing = get_reimburse(reimburse_id)
+    nama_file = existing.get("bukti_filename") if existing else None
+    if not nama_file:
+        return None, None
+    path = os.path.join(BUKTI_DIR, nama_file)
+    if not os.path.isfile(path):
+        return None, None
+    ext = nama_file.rsplit(".", 1)[-1].lower()
+    return path, BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+
+
+def get_saldo_periode(barber_id: int, tahun: int, bulan: int) -> int:
+    """Total klaim BERSTATUS DISETUJUI milik barber ini pada periode
+    (tahun+bulan, dari kolom `tanggal`) -- dipakai auto-fill 'Reimburse' di
+    form Generate Slip Gaji (nilai ini HANYA saran awal, tetap bisa diedit
+    manual). Berbeda dari Komisi (net bonus-potongan bisa negatif), nilai
+    ini SELALU >= 0 karena reimburse murni penambahan."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(nominal), 0) AS total FROM reimburse
+               WHERE barber_id = ? AND status = 'disetujui' AND tanggal LIKE ?""",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
+        ).fetchone()
+    return int(row["total"] or 0)
