@@ -169,7 +169,24 @@
 // pengeluaran_db.py get_pengeluaran_list(), routers/pengaturan.py). Rekap
 // Bulanan Barber TETAP Tahun+Bulan (perhitungan bonus/komisi/uang harian
 // bertumpu pada batas bulan kalender, tidak diubah).
-const CACHE_NAME = "mugen-hair-shell-v28";
+// v28 -> v29: Modul Karyawan (Fase 1) -- Slip Gaji Otomatis. Sidebar dapat
+// mekanisme grup/submenu BARU (sebelumnya 100% flat, nav.js) supaya modul
+// Karyawan berikutnya (Kasbon, Reimburse, dst) tinggal menambah entri
+// tanpa mengubah mekanismenya lagi; grup dengan 1 child (kondisi saat ini)
+// otomatis dirender flat, "naik kelas" jadi dropdown begitu child kedua
+// ditambahkan. Slip Gaji = Gaji Pokok (field baru per-barber, opsional,
+// default 0, backend slip_gaji_db.py) + Komisi/Tips/Uang Harian/Bonus
+// Customer (dari database.get_ringkasan_barber_bulan() yang SUDAH ADA,
+// bukan dihitung ulang) - Potongan Kasbon (selalu 0/manual, modul Kasbon
+// belum ada) - Potongan Lain (manual) = Total Diterima, dengan status
+// Belum/Sudah Dibayar (terkunci begitu Sudah Dibayar). Halaman baru
+// pages/slip_gaji.js (satu halaman, sudut pandang beda untuk Owner/Admin
+// vs Barber, sama seperti pola Rekap), unduh PDF lewat laporan_pdf.py
+// (helper tata letak yang sama dipakai ulang, TIDAK ada layout PDF baru).
+// v30: Modul Karyawan Fase 2 (Kasbon Karyawan) -- halaman baru
+// pages/kasbon.js, grup sidebar "Karyawan" sekarang punya 2 child (Slip
+// Gaji + Kasbon) jadi benar-benar dirender sebagai dropdown (lihat nav.js).
+const CACHE_NAME = "mugen-hair-shell-v30";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -191,6 +208,8 @@ const APP_SHELL = [
   "/js/pages/input_data.js",
   "/js/pages/rekap.js",
   "/js/pages/pengeluaran.js",
+  "/js/pages/slip_gaji.js",
+  "/js/pages/kasbon.js",
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/booking.js",

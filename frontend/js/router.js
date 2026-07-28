@@ -143,6 +143,21 @@ const MugenRouter = (() => {
       // 'staff' (Admin) sama persis seperti Owner, tanpa sistem izin --
       // Barber tetap dibatasi ke data miliknya sendiri (lihat routers/rekap.py).
       PageRekap.render(content);
+    } else if (hash.startsWith("#/karyawan/slip-gaji")) {
+      // Modul Karyawan (Fase 1): Owner/'staff' (kalau diberi izin
+      // izin_slip_gaji) mengelola SEMUA barber; Barber hanya lihat riwayat
+      // miliknya sendiri, read-only -- dibedakan DI DALAM slip_gaji.js
+      // lewat user.role, sama seperti pola Rekap/Booking. Perlindungan
+      // sebenarnya tetap di backend (routers/slip_gaji.py).
+      PageSlipGaji.render(content);
+    } else if (hash.startsWith("#/karyawan/kasbon")) {
+      // Modul Karyawan (Fase 2): Owner/'staff' (kalau diberi izin
+      // izin_kasbon) mengelola kasbon SEMUA barber; Barber hanya lihat
+      // kasbon & riwayat pembayaran miliknya sendiri, read-only --
+      // dibedakan DI DALAM kasbon.js lewat user.role, sama seperti
+      // slip_gaji.js. Perlindungan sebenarnya tetap di backend
+      // (routers/kasbon.py).
+      PageKasbon.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

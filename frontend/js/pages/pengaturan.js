@@ -1075,6 +1075,7 @@ const PagePengaturan = (() => {
         MugenUI.el("option", { value: "transaksi" }, "Laporan Transaksi"),
         MugenUI.el("option", { value: "pengeluaran" }, "Laporan Pengeluaran"),
         MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
+        MugenUI.el("option", { value: "kasbon" }, "Laporan Kasbon"),
       ]);
 
       // Rekap Bulanan Barber: TETAP Tahun+Bulan (perhitungan komisi/bonus/
@@ -1227,6 +1228,10 @@ const PagePengaturan = (() => {
         ]},
         { judul: "Laporan", keys: [
           ["izin_laporan_pdf", "Download PDF"],
+        ]},
+        { judul: "Karyawan", keys: [
+          ["izin_slip_gaji", "Kelola Slip Gaji"],
+          ["izin_kasbon", "Kelola Kasbon Karyawan"],
         ]},
         { judul: "Setting (akses tab)", keys: [
           ["izin_setting_identitas", "Identitas Barbershop"],

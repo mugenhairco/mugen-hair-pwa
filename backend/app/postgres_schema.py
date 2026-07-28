@@ -226,6 +226,63 @@ CREATE TABLE IF NOT EXISTS website_gallery (
     urutan      INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
 );
+
+-- Modul Karyawan (Fase 1): Slip Gaji Otomatis. gaji_pokok lewat ALTER TABLE
+-- terpisah (BUKAN dibakukan ke blok CREATE TABLE barbers di atas) supaya
+-- instalasi Postgres yang SUDAH ADA (tabel barbers sudah lama berdiri,
+-- CREATE TABLE IF NOT EXISTS jadi no-op untuknya) tetap kebagian kolom baru
+-- ini -- PostgreSQL punya ADD COLUMN IF NOT EXISTS asli, jadi idempoten
+-- tanpa perlu trik PRAGMA table_info seperti jalur SQLite.
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_pokok INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS slip_gaji (
+    id                SERIAL PRIMARY KEY,
+    barber_id         INTEGER NOT NULL REFERENCES barbers(id),
+    tahun             INTEGER NOT NULL,
+    bulan             INTEGER NOT NULL,
+    gaji_pokok        INTEGER NOT NULL DEFAULT 0,
+    komisi            INTEGER NOT NULL DEFAULT 0,
+    tips              INTEGER NOT NULL DEFAULT 0,
+    uang_harian       INTEGER NOT NULL DEFAULT 0,
+    bonus_customer    INTEGER NOT NULL DEFAULT 0,
+    potongan_kasbon   INTEGER NOT NULL DEFAULT 0,
+    potongan_lain     INTEGER NOT NULL DEFAULT 0,
+    catatan_potongan  TEXT,
+    total_diterima    INTEGER NOT NULL DEFAULT 0,
+    status            TEXT NOT NULL DEFAULT 'belum_dibayar',
+    tanggal_dibayar   TEXT,
+    dibuat_oleh       TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT,
+    UNIQUE(barber_id, tahun, bulan)
+);
+
+-- Modul Karyawan (Fase 2): Kasbon Karyawan. Dua tabel baru murni, tidak
+-- perlu ALTER TABLE apa pun ke tabel lama.
+CREATE TABLE IF NOT EXISTS kasbon (
+    id           SERIAL PRIMARY KEY,
+    barber_id    INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal      TEXT NOT NULL,
+    jumlah       INTEGER NOT NULL,
+    keterangan   TEXT,
+    status       TEXT NOT NULL DEFAULT 'belum_lunas',
+    sisa         INTEGER NOT NULL,
+    dibuat_oleh  TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kasbon_pembayaran (
+    id            SERIAL PRIMARY KEY,
+    kasbon_id     INTEGER NOT NULL REFERENCES kasbon(id),
+    tanggal       TEXT NOT NULL,
+    jumlah        INTEGER NOT NULL,
+    sumber        TEXT NOT NULL DEFAULT 'manual',
+    slip_gaji_id  INTEGER REFERENCES slip_gaji(id),
+    keterangan    TEXT,
+    dibuat_oleh   TEXT,
+    created_at    TEXT NOT NULL
+);
 """
 
 
