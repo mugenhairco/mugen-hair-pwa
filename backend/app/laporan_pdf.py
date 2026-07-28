@@ -24,11 +24,12 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import database as db
 import pengeluaran_db
 import pengaturan_identitas
+import kasbon_db
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
-JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan"}
+JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan", "kasbon"}
 
 # Dipakai HANYA untuk kolom Laporan Transaksi yang bisa berisi teks panjang
 # (Ket, gabungan beberapa catatan) -- sel string biasa di reportlab Table
@@ -91,6 +92,7 @@ def _judul(jenis: str) -> str:
         "transaksi": "Laporan Transaksi",
         "pengeluaran": "Laporan Pengeluaran",
         "rekap_bulanan": "Rekap Bulanan Barber",
+        "kasbon": "Laporan Kasbon",
     }[jenis]
 
 
@@ -228,6 +230,26 @@ def _laporan_pengeluaran(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh:
     return header, baris
 
 
+def _laporan_kasbon(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
+    """Memenuhi kebutuhan Kasbon "masuk laporan keuangan" -- data APA ADANYA
+    lewat kasbon_db.get_kasbon_list() (rentang tanggal bebas, sama seperti
+    Laporan Transaksi/Pengeluaran), TIDAK menghitung ulang satu angka pun."""
+    data = kasbon_db.get_kasbon_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    header = ["Tanggal", "Barber", "Jumlah Kasbon", "Sisa", "Status", "Keterangan"]
+    baris = [[
+        _sel(k["tanggal"]), _sel(k["nama_barber"]), _sel(_rupiah(k["jumlah"])), _sel(_rupiah(k["sisa"])),
+        _sel("Lunas" if k["status"] == "lunas" else "Belum Lunas"), _sel(k.get("keterangan") or "-"),
+    ] for k in data]
+
+    total_diberikan = sum(k["jumlah"] for k in data)
+    total_sisa = sum(k["sisa"] for k in data)
+    ringkasan_tambahan = [
+        f"<b>Total Kasbon Diberikan: {_rupiah(total_diberikan)}</b>",
+        f"<b>Total Sisa Belum Lunas: {_rupiah(total_sisa)}</b>",
+    ]
+    return header, baris, ringkasan_tambahan
+
+
 def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str):
     data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
     header = ["Barber", "Jumlah Service", "Komisi", "Tips", "Uang Harian", "Bonus Customer", "Total Pendapatan"]
@@ -241,6 +263,10 @@ def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
 # ini (lihat _LEBAR_KOLOM_TRANSAKSI) -- Komponen lebih lebar karena baris
 # "Potongan Lain" bisa memuat catatan bebas dari Owner.
 _LEBAR_KOLOM_SLIP_GAJI = [110 * mm, 84 * mm]
+
+# Lebar kolom Laporan Kasbon (mm), total 194mm sama seperti tabel lain di
+# file ini -- Tanggal/Barber/Jumlah Kasbon/Sisa/Status/Keterangan.
+_LEBAR_KOLOM_KASBON = [22 * mm, 28 * mm, 28 * mm, 28 * mm, 24 * mm, 64 * mm]
 
 
 def buat_slip_gaji_pdf(slip: dict) -> bytes:
@@ -309,6 +335,11 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
                 tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, periode,
             )
             col_widths = _LEBAR_KOLOM_TRANSAKSI
+        elif jenis == "kasbon":
+            header, baris, ringkasan_tambahan = _laporan_kasbon(
+                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
+            )
+            col_widths = _LEBAR_KOLOM_KASBON
         else:
             header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh)
 

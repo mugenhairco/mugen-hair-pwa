@@ -29,6 +29,7 @@ ini sama sekali di jalur itu).
 
 from datetime import datetime
 
+import kasbon_db
 from database import get_conn, get_barber, get_ringkasan_barber_bulan
 
 STATUS_VALID = {"belum_dibayar", "sudah_dibayar"}
@@ -179,11 +180,25 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
 
 
 def tandai_status(slip_id: int, status: str) -> dict:
+    """REVISI (Fase 2, Kasbon): status_lama dicatat SEBELUM update supaya
+    integrasi kasbon di bawah hanya bereaksi pada TRANSISI status (bukan
+    tiap kali endpoint dipanggil dengan status yang sama) -- ini yang
+    membuat pemanggilan berulang idempotent (toggle status ke nilai yang
+    sama tidak memicu apply/reverse potongan kasbon lagi).
+
+    -> 'sudah_dibayar' (dari status lain): kalau slip.potongan_kasbon > 0,
+       potongan itu BARU sekarang benar-benar diterapkan ke saldo kasbon
+       barber (lihat kasbon_db.terapkan_potongan_slip_gaji(), distribusi
+       FIFO) -- BUKAN saat slip digenerate/dihitung ulang.
+    -> 'belum_dibayar' (dari 'sudah_dibayar'): potongan yang sempat
+       diterapkan di atas DIBATALKAN (kasbon_db.batalkan_potongan_slip_gaji()),
+       saldo kasbon terkait dikembalikan seperti semula."""
     if status not in STATUS_VALID:
         raise ValueError(f"Status tidak dikenal: {status}")
     existing = get_slip_gaji(slip_id)
     if existing is None:
         raise ValueError("Slip Gaji tidak ditemukan.")
+    status_lama = existing["status"]
     now = datetime.now().isoformat(timespec="seconds")
     tanggal_dibayar = now[:10] if status == "sudah_dibayar" else None
     with get_conn() as conn:
@@ -191,6 +206,12 @@ def tandai_status(slip_id: int, status: str) -> dict:
             "UPDATE slip_gaji SET status = ?, tanggal_dibayar = ?, updated_at = ? WHERE id = ?",
             (status, tanggal_dibayar, now, slip_id),
         )
+
+    if status == "sudah_dibayar" and status_lama != "sudah_dibayar" and existing["potongan_kasbon"] > 0:
+        kasbon_db.terapkan_potongan_slip_gaji(existing["barber_id"], slip_id, existing["potongan_kasbon"])
+    elif status == "belum_dibayar" and status_lama == "sudah_dibayar":
+        kasbon_db.batalkan_potongan_slip_gaji(slip_id)
+
     return get_slip_gaji(slip_id)
 
 

@@ -256,6 +256,33 @@ CREATE TABLE IF NOT EXISTS slip_gaji (
     updated_at        TEXT,
     UNIQUE(barber_id, tahun, bulan)
 );
+
+-- Modul Karyawan (Fase 2): Kasbon Karyawan. Dua tabel baru murni, tidak
+-- perlu ALTER TABLE apa pun ke tabel lama.
+CREATE TABLE IF NOT EXISTS kasbon (
+    id           SERIAL PRIMARY KEY,
+    barber_id    INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal      TEXT NOT NULL,
+    jumlah       INTEGER NOT NULL,
+    keterangan   TEXT,
+    status       TEXT NOT NULL DEFAULT 'belum_lunas',
+    sisa         INTEGER NOT NULL,
+    dibuat_oleh  TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kasbon_pembayaran (
+    id            SERIAL PRIMARY KEY,
+    kasbon_id     INTEGER NOT NULL REFERENCES kasbon(id),
+    tanggal       TEXT NOT NULL,
+    jumlah        INTEGER NOT NULL,
+    sumber        TEXT NOT NULL DEFAULT 'manual',
+    slip_gaji_id  INTEGER REFERENCES slip_gaji(id),
+    keterangan    TEXT,
+    dibuat_oleh   TEXT,
+    created_at    TEXT NOT NULL
+);
 """
 
 

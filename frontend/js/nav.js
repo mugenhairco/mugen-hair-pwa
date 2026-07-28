@@ -17,14 +17,14 @@ const MugenNav = (() => {
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
     { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"] },
-    // Modul Karyawan (Fase 1) -- baru berisi Slip Gaji. `children` dirender
-    // sebagai grup expand/collapse KALAU child yang lolos filter role >= 2;
-    // kalau cuma 1 (kondisi saat ini), otomatis dirender sebagai link flat
-    // biasa (lihat _bangunItemNav()) -- supaya tidak ada dropdown kosong-
-    // satu-item yang janggal, dan otomatis "naik kelas" jadi grup sungguhan
-    // begitu modul Karyawan lain (Kasbon, Reimburse, dst) menyusul.
+    // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon. `children`
+    // dirender sebagai grup expand/collapse KALAU child yang lolos filter
+    // role >= 2 (kondisi ini, sejak Kasbon ditambahkan); kalau cuma 1,
+    // otomatis dirender sebagai link flat biasa (lihat _bangunItemNav()) --
+    // supaya tidak ada dropdown kosong-satu-item yang janggal.
     { label: "Karyawan", roles: ["admin", "staff", "barber"], children: [
       { hash: "#/karyawan/slip-gaji", label: "Slip Gaji", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/kasbon", label: "Kasbon", roles: ["admin", "staff", "barber"] },
     ]},
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).

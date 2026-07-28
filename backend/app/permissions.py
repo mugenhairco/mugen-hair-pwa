@@ -45,8 +45,9 @@ PERMISSION_DEFS = [
     ("izin_backup_import", "backup", "Import Database", False),
     # ---- Laporan ----
     ("izin_laporan_pdf", "laporan", "Download Laporan PDF", False),
-    # ---- Karyawan (Modul Karyawan, Fase 1: Slip Gaji) ----
+    # ---- Karyawan (Modul Karyawan, Fase 1: Slip Gaji, Fase 2: Kasbon) ----
     ("izin_slip_gaji", "karyawan", "Kelola Slip Gaji", False),
+    ("izin_kasbon", "karyawan", "Kelola Kasbon Karyawan", False),
     # ---- Setting: akses ke tab-nya sendiri ----
     ("izin_setting_identitas", "setting", "Tab Identitas Barbershop", False),
     ("izin_setting_tampilan", "setting", "Tab Tampilan", False),

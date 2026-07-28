@@ -166,8 +166,24 @@ const PageSlipGaji = (() => {
       const b = barbers.find((x) => String(x.id) === selBarber.value);
       inputGajiPokok.value = String((b && b.gaji_pokok) || 0);
     }
-    selBarber.addEventListener("change", isiGajiPokokDariBarber);
+    // Modul Karyawan Fase 2 (Kasbon): Potongan Kasbon otomatis terisi dari
+    // saldo kasbon belum lunas barber yang dipilih (GET /api/kasbon/saldo/
+    // {barber_id}), TAPI tetap bebas diedit manual sebelum Generate -- nilai
+    // ini HANYA saran awal, tidak disimpan ke mana pun sampai slip benar-
+    // benar ditandai Sudah Dibayar (lihat slip_gaji_db.tandai_status()).
+    async function isiPotonganKasbonDariBarber() {
+      if (!selBarber.value) { inputPotonganKasbon.value = "0"; return; }
+      try {
+        const saldo = await MugenApi.get(`/api/kasbon/saldo/${selBarber.value}`);
+        inputPotonganKasbon.value = String(saldo.saldo || 0);
+      } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
+    }
+    selBarber.addEventListener("change", () => {
+      isiGajiPokokDariBarber();
+      isiPotonganKasbonDariBarber();
+    });
     isiGajiPokokDariBarber();
+    isiPotonganKasbonDariBarber();
 
     formCard.appendChild(MugenUI.el("label", {}, "Barber"));
     formCard.appendChild(selBarber);

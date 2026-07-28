@@ -183,7 +183,10 @@
 // pages/slip_gaji.js (satu halaman, sudut pandang beda untuk Owner/Admin
 // vs Barber, sama seperti pola Rekap), unduh PDF lewat laporan_pdf.py
 // (helper tata letak yang sama dipakai ulang, TIDAK ada layout PDF baru).
-const CACHE_NAME = "mugen-hair-shell-v29";
+// v30: Modul Karyawan Fase 2 (Kasbon Karyawan) -- halaman baru
+// pages/kasbon.js, grup sidebar "Karyawan" sekarang punya 2 child (Slip
+// Gaji + Kasbon) jadi benar-benar dirender sebagai dropdown (lihat nav.js).
+const CACHE_NAME = "mugen-hair-shell-v30";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -206,6 +209,7 @@ const APP_SHELL = [
   "/js/pages/rekap.js",
   "/js/pages/pengeluaran.js",
   "/js/pages/slip_gaji.js",
+  "/js/pages/kasbon.js",
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/booking.js",
