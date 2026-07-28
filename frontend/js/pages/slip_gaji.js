@@ -153,6 +153,7 @@ const PageSlipGaji = (() => {
     selTahun.value = String(today.getFullYear());
     const inputGajiPokok = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const inputPotonganKasbon = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", value: "0" }); // boleh negatif -- tanpa atribut min
     const inputPotonganLain = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const inputCatatanPotongan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. keterlambatan" });
     const btnGenerate = MugenUI.el("button", { class: "btn-primary" }, "Generate Slip Gaji");
@@ -178,12 +179,30 @@ const PageSlipGaji = (() => {
         inputPotonganKasbon.value = String(saldo.saldo || 0);
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
+    // Modul Karyawan Fase 3 (Komisi): Penyesuaian Komisi otomatis terisi dari
+    // net bonus-potongan barber+PERIODE yang dipilih (GET /api/komisi/saldo/
+    // {barber_id}?tahun=&bulan=) -- BEDA dari Potongan Kasbon yang cuma
+    // bereaksi ke Barber (saldo berjalan, bukan per-periode), field ini
+    // reaktif ke Barber DAN Bulan/Tahun sekaligus. Tetap bebas diedit manual
+    // sebelum Generate, nilai ini HANYA saran awal.
+    async function isiPenyesuaianKomisiDariPeriode() {
+      if (!selBarber.value) { inputPenyesuaianKomisi.value = "0"; return; }
+      try {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        const saldo = await MugenApi.get(`/api/komisi/saldo/${selBarber.value}?${qs.toString()}`);
+        inputPenyesuaianKomisi.value = String(saldo.saldo || 0);
+      } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
+    }
     selBarber.addEventListener("change", () => {
       isiGajiPokokDariBarber();
       isiPotonganKasbonDariBarber();
+      isiPenyesuaianKomisiDariPeriode();
     });
+    selBulan.addEventListener("change", isiPenyesuaianKomisiDariPeriode);
+    selTahun.addEventListener("change", isiPenyesuaianKomisiDariPeriode);
     isiGajiPokokDariBarber();
     isiPotonganKasbonDariBarber();
+    isiPenyesuaianKomisiDariPeriode();
 
     formCard.appendChild(MugenUI.el("label", {}, "Barber"));
     formCard.appendChild(selBarber);
@@ -195,6 +214,8 @@ const PageSlipGaji = (() => {
     formCard.appendChild(inputGajiPokok);
     formCard.appendChild(MugenUI.el("label", {}, "Potongan Kasbon (Rp, opsional)"));
     formCard.appendChild(inputPotonganKasbon);
+    formCard.appendChild(MugenUI.el("label", {}, "Penyesuaian Komisi (Rp, boleh negatif, opsional)"));
+    formCard.appendChild(inputPenyesuaianKomisi);
     formCard.appendChild(MugenUI.el("label", {}, "Potongan Lain (Rp, opsional)"));
     formCard.appendChild(inputPotonganLain);
     formCard.appendChild(MugenUI.el("label", {}, "Catatan Potongan (opsional)"));
@@ -211,6 +232,7 @@ const PageSlipGaji = (() => {
           barber_id: Number(selBarber.value), tahun: Number(selTahun.value), bulan: Number(selBulan.value),
           gaji_pokok: Number(inputGajiPokok.value) || 0,
           potongan_kasbon: Number(inputPotonganKasbon.value) || 0, potongan_lain: Number(inputPotonganLain.value) || 0,
+          penyesuaian_komisi: Number(inputPenyesuaianKomisi.value) || 0,
           catatan_potongan: inputCatatanPotongan.value.trim(),
         }), { message: "Menghitung Slip Gaji…" });
         // Sinkronkan cache lokal supaya kalau barber yang sama dipilih lagi

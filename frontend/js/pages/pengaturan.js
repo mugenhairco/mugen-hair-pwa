@@ -1232,6 +1232,7 @@ const PagePengaturan = (() => {
         { judul: "Karyawan", keys: [
           ["izin_slip_gaji", "Kelola Slip Gaji"],
           ["izin_kasbon", "Kelola Kasbon Karyawan"],
+          ["izin_komisi", "Kelola Penyesuaian Komisi"],
         ]},
         { judul: "Setting (akses tab)", keys: [
           ["izin_setting_identitas", "Identitas Barbershop"],

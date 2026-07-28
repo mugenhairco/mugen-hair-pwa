@@ -279,6 +279,8 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
     label_potongan_lain = "Potongan Lain"
     if slip.get("catatan_potongan"):
         label_potongan_lain += f" ({slip['catatan_potongan']})"
+    penyesuaian_komisi = int(slip.get("penyesuaian_komisi") or 0)
+    tanda_penyesuaian = "+" if penyesuaian_komisi >= 0 else "-"
     header = ["Komponen", "Nominal"]
     baris = [
         [_sel("Gaji Pokok"), _rupiah(slip["gaji_pokok"])],
@@ -286,6 +288,7 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
         [_sel("Tips"), _rupiah(slip["tips"])],
         [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
         [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
+        [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"],
         [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
         [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
     ]
