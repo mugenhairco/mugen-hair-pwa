@@ -561,12 +561,15 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
                                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
+                                                    tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                                           tanggal_selesai=tanggal_selesai)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
         data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
         rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
         periode = _periode_text_opsional(tahun, bulan)
     header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
@@ -576,19 +579,25 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         _sel(_rupiah(r["pendapatan"])), _sel(r["keterangan"] or "-"),
     ] for r in data]
     # Tahap 15: ringkasan di bawah tabel dipecah jadi Pendapatan (transaksi
-    # murni, TIDAK termasuk Reimburse) + Rincian (jumlah per jenis service,
-    # digabung SEMUA karyawan yang tercakup filter -- service yang jumlahnya
-    # 0 otomatis tidak muncul) + Reimburse (terpisah) + TOTAL (Pendapatan +
-    # Reimburse) -- sebelumnya Reimburse ikut tercampur ke "Total Pendapatan".
-    pendapatan_total = sum(r["pendapatan"] for r in data if r.get("tipe") != "reimburse")
+    # murni, TIDAK termasuk Reimburse/Kasbon) + Rincian (jumlah per jenis
+    # service, digabung SEMUA karyawan yang tercakup filter -- service yang
+    # jumlahnya 0 otomatis tidak muncul) + Reimburse (terpisah) + TOTAL
+    # (Pendapatan + Reimburse) -- sebelumnya Reimburse ikut tercampur ke
+    # "Total Pendapatan". Tahap 17: baris Kasbon Dibayar ditambahkan,
+    # MENGURANGI TOTAL (pinjaman, bukan pendapatan, lihat kasbon_db.py) --
+    # nilai baris kasbon di `data` sudah negatif, jadi kasbon_total di sini
+    # dibalik jadi POSITIF (jumlah yang dibayar) supaya gampang ditampilkan.
+    pendapatan_total = sum(r["pendapatan"] for r in data if r.get("tipe") not in ("reimburse", "kasbon"))
     reimburse_total = sum(r["pendapatan"] for r in data if r.get("tipe") == "reimburse")
+    kasbon_total = sum(-r["pendapatan"] for r in data if r.get("tipe") == "kasbon")
     ringkasan_tambahan = [f"<b>Pendapatan: {_rupiah(pendapatan_total)}</b>"]
     if rincian_service:
         ringkasan_tambahan.append("<b>Rincian</b>")
         for s in rincian_service:
             ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
     ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
-    ringkasan_tambahan.append(f"<b>TOTAL: {_rupiah(pendapatan_total + reimburse_total)}</b>")
+    ringkasan_tambahan.append(f"<b>Kasbon Dibayar: -{_rupiah(kasbon_total)}</b>")
+    ringkasan_tambahan.append(f"<b>TOTAL: {_rupiah(pendapatan_total + reimburse_total - kasbon_total)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI, ringkasan_tambahan=ringkasan_tambahan)
 
@@ -597,21 +606,31 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
 # _LEBAR_KOLOM di _laporan_rekap_bulanan (dipakai Setting > Backup, kolom
 # lebih sedikit): varian halaman ini menyertakan Hari Libur & Target Bonus
 # persis seperti tabel pages/rekap.js tab Bulanan. Kolom Reimburse (Tahap
-# 12) ditambahkan sebelum Total.
-_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [30 * mm, 16 * mm, 20 * mm, 18 * mm, 20 * mm, 14 * mm, 18 * mm, 16 * mm, 20 * mm, 22 * mm]
+# 12) & Kasbon Dibayar (Tahap 17) ditambahkan sebelum Total.
+_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [30 * mm, 14 * mm, 18 * mm, 16 * mm, 20 * mm, 12 * mm, 14 * mm, 14 * mm, 16 * mm, 16 * mm, 24 * mm]
 
 
 def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str) -> bytes:
     data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
-    header = ["Barber", "Jml Service", "Komisi", "Tips", "Uang Harian", "Hari Libur", "Target Bonus", "Bonus Cust.", "Reimburse", "Total"]
-    baris = [[
-        _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])), _sel(_rupiah(r["total_komisi"])),
-        _sel(_rupiah(r["tips"])), _sel(_rupiah(r["uang_harian"])), _sel(str(r["hari_libur"])),
-        _sel("Tercapai" if r["target_tercapai"] else "Belum"), _sel(_rupiah(r["bonus_customer"])),
-        _sel(_rupiah(reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan))),
-        _sel(_rupiah(r["total_pendapatan"])),
-    ] for r in data]
-    total_pendapatan = sum(r["total_pendapatan"] for r in data)
+    header = ["Barber", "Jml Service", "Komisi", "Tips", "Uang Harian", "Hari Libur", "Target Bonus", "Bonus Cust.", "Reimburse", "Kasbon Dibayar", "Total"]
+    # Tahap 17: BUGFIX -- Reimburse sebelumnya ditampilkan sebagai kolom
+    # terpisah TAPI tidak ikut dijumlah ke Total. Sekarang Total per baris
+    # (dan grand total di ringkasan) diperbaiki: + Reimburse - Kasbon
+    # Dibayar (kasbon = pinjaman yang dikembalikan, MENGURANGI, bukan
+    # pendapatan seperti Reimburse -- lihat kasbon_db.py).
+    baris = []
+    total_pendapatan = 0
+    for r in data:
+        reimburse = reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan)
+        kasbon_dibayar = kasbon_db.get_total_dibayar_periode(r["barber_id"], tahun, bulan)
+        total_baris = r["total_pendapatan"] + reimburse - kasbon_dibayar
+        total_pendapatan += total_baris
+        baris.append([
+            _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])), _sel(_rupiah(r["total_komisi"])),
+            _sel(_rupiah(r["tips"])), _sel(_rupiah(r["uang_harian"])), _sel(str(r["hari_libur"])),
+            _sel("Tercapai" if r["target_tercapai"] else "Belum"), _sel(_rupiah(r["bonus_customer"])),
+            _sel(_rupiah(reimburse)), _sel(_rupiah(kasbon_dibayar)), _sel(_rupiah(total_baris)),
+        ])
     ringkasan_tambahan = [f"<b>Total Pendapatan: {_rupiah(total_pendapatan)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Rekap Bulanan Barber", periode, dicetak_oleh, header, baris,

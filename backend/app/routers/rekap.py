@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 
 import database as db
+import kasbon_db
 import pengeluaran_db
 import reimburse_db
 import laporan_pdf
@@ -37,6 +38,10 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     # (bukan di database.py, circular import) -- tanggal barisnya tanggal
     # DISETUJUI, bukan tanggal klaim diajukan.
     data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    # Tahap 17: baris Kasbon yang sudah DIBAYAR (manual maupun potong_gaji)
+    # ikut digabung juga -- BEDA dari Reimburse, pendapatan barisnya
+    # NEGATIF (mengurangi Total, lihat kasbon_db.py).
+    data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
     return data
 
 
@@ -58,8 +63,15 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
     data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
     # Tahap 12: kolom Reimburse -- dihitung di sini (bukan di database.py,
     # yang tidak boleh impor reimburse_db karena circular import).
+    # Tahap 17: BUGFIX -- Reimburse sebelumnya ditampilkan sebagai kolom
+    # terpisah TAPI tidak ikut dijumlah ke total_pendapatan. Sekarang
+    # total_pendapatan diperbaiki supaya benar-benar mencerminkan Reimburse
+    # (menambah) dan Kasbon Dibayar (mengurangi -- pinjaman, bukan
+    # pendapatan, lihat kasbon_db.py).
     for r in data:
         r["reimburse"] = reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan)
+        r["kasbon_dibayar"] = kasbon_db.get_total_dibayar_periode(r["barber_id"], tahun, bulan)
+        r["total_pendapatan"] = r["total_pendapatan"] + r["reimburse"] - r["kasbon_dibayar"]
     return data
 
 

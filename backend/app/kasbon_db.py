@@ -19,7 +19,15 @@ saldo outstanding riil (tidak pernah membuat `sisa` negatif).
 Tabel baru murni milik modul ini (pola sama seperti slip_gaji_db.py) --
 init_kasbon_db() dipanggil dari main.py on_startup() jalur SQLite. Jalur
 PostgreSQL: tabel yang SAMA dibuat di postgres_schema.py.
-"""
+
+Integrasi dengan Rekap Transaksi/Bulanan: BEDA dari Reimburse (murni
+pendapatan, MENAMBAH Total), Kasbon adalah PINJAMAN yang harus
+dikembalikan -- yang "masuk" ke Rekap adalah jumlah yang SUDAH DIBAYAR
+(kasbon_pembayaran, sumber manual maupun potong_gaji), bukan jumlah yang
+diajukan/dicairkan, dan nilainya MENGURANGI Total (lihat
+gabung_ke_rekap_transaksi()/get_total_dibayar_periode() di bawah,
+dipanggil dari routers/rekap.py -- pola sama seperti reimburse_db.py,
+sengaja di sini bukan di database.py supaya tidak circular import)."""
 
 from datetime import datetime
 
@@ -277,3 +285,90 @@ def batalkan_potongan_slip_gaji(slip_gaji_id: int):
                 (sisa_baru, now, p["kasbon_id"]),
             )
             conn.execute("DELETE FROM kasbon_pembayaran WHERE id = ?", (p["id"],))
+
+
+# ---------------------------------------------------------------------------
+# Integrasi Rekap Transaksi/Bulanan -- lihat catatan di docstring modul ini
+# kenapa yang dipakai adalah kasbon_pembayaran (jumlah DIBAYAR), bukan
+# tabel kasbon (jumlah diajukan/dicairkan), dan kenapa nilainya MENGURANGI
+# Total (bukan menambah seperti Reimburse).
+# ---------------------------------------------------------------------------
+
+def get_pembayaran_list_periode(tahun: int = None, bulan: int = None, barber_id: int = None,
+                                 tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """Semua baris kasbon_pembayaran (SEMUA sumber -- manual maupun
+    potong_gaji) pada periode ini (berdasarkan TANGGAL PEMBAYARAN, bukan
+    tanggal kasbon diajukan), lintas kasbon manapun milik barber terkait.
+    tanggal_mulai/tanggal_selesai dipakai periode PDF rentang tanggal bebas
+    -- BEDA dari tahun/bulan yang dipakai tampilan layar (pola sama seperti
+    reimburse_db.get_reimburse_list_disetujui())."""
+    q = """SELECT p.*, k.barber_id AS barber_id FROM kasbon_pembayaran p
+           JOIN kasbon k ON k.id = p.kasbon_id WHERE 1=1"""
+    params = []
+    if barber_id is not None:
+        q += " AND k.barber_id = ?"; params.append(barber_id)
+    if tahun is not None:
+        q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+    if bulan is not None:
+        q += " AND p.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if tanggal_mulai is not None:
+        q += " AND p.tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND p.tanggal <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY p.tanggal DESC, p.id DESC"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    barber_cache = {}
+    for r in rows:
+        bid = r["barber_id"]
+        if bid not in barber_cache:
+            barber_cache[bid] = get_barber(bid)
+        barber = barber_cache[bid]
+        r["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    return rows
+
+
+def get_total_dibayar_periode(barber_id: int, tahun: int, bulan: int) -> int:
+    """Total SEMUA pembayaran kasbon (manual + potong_gaji) barber ini pada
+    bulan ini -- dipakai kolom 'Kasbon Dibayar' Rekap Bulanan, MENGURANGI
+    Total Pendapatan (kasbon adalah pinjaman, bukan pendapatan)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(p.jumlah), 0) AS total FROM kasbon_pembayaran p
+               JOIN kasbon k ON k.id = p.kasbon_id
+               WHERE k.barber_id = ? AND p.tanggal LIKE ?""",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
+        ).fetchone()
+    return int(row["total"] or 0)
+
+
+def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None, barber_id: int = None,
+                               tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """Menggabungkan `baris` (hasil database.get_rekap_transaksi_list(),
+    biasanya SUDAH digabung dengan baris Reimburse lewat reimburse_db) dengan
+    baris pembayaran Kasbon pada periode yang sama -- dipanggil dari layer
+    pemanggil (routers/rekap.py & laporan_pdf.py), BUKAN dari database.py
+    sendiri (circular import: kasbon_db.py mengimpor database.py).
+
+    BEDA dari baris Reimburse: 'pendapatan' di sini NEGATIF (mengurangi
+    Total, bukan menambah) karena kasbon adalah pinjaman yang dikembalikan,
+    bukan pendapatan -- tanggal = tanggal PEMBAYARAN (bukan tanggal kasbon
+    diajukan)."""
+    pembayaran = get_pembayaran_list_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                              tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    for p in pembayaran:
+        baris.append({
+            "tipe": "kasbon",
+            "tanggal": p["tanggal"],
+            "barber_id": p["barber_id"],
+            "nama_barber": p["nama_barber"],
+            "daftar_service": "",
+            "jumlah_service": 0,
+            "tips": 0,
+            "uang_harian": 0,
+            "pendapatan": -p["jumlah"],
+            "keterangan": "Kasbon Dibayar" + (f" ({p['keterangan']})" if p.get("keterangan") else ""),
+        })
+    baris.sort(key=lambda r: r["nama_barber"])
+    baris.sort(key=lambda r: r["tanggal"], reverse=True)
+    return baris
