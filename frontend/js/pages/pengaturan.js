@@ -1074,6 +1074,7 @@ const PagePengaturan = (() => {
       const selJenis = MugenUI.el("select", {}, [
         MugenUI.el("option", { value: "transaksi" }, "Laporan Transaksi"),
         MugenUI.el("option", { value: "pengeluaran" }, "Laporan Pengeluaran"),
+        MugenUI.el("option", { value: "pemasukan" }, "Laporan Pemasukan"),
         MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
         MugenUI.el("option", { value: "kasbon" }, "Laporan Kasbon"),
       ]);

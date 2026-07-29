@@ -197,7 +197,12 @@
 // notifikasi lewat js/izin_notif.js baru), grup sidebar "Karyawan"
 // sekarang punya 5 child. nav.js: mekanisme badge digeneralisasi (data-
 // driven lewat badgeId/badgeRoles, bukan hardcode "#/booking" lagi).
-const CACHE_NAME = "mugen-hair-shell-v32";
+// v33: Modul Keuangan Fase 1 (Pemasukan) + Fase 2 (Transfer Kas/Bank) --
+// dua halaman baru pages/pemasukan.js (cermin pengeluaran.js) dan
+// pages/transfer.js. Grup sidebar baru "Keuangan" berisi Pemasukan/
+// Pengeluaran/Transfer Kas-Bank -- Pengeluaran DIPINDAH ke grup ini (hash
+// #/pengeluaran & halamannya TIDAK berubah, murni penataan ulang sidebar).
+const CACHE_NAME = "mugen-hair-shell-v33";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -220,6 +225,8 @@ const APP_SHELL = [
   "/js/pages/input_data.js",
   "/js/pages/rekap.js",
   "/js/pages/pengeluaran.js",
+  "/js/pages/pemasukan.js",
+  "/js/pages/transfer.js",
   "/js/pages/slip_gaji.js",
   "/js/pages/kasbon.js",
   "/js/pages/komisi.js",
