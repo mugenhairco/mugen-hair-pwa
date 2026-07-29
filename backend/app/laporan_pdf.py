@@ -409,13 +409,23 @@ _LEBAR_KOLOM_KOMISI = [40 * mm, 24 * mm, 30 * mm, 100 * mm]
 _LEBAR_KOLOM_REIMBURSE = [22 * mm, 28 * mm, 28 * mm, 28 * mm, 24 * mm, 64 * mm]
 
 
+def _periode_text_slip_gaji(row: dict) -> str:
+    """Barber: satu bulan kalender penuh (tahun/bulan). Kasir/OB/Kru (Tahap
+    13: periode rentang tanggal bebas, row['tanggal_mulai'] terisi): pakai
+    _periode_text_rentang() yang sudah ada, sama seperti Laporan Transaksi/
+    Pengeluaran."""
+    if row.get("tanggal_mulai"):
+        return _periode_text_rentang(row["tanggal_mulai"], row["tanggal_selesai"])
+    return _periode_text(row["tahun"], row["bulan"])
+
+
 def buat_slip_gaji_pdf(slip: dict) -> bytes:
-    """Slip Gaji satu barber satu bulan -- MEMAKAI ULANG tata letak
+    """Slip Gaji satu barber satu periode -- MEMAKAI ULANG tata letak
     _bangun_pdf() yang sama persis dengan Laporan PDF lain di file ini
     (tabel Komponen|Nominal + baris ringkasan Total Diterima di bawahnya),
     TIDAK menghitung ulang satu angka pun sendiri -- seluruh angka `slip`
     sudah final dari slip_gaji_db.buat_slip_gaji()/get_slip_gaji()."""
-    periode = f"{_NAMA_BULAN[slip['bulan']]} {slip['tahun']} -- {slip['nama_barber']}"
+    periode = f"{_periode_text_slip_gaji(slip)} -- {slip['nama_barber']}"
     label_potongan_lain = "Potongan Lain"
     if slip.get("catatan_potongan"):
         label_potongan_lain += f" ({slip['catatan_potongan']})"
@@ -548,9 +558,12 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     tidak berubah, ini murni opsi tambahan saat cetak PDF."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
+                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
         periode = _periode_text_opsional(tahun, bulan)
     header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
     baris = [[
@@ -618,7 +631,7 @@ def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int
     data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
     header = ["Periode", "Barber", "Reimburse", "Total Diterima", "Status"]
     baris = [[
-        _sel(f"{_NAMA_BULAN[r['bulan']]} {r['tahun']}"), _sel(r["nama_barber"]),
+        _sel(_periode_text_slip_gaji(r)), _sel(r["nama_barber"]),
         _sel(_rupiah(r["reimburse"])),
         _sel(_rupiah(r["total_diterima"])),
         _sel("Sudah Dibayar" if r["status"] == "sudah_dibayar" else "Belum Dibayar"),

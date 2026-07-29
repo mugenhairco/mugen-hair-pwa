@@ -32,7 +32,12 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
                      tanggal: str = None, user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    return db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
+    data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
+    # Tahap 14: baris Reimburse yang sudah DISETUJUI ikut digabung di sini
+    # (bukan di database.py, circular import) -- tanggal barisnya tanggal
+    # DISETUJUI, bukan tanggal klaim diajukan.
+    data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    return data
 
 
 @router.get("/transaksi/pdf")

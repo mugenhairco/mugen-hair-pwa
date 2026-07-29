@@ -77,8 +77,8 @@ def ambil_slip_gaji(slip_id: int, user: dict = Depends(get_current_user)):
 
 class SlipGajiGenerateBody(BaseModel):
     barber_id: int
-    tahun: int
-    bulan: int
+    tahun: int | None = None  # Barber: wajib. Kasir/OB/Kru: diabaikan, pakai tanggal_mulai/tanggal_selesai
+    bulan: int | None = None  # (Tahap 13: periode rentang tanggal bebas, BEDA dari Barber yang tetap bulanan)
     gaji_pokok: int | None = None
     potongan_kasbon: int = 0
     potongan_lain: int = 0
@@ -87,17 +87,20 @@ class SlipGajiGenerateBody(BaseModel):
     catatan_potongan: str = ""
     jumlah_hari_masuk: int | None = None  # Karyawan Non-Barber: wajib diisi, gaji = ini x gaji_per_hari
     bonus_manual: int = 0  # Semua jabatan, selalu >= 0, menambah Total Diterima
+    tanggal_mulai: str | None = None  # Kasir/OB/Kru: wajib diisi (periode rentang tanggal bebas)
+    tanggal_selesai: str | None = None
 
 
 @router.post("")
 def generate_slip_gaji(body: SlipGajiGenerateBody, user: dict = Depends(require_permission("izin_slip_gaji"))):
     try:
         return slip_gaji_db.buat_slip_gaji(
-            body.barber_id, body.tahun, body.bulan, gaji_pokok=body.gaji_pokok,
+            body.barber_id, tahun=body.tahun, bulan=body.bulan, gaji_pokok=body.gaji_pokok,
             potongan_kasbon=body.potongan_kasbon, potongan_lain=body.potongan_lain,
             penyesuaian_komisi=body.penyesuaian_komisi, reimburse=body.reimburse,
             catatan_potongan=body.catatan_potongan, dibuat_oleh=user["username"],
             jumlah_hari_masuk=body.jumlah_hari_masuk, bonus_manual=body.bonus_manual,
+            tanggal_mulai=body.tanggal_mulai, tanggal_selesai=body.tanggal_selesai,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
