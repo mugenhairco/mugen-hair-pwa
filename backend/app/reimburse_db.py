@@ -21,16 +21,16 @@ tetap diizinkan (klaim reimburse yang telat diajukan untuk bulan yang sudah
 digajikan adalah kasus wajar -- cukup tidak otomatis masuk ke slip yang
 sudah terlanjur dibayar itu).
 
-File bukti disimpan di disk (pola sama seperti booking_db.py
-simpan_foto_barber(), TAPI satu file PER KLAIM bukan per-barber -- nama file
-`reimburse-{id}.{ext}`, bukan `barber-{barber_id}.{ext}`).
+File bukti disimpan di database (kolom BLOB `bukti_data`, satu baris PER
+KLAIM bukan per-barber -- nama file `reimburse-{id}.{ext}`, bukan
+`barber-{barber_id}.{ext}`) -- disk lokal Render Free tier TIDAK
+persisten, lihat README.
 
 Tabel baru murni milik modul ini -- init_reimburse_db() dipanggil dari
 main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA dibuat
 di postgres_schema.py.
 """
 
-import os
 from datetime import datetime
 
 from database import get_conn, get_barber
@@ -40,13 +40,16 @@ BUKTI_EXT_KE_CONTENT_TYPE = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
     "webp": "image/webp", "pdf": "application/pdf",
 }
-BUKTI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "reimburse_bukti")
 
 KATEGORI_DEFAULT = ["Transportasi", "Alat/Perlengkapan", "Makan", "Lainnya"]
 
 
 def init_reimburse_db():
     with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(reimburse)").fetchall()]
+        if kolom and "bukti_data" not in kolom:
+            conn.execute("ALTER TABLE reimburse ADD COLUMN bukti_data BLOB")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS reimburse (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +59,7 @@ def init_reimburse_db():
                 keterangan         TEXT,
                 nominal            INTEGER NOT NULL,
                 bukti_filename     TEXT,
+                bukti_data         BLOB,
                 status             TEXT NOT NULL DEFAULT 'pending',
                 catatan_approval   TEXT,
                 diajukan_oleh      TEXT,
@@ -276,10 +280,6 @@ def hapus_reimburse(reimburse_id: int):
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
             "batalkan statusnya dulu kalau perlu menghapus klaim ini."
         )
-    if existing.get("bukti_filename"):
-        path = os.path.join(BUKTI_DIR, existing["bukti_filename"])
-        if os.path.isfile(path):
-            os.remove(path)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
 
@@ -315,33 +315,22 @@ def simpan_bukti_reimburse(reimburse_id: int, filename_asli: str, konten: bytes)
         raise ValueError("Format bukti harus JPG, PNG, WEBP, atau PDF.")
     if not konten:
         raise ValueError("File bukti kosong.")
-    os.makedirs(BUKTI_DIR, exist_ok=True)
-    for f in os.listdir(BUKTI_DIR):
-        if f.startswith(f"reimburse-{reimburse_id}."):
-            try:
-                os.remove(os.path.join(BUKTI_DIR, f))
-            except OSError:
-                pass
     nama_file = f"reimburse-{reimburse_id}.{ext}"
-    with open(os.path.join(BUKTI_DIR, nama_file), "wb") as fh:
-        fh.write(konten)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        conn.execute("UPDATE reimburse SET bukti_filename = ?, updated_at = ? WHERE id = ?",
-                      (nama_file, now, reimburse_id))
+        conn.execute("UPDATE reimburse SET bukti_filename = ?, bukti_data = ?, updated_at = ? WHERE id = ?",
+                      (nama_file, konten, now, reimburse_id))
     return nama_file
 
 
-def get_bukti_file_path(reimburse_id: int):
-    existing = get_reimburse(reimburse_id)
-    nama_file = existing.get("bukti_filename") if existing else None
-    if not nama_file:
+def get_bukti_data(reimburse_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT bukti_filename, bukti_data FROM reimburse WHERE id = ?",
+                            (reimburse_id,)).fetchone()
+    if row is None or not row["bukti_filename"] or row["bukti_data"] is None:
         return None, None
-    path = os.path.join(BUKTI_DIR, nama_file)
-    if not os.path.isfile(path):
-        return None, None
-    ext = nama_file.rsplit(".", 1)[-1].lower()
-    return path, BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    ext = row["bukti_filename"].rsplit(".", 1)[-1].lower()
+    return bytes(row["bukti_data"]), BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
 
 
 def buat_reimburse_sistem(barber_id: int, tanggal: str, kategori: str, nominal: int,
@@ -419,10 +408,6 @@ def hapus_reimburse_sistem(reimburse_id: int):
             "Pengeluaran ini terkait Reimburse yang periodenya sudah dibayar lewat Slip Gaji "
             "dan tidak bisa dihapus."
         )
-    if existing.get("bukti_filename"):
-        path = os.path.join(BUKTI_DIR, existing["bukti_filename"])
-        if os.path.isfile(path):
-            os.remove(path)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
 

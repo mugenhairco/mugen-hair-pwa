@@ -23,8 +23,7 @@ lewat /api/input-data/libur yang SUDAH ADA (lihat catatan di booking_db.py)."""
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 import booking_db
@@ -73,10 +72,10 @@ def public_barbers():
 
 @public_router.get("/barber-foto/{barber_id}")
 def public_barber_foto(barber_id: int):
-    path, content_type = booking_db.get_foto_barber_file_path(barber_id)
-    if path is None:
+    data, content_type = booking_db.get_foto_barber_data(barber_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Foto belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @public_router.get("/services")
@@ -120,10 +119,10 @@ def public_slot(barber_id: int, tanggal: str, service_ids: str = None):
 
 @public_router.get("/qris")
 def public_qris(v: str | None = None):
-    path, content_type = booking_db.get_qris_file_path()
-    if path is None:
+    data, content_type = booking_db.get_qris_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="QRIS belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 class BookingCreateBody(BaseModel):

@@ -31,11 +31,11 @@ Gallery (daftar foto) memakai tabel `website_gallery` (lihat
 init_website_db() untuk jalur SQLite, postgres_schema.py untuk jalur
 PostgreSQL -- KEDUANYA harus diubah bersamaan kalau skema ini berubah lagi)."""
 
-import os
 import uuid
 from datetime import datetime
 
 import database as db
+import file_asset_db
 from database import get_conn
 
 WEBSITE_CONTENT_KEYS = [
@@ -67,13 +67,6 @@ DEFAULT_VALUES = {
     "booking_cta_tombol_teks": "Book Appointment",
 }
 
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-HERO_IMAGE_DIR = os.path.join(STATIC_DIR, "hero_image")
-HERO_VIDEO_DIR = os.path.join(STATIC_DIR, "hero_video")
-ABOUT_FOTO_DIR = os.path.join(STATIC_DIR, "about")
-GALLERY_DIR = os.path.join(STATIC_DIR, "gallery")
-BACKGROUND_DIR = os.path.join(STATIC_DIR, "background")
-
 EXT_KE_CONTENT_TYPE_GAMBAR = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
 }
@@ -96,10 +89,15 @@ def init_website_db():
     postgres_schema.py (create_all() TIDAK memanggil fungsi ini sama
     sekali di jalur itu)."""
     with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(website_gallery)").fetchall()]
+        if kolom and "data" not in kolom:
+            conn.execute("ALTER TABLE website_gallery ADD COLUMN data BLOB")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS website_gallery (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename    TEXT NOT NULL,
+                data        BLOB,
                 urutan      INTEGER NOT NULL DEFAULT 0,
                 created_at  TEXT NOT NULL
             )
@@ -113,13 +111,13 @@ def init_website_db():
 def get_content() -> dict:
     data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, "")) for k in WEBSITE_CONTENT_KEYS}
     data["background_opacity"] = int(data["background_opacity"] or 20)
-    hero_image_filename = db.get_setting("hero_image_filename", "")
+    hero_image_filename = file_asset_db.ambil_meta("hero_image")
     data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}" if hero_image_filename else None
-    hero_video_filename = db.get_setting("hero_video_filename", "")
+    hero_video_filename = file_asset_db.ambil_meta("hero_video")
     data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
-    about_foto_filename = db.get_setting("about_foto_filename", "")
+    about_foto_filename = file_asset_db.ambil_meta("about_foto")
     data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
-    background_image_filename = db.get_setting("background_image_filename", "")
+    background_image_filename = file_asset_db.ambil_meta("background_image")
     data["background_image_url"] = f"/api/website/background-image?v={background_image_filename}" if background_image_filename else None
     return data
 
@@ -151,104 +149,54 @@ def update_content(data: dict):
 # _simpan_gambar()/_get_gambar_file_path() di pengaturan_identitas.py.
 # ---------------------------------------------------------------------------
 
-def _ekstensi_valid(filename: str, mapping: dict):
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    return ext if ext in mapping else None
-
-
-def _simpan_aset(direktori: str, prefix: str, setting_key: str, filename_asli: str, konten: bytes,
-                  mapping: dict, label: str) -> str:
-    ext = _ekstensi_valid(filename_asli, mapping)
-    if ext is None:
-        raise ValueError(f"Format {label} tidak didukung.")
-    if not konten:
-        raise ValueError(f"File {label} kosong.")
-    os.makedirs(direktori, exist_ok=True)
-    for f in os.listdir(direktori):
-        if f.startswith(f"{prefix}."):
-            try:
-                os.remove(os.path.join(direktori, f))
-            except OSError:
-                pass
-    nama_file = f"{prefix}.{ext}"
-    with open(os.path.join(direktori, nama_file), "wb") as fh:
-        fh.write(konten)
-    db.set_setting(setting_key, nama_file)
-    return nama_file
-
-
-def _get_aset_path(direktori: str, setting_key: str, mapping: dict):
-    nama_file = db.get_setting(setting_key, "")
-    if not nama_file:
-        return None, None
-    path = os.path.join(direktori, nama_file)
-    if not os.path.isfile(path):
-        return None, None
-    ext = nama_file.rsplit(".", 1)[-1].lower()
-    return path, mapping.get(ext, "application/octet-stream")
-
-
-def _hapus_aset(direktori: str, setting_key: str):
-    nama_file = db.get_setting(setting_key, "")
-    if nama_file:
-        path = os.path.join(direktori, nama_file)
-        if os.path.isfile(path):
-            os.remove(path)
-    db.set_setting(setting_key, "")
-
-
 def simpan_hero_image(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(HERO_IMAGE_DIR, "hero_image", "hero_image_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image")
+    return file_asset_db.simpan("hero_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image")
 
 
-def get_hero_image_path():
-    return _get_aset_path(HERO_IMAGE_DIR, "hero_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+def get_hero_image_data():
+    return file_asset_db.ambil("hero_image")
 
 
 def hapus_hero_image():
-    _hapus_aset(HERO_IMAGE_DIR, "hero_image_filename")
+    file_asset_db.hapus("hero_image")
 
 
 def simpan_hero_video(filename_asli: str, konten: bytes) -> str:
     if len(konten) > MAKS_UKURAN_VIDEO_BYTES:
         raise ValueError(f"Ukuran video Hero maksimal {MAKS_UKURAN_VIDEO_BYTES // (1024 * 1024)}MB.")
-    return _simpan_aset(HERO_VIDEO_DIR, "hero_video", "hero_video_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_VIDEO, "Hero Video")
+    return file_asset_db.simpan("hero_video", filename_asli, konten, EXT_KE_CONTENT_TYPE_VIDEO, "Hero Video")
 
 
-def get_hero_video_path():
-    return _get_aset_path(HERO_VIDEO_DIR, "hero_video_filename", EXT_KE_CONTENT_TYPE_VIDEO)
+def get_hero_video_data():
+    return file_asset_db.ambil("hero_video")
 
 
 def hapus_hero_video():
-    _hapus_aset(HERO_VIDEO_DIR, "hero_video_filename")
+    file_asset_db.hapus("hero_video")
 
 
 def simpan_about_foto(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(ABOUT_FOTO_DIR, "about", "about_foto_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Foto About")
+    return file_asset_db.simpan("about_foto", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Foto About")
 
 
-def get_about_foto_path():
-    return _get_aset_path(ABOUT_FOTO_DIR, "about_foto_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+def get_about_foto_data():
+    return file_asset_db.ambil("about_foto")
 
 
 def hapus_about_foto():
-    _hapus_aset(ABOUT_FOTO_DIR, "about_foto_filename")
+    file_asset_db.hapus("about_foto")
 
 
 def simpan_background_image(filename_asli: str, konten: bytes) -> str:
-    return _simpan_aset(BACKGROUND_DIR, "background", "background_image_filename", filename_asli, konten,
-                         EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website")
+    return file_asset_db.simpan("background_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website")
 
 
-def get_background_image_path():
-    return _get_aset_path(BACKGROUND_DIR, "background_image_filename", EXT_KE_CONTENT_TYPE_GAMBAR)
+def get_background_image_data():
+    return file_asset_db.ambil("background_image")
 
 
 def hapus_background_image():
-    _hapus_aset(BACKGROUND_DIR, "background_image_filename")
+    file_asset_db.hapus("background_image")
 
 
 # ---------------------------------------------------------------------------
@@ -267,46 +215,37 @@ def get_gallery() -> list:
 
 
 def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
-    ext = _ekstensi_valid(filename_asli, EXT_KE_CONTENT_TYPE_GAMBAR)
-    if ext is None:
+    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
+    if ext not in EXT_KE_CONTENT_TYPE_GAMBAR:
         raise ValueError("Format foto Gallery harus JPG, PNG, atau WEBP.")
     if not konten:
         raise ValueError("File foto kosong.")
-    os.makedirs(GALLERY_DIR, exist_ok=True)
     nama_file = f"{uuid.uuid4().hex}.{ext}"
-    with open(os.path.join(GALLERY_DIR, nama_file), "wb") as fh:
-        fh.write(konten)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO website_gallery (filename, urutan, created_at) VALUES (?, ?, ?)",
-            (nama_file, urutan_maks + 1, now),
+            "INSERT INTO website_gallery (filename, data, urutan, created_at) VALUES (?, ?, ?, ?)",
+            (nama_file, konten, urutan_maks + 1, now),
         )
         return cur.lastrowid
 
 
-def get_gallery_foto_path(foto_id: int):
+def get_gallery_foto_data(foto_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT filename FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
-    if row is None:
-        return None, None
-    path = os.path.join(GALLERY_DIR, row["filename"])
-    if not os.path.isfile(path):
+        row = conn.execute("SELECT filename, data FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
+    if row is None or row["data"] is None:
         return None, None
     ext = row["filename"].rsplit(".", 1)[-1].lower()
-    return path, EXT_KE_CONTENT_TYPE_GAMBAR.get(ext, "application/octet-stream")
+    return bytes(row["data"]), EXT_KE_CONTENT_TYPE_GAMBAR.get(ext, "application/octet-stream")
 
 
 def hapus_gallery_foto(foto_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT filename FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
+        row = conn.execute("SELECT id FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
         if row is None:
             raise ValueError("Foto tidak ditemukan.")
         conn.execute("DELETE FROM website_gallery WHERE id = ?", (foto_id,))
-    path = os.path.join(GALLERY_DIR, row["filename"])
-    if os.path.isfile(path):
-        os.remove(path)
 
 
 def reorder_gallery(ordered_ids: list):

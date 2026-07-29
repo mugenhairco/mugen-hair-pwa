@@ -19,7 +19,7 @@ tidak pernah barber.
   approve/reject (PUT .../status)."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import laporan_pdf
@@ -223,7 +223,7 @@ def unduh_bukti_reimburse(reimburse_id: int, user: dict = Depends(get_current_us
     if klaim is None:
         raise HTTPException(status_code=404, detail="Reimburse tidak ditemukan.")
     _cek_akses_lihat(user, klaim)
-    path, content_type = reimburse_db.get_bukti_file_path(reimburse_id)
-    if path is None:
+    data, content_type = reimburse_db.get_bukti_data(reimburse_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Bukti belum diunggah.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)

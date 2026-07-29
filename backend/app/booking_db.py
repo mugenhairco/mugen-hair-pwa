@@ -30,12 +30,12 @@ selalu dipakai dan tidak boleh dibalik):
 """
 
 import json
-import os
 import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import database as db
+import file_asset_db
 from database import get_conn
 
 # PENYEMPURNAAN: "hari ini"/"jam sekarang" untuk keperluan slot booking HARUS
@@ -275,7 +275,7 @@ def get_payment_settings() -> dict:
         metode_instruksi_custom = json.loads(db.get_setting("booking_metode_instruksi", _DEFAULT_METODE_INSTRUKSI))
     except (TypeError, ValueError):
         metode_instruksi_custom = {}
-    qris_filename = db.get_setting("booking_qris_filename", "")
+    qris_filename = file_asset_db.ambil_meta("qris")
     return {
         "metode_aktif": metode_aktif,
         "metode_nama": {**DEFAULT_METODE_NAMA, **metode_nama_custom},
@@ -328,55 +328,20 @@ def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str =
 
 
 # QRIS image upload — pola SAMA PERSIS seperti pengaturan_identitas.py punya
-# untuk logo barbershop (folder static/ terpisah, nama file dinormalisasi,
-# file lama dihapus supaya tidak menumpuk).
-QRIS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "qris")
+# untuk logo barbershop (slot tunggal, lihat file_asset_db.py).
 EXT_KE_CONTENT_TYPE = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
 
 
-def _ekstensi_valid(filename: str):
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    return ext if ext in EXT_KE_CONTENT_TYPE else None
-
-
 def simpan_qris(filename_asli: str, konten: bytes) -> str:
-    ext = _ekstensi_valid(filename_asli)
-    if ext is None:
-        raise ValueError("Format QRIS harus JPG, PNG, atau WEBP.")
-    if not konten:
-        raise ValueError("File QRIS kosong.")
-    os.makedirs(QRIS_DIR, exist_ok=True)
-    for f in os.listdir(QRIS_DIR):
-        if f.startswith("qris."):
-            try:
-                os.remove(os.path.join(QRIS_DIR, f))
-            except OSError:
-                pass
-    nama_file = f"qris.{ext}"
-    with open(os.path.join(QRIS_DIR, nama_file), "wb") as fh:
-        fh.write(konten)
-    db.set_setting("booking_qris_filename", nama_file)
-    return nama_file
+    return file_asset_db.simpan("qris", filename_asli, konten, EXT_KE_CONTENT_TYPE, "QRIS")
 
 
 def hapus_qris():
-    nama_file = db.get_setting("booking_qris_filename", "")
-    if nama_file:
-        path = os.path.join(QRIS_DIR, nama_file)
-        if os.path.isfile(path):
-            os.remove(path)
-    db.set_setting("booking_qris_filename", "")
+    file_asset_db.hapus("qris")
 
 
-def get_qris_file_path():
-    nama_file = db.get_setting("booking_qris_filename", "")
-    if not nama_file:
-        return None, None
-    path = os.path.join(QRIS_DIR, nama_file)
-    if not os.path.isfile(path):
-        return None, None
-    ext = nama_file.rsplit(".", 1)[-1].lower()
-    return path, EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+def get_qris_data():
+    return file_asset_db.ambil("qris")
 
 
 # ---------------------------------------------------------------------------
@@ -798,7 +763,6 @@ def verifikasi_pembayaran(booking_id: int):
 
 STATUS_BOOKING_VALID = {"aktif", "cuti"}
 FOTO_EXT_KE_CONTENT_TYPE = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
-BARBER_FOTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "barber_foto")
 
 
 def set_status_booking_barber(barber_id: int, status_booking: str):
@@ -825,18 +789,10 @@ def simpan_foto_barber(barber_id: int, filename_asli: str, konten: bytes) -> str
         raise ValueError("Format foto harus JPG, PNG, atau WEBP.")
     if not konten:
         raise ValueError("File foto kosong.")
-    os.makedirs(BARBER_FOTO_DIR, exist_ok=True)
-    for f in os.listdir(BARBER_FOTO_DIR):
-        if f.startswith(f"barber-{barber_id}."):
-            try:
-                os.remove(os.path.join(BARBER_FOTO_DIR, f))
-            except OSError:
-                pass
     nama_file = f"barber-{barber_id}.{ext}"
-    with open(os.path.join(BARBER_FOTO_DIR, nama_file), "wb") as fh:
-        fh.write(konten)
     with get_conn() as conn:
-        conn.execute("UPDATE barbers SET foto_filename = ? WHERE id = ?", (nama_file, barber_id))
+        conn.execute("UPDATE barbers SET foto_filename = ?, foto_data = ? WHERE id = ?",
+                      (nama_file, konten, barber_id))
     return nama_file
 
 
@@ -844,25 +800,17 @@ def hapus_foto_barber(barber_id: int):
     barber = db.get_barber(barber_id)
     if barber is None:
         raise ValueError("Barber tidak ditemukan.")
-    nama_file = barber.get("foto_filename")
-    if nama_file:
-        path = os.path.join(BARBER_FOTO_DIR, nama_file)
-        if os.path.isfile(path):
-            os.remove(path)
     with get_conn() as conn:
-        conn.execute("UPDATE barbers SET foto_filename = NULL WHERE id = ?", (barber_id,))
+        conn.execute("UPDATE barbers SET foto_filename = NULL, foto_data = NULL WHERE id = ?", (barber_id,))
 
 
-def get_foto_barber_file_path(barber_id: int):
-    barber = db.get_barber(barber_id)
-    nama_file = barber.get("foto_filename") if barber else None
-    if not nama_file:
+def get_foto_barber_data(barber_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT foto_filename, foto_data FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    if row is None or not row["foto_filename"] or row["foto_data"] is None:
         return None, None
-    path = os.path.join(BARBER_FOTO_DIR, nama_file)
-    if not os.path.isfile(path):
-        return None, None
-    ext = nama_file.rsplit(".", 1)[-1].lower()
-    return path, FOTO_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    ext = row["foto_filename"].rsplit(".", 1)[-1].lower()
+    return bytes(row["foto_data"]), FOTO_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
 
 
 def set_urutan_service(service_id: int, urutan: int):

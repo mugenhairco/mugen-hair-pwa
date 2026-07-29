@@ -17,8 +17,7 @@ pengaturan.py -- sekarang aset sendiri di sini) dan Background Image."""
 
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 import website_content
@@ -84,10 +83,10 @@ async def upload_hero_image(file: UploadFile = File(...), user: dict = Depends(r
 
 @router.get("/hero-image")
 def ambil_hero_image(v: str | None = None):
-    path, content_type = website_content.get_hero_image_path()
-    if path is None:
+    data, content_type = website_content.get_hero_image_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="Hero Image belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/hero-image")
@@ -112,10 +111,10 @@ async def upload_hero_video(file: UploadFile = File(...), user: dict = Depends(r
 
 @router.get("/hero-video")
 def ambil_hero_video(v: str | None = None):
-    path, content_type = website_content.get_hero_video_path()
-    if path is None:
+    data, content_type = website_content.get_hero_video_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="Hero Video belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/hero-video")
@@ -140,10 +139,10 @@ async def upload_about_foto(file: UploadFile = File(...), user: dict = Depends(r
 
 @router.get("/about-foto")
 def ambil_about_foto(v: str | None = None):
-    path, content_type = website_content.get_about_foto_path()
-    if path is None:
+    data, content_type = website_content.get_about_foto_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="Foto About belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/about-foto")
@@ -168,10 +167,10 @@ async def upload_background_image(file: UploadFile = File(...), user: dict = Dep
 
 @router.get("/background-image")
 def ambil_background_image(v: str | None = None):
-    path, content_type = website_content.get_background_image_path()
-    if path is None:
+    data, content_type = website_content.get_background_image_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="Background Website belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/background-image")
@@ -206,10 +205,10 @@ async def upload_gallery_foto(file: UploadFile = File(...), user: dict = Depends
 
 @router.get("/gallery/{foto_id}/foto")
 def ambil_gallery_foto(foto_id: int, v: str | None = None):
-    path, content_type = website_content.get_gallery_foto_path(foto_id)
-    if path is None:
+    data, content_type = website_content.get_gallery_foto_data(foto_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Foto tidak ditemukan.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 @router.delete("/gallery/{foto_id}")

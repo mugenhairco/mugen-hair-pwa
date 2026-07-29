@@ -58,6 +58,10 @@ def _migrasi_foto_dan_urutan_barber(conn):
     kolom = [r["name"] for r in conn.execute("PRAGMA table_info(barbers)").fetchall()]
     if "foto_filename" not in kolom:
         conn.execute("ALTER TABLE barbers ADD COLUMN foto_filename TEXT")
+    if "foto_data" not in kolom:
+        # Tahap 16: isi foto (BLOB) pindah dari disk lokal ke database --
+        # disk lokal Render Free tier TIDAK persisten, lihat README.
+        conn.execute("ALTER TABLE barbers ADD COLUMN foto_data BLOB")
     if "urutan" not in kolom:
         conn.execute("ALTER TABLE barbers ADD COLUMN urutan INTEGER NOT NULL DEFAULT 0")
         for i, row in enumerate(conn.execute("SELECT id FROM barbers ORDER BY nama").fetchall()):
