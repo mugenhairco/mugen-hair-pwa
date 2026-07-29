@@ -232,6 +232,10 @@ CREATE TABLE IF NOT EXISTS website_gallery (
 -- lokal Render Free tier TIDAK persisten).
 ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS data BYTEA;
 
+-- Gallery bisa diisi video (format apa saja, sama seperti Hero Video)
+-- selain foto -- baris lama otomatis 'foto' (DEFAULT).
+ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS tipe TEXT NOT NULL DEFAULT 'foto';
+
 -- Modul Karyawan (Fase 1): Slip Gaji Otomatis. gaji_pokok lewat ALTER TABLE
 -- terpisah (BUKAN dibakukan ke blok CREATE TABLE barbers di atas) supaya
 -- instalasi Postgres yang SUDAH ADA (tabel barbers sudah lama berdiri,

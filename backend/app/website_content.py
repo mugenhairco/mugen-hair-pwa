@@ -27,7 +27,7 @@ eksternal/Footer legal (Privacy Policy/Terms) yang SEMPAT ada di iterasi
 sebelumnya SUDAH DIHAPUS TOTAL sesuai instruksi revisi -- tidak ada
 pengaturan untuk fitur-fitur itu lagi.
 
-Gallery (daftar foto) memakai tabel `website_gallery` (lihat
+Gallery (daftar foto/video) memakai tabel `website_gallery` (lihat
 init_website_db() untuk jalur SQLite, postgres_schema.py untuk jalur
 PostgreSQL -- KEDUANYA harus diubah bersamaan kalau skema ini berubah lagi)."""
 
@@ -78,8 +78,8 @@ EXT_KE_CONTENT_TYPE_VIDEO = {
     "mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
     "m4v": "video/x-m4v", "ogv": "video/ogg", "ogg": "video/ogg",
 }
-# Cap ukuran video supaya Persistent Disk Render (kapasitas terbatas) tidak
-# habis oleh satu file -- validasi baru yang wajar, bukan perubahan fitur lain.
+# Cap ukuran video (Hero Video maupun Gallery) supaya kuota database (BLOB,
+# lihat file_asset_db.py/tabel website_gallery) tidak habis oleh satu file.
 MAKS_UKURAN_VIDEO_BYTES = 50 * 1024 * 1024  # 50MB
 
 
@@ -92,12 +92,18 @@ def init_website_db():
         kolom = [r["name"] for r in conn.execute("PRAGMA table_info(website_gallery)").fetchall()]
         if kolom and "data" not in kolom:
             conn.execute("ALTER TABLE website_gallery ADD COLUMN data BLOB")
+        if kolom and "tipe" not in kolom:
+            # Gallery bisa diisi video (format apa saja yang didukung
+            # browser, sama seperti Hero Video) selain foto -- baris lama
+            # otomatis 'foto' (DEFAULT), tidak perlu migrasi data.
+            conn.execute("ALTER TABLE website_gallery ADD COLUMN tipe TEXT NOT NULL DEFAULT 'foto'")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS website_gallery (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename    TEXT NOT NULL,
                 data        BLOB,
+                tipe        TEXT NOT NULL DEFAULT 'foto',
                 urutan      INTEGER NOT NULL DEFAULT 0,
                 created_at  TEXT NOT NULL
             )
@@ -200,33 +206,45 @@ def hapus_background_image():
 
 
 # ---------------------------------------------------------------------------
-# GALLERY -- daftar foto (BEDA dari slot tunggal di atas: bisa banyak
-# sekaligus, jadi nama file unik per foto + tabel `website_gallery`, bukan
-# satu slot yang ditimpa).
+# GALLERY -- daftar foto/video (BEDA dari slot tunggal di atas: bisa banyak
+# sekaligus, jadi nama file unik per item + tabel `website_gallery`, bukan
+# satu slot yang ditimpa). Video Gallery format fleksibel sama seperti Hero
+# Video (EXT_KE_CONTENT_TYPE_VIDEO di atas), dengan cap ukuran yang sama.
 # ---------------------------------------------------------------------------
 
 def get_gallery() -> list:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM website_gallery ORDER BY urutan ASC, id ASC").fetchall()
         return [
-            {"id": r["id"], "foto_url": f"/api/website/gallery/{r['id']}/foto?v={r['filename']}", "urutan": r["urutan"]}
+            {
+                "id": r["id"],
+                "foto_url": f"/api/website/gallery/{r['id']}/foto?v={r['filename']}",
+                "tipe": r["tipe"],
+                "urutan": r["urutan"],
+            }
             for r in rows
         ]
 
 
 def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
     ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
-    if ext not in EXT_KE_CONTENT_TYPE_GAMBAR:
-        raise ValueError("Format foto Gallery harus JPG, PNG, atau WEBP.")
+    if ext in EXT_KE_CONTENT_TYPE_GAMBAR:
+        tipe = "foto"
+    elif ext in EXT_KE_CONTENT_TYPE_VIDEO:
+        tipe = "video"
+    else:
+        raise ValueError("Format Gallery harus JPG/PNG/WEBP (foto) atau MP4/MOV/WEBM/dst (video).")
     if not konten:
-        raise ValueError("File foto kosong.")
+        raise ValueError("File kosong.")
+    if tipe == "video" and len(konten) > MAKS_UKURAN_VIDEO_BYTES:
+        raise ValueError(f"Ukuran video Gallery maksimal {MAKS_UKURAN_VIDEO_BYTES // (1024 * 1024)}MB.")
     nama_file = f"{uuid.uuid4().hex}.{ext}"
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO website_gallery (filename, data, urutan, created_at) VALUES (?, ?, ?, ?)",
-            (nama_file, konten, urutan_maks + 1, now),
+            "INSERT INTO website_gallery (filename, data, tipe, urutan, created_at) VALUES (?, ?, ?, ?, ?)",
+            (nama_file, konten, tipe, urutan_maks + 1, now),
         )
         return cur.lastrowid
 
@@ -237,6 +255,8 @@ def get_gallery_foto_data(foto_id: int):
     if row is None or row["data"] is None:
         return None, None
     ext = row["filename"].rsplit(".", 1)[-1].lower()
+    if ext in EXT_KE_CONTENT_TYPE_VIDEO:
+        return bytes(row["data"]), EXT_KE_CONTENT_TYPE_VIDEO[ext]
     return bytes(row["data"]), EXT_KE_CONTENT_TYPE_GAMBAR.get(ext, "application/octet-stream")
 
 

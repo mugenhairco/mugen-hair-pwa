@@ -827,7 +827,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
   box-shadow: var(--shadow-card); padding: 8px; cursor: grab;
 }
-.website-gallery-item img { width: 100%; height: 100px; object-fit: cover; border-radius: 10px; display: block; }
+.website-gallery-item img, .website-gallery-item video { width: 100%; height: 100px; object-fit: cover; border-radius: 10px; display: block; }
 .website-gallery-item-aksi { display: flex; gap: 4px; margin-top: 6px; }
 .website-gallery-item-aksi button { min-height: 32px; padding: 4px 8px; font-size: 12px; flex: 1; }
 .book-barber-foto {
