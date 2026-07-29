@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- Tahap 16: aset slot tunggal (Logo, Hero Image/Video, Foto About,
+-- Background Website, QRIS) -- pindah dari disk lokal ke sini (disk lokal
+-- Render Free tier TIDAK persisten, lihat README) -- lihat file_asset_db.py.
+-- Tabel BARU murni, aman langsung CREATE TABLE IF NOT EXISTS (tidak ada
+-- gap instalasi existing seperti kolom baru di tabel lama).
+CREATE TABLE IF NOT EXISTS file_asset (
+    key           TEXT PRIMARY KEY,
+    filename      TEXT NOT NULL,
+    content_type  TEXT NOT NULL,
+    data          BYTEA NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS barbers (
     id              SERIAL PRIMARY KEY,
     nama            TEXT NOT NULL UNIQUE,
@@ -215,6 +228,10 @@ CREATE TABLE IF NOT EXISTS website_gallery (
     created_at  TEXT NOT NULL
 );
 
+-- Tahap 16: isi foto Gallery (BLOB) pindah dari disk lokal ke sini (disk
+-- lokal Render Free tier TIDAK persisten).
+ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS data BYTEA;
+
 -- Modul Karyawan (Fase 1): Slip Gaji Otomatis. gaji_pokok lewat ALTER TABLE
 -- terpisah (BUKAN dibakukan ke blok CREATE TABLE barbers di atas) supaya
 -- instalasi Postgres yang SUDAH ADA (tabel barbers sudah lama berdiri,
@@ -229,6 +246,11 @@ ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_pokok INTEGER NOT NULL DEFAULT
 -- untuk penjelasan lengkap & pasangan jalur SQLite-nya).
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS jabatan TEXT NOT NULL DEFAULT 'barber';
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_per_hari INTEGER NOT NULL DEFAULT 0;
+
+-- Tahap 16: isi foto barber (BLOB) pindah dari disk lokal ke sini (disk
+-- lokal Render Free tier TIDAK persisten) -- foto_filename (kolom lama)
+-- TETAP dipakai untuk tentukan Content-Type dari ekstensi, tidak berubah.
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS foto_data BYTEA;
 
 CREATE TABLE IF NOT EXISTS slip_gaji (
     id                SERIAL PRIMARY KEY,
@@ -340,6 +362,10 @@ CREATE TABLE IF NOT EXISTS reimburse (
     created_at        TEXT NOT NULL,
     updated_at        TEXT
 );
+
+-- Tahap 16: isi bukti reimburse (BLOB) pindah dari disk lokal ke sini
+-- (disk lokal Render Free tier TIDAK persisten).
+ALTER TABLE reimburse ADD COLUMN IF NOT EXISTS bukti_data BYTEA;
 
 -- Modul Karyawan (Fase 5): Izin & Cuti. Tabel baru murni, tidak perlu ALTER
 -- TABLE apa pun ke tabel lama (berdiri sendiri, tidak terhubung Slip Gaji).

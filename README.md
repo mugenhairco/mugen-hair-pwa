@@ -2693,3 +2693,63 @@ menyiapkannya di server.
 - Ganti `ADMIN_BOOTSTRAP_PASSWORD` dan `SECRET_KEY` dari nilai default
   SEBELUM aplikasi ini dipakai dengan data sungguhan (lihat bagian
   Deployment) — nilai default hanya aman untuk development lokal.
+
+## TAHAP: File Upload (Logo/Hero/Foto/QRIS/Bukti) Dipindah ke Database
+
+**Masalah**: Logo, Gallery, Hero Image/Video, Foto About, Background
+Website, Foto Barber, QRIS, dan Bukti Reimburse terus "hilang" (gambar
+rusak/404) di web maupun halaman booking publik. Root cause SAMA PERSIS
+seperti "AUDIT KRITIS" migrasi PostgreSQL di atas (Render Free tier TIDAK
+mendukung Persistent Disk sama sekali) — tapi migrasi itu dulu HANYA
+memindahkan data TABEL database, isi file yang diupload lewat aplikasi
+(disimpan sebagai file fisik di `backend/app/static/...`) tidak pernah
+ikut dipindahkan, jadi tetap hilang tiap deploy/restart walau baris
+database yang menyimpan NAMA filenya sudah persisten.
+
+**Solusi**: konten file (bytes) disimpan LANGSUNG di kolom BLOB/BYTEA
+database yang sudah persisten (sama seperti solusi data tabel), disk lokal
+`backend/app/static/...` tidak dipakai lagi sama sekali untuk upload:
+- **Aset slot tunggal** (Logo, Hero Image, Hero Video, Foto About,
+  Background Website, QRIS — satu file aktif per fitur, diganti tiap
+  upload baru): tabel baru generik `file_asset` (`key` PRIMARY KEY,
+  `filename`, `content_type`, `data` BLOB/BYTEA, `updated_at`), dikelola
+  modul baru `file_asset_db.py` (`simpan()`/`ambil()`/`ambil_meta()`/
+  `hapus()` dipanggil per fitur dengan `key` berbeda).
+- **Aset banyak baris** (Gallery, Foto Barber, Bukti Reimburse — bisa
+  banyak sekaligus): kolom BLOB baru ditambahkan LANGSUNG ke tabel
+  masing-masing yang sudah ada (`website_gallery.data`,
+  `barbers.foto_data`, `reimburse.bukti_data`), supaya kepemilikan data
+  tetap co-located dengan baris induknya (kolom `*_filename` yang lama
+  TETAP dipakai untuk menentukan Content-Type dari ekstensi).
+- Endpoint GET gambar/video (`routers/pengaturan.py`, `routers/website.py`,
+  `routers/booking.py`, `routers/reimburse.py`) diganti dari
+  `FileResponse(path, ...)` (baca dari disk) ke `Response(content=data,
+  ...)` (serve dari memory) — pola yang sudah dipakai lama untuk PDF di
+  `laporan_pdf.py`. **API contract TIDAK berubah** (endpoint tetap
+  mengembalikan `_url` string dengan `?v=` cache-bust yang sama persis) —
+  **tidak ada perubahan frontend sama sekali**.
+- Migrasi kolom baru ke tabel yang SUDAH ADA (barbers/website_gallery/
+  reimburse) memakai pola idempoten yang sama seperti seluruh migrasi
+  lain di proyek ini: jalur SQLite lewat `PRAGMA table_info()` dicek
+  SEBELUM `CREATE TABLE IF NOT EXISTS`, jalur PostgreSQL lewat
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` terpisah (BUKAN dibakukan ke
+  blok `CREATE TABLE IF NOT EXISTS` yang jadi no-op untuk tabel yang sudah
+  berdiri — kesalahan ini pernah menyebabkan bug produksi di tahap
+  sebelumnya, lihat catatan Pengeluaran).
+- Folder `backend/app/static/{logo,hero_image,hero_video,about,
+  background,gallery,barber_foto,qris,reimburse_bukti}/` (beserta
+  `.gitkeep`-nya) sudah tidak dipakai lagi dan dihapus dari repo.
+
+**Trade-off yang diketahui/diterima**: `FileResponse` otomatis mengisi
+header `Last-Modified`/`ETag` (mengaktifkan HTTP conditional GET/304),
+`Response` biasa tidak — bukan masalah di sini karena aplikasi sudah
+punya skema cache-busting sendiri lewat parameter `?v=<filename>` di
+setiap URL gambar, jadi kebenaran gambar yang ditampilkan tidak bergantung
+pada header itu.
+
+**Di luar cakupan (gap lama, bukan regresi)**: `pengaturan_backup.py`
+(`POSTGRES_BACKUP_TABLES`) sudah lebih dulu tidak mencakup tabel
+`reimburse`/`website_gallery`/`slip_gaji`/`kasbon` dkk di fitur
+Backup/Restore — tabel `file_asset` baru dan kolom BLOB baru ini
+mengikuti gap yang sudah ada itu, bukan gap baru yang ditambahkan tahap
+ini.

@@ -127,7 +127,7 @@ def _judul(jenis: str) -> str:
 def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
     identitas = pengaturan_identitas.get_identitas()
     nama_barbershop = identitas.get("nama_barbershop") or "MUGEN Hair Co."
-    logo_path, _ = pengaturan_identitas.get_logo_file_path()
+    logo_data, _ = pengaturan_identitas.get_logo_data()
     tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     def _on_page(canvas, doc):
@@ -135,9 +135,9 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
         width, height = A4
         y = height - 15 * mm
 
-        if logo_path:
+        if logo_data:
             try:
-                canvas.drawImage(logo_path, 15 * mm, y - 10 * mm, width=14 * mm, height=14 * mm,
+                canvas.drawImage(BytesIO(logo_data), 15 * mm, y - 10 * mm, width=14 * mm, height=14 * mm,
                                   preserveAspectRatio=True, mask="auto")
             except Exception:
                 pass  # logo korup/format tidak didukung reportlab -- laporan tetap dicetak tanpa logo

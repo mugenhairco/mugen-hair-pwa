@@ -60,6 +60,7 @@ from revisi_setting_migrasi import migrasi_revisi_setting
 from karyawan_migrasi import migrasi_karyawan
 import booking_db
 import website_content
+import file_asset_db
 import slip_gaji_db
 import kasbon_db
 import komisi_penyesuaian_db
@@ -225,6 +226,7 @@ def on_startup():
         auth_db.init_auth_db()
         booking_db.init_booking_db()  # BOOKING: tabel bookings/booking_items/closed_slot (idempotent)
         website_content.init_website_db()  # PR 1 Website Content: tabel website_gallery (idempotent)
+        file_asset_db.init_file_asset_db()  # Tahap 16: tabel file_asset -- Logo/Hero/Foto About/Background/QRIS (idempotent)
         slip_gaji_db.init_slip_gaji_db()  # Modul Karyawan Fase 1: kolom barbers.gaji_pokok + tabel slip_gaji (idempotent)
         kasbon_db.init_kasbon_db()  # Modul Karyawan Fase 2: tabel kasbon + kasbon_pembayaran (idempotent)
         komisi_penyesuaian_db.init_komisi_penyesuaian_db()  # Modul Karyawan Fase 3: tabel komisi_penyesuaian (idempotent; kolom slip_gaji.penyesuaian_komisi dibuat di init_slip_gaji_db() di atas)

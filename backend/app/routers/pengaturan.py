@@ -102,10 +102,10 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require
 
 @router.get("/logo")
 def ambil_logo(v: str | None = None):
-    path, content_type = pengaturan_identitas.get_logo_file_path()
-    if path is None:
+    data, content_type = pengaturan_identitas.get_logo_data()
+    if data is None:
         raise HTTPException(status_code=404, detail="Logo belum diatur.")
-    return FileResponse(path, media_type=content_type)
+    return Response(content=data, media_type=content_type)
 
 
 # ================= PENGATURAN KOMISI & BONUS =================
