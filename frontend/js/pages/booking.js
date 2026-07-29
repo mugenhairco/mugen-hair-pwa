@@ -1048,7 +1048,7 @@ const PageBooking = (() => {
     const galleryCard = MugenUI.el("div", { class: "card" });
     body.appendChild(galleryCard);
     galleryCard.appendChild(MugenUI.el("h2", {}, "Gallery"));
-    galleryCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Seret (drag) foto untuk mengubah urutan, atau pakai tombol ↑/↓ (lebih andal di layar sentuh)."));
+    galleryCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Bisa foto maupun video (format apa saja yang didukung browser). Seret (drag) untuk mengubah urutan, atau pakai tombol ↑/↓ (lebih andal di layar sentuh)."));
     const galleryGrid = MugenUI.el("div", { class: "website-gallery-grid" });
     galleryCard.appendChild(galleryGrid);
 
@@ -1066,7 +1066,11 @@ const PageBooking = (() => {
       galleryGrid.innerHTML = "";
       gallery.forEach((foto, idx) => {
         const item = MugenUI.el("div", { class: "website-gallery-item", draggable: "true" });
-        item.appendChild(MugenUI.el("img", { src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery" }));
+        item.appendChild(
+          foto.tipe === "video"
+            ? MugenUI.el("video", { src: MUGEN_API_BASE + foto.foto_url, controls: "controls", muted: "muted" })
+            : MugenUI.el("img", { src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery" }),
+        );
         const btnNaik = MugenUI.el("button", { type: "button", title: "Naikkan urutan" }, "↑");
         if (idx === 0) btnNaik.disabled = true;
         btnNaik.addEventListener("click", () => {
@@ -1081,13 +1085,13 @@ const PageBooking = (() => {
           [disusun[idx], disusun[idx + 1]] = [disusun[idx + 1], disusun[idx]];
           simpanUrutanGallery(disusun);
         });
-        const btnHapus = MugenUI.el("button", { type: "button", class: "btn-danger", title: "Hapus foto" }, "✕");
+        const btnHapus = MugenUI.el("button", { type: "button", class: "btn-danger", title: "Hapus item" }, "✕");
         btnHapus.addEventListener("click", async () => {
-          if (!confirm("Hapus foto ini dari Gallery?")) return;
+          if (!confirm("Hapus item ini dari Gallery?")) return;
           try {
             gallery = await MugenUI.withLoading(() => MugenApi.del(`/api/website/gallery/${foto.id}`), { message: "Menghapus…" });
             renderGalleryGrid();
-            MugenUI.toast("Foto dihapus.", "success");
+            MugenUI.toast("Item Gallery dihapus.", "success");
           } catch (e) { MugenUI.toast(e.message, "error"); }
         });
         item.appendChild(MugenUI.el("div", { class: "website-gallery-item-aksi" }, [btnNaik, btnTurun, btnHapus]));
@@ -1112,16 +1116,20 @@ const PageBooking = (() => {
     }
     renderGalleryGrid();
 
-    const inGalleryFiles = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", multiple: "multiple" });
-    const btnUploadGallery = MugenUI.el("button", { class: "btn-primary" }, "Upload Foto");
+    const inGalleryFiles = MugenUI.el("input", {
+      type: "file",
+      accept: "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,video/ogg,.mov",
+      multiple: "multiple",
+    });
+    const btnUploadGallery = MugenUI.el("button", { class: "btn-primary" }, "Upload Foto/Video");
     const errorGallery = MugenUI.el("div", { class: "login-error" });
-    galleryCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tambah Foto (bisa pilih banyak sekaligus)"));
+    galleryCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tambah Foto/Video (bisa pilih banyak sekaligus, video maks 50MB)"));
     galleryCard.appendChild(inGalleryFiles);
     galleryCard.appendChild(errorGallery);
     galleryCard.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, btnUploadGallery));
     btnUploadGallery.addEventListener("click", async () => {
       errorGallery.textContent = "";
-      if (!inGalleryFiles.files || !inGalleryFiles.files.length) { errorGallery.textContent = "Pilih minimal satu foto dulu."; return; }
+      if (!inGalleryFiles.files || !inGalleryFiles.files.length) { errorGallery.textContent = "Pilih minimal satu foto/video dulu."; return; }
       try {
         await MugenUI.withLoading(async () => {
           for (const file of inGalleryFiles.files) {
@@ -1130,7 +1138,7 @@ const PageBooking = (() => {
         }, { message: "Mengunggah…" });
         inGalleryFiles.value = "";
         renderGalleryGrid();
-        MugenUI.toast("Foto Gallery ditambahkan.", "success");
+        MugenUI.toast("Gallery ditambahkan.", "success");
       } catch (e) { errorGallery.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 

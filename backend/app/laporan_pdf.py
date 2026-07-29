@@ -18,6 +18,7 @@ from io import BytesIO
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
@@ -137,12 +138,12 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
 
         if logo_data:
             try:
-                canvas.drawImage(BytesIO(logo_data), 15 * mm, y - 10 * mm, width=14 * mm, height=14 * mm,
+                canvas.drawImage(ImageReader(BytesIO(logo_data)), 15 * mm, y - 10 * mm, width=14 * mm, height=14 * mm,
                                   preserveAspectRatio=True, mask="auto")
             except Exception:
                 pass  # logo korup/format tidak didukung reportlab -- laporan tetap dicetak tanpa logo
 
-        text_x = 32 * mm if logo_path else 15 * mm
+        text_x = 32 * mm if logo_data else 15 * mm
         canvas.setFont("Helvetica-Bold", 13)
         canvas.drawString(text_x, y - 2 * mm, nama_barbershop)
         canvas.setFont("Helvetica-Bold", 11)

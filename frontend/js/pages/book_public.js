@@ -313,9 +313,16 @@ const PageBookPublic = (() => {
       gallerySec.appendChild(MugenUI.el("h2", {}, "Gallery"));
       const slider = MugenUI.el("div", { class: "book-gallery-slider" });
       for (const foto of gallery) {
-        slider.appendChild(MugenUI.el("img", {
-          src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery", loading: "lazy", class: "book-gallery-slide",
-        }));
+        slider.appendChild(
+          foto.tipe === "video"
+            ? MugenUI.el("video", {
+                src: MUGEN_API_BASE + foto.foto_url, class: "book-gallery-slide",
+                autoplay: "autoplay", muted: "muted", loop: "loop", playsinline: "playsinline",
+              })
+            : MugenUI.el("img", {
+                src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery", loading: "lazy", class: "book-gallery-slide",
+              }),
+        );
       }
       gallerySec.appendChild(slider);
       page.appendChild(gallerySec);
