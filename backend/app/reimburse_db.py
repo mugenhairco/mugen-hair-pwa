@@ -140,6 +140,66 @@ def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = N
     return [_lengkapi(r) for r in rows]
 
 
+def get_reimburse_list_disetujui(tahun: int = None, bulan: int = None, barber_id: int = None,
+                                  tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """Klaim BERSTATUS DISETUJUI, difilter lewat `tanggal_approval` (BUKAN
+    `tanggal` klaim seperti get_reimburse_list()) -- dipakai
+    gabung_ke_rekap_transaksi() di bawah (Tahap 14: baris reimburse
+    otomatis muncul di Rekap Transaksi bertanggal SESUAI TANGGAL
+    DISETUJUI, bukan tanggal klaim diajukan)."""
+    q = "SELECT * FROM reimburse WHERE status = 'disetujui' AND tanggal_approval IS NOT NULL"
+    params = []
+    if barber_id is not None:
+        q += " AND barber_id = ?"; params.append(barber_id)
+    if tahun is not None:
+        q += " AND tanggal_approval LIKE ?"; params.append(f"{tahun:04d}-%")
+    if bulan is not None:
+        q += " AND tanggal_approval LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if tanggal_mulai is not None:
+        q += " AND tanggal_approval >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND tanggal_approval <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY tanggal_approval DESC, id DESC"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    return [_lengkapi(r) for r in rows]
+
+
+def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None, barber_id: int = None,
+                               tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """Menggabungkan `baris` (hasil database.get_rekap_transaksi_list(), satu
+    baris = satu transaksi/hari libur) dengan baris klaim Reimburse
+    BERSTATUS DISETUJUI pada periode yang sama -- dipanggil dari layer
+    pemanggil (routers/rekap.py & laporan_pdf.py), BUKAN dari database.py
+    sendiri (circular import: reimburse_db.py mengimpor database.py).
+
+    Pola baris SAMA seperti baris tipe='libur' yang sudah ada di
+    get_rekap_transaksi_list() -- tanggal = tanggal DISETUJUI (bukan
+    tanggal klaim diajukan), Pendapatan = nominal reimburse (otomatis ikut
+    Total Pendapatan di ringkasan PDF karena baris ini murni ditambahkan ke
+    `baris` yang sama), Ket = "Reimburse (kategori)". Berlaku untuk SEMUA
+    jabatan (barber/kasir/ob/kru), sama seperti tab Transaksi yang sudah
+    generik untuk seluruh karyawan."""
+    klaim = get_reimburse_list_disetujui(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    for k in klaim:
+        baris.append({
+            "tipe": "reimburse",
+            "tanggal": k["tanggal_approval"],
+            "barber_id": k["barber_id"],
+            "nama_barber": k["nama_barber"],
+            "daftar_service": "",
+            "jumlah_service": 0,
+            "tips": 0,
+            "uang_harian": 0,
+            "pendapatan": k["nominal"],
+            "keterangan": f"Reimburse ({k['kategori']})",
+        })
+    baris.sort(key=lambda r: r["nama_barber"])
+    baris.sort(key=lambda r: r["tanggal"], reverse=True)
+    return baris
+
+
 def get_kategori_list() -> list:
     with get_conn() as conn:
         rows = conn.execute(

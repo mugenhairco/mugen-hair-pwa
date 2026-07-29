@@ -558,9 +558,12 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     tidak berubah, ini murni opsi tambahan saat cetak PDF."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
+                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
         periode = _periode_text_opsional(tahun, bulan)
     header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
     baris = [[
