@@ -133,18 +133,6 @@ CREATE TABLE IF NOT EXISTS absensi_libur (
     UNIQUE(barber_id, tanggal)
 );
 
-CREATE TABLE IF NOT EXISTS pengeluaran (
-    id          SERIAL PRIMARY KEY,
-    tanggal     TEXT NOT NULL,
-    keterangan  TEXT NOT NULL,
-    jumlah      INTEGER NOT NULL,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT,
-    kategori    TEXT,
-    barber_id   INTEGER REFERENCES barbers(id),
-    aktif       INTEGER NOT NULL DEFAULT 1
-);
-
 CREATE TABLE IF NOT EXISTS produk (
     id           SERIAL PRIMARY KEY,
     nama         TEXT NOT NULL UNIQUE,
@@ -393,6 +381,26 @@ CREATE TABLE IF NOT EXISTS kas_penyesuaian (
     dibuat_oleh  TEXT,
     created_at   TEXT NOT NULL,
     updated_at   TEXT
+);
+
+-- Pindah ke sini (setelah kas_penyesuaian & reimburse) supaya kolom FK
+-- kas_penyesuaian_id/reimburse_id di bawah menunjuk ke tabel yang sudah
+-- pasti ada duluan (Tahap 12: integrasi Pengeluaran <-> Uang Kas <->
+-- Reimburse -- sumber_dana menentukan pengeluaran otomatis mengurangi
+-- Uang Kas atau membuat klaim Reimburse tersambung).
+CREATE TABLE IF NOT EXISTS pengeluaran (
+    id                  SERIAL PRIMARY KEY,
+    tanggal             TEXT NOT NULL,
+    keterangan          TEXT NOT NULL,
+    jumlah              INTEGER NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT,
+    kategori            TEXT,
+    barber_id           INTEGER REFERENCES barbers(id),
+    aktif               INTEGER NOT NULL DEFAULT 1,
+    sumber_dana         TEXT NOT NULL DEFAULT 'kas',
+    kas_penyesuaian_id  INTEGER REFERENCES kas_penyesuaian(id),
+    reimburse_id        INTEGER REFERENCES reimburse(id)
 );
 """
 

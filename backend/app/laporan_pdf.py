@@ -567,17 +567,19 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari
 # _LEBAR_KOLOM di _laporan_rekap_bulanan (dipakai Setting > Backup, kolom
 # lebih sedikit): varian halaman ini menyertakan Hari Libur & Target Bonus
-# persis seperti tabel pages/rekap.js tab Bulanan.
-_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [40 * mm, 16 * mm, 20 * mm, 18 * mm, 20 * mm, 14 * mm, 18 * mm, 20 * mm, 28 * mm]
+# persis seperti tabel pages/rekap.js tab Bulanan. Kolom Reimburse (Tahap
+# 12) ditambahkan sebelum Total.
+_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [30 * mm, 16 * mm, 20 * mm, 18 * mm, 20 * mm, 14 * mm, 18 * mm, 16 * mm, 20 * mm, 22 * mm]
 
 
 def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str) -> bytes:
     data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
-    header = ["Barber", "Jml Service", "Komisi", "Tips", "Uang Harian", "Hari Libur", "Target Bonus", "Bonus Cust.", "Total"]
+    header = ["Barber", "Jml Service", "Komisi", "Tips", "Uang Harian", "Hari Libur", "Target Bonus", "Bonus Cust.", "Reimburse", "Total"]
     baris = [[
         _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])), _sel(_rupiah(r["total_komisi"])),
         _sel(_rupiah(r["tips"])), _sel(_rupiah(r["uang_harian"])), _sel(str(r["hari_libur"])),
         _sel("Tercapai" if r["target_tercapai"] else "Belum"), _sel(_rupiah(r["bonus_customer"])),
+        _sel(_rupiah(reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan))),
         _sel(_rupiah(r["total_pendapatan"])),
     ] for r in data]
     total_pendapatan = sum(r["total_pendapatan"] for r in data)
@@ -606,16 +608,18 @@ def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_ole
                         col_widths=_LEBAR_KOLOM_PENGELUARAN_TAB_REKAP, ringkasan_tambahan=ringkasan_tambahan)
 
 
-# Lebar kolom Daftar Slip Gaji (mm), total 194mm -- Periode/Barber/Total
-# Diterima/Status, mengikuti kolom tabel pages/slip_gaji.js apa adanya.
-_LEBAR_KOLOM_SLIP_GAJI_LIST = [30 * mm, 50 * mm, 40 * mm, 74 * mm]
+# Lebar kolom Daftar Slip Gaji (mm), total 194mm -- Periode/Barber/
+# Reimburse/Total Diterima/Status, mengikuti kolom tabel pages/slip_gaji.js
+# apa adanya (kolom Reimburse ditambahkan Tahap 12).
+_LEBAR_KOLOM_SLIP_GAJI_LIST = [26 * mm, 44 * mm, 30 * mm, 34 * mm, 60 * mm]
 
 
 def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str) -> bytes:
     data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
-    header = ["Periode", "Barber", "Total Diterima", "Status"]
+    header = ["Periode", "Barber", "Reimburse", "Total Diterima", "Status"]
     baris = [[
         _sel(f"{_NAMA_BULAN[r['bulan']]} {r['tahun']}"), _sel(r["nama_barber"]),
+        _sel(_rupiah(r["reimburse"])),
         _sel(_rupiah(r["total_diterima"])),
         _sel("Sudah Dibayar" if r["status"] == "sudah_dibayar" else "Belum Dibayar"),
     ] for r in data]

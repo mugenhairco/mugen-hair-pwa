@@ -31,6 +31,19 @@ def migrasi_pengeluaran():
         if "aktif" not in kolom:
             conn.execute("ALTER TABLE pengeluaran ADD COLUMN aktif INTEGER NOT NULL DEFAULT 1")
 
+        # Sumber Dana (Tahap 12): setiap pengeluaran ditandai berasal dari
+        # kas toko ('kas', otomatis mengurangi Uang Kas lewat kas_penyesuaian)
+        # atau uang pribadi karyawan yang dipakai dulu ('karyawan', otomatis
+        # membuat klaim Reimburse tersambung). kas_penyesuaian_id/reimburse_id
+        # menyimpan baris terkait yang dibuat otomatis di modul lain.
+        if "sumber_dana" not in kolom:
+            conn.execute("ALTER TABLE pengeluaran ADD COLUMN sumber_dana TEXT NOT NULL DEFAULT 'kas'")
+        if "kas_penyesuaian_id" not in kolom:
+            conn.execute("ALTER TABLE pengeluaran ADD COLUMN kas_penyesuaian_id INTEGER REFERENCES kas_penyesuaian(id)")
+        if "reimburse_id" not in kolom:
+            conn.execute("ALTER TABLE pengeluaran ADD COLUMN reimburse_id INTEGER REFERENCES reimburse(id)")
+
         # Data lama (dicatat sebelum Tahap 9, sebelum kolom kategori ada)
         # diberi kategori default supaya tidak kosong/null di UI & filter.
         conn.execute("UPDATE pengeluaran SET kategori = 'Lainnya' WHERE kategori IS NULL")
+        conn.execute("UPDATE pengeluaran SET sumber_dana = 'kas' WHERE sumber_dana IS NULL")

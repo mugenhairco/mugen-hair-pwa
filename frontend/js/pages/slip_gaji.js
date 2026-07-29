@@ -69,6 +69,7 @@ const PageSlipGaji = (() => {
       ];
       if (isAdmin) kolom.push({ key: "nama_barber", label: "Karyawan" });
       kolom.push(
+        { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },
         { key: "total_diterima", label: "Total Diterima", format: MugenUI.formatRupiah },
         {
           key: "status", label: "Status",
