@@ -567,9 +567,71 @@ def buat_nama_file(prefix: str) -> str:
 
 
 # Lebar kolom Rekap Transaksi (mm), total 194mm -- Tanggal/Barber/Service/
-# Jml Service/Uang Harian/Tips/Pendapatan/Ket, mengikuti kolom tabel
-# pages/rekap.js tab Transaksi apa adanya.
-_LEBAR_KOLOM_REKAP_TRANSAKSI = [20 * mm, 26 * mm, 40 * mm, 16 * mm, 22 * mm, 20 * mm, 22 * mm, 28 * mm]
+# Jml Service/Uang Harian/Tips/Pendapatan(/Reimburse/Kasbon Dibayar kalau
+# ada)/Ket, mengikuti kolom tabel pages/rekap.js tab Transaksi APA ADANYA
+# untuk kolom dasar -- Reimburse & Kasbon Dibayar KHUSUS PDF (lihat
+# _gabung_reimburse_kasbon_kolom()), tidak ada di tampilan layar.
+_LEBAR_KOLOM_REKAP_TRANSAKSI = {
+    (False, False): [20 * mm, 26 * mm, 40 * mm, 16 * mm, 22 * mm, 20 * mm, 22 * mm, 28 * mm],
+    (True, False):  [20 * mm, 26 * mm, 34 * mm, 16 * mm, 20 * mm, 18 * mm, 20 * mm, 18 * mm, 22 * mm],
+    (False, True):  [20 * mm, 26 * mm, 34 * mm, 16 * mm, 20 * mm, 18 * mm, 20 * mm, 18 * mm, 22 * mm],
+    (True, True):   [20 * mm, 24 * mm, 28 * mm, 14 * mm, 18 * mm, 16 * mm, 18 * mm, 16 * mm, 16 * mm, 24 * mm],
+}
+
+
+def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = None, barber_id: int = None,
+                                    tanggal_mulai: str = None, tanggal_selesai: str = None):
+    """REVISI (khusus PDF Rekap Transaksi, BEDA dari tampilan layar yang
+    tetap pakai reimburse_db.py/kasbon_db.py gabung_ke_rekap_transaksi()
+    apa adanya -- baris terpisah): Reimburse & Kasbon Dibayar TIDAK jadi
+    baris sendiri, tapi digabung sebagai KOLOM tambahan ke baris yang
+    SUDAH ADA di tanggal+barber yang sama (satu tanggal = satu baris) --
+    kalau tidak ada baris transaksi/libur di tanggal itu, baru dibuat baris
+    baru minimal. Return (data, ada_reimburse, ada_kasbon) -- 2 flag
+    terakhir dipakai buat_pdf_rekap_transaksi() untuk MENYEMBUNYIKAN TOTAL
+    kolom (bukan cuma mengosongkan nilainya) kalau memang tidak ada
+    satupun Reimburse/Kasbon di SELURUH data yang dicetak (baik filter
+    satu karyawan maupun semua karyawan)."""
+    for r in data:
+        r["reimburse"] = 0
+        r["kasbon_dibayar"] = 0
+
+    # Baris PERTAMA yang cocok per (barber_id, tanggal) -- jarang ada lebih
+    # dari satu transaksi barber yang sama di tanggal yang sama, tapi kalau
+    # ada, Reimburse/Kasbon tanggal itu ditempelkan ke satu baris saja
+    # (tidak pernah dobel) supaya total tetap benar.
+    index = {}
+    for r in data:
+        index.setdefault((r["barber_id"], r["tanggal"]), r)
+
+    def _tempel(key, jumlah, kolom, catatan, nama_barber):
+        row = index.get(key)
+        if row is None:
+            row = {
+                "tipe": "gabungan", "tanggal": key[1], "barber_id": key[0], "nama_barber": nama_barber,
+                "daftar_service": "", "jumlah_service": 0, "tips": 0, "uang_harian": 0, "pendapatan": 0,
+                "keterangan": "", "reimburse": 0, "kasbon_dibayar": 0,
+            }
+            index[key] = row
+            data.append(row)
+        row[kolom] += jumlah
+        row["keterangan"] = "; ".join(x for x in [row["keterangan"], catatan] if x)
+
+    for rb in reimburse_db.get_reimburse_list_disetujui(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai):
+        _tempel((rb["barber_id"], rb["tanggal_approval"]), rb["nominal"], "reimburse",
+                f"Reimburse: {rb['kategori']}", rb["nama_barber"])
+
+    for kb in kasbon_db.get_pembayaran_list_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                     tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai):
+        catatan = f"Kasbon: {kb['keterangan']}" if kb.get("keterangan") else "Kasbon Dibayar"
+        _tempel((kb["barber_id"], kb["tanggal"]), kb["jumlah"], "kasbon_dibayar", catatan, kb["nama_barber"])
+
+    data.sort(key=lambda r: r["nama_barber"])
+    data.sort(key=lambda r: r["tanggal"], reverse=True)
+    ada_reimburse = any(r["reimburse"] for r in data)
+    ada_kasbon = any(r["kasbon_dibayar"] for r in data)
+    return data, ada_reimburse, ada_kasbon
 
 
 def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
@@ -580,47 +642,59 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     tidak berubah, ini murni opsi tambahan saat cetak PDF."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
-                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
-                                                    tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
+            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                                           tanggal_selesai=tanggal_selesai)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
+            data, tahun=tahun, bulan=bulan, barber_id=barber_id)
         rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
         periode = _periode_text_opsional(tahun, bulan)
-    header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
-    baris = [[
-        _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel(r["daftar_service"] or "-"),
-        _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
-        _sel(_rupiah(r["pendapatan"])), _sel(r["keterangan"] or "-"),
-    ] for r in data]
-    # Tahap 15: ringkasan di bawah tabel dipecah jadi Pendapatan (transaksi
-    # murni, TIDAK termasuk Reimburse/Kasbon) + Rincian (jumlah per jenis
-    # service, digabung SEMUA karyawan yang tercakup filter -- service yang
-    # jumlahnya 0 otomatis tidak muncul) + Reimburse (terpisah) + TOTAL
-    # (Pendapatan + Reimburse) -- sebelumnya Reimburse ikut tercampur ke
-    # "Total Pendapatan". Tahap 17: baris Kasbon Dibayar ditambahkan,
-    # MENGURANGI TOTAL (pinjaman, bukan pendapatan, lihat kasbon_db.py) --
-    # nilai baris kasbon di `data` sudah negatif, jadi kasbon_total di sini
-    # dibalik jadi POSITIF (jumlah yang dibayar) supaya gampang ditampilkan.
-    pendapatan_total = sum(r["pendapatan"] for r in data if r.get("tipe") not in ("reimburse", "kasbon"))
-    reimburse_total = sum(r["pendapatan"] for r in data if r.get("tipe") == "reimburse")
-    kasbon_total = sum(-r["pendapatan"] for r in data if r.get("tipe") == "kasbon")
+
+    header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan"]
+    if ada_reimburse:
+        header.append("Reimburse")
+    if ada_kasbon:
+        header.append("Kasbon Dibayar")
+    header.append("Ket")
+
+    baris = []
+    for r in data:
+        sel = [
+            _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel(r["daftar_service"] or "-"),
+            _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
+            _sel(_rupiah(r["pendapatan"])),
+        ]
+        if ada_reimburse:
+            sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
+        if ada_kasbon:
+            sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
+        sel.append(_sel(r["keterangan"] or "-"))
+        baris.append(sel)
+
+    # Ringkasan di bawah tabel: Pendapatan (transaksi murni) + Rincian
+    # (jumlah per jenis service) + Reimburse/Kasbon Dibayar HANYA kalau ada
+    # (lihat ada_reimburse/ada_kasbon) + TOTAL (Pendapatan + Reimburse -
+    # Kasbon Dibayar -- kasbon MENGURANGI, pinjaman bukan pendapatan).
+    pendapatan_total = sum(r["pendapatan"] for r in data)
+    reimburse_total = sum(r["reimburse"] for r in data)
+    kasbon_total = sum(r["kasbon_dibayar"] for r in data)
     ringkasan_tambahan = [f"<b>Pendapatan: {_rupiah(pendapatan_total)}</b>"]
     if rincian_service:
         ringkasan_tambahan.append("<b>Rincian</b>")
         for s in rincian_service:
             ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
-    ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
-    ringkasan_tambahan.append(f"<b>Kasbon Dibayar: -{_rupiah(kasbon_total)}</b>")
+    if ada_reimburse:
+        ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
+    if ada_kasbon:
+        ringkasan_tambahan.append(f"<b>Kasbon Dibayar: -{_rupiah(kasbon_total)}</b>")
     ringkasan_tambahan.append(f"<b>TOTAL: {_rupiah(pendapatan_total + reimburse_total - kasbon_total)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
+                        ringkasan_tambahan=ringkasan_tambahan)
 
 
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari
