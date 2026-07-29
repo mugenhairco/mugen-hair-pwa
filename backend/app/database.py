@@ -923,6 +923,35 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
+def get_rincian_service_periode(tahun: int = None, bulan: int = None, barber_id: int = None,
+                                 tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """Sama seperti get_rincian_service_bulan() di atas, TAPI lebih generik --
+    barber_id OPSIONAL (kalau kosong, rincian digabung dari SEMUA barber) dan
+    mendukung tanggal_mulai/tanggal_selesai sebagai alternatif tahun/bulan
+    (rentang tanggal bebas). Dipakai ringkasan "Rincian" di PDF Rekap
+    Transaksi (Tahap 15). Service yang jumlahnya 0 otomatis tidak pernah
+    muncul (SUM cuma menghasilkan baris untuk service yang benar-benar
+    pernah dipakai pada periode itu)."""
+    q = """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
+           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+           WHERE 1=1"""
+    params = []
+    if barber_id is not None:
+        q += " AND t.barber_id = ?"; params.append(barber_id)
+    if tahun is not None:
+        q += " AND t.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+    if bulan is not None:
+        q += " AND t.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if tanggal_mulai is not None:
+        q += " AND t.tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND t.tanggal <= ?"; params.append(tanggal_selesai)
+    q += " GROUP BY td.nama_service ORDER BY jumlah DESC, td.nama_service ASC"
+    with get_conn() as conn:
+        rows = conn.execute(q, params).fetchall()
+    return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
+
+
 def get_rincian_service_rentang(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
     """Versi rentang tanggal bebas dari get_rincian_service_bulan() di atas --
     BEDA juga karena bisa LINTAS BARBER (barber_id=None = seluruh barber
