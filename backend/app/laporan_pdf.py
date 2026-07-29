@@ -26,11 +26,20 @@ import pengeluaran_db
 import pengaturan_identitas
 import kasbon_db
 import pemasukan_db
+import komisi_penyesuaian_db
+import reimburse_db
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
-JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan", "kasbon", "pemasukan"}
+JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan", "kasbon", "pemasukan", "komisi", "reimburse"}
+# Jenis yang dipilih lewat Tahun+Bulan (satu bulan kalender penuh), BUKAN
+# rentang tanggal bebas -- Rekap Bulanan (perhitungan komisi/bonus/uang
+# harian bertumpu pada batas bulan kalender) dan Komisi (baris
+# komisi_penyesuaian tidak punya kolom tanggal harian, terikat tahun+bulan
+# saja, lihat komisi_penyesuaian_db.py). Semua jenis LAIN pakai rentang
+# tanggal bebas (tanggal_mulai/tanggal_selesai) -- lihat buat_laporan().
+JENIS_TAHUN_BULAN = {"rekap_bulanan", "komisi"}
 
 # Dipakai HANYA untuk kolom Laporan Transaksi yang bisa berisi teks panjang
 # (Ket, gabungan beberapa catatan) -- sel string biasa di reportlab Table
@@ -95,6 +104,8 @@ def _judul(jenis: str) -> str:
         "rekap_bulanan": "Rekap Bulanan Barber",
         "kasbon": "Laporan Kasbon",
         "pemasukan": "Laporan Pemasukan",
+        "komisi": "Laporan Komisi",
+        "reimburse": "Laporan Reimburse",
     }[jenis]
 
 
@@ -269,6 +280,55 @@ def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     return header, baris
 
 
+def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str):
+    """Penyesuaian komisi (bonus/potongan manual) satu bulan kalender --
+    data APA ADANYA lewat komisi_penyesuaian_db.get_penyesuaian_list(),
+    TIDAK menghitung ulang satu angka pun. Net (Total Bonus - Total
+    Potongan) match persis dengan komisi_penyesuaian_db.get_saldo_periode()
+    yang dipakai auto-fill Slip Gaji, jadi laporan ini otomatis konsisten
+    dengan apa yang sudah tercermin di payroll."""
+    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
+    header = ["Barber", "Jenis", "Jumlah", "Keterangan"]
+    baris = [[
+        _sel(k["nama_barber"]), _sel("Bonus" if k["jenis"] == "bonus" else "Potongan"),
+        _sel(_rupiah(k["jumlah"])), _sel(k.get("keterangan") or "-"),
+    ] for k in data]
+
+    total_bonus = sum(k["jumlah"] for k in data if k["jenis"] == "bonus")
+    total_potongan = sum(k["jumlah"] for k in data if k["jenis"] == "potongan")
+    ringkasan_tambahan = [
+        f"<b>Total Bonus: {_rupiah(total_bonus)}</b>",
+        f"<b>Total Potongan: {_rupiah(total_potongan)}</b>",
+        f"<b>Net: {_rupiah(total_bonus - total_potongan)}</b>",
+    ]
+    return header, baris, ringkasan_tambahan
+
+
+def _laporan_reimburse(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
+    """Klaim reimburse rentang tanggal bebas -- data APA ADANYA lewat
+    reimburse_db.get_reimburse_list(), TIDAK menghitung ulang satu angka
+    pun. Total Disetujui-lah yang benar-benar berdampak finansial
+    (satu-satunya status yang bisa masuk auto-fill Slip Gaji, lihat
+    reimburse_db.get_saldo_periode())."""
+    data = reimburse_db.get_reimburse_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
+    header = ["Tanggal", "Barber", "Kategori", "Nominal", "Status", "Keterangan"]
+    baris = [[
+        _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel(r["kategori"]), _sel(_rupiah(r["nominal"])),
+        _sel(label_status.get(r["status"], r["status"])), _sel(r.get("keterangan") or "-"),
+    ] for r in data]
+
+    total_disetujui = sum(r["nominal"] for r in data if r["status"] == "disetujui")
+    total_pending = sum(r["nominal"] for r in data if r["status"] == "pending")
+    total_ditolak = sum(r["nominal"] for r in data if r["status"] == "ditolak")
+    ringkasan_tambahan = [
+        f"<b>Total Disetujui: {_rupiah(total_disetujui)}</b>",
+        f"Total Pending: {_rupiah(total_pending)}",
+        f"Total Ditolak: {_rupiah(total_ditolak)}",
+    ]
+    return header, baris, ringkasan_tambahan
+
+
 # Lebar kolom Slip Gaji (mm), total 194mm sama seperti tabel lain di file
 # ini (lihat _LEBAR_KOLOM_TRANSAKSI) -- Komponen lebih lebar karena baris
 # "Potongan Lain" bisa memuat catatan bebas dari Owner.
@@ -277,6 +337,13 @@ _LEBAR_KOLOM_SLIP_GAJI = [110 * mm, 84 * mm]
 # Lebar kolom Laporan Kasbon (mm), total 194mm sama seperti tabel lain di
 # file ini -- Tanggal/Barber/Jumlah Kasbon/Sisa/Status/Keterangan.
 _LEBAR_KOLOM_KASBON = [22 * mm, 28 * mm, 28 * mm, 28 * mm, 24 * mm, 64 * mm]
+
+# Lebar kolom Laporan Komisi (mm), total 194mm -- Barber/Jenis/Jumlah/Keterangan.
+_LEBAR_KOLOM_KOMISI = [40 * mm, 24 * mm, 30 * mm, 100 * mm]
+
+# Lebar kolom Laporan Reimburse (mm), total 194mm, proporsi sama persis
+# Laporan Kasbon -- Tanggal/Barber/Kategori/Nominal/Status/Keterangan.
+_LEBAR_KOLOM_REIMBURSE = [22 * mm, 28 * mm, 28 * mm, 28 * mm, 24 * mm, 64 * mm]
 
 
 def buat_slip_gaji_pdf(slip: dict) -> bytes:
@@ -321,22 +388,27 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
     """Return (bytes_pdf, nama_file). Raise ValueError kalau jenis tidak dikenal
     atau parameter wajib tidak diisi.
 
-    Rekap Bulanan Barber TETAP dipilih lewat Tahun+Bulan (wajib satu bulan
-    penuh -- perhitungan komisi/bonus/uang harian bertumpu pada batas bulan
-    kalender, lihat database.py get_ringkasan_barber_bulan(), BUKAN sesuatu
-    yang bisa dipotong ke rentang tanggal bebas tanpa mengubah logika hitung
-    itu sendiri). Laporan Transaksi & Pengeluaran dipilih lewat rentang
-    tanggal bebas (tanggal_mulai/tanggal_selesai) supaya Periode di PDF
-    menunjukkan rentang tanggal sebenarnya, bukan cuma Bulan/Tahun."""
+    Rekap Bulanan Barber & Komisi dipilih lewat Tahun+Bulan (lihat
+    JENIS_TAHUN_BULAN) -- Rekap Bulanan karena perhitungan komisi/bonus/
+    uang harian bertumpu pada batas bulan kalender (database.py
+    get_ringkasan_barber_bulan()), Komisi karena baris komisi_penyesuaian
+    tidak punya kolom tanggal harian sama sekali (terikat tahun+bulan
+    saja). Jenis lain (termasuk Reimburse) dipilih lewat rentang tanggal
+    bebas (tanggal_mulai/tanggal_selesai) supaya Periode di PDF menunjukkan
+    rentang tanggal sebenarnya, bukan cuma Bulan/Tahun."""
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis laporan tidak dikenal: {jenis}")
 
     col_widths = None
     ringkasan_tambahan = None
-    if jenis == "rekap_bulanan":
+    if jenis in JENIS_TAHUN_BULAN:
         if not tahun or not bulan:
-            raise ValueError("Tahun dan Bulan wajib diisi untuk Rekap Bulanan Barber.")
-        header, baris = _laporan_rekap_bulanan(tahun, bulan, barber_id, dicetak_oleh)
+            raise ValueError(f"Tahun dan Bulan wajib diisi untuk {_judul(jenis)}.")
+        if jenis == "komisi":
+            header, baris, ringkasan_tambahan = _laporan_komisi(tahun, bulan, barber_id, dicetak_oleh)
+            col_widths = _LEBAR_KOLOM_KOMISI
+        else:
+            header, baris = _laporan_rekap_bulanan(tahun, bulan, barber_id, dicetak_oleh)
         periode = _periode_text(tahun, bulan)
     else:
         if not tanggal_mulai or not tanggal_selesai:
@@ -354,6 +426,11 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
                 tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
             )
             col_widths = _LEBAR_KOLOM_KASBON
+        elif jenis == "reimburse":
+            header, baris, ringkasan_tambahan = _laporan_reimburse(
+                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
+            )
+            col_widths = _LEBAR_KOLOM_REIMBURSE
         elif jenis == "pemasukan":
             header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh)
         else:

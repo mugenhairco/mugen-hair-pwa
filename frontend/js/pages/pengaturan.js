@@ -1077,14 +1077,20 @@ const PagePengaturan = (() => {
         MugenUI.el("option", { value: "pemasukan" }, "Laporan Pemasukan"),
         MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
         MugenUI.el("option", { value: "kasbon" }, "Laporan Kasbon"),
+        MugenUI.el("option", { value: "komisi" }, "Laporan Komisi"),
+        MugenUI.el("option", { value: "reimburse" }, "Laporan Reimburse"),
       ]);
 
-      // Rekap Bulanan Barber: TETAP Tahun+Bulan (perhitungan komisi/bonus/
-      // uang harian bertumpu pada batas bulan kalender, lihat
-      // database.py get_ringkasan_barber_bulan() -- tidak bisa dipotong ke
-      // rentang tanggal bebas). Transaksi & Pengeluaran: rentang tanggal
-      // bebas (Dari - Sampai) supaya Periode di PDF menunjukkan tanggal
-      // sebenarnya, bukan cuma "Bulan Tahun".
+      // Jenis yang dipilih lewat Tahun+Bulan (BUKAN rentang tanggal bebas)
+      // -- pola sama persis JENIS_TAHUN_BULAN di laporan_pdf.py: Rekap
+      // Bulanan (perhitungan komisi/bonus/uang harian bertumpu pada batas
+      // bulan kalender, lihat database.py get_ringkasan_barber_bulan())
+      // dan Komisi (baris komisi_penyesuaian tidak punya kolom tanggal
+      // harian sama sekali, terikat tahun+bulan saja). Jenis lain
+      // (termasuk Reimburse yang PUNYA kolom tanggal) pakai rentang
+      // tanggal bebas (Dari - Sampai) supaya Periode di PDF menunjukkan
+      // tanggal sebenarnya, bukan cuma "Bulan Tahun".
+      const JENIS_TAHUN_BULAN = ["rekap_bulanan", "komisi"];
       const wrapTahunBulan = MugenUI.el("div");
       const selTahunLaporan = MugenUI.el("select");
       for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahunLaporan.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
@@ -1120,9 +1126,9 @@ const PagePengaturan = (() => {
       laporanCard.appendChild(selBarberLaporan);
 
       function terapkanTampilanJenis() {
-        const rekap = selJenis.value === "rekap_bulanan";
-        wrapTahunBulan.style.display = rekap ? "" : "none";
-        wrapRentang.style.display = rekap ? "none" : "";
+        const pakaiTahunBulan = JENIS_TAHUN_BULAN.includes(selJenis.value);
+        wrapTahunBulan.style.display = pakaiTahunBulan ? "" : "none";
+        wrapRentang.style.display = pakaiTahunBulan ? "none" : "";
       }
       terapkanTampilanJenis();
       selJenis.addEventListener("change", terapkanTampilanJenis);
@@ -1136,12 +1142,12 @@ const PagePengaturan = (() => {
 
       btnLaporan.addEventListener("click", async () => {
         laporanError.textContent = "";
-        const rekap = selJenis.value === "rekap_bulanan";
-        if (!rekap && (!inputDari.value || !inputSampai.value)) {
+        const pakaiTahunBulan = JENIS_TAHUN_BULAN.includes(selJenis.value);
+        if (!pakaiTahunBulan && (!inputDari.value || !inputSampai.value)) {
           laporanError.textContent = "Tanggal Dari dan Sampai wajib diisi.";
           return;
         }
-        if (!rekap && inputDari.value > inputSampai.value) {
+        if (!pakaiTahunBulan && inputDari.value > inputSampai.value) {
           laporanError.textContent = "Tanggal Dari tidak boleh setelah Tanggal Sampai.";
           return;
         }
@@ -1149,7 +1155,7 @@ const PagePengaturan = (() => {
         try {
           await MugenUI.withLoading(async () => {
             const qs = new URLSearchParams({ jenis: selJenis.value });
-            if (rekap) {
+            if (pakaiTahunBulan) {
               qs.set("tahun", selTahunLaporan.value);
               qs.set("bulan", selBulanLaporan.value);
             } else {
@@ -1170,7 +1176,7 @@ const PagePengaturan = (() => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            const stamp = rekap ? `${selTahunLaporan.value}-${selBulanLaporan.value}` : `${inputDari.value}_${inputSampai.value}`;
+            const stamp = pakaiTahunBulan ? `${selTahunLaporan.value}-${selBulanLaporan.value}` : `${inputDari.value}_${inputSampai.value}`;
             a.download = `laporan_${selJenis.value}_${stamp}.pdf`;
             document.body.appendChild(a);
             a.click();

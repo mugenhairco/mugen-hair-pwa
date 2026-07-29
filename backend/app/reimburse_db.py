@@ -95,7 +95,12 @@ def get_reimburse(reimburse_id: int):
 
 
 def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = None,
-                        bulan: int = None, kategori: str = None) -> list:
+                        bulan: int = None, kategori: str = None,
+                        tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """tanggal_mulai/tanggal_selesai (inklusif di kedua ujung) dipakai
+    Laporan Reimburse (rentang tanggal bebas) -- BEDA dari tahun/bulan
+    (satu bulan/tahun penuh, dipakai filter halaman Reimburse), pola sama
+    persis kasbon_db.get_kasbon_list()."""
     q = "SELECT * FROM reimburse WHERE 1=1"
     params = []
     if barber_id is not None:
@@ -108,6 +113,10 @@ def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = N
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if kategori:
         q += " AND kategori = ?"; params.append(kategori)
+    if tanggal_mulai is not None:
+        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
     q += " ORDER BY tanggal DESC, id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
