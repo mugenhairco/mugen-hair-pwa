@@ -560,10 +560,13 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
         data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id,
                                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                          tanggal_selesai=tanggal_selesai)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
         data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
         periode = _periode_text_opsional(tahun, bulan)
     header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
     baris = [[
@@ -571,8 +574,20 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
         _sel(_rupiah(r["pendapatan"])), _sel(r["keterangan"] or "-"),
     ] for r in data]
-    total_pendapatan = sum(r["pendapatan"] for r in data)
-    ringkasan_tambahan = [f"<b>Total Pendapatan: {_rupiah(total_pendapatan)}</b>"]
+    # Tahap 15: ringkasan di bawah tabel dipecah jadi Pendapatan (transaksi
+    # murni, TIDAK termasuk Reimburse) + Rincian (jumlah per jenis service,
+    # digabung SEMUA karyawan yang tercakup filter -- service yang jumlahnya
+    # 0 otomatis tidak muncul) + Reimburse (terpisah) + TOTAL (Pendapatan +
+    # Reimburse) -- sebelumnya Reimburse ikut tercampur ke "Total Pendapatan".
+    pendapatan_total = sum(r["pendapatan"] for r in data if r.get("tipe") != "reimburse")
+    reimburse_total = sum(r["pendapatan"] for r in data if r.get("tipe") == "reimburse")
+    ringkasan_tambahan = [f"<b>Pendapatan: {_rupiah(pendapatan_total)}</b>"]
+    if rincian_service:
+        ringkasan_tambahan.append("<b>Rincian</b>")
+        for s in rincian_service:
+            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
+    ringkasan_tambahan.append(f"<b>TOTAL: {_rupiah(pendapatan_total + reimburse_total)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI, ringkasan_tambahan=ringkasan_tambahan)
 
