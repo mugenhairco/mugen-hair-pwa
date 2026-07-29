@@ -25,11 +25,12 @@ import database as db
 import pengeluaran_db
 import pengaturan_identitas
 import kasbon_db
+import pemasukan_db
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
 
-JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan", "kasbon"}
+JENIS_VALID = {"transaksi", "pengeluaran", "rekap_bulanan", "kasbon", "pemasukan"}
 
 # Dipakai HANYA untuk kolom Laporan Transaksi yang bisa berisi teks panjang
 # (Ket, gabungan beberapa catatan) -- sel string biasa di reportlab Table
@@ -93,6 +94,7 @@ def _judul(jenis: str) -> str:
         "pengeluaran": "Laporan Pengeluaran",
         "rekap_bulanan": "Rekap Bulanan Barber",
         "kasbon": "Laporan Kasbon",
+        "pemasukan": "Laporan Pemasukan",
     }[jenis]
 
 
@@ -230,6 +232,14 @@ def _laporan_pengeluaran(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh:
     return header, baris
 
 
+def _laporan_pemasukan(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str):
+    data = pemasukan_db.get_pemasukan_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Jumlah"]
+    baris = [[p["tanggal"], p.get("kategori") or "-", p["keterangan"], p.get("nama_barber") or "-",
+              _rupiah(p["jumlah"])] for p in data]
+    return header, baris
+
+
 def _laporan_kasbon(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
     """Memenuhi kebutuhan Kasbon "masuk laporan keuangan" -- data APA ADANYA
     lewat kasbon_db.get_kasbon_list() (rentang tanggal bebas, sama seperti
@@ -344,6 +354,8 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
                 tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
             )
             col_widths = _LEBAR_KOLOM_KASBON
+        elif jenis == "pemasukan":
+            header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh)
         else:
             header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh)
 

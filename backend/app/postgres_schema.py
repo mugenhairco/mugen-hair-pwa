@@ -341,6 +341,37 @@ CREATE TABLE IF NOT EXISTS izin_cuti (
     created_at        TEXT NOT NULL,
     updated_at        TEXT
 );
+
+-- Modul Keuangan (Fase 1): Pemasukan. Cermin persis tabel `pengeluaran`
+-- yang sudah ada (lihat blok CREATE TABLE pengeluaran di atas), sengaja
+-- TIDAK di-ALTER TABLE-kan ke tabel itu -- pemasukan lain di luar
+-- pendapatan service/booking pantas jadi tabel terpisah, bukan bercampur
+-- dengan catatan pengeluaran.
+CREATE TABLE IF NOT EXISTS pemasukan (
+    id           SERIAL PRIMARY KEY,
+    tanggal      TEXT NOT NULL,
+    kategori     TEXT NOT NULL,
+    keterangan   TEXT NOT NULL,
+    jumlah       INTEGER NOT NULL,
+    barber_id    INTEGER REFERENCES barbers(id),
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
+
+-- Modul Keuangan (Fase 2): Transfer Kas/Bank. Murni catatan pemindahan
+-- dana antar akun toko sendiri -- TIDAK terhubung ke laba/rugi mana pun.
+CREATE TABLE IF NOT EXISTS transfer_dana (
+    id           SERIAL PRIMARY KEY,
+    tanggal      TEXT NOT NULL,
+    dari_akun    TEXT NOT NULL,
+    ke_akun      TEXT NOT NULL,
+    jumlah       INTEGER NOT NULL,
+    keterangan   TEXT,
+    dibuat_oleh  TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT
+);
 """
 
 

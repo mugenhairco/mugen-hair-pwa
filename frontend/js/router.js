@@ -179,6 +179,25 @@ const MugenRouter = (() => {
       // (self-service). Perlindungan sebenarnya tetap di backend
       // (routers/izin_cuti.py).
       PageIzinCuti.render(content);
+    } else if (hash.startsWith("#/keuangan/pemasukan")) {
+      // Modul Keuangan (Fase 1): data operasional TOKO, Owner/'staff' akses
+      // PENUH tanpa sistem izin, Barber tidak ada akses -- pola sama
+      // persis Pengeluaran di bawah. Perlindungan sebenarnya tetap di
+      // backend (require_owner_or_staff di setiap endpoint /api/pemasukan/*).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PagePemasukan.render(content);
+    } else if (hash.startsWith("#/keuangan/transfer")) {
+      // Modul Keuangan (Fase 2): pola akses SAMA PERSIS Pemasukan di atas.
+      // Perlindungan sebenarnya tetap di backend (require_owner_or_staff
+      // di setiap endpoint /api/transfer/*).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PageTransfer.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.
