@@ -17,19 +17,26 @@ const MugenNav = (() => {
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
     { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"] },
     { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"] },
-    // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi.
-    // `children` dirender sebagai grup expand/collapse KALAU child yang
-    // lolos filter role >= 2 (kondisi ini sejak Kasbon); kalau cuma 1,
-    // otomatis dirender sebagai link flat biasa (lihat _bangunItemNav()) --
-    // supaya tidak ada dropdown kosong-satu-item yang janggal.
+    // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi,
+    // Fase 4: Reimburse, Fase 5: Izin & Cuti. `children` dirender sebagai
+    // grup expand/collapse KALAU child yang lolos filter role >= 2 (kondisi
+    // ini sejak Kasbon); kalau cuma 1, otomatis dirender sebagai link flat
+    // biasa (lihat _bangunItemNav()) -- supaya tidak ada dropdown kosong-
+    // satu-item yang janggal. `badgeId`/`badgeRoles` (Izin & Cuti) dipakai
+    // izin_notif.js untuk badge jumlah pengajuan pending, pola sama seperti
+    // badge Booking di bawah (lihat _bangunItemNav()).
     { label: "Karyawan", roles: ["admin", "staff", "barber"], children: [
       { hash: "#/karyawan/slip-gaji", label: "Slip Gaji", roles: ["admin", "staff", "barber"] },
       { hash: "#/karyawan/kasbon", label: "Kasbon", roles: ["admin", "staff", "barber"] },
       { hash: "#/karyawan/komisi", label: "Komisi", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/reimburse", label: "Reimburse", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/izin-cuti", label: "Izin & Cuti", roles: ["admin", "staff", "barber"],
+        badgeId: "izin-badge", badgeRoles: ["admin", "staff"] },
     ]},
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
-    { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"] },
+    { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"],
+      badgeId: "booking-badge", badgeRoles: ["admin", "staff"] },
     { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
     { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
@@ -38,9 +45,16 @@ const MugenNav = (() => {
 
   // Elemen <a> satu item flat (dipakai untuk item MENU biasa maupun child
   // di dalam grup, dan untuk grup yang cuma 1 child lolos filter role).
-  function _elLink(hash, label, activeHash, extraChildren) {
+  // `badge` (opsional): {id, roles} -- span kosong id="{id}" ditambahkan
+  // KALAU role user ada di `roles`, dicari & di-update oleh modul notif
+  // terkait (booking_notif.js/izin_notif.js) tiap polling -- sengaja
+  // dibuat ulang di sini (bukan disimpan sekali) karena seluruh sidebar
+  // di-render ULANG tiap pindah menu.
+  function _elLink(hash, label, activeHash, user, badge) {
     const linkChildren = [MugenUI.el("span", {}, label)];
-    if (extraChildren) linkChildren.push(...extraChildren);
+    if (badge && badge.roles.includes(user.role)) {
+      linkChildren.push(MugenUI.el("span", { class: "nav-badge", id: badge.id, style: "display:none;" }));
+    }
     return MugenUI.el("a", {
       href: hash,
       class: activeHash.startsWith(hash) ? "active" : "",
@@ -52,22 +66,16 @@ const MugenNav = (() => {
   function _bangunItemNav(item, user, activeHash) {
     if (!item.children) {
       if (!item.roles.includes(user.role)) return null;
-      // REVISI: badge jumlah booking belum dikonfirmasi, KHUSUS Owner/Admin --
-      // hanya mereka yang bisa verifikasi/batalkan booking (lihat
-      // routers/booking.py), Barber tidak punya kegunaan untuk badge ini.
-      // id="booking-badge" dicari & di-update oleh booking_notif.js tiap
-      // polling -- sengaja dibuat ulang di sini (bukan disimpan sekali)
-      // karena seluruh sidebar di-render ulang tiap pindah menu.
-      const extra = (item.hash === "#/booking" && (user.role === "admin" || user.role === "staff"))
-        ? [MugenUI.el("span", { class: "nav-badge", id: "booking-badge", style: "display:none;" })]
-        : null;
-      return _elLink(item.hash, item.label, activeHash, extra);
+      const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
+      return _elLink(item.hash, item.label, activeHash, user, badge);
     }
 
     const childrenLolos = item.children.filter((c) => c.roles.includes(user.role));
     if (!childrenLolos.length) return null;
     if (childrenLolos.length === 1) {
-      return _elLink(childrenLolos[0].hash, childrenLolos[0].label, activeHash);
+      const only = childrenLolos[0];
+      const badge = only.badgeId ? { id: only.badgeId, roles: only.badgeRoles || [] } : null;
+      return _elLink(only.hash, only.label, activeHash, user, badge);
     }
 
     const grupAktif = childrenLolos.some((c) => activeHash.startsWith(c.hash));
@@ -78,7 +86,8 @@ const MugenNav = (() => {
     ]);
     const submenu = MugenUI.el("div", { class: "nav-submenu" });
     for (const child of childrenLolos) {
-      submenu.appendChild(_elLink(child.hash, child.label, activeHash));
+      const badge = child.badgeId ? { id: child.badgeId, roles: child.badgeRoles || [] } : null;
+      submenu.appendChild(_elLink(child.hash, child.label, activeHash, user, badge));
     }
     toggle.addEventListener("click", () => wrap.classList.toggle("open"));
     wrap.appendChild(toggle);

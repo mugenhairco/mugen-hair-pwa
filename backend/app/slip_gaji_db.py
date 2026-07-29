@@ -50,6 +50,9 @@ def init_slip_gaji_db():
             # tabel slip_gaji-nya sudah ada -- CREATE TABLE IF NOT EXISTS di
             # bawah jadi no-op untuknya, sama seperti pola gaji_pokok di atas.
             conn.execute("ALTER TABLE slip_gaji ADD COLUMN penyesuaian_komisi INTEGER NOT NULL DEFAULT 0")
+        if kolom_slip and "reimburse" not in kolom_slip:
+            # Modul Karyawan Fase 4 (Reimburse): kolom baru, pola sama.
+            conn.execute("ALTER TABLE slip_gaji ADD COLUMN reimburse INTEGER NOT NULL DEFAULT 0")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS slip_gaji (
@@ -65,6 +68,7 @@ def init_slip_gaji_db():
                 potongan_kasbon   INTEGER NOT NULL DEFAULT 0,
                 potongan_lain     INTEGER NOT NULL DEFAULT 0,
                 penyesuaian_komisi INTEGER NOT NULL DEFAULT 0,
+                reimburse         INTEGER NOT NULL DEFAULT 0,
                 catatan_potongan  TEXT,
                 total_diterima    INTEGER NOT NULL DEFAULT 0,
                 status            TEXT NOT NULL DEFAULT 'belum_dibayar',
@@ -115,8 +119,8 @@ def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = No
 
 
 def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = None, potongan_kasbon: int = 0,
-                    potongan_lain: int = 0, penyesuaian_komisi: int = 0, catatan_potongan: str = "",
-                    dibuat_oleh: str = "") -> dict:
+                    potongan_lain: int = 0, penyesuaian_komisi: int = 0, reimburse: int = 0,
+                    catatan_potongan: str = "", dibuat_oleh: str = "") -> dict:
     """Generate (atau hitung ulang, kalau belum berstatus Sudah Dibayar) slip
     gaji satu barber untuk satu bulan. Komponen income (komisi/tips/uang
     harian/bonus) SELALU dihitung ULANG dari get_ringkasan_barber_bulan()
@@ -159,9 +163,12 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
     potongan_kasbon = int(potongan_kasbon or 0)
     potongan_lain = int(potongan_lain or 0)
     penyesuaian_komisi = int(penyesuaian_komisi or 0)  # signed -- bonus (+) atau potongan (-), lihat komisi_penyesuaian_db.py
+    reimburse = int(reimburse or 0)  # selalu >= 0, lihat reimburse_db.py
     if potongan_kasbon < 0 or potongan_lain < 0:
         raise ValueError("Potongan tidak boleh negatif.")
-    total_diterima = (gaji_pokok + komisi + tips + uang_harian + bonus_customer + penyesuaian_komisi
+    if reimburse < 0:
+        raise ValueError("Reimburse tidak boleh negatif.")
+    total_diterima = (gaji_pokok + komisi + tips + uang_harian + bonus_customer + penyesuaian_komisi + reimburse
                        - potongan_kasbon - potongan_lain)
 
     now = datetime.now().isoformat(timespec="seconds")
@@ -170,21 +177,21 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
             conn.execute(
                 """UPDATE slip_gaji SET gaji_pokok = ?, komisi = ?, tips = ?, uang_harian = ?,
                        bonus_customer = ?, potongan_kasbon = ?, potongan_lain = ?, penyesuaian_komisi = ?,
-                       catatan_potongan = ?, total_diterima = ?, dibuat_oleh = ?, updated_at = ?
+                       reimburse = ?, catatan_potongan = ?, total_diterima = ?, dibuat_oleh = ?, updated_at = ?
                    WHERE id = ?""",
                 (gaji_pokok, komisi, tips, uang_harian, bonus_customer, potongan_kasbon, potongan_lain,
-                 penyesuaian_komisi, catatan_potongan, total_diterima, dibuat_oleh, now, existing["id"]),
+                 penyesuaian_komisi, reimburse, catatan_potongan, total_diterima, dibuat_oleh, now, existing["id"]),
             )
             slip_id = existing["id"]
         else:
             cur = conn.execute(
                 """INSERT INTO slip_gaji
                        (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
-                        potongan_kasbon, potongan_lain, penyesuaian_komisi, catatan_potongan, total_diterima,
-                        status, dibuat_oleh, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
+                        potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, catatan_potongan,
+                        total_diterima, status, dibuat_oleh, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
                 (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
-                 potongan_kasbon, potongan_lain, penyesuaian_komisi, catatan_potongan, total_diterima,
+                 potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, catatan_potongan, total_diterima,
                  dibuat_oleh, now),
             )
             slip_id = cur.lastrowid

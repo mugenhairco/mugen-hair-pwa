@@ -302,6 +302,45 @@ CREATE TABLE IF NOT EXISTS komisi_penyesuaian (
     created_at   TEXT NOT NULL,
     updated_at   TEXT
 );
+
+-- Modul Karyawan (Fase 4): Reimburse. `reimburse` di slip_gaji lewat ALTER
+-- TABLE terpisah, pola sama seperti penyesuaian_komisi di atas.
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS reimburse INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS reimburse (
+    id                SERIAL PRIMARY KEY,
+    barber_id         INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal           TEXT NOT NULL,
+    kategori          TEXT NOT NULL,
+    keterangan        TEXT,
+    nominal           INTEGER NOT NULL,
+    bukti_filename    TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    catatan_approval  TEXT,
+    diajukan_oleh     TEXT,
+    disetujui_oleh    TEXT,
+    tanggal_approval  TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT
+);
+
+-- Modul Karyawan (Fase 5): Izin & Cuti. Tabel baru murni, tidak perlu ALTER
+-- TABLE apa pun ke tabel lama (berdiri sendiri, tidak terhubung Slip Gaji).
+CREATE TABLE IF NOT EXISTS izin_cuti (
+    id                SERIAL PRIMARY KEY,
+    barber_id         INTEGER NOT NULL REFERENCES barbers(id),
+    jenis             TEXT NOT NULL,
+    tanggal_mulai     TEXT NOT NULL,
+    tanggal_selesai   TEXT NOT NULL,
+    alasan            TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    catatan_approval  TEXT,
+    diajukan_oleh     TEXT,
+    disetujui_oleh    TEXT,
+    tanggal_approval  TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT
+);
 """
 
 

@@ -49,6 +49,8 @@ PERMISSION_DEFS = [
     ("izin_slip_gaji", "karyawan", "Kelola Slip Gaji", False),
     ("izin_kasbon", "karyawan", "Kelola Kasbon Karyawan", False),
     ("izin_komisi", "karyawan", "Kelola Penyesuaian Komisi", False),
+    ("izin_reimburse", "karyawan", "Kelola Reimburse", False),
+    ("izin_cuti_karyawan", "karyawan", "Kelola Izin & Cuti", False),
     # ---- Setting: akses ke tab-nya sendiri ----
     ("izin_setting_identitas", "setting", "Tab Identitas Barbershop", False),
     ("izin_setting_tampilan", "setting", "Tab Tampilan", False),

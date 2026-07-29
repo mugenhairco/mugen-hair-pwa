@@ -30,6 +30,10 @@ backend/app/static/gallery/*
 !backend/app/static/gallery/.gitkeep
 backend/app/static/background/*
 !backend/app/static/background/.gitkeep
+# Modul Karyawan Fase 4 (Reimburse): file bukti klaim yang diupload — sama
+# seperti logo/QRIS/foto barber di atas.
+backend/app/static/reimburse_bukti/*
+!backend/app/static/reimburse_bukti/.gitkeep
 backend/app/backups/
 
 # Python

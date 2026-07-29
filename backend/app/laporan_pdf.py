@@ -289,6 +289,7 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
         [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
         [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
         [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"],
+        [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)],
         [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
         [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
     ]

@@ -190,7 +190,14 @@
 // pages/komisi.js (penyesuaian bonus/potongan komisi manual + audit trail,
 // terintegrasi ke Slip Gaji lewat kolom penyesuaian_komisi), grup sidebar
 // "Karyawan" sekarang punya 3 child (Slip Gaji/Kasbon/Komisi).
-const CACHE_NAME = "mugen-hair-shell-v31";
+// v32: Modul Karyawan Fase 4 (Reimburse) + Fase 5 (Izin & Cuti) -- dua
+// halaman baru pages/reimburse.js (klaim self-service barber + upload
+// bukti + approval, terintegrasi ke Slip Gaji lewat kolom reimburse) dan
+// pages/izin_cuti.js (pengajuan izin/cuti self-service + approval + badge
+// notifikasi lewat js/izin_notif.js baru), grup sidebar "Karyawan"
+// sekarang punya 5 child. nav.js: mekanisme badge digeneralisasi (data-
+// driven lewat badgeId/badgeRoles, bukan hardcode "#/booking" lagi).
+const CACHE_NAME = "mugen-hair-shell-v32";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -204,6 +211,7 @@ const APP_SHELL = [
   "/js/brand.js",
   "/js/nav.js",
   "/js/booking_notif.js",
+  "/js/izin_notif.js",
   "/js/router.js",
   "/js/app.js",
   "/js/pages/login.js",
@@ -215,6 +223,8 @@ const APP_SHELL = [
   "/js/pages/slip_gaji.js",
   "/js/pages/kasbon.js",
   "/js/pages/komisi.js",
+  "/js/pages/reimburse.js",
+  "/js/pages/izin_cuti.js",
   "/js/pages/pengaturan.js",
   "/js/pages/produk.js",
   "/js/pages/booking.js",

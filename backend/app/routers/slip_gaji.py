@@ -67,6 +67,7 @@ class SlipGajiGenerateBody(BaseModel):
     potongan_kasbon: int = 0
     potongan_lain: int = 0
     penyesuaian_komisi: int = 0  # Modul Karyawan Fase 3 (Komisi): signed, boleh negatif
+    reimburse: int = 0  # Modul Karyawan Fase 4 (Reimburse): selalu >= 0
     catatan_potongan: str = ""
 
 
@@ -76,7 +77,7 @@ def generate_slip_gaji(body: SlipGajiGenerateBody, user: dict = Depends(require_
         return slip_gaji_db.buat_slip_gaji(
             body.barber_id, body.tahun, body.bulan, gaji_pokok=body.gaji_pokok,
             potongan_kasbon=body.potongan_kasbon, potongan_lain=body.potongan_lain,
-            penyesuaian_komisi=body.penyesuaian_komisi,
+            penyesuaian_komisi=body.penyesuaian_komisi, reimburse=body.reimburse,
             catatan_potongan=body.catatan_potongan, dibuat_oleh=user["username"],
         )
     except ValueError as e:
