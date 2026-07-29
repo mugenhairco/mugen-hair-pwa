@@ -121,6 +121,45 @@ const MugenApi = (() => {
     return payload;
   }
 
+  // Unduh file biner (PDF) lewat GET terautentikasi -- dipakai tombol
+  // "Download PDF" di setiap halaman laporan (Revisi Sistem Laporan & PDF).
+  // Pola sama seperti uploadFile() di atas (fetch manual, bukan lewat
+  // request() yang mengasumsikan body JSON), TAPI mengambil respons
+  // sebagai Blob lalu memicu unduhan lewat elemen <a download> sementara --
+  // bekerja sama baiknya di desktop maupun mobile PWA (tidak mengandalkan
+  // API khusus platform apa pun).
+  async function downloadFile(path, filename) {
+    const headers = {};
+    const token = MugenState.getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let response;
+    try {
+      response = await fetch(MUGEN_API_BASE + path, { headers });
+    } catch (networkErr) {
+      throw new ApiError("Tidak bisa terhubung ke server. Periksa koneksi internet Anda.", 0, null);
+    }
+    if (response.status === 401) {
+      MugenState.clearSession();
+      location.hash = "#/login";
+      throw new ApiError("Sesi login berakhir, silakan login lagi.", 401, null);
+    }
+    if (!response.ok) {
+      let detail = "Terjadi kesalahan pada server.";
+      try { detail = (await response.json()).detail || detail; } catch (e) { /* body bukan JSON */ }
+      throw new ApiError(detail, response.status, null);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return {
     ApiError,
     get: (path, opts) => request("GET", path, undefined, opts),
@@ -128,5 +167,6 @@ const MugenApi = (() => {
     put: (path, body, opts) => request("PUT", path, body, opts),
     del: (path, body, opts) => request("DELETE", path, body, opts),
     uploadFile,
+    downloadFile,
   };
 })();

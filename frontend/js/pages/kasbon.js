@@ -24,6 +24,21 @@ const PageKasbon = (() => {
       status === "lunas" ? "Lunas" : "Belum Lunas");
   }
 
+  function tombolDownloadPdf(getParams) {
+    const btn = MugenUI.el("button", {}, "Download PDF");
+    btn.addEventListener("click", async () => {
+      try {
+        await MugenUI.withLoading(() => {
+          const qs = new URLSearchParams(getParams());
+          return MugenApi.downloadFile(`/api/kasbon/pdf?${qs}`, "laporan_kasbon.pdf");
+        }, { message: "Menyiapkan PDF…" });
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    return btn;
+  }
+
   async function tampilkanRiwayat(riwayatCard, riwayatBody, kasbon) {
     riwayatCard.querySelector("h2").textContent = `Riwayat Pembayaran — ${kasbon.nama_barber} (${kasbon.tanggal})`;
     riwayatBody.innerHTML = "Memuat...";
@@ -71,6 +86,7 @@ const PageKasbon = (() => {
     }
 
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat Kasbon"));
+    listCard.appendChild(tombolDownloadPdf(() => ({})));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
@@ -293,6 +309,14 @@ const PageKasbon = (() => {
     filTahun.appendChild(MugenUI.el("option", { value: "" }, "Semua Tahun"));
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) filTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filStatus, filBulan, filTahun]));
+    filterCard.appendChild(tombolDownloadPdf(() => {
+      const params = {};
+      if (filBarber.value) params.barber_id = filBarber.value;
+      if (filStatus.value) params.status = filStatus.value;
+      if (filBulan.value) params.bulan = filBulan.value;
+      if (filTahun.value) params.tahun = filTahun.value;
+      return params;
+    }));
 
     // ---- Daftar ----
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Kasbon"));

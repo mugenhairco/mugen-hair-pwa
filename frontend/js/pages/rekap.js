@@ -1,6 +1,18 @@
 // pages/rekap.js
 
 const PageRekap = (() => {
+  function tombolDownloadPdf(onClick) {
+    const btn = MugenUI.el("button", {}, "Download PDF");
+    btn.addEventListener("click", async () => {
+      try {
+        await MugenUI.withLoading(onClick, { message: "Menyiapkan PDF…" });
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    return btn;
+  }
+
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
@@ -59,6 +71,11 @@ const PageRekap = (() => {
 
     async function renderTransaksi() {
       const { row, selBulan, selTahun, selBarber } = filterBar();
+      row.appendChild(tombolDownloadPdf(() => {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
+        return MugenApi.downloadFile(`/api/rekap/transaksi/pdf?${qs}`, `rekap_transaksi_${selTahun.value}-${selBulan.value}.pdf`);
+      }));
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);
       body.appendChild(tableWrap);
@@ -98,6 +115,11 @@ const PageRekap = (() => {
 
     async function renderBulanan() {
       const { row, selBulan, selTahun, selBarber } = filterBar();
+      row.appendChild(tombolDownloadPdf(() => {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
+        return MugenApi.downloadFile(`/api/rekap/bulanan/pdf?${qs}`, `rekap_bulanan_${selTahun.value}-${selBulan.value}.pdf`);
+      }));
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);
       body.appendChild(tableWrap);
@@ -138,6 +160,10 @@ const PageRekap = (() => {
 
     async function renderPengeluaran() {
       const { row, selBulan, selTahun } = filterBar({ withBarber: false });
+      row.appendChild(tombolDownloadPdf(() => {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        return MugenApi.downloadFile(`/api/rekap/pengeluaran/pdf?${qs}`, `rekap_pengeluaran_${selTahun.value}-${selBulan.value}.pdf`);
+      }));
       const totalBox = MugenUI.el("div", { class: "card" });
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);

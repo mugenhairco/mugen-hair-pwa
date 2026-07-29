@@ -50,6 +50,22 @@ def list_slip_gaji(tahun: int = None, bulan: int = None, barber_id: int = None,
     return slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
 
 
+@router.get("/pdf")
+def list_slip_gaji_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
+                        user: dict = Depends(get_current_user)):
+    """Unduh PDF Daftar Slip Gaji sesuai filter Barber/Bulan/Tahun yang
+    sedang aktif di halaman -- BEDA dari GET /{slip_id}/pdf yang mencetak
+    satu slip. Route ini didaftarkan SEBELUM /{slip_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter slip_id."""
+    _cek_akses_lihat(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    konten = laporan_pdf.buat_pdf_slip_gaji_list(tahun, bulan, barber_id, user["username"])
+    filename = laporan_pdf.buat_nama_file("daftar_slip_gaji")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.get("/{slip_id}")
 def ambil_slip_gaji(slip_id: int, user: dict = Depends(get_current_user)):
     slip = slip_gaji_db.get_slip_gaji(slip_id)

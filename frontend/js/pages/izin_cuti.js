@@ -16,6 +16,21 @@ const PageIzinCuti = (() => {
     return jenis === "cuti" ? "Cuti" : "Izin";
   }
 
+  function tombolDownloadPdf(getParams) {
+    const btn = MugenUI.el("button", {}, "Download PDF");
+    btn.addEventListener("click", async () => {
+      try {
+        await MugenUI.withLoading(() => {
+          const qs = new URLSearchParams(getParams());
+          return MugenApi.downloadFile(`/api/izin-cuti/pdf?${qs}`, "laporan_izin_cuti.pdf");
+        }, { message: "Menyiapkan PDF…" });
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    return btn;
+  }
+
   // ================= BARBER: pengajuan milik sendiri =================
   async function renderBarberView(root) {
     const today = new Date().toISOString().slice(0, 10);
@@ -102,6 +117,7 @@ const PageIzinCuti = (() => {
     });
 
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat Pengajuan Saya"));
+    listCard.appendChild(tombolDownloadPdf(() => ({})));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
@@ -183,6 +199,13 @@ const PageIzinCuti = (() => {
       MugenUI.el("option", { value: "ditolak" }, "Ditolak"),
     ]);
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filJenis, filStatus]));
+    filterCard.appendChild(tombolDownloadPdf(() => {
+      const params = {};
+      if (filBarber.value) params.barber_id = filBarber.value;
+      if (filJenis.value) params.jenis = filJenis.value;
+      if (filStatus.value) params.status = filStatus.value;
+      return params;
+    }));
 
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Pengajuan Izin & Cuti"));
     const listBody = MugenUI.el("div");

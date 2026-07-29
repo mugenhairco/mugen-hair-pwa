@@ -11,9 +11,11 @@ sudut pandang):
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import kasbon_db
+import laporan_pdf
 import permissions
 from auth import get_current_user, require_permission
 
@@ -45,6 +47,20 @@ def list_kasbon(barber_id: int = None, status: str = None, tahun: int = None, bu
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     return kasbon_db.get_kasbon_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan)
+
+
+@router.get("/pdf")
+def list_kasbon_pdf(barber_id: int = None, status: str = None, tahun: int = None, bulan: int = None,
+                     user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{kasbon_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter kasbon_id."""
+    _cek_akses_lihat(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    konten = laporan_pdf.buat_pdf_kasbon_list(barber_id, status, tahun, bulan, user["username"])
+    filename = laporan_pdf.buat_nama_file("kasbon")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/saldo/{barber_id}")

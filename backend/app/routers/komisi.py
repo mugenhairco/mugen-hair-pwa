@@ -16,9 +16,11 @@ komisi dasar tidak pernah diduplikasi/diimplementasikan ulang di modul ini.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import komisi_penyesuaian_db
+import laporan_pdf
 import permissions
 from auth import get_current_user, require_permission
 
@@ -50,6 +52,22 @@ def list_penyesuaian(barber_id: int = None, tahun: int = None, bulan: int = None
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     return komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis)
+
+
+@router.get("/pdf")
+def list_penyesuaian_pdf(barber_id: int = None, tahun: int = None, bulan: int = None, jenis: str = None,
+                          user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /penyesuaian/{penyesuaian_id} supaya
+    'pdf' tidak ditangkap sebagai path parameter."""
+    _cek_akses_lihat(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    if not tahun or not bulan:
+        raise HTTPException(status_code=422, detail="Tahun dan Bulan wajib diisi.")
+    konten = laporan_pdf.buat_pdf_komisi_list(barber_id, jenis, tahun, bulan, user["username"])
+    filename = laporan_pdf.buat_nama_file("komisi")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/saldo/{barber_id}")

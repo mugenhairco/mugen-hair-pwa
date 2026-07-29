@@ -6,9 +6,11 @@ boleh mengajukan/melihat/mengedit/menghapus pengajuan MILIKNYA SENDIRI
 TETAP eksklusif admin/staff(izin_cuti_karyawan)."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import izin_cuti_db
+import laporan_pdf
 import permissions
 from auth import get_current_user, require_permission
 
@@ -52,6 +54,20 @@ def list_pengajuan(barber_id: int = None, status: str = None, jenis: str = None,
         barber_id = user.get("barber_id")
     return izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis,
                                             tahun=tahun, bulan=bulan)
+
+
+@router.get("/pdf")
+def list_pengajuan_pdf(barber_id: int = None, status: str = None, jenis: str = None,
+                        user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter pengajuan_id."""
+    _cek_akses_lihat(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    konten = laporan_pdf.buat_pdf_izin_cuti_list(barber_id, jenis, status, user["username"])
+    filename = laporan_pdf.buat_nama_file("izin_cuti")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/pending-count")
