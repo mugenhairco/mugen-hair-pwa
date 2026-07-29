@@ -175,7 +175,7 @@ const PageIzinCuti = (() => {
   async function renderAdminView(root) {
     let barbers = [];
     try {
-      barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
+      barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
     } catch (e) { /* opsional */ }
 
     const filterCard = MugenUI.el("div", { class: "card" });
@@ -185,7 +185,7 @@ const PageIzinCuti = (() => {
 
     filterCard.appendChild(MugenUI.el("h2", {}, "Filter"));
     const filBarber = MugenUI.el("select");
-    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Karyawan"));
     for (const b of barbers) filBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     const filJenis = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "" }, "Semua Jenis"),
@@ -236,7 +236,7 @@ const PageIzinCuti = (() => {
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.buildTable(
           [
-            { key: "nama_barber", label: "Barber" },
+            { key: "nama_barber", label: "Karyawan" },
             { key: "jenis", label: "Jenis", format: labelJenis },
             { key: "tanggal_mulai", label: "Mulai", format: MugenUI.formatTanggal },
             { key: "tanggal_selesai", label: "Selesai", format: MugenUI.formatTanggal },

@@ -83,8 +83,18 @@ def services(user: dict = Depends(require_owner_or_staff)):
 def barbers(user: dict = Depends(require_owner_or_staff)):
     """Untuk dropdown pilih barber di form Input Data (Owner). Barber tidak
     butuh ini (barber_id-nya sudah otomatis dari akun), tapi tidak dilarang
-    memanggilnya juga (hanya daftar nama, bukan data sensitif)."""
+    memanggilnya juga (hanya daftar nama, bukan data sensitif). HANYA
+    jabatan='barber' (lihat database.py::get_barbers()) -- Input Data
+    murni transaksi jasa potong rambut, Kasir/OB/Kru tidak relevan di sini."""
     return db.get_barbers()
+
+
+@router.get("/karyawan")
+def karyawan(user: dict = Depends(require_owner_or_staff)):
+    """Untuk dropdown yang harus menampilkan SEMUA karyawan (Barber +
+    Kasir/OB/Kru) -- Slip Gaji, Kasbon, Reimburse, Izin & Cuti, filter
+    Rekap Transaksi. BEDA dari /barbers di atas yang khusus jabatan='barber'."""
+    return db.get_karyawan()
 
 
 @router.post("/preview")

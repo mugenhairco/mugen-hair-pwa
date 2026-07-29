@@ -235,6 +235,13 @@ CREATE TABLE IF NOT EXISTS website_gallery (
 -- tanpa perlu trik PRAGMA table_info seperti jalur SQLite.
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_pokok INTEGER NOT NULL DEFAULT 0;
 
+-- Karyawan Non-Barber (Kasir/OB/Kru): generalisasi tabel barbers lewat
+-- kolom jabatan (default 'barber' -- baris lama otomatis kompatibel) +
+-- gaji_per_hari (hanya relevan non-barber, lihat karyawan_migrasi.py
+-- untuk penjelasan lengkap & pasangan jalur SQLite-nya).
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS jabatan TEXT NOT NULL DEFAULT 'barber';
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_per_hari INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS slip_gaji (
     id                SERIAL PRIMARY KEY,
     barber_id         INTEGER NOT NULL REFERENCES barbers(id),
@@ -307,6 +314,13 @@ CREATE TABLE IF NOT EXISTS komisi_penyesuaian (
 -- TABLE terpisah, pola sama seperti penyesuaian_komisi di atas.
 ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS reimburse INTEGER NOT NULL DEFAULT 0;
 
+-- Karyawan Non-Barber (Kasir/OB/Kru): jumlah_hari_masuk (NULL untuk slip
+-- Barber, gaji dihitung jumlah_hari_masuk x barbers.gaji_per_hari lalu
+-- disimpan ke kolom gaji_pokok slip ini apa adanya) + bonus_manual (semua
+-- jabatan, pola ALTER TABLE sama seperti reimburse di atas).
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS jumlah_hari_masuk INTEGER;
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS bonus_manual INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS reimburse (
     id                SERIAL PRIMARY KEY,
     barber_id         INTEGER NOT NULL REFERENCES barbers(id),
@@ -359,13 +373,21 @@ CREATE TABLE IF NOT EXISTS pemasukan (
     updated_at   TEXT
 );
 
--- Modul Keuangan (Fase 2): Transfer Kas/Bank. Murni catatan pemindahan
--- dana antar akun toko sendiri -- TIDAK terhubung ke laba/rugi mana pun.
-CREATE TABLE IF NOT EXISTS transfer_dana (
+-- Modul Keuangan (Fase 2, pengganti Transfer Kas/Bank yang dihapus):
+-- Uang Kas. kas_saldo_awal SATU baris tetap (id=1, seed lewat
+-- ON CONFLICT DO NOTHING di create_all() di bawah, sama seperti
+-- settings). kas_penyesuaian ledger tambah/kurang.
+CREATE TABLE IF NOT EXISTS kas_saldo_awal (
+    id           INTEGER PRIMARY KEY,
+    saldo        INTEGER NOT NULL DEFAULT 0,
+    diubah_oleh  TEXT,
+    updated_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kas_penyesuaian (
     id           SERIAL PRIMARY KEY,
     tanggal      TEXT NOT NULL,
-    dari_akun    TEXT NOT NULL,
-    ke_akun      TEXT NOT NULL,
+    jenis        TEXT NOT NULL,
     jumlah       INTEGER NOT NULL,
     keterangan   TEXT,
     dibuat_oleh  TEXT,
@@ -413,3 +435,5 @@ def create_all():
             service_ids = [r["id"] for r in rows]
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                          (key, json.dumps(service_ids)))
+
+        conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")

@@ -32,7 +32,7 @@ const PagePengaturan = (() => {
     }
 
     const tabs = isOwner
-      ? ["Identitas Barbershop", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Barber", "Layanan", "User", "Backup", "Hak Akses Admin"]
+      ? ["Identitas Barbershop", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "User", "Backup", "Hak Akses Admin"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -64,7 +64,7 @@ const PagePengaturan = (() => {
       else if (activeTab === "Komisi") await renderKomisi();
       else if (activeTab === "Bonus Service") await renderBonusService();
       else if (activeTab === "Uang Harian") await renderUangHarian();
-      else if (activeTab === "Barber") await renderBarber();
+      else if (activeTab === "Karyawan") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
       else if (activeTab === "User") await renderUser();
       else if (activeTab === "Backup") await renderBackup();
@@ -472,40 +472,76 @@ const PagePengaturan = (() => {
       body.appendChild(formCard);
       body.appendChild(listCard);
 
+      const LABEL_JABATAN = { barber: "Barber", kasir: "Kasir", ob: "OB", kru: "Kru" };
+
       let editingId = null;
-      formCard.appendChild(MugenUI.el("h2", {}, "Tambah Barber"));
+      formCard.appendChild(MugenUI.el("h2", {}, "Tambah Karyawan"));
       const formTitle = formCard.lastChild;
-      const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama barber" });
+      const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama karyawan" });
+      const selJabatan = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "barber" }, "Barber"),
+        MugenUI.el("option", { value: "kasir" }, "Kasir"),
+        MugenUI.el("option", { value: "ob" }, "OB"),
+        MugenUI.el("option", { value: "kru" }, "Kru"),
+      ]);
       // REVISI: Uang Harian sekarang per-barber (sebelumnya dua setting global
-      // uang_harian_barber/uang_harian_rafiq dipilih dari status RAFIQ).
+      // uang_harian_barber/uang_harian_rafiq dipilih dari status RAFIQ) --
+      // HANYA relevan jabatan Barber. Karyawan Non-Barber (Kasir/OB/Kru):
+      // pakai Gaji per Hari (dikalikan Jumlah Hari Masuk saat Generate Slip
+      // Gaji, lihat pages/slip_gaji.js) -- kedua field ditampilkan bergantian
+      // sesuai Jabatan yang dipilih, TIDAK PERNAH bersamaan.
+      const wrapUangHarian = MugenUI.el("div");
       const inputUangHarian = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      wrapUangHarian.appendChild(MugenUI.el("label", {}, "Uang Harian"));
+      wrapUangHarian.appendChild(inputUangHarian);
+
+      const wrapGajiPerHari = MugenUI.el("div");
+      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      wrapGajiPerHari.appendChild(MugenUI.el("label", {}, "Gaji per Hari (Rp)"));
+      wrapGajiPerHari.appendChild(inputGajiPerHari);
+
+      function terapkanTampilanJabatan() {
+        const barber = selJabatan.value === "barber";
+        wrapUangHarian.style.display = barber ? "" : "none";
+        wrapGajiPerHari.style.display = barber ? "none" : "";
+      }
+      selJabatan.addEventListener("change", terapkanTampilanJabatan);
+
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
       const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
       const formError = MugenUI.el("div", { class: "login-error" });
 
-      formCard.appendChild(MugenUI.el("label", {}, "Nama Barber"));
+      formCard.appendChild(MugenUI.el("label", {}, "Nama Karyawan"));
       formCard.appendChild(inputNama);
-      formCard.appendChild(MugenUI.el("label", {}, "Uang Harian"));
-      formCard.appendChild(inputUangHarian);
+      formCard.appendChild(MugenUI.el("label", {}, "Jabatan"));
+      formCard.appendChild(selJabatan);
+      formCard.appendChild(wrapUangHarian);
+      formCard.appendChild(wrapGajiPerHari);
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
       function resetForm() {
         editingId = null;
-        formTitle.textContent = "Tambah Barber";
+        formTitle.textContent = "Tambah Karyawan";
         btnSubmit.textContent = "Simpan";
         btnBatal.style.display = "none";
         inputNama.value = "";
+        selJabatan.value = "barber";
         inputUangHarian.value = "0";
+        inputGajiPerHari.value = "0";
+        terapkanTampilanJabatan();
         formError.textContent = "";
       }
+      terapkanTampilanJabatan();
       btnBatal.addEventListener("click", resetForm);
 
       btnSubmit.addEventListener("click", async () => {
         formError.textContent = "";
-        if (!inputNama.value.trim()) { formError.textContent = "Nama barber tidak boleh kosong."; return; }
+        if (!inputNama.value.trim()) { formError.textContent = "Nama karyawan tidak boleh kosong."; return; }
         const uangHarian = Number(inputUangHarian.value);
         if (Number.isNaN(uangHarian) || uangHarian < 0) { formError.textContent = "Uang harian tidak valid."; return; }
+        const gajiPerHari = Number(inputGajiPerHari.value);
+        if (Number.isNaN(gajiPerHari) || gajiPerHari < 0) { formError.textContent = "Gaji per hari tidak valid."; return; }
         btnSubmit.disabled = true;
         try {
           // REVISI UI/UX: field is_rafiq SENGAJA tidak dikirim lagi dari form
@@ -514,14 +550,17 @@ const PagePengaturan = (() => {
           // PUT memperlakukan field yang tidak dikirim sebagai "jangan
           // diubah", endpoint POST default-nya False untuk barber baru),
           // jadi data/logika lama tidak tersentuh sama sekali.
-          const body2 = { nama: inputNama.value.trim(), uang_harian: uangHarian };
+          const body2 = {
+            nama: inputNama.value.trim(), uang_harian: uangHarian,
+            jabatan: selJabatan.value, gaji_per_hari: gajiPerHari,
+          };
           await MugenUI.withLoading(async () => {
             if (editingId) {
               await MugenApi.put(`/api/pengaturan/barber/${editingId}`, body2);
-              MugenUI.toast("Barber diperbarui.", "success");
+              MugenUI.toast("Karyawan diperbarui.", "success");
             } else {
               await MugenApi.post("/api/pengaturan/barber", body2);
-              MugenUI.toast("Barber ditambahkan.", "success");
+              MugenUI.toast("Karyawan ditambahkan.", "success");
             }
           }, { message: "Menyimpan…" });
           resetForm();
@@ -533,7 +572,7 @@ const PagePengaturan = (() => {
         }
       });
 
-      listCard.appendChild(MugenUI.el("h2", {}, "Daftar Barber"));
+      listCard.appendChild(MugenUI.el("h2", {}, "Daftar Karyawan"));
       const listBody = MugenUI.el("div");
       listCard.appendChild(listBody);
 
@@ -551,7 +590,11 @@ const PagePengaturan = (() => {
                   : MugenUI.el("div", { class: "book-barber-foto-kosong", style: "width:40px;height:40px;margin:0;font-size:14px;" }, r.nama.charAt(0).toUpperCase()),
               },
               { key: "nama", label: "Nama" },
-              { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+              { key: "jabatan", label: "Jabatan", format: (v) => LABEL_JABATAN[v] || v },
+              {
+                key: "uang_harian", label: "Uang Harian / Gaji per Hari",
+                format: (v, r) => MugenUI.formatRupiah(r.jabatan === "barber" ? r.uang_harian : r.gaji_per_hari),
+              },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
                 key: "status_booking", label: "Status Booking", format: (v, r) => {
@@ -578,11 +621,14 @@ const PagePengaturan = (() => {
                   const btnEdit = MugenUI.el("button", {}, "Edit");
                   btnEdit.addEventListener("click", () => {
                     editingId = r.id;
-                    formTitle.textContent = `Edit Barber #${r.id}`;
+                    formTitle.textContent = `Edit Karyawan #${r.id}`;
                     btnSubmit.textContent = "Simpan Perubahan";
                     btnBatal.style.display = "";
                     inputNama.value = r.nama;
+                    selJabatan.value = r.jabatan || "barber";
                     inputUangHarian.value = String(r.uang_harian || 0);
+                    inputGajiPerHari.value = String(r.gaji_per_hari || 0);
+                    terapkanTampilanJabatan();
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });
                   });
@@ -590,16 +636,16 @@ const PagePengaturan = (() => {
                   btnToggle.addEventListener("click", async () => {
                     try {
                       await MugenUI.withLoading(() => MugenApi.put(`/api/pengaturan/barber/${r.id}`, { aktif: !r.aktif }), { message: "Menyimpan…" });
-                      MugenUI.toast(r.aktif ? "Barber dinonaktifkan." : "Barber diaktifkan.", "success");
+                      MugenUI.toast(r.aktif ? "Karyawan dinonaktifkan." : "Karyawan diaktifkan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.message, "error"); }
                   });
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus barber "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`)) return;
+                    if (!confirm(`Hapus karyawan "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`)) return;
                     try {
                       await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/barber/${r.id}`), { message: "Menghapus…" });
-                      MugenUI.toast("Barber dihapus.", "success");
+                      MugenUI.toast("Karyawan dihapus.", "success");
                       loadList();
                     } catch (e) {
                       MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
@@ -975,6 +1021,26 @@ const PagePengaturan = (() => {
                   });
                   wrap.appendChild(btnPassword);
                   wrap.appendChild(btnToggle);
+
+                  // Hapus PERMANEN -- beda dari Nonaktifkan di atas (yang
+                  // cuma menonaktifkan status login, datanya tetap ada).
+                  // Tidak ditampilkan untuk akun sendiri (backend juga
+                  // menolak, tapi tombolnya disembunyikan lebih dulu di
+                  // sini supaya tidak ada tombol yang pasti error).
+                  if (r.id !== user.id) {
+                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                    btnHapus.addEventListener("click", async () => {
+                      if (!confirm(`Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+                      try {
+                        await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/user/${r.id}`), { message: "Menghapus…" });
+                        MugenUI.toast("User dihapus.", "success");
+                        loadList();
+                      } catch (e) {
+                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                      }
+                    });
+                    wrap.appendChild(btnHapus);
+                  }
                   return wrap;
                 },
               },
@@ -1104,7 +1170,7 @@ const PagePengaturan = (() => {
         ]},
         { judul: "User (khusus akun ber-role Barber)", keys: [
           ["izin_user_tambah", "Membuat User Barber"],
-          ["izin_user_hapus", "Menghapus (menonaktifkan) User Barber"],
+          ["izin_user_hapus", "Nonaktifkan/Aktifkan/Hapus Permanen User Barber"],
           ["izin_user_ganti_password", "Mengubah Password User Barber"],
         ]},
         // REVISI (kedua): grup "Pengeluaran" dihapus dari sini -- menu

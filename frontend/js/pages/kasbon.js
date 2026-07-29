@@ -132,8 +132,8 @@ const PageKasbon = (() => {
     let editingId = null;
     let barbers = [];
     try {
-      barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
-    } catch (e) { /* opsional -- form tetap tampil, dropdown Barber cuma kosong */ }
+      barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
+    } catch (e) { /* opsional -- form tetap tampil, dropdown Karyawan cuma kosong */ }
 
     const formCard = MugenUI.el("div", { class: "card" });
     const bayarCard = MugenUI.el("div", { class: "card" });
@@ -160,7 +160,7 @@ const PageKasbon = (() => {
     const formError = MugenUI.el("div", { class: "login-error" });
 
     formCard.appendChild(formTitle);
-    formCard.appendChild(MugenUI.el("label", {}, "Barber"));
+    formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
     formCard.appendChild(selBarber);
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     formCard.appendChild(inputTanggal);
@@ -209,7 +209,7 @@ const PageKasbon = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
-      if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
+      if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
       if (!editingId && (!inputJumlah.value || Number(inputJumlah.value) <= 0)) {
         formError.textContent = "Jumlah harus lebih dari 0."; return;
       }
@@ -295,7 +295,7 @@ const PageKasbon = (() => {
     // ---- Filter ----
     filterCard.appendChild(MugenUI.el("h2", {}, "Filter"));
     const filBarber = MugenUI.el("select");
-    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Karyawan"));
     for (const b of barbers) filBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     const filStatus = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "" }, "Semua Status"),
@@ -341,7 +341,7 @@ const PageKasbon = (() => {
         listBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "nama_barber", label: "Barber" },
+            { key: "nama_barber", label: "Karyawan" },
             { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
             { key: "sisa", label: "Sisa", format: MugenUI.formatRupiah },
             { key: "status", label: "Status", format: badgeStatus },

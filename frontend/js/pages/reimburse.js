@@ -214,7 +214,7 @@ const PageReimburse = (() => {
     let kategoriOptions = [];
     try {
       [barbers, kategoriOptions] = await Promise.all([
-        MugenApi.get("/api/input-data/barbers", { useCache: true }),
+        MugenApi.get("/api/input-data/karyawan", { useCache: true }),
         MugenApi.get("/api/reimburse/kategori", { useCache: true }),
       ]);
     } catch (e) { /* opsional */ }
@@ -244,7 +244,7 @@ const PageReimburse = (() => {
     const formError = MugenUI.el("div", { class: "login-error" });
 
     formCard.appendChild(formTitle);
-    formCard.appendChild(MugenUI.el("label", {}, "Barber"));
+    formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
     formCard.appendChild(selBarber);
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     formCard.appendChild(inputTanggal);
@@ -288,7 +288,7 @@ const PageReimburse = (() => {
     btnBatal.addEventListener("click", resetForm);
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
-      if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
+      if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
       if (!inputKategori.value.trim()) { formError.textContent = "Kategori tidak boleh kosong."; return; }
       if (!inputNominal.value || Number(inputNominal.value) <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
       btnSubmit.disabled = true;
@@ -318,7 +318,7 @@ const PageReimburse = (() => {
     // ---- Filter ----
     filterCard.appendChild(MugenUI.el("h2", {}, "Filter"));
     const filBarber = MugenUI.el("select");
-    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Karyawan"));
     for (const b of barbers) filBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     const filStatus = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "" }, "Semua Status"),
@@ -378,7 +378,7 @@ const PageReimburse = (() => {
         listBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "nama_barber", label: "Barber" },
+            { key: "nama_barber", label: "Karyawan" },
             { key: "kategori", label: "Kategori" },
             { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
             { key: "status", label: "Status", format: badgeStatus },

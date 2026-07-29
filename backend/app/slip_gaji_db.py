@@ -53,6 +53,17 @@ def init_slip_gaji_db():
         if kolom_slip and "reimburse" not in kolom_slip:
             # Modul Karyawan Fase 4 (Reimburse): kolom baru, pola sama.
             conn.execute("ALTER TABLE slip_gaji ADD COLUMN reimburse INTEGER NOT NULL DEFAULT 0")
+        if kolom_slip and "jumlah_hari_masuk" not in kolom_slip:
+            # Karyawan Non-Barber (Kasir/OB/Kru): Gaji dihitung dari Jumlah
+            # Hari Masuk x barbers.gaji_per_hari (disimpan ke kolom
+            # gaji_pokok slip ini apa adanya, TIDAK ke barbers.gaji_pokok --
+            # itu tetap eksklusif Barber). NULL untuk slip Barber (tidak
+            # relevan, tetap pakai Gaji Pokok bulanan flat).
+            conn.execute("ALTER TABLE slip_gaji ADD COLUMN jumlah_hari_masuk INTEGER")
+        if kolom_slip and "bonus_manual" not in kolom_slip:
+            # Bonus manual (SEMUA jabatan) -- field terpisah dari Potongan
+            # Lain (yang sifatnya pengurang), MENAMBAH Total Diterima.
+            conn.execute("ALTER TABLE slip_gaji ADD COLUMN bonus_manual INTEGER NOT NULL DEFAULT 0")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS slip_gaji (
@@ -69,6 +80,8 @@ def init_slip_gaji_db():
                 potongan_lain     INTEGER NOT NULL DEFAULT 0,
                 penyesuaian_komisi INTEGER NOT NULL DEFAULT 0,
                 reimburse         INTEGER NOT NULL DEFAULT 0,
+                jumlah_hari_masuk INTEGER,
+                bonus_manual      INTEGER NOT NULL DEFAULT 0,
                 catatan_potongan  TEXT,
                 total_diterima    INTEGER NOT NULL DEFAULT 0,
                 status            TEXT NOT NULL DEFAULT 'belum_dibayar',
@@ -84,7 +97,8 @@ def init_slip_gaji_db():
 
 def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
-    row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    row["nama_barber"] = barber["nama"] if barber else "(karyawan terhapus)"
+    row["jabatan"] = barber["jabatan"] if barber else "barber"
     return row
 
 
@@ -120,22 +134,29 @@ def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = No
 
 def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = None, potongan_kasbon: int = 0,
                     potongan_lain: int = 0, penyesuaian_komisi: int = 0, reimburse: int = 0,
-                    catatan_potongan: str = "", dibuat_oleh: str = "") -> dict:
+                    catatan_potongan: str = "", dibuat_oleh: str = "",
+                    jumlah_hari_masuk: int = None, bonus_manual: int = 0) -> dict:
     """Generate (atau hitung ulang, kalau belum berstatus Sudah Dibayar) slip
-    gaji satu barber untuk satu bulan. Komponen income (komisi/tips/uang
+    gaji satu karyawan untuk satu bulan. Komponen income (komisi/tips/uang
     harian/bonus) SELALU dihitung ULANG dari get_ringkasan_barber_bulan()
-    apa adanya -- hanya potongan yang manual/diisi Owner.
+    apa adanya -- hanya potongan yang manual/diisi Owner. Untuk karyawan
+    non-barber (Kasir/OB/Kru) fungsi ini otomatis bernilai 0 untuk keempat
+    komponen itu (tidak ada transaksi jasa potong rambut), murni Gaji +
+    Reimburse + Bonus Manual - Potongan.
 
-    gaji_pokok: kalau diisi (bukan None), NILAI INI DISIMPAN PERMANEN ke
-    barbers.gaji_pokok (bukan cuma dipakai sekali untuk slip ini) -- belum
-    ada UI tersendiri untuk mengatur Gaji Pokok per-barber di fase ini
-    (lihat catatan revisi), jadi form Generate Slip Gaji SEKALIAN jadi
-    tempat mengatur/mengubahnya, otomatis "nempel" untuk bulan-bulan
-    berikutnya. Kalau None (tidak dikirim), pakai nilai yang sudah
-    tersimpan di barbers.gaji_pokok apa adanya."""
+    gaji_pokok: HANYA berlaku jabatan='barber' -- kalau diisi (bukan None),
+    NILAI INI DISIMPAN PERMANEN ke barbers.gaji_pokok (bukan cuma dipakai
+    sekali untuk slip ini), form Generate Slip Gaji SEKALIAN jadi tempat
+    mengatur/mengubahnya. Kalau None, pakai nilai yang sudah tersimpan di
+    barbers.gaji_pokok apa adanya.
+
+    jumlah_hari_masuk: WAJIB diisi untuk jabatan NON-barber (Kasir/OB/Kru)
+    -- komponen Gaji = jumlah_hari_masuk x barbers.gaji_per_hari, disimpan
+    ke kolom gaji_pokok SLIP INI apa adanya (BUKAN ke barbers.gaji_pokok,
+    yang tetap eksklusif Barber)."""
     barber = get_barber(barber_id)
     if barber is None:
-        raise ValueError("Barber tidak ditemukan.")
+        raise ValueError("Karyawan tidak ditemukan.")
     if not (1 <= bulan <= 12):
         raise ValueError("Bulan tidak valid.")
 
@@ -146,14 +167,22 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
             "batalkan statusnya dulu kalau perlu generate ulang."
         )
 
-    if gaji_pokok is not None:
-        gaji_pokok = int(gaji_pokok)
-        if gaji_pokok < 0:
-            raise ValueError("Gaji Pokok tidak boleh negatif.")
-        with get_conn() as conn:
-            conn.execute("UPDATE barbers SET gaji_pokok = ? WHERE id = ?", (gaji_pokok, barber_id))
+    jabatan = barber.get("jabatan") or "barber"
+    if jabatan == "barber":
+        if gaji_pokok is not None:
+            gaji_pokok = int(gaji_pokok)
+            if gaji_pokok < 0:
+                raise ValueError("Gaji Pokok tidak boleh negatif.")
+            with get_conn() as conn:
+                conn.execute("UPDATE barbers SET gaji_pokok = ? WHERE id = ?", (gaji_pokok, barber_id))
+        else:
+            gaji_pokok = int(barber.get("gaji_pokok") or 0)
+        jumlah_hari_masuk = None
     else:
-        gaji_pokok = int(barber.get("gaji_pokok") or 0)
+        if jumlah_hari_masuk is None or int(jumlah_hari_masuk) < 0:
+            raise ValueError("Jumlah Hari Masuk harus diisi (0 atau lebih) untuk karyawan non-Barber.")
+        jumlah_hari_masuk = int(jumlah_hari_masuk)
+        gaji_pokok = jumlah_hari_masuk * int(barber.get("gaji_per_hari") or 0)
 
     ringkasan = get_ringkasan_barber_bulan(barber_id, tahun, bulan)
     komisi = ringkasan["komisi"]
@@ -164,12 +193,15 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
     potongan_lain = int(potongan_lain or 0)
     penyesuaian_komisi = int(penyesuaian_komisi or 0)  # signed -- bonus (+) atau potongan (-), lihat komisi_penyesuaian_db.py
     reimburse = int(reimburse or 0)  # selalu >= 0, lihat reimburse_db.py
+    bonus_manual = int(bonus_manual or 0)  # selalu >= 0, semua jabatan
     if potongan_kasbon < 0 or potongan_lain < 0:
         raise ValueError("Potongan tidak boleh negatif.")
     if reimburse < 0:
         raise ValueError("Reimburse tidak boleh negatif.")
+    if bonus_manual < 0:
+        raise ValueError("Bonus Manual tidak boleh negatif.")
     total_diterima = (gaji_pokok + komisi + tips + uang_harian + bonus_customer + penyesuaian_komisi + reimburse
-                       - potongan_kasbon - potongan_lain)
+                       + bonus_manual - potongan_kasbon - potongan_lain)
 
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -177,22 +209,24 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
             conn.execute(
                 """UPDATE slip_gaji SET gaji_pokok = ?, komisi = ?, tips = ?, uang_harian = ?,
                        bonus_customer = ?, potongan_kasbon = ?, potongan_lain = ?, penyesuaian_komisi = ?,
-                       reimburse = ?, catatan_potongan = ?, total_diterima = ?, dibuat_oleh = ?, updated_at = ?
+                       reimburse = ?, jumlah_hari_masuk = ?, bonus_manual = ?, catatan_potongan = ?,
+                       total_diterima = ?, dibuat_oleh = ?, updated_at = ?
                    WHERE id = ?""",
                 (gaji_pokok, komisi, tips, uang_harian, bonus_customer, potongan_kasbon, potongan_lain,
-                 penyesuaian_komisi, reimburse, catatan_potongan, total_diterima, dibuat_oleh, now, existing["id"]),
+                 penyesuaian_komisi, reimburse, jumlah_hari_masuk, bonus_manual, catatan_potongan,
+                 total_diterima, dibuat_oleh, now, existing["id"]),
             )
             slip_id = existing["id"]
         else:
             cur = conn.execute(
                 """INSERT INTO slip_gaji
                        (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
-                        potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, catatan_potongan,
-                        total_diterima, status, dibuat_oleh, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
+                        potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, jumlah_hari_masuk,
+                        bonus_manual, catatan_potongan, total_diterima, status, dibuat_oleh, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
                 (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
-                 potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, catatan_potongan, total_diterima,
-                 dibuat_oleh, now),
+                 potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, jumlah_hari_masuk,
+                 bonus_manual, catatan_potongan, total_diterima, dibuat_oleh, now),
             )
             slip_id = cur.lastrowid
     return get_slip_gaji(slip_id)

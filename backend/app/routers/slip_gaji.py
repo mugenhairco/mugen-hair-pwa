@@ -85,6 +85,8 @@ class SlipGajiGenerateBody(BaseModel):
     penyesuaian_komisi: int = 0  # Modul Karyawan Fase 3 (Komisi): signed, boleh negatif
     reimburse: int = 0  # Modul Karyawan Fase 4 (Reimburse): selalu >= 0
     catatan_potongan: str = ""
+    jumlah_hari_masuk: int | None = None  # Karyawan Non-Barber: wajib diisi, gaji = ini x gaji_per_hari
+    bonus_manual: int = 0  # Semua jabatan, selalu >= 0, menambah Total Diterima
 
 
 @router.post("")
@@ -95,6 +97,7 @@ def generate_slip_gaji(body: SlipGajiGenerateBody, user: dict = Depends(require_
             potongan_kasbon=body.potongan_kasbon, potongan_lain=body.potongan_lain,
             penyesuaian_komisi=body.penyesuaian_komisi, reimburse=body.reimburse,
             catatan_potongan=body.catatan_potongan, dibuat_oleh=user["username"],
+            jumlah_hari_masuk=body.jumlah_hari_masuk, bonus_manual=body.bonus_manual,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

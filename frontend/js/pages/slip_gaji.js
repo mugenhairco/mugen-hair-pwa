@@ -67,7 +67,7 @@ const PageSlipGaji = (() => {
       const kolom = [
         { key: "periode", label: "Periode", format: (_, r) => `${MugenUI.namaBulan(r.bulan)} ${r.tahun}` },
       ];
-      if (isAdmin) kolom.push({ key: "nama_barber", label: "Barber" });
+      if (isAdmin) kolom.push({ key: "nama_barber", label: "Karyawan" });
       kolom.push(
         { key: "total_diterima", label: "Total Diterima", format: MugenUI.formatRupiah },
         {
@@ -143,8 +143,8 @@ const PageSlipGaji = (() => {
     const today = new Date();
     let barbers = [];
     try {
-      barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
-    } catch (e) { /* opsional -- form Generate tetap tampil, dropdown Barber cuma kosong */ }
+      barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
+    } catch (e) { /* opsional -- form Generate tetap tampil, dropdown Karyawan cuma kosong */ }
 
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
@@ -167,22 +167,54 @@ const PageSlipGaji = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
+    // Karyawan Non-Barber (Kasir/OB/Kru): Gaji Pokok bulanan flat diganti
+    // Jumlah Hari Masuk (dikalikan gaji_per_hari karyawan itu) -- field
+    // mana yang tampil bergantung Jabatan karyawan yang sedang dipilih di
+    // selBarber, lihat terapkanTampilanJabatan() di bawah.
+    const wrapGajiPokok = MugenUI.el("div");
     const inputGajiPokok = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    wrapGajiPokok.appendChild(MugenUI.el("label", {}, "Gaji Pokok (Rp, opsional)"));
+    wrapGajiPokok.appendChild(inputGajiPokok);
+
+    const wrapHariMasuk = MugenUI.el("div");
+    const inputJumlahHariMasuk = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const infoGajiPerHari = MugenUI.el("div", { class: "subtitle" }, "");
+    wrapHariMasuk.appendChild(MugenUI.el("label", {}, "Jumlah Hari Masuk"));
+    wrapHariMasuk.appendChild(inputJumlahHariMasuk);
+    wrapHariMasuk.appendChild(infoGajiPerHari);
+
     const inputPotonganKasbon = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", value: "0" }); // boleh negatif -- tanpa atribut min
     const inputReimburse = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputBonusManual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const inputPotonganLain = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const inputCatatanPotongan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. keterlambatan" });
     const btnGenerate = MugenUI.el("button", { class: "btn-primary" }, "Generate Slip Gaji");
     const formError = MugenUI.el("div", { class: "login-error" });
 
+    function jabatanTerpilih() {
+      const b = barbers.find((x) => String(x.id) === selBarber.value);
+      return (b && b.jabatan) || "barber";
+    }
+    function terapkanTampilanJabatan() {
+      const barber = jabatanTerpilih() === "barber";
+      wrapGajiPokok.style.display = barber ? "" : "none";
+      wrapHariMasuk.style.display = barber ? "none" : "";
+    }
+
     // Belum ada tab tersendiri untuk atur Gaji Pokok per-barber (lihat
     // slip_gaji_db.py) -- form ini SEKALIAN jadi tempatnya, otomatis
     // terisi nilai yang tersimpan saat ini begitu Barber dipilih, dan
     // otomatis "nempel" (tersimpan permanen ke data barber) begitu di-Generate.
+    // Karyawan Non-Barber: TIDAK ada nilai tersimpan untuk diisi ulang
+    // (Jumlah Hari Masuk selalu diisi manual tiap generate), field ini
+    // hanya menampilkan info Gaji per Hari karyawan itu sebagai referensi.
     function isiGajiPokokDariBarber() {
       const b = barbers.find((x) => String(x.id) === selBarber.value);
       inputGajiPokok.value = String((b && b.gaji_pokok) || 0);
+      inputJumlahHariMasuk.value = "0";
+      infoGajiPerHari.textContent = b ? `Gaji per Hari: ${MugenUI.formatRupiah(b.gaji_per_hari || 0)}` : "";
+      terapkanTampilanJabatan();
     }
     // Modul Karyawan Fase 2 (Kasbon): Potongan Kasbon otomatis terisi dari
     // saldo kasbon belum lunas barber yang dipilih (GET /api/kasbon/saldo/
@@ -242,20 +274,22 @@ const PageSlipGaji = (() => {
     isiPenyesuaianKomisiDariPeriode();
     isiReimburseDariPeriode();
 
-    formCard.appendChild(MugenUI.el("label", {}, "Barber"));
+    formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
     formCard.appendChild(selBarber);
     formCard.appendChild(MugenUI.el("label", {}, "Bulan"));
     formCard.appendChild(selBulan);
     formCard.appendChild(MugenUI.el("label", {}, "Tahun"));
     formCard.appendChild(selTahun);
-    formCard.appendChild(MugenUI.el("label", {}, "Gaji Pokok (Rp, opsional)"));
-    formCard.appendChild(inputGajiPokok);
+    formCard.appendChild(wrapGajiPokok);
+    formCard.appendChild(wrapHariMasuk);
     formCard.appendChild(MugenUI.el("label", {}, "Potongan Kasbon (Rp, opsional)"));
     formCard.appendChild(inputPotonganKasbon);
     formCard.appendChild(MugenUI.el("label", {}, "Penyesuaian Komisi (Rp, boleh negatif, opsional)"));
     formCard.appendChild(inputPenyesuaianKomisi);
     formCard.appendChild(MugenUI.el("label", {}, "Reimburse (Rp, opsional)"));
     formCard.appendChild(inputReimburse);
+    formCard.appendChild(MugenUI.el("label", {}, "Bonus Manual (Rp, opsional)"));
+    formCard.appendChild(inputBonusManual);
     formCard.appendChild(MugenUI.el("label", {}, "Potongan Lain (Rp, opsional)"));
     formCard.appendChild(inputPotonganLain);
     formCard.appendChild(MugenUI.el("label", {}, "Catatan Potongan (opsional)"));
@@ -265,21 +299,31 @@ const PageSlipGaji = (() => {
 
     btnGenerate.addEventListener("click", async () => {
       formError.textContent = "";
-      if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
+      if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
+      const barberMode = jabatanTerpilih() === "barber";
+      if (!barberMode && (!inputJumlahHariMasuk.value || Number(inputJumlahHariMasuk.value) < 0)) {
+        formError.textContent = "Jumlah Hari Masuk harus diisi (0 atau lebih)."; return;
+      }
       btnGenerate.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/slip-gaji", {
+        const body = {
           barber_id: Number(selBarber.value), tahun: Number(selTahun.value), bulan: Number(selBulan.value),
-          gaji_pokok: Number(inputGajiPokok.value) || 0,
           potongan_kasbon: Number(inputPotonganKasbon.value) || 0, potongan_lain: Number(inputPotonganLain.value) || 0,
           penyesuaian_komisi: Number(inputPenyesuaianKomisi.value) || 0,
           reimburse: Number(inputReimburse.value) || 0,
+          bonus_manual: Number(inputBonusManual.value) || 0,
           catatan_potongan: inputCatatanPotongan.value.trim(),
-        }), { message: "Menghitung Slip Gaji…" });
-        // Sinkronkan cache lokal supaya kalau barber yang sama dipilih lagi
+        };
+        if (barberMode) {
+          body.gaji_pokok = Number(inputGajiPokok.value) || 0;
+        } else {
+          body.jumlah_hari_masuk = Number(inputJumlahHariMasuk.value) || 0;
+        }
+        await MugenUI.withLoading(() => MugenApi.post("/api/slip-gaji", body), { message: "Menghitung Slip Gaji…" });
+        // Sinkronkan cache lokal supaya kalau karyawan yang sama dipilih lagi
         // tanpa reload halaman, Gaji Pokok yang tampil sudah yang terbaru.
         const b = barbers.find((x) => String(x.id) === selBarber.value);
-        if (b) b.gaji_pokok = Number(inputGajiPokok.value) || 0;
+        if (b && barberMode) b.gaji_pokok = Number(inputGajiPokok.value) || 0;
         MugenUI.toast("Slip Gaji berhasil dibuat.", "success");
         loadList();
       } catch (e) {
@@ -292,7 +336,7 @@ const PageSlipGaji = (() => {
     // ---- Filter ----
     filterCard.appendChild(MugenUI.el("h2", {}, "Filter"));
     const filBarber = MugenUI.el("select");
-    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+    filBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Karyawan"));
     for (const b of barbers) filBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     const filBulan = MugenUI.el("select");
     filBulan.appendChild(MugenUI.el("option", { value: "" }, "Semua Bulan"));

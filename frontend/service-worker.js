@@ -202,7 +202,10 @@
 // pages/transfer.js. Grup sidebar baru "Keuangan" berisi Pemasukan/
 // Pengeluaran/Transfer Kas-Bank -- Pengeluaran DIPINDAH ke grup ini (hash
 // #/pengeluaran & halamannya TIDAK berubah, murni penataan ulang sidebar).
-const CACHE_NAME = "mugen-hair-shell-v33";
+// v34: Transfer Kas/Bank DIHAPUS TOTAL, diganti pages/uang_kas.js (Saldo
+// Kas Awal + penyesuaian manual). Karyawan non-barber (Kasir/OB/Kru)
+// ditambah, tab Setting > Barber jadi Setting > Karyawan.
+const CACHE_NAME = "mugen-hair-shell-v34";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -226,7 +229,7 @@ const APP_SHELL = [
   "/js/pages/rekap.js",
   "/js/pages/pengeluaran.js",
   "/js/pages/pemasukan.js",
-  "/js/pages/transfer.js",
+  "/js/pages/uang_kas.js",
   "/js/pages/slip_gaji.js",
   "/js/pages/kasbon.js",
   "/js/pages/komisi.js",

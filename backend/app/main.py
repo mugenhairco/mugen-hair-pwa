@@ -57,6 +57,7 @@ from produk_migrasi import migrasi_produk
 from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
+from karyawan_migrasi import migrasi_karyawan
 import booking_db
 import website_content
 import slip_gaji_db
@@ -65,8 +66,8 @@ import komisi_penyesuaian_db
 import reimburse_db
 import izin_cuti_db
 import pemasukan_db
-import transfer_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, transfer
+import uang_kas_db
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -163,7 +164,7 @@ app.include_router(komisi.router)
 app.include_router(reimburse.router)
 app.include_router(izin_cuti.router)
 app.include_router(pemasukan.router)
-app.include_router(transfer.router)
+app.include_router(uang_kas.router)
 
 
 @app.on_event("startup")
@@ -230,7 +231,7 @@ def on_startup():
         reimburse_db.init_reimburse_db()  # Modul Karyawan Fase 4: tabel reimburse (idempotent; kolom slip_gaji.reimburse dibuat di init_slip_gaji_db() di atas)
         izin_cuti_db.init_izin_cuti_db()  # Modul Karyawan Fase 5: tabel izin_cuti (idempotent, berdiri sendiri)
         pemasukan_db.init_pemasukan_db()  # Modul Keuangan Fase 1: tabel pemasukan (idempotent)
-        transfer_db.init_transfer_db()  # Modul Keuangan Fase 2: tabel transfer_dana (idempotent, berdiri sendiri)
+        uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
         migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
@@ -240,6 +241,7 @@ def on_startup():
         migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
+        migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
