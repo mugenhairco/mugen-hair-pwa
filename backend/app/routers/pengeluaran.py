@@ -28,6 +28,7 @@ class PengeluaranBody(BaseModel):
     jumlah: int
     barber_id: int | None = None
     aktif: bool = True
+    sumber_dana: str = "kas"
 
 
 @router.get("/kategori")
@@ -72,6 +73,7 @@ def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_owner
         new_id = db_pengeluaran.tambah_pengeluaran(
             tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
+            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -84,6 +86,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict =
         db_pengeluaran.koreksi_pengeluaran(
             pengeluaran_id, tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
+            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -92,5 +95,8 @@ def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict =
 
 @router.delete("/{pengeluaran_id}")
 def hapus_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_or_staff)):
-    db_pengeluaran.hapus_pengeluaran(pengeluaran_id)
+    try:
+        db_pengeluaran.hapus_pengeluaran(pengeluaran_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True}

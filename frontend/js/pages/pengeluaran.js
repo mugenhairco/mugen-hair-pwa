@@ -28,7 +28,7 @@ const PagePengeluaran = (() => {
 
     try {
       [barbers, kategoriOptions] = await Promise.all([
-        MugenApi.get("/api/input-data/barbers", { useCache: true }),
+        MugenApi.get("/api/input-data/karyawan", { useCache: true }),
         MugenApi.get("/api/pengeluaran/kategori", { useCache: true }),
       ]);
     } catch (e) {
@@ -48,11 +48,27 @@ const PagePengeluaran = (() => {
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Operasional" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Untuk apa pengeluaran ini" });
     const inputNominal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    // Sumber Dana (Tahap 12): Uang Kas -> otomatis mengurangi saldo Uang
+    // Kas. Uang Karyawan -> otomatis membuat klaim Reimburse tersambung
+    // (cair lewat Slip Gaji periode terkait). selBarber jadi WAJIB hanya
+    // saat Sumber Dana = Uang Karyawan (pola sama seperti terapkanTampilanJabatan()
+    // di slip_gaji.js).
+    const selSumberDana = MugenUI.el("select");
+    selSumberDana.appendChild(MugenUI.el("option", { value: "kas" }, "Uang Kas"));
+    selSumberDana.appendChild(MugenUI.el("option", { value: "karyawan" }, "Uang Karyawan"));
+    const wrapKaryawan = MugenUI.el("div");
     const selBarber = MugenUI.el("select");
-    selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- tidak terkait barber (opsional) --"));
+    selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- pilih karyawan --"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+    wrapKaryawan.appendChild(MugenUI.el("label", {}, "Karyawan (barber/kasir/ob/kru)"));
+    wrapKaryawan.appendChild(selBarber);
     const inputAktif = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
     inputAktif.checked = true;
+
+    function terapkanTampilanSumberDana() {
+      wrapKaryawan.style.display = selSumberDana.value === "karyawan" ? "" : "none";
+    }
+    selSumberDana.addEventListener("change", terapkanTampilanSumberDana);
 
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -67,8 +83,9 @@ const PagePengeluaran = (() => {
     formCard.appendChild(inputKeterangan);
     formCard.appendChild(MugenUI.el("label", {}, "Nominal (Rp)"));
     formCard.appendChild(inputNominal);
-    formCard.appendChild(MugenUI.el("label", {}, "Barber (opsional)"));
-    formCard.appendChild(selBarber);
+    formCard.appendChild(MugenUI.el("label", {}, "Sumber Dana"));
+    formCard.appendChild(selSumberDana);
+    formCard.appendChild(wrapKaryawan);
     formCard.appendChild(MugenUI.el("label", {}, [inputAktif, " Status Aktif"]));
     formCard.appendChild(formError);
     formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
@@ -82,9 +99,11 @@ const PagePengeluaran = (() => {
       inputKategori.value = "";
       inputKeterangan.value = "";
       inputNominal.value = "0";
+      selSumberDana.value = "kas";
       selBarber.value = "";
       inputAktif.checked = true;
       formError.textContent = "";
+      terapkanTampilanSumberDana();
     }
 
     function isiFormUntukEdit(p) {
@@ -96,9 +115,11 @@ const PagePengeluaran = (() => {
       inputKategori.value = p.kategori || "";
       inputKeterangan.value = p.keterangan || "";
       inputNominal.value = String(p.jumlah);
+      selSumberDana.value = p.sumber_dana || "kas";
       selBarber.value = p.barber_id ? String(p.barber_id) : "";
       inputAktif.checked = !!p.aktif;
       formError.textContent = "";
+      terapkanTampilanSumberDana();
       formCard.scrollIntoView({ behavior: "smooth" });
     }
 
@@ -111,12 +132,14 @@ const PagePengeluaran = (() => {
         kategori: inputKategori.value.trim(),
         keterangan: inputKeterangan.value.trim(),
         jumlah: Number(inputNominal.value) || 0,
-        barber_id: selBarber.value ? Number(selBarber.value) : null,
+        sumber_dana: selSumberDana.value,
+        barber_id: selSumberDana.value === "karyawan" && selBarber.value ? Number(selBarber.value) : null,
         aktif: inputAktif.checked,
       };
       if (!body.kategori) { formError.textContent = "Kategori tidak boleh kosong."; return; }
       if (!body.keterangan) { formError.textContent = "Keterangan tidak boleh kosong."; return; }
       if (!body.jumlah || body.jumlah <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
+      if (body.sumber_dana === "karyawan" && !body.barber_id) { formError.textContent = "Pilih karyawan dulu."; return; }
 
       btnSubmit.disabled = true;
       try {
@@ -199,7 +222,10 @@ const PagePengeluaran = (() => {
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
             { key: "kategori", label: "Kategori" },
             { key: "keterangan", label: "Keterangan" },
-            { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
+            {
+              key: "sumber_dana", label: "Sumber Dana",
+              format: (v, r) => v === "karyawan" ? `Uang Karyawan (${r.nama_barber || "-"})` : "Uang Kas",
+            },
             { key: "jumlah", label: "Nominal", format: MugenUI.formatRupiah },
             {
               key: "aktif", label: "Status",
@@ -207,6 +233,9 @@ const PagePengeluaran = (() => {
             },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
+                if (r.terkunci) {
+                  return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
+                }
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnEdit = MugenUI.el("button", {}, "Edit");
                 btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
@@ -218,7 +247,7 @@ const PagePengeluaran = (() => {
                     MugenUI.toast("Pengeluaran dihapus.", "success");
                     loadList();
                   } catch (e) {
-                    MugenUI.toast(e.message, "error");
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }
                 });
                 wrap.appendChild(btnEdit);

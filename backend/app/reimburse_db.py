@@ -267,6 +267,89 @@ def get_bukti_file_path(reimburse_id: int):
     return path, BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
 
 
+def buat_reimburse_sistem(barber_id: int, tanggal: str, kategori: str, nominal: int,
+                           keterangan: str = "", dibuat_oleh: str = "") -> dict:
+    """Sama seperti buat_reimburse(), TAPI untuk klaim yang lahir otomatis
+    dari Pengeluaran (sumber_dana='karyawan') -- diinput Owner/Admin sendiri
+    lewat pencatatan pengeluaran toko, jadi langsung disetujui (status
+    'disetujui', bukan 'pending' menunggu approval terpisah)."""
+    barber = get_barber(barber_id)
+    if barber is None:
+        raise ValueError("Karyawan tidak ditemukan.")
+    kategori = (kategori or "").strip()
+    if not kategori:
+        raise ValueError("Kategori tidak boleh kosong.")
+    nominal = int(nominal or 0)
+    if nominal <= 0:
+        raise ValueError("Nominal harus lebih dari 0.")
+    datetime.strptime(tanggal, "%Y-%m-%d")  # raise ValueError kalau format salah
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO reimburse (barber_id, tanggal, kategori, keterangan, nominal, status,
+                                       diajukan_oleh, disetujui_oleh, tanggal_approval, created_at)
+               VALUES (?, ?, ?, ?, ?, 'disetujui', ?, ?, ?, ?)""",
+            (barber_id, tanggal, kategori, (keterangan or "").strip(), nominal,
+             dibuat_oleh, dibuat_oleh, now[:10], now),
+        )
+        reimburse_id = cur.lastrowid
+    return get_reimburse(reimburse_id)
+
+
+def edit_reimburse_sistem(reimburse_id: int, tanggal: str = None, kategori: str = None,
+                           nominal: int = None, keterangan: str = None) -> dict:
+    """Sama seperti edit_reimburse(), TAPI khusus klaim sistem (dari
+    Pengeluaran) -- HANYA ditolak kalau terkunci (slip sudah dibayar), TIDAK
+    ada pembatasan status='pending' karena klaim sistem memang selalu
+    'disetujui' sejak dibuat."""
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Pengeluaran ini terkait Reimburse yang periodenya sudah dibayar lewat Slip Gaji "
+            "dan tidak bisa diubah."
+        )
+    tanggal_baru = tanggal if tanggal is not None else existing["tanggal"]
+    if tanggal is not None:
+        datetime.strptime(tanggal_baru, "%Y-%m-%d")
+    kategori_baru = kategori.strip() if kategori is not None else existing["kategori"]
+    if kategori is not None and not kategori_baru:
+        raise ValueError("Kategori tidak boleh kosong.")
+    nominal_baru = int(nominal) if nominal is not None else existing["nominal"]
+    if nominal is not None and nominal_baru <= 0:
+        raise ValueError("Nominal harus lebih dari 0.")
+    keterangan_baru = keterangan.strip() if keterangan is not None else existing["keterangan"]
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE reimburse SET tanggal = ?, kategori = ?, nominal = ?, keterangan = ?, updated_at = ?
+               WHERE id = ?""",
+            (tanggal_baru, kategori_baru, nominal_baru, keterangan_baru, now, reimburse_id),
+        )
+    return get_reimburse(reimburse_id)
+
+
+def hapus_reimburse_sistem(reimburse_id: int):
+    """Sama seperti hapus_reimburse(), TAPI khusus klaim sistem (dari
+    Pengeluaran) -- HANYA ditolak kalau terkunci, TIDAK ada pembatasan
+    status='pending'."""
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Pengeluaran ini terkait Reimburse yang periodenya sudah dibayar lewat Slip Gaji "
+            "dan tidak bisa dihapus."
+        )
+    if existing.get("bukti_filename"):
+        path = os.path.join(BUKTI_DIR, existing["bukti_filename"])
+        if os.path.isfile(path):
+            os.remove(path)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+
+
 def get_saldo_periode(barber_id: int, tahun: int, bulan: int) -> int:
     """Total klaim BERSTATUS DISETUJUI milik barber ini pada periode
     (tahun+bulan, dari kolom `tanggal`) -- dipakai auto-fill 'Reimburse' di

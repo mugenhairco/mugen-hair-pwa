@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 import database as db
 import pengeluaran_db
+import reimburse_db
 import laporan_pdf
 from auth import get_current_user, require_owner_or_staff
 
@@ -49,7 +50,12 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
 def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    return db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+    # Tahap 12: kolom Reimburse -- dihitung di sini (bukan di database.py,
+    # yang tidak boleh impor reimburse_db karena circular import).
+    for r in data:
+        r["reimburse"] = reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan)
+    return data
 
 
 @router.get("/bulanan/pdf")
