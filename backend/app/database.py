@@ -284,6 +284,23 @@ def _setting_float(key: str) -> float:
 # ---------------------------------------------------------------------------
 
 def get_barbers(hanya_aktif=True):
+    """HANYA baris jabatan='barber' -- Input Data, Dashboard, Rekap Bulanan,
+    dan Booking publik semuanya lewat fungsi ini, jadi Karyawan non-barber
+    (Kasir/OB/Kru) otomatis TIDAK PERNAH muncul di sini tanpa perlu guard
+    tambahan di masing-masing pemanggil. Untuk daftar SEMUA karyawan
+    (termasuk non-barber), lihat get_karyawan() di bawah."""
+    with get_conn() as conn:
+        q = "SELECT * FROM barbers WHERE jabatan = 'barber'"
+        if hanya_aktif:
+            q += " AND aktif = 1"
+        q += " ORDER BY nama"
+        return [dict(r) for r in conn.execute(q).fetchall()]
+
+
+def get_karyawan(hanya_aktif=True):
+    """SEMUA karyawan (barber + Kasir/OB/Kru), tanpa filter jabatan --
+    dipakai modul yang harus menampilkan seluruh karyawan (Slip Gaji,
+    Kasbon, Reimburse, Izin & Cuti, filter Rekap Transaksi)."""
     with get_conn() as conn:
         q = "SELECT * FROM barbers"
         if hanya_aktif:
@@ -298,17 +315,18 @@ def get_barber(barber_id: int):
         return dict(row) if row else None
 
 
-def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0):
+def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
+                jabatan: str = "barber", gaji_per_hari: int = 0):
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO barbers (nama, is_rafiq, uang_harian) VALUES (?, ?, ?)",
-            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian)),
+            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari) VALUES (?, ?, ?, ?, ?)",
+            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari)),
         )
         return cur.lastrowid
 
 
 def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None,
-                   uang_harian: int = None):
+                   uang_harian: int = None, jabatan: str = None, gaji_per_hari: int = None):
     fields, values = [], []
     if nama is not None:
         fields.append("nama = ?"); values.append(nama.strip())
@@ -318,6 +336,10 @@ def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif
         fields.append("aktif = ?"); values.append(1 if aktif else 0)
     if uang_harian is not None:
         fields.append("uang_harian = ?"); values.append(int(uang_harian))
+    if jabatan is not None:
+        fields.append("jabatan = ?"); values.append(jabatan)
+    if gaji_per_hari is not None:
+        fields.append("gaji_per_hari = ?"); values.append(int(gaji_per_hari))
     if not fields:
         return
     values.append(barber_id)
@@ -1079,7 +1101,10 @@ def get_pendapatan_transaksi(transaksi: dict) -> int:
 # ---------------------------------------------------------------------------
 
 def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
-                    tanggal: str = None) -> list:
+                    tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+    """tanggal_mulai/tanggal_selesai (inklusif di kedua ujung) dipakai Rekap
+    Transaksi untuk periode PDF rentang tanggal bebas -- BEDA dari
+    tahun/bulan (satu bulan/tahun penuh) yang dipakai tampilan layarnya."""
     q = "SELECT barber_id, tanggal FROM absensi_libur WHERE 1=1"
     params = []
     if barber_id is not None:
@@ -1090,6 +1115,10 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
+    if tanggal_mulai is not None:
+        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
     q += " ORDER BY tanggal DESC"
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
@@ -1103,16 +1132,20 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
 # ---------------------------------------------------------------------------
 
 def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = None,
-                              tanggal: str = None) -> list:
+                              tanggal: str = None, tanggal_mulai: str = None,
+                              tanggal_selesai: str = None) -> list:
     """Dipakai oleh halaman Rekap Transaksi. Satu baris = satu transaksi, DITAMBAH
     baris keterangan "Libur" untuk tanggal yang barber-nya ditandai libur di Input
     Data tapi tidak punya transaksi (supaya hari libur tetap kelihatan di rekap).
     Setiap baris transaksi juga membawa Uang Harian HARI itu (dihitung dari total
     service acuan Setting > Uang Harian hari itu, lihat hitung_uang_harian_per_hari)
     dan Jumlah Service (total qty seluruh service di transaksi itu). Urutan: tanggal
-    terbaru dulu."""
-    transaksi_list = get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
-    libur_list = get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal)
+    terbaru dulu. tanggal_mulai/tanggal_selesai dipakai periode PDF rentang tanggal
+    bebas -- BEDA dari tahun/bulan yang dipakai tampilan layar."""
+    transaksi_list = get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
+                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    libur_list = get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
+                                 tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     libur_set = {(l["barber_id"], l["tanggal"]) for l in libur_list}
 
     barber_cache = {}

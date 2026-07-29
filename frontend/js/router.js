@@ -189,15 +189,16 @@ const MugenRouter = (() => {
         return;
       }
       PagePemasukan.render(content);
-    } else if (hash.startsWith("#/keuangan/transfer")) {
-      // Modul Keuangan (Fase 2): pola akses SAMA PERSIS Pemasukan di atas.
+    } else if (hash.startsWith("#/keuangan/uang-kas")) {
+      // Modul Keuangan (Fase 2, semula Transfer Kas/Bank -- dihapus &
+      // diganti Uang Kas): pola akses SAMA PERSIS Pemasukan di atas.
       // Perlindungan sebenarnya tetap di backend (require_owner_or_staff
-      // di setiap endpoint /api/transfer/*).
+      // di setiap endpoint /api/uang-kas/*).
       if (user.role !== "admin" && user.role !== "staff") {
         location.hash = "#/dashboard";
         return;
       }
-      PageTransfer.render(content);
+      PageUangKas.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

@@ -30,7 +30,7 @@ import komisi_penyesuaian_db
 import reimburse_db
 import slip_gaji_db
 import izin_cuti_db
-import transfer_db
+import uang_kas_db
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -421,15 +421,24 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
         label_potongan_lain += f" ({slip['catatan_potongan']})"
     penyesuaian_komisi = int(slip.get("penyesuaian_komisi") or 0)
     tanda_penyesuaian = "+" if penyesuaian_komisi >= 0 else "-"
+    # Karyawan Non-Barber (Kasir/OB/Kru): baris "Gaji Pokok" diganti label
+    # yang menunjukkan rincian hari x rate (angka gaji_pokok slip TETAP
+    # sama, cuma disimpan lewat jalur berbeda -- lihat slip_gaji_db.py).
+    if slip.get("jumlah_hari_masuk") is not None:
+        gaji_per_hari = int(slip["gaji_pokok"]) // int(slip["jumlah_hari_masuk"]) if slip["jumlah_hari_masuk"] else 0
+        label_gaji = f"Gaji ({slip['jumlah_hari_masuk']} hari x {_rupiah(gaji_per_hari)}/hari)"
+    else:
+        label_gaji = "Gaji Pokok"
     header = ["Komponen", "Nominal"]
     baris = [
-        [_sel("Gaji Pokok"), _rupiah(slip["gaji_pokok"])],
+        [_sel(label_gaji), _rupiah(slip["gaji_pokok"])],
         [_sel("Komisi"), _rupiah(slip["komisi"])],
         [_sel("Tips"), _rupiah(slip["tips"])],
         [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
         [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
         [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"],
         [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)],
+        [_sel("Bonus Manual"), _rupiah(slip.get("bonus_manual") or 0)],
         [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
         [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
     ]
@@ -531,9 +540,19 @@ def buat_nama_file(prefix: str) -> str:
 _LEBAR_KOLOM_REKAP_TRANSAKSI = [20 * mm, 26 * mm, 40 * mm, 16 * mm, 22 * mm, 20 * mm, 22 * mm, 28 * mm]
 
 
-def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str) -> bytes:
-    data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
-    header = ["Tanggal", "Barber", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
+def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
+                              tanggal_mulai: str | None = None, tanggal_selesai: str | None = None) -> bytes:
+    """tanggal_mulai/tanggal_selesai (opsional, dikirim dari input Periode
+    PDF di halaman Rekap Transaksi) MENGGANTIKAN tahun/bulan sebagai
+    periode kalau diisi -- filter tampilan layar (Bulan+Tahun) sendiri
+    tidak berubah, ini murni opsi tambahan saat cetak PDF."""
+    if tanggal_mulai and tanggal_selesai:
+        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
+    else:
+        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        periode = _periode_text_opsional(tahun, bulan)
+    header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan", "Ket"]
     baris = [[
         _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel(r["daftar_service"] or "-"),
         _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
@@ -541,7 +560,6 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     ] for r in data]
     total_pendapatan = sum(r["pendapatan"] for r in data)
     ringkasan_tambahan = [f"<b>Total Pendapatan: {_rupiah(total_pendapatan)}</b>"]
-    periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI, ringkasan_tambahan=ringkasan_tambahan)
 
@@ -764,20 +782,35 @@ def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari
                         col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
 
 
-# Lebar kolom Laporan Transfer Kas/Bank (mm), total 194mm -- Tanggal/Dari
-# Akun/Ke Akun/Nominal/Keterangan.
-_LEBAR_KOLOM_TRANSFER = [24 * mm, 40 * mm, 40 * mm, 26 * mm, 64 * mm]
+# Lebar kolom Laporan Uang Kas (mm), total 194mm -- Tanggal/Jenis/Jumlah/
+# Keterangan/Saldo Berjalan.
+_LEBAR_KOLOM_UANG_KAS = [24 * mm, 20 * mm, 28 * mm, 82 * mm, 40 * mm]
 
 
-def buat_pdf_transfer_list(tahun: int, bulan: int, cari: str | None, dicetak_oleh: str) -> bytes:
-    data = transfer_db.get_transfer_list(tahun=tahun, bulan=bulan, cari=cari)
-    header = ["Tanggal", "Dari Akun", "Ke Akun", "Nominal", "Keterangan"]
-    baris = [[
-        _sel(t["tanggal"]), _sel(t["dari_akun"]), _sel(t["ke_akun"]), _sel(_rupiah(t["jumlah"])),
-        _sel(t.get("keterangan") or "-"),
-    ] for t in data]
-    total = sum(t["jumlah"] for t in data)
-    ringkasan_tambahan = [f"<b>Total Nominal Transfer: {_rupiah(total)}</b>"]
-    periode = _periode_text(tahun, bulan)
-    return _bangun_pdf("Laporan Transfer Kas/Bank", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_TRANSFER, ringkasan_tambahan=ringkasan_tambahan)
+def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: str) -> bytes:
+    """Saldo Berjalan dihitung di PYTHON (bukan SQL) saat iterasi baris
+    SECARA KRONOLOGIS (tertua dulu, kebalikan dari get_penyesuaian_list()
+    yang defaultnya terbaru dulu -- ledger yang menunjukkan saldo berjalan
+    HARUS dibaca kronologis), mulai dari Saldo Kas Awal -- konsisten
+    dengan uang_kas_db.get_saldo_kas()."""
+    data = list(reversed(uang_kas_db.get_penyesuaian_list(tahun=tahun, bulan=bulan)))
+    saldo_awal = uang_kas_db.get_saldo_awal()["saldo"]
+    header = ["Tanggal", "Jenis", "Jumlah", "Keterangan", "Saldo Berjalan"]
+    baris = []
+    saldo_berjalan = saldo_awal
+    for k in data:
+        if k["jenis"] == "tambah":
+            saldo_berjalan += k["jumlah"]
+        else:
+            saldo_berjalan -= k["jumlah"]
+        baris.append([
+            _sel(k["tanggal"]), _sel("Tambah" if k["jenis"] == "tambah" else "Kurang"),
+            _sel(_rupiah(k["jumlah"])), _sel(k.get("keterangan") or "-"), _sel(_rupiah(saldo_berjalan)),
+        ])
+    ringkasan_tambahan = [
+        f"Saldo Kas Awal: {_rupiah(saldo_awal)}",
+        f"<b>Saldo Akhir: {_rupiah(saldo_berjalan)}</b>",
+    ]
+    periode = _periode_text_opsional(tahun, bulan)
+    return _bangun_pdf("Laporan Uang Kas", periode, dicetak_oleh, header, baris,
+                        col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan)

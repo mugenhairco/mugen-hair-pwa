@@ -36,10 +36,12 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
 
 @router.get("/transaksi/pdf")
 def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
+                         tanggal_mulai: str = None, tanggal_selesai: str = None,
                          user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"])
+    konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
+                                                   tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     return _pdf_response(konten, "rekap_transaksi")
 
 

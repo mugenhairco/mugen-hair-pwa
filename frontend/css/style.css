@@ -256,7 +256,19 @@ a { color: var(--accent); }
   transition: max-height 200ms var(--ease-press);
 }
 .nav-group.open .nav-submenu { max-height: 240px; }
-.nav-submenu a { margin-left: 22px; }
+/* REVISI UI/UX: submenu (Karyawan, Keuangan, dst) sengaja dibuat JELAS
+   beda level dari menu utama -- sebelumnya cuma margin-left 22px dengan
+   ukuran & warna teks sama persis menu utama, jadi terlihat sejajar/setara
+   padahal ini anak dari sebuah grup. Font lebih kecil + opacity diturunkan
+   (redup, kembali normal saat hover/active sama seperti menu utama) +
+   indentasi diperbesar dari 22px. */
+.sidebar nav .nav-submenu a {
+  margin-left: 30px;
+  padding: 9px 14px;
+  font-size: 13px;
+  opacity: 0.78;
+}
+.sidebar nav .nav-submenu a:hover, .sidebar nav .nav-submenu a.active { opacity: 1; }
 
 .sidebar .user-box {
   margin-top: auto;

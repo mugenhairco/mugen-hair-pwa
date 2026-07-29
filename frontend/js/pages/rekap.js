@@ -29,11 +29,22 @@ const PageRekap = (() => {
     root.appendChild(tabBar);
     root.appendChild(body);
 
-    let barbers = [];
+    // Rekap Bulanan murni perhitungan komisi/tips/uang harian jasa potong
+    // rambut -- TETAP khusus Barber (barbersOnly). Rekap Transaksi
+    // menampilkan/memfilter SELURUH karyawan (barbersOnly + Kasir/OB/Kru,
+    // lewat karyawanAll) sesuai permintaan revisi Karyawan Non-Barber --
+    // barber non-barber otomatis tidak akan pernah punya baris transaksi
+    // (Input Data tidak pernah membiarkan itu dibuat untuk non-barber),
+    // jadi filter itu valid, hanya hasilnya kosong.
+    let barbersOnly = [];
+    let karyawanAll = [];
     if (isAdmin) {
       try {
-        barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
-      } catch (e) { /* filter barber tetap opsional kalau gagal dimuat */ }
+        [barbersOnly, karyawanAll] = await Promise.all([
+          MugenApi.get("/api/input-data/barbers", { useCache: true }),
+          MugenApi.get("/api/input-data/karyawan", { useCache: true }),
+        ]);
+      } catch (e) { /* filter tetap opsional kalau gagal dimuat */ }
     }
 
     function renderTabs() {
@@ -45,7 +56,7 @@ const PageRekap = (() => {
       }
     }
 
-    function filterBar({ withBarber = true } = {}) {
+    function filterBar({ withBarber = true, daftarKaryawan = barbersOnly, labelSemua = "Semua Barber" } = {}) {
       const selBulan = MugenUI.el("select");
       for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
       selBulan.value = String(today.getMonth() + 1);
@@ -54,8 +65,8 @@ const PageRekap = (() => {
       selTahun.value = String(today.getFullYear());
       const selBarber = withBarber && isAdmin ? MugenUI.el("select") : null;
       if (selBarber) {
-        selBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
-        for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+        selBarber.appendChild(MugenUI.el("option", { value: "" }, labelSemua));
+        for (const b of daftarKaryawan) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
       }
       const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
         [selBulan, selTahun, ...(selBarber ? [selBarber] : [])]);
@@ -70,14 +81,35 @@ const PageRekap = (() => {
     }
 
     async function renderTransaksi() {
-      const { row, selBulan, selTahun, selBarber } = filterBar();
-      row.appendChild(tombolDownloadPdf(() => {
-        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+      const { row, selBulan, selTahun, selBarber } = filterBar({ daftarKaryawan: karyawanAll, labelSemua: "Semua Karyawan" });
+
+      // Periode tanggal TAMBAHAN khusus untuk cetak PDF (filter Bulan+Tahun
+      // di atas untuk tampilan layar TIDAK berubah) -- kalau diisi,
+      // menggantikan Bulan+Tahun sebagai periode PDF supaya bisa cetak
+      // rentang custom (mis. per 2 minggu), default kosong (pakai Bulan+
+      // Tahun seperti biasa).
+      const inputDariTanggal = MugenUI.el("input", { type: "date" });
+      const inputSampaiTanggal = MugenUI.el("input", { type: "date" });
+      const pdfRow = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;align-items:center;" }, [
+        MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Periode PDF (opsional):"),
+        inputDariTanggal, inputSampaiTanggal,
+      ]);
+      pdfRow.appendChild(tombolDownloadPdf(() => {
+        const qs = new URLSearchParams();
+        if (inputDariTanggal.value && inputSampaiTanggal.value) {
+          qs.set("tanggal_mulai", inputDariTanggal.value);
+          qs.set("tanggal_selesai", inputSampaiTanggal.value);
+        } else {
+          qs.set("tahun", selTahun.value);
+          qs.set("bulan", selBulan.value);
+        }
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
         return MugenApi.downloadFile(`/api/rekap/transaksi/pdf?${qs}`, `rekap_transaksi_${selTahun.value}-${selBulan.value}.pdf`);
       }));
+
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);
+      body.appendChild(pdfRow);
       body.appendChild(tableWrap);
 
       async function load() {
@@ -92,7 +124,7 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.buildTable(
             [
               { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "nama_barber", label: "Barber" },
+              { key: "nama_barber", label: "Nama" },
               { key: "daftar_service", label: "Service" },
               { key: "jumlah_service", label: "Jml Service" },
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },

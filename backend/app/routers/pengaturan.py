@@ -231,12 +231,18 @@ def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(r
     return {"target": db.target_uang_harian_per_hari()}
 
 
-# ================= MANAJEMEN BARBER =================
+# ================= MANAJEMEN KARYAWAN (Barber + Kasir/OB/Kru) =================
+# Tabel `barbers` digeneralisasi lewat kolom `jabatan` (lihat
+# karyawan_migrasi.py) -- endpoint di sini KHUSUS Setting, jadi WAJIB
+# menampilkan SEMUA jabatan (db.get_karyawan(), bukan db.get_barbers()
+# yang otomatis ter-filter jabatan='barber' untuk pemanggil lain).
 
 class BarberBody(BaseModel):
     nama: str
     is_rafiq: bool = False
     uang_harian: int = 0
+    jabatan: str = "barber"
+    gaji_per_hari: int = 0
 
 
 class BarberUpdateBody(BaseModel):
@@ -244,17 +250,21 @@ class BarberUpdateBody(BaseModel):
     is_rafiq: bool | None = None
     aktif: bool | None = None
     uang_harian: int | None = None
+    jabatan: str | None = None
+    gaji_per_hari: int | None = None
 
 
 @router.get("/barber")
 def list_barber(user: dict = Depends(require_admin)):
-    return db.get_barbers(hanya_aktif=False)  # tampilkan semua (aktif & nonaktif) di halaman Setting
+    return db.get_karyawan(hanya_aktif=False)  # tampilkan semua jabatan, aktif & nonaktif, di halaman Setting
 
 
 @router.post("/barber")
 def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
     try:
-        new_id = pengaturan_barber.tambah_barber_validated(body.nama, body.is_rafiq, body.uang_harian)
+        new_id = pengaturan_barber.tambah_barber_validated(
+            body.nama, body.is_rafiq, body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_barber(new_id)
@@ -265,7 +275,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
     try:
         pengaturan_barber.update_barber_validated(
             barber_id, nama=body.nama, is_rafiq=body.is_rafiq, aktif=body.aktif,
-            uang_harian=body.uang_harian,
+            uang_harian=body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

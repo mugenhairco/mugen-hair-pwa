@@ -37,7 +37,8 @@ const MugenNav = (() => {
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"],
       badgeId: "booking-badge", badgeRoles: ["admin", "staff"] },
-    // Modul Keuangan -- Fase 1: Pemasukan, Fase 2: Transfer Kas/Bank.
+    // Modul Keuangan -- Fase 1: Pemasukan, Fase 2 (semula Transfer Kas/Bank,
+    // dihapus & diganti Uang Kas -- lihat uang_kas_db.py): Uang Kas.
     // Pengeluaran (Tahap 9, sudah ada sejak lama) DIPINDAH ke sini sebagai
     // child -- hash/route/halaman-nya TIDAK berubah sama sekali (tetap
     // #/pengeluaran, tetap PagePengeluaran), murni penataan ulang lokasi di
@@ -47,7 +48,7 @@ const MugenNav = (() => {
     { label: "Keuangan", roles: ["admin", "staff"], children: [
       { hash: "#/keuangan/pemasukan", label: "Pemasukan", roles: ["admin", "staff"] },
       { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
-      { hash: "#/keuangan/transfer", label: "Transfer Kas/Bank", roles: ["admin", "staff"] },
+      { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"] },
     ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
     { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
