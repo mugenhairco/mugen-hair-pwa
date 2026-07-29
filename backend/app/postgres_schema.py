@@ -383,25 +383,36 @@ CREATE TABLE IF NOT EXISTS kas_penyesuaian (
     updated_at   TEXT
 );
 
--- Pindah ke sini (setelah kas_penyesuaian & reimburse) supaya kolom FK
--- kas_penyesuaian_id/reimburse_id di bawah menunjuk ke tabel yang sudah
--- pasti ada duluan (Tahap 12: integrasi Pengeluaran <-> Uang Kas <->
--- Reimburse -- sumber_dana menentukan pengeluaran otomatis mengurangi
--- Uang Kas atau membuat klaim Reimburse tersambung).
+-- Pindah ke sini (setelah kas_penyesuaian & reimburse) supaya untuk
+-- instalasi BARU, tabel yang direferensikan FK sumber_dana/
+-- kas_penyesuaian_id/reimburse_id (ditambahkan lewat ALTER TABLE di
+-- bawah) sudah pasti ada duluan. CREATE TABLE ini SENGAJA hanya berisi
+-- kolom dasar (BUKAN sumber_dana/kas_penyesuaian_id/reimburse_id) --
+-- pola yang sama seperti barbers.jabatan/gaji_pokok & slip_gaji.reimburse:
+-- di instalasi PRODUKSI yang sudah ada, tabel `pengeluaran` ini SUDAH ADA
+-- dari Tahap 9, jadi "CREATE TABLE IF NOT EXISTS" jadi no-op di sana --
+-- taruh kolom baru di sini akan membuatnya TIDAK PERNAH ditambahkan lewat
+-- jalur produksi (BUG yang sempat terjadi -- lihat ALTER TABLE di bawah,
+-- itu satu-satunya jalur yang aman untuk tabel yang sudah ada).
 CREATE TABLE IF NOT EXISTS pengeluaran (
-    id                  SERIAL PRIMARY KEY,
-    tanggal             TEXT NOT NULL,
-    keterangan          TEXT NOT NULL,
-    jumlah              INTEGER NOT NULL,
-    created_at          TEXT NOT NULL,
-    updated_at          TEXT,
-    kategori            TEXT,
-    barber_id           INTEGER REFERENCES barbers(id),
-    aktif               INTEGER NOT NULL DEFAULT 1,
-    sumber_dana         TEXT NOT NULL DEFAULT 'kas',
-    kas_penyesuaian_id  INTEGER REFERENCES kas_penyesuaian(id),
-    reimburse_id        INTEGER REFERENCES reimburse(id)
+    id          SERIAL PRIMARY KEY,
+    tanggal     TEXT NOT NULL,
+    keterangan  TEXT NOT NULL,
+    jumlah      INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT,
+    kategori    TEXT,
+    barber_id   INTEGER REFERENCES barbers(id),
+    aktif       INTEGER NOT NULL DEFAULT 1
 );
+
+-- Tahap 12: Sumber Dana Pengeluaran (Uang Kas / Uang Karyawan) -- ALTER
+-- TABLE (bukan taruh langsung di CREATE TABLE di atas) supaya tabel
+-- `pengeluaran` yang SUDAH ADA di produksi (sejak Tahap 9) tetap dapat
+-- kolom baru ini juga, bukan cuma instalasi baru.
+ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS sumber_dana TEXT NOT NULL DEFAULT 'kas';
+ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS kas_penyesuaian_id INTEGER REFERENCES kas_penyesuaian(id);
+ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS reimburse_id INTEGER REFERENCES reimburse(id);
 """
 
 
