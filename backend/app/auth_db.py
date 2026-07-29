@@ -211,6 +211,16 @@ def nonaktifkan_user(user_id: int):
         conn.execute("UPDATE users SET aktif = 0 WHERE id = ?", (user_id,))
 
 
+def hapus_user(user_id: int):
+    """Hapus PERMANEN (bukan Nonaktifkan) -- aman dilakukan kapan pun, tidak
+    ada tabel lain yang menyimpan FK ke users.id (kolom 'dibuat_oleh'/
+    'diajukan_oleh' dkk di seluruh modul murni TEXT username, bukan FK),
+    jadi tidak ada risiko riwayat data hilang/rusak seperti pada Barber
+    (yang diblokir kalau sudah punya transaksi/absensi)."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
 # REVISI UI/UX: preferensi Dark/Light Mode disimpan PER AKUN (kolom
 # users.tema, lihat tampilan_migrasi.py) -- setiap user (admin maupun
 # barber) mengatur tema-nya sendiri, tidak memengaruhi user lain.

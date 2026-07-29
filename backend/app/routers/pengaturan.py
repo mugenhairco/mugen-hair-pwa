@@ -449,6 +449,28 @@ def aktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     return {"ok": True}
 
 
+@router.delete("/user/{user_id}")
+def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
+    """Hapus PERMANEN (beda dari Nonaktifkan yang cuma menonaktifkan status
+    login) -- dipakai izin `izin_user_hapus` yang sama seperti Nonaktifkan/
+    Aktifkan (satu izin "hak kelola status/keberadaan user", bukan izin
+    baru terpisah)."""
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if target["id"] == user["id"]:
+        raise HTTPException(status_code=403, detail="Tidak bisa menghapus akun sendiri.")
+    if user["role"] == "staff":
+        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menghapus user.")
+        _cek_target_barber_untuk_staff(user, target, "menghapus")
+    if target["role"] == "admin" and auth_db.hitung_owner_aktif() <= 1:
+        raise HTTPException(status_code=403,
+                             detail="Tidak bisa menghapus Owner terakhir. Minimal harus ada satu akun Owner aktif.")
+    auth_db.hapus_user(user_id)
+    return {"ok": True}
+
+
 # ================= HAK AKSES ADMIN (REVISI) =================
 # Menu Setting > Hak Akses Admin, HANYA Owner (require_admin murni, bukan
 # require_owner_or_staff -- Admin TIDAK BOLEH mengatur hak aksesnya sendiri

@@ -1021,6 +1021,26 @@ const PagePengaturan = (() => {
                   });
                   wrap.appendChild(btnPassword);
                   wrap.appendChild(btnToggle);
+
+                  // Hapus PERMANEN -- beda dari Nonaktifkan di atas (yang
+                  // cuma menonaktifkan status login, datanya tetap ada).
+                  // Tidak ditampilkan untuk akun sendiri (backend juga
+                  // menolak, tapi tombolnya disembunyikan lebih dulu di
+                  // sini supaya tidak ada tombol yang pasti error).
+                  if (r.id !== user.id) {
+                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                    btnHapus.addEventListener("click", async () => {
+                      if (!confirm(`Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+                      try {
+                        await MugenUI.withLoading(() => MugenApi.del(`/api/pengaturan/user/${r.id}`), { message: "Menghapus…" });
+                        MugenUI.toast("User dihapus.", "success");
+                        loadList();
+                      } catch (e) {
+                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                      }
+                    });
+                    wrap.appendChild(btnHapus);
+                  }
                   return wrap;
                 },
               },
@@ -1150,7 +1170,7 @@ const PagePengaturan = (() => {
         ]},
         { judul: "User (khusus akun ber-role Barber)", keys: [
           ["izin_user_tambah", "Membuat User Barber"],
-          ["izin_user_hapus", "Menghapus (menonaktifkan) User Barber"],
+          ["izin_user_hapus", "Nonaktifkan/Aktifkan/Hapus Permanen User Barber"],
           ["izin_user_ganti_password", "Mengubah Password User Barber"],
         ]},
         // REVISI (kedua): grup "Pengeluaran" dihapus dari sini -- menu

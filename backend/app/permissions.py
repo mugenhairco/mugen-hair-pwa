@@ -34,7 +34,7 @@ PERMISSION_DEFS = [
     ("izin_dashboard_laba_kotor", "dashboard", "Laba Kotor Toko", False),
     # ---- User: HANYA berlaku untuk mengelola user ber-role Barber ----
     ("izin_user_tambah", "user", "Membuat User Barber", False),
-    ("izin_user_hapus", "user", "Menghapus (menonaktifkan) User Barber", False),
+    ("izin_user_hapus", "user", "Menonaktifkan/Mengaktifkan/Menghapus Permanen User Barber", False),
     ("izin_user_ganti_password", "user", "Mengubah Password User Barber", False),
     # REVISI (kedua): grup "Pengeluaran" DIHAPUS dari sini -- menu
     # Pengeluaran tidak lagi memakai sistem izin sama sekali, 'staff' (Admin)
