@@ -19,9 +19,10 @@ tidak pernah barber.
   approve/reject (PUT .../status)."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
+import laporan_pdf
 import permissions
 import reimburse_db
 from auth import get_current_user, require_permission
@@ -69,6 +70,20 @@ def list_reimburse(barber_id: int = None, status: str = None, tahun: int = None,
         barber_id = user.get("barber_id")
     return reimburse_db.get_reimburse_list(barber_id=barber_id, status=status, tahun=tahun,
                                             bulan=bulan, kategori=kategori)
+
+
+@router.get("/pdf")
+def list_reimburse_pdf(barber_id: int = None, status: str = None, tahun: int = None, bulan: int = None,
+                        user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{reimburse_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter reimburse_id."""
+    _cek_akses_lihat(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    konten = laporan_pdf.buat_pdf_reimburse_list(barber_id, status, tahun, bulan, user["username"])
+    filename = laporan_pdf.buat_nama_file("reimburse")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/kategori")

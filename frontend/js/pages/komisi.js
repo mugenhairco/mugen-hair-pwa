@@ -20,6 +20,21 @@ const PageKomisi = (() => {
       jenis === "bonus" ? "Bonus" : "Potongan");
   }
 
+  function tombolDownloadPdf(getParams) {
+    const btn = MugenUI.el("button", {}, "Download PDF");
+    btn.addEventListener("click", async () => {
+      try {
+        await MugenUI.withLoading(() => {
+          const qs = new URLSearchParams(getParams());
+          return MugenApi.downloadFile(`/api/komisi/pdf?${qs}`, "laporan_komisi.pdf");
+        }, { message: "Menyiapkan PDF…" });
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    return btn;
+  }
+
   async function tampilkanRiwayatKomisi(riwayatBody, barberId, tahun, bulan) {
     riwayatBody.innerHTML = "Memuat...";
     try {
@@ -67,6 +82,7 @@ const PageKomisi = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
+    filterCard.appendChild(tombolDownloadPdf(() => ({ tahun: selTahun.value, bulan: selBulan.value })));
 
     riwayatCard.appendChild(MugenUI.el("h2", {}, "Riwayat Komisi (Dasar)"));
     const riwayatBody = MugenUI.el("div");
@@ -246,6 +262,12 @@ const PageKomisi = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) filTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     filTahun.value = String(today.getFullYear());
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filJenis, filBulan, filTahun]));
+    filterCard.appendChild(tombolDownloadPdf(() => {
+      const params = { tahun: filTahun.value, bulan: filBulan.value };
+      if (filBarber.value) params.barber_id = filBarber.value;
+      if (filJenis.value) params.jenis = filJenis.value;
+      return params;
+    }));
 
     // ---- Riwayat Komisi (dasar, reuse Rekap Bulanan) ----
     riwayatCard.appendChild(MugenUI.el("h2", {}, "Riwayat Komisi (Dasar)"));

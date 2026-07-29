@@ -5,8 +5,10 @@ DI BACKEND (require_owner_or_staff), staff ('Admin') akses PENUH sama
 persis Owner, TANPA sistem izin sama sekali."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
+import laporan_pdf
 import pemasukan_db as db_pemasukan
 from auth import require_owner_or_staff
 
@@ -35,6 +37,17 @@ def list_pemasukan(tahun: int = None, bulan: int = None, tanggal: str = None,
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
     )
+
+
+@router.get("/pdf")
+def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
+                        user: dict = Depends(require_owner_or_staff)):
+    """Route ini didaftarkan SEBELUM /{pemasukan_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter pemasukan_id."""
+    konten = laporan_pdf.buat_pdf_pemasukan_list(tahun, bulan, kategori, cari, user["username"])
+    filename = laporan_pdf.buat_nama_file("pemasukan")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/{pemasukan_id}")

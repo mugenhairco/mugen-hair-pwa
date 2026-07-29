@@ -11,8 +11,10 @@ seperti Owner ('admin') di seluruh endpoint di sini (lihat permissions.py,
 grup izin_pengeluaran_* sudah dihapus dari daftar izin yang bisa diatur)."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
+import laporan_pdf
 import pengeluaran_db as db_pengeluaran
 from auth import require_owner_or_staff
 
@@ -43,6 +45,17 @@ def list_pengeluaran(tahun: int = None, bulan: int = None, tanggal: str = None,
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
     )
+
+
+@router.get("/pdf")
+def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
+                          user: dict = Depends(require_owner_or_staff)):
+    """Route ini didaftarkan SEBELUM /{pengeluaran_id} supaya 'pdf' tidak
+    ditangkap sebagai path parameter pengeluaran_id."""
+    konten = laporan_pdf.buat_pdf_pengeluaran_list(tahun, bulan, kategori, cari, user["username"])
+    filename = laporan_pdf.buat_nama_file("pengeluaran")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/{pengeluaran_id}")

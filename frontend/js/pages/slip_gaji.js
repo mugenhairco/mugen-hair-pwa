@@ -41,6 +41,21 @@ const PageSlipGaji = (() => {
     }
   }
 
+  function tombolDownloadPdfDaftar(getParams) {
+    const btn = MugenUI.el("button", {}, "Download PDF Daftar");
+    btn.addEventListener("click", async () => {
+      try {
+        await MugenUI.withLoading(() => {
+          const qs = new URLSearchParams(getParams());
+          return MugenApi.downloadFile(`/api/slip-gaji/pdf?${qs}`, "daftar_slip_gaji.pdf");
+        }, { message: "Menyiapkan PDF…" });
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    return btn;
+  }
+
   async function loadListInto(listBody, params, isAdmin, onBerubah) {
     listBody.innerHTML = "Memuat...";
     try {
@@ -116,6 +131,7 @@ const PageSlipGaji = (() => {
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat"));
+    listCard.appendChild(tombolDownloadPdfDaftar(() => ({})));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
     const muat = () => loadListInto(listBody, {}, false, muat);
@@ -288,14 +304,20 @@ const PageSlipGaji = (() => {
 
     // ---- Daftar ----
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Slip Gaji"));
+
+    function paramsFilterAktif() {
+      const params = { tahun: filTahun.value };
+      if (filBulan.value) params.bulan = filBulan.value;
+      if (filBarber.value) params.barber_id = filBarber.value;
+      return params;
+    }
+    listCard.appendChild(tombolDownloadPdfDaftar(paramsFilterAktif));
+
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
     function loadList() {
-      const params = { tahun: filTahun.value };
-      if (filBulan.value) params.bulan = filBulan.value;
-      if (filBarber.value) params.barber_id = filBarber.value;
-      loadListInto(listBody, params, true, loadList);
+      loadListInto(listBody, paramsFilterAktif(), true, loadList);
     }
 
     filBarber.addEventListener("change", loadList);

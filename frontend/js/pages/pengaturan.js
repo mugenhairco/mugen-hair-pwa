@@ -991,12 +991,23 @@ const PagePengaturan = (() => {
 
     // ================= TAB: BACKUP =================
     async function renderBackup() {
-      // REVISI Hak Akses Admin: Export/Import/Laporan PDF masing-masing
-      // permission TERPISAH (bukan hanya izin_setting_backup, yang cuma
-      // mengatur akses ke TAB-nya) -- Owner selalu boleh semuanya.
+      // REVISI Hak Akses Admin: Export/Import masing-masing permission
+      // TERPISAH (bukan hanya izin_setting_backup, yang cuma mengatur akses
+      // ke TAB-nya) -- Owner selalu boleh semuanya.
+      //
+      // Revisi Sistem Laporan & PDF: menu Backup ini SEKARANG HANYA untuk
+      // backup/restore database -- kartu "Download Laporan PDF" yang dulu
+      // ada di sini SUDAH DIPINDAH jadi tombol "Download PDF" langsung di
+      // setiap halaman laporan masing-masing (Rekap, Slip Gaji, Kasbon,
+      // Komisi, Reimburse, Izin & Cuti, Pemasukan, Pengeluaran, Transfer),
+      // supaya PDF-nya mengikuti PERSIS filter yang sedang aktif di halaman
+      // itu, bukan filter generik tanggal/bulan-tahun di sini. Endpoint
+      // generik GET /api/pengaturan/laporan/pdf (laporan_pdf.buat_laporan())
+      // dan izin `izin_laporan_pdf` sengaja TIDAK dihapus dari backend --
+      // dibiarkan ada tanpa konsumen UI supaya tidak ada risiko regresi,
+      // tapi tidak dipakai halaman manapun lagi.
       const bolehExport = isOwner || !!izinAdmin.izin_backup_export;
       const bolehImport = isOwner || !!izinAdmin.izin_backup_import;
-      const bolehLaporan = isOwner || !!izinAdmin.izin_laporan_pdf;
 
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
@@ -1060,136 +1071,6 @@ const PagePengaturan = (() => {
         }
       });
 
-      // ================= LAPORAN PDF =================
-      const laporanCard = MugenUI.el("div", { class: "card" });
-      body.appendChild(laporanCard);
-      laporanCard.appendChild(MugenUI.el("h2", {}, "Download Laporan PDF"));
-      laporanCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "PDF berisi nama & logo barbershop, judul laporan, periode, tanggal cetak, nomor halaman, dan nama Anda sebagai pencetak."));
-
-      const today = new Date();
-      const todayIso = today.toISOString().slice(0, 10);
-      const awalBulanIso = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-
-      const selJenis = MugenUI.el("select", {}, [
-        MugenUI.el("option", { value: "transaksi" }, "Laporan Transaksi"),
-        MugenUI.el("option", { value: "pengeluaran" }, "Laporan Pengeluaran"),
-        MugenUI.el("option", { value: "pemasukan" }, "Laporan Pemasukan"),
-        MugenUI.el("option", { value: "rekap_bulanan" }, "Rekap Bulanan Barber"),
-        MugenUI.el("option", { value: "kasbon" }, "Laporan Kasbon"),
-        MugenUI.el("option", { value: "komisi" }, "Laporan Komisi"),
-        MugenUI.el("option", { value: "reimburse" }, "Laporan Reimburse"),
-      ]);
-
-      // Jenis yang dipilih lewat Tahun+Bulan (BUKAN rentang tanggal bebas)
-      // -- pola sama persis JENIS_TAHUN_BULAN di laporan_pdf.py: Rekap
-      // Bulanan (perhitungan komisi/bonus/uang harian bertumpu pada batas
-      // bulan kalender, lihat database.py get_ringkasan_barber_bulan())
-      // dan Komisi (baris komisi_penyesuaian tidak punya kolom tanggal
-      // harian sama sekali, terikat tahun+bulan saja). Jenis lain
-      // (termasuk Reimburse yang PUNYA kolom tanggal) pakai rentang
-      // tanggal bebas (Dari - Sampai) supaya Periode di PDF menunjukkan
-      // tanggal sebenarnya, bukan cuma "Bulan Tahun".
-      const JENIS_TAHUN_BULAN = ["rekap_bulanan", "komisi"];
-      const wrapTahunBulan = MugenUI.el("div");
-      const selTahunLaporan = MugenUI.el("select");
-      for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahunLaporan.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
-      selTahunLaporan.value = String(today.getFullYear());
-      const selBulanLaporan = MugenUI.el("select");
-      for (let m = 1; m <= 12; m++) selBulanLaporan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
-      selBulanLaporan.value = String(today.getMonth() + 1);
-      wrapTahunBulan.appendChild(MugenUI.el("label", {}, "Tahun"));
-      wrapTahunBulan.appendChild(selTahunLaporan);
-      wrapTahunBulan.appendChild(MugenUI.el("label", {}, "Bulan"));
-      wrapTahunBulan.appendChild(selBulanLaporan);
-
-      const wrapRentang = MugenUI.el("div");
-      const inputDari = MugenUI.el("input", { type: "date", value: awalBulanIso, max: todayIso });
-      const inputSampai = MugenUI.el("input", { type: "date", value: todayIso, max: todayIso });
-      wrapRentang.appendChild(MugenUI.el("label", {}, "Dari Tanggal"));
-      wrapRentang.appendChild(inputDari);
-      wrapRentang.appendChild(MugenUI.el("label", {}, "Sampai Tanggal"));
-      wrapRentang.appendChild(inputSampai);
-
-      const selBarberLaporan = MugenUI.el("select");
-      selBarberLaporan.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
-      try {
-        const barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
-        for (const b of barbers) selBarberLaporan.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-      } catch (e) { /* opsional -- filter barber tetap bisa "Semua Barber" */ }
-
-      laporanCard.appendChild(MugenUI.el("label", {}, "Jenis Laporan"));
-      laporanCard.appendChild(selJenis);
-      laporanCard.appendChild(wrapTahunBulan);
-      laporanCard.appendChild(wrapRentang);
-      laporanCard.appendChild(MugenUI.el("label", {}, "Barber"));
-      laporanCard.appendChild(selBarberLaporan);
-
-      function terapkanTampilanJenis() {
-        const pakaiTahunBulan = JENIS_TAHUN_BULAN.includes(selJenis.value);
-        wrapTahunBulan.style.display = pakaiTahunBulan ? "" : "none";
-        wrapRentang.style.display = pakaiTahunBulan ? "none" : "";
-      }
-      terapkanTampilanJenis();
-      selJenis.addEventListener("change", terapkanTampilanJenis);
-
-      const laporanError = MugenUI.el("div", { class: "login-error" });
-      const btnLaporan = MugenUI.el("button", { class: "btn-primary" }, "Download PDF");
-      btnLaporan.disabled = !bolehLaporan;
-      if (!bolehLaporan) laporanCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Admin tidak punya izin untuk Download Laporan PDF. Hubungi Owner."));
-      laporanCard.appendChild(laporanError);
-      laporanCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnLaporan));
-
-      btnLaporan.addEventListener("click", async () => {
-        laporanError.textContent = "";
-        const pakaiTahunBulan = JENIS_TAHUN_BULAN.includes(selJenis.value);
-        if (!pakaiTahunBulan && (!inputDari.value || !inputSampai.value)) {
-          laporanError.textContent = "Tanggal Dari dan Sampai wajib diisi.";
-          return;
-        }
-        if (!pakaiTahunBulan && inputDari.value > inputSampai.value) {
-          laporanError.textContent = "Tanggal Dari tidak boleh setelah Tanggal Sampai.";
-          return;
-        }
-        btnLaporan.disabled = true;
-        try {
-          await MugenUI.withLoading(async () => {
-            const qs = new URLSearchParams({ jenis: selJenis.value });
-            if (pakaiTahunBulan) {
-              qs.set("tahun", selTahunLaporan.value);
-              qs.set("bulan", selBulanLaporan.value);
-            } else {
-              qs.set("tanggal_mulai", inputDari.value);
-              qs.set("tanggal_selesai", inputSampai.value);
-            }
-            if (selBarberLaporan.value) qs.set("barber_id", selBarberLaporan.value);
-            const token = MugenState.getToken();
-            const res = await fetch(`${MUGEN_API_BASE}/api/pengaturan/laporan/pdf?${qs.toString()}`, {
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-            });
-            if (!res.ok) {
-              let pesan = "Gagal mengunduh laporan.";
-              try { pesan = (await res.json()).detail || pesan; } catch (e) { /* body bukan JSON */ }
-              throw new Error(pesan);
-            }
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            const stamp = pakaiTahunBulan ? `${selTahunLaporan.value}-${selBulanLaporan.value}` : `${inputDari.value}_${inputSampai.value}`;
-            a.download = `laporan_${selJenis.value}_${stamp}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-          });
-          MugenUI.toast("Laporan PDF berhasil diunduh.", "success");
-        } catch (e) {
-          laporanError.textContent = e.message;
-        } finally {
-          btnLaporan.disabled = false;
-        }
-      });
     }
 
     // ================= TAB: HAK AKSES ADMIN (Owner-only) =================
