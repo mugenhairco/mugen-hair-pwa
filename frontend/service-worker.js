@@ -205,7 +205,12 @@
 // v34: Transfer Kas/Bank DIHAPUS TOTAL, diganti pages/uang_kas.js (Saldo
 // Kas Awal + penyesuaian manual). Karyawan non-barber (Kasir/OB/Kru)
 // ditambah, tab Setting > Barber jadi Setting > Karyawan.
-const CACHE_NAME = "mugen-hair-shell-v34";
+// v35: Seluruh ikon aplikasi (favicon, ikon manifest PWA semua ukuran,
+// maskable, apple-touch-icon) diganti dari placeholder logo "M" ke logo
+// resmi MUGEN Hair Co. -- nama file TIDAK berubah, jadi CACHE_NAME WAJIB
+// dinaikkan supaya instalasi yang sudah ada tidak terus memakai ikon lama
+// dari cache (pola sama seperti setiap perubahan APP_SHELL lain).
+const CACHE_NAME = "mugen-hair-shell-v35";
 const APP_SHELL = [
   "/",
   "/index.html",
