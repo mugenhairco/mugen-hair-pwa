@@ -14,6 +14,15 @@
 // berstatus Sudah Dibayar akan menghitung ulang komponen income-nya.
 
 const PageSlipGaji = (() => {
+  // Tahap 13: Periode rentang tanggal bebas untuk Kasir/OB/Kru (r.tanggal_mulai
+  // terisi) -- BEDA dari Barber yang tetap satu bulan kalender penuh
+  // (r.tanggal_mulai NULL, dari r.bulan/r.tahun seperti sebelumnya).
+  function periodeText(r) {
+    return r.tanggal_mulai
+      ? `${MugenUI.formatTanggal(r.tanggal_mulai)} - ${MugenUI.formatTanggal(r.tanggal_selesai)}`
+      : `${MugenUI.namaBulan(r.bulan)} ${r.tahun}`;
+  }
+
   async function unduhPdf(id, namaBarber, tahun, bulan) {
     try {
       await MugenUI.withLoading(async () => {
@@ -65,7 +74,7 @@ const PageSlipGaji = (() => {
       const rows = Array.isArray(data) ? data : [];
 
       const kolom = [
-        { key: "periode", label: "Periode", format: (_, r) => `${MugenUI.namaBulan(r.bulan)} ${r.tahun}` },
+        { key: "periode", label: "Periode", format: (_, r) => periodeText(r) },
       ];
       if (isAdmin) kolom.push({ key: "nama_barber", label: "Karyawan" });
       kolom.push(
@@ -102,7 +111,7 @@ const PageSlipGaji = (() => {
               if (r.status !== "sudah_dibayar") {
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${MugenUI.namaBulan(r.bulan)} ${r.tahun}?`)) return;
+                  if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`)) return;
                   try {
                     await MugenUI.withLoading(() => MugenApi.del(`/api/slip-gaji/${r.id}`), { message: "Menghapus…" });
                     MugenUI.toast("Slip Gaji dihapus.", "success");
@@ -162,12 +171,32 @@ const PageSlipGaji = (() => {
 
     const selBarber = MugenUI.el("select");
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+    // Barber: periode SELALU satu bulan kalender (Bulan+Tahun, TIDAK
+    // berubah). Kasir/OB/Kru: TIDAK dibayar bulanan -- periode rentang
+    // tanggal bebas (wrapTanggalRentang di bawah), bisa >1 slip dalam
+    // bulan kalender yang sama (Tahap 13). Field mana yang tampil
+    // bergantung Jabatan karyawan yang dipilih, lihat terapkanTampilanJabatan().
+    const wrapBulanTahun = MugenUI.el("div");
     const selBulan = MugenUI.el("select");
     for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
     selBulan.value = String(today.getMonth() + 1);
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
+    wrapBulanTahun.appendChild(MugenUI.el("label", {}, "Bulan"));
+    wrapBulanTahun.appendChild(selBulan);
+    wrapBulanTahun.appendChild(MugenUI.el("label", {}, "Tahun"));
+    wrapBulanTahun.appendChild(selTahun);
+
+    const wrapTanggalRentang = MugenUI.el("div");
+    const inputTanggalMulai = MugenUI.el("input", { type: "date" });
+    const inputTanggalSelesai = MugenUI.el("input", { type: "date" });
+    inputTanggalMulai.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+    inputTanggalSelesai.value = today.toISOString().slice(0, 10);
+    wrapTanggalRentang.appendChild(MugenUI.el("label", {}, "Tanggal Mulai"));
+    wrapTanggalRentang.appendChild(inputTanggalMulai);
+    wrapTanggalRentang.appendChild(MugenUI.el("label", {}, "Tanggal Selesai"));
+    wrapTanggalRentang.appendChild(inputTanggalSelesai);
     // Karyawan Non-Barber (Kasir/OB/Kru): Gaji Pokok bulanan flat diganti
     // Jumlah Hari Masuk (dikalikan gaji_per_hari karyawan itu) -- field
     // mana yang tampil bergantung Jabatan karyawan yang sedang dipilih di
@@ -201,6 +230,8 @@ const PageSlipGaji = (() => {
       const barber = jabatanTerpilih() === "barber";
       wrapGajiPokok.style.display = barber ? "" : "none";
       wrapHariMasuk.style.display = barber ? "none" : "";
+      wrapBulanTahun.style.display = barber ? "" : "none";
+      wrapTanggalRentang.style.display = barber ? "none" : "";
     }
 
     // Belum ada tab tersendiri untuk atur Gaji Pokok per-barber (lihat
@@ -236,7 +267,10 @@ const PageSlipGaji = (() => {
     // reaktif ke Barber DAN Bulan/Tahun sekaligus. Tetap bebas diedit manual
     // sebelum Generate, nilai ini HANYA saran awal.
     async function isiPenyesuaianKomisiDariPeriode() {
-      if (!selBarber.value) { inputPenyesuaianKomisi.value = "0"; return; }
+      // Komisi murni barber-only (Kasir/OB/Kru tidak pernah punya baris
+      // penyesuaian komisi -- dropdown Komisi sudah /api/input-data/barbers,
+      // lihat komisi_penyesuaian_db.py) -- tidak perlu fetch sama sekali.
+      if (!selBarber.value || jabatanTerpilih() !== "barber") { inputPenyesuaianKomisi.value = "0"; return; }
       try {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         const saldo = await MugenApi.get(`/api/komisi/saldo/${selBarber.value}?${qs.toString()}`);
@@ -244,15 +278,25 @@ const PageSlipGaji = (() => {
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     // Modul Karyawan Fase 4 (Reimburse): Reimburse otomatis terisi dari
-    // total klaim BERSTATUS DISETUJUI barber+PERIODE yang dipilih (GET
-    // /api/reimburse/saldo/{barber_id}?tahun=&bulan=) -- pola SAMA seperti
-    // Penyesuaian Komisi (reaktif ke Barber DAN Bulan/Tahun), TAPI nilai
-    // ini selalu >= 0 (murni penambahan, tidak pernah negatif).
+    // total klaim BERSTATUS DISETUJUI barber+PERIODE yang dipilih. Barber
+    // (periode bulan kalender): GET /api/reimburse/saldo/{barber_id}?
+    // tahun=&bulan= (TIDAK berubah). Kasir/OB/Kru (Tahap 13: periode
+    // rentang tanggal bebas): GET /api/reimburse/saldo-rentang/{barber_id}?
+    // tanggal_mulai=&tanggal_selesai=. Nilai ini selalu >= 0 (murni
+    // penambahan, tidak pernah negatif), HANYA saran awal, tetap bebas
+    // diedit manual sebelum Generate.
     async function isiReimburseDariPeriode() {
       if (!selBarber.value) { inputReimburse.value = "0"; return; }
       try {
-        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-        const saldo = await MugenApi.get(`/api/reimburse/saldo/${selBarber.value}?${qs.toString()}`);
+        let saldo;
+        if (jabatanTerpilih() === "barber") {
+          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+          saldo = await MugenApi.get(`/api/reimburse/saldo/${selBarber.value}?${qs.toString()}`);
+        } else {
+          if (!inputTanggalMulai.value || !inputTanggalSelesai.value) { inputReimburse.value = "0"; return; }
+          const qs = new URLSearchParams({ tanggal_mulai: inputTanggalMulai.value, tanggal_selesai: inputTanggalSelesai.value });
+          saldo = await MugenApi.get(`/api/reimburse/saldo-rentang/${selBarber.value}?${qs.toString()}`);
+        }
         inputReimburse.value = String(saldo.saldo || 0);
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
@@ -270,6 +314,8 @@ const PageSlipGaji = (() => {
       isiPenyesuaianKomisiDariPeriode();
       isiReimburseDariPeriode();
     });
+    inputTanggalMulai.addEventListener("change", isiReimburseDariPeriode);
+    inputTanggalSelesai.addEventListener("change", isiReimburseDariPeriode);
     isiGajiPokokDariBarber();
     isiPotonganKasbonDariBarber();
     isiPenyesuaianKomisiDariPeriode();
@@ -277,10 +323,8 @@ const PageSlipGaji = (() => {
 
     formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
     formCard.appendChild(selBarber);
-    formCard.appendChild(MugenUI.el("label", {}, "Bulan"));
-    formCard.appendChild(selBulan);
-    formCard.appendChild(MugenUI.el("label", {}, "Tahun"));
-    formCard.appendChild(selTahun);
+    formCard.appendChild(wrapBulanTahun);
+    formCard.appendChild(wrapTanggalRentang);
     formCard.appendChild(wrapGajiPokok);
     formCard.appendChild(wrapHariMasuk);
     formCard.appendChild(MugenUI.el("label", {}, "Potongan Kasbon (Rp, opsional)"));
@@ -305,10 +349,16 @@ const PageSlipGaji = (() => {
       if (!barberMode && (!inputJumlahHariMasuk.value || Number(inputJumlahHariMasuk.value) < 0)) {
         formError.textContent = "Jumlah Hari Masuk harus diisi (0 atau lebih)."; return;
       }
+      if (!barberMode && (!inputTanggalMulai.value || !inputTanggalSelesai.value)) {
+        formError.textContent = "Tanggal Mulai dan Tanggal Selesai wajib diisi."; return;
+      }
+      if (!barberMode && inputTanggalSelesai.value < inputTanggalMulai.value) {
+        formError.textContent = "Tanggal Selesai tidak boleh sebelum Tanggal Mulai."; return;
+      }
       btnGenerate.disabled = true;
       try {
         const body = {
-          barber_id: Number(selBarber.value), tahun: Number(selTahun.value), bulan: Number(selBulan.value),
+          barber_id: Number(selBarber.value),
           potongan_kasbon: Number(inputPotonganKasbon.value) || 0, potongan_lain: Number(inputPotonganLain.value) || 0,
           penyesuaian_komisi: Number(inputPenyesuaianKomisi.value) || 0,
           reimburse: Number(inputReimburse.value) || 0,
@@ -316,8 +366,12 @@ const PageSlipGaji = (() => {
           catatan_potongan: inputCatatanPotongan.value.trim(),
         };
         if (barberMode) {
+          body.tahun = Number(selTahun.value);
+          body.bulan = Number(selBulan.value);
           body.gaji_pokok = Number(inputGajiPokok.value) || 0;
         } else {
+          body.tanggal_mulai = inputTanggalMulai.value;
+          body.tanggal_selesai = inputTanggalSelesai.value;
           body.jumlah_hari_masuk = Number(inputJumlahHariMasuk.value) || 0;
         }
         await MugenUI.withLoading(() => MugenApi.post("/api/slip-gaji", body), { message: "Menghitung Slip Gaji…" });

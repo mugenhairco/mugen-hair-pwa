@@ -65,6 +65,61 @@ def init_slip_gaji_db():
             # Lain (yang sifatnya pengurang), MENAMBAH Total Diterima.
             conn.execute("ALTER TABLE slip_gaji ADD COLUMN bonus_manual INTEGER NOT NULL DEFAULT 0")
 
+        if kolom_slip and "tanggal_mulai" not in kolom_slip:
+            # Tahap 13: Periode rentang tanggal bebas untuk Kasir/OB/Kru
+            # (gaji mereka TIDAK dibayar bulanan seperti Barber, bisa >1
+            # slip dalam bulan kalender yang sama) -- constraint lama
+            # UNIQUE(barber_id, tahun, bulan) HANYA cocok untuk Barber (1
+            # slip/bulan). SQLite tidak bisa DROP CONSTRAINT, jadi tabel
+            # di-REBUILD (rename+create ulang+copy data), pola sama seperti
+            # migrasi tabel `transaksi` di database.py. Constraint lama
+            # diganti index UNIQUE PARSIAL (WHERE tanggal_mulai IS
+            # NULL/NOT NULL) di bawah -- barber (tanggal_mulai NULL) tetap
+            # 1 slip/bulan seperti sekarang, non-barber diidentifikasi
+            # lewat rentang tanggalnya sendiri, bukan tahun/bulan lagi.
+            conn.execute("ALTER TABLE slip_gaji RENAME TO slip_gaji_migrasi_lama")
+            conn.execute("""
+                CREATE TABLE slip_gaji (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    barber_id         INTEGER NOT NULL,
+                    tahun             INTEGER NOT NULL,
+                    bulan             INTEGER NOT NULL,
+                    gaji_pokok        INTEGER NOT NULL DEFAULT 0,
+                    komisi            INTEGER NOT NULL DEFAULT 0,
+                    tips              INTEGER NOT NULL DEFAULT 0,
+                    uang_harian       INTEGER NOT NULL DEFAULT 0,
+                    bonus_customer    INTEGER NOT NULL DEFAULT 0,
+                    potongan_kasbon   INTEGER NOT NULL DEFAULT 0,
+                    potongan_lain     INTEGER NOT NULL DEFAULT 0,
+                    penyesuaian_komisi INTEGER NOT NULL DEFAULT 0,
+                    reimburse         INTEGER NOT NULL DEFAULT 0,
+                    jumlah_hari_masuk INTEGER,
+                    bonus_manual      INTEGER NOT NULL DEFAULT 0,
+                    tanggal_mulai     TEXT,
+                    tanggal_selesai   TEXT,
+                    catatan_potongan  TEXT,
+                    total_diterima    INTEGER NOT NULL DEFAULT 0,
+                    status            TEXT NOT NULL DEFAULT 'belum_dibayar',
+                    tanggal_dibayar   TEXT,
+                    dibuat_oleh       TEXT,
+                    created_at        TEXT NOT NULL,
+                    updated_at        TEXT,
+                    FOREIGN KEY (barber_id) REFERENCES barbers(id)
+                )
+            """)
+            conn.execute("""
+                INSERT INTO slip_gaji (id, barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian,
+                                        bonus_customer, potongan_kasbon, potongan_lain, penyesuaian_komisi,
+                                        reimburse, jumlah_hari_masuk, bonus_manual, catatan_potongan,
+                                        total_diterima, status, tanggal_dibayar, dibuat_oleh, created_at, updated_at)
+                SELECT id, barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian,
+                       bonus_customer, potongan_kasbon, potongan_lain, penyesuaian_komisi,
+                       reimburse, jumlah_hari_masuk, bonus_manual, catatan_potongan,
+                       total_diterima, status, tanggal_dibayar, dibuat_oleh, created_at, updated_at
+                FROM slip_gaji_migrasi_lama
+            """)
+            conn.execute("DROP TABLE slip_gaji_migrasi_lama")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS slip_gaji (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +137,8 @@ def init_slip_gaji_db():
                 reimburse         INTEGER NOT NULL DEFAULT 0,
                 jumlah_hari_masuk INTEGER,
                 bonus_manual      INTEGER NOT NULL DEFAULT 0,
+                tanggal_mulai     TEXT,
+                tanggal_selesai   TEXT,
                 catatan_potongan  TEXT,
                 total_diterima    INTEGER NOT NULL DEFAULT 0,
                 status            TEXT NOT NULL DEFAULT 'belum_dibayar',
@@ -89,9 +146,21 @@ def init_slip_gaji_db():
                 dibuat_oleh       TEXT,
                 created_at        TEXT NOT NULL,
                 updated_at        TEXT,
-                UNIQUE(barber_id, tahun, bulan),
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
+        """)
+
+        # Tahap 13: pengganti UNIQUE(barber_id, tahun, bulan) yang lama --
+        # index parsial, aman idempotent dijalankan tiap startup (jalur
+        # rebuild DI ATAS maupun jalur instalasi baru sama-sama berakhir di
+        # sini dengan tabel yang sudah punya kolom tanggal_mulai).
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_slip_gaji_bulanan
+            ON slip_gaji(barber_id, tahun, bulan) WHERE tanggal_mulai IS NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_slip_gaji_rentang
+            ON slip_gaji(barber_id, tanggal_mulai, tanggal_selesai) WHERE tanggal_mulai IS NOT NULL
         """)
 
 
@@ -107,6 +176,19 @@ def get_slip_gaji_by_periode(barber_id: int, tahun: int, bulan: int):
         row = conn.execute(
             "SELECT * FROM slip_gaji WHERE barber_id = ? AND tahun = ? AND bulan = ?",
             (barber_id, tahun, bulan),
+        ).fetchone()
+        return _lengkapi(dict(row)) if row else None
+
+
+def get_slip_gaji_by_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str):
+    """Analog get_slip_gaji_by_periode(), tapi untuk Kasir/OB/Kru (periode
+    rentang tanggal bebas) -- exact-match rentang, dipakai supaya generate
+    ulang dengan rentang PERSIS sama meng-UPDATE slip yang sama (bukan bikin
+    duplikat), sama seperti perilaku generate ulang Barber per bulan."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM slip_gaji WHERE barber_id = ? AND tanggal_mulai = ? AND tanggal_selesai = ?",
+            (barber_id, tanggal_mulai, tanggal_selesai),
         ).fetchone()
         return _lengkapi(dict(row)) if row else None
 
@@ -132,17 +214,28 @@ def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = No
     return [_lengkapi(r) for r in rows]
 
 
-def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = None, potongan_kasbon: int = 0,
-                    potongan_lain: int = 0, penyesuaian_komisi: int = 0, reimburse: int = 0,
-                    catatan_potongan: str = "", dibuat_oleh: str = "",
-                    jumlah_hari_masuk: int = None, bonus_manual: int = 0) -> dict:
+def buat_slip_gaji(barber_id: int, tahun: int = None, bulan: int = None, gaji_pokok: int = None,
+                    potongan_kasbon: int = 0, potongan_lain: int = 0, penyesuaian_komisi: int = 0,
+                    reimburse: int = 0, catatan_potongan: str = "", dibuat_oleh: str = "",
+                    jumlah_hari_masuk: int = None, bonus_manual: int = 0,
+                    tanggal_mulai: str = None, tanggal_selesai: str = None) -> dict:
     """Generate (atau hitung ulang, kalau belum berstatus Sudah Dibayar) slip
-    gaji satu karyawan untuk satu bulan. Komponen income (komisi/tips/uang
-    harian/bonus) SELALU dihitung ULANG dari get_ringkasan_barber_bulan()
-    apa adanya -- hanya potongan yang manual/diisi Owner. Untuk karyawan
-    non-barber (Kasir/OB/Kru) fungsi ini otomatis bernilai 0 untuk keempat
-    komponen itu (tidak ada transaksi jasa potong rambut), murni Gaji +
-    Reimburse + Bonus Manual - Potongan.
+    gaji satu karyawan. Komponen income (komisi/tips/uang harian/bonus)
+    SELALU dihitung ULANG dari get_ringkasan_barber_bulan() apa adanya --
+    hanya potongan yang manual/diisi Owner. Untuk karyawan non-barber
+    (Kasir/OB/Kru) fungsi ini otomatis bernilai 0 untuk keempat komponen itu
+    (tidak ada transaksi jasa potong rambut), murni Gaji + Reimburse +
+    Bonus Manual - Potongan.
+
+    Periode: Barber tetap satu slip per BULAN KALENDER (tahun+bulan wajib
+    diisi, TIDAK dibayar bulanan bukan berarti barber -- itu tetap
+    tahun/bulan seperti sekarang). Kasir/OB/Kru TIDAK dibayar bulanan --
+    periode berupa RENTANG TANGGAL BEBAS (tanggal_mulai/tanggal_selesai
+    wajib diisi), boleh lebih dari satu slip dalam bulan kalender yang
+    sama (mis. dibayar 2x sebulan) -- tahun/bulan tetap DIDERIVE dari
+    tanggal_mulai murni untuk filter/tampilan daftar yang sudah ada, BUKAN
+    lagi kunci keunikan slip untuk jabatan ini (lihat idx_slip_gaji_rentang
+    di init_slip_gaji_db()).
 
     gaji_pokok: HANYA berlaku jabatan='barber' -- kalau diisi (bukan None),
     NILAI INI DISIMPAN PERMANEN ke barbers.gaji_pokok (bukan cuma dipakai
@@ -157,17 +250,31 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
     barber = get_barber(barber_id)
     if barber is None:
         raise ValueError("Karyawan tidak ditemukan.")
-    if not (1 <= bulan <= 12):
-        raise ValueError("Bulan tidak valid.")
 
-    existing = get_slip_gaji_by_periode(barber_id, tahun, bulan)
+    jabatan = barber.get("jabatan") or "barber"
+    if jabatan == "barber":
+        if tahun is None or bulan is None:
+            raise ValueError("Bulan dan Tahun wajib diisi untuk Barber.")
+        if not (1 <= bulan <= 12):
+            raise ValueError("Bulan tidak valid.")
+        existing = get_slip_gaji_by_periode(barber_id, tahun, bulan)
+    else:
+        if not tanggal_mulai or not tanggal_selesai:
+            raise ValueError("Tanggal Mulai dan Tanggal Selesai wajib diisi untuk karyawan non-Barber.")
+        datetime.strptime(tanggal_mulai, "%Y-%m-%d")  # raise ValueError kalau format salah
+        datetime.strptime(tanggal_selesai, "%Y-%m-%d")
+        if tanggal_selesai < tanggal_mulai:
+            raise ValueError("Tanggal Selesai tidak boleh sebelum Tanggal Mulai.")
+        tahun = int(tanggal_mulai[:4])
+        bulan = int(tanggal_mulai[5:7])
+        existing = get_slip_gaji_by_rentang(barber_id, tanggal_mulai, tanggal_selesai)
+
     if existing and existing["status"] == "sudah_dibayar":
         raise ValueError(
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
             "batalkan statusnya dulu kalau perlu generate ulang."
         )
 
-    jabatan = barber.get("jabatan") or "barber"
     if jabatan == "barber":
         if gaji_pokok is not None:
             gaji_pokok = int(gaji_pokok)
@@ -222,11 +329,12 @@ def buat_slip_gaji(barber_id: int, tahun: int, bulan: int, gaji_pokok: int = Non
                 """INSERT INTO slip_gaji
                        (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
                         potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, jumlah_hari_masuk,
-                        bonus_manual, catatan_potongan, total_diterima, status, dibuat_oleh, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
+                        bonus_manual, tanggal_mulai, tanggal_selesai, catatan_potongan, total_diterima,
+                        status, dibuat_oleh, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'belum_dibayar', ?, ?)""",
                 (barber_id, tahun, bulan, gaji_pokok, komisi, tips, uang_harian, bonus_customer,
                  potongan_kasbon, potongan_lain, penyesuaian_komisi, reimburse, jumlah_hari_masuk,
-                 bonus_manual, catatan_potongan, total_diterima, dibuat_oleh, now),
+                 bonus_manual, tanggal_mulai, tanggal_selesai, catatan_potongan, total_diterima, dibuat_oleh, now),
             )
             slip_id = cur.lastrowid
     return get_slip_gaji(slip_id)

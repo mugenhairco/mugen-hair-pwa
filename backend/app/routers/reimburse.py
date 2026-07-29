@@ -100,6 +100,19 @@ def saldo_periode(barber_id: int, tahun: int, bulan: int, user: dict = Depends(g
             "saldo": reimburse_db.get_saldo_periode(barber_id, tahun, bulan)}
 
 
+@router.get("/saldo-rentang/{barber_id}")
+def saldo_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str,
+                   user: dict = Depends(get_current_user)):
+    """Analog saldo_periode() di atas, tapi untuk auto-fill Reimburse di
+    form Generate Slip Gaji Kasir/OB/Kru (Tahap 13: periode rentang tanggal
+    bebas, BEDA dari Barber yang tetap pakai tahun/bulan)."""
+    if user["role"] == "barber" and barber_id != user.get("barber_id"):
+        raise HTTPException(status_code=403, detail="Tidak bisa melihat saldo reimburse barber lain.")
+    _cek_akses_lihat(user)
+    return {"barber_id": barber_id, "tanggal_mulai": tanggal_mulai, "tanggal_selesai": tanggal_selesai,
+            "saldo": reimburse_db.get_saldo_rentang(barber_id, tanggal_mulai, tanggal_selesai)}
+
+
 @router.get("/{reimburse_id}")
 def ambil_reimburse(reimburse_id: int, user: dict = Depends(get_current_user)):
     klaim = reimburse_db.get_reimburse(reimburse_id)

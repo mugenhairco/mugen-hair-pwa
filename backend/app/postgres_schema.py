@@ -248,8 +248,7 @@ CREATE TABLE IF NOT EXISTS slip_gaji (
     tanggal_dibayar   TEXT,
     dibuat_oleh       TEXT,
     created_at        TEXT NOT NULL,
-    updated_at        TEXT,
-    UNIQUE(barber_id, tahun, bulan)
+    updated_at        TEXT
 );
 
 -- Modul Karyawan (Fase 2): Kasbon Karyawan. Dua tabel baru murni, tidak
@@ -308,6 +307,22 @@ ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS reimburse INTEGER NOT NULL DEFAUL
 -- jabatan, pola ALTER TABLE sama seperti reimburse di atas).
 ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS jumlah_hari_masuk INTEGER;
 ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS bonus_manual INTEGER NOT NULL DEFAULT 0;
+
+-- Tahap 13: Periode rentang tanggal bebas untuk Kasir/OB/Kru (gaji mereka
+-- TIDAK dibayar bulanan seperti Barber, bisa >1 slip dalam bulan kalender
+-- yang sama) -- NULL untuk slip Barber (tetap pakai tahun/bulan).
+-- Constraint UNIQUE(barber_id, tahun, bulan) yang lama (inline di CREATE
+-- TABLE slip_gaji di atas, SUDAH DIHAPUS dari sana) diganti index UNIQUE
+-- PARSIAL di bawah -- barber (tanggal_mulai NULL) tetap 1 slip/bulan
+-- seperti sekarang, non-barber diidentifikasi lewat rentang tanggalnya
+-- sendiri. DROP CONSTRAINT IF EXISTS supaya instalasi yang SUDAH ADA (nama
+-- constraint auto-generated Postgres dari definisi UNIQUE(...) inline yang
+-- lama) ikut terlepas, bukan cuma no-op di instalasi baru.
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS tanggal_mulai TEXT;
+ALTER TABLE slip_gaji ADD COLUMN IF NOT EXISTS tanggal_selesai TEXT;
+ALTER TABLE slip_gaji DROP CONSTRAINT IF EXISTS slip_gaji_barber_id_tahun_bulan_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slip_gaji_bulanan ON slip_gaji(barber_id, tahun, bulan) WHERE tanggal_mulai IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slip_gaji_rentang ON slip_gaji(barber_id, tanggal_mulai, tanggal_selesai) WHERE tanggal_mulai IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS reimburse (
     id                SERIAL PRIMARY KEY,

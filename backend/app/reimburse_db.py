@@ -71,20 +71,37 @@ def init_reimburse_db():
 def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
-    tahun, bulan = int(row["tanggal"][:4]), int(row["tanggal"][5:7])
-    row["terkunci"] = _slip_terkunci(row["barber_id"], tahun, bulan)
+    row["terkunci"] = _slip_terkunci(row["barber_id"], row["tanggal"])
     return row
 
 
-def _slip_terkunci(barber_id: int, tahun: int, bulan: int) -> bool:
-    """True kalau Slip Gaji barber+periode ini sudah berstatus
-    'sudah_dibayar' -- query LANGSUNG ke tabel slip_gaji (bukan import
-    slip_gaji_db), sama seperti pola komisi_penyesuaian_db.py."""
+def _slip_terkunci(barber_id: int, tanggal: str) -> bool:
+    """True kalau ada Slip Gaji barber ini yang meliputi `tanggal` (tanggal
+    klaim reimburse ini) dan sudah berstatus 'sudah_dibayar' -- query
+    LANGSUNG ke tabel slip_gaji (bukan import slip_gaji_db), sama seperti
+    pola komisi_penyesuaian_db.py.
+
+    Barber: periode SELALU satu bulan kalender penuh (tanggal_mulai NULL di
+    slip_gaji) -- cek tahun/bulan seperti sebelumnya. Kasir/OB/Kru: periode
+    rentang tanggal bebas, bisa >1 slip per bulan kalender -- cek apakah
+    `tanggal` jatuh DI DALAM rentang [tanggal_mulai, tanggal_selesai] slip
+    manapun milik barber ini (Tahap 13: Slip Gaji periode rentang tanggal)."""
+    barber = get_barber(barber_id)
+    jabatan = (barber or {}).get("jabatan") or "barber"
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT status FROM slip_gaji WHERE barber_id = ? AND tahun = ? AND bulan = ?",
-            (barber_id, tahun, bulan),
-        ).fetchone()
+        if jabatan == "barber":
+            tahun, bulan = int(tanggal[:4]), int(tanggal[5:7])
+            row = conn.execute(
+                "SELECT status FROM slip_gaji WHERE barber_id = ? AND tahun = ? AND bulan = ? "
+                "AND tanggal_mulai IS NULL",
+                (barber_id, tahun, bulan),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT status FROM slip_gaji WHERE barber_id = ? AND tanggal_mulai IS NOT NULL "
+                "AND tanggal_mulai <= ? AND tanggal_selesai >= ? AND status = 'sudah_dibayar' LIMIT 1",
+                (barber_id, tanggal, tanggal),
+            ).fetchone()
     return row is not None and row["status"] == "sudah_dibayar"
 
 
@@ -361,5 +378,20 @@ def get_saldo_periode(barber_id: int, tahun: int, bulan: int) -> int:
             """SELECT COALESCE(SUM(nominal), 0) AS total FROM reimburse
                WHERE barber_id = ? AND status = 'disetujui' AND tanggal LIKE ?""",
             (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
+        ).fetchone()
+    return int(row["total"] or 0)
+
+
+def get_saldo_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> int:
+    """Analog get_saldo_periode(), tapi untuk Kasir/OB/Kru (periode Slip
+    Gaji rentang tanggal bebas, Tahap 13) -- total klaim BERSTATUS DISETUJUI
+    milik barber ini yang tanggalnya jatuh DI DALAM [tanggal_mulai,
+    tanggal_selesai] (inklusif di kedua ujung), dipakai auto-fill
+    'Reimburse' di form Generate Slip Gaji untuk jabatan non-Barber."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(nominal), 0) AS total FROM reimburse
+               WHERE barber_id = ? AND status = 'disetujui' AND tanggal >= ? AND tanggal <= ?""",
+            (barber_id, tanggal_mulai, tanggal_selesai),
         ).fetchone()
     return int(row["total"] or 0)
