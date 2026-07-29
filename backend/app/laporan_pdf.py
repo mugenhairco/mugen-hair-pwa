@@ -66,6 +66,27 @@ def _sel(nilai) -> Paragraph:
     return Paragraph(str(nilai), _SEL_STYLE)
 
 
+# Header kolom tabel -- BEDA dari _SEL_STYLE (isi sel biasa): tebal + putih
+# (menyamai TEXTCOLOR/FONTNAME row header di _gaya_tabel()), supaya bisa
+# dibungkus Paragraph juga (lihat _kepala() di bawah). PENTING: TableStyle
+# (BACKGROUND/TEXTCOLOR/FONTNAME) TIDAK berlaku untuk isi sel berupa
+# Paragraph/flowable (hanya berlaku untuk teks mentah) -- makanya warna/tebal
+# header harus diatur di ParagraphStyle ini sendiri, bukan cukup lewat
+# TableStyle seperti sebelum kolom header dibungkus Paragraph.
+_HEADER_STYLE = ParagraphStyle("header-laporan", fontName="Helvetica-Bold", fontSize=8, leading=10,
+                                textColor=colors.white)
+
+
+def _kepala(nilai) -> Paragraph:
+    """Bungkus label header kolom jadi Paragraph supaya BISA MELIPAT KE
+    BARIS BARU kalau lebih lebar dari kolomnya -- sebelumnya header dikirim
+    sebagai string mentah ke Table, yang TIDAK melipat teks sama sekali
+    (beda dari isi sel biasa yang sudah lewat _sel()/Paragraph), sehingga
+    header kolom sempit (mis. "Jml Service", "Kasbon Dibayar") tumpang
+    tindih ke kolom sebelahnya alih-alih melipat rapi ke baris kedua."""
+    return Paragraph(str(nilai), _HEADER_STYLE)
+
+
 def _rupiah(v) -> str:
     return f"Rp {int(v or 0):,}".replace(",", ".")
 
@@ -195,7 +216,7 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
     if not baris:
         elemen.append(Paragraph("Tidak ada data pada periode ini.", styles["Normal"]))
     else:
-        data_tabel = [header_kolom] + baris
+        data_tabel = [[_kepala(h) for h in header_kolom]] + baris
         tabel = Table(data_tabel, colWidths=col_widths, repeatRows=1)
         tabel.setStyle(_gaya_tabel())
         elemen.append(tabel)
@@ -239,7 +260,7 @@ def _bangun_pdf_sections(judul: str, periode: str, dicetak_oleh: str, sections: 
         if not baris:
             elemen.append(Paragraph("Tidak ada data pada periode ini.", styles["Normal"]))
         else:
-            data_tabel = [sec["header"]] + baris
+            data_tabel = [[_kepala(h) for h in sec["header"]]] + baris
             tabel = Table(data_tabel, colWidths=sec.get("col_widths"), repeatRows=1)
             tabel.setStyle(_gaya_tabel())
             elemen.append(tabel)
@@ -607,7 +628,7 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
 # lebih sedikit): varian halaman ini menyertakan Hari Libur & Target Bonus
 # persis seperti tabel pages/rekap.js tab Bulanan. Kolom Reimburse (Tahap
 # 12) & Kasbon Dibayar (Tahap 17) ditambahkan sebelum Total.
-_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [30 * mm, 14 * mm, 18 * mm, 16 * mm, 20 * mm, 12 * mm, 14 * mm, 14 * mm, 16 * mm, 16 * mm, 24 * mm]
+_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [28 * mm, 18 * mm, 16 * mm, 14 * mm, 18 * mm, 12 * mm, 14 * mm, 14 * mm, 20 * mm, 16 * mm, 24 * mm]
 
 
 def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str) -> bytes:
