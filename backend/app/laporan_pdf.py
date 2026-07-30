@@ -815,7 +815,6 @@ _LEBAR_HALAMAN_RINGKASAN = 281 * mm  # A4 landscape (297mm) dikurangi margin kir
 
 _LEBAR_TETAP_RINGKASAN = {
     "Nama": 30 * mm,           # nama karyawan, dilebihkan supaya nama panjang tetap satu baris
-    "Jml Pelanggan": 18 * mm,  # angka kecil, tapi header 2 kata ("Jml Pelanggan") perlu ruang lipat yang wajar
     "Jml Service": 16 * mm,
     "Hari Libur": 16 * mm,
     "Uang Harian": 23 * mm,    # cukup untuk "Rp 99.999.999" tanpa terpotong
@@ -910,7 +909,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     ada_kasbon = any(r["kasbon_dibayar"] for r in ringkas)
     ada_non_barber = any(r["gaji_non_barber"] for r in ringkas)
 
-    header = ["Nama", "Jml Pelanggan", "Jml Service", "Service", "Hari Libur", "Uang Harian", "Tips", "Pendapatan"]
+    header = ["Nama", "Jml Service", "Service", "Hari Libur", "Uang Harian", "Tips", "Pendapatan"]
     if ada_reimburse:
         header.append("Reimburse")
     if ada_kasbon:
@@ -923,7 +922,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     baris = []
     for r in ringkas:
         sel = [
-            _sel(r["nama_barber"]), _sel(str(r["jumlah_transaksi"])), _sel(str(r["jumlah_service"])),
+            _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])),
             _sel_service(r["daftar_service"]), _sel(str(r["hari_libur"])), _sel(_rupiah(r["uang_harian"])),
             _sel(_rupiah(r["tips"])), _sel(_rupiah(r["pendapatan"])),
         ]
