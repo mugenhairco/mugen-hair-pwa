@@ -566,6 +566,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 }
 .loading-message:empty { display: none; }
 
+/* Dialog konfirmasi modern -- MugenUI.confirmModal() (lihat ui.js),
+   dipakai fitur yang butuh konfirmasi lebih jelas dari confirm() bawaan
+   browser, mis. tombol Hapus Rekap Transaksi khusus Owner. z-index di
+   bawah .loading-overlay (9999) SENGAJA -- kalau tombol konfirmasi
+   memicu withLoading(), overlay loading itu boleh menimpa modal ini. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9500;
+  padding: 20px;
+  animation: mugen-fade-slide-in 150ms ease-out both;
+}
+.modal-box {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: 22px;
+  max-width: 360px;
+  width: 100%;
+}
+.modal-box h3 { margin: 0 0 10px; font-size: 17px; }
+.modal-box p { margin: 0 0 8px; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+.modal-box p:last-of-type { margin-bottom: 0; }
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+.modal-actions button { min-height: 42px; }
+
 .offline-banner {
   background: var(--danger); color: #fff; text-align: center;
   padding: 8px; font-size: 13px; border-radius: 10px; margin-bottom: 12px;

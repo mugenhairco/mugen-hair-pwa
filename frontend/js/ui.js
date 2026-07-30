@@ -29,8 +29,14 @@ const MugenUI = (() => {
   // ada yang terlewat). Loading spinner + teks proses (lihat withLoading
   // di bawah) sudah cukup jadi umpan balik sukses -- perubahan langsung
   // terlihat di UI (list ter-refresh, dst) tanpa perlu snackbar tambahan.
-  function toast(message, type = "info") {
-    if (type !== "error") return;
+  function toast(message, type = "info", { force = false } = {}) {
+    // `force` (opsional, default false): SATU-SATUNYA cara melewati aturan
+    // "toast sukses/info dihilangkan total" di atas -- dipakai SENGAJA
+    // hanya oleh fitur yang secara eksplisit diminta menampilkan notifikasi
+    // sukses (mis. Hapus Rekap Transaksi khusus Owner). Pemanggilan
+    // toast(...) yang SUDAH ADA di seluruh aplikasi TIDAK mengirim
+    // parameter ini, jadi perilakunya 100% tidak berubah.
+    if (type !== "error" && !force) return;
     const el = document.createElement("div");
     el.className = "toast " + type;
     el.textContent = message;
@@ -78,6 +84,38 @@ const MugenUI = (() => {
     table.appendChild(tbody);
     wrap.appendChild(table);
     return wrap;
+  }
+
+  // Dialog konfirmasi modern (menggantikan confirm() bawaan browser yang
+  // tidak bisa diberi styling) -- dipakai fitur yang butuh konfirmasi
+  // bertingkat lebih jelas dari sekadar ya/tidak polos, mis. Hapus Rekap
+  // Transaksi khusus Owner. `message` boleh string atau array string
+  // (tiap elemen jadi satu baris paragraf terpisah). Return Promise<bool>
+  // -- true kalau tombol konfirmasi diklik, false kalau Batal/klik di luar
+  // kotak/tombol X. Dipanggil dengan `await`, TIDAK memblokir thread
+  // seperti confirm() bawaan (async, tidak membekukan tab).
+  function confirmModal({ title, message, confirmText = "Ya", cancelText = "Batal", danger = false } = {}) {
+    return new Promise((resolve) => {
+      const overlay = el("div", { class: "modal-overlay" });
+      const box = el("div", { class: "modal-box" });
+      if (title) box.appendChild(el("h3", {}, title));
+      const baris = Array.isArray(message) ? message : [message];
+      for (const teks of baris) box.appendChild(el("p", {}, teks));
+
+      const btnBatal = el("button", { type: "button" }, cancelText);
+      const btnKonfirmasi = el("button", { type: "button", class: danger ? "btn-danger" : "btn-primary" }, confirmText);
+      box.appendChild(el("div", { class: "modal-actions" }, [btnBatal, btnKonfirmasi]));
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function tutup(hasil) {
+        overlay.remove();
+        resolve(hasil);
+      }
+      btnBatal.addEventListener("click", () => tutup(false));
+      btnKonfirmasi.addEventListener("click", () => tutup(true));
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(false); });
+    });
   }
 
   function offlineBanner(cachedAt) {
@@ -215,6 +253,6 @@ const MugenUI = (() => {
 
   return {
     formatRupiah, formatTanggal, namaBulan, toast, el, buildTable, offlineBanner, barChart,
-    showLoading, hideLoading, withLoading, themeSwitch,
+    showLoading, hideLoading, withLoading, themeSwitch, confirmModal,
   };
 })();

@@ -16,6 +16,10 @@ const PageRekap = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
+    // Fitur Hapus Rekap Transaksi: KHUSUS Owner (role "admin" di kode ini
+    // -- lihat konvensi penamaan role di seluruh aplikasi, "staff" = Admin
+    // di tampilan). Admin/Barber TIDAK melihat tombolnya sama sekali.
+    const isOwner = user.role === "admin";
     const today = new Date();
 
     root.innerHTML = "";
@@ -131,6 +135,47 @@ const PageRekap = (() => {
               { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
               { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
               { key: "keterangan", label: "Ket.", format: (v) => v ? MugenUI.el("span", { class: "badge badge-libur" }, v) : "-" },
+              // Kolom Hapus KHUSUS Owner (isOwner) -- baris "libur"/hasil
+              // gabungan Reimburse/Kasbon tidak punya "id" transaksi (lihat
+              // database.py get_rekap_transaksi_list()), jadi otomatis
+              // tidak dapat tombol (dash saja), hanya baris transaksi asli
+              // yang bisa dihapus.
+              ...(isOwner ? [{
+                key: "aksi", label: "Aksi", format: (_, r) => {
+                  if (r.tipe !== "transaksi" || r.id == null) return "-";
+                  const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  const btnHapus = MugenUI.el(
+                    "button",
+                    { type: "button", class: "btn-danger", title: "Hapus Transaksi" },
+                    "🗑 Hapus",
+                  );
+                  btnHapus.addEventListener("click", async () => {
+                    const ok = await MugenUI.confirmModal({
+                      title: "Hapus Transaksi",
+                      message: [
+                        "Apakah Anda yakin ingin menghapus transaksi ini?",
+                        "Data yang dihapus tidak dapat dikembalikan.",
+                      ],
+                      confirmText: "Ya, Hapus",
+                      cancelText: "Batal",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    try {
+                      await MugenUI.withLoading(
+                        () => MugenApi.del(`/api/input-data/transaksi/${r.id}`),
+                        { message: "Menghapus…" },
+                      );
+                      MugenUI.toast("Transaksi berhasil dihapus.", "success", { force: true });
+                      load();
+                    } catch (e) {
+                      MugenUI.toast(e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnHapus);
+                  return wrap;
+                },
+              }] : []),
             ],
             rows,
           ));

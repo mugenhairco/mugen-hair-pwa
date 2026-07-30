@@ -210,7 +210,10 @@
 // resmi MUGEN Hair Co. -- nama file TIDAK berubah, jadi CACHE_NAME WAJIB
 // dinaikkan supaya instalasi yang sudah ada tidak terus memakai ikon lama
 // dari cache (pola sama seperti setiap perubahan APP_SHELL lain).
-const CACHE_NAME = "mugen-hair-shell-v35";
+// v36: Fitur Hapus Rekap Transaksi khusus Owner -- dialog konfirmasi
+// modern baru (ui.js: confirmModal(), style.css: .modal-*) + tombol
+// Hapus di tabel Rekap Transaksi (rekap.js).
+const CACHE_NAME = "mugen-hair-shell-v36";
 const APP_SHELL = [
   "/",
   "/index.html",
