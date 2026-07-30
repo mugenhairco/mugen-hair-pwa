@@ -33,6 +33,7 @@ di postgres_schema.py.
 
 from datetime import datetime
 
+import r2_storage
 from database import get_conn, get_barber
 
 STATUS_VALID = {"pending", "disetujui", "ditolak"}
@@ -76,6 +77,15 @@ def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
     row["terkunci"] = _slip_terkunci(row["barber_id"], row["tanggal"])
+    # `row` datang dari SELECT * -- kolom biner bukti_data (BLOB, sejak Fase
+    # 4) TIDAK bisa di-serialize jadi JSON (bug laten yang ditemukan saat
+    # audit migrasi R2 ini: endpoint upload/lihat bukti akan crash 500 begitu
+    # bukti sungguhan tersimpan -- murni bug pre-existing, tidak terkait R2).
+    # Dibuang di sini -- frontend (reimburse.js) hanya butuh `bukti_filename`
+    # (untuk cek ada/tidaknya) dan membangun URL unduh sendiri dari `id`,
+    # tidak pernah membaca bukti_data/bukti_r2_key dari respons ini.
+    row.pop("bukti_data", None)
+    row.pop("bukti_r2_key", None)
     return row
 
 
@@ -282,8 +292,11 @@ def hapus_reimburse(reimburse_id: int):
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
             "batalkan statusnya dulu kalau perlu menghapus klaim ini."
         )
+    r2_key = _ambil_bukti_r2_key(reimburse_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+    if r2_key:
+        r2_storage.delete(r2_key)
 
 
 def hapus_reimburse_disetujui(reimburse_id: int):
@@ -304,8 +317,11 @@ def hapus_reimburse_disetujui(reimburse_id: int):
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
             "batalkan statusnya dulu kalau perlu menghapus klaim ini."
         )
+    r2_key = _ambil_bukti_r2_key(reimburse_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+    if r2_key:
+        r2_storage.delete(r2_key)
 
 
 def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str = "",
@@ -334,27 +350,49 @@ def simpan_bukti_reimburse(reimburse_id: int, filename_asli: str, konten: bytes)
     existing = get_reimburse(reimburse_id)
     if existing is None:
         raise ValueError("Reimburse tidak ditemukan.")
-    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
-    if ext not in BUKTI_EXT_KE_CONTENT_TYPE:
-        raise ValueError("Format bukti harus JPG, PNG, WEBP, atau PDF.")
-    if not konten:
-        raise ValueError("File bukti kosong.")
-    nama_file = f"reimburse-{reimburse_id}.{ext}"
+    nama_file, content_type = r2_storage.validasi_dan_beri_nama(
+        filename_asli, konten, BUKTI_EXT_KE_CONTENT_TYPE, "bukti",
+        maks_ukuran_bytes=r2_storage.MAKS_UKURAN_DOKUMEN_BYTES)
     now = datetime.now().isoformat(timespec="seconds")
+    r2_key_lama = _ambil_bukti_r2_key(reimburse_id)
+
+    if r2_storage.IS_ENABLED:
+        r2_key_baru = r2_storage.upload("payments", nama_file, konten, content_type)
+        data_kolom = None
+    else:
+        r2_key_baru = None
+        data_kolom = konten
+
     with get_conn() as conn:
-        conn.execute("UPDATE reimburse SET bukti_filename = ?, bukti_data = ?, updated_at = ? WHERE id = ?",
-                      (nama_file, konten, now, reimburse_id))
+        conn.execute("UPDATE reimburse SET bukti_filename = ?, bukti_data = ?, bukti_r2_key = ?, updated_at = ? WHERE id = ?",
+                      (nama_file, data_kolom, r2_key_baru, now, reimburse_id))
+
+    if r2_key_lama and r2_key_lama != r2_key_baru:
+        r2_storage.delete(r2_key_lama)
     return nama_file
+
+
+def _ambil_bukti_r2_key(reimburse_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT bukti_r2_key FROM reimburse WHERE id = ?", (reimburse_id,)).fetchone()
+    return row["bukti_r2_key"] if row else None
 
 
 def get_bukti_data(reimburse_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT bukti_filename, bukti_data FROM reimburse WHERE id = ?",
+        row = conn.execute("SELECT bukti_filename, bukti_data, bukti_r2_key FROM reimburse WHERE id = ?",
                             (reimburse_id,)).fetchone()
-    if row is None or not row["bukti_filename"] or row["bukti_data"] is None:
+    if row is None or not row["bukti_filename"]:
         return None, None
     ext = row["bukti_filename"].rsplit(".", 1)[-1].lower()
-    return bytes(row["bukti_data"]), BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    content_type = BUKTI_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    if row["bukti_r2_key"]:
+        data, r2_content_type = r2_storage.get_bytes(row["bukti_r2_key"])
+        if data is not None:
+            return data, r2_content_type or content_type
+    if row["bukti_data"] is not None:
+        return bytes(row["bukti_data"]), content_type
+    return None, None
 
 
 def buat_reimburse_sistem(barber_id: int, tanggal: str, kategori: str, nominal: int,
@@ -432,8 +470,11 @@ def hapus_reimburse_sistem(reimburse_id: int):
             "Pengeluaran ini terkait Reimburse yang periodenya sudah dibayar lewat Slip Gaji "
             "dan tidak bisa dihapus."
         )
+    r2_key = _ambil_bukti_r2_key(reimburse_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+    if r2_key:
+        r2_storage.delete(r2_key)
 
 
 def get_saldo_periode(barber_id: int, tahun: int, bulan: int) -> int:

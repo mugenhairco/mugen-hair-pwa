@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import permissions
+import r2_storage
 import reimburse_db
 from auth import get_current_user, require_permission
 
@@ -226,6 +227,8 @@ async def upload_bukti_reimburse(reimburse_id: int, file: UploadFile = File(...)
         reimburse_db.simpan_bukti_reimburse(reimburse_id, file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return reimburse_db.get_reimburse(reimburse_id)
 
 

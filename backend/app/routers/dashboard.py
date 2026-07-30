@@ -21,6 +21,23 @@ def _bulan_ini():
     return today.year, today.month
 
 
+def _tanpa_kolom_biner_ringkasan(ringkasan: dict) -> dict:
+    """db.get_ringkasan_barber_bulan() menyisipkan dict barber APA ADANYA
+    (dari db.get_barber(), SELECT *) di key "barber" -- ikut membawa kolom
+    biner (foto_data BLOB, sejak Tahap 16) yang TIDAK bisa di-serialize jadi
+    JSON (bug laten yang ditemukan saat audit migrasi R2: Dashboard Owner
+    MAUPUN Dashboard Barber akan crash 500 begitu barber yang disasar punya
+    foto tersimpan -- murni bug pre-existing di database.py, tidak terkait
+    R2, dan TIDAK diperbaiki di database.py itu sendiri karena file itu
+    harus tetap identik dengan aplikasi Desktop -- dibuang di sini, di
+    lapisan API, sebelum dikembalikan ke client. Frontend Dashboard tidak
+    pernah membaca foto_data/foto_r2_key dari respons endpoint ini)."""
+    if ringkasan.get("barber"):
+        ringkasan["barber"].pop("foto_data", None)
+        ringkasan["barber"].pop("foto_r2_key", None)
+    return ringkasan
+
+
 def _filter_dashboard_untuk_staff(hasil: dict) -> dict:
     """'staff' (Admin) HANYA melihat kartu ringkasan toko yang diizinkan
     Owner lewat Setting > Hak Akses Admin (lihat permissions.py) -- rincian
@@ -60,7 +77,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
     if tahun is None or bulan is None:
         tahun, bulan = _bulan_ini()
     barbers = db.get_barbers()
-    ringkasan_per_barber = [db.get_ringkasan_barber_bulan(b["id"], tahun, bulan) for b in barbers]
+    ringkasan_per_barber = [_tanpa_kolom_biner_ringkasan(db.get_ringkasan_barber_bulan(b["id"], tahun, bulan)) for b in barbers]
     total_toko = {
         "nilai_service": sum(r["nilai_service"] for r in ringkasan_per_barber),
         "komisi": sum(r["komisi"] for r in ringkasan_per_barber),
@@ -111,7 +128,7 @@ def dashboard_barber(tahun: int = None, bulan: int = None, user: dict = Depends(
     if barber_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Akun ini belum dikaitkan ke data Barber. Hubungi Owner.")
-    return db.get_ringkasan_barber_bulan(barber_id, tahun, bulan)
+    return _tanpa_kolom_biner_ringkasan(db.get_ringkasan_barber_bulan(barber_id, tahun, bulan))
 
 
 def _barber_terpilih(barber_id: int):

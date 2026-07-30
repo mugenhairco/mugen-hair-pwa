@@ -27,6 +27,7 @@ import pengaturan_identitas
 import pengaturan_service
 import pengaturan_user
 import permissions
+import r2_storage
 from auth import require_admin, require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
@@ -97,6 +98,8 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require
         pengaturan_identitas.simpan_logo(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return pengaturan_identitas.get_identitas()
 
 
@@ -254,9 +257,26 @@ class BarberUpdateBody(BaseModel):
     gaji_per_hari: int | None = None
 
 
+def _tanpa_kolom_biner(barber: dict | None) -> dict | None:
+    """db.get_barber()/db.get_karyawan() lewat SELECT * -- ikut membawa
+    kolom biner (foto_data BLOB, sejak Tahap 16) yang TIDAK bisa
+    di-serialize jadi JSON (bug laten yang ditemukan saat audit migrasi R2:
+    endpoint di bawah akan crash 500 begitu ada barber yang punya foto
+    tersimpan -- murni bug pre-existing, tidak terkait R2, tapi baru
+    kelihatan sekarang karena baru diuji end-to-end dengan foto sungguhan).
+    Dibuang di sini SEBELUM dikembalikan ke client -- frontend Setting >
+    Barber tidak pernah membaca foto_data/foto_r2_key dari respons endpoint
+    ini (foto ditampilkan lewat foto_url dari endpoint Booking)."""
+    if barber:
+        barber.pop("foto_data", None)
+        barber.pop("foto_r2_key", None)
+    return barber
+
+
 @router.get("/barber")
 def list_barber(user: dict = Depends(require_admin)):
-    return db.get_karyawan(hanya_aktif=False)  # tampilkan semua jabatan, aktif & nonaktif, di halaman Setting
+    # tampilkan semua jabatan, aktif & nonaktif, di halaman Setting
+    return [_tanpa_kolom_biner(b) for b in db.get_karyawan(hanya_aktif=False)]
 
 
 @router.post("/barber")
@@ -267,7 +287,7 @@ def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(new_id)
+    return _tanpa_kolom_biner(db.get_barber(new_id))
 
 
 @router.put("/barber/{barber_id}")
@@ -279,7 +299,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(barber_id)
+    return _tanpa_kolom_biner(db.get_barber(barber_id))
 
 
 @router.delete("/barber/{barber_id}")

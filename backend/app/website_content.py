@@ -31,11 +31,11 @@ Gallery (daftar foto/video) memakai tabel `website_gallery` (lihat
 init_website_db() untuk jalur SQLite, postgres_schema.py untuk jalur
 PostgreSQL -- KEDUANYA harus diubah bersamaan kalau skema ini berubah lagi)."""
 
-import uuid
 from datetime import datetime
 
 import database as db
 import file_asset_db
+import r2_storage
 from database import get_conn
 
 WEBSITE_CONTENT_KEYS = [
@@ -156,7 +156,8 @@ def update_content(data: dict):
 # ---------------------------------------------------------------------------
 
 def simpan_hero_image(filename_asli: str, konten: bytes) -> str:
-    return file_asset_db.simpan("hero_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image")
+    return file_asset_db.simpan("hero_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image",
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
 
 
 def get_hero_image_data():
@@ -182,7 +183,8 @@ def hapus_hero_video():
 
 
 def simpan_about_foto(filename_asli: str, konten: bytes) -> str:
-    return file_asset_db.simpan("about_foto", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Foto About")
+    return file_asset_db.simpan("about_foto", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Foto About",
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
 
 
 def get_about_foto_data():
@@ -194,7 +196,8 @@ def hapus_about_foto():
 
 
 def simpan_background_image(filename_asli: str, konten: bytes) -> str:
-    return file_asset_db.simpan("background_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website")
+    return file_asset_db.simpan("background_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website",
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
 
 
 def get_background_image_data():
@@ -226,6 +229,9 @@ def get_gallery() -> list:
         ]
 
 
+_EXT_KE_CONTENT_TYPE_GALLERY = {**EXT_KE_CONTENT_TYPE_GAMBAR, **EXT_KE_CONTENT_TYPE_VIDEO}
+
+
 def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
     ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
     if ext in EXT_KE_CONTENT_TYPE_GAMBAR:
@@ -234,38 +240,51 @@ def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
         tipe = "video"
     else:
         raise ValueError("Format Gallery harus JPG/PNG/WEBP (foto) atau MP4/MOV/WEBM/dst (video).")
-    if not konten:
-        raise ValueError("File kosong.")
-    if tipe == "video" and len(konten) > MAKS_UKURAN_VIDEO_BYTES:
-        raise ValueError(f"Ukuran video Gallery maksimal {MAKS_UKURAN_VIDEO_BYTES // (1024 * 1024)}MB.")
-    nama_file = f"{uuid.uuid4().hex}.{ext}"
+    maks_ukuran = MAKS_UKURAN_VIDEO_BYTES if tipe == "video" else r2_storage.MAKS_UKURAN_GAMBAR_BYTES
+    nama_file, content_type = r2_storage.validasi_dan_beri_nama(
+        filename_asli, konten, _EXT_KE_CONTENT_TYPE_GALLERY, "Gallery", maks_ukuran_bytes=maks_ukuran)
     now = datetime.now().isoformat(timespec="seconds")
+
+    if r2_storage.IS_ENABLED:
+        r2_key = r2_storage.upload("gallery", nama_file, konten, content_type)
+        data_kolom = None
+    else:
+        r2_key = None
+        data_kolom = konten
+
     with get_conn() as conn:
         urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO website_gallery (filename, data, tipe, urutan, created_at) VALUES (?, ?, ?, ?, ?)",
-            (nama_file, konten, tipe, urutan_maks + 1, now),
+            "INSERT INTO website_gallery (filename, data, r2_key, tipe, urutan, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (nama_file, data_kolom, r2_key, tipe, urutan_maks + 1, now),
         )
         return cur.lastrowid
 
 
 def get_gallery_foto_data(foto_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT filename, data FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
-    if row is None or row["data"] is None:
+        row = conn.execute("SELECT filename, data, r2_key FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
+    if row is None:
         return None, None
     ext = row["filename"].rsplit(".", 1)[-1].lower()
-    if ext in EXT_KE_CONTENT_TYPE_VIDEO:
-        return bytes(row["data"]), EXT_KE_CONTENT_TYPE_VIDEO[ext]
-    return bytes(row["data"]), EXT_KE_CONTENT_TYPE_GAMBAR.get(ext, "application/octet-stream")
+    content_type = EXT_KE_CONTENT_TYPE_VIDEO.get(ext) or EXT_KE_CONTENT_TYPE_GAMBAR.get(ext, "application/octet-stream")
+    if row["r2_key"]:
+        data, r2_content_type = r2_storage.get_bytes(row["r2_key"])
+        if data is not None:
+            return data, r2_content_type or content_type
+    if row["data"] is not None:
+        return bytes(row["data"]), content_type
+    return None, None
 
 
 def hapus_gallery_foto(foto_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
+        row = conn.execute("SELECT id, r2_key FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
         if row is None:
             raise ValueError("Foto tidak ditemukan.")
         conn.execute("DELETE FROM website_gallery WHERE id = ?", (foto_id,))
+    if row["r2_key"]:
+        r2_storage.delete(row["r2_key"])
 
 
 def reorder_gallery(ordered_ids: list):

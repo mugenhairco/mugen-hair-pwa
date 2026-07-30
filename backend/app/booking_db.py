@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo
 
 import database as db
 import file_asset_db
+import r2_storage
 from database import get_conn
 
 # PENYEMPURNAAN: "hari ini"/"jam sekarang" untuk keperluan slot booking HARUS
@@ -333,7 +334,8 @@ EXT_KE_CONTENT_TYPE = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/
 
 
 def simpan_qris(filename_asli: str, konten: bytes) -> str:
-    return file_asset_db.simpan("qris", filename_asli, konten, EXT_KE_CONTENT_TYPE, "QRIS")
+    return file_asset_db.simpan("qris", filename_asli, konten, EXT_KE_CONTENT_TYPE, "QRIS",
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
 
 
 def hapus_qris():
@@ -784,33 +786,58 @@ def set_urutan_barber(barber_id: int, urutan: int):
 def simpan_foto_barber(barber_id: int, filename_asli: str, konten: bytes) -> str:
     if db.get_barber(barber_id) is None:
         raise ValueError("Barber tidak ditemukan.")
-    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
-    if ext not in FOTO_EXT_KE_CONTENT_TYPE:
-        raise ValueError("Format foto harus JPG, PNG, atau WEBP.")
-    if not konten:
-        raise ValueError("File foto kosong.")
-    nama_file = f"barber-{barber_id}.{ext}"
+    nama_file, content_type = r2_storage.validasi_dan_beri_nama(
+        filename_asli, konten, FOTO_EXT_KE_CONTENT_TYPE, "foto",
+        maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+    r2_key_lama = _ambil_foto_r2_key(barber_id)
+
+    if r2_storage.IS_ENABLED:
+        r2_key_baru = r2_storage.upload("barbers", nama_file, konten, content_type)
+        data_kolom = None
+    else:
+        r2_key_baru = None
+        data_kolom = konten
+
     with get_conn() as conn:
-        conn.execute("UPDATE barbers SET foto_filename = ?, foto_data = ? WHERE id = ?",
-                      (nama_file, konten, barber_id))
+        conn.execute("UPDATE barbers SET foto_filename = ?, foto_data = ?, foto_r2_key = ? WHERE id = ?",
+                      (nama_file, data_kolom, r2_key_baru, barber_id))
+
+    if r2_key_lama and r2_key_lama != r2_key_baru:
+        r2_storage.delete(r2_key_lama)
     return nama_file
+
+
+def _ambil_foto_r2_key(barber_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT foto_r2_key FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    return row["foto_r2_key"] if row else None
 
 
 def hapus_foto_barber(barber_id: int):
     barber = db.get_barber(barber_id)
     if barber is None:
         raise ValueError("Barber tidak ditemukan.")
+    r2_key = _ambil_foto_r2_key(barber_id)
     with get_conn() as conn:
-        conn.execute("UPDATE barbers SET foto_filename = NULL, foto_data = NULL WHERE id = ?", (barber_id,))
+        conn.execute("UPDATE barbers SET foto_filename = NULL, foto_data = NULL, foto_r2_key = NULL WHERE id = ?", (barber_id,))
+    if r2_key:
+        r2_storage.delete(r2_key)
 
 
 def get_foto_barber_data(barber_id: int):
     with get_conn() as conn:
-        row = conn.execute("SELECT foto_filename, foto_data FROM barbers WHERE id = ?", (barber_id,)).fetchone()
-    if row is None or not row["foto_filename"] or row["foto_data"] is None:
+        row = conn.execute("SELECT foto_filename, foto_data, foto_r2_key FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    if row is None or not row["foto_filename"]:
         return None, None
     ext = row["foto_filename"].rsplit(".", 1)[-1].lower()
-    return bytes(row["foto_data"]), FOTO_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    content_type = FOTO_EXT_KE_CONTENT_TYPE.get(ext, "application/octet-stream")
+    if row["foto_r2_key"]:
+        data, r2_content_type = r2_storage.get_bytes(row["foto_r2_key"])
+        if data is not None:
+            return data, r2_content_type or content_type
+    if row["foto_data"] is not None:
+        return bytes(row["foto_data"]), content_type
+    return None, None
 
 
 def set_urutan_service(service_id: int, urutan: int):

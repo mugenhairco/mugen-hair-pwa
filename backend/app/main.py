@@ -58,9 +58,11 @@ from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 from karyawan_migrasi import migrasi_karyawan
+from r2_storage_migrasi import migrasi_r2_storage
 import booking_db
 import website_content
 import file_asset_db
+import r2_storage
 import slip_gaji_db
 import kasbon_db
 import komisi_penyesuaian_db
@@ -265,9 +267,24 @@ def on_startup():
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
+        migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
+
+    # Migrasi Cloudflare R2 (Storage File): dicatat sekali saat boot supaya
+    # langsung kelihatan di log Render kalau env var R2_* belum lengkap
+    # diisi (upload logo/foto/dst tetap berfungsi lewat fallback BLOB-di-
+    # database, TAPI itu artinya belum benar-benar pindah ke R2).
+    if r2_storage.IS_ENABLED:
+        logger.info("[%s] BOOT: Storage R2 AKTIF (bucket=%s).", _INSTANCE_ID, r2_storage.R2_BUCKET_NAME)
+    else:
+        logger.warning(
+            "[%s] BOOT: Storage R2 BELUM dikonfigurasi (env var R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/"
+            "R2_SECRET_ACCESS_KEY/R2_BUCKET_NAME/R2_ENDPOINT_URL belum lengkap) -- upload file "
+            "(logo/foto/gallery/bukti/dst) sementara tetap disimpan di database (BLOB), BUKAN R2.",
+            _INSTANCE_ID,
+        )
 
     # AUDIT DATA HILANG SETELAH RESTART: ringkasan jumlah baris tabel inti,
     # dicetak SETELAH seluruh migrasi/bootstrap di atas selesai -- log ini
@@ -420,4 +437,6 @@ def health_diagnostik(user: dict = Depends(require_admin)):
         "db_size_bytes": db_stat.st_size if db_stat else None,
         "db_mtime": datetime.fromtimestamp(db_stat.st_mtime, tz=timezone.utc).isoformat() if db_stat else None,
         "jumlah_baris": jumlah_baris,
+        "r2_storage_aktif": r2_storage.IS_ENABLED,
+        "r2_bucket": r2_storage.R2_BUCKET_NAME if r2_storage.IS_ENABLED else None,
     }
