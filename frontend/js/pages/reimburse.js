@@ -17,17 +17,16 @@ const PageReimburse = (() => {
     return MugenUI.el("span", { class: "badge" + (status === "disetujui" ? "" : " badge-libur") }, label);
   }
 
-  function tombolDownloadPdf(getParams) {
-    const btn = MugenUI.el("button", {}, "Download PDF");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams(getParams());
-          return MugenApi.downloadFile(`/api/reimburse/pdf?${qs}`, "laporan_reimburse.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  // Perbaikan Alur Cetak PDF: lihat catatan sama di pages/kasbon.js.
+  function tombolDownloadPdf(getParams, computeFilename) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const qs = new URLSearchParams(getParams());
+      const filename = computeFilename ? computeFilename() : "Laporan Reimburse.pdf";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/reimburse/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(filename),
+      });
     });
     return btn;
   }
@@ -151,7 +150,7 @@ const PageReimburse = (() => {
     });
 
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat Klaim Saya"));
-    listCard.appendChild(tombolDownloadPdf(() => ({})));
+    listCard.appendChild(tombolDownloadPdf(() => ({}), () => "Laporan Reimburse Saya.pdf"));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
@@ -340,6 +339,12 @@ const PageReimburse = (() => {
       if (filBulan.value) params.bulan = filBulan.value;
       if (filTahun.value) params.tahun = filTahun.value;
       return params;
+    }, () => {
+      const karyawan = filBarber.value ? (barbers.find((b) => String(b.id) === filBarber.value) || {}).nama || "Karyawan" : "Semua Karyawan";
+      const label = { pending: "Pending", disetujui: "Disetujui", ditolak: "Ditolak" };
+      const status = label[filStatus.value] || "";
+      const periode = filBulan.value && filTahun.value ? `${MugenUI.namaBulan(Number(filBulan.value))} ${filTahun.value}` : filTahun.value || "";
+      return ["Laporan Reimburse", karyawan, status, periode].filter(Boolean).join(" ") + ".pdf";
     }));
 
     // ---- Daftar ----

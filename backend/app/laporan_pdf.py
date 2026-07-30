@@ -33,6 +33,7 @@ import slip_gaji_db
 import izin_cuti_db
 import uang_kas_db
 import data_non_barber_db
+import rekap_ringkasan
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -756,6 +757,112 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
                         ringkasan_tambahan=ringkasan_tambahan)
+
+
+# Lebar kolom TETAP untuk "Rekap Periode (Ringkasan)" (mm) -- kolom "Service"
+# (satu-satunya yang isinya panjang/multi-baris) kebagian SISA lebar dari
+# 194mm dikurangi seluruh kolom tetap ini (lihat _lebar_kolom_ringkasan()),
+# supaya jumlah kolom yang tampil (Reimburse/Kasbon Dibayar/Gaji Non-Barber
+# dinamis, sama seperti Rekap Detail) tidak perlu tabel lebar per kombinasi.
+_LEBAR_TETAP_RINGKASAN = {
+    "Nama": 24 * mm, "Jml Pelanggan": 14 * mm, "Jml Service": 12 * mm, "Hari Libur": 12 * mm,
+    "Uang Harian": 16 * mm, "Tips": 14 * mm, "Pendapatan": 16 * mm, "Reimburse": 14 * mm,
+    "Kasbon Dibayar": 16 * mm, "Gaji Non-Barber": 16 * mm, "Total": 16 * mm,
+}
+
+
+def _lebar_kolom_ringkasan(kolom: list) -> list:
+    lebar_service = 194 * mm - sum(_LEBAR_TETAP_RINGKASAN[k] for k in kolom if k != "Service")
+    return [lebar_service if k == "Service" else _LEBAR_TETAP_RINGKASAN[k] for k in kolom]
+
+
+def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, barber_id: int | None,
+                                        dicetak_oleh: str, tanggal_mulai: str | None = None,
+                                        tanggal_selesai: str | None = None) -> bytes:
+    """"Rekap Periode (Ringkasan)" -- jenis laporan BARU di menu Rekap
+    Transaksi (Perbaikan Alur Cetak PDF), satu baris per karyawan untuk
+    SELURUH periode (BEDA dari buat_pdf_rekap_transaksi() / "Rekap Detail"
+    yang satu baris per transaksi/hari, TIDAK diubah sama sekali). Data
+    sumber & rumus grand total SAMA PERSIS dengan Rekap Detail (dibangun
+    dari baris gabungan yang sama), hanya ditampilkan diringkas per
+    karyawan lewat rekap_ringkasan.ringkas_per_karyawan() -- murni
+    penjumlahan, tidak menghitung ulang satu angka pun."""
+    if tanggal_mulai and tanggal_selesai:
+        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
+    else:
+        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        periode = _periode_text_opsional(tahun, bulan)
+
+    ringkas = rekap_ringkasan.ringkas_per_karyawan(data)
+    ada_reimburse = any(r["reimburse"] for r in ringkas)
+    ada_kasbon = any(r["kasbon_dibayar"] for r in ringkas)
+    ada_non_barber = any(r["gaji_non_barber"] for r in ringkas)
+
+    header = ["Nama", "Jml Pelanggan", "Jml Service", "Service", "Hari Libur", "Uang Harian", "Tips", "Pendapatan"]
+    if ada_reimburse:
+        header.append("Reimburse")
+    if ada_kasbon:
+        header.append("Kasbon Dibayar")
+    if ada_non_barber:
+        header.append("Gaji Non-Barber")
+    header.append("Total")
+
+    baris = []
+    for r in ringkas:
+        sel = [
+            _sel(r["nama_barber"]), _sel(str(r["jumlah_transaksi"])), _sel(str(r["jumlah_service"])),
+            _sel_service(r["daftar_service"]), _sel(str(r["hari_libur"])), _sel(_rupiah(r["uang_harian"])),
+            _sel(_rupiah(r["tips"])), _sel(_rupiah(r["pendapatan"])),
+        ]
+        if ada_reimburse:
+            sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
+        if ada_kasbon:
+            sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
+        if ada_non_barber:
+            sel.append(_sel(_rupiah(r["gaji_non_barber"]) if r["gaji_non_barber"] else "-"))
+        sel.append(_sel(_rupiah(r["total"])))
+        baris.append(sel)
+
+    # Ringkasan bawah SAMA PERSIS rumusnya dengan Rekap Detail (lihat
+    # buat_pdf_rekap_transaksi()) -- wajar, karena sama-sama dijumlahkan
+    # dari baris gabungan yang identik, cuma disajikan beda (per karyawan
+    # vs per transaksi/hari).
+    pendapatan_total = sum(r["pendapatan"] for r in ringkas)
+    reimburse_total = sum(r["reimburse"] for r in ringkas)
+    kasbon_total = sum(r["kasbon_dibayar"] for r in ringkas)
+    non_barber_per_role = {}
+    for r in ringkas:
+        if not r["gaji_non_barber"]:
+            continue
+        role = r.get("jabatan") or "lainnya"
+        non_barber_per_role[role] = non_barber_per_role.get(role, 0) + r["gaji_non_barber"]
+    gaji_non_barber_total = sum(non_barber_per_role.values())
+
+    ringkasan_tambahan = [f"<b>Total Pendapatan Barber: {_rupiah(pendapatan_total)}</b>"]
+    if rincian_service:
+        ringkasan_tambahan.append("<b>Rincian</b>")
+        for s in rincian_service:
+            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    for role, total in non_barber_per_role.items():
+        ringkasan_tambahan.append(f"<b>Total Gaji {_label_jabatan(role)}: {_rupiah(total)}</b>")
+    if ada_reimburse:
+        ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
+    if ada_kasbon:
+        ringkasan_tambahan.append(f"<b>Potongan Kasbon: -{_rupiah(kasbon_total)}</b>")
+    total_keseluruhan = pendapatan_total + gaji_non_barber_total + reimburse_total - kasbon_total
+    ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
+
+    return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
+                        col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan)
 
 
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari

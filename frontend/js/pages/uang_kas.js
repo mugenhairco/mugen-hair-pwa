@@ -151,18 +151,18 @@ const PageUangKas = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
 
-    const btnDownloadPdf = MugenUI.el("button", {}, "Download PDF");
-    btnDownloadPdf.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams();
-          if (selBulan.value) qs.set("bulan", selBulan.value);
-          if (selTahun.value) qs.set("tahun", selTahun.value);
-          return MugenApi.downloadFile(`/api/uang-kas/pdf?${qs}`, "laporan_uang_kas.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+    // Perbaikan Alur Cetak PDF: Preview PDF dulu, TIDAK langsung mengunduh
+    // -- lihat pdf_preview.js.
+    const btnDownloadPdf = MugenUI.el("button", {}, "Cetak PDF");
+    btnDownloadPdf.addEventListener("click", () => {
+      const qs = new URLSearchParams();
+      if (selBulan.value) qs.set("bulan", selBulan.value);
+      if (selTahun.value) qs.set("tahun", selTahun.value);
+      const periode = selBulan.value && selTahun.value ? `${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}` : selTahun.value || "Semua Periode";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/uang-kas/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(`Laporan Uang Kas ${periode}.pdf`),
+      });
     });
     filterCard.appendChild(btnDownloadPdf);
 

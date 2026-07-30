@@ -23,44 +23,24 @@ const PageSlipGaji = (() => {
       : `${MugenUI.namaBulan(r.bulan)} ${r.tahun}`;
   }
 
-  async function unduhPdf(id, namaBarber, tahun, bulan) {
-    try {
-      await MugenUI.withLoading(async () => {
-        const token = MugenState.getToken();
-        const res = await fetch(`${MUGEN_API_BASE}/api/slip-gaji/${id}/pdf`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) {
-          let pesan = "Gagal mengunduh Slip Gaji.";
-          try { pesan = (await res.json()).detail || pesan; } catch (e) { /* body bukan JSON */ }
-          throw new Error(pesan);
-        }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `slip_gaji_${namaBarber}_${tahun}-${String(bulan).padStart(2, "0")}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }, { message: "Menyiapkan PDF…" });
-    } catch (e) {
-      MugenUI.toast(e.message, "error");
-    }
+  // Perbaikan Alur Cetak PDF: Preview PDF dulu (Zoom/Nomor Halaman/
+  // Download/Print/Kembali), TIDAK langsung mengunduh -- lihat pdf_preview.js.
+  function unduhPdf(id, namaBarber, tahun, bulan) {
+    MugenPdfPreview.open({
+      generate: () => MugenApi.fetchBlob(`/api/slip-gaji/${id}/pdf`),
+      filename: MugenUI.namaFileAman(`Slip Gaji ${namaBarber} ${MugenUI.namaBulan(bulan)} ${tahun}.pdf`),
+    });
   }
 
-  function tombolDownloadPdfDaftar(getParams) {
-    const btn = MugenUI.el("button", {}, "Download PDF Daftar");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams(getParams());
-          return MugenApi.downloadFile(`/api/slip-gaji/pdf?${qs}`, "daftar_slip_gaji.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  function tombolDownloadPdfDaftar(getParams, computeFilename) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF Daftar");
+    btn.addEventListener("click", () => {
+      const qs = new URLSearchParams(getParams());
+      const filename = computeFilename ? computeFilename() : "Daftar Slip Gaji.pdf";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/slip-gaji/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(filename),
+      });
     });
     return btn;
   }
@@ -88,7 +68,7 @@ const PageSlipGaji = (() => {
         {
           key: "aksi", label: "Aksi", format: (_, r) => {
             const wrap = MugenUI.el("div", { class: "actions-cell" });
-            const btnPdf = MugenUI.el("button", {}, "Unduh PDF");
+            const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
             btnPdf.addEventListener("click", () => unduhPdf(r.id, r.nama_barber, r.tahun, r.bulan));
             wrap.appendChild(btnPdf);
 
@@ -141,7 +121,7 @@ const PageSlipGaji = (() => {
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat"));
-    listCard.appendChild(tombolDownloadPdfDaftar(() => ({})));
+    listCard.appendChild(tombolDownloadPdfDaftar(() => ({}), () => "Daftar Slip Gaji Saya.pdf"));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
     const muat = () => loadListInto(listBody, {}, false, muat);
@@ -410,7 +390,11 @@ const PageSlipGaji = (() => {
       if (filBarber.value) params.barber_id = filBarber.value;
       return params;
     }
-    listCard.appendChild(tombolDownloadPdfDaftar(paramsFilterAktif));
+    listCard.appendChild(tombolDownloadPdfDaftar(paramsFilterAktif, () => {
+      const karyawan = filBarber.value ? (barbers.find((b) => String(b.id) === filBarber.value) || {}).nama || "Karyawan" : "Semua Karyawan";
+      const periode = filBulan.value ? `${MugenUI.namaBulan(Number(filBulan.value))} ${filTahun.value}` : filTahun.value;
+      return `Daftar Slip Gaji ${karyawan} ${periode}.pdf`;
+    }));
 
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);

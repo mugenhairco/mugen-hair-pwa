@@ -213,7 +213,7 @@ const PageInputData = (() => {
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
             ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
-            { key: "daftar_service", label: "Service" },
+            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
             { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
             { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
             {

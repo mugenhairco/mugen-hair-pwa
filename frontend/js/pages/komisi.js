@@ -20,17 +20,16 @@ const PageKomisi = (() => {
       jenis === "bonus" ? "Bonus" : "Potongan");
   }
 
-  function tombolDownloadPdf(getParams) {
-    const btn = MugenUI.el("button", {}, "Download PDF");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams(getParams());
-          return MugenApi.downloadFile(`/api/komisi/pdf?${qs}`, "laporan_komisi.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  // Perbaikan Alur Cetak PDF: lihat catatan sama di pages/kasbon.js.
+  function tombolDownloadPdf(getParams, computeFilename) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const qs = new URLSearchParams(getParams());
+      const filename = computeFilename ? computeFilename() : "Laporan Komisi.pdf";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/komisi/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(filename),
+      });
     });
     return btn;
   }
@@ -82,7 +81,10 @@ const PageKomisi = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
-    filterCard.appendChild(tombolDownloadPdf(() => ({ tahun: selTahun.value, bulan: selBulan.value })));
+    filterCard.appendChild(tombolDownloadPdf(
+      () => ({ tahun: selTahun.value, bulan: selBulan.value }),
+      () => `Laporan Komisi Saya ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`,
+    ));
 
     riwayatCard.appendChild(MugenUI.el("h2", {}, "Riwayat Komisi (Dasar)"));
     const riwayatBody = MugenUI.el("div");
@@ -267,6 +269,10 @@ const PageKomisi = (() => {
       if (filBarber.value) params.barber_id = filBarber.value;
       if (filJenis.value) params.jenis = filJenis.value;
       return params;
+    }, () => {
+      const karyawan = filBarber.value ? (barbers.find((b) => String(b.id) === filBarber.value) || {}).nama || "Karyawan" : "Semua Barber";
+      const jenis = filJenis.value === "bonus" ? "Bonus" : filJenis.value === "potongan" ? "Potongan" : "";
+      return ["Laporan Komisi", karyawan, jenis, MugenUI.namaBulan(Number(filBulan.value)), filTahun.value].filter(Boolean).join(" ") + ".pdf";
     }));
 
     // ---- Riwayat Komisi (dasar, reuse Rekap Bulanan) ----

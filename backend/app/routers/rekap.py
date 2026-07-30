@@ -53,12 +53,20 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
 
 @router.get("/transaksi/pdf")
 def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
-                         tanggal_mulai: str = None, tanggal_selesai: str = None,
+                         tanggal_mulai: str = None, tanggal_selesai: str = None, jenis: str = "detail",
                          user: dict = Depends(get_current_user)):
+    """jenis: 'detail' (default, format lama -- satu baris per transaksi/
+    hari, TIDAK berubah) atau 'ringkasan' ("Rekap Periode (Ringkasan)" BARU
+    -- satu baris per karyawan untuk seluruh periode, lihat
+    laporan_pdf.buat_pdf_rekap_transaksi_ringkasan())."""
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
-                                                   tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    if jenis == "ringkasan":
+        konten = laporan_pdf.buat_pdf_rekap_transaksi_ringkasan(
+            tahun, bulan, barber_id, user["username"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    else:
+        konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
+                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     return _pdf_response(konten, "rekap_transaksi")
 
 

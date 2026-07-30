@@ -20,6 +20,27 @@ const MugenUI = (() => {
     return nama[bulan] || bulan;
   }
 
+  // "21 Juli 2026" dari tanggal ISO -- dipakai membuat nama file PDF
+  // otomatis (Perbaikan Alur Cetak PDF) supaya formatnya konsisten dengan
+  // formatTanggal()/namaBulan() yang sudah ada, bukan angka bulan mentah.
+  function namaTanggalIndo(iso) {
+    if (!iso) return "-";
+    const [y, m, d] = iso.split("-").map(Number);
+    return `${d} ${namaBulan(m)} ${y}`;
+  }
+
+  // Bersihkan nama file dari karakter yang tidak didukung banyak sistem
+  // operasi (Windows paling ketat: \ / : * ? " < > |) -- dipakai nama file
+  // PDF yang dibuat otomatis dari filter aktif (Perbaikan Alur Cetak PDF),
+  // supaya unduhan tidak pernah gagal gara-gara filter berisi nama
+  // karyawan/kategori bebas apa saja.
+  function namaFileAman(nama) {
+    return String(nama)
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // REVISI UI/UX: toast SUKSES/INFO dihilangkan total sesuai instruksi
   // ("Hilangkan seluruh toast/snackbar sukses. Toast hanya muncul jika
   // terjadi error") -- diubah SATU tempat ini (bukan menghapus tiap
@@ -57,6 +78,28 @@ const MugenUI = (() => {
       node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
     }
     return node;
+  }
+
+  // Kolom "Service" (daftar "Nama xN" dipisah ", ") -- kalau lebih dari
+  // satu jenis service, tampilkan tiap jenis di baris/div terpisah (bukan
+  // digabung koma dalam satu baris) supaya konsisten dengan tampilan PDF
+  // (lihat laporan_pdf.py _sel_service()). Tinggi baris tabel otomatis
+  // menyesuaikan sendiri (elemen block <div> normal, TANPA CSS khusus) --
+  // TIDAK mengubah data `raw` sama sekali, murni cara menampilkannya.
+  // Dipakai di seluruh tampilan Rekap yang punya kolom Service (Rekap
+  // Transaksi, Dashboard Barber, dst).
+  function serviceCell(raw) {
+    if (!raw) return "-";
+    const bagian = raw.split(", ").map((b) => b.trim()).filter(Boolean);
+    if (bagian.length === 0) return "-";
+    const diformat = bagian.map((b) => {
+      const idx = b.lastIndexOf(" x");
+      return idx > -1 && /^\d+$/.test(b.slice(idx + 2)) ? `${b.slice(0, idx)} ×${b.slice(idx + 2)}` : b;
+    });
+    if (diformat.length === 1) return diformat[0];
+    const wrap = el("div");
+    for (const teks of diformat) wrap.appendChild(el("div", {}, teks));
+    return wrap;
   }
 
   // Bangun <table class="data-table"> dari daftar kolom + baris data.
@@ -252,7 +295,7 @@ const MugenUI = (() => {
   }
 
   return {
-    formatRupiah, formatTanggal, namaBulan, toast, el, buildTable, offlineBanner, barChart,
-    showLoading, hideLoading, withLoading, themeSwitch, confirmModal,
+    formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
+    serviceCell, offlineBanner, barChart, showLoading, hideLoading, withLoading, themeSwitch, confirmModal,
   };
 })();
