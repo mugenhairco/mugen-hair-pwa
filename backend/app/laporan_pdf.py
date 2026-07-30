@@ -16,7 +16,7 @@ from datetime import datetime
 from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -210,7 +210,13 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
 
     def _on_page(canvas, doc):
         canvas.saveState()
-        width, height = A4
+        # REVISI (Rapikan PDF Rekap Periode Ringkasan): baca dari doc.pagesize
+        # (BUKAN konstanta A4 langsung) supaya header/footer tetap benar
+        # posisinya kalau dokumennya landscape (lihat _bangun_pdf() param
+        # `landscape`) -- untuk seluruh laporan lain yang tetap portrait,
+        # doc.pagesize == A4 apa adanya, jadi tidak ada perubahan tampilan
+        # sama sekali.
+        width, height = doc.pagesize
         y = height - 15 * mm
 
         if logo_data:
@@ -254,10 +260,19 @@ def _gaya_tabel() -> TableStyle:
 
 
 def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list,
-                 col_widths: list | None = None, ringkasan_tambahan: list | None = None) -> bytes:
+                 col_widths: list | None = None, ringkasan_tambahan: list | None = None,
+                 landscape_page: bool = False, extra_style: list | None = None) -> bytes:
+    """`landscape_page`/`extra_style` (REVISI Rapikan PDF Rekap Periode
+    Ringkasan): KHUSUS dipakai laporan yang kolomnya terlalu banyak untuk
+    muat rapi di lebar A4 potret (Rekap Periode Ringkasan) -- default TETAP
+    False/None untuk SEMUA laporan lain di file ini, jadi tidak ada laporan
+    lain yang tata letaknya berubah sama sekali. `extra_style` = daftar
+    command TableStyle TAMBAHAN (mis. ALIGN per kolom), diterapkan SETELAH
+    _gaya_tabel() supaya bisa menimpa/melengkapi tanpa mengubah gaya dasar
+    yang dipakai laporan lain."""
     buf = BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=A4,
+        buf, pagesize=landscape(A4) if landscape_page else A4,
         # Margin kiri-kanan dibuat SEKECIL MUNGKIN (bukan atas-bawah, yang
         # tetap dipakai untuk area header/nomor halaman) supaya tabel
         # tampil "full" selebar mungkin -- 8mm masih menyisakan sedikit
@@ -274,7 +289,11 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
     else:
         data_tabel = [[_kepala(h) for h in header_kolom]] + baris
         tabel = Table(data_tabel, colWidths=col_widths, repeatRows=1)
-        tabel.setStyle(_gaya_tabel())
+        gaya = _gaya_tabel()
+        if extra_style:
+            for command in extra_style:
+                gaya.add(*command)
+        tabel.setStyle(gaya)
         elemen.append(tabel)
 
         if ringkasan_tambahan:
@@ -778,21 +797,46 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
                         ringkasan_tambahan=ringkasan_tambahan)
 
 
-# Lebar kolom TETAP untuk "Rekap Periode (Ringkasan)" (mm) -- kolom
-# "Service" DAN "Keterangan" (dua-duanya bisa berisi banyak baris, lihat
-# _sel_service()/_sel_keterangan()) berbagi SISA lebar dari 194mm dikurangi
-# seluruh kolom tetap ini (lihat _lebar_kolom_ringkasan()), supaya jumlah
-# kolom yang tampil (Reimburse/Kasbon Dibayar/Gaji Non-Barber dinamis, sama
-# seperti Rekap Detail) tidak perlu tabel lebar per kombinasi.
+# REVISI (Rapikan tampilan PDF Rekap Periode Ringkasan): laporan ini bisa
+# sampai 13 kolom (Reimburse/Kasbon Dibayar/Gaji Non-Barber dinamis, sama
+# seperti Rekap Detail) -- TIDAK muat rapi di lebar A4 potret (194mm) tanpa
+# memaksa kolom nominal jadi sempit dan angkanya terpotong ke baris kedua.
+# Laporan ini SEKARANG dicetak LANDSCAPE (lihat buat_pdf_rekap_transaksi_
+# ringkasan() -> landscape_page=True), memberi ~281mm lebar tercetak --
+# HANYA laporan ini, seluruh laporan lain di file ini TETAP potret A4 apa
+# adanya (_bangun_pdf() default landscape_page=False).
+#
+# Lebar kolom nominal (Uang Harian/Tips/Pendapatan/Reimburse/Kasbon Dibayar/
+# Gaji Non-Barber/Total) dihitung dari lebar teks Rupiah TERBESAR yang
+# realistis ("Rp 99.999.999", 8pt Helvetica) + padding sel, supaya angka
+# WAJIB muat satu baris -- lihat komentar tiap nilai di bawah kalau nilai
+# ini perlu disesuaikan lagi nanti.
+_LEBAR_HALAMAN_RINGKASAN = 281 * mm  # A4 landscape (297mm) dikurangi margin kiri+kanan 8mm+8mm
+
 _LEBAR_TETAP_RINGKASAN = {
-    "Nama": 20 * mm, "Jml Pelanggan": 11 * mm, "Jml Service": 10 * mm, "Hari Libur": 10 * mm,
-    "Uang Harian": 13 * mm, "Tips": 11 * mm, "Pendapatan": 14 * mm, "Reimburse": 12 * mm,
-    "Kasbon Dibayar": 13 * mm, "Gaji Non-Barber": 13 * mm, "Total": 14 * mm,
+    "Nama": 30 * mm,           # nama karyawan, dilebihkan supaya nama panjang tetap satu baris
+    "Jml Pelanggan": 18 * mm,  # angka kecil, tapi header 2 kata ("Jml Pelanggan") perlu ruang lipat yang wajar
+    "Jml Service": 16 * mm,
+    "Hari Libur": 16 * mm,
+    "Uang Harian": 23 * mm,    # cukup untuk "Rp 99.999.999" tanpa terpotong
+    "Tips": 23 * mm,
+    "Pendapatan": 24 * mm,
+    "Reimburse": 23 * mm,
+    "Kasbon Dibayar": 24 * mm,  # ada prefix "-" tambahan ("-Rp ...")
+    "Gaji Non-Barber": 24 * mm,
+    "Total": 24 * mm,          # bisa negatif ("Rp -...") kalau kasbon lebih besar dari pendapatan
 }
 
 
 def _lebar_kolom_ringkasan(kolom: list) -> list:
-    sisa = 194 * mm - sum(_LEBAR_TETAP_RINGKASAN[k] for k in kolom if k not in ("Service", "Keterangan"))
+    """Kolom "Service" & "Keterangan" (satu-satunya yang isinya wajar untuk
+    melipat ke banyak baris, lihat _sel_service()/_sel_keterangan())
+    berbagi SISA lebar setelah seluruh kolom tetap di atas -- supaya jumlah
+    kolom yang tampil (dinamis) tidak perlu tabel lebar per kombinasi.
+    Kolom nominal TIDAK PERNAH mengambil dari sisa ini (lebarnya SELALU
+    tetap dari _LEBAR_TETAP_RINGKASAN), jadi tidak mungkin ikut menyempit
+    walau kolom lain bertambah banyak."""
+    sisa = _LEBAR_HALAMAN_RINGKASAN - sum(_LEBAR_TETAP_RINGKASAN[k] for k in kolom if k not in ("Service", "Keterangan"))
     # Keterangan biasanya menampung lebih banyak baris sekaligus (Catatan +
     # Kasbon + Reimburse + tiap hari Libur) dibanding Service (cuma daftar
     # jenis service), jadi kebagian porsi lebih besar dari sisa lebar.
@@ -807,6 +851,32 @@ def _lebar_kolom_ringkasan(kolom: list) -> list:
         else:
             hasil.append(_LEBAR_TETAP_RINGKASAN[k])
     return hasil
+
+
+# Kolom yang isinya TEKS BEBAS (rata kiri wajar) -- selain ini, seluruh
+# kolom Rekap Periode Ringkasan berisi angka/nominal, dirapikan rata kanan
+# supaya digit-digitnya sejajar antar baris (lebih mudah dibaca/dibandingkan
+# dibanding rata kiri untuk kolom angka).
+_KOLOM_TEKS_RINGKASAN = {"Nama", "Service", "Keterangan"}
+
+
+def _gaya_kolom_ringkasan(kolom: list) -> list:
+    """Command TableStyle TAMBAHAN khusus Rekap Periode Ringkasan (dipakai
+    lewat parameter extra_style _bangun_pdf(), TIDAK menyentuh _gaya_tabel()
+    dasar yang dipakai laporan lain): header selalu center (rapi terlepas
+    dari isi kolom), padding sel eksplisit & seragam (bukan cuma default
+    reportlab), kolom angka rata kanan, kolom teks rata kiri."""
+    commands = [
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for i, k in enumerate(kolom):
+        align = "LEFT" if k in _KOLOM_TEKS_RINGKASAN else "RIGHT"
+        commands.append(("ALIGN", (i, 1), (i, -1), align))
+    return commands
 
 
 def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, barber_id: int | None,
@@ -897,7 +967,8 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
 
     return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
-                        col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan,
+                        landscape_page=True, extra_style=_gaya_kolom_ringkasan(header))
 
 
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari
