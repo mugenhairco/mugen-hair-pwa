@@ -184,6 +184,18 @@ def hapus_reimburse(reimburse_id: int, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+@router.delete("/{reimburse_id}/rekap")
+def hapus_reimburse_dari_rekap(reimburse_id: int, user: dict = Depends(require_permission("izin_reimburse"))):
+    """Hapus klaim reimburse yang SUDAH disetujui, dipakai KHUSUS tombol
+    Hapus di Rekap Transaksi -- beda dari DELETE /{reimburse_id} biasa di
+    atas yang cuma izinkan klaim 'pending'."""
+    try:
+        reimburse_db.hapus_reimburse_disetujui(reimburse_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
 class StatusBody(BaseModel):
     status: str
     catatan_approval: str = ""

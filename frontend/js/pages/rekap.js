@@ -13,6 +13,35 @@ const PageRekap = (() => {
     return btn;
   }
 
+  // Tombol aksi generik dipakai kolom "Aksi" Rekap Transaksi (Owner) --
+  // satu pola untuk hapus transaksi/reimburse dan batalkan pembayaran
+  // kasbon, supaya konfirmasi/loading/toast/refresh-nya konsisten.
+  // `onSelesai` (opsional) dipanggil setelah sukses menghapus/membatalkan,
+  // dipakai renderTransaksi() untuk memuat ulang tabel.
+  function tombolAksi({ label, title, confirmTitle, confirmMessage, hapusUrl, pesanSukses, onSelesai }) {
+    const wrap = MugenUI.el("div", { class: "actions-cell" });
+    const btn = MugenUI.el("button", { type: "button", class: "btn-danger", title }, label);
+    btn.addEventListener("click", async () => {
+      const ok = await MugenUI.confirmModal({
+        title: confirmTitle,
+        message: confirmMessage,
+        confirmText: "Ya, Lanjutkan",
+        cancelText: "Batal",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await MugenUI.withLoading(() => MugenApi.del(hapusUrl), { message: "Memproses…" });
+        MugenUI.toast(pesanSukses, "success", { force: true });
+        if (onSelesai) onSelesai();
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+      }
+    });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
@@ -135,45 +164,62 @@ const PageRekap = (() => {
               { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
               { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
               { key: "keterangan", label: "Ket.", format: (v) => v ? MugenUI.el("span", { class: "badge badge-libur" }, v) : "-" },
-              // Kolom Hapus KHUSUS Owner (isOwner) -- baris "libur"/hasil
-              // gabungan Reimburse/Kasbon tidak punya "id" transaksi (lihat
-              // database.py get_rekap_transaksi_list()), jadi otomatis
-              // tidak dapat tombol (dash saja), hanya baris transaksi asli
-              // yang bisa dihapus.
+              // Kolom Hapus KHUSUS Owner (isOwner). Tiga jenis baris punya
+              // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
+              // (hapus klaim yang sudah disetujui, dengan peringatan lebih
+              // kuat karena ini uang yang sudah cair), "kasbon" (batalkan
+              // SATU pembayaran manual saja -- pembayaran hasil potong
+              // otomatis Slip Gaji, sumber="potong_gaji", sengaja TIDAK bisa
+              // dihapus dari sini supaya tidak bentrok dengan status Slip
+              // Gaji terkait, harus lewat pembatalan status Slip Gaji itu
+              // sendiri). Baris "libur" tidak punya "id" sama sekali jadi
+              // otomatis dash.
               ...(isOwner ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
-                  if (r.tipe !== "transaksi" || r.id == null) return "-";
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnHapus = MugenUI.el(
-                    "button",
-                    { type: "button", class: "btn-danger", title: "Hapus Transaksi" },
-                    "🗑 Hapus",
-                  );
-                  btnHapus.addEventListener("click", async () => {
-                    const ok = await MugenUI.confirmModal({
-                      title: "Hapus Transaksi",
-                      message: [
+                  if (r.id == null) return "-";
+                  if (r.tipe === "transaksi") {
+                    return tombolAksi({
+                      label: "🗑 Hapus", title: "Hapus Transaksi",
+                      confirmTitle: "Hapus Transaksi",
+                      confirmMessage: [
                         "Apakah Anda yakin ingin menghapus transaksi ini?",
                         "Data yang dihapus tidak dapat dikembalikan.",
                       ],
-                      confirmText: "Ya, Hapus",
-                      cancelText: "Batal",
-                      danger: true,
+                      hapusUrl: `/api/input-data/transaksi/${r.id}`,
+                      pesanSukses: "Transaksi berhasil dihapus.",
+                      onSelesai: load,
                     });
-                    if (!ok) return;
-                    try {
-                      await MugenUI.withLoading(
-                        () => MugenApi.del(`/api/input-data/transaksi/${r.id}`),
-                        { message: "Menghapus…" },
-                      );
-                      MugenUI.toast("Transaksi berhasil dihapus.", "success", { force: true });
-                      load();
-                    } catch (e) {
-                      MugenUI.toast(e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnHapus);
-                  return wrap;
+                  }
+                  if (r.tipe === "reimburse") {
+                    return tombolAksi({
+                      label: "🗑 Hapus", title: "Hapus Klaim Reimburse",
+                      confirmTitle: "Hapus Klaim Reimburse",
+                      confirmMessage: [
+                        "Apakah Anda yakin ingin menghapus klaim reimburse yang sudah disetujui ini?",
+                        "Klaim ini sudah cair/tercatat sebagai pendapatan -- menghapusnya akan mengurangi Total Pendapatan pada rekap ini.",
+                        "Data yang dihapus tidak dapat dikembalikan.",
+                      ],
+                      hapusUrl: `/api/reimburse/${r.id}/rekap`,
+                      pesanSukses: "Klaim reimburse berhasil dihapus.",
+                      onSelesai: load,
+                    });
+                  }
+                  if (r.tipe === "kasbon") {
+                    if (r.sumber !== "manual") return "-"; // potong_gaji: lewat Slip Gaji
+                    return tombolAksi({
+                      label: "↩ Batalkan", title: "Batalkan Pembayaran Kasbon",
+                      confirmTitle: "Batalkan Pembayaran Kasbon",
+                      confirmMessage: [
+                        "Apakah Anda yakin ingin membatalkan pembayaran kasbon ini?",
+                        "Sisa kasbon karyawan ini akan dikembalikan sejumlah pembayaran yang dibatalkan.",
+                        "Data yang dihapus tidak dapat dikembalikan.",
+                      ],
+                      hapusUrl: `/api/kasbon/pembayaran/${r.id}`,
+                      pesanSukses: "Pembayaran kasbon berhasil dibatalkan.",
+                      onSelesai: load,
+                    });
+                  }
+                  return "-";
                 },
               }] : []),
             ],

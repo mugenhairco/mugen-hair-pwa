@@ -287,6 +287,37 @@ def batalkan_potongan_slip_gaji(slip_gaji_id: int):
             conn.execute("DELETE FROM kasbon_pembayaran WHERE id = ?", (p["id"],))
 
 
+def batalkan_pembayaran_kasbon(pembayaran_id: int):
+    """Batalkan SATU baris pembayaran kasbon (kembalikan `sisa` kasbon
+    terkait, balik `status` ke 'belum_lunas' kalau sempat 'lunas', lalu
+    hapus baris kasbon_pembayaran itu) -- dipakai tombol Batalkan di Rekap
+    Transaksi (Owner/Admin dengan izin_kasbon). HANYA untuk pembayaran
+    sumber='manual' -- pembayaran hasil potong otomatis Slip Gaji harus
+    dibatalkan lewat status Slip Gaji terkait (batalkan_potongan_slip_gaji()
+    di atas), supaya tidak membuat slip yang sudah terlanjur dibayar jadi
+    tidak sinkron dengan riwayat potongan kasbonnya."""
+    with get_conn() as conn:
+        p = conn.execute("SELECT * FROM kasbon_pembayaran WHERE id = ?", (pembayaran_id,)).fetchone()
+        if p is None:
+            raise ValueError("Riwayat pembayaran kasbon tidak ditemukan.")
+        p = dict(p)
+        if p["sumber"] != "manual":
+            raise ValueError(
+                "Pembayaran ini berasal dari potongan otomatis Slip Gaji -- batalkan lewat "
+                "status Slip Gaji terkait, bukan dari sini."
+            )
+        kasbon = conn.execute("SELECT * FROM kasbon WHERE id = ?", (p["kasbon_id"],)).fetchone()
+        if kasbon is None:
+            raise ValueError("Kasbon terkait tidak ditemukan.")
+        now = datetime.now().isoformat(timespec="seconds")
+        sisa_baru = kasbon["sisa"] + p["jumlah"]
+        conn.execute(
+            "UPDATE kasbon SET sisa = ?, status = 'belum_lunas', updated_at = ? WHERE id = ?",
+            (sisa_baru, now, p["kasbon_id"]),
+        )
+        conn.execute("DELETE FROM kasbon_pembayaran WHERE id = ?", (pembayaran_id,))
+
+
 # ---------------------------------------------------------------------------
 # Integrasi Rekap Transaksi/Bulanan -- lihat catatan di docstring modul ini
 # kenapa yang dipakai adalah kasbon_pembayaran (jumlah DIBAYAR), bukan
@@ -359,6 +390,8 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     for p in pembayaran:
         baris.append({
             "tipe": "kasbon",
+            "id": p["id"],  # dipakai tombol Batalkan (Owner) di Rekap Transaksi
+            "sumber": p["sumber"],  # 'manual' saja yang boleh dibatalkan dari sini
             "tanggal": p["tanggal"],
             "barber_id": p["barber_id"],
             "nama_barber": p["nama_barber"],

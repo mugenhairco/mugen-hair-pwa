@@ -189,6 +189,7 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     for k in klaim:
         baris.append({
             "tipe": "reimburse",
+            "id": k["id"],  # dipakai tombol Hapus (Owner) di Rekap Transaksi
             "tanggal": k["tanggal_approval"],
             "barber_id": k["barber_id"],
             "nama_barber": k["nama_barber"],
@@ -275,6 +276,28 @@ def hapus_reimburse(reimburse_id: int):
         raise ValueError("Reimburse tidak ditemukan.")
     if existing["status"] != "pending":
         raise ValueError("Klaim yang sudah diproses (Disetujui/Ditolak) tidak bisa dihapus lagi.")
+    if existing["terkunci"]:
+        raise ValueError(
+            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
+            "batalkan statusnya dulu kalau perlu menghapus klaim ini."
+        )
+    with get_conn() as conn:
+        conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
+
+
+def hapus_reimburse_disetujui(reimburse_id: int):
+    """Hapus klaim reimburse yang SUDAH berstatus 'disetujui', sepenuhnya --
+    dipakai KHUSUS oleh tombol Hapus di Rekap Transaksi (Owner/Admin dengan
+    izin_reimburse), BEDA dari hapus_reimburse() di atas yang hanya
+    mengizinkan status 'pending' (dipakai halaman Reimburse biasa). Tetap
+    ditolak kalau terkunci (Slip Gaji periode ini sudah 'sudah_dibayar')
+    supaya tidak membuat slip yang sudah terlanjur dibayar jadi tidak sinkron
+    dengan klaim yang sempat masuk ke situ."""
+    existing = get_reimburse(reimburse_id)
+    if existing is None:
+        raise ValueError("Reimburse tidak ditemukan.")
+    if existing["status"] != "disetujui":
+        raise ValueError("Hanya klaim berstatus Disetujui yang bisa dihapus lewat Rekap Transaksi.")
     if existing["terkunci"]:
         raise ValueError(
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
