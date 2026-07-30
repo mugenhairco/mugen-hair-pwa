@@ -163,8 +163,19 @@ const PageRekap = (() => {
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
               { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
               { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
-              { key: "keterangan", label: "Ket.", format: (v) => v ? MugenUI.el("span", { class: "badge badge-libur" }, v) : "-" },
-              // Kolom Hapus KHUSUS Owner (isOwner). Tiga jenis baris punya
+              // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
+              // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
+              // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi teks lebih
+              // panjang -- ditampilkan polos (bukan dipaksa masuk pil kecil
+              // yang didesain untuk label pendek seperti "Libur").
+              {
+                key: "keterangan", label: "Ket.", format: (v, r) => {
+                  if (!v) return "-";
+                  if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
+                  return v;
+                },
+              },
+              // Kolom Hapus KHUSUS Owner (isOwner). Empat jenis baris punya
               // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
               // (hapus klaim yang sudah disetujui, dengan peringatan lebih
               // kuat karena ini uang yang sudah cair), "kasbon" (batalkan
@@ -172,8 +183,9 @@ const PageRekap = (() => {
               // otomatis Slip Gaji, sumber="potong_gaji", sengaja TIDAK bisa
               // dihapus dari sini supaya tidak bentrok dengan status Slip
               // Gaji terkait, harus lewat pembatalan status Slip Gaji itu
-              // sendiri). Baris "libur" tidak punya "id" sama sekali jadi
-              // otomatis dash.
+              // sendiri), "non_barber" (hapus entri Gaji Non-Barber, Input
+              // Data Non-Barber). Baris "libur" tidak punya "id" sama sekali
+              // jadi otomatis dash.
               ...(isOwner ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   if (r.id == null) return "-";
@@ -216,6 +228,19 @@ const PageRekap = (() => {
                       ],
                       hapusUrl: `/api/kasbon/pembayaran/${r.id}`,
                       pesanSukses: "Pembayaran kasbon berhasil dibatalkan.",
+                      onSelesai: load,
+                    });
+                  }
+                  if (r.tipe === "non_barber") {
+                    return tombolAksi({
+                      label: "🗑 Hapus", title: "Hapus Data Gaji Non-Barber",
+                      confirmTitle: "Hapus Data Gaji Non-Barber",
+                      confirmMessage: [
+                        "Apakah Anda yakin ingin menghapus data gaji ini?",
+                        "Data yang dihapus tidak dapat dikembalikan.",
+                      ],
+                      hapusUrl: `/api/data-non-barber/${r.id}`,
+                      pesanSukses: "Data gaji Non-Barber berhasil dihapus.",
                       onSelesai: load,
                     });
                   }

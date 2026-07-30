@@ -458,6 +458,28 @@ CREATE TABLE IF NOT EXISTS pengeluaran (
 ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS sumber_dana TEXT NOT NULL DEFAULT 'kas';
 ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS kas_penyesuaian_id INTEGER REFERENCES kas_penyesuaian(id);
 ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS reimburse_id INTEGER REFERENCES reimburse(id);
+
+-- Input Data Non-Barber (Kasir/OB/Kru/role lainnya): tabel baru murni,
+-- berdiri sendiri dari `transaksi` (Barber) maupun `slip_gaji` -- lihat
+-- data_non_barber_db.py. total_gaji = gaji_per_hari x hari_masuk + bonus -
+-- potongan, dihitung & disimpan saat tambah/edit (bukan live dihitung ulang
+-- tiap query, sama pola-nya seperti slip_gaji.total_diterima).
+CREATE TABLE IF NOT EXISTS data_non_barber (
+    id               SERIAL PRIMARY KEY,
+    barber_id        INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal_mulai    TEXT NOT NULL,
+    tanggal_selesai  TEXT NOT NULL,
+    gaji_per_hari    INTEGER NOT NULL DEFAULT 0,
+    hari_masuk       INTEGER NOT NULL DEFAULT 0,
+    hari_libur       INTEGER NOT NULL DEFAULT 0,
+    bonus            INTEGER NOT NULL DEFAULT 0,
+    potongan         INTEGER NOT NULL DEFAULT 0,
+    catatan          TEXT,
+    total_gaji       INTEGER NOT NULL DEFAULT 0,
+    dibuat_oleh      TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT
+);
 """
 
 

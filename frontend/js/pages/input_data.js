@@ -15,16 +15,41 @@ const PageInputData = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Input Data"));
 
+    // Dukungan Barber + Non-Barber: dropdown pemilih mode -- KHUSUS Owner/
+    // Admin (Non-Barber murni fitur pengelolaan data, sama seperti seluruh
+    // Input Data yang memang sudah Owner/Admin-only). Default "Input Data
+    // Barber" SELALU terpilih (poin #3) supaya tampilan & alur kerja Barber
+    // yang sudah ada TIDAK BERUBAH SAMA SEKALI kalau dropdown ini tidak
+    // pernah disentuh -- seksi Non-Barber murni TAMBAHAN yang disembunyikan
+    // sampai Owner secara eksplisit memilihnya.
+    const barberSection = MugenUI.el("div");
+    const nonBarberSection = MugenUI.el("div", { style: "display:none;" });
+    if (isAdmin) {
+      const selMode = MugenUI.el("select", { style: "max-width:280px;margin-bottom:16px;" }, [
+        MugenUI.el("option", { value: "barber" }, "Input Data Barber"),
+        MugenUI.el("option", { value: "non_barber" }, "Input Data Non-Barber"),
+      ]);
+      selMode.value = "barber";
+      selMode.addEventListener("change", () => {
+        const nonBarber = selMode.value === "non_barber";
+        barberSection.style.display = nonBarber ? "none" : "";
+        nonBarberSection.style.display = nonBarber ? "" : "none";
+      });
+      root.appendChild(selMode);
+    }
+    root.appendChild(barberSection);
+    root.appendChild(nonBarberSection);
+
     let services = [];
     let barbers = [];
     let editingId = null; // null = mode SIMPAN baru, angka = mode KOREKSI
 
     const formCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(formCard);
+    barberSection.appendChild(formCard);
     const listCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(listCard);
+    barberSection.appendChild(listCard);
     const liburCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(liburCard);
+    barberSection.appendChild(liburCard);
 
     try {
       [services, barbers] = await Promise.all([
@@ -259,6 +284,231 @@ const PageInputData = (() => {
 
     resetForm();
     loadList();
+
+    // --- INPUT DATA NON-BARBER (Kasir/OB/Kru/role lainnya) ---
+    // Tabel & endpoint baru, TIDAK terhubung ke `transaksi`/Slip Gaji Barber
+    // sama sekali (lihat data_non_barber_db.py) -- murni tambahan, bagian
+    // ini di-skip total untuk Barber (dropdown mode di atas juga tidak
+    // pernah muncul untuknya).
+    if (isAdmin) await renderNonBarber();
+
+    async function renderNonBarber() {
+      const LABEL_JABATAN = { barber: "Barber", kasir: "Kasir", ob: "OB", kru: "Kru" };
+      const labelJabatan = (j) => LABEL_JABATAN[j] || j;
+
+      let karyawanNonBarber = [];
+      try {
+        const semua = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
+        karyawanNonBarber = (Array.isArray(semua) ? semua : []).filter((k) => k.jabatan !== "barber");
+      } catch (e) { /* form tetap tampil, dropdown karyawan kosong */ }
+
+      const nbFormCard = MugenUI.el("div", { class: "card" });
+      const nbListCard = MugenUI.el("div", { class: "card" });
+      nonBarberSection.appendChild(nbFormCard);
+      nonBarberSection.appendChild(nbListCard);
+
+      let nbEditingId = null;
+
+      const nbFormTitle = MugenUI.el("h2", {}, "Tambah Data Gaji Non-Barber");
+      const selKaryawan = MugenUI.el("select");
+      selKaryawan.appendChild(MugenUI.el("option", { value: "" }, "-- pilih karyawan --"));
+      for (const k of karyawanNonBarber) {
+        selKaryawan.appendChild(MugenUI.el("option", { value: String(k.id) }, `${k.nama} (${labelJabatan(k.jabatan)})`));
+      }
+      const roleTerpilih = MugenUI.el("div", { class: "subtitle", style: "margin:0 0 8px;" }, "Role: -");
+
+      const inputTglMulai = MugenUI.el("input", { type: "date", value: todayIso() });
+      const inputTglSelesai = MugenUI.el("input", { type: "date", value: todayIso() });
+      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputHariMasuk = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputHariLibur = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputBonus = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputPotongan = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputCatatanNb = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
+      const totalGajiBox = MugenUI.el("div", { class: "card", style: "background:var(--bg-input);" }, "Total Gaji: Rp 0");
+
+      function hitungTotalGaji() {
+        const total = (Number(inputGajiPerHari.value) || 0) * (Number(inputHariMasuk.value) || 0)
+          + (Number(inputBonus.value) || 0) - (Number(inputPotongan.value) || 0);
+        totalGajiBox.textContent = `Total Gaji: ${MugenUI.formatRupiah(total)}`;
+        return total;
+      }
+      for (const inp of [inputGajiPerHari, inputHariMasuk, inputBonus, inputPotongan]) {
+        inp.addEventListener("input", hitungTotalGaji);
+      }
+      selKaryawan.addEventListener("change", () => {
+        const k = karyawanNonBarber.find((x) => String(x.id) === selKaryawan.value);
+        roleTerpilih.textContent = `Role: ${k ? labelJabatan(k.jabatan) : "-"}`;
+        if (k && !nbEditingId) {
+          inputGajiPerHari.value = String(k.gaji_per_hari || 0);
+          hitungTotalGaji();
+        }
+      });
+
+      const nbBtnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
+      const nbBtnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Koreksi");
+      const nbFormError = MugenUI.el("div", { class: "login-error" });
+
+      nbFormCard.appendChild(nbFormTitle);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Nama Karyawan"));
+      nbFormCard.appendChild(selKaryawan);
+      nbFormCard.appendChild(roleTerpilih);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Periode: Tanggal Mulai"));
+      nbFormCard.appendChild(inputTglMulai);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Periode: Tanggal Selesai"));
+      nbFormCard.appendChild(inputTglSelesai);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Gaji per Hari (Rp)"));
+      nbFormCard.appendChild(inputGajiPerHari);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Jumlah Hari Masuk"));
+      nbFormCard.appendChild(inputHariMasuk);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Jumlah Hari Libur"));
+      nbFormCard.appendChild(inputHariLibur);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Bonus (Rp, Opsional)"));
+      nbFormCard.appendChild(inputBonus);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Potongan (Rp, Opsional)"));
+      nbFormCard.appendChild(inputPotongan);
+      nbFormCard.appendChild(MugenUI.el("label", {}, "Catatan/Keterangan (Opsional)"));
+      nbFormCard.appendChild(inputCatatanNb);
+      nbFormCard.appendChild(totalGajiBox);
+      nbFormCard.appendChild(nbFormError);
+      nbFormCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [nbBtnSubmit, nbBtnBatal]));
+
+      function resetNbForm() {
+        nbEditingId = null;
+        nbFormTitle.textContent = "Tambah Data Gaji Non-Barber";
+        nbBtnSubmit.textContent = "Simpan";
+        nbBtnBatal.style.display = "none";
+        selKaryawan.value = "";
+        roleTerpilih.textContent = "Role: -";
+        inputTglMulai.value = todayIso();
+        inputTglSelesai.value = todayIso();
+        inputGajiPerHari.value = "0";
+        inputHariMasuk.value = "0";
+        inputHariLibur.value = "0";
+        inputBonus.value = "0";
+        inputPotongan.value = "0";
+        inputCatatanNb.value = "";
+        hitungTotalGaji();
+        nbFormError.textContent = "";
+      }
+
+      function isiNbFormUntukKoreksi(e) {
+        nbEditingId = e.id;
+        nbFormTitle.textContent = `Koreksi Data Gaji #${e.id}`;
+        nbBtnSubmit.textContent = "Simpan Koreksi";
+        nbBtnBatal.style.display = "";
+        selKaryawan.value = String(e.barber_id);
+        roleTerpilih.textContent = `Role: ${labelJabatan(e.jabatan)}`;
+        inputTglMulai.value = e.tanggal_mulai;
+        inputTglSelesai.value = e.tanggal_selesai;
+        inputGajiPerHari.value = String(e.gaji_per_hari);
+        inputHariMasuk.value = String(e.hari_masuk);
+        inputHariLibur.value = String(e.hari_libur);
+        inputBonus.value = String(e.bonus);
+        inputPotongan.value = String(e.potongan);
+        inputCatatanNb.value = e.catatan || "";
+        hitungTotalGaji();
+        nbFormError.textContent = "";
+        nbFormCard.scrollIntoView({ behavior: "smooth" });
+      }
+
+      nbBtnBatal.addEventListener("click", resetNbForm);
+
+      nbBtnSubmit.addEventListener("click", async () => {
+        nbFormError.textContent = "";
+        if (!selKaryawan.value) { nbFormError.textContent = "Pilih karyawan terlebih dahulu."; return; }
+        if (!inputTglMulai.value || !inputTglSelesai.value) { nbFormError.textContent = "Periode wajib diisi."; return; }
+        const body = {
+          barber_id: Number(selKaryawan.value),
+          tanggal_mulai: inputTglMulai.value,
+          tanggal_selesai: inputTglSelesai.value,
+          gaji_per_hari: Number(inputGajiPerHari.value) || 0,
+          hari_masuk: Number(inputHariMasuk.value) || 0,
+          hari_libur: Number(inputHariLibur.value) || 0,
+          bonus: Number(inputBonus.value) || 0,
+          potongan: Number(inputPotongan.value) || 0,
+          catatan: inputCatatanNb.value || "",
+        };
+        nbBtnSubmit.disabled = true;
+        try {
+          await MugenUI.withLoading(async () => {
+            if (nbEditingId) {
+              await MugenApi.put(`/api/data-non-barber/${nbEditingId}`, body);
+              MugenUI.toast("Data gaji dikoreksi.", "success");
+            } else {
+              await MugenApi.post("/api/data-non-barber", body);
+              MugenUI.toast("Data gaji disimpan.", "success");
+            }
+          }, { message: "Memproses…" });
+          resetNbForm();
+          loadNbList();
+        } catch (e) {
+          nbFormError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        } finally {
+          nbBtnSubmit.disabled = false;
+        }
+      });
+
+      // --- DAFTAR DATA GAJI NON-BARBER (bulan berjalan) ---
+      nbListCard.appendChild(MugenUI.el("h2", {}, "Data Gaji Non-Barber Bulan Ini"));
+      const nbListBody = MugenUI.el("div");
+      nbListCard.appendChild(nbListBody);
+
+      async function loadNbList() {
+        nbListBody.innerHTML = "Memuat...";
+        try {
+          const now = new Date();
+          const rows = await MugenApi.get(
+            `/api/data-non-barber?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`,
+            { useCache: true },
+          );
+          nbListBody.innerHTML = "";
+          const daftar = Array.isArray(rows) ? rows : rows.data || [];
+          nbListBody.appendChild(MugenUI.buildTable(
+            [
+              { key: "tanggal_mulai", label: "Periode", format: (v, r) => `${MugenUI.formatTanggal(r.tanggal_mulai)} s/d ${MugenUI.formatTanggal(r.tanggal_selesai)}` },
+              { key: "nama_barber", label: "Nama" },
+              { key: "jabatan", label: "Role", format: (v) => labelJabatan(v) },
+              { key: "gaji_per_hari", label: "Gaji/Hari", format: MugenUI.formatRupiah },
+              { key: "hari_masuk", label: "Hari Masuk" },
+              { key: "hari_libur", label: "Hari Libur" },
+              { key: "bonus", label: "Bonus", format: MugenUI.formatRupiah },
+              { key: "potongan", label: "Potongan", format: MugenUI.formatRupiah },
+              { key: "total_gaji", label: "Total Gaji", format: MugenUI.formatRupiah },
+              { key: "catatan", label: "Catatan", format: (v) => v || "-" },
+              {
+                key: "aksi", label: "Aksi", format: (_, r) => {
+                  const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  const btnEdit = MugenUI.el("button", {}, "Koreksi");
+                  btnEdit.addEventListener("click", () => isiNbFormUntukKoreksi(r));
+                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                  btnHapus.addEventListener("click", async () => {
+                    if (!confirm(`Hapus data gaji "${r.nama_barber}" periode ${r.tanggal_mulai} s/d ${r.tanggal_selesai}?`)) return;
+                    try {
+                      await MugenUI.withLoading(() => MugenApi.del(`/api/data-non-barber/${r.id}`), { message: "Menghapus…" });
+                      MugenUI.toast("Data gaji dihapus.", "success");
+                      loadNbList();
+                    } catch (e) {
+                      MugenUI.toast(e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnEdit);
+                  wrap.appendChild(btnHapus);
+                  return wrap;
+                },
+              },
+            ],
+            daftar,
+          ));
+        } catch (e) {
+          nbListBody.innerHTML = "";
+          nbListBody.appendChild(MugenUI.el("div", {}, e.message));
+        }
+      }
+
+      resetNbForm();
+      loadNbList();
+    }
   }
 
   return { render };

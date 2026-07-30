@@ -473,6 +473,9 @@ const PagePengaturan = (() => {
       body.appendChild(listCard);
 
       const LABEL_JABATAN = { barber: "Barber", kasir: "Kasir", ob: "OB", kru: "Kru" };
+      const JABATAN_TETAP = ["barber", "kasir", "ob", "kru"]; // pilihan dropdown baku -- role Non-Barber
+      // lain (custom, ditulis Owner sendiri) dipilih lewat opsi "Lainnya" di
+      // bawah, TIDAK mengubah/menghapus 3 pilihan Non-Barber baku ini.
 
       let editingId = null;
       formCard.appendChild(MugenUI.el("h2", {}, "Tambah Karyawan"));
@@ -483,7 +486,16 @@ const PagePengaturan = (() => {
         MugenUI.el("option", { value: "kasir" }, "Kasir"),
         MugenUI.el("option", { value: "ob" }, "OB"),
         MugenUI.el("option", { value: "kru" }, "Kru"),
+        MugenUI.el("option", { value: "__lainnya__" }, "Lainnya (Role Kustom)"),
       ]);
+      // Role Non-Barber kustom (mis. "Security", "Barista") -- HANYA muncul
+      // saat "Lainnya" dipilih di atas, teksnya sendiri yang dikirim sebagai
+      // jabatan (bukan "__lainnya__", itu murni penanda internal form ini).
+      const wrapJabatanKustom = MugenUI.el("div");
+      const inputJabatanKustom = MugenUI.el("input", { type: "text", placeholder: "Tulis nama role, mis. Security" });
+      wrapJabatanKustom.appendChild(MugenUI.el("label", {}, "Nama Role"));
+      wrapJabatanKustom.appendChild(inputJabatanKustom);
+      wrapJabatanKustom.style.display = "none";
       // REVISI: Uang Harian sekarang per-barber (sebelumnya dua setting global
       // uang_harian_barber/uang_harian_rafiq dipilih dari status RAFIQ) --
       // HANYA relevan jabatan Barber. Karyawan Non-Barber (Kasir/OB/Kru):
@@ -504,6 +516,7 @@ const PagePengaturan = (() => {
         const barber = selJabatan.value === "barber";
         wrapUangHarian.style.display = barber ? "" : "none";
         wrapGajiPerHari.style.display = barber ? "none" : "";
+        wrapJabatanKustom.style.display = selJabatan.value === "__lainnya__" ? "" : "none";
       }
       selJabatan.addEventListener("change", terapkanTampilanJabatan);
 
@@ -515,6 +528,7 @@ const PagePengaturan = (() => {
       formCard.appendChild(inputNama);
       formCard.appendChild(MugenUI.el("label", {}, "Jabatan"));
       formCard.appendChild(selJabatan);
+      formCard.appendChild(wrapJabatanKustom);
       formCard.appendChild(wrapUangHarian);
       formCard.appendChild(wrapGajiPerHari);
       formCard.appendChild(formError);
@@ -527,6 +541,8 @@ const PagePengaturan = (() => {
         btnBatal.style.display = "none";
         inputNama.value = "";
         selJabatan.value = "barber";
+        inputJabatanKustom.value = "";
+        wrapJabatanKustom.style.display = "none";
         inputUangHarian.value = "0";
         inputGajiPerHari.value = "0";
         terapkanTampilanJabatan();
@@ -538,6 +554,11 @@ const PagePengaturan = (() => {
       btnSubmit.addEventListener("click", async () => {
         formError.textContent = "";
         if (!inputNama.value.trim()) { formError.textContent = "Nama karyawan tidak boleh kosong."; return; }
+        let jabatanDikirim = selJabatan.value;
+        if (jabatanDikirim === "__lainnya__") {
+          jabatanDikirim = inputJabatanKustom.value.trim();
+          if (!jabatanDikirim) { formError.textContent = "Nama role kustom tidak boleh kosong."; return; }
+        }
         const uangHarian = Number(inputUangHarian.value);
         if (Number.isNaN(uangHarian) || uangHarian < 0) { formError.textContent = "Uang harian tidak valid."; return; }
         const gajiPerHari = Number(inputGajiPerHari.value);
@@ -552,7 +573,7 @@ const PagePengaturan = (() => {
           // jadi data/logika lama tidak tersentuh sama sekali.
           const body2 = {
             nama: inputNama.value.trim(), uang_harian: uangHarian,
-            jabatan: selJabatan.value, gaji_per_hari: gajiPerHari,
+            jabatan: jabatanDikirim, gaji_per_hari: gajiPerHari,
           };
           await MugenUI.withLoading(async () => {
             if (editingId) {
@@ -625,7 +646,14 @@ const PagePengaturan = (() => {
                     btnSubmit.textContent = "Simpan Perubahan";
                     btnBatal.style.display = "";
                     inputNama.value = r.nama;
-                    selJabatan.value = r.jabatan || "barber";
+                    const jabatanKaryawan = r.jabatan || "barber";
+                    if (JABATAN_TETAP.includes(jabatanKaryawan)) {
+                      selJabatan.value = jabatanKaryawan;
+                      inputJabatanKustom.value = "";
+                    } else {
+                      selJabatan.value = "__lainnya__";
+                      inputJabatanKustom.value = jabatanKaryawan;
+                    }
                     inputUangHarian.value = String(r.uang_harian || 0);
                     inputGajiPerHari.value = String(r.gaji_per_hari || 0);
                     terapkanTampilanJabatan();

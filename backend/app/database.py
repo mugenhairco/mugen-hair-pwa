@@ -1202,6 +1202,15 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     for t in transaksi_list:
         key = (t["barber_id"], t["tanggal"])
         hari_dengan_transaksi.add(key)
+        # Keterangan: catatan manual (Input Data) + "Libur" (kalau hari yang
+        # sama juga ditandai libur, kasus jarang tapi mungkin) digabung --
+        # sebelumnya catatan TIDAK PERNAH muncul di Rekap Transaksi sama
+        # sekali (field ini kosong terus kecuali "Libur").
+        bagian_ket = []
+        if (t.get("catatan") or "").strip():
+            bagian_ket.append(t["catatan"].strip())
+        if key in libur_set:
+            bagian_ket.append("Libur")
         hasil.append({
             "tipe": "transaksi",
             "id": t["id"],
@@ -1213,7 +1222,7 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
             "tips": t["tips"],
             "uang_harian": _uang_harian(t["barber_id"], t["tanggal"]),
             "pendapatan": get_pendapatan_transaksi(t),
-            "keterangan": "Libur" if key in libur_set else "",
+            "keterangan": "; ".join(bagian_ket),
         })
 
     for l in libur_list:

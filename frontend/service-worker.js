@@ -217,7 +217,11 @@
 // menghapus klaim Reimburse yang sudah disetujui, dan membatalkan
 // pembayaran Kasbon manual (bukan hasil potong otomatis Slip Gaji),
 // rekap.js.
-const CACHE_NAME = "mugen-hair-shell-v37";
+// v38: Dukungan Barber + Non-Barber -- Input Data punya dropdown Input
+// Data Barber/Non-Barber baru (input_data.js), Rekap Transaksi menampilkan
+// & menghapus baris Gaji Non-Barber juga (rekap.js), Setting > Karyawan
+// bisa membuat role kustom Non-Barber (pengaturan.js).
+const CACHE_NAME = "mugen-hair-shell-v38";
 const APP_SHELL = [
   "/",
   "/index.html",
