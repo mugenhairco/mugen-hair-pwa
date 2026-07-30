@@ -16,17 +16,16 @@ const PageIzinCuti = (() => {
     return jenis === "cuti" ? "Cuti" : "Izin";
   }
 
-  function tombolDownloadPdf(getParams) {
-    const btn = MugenUI.el("button", {}, "Download PDF");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams(getParams());
-          return MugenApi.downloadFile(`/api/izin-cuti/pdf?${qs}`, "laporan_izin_cuti.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  // Perbaikan Alur Cetak PDF: lihat catatan sama di pages/kasbon.js.
+  function tombolDownloadPdf(getParams, computeFilename) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const qs = new URLSearchParams(getParams());
+      const filename = computeFilename ? computeFilename() : "Laporan Izin Cuti.pdf";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/izin-cuti/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(filename),
+      });
     });
     return btn;
   }
@@ -117,7 +116,7 @@ const PageIzinCuti = (() => {
     });
 
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat Pengajuan Saya"));
-    listCard.appendChild(tombolDownloadPdf(() => ({})));
+    listCard.appendChild(tombolDownloadPdf(() => ({}), () => "Laporan Izin Cuti Saya.pdf"));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
@@ -205,6 +204,12 @@ const PageIzinCuti = (() => {
       if (filJenis.value) params.jenis = filJenis.value;
       if (filStatus.value) params.status = filStatus.value;
       return params;
+    }, () => {
+      const karyawan = filBarber.value ? (barbers.find((b) => String(b.id) === filBarber.value) || {}).nama || "Karyawan" : "Semua Karyawan";
+      const jenis = filJenis.value ? labelJenis(filJenis.value) : "";
+      const label = { pending: "Pending", disetujui: "Disetujui", ditolak: "Ditolak" };
+      const status = label[filStatus.value] || "";
+      return ["Laporan Izin Cuti", karyawan, jenis, status].filter(Boolean).join(" ") + ".pdf";
     }));
 
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Pengajuan Izin & Cuti"));

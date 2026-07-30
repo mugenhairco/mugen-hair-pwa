@@ -606,6 +606,82 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   padding: 8px; font-size: 13px; border-radius: 10px; margin-bottom: 12px;
 }
 
+/* Preview PDF (Perbaikan Alur Cetak PDF) -- layar penuh, di ATAS
+   loading-overlay (9999) supaya spinner "Membuat PDF…" tetap terlihat
+   menimpa preview lama kalau kebetulan tombol lain ditekan berurutan,
+   tapi preview sendiri tetap harus menutupi seluruh aplikasi termasuk
+   sidebar/nav -- dipakai lewat MugenPdfPreview.open() (pdf_preview.js). */
+.pdf-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.pdf-preview-toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+.pdf-preview-toolbar > button {
+  min-height: 38px;
+}
+.pdf-preview-zoom,
+.pdf-preview-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pdf-preview-zoom-label,
+.pdf-preview-page-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  min-width: 64px;
+  text-align: center;
+}
+.pdf-preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.pdf-preview-body {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding: 16px 12px 40px;
+  background: var(--bg-input);
+}
+.pdf-preview-canvas {
+  background: #fff;
+  box-shadow: var(--shadow-elevated);
+  max-width: 100%;
+  height: fit-content;
+}
+
+/* Area cetak (tombol Print di Preview PDF) -- disembunyikan total saat
+   layar biasa, HANYA dimunculkan lewat @media print di bawah, sekaligus
+   menyembunyikan seluruh elemen lain (termasuk toolbar preview & watermark
+   developer) supaya hasil cetak murni berisi halaman PDF-nya saja. */
+.pdf-preview-print-area { display: none; }
+@media print {
+  body > *:not(.pdf-preview-print-area) { display: none !important; }
+  .pdf-preview-print-area { display: block !important; }
+  .pdf-preview-print-area img {
+    width: 100%;
+    display: block;
+    page-break-after: always;
+  }
+  .pdf-preview-print-area img:last-child { page-break-after: auto; }
+}
+
 .login-wrap {
   min-height: 100vh;
   display: flex;

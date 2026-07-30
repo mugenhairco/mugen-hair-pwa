@@ -61,6 +61,12 @@
     }
   </script>
 
+  <!-- Preview PDF (Cetak PDF): PDF.js dimuat lewat modul terpisah SEDINI
+       mungkin (fetch besar ~1.8MB berjalan di background, tidak memblokir
+       skrip lain) -- lihat pdfjs_boot.js untuk kenapa harus type="module"
+       dan kenapa dipakai lewat window.pdfjsLib + event 'pdfjs-ready',
+       bukan import langsung di pdf_preview.js. -->
+  <script type="module" src="js/pdfjs_boot.js"></script>
   <script src="js/state.js"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
        state.js) dan langsung menerapkan atribut data-theme begitu file
@@ -70,6 +76,7 @@
   <script src="js/theme.js"></script>
   <script src="js/api.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/pdf_preview.js"></script>
   <script src="js/brand.js"></script>
   <script src="js/nav.js"></script>
   <script src="js/booking_notif.js"></script>

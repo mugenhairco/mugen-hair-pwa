@@ -199,6 +199,7 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
             "uang_harian": 0,
             "pendapatan": k["nominal"],
             "keterangan": f"Reimburse ({k['kategori']})",
+            "kategori": k["kategori"],  # field mentah -- dipakai rekap_ringkasan.py supaya tidak perlu parsing teks "keterangan"
         })
     baris.sort(key=lambda r: r["nama_barber"])
     baris.sort(key=lambda r: r["tanggal"], reverse=True)

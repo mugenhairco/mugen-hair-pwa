@@ -159,18 +159,18 @@ const PagePemasukan = (() => {
     const inputCari = MugenUI.el("input", { type: "text", placeholder: "Cari keterangan/kategori..." });
 
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun, selKategori, inputCari]));
-    const btnDownloadPdf = MugenUI.el("button", {}, "Download PDF");
-    btnDownloadPdf.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          if (selKategori.value) qs.set("kategori", selKategori.value);
-          if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
-          return MugenApi.downloadFile(`/api/pemasukan/pdf?${qs}`, "laporan_pemasukan.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+    // Perbaikan Alur Cetak PDF: Preview PDF dulu, TIDAK langsung mengunduh
+    // -- lihat pdf_preview.js.
+    const btnDownloadPdf = MugenUI.el("button", {}, "Cetak PDF");
+    btnDownloadPdf.addEventListener("click", () => {
+      const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+      if (selKategori.value) qs.set("kategori", selKategori.value);
+      if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
+      const bagian = ["Laporan Pemasukan", selKategori.value || "", MugenUI.namaBulan(Number(selBulan.value)), selTahun.value];
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/pemasukan/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(bagian.filter(Boolean).join(" ") + ".pdf"),
+      });
     });
     filterCard.appendChild(btnDownloadPdf);
 

@@ -111,7 +111,7 @@ const PageDashboardBarber = (() => {
         body.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "daftar_service", label: "Service" },
+            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
             { key: "total_harga", label: "Nilai", format: MugenUI.formatRupiah },
             { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
           ],

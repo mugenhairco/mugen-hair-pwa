@@ -217,17 +217,37 @@
 // menghapus klaim Reimburse yang sudah disetujui, dan membatalkan
 // pembayaran Kasbon manual (bukan hasil potong otomatis Slip Gaji),
 // rekap.js.
-const CACHE_NAME = "mugen-hair-shell-v37";
+// v38: Dukungan Barber + Non-Barber -- Input Data punya dropdown Input
+// Data Barber/Non-Barber baru (input_data.js), Rekap Transaksi menampilkan
+// & menghapus baris Gaji Non-Barber juga (rekap.js), Setting > Karyawan
+// bisa membuat role kustom Non-Barber (pengaturan.js).
+// v39: Perbaikan Alur Cetak PDF -- tombol "Cetak PDF" di SELURUH halaman
+// (Rekap, Slip Gaji, Kasbon, Komisi, Reimburse, Izin & Cuti, Pemasukan,
+// Pengeluaran, Uang Kas) sekarang menampilkan Preview PDF dulu (Zoom/Nomor
+// Halaman/Download/Print/Kembali, lihat pdf_preview.js + vendor/pdfjs/),
+// TIDAK langsung mengunduh. Rekap Transaksi PDF punya pilihan Jenis
+// Laporan baru "Rekap Periode (Ringkasan)" (satu baris per karyawan untuk
+// seluruh periode). Kolom Service di seluruh tampilan Rekap sekarang
+// multi-baris (satu jenis service per baris, bukan digabung koma).
+// v40: Revisi kolom Keterangan -- Rekap Periode (Ringkasan) sekarang punya
+// kolom Keterangan (Catatan/Kasbon/Reimburse/tiap hari Libur, satu baris
+// per info, lihat rekap_ringkasan.py). Kolom Ket. di Rekap Transaksi
+// (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
+// berisi lebih dari satu info, bukan digabung titik-koma (ui.js
+// keteranganCell(), laporan_pdf.py _sel_keterangan()).
+const CACHE_NAME = "mugen-hair-shell-v40";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/manifest.json",
   "/config.js",
   "/css/style.css",
+  "/js/pdfjs_boot.js",
   "/js/state.js",
   "/js/theme.js",
   "/js/api.js",
   "/js/ui.js",
+  "/js/pdf_preview.js",
   "/js/brand.js",
   "/js/nav.js",
   "/js/booking_notif.js",
@@ -251,6 +271,10 @@ const APP_SHELL = [
   "/js/pages/produk.js",
   "/js/pages/booking.js",
   "/js/pages/book_public.js",
+  // Perbaikan Alur Cetak PDF: PDF.js (build lokal, BUKAN dari CDN, supaya
+  // Preview PDF tetap bisa dipakai offline -- lihat pdfjs_boot.js).
+  "/vendor/pdfjs/pdf.min.js",
+  "/vendor/pdfjs/pdf.worker.min.js",
   // TAHAP 13: ikon PWA (sebelumnya file-file ini belum ada sama sekali)
   "/icons/favicon.ico",
   "/icons/icon-72.png",

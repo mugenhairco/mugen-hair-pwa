@@ -1,14 +1,19 @@
 // pages/rekap.js
 
 const PageRekap = (() => {
-  function tombolDownloadPdf(onClick) {
-    const btn = MugenUI.el("button", {}, "Download PDF");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(onClick, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
+  // mengunduh -- PDF dibuat lalu ditampilkan dulu lewat MugenPdfPreview
+  // (Preview PDF di dalam aplikasi, dengan Zoom/Nomor Halaman/Download
+  // PDF/Print/Kembali), unduhan sungguhan hanya terjadi kalau tombol
+  // "Download PDF" DI DALAM preview itu yang ditekan. `computeOptions`
+  // dipanggil ULANG setiap kali tombol diklik (bukan sekali di awal),
+  // supaya filter yang aktif SAAT diklik yang dipakai -- return
+  // { generate: () => Promise<Blob>, filename: string }.
+  function tombolCetakPdf(computeOptions) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const { generate, filename } = computeOptions();
+      MugenPdfPreview.open({ generate, filename });
     });
     return btn;
   }
@@ -123,11 +128,52 @@ const PageRekap = (() => {
       // Tahun seperti biasa).
       const inputDariTanggal = MugenUI.el("input", { type: "date" });
       const inputSampaiTanggal = MugenUI.el("input", { type: "date" });
-      const pdfRow = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;align-items:center;" }, [
+      // Jenis Laporan (Perbaikan Alur Cetak PDF): "Rekap Detail" = format
+      // lama (satu baris per transaksi/hari, TIDAK berubah), "Rekap
+      // Periode (Ringkasan)" = BARU, satu baris per karyawan untuk seluruh
+      // periode -- lihat laporan_pdf.buat_pdf_rekap_transaksi_ringkasan().
+      const selJenisLaporan = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "detail" }, "Rekap Detail"),
+        MugenUI.el("option", { value: "ringkasan" }, "Rekap Periode (Ringkasan)"),
+      ]);
+      const pdfRow = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;align-items:center;flex-wrap:wrap;" }, [
         MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Periode PDF (opsional):"),
         inputDariTanggal, inputSampaiTanggal,
+        MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Jenis Laporan:"),
+        selJenisLaporan,
       ]);
-      pdfRow.appendChild(tombolDownloadPdf(() => {
+
+      // Periode efektif yang dipakai NAMA FILE (murni tampilan nama file --
+      // parameter yang DIKIRIM ke server tetap lewat qs di bawah, TIDAK
+      // berubah): kalau Periode PDF custom diisi, pakai apa adanya; kalau
+      // tidak, diturunkan dari Bulan+Tahun yang aktif (tanggal 1 s.d. hari
+      // terakhir bulan itu).
+      function periodeUntukNamaFile() {
+        if (inputDariTanggal.value && inputSampaiTanggal.value) {
+          return { mulai: inputDariTanggal.value, selesai: inputSampaiTanggal.value };
+        }
+        const tahun = Number(selTahun.value), bulan = Number(selBulan.value);
+        const hariTerakhir = new Date(tahun, bulan, 0).getDate();
+        const dua = (n) => String(n).padStart(2, "0");
+        return {
+          mulai: `${tahun}-${dua(bulan)}-01`,
+          selesai: `${tahun}-${dua(bulan)}-${dua(hariTerakhir)}`,
+        };
+      }
+
+      function namaFilePdf() {
+        const jenisLabel = selJenisLaporan.value === "ringkasan" ? "Rekap Periode" : "Rekap Harian";
+        const karyawan = selBarber && selBarber.value
+          ? (karyawanAll.find((k) => String(k.id) === selBarber.value) || {}).nama || "Karyawan"
+          : "Semua Karyawan";
+        const { mulai, selesai } = periodeUntukNamaFile();
+        const tanggalLabel = mulai === selesai
+          ? MugenUI.namaTanggalIndo(mulai)
+          : `${MugenUI.namaTanggalIndo(mulai)} - ${MugenUI.namaTanggalIndo(selesai)}`;
+        return MugenUI.namaFileAman(`${jenisLabel} ${karyawan} ${tanggalLabel}.pdf`);
+      }
+
+      pdfRow.appendChild(tombolCetakPdf(() => {
         const qs = new URLSearchParams();
         if (inputDariTanggal.value && inputSampaiTanggal.value) {
           qs.set("tanggal_mulai", inputDariTanggal.value);
@@ -137,7 +183,11 @@ const PageRekap = (() => {
           qs.set("bulan", selBulan.value);
         }
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
-        return MugenApi.downloadFile(`/api/rekap/transaksi/pdf?${qs}`, `rekap_transaksi_${selTahun.value}-${selBulan.value}.pdf`);
+        qs.set("jenis", selJenisLaporan.value);
+        return {
+          generate: () => MugenApi.fetchBlob(`/api/rekap/transaksi/pdf?${qs}`),
+          filename: namaFilePdf(),
+        };
       }));
 
       const tableWrap = MugenUI.el("div");
@@ -158,13 +208,25 @@ const PageRekap = (() => {
             [
               { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
               { key: "nama_barber", label: "Nama" },
-              { key: "daftar_service", label: "Service" },
+              { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
               { key: "jumlah_service", label: "Jml Service" },
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
               { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
               { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
-              { key: "keterangan", label: "Ket.", format: (v) => v ? MugenUI.el("span", { class: "badge badge-libur" }, v) : "-" },
-              // Kolom Hapus KHUSUS Owner (isOwner). Tiga jenis baris punya
+              // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
+              // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
+              // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi lebih dari
+              // satu informasi sekaligus (dipisah "; ") -- ditampilkan satu
+              // baris per informasi (MugenUI.keteranganCell()), bukan
+              // digabung jadi satu baris.
+              {
+                key: "keterangan", label: "Ket.", format: (v, r) => {
+                  if (!v) return "-";
+                  if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
+                  return MugenUI.keteranganCell(v);
+                },
+              },
+              // Kolom Hapus KHUSUS Owner (isOwner). Empat jenis baris punya
               // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
               // (hapus klaim yang sudah disetujui, dengan peringatan lebih
               // kuat karena ini uang yang sudah cair), "kasbon" (batalkan
@@ -172,8 +234,9 @@ const PageRekap = (() => {
               // otomatis Slip Gaji, sumber="potong_gaji", sengaja TIDAK bisa
               // dihapus dari sini supaya tidak bentrok dengan status Slip
               // Gaji terkait, harus lewat pembatalan status Slip Gaji itu
-              // sendiri). Baris "libur" tidak punya "id" sama sekali jadi
-              // otomatis dash.
+              // sendiri), "non_barber" (hapus entri Gaji Non-Barber, Input
+              // Data Non-Barber). Baris "libur" tidak punya "id" sama sekali
+              // jadi otomatis dash.
               ...(isOwner ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   if (r.id == null) return "-";
@@ -219,6 +282,19 @@ const PageRekap = (() => {
                       onSelesai: load,
                     });
                   }
+                  if (r.tipe === "non_barber") {
+                    return tombolAksi({
+                      label: "🗑 Hapus", title: "Hapus Data Gaji Non-Barber",
+                      confirmTitle: "Hapus Data Gaji Non-Barber",
+                      confirmMessage: [
+                        "Apakah Anda yakin ingin menghapus data gaji ini?",
+                        "Data yang dihapus tidak dapat dikembalikan.",
+                      ],
+                      hapusUrl: `/api/data-non-barber/${r.id}`,
+                      pesanSukses: "Data gaji Non-Barber berhasil dihapus.",
+                      onSelesai: load,
+                    });
+                  }
                   return "-";
                 },
               }] : []),
@@ -238,10 +314,16 @@ const PageRekap = (() => {
 
     async function renderBulanan() {
       const { row, selBulan, selTahun, selBarber } = filterBar();
-      row.appendChild(tombolDownloadPdf(() => {
+      row.appendChild(tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
-        return MugenApi.downloadFile(`/api/rekap/bulanan/pdf?${qs}`, `rekap_bulanan_${selTahun.value}-${selBulan.value}.pdf`);
+        const barberNama = selBarber && selBarber.value
+          ? (barbersOnly.find((b) => String(b.id) === selBarber.value) || {}).nama || "Barber"
+          : "Semua Barber";
+        return {
+          generate: () => MugenApi.fetchBlob(`/api/rekap/bulanan/pdf?${qs}`),
+          filename: MugenUI.namaFileAman(`Rekap Bulanan ${barberNama} ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
+        };
       }));
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);
@@ -285,9 +367,12 @@ const PageRekap = (() => {
 
     async function renderPengeluaran() {
       const { row, selBulan, selTahun } = filterBar({ withBarber: false });
-      row.appendChild(tombolDownloadPdf(() => {
+      row.appendChild(tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-        return MugenApi.downloadFile(`/api/rekap/pengeluaran/pdf?${qs}`, `rekap_pengeluaran_${selTahun.value}-${selBulan.value}.pdf`);
+        return {
+          generate: () => MugenApi.fetchBlob(`/api/rekap/pengeluaran/pdf?${qs}`),
+          filename: MugenUI.namaFileAman(`Rekap Pengeluaran ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
+        };
       }));
       const totalBox = MugenUI.el("div", { class: "card" });
       const tableWrap = MugenUI.el("div");

@@ -121,14 +121,11 @@ const MugenApi = (() => {
     return payload;
   }
 
-  // Unduh file biner (PDF) lewat GET terautentikasi -- dipakai tombol
-  // "Download PDF" di setiap halaman laporan (Revisi Sistem Laporan & PDF).
-  // Pola sama seperti uploadFile() di atas (fetch manual, bukan lewat
-  // request() yang mengasumsikan body JSON), TAPI mengambil respons
-  // sebagai Blob lalu memicu unduhan lewat elemen <a download> sementara --
-  // bekerja sama baiknya di desktop maupun mobile PWA (tidak mengandalkan
-  // API khusus platform apa pun).
-  async function downloadFile(path, filename) {
+  // Ambil file biner (PDF) lewat GET terautentikasi -- dipakai bersama oleh
+  // downloadFile() (unduh langsung) dan fetchBlob() (Preview PDF, TIDAK
+  // langsung mengunduh, lihat pdf_preview.js). Satu tempat untuk auth
+  // header/penanganan 401/error supaya perilakunya konsisten di keduanya.
+  async function _ambilBlob(path) {
     const headers = {};
     const token = MugenState.getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -149,7 +146,24 @@ const MugenApi = (() => {
       try { detail = (await response.json()).detail || detail; } catch (e) { /* body bukan JSON */ }
       throw new ApiError(detail, response.status, null);
     }
-    const blob = await response.blob();
+    return response.blob();
+  }
+
+  // Ambil file biner (PDF) TANPA memicu unduhan -- dipakai alur Preview PDF
+  // (pdf_preview.js): PDF baru benar-benar diunduh ke perangkat setelah
+  // Owner menekan tombol "Download PDF" di halaman preview, bukan otomatis
+  // begitu server selesai membuatnya.
+  async function fetchBlob(path) {
+    return _ambilBlob(path);
+  }
+
+  // Picu unduhan sebuah Blob yang SUDAH ADA di memori (tidak fetch apa pun)
+  // lewat elemen <a download> sementara -- bekerja sama baiknya di desktop
+  // maupun mobile PWA (tidak mengandalkan API khusus platform apa pun).
+  // Dipakai downloadFile() di bawah, dan tombol "Download PDF" di halaman
+  // Preview PDF (pdf_preview.js, blob-nya sudah didapat dari fetchBlob()
+  // saat preview dibuka, jadi TIDAK fetch ulang ke server).
+  function saveBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -160,6 +174,14 @@ const MugenApi = (() => {
     URL.revokeObjectURL(url);
   }
 
+  // Unduh file biner (PDF) lewat GET terautentikasi. Sekarang HANYA dipanggil
+  // dari tombol "Download PDF" di halaman Preview PDF (lihat pdf_preview.js)
+  // -- bukan lagi dipicu langsung dari tombol "Cetak PDF" tiap halaman
+  // (Perbaikan Alur Cetak PDF).
+  async function downloadFile(path, filename) {
+    saveBlob(await _ambilBlob(path), filename);
+  }
+
   return {
     ApiError,
     get: (path, opts) => request("GET", path, undefined, opts),
@@ -167,6 +189,8 @@ const MugenApi = (() => {
     put: (path, body, opts) => request("PUT", path, body, opts),
     del: (path, body, opts) => request("DELETE", path, body, opts),
     uploadFile,
+    fetchBlob,
+    saveBlob,
     downloadFile,
   };
 })();

@@ -24,17 +24,19 @@ const PageKasbon = (() => {
       status === "lunas" ? "Lunas" : "Belum Lunas");
   }
 
-  function tombolDownloadPdf(getParams) {
-    const btn = MugenUI.el("button", {}, "Download PDF");
-    btn.addEventListener("click", async () => {
-      try {
-        await MugenUI.withLoading(() => {
-          const qs = new URLSearchParams(getParams());
-          return MugenApi.downloadFile(`/api/kasbon/pdf?${qs}`, "laporan_kasbon.pdf");
-        }, { message: "Menyiapkan PDF…" });
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-      }
+  // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" menampilkan Preview PDF
+  // dulu (Zoom/Nomor Halaman/Download/Print/Kembali), TIDAK langsung
+  // mengunduh -- lihat pdf_preview.js. `computeFilename` (opsional) dipakai
+  // membuat nama file otomatis dari filter yang aktif saat tombol diklik.
+  function tombolDownloadPdf(getParams, computeFilename) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const qs = new URLSearchParams(getParams());
+      const filename = computeFilename ? computeFilename() : "Laporan Kasbon.pdf";
+      MugenPdfPreview.open({
+        generate: () => MugenApi.fetchBlob(`/api/kasbon/pdf?${qs}`),
+        filename: MugenUI.namaFileAman(filename),
+      });
     });
     return btn;
   }
@@ -86,7 +88,7 @@ const PageKasbon = (() => {
     }
 
     listCard.appendChild(MugenUI.el("h2", {}, "Riwayat Kasbon"));
-    listCard.appendChild(tombolDownloadPdf(() => ({})));
+    listCard.appendChild(tombolDownloadPdf(() => ({}), () => "Laporan Kasbon Saya.pdf"));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
@@ -316,6 +318,11 @@ const PageKasbon = (() => {
       if (filBulan.value) params.bulan = filBulan.value;
       if (filTahun.value) params.tahun = filTahun.value;
       return params;
+    }, () => {
+      const karyawan = filBarber.value ? (barbers.find((b) => String(b.id) === filBarber.value) || {}).nama || "Karyawan" : "Semua Karyawan";
+      const status = filStatus.value === "lunas" ? "Lunas" : filStatus.value === "belum_lunas" ? "Belum Lunas" : "";
+      const periode = filBulan.value && filTahun.value ? `${MugenUI.namaBulan(Number(filBulan.value))} ${filTahun.value}` : filTahun.value || "";
+      return ["Laporan Kasbon", karyawan, status, periode].filter(Boolean).join(" ") + ".pdf";
     }));
 
     // ---- Daftar ----

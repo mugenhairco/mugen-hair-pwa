@@ -16,6 +16,7 @@ import database as db
 import kasbon_db
 import pengeluaran_db
 import reimburse_db
+import data_non_barber_db
 import laporan_pdf
 from auth import get_current_user, require_owner_or_staff
 
@@ -42,17 +43,30 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     # ikut digabung juga -- BEDA dari Reimburse, pendapatan barisnya
     # NEGATIF (mengurangi Total, lihat kasbon_db.py).
     data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    # Dukungan Barber + Non-Barber: baris Gaji Non-Barber (Input Data
+    # Non-Barber) ikut digabung juga -- karyawan non-barber TIDAK PERNAH
+    # punya baris "transaksi" (lihat data_non_barber_db.py), jadi tanpa ini
+    # filter "Semua Karyawan"/pilih karyawan non-barber selalu kosong.
+    data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
     return data
 
 
 @router.get("/transaksi/pdf")
 def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
-                         tanggal_mulai: str = None, tanggal_selesai: str = None,
+                         tanggal_mulai: str = None, tanggal_selesai: str = None, jenis: str = "detail",
                          user: dict = Depends(get_current_user)):
+    """jenis: 'detail' (default, format lama -- satu baris per transaksi/
+    hari, TIDAK berubah) atau 'ringkasan' ("Rekap Periode (Ringkasan)" BARU
+    -- satu baris per karyawan untuk seluruh periode, lihat
+    laporan_pdf.buat_pdf_rekap_transaksi_ringkasan())."""
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
-                                                   tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    if jenis == "ringkasan":
+        konten = laporan_pdf.buat_pdf_rekap_transaksi_ringkasan(
+            tahun, bulan, barber_id, user["username"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    else:
+        konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
+                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     return _pdf_response(konten, "rekap_transaksi")
 
 
