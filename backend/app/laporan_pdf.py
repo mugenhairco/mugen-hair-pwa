@@ -103,6 +103,25 @@ def _sel_service(daftar_service: str) -> Paragraph:
     return Paragraph("<br/>".join(diformat), _SEL_STYLE)
 
 
+def _sel_keterangan(nilai) -> Paragraph:
+    """Kolom Keterangan/Ket (Rekap Transaksi Detail & Ringkasan): kalau
+    berisi LEBIH DARI SATU informasi (Catatan/Kasbon/Reimburse/Libur, dst),
+    tampilkan SATU BARIS BARU per informasi -- BUKAN digabung koma/titik-
+    koma jadi satu baris, prinsipnya sama persis _sel_service() di atas.
+    Menerima LIST (baris sudah dipisah per info, dipakai rekap_ringkasan.py
+    lewat field keterangan_list) ATAU string gabungan "; " (pola lama,
+    dipakai r["keterangan"] baris Rekap Detail dari database.py/
+    reimburse_db.py/kasbon_db.py/data_non_barber_db.py -- lihat _tempel()
+    di bawah). TIDAK mengubah data sumbernya, murni cara menampilkannya."""
+    if isinstance(nilai, list):
+        bagian = [str(b).strip() for b in nilai if str(b or "").strip()]
+    else:
+        bagian = [b.strip() for b in (nilai or "").split("; ") if b.strip()]
+    if not bagian:
+        return _sel("-")
+    return Paragraph("<br/>".join(bagian), _SEL_STYLE)
+
+
 # Header kolom tabel -- BEDA dari _SEL_STYLE (isi sel biasa): tebal + putih
 # (menyamai TEXTCOLOR/FONTNAME row header di _gaya_tabel()), supaya bisa
 # dibungkus Paragraph juga (lihat _kepala() di bawah). PENTING: TableStyle
@@ -716,7 +735,7 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
             sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
         if ada_kasbon:
             sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
-        sel.append(_sel(r["keterangan"] or "-"))
+        sel.append(_sel_keterangan(r["keterangan"]))
         baris.append(sel)
 
     # Ringkasan di bawah tabel (urutan sesuai spesifikasi Dukungan Barber +
@@ -759,21 +778,35 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
                         ringkasan_tambahan=ringkasan_tambahan)
 
 
-# Lebar kolom TETAP untuk "Rekap Periode (Ringkasan)" (mm) -- kolom "Service"
-# (satu-satunya yang isinya panjang/multi-baris) kebagian SISA lebar dari
-# 194mm dikurangi seluruh kolom tetap ini (lihat _lebar_kolom_ringkasan()),
-# supaya jumlah kolom yang tampil (Reimburse/Kasbon Dibayar/Gaji Non-Barber
-# dinamis, sama seperti Rekap Detail) tidak perlu tabel lebar per kombinasi.
+# Lebar kolom TETAP untuk "Rekap Periode (Ringkasan)" (mm) -- kolom
+# "Service" DAN "Keterangan" (dua-duanya bisa berisi banyak baris, lihat
+# _sel_service()/_sel_keterangan()) berbagi SISA lebar dari 194mm dikurangi
+# seluruh kolom tetap ini (lihat _lebar_kolom_ringkasan()), supaya jumlah
+# kolom yang tampil (Reimburse/Kasbon Dibayar/Gaji Non-Barber dinamis, sama
+# seperti Rekap Detail) tidak perlu tabel lebar per kombinasi.
 _LEBAR_TETAP_RINGKASAN = {
-    "Nama": 24 * mm, "Jml Pelanggan": 14 * mm, "Jml Service": 12 * mm, "Hari Libur": 12 * mm,
-    "Uang Harian": 16 * mm, "Tips": 14 * mm, "Pendapatan": 16 * mm, "Reimburse": 14 * mm,
-    "Kasbon Dibayar": 16 * mm, "Gaji Non-Barber": 16 * mm, "Total": 16 * mm,
+    "Nama": 20 * mm, "Jml Pelanggan": 11 * mm, "Jml Service": 10 * mm, "Hari Libur": 10 * mm,
+    "Uang Harian": 13 * mm, "Tips": 11 * mm, "Pendapatan": 14 * mm, "Reimburse": 12 * mm,
+    "Kasbon Dibayar": 13 * mm, "Gaji Non-Barber": 13 * mm, "Total": 14 * mm,
 }
 
 
 def _lebar_kolom_ringkasan(kolom: list) -> list:
-    lebar_service = 194 * mm - sum(_LEBAR_TETAP_RINGKASAN[k] for k in kolom if k != "Service")
-    return [lebar_service if k == "Service" else _LEBAR_TETAP_RINGKASAN[k] for k in kolom]
+    sisa = 194 * mm - sum(_LEBAR_TETAP_RINGKASAN[k] for k in kolom if k not in ("Service", "Keterangan"))
+    # Keterangan biasanya menampung lebih banyak baris sekaligus (Catatan +
+    # Kasbon + Reimburse + tiap hari Libur) dibanding Service (cuma daftar
+    # jenis service), jadi kebagian porsi lebih besar dari sisa lebar.
+    lebar_service = sisa * 0.38
+    lebar_keterangan = sisa - lebar_service
+    hasil = []
+    for k in kolom:
+        if k == "Service":
+            hasil.append(lebar_service)
+        elif k == "Keterangan":
+            hasil.append(lebar_keterangan)
+        else:
+            hasil.append(_LEBAR_TETAP_RINGKASAN[k])
+    return hasil
 
 
 def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, barber_id: int | None,
@@ -815,6 +848,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     if ada_non_barber:
         header.append("Gaji Non-Barber")
     header.append("Total")
+    header.append("Keterangan")
 
     baris = []
     for r in ringkas:
@@ -830,6 +864,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
         if ada_non_barber:
             sel.append(_sel(_rupiah(r["gaji_non_barber"]) if r["gaji_non_barber"] else "-"))
         sel.append(_sel(_rupiah(r["total"])))
+        sel.append(_sel_keterangan(r["keterangan_list"]))
         baris.append(sel)
 
     # Ringkasan bawah SAMA PERSIS rumusnya dengan Rekap Detail (lihat

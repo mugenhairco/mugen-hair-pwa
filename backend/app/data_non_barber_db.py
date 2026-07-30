@@ -240,6 +240,7 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
             "uang_harian": 0,
             "pendapatan": e["total_gaji"],
             "keterangan": "; ".join(bagian_ket),
+            "catatan": e.get("catatan") or "",  # field mentah -- dipakai rekap_ringkasan.py
         })
     baris.sort(key=lambda r: r["nama_barber"])
     baris.sort(key=lambda r: r["tanggal"], reverse=True)

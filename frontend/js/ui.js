@@ -102,6 +102,24 @@ const MugenUI = (() => {
     return wrap;
   }
 
+  // Kolom "Keterangan"/"Ket." (daftar info dipisah "; ", pola yang sama
+  // dipakai database.py/reimburse_db.py/kasbon_db.py/data_non_barber_db.py
+  // saat membangun field `keterangan`) -- kalau lebih dari satu informasi
+  // (Catatan/Kasbon/Reimburse/Libur, dst), tampilkan tiap info di baris/div
+  // terpisah (bukan digabung titik-koma dalam satu baris), prinsip sama
+  // persis serviceCell() di atas. TIDAK mengubah data `raw` sama sekali,
+  // murni cara menampilkannya -- dipakai di seluruh tampilan Rekap yang
+  // punya kolom Keterangan (Rekap Transaksi, dst).
+  function keteranganCell(raw) {
+    if (!raw) return "-";
+    const bagian = raw.split("; ").map((b) => b.trim()).filter(Boolean);
+    if (bagian.length === 0) return "-";
+    if (bagian.length === 1) return bagian[0];
+    const wrap = el("div");
+    for (const teks of bagian) wrap.appendChild(el("div", {}, teks));
+    return wrap;
+  }
+
   // Bangun <table class="data-table"> dari daftar kolom + baris data.
   // columns: [{ key, label, format?: fn }]
   function buildTable(columns, rows, { emptyText = "Belum ada data." } = {}) {
@@ -296,6 +314,7 @@ const MugenUI = (() => {
 
   return {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
-    serviceCell, offlineBanner, barChart, showLoading, hideLoading, withLoading, themeSwitch, confirmModal,
+    serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
+    themeSwitch, confirmModal,
   };
 })();

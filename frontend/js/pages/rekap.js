@@ -215,14 +215,15 @@ const PageRekap = (() => {
               { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
               // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
               // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
-              // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi teks lebih
-              // panjang -- ditampilkan polos (bukan dipaksa masuk pil kecil
-              // yang didesain untuk label pendek seperti "Libur").
+              // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi lebih dari
+              // satu informasi sekaligus (dipisah "; ") -- ditampilkan satu
+              // baris per informasi (MugenUI.keteranganCell()), bukan
+              // digabung jadi satu baris.
               {
                 key: "keterangan", label: "Ket.", format: (v, r) => {
                   if (!v) return "-";
                   if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
-                  return v;
+                  return MugenUI.keteranganCell(v);
                 },
               },
               // Kolom Hapus KHUSUS Owner (isOwner). Empat jenis baris punya

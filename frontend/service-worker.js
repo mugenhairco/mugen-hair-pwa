@@ -229,7 +229,13 @@
 // Laporan baru "Rekap Periode (Ringkasan)" (satu baris per karyawan untuk
 // seluruh periode). Kolom Service di seluruh tampilan Rekap sekarang
 // multi-baris (satu jenis service per baris, bukan digabung koma).
-const CACHE_NAME = "mugen-hair-shell-v39";
+// v40: Revisi kolom Keterangan -- Rekap Periode (Ringkasan) sekarang punya
+// kolom Keterangan (Catatan/Kasbon/Reimburse/tiap hari Libur, satu baris
+// per info, lihat rekap_ringkasan.py). Kolom Ket. di Rekap Transaksi
+// (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
+// berisi lebih dari satu info, bukan digabung titik-koma (ui.js
+// keteranganCell(), laporan_pdf.py _sel_keterangan()).
+const CACHE_NAME = "mugen-hair-shell-v40";
 const APP_SHELL = [
   "/",
   "/index.html",
