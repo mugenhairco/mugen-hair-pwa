@@ -213,7 +213,11 @@
 // v36: Fitur Hapus Rekap Transaksi khusus Owner -- dialog konfirmasi
 // modern baru (ui.js: confirmModal(), style.css: .modal-*) + tombol
 // Hapus di tabel Rekap Transaksi (rekap.js).
-const CACHE_NAME = "mugen-hair-shell-v36";
+// v37: Perluasan Hapus Rekap Transaksi -- kolom Aksi (Owner) sekarang juga
+// menghapus klaim Reimburse yang sudah disetujui, dan membatalkan
+// pembayaran Kasbon manual (bukan hasil potong otomatis Slip Gaji),
+// rekap.js.
+const CACHE_NAME = "mugen-hair-shell-v37";
 const APP_SHELL = [
   "/",
   "/index.html",

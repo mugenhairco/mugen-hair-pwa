@@ -129,6 +129,19 @@ def hapus_kasbon(kasbon_id: int, user: dict = Depends(require_permission("izin_k
     return {"ok": True}
 
 
+@router.delete("/pembayaran/{pembayaran_id}")
+def batalkan_pembayaran(pembayaran_id: int, user: dict = Depends(require_permission("izin_kasbon"))):
+    """Batalkan satu baris pembayaran kasbon MANUAL -- dipakai tombol
+    Batalkan di Rekap Transaksi. Path ini didaftarkan SEBELUM /{kasbon_id}
+    tidak masalah karena kedalamannya beda (2 segmen vs 1), jadi tidak
+    pernah ambigu dengan GET /{kasbon_id}."""
+    try:
+        kasbon_db.batalkan_pembayaran_kasbon(pembayaran_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
 class PembayaranBody(BaseModel):
     tanggal: str
     jumlah: int
