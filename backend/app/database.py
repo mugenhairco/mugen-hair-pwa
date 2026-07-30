@@ -1170,7 +1170,14 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     service acuan Setting > Uang Harian hari itu, lihat hitung_uang_harian_per_hari)
     dan Jumlah Service (total qty seluruh service di transaksi itu). Urutan: tanggal
     terbaru dulu. tanggal_mulai/tanggal_selesai dipakai periode PDF rentang tanggal
-    bebas -- BEDA dari tahun/bulan yang dipakai tampilan layar."""
+    bebas -- BEDA dari tahun/bulan yang dipakai tampilan layar.
+
+    Baris bertipe "transaksi" membawa "id" (primary key tabel transaksi) --
+    dipakai tombol Hapus khusus Owner di halaman Rekap Transaksi (lihat
+    routers/input_data.py hapus_transaksi(), endpoint yang sudah ada,
+    dipakai ulang). Baris "libur"/hasil gabungan reimburse/kasbon TIDAK
+    punya "id" ini -- sengaja, supaya frontend tahu baris mana yang boleh
+    dihapus lewat endpoint itu."""
     transaksi_list = get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     libur_list = get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
@@ -1197,6 +1204,7 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
         hari_dengan_transaksi.add(key)
         hasil.append({
             "tipe": "transaksi",
+            "id": t["id"],
             "tanggal": t["tanggal"],
             "barber_id": t["barber_id"],
             "nama_barber": t["nama_barber"],
