@@ -235,7 +235,7 @@
 // (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
 // berisi lebih dari satu info, bukan digabung titik-koma (ui.js
 // keteranganCell(), laporan_pdf.py _sel_keterangan()).
-const CACHE_NAME = "mugen-hair-shell-v40";
+const CACHE_NAME = "mugen-hair-shell-v41";
 const APP_SHELL = [
   "/",
   "/index.html",
