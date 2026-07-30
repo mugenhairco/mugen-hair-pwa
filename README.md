@@ -2505,11 +2505,20 @@ lokal, sudah ada nilai default yang aman):
 | `ADMIN_BOOTSTRAP_USERNAME` | Username Owner pertama (hanya dipakai sekali saat database masih kosong) | `owner` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
-| `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` |
+| `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` (+ otomatis mengizinkan seluruh subdomain `*.onrender.com`, lihat kode) |
+| `DATABASE_URL` | Connection string PostgreSQL (Neon/dsb) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
+| `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
+| `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Kredensial API Token R2 (Object Read & Write, dibatasi ke satu bucket) | kosong |
+| `R2_BUCKET_NAME` | Nama bucket R2 tujuan upload | kosong |
+| `R2_ENDPOINT_URL` | Endpoint S3-compatible R2 (`https://<account_id>.r2.cloudflarestorage.com`) — opsional kalau `R2_ACCOUNT_ID` sudah diisi | diturunkan dari `R2_ACCOUNT_ID` |
+| `R2_PUBLIC_URL` | Domain publik R2 (CDN) — **disimpan, TIDAK dipakai jalur kode manapun saat ini** (bucket tetap private, backend tetap jadi gerbang akses satu-satunya, lihat r2_storage.py) | kosong |
 | `GOOGLE_SHEET_ID` | ID spreadsheet Google Sheets tujuan sinkron (Tahap 12) | kosong (sinkron nonaktif) |
 | `GOOGLE_CREDENTIALS_JSON` | Isi mentah file JSON service account Google (alternatif dari file `credentials.json`) | kosong |
 | `SYNC_RETRY_INTERVAL_DETIK` | Jeda antar percobaan retry sinkron otomatis | `60` |
 | `ADMIN_RESET_USERNAME` / `ADMIN_RESET_PASSWORD` | Buat/reset SATU akun admin di server yang sudah berjalan (lupa kredensial) — lihat bagian **Reset / Buat Akun Admin** di bawah | kosong (no-op) |
+
+> Catatan: `GOOGLE_SHEET_ID`/`GOOGLE_CREDENTIALS_JSON`/`SYNC_RETRY_INTERVAL_DETIK` di tabel ini sudah TIDAK dipakai lagi sejak fitur Sinkronisasi Google Sheets dihapus total (lihat bagian **Sinkronisasi Google Sheets — DIHAPUS** di bawah) — baris ini tertinggal di tabel (dokumentasi basi, ditemukan saat audit migrasi R2, di luar cakupan pekerjaan itu untuk dibersihkan sekarang).
 
 **2. Jalankan frontend** — karena murni file statis, bisa dibuka dengan
 server statis apa saja. Contoh paling sederhana (dari folder `frontend/`):
@@ -2753,3 +2762,186 @@ pada header itu.
 Backup/Restore — tabel `file_asset` baru dan kolom BLOB baru ini
 mengikuti gap yang sudah ada itu, bukan gap baru yang ditambahkan tahap
 ini.
+
+## Migrasi Cloudflare R2 (Storage File)
+
+Lanjutan dari bagian **TAHAP: File Upload ... Dipindah ke Database** di
+atas: file (Logo, Hero Image/Video, Foto About, Background Website, QRIS,
+Foto Barber, Gallery, Bukti Reimburse) dipindah SEKALI LAGI — dari BLOB di
+database (Neon) ke **Cloudflare R2** (object storage S3-compatible) —
+supaya database hanya menyimpan METADATA (nama file, tipe, key objek R2),
+bukan lagi isi byte file itu sendiri (database tetap ringan walau jumlah
+file yang diupload terus bertambah).
+
+### Arsitektur
+
+- **Bucket R2 tetap PRIVATE** — backend TETAP jadi satu-satunya gerbang
+  akses file, PERSIS seperti pola BLOB-di-database sebelumnya. Ini
+  keputusan sadar (BUKAN default R2): audit kode menemukan seluruh frontend
+  (`js/pages/booking.js`, `book_public.js`, `pengaturan.js`, `brand.js`)
+  memakai pola `MUGEN_API_BASE + data.xxx_url` di puluhan tempat, yang
+  mengasumsikan `xxx_url` adalah PATH RELATIF ke backend yang sama — kalau
+  field itu diisi URL R2 absolut langsung, hasilnya jadi string gabungan
+  yang rusak. Dengan backend tetap jadi proxy, **TIDAK ADA endpoint API
+  ataupun kode frontend yang berubah sama sekali** — endpoint GET yang
+  sudah ada (`GET /api/pengaturan/logo`, `GET /api/website/hero-image`,
+  dst) sekarang membaca bytes dari R2 (lewat `r2_storage.get_bytes()`)
+  alih-alih `SELECT ... BLOB`, tapi bentuk respons ke client identik.
+- **`backend/app/r2_storage.py`** (baru) — klien S3-compatible generik
+  lewat `boto3`, diarahkan ke endpoint R2 (bukan AWS): `upload()`/
+  `get_bytes()`/`delete()`/`validasi_dan_beri_nama()`. Retry otomatis (3x,
+  exponential backoff bawaan `botocore`) + timeout (connect 10 detik, baca
+  30 detik) untuk kegagalan transient. `IS_ENABLED` = `False` kalau salah
+  satu dari `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET_NAME`/
+  `R2_ENDPOINT_URL` kosong — dalam kondisi itu, jalur BLOB-di-database LAMA
+  dipakai apa adanya (byte-identik dengan sebelum migrasi ini), supaya
+  **development lokal tanpa kredensial R2 tetap 100% berfungsi** tanpa
+  konfigurasi tambahan apa pun (pola yang sama seperti `DATABASE_URL`
+  menentukan SQLite vs PostgreSQL di `db_compat.py`).
+- **Struktur folder/prefix di bucket**:
+  ```
+  logos/      -- Logo Barbershop
+  assets/     -- Hero Image, Hero Video, Foto About, Background Website
+  barbers/    -- Foto Barber
+  gallery/    -- Gallery (foto & video)
+  payments/   -- QRIS, Bukti Reimburse
+  ```
+  (Tidak ada folder `customers/` — diaudit langsung, TIDAK ADA fitur "Foto
+  Customer" di aplikasi ini sama sekali, jadi tidak dibuat.)
+- **Nama file di bucket**: `uuid4().hex` + ekstensi asli (mis.
+  `logos/3f9a1c...b2.png`) — SELALU unik per upload (bukan lagi nama
+  deterministik seperti `logo.png`/`barber-3.jpg` sebelumnya), sekaligus
+  memperbaiki bug cache-busting laten: nama file deterministik lama
+  membuat parameter `?v=` TIDAK PERNAH berubah kalau ekstensi upload baru
+  sama dengan yang lama, berpotensi membuat browser terus menampilkan
+  gambar basi dari cache.
+
+### Perubahan skema (idempotent, TIDAK menghapus/mengubah data lama)
+
+Empat kolom baru (`*_r2_key`, TEXT, nullable) — `backend/app/
+r2_storage_migrasi.py` (jalur SQLite) & `postgres_schema.py` (jalur
+PostgreSQL, `ADD COLUMN IF NOT EXISTS`):
+- `file_asset.r2_key`
+- `website_gallery.r2_key`
+- `barbers.foto_r2_key`
+- `reimburse.bukti_r2_key`
+
+Kolom BLOB lama (`file_asset.data`, `website_gallery.data`,
+`barbers.foto_data`, `reimburse.bukti_data`) **TIDAK dihapus** — baris LAMA
+(`*_r2_key IS NULL`) tetap dibaca dari situ sebagai fallback otomatis,
+sampai dibackfill manual lewat `migrate_blobs_to_r2.py` (lihat di bawah).
+File BARU (diupload setelah R2 dikonfigurasi) langsung ke R2 sepenuhnya,
+kolom BLOB-nya dikosongkan (`NULL`, atau `b""` khusus `file_asset.data`
+yang historis `NOT NULL` — placeholder murni, tidak pernah dibaca lagi
+kalau `r2_key` terisi).
+
+### Backfill file lama: `migrate_blobs_to_r2.py`
+
+Script MANUAL (SATU KALI, tidak pernah dipanggil otomatis) untuk
+mengupload file yang SUDAH ADA di kolom BLOB (dari sebelum R2
+dikonfigurasi) ke R2, lalu mengisi kolom `*_r2_key`-nya. **Tidak
+menghapus/mengubah kolom BLOB lama sama sekali** — murni redundan setelah
+backfill (bisa dibersihkan manual belakangan sebagai keputusan terpisah).
+Idempotent (baris yang sudah punya `r2_key` dilewati) & aman dijalankan
+berulang.
+
+```bash
+# dari folder backend/app, dengan DATABASE_URL (Neon) DAN R2_* lengkap:
+DATABASE_URL="postgresql://..." R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... \
+  R2_SECRET_ACCESS_KEY=... R2_BUCKET_NAME=... \
+  python migrate_blobs_to_r2.py --dry-run   # lihat jumlah baris dulu
+DATABASE_URL="postgresql://..." R2_ACCOUNT_ID=... ... python migrate_blobs_to_r2.py  # backfill sungguhan
+```
+
+### Validasi upload (BARU — sebelumnya sebagian besar tidak ada batas ukuran)
+
+- Format file: tetap sama seperti sebelumnya per fitur (whitelist ekstensi
+  masing-masing, tidak berubah).
+- **Ukuran maksimum** (baru, `r2_storage.py`): gambar/dokumen 10MB, video
+  tetap 50MB (batas lama, tidak berubah). Sebelum migrasi ini, HANYA video
+  yang punya batas ukuran — audit menemukan Logo/Foto Barber/Bukti
+  Reimburse/dst tidak pernah dibatasi sama sekali.
+- Nama file unik (uuid4, lihat di atas).
+- Kegagalan upload/koneksi ke R2 dilempar sebagai `r2_storage.R2Error`,
+  ditangani setiap router upload sebagai **HTTP 502** dengan pesan jelas
+  (sebelumnya: tidak relevan, BLOB-ke-database praktis tidak pernah gagal).
+
+### Bug ditemukan & diperbaiki SAAT audit migrasi ini (bukan diminta eksplisit, tapi langsung relevan)
+
+Tiga endpoint mengembalikan dict hasil `SELECT *` (dari `database.py`,
+yang harus tetap identik dengan aplikasi Desktop) APA ADANYA sebagai JSON
+— begitu barber/klaim yang disasar punya foto/bukti **sungguhan**
+tersimpan (kolom BLOB berisi bytes asli, bukan `NULL`), FastAPI **crash
+500** (`UnicodeDecodeError`) karena mencoba men-serialize bytes biner
+sebagai JSON. Bug ini SUDAH ADA sejak kolom `foto_data`/`bukti_data`
+dibuat (Tahap 16), tidak terkait R2 sama sekali — baru kelihatan sekarang
+karena migrasi ini adalah pengujian end-to-end PERTAMA dengan foto/bukti
+sungguhan pada endpoint-endpoint ini:
+- **Dashboard Owner & Dashboard Barber** (`routers/dashboard.py`) — field
+  `ringkasan["barber"]` (dari `database.get_ringkasan_barber_bulan()`).
+- **Setting > Barber** (`routers/pengaturan.py`) — list, tambah, ubah.
+- **Booking > status/urutan/foto Barber** (`routers/booking.py`).
+- **Input Data / Slip Gaji / Kasbon / Reimburse / Izin & Cuti dropdown**
+  (`routers/input_data.py`, `GET /barbers` & `GET /karyawan`).
+- **Reimburse** (`reimburse_db.py::_lengkapi()`) — kolom `bukti_data` ADA
+  LANGSUNG di baris `reimburse` itu sendiri (bukan lewat barber).
+
+**Diperbaiki** dengan membuang field biner (`foto_data`/`foto_r2_key`/
+`bukti_data`/`bukti_r2_key`) di lapisan router/API, TEPAT SEBELUM
+dikembalikan ke client — BUKAN di `database.py` (yang harus tetap
+identik dengan aplikasi Desktop). Diverifikasi frontend tidak pernah
+membaca field itu langsung (selalu lewat `*_url` yang sudah dibangun
+terpisah), jadi pembuangan ini tidak menghilangkan data apa pun yang
+sebenarnya dipakai UI.
+
+### Tidak diubah sama sekali
+
+`database.py` (termasuk `SELECT *` yang jadi akar bug di atas — TIDAK
+disentuh, sesuai aturan file ini harus identik dengan aplikasi Desktop),
+seluruh endpoint API (path, method, bentuk request/response — hanya isi
+byte yang berubah), seluruh kode frontend (`frontend/` — nol baris
+diubah), rumus komisi/bonus/absensi/gaji.
+
+### Pengujian
+
+Diuji lewat `TestClient` (backend berjalan sungguhan, database SQLite
+lokal — Cloudflare R2 sungguhan TIDAK bisa diakses dari sandbox
+pengembangan ini, koneksi TCP keluar port 443/5432/dst ke domain
+eksternal diblokir kebijakan jaringan sandbox, lihat catatan serupa di
+bagian Migrasi PostgreSQL) — jalur R2 diuji lewat **client S3 tiruan**
+(dependency-injection ke `r2_storage._client`, menyimpan objek di memory)
+untuk memverifikasi seluruh pipeline upload/baca/hapus tanpa
+menyentuh kode aslinya sama sekali:
+
+1. **Jalur R2 nonaktif (development lokal, tanpa env var R2_*)**: seluruh
+   7 endpoint upload (Logo, Hero Image, Hero Video, Foto About, Background
+   Website, Gallery, Foto Barber, QRIS, Bukti Reimburse) diuji end-to-end
+   (upload → baca → hapus) — byte-identik dengan perilaku sebelum migrasi
+   ini, tidak ada regresi.
+2. **Jalur R2 aktif (client S3 tiruan)**: seluruh 7 endpoint di atas diuji
+   ulang — file tersimpan di object store tiruan dengan prefix yang benar
+   (`logos/`, `assets/`, `barbers/`, `gallery/`, `payments/`), dibaca
+   kembali dengan isi & Content-Type benar, **file lama otomatis terhapus
+   dari R2** saat diganti (upload logo 2x → key pertama hilang dari store)
+   maupun saat data induknya dihapus (hapus klaim Reimburse → key bukti
+   ikut hilang; foto Barber lain yang tidak disentuh TETAP ada).
+3. **Validasi**: format tidak didukung ditolak `422` (file lama TIDAK
+   ikut terhapus), ukuran melebihi batas ditolak `422` dengan pesan jelas.
+4. **Kegagalan R2** (client S3 tiruan yang sengaja dibuat gagal
+   connect): endpoint upload mengembalikan `502` dengan pesan jelas,
+   bukan crash `500` mentah.
+5. **Backfill (`migrate_blobs_to_r2.py`)**: logika inti (SELECT baris
+   `r2_key IS NULL`, upload, UPDATE `r2_key`) diverifikasi terhadap baris
+   BLOB legacy yang sengaja disisipkan manual — berhasil ter-backfill,
+   `r2_key` terisi benar, DAN kolom BLOB lama **tetap utuh** (tidak
+   terhapus) setelahnya. Koneksi Postgres/Neon sungguhan tidak bisa diuji
+   dari sandbox ini (lihat catatan jaringan di atas) — script menolak
+   berjalan sama sekali kalau `DATABASE_URL` tidak mengarah ke PostgreSQL,
+   mencegah backfill tidak sengaja jalan ke SQLite lokal.
+6. **Regresi bug yang ditemukan** (lihat bagian di atas): Dashboard
+   Owner/Barber, Setting > Barber, Booking > Foto Barber, Input Data
+   dropdown, dan Reimburse semuanya diuji ULANG dengan barber/klaim yang
+   BENAR-BENAR punya foto/bukti tersimpan — seluruhnya `200`, tidak ada
+   lagi crash `500`.
+7. `python -m py_compile` untuk seluruh file backend yang disentuh/baru —
+   tidak ada syntax error.

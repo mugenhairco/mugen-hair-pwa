@@ -1,20 +1,28 @@
 """
 file_asset_db.py — Penyimpanan file biner (gambar/video) slot tunggal
 =============================================================================
-Ganti penyimpanan file lokal (backend/app/static/...) yang TERBUKTI hilang
-tiap deploy/restart di Render Free tier (tidak mendukung Persistent Disk
-sama sekali -- lihat README) -- konten file (bytes) disimpan LANGSUNG di
-database yang sudah persisten (sama seperti solusi yang sudah dipakai utk
-data transaksi/setting, migrasi ke PostgreSQL/Neon).
-
 Modul ini KHUSUS aset "slot tunggal" (satu file aktif per key, diganti
 tiap upload baru): Logo (pengaturan_identitas.py), Hero Image/Hero Video/
 Foto About/Background Website (website_content.py), QRIS (booking_db.py).
 Aset "banyak baris" (Gallery, Foto Barber, Bukti Reimburse) TIDAK lewat
-modul ini -- kolom BLOB ditambahkan LANGSUNG ke tabel masing-masing
-(website_gallery.data, barbers.foto_data, reimburse.bukti_data) di
-modulnya sendiri, supaya kepemilikan data tetap co-located dengan baris
-induknya (pola yang sudah dipakai `bukti_filename` dkk).
+modul ini -- lihat website_content.py/booking_db.py/reimburse_db.py.
+
+Migrasi Cloudflare R2 (Storage File): kalau r2_storage.IS_ENABLED (env var
+R2_* lengkap), isi file diupload ke R2 dan HANYA object key-nya yang
+disimpan di kolom `r2_key` -- kolom `data` (BLOB, historis NOT NULL) diisi
+bytes KOSONG sebagai placeholder murni supaya constraint lama tetap
+terpenuhi tanpa perlu ALTER COLUMN (yang tidak sesederhana itu di SQLite).
+Kalau R2 TIDAK dikonfigurasi (mis. development lokal), jalur BLOB-di-
+database LAMA dipakai apa adanya, byte-identik dengan sebelum migrasi R2 --
+supaya development lokal tanpa kredensial R2 tetap 100% berfungsi.
+
+Baris LAMA (sebelum migrasi R2, `r2_key IS NULL` tapi `data` berisi bytes
+sungguhan) TETAP bisa dibaca lewat ambil() -- fallback otomatis ke kolom
+`data` kalau `r2_key` kosong, sampai dibackfill manual lewat
+migrate_blobs_to_r2.py (lihat README).
+
+KEY_TO_PREFIX menentukan folder/prefix di bucket R2 untuk tiap key (lihat
+README bagian struktur bucket).
 
 Tabel baru murni milik modul ini -- init_file_asset_db() dipanggil dari
 main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA
@@ -23,7 +31,17 @@ dibuat di postgres_schema.py.
 
 from datetime import datetime
 
+import r2_storage
 from database import get_conn
+
+KEY_TO_PREFIX = {
+    "logo": "logos",
+    "hero_image": "assets",
+    "hero_video": "assets",
+    "about_foto": "assets",
+    "background_image": "assets",
+    "qris": "payments",
+}
 
 
 def init_file_asset_db():
@@ -39,41 +57,61 @@ def init_file_asset_db():
         """)
 
 
-def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: str) -> str:
+def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: str,
+           maks_ukuran_bytes: int | None = None) -> str:
     """Simpan/ganti file untuk `key` ini -- mapping = dict ekstensi->Content-Type
     (sama seperti yang sudah dipakai tiap pemanggil untuk validasi), label
-    dipakai di pesan error. Return nama file yang tersimpan (dipakai
-    pemanggil sebagai `?v=` cache-bust)."""
-    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
-    if ext not in mapping:
-        raise ValueError(f"Format {label} tidak didukung.")
-    if not konten:
-        raise ValueError(f"File {label} kosong.")
-    nama_file = f"{key}.{ext}"
-    content_type = mapping[ext]
+    dipakai di pesan error, `maks_ukuran_bytes` opsional (default None =
+    tidak ada batas, kompatibel dengan pemanggil lama yang sudah melakukan
+    validasi ukurannya sendiri, mis. Hero Video). Return nama file yang
+    tersimpan (dipakai pemanggil sebagai `?v=` cache-bust). File lama di R2
+    (kalau ada) otomatis dihapus SETELAH file baru berhasil tersimpan
+    (supaya tidak ada jeda tanpa file valid kalau upload baru gagal di
+    tengah jalan)."""
+    nama_file, content_type = r2_storage.validasi_dan_beri_nama(filename_asli, konten, mapping, label, maks_ukuran_bytes)
     now = datetime.now().isoformat(timespec="seconds")
+    r2_key_lama = ambil_r2_key(key)
+
+    if r2_storage.IS_ENABLED:
+        r2_key_baru = r2_storage.upload(KEY_TO_PREFIX.get(key, "assets"), nama_file, konten, content_type)
+        data_kolom = b""
+    else:
+        r2_key_baru = None
+        data_kolom = konten
+
     with get_conn() as conn:
         existing = conn.execute("SELECT key FROM file_asset WHERE key = ?", (key,)).fetchone()
         if existing:
             conn.execute(
-                "UPDATE file_asset SET filename = ?, content_type = ?, data = ?, updated_at = ? WHERE key = ?",
-                (nama_file, content_type, konten, now, key),
+                "UPDATE file_asset SET filename = ?, content_type = ?, data = ?, r2_key = ?, updated_at = ? WHERE key = ?",
+                (nama_file, content_type, data_kolom, r2_key_baru, now, key),
             )
         else:
             conn.execute(
-                "INSERT INTO file_asset (key, filename, content_type, data, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (key, nama_file, content_type, konten, now),
+                "INSERT INTO file_asset (key, filename, content_type, data, r2_key, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (key, nama_file, content_type, data_kolom, r2_key_baru, now),
             )
+
+    if r2_key_lama and r2_key_lama != r2_key_baru:
+        r2_storage.delete(r2_key_lama)
     return nama_file
 
 
 def ambil(key: str):
-    """Return (data: bytes, content_type: str) kalau ada, atau (None, None)."""
+    """Return (data: bytes, content_type: str) kalau ada, atau (None, None).
+    R2 diprioritaskan kalau `r2_key` terisi; kalau tidak (baris lama/R2
+    nonaktif), fallback ke kolom `data` (BLOB) seperti sebelum migrasi R2."""
     with get_conn() as conn:
-        row = conn.execute("SELECT content_type, data FROM file_asset WHERE key = ?", (key,)).fetchone()
+        row = conn.execute("SELECT content_type, data, r2_key FROM file_asset WHERE key = ?", (key,)).fetchone()
     if row is None:
         return None, None
-    return bytes(row["data"]), row["content_type"]
+    if row["r2_key"]:
+        data, content_type = r2_storage.get_bytes(row["r2_key"])
+        if data is not None:
+            return data, content_type or row["content_type"]
+    if row["data"]:
+        return bytes(row["data"]), row["content_type"]
+    return None, None
 
 
 def ambil_meta(key: str):
@@ -87,6 +125,15 @@ def ambil_meta(key: str):
     return row["filename"] if row else None
 
 
+def ambil_r2_key(key: str):
+    with get_conn() as conn:
+        row = conn.execute("SELECT r2_key FROM file_asset WHERE key = ?", (key,)).fetchone()
+    return row["r2_key"] if row else None
+
+
 def hapus(key: str):
+    r2_key = ambil_r2_key(key)
     with get_conn() as conn:
         conn.execute("DELETE FROM file_asset WHERE key = ?", (key,))
+    if r2_key:
+        r2_storage.delete(r2_key)

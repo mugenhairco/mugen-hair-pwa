@@ -480,6 +480,17 @@ CREATE TABLE IF NOT EXISTS data_non_barber (
     created_at       TEXT NOT NULL,
     updated_at       TEXT
 );
+
+-- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK
+-- menyentuh data lama) yang menyimpan OBJECT KEY R2 -- lihat r2_storage.py
+-- untuk arsitektur lengkap & r2_storage_migrasi.py untuk pasangan jalur
+-- SQLite-nya. Kolom BLOB/BYTEA lama (`data`/`foto_data`/`bukti_data`) TIDAK
+-- dihapus -- baris lama tetap bisa dibaca dari situ sampai di-backfill
+-- lewat migrate_blobs_to_r2.py (dijalankan manual, TIDAK otomatis di sini).
+ALTER TABLE file_asset ADD COLUMN IF NOT EXISTS r2_key TEXT;
+ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS r2_key TEXT;
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS foto_r2_key TEXT;
+ALTER TABLE reimburse ADD COLUMN IF NOT EXISTS bukti_r2_key TEXT;
 """
 
 

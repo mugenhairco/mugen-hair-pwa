@@ -15,6 +15,7 @@ tab browser): Nama Barbershop, Email, dan Logo."""
 
 import database as db
 import file_asset_db
+import r2_storage
 
 IDENTITAS_KEYS = [
     "nama_barbershop", "email",
@@ -45,7 +46,8 @@ def update_identitas(data: dict):
 
 
 def simpan_logo(filename_asli: str, konten: bytes) -> str:
-    return file_asset_db.simpan("logo", filename_asli, konten, EXT_KE_CONTENT_TYPE, "Logo")
+    return file_asset_db.simpan("logo", filename_asli, konten, EXT_KE_CONTENT_TYPE, "Logo",
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
 
 
 def get_logo_data():

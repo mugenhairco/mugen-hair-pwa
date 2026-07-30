@@ -20,6 +20,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
+import r2_storage
 import website_content
 from auth import require_admin
 
@@ -78,6 +79,8 @@ async def upload_hero_image(file: UploadFile = File(...), user: dict = Depends(r
         website_content.simpan_hero_image(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return website_content.get_content()
 
 
@@ -106,6 +109,8 @@ async def upload_hero_video(file: UploadFile = File(...), user: dict = Depends(r
         website_content.simpan_hero_video(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return website_content.get_content()
 
 
@@ -134,6 +139,8 @@ async def upload_about_foto(file: UploadFile = File(...), user: dict = Depends(r
         website_content.simpan_about_foto(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return website_content.get_content()
 
 
@@ -162,6 +169,8 @@ async def upload_background_image(file: UploadFile = File(...), user: dict = Dep
         website_content.simpan_background_image(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return website_content.get_content()
 
 
@@ -200,6 +209,8 @@ async def upload_gallery_foto(file: UploadFile = File(...), user: dict = Depends
         website_content.tambah_gallery_foto(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return website_content.get_gallery()
 
 

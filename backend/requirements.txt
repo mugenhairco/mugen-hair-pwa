@@ -22,6 +22,12 @@ psycopg2-binary>=2.9.9
 # Download Laporan PDF (Menu Backup) -- lihat laporan_pdf.py.
 reportlab>=4.0.0
 
+# Storage Cloudflare R2 (S3-compatible) -- dipakai r2_storage.py HANYA kalau
+# environment variable R2_* lengkap diisi (pola sama seperti psycopg2-binary
+# di atas: kalau kosong, library ini tetap terpasang tapi tidak pernah
+# dipanggil, jalur lama BLOB-di-database tetap berfungsi apa adanya).
+boto3>=1.34.0
+
 # Pembatasan Slot Jam Booking (booking_db.py, WIB = ZoneInfo("Asia/Jakarta")):
 # zoneinfo (stdlib sejak Python 3.9) butuh database IANA tzdata di sistem --
 # tidak semua image OS/container menyediakannya bawaan. Paket tzdata ini

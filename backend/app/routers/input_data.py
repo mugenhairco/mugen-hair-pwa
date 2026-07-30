@@ -50,6 +50,20 @@ class LiburBody(BaseModel):
     tanggal: str
 
 
+def _tanpa_kolom_biner(barbers: list) -> list:
+    """db.get_barbers()/db.get_karyawan() lewat SELECT * -- ikut membawa
+    kolom biner (foto_data BLOB, sejak Tahap 16) yang TIDAK bisa
+    di-serialize jadi JSON (bug laten yang ditemukan saat audit migrasi R2:
+    dropdown Input Data/Slip Gaji/Kasbon/Reimburse/Izin & Cuti/filter Rekap
+    akan crash 500 begitu ada barber yang punya foto tersimpan -- murni bug
+    pre-existing, tidak terkait R2, diperbaiki di lapisan API karena
+    database.py sendiri harus tetap identik dengan aplikasi Desktop)."""
+    for b in barbers:
+        b.pop("foto_data", None)
+        b.pop("foto_r2_key", None)
+    return barbers
+
+
 def _resolve_barber_id(user: dict, barber_id_diminta: int | None) -> int:
     """Owner boleh pilih barber_id bebas (wajib diisi). Barber dipaksa ke
     barber_id akunnya sendiri, apapun yang dikirim dari frontend."""
@@ -86,7 +100,7 @@ def barbers(user: dict = Depends(require_owner_or_staff)):
     memanggilnya juga (hanya daftar nama, bukan data sensitif). HANYA
     jabatan='barber' (lihat database.py::get_barbers()) -- Input Data
     murni transaksi jasa potong rambut, Kasir/OB/Kru tidak relevan di sini."""
-    return db.get_barbers()
+    return _tanpa_kolom_biner(db.get_barbers())
 
 
 @router.get("/karyawan")
@@ -94,7 +108,7 @@ def karyawan(user: dict = Depends(require_owner_or_staff)):
     """Untuk dropdown yang harus menampilkan SEMUA karyawan (Barber +
     Kasir/OB/Kru) -- Slip Gaji, Kasbon, Reimburse, Izin & Cuti, filter
     Rekap Transaksi. BEDA dari /barbers di atas yang khusus jabatan='barber'."""
-    return db.get_karyawan()
+    return _tanpa_kolom_biner(db.get_karyawan())
 
 
 @router.post("/preview")

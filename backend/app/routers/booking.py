@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 import booking_db
 import database as db
+import r2_storage
 from auth import require_owner_or_staff, require_barber
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
@@ -277,6 +278,8 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
         booking_db.simpan_qris(file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
     return booking_db.get_payment_settings()
 
 
@@ -324,13 +327,30 @@ class BarberUrutanBody(BaseModel):
     urutan: int
 
 
+def _barber_publik(barber_id: int):
+    """db.get_barber() lewat SELECT * -- ikut membawa kolom biner
+    (foto_data BLOB, sejak Tahap 16) yang TIDAK bisa di-serialize jadi JSON
+    (bug laten yang ditemukan saat audit migrasi R2 ini: endpoint di bawah
+    akan crash 500 begitu barber yang disasar punya foto tersimpan -- murni
+    bug pre-existing, tidak terkait R2, tapi jadi kelihatan sekarang karena
+    baru diuji end-to-end dengan foto sungguhan). Field biner/internal
+    dibuang di sini SEBELUM dikembalikan ke client -- frontend sudah selalu
+    memakai `foto_url` (dari /api/public/booking/barbers), tidak pernah
+    membaca foto_data/foto_r2_key langsung dari respons endpoint ini."""
+    barber = db.get_barber(barber_id)
+    if barber:
+        barber.pop("foto_data", None)
+        barber.pop("foto_r2_key", None)
+    return barber
+
+
 @router.put("/barber/{barber_id}/status")
 def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_owner_or_staff)):
     try:
         booking_db.set_status_booking_barber(barber_id, body.status_booking)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(barber_id)
+    return _barber_publik(barber_id)
 
 
 @router.put("/barber/{barber_id}/urutan")
@@ -339,7 +359,7 @@ def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depe
         booking_db.set_urutan_barber(barber_id, body.urutan)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(barber_id)
+    return _barber_publik(barber_id)
 
 
 @router.post("/barber/{barber_id}/foto")
@@ -349,7 +369,9 @@ async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user:
         booking_db.simpan_foto_barber(barber_id, file.filename, konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(barber_id)
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return _barber_publik(barber_id)
 
 
 @router.delete("/barber/{barber_id}/foto")
@@ -358,7 +380,7 @@ def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_owne
         booking_db.hapus_foto_barber(barber_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return db.get_barber(barber_id)
+    return _barber_publik(barber_id)
 
 
 # ---- SERVICE: urutan (field TAMBAHAN modul Booking; nama/harga/durasi/dst

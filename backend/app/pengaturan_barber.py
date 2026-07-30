@@ -12,6 +12,7 @@ menambah dua hal yang belum ada di database.py:
    hanya mengandalkan UNIQUE constraint di level SQLite untuk itu).
 """
 
+import r2_storage
 from db_compat import IntegrityError
 import database as db
 from database import get_conn
@@ -56,15 +57,19 @@ def barber_sudah_dipakai(barber_id: int) -> bool:
 
 
 def hapus_barber(barber_id: int):
-    if db.get_barber(barber_id) is None:
+    barber = db.get_barber(barber_id)
+    if barber is None:
         raise ValueError("Barber tidak ditemukan.")
     if barber_sudah_dipakai(barber_id):
         raise ValueError(
             "Barber ini sudah memiliki riwayat transaksi/absensi dan tidak dapat "
             "dihapus. Silakan gunakan fitur Nonaktifkan Barber."
         )
+    r2_key = barber.get("foto_r2_key")
     with get_conn() as conn:
         conn.execute("DELETE FROM barbers WHERE id = ?", (barber_id,))
+    if r2_key:
+        r2_storage.delete(r2_key)
 
 
 def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
