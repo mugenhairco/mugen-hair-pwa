@@ -42,6 +42,10 @@ __pycache__/
 .venv/
 venv/
 
+# android-app/ (proyek Capacitor) — node_modules dibuat ulang via `npm install`
+# (lihat android-app/README.md), .gradle/build sudah di-cover android-app/android/.gitignore
+node_modules/
+
 # Editor
 .vscode/
 .idea/

@@ -1,0 +1,22 @@
+{
+  "appId": "com.mugenhairco.app",
+  "appName": "MUGEN Hair Co.",
+  "webDir": "www",
+  "server": {
+    "url": "https://mugen-hair-co.onrender.com",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#F5F7FAFF",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    }
+  }
+}

@@ -102,14 +102,32 @@ _INSTANCE_ID = uuid.uuid4().hex[:12]
 _BOOT_TIME = datetime.now(timezone.utc)
 
 # CORS: daftar origin frontend yang boleh memanggil API ini, dipisah koma di
-# environment variable ALLOWED_ORIGINS (diisi saat deploy).
-# Default di bawah ini untuk development lokal supaya tidak perlu setting apapun dulu.
-_default_origins = "http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000,http://localhost:8000"
+# environment variable ALLOWED_ORIGINS (diisi saat deploy) -- TETAP cara
+# utama untuk domain custom (mis. domain sendiri, bukan onrender.com).
+# BUGFIX: default sebelumnya HANYA localhost -- kalau ALLOWED_ORIGINS lupa
+# diisi/salah isi di dashboard hosting (persis yang terjadi -- frontend
+# production sempat ditolak CORS), permintaan dari frontend production
+# ditolak total. Sekarang default sudah menyertakan origin frontend
+# production yang diketahui SEBAGAI CADANGAN (bukan pengganti env var,
+# tetap override lewat ALLOWED_ORIGINS kalau perlu domain lain), DITAMBAH
+# allow_origin_regex yang mengizinkan subdomain *.onrender.com mana pun --
+# jadi tidak rapuh lagi terhadap slug Render yang berubah/beda dari yang
+# diperkirakan (mis. "mugen-hair-co" vs "mugenhairco"). Aman diperlonggar
+# sebatas *.onrender.com (platform hosting sendiri, bukan domain acak)
+# karena autentikasi aplikasi ini murni header "Authorization: Bearer
+# <token>" yang disisipkan manual oleh JS (lihat frontend/js/api.js) --
+# BUKAN cookie -- jadi allow_credentials=True di sini tidak membuka celah
+# pencurian sesi lintas origin seperti kalau aplikasi memakai cookie.
+_default_origins = (
+    "http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000,http://localhost:8000,"
+    "https://mugen-hair-co.onrender.com,https://mugenhairco.onrender.com"
+)
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
