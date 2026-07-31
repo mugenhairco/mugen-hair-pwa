@@ -62,6 +62,7 @@ from r2_storage_migrasi import migrasi_r2_storage
 import tenant_migrasi
 from tenant_migrasi import migrasi_tenant
 import tenant_db
+from tenant_middleware import TenantResolutionMiddleware
 import booking_db
 import website_content
 import file_asset_db
@@ -138,6 +139,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# FONDASI Multi-Tenant Phase 2.0: resolusi tenant per-request di SATU
+# tempat (lihat tenant_middleware.py) -- request.state.requested_tenant_slug
+# dipakai auth.resolve_tenant_publik()/resolve_tenant_hibrid() dan
+# routers/auth_router.py::login() sebagai sumber slug SELAIN query string
+# `?tenant=` (yang tetap prioritas utama, perilaku Phase 1 tidak berubah).
+app.add_middleware(TenantResolutionMiddleware)
 
 
 @app.middleware("http")

@@ -16,7 +16,7 @@ karena get_current_user selalu re-check ke database, bukan cuma percaya isi toke
 
 import os
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -112,7 +112,7 @@ def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-def resolve_tenant_hibrid(credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+def resolve_tenant_hibrid(request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer),
                            tenant: str | None = None) -> int:
     """Dipakai endpoint yang PUBLIC tapi JUGA dipanggil dari sisi SUDAH LOGIN
     lewat endpoint yang SAMA PERSIS -- mis. GET /pengaturan/identitas,
@@ -137,10 +137,10 @@ def resolve_tenant_hibrid(credentials: HTTPAuthorizationCredentials = Depends(_b
                 return user["tenant_id"]
         except HTTPException:
             pass
-    return resolve_tenant_publik(tenant)
+    return resolve_tenant_publik(request, tenant)
 
 
-def resolve_tenant_publik(tenant: str | None = None) -> int:
+def resolve_tenant_publik(request: Request, tenant: str | None = None) -> int:
     """FONDASI Multi-Tenant Phase 1: dependency resolusi tenant untuk SELURUH
     endpoint PUBLIC (tanpa sesi login -- halaman Login/booking /book) yang
     perlu tahu tenant mana yang aktif. Lihat tenant_db.cari_tenant_publik()
@@ -149,9 +149,18 @@ def resolve_tenant_publik(tenant: str | None = None) -> int:
     eksplisit di luar cakupan Phase 1) dipilih. Query string kosong =
     tenant default, SATU-SATUNYA tenant yang ada di deployment single-tenant
     SEKARANG -- frontend yang belum dimodifikasi TIDAK PERNAH mengirim
-    parameter ini, jadi perilakunya 100% sama seperti sebelum Phase 1."""
+    parameter ini, jadi perilakunya 100% sama seperti sebelum Phase 1.
+
+    FONDASI Multi-Tenant Phase 2.0: kalau `tenant` (query string, prioritas
+    utama -- tidak berubah) kosong, fallback ke
+    `request.state.requested_tenant_slug` yang sudah di-resolve
+    TenantResolutionMiddleware dari header `X-Tenant-Slug` atau subdomain
+    (lihat tenant_middleware.py) -- deployment yang belum memakai keduanya
+    (mis. sekarang, di *.onrender.com) selalu dapat None dari situ, jadi
+    perilakunya tetap identik sebelum Phase 2.0."""
     import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
-    t = tenant_db.cari_tenant_publik(tenant)
+    slug = tenant or getattr(request.state, "requested_tenant_slug", None)
+    t = tenant_db.cari_tenant_publik(slug)
     if t is None or t["status"] != "aktif":
         raise HTTPException(status_code=404, detail="Barbershop tidak ditemukan.")
     return t["id"]

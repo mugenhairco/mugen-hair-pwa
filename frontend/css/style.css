@@ -775,6 +775,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 .login-error { color: var(--danger); font-size: 13px; margin-top: 10px; }
 
+/* FONDASI Multi-Tenant Phase 2.0: pemilih toko -- hanya muncul kalau
+   username+password yang dimasukkan ternyata terdaftar di lebih dari satu
+   toko (lihat js/pages/login.js). */
+.login-tenant-picker { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.login-tenant-picker-label { font-size: 13px; color: var(--text-dim); }
+.login-tenant-option { width: 100%; min-height: 40px; text-align: left; }
+
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 .actions-cell button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; box-shadow: none; border-radius: 10px; }
 

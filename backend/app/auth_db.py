@@ -179,7 +179,7 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None, 
         return cur.lastrowid
 
 
-def get_user_by_username(username: str):
+def get_user_by_username(username: str, tenant_id: int = None):
     """BUGFIX (login 'kadang' gagal dengan kredensial benar): pencocokan
     username sekarang case-INSENSITIVE. Sebelumnya exact match case-sensitive
     -- kalau keyboard HP user kebetulan meng-kapitalkan huruf pertama
@@ -192,16 +192,40 @@ def get_user_by_username(username: str):
     (username = ?) DESC` memprioritaskan exact match kalau kebetulan ada dua
     username yang hanya beda huruf besar/kecil (username tetap disimpan
     case-sensitive & unique persis seperti diketik saat dibuat -- ini HANYA
-    mengubah cara mencari/mencocokkan saat login)."""
+    mengubah cara mencari/mencocokkan saat login).
+
+    FONDASI Multi-Tenant Phase 2.0: `tenant_id` opsional -- diisi untuk
+    login dengan slug tenant eksplisit (pencarian di-scope KETAT ke tenant
+    itu saja, lihat routers/auth_router.py). None (default) = perilaku
+    LAMA, cari lintas tenant -- masih dipakai jalur darurat/bootstrap yang
+    memang belum tahu tenant_id (lihat reset_atau_buat_admin_darurat())."""
     with get_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM users
-               WHERE LOWER(username) = LOWER(?) AND aktif = 1
-               ORDER BY (username = ?) DESC
-               LIMIT 1""",
-            (username, username),
-        ).fetchone()
+        q = "SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND aktif = 1"
+        params = [username]
+        if tenant_id is not None:
+            q += " AND tenant_id = ?"
+            params.append(tenant_id)
+        q += " ORDER BY (username = ?) DESC LIMIT 1"
+        params.append(username)
+        row = conn.execute(q, params).fetchone()
         return dict(row) if row else None
+
+
+def cari_kandidat_login(username: str) -> list:
+    """FONDASI Multi-Tenant Phase 2.0: SEMUA user aktif (lintas tenant)
+    yang username-nya cocok (case-insensitive) -- dipakai login TANPA slug
+    tenant eksplisit (lihat autentikasi() di bawah) untuk mendeteksi
+    ambiguitas. Dua tenant BERBEDA boleh punya username yang sama persis
+    (lihat UNIQUE(tenant_id, username) di init_auth_db()/postgres_schema.py,
+    berubah dari UNIQUE(username) global sejak Phase 1) -- hasil fungsi ini
+    NORMALNYA 0 atau 1 baris, >1 baris HANYA terjadi kalau memang ada
+    tenant lain yang kebetulan memakai username yang sama."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND aktif = 1",
+            (username,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_user(user_id: int):
@@ -327,13 +351,41 @@ def reset_atau_buat_admin_darurat(username: str, password: str) -> str:
         return "direset"
 
 
-def autentikasi(username: str, password: str):
-    """Return dict user (tanpa password_hash) kalau username+password benar, None kalau salah."""
-    user = get_user_by_username(username)
-    if user is None:
+def autentikasi(username: str, password: str, tenant_id: int = None):
+    """Return dict user (tanpa password_hash) kalau username+password benar
+    untuk TEPAT SATU tenant, None kalau salah/tidak ditemukan.
+
+    FONDASI Multi-Tenant Phase 2.0: `tenant_id` opsional.
+    - Diisi (login dengan slug tenant eksplisit dari form Login): pencarian
+      di-scope KETAT ke tenant itu saja lewat get_user_by_username().
+    - None (default, login TANPA slug -- kasus paling umum, termasuk 100%
+      instalasi yang cuma punya satu tenant): cari SEMUA kandidat lintas
+      tenant lewat cari_kandidat_login(), lalu verifikasi password
+      terhadap SETIAP kandidat (bukan cuma yang pertama ketemu seperti
+      Phase 1). Kalau TEPAT SATU yang password-nya cocok, login berhasil
+      seperti biasa. Kalau LEBIH DARI SATU yang password-nya SAMA-SAMA
+      cocok (dua tenant BERBEDA kebetulan pakai username+password
+      identik -- sangat jarang, tapi constraint database mengizinkan ini
+      terjadi), return LIST kandidat (bukan dict/None) sebagai sinyal
+      "ambigu, minta pengguna pilih tenant" ke pemanggil (lihat
+      routers/auth_router.py::login()) -- PENTING: ambiguitas ini HANYA
+      pernah terungkap ke pemanggil yang SUDAH membuktikan tahu password
+      yang benar untuk kandidat-kandidat itu; percobaan dengan password
+      salah tetap dapat None biasa, tidak pernah membocorkan bahwa ada
+      lebih dari satu tenant dengan username itu."""
+    if tenant_id is not None:
+        user = get_user_by_username(username, tenant_id=tenant_id)
+        if user is None or not verify_password(password, user["password_hash"]):
+            return None
+        user = dict(user)
+        user.pop("password_hash")
+        return user
+
+    cocok = [u for u in cari_kandidat_login(username) if verify_password(password, u["password_hash"])]
+    if not cocok:
         return None
-    if not verify_password(password, user["password_hash"]):
-        return None
-    user = dict(user)
+    if len(cocok) > 1:
+        return cocok
+    user = dict(cocok[0])
     user.pop("password_hash")
     return user

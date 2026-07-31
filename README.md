@@ -2506,6 +2506,7 @@ lokal, sudah ada nilai default yang aman):
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
 | `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` (+ otomatis mengizinkan seluruh subdomain `*.onrender.com`, lihat kode) |
+| `TENANT_SUBDOMAIN_BASE_DOMAIN` | FONDASI Multi-Tenant Phase 2.0: domain dasar untuk resolusi tenant lewat SUBDOMAIN (mis. diisi `mugenhair.app` supaya `toko-a.mugenhair.app` otomatis ter-resolve ke tenant slug `toko-a`, lihat `tenant_middleware.py`) | kosong (subdomain resolution MATI TOTAL -- tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) |
 | `DATABASE_URL` | Connection string PostgreSQL (Neon/dsb) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
 | `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
