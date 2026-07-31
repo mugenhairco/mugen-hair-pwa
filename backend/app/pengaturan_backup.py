@@ -55,14 +55,11 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "backups")
 
 # Tabel yang punya kolom tenant_id LANGSUNG (sama persis daftar
-# tenant_migrasi.py::_TABEL_TENANT_LANGSUNG, kecuali pengeluaran/produk/
-# pemasukan/kas_* yang TIDAK diikutkan di sini -- backup ini sengaja
-# mencakup HANYA data inti operasional barbershop sejak Tahap 10, belum
-# diperluas ke seluruh modul Karyawan/Keuangan yang lahir belakangan;
-# lihat technical debt di laporan hardening Phase 1.1).
+# tenant_migrasi.py::_TABEL_TENANT_LANGSUNG).
 POSTGRES_BACKUP_TABEL_LANGSUNG = [
     "barbers", "services", "produk", "pengeluaran", "users",
     "bookings", "closed_slot", "toko_libur",
+    "pemasukan", "kas_saldo_awal", "kas_penyesuaian",
 ]
 
 # Tabel yang TIDAK punya kolom tenant_id sendiri (di-scope TRANSITIF lewat
@@ -77,7 +74,25 @@ POSTGRES_BACKUP_TABEL_TRANSITIF = {
     "absensi_libur": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
     "produk_mutasi": "JOIN produk p ON p.id = t.produk_id WHERE p.tenant_id = ?",
     "booking_items": "JOIN bookings bk ON bk.id = t.booking_id WHERE bk.tenant_id = ?",
+    # FONDASI Multi-Tenant Phase 1.1 -- modul Karyawan (barber_id NOT NULL,
+    # scoping transitif SAMA PERSIS pola kasbon_db.py/reimburse_db.py/dst).
+    "slip_gaji": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
+    "kasbon": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
+    "kasbon_pembayaran": ("JOIN kasbon k ON k.id = t.kasbon_id "
+                          "JOIN barbers b ON b.id = k.barber_id WHERE b.tenant_id = ?"),
+    "komisi_penyesuaian": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
+    "reimburse": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
+    "izin_cuti": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
+    "data_non_barber": "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?",
 }
+
+# Tabel yang kolom `id`-nya BUKAN sequence auto-increment (SERIAL) -- lihat
+# uang_kas_db.py: kas_saldo_awal memakai konvensi "id = tenant_id"
+# (INTEGER PRIMARY KEY biasa). setval(pg_get_serial_sequence(...)) TIDAK
+# berlaku untuk tabel ini -- dilewati secara eksplisit saat import (lihat
+# import_database_postgres()), bukan mengandalkan perilaku implisit
+# pg_get_serial_sequence() mengembalikan NULL untuk kolom non-serial.
+_TABEL_TANPA_SERIAL_ID = {"kas_saldo_awal"}
 
 # Urutan SISIPKAN saat import (induk dulu, FK-safe) -- urutan hapus (anak
 # dulu) yang sesungguhnya dijalankan ada di _hapus_scoped() di bawah
@@ -89,6 +104,13 @@ _URUTAN_SISIP = [
     "absensi_libur", "transaksi", "transaksi_detail",
     "produk", "produk_mutasi",
     "toko_libur", "bookings", "closed_slot", "booking_items",
+    # FONDASI Multi-Tenant Phase 1.1 -- technical debt Phase 1.1 ditutup:
+    # modul Karyawan/Keuangan yang lahir SETELAH Tahap 10 (dulu tidak
+    # ikut ter-backup sama sekali) sekarang ikut. slip_gaji & kasbon
+    # WAJIB sebelum kasbon_pembayaran (FK ke keduanya).
+    "pemasukan", "kas_saldo_awal", "kas_penyesuaian",
+    "slip_gaji", "kasbon", "kasbon_pembayaran",
+    "komisi_penyesuaian", "reimburse", "izin_cuti", "data_non_barber",
 ]
 
 POSTGRES_BACKUP_FORMAT = "mugen-postgres-backup-v2"
@@ -221,7 +243,7 @@ def import_database_postgres(konten: bytes, tenant_id: int) -> str:
                         f"INSERT INTO {t} ({daftar_kolom}) VALUES ({placeholder})",
                         tuple(r[k] for k in kolom),
                     )
-                if "id" in (baris[0].keys() if baris else []):
+                if "id" in (baris[0].keys() if baris else []) and t not in _TABEL_TANPA_SERIAL_ID:
                     conn.execute(
                         f"SELECT setval(pg_get_serial_sequence('{t}', 'id'), "
                         f"COALESCE((SELECT MAX(id) FROM {t}), 1), true)"
@@ -248,6 +270,41 @@ def _hapus_scoped(conn, tenant_id: int):
     lalu baris tabel LANGSUNG -- dipisah dari import_database_postgres()
     murni supaya sintaks DELETE...USING per tabel (beda-beda join-nya)
     tetap mudah dibaca, bukan di-generate string manipulation."""
+    # FONDASI Multi-Tenant Phase 1.1 -- modul Karyawan/Keuangan (technical
+    # debt Phase 1.1 ditutup di sini). kasbon_pembayaran WAJIB dihapus
+    # SEBELUM kasbon/slip_gaji (FK ke keduanya).
+    conn.execute("""
+        DELETE FROM kasbon_pembayaran WHERE kasbon_id IN (
+            SELECT k.id FROM kasbon k JOIN barbers b ON b.id = k.barber_id WHERE b.tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM kasbon WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM slip_gaji WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM komisi_penyesuaian WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM reimburse WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM izin_cuti WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("""
+        DELETE FROM data_non_barber WHERE barber_id IN (
+            SELECT id FROM barbers WHERE tenant_id = ?)
+    """, (tenant_id,))
+    conn.execute("DELETE FROM pemasukan WHERE tenant_id = ?", (tenant_id,))
+    conn.execute("DELETE FROM kas_penyesuaian WHERE tenant_id = ?", (tenant_id,))
+    conn.execute("DELETE FROM kas_saldo_awal WHERE tenant_id = ?", (tenant_id,))
+
     conn.execute("""
         DELETE FROM booking_items WHERE booking_id IN (
             SELECT id FROM bookings WHERE tenant_id = ?)
