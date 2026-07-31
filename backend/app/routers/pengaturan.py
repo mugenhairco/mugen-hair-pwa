@@ -580,16 +580,32 @@ def _cek_izin_backup(user: dict, key: str, aksi: str):
             raise HTTPException(status_code=403, detail=f"Admin tidak punya izin untuk {aksi} database.")
 
 
+def _tolak_backup_sqlite_multi_tenant():
+    """FONDASI Multi-Tenant Phase 1.1: jalur SQLite meng-copy FILE UTUH
+    (tidak ada cara mem-filter sebagian baris), jadi HANYA aman kalau
+    instalasi ini benar-benar cuma punya satu tenant -- lihat penjelasan
+    lengkap di docstring pengaturan_backup.py."""
+    if pengaturan_backup.sqlite_punya_lebih_dari_satu_tenant():
+        raise HTTPException(
+            status_code=409,
+            detail="Export/Import Database (file .db utuh) tidak tersedia karena instalasi ini "
+                   "sudah punya lebih dari satu toko (tenant) -- file .db tidak bisa difilter per "
+                   "toko. Hubungi penyedia layanan untuk migrasi ke PostgreSQL, yang mendukung "
+                   "Export/Import per toko.",
+        )
+
+
 @router.get("/backup/export")
 def export_database(user: dict = Depends(require_owner_or_staff)):
     _cek_izin_backup(user, "izin_backup_export", "export")
     if db_compat.IS_POSTGRES:
-        konten = pengaturan_backup.export_database_postgres()
+        konten = pengaturan_backup.export_database_postgres(user["tenant_id"])
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         return Response(
             content=konten, media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="mugen_hair_backup_{stamp}.json"'},
         )
+    _tolak_backup_sqlite_multi_tenant()
     return FileResponse(db.DB_PATH, media_type="application/octet-stream",
                          filename="mugen_hair_backup.db")
 
@@ -600,8 +616,9 @@ async def import_database(file: UploadFile = File(...), user: dict = Depends(req
     konten = await file.read()
     try:
         if db_compat.IS_POSTGRES:
-            backup_path = pengaturan_backup.import_database_postgres(konten)
+            backup_path = pengaturan_backup.import_database_postgres(konten, user["tenant_id"])
         else:
+            _tolak_backup_sqlite_multi_tenant()
             backup_path = pengaturan_backup.import_database(konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
