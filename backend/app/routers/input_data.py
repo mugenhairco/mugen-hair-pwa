@@ -133,7 +133,7 @@ def karyawan(user: dict = Depends(require_owner_or_staff)):
 
 @router.post("/preview")
 def preview(body: PreviewBody, user: dict = Depends(require_owner_or_staff)):
-    return db.hitung_preview_items([it.model_dump() for it in body.items])
+    return db.hitung_preview_items([it.model_dump() for it in body.items], tenant_id=user["tenant_id"])
 
 
 @router.get("/transaksi")

@@ -470,7 +470,7 @@ def hapus_service(service_id: int):
 # PERHITUNGAN KOMISI (per transaksi)
 # ---------------------------------------------------------------------------
 
-def hitung_komisi_service(harga: int, modal: int = 0) -> float:
+def hitung_komisi_service(harga: int, modal: int = 0, tenant_id=None) -> float:
     """
     REVISI Struktur Setting: Komisi = (Harga - Harga Modal) x Persentase Komisi.
     `modal` datang dari Harga Modal per-service (Setting > Layanan, kolom
@@ -480,8 +480,16 @@ def hitung_komisi_service(harga: int, modal: int = 0) -> float:
     Potongan Modal Chemical global) -- lihat revisi_setting_migrasi.py untuk
     migrasi yang menjaga nominal komisi service yang sudah berjalan TIDAK
     berubah akibat pergantian skema ini.
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional -- persentase_komisi
+    adalah setting PER TOKO (lihat _setting_float/_kunci_tenant), jadi tanpa
+    ini fungsi selalu membaca persentase_komisi milik tenant DEFAULT
+    (tenant_id=None) apa pun tenant transaksi/preview yang sedang dihitung.
+    BUG Phase 1 yang diperbaiki di sini: komisi tenant lain sebelumnya
+    memakai persentase komisi tenant default, bukan persentase tenant itu
+    sendiri, begitu Owner tenant lain mengubah persentase_komisi miliknya.
     """
-    persentase = _setting_float("persentase_komisi") / 100.0
+    persentase = _setting_float("persentase_komisi", tenant_id=tenant_id) / 100.0
     dasar = max(0, harga - modal)
     return round(dasar * persentase)
 
@@ -595,6 +603,26 @@ def _peta_modal_service(conn) -> dict:
     return {r["id"]: (r["modal"] or 0) for r in conn.execute("SELECT id, modal FROM services").fetchall()}
 
 
+def _tenant_id_barber(conn, barber_id) -> int | None:
+    """FONDASI Multi-Tenant Phase 1.1: tenant pemilik satu barber (untuk
+    diteruskan ke hitung_komisi_service, lihat _lengkapi_transaksi)."""
+    if barber_id is None:
+        return None
+    row = conn.execute("SELECT tenant_id FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    return row["tenant_id"] if row else None
+
+
+def _peta_tenant_barber(conn, barber_ids) -> dict:
+    """Versi batch dari _tenant_id_barber() -- {barber_id: tenant_id} SEKALI
+    ambil, dipakai _lengkapi_transaksi_batch supaya tidak query per header."""
+    ids = sorted({bid for bid in barber_ids if bid is not None})
+    if not ids:
+        return {}
+    placeholder = ", ".join("?" for _ in ids)
+    rows = conn.execute(f"SELECT id, tenant_id FROM barbers WHERE id IN ({placeholder})", ids).fetchall()
+    return {r["id"]: r["tenant_id"] for r in rows}
+
+
 def _lengkapi_transaksi(conn, header: dict) -> dict:
     """Tambahkan daftar item + total (harga, komisi) yang dihitung dari transaksi_detail
     ke satu dict header transaksi. Dipakai oleh get_transaksi & get_transaksi_list."""
@@ -602,11 +630,13 @@ def _lengkapi_transaksi(conn, header: dict) -> dict:
         "SELECT * FROM transaksi_detail WHERE transaksi_id = ? ORDER BY id", (header["id"],)
     ).fetchall()]
     modal_map = _peta_modal_service(conn)
+    tenant_id = _tenant_id_barber(conn, header.get("barber_id"))
     header["items"] = items
     header["jumlah_item"] = sum(it["jumlah"] for it in items)
     header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
     header["total_komisi"] = sum(
-        hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0)) * it["jumlah"] for it in items
+        hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0), tenant_id=tenant_id) * it["jumlah"]
+        for it in items
     )
     header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
     return header
@@ -637,13 +667,16 @@ def _lengkapi_transaksi_batch(conn, headers: list) -> list:
             detail_per_transaksi[r["transaksi_id"]].append(dict(r))
 
     modal_map = _peta_modal_service(conn)  # SATU query untuk seluruh batch (bukan per transaksi)
+    tenant_map = _peta_tenant_barber(conn, (h.get("barber_id") for h in headers))
     for header in headers:
         items = detail_per_transaksi.get(header["id"], [])
+        tenant_id = tenant_map.get(header.get("barber_id"))
         header["items"] = items
         header["jumlah_item"] = sum(it["jumlah"] for it in items)
         header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
         header["total_komisi"] = sum(
-            hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0)) * it["jumlah"] for it in items
+            hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0), tenant_id=tenant_id) * it["jumlah"]
+            for it in items
         )
         header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
     return headers
@@ -697,10 +730,16 @@ def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = No
         return _lengkapi_transaksi_batch(conn, headers)
 
 
-def hitung_preview_items(items: list) -> dict:
+def hitung_preview_items(items: list, tenant_id=None) -> dict:
     """Dipakai oleh Input Data untuk menampilkan pratinjau total harga & komisi
     SEBELUM disimpan, tanpa UI menghitung apa pun sendiri.
-    `items` = list of {'service_id': int, 'jumlah': int}."""
+    `items` = list of {'service_id': int, 'jumlah': int}.
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional -- endpoint ber-login
+    (routers/input_data.py) WAJIB mengisi user["tenant_id"] supaya (1) service
+    milik tenant lain tidak ikut dihitung (walau service_id ditebak/dikirim
+    manual) dan (2) hitung_komisi_service memakai persentase_komisi milik
+    tenant yang benar, bukan tenant default."""
     valid_items = _bersihkan_items(items)
     rincian = []
     total_harga = 0
@@ -710,8 +749,10 @@ def hitung_preview_items(items: list) -> dict:
             service = conn.execute("SELECT * FROM services WHERE id = ?", (it["service_id"],)).fetchone()
             if service is None:
                 continue
+            if tenant_id is not None and service["tenant_id"] != tenant_id:
+                continue
             jumlah = it["jumlah"]
-            komisi_satuan = hitung_komisi_service(service["harga"], service["modal"] or 0)
+            komisi_satuan = hitung_komisi_service(service["harga"], service["modal"] or 0, tenant_id=tenant_id)
             subtotal = service["harga"] * jumlah
             komisi = komisi_satuan * jumlah
             total_harga += subtotal
