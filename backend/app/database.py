@@ -243,70 +243,107 @@ def init_db():
 # SETTINGS
 # ---------------------------------------------------------------------------
 
-def get_setting(key: str, default=None):
+def _kunci_tenant(tenant_id, key: str) -> str:
+    """FONDASI Multi-Tenant Phase 1: `settings`/`file_asset` TIDAK mendapat
+    kolom `tenant_id` baru (keduanya pakai `key TEXT PRIMARY KEY`, mengubah
+    PRIMARY KEY di SQLite butuh membangun ulang tabel -- terlalu berisiko
+    untuk tabel yang paling sering dibaca-tulis di aplikasi ini). Isolasi
+    tenant dilakukan dengan menyisipkan tenant_id KE DALAM string key itu
+    sendiri (mis. "1:persentase_komisi"), murni di lapisan Python.
+    tenant_id=None mengembalikan key APA ADANYA (perilaku LAMA, sebelum
+    Phase 1) -- lihat tenant_migrasi.py::_migrasi_prefix_settings() untuk
+    migrasi satu-kali yang menyalin baris polos yang SUDAH ADA ke bentuk
+    ber-prefix tenant default (bukan reset ke nilai pabrik)."""
+    return f"{tenant_id}:{key}" if tenant_id is not None else key
+
+
+def get_setting(key: str, default=None, tenant_id=None):
     with get_conn() as conn:
-        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (_kunci_tenant(tenant_id, key),)).fetchone()
         return row["value"] if row else default
 
 
-def get_all_settings() -> dict:
+def get_all_settings(tenant_id=None) -> dict:
+    """tenant_id diisi: hanya setting milik tenant itu (prefix dibuang dari
+    key hasil). tenant_id=None: SEMUA baris apa adanya termasuk prefiknya --
+    HANYA untuk kode lama/migrasi, endpoint API ber-login WAJIB mengisi
+    tenant_id (lihat catatan _kunci_tenant())."""
     with get_conn() as conn:
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    if tenant_id is None:
         return {r["key"]: r["value"] for r in rows}
+    prefix = f"{tenant_id}:"
+    return {r["key"][len(prefix):]: r["value"] for r in rows if r["key"].startswith(prefix)}
 
 
-def set_setting(key: str, value):
+def set_setting(key: str, value, tenant_id=None):
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, str(value)),
+            (_kunci_tenant(tenant_id, key), str(value)),
         )
 
 
-def set_settings_bulk(data: dict):
+def set_settings_bulk(data: dict, tenant_id=None):
     """Update banyak setting sekaligus (dipakai oleh halaman Setting saat SIMPAN)."""
     with get_conn() as conn:
         for key, value in data.items():
             conn.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                (key, str(value)),
+                (_kunci_tenant(tenant_id, key), str(value)),
             )
 
 
-def _setting_float(key: str) -> float:
-    return float(get_setting(key, "0"))
+def _setting_float(key: str, tenant_id=None) -> float:
+    return float(get_setting(key, "0", tenant_id=tenant_id))
 
 
 # ---------------------------------------------------------------------------
 # BARBERS
 # ---------------------------------------------------------------------------
 
-def get_barbers(hanya_aktif=True):
+def get_barbers(hanya_aktif=True, tenant_id=None):
     """HANYA baris jabatan='barber' -- Input Data, Dashboard, Rekap Bulanan,
     dan Booking publik semuanya lewat fungsi ini, jadi Karyawan non-barber
     (Kasir/OB/Kru) otomatis TIDAK PERNAH muncul di sini tanpa perlu guard
     tambahan di masing-masing pemanggil. Untuk daftar SEMUA karyawan
-    (termasuk non-barber), lihat get_karyawan() di bawah."""
+    (termasuk non-barber), lihat get_karyawan() di bawah.
+
+    FONDASI Multi-Tenant Phase 1: `tenant_id` opsional (default None = tidak
+    difilter, dipakai booking_db.public_barbers() yang sudah menyaring
+    tenant di query TERPISAH -- lihat catatan di sana) supaya SATU baris
+    WHERE tambahan ini TIDAK mengubah rumus/urutan hasil sama sekali,
+    murni menyaring baris. Endpoint API ber-login WAJIB mengisi ini."""
     with get_conn() as conn:
         q = "SELECT * FROM barbers WHERE jabatan = 'barber'"
+        params = []
         if hanya_aktif:
             q += " AND aktif = 1"
+        if tenant_id is not None:
+            q += " AND tenant_id = ?"; params.append(tenant_id)
         q += " ORDER BY nama"
-        return [dict(r) for r in conn.execute(q).fetchall()]
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
-def get_karyawan(hanya_aktif=True):
+def get_karyawan(hanya_aktif=True, tenant_id=None):
     """SEMUA karyawan (barber + Kasir/OB/Kru), tanpa filter jabatan --
     dipakai modul yang harus menampilkan seluruh karyawan (Slip Gaji,
-    Kasbon, Reimburse, Izin & Cuti, filter Rekap Transaksi)."""
+    Kasbon, Reimburse, Izin & Cuti, filter Rekap Transaksi).
+    `tenant_id`: lihat catatan di get_barbers()."""
     with get_conn() as conn:
-        q = "SELECT * FROM barbers"
+        klausa = []
+        params = []
         if hanya_aktif:
-            q += " WHERE aktif = 1"
+            klausa.append("aktif = 1")
+        if tenant_id is not None:
+            klausa.append("tenant_id = ?"); params.append(tenant_id)
+        q = "SELECT * FROM barbers"
+        if klausa:
+            q += " WHERE " + " AND ".join(klausa)
         q += " ORDER BY nama"
-        return [dict(r) for r in conn.execute(q).fetchall()]
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
 def get_barber(barber_id: int):
@@ -316,11 +353,11 @@ def get_barber(barber_id: int):
 
 
 def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
-                jabatan: str = "barber", gaji_per_hari: int = 0):
+                jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None):
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari) VALUES (?, ?, ?, ?, ?)",
-            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari)),
+            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari, tenant_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari), tenant_id),
         )
         return cur.lastrowid
 
@@ -351,13 +388,20 @@ def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif
 # SERVICES
 # ---------------------------------------------------------------------------
 
-def get_services(hanya_aktif=True):
+def get_services(hanya_aktif=True, tenant_id=None):
+    """`tenant_id`: lihat catatan di get_barbers()."""
     with get_conn() as conn:
-        q = "SELECT * FROM services"
+        klausa = []
+        params = []
         if hanya_aktif:
-            q += " WHERE aktif = 1"
+            klausa.append("aktif = 1")
+        if tenant_id is not None:
+            klausa.append("tenant_id = ?"); params.append(tenant_id)
+        q = "SELECT * FROM services"
+        if klausa:
+            q += " WHERE " + " AND ".join(klausa)
         q += " ORDER BY nama"
-        return [dict(r) for r in conn.execute(q).fetchall()]
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
 def get_service(service_id: int):
@@ -366,15 +410,15 @@ def get_service(service_id: int):
         return dict(row) if row else None
 
 
-def add_service(nama: str, harga: int, pakai_potongan_chemical: bool = None):
+def add_service(nama: str, harga: int, pakai_potongan_chemical: bool = None, tenant_id: int = None):
     """Jika pakai_potongan_chemical tidak diisi, otomatis ditentukan berdasarkan
     daftar 5 layanan utama (Dry Cut, Cut & Wash, Hair Do, Beard Trim, Wet Shave)."""
     if pakai_potongan_chemical is None:
         pakai_potongan_chemical = nama not in SERVICE_TANPA_POTONGAN
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO services (nama, harga, pakai_potongan_chemical) VALUES (?, ?, ?)",
-            (nama.strip(), int(harga), 1 if pakai_potongan_chemical else 0),
+            "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id) VALUES (?, ?, ?, ?)",
+            (nama.strip(), int(harga), 1 if pakai_potongan_chemical else 0, tenant_id),
         )
         return cur.lastrowid
 
@@ -616,13 +660,19 @@ def get_transaksi(transaksi_id: int):
 
 def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = None,
                         tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None,
-                        limit: int = None):
+                        limit: int = None, tenant_id: int = None):
     """Dipakai oleh Rekap, Dashboard, dan Laporan PDF. Urutan default: tanggal
     terbaru dulu. Setiap baris hasil = satu transaksi (kunjungan customer)
     lengkap dengan daftar service & totalnya (lihat _lengkapi_transaksi_batch).
     tanggal_mulai/tanggal_selesai (format 'YYYY-MM-DD', inklusif di kedua
     ujung) dipakai Laporan PDF untuk rentang tanggal bebas -- BEDA dari
-    tahun/bulan (satu bulan/tahun penuh) yang dipakai Rekap."""
+    tahun/bulan (satu bulan/tahun penuh) yang dipakai Rekap.
+
+    FONDASI Multi-Tenant Phase 1: `transaksi` TIDAK punya kolom tenant_id
+    sendiri (tenant-scoped TRANSITIF lewat JOIN ke barbers, lihat
+    tenant_migrasi.py) -- `tenant_id` opsional (default None = tidak
+    difilter, PENTING untuk endpoint ber-login yang bisa menampilkan
+    SEMUA barber sekaligus, mis. Rekap tanpa filter Barber)."""
     q = "SELECT t.*, b.nama AS nama_barber FROM transaksi t JOIN barbers b ON b.id = t.barber_id WHERE 1=1"
     params = []
     if tahun is not None:
@@ -631,6 +681,8 @@ def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = No
         q += " AND t.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if barber_id is not None:
         q += " AND t.barber_id = ?"; params.append(barber_id)
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if tanggal is not None:
         q += " AND t.tanggal = ?"; params.append(tanggal)
     if tanggal_mulai is not None:
@@ -729,24 +781,24 @@ def get_hari_libur_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: 
 # Owner sengaja mengubahnya.
 # ---------------------------------------------------------------------------
 
-def get_bonus_service_acuan_ids() -> list:
-    raw = get_setting("bonus_service_acuan_service_ids", "[]")
+def get_bonus_service_acuan_ids(tenant_id=None) -> list:
+    raw = get_setting("bonus_service_acuan_service_ids", "[]", tenant_id=tenant_id)
     try:
         return [int(x) for x in json.loads(raw)] if raw else []
     except (TypeError, ValueError):
         return []
 
 
-def set_bonus_service_acuan_ids(service_ids: list) -> None:
+def set_bonus_service_acuan_ids(service_ids: list, tenant_id=None) -> None:
     bersih = sorted({int(x) for x in service_ids})
-    set_setting("bonus_service_acuan_service_ids", json.dumps(bersih))
+    set_setting("bonus_service_acuan_service_ids", json.dumps(bersih), tenant_id=tenant_id)
 
 
-def get_bonus_service_acuan_nama() -> list:
+def get_bonus_service_acuan_nama(tenant_id=None) -> list:
     """Nama service acuan Bonus Service SAAT INI (mengikuti pilihan Owner di
     Setting > Bonus Service) -- dipakai frontend supaya label di Dashboard
     ('X service (...) bulan ini') tidak lagi hardcode 'Dry Cut + Cut & Wash'."""
-    ids = get_bonus_service_acuan_ids()
+    ids = get_bonus_service_acuan_ids(tenant_id=tenant_id)
     if not ids:
         return []
     placeholder = ", ".join("?" for _ in ids)
@@ -755,17 +807,17 @@ def get_bonus_service_acuan_nama() -> list:
         return [r["nama"] for r in rows]
 
 
-def get_uang_harian_acuan_ids() -> list:
-    raw = get_setting("uang_harian_acuan_service_ids", "[]")
+def get_uang_harian_acuan_ids(tenant_id=None) -> list:
+    raw = get_setting("uang_harian_acuan_service_ids", "[]", tenant_id=tenant_id)
     try:
         return [int(x) for x in json.loads(raw)] if raw else []
     except (TypeError, ValueError):
         return []
 
 
-def set_uang_harian_acuan_ids(service_ids: list) -> None:
+def set_uang_harian_acuan_ids(service_ids: list, tenant_id=None) -> None:
     bersih = sorted({int(x) for x in service_ids})
-    set_setting("uang_harian_acuan_service_ids", json.dumps(bersih))
+    set_setting("uang_harian_acuan_service_ids", json.dumps(bersih), tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------
@@ -783,13 +835,16 @@ def set_uang_harian_acuan_ids(service_ids: list) -> None:
 # (lihat revisi_bonus_migrasi.py untuk migrasi kolomnya).
 # ---------------------------------------------------------------------------
 
-def target_uang_harian_per_hari() -> int:
-    return int(_setting_float("uang_harian_target_service_harian") or 3)
+def target_uang_harian_per_hari(tenant_id=None) -> int:
+    return int(_setting_float("uang_harian_target_service_harian", tenant_id=tenant_id) or 3)
 
 
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
-    acuan_ids = set(get_uang_harian_acuan_ids())
-    target = target_uang_harian_per_hari()
+    """FONDASI Multi-Tenant Phase 1: tenant_id diambil dari `barber` yang
+    sudah diterima fungsi ini (bukan parameter baru) -- lihat get_barbers()."""
+    tenant_id = barber.get("tenant_id")
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT td.service_id, td.jumlah FROM transaksi_detail td
@@ -811,8 +866,9 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     (lihat target_uang_harian_per_hari()), nominalnya dari kolom uang_harian milik
     barber itu sendiri (REVISI: per-barber, lihat komentar di atas
     hitung_uang_harian_per_hari)."""
-    acuan_ids = set(get_uang_harian_acuan_ids())
-    target = target_uang_harian_per_hari()
+    tenant_id = barber.get("tenant_id")
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
@@ -834,8 +890,9 @@ def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai
     """Versi rentang tanggal bebas dari hitung_uang_harian_bulan() di atas --
     dipakai Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom,
     BUKAN satu bulan kalender penuh). Aturan hitungnya SAMA PERSIS."""
-    acuan_ids = set(get_uang_harian_acuan_ids())
-    target = target_uang_harian_per_hari()
+    tenant_id = barber.get("tenant_id")
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
@@ -924,20 +981,26 @@ def get_rincian_service_bulan(barber_id: int, tahun: int, bulan: int) -> list:
 
 
 def get_rincian_service_periode(tahun: int = None, bulan: int = None, barber_id: int = None,
-                                 tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                                 tanggal_mulai: str = None, tanggal_selesai: str = None,
+                                 tenant_id: int = None) -> list:
     """Sama seperti get_rincian_service_bulan() di atas, TAPI lebih generik --
     barber_id OPSIONAL (kalau kosong, rincian digabung dari SEMUA barber) dan
     mendukung tanggal_mulai/tanggal_selesai sebagai alternatif tahun/bulan
     (rentang tanggal bebas). Dipakai ringkasan "Rincian" di PDF Rekap
     Transaksi (Tahap 15). Service yang jumlahnya 0 otomatis tidak pernah
     muncul (SUM cuma menghasilkan baris untuk service yang benar-benar
-    pernah dipakai pada periode itu)."""
+    pernah dipakai pada periode itu). `tenant_id`: lihat catatan di
+    get_transaksi_list() -- JOIN ke barbers hanya ditambahkan kalau diisi."""
     q = """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
-           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-           WHERE 1=1"""
+           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id"""
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = t.barber_id"
+    q += " WHERE 1=1"
     params = []
     if barber_id is not None:
         q += " AND t.barber_id = ?"; params.append(barber_id)
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
         q += " AND t.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
@@ -952,32 +1015,38 @@ def get_rincian_service_periode(tahun: int = None, bulan: int = None, barber_id:
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
-def get_rincian_service_rentang(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
+def get_rincian_service_rentang(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None,
+                                 tenant_id: int = None) -> list:
     """Versi rentang tanggal bebas dari get_rincian_service_bulan() di atas --
     BEDA juga karena bisa LINTAS BARBER (barber_id=None = seluruh barber
     digabung), dipakai Laporan PDF > Laporan Transaksi untuk baris ringkasan
     'Total Jumlah per Service' di bawah tabel rekap. Sama seperti fungsi di
     atas: hanya service yang jumlahnya > 0 yang dikembalikan, terurut dari
-    yang jumlahnya paling banyak."""
-    q = """SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah
-           FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
-           WHERE t.tanggal >= ? AND t.tanggal <= ?"""
+    yang jumlahnya paling banyak. `tenant_id`: lihat catatan di
+    get_transaksi_list() -- JOIN ke barbers hanya ditambahkan kalau diisi."""
+    q = "SELECT td.nama_service AS nama_service, SUM(td.jumlah) AS jumlah FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = t.barber_id"
+    q += " WHERE t.tanggal >= ? AND t.tanggal <= ?"
     params = [tanggal_mulai, tanggal_selesai]
     if barber_id is not None:
         q += " AND t.barber_id = ?"
         params.append(barber_id)
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"
+        params.append(tenant_id)
     q += " GROUP BY td.nama_service ORDER BY jumlah DESC, td.nama_service ASC"
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
     return [{"nama_service": r["nama_service"], "jumlah": r["jumlah"]} for r in rows]
 
 
-def get_bonus_customer_tiers() -> list:
+def get_bonus_customer_tiers(tenant_id=None) -> list:
     """Daftar tier {target, bonus} untuk Bonus Customer/Target Bonus Service,
     terurut naik berdasarkan target. Disimpan sebagai JSON di tabel
     `settings` (key 'bonus_customer_tiers', key-value generik yang sudah ada
     sejak Tahap 2) -- tidak perlu tabel baru."""
-    raw = get_setting("bonus_customer_tiers", "[]")
+    raw = get_setting("bonus_customer_tiers", "[]", tenant_id=tenant_id)
     try:
         mentah = json.loads(raw) if raw else []
     except (TypeError, ValueError):
@@ -991,7 +1060,7 @@ def get_bonus_customer_tiers() -> list:
     return sorted(hasil, key=lambda t: t["target"])
 
 
-def set_bonus_customer_tiers(tiers: list) -> None:
+def set_bonus_customer_tiers(tiers: list, tenant_id=None) -> None:
     """Timpa PENUH daftar tier (dipakai lewat pengaturan_bonus.py, yang
     menjaga aturan tambah/ubah/hapus per-target). Validasi dasar di sini
     supaya data yang tersimpan selalu konsisten apa pun jalur pemanggilnya."""
@@ -1009,12 +1078,19 @@ def set_bonus_customer_tiers(tiers: list) -> None:
         target_terpakai.add(target)
         bersih.append({"target": target, "bonus": bonus})
     bersih.sort(key=lambda t: t["target"])
-    set_setting("bonus_customer_tiers", json.dumps(bersih))
+    set_setting("bonus_customer_tiers", json.dumps(bersih), tenant_id=tenant_id)
 
 
 def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: int = None) -> dict:
+    """FONDASI Multi-Tenant Phase 1: fungsi ini hanya menerima barber_id
+    (bukan dict barber lengkap) -- tenant_id diambil lewat satu get_barber()
+    tambahan di sini (bukan mengubah signature fungsi, dipanggil dari banyak
+    tempat) supaya setting Bonus Customer (tiers/maksimal libur/potongan)
+    yang dibaca konsisten milik tenant barber ini, bukan tenant lain."""
+    barber = get_barber(barber_id)
+    tenant_id = barber.get("tenant_id") if barber else None
     jumlah_service = get_jumlah_service_dry_cut_cut_wash_bulan(barber_id, tahun, bulan)
-    tiers = get_bonus_customer_tiers()
+    tiers = get_bonus_customer_tiers(tenant_id=tenant_id)
 
     tier_tercapai = None
     tier_berikutnya = None
@@ -1029,8 +1105,8 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
 
     if hari_libur is None:
         hari_libur = get_hari_libur(barber_id, tahun, bulan)
-    maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer"))
-    potongan_persen = _setting_float("potongan_bonus_customer_persen") / 100.0
+    maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer", tenant_id=tenant_id))
+    potongan_persen = _setting_float("potongan_bonus_customer_persen", tenant_id=tenant_id) / 100.0
     libur_melebihi = hari_libur > maksimal_libur
 
     if not tercapai:
@@ -1130,25 +1206,35 @@ def get_pendapatan_transaksi(transaksi: dict) -> int:
 # ---------------------------------------------------------------------------
 
 def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
-                    tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                    tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None,
+                    tenant_id: int = None) -> list:
     """tanggal_mulai/tanggal_selesai (inklusif di kedua ujung) dipakai Rekap
     Transaksi untuk periode PDF rentang tanggal bebas -- BEDA dari
-    tahun/bulan (satu bulan/tahun penuh) yang dipakai tampilan layarnya."""
-    q = "SELECT barber_id, tanggal FROM absensi_libur WHERE 1=1"
+    tahun/bulan (satu bulan/tahun penuh) yang dipakai tampilan layarnya.
+    `tenant_id`: lihat catatan di get_transaksi_list() -- `absensi_libur`
+    tenant-scoped TRANSITIF lewat JOIN ke barbers, hanya di-JOIN kalau
+    tenant_id diisi (query tanpa tenant_id identik persis seperti sebelum
+    Phase 1)."""
+    q = "SELECT al.barber_id AS barber_id, al.tanggal AS tanggal FROM absensi_libur al"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = al.barber_id"
+    q += " WHERE 1=1"
     params = []
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND al.barber_id = ?"; params.append(barber_id)
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND al.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND al.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
-        q += " AND tanggal = ?"; params.append(tanggal)
+        q += " AND al.tanggal = ?"; params.append(tanggal)
     if tanggal_mulai is not None:
-        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+        q += " AND al.tanggal >= ?"; params.append(tanggal_mulai)
     if tanggal_selesai is not None:
-        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
-    q += " ORDER BY tanggal DESC"
+        q += " AND al.tanggal <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY al.tanggal DESC"
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
@@ -1162,7 +1248,7 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
 
 def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = None,
                               tanggal: str = None, tanggal_mulai: str = None,
-                              tanggal_selesai: str = None) -> list:
+                              tanggal_selesai: str = None, tenant_id: int = None) -> list:
     """Dipakai oleh halaman Rekap Transaksi. Satu baris = satu transaksi, DITAMBAH
     baris keterangan "Libur" untuk tanggal yang barber-nya ditandai libur di Input
     Data tapi tidak punya transaksi (supaya hari libur tetap kelihatan di rekap).
@@ -1179,9 +1265,11 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     punya "id" ini -- sengaja, supaya frontend tahu baris mana yang boleh
     dihapus lewat endpoint itu."""
     transaksi_list = get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
-                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                         tenant_id=tenant_id)
     libur_list = get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
-                                 tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                 tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                 tenant_id=tenant_id)
     libur_set = {(l["barber_id"], l["tanggal"]) for l in libur_list}
 
     barber_cache = {}
@@ -1250,12 +1338,12 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     return hasil
 
 
-def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> list:
+def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None, tenant_id: int = None) -> list:
     """Satu baris = satu barber untuk satu bulan, akumulasi dari transaksi sebulan
     (termasuk total Uang Harian), lengkap dengan detail Bonus Customer (target
     berupa jumlah service acuan Setting > Bonus Service, dan syarat hari libur) yang
     menentukan bonus itu cair atau tidak."""
-    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers()
+    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers(tenant_id=tenant_id)
     hasil = []
     for barber in barbers:
         if barber is None:
@@ -1283,7 +1371,8 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None) -> lis
     return hasil
 
 
-def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None) -> list:
+def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber_id: int = None,
+                                 tenant_id: int = None) -> list:
     """Satu baris = satu barber, akumulasi dari transaksi pada RENTANG TANGGAL
     BEBAS (dipakai Laporan PDF > Laporan Transaksi -- BEDA dari
     get_rekap_bulanan_list() di atas yang selalu satu bulan kalender penuh,
@@ -1295,7 +1384,7 @@ def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber
     -- format tampilannya (gabung jadi satu teks kolom Ket) diserahkan ke
     laporan_pdf.py, di sini murni data mentah apa adanya. 'total' = Komisi +
     Tips + Uang Harian."""
-    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers()
+    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers(tenant_id=tenant_id)
     hasil = []
     for barber in barbers:
         if barber is None:
@@ -1336,7 +1425,7 @@ def get_laporan_transaksi_rekap(tanggal_mulai: str, tanggal_selesai: str, barber
 # ini pengeluaran operasional toko (mis. beli bahan, listrik, dll).
 # ---------------------------------------------------------------------------
 
-def tambah_pengeluaran(tanggal: str, keterangan: str, jumlah: int) -> int:
+def tambah_pengeluaran(tanggal: str, keterangan: str, jumlah: int, tenant_id: int = None) -> int:
     _validasi_tanggal(tanggal)
     keterangan = (keterangan or "").strip()
     if not keterangan:
@@ -1346,8 +1435,8 @@ def tambah_pengeluaran(tanggal: str, keterangan: str, jumlah: int) -> int:
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO pengeluaran (tanggal, keterangan, jumlah, created_at) VALUES (?, ?, ?, ?)",
-            (tanggal, keterangan, int(jumlah), now),
+            "INSERT INTO pengeluaran (tanggal, keterangan, jumlah, created_at, tenant_id) VALUES (?, ?, ?, ?, ?)",
+            (tanggal, keterangan, int(jumlah), now, tenant_id),
         )
         return cur.lastrowid
 
@@ -1378,7 +1467,8 @@ def get_pengeluaran(pengeluaran_id: int):
         return dict(row) if row else None
 
 
-def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = None) -> list:
+def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = None,
+                          tenant_id: int = None) -> list:
     """Urutan: tanggal terbaru dulu."""
     q = "SELECT * FROM pengeluaran WHERE 1=1"
     params = []
@@ -1388,14 +1478,16 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
+    if tenant_id is not None:
+        q += " AND tenant_id = ?"; params.append(tenant_id)
     q += " ORDER BY tanggal DESC, id DESC"
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_total_pengeluaran(tahun: int = None, bulan: int = None) -> int:
-    return sum(p["jumlah"] for p in get_pengeluaran_list(tahun=tahun, bulan=bulan))
+def get_total_pengeluaran(tahun: int = None, bulan: int = None, tenant_id: int = None) -> int:
+    return sum(p["jumlah"] for p in get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id))
 
 
 # ---------------------------------------------------------------------------
@@ -1446,7 +1538,13 @@ def _saldo_valid(mutasi_list: list) -> bool:
     return True
 
 
-def tambah_produk(nama: str, harga_modal: int = 0, harga_jual: int = 0) -> int:
+def tambah_produk(nama: str, harga_modal: int = 0, harga_jual: int = 0, tenant_id: int = None) -> int:
+    """FONDASI Multi-Tenant Phase 1: kolom `nama` MASIH unik GLOBAL (belum
+    dilonggarkan per-tenant seperti barbers/services/users -- di luar
+    sembilan tabel yang diaudit eksplisit butuh itu) -- dua tenant BELUM
+    bisa sama-sama punya produk bernama sama persis, keterbatasan yang
+    diketahui & didokumentasikan, BUKAN kebocoran data (baris tetap
+    kepunyaan tenant masing-masing lewat tenant_id di bawah)."""
     nama = (nama or "").strip()
     if not nama:
         raise ValueError("Nama produk tidak boleh kosong.")
@@ -1455,8 +1553,8 @@ def tambah_produk(nama: str, harga_modal: int = 0, harga_jual: int = 0) -> int:
     with get_conn() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO produk (nama, harga_modal, harga_jual) VALUES (?, ?, ?)",
-                (nama, int(harga_modal), int(harga_jual)),
+                "INSERT INTO produk (nama, harga_modal, harga_jual, tenant_id) VALUES (?, ?, ?, ?)",
+                (nama, int(harga_modal), int(harga_jual), tenant_id),
             )
         except IntegrityError:
             raise ValueError(f"Produk dengan nama '{nama}' sudah ada.")
@@ -1513,14 +1611,20 @@ def get_stok_produk(produk_id: int) -> int:
         return row["stok"]
 
 
-def get_produk_list(hanya_aktif: bool = True) -> list:
+def get_produk_list(hanya_aktif: bool = True, tenant_id: int = None) -> list:
     """Setiap produk disertai 'stok' (sisa stok saat ini, hasil hitung ulang)."""
     with get_conn() as conn:
-        q = "SELECT * FROM produk"
+        klausa = []
+        params = []
         if hanya_aktif:
-            q += " WHERE aktif = 1"
+            klausa.append("aktif = 1")
+        if tenant_id is not None:
+            klausa.append("tenant_id = ?"); params.append(tenant_id)
+        q = "SELECT * FROM produk"
+        if klausa:
+            q += " WHERE " + " AND ".join(klausa)
         q += " ORDER BY nama ASC"
-        produk_rows = [dict(r) for r in conn.execute(q).fetchall()]
+        produk_rows = [dict(r) for r in conn.execute(q, params).fetchall()]
         for p in produk_rows:
             p["stok"] = get_stok_produk(p["id"])
         return produk_rows
@@ -1642,9 +1746,13 @@ def hapus_mutasi_produk(mutasi_id: int):
 
 
 def get_mutasi_produk(mutasi_id: int):
+    """FONDASI Multi-Tenant Phase 1: `p.tenant_id` ikut disertakan (produk_mutasi
+    sendiri TIDAK punya kolom tenant_id -- tenant-scoped TRANSITIF lewat JOIN
+    ke produk, lihat tenant_migrasi.py) supaya router bisa memverifikasi
+    kepemilikan tenant lewat fetch-then-authorize tanpa query tambahan."""
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT pm.*, p.nama AS nama_produk FROM produk_mutasi pm
+            """SELECT pm.*, p.nama AS nama_produk, p.tenant_id AS tenant_id FROM produk_mutasi pm
                JOIN produk p ON p.id = pm.produk_id WHERE pm.id = ?""",
             (mutasi_id,),
         ).fetchone()
@@ -1652,14 +1760,16 @@ def get_mutasi_produk(mutasi_id: int):
 
 
 def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
-                            tahun: int = None, bulan: int = None) -> list:
+                            tahun: int = None, bulan: int = None, tenant_id: int = None) -> list:
     """Urutan: tanggal terbaru dulu. Ikut menyertakan nama_produk supaya UI tidak
-    perlu join sendiri."""
+    perlu join sendiri. `tenant_id`: lihat catatan di get_mutasi_produk()."""
     q = """SELECT pm.*, p.nama AS nama_produk FROM produk_mutasi pm
            JOIN produk p ON p.id = pm.produk_id WHERE 1=1"""
     params = []
     if produk_id is not None:
         q += " AND pm.produk_id = ?"; params.append(produk_id)
+    if tenant_id is not None:
+        q += " AND p.tenant_id = ?"; params.append(tenant_id)
     if tipe is not None:
         q += " AND pm.tipe = ?"; params.append(tipe)
     if tahun is not None:
@@ -1672,7 +1782,7 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
         return [dict(r) for r in rows]
 
 
-def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None) -> int:
+def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tenant_id: int = None) -> int:
     """Total omzet (nilai penjualan) SELURUH produk dari transaksi bertipe
     'jual' SAJA -- Restock tidak relevan (bukan penjualan), Tester SENGAJA
     tidak dihitung (tidak menambah nilai penjualan, lihat tester_produk())
@@ -1680,14 +1790,23 @@ def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None) -> int:
     harga_jual_saat_itu (snapshot per transaksi, lihat _catat_keluar_produk),
     BUKAN harga_jual produk saat ini, supaya angka bulan lalu tidak berubah
     kalau harga produk diedit belakangan. Dipakai kartu 'Penjualan Produk'
-    di Dashboard Owner."""
-    q = """SELECT COALESCE(SUM(jumlah * COALESCE(harga_jual_saat_itu, 0)), 0) AS omzet
-           FROM produk_mutasi WHERE tipe = 'jual'"""
+    di Dashboard Owner.
+
+    FONDASI Multi-Tenant Phase 1: `produk_mutasi` TIDAK punya kolom
+    tenant_id sendiri (tenant-scoped TRANSITIF lewat JOIN ke produk, lihat
+    tenant_migrasi.py) -- JOIN hanya ditambahkan kalau tenant_id diisi
+    (query tanpa tenant_id identik persis seperti sebelum Phase 1)."""
+    q = "SELECT COALESCE(SUM(pm.jumlah * COALESCE(pm.harga_jual_saat_itu, 0)), 0) AS omzet FROM produk_mutasi pm"
+    if tenant_id is not None:
+        q += " JOIN produk p ON p.id = pm.produk_id"
+    q += " WHERE pm.tipe = 'jual'"
     params = []
+    if tenant_id is not None:
+        q += " AND p.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND pm.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     with get_conn() as conn:
         return conn.execute(q, params).fetchone()["omzet"]
 

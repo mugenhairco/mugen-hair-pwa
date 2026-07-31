@@ -76,18 +76,32 @@ def get_conn():
 def init_auth_db():
     """CREATE TABLE IF NOT EXISTS — aman dipanggil berkali-kali, tidak akan
     pernah menimpa/menghapus data yang sudah ada (tabel & data 'barbers',
-    'transaksi', dst di database.py TIDAK disentuh sama sekali)."""
+    'transaksi', dst di database.py TIDAK disentuh sama sekali).
+
+    FONDASI Multi-Tenant Phase 1: instalasi SQLite BARU (tabel belum pernah
+    ada) langsung dibuat dengan `tenant_id` + `UNIQUE(tenant_id, username)`
+    (bukan lagi `username` unik global) sejak awal. Instalasi SQLite LAMA
+    (tabel sudah ada dari sebelum Phase 1) TIDAK ikut diubah constraint-nya
+    di sini -- SQLite tidak bisa mengubah UNIQUE constraint tanpa membangun
+    ulang tabel; kolom `tenant_id`-nya sendiri tetap ditambahkan lewat
+    ALTER TABLE oleh tenant_migrasi.py (dipanggil terpisah, lihat main.py).
+    Batasan ini HANYA berlaku jalur SQLite (development lokal) -- jalur
+    PostgreSQL (produksi, lihat postgres_schema.py) sudah menangani
+    perubahan constraint pada instalasi yang sudah berjalan lewat
+    `DROP CONSTRAINT`/`CREATE UNIQUE INDEX`."""
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                username      TEXT NOT NULL UNIQUE,
+                username      TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
                 role          TEXT NOT NULL,   -- 'admin' atau 'barber'
                 barber_id     INTEGER,         -- HANYA diisi kalau role = 'barber'
                                                 -- (referensi ke barbers.id di database.py)
+                tenant_id     INTEGER,         -- referensi ke tenants.id (tenant_migrasi.py)
                 aktif         INTEGER NOT NULL DEFAULT 1,
                 created_at    TEXT NOT NULL,
+                UNIQUE(tenant_id, username),
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
@@ -134,7 +148,14 @@ def verify_password(password: str, password_hash: str) -> bool:
         raise RuntimeError(_pesan_diagnosa_bcrypt(e)) from e
 
 
-def tambah_user(username: str, password: str, role: str, barber_id: int = None) -> int:
+def tambah_user(username: str, password: str, role: str, barber_id: int = None, tenant_id: int = None) -> int:
+    """FONDASI Multi-Tenant Phase 1: `tenant_id` menandai user ini milik
+    tenant mana -- WAJIB diisi pemanggil KECUALI jalur bootstrap instalasi
+    yang benar-benar baru (lihat main.py::_bootstrap_admin_pertama(), yang
+    sudah meresolusi tenant default sebelum memanggil ini). Constraint unik
+    username berubah dari GLOBAL menjadi PER TENANT (lihat
+    postgres_schema.py/tenant_migrasi.py) -- dua tenant boleh sama-sama
+    punya username yang sama persis."""
     from datetime import datetime
     username = (username or "").strip()
     if not username:
@@ -150,8 +171,8 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None) 
     with get_conn() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (username, password_hash, role, barber_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                (username, hash_password(password), role, barber_id, now),
+                "INSERT INTO users (username, password_hash, role, barber_id, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (username, hash_password(password), role, barber_id, tenant_id, now),
             )
         except IntegrityError:
             raise ValueError(f"Username '{username}' sudah dipakai.")
@@ -189,20 +210,40 @@ def get_user(user_id: int):
         return dict(row) if row else None
 
 
-def get_user_list():
+def get_user_list(tenant_id: int = None):
+    """FONDASI Multi-Tenant Phase 1: `tenant_id=None` (default) tetap
+    mengembalikan SEMUA user lintas tenant -- perilaku LAMA, dipertahankan
+    karena dipakai main.py::_bootstrap_admin_pertama() untuk cek "instalasi
+    benar-benar baru" (harus lihat lintas tenant, bukan cuma satu tenant
+    yang belum tentu ada). Endpoint API (routers/pengaturan.py) SELALU
+    memanggil dengan tenant_id diisi eksplisit."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM users ORDER BY role, username").fetchall()
+        if tenant_id is not None:
+            rows = conn.execute("SELECT * FROM users WHERE tenant_id = ? ORDER BY role, username", (tenant_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM users ORDER BY role, username").fetchall()
         return [dict(r) for r in rows]
 
 
-def hitung_owner_aktif() -> int:
+def hitung_owner_aktif(tenant_id: int = None) -> int:
     """Jumlah akun Owner (role='admin') yang masih aktif -- dipakai untuk
     menegakkan aturan 'Owner terakhir tidak boleh dihapus atau diturunkan
-    rolenya' (lihat pengaturan_user.py/routers/pengaturan.py)."""
+    rolenya' (lihat pengaturan_user.py/routers/pengaturan.py).
+
+    FONDASI Multi-Tenant Phase 1: `tenant_id` WAJIB diisi pemanggil di
+    endpoint API -- tanpa ini, "Owner terakhir" akan terhitung LINTAS
+    SELURUH tenant (bug: Tenant B tidak akan pernah bisa kehilangan Owner
+    terakhirnya SENDIRI selama Tenant A manapun masih punya Owner aktif)."""
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS jumlah FROM users WHERE role = 'admin' AND aktif = 1"
-        ).fetchone()
+        if tenant_id is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) AS jumlah FROM users WHERE role = 'admin' AND aktif = 1 AND tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS jumlah FROM users WHERE role = 'admin' AND aktif = 1"
+            ).fetchone()
         return row["jumlah"]
 
 

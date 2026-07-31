@@ -38,13 +38,13 @@ def _tanpa_kolom_biner_ringkasan(ringkasan: dict) -> dict:
     return ringkasan
 
 
-def _filter_dashboard_untuk_staff(hasil: dict) -> dict:
+def _filter_dashboard_untuk_staff(hasil: dict, tenant_id: int) -> dict:
     """'staff' (Admin) HANYA melihat kartu ringkasan toko yang diizinkan
     Owner lewat Setting > Hak Akses Admin (lihat permissions.py) -- rincian
     per-barber (komisi/tips/dst masing-masing orang) dan grafik pendapatan
     TIDAK PERNAH ikut dikirim untuk role ini sama sekali, sesuai spesifikasi
     Dashboard Admin (hanya 4 kartu ringkasan toko, bukan rincian per orang)."""
-    izin = permissions.get_all()
+    izin = permissions.get_all(tenant_id=tenant_id)
     if not izin.get("izin_dashboard_nilai_service"):
         hasil["total_toko"]["nilai_service"] = None
     if not izin.get("izin_dashboard_total_komisi"):
@@ -76,7 +76,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
     kartu Service Bulan Ini tidak perlu menghitung apa pun sendiri di frontend."""
     if tahun is None or bulan is None:
         tahun, bulan = _bulan_ini()
-    barbers = db.get_barbers()
+    barbers = db.get_barbers(tenant_id=user["tenant_id"])
     ringkasan_per_barber = [_tanpa_kolom_biner_ringkasan(db.get_ringkasan_barber_bulan(b["id"], tahun, bulan)) for b in barbers]
     total_toko = {
         "nilai_service": sum(r["nilai_service"] for r in ringkasan_per_barber),
@@ -87,13 +87,13 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         "total_pendapatan": sum(r["total_pendapatan"] for r in ringkasan_per_barber),
         "jumlah_customer": sum(r["jumlah_customer"] for r in ringkasan_per_barber),
     }
-    total_pengeluaran = db.get_total_pengeluaran(tahun=tahun, bulan=bulan)
+    total_pengeluaran = db.get_total_pengeluaran(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     # REVISI: kartu "Penjualan Produk" -- omzet HANYA dari transaksi produk
     # bertipe Jual (Restock bukan penjualan, Tester sengaja tidak dihitung,
     # lihat database.get_omzet_penjualan_produk). SENGAJA TIDAK diikutkan ke
     # laba_kotor di bawah -- bukan diminta, rumus laba kotor toko lama tetap
     # sama persis seperti sebelumnya.
-    penjualan_produk = db.get_omzet_penjualan_produk(tahun=tahun, bulan=bulan)
+    penjualan_produk = db.get_omzet_penjualan_produk(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 
     rincian_gabungan = {}
     for r in ringkasan_per_barber:
@@ -116,7 +116,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         - total_toko["bonus_customer"] - total_pengeluaran,
     }
     if user["role"] == "staff":
-        hasil = _filter_dashboard_untuk_staff(hasil)
+        hasil = _filter_dashboard_untuk_staff(hasil, user["tenant_id"])
     return hasil
 
 
@@ -131,16 +131,22 @@ def dashboard_barber(tahun: int = None, bulan: int = None, user: dict = Depends(
     return _tanpa_kolom_biner_ringkasan(db.get_ringkasan_barber_bulan(barber_id, tahun, bulan))
 
 
-def _barber_terpilih(barber_id: int):
+def _barber_terpilih(barber_id: int, tenant_id: int):
     """Dipakai kedua endpoint grafik di bawah: barber_id kosong (None) berarti
     gabungan SEMUA barber aktif; kalau diisi, hanya barber itu (dicari
     langsung by id, bukan cuma dari daftar aktif -- konsisten dengan endpoint
     lain yang tetap bisa menampilkan data historis barber yang sudah
-    dinonaktifkan)."""
+    dinonaktifkan).
+    FONDASI Multi-Tenant Phase 1: barber_id dari query string bebas ditulis
+    siapa pun yang memanggil endpoint -- kalau ID itu ternyata milik tenant
+    LAIN, kembalikan [] (bukan 404/403) supaya perilaku sama seperti
+    "barber_id tidak ditemukan" tanpa membocorkan bahwa ID itu sebenarnya ada."""
     if barber_id is not None:
         barber = db.get_barber(barber_id)
-        return [barber] if barber else []
-    return db.get_barbers()
+        if barber is None or barber.get("tenant_id") != tenant_id:
+            return []
+        return [barber]
+    return db.get_barbers(tenant_id=tenant_id)
 
 
 @router.get("/owner/grafik-harian")
@@ -159,7 +165,7 @@ def grafik_harian(tahun: int, bulan: int, barber_id: int = None, user: dict = De
     /owner/grafik-bulanan (total_pendapatan bulan itu) supaya tidak ada
     angka yang menyesatkan di kedua grafik."""
     jumlah_hari = calendar.monthrange(tahun, bulan)[1]
-    barbers = _barber_terpilih(barber_id)
+    barbers = _barber_terpilih(barber_id, user["tenant_id"])
 
     pendapatan_per_hari = {h: 0 for h in range(1, jumlah_hari + 1)}
     for b in barbers:
@@ -181,7 +187,7 @@ def grafik_bulanan(tahun: int, barber_id: int = None, user: dict = Depends(requi
     Pendapatan di sini = total_pendapatan PENUH (Komisi + Tips + Uang Harian
     + Bonus Customer) dari get_ringkasan_barber_bulan yang sudah ada --
     bonus wajar diikutkan di sini karena memang perhitungan bulanan."""
-    barbers = _barber_terpilih(barber_id)
+    barbers = _barber_terpilih(barber_id, user["tenant_id"])
 
     hasil = []
     for bulan in range(1, 13):

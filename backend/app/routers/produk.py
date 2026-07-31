@@ -46,15 +46,31 @@ class KoreksiMutasiBody(BaseModel):
     catatan: str | None = None
 
 
+def _pastikan_produk_tenant_sama(user: dict, produk: dict | None):
+    """FONDASI Multi-Tenant Phase 1: fetch-then-authorize, pola sama seperti
+    _pastikan_barber_tenant_sama di routers/pengaturan.py -- 404 supaya
+    tidak membocorkan bahwa produk_id itu sebenarnya ada, milik tenant lain."""
+    if produk is None or produk.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+
+
+def _pastikan_mutasi_tenant_sama(user: dict, mutasi: dict | None):
+    """Sama seperti _pastikan_produk_tenant_sama, versi untuk /mutasi/{id}
+    (get_mutasi_produk() sudah menyertakan tenant_id produknya, lihat
+    database.py)."""
+    if mutasi is None or mutasi.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Data mutasi tidak ditemukan.")
+
+
 @router.get("")
 def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_owner_or_staff)):
-    return db.get_produk_list(hanya_aktif=hanya_aktif)
+    return db.get_produk_list(hanya_aktif=hanya_aktif, tenant_id=user["tenant_id"])
 
 
 @router.post("")
 def tambah_produk(body: ProdukBody, user: dict = Depends(require_owner_or_staff)):
     try:
-        produk_id = db.tambah_produk(body.nama, body.harga_modal, body.harga_jual)
+        produk_id = db.tambah_produk(body.nama, body.harga_modal, body.harga_jual, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_produk(produk_id)
@@ -62,8 +78,7 @@ def tambah_produk(body: ProdukBody, user: dict = Depends(require_owner_or_staff)
 
 @router.put("/{produk_id}")
 def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_owner_or_staff)):
-    if db.get_produk(produk_id) is None:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         db.update_produk(produk_id, nama=body.nama, harga_modal=body.harga_modal, harga_jual=body.harga_jual)
     except ValueError as e:
@@ -73,16 +88,14 @@ def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(r
 
 @router.delete("/{produk_id}")
 def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_owner_or_staff)):
-    if db.get_produk(produk_id) is None:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     db.nonaktifkan_produk(produk_id)
     return {"ok": True}
 
 
 @router.post("/{produk_id}/restock")
 def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
-    if db.get_produk(produk_id) is None:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.restock_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
@@ -92,8 +105,7 @@ def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(requir
 
 @router.post("/{produk_id}/jual")
 def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
-    if db.get_produk(produk_id) is None:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.jual_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
@@ -106,8 +118,7 @@ def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require
     """REVISI: tipe transaksi baru 'Tester' -- mengurangi stok sama seperti
     Jual, TAPI TIDAK menambah omzet (lihat db.tester_produk/
     db.get_omzet_penjualan_produk), tetap tercatat penuh di riwayat mutasi."""
-    if db.get_produk(produk_id) is None:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+    _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.tester_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
@@ -118,13 +129,13 @@ def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require
 @router.get("/mutasi")
 def list_mutasi(produk_id: int = None, tipe: str = None, tahun: int = None,
                 bulan: int = None, user: dict = Depends(require_owner_or_staff)):
-    return db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan)
+    return db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan,
+                                      tenant_id=user["tenant_id"])
 
 
 @router.put("/mutasi/{mutasi_id}")
 def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_owner_or_staff)):
-    if db.get_mutasi_produk(mutasi_id) is None:
-        raise HTTPException(status_code=404, detail="Data mutasi tidak ditemukan.")
+    _pastikan_mutasi_tenant_sama(user, db.get_mutasi_produk(mutasi_id))
     try:
         db.koreksi_mutasi_produk(mutasi_id, body.tanggal, body.jumlah, body.catatan)
     except ValueError as e:
@@ -134,8 +145,7 @@ def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends
 
 @router.delete("/mutasi/{mutasi_id}")
 def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_owner_or_staff)):
-    if db.get_mutasi_produk(mutasi_id) is None:
-        raise HTTPException(status_code=404, detail="Data mutasi tidak ditemukan.")
+    _pastikan_mutasi_tenant_sama(user, db.get_mutasi_produk(mutasi_id))
     try:
         db.hapus_mutasi_produk(mutasi_id)
     except ValueError as e:

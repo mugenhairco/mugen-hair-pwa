@@ -23,6 +23,11 @@ import json
 
 import db_compat
 
+# FONDASI Multi-Tenant Phase 1 -- SAMA PERSIS dengan tenant_migrasi.py
+# (jalur SQLite), lihat file itu untuk penjelasan arsitektur lengkap.
+TENANT_DEFAULT_SLUG = "mugen-hair-co"
+TENANT_DEFAULT_NAMA = "MUGEN Hair Co."
+
 DEFAULT_SETTINGS = {
     "persentase_komisi": "40",
     "potongan_modal_chemical": "15000",
@@ -491,6 +496,54 @@ ALTER TABLE file_asset ADD COLUMN IF NOT EXISTS r2_key TEXT;
 ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS r2_key TEXT;
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS foto_r2_key TEXT;
 ALTER TABLE reimburse ADD COLUMN IF NOT EXISTS bukti_r2_key TEXT;
+
+-- FONDASI Multi-Tenant (SaaS) Phase 1: lihat tenant_migrasi.py (jalur
+-- SQLite) untuk penjelasan arsitektur lengkap -- ringkasnya: tabel baru
+-- `tenants` + kolom `tenant_id` (nullable, di-backfill ke SATU tenant
+-- default yang merepresentasikan data produksi yang sudah berjalan) di
+-- sembilan tabel root data milik toko. Tabel lain (transaksi/absensi_libur/
+-- produk_mutasi/booking_items/dst) TIDAK mendapat kolom baru -- tenant-
+-- scoped TRANSITIF lewat JOIN ke tabel yang sudah bertenant_id di sini
+-- (lihat database.py, perubahan query dijelaskan di komentar masing-masing
+-- fungsi). `settings`/`file_asset` JUGA TIDAK mendapat kolom baru --
+-- isolasi keduanya lewat prefix di dalam kolom `key` yang sudah ada
+-- (lihat database.py::_kunci_tenant()/file_asset_db.py), BUKAN lewat
+-- ALTER TABLE, supaya tidak perlu mengubah PRIMARY KEY(key) yang sudah ada.
+CREATE TABLE IF NOT EXISTS tenants (
+    id                 SERIAL PRIMARY KEY,
+    slug               TEXT NOT NULL UNIQUE,
+    nama_barbershop    TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'aktif',
+    masa_aktif_sampai  TEXT,
+    custom_domain      TEXT,
+    created_at         TEXT NOT NULL
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE pengeluaran ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE closed_slot ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE toko_libur ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+
+-- Kolom `nama` di barbers/services SENGAJA TIDAK lagi unik GLOBAL --
+-- dilonggarkan jadi unik PER TENANT (dua toko boleh sama-sama punya
+-- barber "Andi" atau service "Dry Cut"). Nama constraint di bawah ini
+-- (```_nama_key```) adalah nama otomatis Postgres untuk `UNIQUE(nama)`
+-- inline di CREATE TABLE -- DROP CONSTRAINT IF EXISTS aman dipanggil
+-- berulang (no-op kalau sudah pernah dijalankan/tidak pernah ada).
+ALTER TABLE barbers DROP CONSTRAINT IF EXISTS barbers_nama_key;
+ALTER TABLE services DROP CONSTRAINT IF EXISTS services_nama_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_barbers_tenant_nama ON barbers(tenant_id, nama);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_services_tenant_nama ON services(tenant_id, nama);
+
+-- users.username: sama alasannya -- dua tenant boleh sama-sama punya
+-- username "admin".
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant_username ON users(tenant_id, username);
 """
 
 
@@ -504,33 +557,109 @@ def create_all():
             if statement:
                 conn.execute(statement)
 
+        # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan
+        # data produksi yang sudah berjalan) + backfill tenant_id untuk
+        # baris yang belum punya (baris BARU setelah Phase 1 aktif sudah
+        # diisi tenant_id-nya sendiri saat dibuat, jadi TIDAK ikut tertimpa
+        # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
+        tenant_default_id = _pastikan_tenant_default(conn)
+        for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
+                      "website_gallery", "bookings", "closed_slot", "toko_libur"):
+            conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_default_id,))
+
+        # FONDASI Multi-Tenant Phase 1: salin (bukan pindah/hapus) SEMUA
+        # baris `settings` LAMA (key polos, dari sebelum Phase 1 aktif) ke
+        # bentuk ber-prefix tenant default -- WAJIB dijalankan SEBELUM
+        # seeding default hardcode di bawah, supaya toko produksi yang
+        # SUDAH mengustomisasi setting (mis. persentase_komisi diubah dari
+        # 40 ke nilai lain) tidak diam-diam ter-reset ke nilai pabrik begitu
+        # get_setting() mulai membaca key ber-prefix (lihat database.py).
+        _migrasi_prefix_settings(conn, tenant_default_id)
+
         for key, value in DEFAULT_SETTINGS.items():
-            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                         (_kunci_tenant(tenant_default_id, key), value))
         for key, value in IDENTITAS_DEFAULT.items():
-            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                         (_kunci_tenant(tenant_default_id, key), value))
         for key, value in DEFAULT_BOOKING_SETTINGS.items():
-            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING", (key, value))
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                         (_kunci_tenant(tenant_default_id, key), value))
         conn.execute(
-            "INSERT INTO settings (key, value) VALUES ('bonus_customer_tiers', ?) ON CONFLICT DO NOTHING",
-            (json.dumps(DEFAULT_BONUS_TIERS),),
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            (_kunci_tenant(tenant_default_id, "bonus_customer_tiers"), json.dumps(DEFAULT_BONUS_TIERS)),
         )
 
-        jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services").fetchone()["n"]
+        jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
+                                       (tenant_default_id,)).fetchone()["n"]
         if jumlah_service == 0:
             for nama, harga, pakai_potongan in DEFAULT_SERVICES:
                 conn.execute(
-                    "INSERT INTO services (nama, harga, pakai_potongan_chemical) VALUES (?, ?, ?)",
-                    (nama, harga, pakai_potongan),
+                    "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id) VALUES (?, ?, ?, ?)",
+                    (nama, harga, pakai_potongan, tenant_default_id),
                 )
 
         for key in ("bonus_service_acuan_service_ids", "uang_harian_acuan_service_ids"):
-            existing = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            kunci = _kunci_tenant(tenant_default_id, key)
+            existing = conn.execute("SELECT value FROM settings WHERE key = ?", (kunci,)).fetchone()
             if existing is not None:
                 continue
             placeholder = ", ".join("?" for _ in _SEED_ACUAN_NAMA)
-            rows = conn.execute(f"SELECT id FROM services WHERE nama IN ({placeholder})", _SEED_ACUAN_NAMA).fetchall()
+            rows = conn.execute(f"SELECT id FROM services WHERE nama IN ({placeholder}) AND tenant_id = ?",
+                                 list(_SEED_ACUAN_NAMA) + [tenant_default_id]).fetchall()
             service_ids = [r["id"] for r in rows]
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
-                         (key, json.dumps(service_ids)))
+                         (kunci, json.dumps(service_ids)))
 
         conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")
+
+
+def _pastikan_tenant_default(conn) -> int:
+    """Sama persis logikanya dengan tenant_migrasi.py::_pastikan_tenant_default()
+    (jalur SQLite) -- diduplikasi murni karena jalur Postgres/SQLite memang
+    dua file skema yang sudah terpisah sejak awal proyek ini (lihat db_compat.py)."""
+    row = conn.execute("SELECT id FROM tenants WHERE slug = ?", (TENANT_DEFAULT_SLUG,)).fetchone()
+    if row:
+        return row["id"]
+    from datetime import datetime
+    now = datetime.now().isoformat(timespec="seconds")
+    cur = conn.execute(
+        "INSERT INTO tenants (slug, nama_barbershop, status, created_at) VALUES (?, ?, 'aktif', ?)",
+        (TENANT_DEFAULT_SLUG, TENANT_DEFAULT_NAMA, now),
+    )
+    return cur.lastrowid
+
+
+def _kunci_tenant(tenant_id: int, key: str) -> str:
+    """SAMA PERSIS dengan database.py::_kunci_tenant() -- diduplikasi di sini
+    murni supaya modul ini tidak perlu import database.py (hindari import
+    siklik: database.py tidak pernah mengimpor postgres_schema.py)."""
+    return f"{tenant_id}:{key}"
+
+
+def _key_sudah_diprefix(key: str) -> bool:
+    depan = key.split(":", 1)[0]
+    return depan.isdigit()
+
+
+def _migrasi_prefix_settings(conn, tenant_id_default: int):
+    """Generik -- TIDAK perlu tahu daftar key satu-satu (default setting
+    tersebar di banyak modul: database.py, pengaturan_identitas.py,
+    website_content.py, booking_db.py, dst). Menyalin SETIAP baris `settings`
+    yang key-nya masih polos (belum berbentuk "<tenant_id>:asli") ke bentuk
+    baru diprefix tenant default, dengan NILAI SAAT INI (bukan nilai
+    default) -- baris lama TETAP dibiarkan ada, sekadar jadi baris "mati"
+    yang tidak lagi dibaca begitu kode mulai memakai key ber-prefix.
+    Idempotent: kalau key ber-prefix-nya sudah ada (mis. sudah pernah
+    dijalankan, atau sudah diedit ulang lewat Setting setelah Phase 1
+    aktif), baris itu TIDAK ditimpa."""
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    for r in rows:
+        key = r["key"]
+        if _key_sudah_diprefix(key):
+            continue
+        kunci_baru = _kunci_tenant(tenant_id_default, key)
+        existing = conn.execute("SELECT value FROM settings WHERE key = ?", (kunci_baru,)).fetchone()
+        if existing is None:
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                         (kunci_baru, r["value"]))

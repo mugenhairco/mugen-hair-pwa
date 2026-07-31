@@ -59,6 +59,9 @@ from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 from karyawan_migrasi import migrasi_karyawan
 from r2_storage_migrasi import migrasi_r2_storage
+import tenant_migrasi
+from tenant_migrasi import migrasi_tenant
+import tenant_db
 import booking_db
 import website_content
 import file_asset_db
@@ -268,6 +271,7 @@ def on_startup():
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
+        migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
@@ -318,7 +322,12 @@ def _bootstrap_admin_pertama():
         return
     username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "owner")
     password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "ganti-password-ini")
-    auth_db.tambah_user(username=username, password=password, role="admin")
+    # FONDASI Multi-Tenant Phase 1: akun pertama ini otomatis milik tenant
+    # default (dibuat migrasi_tenant() sebelum baris ini dijalankan, lihat
+    # urutan startup di atas) -- instalasi baru = tenant tunggal pertama.
+    tenant_default = tenant_db.get_tenant_by_slug(tenant_migrasi.SLUG_TENANT_DEFAULT)
+    auth_db.tambah_user(username=username, password=password, role="admin",
+                         tenant_id=tenant_default["id"] if tenant_default else None)
     logger.critical(
         "[%s] BOOTSTRAP: tabel users KOSONG saat proses ini boot -- akun admin baru '%s' "
         "dibuat dari ADMIN_BOOTSTRAP_USERNAME/PASSWORD. Kalau ini bukan instalasi pertama "

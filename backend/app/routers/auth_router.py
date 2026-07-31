@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import auth_db
+import tenant_db
 from auth import buat_token, get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -16,11 +17,25 @@ class LoginBody(BaseModel):
 
 @router.post("/login")
 def login(body: LoginBody):
+    """FONDASI Multi-Tenant Phase 1: pencarian username TETAP lintas tenant
+    (lihat auth_db.get_user_by_username()) -- Owner Phase 1 masih login
+    dengan username+password polos, TANPA field/langkah tambahan apa pun,
+    sesuai instruksi "jangan mengubah workflow pengguna". Konsekuensi yang
+    disadari & didokumentasikan di laporan Phase 1: dua tenant BERBEDA yang
+    kebetulan memilih username yang SAMA PERSIS akan membuat login ambigu
+    (constraint database sekarang mengizinkan itu terjadi, lihat
+    postgres_schema.py) -- diserahkan ke Phase 2 (subdomain per tenant atau
+    pemilih tenant eksplisit di form Login)."""
     user = auth_db.autentikasi(body.username, body.password)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah.")
     if not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif, hubungi Owner.")
+    if user.get("tenant_id") is not None:
+        tenant = tenant_db.get_tenant(user["tenant_id"])
+        if tenant is None or tenant["status"] != "aktif":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                 detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
     token = buat_token(user["id"])
     return {"token": token, "user": user}
 

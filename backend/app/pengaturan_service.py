@@ -44,7 +44,8 @@ def set_durasi(service_id: int, durasi_menit: int):
 
 
 def tambah_service_lengkap(nama: str, harga: int, modal: int = 0,
-                            pakai_potongan_chemical: bool = None, durasi_menit: int = 60) -> int:
+                            pakai_potongan_chemical: bool = None, durasi_menit: int = 60,
+                            tenant_id: int = None) -> int:
     if not (nama or "").strip():
         raise ValueError("Nama layanan tidak boleh kosong.")
     _validasi_angka("Harga", harga)
@@ -52,7 +53,7 @@ def tambah_service_lengkap(nama: str, harga: int, modal: int = 0,
     if not durasi_menit or durasi_menit <= 0:
         raise ValueError("Durasi harus lebih dari 0 menit.")
     try:
-        service_id = db.add_service(nama, harga, pakai_potongan_chemical)
+        service_id = db.add_service(nama, harga, pakai_potongan_chemical, tenant_id=tenant_id)
     except IntegrityError:
         raise ValueError(f"Nama layanan '{nama.strip()}' sudah dipakai.")
     set_modal(service_id, modal)

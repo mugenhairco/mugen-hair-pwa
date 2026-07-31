@@ -35,7 +35,7 @@ class PengeluaranBody(BaseModel):
 def daftar_kategori(user: dict = Depends(require_owner_or_staff)):
     """Daftar kategori (default + yang sudah pernah dipakai) untuk dropdown
     filter & form di frontend."""
-    return db_pengeluaran.get_kategori_list()
+    return db_pengeluaran.get_kategori_list(tenant_id=user["tenant_id"])
 
 
 @router.get("")
@@ -45,7 +45,16 @@ def list_pengeluaran(tahun: int = None, bulan: int = None, tanggal: str = None,
     return db_pengeluaran.get_pengeluaran_list(
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
+        tenant_id=user["tenant_id"],
     )
+
+
+def _pastikan_pengeluaran_tenant_sama(user: dict, row: dict | None):
+    """FONDASI Multi-Tenant Phase 1: fetch-then-authorize, pola sama seperti
+    _pastikan_barber_tenant_sama di routers/pengaturan.py -- 404 supaya tidak
+    membocorkan bahwa pengeluaran_id itu sebenarnya ada, milik tenant lain."""
+    if row is None or row.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan.")
 
 
 @router.get("/pdf")
@@ -53,7 +62,8 @@ def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str
                           user: dict = Depends(require_owner_or_staff)):
     """Route ini didaftarkan SEBELUM /{pengeluaran_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pengeluaran_id."""
-    konten = laporan_pdf.buat_pdf_pengeluaran_list(tahun, bulan, kategori, cari, user["username"])
+    konten = laporan_pdf.buat_pdf_pengeluaran_list(tahun, bulan, kategori, cari, user["username"],
+                                                    tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("pengeluaran")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -62,8 +72,7 @@ def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str
 @router.get("/{pengeluaran_id}")
 def detail_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_or_staff)):
     row = db_pengeluaran.get_pengeluaran(pengeluaran_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan.")
+    _pastikan_pengeluaran_tenant_sama(user, row)
     return row
 
 
@@ -73,7 +82,7 @@ def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_owner
         new_id = db_pengeluaran.tambah_pengeluaran(
             tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
-            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"],
+            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"], tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -82,11 +91,12 @@ def tambah_pengeluaran(body: PengeluaranBody, user: dict = Depends(require_owner
 
 @router.put("/{pengeluaran_id}")
 def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict = Depends(require_owner_or_staff)):
+    _pastikan_pengeluaran_tenant_sama(user, db_pengeluaran.get_pengeluaran(pengeluaran_id))
     try:
         db_pengeluaran.koreksi_pengeluaran(
             pengeluaran_id, tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
-            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"],
+            sumber_dana=body.sumber_dana, dibuat_oleh=user["username"], tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -95,6 +105,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, body: PengeluaranBody, user: dict =
 
 @router.delete("/{pengeluaran_id}")
 def hapus_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_or_staff)):
+    _pastikan_pengeluaran_tenant_sama(user, db_pengeluaran.get_pengeluaran(pengeluaran_id))
     try:
         db_pengeluaran.hapus_pengeluaran(pengeluaran_id)
     except ValueError as e:

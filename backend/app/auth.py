@@ -49,15 +49,44 @@ def _decode_token(token: str) -> int:
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
     """Dependency dasar: wajib login (role apa saja). Selalu ambil data user
     TERBARU dari database (bukan dari isi token) supaya kalau user dinonaktifkan
-    atau role-nya diubah, efeknya langsung terlihat tanpa harus tunggu token expired."""
+    atau role-nya diubah, efeknya langsung terlihat tanpa harus tunggu token expired.
+
+    FONDASI Multi-Tenant Phase 1: `user["tenant_id"]` ikut terbawa dari baris
+    yang sama (SELECT * di auth_db.get_user(), tidak perlu query tambahan)
+    -- inilah SATU-SATUNYA titik di seluruh aplikasi tempat tenant aktif
+    di-resolve untuk endpoint ber-login, lihat get_current_tenant_id() di
+    bawah. Tenant yang di-nonaktifkan (lihat tenant_db.py, kolom `status`)
+    langsung menolak SEMUA request user-nya di sini, sama seperti akun user
+    yang di-nonaktifkan -- efeknya konsisten & langsung terlihat tanpa
+    tunggu token expired, pola yang sama dengan pengecekan `user.aktif`."""
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Belum login.")
     user_id = _decode_token(credentials.credentials)
     user = auth_db.get_user(user_id)
     if user is None or not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif atau tidak ditemukan.")
+    if user.get("tenant_id") is not None:
+        import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+        tenant = tenant_db.get_tenant(user["tenant_id"])
+        if tenant is None or tenant["status"] != "aktif":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                 detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
     user.pop("password_hash", None)
     return user
+
+
+def get_current_tenant_id(user: dict = Depends(get_current_user)) -> int:
+    """Dependency tenant-resolution UTAMA untuk seluruh Dashboard PWA (§4
+    rancangan audit) -- tenant SELALU diturunkan dari sesi login yang
+    sedang aktif, TIDAK PERNAH dari parameter/header yang bisa disuntik
+    client. Endpoint yang butuh menyaring data per-tenant memakai dependency
+    ini (bukan membaca user["tenant_id"] manual di tiap endpoint) supaya ada
+    SATU titik yang menolak tegas kalau suatu saat ada akun tanpa tenant_id
+    (seharusnya tidak pernah terjadi lewat alur normal aplikasi)."""
+    if user.get("tenant_id") is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                             detail="Akun ini belum dikaitkan ke barbershop mana pun.")
+    return user["tenant_id"]
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -83,6 +112,51 @@ def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def resolve_tenant_hibrid(credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+                           tenant: str | None = None) -> int:
+    """Dipakai endpoint yang PUBLIC tapi JUGA dipanggil dari sisi SUDAH LOGIN
+    lewat endpoint yang SAMA PERSIS -- mis. GET /pengaturan/identitas,
+    /pengaturan/logo, /website/content/*, /website/gallery* dipakai baik
+    oleh halaman Login/booking publik (belum ada token) MAUPUN oleh menu
+    Setting/Website Content setelah login (SUDAH ada token, tapi frontend-
+    nya tidak dan tidak perlu tahu slug tenant-nya sendiri untuk membaca
+    data miliknya sendiri).
+
+    Kalau ada token valid, tenant diambil dari SESI LOGIN (prioritas --
+    kalau tidak, Setting Tenant B akan diam-diam menampilkan data Tenant
+    default, bug nyata yang ditemukan lewat pengujian dua-tenant Phase 1).
+    Kalau tidak ada token (pengunjung publik sungguhan), fallback ke
+    resolve_tenant_publik() (query string `?tenant=<slug>` / tenant
+    default) -- endpoint TETAP bisa diakses tanpa login sama sekali,
+    perilaku publik tidak berubah."""
+    if credentials is not None:
+        try:
+            user_id = _decode_token(credentials.credentials)
+            user = auth_db.get_user(user_id)
+            if user is not None and user.get("aktif") and user.get("tenant_id") is not None:
+                return user["tenant_id"]
+        except HTTPException:
+            pass
+    return resolve_tenant_publik(tenant)
+
+
+def resolve_tenant_publik(tenant: str | None = None) -> int:
+    """FONDASI Multi-Tenant Phase 1: dependency resolusi tenant untuk SELURUH
+    endpoint PUBLIC (tanpa sesi login -- halaman Login/booking /book) yang
+    perlu tahu tenant mana yang aktif. Lihat tenant_db.cari_tenant_publik()
+    untuk penjelasan lengkap kenapa mekanisme ini (query string
+    `?tenant=<slug>`, BUKAN subdomain/custom domain -- custom domain
+    eksplisit di luar cakupan Phase 1) dipilih. Query string kosong =
+    tenant default, SATU-SATUNYA tenant yang ada di deployment single-tenant
+    SEKARANG -- frontend yang belum dimodifikasi TIDAK PERNAH mengirim
+    parameter ini, jadi perilakunya 100% sama seperti sebelum Phase 1."""
+    import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+    t = tenant_db.cari_tenant_publik(tenant)
+    if t is None or t["status"] != "aktif":
+        raise HTTPException(status_code=404, detail="Barbershop tidak ditemukan.")
+    return t["id"]
+
+
 def require_permission(key: str):
     """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
     penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).
@@ -93,7 +167,7 @@ def require_permission(key: str):
         if user["role"] == "admin":
             return user
         import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
-        if not permissions.has(key):
+        if not permissions.has(key, tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                  detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
         return user

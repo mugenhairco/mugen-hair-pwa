@@ -61,13 +61,18 @@ PERMISSION_DEFS = [
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}
 
 
-def get_all() -> dict:
+def get_all(tenant_id=None) -> dict:
     """{key: bool} untuk SELURUH permission, dengan default dari
     PERMISSION_DEFS kalau Owner belum pernah mengaturnya sama sekali.
     SATU query (get_all_settings(), sudah ada sejak Tahap 2) -- bukan satu
     query per key -- karena fungsi ini dipanggil di SETIAP pengecekan
-    require_permission()/has(), termasuk untuk request yang datang beruntun."""
-    semua = db.get_all_settings()
+    require_permission()/has(), termasuk untuk request yang datang beruntun.
+
+    FONDASI Multi-Tenant Phase 1: `tenant_id` opsional (lihat catatan
+    db.get_setting()/_kunci_tenant()) -- Hak Akses Admin adalah pengaturan
+    PER TOKO (Owner Tenant A tidak boleh mengatur Admin Tenant B), jadi
+    endpoint ber-login WAJIB mengisi ini (lihat auth.require_permission)."""
+    semua = db.get_all_settings(tenant_id=tenant_id)
     hasil = {}
     for key, _grup, _label, default in PERMISSION_DEFS:
         nilai = semua.get(key)
@@ -75,7 +80,7 @@ def get_all() -> dict:
     return hasil
 
 
-def set_bulk(data: dict) -> dict:
+def set_bulk(data: dict, tenant_id=None) -> dict:
     """Timpa permission yang DIKIRIM saja (key yang tidak dikirim tetap
     seperti sebelumnya) -- validasi key dulu supaya tidak ada key sembarang
     ikut tersimpan ke tabel settings."""
@@ -84,16 +89,16 @@ def set_bulk(data: dict) -> dict:
         raise ValueError(f"Permission tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
     bersih = {key: ("1" if bool(v) else "0") for key, v in data.items()}
     if bersih:
-        db.set_settings_bulk(bersih)
-    return get_all()
+        db.set_settings_bulk(bersih, tenant_id=tenant_id)
+    return get_all(tenant_id=tenant_id)
 
 
-def has(key: str) -> bool:
+def has(key: str, tenant_id=None) -> bool:
     if key not in PERMISSION_KEYS:
         raise ValueError(f"Permission tidak dikenal: {key}")
-    return get_all().get(key, False)
+    return get_all(tenant_id=tenant_id).get(key, False)
 
 
-def has_any(keys) -> bool:
-    izin = get_all()
+def has_any(keys, tenant_id=None) -> bool:
+    izin = get_all(tenant_id=tenant_id)
     return any(izin.get(k, False) for k in keys)
