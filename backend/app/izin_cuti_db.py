@@ -54,6 +54,10 @@ def init_izin_cuti_db():
 def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    # FONDASI Multi-Tenant Phase 1.1: izin_cuti TIDAK punya kolom tenant_id
+    # sendiri (di-scope TRANSITIF lewat barbers.tenant_id, barber_id NOT
+    # NULL) -- diselipkan di sini untuk fetch-then-authorize.
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     return row
 
 
@@ -64,36 +68,51 @@ def get_pengajuan(pengajuan_id: int):
 
 
 def get_pengajuan_list(barber_id: int = None, status: str = None, jenis: str = None,
-                        tahun: int = None, bulan: int = None) -> list:
-    q = "SELECT * FROM izin_cuti WHERE 1=1"
+                        tahun: int = None, bulan: int = None, tenant_id: int = None) -> list:
+    """FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan
+    ke barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB
+    mengisi ini)."""
+    q = "SELECT i.* FROM izin_cuti i"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = i.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND i.barber_id = ?"; params.append(barber_id)
     if status is not None:
-        q += " AND status = ?"; params.append(status)
+        q += " AND i.status = ?"; params.append(status)
     if jenis is not None:
-        q += " AND jenis = ?"; params.append(jenis)
+        q += " AND i.jenis = ?"; params.append(jenis)
     if tahun is not None:
-        q += " AND tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND i.tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
-    q += " ORDER BY tanggal_mulai DESC, id DESC"
+        q += " AND i.tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    q += " ORDER BY i.tanggal_mulai DESC, i.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
 
 
-def get_jumlah_pending() -> int:
+def get_jumlah_pending(tenant_id: int = None) -> int:
     """Dipakai badge notifikasi sidebar (Owner/Admin) -- lihat izin_notif.js."""
+    q = "SELECT COUNT(*) AS jumlah FROM izin_cuti i"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = i.barber_id"
+    q += " WHERE i.status = 'pending'"
+    params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     with get_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) AS jumlah FROM izin_cuti WHERE status = 'pending'").fetchone()
+        row = conn.execute(q, params).fetchone()
     return int(row["jumlah"] or 0)
 
 
 def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_selesai: str,
-                    alasan: str, diajukan_oleh: str = "") -> dict:
+                    alasan: str, diajukan_oleh: str = "", tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis tidak dikenal: {jenis}")

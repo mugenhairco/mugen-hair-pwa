@@ -445,14 +445,16 @@ def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     return header, baris
 
 
-def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str):
+def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str,
+                     tenant_id: int | None = None):
     """Penyesuaian komisi (bonus/potongan manual) satu bulan kalender --
     data APA ADANYA lewat komisi_penyesuaian_db.get_penyesuaian_list(),
     TIDAK menghitung ulang satu angka pun. Net (Total Bonus - Total
     Potongan) match persis dengan komisi_penyesuaian_db.get_saldo_periode()
     yang dipakai auto-fill Slip Gaji, jadi laporan ini otomatis konsisten
     dengan apa yang sudah tercermin di payroll."""
-    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
+    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
+                                                        tenant_id=tenant_id)
     header = ["Barber", "Jenis", "Jumlah", "Keterangan"]
     baris = [[
         _sel(k["nama_barber"]), _sel("Bonus" if k["jenis"] == "bonus" else "Potongan"),
@@ -599,7 +601,8 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
         if not tahun or not bulan:
             raise ValueError(f"Tahun dan Bulan wajib diisi untuk {_judul(jenis)}.")
         if jenis == "komisi":
-            header, baris, ringkasan_tambahan = _laporan_komisi(tahun, bulan, barber_id, dicetak_oleh)
+            header, baris, ringkasan_tambahan = _laporan_komisi(tahun, bulan, barber_id, dicetak_oleh,
+                                                                  tenant_id=tenant_id)
             col_widths = _LEBAR_KOLOM_KOMISI
         else:
             header, baris = _laporan_rekap_bulanan(tahun, bulan, barber_id, dicetak_oleh, tenant_id=tenant_id)
@@ -1109,13 +1112,14 @@ def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int |
 _LEBAR_KOLOM_RIWAYAT_KOMISI_DASAR = [54 * mm, 20 * mm, 24 * mm, 20 * mm, 24 * mm, 24 * mm, 28 * mm]
 
 
-def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, bulan: int, dicetak_oleh: str) -> bytes:
+def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, bulan: int, dicetak_oleh: str,
+                          tenant_id: int | None = None) -> bytes:
     """PDF dua bagian, PERSIS apa yang tampil di halaman Komisi untuk
     filter Barber/Bulan/Tahun yang sama: Riwayat Komisi (Dasar) (reuse
     db.get_rekap_bulanan_list() apa adanya, TIDAK menghitung ulang) +
     Daftar Penyesuaian Komisi (dengan filter Jenis tambahan yang tidak ada
     di _laporan_komisi() versi Setting > Backup)."""
-    riwayat = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
+    riwayat = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id, tenant_id=tenant_id)
     header_riwayat = ["Barber", "Jml Service", "Komisi Dasar", "Tips", "Uang Harian", "Bonus Cust.", "Total Pendapatan"]
     baris_riwayat = [[
         _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])), _sel(_rupiah(r["total_komisi"])),
@@ -1123,7 +1127,8 @@ def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, b
         _sel(_rupiah(r["total_pendapatan"])),
     ] for r in riwayat]
 
-    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis)
+    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis,
+                                                        tenant_id=tenant_id)
     header_penyesuaian = ["Barber", "Jenis", "Jumlah", "Keterangan"]
     baris_penyesuaian = [[
         _sel(k["nama_barber"]), _sel("Bonus" if k["jenis"] == "bonus" else "Potongan"),
@@ -1179,10 +1184,11 @@ def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: in
 _LEBAR_KOLOM_IZIN_CUTI = [30 * mm, 16 * mm, 20 * mm, 20 * mm, 84 * mm, 24 * mm]
 
 
-def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: str | None, dicetak_oleh: str) -> bytes:
+def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: str | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
     """Halaman Izin & Cuti TIDAK punya filter tanggal/bulan/tahun sama
     sekali (lihat pages/izin_cuti.js) -- Periode selalu "Semua Periode"."""
-    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis)
+    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis, tenant_id=tenant_id)
     label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
     header = ["Barber", "Jenis", "Mulai", "Selesai", "Alasan", "Status"]
     baris = [[
