@@ -1,0 +1,10 @@
+# Dependensi TAMBAHAN untuk menjalankan test suite (backend/tests/) --
+# TIDAK dibutuhkan untuk menjalankan aplikasi (lihat requirements.txt),
+# jadi sengaja dipisah supaya deploy produksi (Render/dst) tidak perlu
+# menginstal ini. Jalankan test dengan:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest backend/tests -v
+-r requirements.txt
+
+pytest>=8.0.0
+httpx>=0.27.0

@@ -2537,6 +2537,31 @@ Alternatif lain untuk men-serve frontend saat development: ekstensi "Live
 Server" di VS Code, atau `npx serve`, atau `php -S localhost:5500` — apa
 saja yang bisa menyajikan file statis di localhost.
 
+## Menjalankan Test
+
+FONDASI Multi-Tenant Phase 1.1 (technical debt yang ditutup): seluruh
+skenario isolasi tenant, migrasi database, dan regresi fitur sekarang
+tersimpan permanen sebagai test suite pytest di `backend/tests/` (bukan
+lagi script ad-hoc yang hilang begitu sesi kerja selesai), dan dijalankan
+otomatis lewat GitHub Actions di setiap push/PR (lihat
+`.github/workflows/backend-tests.yml`).
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests -v
+```
+
+Sebagian besar test (isolasi tenant, migrasi, regresi fitur) jalan murni
+lewat SQLite temporer, tidak butuh setup tambahan apa pun. Satu test
+(`test_backup_postgres.py`, verifikasi Export/Import Database terhadap
+PostgreSQL sungguhan) butuh PostgreSQL lokal di `localhost:5432` dengan
+database `mugen_test`, user `postgres`/password `postgres` — kalau tidak
+tersedia, test itu **otomatis di-skip** (bukan gagal), lihat
+`backend/tests/conftest.py::has_postgres()`. Override connection string
+lewat environment variable `MUGEN_TEST_DATABASE_URL` kalau kredensial
+lokal Anda berbeda.
+
 ## Deployment (Produksi)
 
 Backend (FastAPI) dan frontend (statis) adalah **dua layanan terpisah** —

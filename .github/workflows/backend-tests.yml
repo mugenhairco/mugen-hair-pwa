@@ -1,0 +1,51 @@
+name: Backend tests
+
+# FONDASI Multi-Tenant Phase 1.1 (technical debt): sebelum workflow ini
+# ada, seluruh verifikasi (isolasi tenant, migrasi, regresi fitur, celah
+# Backup Export/Import) hanya dijalankan manual lewat script ad-hoc --
+# TIDAK PERNAH otomatis dijalankan ulang tiap push/PR. Workflow ini
+# menjalankan backend/tests/ (lihat backend/tests/conftest.py) pada
+# setiap push & pull request, termasuk skenario PostgreSQL sungguhan
+# lewat service container di bawah (test_backup_postgres.py di-skip
+# otomatis kalau container ini tidak tersedia, lihat
+# conftest.py::has_postgres()).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mugen_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Run backend test suite
+        working-directory: backend
+        run: pytest tests -v
