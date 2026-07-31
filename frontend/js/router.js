@@ -123,6 +123,18 @@ const MugenRouter = (() => {
     }
 
     const user = MugenState.getUser();
+
+    // FONDASI Multi-Tenant Phase 2.1: akun 'superadmin' (tenant_id=NULL)
+    // TIDAK punya akses ke wilayah tenant mana pun (backend menolak lewat
+    // get_current_tenant_id(), lihat auth.py) -- satu-satunya halaman yang
+    // relevan untuknya adalah Kelola Tenant, dirender untuk hash APA PUN
+    // yang diminta (superadmin tidak punya menu lain untuk dituju).
+    if (user.role === "superadmin") {
+      const content = shell();
+      PageSuperadmin.render(content);
+      return;
+    }
+
     const content = shell();
 
     if (hash.startsWith("#/dashboard")) {

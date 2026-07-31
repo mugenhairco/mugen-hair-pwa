@@ -119,17 +119,25 @@ const MugenNav = (() => {
     MugenBrand.applyToDom();
 
     const nav = MugenUI.el("nav");
-    for (const item of MENU) {
-      const el = _bangunItemNav(item, user, activeHash);
-      if (el) nav.appendChild(el);
-    }
-    for (const label of MENU_SEGERA) {
-      nav.appendChild(MugenUI.el("a", { href: "#", class: "disabled",
-        style: "opacity:.4;pointer-events:none;" }, `${label} (segera)`));
+    // FONDASI Multi-Tenant Phase 2.1: 'superadmin' TIDAK ikut menu MENU
+    // biasa sama sekali (semuanya milik wilayah tenant, yang memang ditolak
+    // backend untuk akun ini, lihat auth.get_current_tenant_id()) -- cukup
+    // satu link ke satu-satunya halaman yang dia punya.
+    if (user.role === "superadmin") {
+      nav.appendChild(_elLink("#/dashboard", "Kelola Tenant", activeHash, user, null));
+    } else {
+      for (const item of MENU) {
+        const el = _bangunItemNav(item, user, activeHash);
+        if (el) nav.appendChild(el);
+      }
+      for (const label of MENU_SEGERA) {
+        nav.appendChild(MugenUI.el("a", { href: "#", class: "disabled",
+          style: "opacity:.4;pointer-events:none;" }, `${label} (segera)`));
+      }
     }
     sidebar.appendChild(nav);
 
-    const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber" };
+    const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber", superadmin: "Super Admin" };
     const userBox = MugenUI.el("div", { class: "user-box" }, [
       MugenUI.el("div", {}, user.username),
       MugenUI.el("div", {}, LABEL_ROLE[user.role] || user.role),

@@ -235,7 +235,7 @@
 // (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
 // berisi lebih dari satu info, bukan digabung titik-koma (ui.js
 // keteranganCell(), laporan_pdf.py _sel_keterangan()).
-const CACHE_NAME = "mugen-hair-shell-v42";
+const CACHE_NAME = "mugen-hair-shell-v43";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -271,6 +271,7 @@ const APP_SHELL = [
   "/js/pages/produk.js",
   "/js/pages/booking.js",
   "/js/pages/book_public.js",
+  "/js/pages/superadmin.js",
   // Perbaikan Alur Cetak PDF: PDF.js (build lokal, BUKAN dari CDN, supaya
   // Preview PDF tetap bisa dipakai offline -- lihat pdfjs_boot.js).
   "/vendor/pdfjs/pdf.min.js",
