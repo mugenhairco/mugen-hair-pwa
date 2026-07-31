@@ -99,6 +99,7 @@ def tambah_pengeluaran(tanggal: str, kategori: str, keterangan: str, jumlah: int
     else:
         reimburse = reimburse_db.buat_reimburse_sistem(
             barber_id, tanggal, kategori, int(jumlah), keterangan=keterangan, dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET reimburse_id = ? WHERE id = ?",
@@ -185,6 +186,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, ketera
     else:
         reimburse = reimburse_db.buat_reimburse_sistem(
             barber_id, tanggal, kategori, int(jumlah), keterangan=keterangan, dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET reimburse_id = ? WHERE id = ?",

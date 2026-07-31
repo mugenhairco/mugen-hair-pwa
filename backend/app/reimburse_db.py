@@ -77,6 +77,10 @@ def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
     row["terkunci"] = _slip_terkunci(row["barber_id"], row["tanggal"])
+    # FONDASI Multi-Tenant Phase 1.1: reimburse TIDAK punya kolom tenant_id
+    # sendiri (di-scope TRANSITIF lewat barbers.tenant_id, barber_id NOT
+    # NULL) -- diselipkan di sini supaya router bisa fetch-then-authorize.
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     # `row` datang dari SELECT * -- kolom biner bukti_data (BLOB, sejak Fase
     # 4) TIDAK bisa di-serialize jadi JSON (bug laten yang ditemukan saat
     # audit migrasi R2 ini: endpoint upload/lihat bukti akan crash 500 begitu
@@ -127,60 +131,80 @@ def get_reimburse(reimburse_id: int):
 
 def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = None,
                         bulan: int = None, kategori: str = None,
-                        tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                        tanggal_mulai: str = None, tanggal_selesai: str = None,
+                        tenant_id: int = None) -> list:
     """tanggal_mulai/tanggal_selesai (inklusif di kedua ujung) dipakai
     Laporan Reimburse (rentang tanggal bebas) -- BEDA dari tahun/bulan
     (satu bulan/tahun penuh, dipakai filter halaman Reimburse), pola sama
-    persis kasbon_db.get_kasbon_list()."""
-    q = "SELECT * FROM reimburse WHERE 1=1"
+    persis kasbon_db.get_kasbon_list().
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan ke
+    barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB
+    mengisi ini)."""
+    q = "SELECT r.* FROM reimburse r"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = r.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND r.barber_id = ?"; params.append(barber_id)
     if status is not None:
-        q += " AND status = ?"; params.append(status)
+        q += " AND r.status = ?"; params.append(status)
     if tahun is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND r.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND r.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if kategori:
-        q += " AND kategori = ?"; params.append(kategori)
+        q += " AND r.kategori = ?"; params.append(kategori)
     if tanggal_mulai is not None:
-        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+        q += " AND r.tanggal >= ?"; params.append(tanggal_mulai)
     if tanggal_selesai is not None:
-        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
-    q += " ORDER BY tanggal DESC, id DESC"
+        q += " AND r.tanggal <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY r.tanggal DESC, r.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
 
 
 def get_reimburse_list_disetujui(tahun: int = None, bulan: int = None, barber_id: int = None,
-                                  tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                                  tanggal_mulai: str = None, tanggal_selesai: str = None,
+                                  tenant_id: int = None) -> list:
     """Klaim BERSTATUS DISETUJUI, difilter lewat `tanggal_approval` (BUKAN
     `tanggal` klaim seperti get_reimburse_list()) -- dipakai
     gabung_ke_rekap_transaksi() di bawah (Tahap 14: baris reimburse
     otomatis muncul di Rekap Transaksi bertanggal SESUAI TANGGAL
-    DISETUJUI, bukan tanggal klaim diajukan)."""
-    q = "SELECT * FROM reimburse WHERE status = 'disetujui' AND tanggal_approval IS NOT NULL"
+    DISETUJUI, bukan tanggal klaim diajukan).
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, sama seperti
+    get_reimburse_list()."""
+    q = "SELECT r.* FROM reimburse r"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = r.barber_id"
+    q += " WHERE r.status = 'disetujui' AND r.tanggal_approval IS NOT NULL"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND r.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND tanggal_approval LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND r.tanggal_approval LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal_approval LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND r.tanggal_approval LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
-        q += " AND tanggal_approval >= ?"; params.append(tanggal_mulai)
+        q += " AND r.tanggal_approval >= ?"; params.append(tanggal_mulai)
     if tanggal_selesai is not None:
-        q += " AND tanggal_approval <= ?"; params.append(tanggal_selesai)
-    q += " ORDER BY tanggal_approval DESC, id DESC"
+        q += " AND r.tanggal_approval <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY r.tanggal_approval DESC, r.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
 
 
 def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None, barber_id: int = None,
-                               tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                               tanggal_mulai: str = None, tanggal_selesai: str = None,
+                               tenant_id: int = None) -> list:
     """Menggabungkan `baris` (hasil database.get_rekap_transaksi_list(), satu
     baris = satu transaksi/hari libur) dengan baris klaim Reimburse
     BERSTATUS DISETUJUI pada periode yang sama -- dipanggil dari layer
@@ -195,7 +219,8 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     jabatan (barber/kasir/ob/kru), sama seperti tab Transaksi yang sudah
     generik untuk seluruh karyawan."""
     klaim = get_reimburse_list_disetujui(tahun=tahun, bulan=bulan, barber_id=barber_id,
-                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                          tenant_id=tenant_id)
     for k in klaim:
         baris.append({
             "tipe": "reimburse",
@@ -216,19 +241,25 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     return baris
 
 
-def get_kategori_list() -> list:
+def get_kategori_list(tenant_id: int = None) -> list:
+    q = "SELECT DISTINCT r.kategori FROM reimburse r"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = r.barber_id"
+    q += " WHERE r.kategori IS NOT NULL AND r.kategori != ''"
+    params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
+    q += " ORDER BY r.kategori"
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT kategori FROM reimburse WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori"
-        ).fetchall()
+        rows = conn.execute(q, params).fetchall()
     dinamis = [r["kategori"] for r in rows]
     return list(dict.fromkeys(KATEGORI_DEFAULT + dinamis))
 
 
 def buat_reimburse(barber_id: int, tanggal: str, kategori: str, nominal: int,
-                    keterangan: str = "", diajukan_oleh: str = "") -> dict:
+                    keterangan: str = "", diajukan_oleh: str = "", tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
     kategori = (kategori or "").strip()
     if not kategori:
@@ -396,13 +427,13 @@ def get_bukti_data(reimburse_id: int):
 
 
 def buat_reimburse_sistem(barber_id: int, tanggal: str, kategori: str, nominal: int,
-                           keterangan: str = "", dibuat_oleh: str = "") -> dict:
+                           keterangan: str = "", dibuat_oleh: str = "", tenant_id: int = None) -> dict:
     """Sama seperti buat_reimburse(), TAPI untuk klaim yang lahir otomatis
     dari Pengeluaran (sumber_dana='karyawan') -- diinput Owner/Admin sendiri
     lewat pencatatan pengeluaran toko, jadi langsung disetujui (status
     'disetujui', bukan 'pending' menunggu approval terpisah)."""
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Karyawan tidak ditemukan.")
     kategori = (kategori or "").strip()
     if not kategori:

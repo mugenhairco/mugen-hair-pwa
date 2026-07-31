@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import database as db
 import kasbon_db
 import laporan_pdf
 import permissions
@@ -30,7 +31,7 @@ def _cek_akses_lihat(user: dict, kasbon: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_kasbon"):
+        if not permissions.has("izin_kasbon", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Kasbon. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -40,13 +41,27 @@ def _cek_akses_lihat(user: dict, kasbon: dict = None):
     raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
 
+def _pastikan_kasbon_tenant_sama(user: dict, kasbon: dict | None):
+    """FONDASI Multi-Tenant Phase 1.1: fetch-then-authorize -- 404 (bukan
+    403) supaya tidak membocorkan bahwa kasbon_id itu sebenarnya ada, milik
+    tenant lain (pola sama seperti routers/pengeluaran.py)."""
+    if kasbon is None or kasbon.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Kasbon tidak ditemukan.")
+
+
+def _pastikan_pembayaran_tenant_sama(user: dict, pembayaran: dict | None):
+    if pembayaran is None or pembayaran.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Riwayat pembayaran kasbon tidak ditemukan.")
+
+
 @router.get("")
 def list_kasbon(barber_id: int = None, status: str = None, tahun: int = None, bulan: int = None,
                  user: dict = Depends(get_current_user)):
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    return kasbon_db.get_kasbon_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan)
+    return kasbon_db.get_kasbon_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan,
+                                      tenant_id=user["tenant_id"])
 
 
 @router.get("/pdf")
@@ -57,7 +72,8 @@ def list_kasbon_pdf(barber_id: int = None, status: str = None, tahun: int = None
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_kasbon_list(barber_id, status, tahun, bulan, user["username"])
+    konten = laporan_pdf.buat_pdf_kasbon_list(barber_id, status, tahun, bulan, user["username"],
+                                               tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("kasbon")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -68,14 +84,16 @@ def saldo_barber(barber_id: int, user: dict = Depends(get_current_user)):
     if user["role"] == "barber" and barber_id != user.get("barber_id"):
         raise HTTPException(status_code=403, detail="Tidak bisa melihat saldo kasbon barber lain.")
     _cek_akses_lihat(user)
+    barber = db.get_barber(barber_id)
+    if barber is None or barber["tenant_id"] != user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="Barber tidak ditemukan.")
     return {"barber_id": barber_id, "saldo": kasbon_db.get_saldo_barber(barber_id)}
 
 
 @router.get("/{kasbon_id}")
 def ambil_kasbon(kasbon_id: int, user: dict = Depends(get_current_user)):
     kasbon = kasbon_db.get_kasbon(kasbon_id)
-    if kasbon is None:
-        raise HTTPException(status_code=404, detail="Kasbon tidak ditemukan.")
+    _pastikan_kasbon_tenant_sama(user, kasbon)
     _cek_akses_lihat(user, kasbon)
     return kasbon
 
@@ -83,8 +101,7 @@ def ambil_kasbon(kasbon_id: int, user: dict = Depends(get_current_user)):
 @router.get("/{kasbon_id}/pembayaran")
 def riwayat_pembayaran(kasbon_id: int, user: dict = Depends(get_current_user)):
     kasbon = kasbon_db.get_kasbon(kasbon_id)
-    if kasbon is None:
-        raise HTTPException(status_code=404, detail="Kasbon tidak ditemukan.")
+    _pastikan_kasbon_tenant_sama(user, kasbon)
     _cek_akses_lihat(user, kasbon)
     return kasbon_db.get_riwayat_pembayaran(kasbon_id)
 
@@ -100,7 +117,8 @@ class KasbonBody(BaseModel):
 def buat_kasbon(body: KasbonBody, user: dict = Depends(require_permission("izin_kasbon"))):
     try:
         return kasbon_db.buat_kasbon(body.barber_id, body.tanggal, body.jumlah,
-                                      keterangan=body.keterangan, dibuat_oleh=user["username"])
+                                      keterangan=body.keterangan, dibuat_oleh=user["username"],
+                                      tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -113,6 +131,7 @@ class KasbonEditBody(BaseModel):
 
 @router.put("/{kasbon_id}")
 def edit_kasbon(kasbon_id: int, body: KasbonEditBody, user: dict = Depends(require_permission("izin_kasbon"))):
+    _pastikan_kasbon_tenant_sama(user, kasbon_db.get_kasbon(kasbon_id))
     try:
         return kasbon_db.edit_kasbon(kasbon_id, tanggal=body.tanggal, jumlah=body.jumlah,
                                       keterangan=body.keterangan)
@@ -122,6 +141,7 @@ def edit_kasbon(kasbon_id: int, body: KasbonEditBody, user: dict = Depends(requi
 
 @router.delete("/{kasbon_id}")
 def hapus_kasbon(kasbon_id: int, user: dict = Depends(require_permission("izin_kasbon"))):
+    _pastikan_kasbon_tenant_sama(user, kasbon_db.get_kasbon(kasbon_id))
     try:
         kasbon_db.hapus_kasbon(kasbon_id)
     except ValueError as e:
@@ -135,6 +155,7 @@ def batalkan_pembayaran(pembayaran_id: int, user: dict = Depends(require_permiss
     Batalkan di Rekap Transaksi. Path ini didaftarkan SEBELUM /{kasbon_id}
     tidak masalah karena kedalamannya beda (2 segmen vs 1), jadi tidak
     pernah ambigu dengan GET /{kasbon_id}."""
+    _pastikan_pembayaran_tenant_sama(user, kasbon_db.get_pembayaran_kasbon(pembayaran_id))
     try:
         kasbon_db.batalkan_pembayaran_kasbon(pembayaran_id)
     except ValueError as e:
@@ -150,6 +171,7 @@ class PembayaranBody(BaseModel):
 
 @router.post("/{kasbon_id}/pembayaran")
 def bayar_kasbon(kasbon_id: int, body: PembayaranBody, user: dict = Depends(require_permission("izin_kasbon"))):
+    _pastikan_kasbon_tenant_sama(user, kasbon_db.get_kasbon(kasbon_id))
     try:
         return kasbon_db.bayar_kasbon(kasbon_id, body.tanggal, body.jumlah,
                                        keterangan=body.keterangan, dibuat_oleh=user["username"])

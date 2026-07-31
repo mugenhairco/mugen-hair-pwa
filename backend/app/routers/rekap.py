@@ -39,11 +39,13 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     # Tahap 14: baris Reimburse yang sudah DISETUJUI ikut digabung di sini
     # (bukan di database.py, circular import) -- tanggal barisnya tanggal
     # DISETUJUI, bukan tanggal klaim diajukan.
-    data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                   tenant_id=user["tenant_id"])
     # Tahap 17: baris Kasbon yang sudah DIBAYAR (manual maupun potong_gaji)
     # ikut digabung juga -- BEDA dari Reimburse, pendapatan barisnya
     # NEGATIF (mengurangi Total, lihat kasbon_db.py).
-    data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                tenant_id=user["tenant_id"])
     # Dukungan Barber + Non-Barber: baris Gaji Non-Barber (Input Data
     # Non-Barber) ikut digabung juga -- karyawan non-barber TIDAK PERNAH
     # punya baris "transaksi" (lihat data_non_barber_db.py), jadi tanpa ini
