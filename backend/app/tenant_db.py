@@ -73,7 +73,7 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
     membuat user Owner/data awal, itu tanggung jawab pemanggil, sama seperti
     _bootstrap_admin_pertama() di main.py membuat user pertama terpisah dari
     pembuatan tenant default). Dipakai untuk pengujian Phase 1 (Tenant B)
-    dan fondasi provisioning Super Admin nanti."""
+    dan fondasi provisioning Super Admin (lihat routers/superadmin.py)."""
     slug = (slug or "").strip().lower()
     nama_barbershop = (nama_barbershop or "").strip()
     if not slug:
@@ -89,3 +89,17 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
             (slug, nama_barbershop, now),
         )
         return cur.lastrowid
+
+
+def set_status(tenant_id: int, status: str) -> None:
+    """FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): aktifkan/
+    nonaktifkan satu tenant. Efeknya langsung terasa tanpa tunggu token
+    expired -- get_current_user() (auth.py) sudah menolak SEMUA request user
+    tenant yang di-nonaktifkan sejak Phase 1, jadi fungsi ini murni mengubah
+    kolom `status`, tidak perlu menyentuh baris user/data lain sama sekali."""
+    if status not in STATUS_VALID:
+        raise ValueError(f"Status harus salah satu dari: {', '.join(sorted(STATUS_VALID))}.")
+    if get_tenant(tenant_id) is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute("UPDATE tenants SET status = ? WHERE id = ?", (status, tenant_id))

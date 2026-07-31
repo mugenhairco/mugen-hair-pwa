@@ -75,7 +75,7 @@ import izin_cuti_db
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -199,6 +199,7 @@ app.include_router(izin_cuti.router)
 app.include_router(pemasukan.router)
 app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
+app.include_router(superadmin.router)
 
 
 @app.on_event("startup")
@@ -283,6 +284,7 @@ def on_startup():
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
+    _bootstrap_superadmin_pertama()
 
     # Migrasi Cloudflare R2 (Storage File): dicatat sekali saat boot supaya
     # langsung kelihatan di log Render kalau env var R2_* belum lengkap
@@ -390,6 +392,38 @@ def _reset_admin_darurat():
         "password ke nilai yang sama persis (ini KEMUNGKINAN BESAR penyebab kalau ada "
         "laporan 'password kembali ke password awal setelah restart/deploy').",
         _INSTANCE_ID, username, hasil,
+    )
+
+
+def _bootstrap_superadmin_pertama():
+    """FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): akun
+    `role='superadmin'` (tenant_id=NULL) untuk mengelola SELURUH tenant --
+    berbeda dari _bootstrap_admin_pertama() di atas (otomatis jalan kalau
+    tabel users kosong, pakai password default), akun ini adalah yang PALING
+    sensitif di seluruh sistem (bisa lihat & mengaktifkan/menonaktifkan
+    SEMUA tenant), jadi HANYA dibuat kalau operator mengisi KEDUA environment
+    variable ini secara eksplisit (pola sama seperti _reset_admin_darurat()
+    di bawah) -- default kosong = fungsi ini no-op total, TIDAK PERNAH
+    otomatis membuat superadmin dengan password bawaan:
+    - SUPERADMIN_BOOTSTRAP_USERNAME
+    - SUPERADMIN_BOOTSTRAP_PASSWORD
+
+    Aman dipanggil tiap kali proses ini boot -- no-op begitu SATU akun
+    superadmin (role apa pun statusnya) sudah pernah ada, tidak pernah
+    menimpa/duplikat."""
+    username = os.environ.get("SUPERADMIN_BOOTSTRAP_USERNAME", "").strip()
+    password = os.environ.get("SUPERADMIN_BOOTSTRAP_PASSWORD", "")
+    if not username or not password:
+        return
+    if any(u["role"] == "superadmin" for u in auth_db.get_user_list()):
+        return
+    auth_db.tambah_user(username=username, password=password, role="superadmin", tenant_id=None)
+    logger.critical(
+        "[%s] BOOTSTRAP: akun Super Admin baru '%s' dibuat dari "
+        "SUPERADMIN_BOOTSTRAP_USERNAME/PASSWORD (belum ada superadmin sebelumnya). "
+        "Kalau ini bukan pemasangan Super Admin Dashboard pertama kali, periksa "
+        "kenapa tidak ada akun superadmin yang tersimpan sebelumnya.",
+        _INSTANCE_ID, username,
     )
 
 

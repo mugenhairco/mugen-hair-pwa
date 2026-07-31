@@ -155,15 +155,24 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None, 
     sudah meresolusi tenant default sebelum memanggil ini). Constraint unik
     username berubah dari GLOBAL menjadi PER TENANT (lihat
     postgres_schema.py/tenant_migrasi.py) -- dua tenant boleh sama-sama
-    punya username yang sama persis."""
+    punya username yang sama persis.
+
+    FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): role 'superadmin'
+    ditambahkan -- akun ini mengelola SELURUH tenant (bukan milik satu
+    barbershop mana pun), jadi WAJIB `tenant_id=None` (get_current_user() di
+    auth.py melewatkan pengecekan tenant aktif kalau tenant_id None, dan
+    get_current_tenant_id() menolak akun ini dari endpoint ber-scope tenant
+    -- lihat auth.py). Lihat main.py::_bootstrap_superadmin_pertama()."""
     from datetime import datetime
     username = (username or "").strip()
     if not username:
         raise ValueError("Username tidak boleh kosong.")
-    if role not in ("admin", "staff", "barber"):
-        raise ValueError("Role harus 'admin' (Owner), 'staff' (Admin), atau 'barber'.")
+    if role not in ("admin", "staff", "barber", "superadmin"):
+        raise ValueError("Role harus 'admin' (Owner), 'staff' (Admin), 'barber', atau 'superadmin'.")
     if role == "barber" and barber_id is None:
         raise ValueError("User dengan role 'barber' wajib dikaitkan ke barber_id.")
+    if role == "superadmin" and tenant_id is not None:
+        raise ValueError("User ber-role 'superadmin' tidak boleh dikaitkan ke tenant mana pun.")
     if not password or len(password) < 4:
         raise ValueError("Password minimal 4 karakter.")
 

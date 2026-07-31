@@ -101,6 +101,19 @@ def require_barber(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
+    """FONDASI Multi-Tenant Phase 2.1: Super Admin Dashboard -- akun
+    `role='superadmin'` (selalu `tenant_id=None`, lihat auth_db.tambah_user())
+    mengelola SELURUH tenant. get_current_user() di atas TIDAK menjalankan
+    pengecekan tenant aktif untuk akun ini (tenant_id None), dan
+    get_current_tenant_id() menolak akun ini dari SEMUA endpoint ber-scope
+    tenant biasa -- dua sifat itu bersama-sama memastikan superadmin dan
+    akun tenant biasa saling eksklusif dari sisi endpoint yang bisa diakses."""
+    if user["role"] != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus Super Admin.")
+    return user
+
+
 def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     """'admin' (Owner, akses penuh) atau 'staff' (Admin, akses dibatasi hak
     akses yang diatur Owner lewat Setting > Hak Akses Admin -- lihat
