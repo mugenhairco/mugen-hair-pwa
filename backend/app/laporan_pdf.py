@@ -585,13 +585,12 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
     bebas (tanggal_mulai/tanggal_selesai) supaya Periode di PDF menunjukkan
     rentang tanggal sebenarnya, bukan cuma Bulan/Tahun.
 
-    FONDASI Multi-Tenant Phase 1: `tenant_id` SEJAUH INI diteruskan ke
-    jenis="pengeluaran"/"transaksi"/"rekap_bulanan" (basis datanya sudah
-    tenant-aware -- lihat Tahap 28/29/30). Jenis lain (kasbon/reimburse/
-    pemasukan/komisi) MASIH mengembalikan data LINTAS TENANT -- keterbatasan
-    yang diketahui & didokumentasikan di laporan Phase 1, karena basis data
-    modul-modul itu (kasbon_db, reimburse_db, komisi_penyesuaian_db,
-    pemasukan_db) belum tenant-aware (lihat cakupan Tahap 34)."""
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` sekarang diteruskan ke
+    SELURUH jenis laporan, termasuk kasbon/reimburse/komisi (lihat
+    _laporan_kasbon/_laporan_reimburse/_laporan_komisi). Jenis "pemasukan"
+    MASIH mengembalikan data LINTAS TENANT -- keterbatasan yang diketahui &
+    didokumentasikan di laporan Phase 1.1, karena pemasukan_db belum
+    tenant-aware (lihat laporan hardening Phase 1.1, bagian technical debt)."""
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis laporan tidak dikenal: {jenis}")
 
@@ -738,12 +737,10 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     periode kalau diisi -- filter tampilan layar (Bulan+Tahun) sendiri
     tidak berubah, ini murni opsi tambahan saat cetak PDF.
 
-    FONDASI Multi-Tenant Phase 1: `tenant_id` HANYA diteruskan ke query
-    db.get_rekap_transaksi_list()/get_rincian_service_*() (Tahap 30) --
-    data_non_barber_db/reimburse_db/kasbon_db yang digabung di bawah BELUM
-    tenant-aware (Tahap 34), jadi baris gabungan dari modul itu masih bisa
-    ikut tampil lintas tenant kalau barber_id tidak diisi. Diketahui &
-    didokumentasikan sebagai keterbatasan Phase 1."""
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` diteruskan ke SELURUH query
+    di bawah, termasuk data_non_barber_db/reimburse_db/kasbon_db yang
+    digabung (lihat _gabung_reimburse_kasbon_kolom()) -- Phase 1 sempat
+    tidak meneruskannya ke ketiga modul itu, sudah diperbaiki di sini."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
@@ -752,7 +749,8 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         # kebetulan jatuh di tanggal yang sama ikut tertempel ke baris itu
         # juga (fungsi itu generik, bekerja untuk baris tipe apapun).
         data = data_non_barber_db.gabung_ke_rekap_transaksi(
-            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+            tenant_id=tenant_id)
         data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
             data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
             tenant_id=tenant_id)
@@ -761,7 +759,8 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                             tenant_id=tenant_id)
         data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
             data, tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
         rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
@@ -924,17 +923,23 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                       tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                    tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
         rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                                           tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
         data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                       tenant_id=tenant_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                    tenant_id=tenant_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                             tenant_id=tenant_id)
         rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
                                                           tenant_id=tenant_id)
         periode = _periode_text_opsional(tahun, bulan)
@@ -1067,8 +1072,9 @@ def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_ole
 _LEBAR_KOLOM_SLIP_GAJI_LIST = [26 * mm, 44 * mm, 30 * mm, 34 * mm, 60 * mm]
 
 
-def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str) -> bytes:
-    data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
+    data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
     header = ["Periode", "Barber", "Reimburse", "Total Diterima", "Status"]
     baris = [[
         _sel(_periode_text_slip_gaji(r)), _sel(r["nama_barber"]),

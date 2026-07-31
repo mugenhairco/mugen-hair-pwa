@@ -50,7 +50,8 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     # Non-Barber) ikut digabung juga -- karyawan non-barber TIDAK PERNAH
     # punya baris "transaksi" (lihat data_non_barber_db.py), jadi tanpa ini
     # filter "Semua Karyawan"/pilih karyawan non-barber selalu kosong.
-    data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                         tenant_id=user["tenant_id"])
     return data
 
 

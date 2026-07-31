@@ -168,6 +168,10 @@ def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(karyawan terhapus)"
     row["jabatan"] = barber["jabatan"] if barber else "barber"
+    # FONDASI Multi-Tenant Phase 1.1: slip_gaji TIDAK punya kolom tenant_id
+    # sendiri (di-scope TRANSITIF lewat barbers.tenant_id, barber_id NOT
+    # NULL) -- diselipkan di sini untuk fetch-then-authorize.
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     return row
 
 
@@ -199,16 +203,25 @@ def get_slip_gaji(slip_id: int):
         return _lengkapi(dict(row)) if row else None
 
 
-def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = None) -> list:
-    q = "SELECT * FROM slip_gaji WHERE 1=1"
+def get_slip_gaji_list(tahun: int = None, bulan: int = None, barber_id: int = None,
+                        tenant_id: int = None) -> list:
+    """FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan
+    ke barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB
+    mengisi ini)."""
+    q = "SELECT s.* FROM slip_gaji s"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = s.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
-        q += " AND tahun = ?"; params.append(tahun)
+        q += " AND s.tahun = ?"; params.append(tahun)
     if bulan is not None:
-        q += " AND bulan = ?"; params.append(bulan)
+        q += " AND s.bulan = ?"; params.append(bulan)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
-    q += " ORDER BY tahun DESC, bulan DESC, id DESC"
+        q += " AND s.barber_id = ?"; params.append(barber_id)
+    q += " ORDER BY s.tahun DESC, s.bulan DESC, s.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
@@ -218,7 +231,7 @@ def buat_slip_gaji(barber_id: int, tahun: int = None, bulan: int = None, gaji_po
                     potongan_kasbon: int = 0, potongan_lain: int = 0, penyesuaian_komisi: int = 0,
                     reimburse: int = 0, catatan_potongan: str = "", dibuat_oleh: str = "",
                     jumlah_hari_masuk: int = None, bonus_manual: int = 0,
-                    tanggal_mulai: str = None, tanggal_selesai: str = None) -> dict:
+                    tanggal_mulai: str = None, tanggal_selesai: str = None, tenant_id: int = None) -> dict:
     """Generate (atau hitung ulang, kalau belum berstatus Sudah Dibayar) slip
     gaji satu karyawan. Komponen income (komisi/tips/uang harian/bonus)
     SELALU dihitung ULANG dari get_ringkasan_barber_bulan() apa adanya --
@@ -248,7 +261,7 @@ def buat_slip_gaji(barber_id: int, tahun: int = None, bulan: int = None, gaji_po
     ke kolom gaji_pokok SLIP INI apa adanya (BUKAN ke barbers.gaji_pokok,
     yang tetap eksklusif Barber)."""
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Karyawan tidak ditemukan.")
 
     jabatan = barber.get("jabatan") or "barber"
