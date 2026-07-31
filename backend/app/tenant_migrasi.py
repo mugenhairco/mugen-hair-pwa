@@ -28,10 +28,23 @@ hasil audit "Database Design Impact"):
   users, barbers, services, produk, pengeluaran, website_gallery,
   bookings, closed_slot, toko_libur
 
+FONDASI Multi-Tenant Phase 1.1 -- tiga tabel tambahan juga mendapat
+tenant_id LANGSUNG (bukan lewat _TABEL_TENANT_LANGSUNG generik di atas
+karena masing-masing constraint-nya beda, lihat penjelasan tiap fungsi):
+  pemasukan (barber_id NULLABLE -- beda dari pengeluaran yang barber_id-nya
+  juga nullable tapi SUDAH dapat tenant_id sejak Phase 1, pemasukan
+  ketinggalan saat itu), kas_saldo_awal & kas_penyesuaian (TIDAK PUNYA
+  barber_id sama sekali -- saldo kas milik TOKO, bukan satu karyawan,
+  jadi tidak bisa di-scope transitif lewat JOIN ke barbers seperti
+  kasbon/reimburse/dst di bawah).
+
 Tabel yang TIDAK mendapat kolom baru (tenant-scoped TRANSITIF lewat FK ke
 tabel di atas, sesuai audit -- query-nya di-filter lewat JOIN, bukan lewat
 kolom baru): transaksi, transaksi_detail, absensi_libur, produk_mutasi,
-booking_items.
+booking_items. FONDASI Multi-Tenant Phase 1.1 menambah pola yang sama untuk
+modul Karyawan (semua barber_id NOT NULL, sehingga cukup di-scope lewat
+JOIN ke barbers.tenant_id): kasbon, kasbon_pembayaran, slip_gaji,
+komisi_penyesuaian, reimburse, izin_cuti, data_non_barber.
 
 `settings` dan `file_asset` SENGAJA TIDAK mendapat kolom baru sama sekali
 (dan TIDAK butuh migrasi apa pun di sini) -- keduanya sudah punya kolom
@@ -55,6 +68,8 @@ SLUG_TENANT_DEFAULT = "mugen-hair-co"
 _TABEL_TENANT_LANGSUNG = [
     "users", "barbers", "services", "produk", "pengeluaran",
     "website_gallery", "bookings", "closed_slot", "toko_libur",
+    # FONDASI Multi-Tenant Phase 1.1 -- lihat penjelasan di docstring modul.
+    "pemasukan", "kas_saldo_awal", "kas_penyesuaian",
 ]
 
 

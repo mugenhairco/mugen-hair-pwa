@@ -92,6 +92,7 @@ def tambah_pengeluaran(tanggal: str, kategori: str, keterangan: str, jumlah: int
     if sumber_dana == "kas":
         kas_penyesuaian_id = uang_kas_db.tambah_penyesuaian(
             tanggal, "kurang", int(jumlah), keterangan=f"Pengeluaran: {keterangan}", dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET kas_penyesuaian_id = ? WHERE id = ?",
@@ -179,6 +180,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, ketera
     if sumber_dana == "kas":
         kas_penyesuaian_id_baru = uang_kas_db.tambah_penyesuaian(
             tanggal, "kurang", int(jumlah), keterangan=f"Pengeluaran: {keterangan}", dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET kas_penyesuaian_id = ? WHERE id = ?",

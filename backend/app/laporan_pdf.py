@@ -405,8 +405,9 @@ def _laporan_pengeluaran(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh:
     return header, baris
 
 
-def _laporan_pemasukan(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str):
-    data = pemasukan_db.get_pemasukan_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+def _laporan_pemasukan(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str, tenant_id: int | None = None):
+    data = pemasukan_db.get_pemasukan_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                            tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Jumlah"]
     baris = [[p["tanggal"], p.get("kategori") or "-", p["keterangan"], p.get("nama_barber") or "-",
               _rupiah(p["jumlah"])] for p in data]
@@ -586,11 +587,9 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
     rentang tanggal sebenarnya, bukan cuma Bulan/Tahun.
 
     FONDASI Multi-Tenant Phase 1.1: `tenant_id` sekarang diteruskan ke
-    SELURUH jenis laporan, termasuk kasbon/reimburse/komisi (lihat
-    _laporan_kasbon/_laporan_reimburse/_laporan_komisi). Jenis "pemasukan"
-    MASIH mengembalikan data LINTAS TENANT -- keterbatasan yang diketahui &
-    didokumentasikan di laporan Phase 1.1, karena pemasukan_db belum
-    tenant-aware (lihat laporan hardening Phase 1.1, bagian technical debt)."""
+    SELURUH jenis laporan tanpa kecuali (kasbon/reimburse/komisi/pemasukan
+    -- lihat _laporan_kasbon/_laporan_reimburse/_laporan_komisi/
+    _laporan_pemasukan)."""
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis laporan tidak dikenal: {jenis}")
 
@@ -628,7 +627,7 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
             )
             col_widths = _LEBAR_KOLOM_REIMBURSE
         elif jenis == "pemasukan":
-            header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh)
+            header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh, tenant_id=tenant_id)
         else:
             header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh, tenant_id=tenant_id)
 
@@ -1220,8 +1219,10 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
 _LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN = [20 * mm, 26 * mm, 70 * mm, 26 * mm, 24 * mm, 28 * mm]
 
 
-def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str) -> bytes:
-    data = pemasukan_db.get_pemasukan_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari)
+def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
+    data = pemasukan_db.get_pemasukan_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari,
+                                            tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Nominal", "Status"]
     baris = [[
         _sel(p["tanggal"]), _sel(p.get("kategori") or "-"), _sel(p["keterangan"]),
@@ -1257,14 +1258,15 @@ def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari
 _LEBAR_KOLOM_UANG_KAS = [24 * mm, 20 * mm, 28 * mm, 82 * mm, 40 * mm]
 
 
-def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: str) -> bytes:
+def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: str,
+                            tenant_id: int | None = None) -> bytes:
     """Saldo Berjalan dihitung di PYTHON (bukan SQL) saat iterasi baris
     SECARA KRONOLOGIS (tertua dulu, kebalikan dari get_penyesuaian_list()
     yang defaultnya terbaru dulu -- ledger yang menunjukkan saldo berjalan
     HARUS dibaca kronologis), mulai dari Saldo Kas Awal -- konsisten
     dengan uang_kas_db.get_saldo_kas()."""
-    data = list(reversed(uang_kas_db.get_penyesuaian_list(tahun=tahun, bulan=bulan)))
-    saldo_awal = uang_kas_db.get_saldo_awal()["saldo"]
+    data = list(reversed(uang_kas_db.get_penyesuaian_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)))
+    saldo_awal = uang_kas_db.get_saldo_awal(tenant_id)["saldo"]
     header = ["Tanggal", "Jenis", "Jumlah", "Keterangan", "Saldo Berjalan"]
     baris = []
     saldo_berjalan = saldo_awal

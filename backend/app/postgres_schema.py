@@ -529,6 +529,15 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE closed_slot ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE toko_libur ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 
+-- FONDASI Multi-Tenant Phase 1.1: pemasukan.barber_id NULLABLE dan
+-- kas_saldo_awal/kas_penyesuaian TIDAK PUNYA barber_id sama sekali (saldo
+-- kas milik TOKO, bukan satu karyawan) -- ketiganya TIDAK BISA di-scope
+-- transitif lewat JOIN ke barbers seperti kasbon/reimburse/dst, jadi dapat
+-- tenant_id LANGSUNG (lihat tenant_migrasi.py untuk penjelasan lengkap).
+ALTER TABLE pemasukan ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE kas_saldo_awal ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+ALTER TABLE kas_penyesuaian ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+
 -- Kolom `nama` di barbers/services SENGAJA TIDAK lagi unik GLOBAL --
 -- dilonggarkan jadi unik PER TENANT (dua toko boleh sama-sama punya
 -- barber "Andi" atau service "Dry Cut"). Nama constraint di bawah ini
@@ -564,7 +573,9 @@ def create_all():
         # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
         tenant_default_id = _pastikan_tenant_default(conn)
         for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
-                      "website_gallery", "bookings", "closed_slot", "toko_libur"):
+                      "website_gallery", "bookings", "closed_slot", "toko_libur",
+                      # FONDASI Multi-Tenant Phase 1.1 -- lihat ALTER TABLE di atas.
+                      "pemasukan", "kas_saldo_awal", "kas_penyesuaian"):
             conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_default_id,))
 
         # FONDASI Multi-Tenant Phase 1: salin (bukan pindah/hapus) SEMUA
