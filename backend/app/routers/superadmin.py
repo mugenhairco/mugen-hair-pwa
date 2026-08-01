@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import auth_db
+import superadmin_audit_db
 import tenant_db
 from auth import require_superadmin
 
@@ -79,6 +80,8 @@ def buat_tenant(body: BuatTenantBody, user: dict = Depends(require_superadmin)):
         # ulang untuk toko yang sama; kasus ini cukup jarang untuk tidak
         # butuh rollback otomatis).
         raise HTTPException(status_code=422, detail=f"Toko dibuat, tapi akun Owner gagal: {e}")
+    superadmin_audit_db.catat(user["username"], "buat_tenant", tenant_id=tenant_id, tenant_slug=body.slug,
+                               detail=f"nama_barbershop={body.nama_barbershop!r}, owner_username={body.owner_username!r}")
     return _tenant_dengan_ringkasan(tenant_db.get_tenant(tenant_id))
 
 
@@ -92,4 +95,12 @@ def ubah_status_tenant(tenant_id: int, body: StatusTenantBody, user: dict = Depe
         tenant_db.set_status(tenant_id, body.status)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return _tenant_dengan_ringkasan(tenant_db.get_tenant(tenant_id))
+    t = tenant_db.get_tenant(tenant_id)
+    aksi = "aktifkan_tenant" if body.status == "aktif" else "nonaktifkan_tenant"
+    superadmin_audit_db.catat(user["username"], aksi, tenant_id=tenant_id, tenant_slug=t["slug"] if t else None)
+    return _tenant_dengan_ringkasan(t)
+
+
+@router.get("/audit-log")
+def audit_log(user: dict = Depends(require_superadmin)):
+    return superadmin_audit_db.list_log()

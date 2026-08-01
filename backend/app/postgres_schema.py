@@ -553,6 +553,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_services_tenant_nama ON services(tenant_id
 -- username "admin".
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant_username ON users(tenant_id, username);
+
+-- FONDASI Multi-Tenant Phase 2.1: audit log Super Admin -- lihat
+-- superadmin_audit_db.py (jalur SQLite) untuk penjelasan lengkap. Baris di
+-- sini milik SELURUH sistem (bukan satu tenant), jadi SENGAJA tidak punya
+-- kolom tenant_id sendiri.
+CREATE TABLE IF NOT EXISTS superadmin_audit_log (
+    id                    SERIAL PRIMARY KEY,
+    waktu                 TEXT NOT NULL,
+    superadmin_username   TEXT NOT NULL,
+    aksi                  TEXT NOT NULL,
+    tenant_id             INTEGER,
+    tenant_slug           TEXT,
+    detail                TEXT
+);
 """
 
 
