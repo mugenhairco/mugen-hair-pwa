@@ -8,6 +8,21 @@
 // routers/superadmin.py::buat_tenant()).
 
 const PageSuperadmin = (() => {
+  // waktu audit log disimpan sebagai ISO "YYYY-MM-DDTHH:MM:SS" (lihat
+  // superadmin_audit_db.py) -- formatTanggal() di ui.js hanya untuk tanggal
+  // tanpa jam (split "-" saja), jadi dipakai formatter lokal kecil di sini.
+  function formatWaktu(iso) {
+    if (!iso) return "-";
+    const [tanggal, jam] = iso.split("T");
+    return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
+  }
+
+  const AKSI_LABEL = {
+    buat_tenant: "Buat Toko",
+    aktifkan_tenant: "Aktifkan Toko",
+    nonaktifkan_tenant: "Nonaktifkan Toko",
+  };
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Kelola Tenant (Super Admin)"));
@@ -16,8 +31,10 @@ const PageSuperadmin = (() => {
 
     const formCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
+    const auditCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     root.appendChild(formCard);
+    root.appendChild(auditCard);
 
     // ---------------------------------------------------------------
     // 1. DAFTAR TENANT
@@ -62,6 +79,7 @@ const PageSuperadmin = (() => {
                     );
                     MugenUI.toast("Status toko diperbarui.", "success");
                     loadTenantList();
+                    loadAuditLog();
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }
@@ -124,6 +142,7 @@ const PageSuperadmin = (() => {
         inputOwnerUsername.value = "";
         inputOwnerPassword.value = "";
         loadTenantList();
+        loadAuditLog();
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {
@@ -131,7 +150,37 @@ const PageSuperadmin = (() => {
       }
     });
 
+    // ---------------------------------------------------------------
+    // 3. RIWAYAT AKSI (Audit Log)
+    // ---------------------------------------------------------------
+    auditCard.appendChild(MugenUI.el("h2", {}, "Riwayat Aksi"));
+    const auditBody = MugenUI.el("div");
+    auditCard.appendChild(auditBody);
+
+    async function loadAuditLog() {
+      auditBody.innerHTML = "Memuat...";
+      try {
+        const log = await MugenApi.get("/api/superadmin/audit-log");
+        auditBody.innerHTML = "";
+        auditBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "waktu", label: "Waktu", format: formatWaktu },
+            { key: "superadmin_username", label: "Super Admin" },
+            { key: "aksi", label: "Aksi", format: (v) => AKSI_LABEL[v] || v },
+            { key: "tenant_slug", label: "Toko" },
+            { key: "detail", label: "Detail" },
+          ],
+          log,
+          { emptyText: "Belum ada aksi tercatat." },
+        ));
+      } catch (e) {
+        auditBody.innerHTML = "";
+        auditBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
     await loadTenantList();
+    await loadAuditLog();
   }
 
   return { render };

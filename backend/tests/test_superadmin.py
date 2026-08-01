@@ -171,3 +171,35 @@ def test_tanpa_env_var_tidak_ada_superadmin_dibuat(app_client):
     SUPERADMIN_BOOTSTRAP_*) tidak pernah membuat akun superadmin apa pun."""
     daftar = auth_db.get_user_list()
     assert not any(u["role"] == "superadmin" for u in daftar)
+
+
+def test_audit_log_mencatat_buat_tenant_dan_ubah_status(app_client):
+    """FONDASI Multi-Tenant Phase 2.1 (hardening): SETIAP aksi lifecycle
+    tenant lewat Dashboard Super Admin (buat toko, aktifkan, nonaktifkan)
+    WAJIB tercatat di superadmin_audit_log -- lihat superadmin_audit_db.py."""
+    headers = _buat_superadmin_dan_login(app_client, username="auditor1")
+
+    r = app_client.post("/api/superadmin/tenants", headers=headers, json={
+        "slug": "toko-audit", "nama_barbershop": "Toko Audit",
+        "owner_username": "owneraudit", "owner_password": "password123",
+    })
+    assert r.status_code == 200, r.text
+    tenant_id = r.json()["id"]
+
+    app_client.put(f"/api/superadmin/tenants/{tenant_id}/status", headers=headers, json={"status": "nonaktif"})
+    app_client.put(f"/api/superadmin/tenants/{tenant_id}/status", headers=headers, json={"status": "aktif"})
+
+    r2 = app_client.get("/api/superadmin/audit-log", headers=headers)
+    assert r2.status_code == 200, r2.text
+    log = r2.json()
+    # terbaru dulu -- tiga aksi terakhir persis urutan sebaliknya dari yang dilakukan di atas.
+    aksi_tenant_audit = [e for e in log if e["tenant_slug"] == "toko-audit"]
+    assert [e["aksi"] for e in aksi_tenant_audit] == ["aktifkan_tenant", "nonaktifkan_tenant", "buat_tenant"]
+    for e in aksi_tenant_audit:
+        assert e["superadmin_username"] == "auditor1"
+        assert e["tenant_id"] == tenant_id
+
+
+def test_audit_log_ditolak_untuk_akun_tenant_biasa(two_tenants):
+    r = two_tenants["client"].get("/api/superadmin/audit-log", headers=two_tenants["headers_a"])
+    assert r.status_code == 403
