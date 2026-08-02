@@ -247,7 +247,11 @@
 // index.html/manifest.json: fallback statis sebelum JS jalan diganti dari
 // "MUGEN Hair Co." jadi "Developer" (branding platform generik, BUKAN
 // nama satu tenant tertentu). style.css: token --accent-secondary baru.
-const CACHE_NAME = "mugen-hair-shell-v45";
+// v45 -> v46: Setting > Branding tab baru (pengaturan.js) -- Nama
+// Barbershop, Logo, Favicon (upload/hapus), Primary/Secondary Color,
+// Tagline, Alamat, WhatsApp, Email, Website dalam satu form, plus entri
+// baru di grup Setting pada Hak Akses Admin ("izin_setting_branding").
+const CACHE_NAME = "mugen-hair-shell-v46";
 const APP_SHELL = [
   "/",
   "/index.html",
