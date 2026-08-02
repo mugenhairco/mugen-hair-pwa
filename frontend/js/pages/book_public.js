@@ -872,28 +872,24 @@ const PageBookPublic = (() => {
         return items;
       }
 
-      // Review Booking: satu blok per info (label + value + tombol Change-nya
-      // SENDIRI tepat di bawahnya, lihat spesifikasi ticket) -- pengganti
-      // link "‹ Change Details" tunggal yang lama.
-      function seksiUbah(label, value, tujuanStep) {
-        const wrap = MugenUI.el("div", { class: "book-summary-field" }, [
+      // Review Booking: satu blok per info (label + value SAJA, tanpa tombol
+      // Change per-field lagi -- REVISI: diganti satu link "< Back" tunggal
+      // di bawah halaman, lihat renderFasePilihMetode()).
+      function seksiInfo(label, value) {
+        return MugenUI.el("div", { class: "book-summary-field" }, [
           MugenUI.el("div", { class: "book-summary-label" }, label),
           MugenUI.el("div", { class: "book-summary-value" }, value),
         ]);
-        const btnUbah = MugenUI.el("button", { type: "button", class: "book-summary-change-btn" }, `Change ${label}`);
-        btnUbah.addEventListener("click", () => goto(tujuanStep));
-        wrap.appendChild(btnUbah);
-        return wrap;
       }
 
       function renderFasePilihMetode() {
         body.appendChild(MugenUI.el("h2", {}, "Booking Summary"));
         body.appendChild(MugenUI.el("div", { class: "card book-summary-card" }, [
-          seksiUbah("Barber", state.barberNama, 1),
-          seksiUbah("Service", dipilih.map((s) => s.nama).join(", "), 2),
-          seksiUbah("Date", MugenUI.formatTanggal(state.tanggal), 3),
-          seksiUbah("Time", state.jam, 4),
-          seksiUbah("Details", `${state.nama} • ${state.whatsapp}`, 5),
+          seksiInfo("Barber", state.barberNama),
+          seksiInfo("Service", dipilih.map((s) => s.nama).join(", ")),
+          seksiInfo("Date", MugenUI.formatTanggal(state.tanggal)),
+          seksiInfo("Time", state.jam),
+          seksiInfo("Details", `${state.nama} • ${state.whatsapp}`),
           MugenUI.el("hr"),
           baris("Total Payment", MugenUI.formatRupiah(totalHarga), true),
         ]));
@@ -927,6 +923,19 @@ const PageBookPublic = (() => {
           }
         }
         body.appendChild(errorBox);
+
+        // REVISI: satu link "< Back" di bagian bawah halaman, tepat di atas
+        // indikator lingkaran (bukan tombol Change per-field di dalam card
+        // lagi) -- font/warna SAMA PERSIS dengan link "Change X" di step
+        // lain (reuse .book-nav-row button), TAPI TANPA kelas "row" supaya
+        // tidak ikut melebar+center seperti link Change lama (.row > *
+        // { flex:1 } membuat tombol satu-satunya di situ melebar penuh,
+        // teksnya jadi center bukan rata kiri) -- di sini SENGAJA rata kiri
+        // sesuai spesifikasi. Mengembalikan ke step sebelumnya (5 -- Your
+        // Details) sesuai alur booking.
+        body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
+          MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "< Back"),
+        ]));
         body.appendChild(paginationDots(6, TOTAL_STEP));
 
         const btnKonfirmasi = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Confirm");
