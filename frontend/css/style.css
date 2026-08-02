@@ -966,11 +966,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 /* Header ringkas di dalam wizard (logo/nama + link kembali ke landing page)
    -- Hero besar sudah ditampilkan di landing page, tidak diulang di sini. */
 .book-wizard-header { text-align: center; margin-bottom: 16px; }
-.book-back-home {
-  background: transparent; border: none; box-shadow: none; min-height: auto;
-  color: var(--text-dim); padding: 4px 0; font-size: 13px; display: block; margin: 0 auto 10px;
-}
-.book-back-home:hover { color: var(--accent); }
 .book-wizard-brand { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 16px; }
 .book-wizard-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; }
 
@@ -1025,14 +1020,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   min-height: auto; box-shadow: none;
   padding: 10px 4px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; font-weight: 600;
 }
-.book-slot-available { background: rgba(22,163,74,0.10); color: var(--success); border-color: var(--success); cursor: pointer; }
-.book-slot-available.selected { background: var(--success); color: #fff; }
+/* REVISI UI/UX: tombol Time yang BELUM dipilih (available) disamakan
+   warnanya dengan tombol Date yang belum dipilih (.book-calendar-cell) --
+   warna aktif/selected TETAP hijau (--success) seperti sebelumnya. */
+.book-slot-available { background: var(--bg-input); color: var(--text); border-color: var(--border); cursor: pointer; }
+.book-slot-available.selected { background: var(--success); color: #fff; border-color: var(--success); }
 .book-slot-booked { background: rgba(220,38,38,0.08); color: var(--danger); border-color: var(--danger); opacity: 0.7; cursor: not-allowed; }
 .book-slot-closed { background: var(--bg-input); color: var(--text-dim); opacity: 0.6; cursor: not-allowed; }
 .book-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-dim); }
 .book-legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .book-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-.book-dot.book-slot-available { background: var(--success); border: none; }
+.book-dot.book-slot-available { background: var(--bg-input); border: 1px solid var(--border); }
 .book-dot.book-slot-booked { background: var(--danger); border: none; }
 .book-dot.book-slot-closed { background: var(--text-dim); border: none; }
 
@@ -1103,28 +1101,29 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-field-row-total .book-field-value { font-weight: 700; font-size: 17px; color: var(--accent); }
 .book-selesai-detail hr { margin: 6px 0 10px; border-color: var(--border); }
 
-/* ---- Animasi perpindahan step: slide + fade ringan (12px, ~225ms) --
-   disamakan dengan animasi umum aplikasi (lihat mugen-fade-slide-in di
-   atas), lihat book_public.js untuk logika arah maju/mundur. ---- */
+/* Review Booking (Booking Summary, step 6): satu blok per info + tombol
+   Change persis di bawah nilainya (lihat seksiUbah() di book_public.js). */
+.book-summary-card { display: flex; flex-direction: column; }
+.book-summary-field { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.book-summary-field:last-of-type { border-bottom: none; }
+.book-summary-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; }
+.book-summary-value { font-weight: 600; margin-top: 2px; word-break: break-word; }
+.book-summary-change-btn {
+  background: transparent; border: none; box-shadow: none; min-height: auto;
+  color: var(--accent); font-size: 12px; font-weight: 600; padding: 6px 0 0; cursor: pointer;
+}
+.book-summary-change-btn:hover { text-decoration: underline; }
+
+/* ---- Animasi perpindahan step: SAMA PERSIS dengan transisi antar menu
+   aplikasi -- reuse token mugen-content-fade-in (lihat definisinya di
+   atas), BUKAN animasi baru. book_public.js membuat elemen .book-body BARU
+   tiap ganti step (persis mekanisme shell() di router.js) supaya kelas ini
+   ter-trigger otomatis. ---- */
 .book-body-viewport { position: relative; }
-.book-body-viewport.book-transitioning { overflow: hidden; }
-.book-step-outgoing { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
 .book-nav-disabled button { pointer-events: none; }
-
-@keyframes book-slide-out-maju { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-12px); opacity: 0; } }
-@keyframes book-slide-out-mundur { from { transform: translateX(0); opacity: 1; } to { transform: translateX(12px); opacity: 0; } }
-@keyframes book-slide-in-maju { from { transform: translateX(12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes book-slide-in-mundur { from { transform: translateX(-12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-.book-anim-out-maju { animation: book-slide-out-maju 300ms var(--ease-press) both; }
-.book-anim-out-mundur { animation: book-slide-out-mundur 300ms var(--ease-press) both; }
-.book-anim-in-maju { animation: book-slide-in-maju 300ms var(--ease-press) both; }
-.book-anim-in-mundur { animation: book-slide-in-mundur 300ms var(--ease-press) both; }
-
+.book-step-fade-in { animation: mugen-content-fade-in 300ms ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .book-anim-out-maju, .book-anim-out-mundur, .book-anim-in-maju, .book-anim-in-mundur {
-    animation: none !important;
-  }
+  .book-step-fade-in { animation: none !important; }
 }
 
 /* PR 2 "Revisi Konsep Website Booking": halaman awal "BOOKING" terbang

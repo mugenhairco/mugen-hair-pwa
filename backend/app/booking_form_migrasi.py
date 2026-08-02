@@ -46,6 +46,7 @@ def migrasi_booking_form():
         _migrasi_foto_dan_urutan_barber(conn)
         _migrasi_urutan_service(conn)
         _normalisasi_urutan_service_kolisi(conn)
+        _normalisasi_urutan_barber_kolisi(conn)
 
 
 def _migrasi_status_booking(conn):
@@ -119,3 +120,32 @@ def _normalisasi_urutan_service_kolisi(conn):
         for i, row in enumerate(rows):
             if row["urutan"] != i:
                 conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (i, row["id"]))
+
+
+def _normalisasi_urutan_barber_kolisi(conn):
+    """BOOKING UI/UX #1 (bugfix): PERSIS pola _normalisasi_urutan_service_kolisi()
+    di atas, tapi untuk `barbers` -- SEBELUM diperbaiki, database.add_barber()
+    tidak pernah mengisi `urutan` (selalu default kolom, 0), jadi tombol ↑/↓
+    Settings > Karyawan tidak berpengaruh untuk karyawan yang ditambahkan
+    setelah migrasi _migrasi_foto_dan_urutan_barber() di atas. Sudah
+    diperbaiki PERMANEN di add_barber() -- fungsi ini HANYA membereskan data
+    yang SUDAH TERLANJUR tidak konsisten, per tenant, HANYA kalau memang ada
+    tabrakan. Urutan RELATIF yang sudah ada tetap dipertahankan (Owner yang
+    sudah pernah pakai ↑/↓, jadi urutannya sudah unik, tidak akan melihat
+    perubahan apa pun). Aman dipanggil berkali-kali."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(barbers)").fetchall()]
+    if "tenant_id" not in kolom:
+        return
+    tenant_ids = [r["tenant_id"] for r in conn.execute("SELECT DISTINCT tenant_id FROM barbers").fetchall()]
+    for tenant_id in tenant_ids:
+        if tenant_id is None:
+            rows = conn.execute("SELECT id, urutan FROM barbers WHERE tenant_id IS NULL ORDER BY urutan, nama").fetchall()
+        else:
+            rows = conn.execute("SELECT id, urutan FROM barbers WHERE tenant_id = ? ORDER BY urutan, nama",
+                                 (tenant_id,)).fetchall()
+        urutan_terpakai = [r["urutan"] for r in rows]
+        if len(set(urutan_terpakai)) == len(urutan_terpakai):
+            continue  # tidak ada tabrakan untuk tenant ini, tidak perlu apa-apa
+        for i, row in enumerate(rows):
+            if row["urutan"] != i:
+                conn.execute("UPDATE barbers SET urutan = ? WHERE id = ?", (i, row["id"]))
