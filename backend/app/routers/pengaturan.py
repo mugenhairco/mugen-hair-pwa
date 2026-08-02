@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import auth_db
+import branding_db
 import database as db
 import db_compat
 import laporan_pdf
@@ -118,6 +119,67 @@ def ambil_logo(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hib
     data, content_type = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Logo belum diatur.")
+    return Response(content=data, media_type=content_type)
+
+
+# ================= BRANDING (Phase 2.2: Tenant & Platform Branding) =================
+# Field GABUNGAN dari Identitas (nama_barbershop, email) + Website Content
+# (tagline, alamat, whatsapp) + field BARU milik branding_db.py sendiri
+# (primary_color, secondary_color, website_url, favicon) -- lihat docstring
+# branding_db.py untuk kenapa TIDAK diduplikasi/dipindah dari modul asalnya.
+# GET publik ada di routers/branding.py (/api/tenant/branding, dipakai
+# halaman Login juga) -- di sini HANYA endpoint TULIS + serve file favicon.
+
+class BrandingBody(BaseModel):
+    nama_barbershop: str | None = None
+    email: str | None = None
+    tagline: str | None = None
+    alamat: str | None = None
+    whatsapp: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    website_url: str | None = None
+
+
+@router.put("/branding")
+def simpan_branding(body: BrandingBody, user: dict = Depends(require_permission("izin_setting_branding"))):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        branding_db.update_branding(data, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.post("/favicon")
+async def upload_favicon(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_branding"))):
+    konten = await file.read()
+    try:
+        branding_db.simpan_favicon(file.filename, konten, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.delete("/favicon")
+def hapus_favicon(user: dict = Depends(require_permission("izin_setting_branding"))):
+    """Kembali ke favicon platform (fallback statis di index.html/manifest.json)
+    -- lihat routers/branding.py: favicon_url None ditafsirkan SAMA baik
+    untuk "belum pernah upload" maupun "sengaja dihapus"."""
+    branding_db.hapus_favicon(tenant_id=user["tenant_id"])
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.get("/favicon")
+def ambil_favicon(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hibrid)):
+    # FONDASI Multi-Tenant Phase 2.2: PUBLIC sama seperti GET /logo -- favicon
+    # sendiri bukan data sensitif, dan browser butuh mengambilnya tanpa token
+    # (tag <link rel="icon">, lihat frontend/js/brand.js).
+    data, content_type = branding_db.get_favicon_data(tenant_id=tenant_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Favicon belum diatur.")
     return Response(content=data, media_type=content_type)
 
 

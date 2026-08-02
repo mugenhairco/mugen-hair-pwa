@@ -36,6 +36,7 @@ from database import get_conn, _kunci_tenant
 
 KEY_TO_PREFIX = {
     "logo": "logos",
+    "favicon": "logos",
     "hero_image": "assets",
     "hero_video": "assets",
     "about_foto": "assets",

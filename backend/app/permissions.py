@@ -56,6 +56,13 @@ PERMISSION_DEFS = [
     ("izin_setting_tampilan", "setting", "Tab Tampilan", False),
     ("izin_setting_user", "setting", "Tab User", False),
     ("izin_setting_backup", "setting", "Tab Backup", False),
+    # FONDASI Multi-Tenant Phase 2.2: Tab Branding (nama, logo, favicon,
+    # warna, tagline, alamat, whatsapp, email, website) -- permission
+    # TERPISAH dari izin_setting_identitas supaya Owner bisa memberi izin
+    # granular (mis. staff boleh atur Branding tapi tidak boleh ke tab
+    # Identitas lama, atau sebaliknya) sesuai instruksi "Admin dapat
+    # mengubah Branding jika memiliki izin".
+    ("izin_setting_branding", "setting", "Tab Branding", False),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}

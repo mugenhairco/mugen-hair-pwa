@@ -179,6 +179,49 @@ def resolve_tenant_publik(request: Request, tenant: str | None = None) -> int:
     return t["id"]
 
 
+def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+                                   tenant: str | None = None) -> int | None:
+    """FONDASI Multi-Tenant Phase 2.2 (Tenant Branding & Platform Branding):
+    dependency KHUSUS endpoint publik GET /api/tenant/branding -- BEDA
+    dengan resolve_tenant_hibrid()/resolve_tenant_publik() di atas (dipakai
+    endpoint LAIN, TIDAK diubah sama sekali di sini, supaya tidak ada
+    breaking change) dalam SATU hal penting: kalau tidak ada sinyal tenant
+    APA PUN, fungsi ini return None (artinya "pakai branding platform") --
+    BUKAN diam-diam jatuh ke tenant default pertama seperti
+    resolve_tenant_publik() (perilaku ITU sengaja dipertahankan apa adanya
+    untuk halaman publik /book dkk, supaya kompatibilitas mundur terjaga).
+
+    Prioritas:
+    1. Sesi login valid (token benar, akun aktif) -> `user["tenant_id"]`
+       APA ADANYA -- integer untuk Owner/Admin/Barber biasa (branding toko
+       sendiri, TIDAK BISA disuntik lewat query string manapun), atau None
+       untuk superadmin (branding platform, sesuai spesifikasi "Super Admin
+       tetap branding platform, bukan branding tenant tertentu").
+    2. Tidak ada sesi valid (pengunjung anonim / halaman Login belum
+       submit) -> `tenant` (query string eksplisit, TERMASUK slug yang
+       "diingat" browser dari login sebelumnya -- lihat frontend/js/
+       brand.js, murni untuk TAMPILAN, bukan otorisasi apa pun jadi aman
+       dikirim proaktif) -> fallback slug dari middleware (header
+       X-Tenant-Slug/subdomain, lihat tenant_middleware.py) -> None
+       (branding platform) kalau semuanya kosong/tidak ditemukan/nonaktif."""
+    if credentials is not None:
+        try:
+            user_id = _decode_token(credentials.credentials)
+            user = auth_db.get_user(user_id)
+            if user is not None and user.get("aktif"):
+                return user.get("tenant_id")
+        except HTTPException:
+            pass
+    import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+    slug = tenant or getattr(request.state, "requested_tenant_slug", None)
+    if not slug:
+        return None
+    t = tenant_db.get_tenant_by_slug(slug)
+    if t is None or t["status"] != "aktif":
+        return None
+    return t["id"]
+
+
 def require_permission(key: str):
     """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
     penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).

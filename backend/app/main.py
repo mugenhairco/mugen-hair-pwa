@@ -76,7 +76,7 @@ import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
 import superadmin_audit_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -201,6 +201,7 @@ app.include_router(pemasukan.router)
 app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
 app.include_router(superadmin.router)
+app.include_router(branding.router)
 
 
 @app.on_event("startup")
