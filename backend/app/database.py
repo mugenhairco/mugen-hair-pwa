@@ -389,7 +389,16 @@ def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif
 # ---------------------------------------------------------------------------
 
 def get_services(hanya_aktif=True, tenant_id=None):
-    """`tenant_id`: lihat catatan di get_barbers()."""
+    """`tenant_id`: lihat catatan di get_barbers().
+
+    MAINTENANCE #1 (bugfix): ORDER BY sebelumnya `nama` (alfabetis) --
+    Setting > Layanan dan halaman Booking sudah menyusun ulang di sisi
+    frontend/Python memakai kolom `urutan` (lihat pages/pengaturan.js,
+    routers/booking.py), TAPI Input Data (routers/input_data.py, endpoint
+    /api/input-data/services) memakai hasil fungsi ini APA ADANYA tanpa
+    sortir ulang, jadi dropdown-nya selalu alfabetis, mengabaikan urutan
+    yang sudah diatur Owner. Diurutkan `urutan` dulu di sini (satu sumber
+    kebenaran) supaya SELURUH pemanggil otomatis konsisten."""
     with get_conn() as conn:
         klausa = []
         params = []
@@ -400,7 +409,7 @@ def get_services(hanya_aktif=True, tenant_id=None):
         q = "SELECT * FROM services"
         if klausa:
             q += " WHERE " + " AND ".join(klausa)
-        q += " ORDER BY nama"
+        q += " ORDER BY urutan, nama"
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
@@ -412,13 +421,27 @@ def get_service(service_id: int):
 
 def add_service(nama: str, harga: int, pakai_potongan_chemical: bool = None, tenant_id: int = None):
     """Jika pakai_potongan_chemical tidak diisi, otomatis ditentukan berdasarkan
-    daftar 5 layanan utama (Dry Cut, Cut & Wash, Hair Do, Beard Trim, Wet Shave)."""
+    daftar 5 layanan utama (Dry Cut, Cut & Wash, Hair Do, Beard Trim, Wet Shave).
+
+    MAINTENANCE #1 (bugfix): SEBELUMNYA `urutan` tidak pernah diisi di sini,
+    jadi selalu memakai default kolom (0) -- begitu ada lebih dari satu
+    layanan ber-urutan 0, tombol ↑/↓ (Setting > Layanan, menukar nilai
+    urutan dua baris bersebelahan) jadi tidak berpengaruh (menukar 0
+    dengan 0). Sekarang layanan baru selalu mendapat urutan berikutnya
+    (MAX + 1, di-scope per tenant), sama seperti pola tambah_gallery_foto()
+    di website_content.py."""
     if pakai_potongan_chemical is None:
         pakai_potongan_chemical = nama not in SERVICE_TANPA_POTONGAN
     with get_conn() as conn:
+        if tenant_id is not None:
+            urutan_maks = conn.execute(
+                "SELECT COALESCE(MAX(urutan), -1) AS m FROM services WHERE tenant_id = ?", (tenant_id,)
+            ).fetchone()["m"]
+        else:
+            urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM services").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id) VALUES (?, ?, ?, ?)",
-            (nama.strip(), int(harga), 1 if pakai_potongan_chemical else 0, tenant_id),
+            "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id, urutan) VALUES (?, ?, ?, ?, ?)",
+            (nama.strip(), int(harga), 1 if pakai_potongan_chemical else 0, tenant_id, urutan_maks + 1),
         )
         return cur.lastrowid
 

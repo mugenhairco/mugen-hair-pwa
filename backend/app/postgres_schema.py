@@ -618,10 +618,15 @@ def create_all():
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
                                        (tenant_default_id,)).fetchone()["n"]
         if jumlah_service == 0:
-            for nama, harga, pakai_potongan in DEFAULT_SERVICES:
+            # MAINTENANCE #1 (bugfix): `urutan` diisi eksplisit sesuai urutan
+            # daftar di atas (bukan mengandalkan default kolom 0 untuk
+            # SEMUANYA -- lihat catatan lengkap di
+            # database.py::add_service()/_normalisasi_urutan_service_kolisi()
+            # di booking_form_migrasi.py untuk kenapa itu masalah).
+            for i, (nama, harga, pakai_potongan) in enumerate(DEFAULT_SERVICES):
                 conn.execute(
-                    "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id) VALUES (?, ?, ?, ?)",
-                    (nama, harga, pakai_potongan, tenant_default_id),
+                    "INSERT INTO services (nama, harga, pakai_potongan_chemical, tenant_id, urutan) VALUES (?, ?, ?, ?, ?)",
+                    (nama, harga, pakai_potongan, tenant_default_id, i),
                 )
 
         for key in ("bonus_service_acuan_service_ids", "uang_harian_acuan_service_ids"):
@@ -637,6 +642,30 @@ def create_all():
                          (kunci, json.dumps(service_ids)))
 
         conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")
+
+        _normalisasi_urutan_service_kolisi(conn)
+
+
+def _normalisasi_urutan_service_kolisi(conn):
+    """MAINTENANCE #1 (bugfix) -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan booking_form_migrasi.py::_normalisasi_urutan_service_kolisi()
+    (jalur SQLite, lihat docstring itu untuk penjelasan lengkap akar
+    masalahnya) -- diduplikasi di sini murni supaya modul ini TIDAK perlu
+    import database.py (lihat catatan _kunci_tenant() di atas untuk alasan
+    yang sama)."""
+    tenant_ids = [r["tenant_id"] for r in conn.execute("SELECT DISTINCT tenant_id FROM services").fetchall()]
+    for tenant_id in tenant_ids:
+        if tenant_id is None:
+            rows = conn.execute("SELECT id, urutan FROM services WHERE tenant_id IS NULL ORDER BY urutan, nama").fetchall()
+        else:
+            rows = conn.execute("SELECT id, urutan FROM services WHERE tenant_id = ? ORDER BY urutan, nama",
+                                 (tenant_id,)).fetchall()
+        urutan_terpakai = [r["urutan"] for r in rows]
+        if len(set(urutan_terpakai)) == len(urutan_terpakai):
+            continue  # tidak ada tabrakan untuk tenant ini, tidak perlu apa-apa
+        for i, row in enumerate(rows):
+            if row["urutan"] != i:
+                conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (i, row["id"]))
 
 
 def _pastikan_tenant_default(conn) -> int:

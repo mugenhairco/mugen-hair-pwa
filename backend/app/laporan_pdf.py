@@ -557,18 +557,23 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
     else:
         label_gaji = "Gaji Pokok"
     header = ["Komponen", "Nominal"]
-    baris = [
-        [_sel(label_gaji), _rupiah(slip["gaji_pokok"])],
-        [_sel("Komisi"), _rupiah(slip["komisi"])],
-        [_sel("Tips"), _rupiah(slip["tips"])],
-        [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
-        [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
-        [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"],
-        [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)],
-        [_sel("Bonus Manual"), _rupiah(slip.get("bonus_manual") or 0)],
-        [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
-        [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
+    # MAINTENANCE #1: PDF dinamis -- komponen yang nilainya 0/kosong TIDAK
+    # ditampilkan sama sekali (bukan "Rp 0"), formula/field Total Diterima
+    # itu sendiri TIDAK berubah (tetap seluruh komponen di bawah, lihat
+    # slip_gaji_db.buat_slip_gaji() -- hanya TAMPILANNYA yang jadi dinamis).
+    baris_dinamis = [
+        (slip["gaji_pokok"], [_sel(label_gaji), _rupiah(slip["gaji_pokok"])]),
+        (slip["komisi"], [_sel("Komisi"), _rupiah(slip["komisi"])]),
+        (slip["tips"], [_sel("Tips"), _rupiah(slip["tips"])]),
+        (slip["uang_harian"], [_sel("Uang Harian"), _rupiah(slip["uang_harian"])]),
+        (slip["bonus_customer"], [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])]),
+        (penyesuaian_komisi, [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"]),
+        (slip.get("reimburse") or 0, [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)]),
+        (slip.get("bonus_manual") or 0, [_sel("Bonus Manual"), _rupiah(slip.get("bonus_manual") or 0)]),
+        (slip["potongan_kasbon"], [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"]),
+        (slip["potongan_lain"], [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"]),
     ]
+    baris = [baris_item for nilai, baris_item in baris_dinamis if nilai]
     status_label = "Sudah Dibayar" if slip["status"] == "sudah_dibayar" else "Belum Dibayar"
     ringkasan_tambahan = [
         f"<b>Total Diterima: {_rupiah(slip['total_diterima'])}</b>",
