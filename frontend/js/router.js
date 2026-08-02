@@ -44,7 +44,13 @@ const MugenRouter = (() => {
     wrap.appendChild(hamburger);
     wrap.appendChild(main);
     appRoot.appendChild(wrap);
-    MugenBrand.refresh(); // TAHAP 10: sinkronkan nama/logo terbaru ke sidebar setiap pindah halaman
+    // FONDASI Multi-Tenant Phase 2.2: applyToDom() SAJA (dari cache), BUKAN
+    // refresh() -- shell() dipanggil di SETIAP pindah halaman/menu, dan
+    // spesifikasi Phase 2.2 eksplisit melarang request branding berulang
+    // tiap navigasi ("Branding cukup diambil sekali saat aplikasi dimuat").
+    // Data terbaru sudah cukup di-refresh() SEKALI saat app.js boot + SEKALI
+    // lagi tepat setelah login berhasil (lihat login.js).
+    MugenBrand.applyToDom();
     return main;
   }
 

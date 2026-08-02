@@ -16,6 +16,13 @@
   --accent: #334155;         /* Primary */
   --accent-hover: #1E293B;   /* Hover */
   --accent-pressed: #0F172A; /* Pressed */
+  /* FONDASI Multi-Tenant Phase 2.2 (Tenant Branding): Secondary Color --
+     token TERPISAH dari --accent (Primary), dipakai elemen yang perlu
+     dibedakan dari aksi utama (link hover, badge sekunder). Tenant yang
+     mengatur Secondary Color lewat Setting > Branding menimpa nilai ini
+     lewat inline style di :root (lihat frontend/js/brand.js), prioritas
+     TERTINGGI, berlaku sama di tema Terang maupun Gelap. */
+  --accent-secondary: #0891B2;
   --danger: #DC2626;
   --success: #16A34A;
   --warning: #EA580C;
@@ -46,6 +53,7 @@
   --accent: #475569;         /* Primary (dark) */
   --accent-hover: #64748B;   /* Hover (dark, lebih terang) */
   --accent-pressed: #334155; /* Pressed (dark, lebih gelap) */
+  --accent-secondary: #22D3EE; /* Secondary (dark, dinaikkan terangnya untuk kontras) */
   --danger: #F87171;
   --success: #4ADE80;
   --warning: #FB923C;
@@ -120,6 +128,7 @@ body.book-public-active .dev-watermark-bg { display: none; }
    Layout app (sidebar + konten), dipakai setelah login.
    --------------------------------------------------------------------- */
 a { color: var(--accent); }
+a:hover { color: var(--accent-secondary); }
 
 #app { min-height: 100vh; position: relative; z-index: 1; }
 
@@ -510,7 +519,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
-.badge-libur { background: rgba(51,65,85,0.08); color: var(--accent); }
+.badge-libur { background: rgba(8,145,178,0.10); color: var(--accent-secondary); }
 .badge-success { background: rgba(22,163,74,0.10); color: var(--success); }
 .badge-danger { background: rgba(220,38,38,0.10); color: var(--danger); }
 /* REVISI: badge tipe transaksi Produk "Tester" (beda dari Restock/Jual) */
@@ -518,7 +527,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 /* REVISI UI/UX: tint badge di atas dihitung dari hex tema TERANG -- di atas
    kartu gelap kombinasi itu nyaris tidak terlihat, jadi tint-nya diganti
    versi lebih terang & sedikit lebih pekat supaya tetap kontras. */
-:root[data-theme="dark"] .badge-libur { background: rgba(148,163,184,0.16); }
+:root[data-theme="dark"] .badge-libur { background: rgba(34,211,238,0.16); }
 :root[data-theme="dark"] .badge-success { background: rgba(74,222,128,0.16); }
 :root[data-theme="dark"] .badge-danger { background: rgba(248,113,113,0.16); }
 :root[data-theme="dark"] .badge-tester { background: rgba(96,165,250,0.16); }

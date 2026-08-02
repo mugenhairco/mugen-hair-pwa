@@ -235,7 +235,19 @@
 // (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
 // berisi lebih dari satu info, bukan digabung titik-koma (ui.js
 // keteranganCell(), laporan_pdf.py _sel_keterangan()).
-const CACHE_NAME = "mugen-hair-shell-v44";
+// v44 -> v45: FONDASI Multi-Tenant Phase 2.2 -- Tenant Branding & Platform
+// Branding (White Label). brand.js dirombak: sumber data pindah dari
+// /api/pengaturan/identitas ke /api/tenant/branding (fallback platform
+// "Developer" saat tenant belum dikenali), favicon & warna Primary/
+// Secondary sekarang ikut diterapkan secara dinamis (bukan cuma nama/logo).
+// refresh() (fetch ke server) sekarang HANYA dipanggil sekali saat app.js
+// boot + sekali lagi tepat setelah login berhasil -- router.js (dipanggil
+// tiap pindah menu) sekarang pakai applyToDom() dari cache saja, TIDAK
+// fetch ulang tiap navigasi. Tab baru Setting > Branding (pengaturan.js).
+// index.html/manifest.json: fallback statis sebelum JS jalan diganti dari
+// "MUGEN Hair Co." jadi "Developer" (branding platform generik, BUKAN
+// nama satu tenant tertentu). style.css: token --accent-secondary baru.
+const CACHE_NAME = "mugen-hair-shell-v45";
 const APP_SHELL = [
   "/",
   "/index.html",

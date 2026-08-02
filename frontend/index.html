@@ -3,12 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
-  <title>MUGEN Hair Co.</title>
-  <!-- TAHAP 10: judul di atas hanya fallback awal sebelum JS jalan — brand.js
-       akan menimpa document.title dengan nama barbershop dari database begitu
-       halaman selesai dimuat, jadi tidak lagi hardcode di alur aplikasi. -->
+  <title>Developer</title>
+  <!-- TAHAP 10 + FONDASI Multi-Tenant Phase 2.2: judul di atas hanya
+       fallback PLATFORM awal sebelum JS jalan -- brand.js akan menimpa
+       document.title dengan nama barbershop tenant (kalau sudah dikenali)
+       dari /api/tenant/branding begitu halaman selesai dimuat. "Developer"
+       (BUKAN nama tenant tertentu) sengaja dipakai di sini supaya
+       deployment white-label baru tidak menampilkan identitas satu
+       barbershop tertentu sebelum tenant-nya sendiri diketahui. -->
   <meta name="theme-color" content="#F5F7FA" />
-  <meta name="description" content="Aplikasi manajemen komisi, uang harian, bonus barber, produk, dan pengeluaran — MUGEN Hair Co." />
+  <meta name="description" content="Platform manajemen barbershop -- komisi, uang harian, bonus barber, produk, dan pengeluaran." />
   <link rel="manifest" href="manifest.json" />
 
   <!-- TAHAP 13: set ikon lengkap (sebelumnya manifest.json/tag di bawah ini
@@ -25,7 +29,7 @@
        per resolusi device. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="MUGEN Hair" />
+  <meta name="apple-mobile-web-app-title" content="Developer" />
   <meta name="mobile-web-app-capable" content="yes" />
 
   <link rel="stylesheet" href="css/style.css" />

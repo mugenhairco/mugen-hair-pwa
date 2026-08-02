@@ -98,6 +98,15 @@ const PageLogin = (() => {
           tenant: tenantSlugTerpilih || undefined,
         }), { message: "Memproses login…" });
         MugenState.setSession(res.token, res.user, res.tenant);
+        // FONDASI Multi-Tenant Phase 2.2: tenant baru saja "diketahui" lewat
+        // login berhasil ini -- SATU refresh() tambahan (di luar yang
+        // sudah dipanggil sekali saat app.js boot) supaya sidebar/Dashboard
+        // langsung menampilkan branding TOKO YANG BENAR, bukan cache
+        // sebelum login (mis. branding platform pada percobaan login
+        // pertama di perangkat baru). Tidak di-await (sama seperti pola
+        // MugenBookingNotif.refreshNow() di bawah) supaya tidak menunda
+        // perpindahan ke Dashboard.
+        MugenBrand.refresh();
         // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
         // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah
         // kedaluwarsa), set location.hash ke nilai yang sama TIDAK memicu
