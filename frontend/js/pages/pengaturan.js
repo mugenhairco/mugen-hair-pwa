@@ -222,10 +222,8 @@ const PagePengaturan = (() => {
       card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputFavicon, btnUploadFavicon, btnHapusFavicon]));
       card.appendChild(faviconError);
 
-      // ---- Form utama: nama, warna, tagline, kontak ----
+      // ---- Form utama: nama, tagline, kontak ----
       const inputNama = MugenUI.el("input", { type: "text", value: data.nama_barbershop || "" });
-      const inputPrimary = MugenUI.el("input", { type: "color", value: data.primary_color || "#334155" });
-      const inputSecondary = MugenUI.el("input", { type: "color", value: data.secondary_color || "#0891B2" });
       const inputTagline = MugenUI.el("input", { type: "text", value: data.tagline || "", placeholder: "Opsional -- mis. \"Potong rambut premium sejak 2020\"" });
       const inputAlamat = MugenUI.el("input", { type: "text", value: data.alamat || "" });
       const inputWhatsapp = MugenUI.el("input", { type: "text", value: data.whatsapp || "" });
@@ -236,10 +234,6 @@ const PagePengaturan = (() => {
 
       card.appendChild(MugenUI.el("label", {}, "Nama Barbershop"));
       card.appendChild(inputNama);
-      card.appendChild(MugenUI.el("label", {}, "Primary Color"));
-      card.appendChild(inputPrimary);
-      card.appendChild(MugenUI.el("label", {}, "Secondary Color"));
-      card.appendChild(inputSecondary);
       card.appendChild(MugenUI.el("label", {}, "Tagline"));
       card.appendChild(inputTagline);
       card.appendChild(MugenUI.el("label", {}, "Alamat"));
@@ -261,8 +255,6 @@ const PagePengaturan = (() => {
           await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/branding", {
             nama_barbershop: inputNama.value.trim(),
             email: inputEmail.value.trim(),
-            primary_color: inputPrimary.value,
-            secondary_color: inputSecondary.value,
             tagline: inputTagline.value.trim(),
             alamat: inputAlamat.value.trim(),
             whatsapp: inputWhatsapp.value.trim(),

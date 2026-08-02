@@ -41,6 +41,40 @@ const MugenUI = (() => {
       .trim();
   }
 
+  // BOOKING UI/UX #1: Nomor Transaksi -- [SERVICE_INITIAL][DD][MM][HHMM]
+  // [TENANT_INITIAL], SATU-SATUNYA implementasi (dipakai layar Appointment
+  // Confirmed di book_public.js DAN menu Booking > List/Calendar di
+  // booking.js) supaya keduanya selalu menampilkan angka yang sama persis
+  // untuk booking yang sama. Murni tampilan, dihitung dari field yang
+  // sudah ada di respons booking (daftar_service/tanggal/jam_mulai) --
+  // tidak disimpan di database. Aturan inisial: 1 kata = 1 huruf pertama,
+  // 2+ kata = huruf pertama dari 2 kata pertama, abaikan &/-/spasi, huruf
+  // kapital -- sama untuk service maupun tenant (tenant SELALU 2 huruf,
+  // kata tunggal dipotong 2 huruf pertama, supaya berlaku untuk tenant
+  // mana pun, bukan daftar hardcode nama toko).
+  function _kataInisial(teks) {
+    return String(teks || "").replace(/[&/\-]/g, " ").split(/\s+/).filter(Boolean);
+  }
+  function inisialService(namaService) {
+    const kata = _kataInisial(namaService);
+    if (kata.length <= 1) return (kata[0] || "").charAt(0).toUpperCase();
+    return kata.slice(0, 2).map((k) => k.charAt(0).toUpperCase()).join("");
+  }
+  function inisialTenant(namaTenant) {
+    const kata = _kataInisial(namaTenant);
+    if (kata.length >= 2) return kata.slice(0, 2).map((k) => k.charAt(0).toUpperCase()).join("");
+    return (kata[0] || "").slice(0, 2).toUpperCase();
+  }
+  function buatNomorTransaksi(booking, namaTenant) {
+    const daftarService = String(booking.daftar_service || "").split(",")[0].trim();
+    const tgl = new Date(booking.tanggal + "T00:00:00");
+    const dd = String(tgl.getDate()).padStart(2, "0");
+    const mm = String(tgl.getMonth() + 1).padStart(2, "0");
+    const [jamStr, menitStr] = String(booking.jam_mulai || "00:00").split(":");
+    const hhmm = String(jamStr || "00").padStart(2, "0") + String(menitStr || "00").padStart(2, "0");
+    return `${inisialService(daftarService)}${dd}${mm}${hhmm}${inisialTenant(namaTenant)}`;
+  }
+
   // REVISI UI/UX: toast SUKSES/INFO dihilangkan total sesuai instruksi
   // ("Hilangkan seluruh toast/snackbar sukses. Toast hanya muncul jika
   // terjadi error") -- diubah SATU tempat ini (bukan menghapus tiap
@@ -315,6 +349,6 @@ const MugenUI = (() => {
   return {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
-    themeSwitch, confirmModal,
+    themeSwitch, confirmModal, buatNomorTransaksi,
   };
 })();

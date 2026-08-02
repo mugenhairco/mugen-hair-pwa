@@ -455,41 +455,6 @@ const PageBookPublic = (() => {
     const identitas = MugenBrand.get();
     terapkanBackground(page, websiteContent);
 
-    // ---- Transaction Number: [SERVICE_INITIAL][DD][MM][HHMM][TENANT_INITIAL] --
-    // murni tampilan, dihitung di klien dari data yang SUDAH ada di response
-    // booking (tidak disimpan di database, tidak mengubah booking_db.py).
-    // Aturan inisial: 1 kata = 1 huruf pertama, 2+ kata = huruf pertama dari
-    // 2 kata pertama, abaikan &/-/spasi, huruf kapital -- sama untuk service
-    // maupun tenant (tenant SELALU 2 huruf per spesifikasi, jadi kata tunggal
-    // dipotong 2 huruf pertama alih-alih 1, supaya tetap generalisasi benar
-    // untuk tenant mana pun, bukan daftar hardcode nama toko).
-    function inisialKata(teks) {
-      return String(teks || "").replace(/[&/\-]/g, " ").split(/\s+/).filter(Boolean);
-    }
-    function inisialService(namaService) {
-      const kata = inisialKata(namaService);
-      if (kata.length <= 1) return (kata[0] || "").charAt(0).toUpperCase();
-      return kata.slice(0, 2).map((k) => k.charAt(0).toUpperCase()).join("");
-    }
-    function inisialTenant(namaTenant) {
-      const kata = inisialKata(namaTenant);
-      if (kata.length >= 2) return kata.slice(0, 2).map((k) => k.charAt(0).toUpperCase()).join("");
-      return (kata[0] || "").slice(0, 2).toUpperCase();
-    }
-    function buatNomorTransaksi(r) {
-      // Booking bisa punya lebih dari satu service (state.serviceIds) tapi
-      // format nomor transaksi cuma punya SATU slot inisial -- pakai service
-      // PERTAMA yang dipilih (urutan sama seperti r.daftar_service, lihat
-      // booking_db.py get_booking()).
-      const serviceUtama = (r.daftar_service || "").split(",")[0].trim();
-      const tgl = new Date(r.tanggal + "T00:00:00");
-      const dd = String(tgl.getDate()).padStart(2, "0");
-      const mm = String(tgl.getMonth() + 1).padStart(2, "0");
-      const [jamStr, menitStr] = String(r.jam_mulai || "00:00").split(":");
-      const hhmm = String(jamStr || "00").padStart(2, "0") + String(menitStr || "00").padStart(2, "0");
-      return `${inisialService(serviceUtama)}${dd}${mm}${hhmm}${inisialTenant(identitas.nama_barbershop)}`;
-    }
-
     // Header wizard SENGAJA ringkas (logo/nama kecil + link kembali ke
     // Beranda) -- Hero besar sudah ditampilkan di landing page, tidak perlu
     // diulang di sini.
@@ -1019,7 +984,7 @@ const PageBookPublic = (() => {
     function renderConfirmed() {
       const r = state.bookingResult;
       const detail = MugenUI.el("div", { class: "book-selesai-detail" }, [
-        fieldRow("Transaction Number", buatNomorTransaksi(r)),
+        fieldRow("Transaction Number", MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop)),
         fieldRow("Barber", r.nama_barber),
         fieldRow("Date", MugenUI.formatTanggal(r.tanggal)),
         fieldRow("Time", r.jam_mulai),

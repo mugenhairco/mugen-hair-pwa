@@ -256,7 +256,7 @@
 // dipakai untuk menampilkan branding tenant SEBELUM login, ditemukan lewat
 // verifikasi E2E langsung (link khusus per-toko sebelumnya cuma didukung
 // endpoint publik lain seperti /book, belum di brand.js).
-const CACHE_NAME = "mugen-hair-shell-v48";
+const CACHE_NAME = "mugen-hair-shell-v49";
 const APP_SHELL = [
   "/",
   "/index.html",
