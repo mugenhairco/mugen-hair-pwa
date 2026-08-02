@@ -530,7 +530,16 @@ const PageBookPublic = (() => {
     }
 
     function onPopState(e) {
-      if (transitioning) return;
+      // SENGAJA TIDAK menjaga `transitioning` di sini (beda dari goto(),
+      // yang memang menjaganya untuk debounce klik ganda pada tombol di
+      // layar) -- tombol Back Android/Swipe Back iPhone/Browser Back adalah
+      // aksi OS yang browser SUDAH memprosesnya (history sudah berpindah),
+      // jadi event ini TIDAK BOLEH diabaikan sekalipun sedang di tengah
+      // animasi step sebelumnya (kalau diabaikan, tombol Back terasa
+      // "tidak berfungsi" sampai ditekan lagi) -- renderAll()/
+      // gantiBodyDenganFade() aman dipanggil susulan begitu (murni ganti
+      // elemen `body`, tidak ada state yang rusak kalau dipanggil dua kali
+      // berdekatan).
       const st = e.state;
       if (st && typeof st.mugenBookStep === "number") {
         if (st.mugenBookStep === step) return;
