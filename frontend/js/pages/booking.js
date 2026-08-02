@@ -134,7 +134,13 @@ const PageBooking = (() => {
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
   function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null } = {}) {
+    // BOOKING UI/UX #1: No. Transaksi -- SATU-SATUNYA implementasi ada di
+    // MugenUI.buatNomorTransaksi() (ui.js), dipakai di sini DAN di layar
+    // Appointment Confirmed (book_public.js) supaya angkanya selalu sama
+    // persis untuk booking yang sama.
+    const namaBarbershop = MugenBrand.get().nama_barbershop;
     const columns = [
+      { key: "no_transaksi", label: "No. Transaksi", format: (_, r) => MugenUI.buatNomorTransaksi(r, namaBarbershop) },
       { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
       { key: "jam_mulai", label: "Jam", format: (_, r) => `${r.jam_mulai}-${r.jam_selesai}` },
       ...(withBarber ? [{ key: "nama_barber", label: "Barber" }] : []),

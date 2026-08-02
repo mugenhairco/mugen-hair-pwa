@@ -644,6 +644,7 @@ def create_all():
         conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")
 
         _normalisasi_urutan_service_kolisi(conn)
+        _normalisasi_urutan_barber_kolisi(conn)
 
 
 def _normalisasi_urutan_service_kolisi(conn):
@@ -666,6 +667,26 @@ def _normalisasi_urutan_service_kolisi(conn):
         for i, row in enumerate(rows):
             if row["urutan"] != i:
                 conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (i, row["id"]))
+
+
+def _normalisasi_urutan_barber_kolisi(conn):
+    """BOOKING UI/UX #1 (bugfix) -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan booking_form_migrasi.py::_normalisasi_urutan_barber_kolisi()
+    (jalur SQLite) -- diduplikasi di sini dengan alasan yang sama seperti
+    _normalisasi_urutan_service_kolisi() di atas."""
+    tenant_ids = [r["tenant_id"] for r in conn.execute("SELECT DISTINCT tenant_id FROM barbers").fetchall()]
+    for tenant_id in tenant_ids:
+        if tenant_id is None:
+            rows = conn.execute("SELECT id, urutan FROM barbers WHERE tenant_id IS NULL ORDER BY urutan, nama").fetchall()
+        else:
+            rows = conn.execute("SELECT id, urutan FROM barbers WHERE tenant_id = ? ORDER BY urutan, nama",
+                                 (tenant_id,)).fetchall()
+        urutan_terpakai = [r["urutan"] for r in rows]
+        if len(set(urutan_terpakai)) == len(urutan_terpakai):
+            continue  # tidak ada tabrakan untuk tenant ini, tidak perlu apa-apa
+        for i, row in enumerate(rows):
+            if row["urutan"] != i:
+                conn.execute("UPDATE barbers SET urutan = ? WHERE id = ?", (i, row["id"]))
 
 
 def _pastikan_tenant_default(conn) -> int:

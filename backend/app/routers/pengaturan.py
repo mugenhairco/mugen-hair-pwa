@@ -102,7 +102,13 @@ def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_permissio
 
 
 @router.post("/logo")
-async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_identitas"))):
+async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_branding"))):
+    # BOOKING UI/UX #1: tab Setting > Identitas Barbershop (yang dulu satu-
+    # satunya pemanggil endpoint ini lewat PUT /identitas) sudah dihapus --
+    # tab Branding sekarang satu-satunya jalur upload logo, jadi izin yang
+    # dicek di sini diikutkan ke izin_setting_branding (bukan
+    # izin_setting_identitas lagi, yang sudah tidak bisa diberikan Owner ke
+    # Admin lewat UI Hak Akses Admin manapun).
     konten = await file.read()
     try:
         pengaturan_identitas.simpan_logo(file.filename, konten, tenant_id=user["tenant_id"])

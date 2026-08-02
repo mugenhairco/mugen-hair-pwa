@@ -310,7 +310,7 @@ const PageBookPublic = (() => {
     // ---- Gallery ----
     if (gallery.length) {
       const gallerySec = MugenUI.el("section", { class: "book-section book-gallery" });
-      gallerySec.appendChild(MugenUI.el("h2", {}, "Gallery"));
+      gallerySec.appendChild(MugenUI.el("h2", {}, "Our Work"));
       const slider = MugenUI.el("div", { class: "book-gallery-slider" });
       for (const foto of gallery) {
         slider.appendChild(
@@ -420,7 +420,7 @@ const PageBookPublic = (() => {
     page.appendChild(wizardHeader);
 
     const bodyViewport = MugenUI.el("div", { class: "book-body-viewport" });
-    const body = MugenUI.el("div", { class: "book-body" });
+    let body = MugenUI.el("div", { class: "book-body" });
     bodyViewport.appendChild(body);
     page.appendChild(bodyViewport);
 
@@ -459,9 +459,6 @@ const PageBookPublic = (() => {
     // Beranda) -- Hero besar sudah ditampilkan di landing page, tidak perlu
     // diulang di sini.
     wizardHeader.innerHTML = "";
-    const btnKembali = MugenUI.el("button", { type: "button", class: "book-back-home" }, "‹ Back to Home");
-    btnKembali.addEventListener("click", () => { root.innerHTML = ""; render(root); });
-    wizardHeader.appendChild(btnKembali);
     const wizardBrandRow = MugenUI.el("div", { class: "book-wizard-brand" });
     if (identitas.logo_url) {
       wizardBrandRow.appendChild(gambarAman(MUGEN_API_BASE + identitas.logo_url, { alt: "Logo", class: "book-wizard-logo" }));
@@ -469,13 +466,14 @@ const PageBookPublic = (() => {
     wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "Developer"));
     wizardHeader.appendChild(wizardBrandRow);
 
-    // ---- animasi perpindahan step: slide + fade, 300ms, arah mengikuti
-    // maju/mundurnya nomor step (goto ke step lebih besar = "Continue" =
-    // slide dari kanan ke kiri, goto ke step lebih kecil = "Back" = slide
-    // dari kiri ke kanan). Selama animasi berjalan, transitioning=true
-    // membuat goto() lain diabaikan -- ini SATU-SATUNYA tempat penjagaan
-    // double-klik perlu ditambahkan karena semua tombol navigasi step
-    // memanggil goto().
+    // ---- animasi perpindahan step: SAMA PERSIS dengan transisi antar menu
+    // aplikasi (fade-in opacity murni, 300ms, lihat mugen-content-fade-in di
+    // style.css) -- bukan animasi baru. router.js memicu animasi itu dengan
+    // selalu membuat <main class="content"> BARU tiap navigasi (shell()),
+    // jadi di sini dipakai teknik yang SAMA: `body` dibuat ulang (bukan
+    // innerHTML="") tiap ganti step supaya kelas .book-step-fade-in
+    // ter-trigger otomatis oleh browser. transitioning=true selama animasi
+    // berjalan supaya klik ganda/step lain tidak nyelonong di tengah jalan.
     let transitioning = false;
     const ANIM_MS = 300;
 
@@ -483,10 +481,48 @@ const PageBookPublic = (() => {
       return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
+    // ---- riwayat browser: tiap masuk step 1-6 (SEBELUM booking benar-benar
+    // dikirim ke server, lihat renderPayment()) push satu history state,
+    // supaya tombol Back Android/Swipe Back iPhone/Browser Back bisa mundur
+    // SATU step demi step (transisi sama seperti tombol Change di layar,
+    // TIDAK reload/rerender halaman, state booking tetap tersimpan) sampai
+    // akhirnya keluar wizard kembali ke landing page. SENGAJA TIDAK push
+    // state untuk step 7/fase pembayaran -- booking sudah terkirim ke server
+    // di titik itu, jadi Back dari sana cukup kembali ke Ringkasan Booking
+    // (step 6) tanpa mengubah alur pengiriman booking itu sendiri.
+    function pushHistoryStep(n) {
+      history.pushState({ mugenBookStep: n }, "");
+    }
+
+    function onPopState(e) {
+      // SENGAJA TIDAK menjaga `transitioning` di sini (beda dari goto(),
+      // yang memang menjaganya untuk debounce klik ganda pada tombol di
+      // layar) -- tombol Back Android/Swipe Back iPhone/Browser Back adalah
+      // aksi OS yang browser SUDAH memprosesnya (history sudah berpindah),
+      // jadi event ini TIDAK BOLEH diabaikan sekalipun sedang di tengah
+      // animasi step sebelumnya (kalau diabaikan, tombol Back terasa
+      // "tidak berfungsi" sampai ditekan lagi) -- renderAll()/
+      // gantiBodyDenganFade() aman dipanggil susulan begitu (murni ganti
+      // elemen `body`, tidak ada state yang rusak kalau dipanggil dua kali
+      // berdekatan).
+      const st = e.state;
+      if (st && typeof st.mugenBookStep === "number") {
+        if (st.mugenBookStep === step) return;
+        step = st.mugenBookStep;
+        renderAll("mundur");
+      } else {
+        window.removeEventListener("popstate", onPopState);
+        root.innerHTML = "";
+        render(root);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+
     function goto(n) {
       if (transitioning || n === step) return;
       const arah = n > step ? "maju" : "mundur";
       step = n;
+      if (n <= 6) pushHistoryStep(n);
       renderAll(arah);
     }
 
@@ -505,37 +541,27 @@ const PageBookPublic = (() => {
         body.innerHTML = "";
         renderStepBody();
       } else {
-        animasiTransisi(arah);
+        gantiBodyDenganFade();
       }
       window.scrollTo(0, 0);
     }
 
-    function animasiTransisi(arah) {
+    // Body DIBUAT ULANG (bukan innerHTML="") -- elemen baru otomatis
+    // ter-fade-in oleh CSS (persis mekanisme .content di router.js), body
+    // lama langsung dilepas (BUKAN menunggu animasi keluar) supaya tidak ada
+    // flash putih/kedip: background page & card sudah konsisten di kedua step.
+    function gantiBodyDenganFade() {
       transitioning = true;
-      bodyViewport.classList.add("book-transitioning");
       page.classList.add("book-nav-disabled");
-
-      const klonLama = body.cloneNode(true);
-      klonLama.classList.add("book-step-outgoing", arah === "maju" ? "book-anim-out-maju" : "book-anim-out-mundur");
-      bodyViewport.appendChild(klonLama);
-
-      body.innerHTML = "";
+      const bodyLama = body;
+      body = MugenUI.el("div", { class: "book-body book-step-fade-in" });
+      bodyViewport.appendChild(body);
       renderStepBody();
-      body.classList.add(arah === "maju" ? "book-anim-in-maju" : "book-anim-in-mundur");
-
-      let selesai = false;
-      function bersihkan() {
-        if (selesai) return;
-        selesai = true;
-        klonLama.remove();
-        body.classList.remove("book-anim-in-maju", "book-anim-in-mundur");
-        bodyViewport.classList.remove("book-transitioning");
-        page.classList.remove("book-nav-disabled");
+      bodyLama.remove();
+      setTimeout(() => {
         transitioning = false;
-      }
-      klonLama.addEventListener("animationend", bersihkan);
-      // jaga-jaga kalau animationend tidak pernah terpicu (mis. tab di background)
-      setTimeout(bersihkan, ANIM_MS + 150);
+        page.classList.remove("book-nav-disabled");
+      }, ANIM_MS);
     }
 
     // ================= STEP 1: CHOOSE BARBER =================
@@ -846,18 +872,28 @@ const PageBookPublic = (() => {
         return items;
       }
 
+      // Review Booking: satu blok per info (label + value + tombol Change-nya
+      // SENDIRI tepat di bawahnya, lihat spesifikasi ticket) -- pengganti
+      // link "‹ Change Details" tunggal yang lama.
+      function seksiUbah(label, value, tujuanStep) {
+        const wrap = MugenUI.el("div", { class: "book-summary-field" }, [
+          MugenUI.el("div", { class: "book-summary-label" }, label),
+          MugenUI.el("div", { class: "book-summary-value" }, value),
+        ]);
+        const btnUbah = MugenUI.el("button", { type: "button", class: "book-summary-change-btn" }, `Change ${label}`);
+        btnUbah.addEventListener("click", () => goto(tujuanStep));
+        wrap.appendChild(btnUbah);
+        return wrap;
+      }
+
       function renderFasePilihMetode() {
         body.appendChild(MugenUI.el("h2", {}, "Booking Summary"));
-        body.appendChild(MugenUI.el("div", { class: "row book-nav-row", style: "margin-bottom:12px;" }, [
-          MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "‹ Change Details"),
-        ]));
-        body.appendChild(MugenUI.el("div", { class: "card" }, [
-          baris("Barber", state.barberNama),
-          baris("Date", MugenUI.formatTanggal(state.tanggal)),
-          baris("Time", state.jam),
-          baris("Service", dipilih.map((s) => s.nama).join(", ")),
-          baris("Name", state.nama),
-          baris("WhatsApp", state.whatsapp),
+        body.appendChild(MugenUI.el("div", { class: "card book-summary-card" }, [
+          seksiUbah("Barber", state.barberNama, 1),
+          seksiUbah("Service", dipilih.map((s) => s.nama).join(", "), 2),
+          seksiUbah("Date", MugenUI.formatTanggal(state.tanggal), 3),
+          seksiUbah("Time", state.jam, 4),
+          seksiUbah("Details", `${state.nama} • ${state.whatsapp}`, 5),
           MugenUI.el("hr"),
           baris("Total Payment", MugenUI.formatRupiah(totalHarga), true),
         ]));
@@ -948,6 +984,7 @@ const PageBookPublic = (() => {
     function renderConfirmed() {
       const r = state.bookingResult;
       const detail = MugenUI.el("div", { class: "book-selesai-detail" }, [
+        fieldRow("Transaction Number", MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop)),
         fieldRow("Barber", r.nama_barber),
         fieldRow("Date", MugenUI.formatTanggal(r.tanggal)),
         fieldRow("Time", r.jam_mulai),
@@ -969,11 +1006,9 @@ const PageBookPublic = (() => {
         goto(1);
       });
       body.appendChild(btnBaru);
-      const btnHome = MugenUI.el("button", { type: "button", style: "margin-top:10px;margin-left:8px;" }, "Back to Home");
-      btnHome.addEventListener("click", () => { root.innerHTML = ""; render(root); });
-      body.appendChild(btnHome);
     }
 
+    pushHistoryStep(1);
     renderAll();
   }
 

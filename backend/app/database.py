@@ -315,7 +315,13 @@ def get_barbers(hanya_aktif=True, tenant_id=None):
     difilter, dipakai booking_db.public_barbers() yang sudah menyaring
     tenant di query TERPISAH -- lihat catatan di sana) supaya SATU baris
     WHERE tambahan ini TIDAK mengubah rumus/urutan hasil sama sekali,
-    murni menyaring baris. Endpoint API ber-login WAJIB mengisi ini."""
+    murni menyaring baris. Endpoint API ber-login WAJIB mengisi ini.
+
+    BOOKING UI/UX #1 (bugfix, sama seperti get_services() di bawah): ORDER
+    BY sebelumnya `nama` (alfabetis) -- diurutkan `urutan` dulu di sini
+    (satu sumber kebenaran) supaya SELURUH pemanggil (termasuk yang belum
+    sempat sortir ulang sendiri) otomatis mengikuti urutan Settings >
+    Karyawan, bukan cuma yang sudah sortir ulang di sisi frontend."""
     with get_conn() as conn:
         q = "SELECT * FROM barbers WHERE jabatan = 'barber'"
         params = []
@@ -323,7 +329,7 @@ def get_barbers(hanya_aktif=True, tenant_id=None):
             q += " AND aktif = 1"
         if tenant_id is not None:
             q += " AND tenant_id = ?"; params.append(tenant_id)
-        q += " ORDER BY nama"
+        q += " ORDER BY urutan, nama"
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
@@ -342,7 +348,7 @@ def get_karyawan(hanya_aktif=True, tenant_id=None):
         q = "SELECT * FROM barbers"
         if klausa:
             q += " WHERE " + " AND ".join(klausa)
-        q += " ORDER BY nama"
+        q += " ORDER BY urutan, nama"
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
@@ -354,10 +360,23 @@ def get_barber(barber_id: int):
 
 def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
                 jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None):
+    """BOOKING UI/UX #1 (bugfix, sama seperti add_service() di services.py):
+    SEBELUMNYA `urutan` tidak pernah diisi di sini, jadi selalu memakai
+    default kolom (0) -- begitu 2+ karyawan berbagi urutan=0, tombol ↑/↓ di
+    Settings > Karyawan (yang menukar NILAI urutan dua baris bersebelahan)
+    jadi tidak berefek (menukar 0 dengan 0). Sekarang karyawan baru selalu
+    mendapat urutan berikutnya (MAX + 1, di-scope per tenant)."""
     with get_conn() as conn:
+        if tenant_id is not None:
+            urutan_maks = conn.execute(
+                "SELECT COALESCE(MAX(urutan), -1) AS m FROM barbers WHERE tenant_id = ?", (tenant_id,)
+            ).fetchone()["m"]
+        else:
+            urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM barbers").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari, tenant_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari), tenant_id),
+            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari, tenant_id, urutan) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari), tenant_id, urutan_maks + 1),
         )
         return cur.lastrowid
 
