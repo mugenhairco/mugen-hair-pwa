@@ -45,6 +45,7 @@ def migrasi_booking_form():
         _migrasi_status_booking(conn)
         _migrasi_foto_dan_urutan_barber(conn)
         _migrasi_urutan_service(conn)
+        _normalisasi_urutan_service_kolisi(conn)
 
 
 def _migrasi_status_booking(conn):
@@ -75,3 +76,46 @@ def _migrasi_urutan_service(conn):
     conn.execute("ALTER TABLE services ADD COLUMN urutan INTEGER NOT NULL DEFAULT 0")
     for i, row in enumerate(conn.execute("SELECT id FROM services ORDER BY nama").fetchall()):
         conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (i, row["id"]))
+
+
+def _normalisasi_urutan_service_kolisi(conn):
+    """MAINTENANCE #1 (bugfix): SEBELUM diperbaiki, database.add_service()
+    tidak pernah mengisi `urutan` (selalu memakai default kolom, 0) --
+    SETIAP layanan yang ditambahkan setelah migrasi di atas (termasuk
+    layanan di tenant baru mana pun yang dibuat lewat Super Admin
+    Dashboard) berbagi urutan=0, membuat tombol ↑/↓ Setting > Layanan
+    (menukar nilai urutan dua baris bersebelahan) tidak berpengaruh
+    (menukar 0 dengan 0). Sudah diperbaiki PERMANEN di add_service() --
+    fungsi ini HANYA membereskan data yang SUDAH TERLANJUR tidak konsisten
+    sebelum perbaikan itu ada, per tenant, dan HANYA kalau memang
+    terdeteksi ada tabrakan (dua layanan tenant yang sama dengan urutan
+    yang SAMA PERSIS). Urutan RELATIF yang sudah ada (urutan lalu nama
+    sebagai pemisah dasi) TETAP DIPERTAHANKAN, hanya angkanya dirapikan
+    jadi 0,1,2,... berurutan -- Owner yang SUDAH mengatur urutan lewat
+    tombol ↑/↓ (jadi urutan-nya sudah unik) TIDAK akan melihat urutan
+    layanannya berubah sama sekali akibat migrasi ini. Aman dipanggil
+    berkali-kali (no-op begitu tidak ada tabrakan tersisa).
+
+    BUGFIX urutan startup: fungsi ini dipanggil dari migrasi_booking_form(),
+    yang jalan SEBELUM migrasi_tenant() (lihat main.py::on_startup()) --
+    pada boot PERTAMA KALI sebuah instalasi baru, kolom `tenant_id` di
+    `services` BELUM ADA sama sekali di titik ini. Keluar lebih awal kalau
+    begitu (aman -- instalasi baru tidak mungkin sudah punya tabrakan
+    urutan, dan boot BERIKUTNYA setelah migrasi_tenant() selesai akan
+    otomatis menormalisasi kalau memang perlu)."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(services)").fetchall()]
+    if "tenant_id" not in kolom:
+        return
+    tenant_ids = [r["tenant_id"] for r in conn.execute("SELECT DISTINCT tenant_id FROM services").fetchall()]
+    for tenant_id in tenant_ids:
+        if tenant_id is None:
+            rows = conn.execute("SELECT id, urutan FROM services WHERE tenant_id IS NULL ORDER BY urutan, nama").fetchall()
+        else:
+            rows = conn.execute("SELECT id, urutan FROM services WHERE tenant_id = ? ORDER BY urutan, nama",
+                                 (tenant_id,)).fetchall()
+        urutan_terpakai = [r["urutan"] for r in rows]
+        if len(set(urutan_terpakai)) == len(urutan_terpakai):
+            continue  # tidak ada tabrakan untuk tenant ini, tidak perlu apa-apa
+        for i, row in enumerate(rows):
+            if row["urutan"] != i:
+                conn.execute("UPDATE services SET urutan = ? WHERE id = ?", (i, row["id"]))

@@ -62,6 +62,7 @@ def ringkas_per_karyawan(baris: list) -> list:
                 "kasbon_ket_list": [],  # jumlah tiap pembayaran kasbon (int)
                 "reimburse_ket_list": [],  # (kategori, jumlah) tiap klaim
                 "libur_list": [],       # tanggal ISO tiap hari libur
+                "_tanggal_uang_harian_dihitung": set(),  # MAINTENANCE #1: lihat catatan di bawah
             }
             urutan.append(bid)
         acc = ringkas[bid]
@@ -72,7 +73,19 @@ def ringkas_per_karyawan(baris: list) -> list:
         if tipe == "transaksi":
             acc["jumlah_transaksi"] += 1
             acc["jumlah_service"] += r["jumlah_service"]
-            acc["uang_harian"] += r["uang_harian"]
+            # MAINTENANCE #1 (bugfix): Uang Harian adalah nominal PER HARI
+            # (bukan per transaksi, lihat database.py::hitung_uang_harian_
+            # per_hari()) -- get_rekap_transaksi_list() menempelkan nilai
+            # HARI itu apa adanya ke SETIAP baris transaksi hari itu (kalau
+            # barber dicatat lebih dari sekali di hari yang sama, semua baris
+            # hari itu membawa angka yang SAMA). Menjumlahkannya per-baris
+            # (perilaku SEBELUMNYA) melipatgandakan Uang Harian sebanyak
+            # jumlah transaksi hari itu -- di-dedup per (barber, tanggal) di
+            # sini supaya HANYA dihitung SEKALI per hari, apa pun jumlah
+            # transaksinya hari itu.
+            if r["tanggal"] not in acc["_tanggal_uang_harian_dihitung"]:
+                acc["uang_harian"] += r["uang_harian"]
+                acc["_tanggal_uang_harian_dihitung"].add(r["tanggal"])
             acc["tips"] += r["tips"]
             acc["pendapatan"] += r["pendapatan"]
             for bagian in (r.get("daftar_service") or "").split(", "):
@@ -114,7 +127,13 @@ def ringkas_per_karyawan(baris: list) -> list:
     for bid in urutan:
         acc = ringkas[bid]
         daftar_service = ", ".join(f"{nama} x{jml}" for nama, jml in acc["layanan"].items())
-        total = acc["pendapatan"] + acc["gaji_non_barber"] + acc["reimburse"] - acc["kasbon_dibayar"]
+        # MAINTENANCE #1 (bugfix): "total" SEBELUMNYA tidak menyertakan
+        # acc["uang_harian"] sama sekali -- kolom "Total" per baris di tabel
+        # jadi diam-diam lebih kecil dari seharusnya kalau karyawan itu dapat
+        # Uang Harian periode itu (uang_harian TETAP ditampilkan sebagai
+        # kolomnya sendiri di tabel, jadi ketidaksesuaian ini terlihat kalau
+        # dijumlah manual oleh pengguna).
+        total = acc["pendapatan"] + acc["uang_harian"] + acc["gaji_non_barber"] + acc["reimburse"] - acc["kasbon_dibayar"]
 
         # Keterangan: satu baris teks PER INFORMASI (bukan digabung jadi
         # satu baris) -- urut kategori: Catatan, lalu Kasbon, lalu

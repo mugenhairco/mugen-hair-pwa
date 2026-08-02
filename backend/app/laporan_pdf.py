@@ -557,18 +557,23 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
     else:
         label_gaji = "Gaji Pokok"
     header = ["Komponen", "Nominal"]
-    baris = [
-        [_sel(label_gaji), _rupiah(slip["gaji_pokok"])],
-        [_sel("Komisi"), _rupiah(slip["komisi"])],
-        [_sel("Tips"), _rupiah(slip["tips"])],
-        [_sel("Uang Harian"), _rupiah(slip["uang_harian"])],
-        [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])],
-        [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"],
-        [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)],
-        [_sel("Bonus Manual"), _rupiah(slip.get("bonus_manual") or 0)],
-        [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"],
-        [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"],
+    # MAINTENANCE #1: PDF dinamis -- komponen yang nilainya 0/kosong TIDAK
+    # ditampilkan sama sekali (bukan "Rp 0"), formula/field Total Diterima
+    # itu sendiri TIDAK berubah (tetap seluruh komponen di bawah, lihat
+    # slip_gaji_db.buat_slip_gaji() -- hanya TAMPILANNYA yang jadi dinamis).
+    baris_dinamis = [
+        (slip["gaji_pokok"], [_sel(label_gaji), _rupiah(slip["gaji_pokok"])]),
+        (slip["komisi"], [_sel("Komisi"), _rupiah(slip["komisi"])]),
+        (slip["tips"], [_sel("Tips"), _rupiah(slip["tips"])]),
+        (slip["uang_harian"], [_sel("Uang Harian"), _rupiah(slip["uang_harian"])]),
+        (slip["bonus_customer"], [_sel("Bonus Customer"), _rupiah(slip["bonus_customer"])]),
+        (penyesuaian_komisi, [_sel("Penyesuaian Komisi"), f"{tanda_penyesuaian} {_rupiah(abs(penyesuaian_komisi))}"]),
+        (slip.get("reimburse") or 0, [_sel("Reimburse"), _rupiah(slip.get("reimburse") or 0)]),
+        (slip.get("bonus_manual") or 0, [_sel("Bonus Manual"), _rupiah(slip.get("bonus_manual") or 0)]),
+        (slip["potongan_kasbon"], [_sel("Potongan Kasbon"), f"- {_rupiah(slip['potongan_kasbon'])}"]),
+        (slip["potongan_lain"], [_sel(label_potongan_lain), f"- {_rupiah(slip['potongan_lain'])}"]),
     ]
+    baris = [baris_item for nilai, baris_item in baris_dinamis if nilai]
     status_label = "Sudah Dibayar" if slip["status"] == "sudah_dibayar" else "Belum Dibayar"
     ringkasan_tambahan = [
         f"<b>Total Diterima: {_rupiah(slip['total_diterima'])}</b>",
@@ -798,15 +803,32 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         sel.append(_sel_keterangan(r["keterangan"]))
         baris.append(sel)
 
-    # Ringkasan di bawah tabel (urutan sesuai spesifikasi Dukungan Barber +
-    # Non-Barber): Total Pendapatan Barber (transaksi murni, TIDAK termasuk
-    # Gaji Non-Barber -- dua sistem penggajian yang beda, sengaja dipisah)
-    # + Rincian per Service + Total Gaji Non-Barber PER ROLE (dinamis,
-    # role yang totalnya 0/tidak ada datanya di periode ini TIDAK
-    # ditampilkan) + Reimburse/Potongan Kasbon HANYA kalau ada + Total
-    # Keseluruhan (menjumlahkan semuanya, TIDAK mengubah cara pendapatan
-    # Barber sendiri dihitung sama sekali).
-    pendapatan_total = sum(r["pendapatan"] for r in data if r.get("tipe") != "non_barber")
+    # MAINTENANCE #1 (bugfix): Ringkasan di bawah tabel SEBELUMNYA menjumlah
+    # "Total Pendapatan Barber" dari get_pendapatan_transaksi() = total_komisi
+    # + tips SAJA (lihat database.py) -- Uang Harian ditampilkan per-baris di
+    # tabel TAPI TIDAK PERNAH ikut dijumlahkan ke total manapun di bawahnya,
+    # jadi "Total Keseluruhan" secara diam-diam kurang sebesar total Uang
+    # Harian periode itu. Diperbaiki dengan menjumlahkan Komisi/Uang Harian/
+    # Tips SEBAGAI TIGA ANGKA TERPISAH (Uang Harian di-dedup per (barber,
+    # tanggal) -- SATU baris per hari itu di tabel bisa terwakili lebih dari
+    # satu baris transaksi kalau barber itu dicatat lebih dari sekali hari
+    # yang sama, dan tiap baris membawa nilai Uang Harian hari itu yang SAMA
+    # apa adanya, lihat get_rekap_transaksi_list() -- menjumlah apa adanya
+    # per-baris akan melipatgandakannya).
+    #
+    # Susunan & tampilan dinamis (MAINTENANCE #1): Komisi/Uang Harian/Tips/
+    # Gaji Non-Barber per role/Reimburse/Kasbon HANYA ditampilkan kalau
+    # nilainya bukan nol -- baris yang nilainya 0 TIDAK ditampilkan sama
+    # sekali (bukan ditampilkan sebagai "Rp0"), lalu Rincian Service (HANYA
+    # service yang jumlahnya > 0 -- get_rincian_service_periode() sudah
+    # begitu dari awal), diakhiri "Total Diterima" (dulu "Total Keseluruhan").
+    komisi_total = sum(r["pendapatan"] - r["tips"] for r in data if r.get("tipe") != "non_barber")
+    tips_total = sum(r["tips"] for r in data if r.get("tipe") != "non_barber")
+    uang_harian_per_hari = {}
+    for r in data:
+        if r.get("tipe") == "transaksi":
+            uang_harian_per_hari[(r["barber_id"], r["tanggal"])] = r["uang_harian"]
+    uang_harian_total = sum(uang_harian_per_hari.values())
     reimburse_total = sum(r["reimburse"] for r in data)
     kasbon_total = sum(r["kasbon_dibayar"] for r in data)
 
@@ -818,11 +840,13 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         non_barber_per_role[role] = non_barber_per_role.get(role, 0) + r["pendapatan"]
     gaji_non_barber_total = sum(non_barber_per_role.values())
 
-    ringkasan_tambahan = [f"<b>Total Pendapatan Barber: {_rupiah(pendapatan_total)}</b>"]
-    if rincian_service:
-        ringkasan_tambahan.append("<b>Rincian</b>")
-        for s in rincian_service:
-            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    ringkasan_tambahan = []
+    if komisi_total:
+        ringkasan_tambahan.append(f"<b>Komisi: {_rupiah(komisi_total)}</b>")
+    if uang_harian_total:
+        ringkasan_tambahan.append(f"<b>Uang Harian: {_rupiah(uang_harian_total)}</b>")
+    if tips_total:
+        ringkasan_tambahan.append(f"<b>Tips: {_rupiah(tips_total)}</b>")
     for role, total in non_barber_per_role.items():
         if not total:
             continue
@@ -830,9 +854,13 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     if ada_reimburse:
         ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
     if ada_kasbon:
-        ringkasan_tambahan.append(f"<b>Potongan Kasbon: -{_rupiah(kasbon_total)}</b>")
-    total_keseluruhan = pendapatan_total + gaji_non_barber_total + reimburse_total - kasbon_total
-    ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
+        ringkasan_tambahan.append(f"<b>Kasbon: -{_rupiah(kasbon_total)}</b>")
+    if rincian_service:
+        ringkasan_tambahan.append("<b>Service</b>")
+        for s in rincian_service:
+            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    total_diterima = komisi_total + uang_harian_total + tips_total + gaji_non_barber_total + reimburse_total - kasbon_total
+    ringkasan_tambahan.append(f"<b>Total Diterima: {_rupiah(total_diterima)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
                         ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
@@ -986,11 +1014,16 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
         sel.append(_sel_keterangan(r["keterangan_list"]))
         baris.append(sel)
 
-    # Ringkasan bawah SAMA PERSIS rumusnya dengan Rekap Detail (lihat
-    # buat_pdf_rekap_transaksi()) -- wajar, karena sama-sama dijumlahkan
-    # dari baris gabungan yang identik, cuma disajikan beda (per karyawan
-    # vs per transaksi/hari).
-    pendapatan_total = sum(r["pendapatan"] for r in ringkas)
+    # MAINTENANCE #1 (bugfix): ringkasan bawah SEBELUMNYA "SAMA PERSIS
+    # rumusnya dengan Rekap Detail" apa adanya -- termasuk BUG-nya (Uang
+    # Harian tidak ikut dijumlahkan ke total mana pun, lihat catatan bugfix
+    # di buat_pdf_rekap_transaksi() di atas). `ringkas` (dari
+    # rekap_ringkasan.ringkas_per_karyawan(), sudah diperbaiki juga) SUDAH
+    # men-dedup Uang Harian per (barber, tanggal) per karyawan, jadi
+    # menjumlahkannya lintas karyawan di sini aman (tidak perlu dedup lagi).
+    komisi_total = sum(r["pendapatan"] - r["tips"] for r in ringkas)
+    tips_total = sum(r["tips"] for r in ringkas)
+    uang_harian_total = sum(r["uang_harian"] for r in ringkas)
     reimburse_total = sum(r["reimburse"] for r in ringkas)
     kasbon_total = sum(r["kasbon_dibayar"] for r in ringkas)
     non_barber_per_role = {}
@@ -1001,19 +1034,27 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
         non_barber_per_role[role] = non_barber_per_role.get(role, 0) + r["gaji_non_barber"]
     gaji_non_barber_total = sum(non_barber_per_role.values())
 
-    ringkasan_tambahan = [f"<b>Total Pendapatan Barber: {_rupiah(pendapatan_total)}</b>"]
-    if rincian_service:
-        ringkasan_tambahan.append("<b>Rincian</b>")
-        for s in rincian_service:
-            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    # Susunan & tampilan dinamis (MAINTENANCE #1): SAMA PERSIS
+    # buat_pdf_rekap_transaksi() -- lihat catatan lengkap di sana.
+    ringkasan_tambahan = []
+    if komisi_total:
+        ringkasan_tambahan.append(f"<b>Komisi: {_rupiah(komisi_total)}</b>")
+    if uang_harian_total:
+        ringkasan_tambahan.append(f"<b>Uang Harian: {_rupiah(uang_harian_total)}</b>")
+    if tips_total:
+        ringkasan_tambahan.append(f"<b>Tips: {_rupiah(tips_total)}</b>")
     for role, total in non_barber_per_role.items():
         ringkasan_tambahan.append(f"<b>Total Gaji {_label_jabatan(role)}: {_rupiah(total)}</b>")
     if ada_reimburse:
         ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
     if ada_kasbon:
-        ringkasan_tambahan.append(f"<b>Potongan Kasbon: -{_rupiah(kasbon_total)}</b>")
-    total_keseluruhan = pendapatan_total + gaji_non_barber_total + reimburse_total - kasbon_total
-    ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
+        ringkasan_tambahan.append(f"<b>Kasbon: -{_rupiah(kasbon_total)}</b>")
+    if rincian_service:
+        ringkasan_tambahan.append("<b>Service</b>")
+        for s in rincian_service:
+            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    total_diterima = komisi_total + uang_harian_total + tips_total + gaji_non_barber_total + reimburse_total - kasbon_total
+    ringkasan_tambahan.append(f"<b>Total Diterima: {_rupiah(total_diterima)}</b>")
 
     return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
                         col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan,
