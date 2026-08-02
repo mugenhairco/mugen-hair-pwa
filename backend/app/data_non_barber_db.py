@@ -51,12 +51,16 @@ def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(karyawan terhapus)"
     row["jabatan"] = barber["jabatan"] if barber else None
+    # FONDASI Multi-Tenant Phase 1.1: data_non_barber TIDAK punya kolom
+    # tenant_id sendiri (di-scope TRANSITIF lewat barbers.tenant_id,
+    # barber_id NOT NULL) -- diselipkan di sini untuk fetch-then-authorize.
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     return row
 
 
-def _pastikan_non_barber(barber_id: int) -> dict:
+def _pastikan_non_barber(barber_id: int, tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Karyawan tidak ditemukan.")
     if (barber.get("jabatan") or "barber") == "barber":
         raise ValueError(
@@ -73,25 +77,35 @@ def get_data_non_barber(entry_id: int):
 
 
 def get_data_non_barber_list(barber_id: int = None, tahun: int = None, bulan: int = None,
-                              tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                              tanggal_mulai: str = None, tanggal_selesai: str = None,
+                              tenant_id: int = None) -> list:
     """tahun/bulan (dipakai tampilan layar) DIDERIVE dari tanggal_mulai --
     pola sama seperti slip_gaji_db.py untuk periode rentang tanggal bebas
     Kasir/OB/Kru. tanggal_mulai/tanggal_selesai (dipakai periode PDF rentang
     tanggal bebas) BEDA -- filter entri yang tanggal_mulai-nya jatuh di
-    dalam rentang itu (inklusif)."""
-    q = "SELECT * FROM data_non_barber WHERE 1=1"
+    dalam rentang itu (inklusif).
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan ke
+    barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB mengisi
+    ini)."""
+    q = "SELECT d.* FROM data_non_barber d"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = d.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND d.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND d.tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND d.tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
-        q += " AND tanggal_mulai >= ?"; params.append(tanggal_mulai)
+        q += " AND d.tanggal_mulai >= ?"; params.append(tanggal_mulai)
     if tanggal_selesai is not None:
-        q += " AND tanggal_mulai <= ?"; params.append(tanggal_selesai)
-    q += " ORDER BY tanggal_mulai DESC, id DESC"
+        q += " AND d.tanggal_mulai <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY d.tanggal_mulai DESC, d.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
@@ -103,8 +117,8 @@ def _hitung_total(gaji_per_hari: int, hari_masuk: int, bonus: int, potongan: int
 
 def tambah_data_non_barber(barber_id: int, tanggal_mulai: str, tanggal_selesai: str, gaji_per_hari: int,
                             hari_masuk: int, hari_libur: int = 0, bonus: int = 0, potongan: int = 0,
-                            catatan: str = "", dibuat_oleh: str = "") -> dict:
-    _pastikan_non_barber(barber_id)
+                            catatan: str = "", dibuat_oleh: str = "", tenant_id: int = None) -> dict:
+    _pastikan_non_barber(barber_id, tenant_id)
     datetime.strptime(tanggal_mulai, "%Y-%m-%d")  # raise ValueError kalau format salah
     datetime.strptime(tanggal_selesai, "%Y-%m-%d")
     if tanggal_selesai < tanggal_mulai:
@@ -142,13 +156,13 @@ def tambah_data_non_barber(barber_id: int, tanggal_mulai: str, tanggal_selesai: 
 def edit_data_non_barber(entry_id: int, barber_id: int = None, tanggal_mulai: str = None,
                           tanggal_selesai: str = None, gaji_per_hari: int = None, hari_masuk: int = None,
                           hari_libur: int = None, bonus: int = None, potongan: int = None,
-                          catatan: str = None) -> dict:
+                          catatan: str = None, tenant_id: int = None) -> dict:
     existing = get_data_non_barber(entry_id)
     if existing is None:
         raise ValueError("Data Non-Barber tidak ditemukan.")
 
     barber_id_baru = barber_id if barber_id is not None else existing["barber_id"]
-    _pastikan_non_barber(barber_id_baru)
+    _pastikan_non_barber(barber_id_baru, tenant_id)
 
     tanggal_mulai_baru = tanggal_mulai if tanggal_mulai is not None else existing["tanggal_mulai"]
     tanggal_selesai_baru = tanggal_selesai if tanggal_selesai is not None else existing["tanggal_selesai"]
@@ -209,7 +223,8 @@ def hapus_data_non_barber(entry_id: int):
 # ---------------------------------------------------------------------------
 
 def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None, barber_id: int = None,
-                               tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                               tanggal_mulai: str = None, tanggal_selesai: str = None,
+                               tenant_id: int = None) -> list:
     """Menggabungkan `baris` (hasil database.get_rekap_transaksi_list(),
     biasanya sudah digabung dengan baris Reimburse/Kasbon) dengan baris Gaji
     Non-Barber (Input Data Non-Barber) pada periode yang sama. `tanggal`
@@ -222,7 +237,8 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     lihat tambah_data_non_barber()) -- TIDAK dihitung ulang di sini, sama
     prinsipnya seperti seluruh modul lain di file ini."""
     entri = get_data_non_barber_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
-                                      tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                      tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                      tenant_id=tenant_id)
     for e in entri:
         bagian_ket = [f"Periode: {e['tanggal_mulai']} s/d {e['tanggal_selesai']}"]
         if e.get("catatan"):

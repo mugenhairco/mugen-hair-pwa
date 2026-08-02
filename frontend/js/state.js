@@ -7,6 +7,7 @@
 const MugenState = (() => {
   const TOKEN_KEY = "mugen_token";
   const USER_KEY = "mugen_user";
+  const TENANT_KEY = "mugen_tenant";
   const CACHE_PREFIX = "mugen_cache:";
 
   function getToken() {
@@ -18,9 +19,19 @@ const MugenState = (() => {
     return raw ? JSON.parse(raw) : null;
   }
 
-  function setSession(token, user) {
+  function setSession(token, user, tenant) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    // FONDASI Multi-Tenant Phase 2.0: simpan slug toko yang BERHASIL login
+    // (kalau ada) -- lihat getTenantSlug()/rememberTenantSlug() di bawah,
+    // dipakai halaman Login untuk pre-fill slug di percobaan login
+    // BERIKUTNYA di perangkat yang sama (satu perangkat/PWA install
+    // biasanya memang dipakai satu toko terus-menerus), supaya alur
+    // "ambigu, pilih toko" (lihat login.js) SANGAT JARANG muncul lagi
+    // setelah login pertama kali berhasil. SENGAJA TIDAK dihapus saat
+    // clearSession() (logout) -- slug toko tetap relevan dipakai lagi
+    // walau sesi login sudah berakhir.
+    if (tenant && tenant.slug) rememberTenantSlug(tenant.slug);
   }
 
   function clearSession() {
@@ -30,6 +41,14 @@ const MugenState = (() => {
 
   function isLoggedIn() {
     return !!getToken();
+  }
+
+  function getTenantSlug() {
+    return localStorage.getItem(TENANT_KEY) || "";
+  }
+
+  function rememberTenantSlug(slug) {
+    if (slug) localStorage.setItem(TENANT_KEY, slug);
   }
 
   // REVISI UI/UX: penanda in-memory (SENGAJA bukan localStorage -- cukup
@@ -65,6 +84,6 @@ const MugenState = (() => {
 
   return {
     getToken, getUser, setSession, clearSession, isLoggedIn, cacheSet, cacheGet,
-    markLoginEntrance, consumeLoginEntrance,
+    markLoginEntrance, consumeLoginEntrance, getTenantSlug, rememberTenantSlug,
   };
 })();

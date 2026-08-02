@@ -114,21 +114,21 @@ def init_website_db():
 # Konten skalar (settings key-value)
 # ---------------------------------------------------------------------------
 
-def get_content() -> dict:
-    data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, "")) for k in WEBSITE_CONTENT_KEYS}
+def get_content(tenant_id: int = None) -> dict:
+    data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, ""), tenant_id=tenant_id) for k in WEBSITE_CONTENT_KEYS}
     data["background_opacity"] = int(data["background_opacity"] or 20)
-    hero_image_filename = file_asset_db.ambil_meta("hero_image")
+    hero_image_filename = file_asset_db.ambil_meta("hero_image", tenant_id=tenant_id)
     data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}" if hero_image_filename else None
-    hero_video_filename = file_asset_db.ambil_meta("hero_video")
+    hero_video_filename = file_asset_db.ambil_meta("hero_video", tenant_id=tenant_id)
     data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
-    about_foto_filename = file_asset_db.ambil_meta("about_foto")
+    about_foto_filename = file_asset_db.ambil_meta("about_foto", tenant_id=tenant_id)
     data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
-    background_image_filename = file_asset_db.ambil_meta("background_image")
+    background_image_filename = file_asset_db.ambil_meta("background_image", tenant_id=tenant_id)
     data["background_image_url"] = f"/api/website/background-image?v={background_image_filename}" if background_image_filename else None
     return data
 
 
-def update_content(data: dict):
+def update_content(data: dict, tenant_id: int = None):
     bersih = {k: (v if v is not None else "") for k, v in data.items() if k in WEBSITE_CONTENT_KEYS}
     for k in bersih:
         if isinstance(bersih[k], str):
@@ -147,7 +147,7 @@ def update_content(data: dict):
         bersih["background_opacity"] = str(opasitas)
     if not bersih:
         return
-    db.set_settings_bulk(bersih)
+    db.set_settings_bulk(bersih, tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------
@@ -155,57 +155,58 @@ def update_content(data: dict):
 # _simpan_gambar()/_get_gambar_file_path() di pengaturan_identitas.py.
 # ---------------------------------------------------------------------------
 
-def simpan_hero_image(filename_asli: str, konten: bytes) -> str:
+def simpan_hero_image(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
     return file_asset_db.simpan("hero_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Hero Image",
-                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
 
 
-def get_hero_image_data():
-    return file_asset_db.ambil("hero_image")
+def get_hero_image_data(tenant_id: int = None):
+    return file_asset_db.ambil("hero_image", tenant_id=tenant_id)
 
 
-def hapus_hero_image():
-    file_asset_db.hapus("hero_image")
+def hapus_hero_image(tenant_id: int = None):
+    file_asset_db.hapus("hero_image", tenant_id=tenant_id)
 
 
-def simpan_hero_video(filename_asli: str, konten: bytes) -> str:
+def simpan_hero_video(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
     if len(konten) > MAKS_UKURAN_VIDEO_BYTES:
         raise ValueError(f"Ukuran video Hero maksimal {MAKS_UKURAN_VIDEO_BYTES // (1024 * 1024)}MB.")
-    return file_asset_db.simpan("hero_video", filename_asli, konten, EXT_KE_CONTENT_TYPE_VIDEO, "Hero Video")
+    return file_asset_db.simpan("hero_video", filename_asli, konten, EXT_KE_CONTENT_TYPE_VIDEO, "Hero Video",
+                                 tenant_id=tenant_id)
 
 
-def get_hero_video_data():
-    return file_asset_db.ambil("hero_video")
+def get_hero_video_data(tenant_id: int = None):
+    return file_asset_db.ambil("hero_video", tenant_id=tenant_id)
 
 
-def hapus_hero_video():
-    file_asset_db.hapus("hero_video")
+def hapus_hero_video(tenant_id: int = None):
+    file_asset_db.hapus("hero_video", tenant_id=tenant_id)
 
 
-def simpan_about_foto(filename_asli: str, konten: bytes) -> str:
+def simpan_about_foto(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
     return file_asset_db.simpan("about_foto", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Foto About",
-                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
 
 
-def get_about_foto_data():
-    return file_asset_db.ambil("about_foto")
+def get_about_foto_data(tenant_id: int = None):
+    return file_asset_db.ambil("about_foto", tenant_id=tenant_id)
 
 
-def hapus_about_foto():
-    file_asset_db.hapus("about_foto")
+def hapus_about_foto(tenant_id: int = None):
+    file_asset_db.hapus("about_foto", tenant_id=tenant_id)
 
 
-def simpan_background_image(filename_asli: str, konten: bytes) -> str:
+def simpan_background_image(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
     return file_asset_db.simpan("background_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website",
-                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
 
 
-def get_background_image_data():
-    return file_asset_db.ambil("background_image")
+def get_background_image_data(tenant_id: int = None):
+    return file_asset_db.ambil("background_image", tenant_id=tenant_id)
 
 
-def hapus_background_image():
-    file_asset_db.hapus("background_image")
+def hapus_background_image(tenant_id: int = None):
+    file_asset_db.hapus("background_image", tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +216,13 @@ def hapus_background_image():
 # Video (EXT_KE_CONTENT_TYPE_VIDEO di atas), dengan cap ukuran yang sama.
 # ---------------------------------------------------------------------------
 
-def get_gallery() -> list:
+def get_gallery(tenant_id: int = None) -> list:
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM website_gallery ORDER BY urutan ASC, id ASC").fetchall()
+        if tenant_id is not None:
+            rows = conn.execute("SELECT * FROM website_gallery WHERE tenant_id = ? ORDER BY urutan ASC, id ASC",
+                                 (tenant_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM website_gallery ORDER BY urutan ASC, id ASC").fetchall()
         return [
             {
                 "id": r["id"],
@@ -232,7 +237,7 @@ def get_gallery() -> list:
 _EXT_KE_CONTENT_TYPE_GALLERY = {**EXT_KE_CONTENT_TYPE_GAMBAR, **EXT_KE_CONTENT_TYPE_VIDEO}
 
 
-def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
+def tambah_gallery_foto(filename_asli: str, konten: bytes, tenant_id: int = None) -> int:
     ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
     if ext in EXT_KE_CONTENT_TYPE_GAMBAR:
         tipe = "foto"
@@ -253,10 +258,16 @@ def tambah_gallery_foto(filename_asli: str, konten: bytes) -> int:
         data_kolom = konten
 
     with get_conn() as conn:
-        urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery").fetchone()["m"]
+        if tenant_id is not None:
+            urutan_maks = conn.execute(
+                "SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery WHERE tenant_id = ?",
+                (tenant_id,)).fetchone()["m"]
+        else:
+            urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM website_gallery").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO website_gallery (filename, data, r2_key, tipe, urutan, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (nama_file, data_kolom, r2_key, tipe, urutan_maks + 1, now),
+            "INSERT INTO website_gallery (filename, data, r2_key, tipe, urutan, created_at, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (nama_file, data_kolom, r2_key, tipe, urutan_maks + 1, now, tenant_id),
         )
         return cur.lastrowid
 
@@ -277,6 +288,16 @@ def get_gallery_foto_data(foto_id: int):
     return None, None
 
 
+def get_gallery_foto_meta(foto_id: int):
+    """FONDASI Multi-Tenant Phase 1: dipakai router untuk fetch-then-authorize
+    (bandingkan tenant_id) SEBELUM memanggil get_gallery_foto_data()/
+    hapus_gallery_foto() -- keduanya sendiri tetap menerima bare foto_id
+    tanpa parameter tenant_id baru, sama seperti pola get_barber()/get_service()."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT id, tenant_id FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
+        return dict(row) if row else None
+
+
 def hapus_gallery_foto(foto_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT id, r2_key FROM website_gallery WHERE id = ?", (foto_id,)).fetchone()
@@ -287,9 +308,13 @@ def hapus_gallery_foto(foto_id: int):
         r2_storage.delete(row["r2_key"])
 
 
-def reorder_gallery(ordered_ids: list):
+def reorder_gallery(ordered_ids: list, tenant_id: int = None):
     with get_conn() as conn:
-        existing_ids = {r["id"] for r in conn.execute("SELECT id FROM website_gallery").fetchall()}
+        if tenant_id is not None:
+            existing_ids = {r["id"] for r in conn.execute(
+                "SELECT id FROM website_gallery WHERE tenant_id = ?", (tenant_id,)).fetchall()}
+        else:
+            existing_ids = {r["id"] for r in conn.execute("SELECT id FROM website_gallery").fetchall()}
         if set(ordered_ids) != existing_ids:
             raise ValueError("Daftar urutan tidak cocok dengan foto Gallery yang ada.")
         for urutan, foto_id in enumerate(ordered_ids):

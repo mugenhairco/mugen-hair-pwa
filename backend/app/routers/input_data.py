@@ -66,7 +66,14 @@ def _tanpa_kolom_biner(barbers: list) -> list:
 
 def _resolve_barber_id(user: dict, barber_id_diminta: int | None) -> int:
     """Owner boleh pilih barber_id bebas (wajib diisi). Barber dipaksa ke
-    barber_id akunnya sendiri, apapun yang dikirim dari frontend."""
+    barber_id akunnya sendiri, apapun yang dikirim dari frontend.
+
+    FONDASI Multi-Tenant Phase 1: barber_id_diminta (Owner/Admin) SEBELUMNYA
+    dipakai apa adanya TANPA verifikasi kepemilikan -- bug nyata: Owner
+    Tenant A yang mengirim barber_id milik Tenant B akan berhasil mencatat
+    transaksi ATAS NAMA barber Tenant B. Sekarang WAJIB diverifikasi dulu
+    lewat db.get_barber() + bandingkan tenant_id, sama seperti pola
+    fetch-then-authorize di routers/pengaturan.py."""
     if user["role"] == "barber":
         if user.get("barber_id") is None:
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
@@ -74,23 +81,36 @@ def _resolve_barber_id(user: dict, barber_id_diminta: int | None) -> int:
     # role admin
     if barber_id_diminta is None:
         raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
+    barber = db.get_barber(barber_id_diminta)
+    if barber is None or barber.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
     return barber_id_diminta
 
 
 def _pastikan_pemilik(user: dict, transaksi_id: int) -> dict:
     """Untuk role barber: pastikan transaksi yang mau dikoreksi/dihapus benar
-    memang miliknya sendiri, bukan milik barber lain."""
+    memang miliknya sendiri, bukan milik barber lain.
+
+    FONDASI Multi-Tenant Phase 1: SEBELUMNYA role admin/staff TIDAK PERNAH
+    diverifikasi sama sekali di sini -- bug nyata: Owner Tenant A bisa
+    mengoreksi/menghapus transaksi Tenant B hanya dengan menebak/menaikkan
+    transaksi_id. 404 (bukan 403) dipakai untuk kasus lintas-tenant supaya
+    tidak membocorkan bahwa transaksi_id itu sebenarnya ada."""
     transaksi = db.get_transaksi(transaksi_id)
     if transaksi is None:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
     if user["role"] == "barber" and transaksi["barber_id"] != user.get("barber_id"):
         raise HTTPException(status_code=403, detail="Bukan transaksi milik Anda.")
+    if user["role"] != "barber":
+        barber = db.get_barber(transaksi["barber_id"])
+        if barber is None or barber.get("tenant_id") != user.get("tenant_id"):
+            raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
     return transaksi
 
 
 @router.get("/services")
 def services(user: dict = Depends(require_owner_or_staff)):
-    return db.get_services()
+    return db.get_services(tenant_id=user["tenant_id"])
 
 
 @router.get("/barbers")
@@ -100,7 +120,7 @@ def barbers(user: dict = Depends(require_owner_or_staff)):
     memanggilnya juga (hanya daftar nama, bukan data sensitif). HANYA
     jabatan='barber' (lihat database.py::get_barbers()) -- Input Data
     murni transaksi jasa potong rambut, Kasir/OB/Kru tidak relevan di sini."""
-    return _tanpa_kolom_biner(db.get_barbers())
+    return _tanpa_kolom_biner(db.get_barbers(tenant_id=user["tenant_id"]))
 
 
 @router.get("/karyawan")
@@ -108,19 +128,20 @@ def karyawan(user: dict = Depends(require_owner_or_staff)):
     """Untuk dropdown yang harus menampilkan SEMUA karyawan (Barber +
     Kasir/OB/Kru) -- Slip Gaji, Kasbon, Reimburse, Izin & Cuti, filter
     Rekap Transaksi. BEDA dari /barbers di atas yang khusus jabatan='barber'."""
-    return _tanpa_kolom_biner(db.get_karyawan())
+    return _tanpa_kolom_biner(db.get_karyawan(tenant_id=user["tenant_id"]))
 
 
 @router.post("/preview")
 def preview(body: PreviewBody, user: dict = Depends(require_owner_or_staff)):
-    return db.hitung_preview_items([it.model_dump() for it in body.items])
+    return db.hitung_preview_items([it.model_dump() for it in body.items], tenant_id=user["tenant_id"])
 
 
 @router.get("/transaksi")
 def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
                     user: dict = Depends(require_owner_or_staff)):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
-    return db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
+    return db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
+                                  tenant_id=user["tenant_id"])
 
 
 @router.post("/transaksi")
@@ -164,7 +185,7 @@ def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_owner_or_sta
 @router.get("/libur")
 def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
-    return db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
+    return db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 
 
 @router.post("/libur")

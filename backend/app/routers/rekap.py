@@ -34,20 +34,24 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
                      tanggal: str = None, user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal)
+    data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
+                                        tenant_id=user["tenant_id"])
     # Tahap 14: baris Reimburse yang sudah DISETUJUI ikut digabung di sini
     # (bukan di database.py, circular import) -- tanggal barisnya tanggal
     # DISETUJUI, bukan tanggal klaim diajukan.
-    data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                   tenant_id=user["tenant_id"])
     # Tahap 17: baris Kasbon yang sudah DIBAYAR (manual maupun potong_gaji)
     # ikut digabung juga -- BEDA dari Reimburse, pendapatan barisnya
     # NEGATIF (mengurangi Total, lihat kasbon_db.py).
-    data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                tenant_id=user["tenant_id"])
     # Dukungan Barber + Non-Barber: baris Gaji Non-Barber (Input Data
     # Non-Barber) ikut digabung juga -- karyawan non-barber TIDAK PERNAH
     # punya baris "transaksi" (lihat data_non_barber_db.py), jadi tanpa ini
     # filter "Semua Karyawan"/pilih karyawan non-barber selalu kosong.
-    data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                         tenant_id=user["tenant_id"])
     return data
 
 
@@ -63,10 +67,12 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
         barber_id = user.get("barber_id")
     if jenis == "ringkasan":
         konten = laporan_pdf.buat_pdf_rekap_transaksi_ringkasan(
-            tahun, bulan, barber_id, user["username"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+            tahun, bulan, barber_id, user["username"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+            tenant_id=user["tenant_id"])
     else:
         konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
-                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                                        tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_transaksi")
 
 
@@ -74,7 +80,7 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
 def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+    data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=user["tenant_id"])
     # Tahap 12: kolom Reimburse -- dihitung di sini (bukan di database.py,
     # yang tidak boleh impor reimburse_db karena circular import).
     # Tahap 17: BUGFIX -- Reimburse sebelumnya ditampilkan sebagai kolom
@@ -93,18 +99,19 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
 def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_rekap_bulanan(tahun, bulan, barber_id, user["username"])
+    konten = laporan_pdf.buat_pdf_rekap_bulanan(tahun, bulan, barber_id, user["username"],
+                                                 tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_bulanan")
 
 
 @router.get("/pengeluaran")
 def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
-    daftar = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan)
+    daftar = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     total = sum(p["jumlah"] for p in daftar)
     return {"daftar": daftar, "total": total}
 
 
 @router.get("/pengeluaran/pdf")
 def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
-    konten = laporan_pdf.buat_pdf_rekap_pengeluaran(tahun, bulan, user["username"])
+    konten = laporan_pdf.buat_pdf_rekap_pengeluaran(tahun, bulan, user["username"], tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_pengeluaran")

@@ -29,27 +29,27 @@ EXT_KE_CONTENT_TYPE = {
 }
 
 
-def get_identitas() -> dict:
-    data = {k: db.get_setting(k, "") for k in IDENTITAS_KEYS}
-    logo_filename = file_asset_db.ambil_meta("logo")
+def get_identitas(tenant_id: int = None) -> dict:
+    data = {k: db.get_setting(k, "", tenant_id=tenant_id) for k in IDENTITAS_KEYS}
+    logo_filename = file_asset_db.ambil_meta("logo", tenant_id=tenant_id)
     data["logo_url"] = f"/api/pengaturan/logo?v={logo_filename}" if logo_filename else None
     return data
 
 
-def update_identitas(data: dict):
+def update_identitas(data: dict, tenant_id: int = None):
     if "nama_barbershop" in data and not (data["nama_barbershop"] or "").strip():
         raise ValueError("Nama Barbershop tidak boleh kosong.")
     aman = {k: (v or "").strip() for k, v in data.items() if k in IDENTITAS_KEYS}
     if not aman:
         return
-    db.set_settings_bulk(aman)
+    db.set_settings_bulk(aman, tenant_id=tenant_id)
 
 
-def simpan_logo(filename_asli: str, konten: bytes) -> str:
+def simpan_logo(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
     return file_asset_db.simpan("logo", filename_asli, konten, EXT_KE_CONTENT_TYPE, "Logo",
-                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
 
 
-def get_logo_data():
+def get_logo_data(tenant_id: int = None):
     """Return (data, content_type) kalau logo ada, atau (None, None)."""
-    return file_asset_db.ambil("logo")
+    return file_asset_db.ambil("logo", tenant_id=tenant_id)

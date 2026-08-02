@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import database as db
 import komisi_penyesuaian_db
 import laporan_pdf
 import permissions
@@ -35,7 +36,7 @@ def _cek_akses_lihat(user: dict, penyesuaian: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_komisi"):
+        if not permissions.has("izin_komisi", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Komisi. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -45,13 +46,28 @@ def _cek_akses_lihat(user: dict, penyesuaian: dict = None):
     raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
 
+def _pastikan_penyesuaian_tenant_sama(user: dict, penyesuaian: dict | None):
+    """FONDASI Multi-Tenant Phase 1.1: fetch-then-authorize -- 404 (bukan
+    403) supaya tidak membocorkan bahwa penyesuaian_id itu sebenarnya ada,
+    milik tenant lain."""
+    if penyesuaian is None or penyesuaian.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Penyesuaian komisi tidak ditemukan.")
+
+
+def _pastikan_barber_tenant_sama(user: dict, barber_id: int):
+    barber = db.get_barber(barber_id)
+    if barber is None or barber["tenant_id"] != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Barber tidak ditemukan.")
+
+
 @router.get("/penyesuaian")
 def list_penyesuaian(barber_id: int = None, tahun: int = None, bulan: int = None, jenis: str = None,
                       user: dict = Depends(get_current_user)):
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    return komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis)
+    return komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis,
+                                                        tenant_id=user["tenant_id"])
 
 
 @router.get("/pdf")
@@ -64,7 +80,8 @@ def list_penyesuaian_pdf(barber_id: int = None, tahun: int = None, bulan: int = 
         barber_id = user.get("barber_id")
     if not tahun or not bulan:
         raise HTTPException(status_code=422, detail="Tahun dan Bulan wajib diisi.")
-    konten = laporan_pdf.buat_pdf_komisi_list(barber_id, jenis, tahun, bulan, user["username"])
+    konten = laporan_pdf.buat_pdf_komisi_list(barber_id, jenis, tahun, bulan, user["username"],
+                                               tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("komisi")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -75,6 +92,7 @@ def saldo_periode(barber_id: int, tahun: int, bulan: int, user: dict = Depends(g
     if user["role"] == "barber" and barber_id != user.get("barber_id"):
         raise HTTPException(status_code=403, detail="Tidak bisa melihat saldo komisi barber lain.")
     _cek_akses_lihat(user)
+    _pastikan_barber_tenant_sama(user, barber_id)
     return {"barber_id": barber_id, "tahun": tahun, "bulan": bulan,
             "saldo": komisi_penyesuaian_db.get_saldo_periode(barber_id, tahun, bulan)}
 
@@ -82,8 +100,7 @@ def saldo_periode(barber_id: int, tahun: int, bulan: int, user: dict = Depends(g
 @router.get("/penyesuaian/{penyesuaian_id}")
 def ambil_penyesuaian(penyesuaian_id: int, user: dict = Depends(get_current_user)):
     penyesuaian = komisi_penyesuaian_db.get_penyesuaian(penyesuaian_id)
-    if penyesuaian is None:
-        raise HTTPException(status_code=404, detail="Penyesuaian komisi tidak ditemukan.")
+    _pastikan_penyesuaian_tenant_sama(user, penyesuaian)
     _cek_akses_lihat(user, penyesuaian)
     return penyesuaian
 
@@ -102,7 +119,7 @@ def buat_penyesuaian(body: PenyesuaianBody, user: dict = Depends(require_permiss
     try:
         return komisi_penyesuaian_db.buat_penyesuaian(
             body.barber_id, body.tahun, body.bulan, body.jenis, body.jumlah,
-            body.keterangan, dibuat_oleh=user["username"],
+            body.keterangan, dibuat_oleh=user["username"], tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -117,6 +134,7 @@ class PenyesuaianEditBody(BaseModel):
 @router.put("/penyesuaian/{penyesuaian_id}")
 def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianEditBody,
                       user: dict = Depends(require_permission("izin_komisi"))):
+    _pastikan_penyesuaian_tenant_sama(user, komisi_penyesuaian_db.get_penyesuaian(penyesuaian_id))
     try:
         return komisi_penyesuaian_db.edit_penyesuaian(
             penyesuaian_id, jenis=body.jenis, jumlah=body.jumlah, keterangan=body.keterangan,
@@ -127,6 +145,7 @@ def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianEditBody,
 
 @router.delete("/penyesuaian/{penyesuaian_id}")
 def hapus_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_permission("izin_komisi"))):
+    _pastikan_penyesuaian_tenant_sama(user, komisi_penyesuaian_db.get_penyesuaian(penyesuaian_id))
     try:
         komisi_penyesuaian_db.hapus_penyesuaian(penyesuaian_id)
     except ValueError as e:

@@ -16,7 +16,7 @@ karena get_current_user selalu re-check ke database, bukan cuma percaya isi toke
 
 import os
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
@@ -49,15 +49,44 @@ def _decode_token(token: str) -> int:
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
     """Dependency dasar: wajib login (role apa saja). Selalu ambil data user
     TERBARU dari database (bukan dari isi token) supaya kalau user dinonaktifkan
-    atau role-nya diubah, efeknya langsung terlihat tanpa harus tunggu token expired."""
+    atau role-nya diubah, efeknya langsung terlihat tanpa harus tunggu token expired.
+
+    FONDASI Multi-Tenant Phase 1: `user["tenant_id"]` ikut terbawa dari baris
+    yang sama (SELECT * di auth_db.get_user(), tidak perlu query tambahan)
+    -- inilah SATU-SATUNYA titik di seluruh aplikasi tempat tenant aktif
+    di-resolve untuk endpoint ber-login, lihat get_current_tenant_id() di
+    bawah. Tenant yang di-nonaktifkan (lihat tenant_db.py, kolom `status`)
+    langsung menolak SEMUA request user-nya di sini, sama seperti akun user
+    yang di-nonaktifkan -- efeknya konsisten & langsung terlihat tanpa
+    tunggu token expired, pola yang sama dengan pengecekan `user.aktif`."""
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Belum login.")
     user_id = _decode_token(credentials.credentials)
     user = auth_db.get_user(user_id)
     if user is None or not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif atau tidak ditemukan.")
+    if user.get("tenant_id") is not None:
+        import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+        tenant = tenant_db.get_tenant(user["tenant_id"])
+        if tenant is None or tenant["status"] != "aktif":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                 detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
     user.pop("password_hash", None)
     return user
+
+
+def get_current_tenant_id(user: dict = Depends(get_current_user)) -> int:
+    """Dependency tenant-resolution UTAMA untuk seluruh Dashboard PWA (§4
+    rancangan audit) -- tenant SELALU diturunkan dari sesi login yang
+    sedang aktif, TIDAK PERNAH dari parameter/header yang bisa disuntik
+    client. Endpoint yang butuh menyaring data per-tenant memakai dependency
+    ini (bukan membaca user["tenant_id"] manual di tiap endpoint) supaya ada
+    SATU titik yang menolak tegas kalau suatu saat ada akun tanpa tenant_id
+    (seharusnya tidak pernah terjadi lewat alur normal aplikasi)."""
+    if user.get("tenant_id") is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                             detail="Akun ini belum dikaitkan ke barbershop mana pun.")
+    return user["tenant_id"]
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -72,6 +101,19 @@ def require_barber(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
+    """FONDASI Multi-Tenant Phase 2.1: Super Admin Dashboard -- akun
+    `role='superadmin'` (selalu `tenant_id=None`, lihat auth_db.tambah_user())
+    mengelola SELURUH tenant. get_current_user() di atas TIDAK menjalankan
+    pengecekan tenant aktif untuk akun ini (tenant_id None), dan
+    get_current_tenant_id() menolak akun ini dari SEMUA endpoint ber-scope
+    tenant biasa -- dua sifat itu bersama-sama memastikan superadmin dan
+    akun tenant biasa saling eksklusif dari sisi endpoint yang bisa diakses."""
+    if user["role"] != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus Super Admin.")
+    return user
+
+
 def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     """'admin' (Owner, akses penuh) atau 'staff' (Admin, akses dibatasi hak
     akses yang diatur Owner lewat Setting > Hak Akses Admin -- lihat
@@ -81,6 +123,103 @@ def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in ("admin", "staff"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus Owner atau Admin.")
     return user
+
+
+def resolve_tenant_hibrid(request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+                           tenant: str | None = None) -> int:
+    """Dipakai endpoint yang PUBLIC tapi JUGA dipanggil dari sisi SUDAH LOGIN
+    lewat endpoint yang SAMA PERSIS -- mis. GET /pengaturan/identitas,
+    /pengaturan/logo, /website/content/*, /website/gallery* dipakai baik
+    oleh halaman Login/booking publik (belum ada token) MAUPUN oleh menu
+    Setting/Website Content setelah login (SUDAH ada token, tapi frontend-
+    nya tidak dan tidak perlu tahu slug tenant-nya sendiri untuk membaca
+    data miliknya sendiri).
+
+    Kalau ada token valid, tenant diambil dari SESI LOGIN (prioritas --
+    kalau tidak, Setting Tenant B akan diam-diam menampilkan data Tenant
+    default, bug nyata yang ditemukan lewat pengujian dua-tenant Phase 1).
+    Kalau tidak ada token (pengunjung publik sungguhan), fallback ke
+    resolve_tenant_publik() (query string `?tenant=<slug>` / tenant
+    default) -- endpoint TETAP bisa diakses tanpa login sama sekali,
+    perilaku publik tidak berubah."""
+    if credentials is not None:
+        try:
+            user_id = _decode_token(credentials.credentials)
+            user = auth_db.get_user(user_id)
+            if user is not None and user.get("aktif") and user.get("tenant_id") is not None:
+                return user["tenant_id"]
+        except HTTPException:
+            pass
+    return resolve_tenant_publik(request, tenant)
+
+
+def resolve_tenant_publik(request: Request, tenant: str | None = None) -> int:
+    """FONDASI Multi-Tenant Phase 1: dependency resolusi tenant untuk SELURUH
+    endpoint PUBLIC (tanpa sesi login -- halaman Login/booking /book) yang
+    perlu tahu tenant mana yang aktif. Lihat tenant_db.cari_tenant_publik()
+    untuk penjelasan lengkap kenapa mekanisme ini (query string
+    `?tenant=<slug>`, BUKAN subdomain/custom domain -- custom domain
+    eksplisit di luar cakupan Phase 1) dipilih. Query string kosong =
+    tenant default, SATU-SATUNYA tenant yang ada di deployment single-tenant
+    SEKARANG -- frontend yang belum dimodifikasi TIDAK PERNAH mengirim
+    parameter ini, jadi perilakunya 100% sama seperti sebelum Phase 1.
+
+    FONDASI Multi-Tenant Phase 2.0: kalau `tenant` (query string, prioritas
+    utama -- tidak berubah) kosong, fallback ke
+    `request.state.requested_tenant_slug` yang sudah di-resolve
+    TenantResolutionMiddleware dari header `X-Tenant-Slug` atau subdomain
+    (lihat tenant_middleware.py) -- deployment yang belum memakai keduanya
+    (mis. sekarang, di *.onrender.com) selalu dapat None dari situ, jadi
+    perilakunya tetap identik sebelum Phase 2.0."""
+    import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+    slug = tenant or getattr(request.state, "requested_tenant_slug", None)
+    t = tenant_db.cari_tenant_publik(slug)
+    if t is None or t["status"] != "aktif":
+        raise HTTPException(status_code=404, detail="Barbershop tidak ditemukan.")
+    return t["id"]
+
+
+def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+                                   tenant: str | None = None) -> int | None:
+    """FONDASI Multi-Tenant Phase 2.2 (Tenant Branding & Platform Branding):
+    dependency KHUSUS endpoint publik GET /api/tenant/branding -- BEDA
+    dengan resolve_tenant_hibrid()/resolve_tenant_publik() di atas (dipakai
+    endpoint LAIN, TIDAK diubah sama sekali di sini, supaya tidak ada
+    breaking change) dalam SATU hal penting: kalau tidak ada sinyal tenant
+    APA PUN, fungsi ini return None (artinya "pakai branding platform") --
+    BUKAN diam-diam jatuh ke tenant default pertama seperti
+    resolve_tenant_publik() (perilaku ITU sengaja dipertahankan apa adanya
+    untuk halaman publik /book dkk, supaya kompatibilitas mundur terjaga).
+
+    Prioritas:
+    1. Sesi login valid (token benar, akun aktif) -> `user["tenant_id"]`
+       APA ADANYA -- integer untuk Owner/Admin/Barber biasa (branding toko
+       sendiri, TIDAK BISA disuntik lewat query string manapun), atau None
+       untuk superadmin (branding platform, sesuai spesifikasi "Super Admin
+       tetap branding platform, bukan branding tenant tertentu").
+    2. Tidak ada sesi valid (pengunjung anonim / halaman Login belum
+       submit) -> `tenant` (query string eksplisit, TERMASUK slug yang
+       "diingat" browser dari login sebelumnya -- lihat frontend/js/
+       brand.js, murni untuk TAMPILAN, bukan otorisasi apa pun jadi aman
+       dikirim proaktif) -> fallback slug dari middleware (header
+       X-Tenant-Slug/subdomain, lihat tenant_middleware.py) -> None
+       (branding platform) kalau semuanya kosong/tidak ditemukan/nonaktif."""
+    if credentials is not None:
+        try:
+            user_id = _decode_token(credentials.credentials)
+            user = auth_db.get_user(user_id)
+            if user is not None and user.get("aktif"):
+                return user.get("tenant_id")
+        except HTTPException:
+            pass
+    import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
+    slug = tenant or getattr(request.state, "requested_tenant_slug", None)
+    if not slug:
+        return None
+    t = tenant_db.get_tenant_by_slug(slug)
+    if t is None or t["status"] != "aktif":
+        return None
+    return t["id"]
 
 
 def require_permission(key: str):
@@ -93,7 +232,7 @@ def require_permission(key: str):
         if user["role"] == "admin":
             return user
         import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
-        if not permissions.has(key):
+        if not permissions.has(key, tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                  detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
         return user

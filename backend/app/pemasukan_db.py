@@ -36,6 +36,7 @@ def init_pemasukan_db():
                 aktif        INTEGER NOT NULL DEFAULT 1,
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT,
+                tenant_id    INTEGER,
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
@@ -58,37 +59,41 @@ def _validasi_input(tanggal: str, kategori: str, keterangan: str, jumlah: int):
     return kategori, keterangan
 
 
-def _pastikan_barber_valid(conn, barber_id):
+def _pastikan_barber_valid(conn, barber_id, tenant_id=None):
     if barber_id is None:
         return
-    ada = conn.execute("SELECT 1 FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    if tenant_id is not None:
+        ada = conn.execute("SELECT 1 FROM barbers WHERE id = ? AND tenant_id = ?", (barber_id, tenant_id)).fetchone()
+    else:
+        ada = conn.execute("SELECT 1 FROM barbers WHERE id = ?", (barber_id,)).fetchone()
     if not ada:
         raise ValueError("Barber yang dipilih tidak ditemukan.")
 
 
 def tambah_pemasukan(tanggal: str, kategori: str, keterangan: str, jumlah: int,
-                      barber_id: int = None, aktif: bool = True) -> int:
+                      barber_id: int = None, aktif: bool = True, tenant_id: int = None) -> int:
     kategori, keterangan = _validasi_input(tanggal, kategori, keterangan, jumlah)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        _pastikan_barber_valid(conn, barber_id)
+        _pastikan_barber_valid(conn, barber_id, tenant_id)
         cur = conn.execute(
-            """INSERT INTO pemasukan (tanggal, kategori, keterangan, jumlah, barber_id, aktif, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (tanggal, kategori, keterangan, int(jumlah), barber_id, 1 if aktif else 0, now),
+            """INSERT INTO pemasukan (tanggal, kategori, keterangan, jumlah, barber_id, aktif, created_at,
+                                       tenant_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tanggal, kategori, keterangan, int(jumlah), barber_id, 1 if aktif else 0, now, tenant_id),
         )
         return cur.lastrowid
 
 
 def koreksi_pemasukan(pemasukan_id: int, tanggal: str, kategori: str, keterangan: str,
-                       jumlah: int, barber_id: int = None, aktif: bool = True):
+                       jumlah: int, barber_id: int = None, aktif: bool = True, tenant_id: int = None):
     kategori, keterangan = _validasi_input(tanggal, kategori, keterangan, jumlah)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         existing = conn.execute("SELECT id FROM pemasukan WHERE id = ?", (pemasukan_id,)).fetchone()
         if existing is None:
             raise ValueError("Data pemasukan tidak ditemukan.")
-        _pastikan_barber_valid(conn, barber_id)
+        _pastikan_barber_valid(conn, barber_id, tenant_id)
         conn.execute(
             """UPDATE pemasukan
                SET tanggal = ?, kategori = ?, keterangan = ?, jumlah = ?,
@@ -116,14 +121,21 @@ def get_pemasukan(pemasukan_id: int):
 
 def get_pemasukan_list(tahun: int = None, bulan: int = None, tanggal: str = None,
                         tanggal_mulai: str = None, tanggal_selesai: str = None,
-                        kategori: str = None, cari: str = None, hanya_aktif: bool = None) -> list:
+                        kategori: str = None, cari: str = None, hanya_aktif: bool = None,
+                        tenant_id: int = None) -> list:
     """Urutan: tanggal terbaru dulu. `cari` mencari di keterangan & kategori.
     tanggal_mulai/tanggal_selesai (format 'YYYY-MM-DD', inklusif di kedua
     ujung) dipakai Laporan PDF untuk rentang tanggal bebas -- BEDA dari
-    tahun/bulan (satu bulan/tahun penuh)."""
+    tahun/bulan (satu bulan/tahun penuh).
+
+    FONDASI Multi-Tenant Phase 1.1: `pemasukan` (barber_id NULLABLE) punya
+    kolom tenant_id LANGSUNG (bukan transitif lewat barbers) -- lihat
+    tenant_migrasi.py untuk penjelasan lengkap kenapa."""
     q = """SELECT p.*, b.nama AS nama_barber
            FROM pemasukan p LEFT JOIN barbers b ON b.id = p.barber_id WHERE 1=1"""
     params = []
+    if tenant_id is not None:
+        q += " AND p.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
@@ -150,12 +162,15 @@ def get_pemasukan_list(tahun: int = None, bulan: int = None, tanggal: str = None
         return [dict(r) for r in rows]
 
 
-def get_kategori_list() -> list:
+def get_kategori_list(tenant_id: int = None) -> list:
     """Gabungan kategori default + kategori yang sudah pernah dipakai di data,
     supaya dropdown filter/form selalu lengkap tanpa perlu tabel kategori terpisah."""
+    q = "SELECT DISTINCT kategori FROM pemasukan WHERE kategori IS NOT NULL AND kategori != ''"
+    params = []
+    if tenant_id is not None:
+        q += " AND tenant_id = ?"; params.append(tenant_id)
+    q += " ORDER BY kategori"
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT kategori FROM pemasukan WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori"
-        ).fetchall()
+        rows = conn.execute(q, params).fetchall()
     dinamis = [r["kategori"] for r in rows]
     return list(dict.fromkeys(KATEGORI_DEFAULT + dinamis))  # urutan dijaga, tanpa duplikat

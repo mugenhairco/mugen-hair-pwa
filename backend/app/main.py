@@ -59,6 +59,10 @@ from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 from karyawan_migrasi import migrasi_karyawan
 from r2_storage_migrasi import migrasi_r2_storage
+import tenant_migrasi
+from tenant_migrasi import migrasi_tenant
+import tenant_db
+from tenant_middleware import TenantResolutionMiddleware
 import booking_db
 import website_content
 import file_asset_db
@@ -71,7 +75,8 @@ import izin_cuti_db
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber
+import superadmin_audit_db
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -136,6 +141,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# FONDASI Multi-Tenant Phase 2.0: resolusi tenant per-request di SATU
+# tempat (lihat tenant_middleware.py) -- request.state.requested_tenant_slug
+# dipakai auth.resolve_tenant_publik()/resolve_tenant_hibrid() dan
+# routers/auth_router.py::login() sebagai sumber slug SELAIN query string
+# `?tenant=` (yang tetap prioritas utama, perilaku Phase 1 tidak berubah).
+app.add_middleware(TenantResolutionMiddleware)
+
 
 @app.middleware("http")
 async def _log_dan_no_store(request: Request, call_next):
@@ -188,6 +200,8 @@ app.include_router(izin_cuti.router)
 app.include_router(pemasukan.router)
 app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
+app.include_router(superadmin.router)
+app.include_router(branding.router)
 
 
 @app.on_event("startup")
@@ -257,6 +271,7 @@ def on_startup():
         pemasukan_db.init_pemasukan_db()  # Modul Keuangan Fase 1: tabel pemasukan (idempotent)
         uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)
+        superadmin_audit_db.init_superadmin_audit_db()  # FONDASI Multi-Tenant Phase 2.1: tabel superadmin_audit_log (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)
         migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
@@ -268,9 +283,11 @@ def on_startup():
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
+        migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
+    _bootstrap_superadmin_pertama()
 
     # Migrasi Cloudflare R2 (Storage File): dicatat sekali saat boot supaya
     # langsung kelihatan di log Render kalau env var R2_* belum lengkap
@@ -318,7 +335,12 @@ def _bootstrap_admin_pertama():
         return
     username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "owner")
     password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "ganti-password-ini")
-    auth_db.tambah_user(username=username, password=password, role="admin")
+    # FONDASI Multi-Tenant Phase 1: akun pertama ini otomatis milik tenant
+    # default (dibuat migrasi_tenant() sebelum baris ini dijalankan, lihat
+    # urutan startup di atas) -- instalasi baru = tenant tunggal pertama.
+    tenant_default = tenant_db.get_tenant_by_slug(tenant_migrasi.SLUG_TENANT_DEFAULT)
+    auth_db.tambah_user(username=username, password=password, role="admin",
+                         tenant_id=tenant_default["id"] if tenant_default else None)
     logger.critical(
         "[%s] BOOTSTRAP: tabel users KOSONG saat proses ini boot -- akun admin baru '%s' "
         "dibuat dari ADMIN_BOOTSTRAP_USERNAME/PASSWORD. Kalau ini bukan instalasi pertama "
@@ -373,6 +395,38 @@ def _reset_admin_darurat():
         "password ke nilai yang sama persis (ini KEMUNGKINAN BESAR penyebab kalau ada "
         "laporan 'password kembali ke password awal setelah restart/deploy').",
         _INSTANCE_ID, username, hasil,
+    )
+
+
+def _bootstrap_superadmin_pertama():
+    """FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): akun
+    `role='superadmin'` (tenant_id=NULL) untuk mengelola SELURUH tenant --
+    berbeda dari _bootstrap_admin_pertama() di atas (otomatis jalan kalau
+    tabel users kosong, pakai password default), akun ini adalah yang PALING
+    sensitif di seluruh sistem (bisa lihat & mengaktifkan/menonaktifkan
+    SEMUA tenant), jadi HANYA dibuat kalau operator mengisi KEDUA environment
+    variable ini secara eksplisit (pola sama seperti _reset_admin_darurat()
+    di bawah) -- default kosong = fungsi ini no-op total, TIDAK PERNAH
+    otomatis membuat superadmin dengan password bawaan:
+    - SUPERADMIN_BOOTSTRAP_USERNAME
+    - SUPERADMIN_BOOTSTRAP_PASSWORD
+
+    Aman dipanggil tiap kali proses ini boot -- no-op begitu SATU akun
+    superadmin (role apa pun statusnya) sudah pernah ada, tidak pernah
+    menimpa/duplikat."""
+    username = os.environ.get("SUPERADMIN_BOOTSTRAP_USERNAME", "").strip()
+    password = os.environ.get("SUPERADMIN_BOOTSTRAP_PASSWORD", "")
+    if not username or not password:
+        return
+    if any(u["role"] == "superadmin" for u in auth_db.get_user_list()):
+        return
+    auth_db.tambah_user(username=username, password=password, role="superadmin", tenant_id=None)
+    logger.critical(
+        "[%s] BOOTSTRAP: akun Super Admin baru '%s' dibuat dari "
+        "SUPERADMIN_BOOTSTRAP_USERNAME/PASSWORD (belum ada superadmin sebelumnya). "
+        "Kalau ini bukan pemasangan Super Admin Dashboard pertama kali, periksa "
+        "kenapa tidak ada akun superadmin yang tersimpan sebelumnya.",
+        _INSTANCE_ID, username,
     )
 
 

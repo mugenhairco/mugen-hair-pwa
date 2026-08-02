@@ -2506,6 +2506,7 @@ lokal, sudah ada nilai default yang aman):
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
 | `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` (+ otomatis mengizinkan seluruh subdomain `*.onrender.com`, lihat kode) |
+| `TENANT_SUBDOMAIN_BASE_DOMAIN` | FONDASI Multi-Tenant Phase 2.0: domain dasar untuk resolusi tenant lewat SUBDOMAIN (mis. diisi `mugenhair.app` supaya `toko-a.mugenhair.app` otomatis ter-resolve ke tenant slug `toko-a`, lihat `tenant_middleware.py`) | kosong (subdomain resolution MATI TOTAL -- tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) |
 | `DATABASE_URL` | Connection string PostgreSQL (Neon/dsb) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
 | `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
@@ -2536,6 +2537,31 @@ port 8000 seperti langkah 1). Login dengan akun Owner dari langkah 1.
 Alternatif lain untuk men-serve frontend saat development: ekstensi "Live
 Server" di VS Code, atau `npx serve`, atau `php -S localhost:5500` — apa
 saja yang bisa menyajikan file statis di localhost.
+
+## Menjalankan Test
+
+FONDASI Multi-Tenant Phase 1.1 (technical debt yang ditutup): seluruh
+skenario isolasi tenant, migrasi database, dan regresi fitur sekarang
+tersimpan permanen sebagai test suite pytest di `backend/tests/` (bukan
+lagi script ad-hoc yang hilang begitu sesi kerja selesai), dan dijalankan
+otomatis lewat GitHub Actions di setiap push/PR (lihat
+`.github/workflows/backend-tests.yml`).
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests -v
+```
+
+Sebagian besar test (isolasi tenant, migrasi, regresi fitur) jalan murni
+lewat SQLite temporer, tidak butuh setup tambahan apa pun. Satu test
+(`test_backup_postgres.py`, verifikasi Export/Import Database terhadap
+PostgreSQL sungguhan) butuh PostgreSQL lokal di `localhost:5432` dengan
+database `mugen_test`, user `postgres`/password `postgres` — kalau tidak
+tersedia, test itu **otomatis di-skip** (bukan gagal), lihat
+`backend/tests/conftest.py::has_postgres()`. Override connection string
+lewat environment variable `MUGEN_TEST_DATABASE_URL` kalau kredensial
+lokal Anda berbeda.
 
 ## Deployment (Produksi)
 

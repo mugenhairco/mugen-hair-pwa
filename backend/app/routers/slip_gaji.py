@@ -31,7 +31,7 @@ def _cek_akses_lihat(user: dict, slip: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_slip_gaji"):
+        if not permissions.has("izin_slip_gaji", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Slip Gaji. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -41,13 +41,22 @@ def _cek_akses_lihat(user: dict, slip: dict = None):
     raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
 
+def _pastikan_slip_tenant_sama(user: dict, slip: dict | None):
+    """FONDASI Multi-Tenant Phase 1.1: fetch-then-authorize -- 404 (bukan
+    403) supaya tidak membocorkan bahwa slip_id itu sebenarnya ada, milik
+    tenant lain."""
+    if slip is None or slip.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Slip Gaji tidak ditemukan.")
+
+
 @router.get("")
 def list_slip_gaji(tahun: int = None, bulan: int = None, barber_id: int = None,
                     user: dict = Depends(get_current_user)):
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    return slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+    return slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                            tenant_id=user["tenant_id"])
 
 
 @router.get("/pdf")
@@ -60,7 +69,8 @@ def list_slip_gaji_pdf(tahun: int = None, bulan: int = None, barber_id: int = No
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_slip_gaji_list(tahun, bulan, barber_id, user["username"])
+    konten = laporan_pdf.buat_pdf_slip_gaji_list(tahun, bulan, barber_id, user["username"],
+                                                  tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("daftar_slip_gaji")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -69,8 +79,7 @@ def list_slip_gaji_pdf(tahun: int = None, bulan: int = None, barber_id: int = No
 @router.get("/{slip_id}")
 def ambil_slip_gaji(slip_id: int, user: dict = Depends(get_current_user)):
     slip = slip_gaji_db.get_slip_gaji(slip_id)
-    if slip is None:
-        raise HTTPException(status_code=404, detail="Slip Gaji tidak ditemukan.")
+    _pastikan_slip_tenant_sama(user, slip)
     _cek_akses_lihat(user, slip)
     return slip
 
@@ -101,6 +110,7 @@ def generate_slip_gaji(body: SlipGajiGenerateBody, user: dict = Depends(require_
             catatan_potongan=body.catatan_potongan, dibuat_oleh=user["username"],
             jumlah_hari_masuk=body.jumlah_hari_masuk, bonus_manual=body.bonus_manual,
             tanggal_mulai=body.tanggal_mulai, tanggal_selesai=body.tanggal_selesai,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -112,6 +122,7 @@ class StatusBody(BaseModel):
 
 @router.put("/{slip_id}/status")
 def ubah_status_slip_gaji(slip_id: int, body: StatusBody, user: dict = Depends(require_permission("izin_slip_gaji"))):
+    _pastikan_slip_tenant_sama(user, slip_gaji_db.get_slip_gaji(slip_id))
     try:
         return slip_gaji_db.tandai_status(slip_id, body.status)
     except ValueError as e:
@@ -120,6 +131,7 @@ def ubah_status_slip_gaji(slip_id: int, body: StatusBody, user: dict = Depends(r
 
 @router.delete("/{slip_id}")
 def hapus_slip_gaji(slip_id: int, user: dict = Depends(require_permission("izin_slip_gaji"))):
+    _pastikan_slip_tenant_sama(user, slip_gaji_db.get_slip_gaji(slip_id))
     try:
         slip_gaji_db.hapus_slip_gaji(slip_id)
     except ValueError as e:
@@ -130,8 +142,7 @@ def hapus_slip_gaji(slip_id: int, user: dict = Depends(require_permission("izin_
 @router.get("/{slip_id}/pdf")
 def unduh_pdf_slip_gaji(slip_id: int, user: dict = Depends(get_current_user)):
     slip = slip_gaji_db.get_slip_gaji(slip_id)
-    if slip is None:
-        raise HTTPException(status_code=404, detail="Slip Gaji tidak ditemukan.")
+    _pastikan_slip_tenant_sama(user, slip)
     _cek_akses_lihat(user, slip)
     konten = laporan_pdf.buat_slip_gaji_pdf(slip)
     filename = f"slip_gaji_{slip['nama_barber']}_{slip['tahun']}-{slip['bulan']:02d}.pdf"

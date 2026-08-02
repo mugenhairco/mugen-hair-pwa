@@ -1,0 +1,14 @@
+# Dependensi TAMBAHAN untuk menjalankan test suite (backend/tests/) --
+# TIDAK dibutuhkan untuk menjalankan aplikasi (lihat requirements.txt),
+# jadi sengaja dipisah supaya deploy produksi (Render/dst) tidak perlu
+# menginstal ini. Jalankan test dengan:
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest backend/tests -v
+-r requirements.txt
+
+pytest>=8.0.0
+httpx>=0.27.0
+# FONDASI Multi-Tenant Phase 2.2: verifikasi isi PDF laporan (nama
+# barbershop/logo di header benar milik tenant yang mencetak, bukan
+# tenant lain -- lihat test_branding.py::test_pdf_header_ikut_tenant_yang_benar).
+pypdf>=4.0.0

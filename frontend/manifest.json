@@ -1,7 +1,7 @@
 {
-  "name": "MUGEN Hair Co.",
-  "short_name": "MUGEN Hair",
-  "description": "Aplikasi manajemen komisi, uang harian, bonus barber, produk, dan pengeluaran — MUGEN Hair Co.",
+  "name": "Developer",
+  "short_name": "Developer",
+  "description": "Platform manajemen barbershop -- komisi, uang harian, bonus barber, produk, dan pengeluaran.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

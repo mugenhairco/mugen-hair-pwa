@@ -202,10 +202,19 @@ def _judul(jenis: str) -> str:
     }[jenis]
 
 
-def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
-    identitas = pengaturan_identitas.get_identitas()
-    nama_barbershop = identitas.get("nama_barbershop") or "MUGEN Hair Co."
-    logo_data, _ = pengaturan_identitas.get_logo_data()
+def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str, tenant_id: int | None = None):
+    """FONDASI Multi-Tenant Phase 2.2 (Tenant Branding): `tenant_id` SEBELUMNYA
+    tidak pernah diteruskan sampai ke sini -- identitas/logo yang tercetak di
+    SETIAP laporan PDF (apa pun tenant-nya) selalu diambil TANPA tenant_id,
+    yaitu key `settings`/`file_asset` GLOBAL/tanpa-prefix (nilai lama dari
+    sebelum Phase 1, beku sejak migrasi) -- bug nyata: PDF Tenant B akan
+    tercetak dengan nama & logo Tenant A (tenant default) di kop suratnya,
+    bukan milik tenant itu sendiri. Sekarang WAJIB diteruskan dari seluruh
+    fungsi buat_pdf_*() di bawah (semuanya sudah menerima tenant_id untuk
+    scoping data sejak Phase 1.1, tinggal diteruskan satu langkah lagi)."""
+    identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
+    nama_barbershop = identitas.get("nama_barbershop") or "Developer"
+    logo_data, _ = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     def _on_page(canvas, doc):
@@ -261,7 +270,8 @@ def _gaya_tabel() -> TableStyle:
 
 def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list,
                  col_widths: list | None = None, ringkasan_tambahan: list | None = None,
-                 landscape_page: bool = False, extra_style: list | None = None) -> bytes:
+                 landscape_page: bool = False, extra_style: list | None = None,
+                 tenant_id: int | None = None) -> bytes:
     """`landscape_page`/`extra_style` (REVISI Rapikan PDF Rekap Periode
     Ringkasan): KHUSUS dipakai laporan yang kolomnya terlalu banyak untuk
     muat rapi di lebar A4 potret (Rekap Periode Ringkasan) -- default TETAP
@@ -301,7 +311,7 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
             for baris_ringkasan in ringkasan_tambahan:
                 elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
 
-    on_page = _header_footer_factory(judul, periode, dicetak_oleh)
+    on_page = _header_footer_factory(judul, periode, dicetak_oleh, tenant_id=tenant_id)
     doc.build(elemen, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
@@ -313,7 +323,7 @@ _SUBJUDUL_STYLE = ParagraphStyle("subjudul-laporan", fontName="Helvetica-Bold", 
 
 
 def _bangun_pdf_sections(judul: str, periode: str, dicetak_oleh: str, sections: list,
-                          ringkasan_tambahan: list | None = None) -> bytes:
+                          ringkasan_tambahan: list | None = None, tenant_id: int | None = None) -> bytes:
     """Sama seperti _bangun_pdf(), tapi mendukung LEBIH DARI SATU tabel
     dalam satu PDF (masing-masing didahului sub-judul) -- dipakai halaman
     yang PDF cetak-langsungnya perlu menampilkan lebih dari satu tabel data
@@ -345,7 +355,7 @@ def _bangun_pdf_sections(judul: str, periode: str, dicetak_oleh: str, sections: 
         for baris_ringkasan in ringkasan_tambahan:
             elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
 
-    on_page = _header_footer_factory(judul, periode, dicetak_oleh)
+    on_page = _header_footer_factory(judul, periode, dicetak_oleh, tenant_id=tenant_id)
     doc.build(elemen, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
@@ -360,7 +370,7 @@ _LEBAR_KOLOM_TRANSAKSI = [24 * mm, 16 * mm, 20 * mm, 20 * mm, 20 * mm, 10 * mm, 
 
 
 def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None,
-                        dicetak_oleh: str, periode: str):
+                        dicetak_oleh: str, periode: str, tenant_id: int | None = None):
     """Laporan Transaksi = REKAP per barber untuk seluruh rentang tanggal
     (BUKAN daftar per kunjungan customer lagi) -- kolom Libur (hari) & Ket
     (gabungan catatan manual dari Input Data, masing-masing berlabel
@@ -374,7 +384,7 @@ def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int 
     Pendapatan (jumlah kolom Total seluruh baris di atas, sudah termasuk
     Tips) dan Total Jumlah per Service (lintas barber yang tampil, hormat
     filter barber_id yang sama dengan tabelnya)."""
-    data = db.get_laporan_transaksi_rekap(tanggal_mulai, tanggal_selesai, barber_id=barber_id)
+    data = db.get_laporan_transaksi_rekap(tanggal_mulai, tanggal_selesai, barber_id=barber_id, tenant_id=tenant_id)
     header = ["Tanggal", "Barber", "Uang Harian", "Komisi", "Tips", "Libur", "Total", "Ket"]
     baris = []
     for r in data:
@@ -386,7 +396,8 @@ def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int 
         ])
 
     total_pendapatan = sum(r["total"] for r in data)
-    rincian_service = db.get_rincian_service_rentang(tanggal_mulai, tanggal_selesai, barber_id=barber_id)
+    rincian_service = db.get_rincian_service_rentang(tanggal_mulai, tanggal_selesai, barber_id=barber_id,
+                                                       tenant_id=tenant_id)
     ringkasan_tambahan = [f"<b>Total Semua Pendapatan: {_rupiah(total_pendapatan)}</b>"]
     if rincian_service:
         ringkasan_tambahan.append("<b>Total Jumlah per Service:</b>")
@@ -395,27 +406,31 @@ def _laporan_transaksi(tanggal_mulai: str, tanggal_selesai: str, barber_id: int 
     return header, baris, ringkasan_tambahan
 
 
-def _laporan_pengeluaran(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str):
-    data = pengeluaran_db.get_pengeluaran_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+def _laporan_pengeluaran(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str, tenant_id: int = None):
+    data = pengeluaran_db.get_pengeluaran_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                                tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Jumlah"]
     baris = [[p["tanggal"], p.get("kategori") or "-", p["keterangan"], p.get("nama_barber") or "-",
               _rupiah(p["jumlah"])] for p in data]
     return header, baris
 
 
-def _laporan_pemasukan(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str):
-    data = pemasukan_db.get_pemasukan_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+def _laporan_pemasukan(tanggal_mulai: str, tanggal_selesai: str, dicetak_oleh: str, tenant_id: int | None = None):
+    data = pemasukan_db.get_pemasukan_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                            tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Jumlah"]
     baris = [[p["tanggal"], p.get("kategori") or "-", p["keterangan"], p.get("nama_barber") or "-",
               _rupiah(p["jumlah"])] for p in data]
     return header, baris
 
 
-def _laporan_kasbon(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
+def _laporan_kasbon(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str,
+                     tenant_id: int | None = None):
     """Memenuhi kebutuhan Kasbon "masuk laporan keuangan" -- data APA ADANYA
     lewat kasbon_db.get_kasbon_list() (rentang tanggal bebas, sama seperti
     Laporan Transaksi/Pengeluaran), TIDAK menghitung ulang satu angka pun."""
-    data = kasbon_db.get_kasbon_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    data = kasbon_db.get_kasbon_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                      tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
     header = ["Tanggal", "Barber", "Jumlah Kasbon", "Sisa", "Status", "Keterangan"]
     baris = [[
         _sel(k["tanggal"]), _sel(k["nama_barber"]), _sel(_rupiah(k["jumlah"])), _sel(_rupiah(k["sisa"])),
@@ -431,8 +446,9 @@ def _laporan_kasbon(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | N
     return header, baris, ringkasan_tambahan
 
 
-def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str):
-    data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
+def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str,
+                            tenant_id: int | None = None):
+    data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id, tenant_id=tenant_id)
     header = ["Barber", "Jumlah Service", "Komisi", "Tips", "Uang Harian", "Bonus Customer", "Total Pendapatan"]
     baris = [[r["nama_barber"], str(r["jumlah_service"]), _rupiah(r["total_komisi"]), _rupiah(r["tips"]),
               _rupiah(r["uang_harian"]), _rupiah(r["bonus_customer"]), _rupiah(r["total_pendapatan"])]
@@ -440,14 +456,16 @@ def _laporan_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     return header, baris
 
 
-def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str):
+def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str,
+                     tenant_id: int | None = None):
     """Penyesuaian komisi (bonus/potongan manual) satu bulan kalender --
     data APA ADANYA lewat komisi_penyesuaian_db.get_penyesuaian_list(),
     TIDAK menghitung ulang satu angka pun. Net (Total Bonus - Total
     Potongan) match persis dengan komisi_penyesuaian_db.get_saldo_periode()
     yang dipakai auto-fill Slip Gaji, jadi laporan ini otomatis konsisten
     dengan apa yang sudah tercermin di payroll."""
-    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan)
+    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
+                                                        tenant_id=tenant_id)
     header = ["Barber", "Jenis", "Jumlah", "Keterangan"]
     baris = [[
         _sel(k["nama_barber"]), _sel("Bonus" if k["jenis"] == "bonus" else "Potongan"),
@@ -464,13 +482,15 @@ def _laporan_komisi(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh:
     return header, baris, ringkasan_tambahan
 
 
-def _laporan_reimburse(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str):
+def _laporan_reimburse(tanggal_mulai: str, tanggal_selesai: str, barber_id: int | None, dicetak_oleh: str,
+                        tenant_id: int | None = None):
     """Klaim reimburse rentang tanggal bebas -- data APA ADANYA lewat
     reimburse_db.get_reimburse_list(), TIDAK menghitung ulang satu angka
     pun. Total Disetujui-lah yang benar-benar berdampak finansial
     (satu-satunya status yang bisa masuk auto-fill Slip Gaji, lihat
     reimburse_db.get_saldo_periode())."""
-    data = reimburse_db.get_reimburse_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+    data = reimburse_db.get_reimburse_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                            tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
     label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
     header = ["Tanggal", "Barber", "Kategori", "Nominal", "Status", "Keterangan"]
     baris = [[
@@ -558,12 +578,13 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
         ringkasan_tambahan.append(f"Tanggal Dibayar: {slip['tanggal_dibayar']}")
     dicetak_oleh = slip.get("dibuat_oleh") or "-"
     return _bangun_pdf("Slip Gaji", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_SLIP_GAJI, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_SLIP_GAJI, ringkasan_tambahan=ringkasan_tambahan,
+                        tenant_id=slip.get("tenant_id"))
 
 
 def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
                   tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
-                  tahun: int | None = None, bulan: int | None = None):
+                  tahun: int | None = None, bulan: int | None = None, tenant_id: int | None = None):
     """Return (bytes_pdf, nama_file). Raise ValueError kalau jenis tidak dikenal
     atau parameter wajib tidak diisi.
 
@@ -574,7 +595,12 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
     tidak punya kolom tanggal harian sama sekali (terikat tahun+bulan
     saja). Jenis lain (termasuk Reimburse) dipilih lewat rentang tanggal
     bebas (tanggal_mulai/tanggal_selesai) supaya Periode di PDF menunjukkan
-    rentang tanggal sebenarnya, bukan cuma Bulan/Tahun."""
+    rentang tanggal sebenarnya, bukan cuma Bulan/Tahun.
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` sekarang diteruskan ke
+    SELURUH jenis laporan tanpa kecuali (kasbon/reimburse/komisi/pemasukan
+    -- lihat _laporan_kasbon/_laporan_reimburse/_laporan_komisi/
+    _laporan_pemasukan)."""
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis laporan tidak dikenal: {jenis}")
 
@@ -584,10 +610,11 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
         if not tahun or not bulan:
             raise ValueError(f"Tahun dan Bulan wajib diisi untuk {_judul(jenis)}.")
         if jenis == "komisi":
-            header, baris, ringkasan_tambahan = _laporan_komisi(tahun, bulan, barber_id, dicetak_oleh)
+            header, baris, ringkasan_tambahan = _laporan_komisi(tahun, bulan, barber_id, dicetak_oleh,
+                                                                  tenant_id=tenant_id)
             col_widths = _LEBAR_KOLOM_KOMISI
         else:
-            header, baris = _laporan_rekap_bulanan(tahun, bulan, barber_id, dicetak_oleh)
+            header, baris = _laporan_rekap_bulanan(tahun, bulan, barber_id, dicetak_oleh, tenant_id=tenant_id)
         periode = _periode_text(tahun, bulan)
     else:
         if not tanggal_mulai or not tanggal_selesai:
@@ -597,26 +624,26 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
         if jenis == "transaksi":
             header, baris, ringkasan_tambahan = _laporan_transaksi(
-                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, periode,
+                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, periode, tenant_id=tenant_id,
             )
             col_widths = _LEBAR_KOLOM_TRANSAKSI
         elif jenis == "kasbon":
             header, baris, ringkasan_tambahan = _laporan_kasbon(
-                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
+                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, tenant_id=tenant_id,
             )
             col_widths = _LEBAR_KOLOM_KASBON
         elif jenis == "reimburse":
             header, baris, ringkasan_tambahan = _laporan_reimburse(
-                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh,
+                tanggal_mulai, tanggal_selesai, barber_id, dicetak_oleh, tenant_id=tenant_id,
             )
             col_widths = _LEBAR_KOLOM_REIMBURSE
         elif jenis == "pemasukan":
-            header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh)
+            header, baris = _laporan_pemasukan(tanggal_mulai, tanggal_selesai, dicetak_oleh, tenant_id=tenant_id)
         else:
-            header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh)
+            header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh, tenant_id=tenant_id)
 
     judul = _judul(jenis)
-    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths, ringkasan_tambahan)
+    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths, ringkasan_tambahan, tenant_id=tenant_id)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"laporan_{jenis}_{stamp}.pdf"
     return konten, filename
@@ -655,7 +682,8 @@ _LEBAR_KOLOM_REKAP_TRANSAKSI = {
 
 
 def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = None, barber_id: int = None,
-                                    tanggal_mulai: str = None, tanggal_selesai: str = None):
+                                    tanggal_mulai: str = None, tanggal_selesai: str = None,
+                                    tenant_id: int = None):
     """REVISI (khusus PDF Rekap Transaksi, BEDA dari tampilan layar yang
     tetap pakai reimburse_db.py/kasbon_db.py gabung_ke_rekap_transaksi()
     apa adanya -- baris terpisah): Reimburse & Kasbon Dibayar TIDAK jadi
@@ -693,12 +721,14 @@ def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = N
         row["keterangan"] = "; ".join(x for x in [row["keterangan"], catatan] if x)
 
     for rb in reimburse_db.get_reimburse_list_disetujui(tahun=tahun, bulan=bulan, barber_id=barber_id,
-                                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai):
+                                                          tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                                          tenant_id=tenant_id):
         _tempel((rb["barber_id"], rb["tanggal_approval"]), rb["nominal"], "reimburse",
                 f"Reimburse: {rb['kategori']} {_rupiah(rb['nominal'])}", rb["nama_barber"])
 
     for kb in kasbon_db.get_pembayaran_list_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
-                                                     tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai):
+                                                     tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                                     tenant_id=tenant_id):
         catatan = f"Kasbon: {_rupiah(kb['jumlah'])} ({kb['keterangan']})" if kb.get("keterangan") else f"Kasbon: {_rupiah(kb['jumlah'])}"
         _tempel((kb["barber_id"], kb["tanggal"]), kb["jumlah"], "kasbon_dibayar", catatan, kb["nama_barber"])
 
@@ -710,30 +740,41 @@ def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = N
 
 
 def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
-                              tanggal_mulai: str | None = None, tanggal_selesai: str | None = None) -> bytes:
+                              tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
+                              tenant_id: int | None = None) -> bytes:
     """tanggal_mulai/tanggal_selesai (opsional, dikirim dari input Periode
     PDF di halaman Rekap Transaksi) MENGGANTIKAN tahun/bulan sebagai
     periode kalau diisi -- filter tampilan layar (Bulan+Tahun) sendiri
-    tidak berubah, ini murni opsi tambahan saat cetak PDF."""
+    tidak berubah, ini murni opsi tambahan saat cetak PDF.
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` diteruskan ke SELURUH query
+    di bawah, termasuk data_non_barber_db/reimburse_db/kasbon_db yang
+    digabung (lihat _gabung_reimburse_kasbon_kolom()) -- Phase 1 sempat
+    tidak meneruskannya ke ketiga modul itu, sudah diperbaiki di sini."""
     if tanggal_mulai and tanggal_selesai:
-        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                            tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
         # Dukungan Barber + Non-Barber: baris Gaji Non-Barber digabung SEBELUM
         # _gabung_reimburse_kasbon_kolom() supaya Reimburse/Kasbon yang
         # kebetulan jatuh di tanggal yang sama ikut tertempel ke baris itu
         # juga (fungsi itu generik, bekerja untuk baris tipe apapun).
         data = data_non_barber_db.gabung_ke_rekap_transaksi(
-            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+            tenant_id=tenant_id)
         data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
-            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+            data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+            tenant_id=tenant_id)
         rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
-                                                          tanggal_selesai=tanggal_selesai)
+                                                          tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
-        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                             tenant_id=tenant_id)
         data, ada_reimburse, ada_kasbon = _gabung_reimburse_kasbon_kolom(
-            data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
+            data, tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
+        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                          tenant_id=tenant_id)
         periode = _periode_text_opsional(tahun, bulan)
 
     header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan"]
@@ -794,7 +835,7 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
-                        ringkasan_tambahan=ringkasan_tambahan)
+                        ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # REVISI (Rapikan tampilan PDF Rekap Periode Ringkasan): laporan ini bisa
@@ -880,7 +921,7 @@ def _gaya_kolom_ringkasan(kolom: list) -> list:
 
 def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, barber_id: int | None,
                                         dicetak_oleh: str, tanggal_mulai: str | None = None,
-                                        tanggal_selesai: str | None = None) -> bytes:
+                                        tanggal_selesai: str | None = None, tenant_id: int | None = None) -> bytes:
     """"Rekap Periode (Ringkasan)" -- jenis laporan BARU di menu Rekap
     Transaksi (Perbaikan Alur Cetak PDF), satu baris per karyawan untuk
     SELURUH periode (BEDA dari buat_pdf_rekap_transaksi() / "Rekap Detail"
@@ -890,18 +931,27 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     karyawan lewat rekap_ringkasan.ringkas_per_karyawan() -- murni
     penjumlahan, tidak menghitung ulang satu angka pun."""
     if tanggal_mulai and tanggal_selesai:
-        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
-        rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+        data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                            tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                       tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                    tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+        rincian_service = db.get_rincian_service_periode(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
+                                                          tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
         periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
     else:
-        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id)
-        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id)
+        data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
+        data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                       tenant_id=tenant_id)
+        data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                    tenant_id=tenant_id)
+        data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                             tenant_id=tenant_id)
+        rincian_service = db.get_rincian_service_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                          tenant_id=tenant_id)
         periode = _periode_text_opsional(tahun, bulan)
 
     ringkas = rekap_ringkasan.ringkas_per_karyawan(data)
@@ -967,7 +1017,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
 
     return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
                         col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan,
-                        landscape_page=True, extra_style=_gaya_kolom_ringkasan(header))
+                        landscape_page=True, extra_style=_gaya_kolom_ringkasan(header), tenant_id=tenant_id)
 
 
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari
@@ -978,8 +1028,9 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
 _LEBAR_KOLOM_REKAP_BULANAN_HALAMAN = [28 * mm, 18 * mm, 16 * mm, 14 * mm, 18 * mm, 12 * mm, 14 * mm, 14 * mm, 20 * mm, 16 * mm, 24 * mm]
 
 
-def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str) -> bytes:
-    data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
+def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, dicetak_oleh: str,
+                            tenant_id: int | None = None) -> bytes:
+    data = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id, tenant_id=tenant_id)
     header = ["Barber", "Jml Service", "Komisi", "Tips", "Uang Harian", "Hari Libur", "Target Bonus", "Bonus Cust.", "Reimburse", "Kasbon Dibayar", "Total"]
     # Tahap 17: BUGFIX -- Reimburse sebelumnya ditampilkan sebagai kolom
     # terpisah TAPI tidak ikut dijumlah ke Total. Sekarang Total per baris
@@ -1002,7 +1053,7 @@ def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     ringkasan_tambahan = [f"<b>Total Pendapatan: {_rupiah(total_pendapatan)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Rekap Bulanan Barber", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Rekap Pengeluaran & Laporan Pemasukan/Pengeluaran (mm), total
@@ -1010,8 +1061,9 @@ def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
 _LEBAR_KOLOM_PENGELUARAN_TAB_REKAP = [22 * mm, 30 * mm, 94 * mm, 28 * mm, 20 * mm]
 
 
-def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_oleh: str) -> bytes:
-    data = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan)
+def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_oleh: str,
+                                tenant_id: int = None) -> bytes:
+    data = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Jumlah"]
     baris = [[
         _sel(p["tanggal"]), _sel(p.get("kategori") or "-"), _sel(p["keterangan"]),
@@ -1021,7 +1073,7 @@ def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_ole
     ringkasan_tambahan = [f"<b>Total Pengeluaran: {_rupiah(total)}</b>"]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Rekap Pengeluaran", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PENGELUARAN_TAB_REKAP, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PENGELUARAN_TAB_REKAP, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Daftar Slip Gaji (mm), total 194mm -- Periode/Barber/
@@ -1030,8 +1082,9 @@ def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_ole
 _LEBAR_KOLOM_SLIP_GAJI_LIST = [26 * mm, 44 * mm, 30 * mm, 34 * mm, 60 * mm]
 
 
-def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str) -> bytes:
-    data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id)
+def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
+    data = slip_gaji_db.get_slip_gaji_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=tenant_id)
     header = ["Periode", "Barber", "Reimburse", "Total Diterima", "Status"]
     baris = [[
         _sel(_periode_text_slip_gaji(r)), _sel(r["nama_barber"]),
@@ -1043,15 +1096,16 @@ def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int
     ringkasan_tambahan = [f"<b>Total Diterima (semua baris): {_rupiah(total)}</b>"]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Daftar Slip Gaji", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_SLIP_GAJI_LIST, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_SLIP_GAJI_LIST, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int | None, bulan: int | None,
-                          dicetak_oleh: str) -> bytes:
+                          dicetak_oleh: str, tenant_id: int | None = None) -> bytes:
     """Sama seperti _laporan_kasbon() (Setting > Backup), tapi filter
     tahun/bulan+status persis filter halaman Kasbon (BUKAN rentang tanggal
     bebas)."""
-    data = kasbon_db.get_kasbon_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan)
+    data = kasbon_db.get_kasbon_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan,
+                                      tenant_id=tenant_id)
     header = ["Tanggal", "Barber", "Jumlah Kasbon", "Sisa", "Status", "Keterangan"]
     baris = [[
         _sel(k["tanggal"]), _sel(k["nama_barber"]), _sel(_rupiah(k["jumlah"])), _sel(_rupiah(k["sisa"])),
@@ -1065,7 +1119,7 @@ def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int |
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Kasbon", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_KASBON, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_KASBON, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Riwayat Komisi (Dasar) dalam PDF Laporan Komisi (mm), total
@@ -1074,13 +1128,14 @@ def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int |
 _LEBAR_KOLOM_RIWAYAT_KOMISI_DASAR = [54 * mm, 20 * mm, 24 * mm, 20 * mm, 24 * mm, 24 * mm, 28 * mm]
 
 
-def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, bulan: int, dicetak_oleh: str) -> bytes:
+def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, bulan: int, dicetak_oleh: str,
+                          tenant_id: int | None = None) -> bytes:
     """PDF dua bagian, PERSIS apa yang tampil di halaman Komisi untuk
     filter Barber/Bulan/Tahun yang sama: Riwayat Komisi (Dasar) (reuse
     db.get_rekap_bulanan_list() apa adanya, TIDAK menghitung ulang) +
     Daftar Penyesuaian Komisi (dengan filter Jenis tambahan yang tidak ada
     di _laporan_komisi() versi Setting > Backup)."""
-    riwayat = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id)
+    riwayat = db.get_rekap_bulanan_list(tahun, bulan, barber_id=barber_id, tenant_id=tenant_id)
     header_riwayat = ["Barber", "Jml Service", "Komisi Dasar", "Tips", "Uang Harian", "Bonus Cust.", "Total Pendapatan"]
     baris_riwayat = [[
         _sel(r["nama_barber"]), _sel(str(r["jumlah_service"])), _sel(_rupiah(r["total_komisi"])),
@@ -1088,7 +1143,8 @@ def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, b
         _sel(_rupiah(r["total_pendapatan"])),
     ] for r in riwayat]
 
-    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis)
+    data = komisi_penyesuaian_db.get_penyesuaian_list(barber_id=barber_id, tahun=tahun, bulan=bulan, jenis=jenis,
+                                                        tenant_id=tenant_id)
     header_penyesuaian = ["Barber", "Jenis", "Jumlah", "Keterangan"]
     baris_penyesuaian = [[
         _sel(k["nama_barber"]), _sel("Bonus" if k["jenis"] == "bonus" else "Potongan"),
@@ -1110,15 +1166,16 @@ def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, b
          "col_widths": _LEBAR_KOLOM_KOMISI},
     ]
     return _bangun_pdf_sections("Laporan Komisi", periode, dicetak_oleh, sections,
-                                 ringkasan_tambahan=ringkasan_tambahan)
+                                 ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: int | None, bulan: int | None,
-                             dicetak_oleh: str) -> bytes:
+                             dicetak_oleh: str, tenant_id: int | None = None) -> bytes:
     """Sama seperti _laporan_reimburse() (Setting > Backup), tapi filter
     tahun/bulan+status persis filter halaman Reimburse (BUKAN rentang
     tanggal bebas)."""
-    data = reimburse_db.get_reimburse_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan)
+    data = reimburse_db.get_reimburse_list(barber_id=barber_id, status=status, tahun=tahun, bulan=bulan,
+                                            tenant_id=tenant_id)
     label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
     header = ["Tanggal", "Barber", "Kategori", "Nominal", "Status", "Keterangan"]
     baris = [[
@@ -1135,7 +1192,7 @@ def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: in
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Reimburse", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_REIMBURSE, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_REIMBURSE, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Izin & Cuti (mm), total 194mm -- Barber/Jenis/Mulai/
@@ -1143,10 +1200,11 @@ def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: in
 _LEBAR_KOLOM_IZIN_CUTI = [30 * mm, 16 * mm, 20 * mm, 20 * mm, 84 * mm, 24 * mm]
 
 
-def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: str | None, dicetak_oleh: str) -> bytes:
+def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: str | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
     """Halaman Izin & Cuti TIDAK punya filter tanggal/bulan/tahun sama
     sekali (lihat pages/izin_cuti.js) -- Periode selalu "Semua Periode"."""
-    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis)
+    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis, tenant_id=tenant_id)
     label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
     header = ["Barber", "Jenis", "Mulai", "Selesai", "Alasan", "Status"]
     baris = [[
@@ -1162,7 +1220,7 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
         f"(Disetujui: {jumlah_disetujui}, Pending: {jumlah_pending}, Ditolak: {jumlah_ditolak})",
     ]
     return _bangun_pdf("Laporan Izin & Cuti", "Semua Periode", dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Pemasukan/Pengeluaran (mm), total 194mm -- Tanggal/
@@ -1172,8 +1230,10 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
 _LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN = [20 * mm, 26 * mm, 70 * mm, 26 * mm, 24 * mm, 28 * mm]
 
 
-def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str) -> bytes:
-    data = pemasukan_db.get_pemasukan_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari)
+def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str,
+                             tenant_id: int | None = None) -> bytes:
+    data = pemasukan_db.get_pemasukan_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari,
+                                            tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Nominal", "Status"]
     baris = [[
         _sel(p["tanggal"]), _sel(p.get("kategori") or "-"), _sel(p["keterangan"]),
@@ -1184,11 +1244,13 @@ def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: 
     ringkasan_tambahan = [f"<b>Total Pemasukan: {_rupiah(total)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Laporan Pemasukan", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
-def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str) -> bytes:
-    data = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari)
+def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str,
+                               tenant_id: int = None) -> bytes:
+    data = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, kategori=kategori, cari=cari,
+                                                tenant_id=tenant_id)
     header = ["Tanggal", "Kategori", "Keterangan", "Barber", "Nominal", "Status"]
     baris = [[
         _sel(p["tanggal"]), _sel(p.get("kategori") or "-"), _sel(p["keterangan"]),
@@ -1199,7 +1261,7 @@ def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari
     ringkasan_tambahan = [f"<b>Total Pengeluaran: {_rupiah(total)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Laporan Pengeluaran", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Uang Kas (mm), total 194mm -- Tanggal/Jenis/Jumlah/
@@ -1207,14 +1269,15 @@ def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari
 _LEBAR_KOLOM_UANG_KAS = [24 * mm, 20 * mm, 28 * mm, 82 * mm, 40 * mm]
 
 
-def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: str) -> bytes:
+def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: str,
+                            tenant_id: int | None = None) -> bytes:
     """Saldo Berjalan dihitung di PYTHON (bukan SQL) saat iterasi baris
     SECARA KRONOLOGIS (tertua dulu, kebalikan dari get_penyesuaian_list()
     yang defaultnya terbaru dulu -- ledger yang menunjukkan saldo berjalan
     HARUS dibaca kronologis), mulai dari Saldo Kas Awal -- konsisten
     dengan uang_kas_db.get_saldo_kas()."""
-    data = list(reversed(uang_kas_db.get_penyesuaian_list(tahun=tahun, bulan=bulan)))
-    saldo_awal = uang_kas_db.get_saldo_awal()["saldo"]
+    data = list(reversed(uang_kas_db.get_penyesuaian_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)))
+    saldo_awal = uang_kas_db.get_saldo_awal(tenant_id)["saldo"]
     header = ["Tanggal", "Jenis", "Jumlah", "Keterangan", "Saldo Berjalan"]
     baris = []
     saldo_berjalan = saldo_awal
@@ -1233,4 +1296,4 @@ def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: s
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Uang Kas", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)

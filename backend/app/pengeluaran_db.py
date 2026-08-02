@@ -55,10 +55,13 @@ def _validasi_sumber_dana(sumber_dana: str, barber_id) -> str:
     return sumber_dana
 
 
-def _pastikan_barber_valid(conn, barber_id):
+def _pastikan_barber_valid(conn, barber_id, tenant_id=None):
     if barber_id is None:
         return
-    ada = conn.execute("SELECT 1 FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    if tenant_id is not None:
+        ada = conn.execute("SELECT 1 FROM barbers WHERE id = ? AND tenant_id = ?", (barber_id, tenant_id)).fetchone()
+    else:
+        ada = conn.execute("SELECT 1 FROM barbers WHERE id = ?", (barber_id,)).fetchone()
     if not ada:
         raise ValueError("Karyawan yang dipilih tidak ditemukan.")
 
@@ -72,23 +75,24 @@ def _reimburse_terkunci(reimburse_id) -> bool:
 
 def tambah_pengeluaran(tanggal: str, kategori: str, keterangan: str, jumlah: int,
                         barber_id: int = None, aktif: bool = True,
-                        sumber_dana: str = "kas", dibuat_oleh: str = None) -> int:
+                        sumber_dana: str = "kas", dibuat_oleh: str = None, tenant_id: int = None) -> int:
     kategori, keterangan = _validasi_input(tanggal, kategori, keterangan, jumlah)
     sumber_dana = _validasi_sumber_dana(sumber_dana, barber_id)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        _pastikan_barber_valid(conn, barber_id)
+        _pastikan_barber_valid(conn, barber_id, tenant_id)
         cur = conn.execute(
             """INSERT INTO pengeluaran (tanggal, kategori, keterangan, jumlah, barber_id, aktif,
-                                         sumber_dana, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tanggal, kategori, keterangan, int(jumlah), barber_id, 1 if aktif else 0, sumber_dana, now),
+                                         sumber_dana, created_at, tenant_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tanggal, kategori, keterangan, int(jumlah), barber_id, 1 if aktif else 0, sumber_dana, now, tenant_id),
         )
         pengeluaran_id = cur.lastrowid
 
     if sumber_dana == "kas":
         kas_penyesuaian_id = uang_kas_db.tambah_penyesuaian(
             tanggal, "kurang", int(jumlah), keterangan=f"Pengeluaran: {keterangan}", dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET kas_penyesuaian_id = ? WHERE id = ?",
@@ -96,6 +100,7 @@ def tambah_pengeluaran(tanggal: str, kategori: str, keterangan: str, jumlah: int
     else:
         reimburse = reimburse_db.buat_reimburse_sistem(
             barber_id, tanggal, kategori, int(jumlah), keterangan=keterangan, dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET reimburse_id = ? WHERE id = ?",
@@ -106,7 +111,7 @@ def tambah_pengeluaran(tanggal: str, kategori: str, keterangan: str, jumlah: int
 
 def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, keterangan: str,
                          jumlah: int, barber_id: int = None, aktif: bool = True,
-                         sumber_dana: str = "kas", dibuat_oleh: str = None):
+                         sumber_dana: str = "kas", dibuat_oleh: str = None, tenant_id: int = None):
     kategori, keterangan = _validasi_input(tanggal, kategori, keterangan, jumlah)
     sumber_dana = _validasi_sumber_dana(sumber_dana, barber_id)
     with get_conn() as conn:
@@ -114,7 +119,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, ketera
         if existing is None:
             raise ValueError("Data pengeluaran tidak ditemukan.")
         existing = dict(existing)
-        _pastikan_barber_valid(conn, barber_id)
+        _pastikan_barber_valid(conn, barber_id, tenant_id)
 
     if _reimburse_terkunci(existing["reimburse_id"]):
         raise ValueError(
@@ -175,6 +180,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, ketera
     if sumber_dana == "kas":
         kas_penyesuaian_id_baru = uang_kas_db.tambah_penyesuaian(
             tanggal, "kurang", int(jumlah), keterangan=f"Pengeluaran: {keterangan}", dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET kas_penyesuaian_id = ? WHERE id = ?",
@@ -182,6 +188,7 @@ def koreksi_pengeluaran(pengeluaran_id: int, tanggal: str, kategori: str, ketera
     else:
         reimburse = reimburse_db.buat_reimburse_sistem(
             barber_id, tanggal, kategori, int(jumlah), keterangan=keterangan, dibuat_oleh=dibuat_oleh,
+            tenant_id=tenant_id,
         )
         with get_conn() as conn:
             conn.execute("UPDATE pengeluaran SET reimburse_id = ? WHERE id = ?",
@@ -232,7 +239,8 @@ def get_pengeluaran(pengeluaran_id: int):
 
 def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = None,
                           tanggal_mulai: str = None, tanggal_selesai: str = None,
-                          kategori: str = None, cari: str = None, hanya_aktif: bool = None) -> list:
+                          kategori: str = None, cari: str = None, hanya_aktif: bool = None,
+                          tenant_id: int = None) -> list:
     """Urutan: tanggal terbaru dulu. `cari` mencari di keterangan & kategori.
     tanggal_mulai/tanggal_selesai (format 'YYYY-MM-DD', inklusif di kedua
     ujung) dipakai Laporan PDF untuk rentang tanggal bebas -- BEDA dari
@@ -240,6 +248,8 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
     q = """SELECT p.*, b.nama AS nama_barber
            FROM pengeluaran p LEFT JOIN barbers b ON b.id = p.barber_id WHERE 1=1"""
     params = []
+    if tenant_id is not None:
+        q += " AND p.tenant_id = ?"; params.append(tenant_id)
     if tahun is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
@@ -271,13 +281,16 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
     return rows
 
 
-def get_kategori_list() -> list:
+def get_kategori_list(tenant_id: int = None) -> list:
     """Gabungan kategori default + kategori yang sudah pernah dipakai di data,
     supaya dropdown filter/form selalu lengkap tanpa perlu tabel kategori terpisah."""
+    q = "SELECT DISTINCT kategori FROM pengeluaran WHERE kategori IS NOT NULL AND kategori != ''"
+    params = []
+    if tenant_id is not None:
+        q += " AND tenant_id = ?"; params.append(tenant_id)
+    q += " ORDER BY kategori"
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT kategori FROM pengeluaran WHERE kategori IS NOT NULL AND kategori != '' ORDER BY kategori"
-        ).fetchall()
+        rows = conn.execute(q, params).fetchall()
     dinamis = [r["kategori"] for r in rows]
     gabungan = list(dict.fromkeys(KATEGORI_DEFAULT + dinamis))  # urutan dijaga, tanpa duplikat
     return gabungan

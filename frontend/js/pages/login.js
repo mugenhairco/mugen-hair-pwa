@@ -39,14 +39,53 @@ const PageLogin = (() => {
     });
     const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password", autocomplete: "current-password" });
     const errorBox = MugenUI.el("div", { class: "login-error" });
+    // FONDASI Multi-Tenant Phase 2.0: pemilih toko -- SEMBUNYI secara default
+    // (mayoritas mutlak: satu perangkat = satu toko, TIDAK PERNAH ambigu),
+    // hanya dimunculkan kalau backend membalas 409 "username+password ini
+    // terdaftar di lebih dari satu toko" (lihat blok catch di form.submit
+    // di bawah). Alur ini SENGAJA tidak menambah field apa pun ke form
+    // untuk kasus normal, sesuai instruksi asli Phase 1 "jangan mengubah
+    // workflow pengguna" -- pemilih toko murni fallback untuk kasus langka.
+    const tenantPickerBox = MugenUI.el("div", { class: "login-tenant-picker", style: "display:none;" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Masuk");
 
     const form = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Username"), inputUsername,
       MugenUI.el("label", {}, "Password"), inputPassword,
       errorBox,
+      tenantPickerBox,
       btnSubmit,
     ]);
+
+    // PENTING (correctness): TIDAK mengirim slug toko yang "diingat" dari
+    // login sebelumnya (state.js::getTenantSlug()) secara otomatis di
+    // percobaan PERTAMA -- kalau perangkat ini sebelumnya dipakai untuk
+    // toko lain (device bersama/berganti tempat kerja) dan username+
+    // password yang diketik sekarang sebenarnya valid untuk toko BERBEDA,
+    // mengirim slug lama akan salah scoping login jadi 401 "salah" walau
+    // kredensialnya benar. tenantSlugTerpilih HANYA diisi lewat dua jalur
+    // eksplisit di bawah: (1) pengguna menekan tombol toko di pemilih yang
+    // muncul saat 409, atau (2) slug yang diingat KEBETULAN cocok dengan
+    // salah satu kandidat 409 itu sendiri (auto-retry transparan, lihat
+    // blok catch di bawah) -- jadi tidak pernah dikirim "buta".
+    let tenantSlugTerpilih = null;
+
+    function tampilkanPemilihToko(daftarToko, pesan) {
+      tenantPickerBox.innerHTML = "";
+      tenantPickerBox.style.display = "";
+      tenantPickerBox.appendChild(
+        MugenUI.el("div", { class: "login-tenant-picker-label" }, pesan)
+      );
+      daftarToko.forEach((t) => {
+        const btn = MugenUI.el("button", { type: "button", class: "login-tenant-option" }, t.nama_barbershop);
+        btn.addEventListener("click", () => {
+          tenantSlugTerpilih = t.slug;
+          form.requestSubmit();
+        });
+        tenantPickerBox.appendChild(btn);
+      });
+    }
+
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       errorBox.textContent = "";
@@ -56,8 +95,18 @@ const PageLogin = (() => {
         const res = await MugenUI.withLoading(() => MugenApi.post("/api/auth/login", {
           username: inputUsername.value.trim(),
           password: inputPassword.value,
+          tenant: tenantSlugTerpilih || undefined,
         }), { message: "Memproses login…" });
-        MugenState.setSession(res.token, res.user);
+        MugenState.setSession(res.token, res.user, res.tenant);
+        // FONDASI Multi-Tenant Phase 2.2: tenant baru saja "diketahui" lewat
+        // login berhasil ini -- SATU refresh() tambahan (di luar yang
+        // sudah dipanggil sekali saat app.js boot) supaya sidebar/Dashboard
+        // langsung menampilkan branding TOKO YANG BENAR, bukan cache
+        // sebelum login (mis. branding platform pada percobaan login
+        // pertama di perangkat baru). Tidak di-await (sama seperti pola
+        // MugenBookingNotif.refreshNow() di bawah) supaya tidak menunda
+        // perpindahan ke Dashboard.
+        MugenBrand.refresh();
         // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
         // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah
         // kedaluwarsa), set location.hash ke nilai yang sama TIDAK memicu
@@ -74,7 +123,30 @@ const PageLogin = (() => {
         // pasti ada di DOM saat badge-nya di-update.
         if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
       } catch (e) {
-        errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        // FONDASI Multi-Tenant Phase 2.0: 409 = ambigu, backend mengembalikan
+        // {message, tenants: [...]} di e.detail.detail (BUKAN string biasa)
+        // -- lihat routers/auth_router.py::login().
+        const detail = e.detail && e.detail.detail;
+        if (e.status === 409 && detail && Array.isArray(detail.tenants)) {
+          // Auto-retry TRANSPARAN (tanpa menampilkan pemilih toko sama
+          // sekali) kalau slug yang diingat dari login SEBELUMNYA di
+          // perangkat ini kebetulan cocok dengan salah satu kandidat --
+          // aman (BUKAN kirim "buta") karena backend sudah membuktikan
+          // username+password ini valid untuk toko itu (salah satu dari
+          // daftar `tenants` di respons 409 ini).
+          const slugDiingat = MugenState.getTenantSlug();
+          const cocok = slugDiingat && detail.tenants.some((t) => t.slug === slugDiingat);
+          if (cocok && tenantSlugTerpilih !== slugDiingat) {
+            tenantSlugTerpilih = slugDiingat;
+            form.requestSubmit();
+            return;
+          }
+          errorBox.textContent = "";
+          tampilkanPemilihToko(detail.tenants, detail.message || "Pilih toko Anda:");
+        } else {
+          tenantPickerBox.style.display = "none";
+          errorBox.textContent = (typeof detail === "string" && detail) || e.message;
+        }
       } finally {
         btnSubmit.disabled = false;
         btnSubmit.textContent = "Masuk";

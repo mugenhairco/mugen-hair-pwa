@@ -73,7 +73,7 @@ def hapus_barber(barber_id: int):
 
 
 def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
-                             jabatan: str = "barber", gaji_per_hari: int = 0) -> int:
+                             jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None) -> int:
     if not (nama or "").strip():
         raise ValueError("Nama karyawan tidak boleh kosong.")
     jabatan = (jabatan or "").strip()
@@ -84,7 +84,8 @@ def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int 
     if gaji_per_hari < 0:
         raise ValueError("Gaji per hari tidak boleh negatif.")
     try:
-        return db.add_barber(nama, is_rafiq, uang_harian, jabatan=jabatan, gaji_per_hari=gaji_per_hari)
+        return db.add_barber(nama, is_rafiq, uang_harian, jabatan=jabatan, gaji_per_hari=gaji_per_hari,
+                              tenant_id=tenant_id)
     except IntegrityError:
         raise ValueError(f"Nama karyawan '{nama.strip()}' sudah dipakai.")
 

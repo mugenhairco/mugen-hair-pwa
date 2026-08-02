@@ -24,9 +24,17 @@ class PemasukanBody(BaseModel):
     aktif: bool = True
 
 
+def _pastikan_pemasukan_tenant_sama(user: dict, row: dict | None):
+    """FONDASI Multi-Tenant Phase 1.1: fetch-then-authorize, pola sama
+    seperti routers/pengeluaran.py -- 404 supaya tidak membocorkan bahwa
+    pemasukan_id itu sebenarnya ada, milik tenant lain."""
+    if row is None or row.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Data pemasukan tidak ditemukan.")
+
+
 @router.get("/kategori")
 def daftar_kategori(user: dict = Depends(require_owner_or_staff)):
-    return db_pemasukan.get_kategori_list()
+    return db_pemasukan.get_kategori_list(tenant_id=user["tenant_id"])
 
 
 @router.get("")
@@ -36,6 +44,7 @@ def list_pemasukan(tahun: int = None, bulan: int = None, tanggal: str = None,
     return db_pemasukan.get_pemasukan_list(
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
+        tenant_id=user["tenant_id"],
     )
 
 
@@ -44,7 +53,8 @@ def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str =
                         user: dict = Depends(require_owner_or_staff)):
     """Route ini didaftarkan SEBELUM /{pemasukan_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pemasukan_id."""
-    konten = laporan_pdf.buat_pdf_pemasukan_list(tahun, bulan, kategori, cari, user["username"])
+    konten = laporan_pdf.buat_pdf_pemasukan_list(tahun, bulan, kategori, cari, user["username"],
+                                                  tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("pemasukan")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -53,8 +63,7 @@ def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str =
 @router.get("/{pemasukan_id}")
 def detail_pemasukan(pemasukan_id: int, user: dict = Depends(require_owner_or_staff)):
     row = db_pemasukan.get_pemasukan(pemasukan_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Data pemasukan tidak ditemukan.")
+    _pastikan_pemasukan_tenant_sama(user, row)
     return row
 
 
@@ -64,6 +73,7 @@ def tambah_pemasukan(body: PemasukanBody, user: dict = Depends(require_owner_or_
         new_id = db_pemasukan.tambah_pemasukan(
             tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -72,10 +82,12 @@ def tambah_pemasukan(body: PemasukanBody, user: dict = Depends(require_owner_or_
 
 @router.put("/{pemasukan_id}")
 def koreksi_pemasukan(pemasukan_id: int, body: PemasukanBody, user: dict = Depends(require_owner_or_staff)):
+    _pastikan_pemasukan_tenant_sama(user, db_pemasukan.get_pemasukan(pemasukan_id))
     try:
         db_pemasukan.koreksi_pemasukan(
             pemasukan_id, tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
             jumlah=body.jumlah, barber_id=body.barber_id, aktif=body.aktif,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -84,5 +96,6 @@ def koreksi_pemasukan(pemasukan_id: int, body: PemasukanBody, user: dict = Depen
 
 @router.delete("/{pemasukan_id}")
 def hapus_pemasukan(pemasukan_id: int, user: dict = Depends(require_owner_or_staff)):
+    _pastikan_pemasukan_tenant_sama(user, db_pemasukan.get_pemasukan(pemasukan_id))
     db_pemasukan.hapus_pemasukan(pemasukan_id)
     return {"ok": True}

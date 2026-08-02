@@ -32,10 +32,11 @@ dibuat di postgres_schema.py.
 from datetime import datetime
 
 import r2_storage
-from database import get_conn
+from database import get_conn, _kunci_tenant
 
 KEY_TO_PREFIX = {
     "logo": "logos",
+    "favicon": "logos",
     "hero_image": "assets",
     "hero_video": "assets",
     "about_foto": "assets",
@@ -58,7 +59,7 @@ def init_file_asset_db():
 
 
 def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: str,
-           maks_ukuran_bytes: int | None = None) -> str:
+           maks_ukuran_bytes: int | None = None, tenant_id: int = None) -> str:
     """Simpan/ganti file untuk `key` ini -- mapping = dict ekstensi->Content-Type
     (sama seperti yang sudah dipakai tiap pemanggil untuk validasi), label
     dipakai di pesan error, `maks_ukuran_bytes` opsional (default None =
@@ -67,10 +68,20 @@ def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: st
     tersimpan (dipakai pemanggil sebagai `?v=` cache-bust). File lama di R2
     (kalau ada) otomatis dihapus SETELAH file baru berhasil tersimpan
     (supaya tidak ada jeda tanpa file valid kalau upload baru gagal di
-    tengah jalan)."""
+    tengah jalan).
+
+    FONDASI Multi-Tenant Phase 1: `file_asset` TIDAK mendapat kolom
+    tenant_id baru (`key TEXT PRIMARY KEY` -- sama alasannya dengan
+    `settings`, lihat database.py::_kunci_tenant()) -- isolasi dilakukan
+    dengan memprefix `key` dengan tenant_id SEBELUM query, murni di lapisan
+    Python. Nama file R2 sendiri SUDAH unik global (uuid4, lihat
+    r2_storage.validasi_dan_beri_nama()) -- prefix di sini murni supaya
+    BARIS POINTER-nya di database tidak saling menimpa antar tenant, bukan
+    supaya file-nya sendiri tidak bertabrakan (itu sudah aman sejak awal)."""
     nama_file, content_type = r2_storage.validasi_dan_beri_nama(filename_asli, konten, mapping, label, maks_ukuran_bytes)
     now = datetime.now().isoformat(timespec="seconds")
-    r2_key_lama = ambil_r2_key(key)
+    key_db = _kunci_tenant(tenant_id, key)
+    r2_key_lama = ambil_r2_key(key, tenant_id=tenant_id)
 
     if r2_storage.IS_ENABLED:
         r2_key_baru = r2_storage.upload(KEY_TO_PREFIX.get(key, "assets"), nama_file, konten, content_type)
@@ -80,16 +91,16 @@ def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: st
         data_kolom = konten
 
     with get_conn() as conn:
-        existing = conn.execute("SELECT key FROM file_asset WHERE key = ?", (key,)).fetchone()
+        existing = conn.execute("SELECT key FROM file_asset WHERE key = ?", (key_db,)).fetchone()
         if existing:
             conn.execute(
                 "UPDATE file_asset SET filename = ?, content_type = ?, data = ?, r2_key = ?, updated_at = ? WHERE key = ?",
-                (nama_file, content_type, data_kolom, r2_key_baru, now, key),
+                (nama_file, content_type, data_kolom, r2_key_baru, now, key_db),
             )
         else:
             conn.execute(
                 "INSERT INTO file_asset (key, filename, content_type, data, r2_key, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (key, nama_file, content_type, data_kolom, r2_key_baru, now),
+                (key_db, nama_file, content_type, data_kolom, r2_key_baru, now),
             )
 
     if r2_key_lama and r2_key_lama != r2_key_baru:
@@ -97,12 +108,13 @@ def simpan(key: str, filename_asli: str, konten: bytes, mapping: dict, label: st
     return nama_file
 
 
-def ambil(key: str):
+def ambil(key: str, tenant_id: int = None):
     """Return (data: bytes, content_type: str) kalau ada, atau (None, None).
     R2 diprioritaskan kalau `r2_key` terisi; kalau tidak (baris lama/R2
     nonaktif), fallback ke kolom `data` (BLOB) seperti sebelum migrasi R2."""
     with get_conn() as conn:
-        row = conn.execute("SELECT content_type, data, r2_key FROM file_asset WHERE key = ?", (key,)).fetchone()
+        row = conn.execute("SELECT content_type, data, r2_key FROM file_asset WHERE key = ?",
+                            (_kunci_tenant(tenant_id, key),)).fetchone()
     if row is None:
         return None, None
     if row["r2_key"]:
@@ -114,26 +126,28 @@ def ambil(key: str):
     return None, None
 
 
-def ambil_meta(key: str):
+def ambil_meta(key: str, tenant_id: int = None):
     """Cuma nama file (untuk cache-bust ?v=...), TANPA fetch kolom `data`
     (bisa besar untuk gambar/video) -- dipakai endpoint GET pengaturan
     konten (get_identitas()/get_content()/get_payment_settings()) yang
     dipanggil jauh lebih sering daripada endpoint download gambar itu
     sendiri. Return filename atau None kalau belum ada."""
     with get_conn() as conn:
-        row = conn.execute("SELECT filename FROM file_asset WHERE key = ?", (key,)).fetchone()
+        row = conn.execute("SELECT filename FROM file_asset WHERE key = ?",
+                            (_kunci_tenant(tenant_id, key),)).fetchone()
     return row["filename"] if row else None
 
 
-def ambil_r2_key(key: str):
+def ambil_r2_key(key: str, tenant_id: int = None):
     with get_conn() as conn:
-        row = conn.execute("SELECT r2_key FROM file_asset WHERE key = ?", (key,)).fetchone()
+        row = conn.execute("SELECT r2_key FROM file_asset WHERE key = ?",
+                            (_kunci_tenant(tenant_id, key),)).fetchone()
     return row["r2_key"] if row else None
 
 
-def hapus(key: str):
-    r2_key = ambil_r2_key(key)
+def hapus(key: str, tenant_id: int = None):
+    r2_key = ambil_r2_key(key, tenant_id=tenant_id)
     with get_conn() as conn:
-        conn.execute("DELETE FROM file_asset WHERE key = ?", (key,))
+        conn.execute("DELETE FROM file_asset WHERE key = ?", (_kunci_tenant(tenant_id, key),))
     if r2_key:
         r2_storage.delete(r2_key)

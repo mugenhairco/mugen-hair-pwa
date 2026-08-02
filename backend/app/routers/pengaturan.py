@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import auth_db
+import branding_db
 import database as db
 import db_compat
 import laporan_pdf
@@ -28,7 +29,7 @@ import pengaturan_service
 import pengaturan_user
 import permissions
 import r2_storage
-from auth import require_admin, require_owner_or_staff, require_permission
+from auth import require_admin, require_owner_or_staff, require_permission, resolve_tenant_hibrid
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
 
@@ -46,8 +47,9 @@ def _cek_target_barber_untuk_staff(user: dict, target: dict, aksi: str):
 
 def _cek_bukan_owner_terakhir(target: dict):
     """Berlaku untuk SIAPA PUN pemanggilnya (termasuk Owner) -- minimal
-    harus selalu ada satu akun Owner aktif."""
-    if target["role"] == "admin" and auth_db.hitung_owner_aktif() <= 1:
+    harus selalu ada satu akun Owner aktif DI TENANT YANG SAMA (lihat
+    catatan tenant_id di auth_db.hitung_owner_aktif())."""
+    if target["role"] == "admin" and auth_db.hitung_owner_aktif(target.get("tenant_id")) <= 1:
         raise HTTPException(status_code=403,
                              detail="Tidak bisa menonaktifkan Owner terakhir. Minimal harus ada satu akun Owner aktif.")
 
@@ -78,36 +80,106 @@ class IdentitasBody(BaseModel):
 
 
 @router.get("/identitas")
-def ambil_identitas():
-    return pengaturan_identitas.get_identitas()
+def ambil_identitas(tenant_id: int = Depends(resolve_tenant_hibrid)):
+    # FONDASI Multi-Tenant Phase 1: endpoint ini SENGAJA PUBLIC (lihat
+    # docstring router di atas -- halaman Login belum ada token). Tenant
+    # diresolve lewat query string opsional `?tenant=<slug>` (lihat
+    # auth.resolve_tenant_publik()) -- SAMA seperti mekanisme booking publik
+    # (Tahap 32). Kosong = tenant default, perilaku LAMA tidak berubah.
+    # Mekanisme berbasis subdomain (halaman Login TIDAK bisa membaca query
+    # string sebelum tahu URL-nya sendiri sama sekali) ada di luar cakupan
+    # Phase 1 -- lihat roadmap audit Fase 2.
+    return pengaturan_identitas.get_identitas(tenant_id=tenant_id)
 
 
 @router.put("/identitas")
 def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_permission("izin_setting_identitas"))):
     try:
-        pengaturan_identitas.update_identitas(body.model_dump())
+        pengaturan_identitas.update_identitas(body.model_dump(), tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return pengaturan_identitas.get_identitas()
+    return pengaturan_identitas.get_identitas(tenant_id=user["tenant_id"])
 
 
 @router.post("/logo")
 async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_identitas"))):
     konten = await file.read()
     try:
-        pengaturan_identitas.simpan_logo(file.filename, konten)
+        pengaturan_identitas.simpan_logo(file.filename, konten, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except r2_storage.R2Error as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return pengaturan_identitas.get_identitas()
+    return pengaturan_identitas.get_identitas(tenant_id=user["tenant_id"])
 
 
 @router.get("/logo")
-def ambil_logo(v: str | None = None):
-    data, content_type = pengaturan_identitas.get_logo_data()
+def ambil_logo(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hibrid)):
+    # FONDASI Multi-Tenant Phase 1: sama seperti GET /identitas di atas.
+    data, content_type = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Logo belum diatur.")
+    return Response(content=data, media_type=content_type)
+
+
+# ================= BRANDING (Phase 2.2: Tenant & Platform Branding) =================
+# Field GABUNGAN dari Identitas (nama_barbershop, email) + Website Content
+# (tagline, alamat, whatsapp) + field BARU milik branding_db.py sendiri
+# (primary_color, secondary_color, website_url, favicon) -- lihat docstring
+# branding_db.py untuk kenapa TIDAK diduplikasi/dipindah dari modul asalnya.
+# GET publik ada di routers/branding.py (/api/tenant/branding, dipakai
+# halaman Login juga) -- di sini HANYA endpoint TULIS + serve file favicon.
+
+class BrandingBody(BaseModel):
+    nama_barbershop: str | None = None
+    email: str | None = None
+    tagline: str | None = None
+    alamat: str | None = None
+    whatsapp: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    website_url: str | None = None
+
+
+@router.put("/branding")
+def simpan_branding(body: BrandingBody, user: dict = Depends(require_permission("izin_setting_branding"))):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        branding_db.update_branding(data, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.post("/favicon")
+async def upload_favicon(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_setting_branding"))):
+    konten = await file.read()
+    try:
+        branding_db.simpan_favicon(file.filename, konten, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.delete("/favicon")
+def hapus_favicon(user: dict = Depends(require_permission("izin_setting_branding"))):
+    """Kembali ke favicon platform (fallback statis di index.html/manifest.json)
+    -- lihat routers/branding.py: favicon_url None ditafsirkan SAMA baik
+    untuk "belum pernah upload" maupun "sengaja dihapus"."""
+    branding_db.hapus_favicon(tenant_id=user["tenant_id"])
+    return branding_db.get_branding(tenant_id=user["tenant_id"])
+
+
+@router.get("/favicon")
+def ambil_favicon(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hibrid)):
+    # FONDASI Multi-Tenant Phase 2.2: PUBLIC sama seperti GET /logo -- favicon
+    # sendiri bukan data sensitif, dan browser butuh mengambilnya tanpa token
+    # (tag <link rel="icon">, lihat frontend/js/brand.js).
+    data, content_type = branding_db.get_favicon_data(tenant_id=tenant_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Favicon belum diatur.")
     return Response(content=data, media_type=content_type)
 
 
@@ -121,7 +193,7 @@ class KomisiBody(BaseModel):
 
 @router.get("/komisi")
 def ambil_komisi(user: dict = Depends(require_admin)):
-    semua = db.get_all_settings()
+    semua = db.get_all_settings(tenant_id=user["tenant_id"])
     return {k: semua.get(k) for k in KOMISI_KEYS}
 
 
@@ -131,8 +203,8 @@ def simpan_komisi(body: KomisiBody, user: dict = Depends(require_admin)):
     for k, v in data.items():
         if v < 0:
             raise HTTPException(status_code=422, detail=f"{k} tidak boleh negatif.")
-    db.set_settings_bulk(data)
-    semua = db.get_all_settings()
+    db.set_settings_bulk(data, tenant_id=user["tenant_id"])
+    semua = db.get_all_settings(tenant_id=user["tenant_id"])
     return {k: semua.get(k) for k in KOMISI_KEYS}
 
 
@@ -153,13 +225,13 @@ class BonusTierUpdateBody(BaseModel):
 
 @router.get("/bonus-tiers")
 def list_bonus_tiers(user: dict = Depends(require_admin)):
-    return db.get_bonus_customer_tiers()
+    return db.get_bonus_customer_tiers(tenant_id=user["tenant_id"])
 
 
 @router.post("/bonus-tiers")
 def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_admin)):
     try:
-        return pengaturan_bonus.tambah_tier(body.target, body.bonus)
+        return pengaturan_bonus.tambah_tier(body.target, body.bonus, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -167,7 +239,7 @@ def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_admin)):
 @router.put("/bonus-tiers/{target}")
 def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends(require_admin)):
     try:
-        return pengaturan_bonus.ubah_tier(target, body.target, body.bonus)
+        return pengaturan_bonus.ubah_tier(target, body.target, body.bonus, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -175,7 +247,7 @@ def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends
 @router.delete("/bonus-tiers/{target}")
 def hapus_bonus_tier(target: int, user: dict = Depends(require_admin)):
     try:
-        return pengaturan_bonus.hapus_tier(target)
+        return pengaturan_bonus.hapus_tier(target, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -193,24 +265,24 @@ class AcuanServiceBody(BaseModel):
 
 @router.get("/bonus-service-acuan")
 def ambil_bonus_service_acuan(user: dict = Depends(require_admin)):
-    return {"service_ids": db.get_bonus_service_acuan_ids()}
+    return {"service_ids": db.get_bonus_service_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.put("/bonus-service-acuan")
 def simpan_bonus_service_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
-    db.set_bonus_service_acuan_ids(body.service_ids)
-    return {"service_ids": db.get_bonus_service_acuan_ids()}
+    db.set_bonus_service_acuan_ids(body.service_ids, tenant_id=user["tenant_id"])
+    return {"service_ids": db.get_bonus_service_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.get("/uang-harian-acuan")
 def ambil_uang_harian_acuan(user: dict = Depends(require_admin)):
-    return {"service_ids": db.get_uang_harian_acuan_ids()}
+    return {"service_ids": db.get_uang_harian_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.put("/uang-harian-acuan")
 def simpan_uang_harian_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
-    db.set_uang_harian_acuan_ids(body.service_ids)
-    return {"service_ids": db.get_uang_harian_acuan_ids()}
+    db.set_uang_harian_acuan_ids(body.service_ids, tenant_id=user["tenant_id"])
+    return {"service_ids": db.get_uang_harian_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 # REVISI Struktur Setting: target jumlah service/hari supaya Uang Harian cair
@@ -223,15 +295,15 @@ class UangHarianTargetBody(BaseModel):
 
 @router.get("/uang-harian-target")
 def ambil_uang_harian_target(user: dict = Depends(require_admin)):
-    return {"target": db.target_uang_harian_per_hari()}
+    return {"target": db.target_uang_harian_per_hari(tenant_id=user["tenant_id"])}
 
 
 @router.put("/uang-harian-target")
 def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(require_admin)):
     if body.target <= 0:
         raise HTTPException(status_code=422, detail="Target harus lebih dari 0.")
-    db.set_setting("uang_harian_target_service_harian", body.target)
-    return {"target": db.target_uang_harian_per_hari()}
+    db.set_setting("uang_harian_target_service_harian", body.target, tenant_id=user["tenant_id"])
+    return {"target": db.target_uang_harian_per_hari(tenant_id=user["tenant_id"])}
 
 
 # ================= MANAJEMEN KARYAWAN (Barber + Kasir/OB/Kru) =================
@@ -273,10 +345,18 @@ def _tanpa_kolom_biner(barber: dict | None) -> dict | None:
     return barber
 
 
+def _pastikan_barber_tenant_sama(user: dict, target: dict | None):
+    """FONDASI Multi-Tenant Phase 1: sama seperti _pastikan_target_tenant_sama
+    (lihat penjelasan di sana), versi untuk endpoint /barber/{id} -- 404
+    dipakai supaya tidak membocorkan "barber ini ADA tapi milik tenant lain"."""
+    if target is None or target.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Karyawan tidak ditemukan.")
+
+
 @router.get("/barber")
 def list_barber(user: dict = Depends(require_admin)):
     # tampilkan semua jabatan, aktif & nonaktif, di halaman Setting
-    return [_tanpa_kolom_biner(b) for b in db.get_karyawan(hanya_aktif=False)]
+    return [_tanpa_kolom_biner(b) for b in db.get_karyawan(hanya_aktif=False, tenant_id=user["tenant_id"])]
 
 
 @router.post("/barber")
@@ -284,6 +364,7 @@ def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
     try:
         new_id = pengaturan_barber.tambah_barber_validated(
             body.nama, body.is_rafiq, body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -292,6 +373,7 @@ def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
 
 @router.put("/barber/{barber_id}")
 def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(require_admin)):
+    _pastikan_barber_tenant_sama(user, db.get_barber(barber_id))
     try:
         pengaturan_barber.update_barber_validated(
             barber_id, nama=body.nama, is_rafiq=body.is_rafiq, aktif=body.aktif,
@@ -304,6 +386,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
 
 @router.delete("/barber/{barber_id}")
 def hapus_barber(barber_id: int, user: dict = Depends(require_admin)):
+    _pastikan_barber_tenant_sama(user, db.get_barber(barber_id))
     try:
         pengaturan_barber.hapus_barber(barber_id)
     except ValueError as e:
@@ -330,9 +413,16 @@ class ServiceUpdateBody(BaseModel):
     durasi_menit: int | None = None
 
 
+def _pastikan_service_tenant_sama(user: dict, target: dict | None):
+    """FONDASI Multi-Tenant Phase 1: sama seperti _pastikan_barber_tenant_sama,
+    versi untuk endpoint /service/{id}."""
+    if target is None or target.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Layanan tidak ditemukan.")
+
+
 @router.get("/service")
 def list_service(user: dict = Depends(require_admin)):
-    return db.get_services(hanya_aktif=False)
+    return db.get_services(hanya_aktif=False, tenant_id=user["tenant_id"])
 
 
 @router.post("/service")
@@ -340,6 +430,7 @@ def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
     try:
         new_id = pengaturan_service.tambah_service_lengkap(
             body.nama, body.harga, body.modal, body.pakai_potongan_chemical, body.durasi_menit,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -348,6 +439,7 @@ def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
 
 @router.put("/service/{service_id}")
 def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depends(require_admin)):
+    _pastikan_service_tenant_sama(user, db.get_service(service_id))
     try:
         pengaturan_service.update_service_lengkap(
             service_id, nama=body.nama, harga=body.harga, modal=body.modal,
@@ -361,6 +453,7 @@ def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depend
 
 @router.delete("/service/{service_id}")
 def hapus_service(service_id: int, user: dict = Depends(require_admin)):
+    _pastikan_service_tenant_sama(user, db.get_service(service_id))
     try:
         db.hapus_service(service_id)  # fungsi Tahap 2, sudah menolak kalau pernah dipakai transaksi
     except ValueError as e:
@@ -385,11 +478,23 @@ class PasswordBody(BaseModel):
     password: str
 
 
+def _pastikan_target_tenant_sama(user: dict, target: dict):
+    """FONDASI Multi-Tenant Phase 1: satu-satunya penegakan isolasi yang
+    dibutuhkan untuk endpoint /user/{id}/* -- semuanya sudah memakai pola
+    "ambil dulu baris user targetnya, baru diproses" (fetch-then-authorize),
+    jadi cukup SATU pengecekan tambahan di sini per endpoint, bukan
+    mengubah query auth_db.get_user() itu sendiri. 404 (bukan 403) sengaja
+    dipakai supaya tidak membocorkan informasi "user itu ADA tapi milik
+    tenant lain" ke pemanggil."""
+    if target.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+
+
 @router.get("/user")
 def list_user(user: dict = Depends(require_owner_or_staff)):
-    if user["role"] == "staff" and not permissions.has("izin_setting_user"):
+    if user["role"] == "staff" and not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]):
         raise HTTPException(status_code=403, detail="Admin tidak punya akses ke tab User.")
-    daftar = auth_db.get_user_list()
+    daftar = auth_db.get_user_list(tenant_id=user["tenant_id"])
     for u in daftar:
         u.pop("password_hash", None)  # jangan pernah kirim hash ke frontend
     return daftar
@@ -398,12 +503,17 @@ def list_user(user: dict = Depends(require_owner_or_staff)):
 @router.post("/user")
 def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_tambah"):
+        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_tambah", tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk membuat user.")
         if body.role != "barber":
             raise HTTPException(status_code=403, detail="Admin hanya boleh membuat user ber-role Barber.")
+    if body.barber_id is not None:
+        barber_target = db.get_barber(body.barber_id)
+        if barber_target is None or barber_target.get("tenant_id") != user["tenant_id"]:
+            raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
     try:
-        new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id)
+        new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id,
+                                      tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     hasil = auth_db.get_user(new_id)
@@ -416,6 +526,10 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
 # Membuat/Menghapus/Mengubah Password untuk grup "User").
 @router.put("/user/{user_id}/username")
 def ganti_username(user_id: int, body: UsernameBody, user: dict = Depends(require_admin)):
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_target_tenant_sama(user, target)
     try:
         pengaturan_user.ganti_username(user_id, body.username)
     except ValueError as e:
@@ -428,8 +542,9 @@ def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(requir
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_ganti_password"):
+        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_ganti_password", tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengubah password user.")
         _cek_target_barber_untuk_staff(user, target, "mengubah password")
     try:
@@ -444,8 +559,9 @@ def nonaktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff))
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menonaktifkan user.")
         _cek_target_barber_untuk_staff(user, target, "menonaktifkan")
     _cek_bukan_owner_terakhir(target)
@@ -458,8 +574,9 @@ def aktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengaktifkan user.")
         _cek_target_barber_untuk_staff(user, target, "mengaktifkan")
     try:
@@ -478,13 +595,14 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_target_tenant_sama(user, target)
     if target["id"] == user["id"]:
         raise HTTPException(status_code=403, detail="Tidak bisa menghapus akun sendiri.")
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user") or not permissions.has("izin_user_hapus"):
+        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menghapus user.")
         _cek_target_barber_untuk_staff(user, target, "menghapus")
-    if target["role"] == "admin" and auth_db.hitung_owner_aktif() <= 1:
+    if target["role"] == "admin" and auth_db.hitung_owner_aktif(user["tenant_id"]) <= 1:
         raise HTTPException(status_code=403,
                              detail="Tidak bisa menghapus Owner terakhir. Minimal harus ada satu akun Owner aktif.")
     auth_db.hapus_user(user_id)
@@ -505,13 +623,13 @@ class HakAksesAdminBody(BaseModel):
 # (lihat pages/pengaturan.js). Mengubahnya (PUT di bawah) TETAP Owner-murni.
 @router.get("/hak-akses-admin")
 def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
-    return permissions.get_all()
+    return permissions.get_all(tenant_id=user["tenant_id"])
 
 
 @router.put("/hak-akses-admin")
 def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require_admin)):
     try:
-        return permissions.set_bulk(body.izin)
+        return permissions.set_bulk(body.izin, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -520,20 +638,36 @@ def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require
 
 def _cek_izin_backup(user: dict, key: str, aksi: str):
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_backup") or not permissions.has(key):
+        if not permissions.has("izin_setting_backup", tenant_id=user["tenant_id"]) or not permissions.has(key, tenant_id=user["tenant_id"]):
             raise HTTPException(status_code=403, detail=f"Admin tidak punya izin untuk {aksi} database.")
+
+
+def _tolak_backup_sqlite_multi_tenant():
+    """FONDASI Multi-Tenant Phase 1.1: jalur SQLite meng-copy FILE UTUH
+    (tidak ada cara mem-filter sebagian baris), jadi HANYA aman kalau
+    instalasi ini benar-benar cuma punya satu tenant -- lihat penjelasan
+    lengkap di docstring pengaturan_backup.py."""
+    if pengaturan_backup.sqlite_punya_lebih_dari_satu_tenant():
+        raise HTTPException(
+            status_code=409,
+            detail="Export/Import Database (file .db utuh) tidak tersedia karena instalasi ini "
+                   "sudah punya lebih dari satu toko (tenant) -- file .db tidak bisa difilter per "
+                   "toko. Hubungi penyedia layanan untuk migrasi ke PostgreSQL, yang mendukung "
+                   "Export/Import per toko.",
+        )
 
 
 @router.get("/backup/export")
 def export_database(user: dict = Depends(require_owner_or_staff)):
     _cek_izin_backup(user, "izin_backup_export", "export")
     if db_compat.IS_POSTGRES:
-        konten = pengaturan_backup.export_database_postgres()
+        konten = pengaturan_backup.export_database_postgres(user["tenant_id"])
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         return Response(
             content=konten, media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="mugen_hair_backup_{stamp}.json"'},
         )
+    _tolak_backup_sqlite_multi_tenant()
     return FileResponse(db.DB_PATH, media_type="application/octet-stream",
                          filename="mugen_hair_backup.db")
 
@@ -544,8 +678,9 @@ async def import_database(file: UploadFile = File(...), user: dict = Depends(req
     konten = await file.read()
     try:
         if db_compat.IS_POSTGRES:
-            backup_path = pengaturan_backup.import_database_postgres(konten)
+            backup_path = pengaturan_backup.import_database_postgres(konten, user["tenant_id"])
         else:
+            _tolak_backup_sqlite_multi_tenant()
             backup_path = pengaturan_backup.import_database(konten)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -559,12 +694,13 @@ def download_laporan_pdf(jenis: str, barber_id: int | None = None,
                           tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
                           tahun: int | None = None, bulan: int | None = None,
                           user: dict = Depends(require_owner_or_staff)):
-    if user["role"] == "staff" and not permissions.has("izin_laporan_pdf"):
+    if user["role"] == "staff" and not permissions.has("izin_laporan_pdf", tenant_id=user["tenant_id"]):
         raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
     try:
         konten, filename = laporan_pdf.buat_laporan(
             jenis, barber_id, dicetak_oleh=user["username"],
             tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tahun=tahun, bulan=bulan,
+            tenant_id=user["tenant_id"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

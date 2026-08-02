@@ -466,7 +466,7 @@ const PageBookPublic = (() => {
     if (identitas.logo_url) {
       wizardBrandRow.appendChild(gambarAman(MUGEN_API_BASE + identitas.logo_url, { alt: "Logo", class: "book-wizard-logo" }));
     }
-    wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "MUGEN Hair Co."));
+    wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "Developer"));
     wizardHeader.appendChild(wizardBrandRow);
 
     // ---- animasi perpindahan step: slide + fade, 300ms, arah mengikuti

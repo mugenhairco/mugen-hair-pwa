@@ -74,6 +74,11 @@ def init_kasbon_db():
 def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    # FONDASI Multi-Tenant Phase 1.1: kasbon TIDAK punya kolom tenant_id
+    # sendiri (di-scope TRANSITIF lewat barbers.tenant_id, barber_id NOT
+    # NULL) -- diselipkan di sini supaya router bisa fetch-then-authorize
+    # tanpa query tambahan (lihat routers/kasbon.py::_pastikan_kasbon_tenant_sama).
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     return row
 
 
@@ -84,25 +89,35 @@ def get_kasbon(kasbon_id: int):
 
 
 def get_kasbon_list(barber_id: int = None, status: str = None, tahun: int = None, bulan: int = None,
-                     tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                     tanggal_mulai: str = None, tanggal_selesai: str = None, tenant_id: int = None) -> list:
     """tanggal_mulai/tanggal_selesai (inklusif di kedua ujung) dipakai
     Laporan Kasbon (rentang tanggal bebas) -- BEDA dari tahun/bulan (satu
-    bulan/tahun penuh, dipakai filter halaman Kasbon)."""
-    q = "SELECT * FROM kasbon WHERE 1=1"
+    bulan/tahun penuh, dipakai filter halaman Kasbon).
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional -- JOIN ke barbers
+    HANYA ditambahkan kalau tenant_id diisi (endpoint ber-login WAJIB
+    mengisi ini, lihat routers/kasbon.py), supaya kasbon barber tenant lain
+    tidak pernah ikut ke daftar."""
+    q = "SELECT k.* FROM kasbon k"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = k.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND k.barber_id = ?"; params.append(barber_id)
     if status is not None:
-        q += " AND status = ?"; params.append(status)
+        q += " AND k.status = ?"; params.append(status)
     if tahun is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+        q += " AND k.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
-        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+        q += " AND k.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
-        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+        q += " AND k.tanggal >= ?"; params.append(tanggal_mulai)
     if tanggal_selesai is not None:
-        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
-    q += " ORDER BY tanggal DESC, id DESC"
+        q += " AND k.tanggal <= ?"; params.append(tanggal_selesai)
+    q += " ORDER BY k.tanggal DESC, k.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
@@ -116,9 +131,10 @@ def _hitung_sudah_dibayar(conn, kasbon_id: int) -> int:
     return int(row["total"] or 0)
 
 
-def buat_kasbon(barber_id: int, tanggal: str, jumlah: int, keterangan: str = "", dibuat_oleh: str = "") -> dict:
+def buat_kasbon(barber_id: int, tanggal: str, jumlah: int, keterangan: str = "", dibuat_oleh: str = "",
+                 tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
     jumlah = int(jumlah or 0)
     if jumlah <= 0:
@@ -183,6 +199,25 @@ def get_riwayat_pembayaran(kasbon_id: int) -> list:
             (kasbon_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_pembayaran_kasbon(pembayaran_id: int):
+    """Satu baris kasbon_pembayaran + tenant_id (diturunkan lewat kasbon ->
+    barbers) -- dipakai routers/kasbon.py untuk fetch-then-authorize SEBELUM
+    memanggil batalkan_pembayaran_kasbon() (yang sendiri tetap menerima
+    hanya pembayaran_id, pola sama seperti fungsi single-row lain)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT p.*, k.barber_id AS barber_id FROM kasbon_pembayaran p
+               JOIN kasbon k ON k.id = p.kasbon_id WHERE p.id = ?""",
+            (pembayaran_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        row = dict(row)
+    barber = get_barber(row["barber_id"])
+    row["tenant_id"] = barber["tenant_id"] if barber else None
+    return row
 
 
 def bayar_kasbon(kasbon_id: int, tanggal: str, jumlah: int, keterangan: str = "", dibuat_oleh: str = "",
@@ -326,16 +361,27 @@ def batalkan_pembayaran_kasbon(pembayaran_id: int):
 # ---------------------------------------------------------------------------
 
 def get_pembayaran_list_periode(tahun: int = None, bulan: int = None, barber_id: int = None,
-                                 tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                                 tanggal_mulai: str = None, tanggal_selesai: str = None,
+                                 tenant_id: int = None) -> list:
     """Semua baris kasbon_pembayaran (SEMUA sumber -- manual maupun
     potong_gaji) pada periode ini (berdasarkan TANGGAL PEMBAYARAN, bukan
     tanggal kasbon diajukan), lintas kasbon manapun milik barber terkait.
     tanggal_mulai/tanggal_selesai dipakai periode PDF rentang tanggal bebas
     -- BEDA dari tahun/bulan yang dipakai tampilan layar (pola sama seperti
-    reimburse_db.get_reimburse_list_disetujui())."""
+    reimburse_db.get_reimburse_list_disetujui()).
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan ke
+    barbers HANYA ditambahkan kalau diisi -- dipakai routers/rekap.py &
+    laporan_pdf.py (endpoint ber-login) supaya potongan kasbon barber
+    tenant lain tidak pernah ikut ke Rekap Transaksi/Laporan."""
     q = """SELECT p.*, k.barber_id AS barber_id FROM kasbon_pembayaran p
-           JOIN kasbon k ON k.id = p.kasbon_id WHERE 1=1"""
+           JOIN kasbon k ON k.id = p.kasbon_id"""
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = k.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
         q += " AND k.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
@@ -374,7 +420,8 @@ def get_total_dibayar_periode(barber_id: int, tahun: int, bulan: int) -> int:
 
 
 def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None, barber_id: int = None,
-                               tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
+                               tanggal_mulai: str = None, tanggal_selesai: str = None,
+                               tenant_id: int = None) -> list:
     """Menggabungkan `baris` (hasil database.get_rekap_transaksi_list(),
     biasanya SUDAH digabung dengan baris Reimburse lewat reimburse_db) dengan
     baris pembayaran Kasbon pada periode yang sama -- dipanggil dari layer
@@ -384,9 +431,13 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
     BEDA dari baris Reimburse: 'pendapatan' di sini NEGATIF (mengurangi
     Total, bukan menambah) karena kasbon adalah pinjaman yang dikembalikan,
     bukan pendapatan -- tanggal = tanggal PEMBAYARAN (bukan tanggal kasbon
-    diajukan)."""
+    diajukan).
+
+    FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, diteruskan ke
+    get_pembayaran_list_periode()."""
     pembayaran = get_pembayaran_list_periode(tahun=tahun, bulan=bulan, barber_id=barber_id,
-                                              tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
+                                              tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                              tenant_id=tenant_id)
     for p in pembayaran:
         baris.append({
             "tipe": "kasbon",

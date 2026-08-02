@@ -22,7 +22,7 @@ def _cek_akses_lihat(user: dict, pengajuan: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_cuti_karyawan"):
+        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -36,7 +36,7 @@ def _pastikan_pemilik_atau_admin(user: dict, pengajuan: dict):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_cuti_karyawan"):
+        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -46,6 +46,14 @@ def _pastikan_pemilik_atau_admin(user: dict, pengajuan: dict):
     raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
 
+def _pastikan_pengajuan_tenant_sama(user: dict, pengajuan: dict | None):
+    """FONDASI Multi-Tenant Phase 1.1: fetch-then-authorize -- 404 (bukan
+    403) supaya tidak membocorkan bahwa pengajuan_id itu sebenarnya ada,
+    milik tenant lain."""
+    if pengajuan is None or pengajuan.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan.")
+
+
 @router.get("")
 def list_pengajuan(barber_id: int = None, status: str = None, jenis: str = None,
                     tahun: int = None, bulan: int = None, user: dict = Depends(get_current_user)):
@@ -53,7 +61,7 @@ def list_pengajuan(barber_id: int = None, status: str = None, jenis: str = None,
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     return izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis,
-                                            tahun=tahun, bulan=bulan)
+                                            tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 
 
 @router.get("/pdf")
@@ -64,7 +72,8 @@ def list_pengajuan_pdf(barber_id: int = None, status: str = None, jenis: str = N
     _cek_akses_lihat(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
-    konten = laporan_pdf.buat_pdf_izin_cuti_list(barber_id, jenis, status, user["username"])
+    konten = laporan_pdf.buat_pdf_izin_cuti_list(barber_id, jenis, status, user["username"],
+                                                  tenant_id=user["tenant_id"])
     filename = laporan_pdf.buat_nama_file("izin_cuti")
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -74,16 +83,16 @@ def list_pengajuan_pdf(barber_id: int = None, status: str = None, jenis: str = N
 def pending_count(user: dict = Depends(get_current_user)):
     """Badge notifikasi sidebar -- HANYA admin/staff (izin_cuti_karyawan)
     yang berkepentingan, barber selalu dapat 0 (tidak ditampilkan di UI)."""
-    if user["role"] == "admin" or (user["role"] == "staff" and permissions.has("izin_cuti_karyawan")):
-        return {"jumlah": izin_cuti_db.get_jumlah_pending()}
+    if user["role"] == "admin" or (user["role"] == "staff" and
+                                    permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"))):
+        return {"jumlah": izin_cuti_db.get_jumlah_pending(tenant_id=user["tenant_id"])}
     return {"jumlah": 0}
 
 
 @router.get("/{pengajuan_id}")
 def ambil_pengajuan(pengajuan_id: int, user: dict = Depends(get_current_user)):
     pengajuan = izin_cuti_db.get_pengajuan(pengajuan_id)
-    if pengajuan is None:
-        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan.")
+    _pastikan_pengajuan_tenant_sama(user, pengajuan)
     _cek_akses_lihat(user, pengajuan)
     return pengajuan
 
@@ -103,7 +112,7 @@ def buat_pengajuan(body: PengajuanBody, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
         barber_id = user["barber_id"]
     elif user["role"] in ("admin", "staff"):
-        if user["role"] == "staff" and not permissions.has("izin_cuti_karyawan"):
+        if user["role"] == "staff" and not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         if body.barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
@@ -112,7 +121,8 @@ def buat_pengajuan(body: PengajuanBody, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
     try:
         return izin_cuti_db.buat_pengajuan(barber_id, body.jenis, body.tanggal_mulai, body.tanggal_selesai,
-                                            body.alasan, diajukan_oleh=user["username"])
+                                            body.alasan, diajukan_oleh=user["username"],
+                                            tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -127,8 +137,7 @@ class PengajuanEditBody(BaseModel):
 @router.put("/{pengajuan_id}")
 def edit_pengajuan(pengajuan_id: int, body: PengajuanEditBody, user: dict = Depends(get_current_user)):
     pengajuan = izin_cuti_db.get_pengajuan(pengajuan_id)
-    if pengajuan is None:
-        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan.")
+    _pastikan_pengajuan_tenant_sama(user, pengajuan)
     _pastikan_pemilik_atau_admin(user, pengajuan)
     try:
         return izin_cuti_db.edit_pengajuan(pengajuan_id, jenis=body.jenis, tanggal_mulai=body.tanggal_mulai,
@@ -140,8 +149,7 @@ def edit_pengajuan(pengajuan_id: int, body: PengajuanEditBody, user: dict = Depe
 @router.delete("/{pengajuan_id}")
 def hapus_pengajuan(pengajuan_id: int, user: dict = Depends(get_current_user)):
     pengajuan = izin_cuti_db.get_pengajuan(pengajuan_id)
-    if pengajuan is None:
-        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan.")
+    _pastikan_pengajuan_tenant_sama(user, pengajuan)
     _pastikan_pemilik_atau_admin(user, pengajuan)
     try:
         izin_cuti_db.hapus_pengajuan(pengajuan_id)
@@ -158,6 +166,7 @@ class StatusBody(BaseModel):
 @router.put("/{pengajuan_id}/status")
 def ubah_status_pengajuan(pengajuan_id: int, body: StatusBody,
                            user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    _pastikan_pengajuan_tenant_sama(user, izin_cuti_db.get_pengajuan(pengajuan_id))
     try:
         return izin_cuti_db.set_status_pengajuan(pengajuan_id, body.status,
                                                   catatan_approval=body.catatan_approval,

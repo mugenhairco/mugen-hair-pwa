@@ -235,7 +235,28 @@
 // (layar) dan Ket di Rekap Detail (PDF) sekarang juga multi-baris kalau
 // berisi lebih dari satu info, bukan digabung titik-koma (ui.js
 // keteranganCell(), laporan_pdf.py _sel_keterangan()).
-const CACHE_NAME = "mugen-hair-shell-v41";
+// v44 -> v45: FONDASI Multi-Tenant Phase 2.2 -- Tenant Branding & Platform
+// Branding (White Label). brand.js dirombak: sumber data pindah dari
+// /api/pengaturan/identitas ke /api/tenant/branding (fallback platform
+// "Developer" saat tenant belum dikenali), favicon & warna Primary/
+// Secondary sekarang ikut diterapkan secara dinamis (bukan cuma nama/logo).
+// refresh() (fetch ke server) sekarang HANYA dipanggil sekali saat app.js
+// boot + sekali lagi tepat setelah login berhasil -- router.js (dipanggil
+// tiap pindah menu) sekarang pakai applyToDom() dari cache saja, TIDAK
+// fetch ulang tiap navigasi. Tab baru Setting > Branding (pengaturan.js).
+// index.html/manifest.json: fallback statis sebelum JS jalan diganti dari
+// "MUGEN Hair Co." jadi "Developer" (branding platform generik, BUKAN
+// nama satu tenant tertentu). style.css: token --accent-secondary baru.
+// v45 -> v46: Setting > Branding tab baru (pengaturan.js) -- Nama
+// Barbershop, Logo, Favicon (upload/hapus), Primary/Secondary Color,
+// Tagline, Alamat, WhatsApp, Email, Website dalam satu form, plus entri
+// baru di grup Setting pada Hak Akses Admin ("izin_setting_branding").
+// v46 -> v47: brand.js -- query string `?tenant=<slug>` di URL saat ini
+// (mekanisme tenant discovery yang sudah ada sejak Phase 1) sekarang juga
+// dipakai untuk menampilkan branding tenant SEBELUM login, ditemukan lewat
+// verifikasi E2E langsung (link khusus per-toko sebelumnya cuma didukung
+// endpoint publik lain seperti /book, belum di brand.js).
+const CACHE_NAME = "mugen-hair-shell-v47";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -271,6 +292,7 @@ const APP_SHELL = [
   "/js/pages/produk.js",
   "/js/pages/booking.js",
   "/js/pages/book_public.js",
+  "/js/pages/superadmin.js",
   // Perbaikan Alur Cetak PDF: PDF.js (build lokal, BUKAN dari CDN, supaya
   // Preview PDF tetap bisa dipakai offline -- lihat pdfjs_boot.js).
   "/vendor/pdfjs/pdf.min.js",

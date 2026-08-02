@@ -57,6 +57,10 @@ def _lengkapi(row: dict) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
     row["terkunci"] = _slip_terkunci(row["barber_id"], row["tahun"], row["bulan"])
+    # FONDASI Multi-Tenant Phase 1.1: komisi_penyesuaian TIDAK punya kolom
+    # tenant_id sendiri (di-scope TRANSITIF lewat barbers.tenant_id,
+    # barber_id NOT NULL) -- diselipkan di sini untuk fetch-then-authorize.
+    row["tenant_id"] = barber["tenant_id"] if barber else None
     return row
 
 
@@ -78,27 +82,36 @@ def get_penyesuaian(penyesuaian_id: int):
         return _lengkapi(dict(row)) if row else None
 
 
-def get_penyesuaian_list(barber_id: int = None, tahun: int = None, bulan: int = None, jenis: str = None) -> list:
-    q = "SELECT * FROM komisi_penyesuaian WHERE 1=1"
+def get_penyesuaian_list(barber_id: int = None, tahun: int = None, bulan: int = None, jenis: str = None,
+                          tenant_id: int = None) -> list:
+    """FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan
+    ke barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB
+    mengisi ini)."""
+    q = "SELECT k.* FROM komisi_penyesuaian k"
+    if tenant_id is not None:
+        q += " JOIN barbers b ON b.id = k.barber_id"
+    q += " WHERE 1=1"
     params = []
+    if tenant_id is not None:
+        q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
-        q += " AND barber_id = ?"; params.append(barber_id)
+        q += " AND k.barber_id = ?"; params.append(barber_id)
     if tahun is not None:
-        q += " AND tahun = ?"; params.append(tahun)
+        q += " AND k.tahun = ?"; params.append(tahun)
     if bulan is not None:
-        q += " AND bulan = ?"; params.append(bulan)
+        q += " AND k.bulan = ?"; params.append(bulan)
     if jenis is not None:
-        q += " AND jenis = ?"; params.append(jenis)
-    q += " ORDER BY tahun DESC, bulan DESC, id DESC"
+        q += " AND k.jenis = ?"; params.append(jenis)
+    q += " ORDER BY k.tahun DESC, k.bulan DESC, k.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
 
 
 def buat_penyesuaian(barber_id: int, tahun: int, bulan: int, jenis: str, jumlah: int,
-                      keterangan: str, dibuat_oleh: str = "") -> dict:
+                      keterangan: str, dibuat_oleh: str = "", tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
-    if barber is None:
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
     if jenis not in JENIS_VALID:
         raise ValueError(f"Jenis penyesuaian tidak dikenal: {jenis}")
