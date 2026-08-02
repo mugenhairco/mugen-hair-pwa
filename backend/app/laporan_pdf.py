@@ -202,10 +202,19 @@ def _judul(jenis: str) -> str:
     }[jenis]
 
 
-def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str):
-    identitas = pengaturan_identitas.get_identitas()
-    nama_barbershop = identitas.get("nama_barbershop") or "MUGEN Hair Co."
-    logo_data, _ = pengaturan_identitas.get_logo_data()
+def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str, tenant_id: int | None = None):
+    """FONDASI Multi-Tenant Phase 2.2 (Tenant Branding): `tenant_id` SEBELUMNYA
+    tidak pernah diteruskan sampai ke sini -- identitas/logo yang tercetak di
+    SETIAP laporan PDF (apa pun tenant-nya) selalu diambil TANPA tenant_id,
+    yaitu key `settings`/`file_asset` GLOBAL/tanpa-prefix (nilai lama dari
+    sebelum Phase 1, beku sejak migrasi) -- bug nyata: PDF Tenant B akan
+    tercetak dengan nama & logo Tenant A (tenant default) di kop suratnya,
+    bukan milik tenant itu sendiri. Sekarang WAJIB diteruskan dari seluruh
+    fungsi buat_pdf_*() di bawah (semuanya sudah menerima tenant_id untuk
+    scoping data sejak Phase 1.1, tinggal diteruskan satu langkah lagi)."""
+    identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
+    nama_barbershop = identitas.get("nama_barbershop") or "Developer"
+    logo_data, _ = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     def _on_page(canvas, doc):
@@ -261,7 +270,8 @@ def _gaya_tabel() -> TableStyle:
 
 def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list,
                  col_widths: list | None = None, ringkasan_tambahan: list | None = None,
-                 landscape_page: bool = False, extra_style: list | None = None) -> bytes:
+                 landscape_page: bool = False, extra_style: list | None = None,
+                 tenant_id: int | None = None) -> bytes:
     """`landscape_page`/`extra_style` (REVISI Rapikan PDF Rekap Periode
     Ringkasan): KHUSUS dipakai laporan yang kolomnya terlalu banyak untuk
     muat rapi di lebar A4 potret (Rekap Periode Ringkasan) -- default TETAP
@@ -301,7 +311,7 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
             for baris_ringkasan in ringkasan_tambahan:
                 elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
 
-    on_page = _header_footer_factory(judul, periode, dicetak_oleh)
+    on_page = _header_footer_factory(judul, periode, dicetak_oleh, tenant_id=tenant_id)
     doc.build(elemen, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
@@ -313,7 +323,7 @@ _SUBJUDUL_STYLE = ParagraphStyle("subjudul-laporan", fontName="Helvetica-Bold", 
 
 
 def _bangun_pdf_sections(judul: str, periode: str, dicetak_oleh: str, sections: list,
-                          ringkasan_tambahan: list | None = None) -> bytes:
+                          ringkasan_tambahan: list | None = None, tenant_id: int | None = None) -> bytes:
     """Sama seperti _bangun_pdf(), tapi mendukung LEBIH DARI SATU tabel
     dalam satu PDF (masing-masing didahului sub-judul) -- dipakai halaman
     yang PDF cetak-langsungnya perlu menampilkan lebih dari satu tabel data
@@ -345,7 +355,7 @@ def _bangun_pdf_sections(judul: str, periode: str, dicetak_oleh: str, sections: 
         for baris_ringkasan in ringkasan_tambahan:
             elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
 
-    on_page = _header_footer_factory(judul, periode, dicetak_oleh)
+    on_page = _header_footer_factory(judul, periode, dicetak_oleh, tenant_id=tenant_id)
     doc.build(elemen, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
@@ -568,7 +578,8 @@ def buat_slip_gaji_pdf(slip: dict) -> bytes:
         ringkasan_tambahan.append(f"Tanggal Dibayar: {slip['tanggal_dibayar']}")
     dicetak_oleh = slip.get("dibuat_oleh") or "-"
     return _bangun_pdf("Slip Gaji", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_SLIP_GAJI, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_SLIP_GAJI, ringkasan_tambahan=ringkasan_tambahan,
+                        tenant_id=slip.get("tenant_id"))
 
 
 def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
@@ -632,7 +643,7 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
             header, baris = _laporan_pengeluaran(tanggal_mulai, tanggal_selesai, dicetak_oleh, tenant_id=tenant_id)
 
     judul = _judul(jenis)
-    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths, ringkasan_tambahan)
+    konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths, ringkasan_tambahan, tenant_id=tenant_id)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"laporan_{jenis}_{stamp}.pdf"
     return konten, filename
@@ -824,7 +835,7 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     ringkasan_tambahan.append(f"<b>Total Keseluruhan: {_rupiah(total_keseluruhan)}</b>")
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
-                        ringkasan_tambahan=ringkasan_tambahan)
+                        ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # REVISI (Rapikan tampilan PDF Rekap Periode Ringkasan): laporan ini bisa
@@ -1006,7 +1017,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
 
     return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
                         col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan,
-                        landscape_page=True, extra_style=_gaya_kolom_ringkasan(header))
+                        landscape_page=True, extra_style=_gaya_kolom_ringkasan(header), tenant_id=tenant_id)
 
 
 # Lebar kolom Rekap Bulanan Barber (mm), total 194mm -- BEDA dari
@@ -1042,7 +1053,7 @@ def buat_pdf_rekap_bulanan(tahun: int, bulan: int, barber_id: int | None, diceta
     ringkasan_tambahan = [f"<b>Total Pendapatan: {_rupiah(total_pendapatan)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Rekap Bulanan Barber", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_REKAP_BULANAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Rekap Pengeluaran & Laporan Pemasukan/Pengeluaran (mm), total
@@ -1062,7 +1073,7 @@ def buat_pdf_rekap_pengeluaran(tahun: int | None, bulan: int | None, dicetak_ole
     ringkasan_tambahan = [f"<b>Total Pengeluaran: {_rupiah(total)}</b>"]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Rekap Pengeluaran", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PENGELUARAN_TAB_REKAP, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PENGELUARAN_TAB_REKAP, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Daftar Slip Gaji (mm), total 194mm -- Periode/Barber/
@@ -1085,7 +1096,7 @@ def buat_pdf_slip_gaji_list(tahun: int | None, bulan: int | None, barber_id: int
     ringkasan_tambahan = [f"<b>Total Diterima (semua baris): {_rupiah(total)}</b>"]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Daftar Slip Gaji", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_SLIP_GAJI_LIST, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_SLIP_GAJI_LIST, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int | None, bulan: int | None,
@@ -1108,7 +1119,7 @@ def buat_pdf_kasbon_list(barber_id: int | None, status: str | None, tahun: int |
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Kasbon", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_KASBON, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_KASBON, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Riwayat Komisi (Dasar) dalam PDF Laporan Komisi (mm), total
@@ -1155,7 +1166,7 @@ def buat_pdf_komisi_list(barber_id: int | None, jenis: str | None, tahun: int, b
          "col_widths": _LEBAR_KOLOM_KOMISI},
     ]
     return _bangun_pdf_sections("Laporan Komisi", periode, dicetak_oleh, sections,
-                                 ringkasan_tambahan=ringkasan_tambahan)
+                                 ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: int | None, bulan: int | None,
@@ -1181,7 +1192,7 @@ def buat_pdf_reimburse_list(barber_id: int | None, status: str | None, tahun: in
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Reimburse", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_REIMBURSE, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_REIMBURSE, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Izin & Cuti (mm), total 194mm -- Barber/Jenis/Mulai/
@@ -1209,7 +1220,7 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
         f"(Disetujui: {jumlah_disetujui}, Pending: {jumlah_pending}, Ditolak: {jumlah_ditolak})",
     ]
     return _bangun_pdf("Laporan Izin & Cuti", "Semua Periode", dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Pemasukan/Pengeluaran (mm), total 194mm -- Tanggal/
@@ -1233,7 +1244,7 @@ def buat_pdf_pemasukan_list(tahun: int, bulan: int, kategori: str | None, cari: 
     ringkasan_tambahan = [f"<b>Total Pemasukan: {_rupiah(total)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Laporan Pemasukan", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari: str | None, dicetak_oleh: str,
@@ -1250,7 +1261,7 @@ def buat_pdf_pengeluaran_list(tahun: int, bulan: int, kategori: str | None, cari
     ringkasan_tambahan = [f"<b>Total Pengeluaran: {_rupiah(total)}</b>"]
     periode = _periode_text(tahun, bulan)
     return _bangun_pdf("Laporan Pengeluaran", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_PEMASUKAN_PENGELUARAN_HALAMAN, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Uang Kas (mm), total 194mm -- Tanggal/Jenis/Jumlah/
@@ -1285,4 +1296,4 @@ def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: s
     ]
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Uang Kas", periode, dicetak_oleh, header, baris,
-                        col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan)
+                        col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
