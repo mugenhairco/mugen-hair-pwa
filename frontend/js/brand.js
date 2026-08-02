@@ -152,17 +152,22 @@ const MugenBrand = (() => {
 
   async function refresh() {
     try {
-      // FONDASI Multi-Tenant Phase 2.2: slug yang "diingat" (lihat
-      // state.js::getTenantSlug(), Phase 2.0) dikirim proaktif SEBAGAI
-      // PETUNJUK TAMPILAN SAJA -- aman dikirim kapan pun (termasuk SEBELUM
-      // login) karena endpoint ini publik, tidak mengandung/memverifikasi
-      // password apa pun, dan backend TETAP memprioritaskan tenant sesi
-      // login yang valid di atas parameter ini (lihat
-      // auth.resolve_tenant_untuk_branding()). Tanpa ini, pengguna yang
-      // belum login di perangkat yang sudah pernah dipakai tokonya sendiri
-      // akan melihat branding platform dulu sesaat, bukan langsung branding
-      // tokonya.
-      const slug = typeof MugenState !== "undefined" ? MugenState.getTenantSlug() : "";
+      // FONDASI Multi-Tenant Phase 2.2: dua sumber "tenant yang diketahui"
+      // untuk TAMPILAN branding SAJA (bukan otorisasi apa pun, endpoint ini
+      // publik) -- backend TETAP memprioritaskan tenant sesi login yang
+      // valid di atas keduanya (lihat auth.resolve_tenant_untuk_branding()):
+      // 1. `?tenant=<slug>` di URL saat ini -- mekanisme tenant discovery
+      //    yang SUDAH ADA sejak Phase 1 (dipakai /book dkk), dipakai di sini
+      //    supaya link khusus per-toko (mis. dibagikan admin ke staf toko
+      //    itu) langsung menampilkan branding tokonya sebelum sempat login.
+      // 2. Slug yang "diingat" dari login sebelumnya (state.js, Phase 2.0)
+      //    -- fallback kalau URL saat ini TIDAK membawa parameter tenant
+      //    sama sekali, supaya pengguna yang belum login di perangkat yang
+      //    sudah pernah dipakai tokonya sendiri tidak melihat branding
+      //    platform dulu sesaat.
+      const slugUrl = new URLSearchParams(location.search).get("tenant");
+      const slugDiingat = typeof MugenState !== "undefined" ? MugenState.getTenantSlug() : "";
+      const slug = slugUrl || slugDiingat;
       const path = "/api/tenant/branding" + (slug ? `?tenant=${encodeURIComponent(slug)}` : "");
       const data = await MugenApi.get(path);
       current = data;

@@ -251,7 +251,12 @@
 // Barbershop, Logo, Favicon (upload/hapus), Primary/Secondary Color,
 // Tagline, Alamat, WhatsApp, Email, Website dalam satu form, plus entri
 // baru di grup Setting pada Hak Akses Admin ("izin_setting_branding").
-const CACHE_NAME = "mugen-hair-shell-v46";
+// v46 -> v47: brand.js -- query string `?tenant=<slug>` di URL saat ini
+// (mekanisme tenant discovery yang sudah ada sejak Phase 1) sekarang juga
+// dipakai untuk menampilkan branding tenant SEBELUM login, ditemukan lewat
+// verifikasi E2E langsung (link khusus per-toko sebelumnya cuma didukung
+// endpoint publik lain seperti /book, belum di brand.js).
+const CACHE_NAME = "mugen-hair-shell-v47";
 const APP_SHELL = [
   "/",
   "/index.html",
