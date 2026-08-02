@@ -1101,18 +1101,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-field-row-total .book-field-value { font-weight: 700; font-size: 17px; color: var(--accent); }
 .book-selesai-detail hr { margin: 6px 0 10px; border-color: var(--border); }
 
-/* Review Booking (Booking Summary, step 6): satu blok per info + tombol
-   Change persis di bawah nilainya (lihat seksiUbah() di book_public.js). */
+/* Review Booking (Booking Summary, step 6): satu blok per info (label +
+   value SAJA -- link "< Back" tunggal ada di bawah halaman, lihat
+   .book-nav-row & renderFasePilihMetode() di book_public.js). */
 .book-summary-card { display: flex; flex-direction: column; }
 .book-summary-field { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .book-summary-field:last-of-type { border-bottom: none; }
 .book-summary-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; }
 .book-summary-value { font-weight: 600; margin-top: 2px; word-break: break-word; }
-.book-summary-change-btn {
-  background: transparent; border: none; box-shadow: none; min-height: auto;
-  color: var(--accent); font-size: 12px; font-weight: 600; padding: 6px 0 0; cursor: pointer;
-}
-.book-summary-change-btn:hover { text-decoration: underline; }
 
 /* ---- Animasi perpindahan step: SAMA PERSIS dengan transisi antar menu
    aplikasi -- reuse token mugen-content-fade-in (lihat definisinya di
