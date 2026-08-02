@@ -9,7 +9,6 @@ const PagePengaturan = (() => {
   // dari hak akses yang bisa diberikan (lihat backend/permissions.py),
   // jadi tetap Owner-murni. Pemetaan tab -> key izin Setting-nya:
   const TAB_KE_IZIN_SETTING = {
-    "Identitas Barbershop": "izin_setting_identitas",
     "Branding": "izin_setting_branding",
     "Tampilan": "izin_setting_tampilan",
     "User": "izin_setting_user",
@@ -33,7 +32,7 @@ const PagePengaturan = (() => {
     }
 
     const tabs = isOwner
-      ? ["Identitas Barbershop", "Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "User", "Backup", "Hak Akses Admin"]
+      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "User", "Backup", "Hak Akses Admin"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -60,8 +59,7 @@ const PagePengaturan = (() => {
 
     async function renderBody() {
       body.innerHTML = "";
-      if (activeTab === "Identitas Barbershop") await renderIdentitas();
-      else if (activeTab === "Branding") await renderBranding();
+      if (activeTab === "Branding") await renderBranding();
       else if (activeTab === "Tampilan") await renderTampilan();
       else if (activeTab === "Komisi") await renderKomisi();
       else if (activeTab === "Bonus Service") await renderBonusService();
@@ -127,96 +125,14 @@ const PagePengaturan = (() => {
       });
     }
 
-    // ================= TAB: IDENTITAS BARBERSHOP =================
-    // REVISI STRUKTUR WEBSITE CONTENT: Tagline/Deskripsi/Alamat/WhatsApp/
-    // Instagram/Website/Jam Operasional/Banner DIPINDAHKAN ke Booking >
-    // Website Content (lihat renderWebsiteContent() di booking.js) --
-    // BUKAN diduplikasi di sini. Tab ini sekarang hanya menyisakan
-    // identitas inti yang dipakai DI LUAR halaman publik /book juga
-    // (sidebar, halaman Login, judul tab browser): Nama Barbershop, Email,
-    // Logo.
-    async function renderIdentitas() {
-      const card = MugenUI.el("div", { class: "card" });
-      body.appendChild(card);
-      card.appendChild(MugenUI.el("h2", {}, "Identitas Barbershop"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Nama & logo di sini otomatis dipakai di halaman Login dan sidebar seluruh aplikasi. Konten halaman Website (Tagline, About, Alamat, Kontak, dst) dikelola di Booking → Website Content."));
-
-      let data;
-      try {
-        data = await MugenApi.get("/api/pengaturan/identitas");
-      } catch (e) {
-        card.appendChild(MugenUI.el("div", {}, e.message));
-        return;
-      }
-
-      const logoPreview = MugenUI.el("img", { class: "logo-preview", style: data.logo_url ? "" : "display:none;", alt: "Logo saat ini" });
-      if (data.logo_url) logoPreview.src = MUGEN_API_BASE + data.logo_url;
-      const inputLogo = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-      const btnUploadLogo = MugenUI.el("button", {}, "Upload Logo Baru");
-      const logoError = MugenUI.el("div", { class: "login-error" });
-
-      btnUploadLogo.addEventListener("click", async () => {
-        if (!inputLogo.files || !inputLogo.files[0]) { logoError.textContent = "Pilih file logo dulu (JPG/PNG/WEBP)."; return; }
-        logoError.textContent = "";
-        btnUploadLogo.disabled = true;
-        try {
-          const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/pengaturan/logo", inputLogo.files[0]), { message: "Mengunggah…" });
-          logoPreview.src = MUGEN_API_BASE + hasil.logo_url + "&t=" + Date.now();
-          logoPreview.style.display = "";
-          MugenUI.toast("Logo berhasil diganti.", "success");
-          MugenBrand.refresh();
-        } catch (e) {
-          logoError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        } finally {
-          btnUploadLogo.disabled = false;
-        }
-      });
-
-      card.appendChild(MugenUI.el("label", {}, "Logo (JPG/PNG/WEBP)"));
-      card.appendChild(logoPreview);
-      card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [inputLogo, btnUploadLogo]));
-      card.appendChild(logoError);
-
-      const inputNama = MugenUI.el("input", { type: "text", value: data.nama_barbershop || "" });
-      const inputEmail = MugenUI.el("input", { type: "text", value: data.email || "" });
-      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Identitas");
-      const formError = MugenUI.el("div", { class: "login-error" });
-
-      card.appendChild(MugenUI.el("label", {}, "Nama Barbershop"));
-      card.appendChild(inputNama);
-      card.appendChild(MugenUI.el("label", {}, "Email"));
-      card.appendChild(inputEmail);
-      card.appendChild(formError);
-      card.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
-
-      btnSimpan.addEventListener("click", async () => {
-        formError.textContent = "";
-        if (!inputNama.value.trim()) { formError.textContent = "Nama Barbershop tidak boleh kosong."; return; }
-        btnSimpan.disabled = true;
-        try {
-          await MugenUI.withLoading(() => MugenApi.put("/api/pengaturan/identitas", {
-            nama_barbershop: inputNama.value.trim(),
-            email: inputEmail.value.trim(),
-          }), { message: "Menyimpan…" });
-          MugenUI.toast("Identitas barbershop disimpan.", "success");
-          MugenBrand.refresh();
-        } catch (e) {
-          formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        } finally {
-          btnSimpan.disabled = false;
-        }
-      });
-    }
-
     // ================= TAB: BRANDING (Phase 2.2: Tenant & Platform Branding) =================
     // Satu tempat untuk seluruh identitas visual toko yang dipakai APLIKASI
     // (bukan halaman publik /book, yang tetap dikelola terpisah di Booking >
     // Website Content -- lihat pengaturan_identitas.py/website_content.py
-    // untuk kenapa TIDAK diduplikasi). Nama Barbershop/Email/Logo di sini
-    // adalah field YANG SAMA dengan tab Identitas Barbershop (satu sumber
-    // data, sengaja ditampilkan lagi di sini untuk kenyamanan Owner --
-    // menyimpan di salah satu tab langsung terlihat efeknya di tab lain).
+    // untuk kenapa TIDAK diduplikasi). SATU-SATUNYA sumber data untuk Nama
+    // Barbershop/Email/Logo (tab "Identitas Barbershop" yang dulu terpisah
+    // sudah DIHAPUS -- BOOKING UI/UX #1 -- semua fieldnya adalah subset dari
+    // tab ini, tidak ada data yang hilang).
     async function renderBranding() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
@@ -1374,7 +1290,6 @@ const PagePengaturan = (() => {
           ["izin_cuti_karyawan", "Kelola Izin & Cuti"],
         ]},
         { judul: "Setting (akses tab)", keys: [
-          ["izin_setting_identitas", "Identitas Barbershop"],
           ["izin_setting_branding", "Branding"],
           ["izin_setting_tampilan", "Tampilan"],
           ["izin_setting_user", "User"],
