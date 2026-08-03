@@ -77,3 +77,25 @@ def test_export_import_tenant_scoped_terhadap_postgres_sungguhan():
     assert "SUBPROCESS_OK" in proc.stdout, (
         f"stdout:\n{proc.stdout}\n\nstderr:\n{proc.stderr}"
     )
+
+
+def test_tables_tidak_mengandung_karakter_pemicu_placeholder_psycopg2():
+    """Regresi bug produksi (Phase 3): db_compat._translate() menerjemahkan
+    SETIAP tanda tanya literal di _TABLES (postgres_schema.py) -- termasuk
+    yang ada di dalam komentar SQL "--" -- jadi placeholder posisi
+    Postgres, dan psycopg2 ikut mencari pola placeholder itu di SELURUH
+    teks query (termasuk komentar) saat parameter diberikan. Kalau salah
+    satu jebakan ini kena, create_all() gagal saat runtime dengan
+    "IndexError: tuple index out of range" -- BUKAN error sintaks SQL, jadi
+    TIDAK PERNAH tertangkap py_compile/linter, hanya kelihatan saat
+    benar-benar dieksekusi lewat koneksi PostgreSQL sungguhan (lihat test
+    di atas). Test statis ini (TIDAK butuh Postgres sungguhan, selalu
+    jalan) mendeteksi dua jebakan itu lebih awal & lebih cepat."""
+    import sys
+
+    sys.path.insert(0, APP_DIR)
+    import postgres_schema
+
+    tables = postgres_schema._TABLES
+    assert "?" not in tables, "Tanda tanya literal di _TABLES akan diterjemahkan jadi placeholder Postgres."
+    assert "%s" not in tables, "'%s' literal di _TABLES akan disalahartikan psycopg2 sebagai placeholder posisi."

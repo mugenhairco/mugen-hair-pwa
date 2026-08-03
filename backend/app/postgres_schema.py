@@ -86,6 +86,23 @@ DEFAULT_BONUS_TIERS = [{"target": 60, "bonus": 150000}]
 # bonus_service_migrasi.py untuk versi SQLite (nama yang sama persis).
 _SEED_ACUAN_NAMA = ("Dry Cut", "Cut & Wash")
 
+# PENTING -- dua jebakan db_compat._translate() yang WAJIB dihindari di
+# SETIAP baris teks (termasuk komentar SQL "--") di dalam string _TABLES
+# di bawah ini, karena create_all() mengeksekusinya lewat conn.execute()
+# yang sama seperti query berparameter biasa:
+# 1. Karakter tanda tanya literal -- _translate() tidak mengerti komentar
+#    SQL, jadi tanda tanya APA PUN di luar string ber-kutip-satu akan ikut
+#    diterjemahkan jadi placeholder posisi Postgres.
+# 2. Text yang kebetulan berbentuk sama seperti placeholder posisi
+#    Postgres (huruf 's' tepat setelah tanda persen) -- psycopg2 membaca
+#    SELURUH teks query mencari pola itu untuk substitusi parameter, TIDAK
+#    peduli itu ada di dalam komentar SQL atau tidak.
+# KEDUANYA membuat create_all() gagal saat runtime dengan "IndexError:
+# tuple index out of range" (parameter kosong tidak cukup untuk mengisi
+# placeholder yang ditemukan) -- BUKAN error sintaks SQL, jadi py_compile/
+# linter TIDAK PERNAH menangkapnya, hanya kelihatan saat benar-benar
+# dieksekusi lewat koneksi PostgreSQL sungguhan. Baris tenant_subscriptions
+# di bawah ini pernah kena KEDUA jebakan ini sekaligus (lihat riwayat git).
 _TABLES = """
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -570,12 +587,11 @@ CREATE TABLE IF NOT EXISTS superadmin_audit_log (
     detail                TEXT
 );
 
--- FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle) -- SAMA
--- PERSIS dengan subscription_db.py (jalur SQLite), lihat file itu untuk
--- penjelasan arsitektur lengkap (terpisah TOTAL dari tenants.status).
+-- FONDASI Multi-Tenant Phase 3: tenant_id tanpa foreign key ke tenants
+-- (lihat komentar Python di atas definisi _TABLES untuk penjelasan lengkap).
 CREATE TABLE IF NOT EXISTS tenant_subscriptions (
     id           SERIAL PRIMARY KEY,
-    tenant_id    INTEGER NOT NULL UNIQUE REFERENCES tenants(id),
+    tenant_id    INTEGER NOT NULL UNIQUE,
     package      TEXT NOT NULL DEFAULT 'free',
     status       TEXT NOT NULL DEFAULT 'trial',
     trial_start  TEXT,
@@ -588,7 +604,7 @@ CREATE TABLE IF NOT EXISTS tenant_subscriptions (
 
 CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     id                      SERIAL PRIMARY KEY,
-    tenant_id               INTEGER NOT NULL REFERENCES tenants(id),
+    tenant_id               INTEGER NOT NULL,
     provider                TEXT NOT NULL,
     virtual_account_number  TEXT NOT NULL,
     payment_status          TEXT NOT NULL DEFAULT 'pending',
