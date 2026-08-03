@@ -889,10 +889,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-hero-media { width: 100%; }
 .book-hero-media img, .book-hero-media video { width: 100%; max-height: 360px; object-fit: cover; display: block; }
 .book-hero-content { padding: 24px 20px 32px; }
-/* REVISI Branding Rivoir: logo diperbesar (56px -> 84px, kira-kira 3x
-   font-size judul di bawahnya) supaya proporsional & seimbang dengan judul
-   toko -- sebelumnya terasa terlalu kecil dibanding h1 28px/800. */
-.book-hero-logo { width: 84px; height: 84px; object-fit: contain; border-radius: 16px; margin: 0 auto 14px; display: block; }
+/* REVISI Branding Rivoir: logo diperbesar lagi (56px -> 84px -> 120px) --
+   84px masih terasa kecil dibanding hero image/judul di atasnya, sekarang
+   dibuat jadi elemen brand yang jelas terlihat begitu halaman dibuka. */
+.book-hero-logo { width: 120px; height: 120px; object-fit: contain; border-radius: 20px; margin: 0 auto 14px; display: block; box-shadow: var(--shadow-card); }
 .book-hero-content h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
 .book-hero-tagline { color: var(--text-dim); font-size: 15px; font-style: italic; margin-bottom: 20px; }
 
@@ -952,10 +952,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 /* Header ringkas di dalam wizard (logo/nama + link kembali ke landing page)
    -- Hero besar sudah ditampilkan di landing page, tidak diulang di sini. */
 .book-wizard-header { text-align: center; margin-bottom: 16px; }
-.book-wizard-brand { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 16px; }
-.book-wizard-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; }
+.book-wizard-brand { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 18px; }
+.book-wizard-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; }
 
-.book-barber-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+.book-barber-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .book-barber-card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
   box-shadow: var(--shadow-card); min-height: auto;
@@ -977,11 +977,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .website-gallery-item-aksi { display: flex; gap: 4px; margin-top: 6px; }
 .website-gallery-item-aksi button { min-height: 32px; padding: 4px 8px; font-size: 12px; flex: 1; }
 .book-barber-foto {
-  width: 64px; height: 64px; border-radius: 50%; object-fit: cover; margin: 0 auto 8px; display: block;
+  width: 92px; height: 92px; border-radius: 50%; object-fit: cover; margin: 0 auto 10px; display: block;
+  border: 2px solid var(--border);
 }
 .book-barber-foto-kosong {
-  width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 8px; display: flex; align-items: center;
-  justify-content: center; background: var(--bg-input); color: var(--text-dim); font-size: 22px; font-weight: 700;
+  width: 92px; height: 92px; border-radius: 50%; margin: 0 auto 10px; display: flex; align-items: center;
+  justify-content: center; background: var(--bg-input); color: var(--text-dim); font-size: 30px; font-weight: 700;
+  border: 2px solid var(--border);
 }
 .book-barber-nama { font-weight: 700; }
 .book-barber-status { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
