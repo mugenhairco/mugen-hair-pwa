@@ -29,6 +29,21 @@ const PageSuperadmin = (() => {
     ubah_config_subscription: "Ubah Konfigurasi Subscription",
     buat_pembayaran_subscription: "Catat Pembayaran Subscription",
     ubah_status_pembayaran_subscription: "Ubah Status Pembayaran Subscription",
+    // FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans).
+    ubah_paket_billing: "Ubah Paket Billing",
+    tambah_fitur_billing: "Tambah Fitur Billing",
+    ubah_fitur_billing: "Ubah Fitur Billing",
+    hapus_fitur_billing: "Hapus Fitur Billing",
+    ubah_fitur_paket_billing: "Ubah Fitur Paket Billing",
+  };
+
+  const LABEL_STATUS_INVOICE = {
+    pending: "Menunggu Pembayaran", paid: "Berhasil", denied: "Ditolak",
+    cancelled: "Dibatalkan", expired: "Kedaluwarsa",
+  };
+  const BADGE_STATUS_INVOICE = {
+    pending: "badge-warning", paid: "badge-success", denied: "badge-danger",
+    cancelled: "badge-danger", expired: "badge-danger",
   };
 
   const LABEL_PACKAGE_SUBS = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
@@ -52,11 +67,19 @@ const PageSuperadmin = (() => {
     const listCard = MugenUI.el("div", { class: "card" });
     const subsConfigCard = MugenUI.el("div", { class: "card" });
     const subsManagerCard = MugenUI.el("div", { class: "card" });
+    // FONDASI Multi-Tenant Phase 4: tiga kartu baru, TIDAK mengubah kartu
+    // Phase 3 di atas sama sekali -- lihat billing_db.py/routers/billing.py.
+    const billingPackagesCard = MugenUI.el("div", { class: "card" });
+    const billingFeaturesCard = MugenUI.el("div", { class: "card" });
+    const billingInvoicesCard = MugenUI.el("div", { class: "card" });
     const auditCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     root.appendChild(formCard);
     root.appendChild(subsConfigCard);
     root.appendChild(subsManagerCard);
+    root.appendChild(billingPackagesCard);
+    root.appendChild(billingFeaturesCard);
+    root.appendChild(billingInvoicesCard);
     root.appendChild(auditCard);
 
     // ---------------------------------------------------------------
@@ -394,7 +417,272 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 5. RIWAYAT AKSI (Audit Log)
+    // 5. PAKET BILLING (FONDASI Multi-Tenant Phase 4) -- konfigurasi
+    // nama/harga/durasi/status/urutan/deskripsi/limit pemakaian + fitur
+    // checkbox untuk EMPAT kode paket yang SAMA dengan Kelola Subscription
+    // Toko di atas (free/basic/pro/enterprise, lihat billing_db.py) --
+    // BUKAN sistem paket baru.
+    // ---------------------------------------------------------------
+    billingPackagesCard.appendChild(MugenUI.el("h2", {}, "Paket Billing (Harga, Limit, Fitur)"));
+    billingPackagesCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Atribut EMPAT paket subscription yang sama dipakai Kelola Subscription Toko di atas -- kosongkan limit untuk tidak dibatasi."));
+    const billingPackagesListBody = MugenUI.el("div");
+    const billingPackageEditBody = MugenUI.el("div", { style: "margin-top:16px;" },
+      MugenUI.el("div", { class: "subtitle" }, "Klik \"Edit\" pada salah satu paket di atas untuk mengubah."));
+    billingPackagesCard.appendChild(billingPackagesListBody);
+    billingPackagesCard.appendChild(billingPackageEditBody);
+
+    let _katalogFiturCache = [];
+
+    async function loadBillingPackages() {
+      billingPackagesListBody.innerHTML = "Memuat...";
+      try {
+        const paket = await MugenApi.get("/api/superadmin/billing/packages");
+        billingPackagesListBody.innerHTML = "";
+        billingPackagesListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama", label: "Nama" },
+            { key: "kode", label: "Kode" },
+            { key: "harga", label: "Harga", format: (v) => MugenUI.formatRupiah(v) },
+            { key: "durasi_hari", label: "Durasi (hari)" },
+            { key: "urutan", label: "Urutan" },
+            { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? " badge-success" : " badge-danger") }, v ? "Aktif" : "Nonaktif") },
+            {
+              key: "aksi", label: "Aksi", format: (_, p) => {
+                const btn = MugenUI.el("button", {}, "Edit");
+                btn.addEventListener("click", () => renderBillingPackageEdit(p));
+                return btn;
+              },
+            },
+          ],
+          paket,
+          { emptyText: "Belum ada paket." },
+        ));
+      } catch (e) {
+        billingPackagesListBody.innerHTML = "";
+        billingPackagesListBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    async function renderBillingPackageEdit(paket) {
+      billingPackageEditBody.innerHTML = "Memuat...";
+      let fiturTertandai;
+      try {
+        [_katalogFiturCache, fiturTertandai] = await Promise.all([
+          MugenApi.get("/api/superadmin/billing/features"),
+          MugenApi.get(`/api/superadmin/billing/packages/${paket.id}/features`),
+        ]);
+      } catch (e) {
+        billingPackageEditBody.innerHTML = "";
+        billingPackageEditBody.appendChild(MugenUI.el("div", {}, e.message));
+        return;
+      }
+      const idFiturTertandai = new Set(fiturTertandai.map((f) => f.id));
+
+      billingPackageEditBody.innerHTML = "";
+      billingPackageEditBody.appendChild(MugenUI.el("h3", {}, `Edit Paket: ${paket.nama} (${paket.kode})`));
+
+      const inputNama = MugenUI.el("input", { type: "text", value: paket.nama });
+      const inputHarga = MugenUI.el("input", { type: "number", min: "0", value: String(paket.harga) });
+      const inputDurasi = MugenUI.el("input", { type: "number", min: "1", value: String(paket.durasi_hari) });
+      const inputUrutan = MugenUI.el("input", { type: "number", min: "0", value: String(paket.urutan) });
+      const inputAktif = MugenUI.el("input", { type: "checkbox" });
+      inputAktif.checked = !!paket.aktif;
+      const inputDeskripsi = MugenUI.el("textarea", { rows: "2" }, paket.deskripsi || "");
+
+      billingPackageEditBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nama"), inputNama]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Harga (Rp)"), inputHarga]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Durasi (hari)"), inputDurasi]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Urutan"), inputUrutan]),
+      ]));
+      billingPackageEditBody.appendChild(MugenUI.el("label", { style: "margin-top:10px;display:flex;align-items:center;gap:6px;" }, [inputAktif, "Aktif (tampil di katalog Owner)"]));
+      billingPackageEditBody.appendChild(MugenUI.el("label", {}, "Deskripsi"));
+      billingPackageEditBody.appendChild(inputDeskripsi);
+
+      // --- Limit pemakaian ---
+      billingPackageEditBody.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Limit Pemakaian (kosongkan = tidak dibatasi)"));
+      const LIMIT_FIELDS = [
+        ["max_barber", "Maks. Barber"], ["max_user", "Maks. User"], ["max_layanan", "Maks. Layanan"],
+        ["max_booking", "Maks. Booking/bulan"], ["max_cabang", "Maks. Cabang"],
+      ];
+      const inputLimit = {};
+      const limitRow = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" });
+      for (const [key, label] of LIMIT_FIELDS) {
+        const input = MugenUI.el("input", { type: "number", min: "0", placeholder: "tidak dibatasi" });
+        if (paket[key] !== null && paket[key] !== undefined) input.value = String(paket[key]);
+        inputLimit[key] = input;
+        limitRow.appendChild(MugenUI.el("div", {}, [MugenUI.el("label", {}, label), input]));
+      }
+      billingPackageEditBody.appendChild(limitRow);
+
+      // --- Fitur checkbox ---
+      billingPackageEditBody.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Fitur Paket Ini"));
+      const fiturWrap = MugenUI.el("div", { style: "display:flex;flex-wrap:wrap;gap:12px;margin-bottom:8px;" });
+      const checkboxFitur = [];
+      if (!_katalogFiturCache.length) {
+        fiturWrap.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada fitur di katalog -- tambah dulu di bagian Katalog Fitur di bawah."));
+      }
+      for (const f of _katalogFiturCache) {
+        const cb = MugenUI.el("input", { type: "checkbox" });
+        cb.checked = idFiturTertandai.has(f.id);
+        cb.dataset.featureId = String(f.id);
+        checkboxFitur.push(cb);
+        fiturWrap.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;" }, [cb, f.nama]));
+      }
+      billingPackageEditBody.appendChild(fiturWrap);
+
+      const errEdit = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Paket");
+      billingPackageEditBody.appendChild(errEdit);
+      billingPackageEditBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
+
+      btnSimpan.addEventListener("click", async () => {
+        errEdit.textContent = "";
+        const body = {
+          nama: inputNama.value.trim(),
+          harga: parseInt(inputHarga.value, 10) || 0,
+          durasi_hari: parseInt(inputDurasi.value, 10) || 1,
+          urutan: parseInt(inputUrutan.value, 10) || 0,
+          aktif: inputAktif.checked,
+          deskripsi: inputDeskripsi.value,
+        };
+        for (const [key] of LIMIT_FIELDS) {
+          const v = inputLimit[key].value;
+          body[key] = v === "" ? null : parseInt(v, 10);
+        }
+        const featureIds = checkboxFitur.filter((cb) => cb.checked).map((cb) => parseInt(cb.dataset.featureId, 10));
+        try {
+          await MugenUI.withLoading(async () => {
+            await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}`, body);
+            await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}/features`, { feature_ids: featureIds });
+          }, { message: "Menyimpan…" });
+          MugenUI.toast("Paket billing disimpan.", "success");
+          loadAuditLog();
+          await loadBillingPackages();
+          billingPackageEditBody.innerHTML = "";
+          billingPackageEditBody.appendChild(MugenUI.el("div", { class: "subtitle" }, "Klik \"Edit\" pada salah satu paket di atas untuk mengubah."));
+        } catch (e) {
+          errEdit.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+    }
+
+    // ---------------------------------------------------------------
+    // 6. KATALOG FITUR (FONDASI Multi-Tenant Phase 4) -- murni katalog/
+    // toggle, TIDAK menggerbang fungsi kode apa pun (lihat billing_db.py).
+    // ---------------------------------------------------------------
+    billingFeaturesCard.appendChild(MugenUI.el("h2", {}, "Katalog Fitur"));
+    billingFeaturesCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Tambah/ubah/nonaktifkan/hapus fitur bebas -- centang penugasannya ke paket lewat \"Edit\" paket di atas."));
+    const billingFeaturesListBody = MugenUI.el("div");
+    billingFeaturesCard.appendChild(billingFeaturesListBody);
+
+    async function loadBillingFeatures() {
+      billingFeaturesListBody.innerHTML = "Memuat...";
+      try {
+        const fitur = await MugenApi.get("/api/superadmin/billing/features");
+        billingFeaturesListBody.innerHTML = "";
+        billingFeaturesListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama", label: "Nama" },
+            { key: "kode", label: "Kode" },
+            { key: "deskripsi", label: "Deskripsi", format: (v) => v || "-" },
+            { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? " badge-success" : " badge-danger") }, v ? "Aktif" : "Nonaktif") },
+            {
+              key: "aksi", label: "Aksi", format: (_, f) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnToggle = MugenUI.el("button", {}, f.aktif ? "Nonaktifkan" : "Aktifkan");
+                btnToggle.addEventListener("click", async () => {
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/billing/features/${f.id}`,
+                      { aktif: !f.aktif }), { message: "Menyimpan…" });
+                    MugenUI.toast("Fitur diperbarui.", "success");
+                    loadAuditLog(); loadBillingFeatures();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnToggle);
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus fitur "${f.nama}" dari katalog? Fitur ini otomatis lepas dari SEMUA paket yang sudah mencentangnya.`)) return;
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/billing/features/${f.id}`), { message: "Menghapus…" });
+                    MugenUI.toast("Fitur dihapus.", "success");
+                    loadAuditLog(); loadBillingFeatures();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          fitur,
+          { emptyText: "Belum ada fitur di katalog." },
+        ));
+      } catch (e) {
+        billingFeaturesListBody.innerHTML = "";
+        billingFeaturesListBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    const inputFiturKode = MugenUI.el("input", { type: "text", placeholder: "kode_fitur (mis. whatsapp_reminder)" });
+    const inputFiturNama = MugenUI.el("input", { type: "text", placeholder: "Nama Fitur (mis. WhatsApp Reminder)" });
+    const inputFiturDeskripsi = MugenUI.el("input", { type: "text", placeholder: "Deskripsi (opsional)" });
+    const btnTambahFitur = MugenUI.el("button", { class: "btn-primary" }, "Tambah Fitur");
+    const errFitur = MugenUI.el("div", { class: "login-error" });
+    billingFeaturesCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Tambah Fitur Baru"));
+    billingFeaturesCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
+      inputFiturKode, inputFiturNama, inputFiturDeskripsi, btnTambahFitur,
+    ]));
+    billingFeaturesCard.appendChild(errFitur);
+
+    btnTambahFitur.addEventListener("click", async () => {
+      errFitur.textContent = "";
+      try {
+        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/billing/features", {
+          kode: inputFiturKode.value.trim(), nama: inputFiturNama.value.trim(), deskripsi: inputFiturDeskripsi.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Fitur ditambahkan.", "success");
+        inputFiturKode.value = ""; inputFiturNama.value = ""; inputFiturDeskripsi.value = "";
+        loadAuditLog(); loadBillingFeatures();
+      } catch (e) {
+        errFitur.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 7. MONITORING PEMBAYARAN SEMUA TOKO (FONDASI Multi-Tenant Phase 4)
+    // ---------------------------------------------------------------
+    billingInvoicesCard.appendChild(MugenUI.el("h2", {}, "Monitoring Pembayaran (Semua Toko)"));
+    const billingInvoicesBody = MugenUI.el("div");
+    billingInvoicesCard.appendChild(billingInvoicesBody);
+
+    async function loadBillingInvoices() {
+      billingInvoicesBody.innerHTML = "Memuat...";
+      try {
+        const invoices = await MugenApi.get("/api/superadmin/billing/invoices");
+        billingInvoicesBody.innerHTML = "";
+        billingInvoicesBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nomor_invoice", label: "No. Invoice" },
+            { key: "nama_barbershop", label: "Toko", format: (v, i) => v || i.tenant_slug || "-" },
+            { key: "package_nama", label: "Paket" },
+            { key: "jumlah", label: "Jumlah", format: (v) => MugenUI.formatRupiah(v) },
+            { key: "metode_pembayaran", label: "Metode", format: (v) => v || "-" },
+            { key: "status", label: "Status", format: (v) => MugenUI.el("span", { class: "badge " + (BADGE_STATUS_INVOICE[v] || "") }, LABEL_STATUS_INVOICE[v] || v) },
+            { key: "created_at", label: "Tanggal", format: formatWaktu },
+          ],
+          invoices,
+          { emptyText: "Belum ada invoice." },
+        ));
+      } catch (e) {
+        billingInvoicesBody.innerHTML = "";
+        billingInvoicesBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // 8. RIWAYAT AKSI (Audit Log)
     // ---------------------------------------------------------------
     auditCard.appendChild(MugenUI.el("h2", {}, "Riwayat Aksi"));
     const auditBody = MugenUI.el("div");
@@ -424,6 +712,9 @@ const PageSuperadmin = (() => {
 
     await loadTenantList();
     await loadSubsConfig();
+    await loadBillingPackages();
+    await loadBillingFeatures();
+    await loadBillingInvoices();
     await loadAuditLog();
   }
 

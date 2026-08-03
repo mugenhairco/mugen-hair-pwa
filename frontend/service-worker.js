@@ -296,6 +296,11 @@
 // dinamis, riwayat invoice), nav.js/router.js menu & rute baru "#/billing"
 // (khusus role admin, TERPISAH dari tab Subscription read-only Phase 3
 // yang tidak diubah).
+// v58 -> v59: FONDASI Multi-Tenant Phase 4 lanjutan -- superadmin.js
+// tiga kartu baru (Paket Billing: harga/durasi/urutan/status/deskripsi/
+// limit + checkbox fitur per paket, Katalog Fitur: tambah/nonaktifkan/
+// hapus, Monitoring Pembayaran: invoice seluruh toko), kartu Phase 3 yang
+// sudah ada TIDAK diubah.
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -311,7 +316,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "58";
+const ASSET_VERSION = "59";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
