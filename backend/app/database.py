@@ -1845,7 +1845,16 @@ def get_mutasi_produk(mutasi_id: int):
 def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
                             tahun: int = None, bulan: int = None, tenant_id: int = None) -> list:
     """Urutan: tanggal terbaru dulu. Ikut menyertakan nama_produk supaya UI tidak
-    perlu join sendiri. `tenant_id`: lihat catatan di get_mutasi_produk()."""
+    perlu join sendiri. `tenant_id`: lihat catatan di get_mutasi_produk().
+
+    REVISI Branding Rivoir (Produk PDF): tiap baris juga disertai
+    `sisa_stok` -- SISA STOK PRODUK ITU SAAT INI (sama seperti kolom "Sisa
+    Stok" di get_produk_list(), BUKAN saldo berjalan setelah transaksi itu
+    -- kolom "Sisa Stok" di seluruh halaman Produk sudah konsisten berarti
+    stok terkini, jadi baris riwayat mutasi mengikuti arti yang sama supaya
+    tidak ada dua makna "Sisa Stok" berbeda di halaman yang sama). Dihitung
+    ulang PER produk_id (di-cache di sini) supaya produk dengan banyak
+    baris mutasi tidak memicu query berulang."""
     q = """SELECT pm.*, p.nama AS nama_produk FROM produk_mutasi pm
            JOIN produk p ON p.id = pm.produk_id WHERE 1=1"""
     params = []
@@ -1861,8 +1870,13 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
         q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY pm.tanggal DESC, pm.id DESC"
     with get_conn() as conn:
-        rows = conn.execute(q, params).fetchall()
-        return [dict(r) for r in rows]
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    stok_cache = {}
+    for r in rows:
+        if r["produk_id"] not in stok_cache:
+            stok_cache[r["produk_id"]] = get_stok_produk(r["produk_id"])
+        r["sisa_stok"] = stok_cache[r["produk_id"]]
+    return rows
 
 
 def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tenant_id: int = None) -> int:

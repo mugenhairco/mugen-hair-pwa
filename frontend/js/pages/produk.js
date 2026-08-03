@@ -13,6 +13,20 @@ const PageProduk = (() => {
     return new Date().toISOString().slice(0, 10);
   }
 
+  // Cetak PDF: PDF ditampilkan dulu lewat MugenPdfPreview (Zoom/Nomor
+  // Halaman/Download PDF/Print), TIDAK langsung mengunduh -- pola yang
+  // sama dipakai rekap.js (duplikasi kecil per-modul, konsisten dengan
+  // gaya codebase). `computeOptions` dipanggil ULANG tiap klik supaya
+  // filter yang aktif SAAT diklik yang dipakai.
+  function tombolCetakPdf(computeOptions) {
+    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    btn.addEventListener("click", () => {
+      const { generate, filename } = computeOptions();
+      MugenPdfPreview.open({ generate, filename });
+    });
+    return btn;
+  }
+
   async function render(root) {
     const today = new Date();
     root.innerHTML = "";
@@ -271,6 +285,25 @@ const PageProduk = (() => {
     riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
       [selProdukFilter, selTipeFilter, selBulanFilter, selTahunFilter]));
 
+    // Cetak PDF: filter yang dipakai SAMA PERSIS dengan yang sedang aktif
+    // di layar (produk/tipe/tahun/bulan) -- lihat laporan_pdf.py
+    // buat_pdf_mutasi_produk(), sumber datanya SAMA (db.get_mutasi_produk_list())
+    // dengan tabel di bawah supaya isi PDF selalu identik dengan tabel.
+    riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [
+      tombolCetakPdf(() => {
+        const qs = new URLSearchParams({ tahun: selTahunFilter.value, bulan: selBulanFilter.value });
+        if (selProdukFilter.value) qs.set("produk_id", selProdukFilter.value);
+        if (selTipeFilter.value) qs.set("tipe", selTipeFilter.value);
+        const namaProduk = selProdukFilter.value
+          ? (produkList.find((p) => String(p.id) === selProdukFilter.value) || {}).nama || "Produk"
+          : "Semua Produk";
+        return {
+          generate: () => MugenApi.fetchBlob(`/api/produk/mutasi/pdf?${qs}`),
+          filename: MugenUI.namaFileAman(`Riwayat Mutasi Produk ${namaProduk} ${MugenUI.namaBulan(Number(selBulanFilter.value))} ${selTahunFilter.value}.pdf`),
+        };
+      }),
+    ]));
+
     const riwayatBody = MugenUI.el("div");
     riwayatCard.appendChild(riwayatBody);
 
@@ -326,6 +359,7 @@ const PageProduk = (() => {
               }, MUTASI_TIPE_LABEL[v] || v),
             },
             { key: "jumlah", label: "Jumlah" },
+            { key: "sisa_stok", label: "Sisa Stok" },
             { key: "catatan", label: "Catatan" },
             {
               key: "aksi", label: "Aksi", format: (_, m) => {
