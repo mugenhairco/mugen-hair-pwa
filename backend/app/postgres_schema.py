@@ -613,6 +613,28 @@ CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     paid_at                 TEXT,
     created_at              TEXT NOT NULL
 );
+
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- billing_db.py (jalur SQLite) untuk penjelasan lengkap. `kode` TANPA
+-- foreign key ke mana pun (dicocokkan ke tenant_subscriptions.package di
+-- kode aplikasi, bukan di database), sama seperti tenant_id di tabel lain.
+CREATE TABLE IF NOT EXISTS subscription_packages (
+    id           SERIAL PRIMARY KEY,
+    kode         TEXT NOT NULL UNIQUE,
+    nama         TEXT NOT NULL,
+    harga        INTEGER NOT NULL DEFAULT 0,
+    durasi_hari  INTEGER NOT NULL DEFAULT 30,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    urutan       INTEGER NOT NULL DEFAULT 0,
+    deskripsi    TEXT,
+    max_barber   INTEGER,
+    max_user     INTEGER,
+    max_layanan  INTEGER,
+    max_booking  INTEGER,
+    max_cabang   INTEGER,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
 """
 
 
@@ -692,6 +714,7 @@ def create_all():
         _normalisasi_urutan_service_kolisi(conn)
         _normalisasi_urutan_barber_kolisi(conn)
         _migrasi_subscription(conn)
+        _migrasi_billing_packages(conn)
 
 
 def _migrasi_subscription(conn):
@@ -734,6 +757,29 @@ def _migrasi_subscription(conn):
             "(tenant_id, package, status, trial_start, trial_end, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (tenant_id, package, status, trial_start, trial_end, now, now),
+        )
+
+
+def _migrasi_billing_packages(conn):
+    """FONDASI Multi-Tenant Phase 4 -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan billing_db.py::seed_default_packages() (jalur SQLite) --
+    diduplikasi di sini dengan alasan yang sama seperti _migrasi_subscription()
+    di atas (modul ini TIDAK mengimpor billing_db.py). Idempotent -- baris
+    yang SUDAH ADA (Super Admin mungkin sudah mengubah harga/nama/dst lewat
+    Dashboard) TIDAK PERNAH ditimpa."""
+    urutan_default = {"free": 1, "basic": 2, "pro": 3, "enterprise": 4}
+    nama_default = {"free": "Free", "basic": "Basic", "pro": "Pro", "enterprise": "Enterprise"}
+    harga_default = {"free": 0, "basic": 99000, "pro": 249000, "enterprise": 599000}
+    now = datetime.now().isoformat(timespec="seconds")
+    existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_packages").fetchall()}
+    for kode in sorted(urutan_default, key=lambda k: urutan_default[k]):
+        if kode in existing:
+            continue
+        conn.execute(
+            "INSERT INTO subscription_packages "
+            "(kode, nama, harga, durasi_hari, aktif, urutan, deskripsi, created_at, updated_at) "
+            "VALUES (?, ?, ?, 30, 1, ?, '', ?, ?)",
+            (kode, nama_default[kode], harga_default[kode], urutan_default[kode], now, now),
         )
 
 
