@@ -256,7 +256,15 @@
 // dipakai untuk menampilkan branding tenant SEBELUM login, ditemukan lewat
 // verifikasi E2E langsung (link khusus per-toko sebelumnya cuma didukung
 // endpoint publik lain seperti /book, belum di brand.js).
-const CACHE_NAME = "mugen-hair-shell-v55";
+// v55 -> v56: FONDASI Multi-Tenant Phase 3 (Subscription & Tenant
+// Lifecycle) -- subscription.js baru (cache akses_diblokir app-wide),
+// pages/subscription_blocked.js baru (halaman status saat Expired/
+// Suspended/Cancelled), router.js/app.js/login.js mengalihkan tenant yang
+// diblokir, pengaturan.js tab baru "Subscription" (Owner read-only),
+// superadmin.js kelola package/status/trial/grace/pembayaran VA per toko,
+// book_public.js menampilkan "Booking Tidak Tersedia" saat diblokir,
+// style.css badge-warning baru.
+const CACHE_NAME = "mugen-hair-shell-v56";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -270,6 +278,7 @@ const APP_SHELL = [
   "/js/ui.js",
   "/js/pdf_preview.js",
   "/js/brand.js",
+  "/js/subscription.js",
   "/js/nav.js",
   "/js/booking_notif.js",
   "/js/izin_notif.js",
@@ -293,6 +302,7 @@ const APP_SHELL = [
   "/js/pages/booking.js",
   "/js/pages/book_public.js",
   "/js/pages/superadmin.js",
+  "/js/pages/subscription_blocked.js",
   // Perbaikan Alur Cetak PDF: PDF.js (build lokal, BUKAN dari CDN, supaya
   // Preview PDF tetap bisa dipakai offline -- lihat pdfjs_boot.js).
   "/vendor/pdfjs/pdf.min.js",
