@@ -995,6 +995,15 @@ const PageBooking = (() => {
       } catch (e) { errorHero.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
+    // --- Choose Barber (foto barber tampil di step "Pilih Barber" wizard
+    // booking publik) -- foto dikelola di Setting > Karyawan supaya satu
+    // tempat yang sama dipakai untuk data barber di seluruh aplikasi. ---
+    const barberCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(barberCard);
+    barberCard.appendChild(MugenUI.el("h2", {}, "Choose Barber (Foto Barber)"));
+    barberCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Foto tiap barber yang tampil di step \"Pilih Barber\" halaman booking publik dikelola di Setting → Karyawan (tombol \"Foto\" pada tiap baris barber)."));
+
     // --- About ---
     const aboutCard = MugenUI.el("div", { class: "card" });
     body.appendChild(aboutCard);
