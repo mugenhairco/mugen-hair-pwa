@@ -889,10 +889,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-hero-media { width: 100%; }
 .book-hero-media img, .book-hero-media video { width: 100%; max-height: 360px; object-fit: cover; display: block; }
 .book-hero-content { padding: 24px 20px 32px; }
-/* REVISI Branding Rivoir: logo diperbesar lagi (56px -> 84px -> 120px) --
-   84px masih terasa kecil dibanding hero image/judul di atasnya, sekarang
-   dibuat jadi elemen brand yang jelas terlihat begitu halaman dibuka. */
-.book-hero-logo { width: 120px; height: 120px; object-fit: contain; border-radius: 20px; margin: 0 auto 14px; display: block; box-shadow: var(--shadow-card); }
+/* REVISI: logo TIDAK BOLEH terlihat berada di dalam kotak/card apa pun --
+   file logo sendiri sudah PNG transparan (alpha channel), jadi TIDAK ADA
+   background-color/border/border-radius/box-shadow/padding di sini yang
+   bisa menimbulkan efek "logo di dalam kotak". Tinggi logo dibuat
+   proporsional dengan nama tenant di bawahnya (h1 28px/800) TANPA
+   dipaksa persegi (width: auto) supaya logo non-persegi (mis. wordmark)
+   tidak menyusut aneh akibat object-fit: contain di dalam kotak persegi. */
+.book-hero-logo { height: 96px; width: auto; max-width: 260px; object-fit: contain; margin: 0 auto 14px; display: block; }
 .book-hero-content h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
 .book-hero-tagline { color: var(--text-dim); font-size: 15px; font-style: italic; margin-bottom: 20px; }
 
@@ -921,8 +925,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 /* Book Appointment -- SATU-SATUNYA tombol booking di halaman, di bawah
    Opening Hours & di atas Connect With Us. Tombolnya SELALU tampil apa pun
-   isi Heading/Subheading (lihat book_public.js). */
-.book-cta { text-align: center; background: var(--bg-card); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+   isi Heading/Subheading (lihat book_public.js). REVISI: section ini TIDAK
+   BOLEH punya panel/kotak sendiri (sebelumnya background var(--bg-card) +
+   border-top/bottom) -- tombol harus tampil langsung di atas background
+   halaman, hanya .btn-primary sendiri (permukaan tombolnya) yang boleh
+   berwarna, bukan section pembungkusnya. */
+.book-cta { text-align: center; }
 .book-cta-btn { width: 100%; max-width: 320px; margin-top: 16px; }
 
 /* Connect With Us -- section KECIL sengaja (heading lebih kecil dari
@@ -953,7 +961,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    -- Hero besar sudah ditampilkan di landing page, tidak diulang di sini. */
 .book-wizard-header { text-align: center; margin-bottom: 16px; }
 .book-wizard-brand { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 18px; }
-.book-wizard-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; }
+/* REVISI: samakan dengan .book-hero-logo -- logo TANPA kotak/frame, tinggi
+   proporsional dengan teks nama tenant di sebelahnya (18px/700). */
+.book-wizard-logo { height: 36px; width: auto; max-width: 120px; object-fit: contain; }
 
 .book-barber-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .book-barber-card {
