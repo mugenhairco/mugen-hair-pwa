@@ -62,6 +62,18 @@ _KUNCI_GRACE_HARI = "subscription_grace_hari"
 
 
 def init_subscription_db():
+    # BUGFIX Phase 3: tenant_id SENGAJA TANPA "FOREIGN KEY ... REFERENCES
+    # tenants(id)" -- SAMA seperti SEMUA kolom tenant_id lain di proyek ini
+    # (tenant_migrasi.py hanya "ALTER TABLE ... ADD COLUMN tenant_id
+    # INTEGER" polos, tidak ada satu pun FK ke tabel tenants) -- isolasi
+    # tenant SELALU ditegakkan di lapisan APLIKASI (WHERE tenant_id = ?),
+    # tidak pernah lewat foreign key constraint. Versi awal Phase 3 sempat
+    # menambahkan FK ke sini, dan meniru pola yang SAMA di postgres_schema.py
+    # menyebabkan deploy produksi GAGAL TOTAL (psycopg2.errors.
+    # InvalidForeignKey -- tabel `tenants` produksi ternyata tidak punya
+    # unique constraint yang bisa dipakai FK reference) -- dihapus dari
+    # KEDUA jalur (SQLite di sini, Postgres di postgres_schema.py) supaya
+    # perilakunya konsisten.
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tenant_subscriptions (
@@ -74,8 +86,7 @@ def init_subscription_db():
                 grace_start  TEXT,
                 grace_end    TEXT,
                 created_at   TEXT NOT NULL,
-                updated_at   TEXT NOT NULL,
-                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+                updated_at   TEXT NOT NULL
             )
         """)
         conn.execute("""
@@ -88,8 +99,7 @@ def init_subscription_db():
                 amount                  INTEGER NOT NULL,
                 expired_at              TEXT,
                 paid_at                 TEXT,
-                created_at              TEXT NOT NULL,
-                FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+                created_at              TEXT NOT NULL
             )
         """)
 
