@@ -20,6 +20,8 @@ SQLite (lihat README bagian Migrasi PostgreSQL untuk pemetaan lengkapnya).
 """
 
 import json
+import os
+from datetime import datetime, timedelta
 
 import db_compat
 
@@ -567,6 +569,34 @@ CREATE TABLE IF NOT EXISTS superadmin_audit_log (
     tenant_slug           TEXT,
     detail                TEXT
 );
+
+-- FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle) -- SAMA
+-- PERSIS dengan subscription_db.py (jalur SQLite), lihat file itu untuk
+-- penjelasan arsitektur lengkap (terpisah TOTAL dari tenants.status).
+CREATE TABLE IF NOT EXISTS tenant_subscriptions (
+    id           SERIAL PRIMARY KEY,
+    tenant_id    INTEGER NOT NULL UNIQUE REFERENCES tenants(id),
+    package      TEXT NOT NULL DEFAULT 'free',
+    status       TEXT NOT NULL DEFAULT 'trial',
+    trial_start  TEXT,
+    trial_end    TEXT,
+    grace_start  TEXT,
+    grace_end    TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
+    id                      SERIAL PRIMARY KEY,
+    tenant_id               INTEGER NOT NULL REFERENCES tenants(id),
+    provider                TEXT NOT NULL,
+    virtual_account_number  TEXT NOT NULL,
+    payment_status          TEXT NOT NULL DEFAULT 'pending',
+    amount                  INTEGER NOT NULL,
+    expired_at              TEXT,
+    paid_at                 TEXT,
+    created_at              TEXT NOT NULL
+);
 """
 
 
@@ -645,6 +675,50 @@ def create_all():
 
         _normalisasi_urutan_service_kolisi(conn)
         _normalisasi_urutan_barber_kolisi(conn)
+        _migrasi_subscription(conn)
+
+
+def _migrasi_subscription(conn):
+    """FONDASI Multi-Tenant Phase 3 -- versi PostgreSQL, SAMA PERSIS
+    logikanya dengan subscription_migrasi.py::migrasi_subscription() (jalur
+    SQLite, lihat docstring modul itu untuk penjelasan lengkap termasuk
+    kenapa TIDAK ADA status permanen yang di-hardcode untuk tenant mana
+    pun) -- diduplikasi di sini murni supaya modul ini TIDAK perlu import
+    subscription_db.py (lihat catatan _kunci_tenant() di atas untuk alasan
+    yang sama). SETIAP tenant yang belum punya baris tenant_subscriptions
+    (termasuk tenant_default_id di atas) dapat baris default -- idempotent,
+    baris yang SUDAH ADA tidak pernah ditimpa."""
+    package = os.environ.get("SUBSCRIPTION_SEED_DEFAULT_PACKAGE", "free").strip().lower()
+    if package not in {"free", "basic", "pro", "enterprise"}:
+        package = "free"
+    status = os.environ.get("SUBSCRIPTION_SEED_DEFAULT_STATUS", "active").strip().lower()
+    if status not in {"trial", "active", "grace_period", "expired", "suspended", "cancelled"}:
+        status = "active"
+    now = datetime.now().isoformat(timespec="seconds")
+    trial_start = trial_end = None
+    if status == "trial":
+        # Kunci platform-wide TANPA prefix tenant (sama seperti
+        # subscription_db.py::get_platform_config()/_KUNCI_TRIAL_HARI) --
+        # kalau Super Admin belum pernah mengatur lewat PUT
+        # /api/superadmin/subscriptions/config, pakai default pabrik 14
+        # hari (subscription_db.DEFAULT_TRIAL_HARI di jalur SQLite).
+        row = conn.execute("SELECT value FROM settings WHERE key = 'subscription_trial_hari'").fetchone()
+        trial_hari = int(row["value"]) if row else 14
+        trial_start = now
+        trial_end = (datetime.now() + timedelta(days=trial_hari)).isoformat(timespec="seconds")
+    tenant_ids = [r["id"] for r in conn.execute("SELECT id FROM tenants").fetchall()]
+    for tenant_id in tenant_ids:
+        existing = conn.execute(
+            "SELECT id FROM tenant_subscriptions WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+        if existing is not None:
+            continue
+        conn.execute(
+            "INSERT INTO tenant_subscriptions "
+            "(tenant_id, package, status, trial_start, trial_end, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (tenant_id, package, status, trial_start, trial_end, now, now),
+        )
 
 
 def _normalisasi_urutan_service_kolisi(conn):

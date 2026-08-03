@@ -76,7 +76,8 @@ import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
 import superadmin_audit_db
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding
+from subscription_migrasi import migrasi_subscription
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -202,6 +203,8 @@ app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
 app.include_router(superadmin.router)
 app.include_router(branding.router)
+app.include_router(subscription.router)
+app.include_router(subscription.superadmin_router)
 
 
 @app.on_event("startup")
@@ -284,6 +287,7 @@ def on_startup():
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
+        migrasi_subscription()  # FONDASI Multi-Tenant Phase 3: tabel tenant_subscriptions + backfill (idempotent, WAJIB setelah migrasi_tenant())
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
