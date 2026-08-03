@@ -290,6 +290,12 @@
 //    menampilkan banner "Muat Ulang" (pwa_update.js, TIDAK PERNAH reload
 //    otomatis tanpa aksi user -- aplikasi ini penuh form, reload paksa
 //    berisiko menghilangkan data yang belum tersimpan).
+// v57 -> v58: FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) --
+// pages/billing.js baru (halaman Owner: paket & status langganan, katalog
+// paket upgrade/downgrade/perpanjang, checkout Snap Midtrans dimuat
+// dinamis, riwayat invoice), nav.js/router.js menu & rute baru "#/billing"
+// (khusus role admin, TERPISAH dari tab Subscription read-only Phase 3
+// yang tidak diubah).
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -305,7 +311,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "57";
+const ASSET_VERSION = "58";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -357,6 +363,7 @@ const _APP_SHELL_BER_VERSI = [
   "/js/pages/reimburse.js",
   "/js/pages/izin_cuti.js",
   "/js/pages/pengaturan.js",
+  "/js/pages/billing.js",
   "/js/pages/produk.js",
   "/js/pages/booking.js",
   "/js/pages/book_public.js",

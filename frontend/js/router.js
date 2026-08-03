@@ -242,6 +242,15 @@ const MugenRouter = (() => {
         return;
       }
       PagePengeluaran.render(content);
+    } else if (hash.startsWith("#/billing")) {
+      // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (require_admin di
+      // BACKEND juga -- routers/billing.py -- 'staff' TIDAK ikut, sama
+      // seperti tab Subscription Phase 3 di pengaturan.js).
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      PageBilling.render(content);
     } else if (hash.startsWith("#/pengaturan")) {
       // Tahap 10 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
       // boleh MASUK menu Setting (tab yang tampil difilter di dalam

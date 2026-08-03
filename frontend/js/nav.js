@@ -51,6 +51,11 @@ const MugenNav = (() => {
       { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"] },
     ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
+    // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di
+    // routers/billing.py) -- 'staff' TIDAK ikut, sama seperti tab
+    // Subscription Phase 3 (pages/pengaturan.js), yang TIDAK diubah/
+    // digabung ke sini sama sekali.
+    { hash: "#/billing", label: "Billing", roles: ["admin"] },
     { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
   ];
   const MENU_SEGERA = [];
