@@ -524,6 +524,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .badge-danger { background: rgba(220,38,38,0.10); color: var(--danger); }
 /* REVISI: badge tipe transaksi Produk "Tester" (beda dari Restock/Jual) */
 .badge-tester { background: rgba(37,99,235,0.10); color: var(--info); }
+/* FONDASI Multi-Tenant Phase 3: badge status Subscription "Grace Period"
+   (Setting > Subscription, Dashboard Super Admin) -- beda dari
+   badge-success (Active/Trial) & badge-danger (Expired/Suspended/
+   Cancelled), warna warning/amber supaya jelas "butuh perhatian". */
+.badge-warning { background: rgba(234,88,12,0.10); color: var(--warning); }
 /* REVISI UI/UX: tint badge di atas dihitung dari hex tema TERANG -- di atas
    kartu gelap kombinasi itu nyaris tidak terlihat, jadi tint-nya diganti
    versi lebih terang & sedikit lebih pekat supaya tetap kontras. */

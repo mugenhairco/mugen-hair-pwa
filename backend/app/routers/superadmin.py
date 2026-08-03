@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import auth_db
+import subscription_db
 import superadmin_audit_db
 import tenant_db
 from auth import require_superadmin
@@ -80,6 +81,11 @@ def buat_tenant(body: BuatTenantBody, user: dict = Depends(require_superadmin)):
         # ulang untuk toko yang sama; kasus ini cukup jarang untuk tidak
         # butuh rollback otomatis).
         raise HTTPException(status_code=422, detail=f"Toko dibuat, tapi akun Owner gagal: {e}")
+    # FONDASI Multi-Tenant Phase 3: tenant baru langsung dapat baris
+    # tenant_subscriptions default (sama seperti backfill migrasi untuk
+    # tenant lama, lihat subscription_migrasi.py) -- supaya TIDAK ADA tenant
+    # yang pernah "tidak dikenal" sistem subscription sejak awal dibuat.
+    subscription_db.create_default_subscription(tenant_id)
     superadmin_audit_db.catat(user["username"], "buat_tenant", tenant_id=tenant_id, tenant_slug=body.slug,
                                detail=f"nama_barbershop={body.nama_barbershop!r}, owner_username={body.owner_username!r}")
     return _tenant_dengan_ringkasan(tenant_db.get_tenant(tenant_id))

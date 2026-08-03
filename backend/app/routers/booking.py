@@ -29,10 +29,28 @@ from pydantic import BaseModel
 import booking_db
 import database as db
 import r2_storage
+import subscription_db
 from auth import require_owner_or_staff, require_barber, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
+
+
+def resolve_tenant_publik_aktif(tenant_id: int = Depends(resolve_tenant_publik)) -> int:
+    """FONDASI Multi-Tenant Phase 3: pembungkus resolve_tenant_publik (auth.py,
+    TIDAK disentuh sama sekali di sini) -- dipakai SEMUA endpoint publik yang
+    benar-benar menyediakan/menerima data booking (barbers, foto, services,
+    pengaturan, slot, qris, buat booking), TIDAK dipakai endpoint
+    /subscription-status sendiri (tujuannya justru melaporkan status
+    tersebut, jadi harus tetap bisa diakses walau statusnya diblokir).
+    Tenant TANPA baris subscription (lihat subscription_db.akses_diblokir())
+    dianggap TIDAK diblokir -- fail-open, sama seperti dashboard internal."""
+    if subscription_db.akses_diblokir(tenant_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Halaman booking toko ini sedang tidak tersedia. Hubungi pemilik toko untuk informasi lebih lanjut.",
+        )
+    return tenant_id
 
 
 def _parse_service_ids(service_ids: str | None) -> list:
@@ -51,8 +69,20 @@ def _parse_service_ids(service_ids: str | None) -> list:
 # =====================================================================
 
 
+@public_router.get("/subscription-status")
+def public_subscription_status(tenant_id: int = Depends(resolve_tenant_publik)):
+    """FONDASI Multi-Tenant Phase 3: dipanggil book_public.js PALING AWAL
+    (sebelum endpoint publik lain mana pun) supaya halaman booking bisa
+    langsung menampilkan halaman "tidak tersedia" tanpa sempat memanggil
+    /barbers, /services, /pengaturan, dst yang JUSTRU akan ditolak 403 oleh
+    resolve_tenant_publik_aktif() kalau statusnya diblokir. SENGAJA memakai
+    resolve_tenant_publik POLOS (bukan varian _aktif) -- endpoint ini
+    JUSTRU yang melaporkan status itu, jadi harus selalu bisa diakses."""
+    return {"tersedia": not subscription_db.akses_diblokir(tenant_id)}
+
+
 @public_router.get("/barbers")
-def public_barbers(tenant_id: int = Depends(resolve_tenant_publik)):
+def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """Semua barber AKTIF ditampilkan (barber non-aktif/dihapus Owner tidak
     relevan untuk booking baru), diurutkan sesuai `urutan` yang diatur
     Owner. Status 'libur hari ini' / 'cuti' disertakan untuk tampilan awal
@@ -72,7 +102,7 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik)):
 
 
 @public_router.get("/barber-foto/{barber_id}")
-def public_barber_foto(barber_id: int, tenant_id: int = Depends(resolve_tenant_publik)):
+def public_barber_foto(barber_id: int, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     barber = db.get_barber(barber_id)
     if barber is None or barber.get("tenant_id") != tenant_id:
         raise HTTPException(status_code=404, detail="Foto belum diatur.")
@@ -83,7 +113,7 @@ def public_barber_foto(barber_id: int, tenant_id: int = Depends(resolve_tenant_p
 
 
 @public_router.get("/services")
-def public_services(tenant_id: int = Depends(resolve_tenant_publik)):
+def public_services(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     services = sorted(db.get_services(hanya_aktif=True, tenant_id=tenant_id), key=lambda s: (s.get("urutan") or 0, s["nama"]))
     return [
         {"id": s["id"], "nama": s["nama"], "harga": s["harga"], "durasi_menit": s.get("durasi_menit") or 60}
@@ -92,7 +122,7 @@ def public_services(tenant_id: int = Depends(resolve_tenant_publik)):
 
 
 @public_router.get("/pengaturan")
-def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik)):
+def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """Semua yang dibutuhkan wizard /book: jam operasional, hari operasional,
     interval slot, maksimal hari booking ke depan, teks header/footer/pesan,
     metode pembayaran aktif + label/instruksi + info QRIS/transfer bank
@@ -115,7 +145,7 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik)):
 
 @public_router.get("/slot")
 def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
-                 tenant_id: int = Depends(resolve_tenant_publik)):
+                 tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     try:
         return booking_db.hitung_slot(barber_id, tanggal, _parse_service_ids(service_ids), tenant_id=tenant_id)
     except ValueError as e:
@@ -123,7 +153,7 @@ def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
 
 
 @public_router.get("/qris")
-def public_qris(v: str | None = None, tenant_id: int = Depends(resolve_tenant_publik)):
+def public_qris(v: str | None = None, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     data, content_type = booking_db.get_qris_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="QRIS belum diatur.")
@@ -142,7 +172,7 @@ class BookingCreateBody(BaseModel):
 
 
 @public_router.post("")
-def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik)):
+def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     try:
         return booking_db.buat_booking(
             barber_id=body.barber_id, tanggal=body.tanggal, jam_mulai=body.jam_mulai,

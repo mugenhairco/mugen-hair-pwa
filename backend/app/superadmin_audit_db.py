@@ -16,7 +16,15 @@ from datetime import datetime
 
 from database import get_conn
 
-AKSI_VALID = {"buat_tenant", "aktifkan_tenant", "nonaktifkan_tenant"}
+AKSI_VALID = {
+    "buat_tenant", "aktifkan_tenant", "nonaktifkan_tenant",
+    # FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle) --
+    # lihat routers/subscription.py, subscription_db.py.
+    "ubah_package_subscription", "ubah_status_subscription",
+    "ubah_trial_subscription", "ubah_grace_subscription",
+    "ubah_config_subscription", "buat_pembayaran_subscription",
+    "ubah_status_pembayaran_subscription",
+}
 
 
 def init_superadmin_audit_db():
