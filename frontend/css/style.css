@@ -578,6 +578,28 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 .toast.success { border-color: var(--success); color: var(--success); }
 
+/* pwa_update.js -- banner "versi baru tersedia", SENGAJA berbeda dari
+   .toast (yang otomatis hilang 3.5 detik) karena banner ini PERSISTEN
+   sampai user menekan tombolnya sendiri -- reload paksa/otomatis bisa
+   menghilangkan data form yang belum disimpan, jadi user harus yang
+   memutuskan kapan aman untuk memuat ulang. */
+.pwa-update-banner {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: 999; display: flex; align-items: center; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 12px 16px; border-radius: 12px; color: var(--text);
+  box-shadow: var(--shadow-elevated);
+  animation: mugen-fade-slide-in 200ms ease-out both;
+  max-width: calc(100vw - 32px);
+  font-size: 14px;
+}
+.pwa-update-banner .pwa-update-btn {
+  background: var(--accent); color: #fff; border: none; min-height: auto;
+  box-shadow: none; padding: 8px 14px; border-radius: 10px; font-weight: 600;
+  white-space: nowrap;
+}
+.pwa-update-banner .pwa-update-btn:hover { background: var(--accent-hover); }
+
 /* Overlay loading global -- dipakai MugenUI.withLoading() (lihat ui.js)
    setiap kali tombol yang memanggil server ditekan, atau filter
    bulan/tahun (dropdown) diganti. Ditaruh di tengah aplikasi, di atas

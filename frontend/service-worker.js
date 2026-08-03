@@ -264,11 +264,69 @@
 // superadmin.js kelola package/status/trial/grace/pembayaran VA per toko,
 // book_public.js menampilkan "Booking Tidak Tersedia" saat diblokir,
 // style.css badge-warning baru.
-const CACHE_NAME = "mugen-hair-shell-v56";
-const APP_SHELL = [
-  "/",
-  "/index.html",
-  "/manifest.json",
+// v56 -> v57: PERBAIKAN MEKANISME CACHE & UPDATE PWA -- keluhan "harus
+// Hard Refresh/hapus cache manual tiap deploy baru" diperbaiki di EMPAT
+// lapisan sekaligus:
+// 1. install: precache SEKARANG fetch(url, {cache:"reload"}) satu per
+//    satu (bukan cache.addAll() polos) -- addAll() tidak menjamin bypass
+//    HTTP cache browser/CDN, jadi precache BISA SAJA diam-diam mengambil
+//    byte LAMA walau CACHE_NAME sudah berubah, kalau host menyajikan
+//    Cache-Control yang agresif untuk file statis.
+// 2. fetch: navigasi (buka halaman/reload, event.request.mode ===
+//    "navigate") sekarang NETWORK-FIRST (fallback ke cache index.html
+//    HANYA saat offline) -- sebelumnya cache-first PENUH, jadi index.html
+//    (dan referensi <script>/<link> ?v=... di dalamnya) bisa tersaji dari
+//    cache lama sampai proses update Service Worker BENAR-BENAR kelar,
+//    walau user sudah menekan reload biasa.
+// 3. APP_SHELL sekarang membawa query "?v=<versi>" (index.html memakai
+//    query yang SAMA persis untuk tiap <script src>/<link href>) --
+//    cache-busting di lapisan URL, independen total dari Service Worker
+//    (tetap benar walau SW gagal register/browser tidak mendukungnya).
+// 4. app.js: registrasi sekarang pakai updateViaCache:"none" (paksa
+//    browser SELALU network-check byte service-worker.js INI SENDIRI,
+//    tidak pernah dari HTTP cache -- ini file paling kritis untuk selalu
+//    fresh, karena SELURUH mekanisme deteksi update bergantung padanya),
+//    mengecek update tiap 1 jam + tiap tab kembali terlihat, dan
+//    menampilkan banner "Muat Ulang" (pwa_update.js, TIDAK PERNAH reload
+//    otomatis tanpa aksi user -- aplikasi ini penuh form, reload paksa
+//    berisiko menghilangkan data yang belum tersimpan).
+//
+// CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
+// FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
+// yang membuat browser mendeteksi "ada Service Worker baru" adalah
+// PERBEDAAN BYTE pada file service-worker.js YANG TERDAFTAR itu sendiri
+// (algoritma update Service Worker: fetch ulang, bandingkan byte, kalau
+// beda baru dianggap "installing"). Kalau angka versi diimpor dari file
+// lain, mengubah file LAIN itu TIDAK mengubah SATU BYTE PUN di
+// service-worker.js -- browser tidak akan pernah menganggap ada update,
+// MEKANISME INI JADI TIDAK BERFUNGSI SAMA SEKALI. Karena itu: SETIAP
+// deploy yang mengubah APP_SHELL atau css/style.css WAJIB menaikkan angka
+// DI SINI (ASSET_VERSION) DAN query "?v=..." di index.html ke angka yang
+// SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
+// selama proyek ini tidak memakai proses build (lihat README "tidak ada
+// proses build").
+const ASSET_VERSION = "57";
+const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
+
+// Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
+// permintaan navigasi browser yang SEBENARNYA (buka/reload halaman) selalu
+// ke URL polos tanpa query itu, jadi kunci cache-nya harus cocok persis
+// supaya fallback offline (lihat event "fetch" di bawah) bisa menemukannya.
+// Aset lain (JS/CSS/PDF.js) dapat query ?v= yang SAMA persis dengan yang
+// dipakai index.html, supaya kunci cache Service Worker cocok dengan URL
+// yang benar-benar diminta halaman.
+// vendor/pdfjs/*: TIDAK diberi query ?v= -- pdfjs_boot.js meng-import
+// keduanya lewat path absolut TANPA query (import statement statis + nilai
+// literal workerSrc, lihat file itu, sengaja "TIDAK dimodifikasi" karena
+// build resmi pdfjs-dist apa adanya) -- kalau kedua entri ini dikasih query
+// di sini tapi TIDAK di pdfjs_boot.js, kuncinya tidak akan pernah cocok
+// dengan permintaan sungguhan (selalu network, bukan cache -- tidak fatal,
+// tapi menghilangkan manfaat offline-nya).
+const _APP_SHELL_TANPA_VERSI = [
+  "/", "/index.html", "/manifest.json",
+  "/vendor/pdfjs/pdf.min.js", "/vendor/pdfjs/pdf.worker.min.js",
+];
+const _APP_SHELL_BER_VERSI = [
   "/config.js",
   "/css/style.css",
   "/js/pdfjs_boot.js",
@@ -279,6 +337,7 @@ const APP_SHELL = [
   "/js/pdf_preview.js",
   "/js/brand.js",
   "/js/subscription.js",
+  "/js/pwa_update.js",
   "/js/nav.js",
   "/js/booking_notif.js",
   "/js/izin_notif.js",
@@ -303,11 +362,12 @@ const APP_SHELL = [
   "/js/pages/book_public.js",
   "/js/pages/superadmin.js",
   "/js/pages/subscription_blocked.js",
-  // Perbaikan Alur Cetak PDF: PDF.js (build lokal, BUKAN dari CDN, supaya
-  // Preview PDF tetap bisa dipakai offline -- lihat pdfjs_boot.js).
-  "/vendor/pdfjs/pdf.min.js",
-  "/vendor/pdfjs/pdf.worker.min.js",
-  // TAHAP 13: ikon PWA (sebelumnya file-file ini belum ada sama sekali)
+];
+const APP_SHELL = [
+  ..._APP_SHELL_TANPA_VERSI,
+  ..._APP_SHELL_BER_VERSI.map((p) => `${p}?v=${ASSET_VERSION}`),
+  // TAHAP 13: ikon PWA -- TIDAK diberi query ?v= (jarang berubah, dan
+  // manifest.json/index.html <link> merujuknya TANPA query juga).
   "/icons/favicon.ico",
   "/icons/icon-72.png",
   "/icons/icon-96.png",
@@ -324,7 +384,19 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        APP_SHELL.map((url) =>
+          // {cache:"reload"} MEMAKSA fetch ini bypass HTTP cache browser
+          // sepenuhnya (selalu network sungguhan) -- lihat catatan #2 di
+          // changelog v56->v57 atas kenapa cache.addAll() polos tidak cukup.
+          fetch(url, { cache: "reload" }).then((response) => {
+            if (!response.ok) throw new Error(`Precache gagal untuk ${url}: HTTP ${response.status}`);
+            return cache.put(url, response);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
@@ -347,6 +419,20 @@ self.addEventListener("fetch", (event) => {
     return; // biarkan lewat langsung ke network, tidak disentuh service worker
   }
 
+  // Navigasi (buka halaman/reload) -- NETWORK-FIRST, fallback ke cache
+  // index.html HANYA saat offline/network gagal. Lihat catatan #3 di
+  // changelog v56->v57 atas kenapa ini WAJIB diubah dari cache-first.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match("/index.html"))
+    );
+    return;
+  }
+
+  // Aset lain (JS/CSS/PDF.js/ikon, termasuk yang membawa query ?v=...) --
+  // cache-first seperti sebelumnya, aman karena URL-nya sendiri sudah unik
+  // per versi (lihat APP_SHELL di atas) dan CACHE_NAME baru otomatis
+  // membuat bucket cache baru saat Service Worker versi baru aktif.
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
