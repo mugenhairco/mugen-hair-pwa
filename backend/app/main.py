@@ -79,7 +79,7 @@ import superadmin_audit_db
 from subscription_migrasi import migrasi_subscription
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
 import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook
 
 app = FastAPI(title="MUGEN Hair Co. API")
 
@@ -209,6 +209,7 @@ app.include_router(subscription.router)
 app.include_router(subscription.superadmin_router)
 app.include_router(billing.router)
 app.include_router(billing.superadmin_router)
+app.include_router(billing_webhook.public_router)
 
 
 @app.on_event("startup")

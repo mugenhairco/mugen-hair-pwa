@@ -111,3 +111,27 @@ def list_invoices(tenant_id: int = None) -> list:
             params.append(tenant_id)
         q += " ORDER BY id DESC"
         return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+
+def update_invoice(invoice_id: int, **fields) -> dict:
+    """Dipanggil billing_webhook.py::proses_notifikasi() SETELAH signature/
+    order_id/amount lolos validasi -- `order_id`/`nomor_invoice`/`tenant_id`/
+    `package_kode`/`package_nama`/`jumlah`/`durasi_hari` (snapshot checkout)
+    SENGAJA TIDAK BISA diubah lewat sini, hanya kolom yang memang berubah
+    seiring status pembayaran."""
+    if get_invoice(invoice_id) is None:
+        raise ValueError("Invoice tidak ditemukan.")
+    kolom_diizinkan = {
+        "status", "metode_pembayaran", "payment_type", "snap_token", "snap_redirect_url",
+        "periode_mulai", "periode_selesai", "raw_notification", "paid_at",
+    }
+    aman = {k: v for k, v in fields.items() if k in kolom_diizinkan}
+    if not aman:
+        return get_invoice(invoice_id)
+    if "status" in aman and aman["status"] not in STATUS_VALID:
+        raise ValueError(f"Status invoice tidak dikenal: {aman['status']}")
+    set_clause = ", ".join(f"{k} = ?" for k in aman)
+    params = list(aman.values()) + [_now(), invoice_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE subscription_invoices SET {set_clause}, updated_at = ? WHERE id = ?", params)
+    return get_invoice(invoice_id)
