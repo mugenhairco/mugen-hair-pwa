@@ -613,6 +613,76 @@ CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     paid_at                 TEXT,
     created_at              TEXT NOT NULL
 );
+
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- billing_db.py (jalur SQLite) untuk penjelasan lengkap. `kode` TANPA
+-- foreign key ke mana pun (dicocokkan ke tenant_subscriptions.package di
+-- kode aplikasi, bukan di database), sama seperti tenant_id di tabel lain.
+CREATE TABLE IF NOT EXISTS subscription_packages (
+    id           SERIAL PRIMARY KEY,
+    kode         TEXT NOT NULL UNIQUE,
+    nama         TEXT NOT NULL,
+    harga        INTEGER NOT NULL DEFAULT 0,
+    durasi_hari  INTEGER NOT NULL DEFAULT 30,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    urutan       INTEGER NOT NULL DEFAULT 0,
+    deskripsi    TEXT,
+    max_barber   INTEGER,
+    max_user     INTEGER,
+    max_layanan  INTEGER,
+    max_booking  INTEGER,
+    max_cabang   INTEGER,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS subscription_features (
+    id           SERIAL PRIMARY KEY,
+    kode         TEXT NOT NULL UNIQUE,
+    nama         TEXT NOT NULL,
+    deskripsi    TEXT,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    urutan       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- package_id/feature_id PAKAI foreign key (lihat catatan Python di
+-- billing_db.py::init_billing_db() -- kedua tabel di atas BARU dibuat di
+-- sini sendiri dengan PRIMARY KEY yang benar, beda dengan tabel `tenants`
+-- produksi lama yang jadi sumber insiden FK tenant_id di catatan lain).
+CREATE TABLE IF NOT EXISTS subscription_package_features (
+    id           SERIAL PRIMARY KEY,
+    package_id   INTEGER NOT NULL REFERENCES subscription_packages(id),
+    feature_id   INTEGER NOT NULL REFERENCES subscription_features(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    UNIQUE(package_id, feature_id)
+);
+
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap. tenant_id
+-- TANPA foreign key (pola sama seperti tabel lain di proyek ini).
+CREATE TABLE IF NOT EXISTS subscription_invoices (
+    id                  SERIAL PRIMARY KEY,
+    nomor_invoice       TEXT NOT NULL UNIQUE,
+    order_id            TEXT NOT NULL UNIQUE,
+    tenant_id           INTEGER NOT NULL,
+    package_kode        TEXT NOT NULL,
+    package_nama        TEXT NOT NULL,
+    jumlah              INTEGER NOT NULL,
+    durasi_hari         INTEGER NOT NULL,
+    metode_pembayaran   TEXT,
+    payment_type        TEXT,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    snap_token          TEXT,
+    snap_redirect_url   TEXT,
+    periode_mulai       TEXT,
+    periode_selesai     TEXT,
+    raw_notification    TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    paid_at             TEXT
+);
 """
 
 
@@ -692,6 +762,8 @@ def create_all():
         _normalisasi_urutan_service_kolisi(conn)
         _normalisasi_urutan_barber_kolisi(conn)
         _migrasi_subscription(conn)
+        _migrasi_billing_packages(conn)
+        _migrasi_billing_features(conn)
 
 
 def _migrasi_subscription(conn):
@@ -734,6 +806,55 @@ def _migrasi_subscription(conn):
             "(tenant_id, package, status, trial_start, trial_end, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (tenant_id, package, status, trial_start, trial_end, now, now),
+        )
+
+
+def _migrasi_billing_packages(conn):
+    """FONDASI Multi-Tenant Phase 4 -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan billing_db.py::seed_default_packages() (jalur SQLite) --
+    diduplikasi di sini dengan alasan yang sama seperti _migrasi_subscription()
+    di atas (modul ini TIDAK mengimpor billing_db.py). Idempotent -- baris
+    yang SUDAH ADA (Super Admin mungkin sudah mengubah harga/nama/dst lewat
+    Dashboard) TIDAK PERNAH ditimpa."""
+    urutan_default = {"free": 1, "basic": 2, "pro": 3, "enterprise": 4}
+    nama_default = {"free": "Free", "basic": "Basic", "pro": "Pro", "enterprise": "Enterprise"}
+    harga_default = {"free": 0, "basic": 99000, "pro": 249000, "enterprise": 599000}
+    now = datetime.now().isoformat(timespec="seconds")
+    existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_packages").fetchall()}
+    for kode in sorted(urutan_default, key=lambda k: urutan_default[k]):
+        if kode in existing:
+            continue
+        conn.execute(
+            "INSERT INTO subscription_packages "
+            "(kode, nama, harga, durasi_hari, aktif, urutan, deskripsi, created_at, updated_at) "
+            "VALUES (?, ?, ?, 30, 1, ?, '', ?, ?)",
+            (kode, nama_default[kode], harga_default[kode], urutan_default[kode], now, now),
+        )
+
+
+def _migrasi_billing_features(conn):
+    """FONDASI Multi-Tenant Phase 4 -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan billing_db.py::seed_default_features() (jalur SQLite) --
+    diduplikasi di sini dengan alasan yang sama seperti
+    _migrasi_billing_packages() di atas. Idempotent, tidak pernah menimpa
+    baris yang sudah ada."""
+    fitur_default = (
+        ("booking_online", "Booking Online"), ("dashboard_owner", "Dashboard Owner"),
+        ("dashboard_barber", "Dashboard Barber"), ("multi_barber", "Multi Barber"),
+        ("multi_cabang", "Multi Cabang"), ("google_calendar", "Google Calendar"),
+        ("whatsapp_reminder", "WhatsApp Reminder"), ("export_excel", "Export Excel"),
+        ("export_pdf", "Export PDF"), ("qris", "QRIS"), ("virtual_account", "Virtual Account"),
+        ("api", "API"), ("priority_support", "Priority Support"),
+    )
+    now = datetime.now().isoformat(timespec="seconds")
+    existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_features").fetchall()}
+    for urutan, (kode, nama) in enumerate(fitur_default):
+        if kode in existing:
+            continue
+        conn.execute(
+            "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
+            "VALUES (?, ?, '', 1, ?, ?, ?)",
+            (kode, nama, urutan, now, now),
         )
 
 

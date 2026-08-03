@@ -26,6 +26,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
+import billing_limits
 import booking_db
 import database as db
 import r2_storage
@@ -174,6 +175,7 @@ class BookingCreateBody(BaseModel):
 @public_router.post("")
 def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     try:
+        billing_limits.pastikan_boleh_tambah_booking(tenant_id)  # FONDASI Multi-Tenant Phase 4
         return booking_db.buat_booking(
             barber_id=body.barber_id, tanggal=body.tanggal, jam_mulai=body.jam_mulai,
             service_ids=body.service_ids, customer_nama=body.customer_nama,

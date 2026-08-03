@@ -24,6 +24,11 @@ AKSI_VALID = {
     "ubah_trial_subscription", "ubah_grace_subscription",
     "ubah_config_subscription", "buat_pembayaran_subscription",
     "ubah_status_pembayaran_subscription",
+    # FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+    # routers/billing.py, billing_db.py.
+    "ubah_paket_billing",
+    "tambah_fitur_billing", "ubah_fitur_billing", "hapus_fitur_billing",
+    "ubah_fitur_paket_billing",
 }
 
 

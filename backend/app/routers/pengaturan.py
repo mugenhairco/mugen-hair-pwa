@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import auth_db
+import billing_limits
 import branding_db
 import database as db
 import db_compat
@@ -368,6 +369,7 @@ def list_barber(user: dict = Depends(require_admin)):
 @router.post("/barber")
 def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
     try:
+        billing_limits.pastikan_boleh_tambah_barber(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = pengaturan_barber.tambah_barber_validated(
             body.nama, body.is_rafiq, body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
             tenant_id=user["tenant_id"],
@@ -434,6 +436,7 @@ def list_service(user: dict = Depends(require_admin)):
 @router.post("/service")
 def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
     try:
+        billing_limits.pastikan_boleh_tambah_layanan(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = pengaturan_service.tambah_service_lengkap(
             body.nama, body.harga, body.modal, body.pakai_potongan_chemical, body.durasi_menit,
             tenant_id=user["tenant_id"],
@@ -518,6 +521,7 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
         if barber_target is None or barber_target.get("tenant_id") != user["tenant_id"]:
             raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
     try:
+        billing_limits.pastikan_boleh_tambah_user(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id,
                                       tenant_id=user["tenant_id"])
     except ValueError as e:
