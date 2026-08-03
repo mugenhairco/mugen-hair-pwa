@@ -213,7 +213,7 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str, tenant_i
     fungsi buat_pdf_*() di bawah (semuanya sudah menerima tenant_id untuk
     scoping data sejak Phase 1.1, tinggal diteruskan satu langkah lagi)."""
     identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
-    nama_barbershop = identitas.get("nama_barbershop") or "Developer"
+    nama_barbershop = identitas.get("nama_barbershop") or "Rivoir"
     logo_data, _ = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
 

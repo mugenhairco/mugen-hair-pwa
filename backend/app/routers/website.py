@@ -47,8 +47,6 @@ class WebsiteContentBody(BaseModel):
     tiktok: str = ""
     whatsapp: str = ""
     telepon: str = ""
-    background_tipe: str = "light"
-    background_opacity: int = 20
     booking_cta_judul: str = ""
     booking_cta_subjudul: str = ""
     booking_cta_tombol_teks: str = ""
@@ -170,36 +168,6 @@ def ambil_about_foto(v: str | None = None, tenant_id: int = Depends(resolve_tena
 @router.delete("/about-foto")
 def hapus_about_foto_endpoint(user: dict = Depends(require_admin)):
     website_content.hapus_about_foto(tenant_id=user["tenant_id"])
-    return website_content.get_content(tenant_id=user["tenant_id"])
-
-
-# ---------------------------------------------------------------------------
-# Background Website
-# ---------------------------------------------------------------------------
-
-@router.post("/background-image")
-async def upload_background_image(file: UploadFile = File(...), user: dict = Depends(require_admin)):
-    konten = await file.read()
-    try:
-        website_content.simpan_background_image(file.filename, konten, tenant_id=user["tenant_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except r2_storage.R2Error as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    return website_content.get_content(tenant_id=user["tenant_id"])
-
-
-@router.get("/background-image")
-def ambil_background_image(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hibrid)):
-    data, content_type = website_content.get_background_image_data(tenant_id=tenant_id)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Background Website belum diatur.")
-    return Response(content=data, media_type=content_type)
-
-
-@router.delete("/background-image")
-def hapus_background_image_endpoint(user: dict = Depends(require_admin)):
-    website_content.hapus_background_image(tenant_id=user["tenant_id"])
     return website_content.get_content(tenant_id=user["tenant_id"])
 
 

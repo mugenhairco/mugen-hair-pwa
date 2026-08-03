@@ -23,10 +23,9 @@ router = APIRouter(prefix="/api/tenant", tags=["branding"])
 # (bukan milik tenant mana pun), TIDAK ADA endpoint tulis untuk ini sama
 # sekali (tenant tidak bisa mengubahnya) -- fallback SATU-SATUNYA saat
 # tenant belum/tidak bisa dikenali (lihat resolve_tenant_untuk_branding()).
-# "Developer" BUKAN nama tenant sungguhan -- persis sesuai spesifikasi
-# Phase 2.2 ("Nama Platform: Developer").
+# "Rivoir" BUKAN nama tenant sungguhan -- identitas developer platform ini.
 PLATFORM_BRANDING = {
-    "nama_barbershop": "Developer",
+    "nama_barbershop": "Rivoir",
     "email": "",
     "logo_url": None,
     "favicon_url": None,

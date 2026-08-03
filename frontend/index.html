@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
-  <title>Developer</title>
+  <title>Rivoir</title>
   <!-- TAHAP 10 + FONDASI Multi-Tenant Phase 2.2: judul di atas hanya
        fallback PLATFORM awal sebelum JS jalan -- brand.js akan menimpa
        document.title dengan nama barbershop tenant (kalau sudah dikenali)
-       dari /api/tenant/branding begitu halaman selesai dimuat. "Developer"
+       dari /api/tenant/branding begitu halaman selesai dimuat. "Rivoir"
        (BUKAN nama tenant tertentu) sengaja dipakai di sini supaya
        deployment white-label baru tidak menampilkan identitas satu
        barbershop tertentu sebelum tenant-nya sendiri diketahui. -->
@@ -29,7 +29,7 @@
        per resolusi device. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Developer" />
+  <meta name="apple-mobile-web-app-title" content="Rivoir" />
   <meta name="mobile-web-app-capable" content="yes" />
 
   <link rel="stylesheet" href="css/style.css" />
@@ -39,13 +39,13 @@
        supaya tidak pernah ikut terhapus/tertimpa render ulang SPA (setiap
        halaman melakukan root.innerHTML = "" pada #app saja) dan tidak ada
        jalan untuk menonaktifkannya lewat menu Setting mana pun. -->
-  <div class="dev-watermark-bg" aria-hidden="true">Developer</div>
+  <div class="dev-watermark-bg" aria-hidden="true">Rivoir</div>
 
   <div id="app">
     <p class="status-placeholder">Memuat aplikasi...</p>
   </div>
 
-  <div class="dev-watermark-footer" aria-hidden="true">Powered by Developer</div>
+  <div class="dev-watermark-footer" aria-hidden="true">Powered by Rivoir</div>
 
   <!-- Ganti nilai ini ke URL backend Render setelah deploy, contoh:
        <script>window.MUGEN_API_BASE = "https://mugen-hair-api.onrender.com";</script>

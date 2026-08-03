@@ -40,7 +40,6 @@ KEY_TO_PREFIX = {
     "hero_image": "assets",
     "hero_video": "assets",
     "about_foto": "assets",
-    "background_image": "assets",
     "qris": "payments",
 }
 
