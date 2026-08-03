@@ -635,6 +635,29 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS subscription_features (
+    id           SERIAL PRIMARY KEY,
+    kode         TEXT NOT NULL UNIQUE,
+    nama         TEXT NOT NULL,
+    deskripsi    TEXT,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    urutan       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- package_id/feature_id PAKAI foreign key (lihat catatan Python di
+-- billing_db.py::init_billing_db() -- kedua tabel di atas BARU dibuat di
+-- sini sendiri dengan PRIMARY KEY yang benar, beda dengan tabel `tenants`
+-- produksi lama yang jadi sumber insiden FK tenant_id di catatan lain).
+CREATE TABLE IF NOT EXISTS subscription_package_features (
+    id           SERIAL PRIMARY KEY,
+    package_id   INTEGER NOT NULL REFERENCES subscription_packages(id),
+    feature_id   INTEGER NOT NULL REFERENCES subscription_features(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    UNIQUE(package_id, feature_id)
+);
 """
 
 
@@ -715,6 +738,7 @@ def create_all():
         _normalisasi_urutan_barber_kolisi(conn)
         _migrasi_subscription(conn)
         _migrasi_billing_packages(conn)
+        _migrasi_billing_features(conn)
 
 
 def _migrasi_subscription(conn):
@@ -780,6 +804,32 @@ def _migrasi_billing_packages(conn):
             "(kode, nama, harga, durasi_hari, aktif, urutan, deskripsi, created_at, updated_at) "
             "VALUES (?, ?, ?, 30, 1, ?, '', ?, ?)",
             (kode, nama_default[kode], harga_default[kode], urutan_default[kode], now, now),
+        )
+
+
+def _migrasi_billing_features(conn):
+    """FONDASI Multi-Tenant Phase 4 -- versi PostgreSQL, SAMA PERSIS logikanya
+    dengan billing_db.py::seed_default_features() (jalur SQLite) --
+    diduplikasi di sini dengan alasan yang sama seperti
+    _migrasi_billing_packages() di atas. Idempotent, tidak pernah menimpa
+    baris yang sudah ada."""
+    fitur_default = (
+        ("booking_online", "Booking Online"), ("dashboard_owner", "Dashboard Owner"),
+        ("dashboard_barber", "Dashboard Barber"), ("multi_barber", "Multi Barber"),
+        ("multi_cabang", "Multi Cabang"), ("google_calendar", "Google Calendar"),
+        ("whatsapp_reminder", "WhatsApp Reminder"), ("export_excel", "Export Excel"),
+        ("export_pdf", "Export PDF"), ("qris", "QRIS"), ("virtual_account", "Virtual Account"),
+        ("api", "API"), ("priority_support", "Priority Support"),
+    )
+    now = datetime.now().isoformat(timespec="seconds")
+    existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_features").fetchall()}
+    for urutan, (kode, nama) in enumerate(fitur_default):
+        if kode in existing:
+            continue
+        conn.execute(
+            "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
+            "VALUES (?, ?, '', 1, ?, ?, ?)",
+            (kode, nama, urutan, now, now),
         )
 
 

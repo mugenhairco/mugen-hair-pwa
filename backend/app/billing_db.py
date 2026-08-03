@@ -24,12 +24,38 @@ SEKALI TIDAK disentuh di sini.
 
 Tabel baru murni milik modul ini (pola sama seperti subscription_db.py) --
 init_billing_db() dipanggil dari main.py on_startup() jalur SQLite. Jalur
-PostgreSQL: tabel yang SAMA dibuat di postgres_schema.py."""
+PostgreSQL: tabel yang SAMA dibuat di postgres_schema.py.
+
+Modul ini JUGA berisi katalog fitur (`subscription_features` +
+`subscription_package_features`, penugasan checkbox per paket) -- SESUAI
+KEPUTUSAN cakupan Phase 4: murni katalog/toggle data (Super Admin bebas
+tambah/hapus/aktifkan-nonaktifkan fitur & mencentang fitur mana milik
+paket mana), TANPA menggerbang fungsi kode apa pun -- kebanyakan contoh
+fitur di spesifikasi (Google Calendar, WhatsApp Reminder, Multi Cabang,
+API, dst) belum punya implementasi nyata di aplikasi ini sama sekali.
+Beda dengan LIMIT_FIELDS di bawah (barber/user/layanan/booking) yang
+BENAR-BENAR ditegakkan di kode karena entitasnya nyata ada."""
 
 from datetime import datetime
 
 from database import get_conn
 from subscription_db import PACKAGE_VALID
+
+_FITUR_DEFAULT = (
+    ("booking_online", "Booking Online"),
+    ("dashboard_owner", "Dashboard Owner"),
+    ("dashboard_barber", "Dashboard Barber"),
+    ("multi_barber", "Multi Barber"),
+    ("multi_cabang", "Multi Cabang"),
+    ("google_calendar", "Google Calendar"),
+    ("whatsapp_reminder", "WhatsApp Reminder"),
+    ("export_excel", "Export Excel"),
+    ("export_pdf", "Export PDF"),
+    ("qris", "QRIS"),
+    ("virtual_account", "Virtual Account"),
+    ("api", "API"),
+    ("priority_support", "Priority Support"),
+)
 
 # Batas pemakaian (kolom nullable di subscription_packages, NULL = tidak
 # dibatasi) -- SESUAI KEPUTUSAN cakupan Phase 4: HANYA limit yang punya
@@ -65,6 +91,35 @@ def init_billing_db():
                 max_cabang   INTEGER,
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_features (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                kode         TEXT NOT NULL UNIQUE,
+                nama         TEXT NOT NULL,
+                deskripsi    TEXT,
+                aktif        INTEGER NOT NULL DEFAULT 1,
+                urutan       INTEGER NOT NULL DEFAULT 0,
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            )
+        """)
+        # package_id/feature_id PAKAI foreign key (beda dengan tenant_id di
+        # tabel lain) -- kedua tabel ini BARU dibuat di sini sendiri dengan
+        # PRIMARY KEY yang benar sejak awal, TIDAK seperti tabel `tenants`
+        # produksi lama yang jadi sumber insiden FK di catatan panjang
+        # postgres_schema.py. Pola sama seperti kasbon_id/slip_gaji_id di
+        # kasbon_db.py.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_package_features (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                package_id   INTEGER NOT NULL,
+                feature_id   INTEGER NOT NULL,
+                created_at   TEXT NOT NULL,
+                UNIQUE(package_id, feature_id),
+                FOREIGN KEY (package_id) REFERENCES subscription_packages(id),
+                FOREIGN KEY (feature_id) REFERENCES subscription_features(id) ON DELETE CASCADE
             )
         """)
 
@@ -146,3 +201,131 @@ def update_package(package_id: int, **fields) -> dict:
     with get_conn() as conn:
         conn.execute(f"UPDATE subscription_packages SET {set_clause}, updated_at = ? WHERE id = ?", params)
     return get_package(package_id)
+
+
+# ============================= Katalog Fitur =============================
+
+def seed_default_features():
+    """Idempotent -- sama pola seperti seed_default_packages(), murni titik
+    awal supaya katalog tidak kosong saat boot pertama. Super Admin bebas
+    menambah/menghapus/mengubah SEMUANYA kapan pun."""
+    with get_conn() as conn:
+        existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_features").fetchall()}
+        now = _now()
+        for urutan, (kode, nama) in enumerate(_FITUR_DEFAULT):
+            if kode in existing:
+                continue
+            conn.execute(
+                "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
+                "VALUES (?, ?, '', 1, ?, ?, ?)",
+                (kode, nama, urutan, now, now),
+            )
+
+
+def list_features(hanya_aktif: bool = False) -> list:
+    with get_conn() as conn:
+        q = "SELECT * FROM subscription_features"
+        if hanya_aktif:
+            q += " WHERE aktif = 1"
+        q += " ORDER BY urutan, id"
+        return [dict(r) for r in conn.execute(q).fetchall()]
+
+
+def get_feature(feature_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM subscription_features WHERE id = ?", (feature_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_feature_by_kode(kode: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM subscription_features WHERE kode = ?", (kode,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_feature(kode: str, nama: str, deskripsi: str = "") -> dict:
+    """`kode` dinormalisasi (lowercase, spasi -> underscore) supaya cocok
+    dipakai sebagai slug internal -- Super Admin tetap bebas memberi `nama`
+    tampilan apa pun terlepas dari kode ini."""
+    kode = (kode or "").strip().lower().replace(" ", "_")
+    if not kode:
+        raise ValueError("Kode fitur tidak boleh kosong.")
+    if not (nama or "").strip():
+        raise ValueError("Nama fitur tidak boleh kosong.")
+    if get_feature_by_kode(kode) is not None:
+        raise ValueError(f"Kode fitur '{kode}' sudah dipakai.")
+    now = _now()
+    with get_conn() as conn:
+        urutan = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM subscription_features").fetchone()["m"] + 1
+        conn.execute(
+            "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, ?, ?, ?)",
+            (kode, nama.strip(), deskripsi or "", urutan, now, now),
+        )
+    return get_feature_by_kode(kode)
+
+
+def update_feature(feature_id: int, **fields) -> dict:
+    """`kode` SENGAJA TIDAK BISA diubah lewat sini -- alasan sama persis
+    seperti update_package() (identitas baris, dipakai
+    subscription_package_features.feature_id)."""
+    if get_feature(feature_id) is None:
+        raise ValueError("Fitur tidak ditemukan.")
+    kolom_diizinkan = {"nama", "deskripsi", "aktif", "urutan"}
+    aman = {k: v for k, v in fields.items() if k in kolom_diizinkan}
+    if not aman:
+        return get_feature(feature_id)
+    if "aktif" in aman:
+        aman["aktif"] = 1 if aman["aktif"] else 0
+    if "nama" in aman and not (aman["nama"] or "").strip():
+        raise ValueError("Nama fitur tidak boleh kosong.")
+    set_clause = ", ".join(f"{k} = ?" for k in aman)
+    params = list(aman.values()) + [_now(), feature_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE subscription_features SET {set_clause}, updated_at = ? WHERE id = ?", params)
+    return get_feature(feature_id)
+
+
+def delete_feature(feature_id: int):
+    """Hapus PERMANEN dari katalog (beda dengan `aktif=0` lewat
+    update_feature() -- itu murni menyembunyikan dari daftar tanpa
+    menghapus). ON DELETE CASCADE di subscription_package_features.feature_id
+    otomatis melepas fitur ini dari SEMUA paket yang sudah mencentangnya."""
+    if get_feature(feature_id) is None:
+        raise ValueError("Fitur tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subscription_features WHERE id = ?", (feature_id,))
+
+
+def get_package_features(package_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT f.* FROM subscription_package_features pf "
+            "JOIN subscription_features f ON f.id = pf.feature_id "
+            "WHERE pf.package_id = ? ORDER BY f.urutan, f.id",
+            (package_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def set_package_features(package_id: int, feature_ids: list) -> list:
+    """Checkbox-style: MENGGANTI SELURUH penugasan fitur paket ini dengan
+    daftar `feature_ids` yang dikirim (bukan menambah satu per satu) --
+    cara paling gampang dikirim langsung dari form checkbox frontend tanpa
+    perlu menghitung diff sendiri."""
+    if get_package(package_id) is None:
+        raise ValueError("Paket tidak ditemukan.")
+    feature_ids = list(dict.fromkeys(feature_ids or []))
+    katalog_ids = {f["id"] for f in list_features()}
+    for fid in feature_ids:
+        if fid not in katalog_ids:
+            raise ValueError(f"Fitur id={fid} tidak ditemukan di katalog.")
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subscription_package_features WHERE package_id = ?", (package_id,))
+        for fid in feature_ids:
+            conn.execute(
+                "INSERT INTO subscription_package_features (package_id, feature_id, created_at) VALUES (?, ?, ?)",
+                (package_id, fid, now),
+            )
+    return get_package_features(package_id)

@@ -290,8 +290,9 @@ def on_startup():
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
         migrasi_subscription()  # FONDASI Multi-Tenant Phase 3: tabel tenant_subscriptions + backfill (idempotent, WAJIB setelah migrasi_tenant())
-        billing_db.init_billing_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
+        billing_db.init_billing_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages + katalog fitur (idempotent)
         billing_db.seed_default_packages()  # seed 4 baris (free/basic/pro/enterprise) kalau belum ada (idempotent)
+        billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, QRIS, dst) kalau belum ada (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
