@@ -52,17 +52,16 @@ WEBSITE_CONTENT_KEYS = [
     "instagram", "tiktok", "whatsapp",  # instagram & whatsapp dipindahkan dari Identitas
     # Contact
     "telepon",
-    # Background Website
-    "background_tipe",         # "image" | "light" | "dark"
-    "background_opacity",      # "0".."100", HANYA relevan kalau background_tipe == "image"
     # Book Appointment (CTA satu-satunya di halaman, lihat instruksi #7)
     "booking_cta_judul", "booking_cta_subjudul", "booking_cta_tombol_teks",
 ]
 
+# REVISI Branding Rivoir: fitur "Background Website" (pilihan Light/Dark/
+# Image+Opacity per tenant) DIHAPUS TOTAL -- Web Booking sekarang selalu
+# memakai satu background default yang sama (lihat :root[data-theme="dark"]
+# .book-public di style.css), tanpa opsi ganti apa pun.
 DEFAULT_VALUES = {
     "hero_tipe": "image",
-    "background_tipe": "light",
-    "background_opacity": "20",
     "booking_cta_judul": "Ready for your next cut?",
     "booking_cta_tombol_teks": "Book Appointment",
 }
@@ -116,15 +115,12 @@ def init_website_db():
 
 def get_content(tenant_id: int = None) -> dict:
     data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, ""), tenant_id=tenant_id) for k in WEBSITE_CONTENT_KEYS}
-    data["background_opacity"] = int(data["background_opacity"] or 20)
     hero_image_filename = file_asset_db.ambil_meta("hero_image", tenant_id=tenant_id)
     data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}" if hero_image_filename else None
     hero_video_filename = file_asset_db.ambil_meta("hero_video", tenant_id=tenant_id)
     data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
     about_foto_filename = file_asset_db.ambil_meta("about_foto", tenant_id=tenant_id)
     data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
-    background_image_filename = file_asset_db.ambil_meta("background_image", tenant_id=tenant_id)
-    data["background_image_url"] = f"/api/website/background-image?v={background_image_filename}" if background_image_filename else None
     return data
 
 
@@ -135,16 +131,6 @@ def update_content(data: dict, tenant_id: int = None):
             bersih[k] = bersih[k].strip()
     if "hero_tipe" in bersih and bersih["hero_tipe"] not in ("image", "video"):
         raise ValueError("hero_tipe harus 'image' atau 'video'.")
-    if "background_tipe" in bersih and bersih["background_tipe"] not in ("image", "light", "dark"):
-        raise ValueError("background_tipe harus 'image', 'light', atau 'dark'.")
-    if "background_opacity" in bersih:
-        try:
-            opasitas = int(bersih["background_opacity"])
-        except (TypeError, ValueError):
-            raise ValueError("background_opacity harus angka 0-100.")
-        if not (0 <= opasitas <= 100):
-            raise ValueError("background_opacity harus antara 0-100.")
-        bersih["background_opacity"] = str(opasitas)
     if not bersih:
         return
     db.set_settings_bulk(bersih, tenant_id=tenant_id)
@@ -194,19 +180,6 @@ def get_about_foto_data(tenant_id: int = None):
 
 def hapus_about_foto(tenant_id: int = None):
     file_asset_db.hapus("about_foto", tenant_id=tenant_id)
-
-
-def simpan_background_image(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
-    return file_asset_db.simpan("background_image", filename_asli, konten, EXT_KE_CONTENT_TYPE_GAMBAR, "Background Website",
-                                 maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
-
-
-def get_background_image_data(tenant_id: int = None):
-    return file_asset_db.ambil("background_image", tenant_id=tenant_id)
-
-
-def hapus_background_image(tenant_id: int = None):
-    file_asset_db.hapus("background_image", tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------

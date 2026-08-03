@@ -116,13 +116,13 @@ body {
   user-select: none;
   padding-bottom: env(safe-area-inset-bottom);
 }
-/* REVISI STRUKTUR WEBSITE CONTENT: "Website hanya menggunakan background
-   yang dipilih oleh Owner" -- watermark BESAR disembunyikan khusus selama
-   di halaman publik /book (lihat router.js & book_public.js: class ini
-   ditambahkan/dihapus di <body>). Watermark KECIL (.dev-watermark-footer di
-   atas) SENGAJA TIDAK disembunyikan di sini -- kredit developer minimalis
-   tetap tampil di /book sesuai instruksi. */
-body.book-public-active .dev-watermark-bg { display: none; }
+/* REVISI Branding Rivoir: watermark BESAR sekarang tampil KONSISTEN di
+   SELURUH halaman aplikasi TERMASUK Web Booking (/book) -- sebelumnya
+   disembunyikan khusus di /book supaya tidak bentrok dengan fitur
+   Background Website (custom image/opacity per tenant, SUDAH DIHAPUS
+   TOTAL, lihat book_public.js) -- alasan itu sudah tidak berlaku lagi
+   karena Web Booking sekarang selalu memakai satu background default yang
+   sama seperti halaman lain. */
 
 /* ---------------------------------------------------------------------
    Layout app (sidebar + konten), dipakai setelah login.
@@ -874,23 +874,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
 
-/* Background Website (image mode) -- layer terpisah di BELAKANG seluruh
-   konten (lihat book_public.js terapkanBackground(): elemen ini disisipkan
-   sebagai anak pertama .book-public, z-index -1 relatif terhadap konten
-   normal-flow di sekitarnya, TIDAK butuh z-index tinggi karena #app sendiri
-   sudah membuat stacking context di atas dev-watermark-bg). Opacity diatur
-   lewat inline style (slider Owner), bukan di sini. */
-.book-public.book-bg-image { background: var(--bg); }
-.book-bg-layer {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  pointer-events: none;
-}
-
 /* ---------------------------------------------------------------------
    PR 2 "Revisi Konsep Website Booking": Landing Page (Hero/About/Gallery/
    Visit Us/Connect With Us/Closing) -- lebih lebar dari wizard (yang tetap
@@ -906,7 +889,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-hero-media { width: 100%; }
 .book-hero-media img, .book-hero-media video { width: 100%; max-height: 360px; object-fit: cover; display: block; }
 .book-hero-content { padding: 24px 20px 32px; }
-.book-hero-logo { width: 56px; height: 56px; object-fit: contain; border-radius: 12px; margin: 0 auto 12px; display: block; }
+/* REVISI Branding Rivoir: logo diperbesar (56px -> 84px, kira-kira 3x
+   font-size judul di bawahnya) supaya proporsional & seimbang dengan judul
+   toko -- sebelumnya terasa terlalu kecil dibanding h1 28px/800. */
+.book-hero-logo { width: 84px; height: 84px; object-fit: contain; border-radius: 16px; margin: 0 auto 14px; display: block; }
 .book-hero-content h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
 .book-hero-tagline { color: var(--text-dim); font-size: 15px; font-style: italic; margin-bottom: 20px; }
 

@@ -14,9 +14,11 @@ database.py (TIDAK diubah di sini) — router ini hanya meneruskan request ke
 fungsi yang sudah ada di sana dan mengubah ValueError jadi HTTP 422."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 import database as db
+import laporan_pdf
 from auth import require_owner_or_staff
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
@@ -131,6 +133,20 @@ def list_mutasi(produk_id: int = None, tipe: str = None, tahun: int = None,
                 bulan: int = None, user: dict = Depends(require_owner_or_staff)):
     return db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan,
                                       tenant_id=user["tenant_id"])
+
+
+@router.get("/mutasi/pdf")
+def list_mutasi_pdf(produk_id: int = None, tipe: str = None, tahun: int = None, bulan: int = None,
+                     user: dict = Depends(require_owner_or_staff)):
+    """Cetak Riwayat Mutasi Produk -- filter SAMA PERSIS dengan GET /mutasi
+    di atas (dipanggil tombol Cetak PDF di produk.js dengan filter aktif
+    yang sedang tampil di layar), sumber data SAMA (db.get_mutasi_produk_list())
+    supaya isi PDF selalu identik dengan tabel di layar."""
+    konten = laporan_pdf.buat_pdf_mutasi_produk(produk_id, tipe, tahun, bulan, user["username"],
+                                                 tenant_id=user["tenant_id"])
+    filename = laporan_pdf.buat_nama_file("riwayat-mutasi-produk")
+    return Response(content=konten, media_type="application/pdf",
+                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.put("/mutasi/{mutasi_id}")

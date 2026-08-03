@@ -1,7 +1,7 @@
 """
 test_branding.py — FONDASI Multi-Tenant Phase 2.2: Tenant & Platform Branding
 =============================================================================
-Cakupan: fallback branding platform ("Developer") saat tenant belum
+Cakupan: fallback branding platform ("Rivoir") saat tenant belum
 dikenali, isolasi branding dua tenant, resolusi sesi vs query string,
 superadmin selalu platform branding, upload/hapus favicon + validasi,
 validasi warna, dan bugfix header/logo PDF (Phase 2.2 juga memperbaiki
@@ -16,12 +16,12 @@ import laporan_pdf
 
 def test_branding_platform_default_tanpa_sinyal_tenant(app_client):
     """Tanpa login, tanpa ?tenant=, tanpa header/subdomain -- HARUS branding
-    platform ("Developer"), BUKAN diam-diam jatuh ke tenant default pertama
+    platform ("Rivoir"), BUKAN diam-diam jatuh ke tenant default pertama
     (beda sengaja dari resolve_tenant_publik() yang dipakai /book dkk)."""
     r = app_client.get("/api/tenant/branding")
     assert r.status_code == 200, r.text
     data = r.json()
-    assert data["nama_barbershop"] == "Developer"
+    assert data["nama_barbershop"] == "Rivoir"
     assert data["logo_url"] is None
     assert data["favicon_url"] is None
     assert data["is_platform_default"] is True
@@ -92,7 +92,7 @@ def test_superadmin_selalu_branding_platform(app_client):
     # branding tenant mana pun (sesuai spesifikasi).
     r2 = app_client.get("/api/tenant/branding?tenant=mugen-hair-co", headers=headers)
     assert r2.status_code == 200
-    assert r2.json()["nama_barbershop"] == "Developer"
+    assert r2.json()["nama_barbershop"] == "Rivoir"
     assert r2.json()["is_platform_default"] is True
 
 

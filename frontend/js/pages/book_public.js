@@ -12,10 +12,13 @@
 // BUKAN sistem jam kedua). SEO meta/Favicon/Branding warna/Splash Screen/
 // Footer legal (Privacy Policy/Terms)/CTA sebagai link eksternal SUDAH
 // DIHAPUS TOTAL sesuai instruksi -- tidak ada penggantinya di halaman ini.
-// Background Website (Light/Dark preset atau Image+Opacity) DITERAPKAN lewat
-// terapkanBackground() di bawah, scoped ke root .book-public saja (teknik
-// custom-property inline style yang sama dipakai PR 3 untuk warna branding,
-// sekarang dipakai untuk ini).
+// REVISI Branding Rivoir: fitur "Background Website" (preset Light/Dark
+// custom, upload gambar+opacity) SUDAH DIHAPUS TOTAL -- halaman ini
+// sekarang selalu memakai satu background default (Light) yang sama
+// seperti sebelumnya, tanpa opsi ganti apa pun (lihat :root[data-
+// theme="dark"] .book-public di style.css, yang sudah memaksa palet Light
+// terlepas dari tema akun -- itu SATU-SATUNYA sumber warna latar di sini
+// sekarang, tidak ada override JS lagi).
 //
 // Setiap section WAJIB dinamis -- section/elemen yang datanya kosong TIDAK
 // PERNAH dirender sama sekali (bukan disembunyikan lewat CSS), supaya tidak
@@ -177,55 +180,6 @@ const PageBookPublic = (() => {
     return img;
   }
 
-  // Preset warna Background Website "Light"/"Dark" -- SAMA PERSIS dengan
-  // palet Light/Dark yang sudah dipakai aplikasi admin (:root & :root[data-
-  // theme="dark"] di style.css), supaya kontras teks/ikon/tombol/kartu tetap
-  // terjamin baik tanpa perlu palet baru terpisah. Diterapkan sebagai inline
-  // custom property di elemen root (page) -- SCOPED ke subtree halaman
-  // publik ini saja (teknik yang sama dipakai PR 3 untuk Primary/Secondary
-  // Color, yang sekarang sudah dihapus), tidak pernah menjalar ke tema
-  // aplikasi admin internal.
-  const BG_PRESET = {
-    light: {
-      "--bg": "#F5F7FA", "--bg-card": "#FFFFFF", "--bg-input": "#F8FAFC", "--border": "#E2E8F0",
-      "--text": "#0F172A", "--text-dim": "#64748B", "--accent": "#334155", "--accent-hover": "#1E293B",
-      "--accent-pressed": "#0F172A",
-      "--shadow-card": "0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06)",
-      "--shadow-elevated": "0 8px 24px rgba(15,23,42,0.10)",
-    },
-    dark: {
-      "--bg": "#0F172A", "--bg-card": "#1E293B", "--bg-input": "#0F172A", "--border": "#334155",
-      "--text": "#F1F5F9", "--text-dim": "#94A3B8", "--accent": "#475569", "--accent-hover": "#64748B",
-      "--accent-pressed": "#334155",
-      "--shadow-card": "0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.24)",
-      "--shadow-elevated": "0 8px 24px rgba(0,0,0,0.40)",
-    },
-  };
-
-  // Background Website: "light"/"dark" (preset polos) ATAU "image" (foto
-  // Owner + slider opacity, memakai preset Light sebagai dasar kontras teks
-  // -- pilihan Light/Dark TIDAK dipakai lagi kalau tipe-nya "image", sesuai
-  // instruksi). Layer gambar ditaruh sebagai elemen ANAK PERTAMA rootEl,
-  // position:absolute + z-index:-1 -- tetap di BELAKANG seluruh konten
-  // halaman (dan tetap di ATAS dev-watermark-bg, karena #app sendiri sudah
-  // z-index:1 lebih tinggi, lihat style.css) tanpa perlu z-index tinggi.
-  function terapkanBackground(rootEl, content) {
-    const preset = content.background_tipe === "dark" ? BG_PRESET.dark : BG_PRESET.light;
-    for (const [prop, nilai] of Object.entries(preset)) rootEl.style.setProperty(prop, nilai);
-
-    const layerLama = rootEl.querySelector(":scope > .book-bg-layer");
-    if (layerLama) layerLama.remove();
-    rootEl.classList.remove("book-bg-image");
-
-    if (content.background_tipe === "image" && content.background_image_url) {
-      rootEl.classList.add("book-bg-image");
-      const layer = MugenUI.el("div", { class: "book-bg-layer", "aria-hidden": "true" });
-      layer.style.backgroundImage = `url("${MUGEN_API_BASE}${content.background_image_url}")`;
-      layer.style.opacity = String(Math.max(0, Math.min(100, content.background_opacity ?? 20)) / 100);
-      rootEl.insertBefore(layer, rootEl.firstChild);
-    }
-  }
-
   function render(root) {
     root.innerHTML = "";
     // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
@@ -263,7 +217,6 @@ const PageBookPublic = (() => {
       return;
     }
     page.innerHTML = "";
-    terapkanBackground(page, content);
 
     function bukaWizard() {
       root.innerHTML = "";
@@ -438,13 +391,11 @@ const PageBookPublic = (() => {
       metode: null,
     };
 
-    let websiteContent = null;
     try {
-      [pengaturan, barbers, services, websiteContent] = await Promise.all([
+      [pengaturan, barbers, services] = await Promise.all([
         MugenApi.get("/api/public/booking/pengaturan"),
         MugenApi.get("/api/public/booking/barbers"),
         MugenApi.get("/api/public/booking/services"),
-        MugenApi.get("/api/website/content"),
         MugenBrand.refresh(),
       ]);
     } catch (e) {
@@ -453,7 +404,6 @@ const PageBookPublic = (() => {
     }
 
     const identitas = MugenBrand.get();
-    terapkanBackground(page, websiteContent);
 
     // Header wizard SENGAJA ringkas (logo/nama kecil + link kembali ke
     // Beranda) -- Hero besar sudah ditampilkan di landing page, tidak perlu
@@ -463,7 +413,7 @@ const PageBookPublic = (() => {
     if (identitas.logo_url) {
       wizardBrandRow.appendChild(gambarAman(MUGEN_API_BASE + identitas.logo_url, { alt: "Logo", class: "book-wizard-logo" }));
     }
-    wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "Developer"));
+    wizardBrandRow.appendChild(MugenUI.el("span", {}, identitas.nama_barbershop || "Rivoir"));
     wizardHeader.appendChild(wizardBrandRow);
 
     // ---- animasi perpindahan step: SAMA PERSIS dengan transisi antar menu

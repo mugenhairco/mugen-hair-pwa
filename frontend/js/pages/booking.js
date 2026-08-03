@@ -885,7 +885,6 @@ const PageBooking = (() => {
         alamat: content.alamat, visit_maps_embed_url: content.visit_maps_embed_url, visit_maps_link: content.visit_maps_link,
         instagram: content.instagram, tiktok: content.tiktok, whatsapp: content.whatsapp,
         telepon: content.telepon,
-        background_tipe: content.background_tipe, background_opacity: content.background_opacity,
         booking_cta_judul: content.booking_cta_judul, booking_cta_subjudul: content.booking_cta_subjudul,
         booking_cta_tombol_teks: content.booking_cta_tombol_teks,
       });
@@ -1230,80 +1229,6 @@ const PageBooking = (() => {
         await MugenUI.withLoading(() => simpanContent({ telepon: inTelepon.value.trim() }), { message: "Menyimpan…" });
         MugenUI.toast("Contact disimpan.", "success");
       } catch (e) { errorContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- Background Website ---
-    const bgCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(bgCard);
-    bgCard.appendChild(MugenUI.el("h2", {}, "Background Website"));
-    bgCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Pilih Image untuk pakai gambar sendiri (dengan transparency), atau Light/Dark untuk warna polos bawaan -- seluruh teks/ikon/tombol/card otomatis menyesuaikan kontras."));
-
-    const selBgTipe = MugenUI.el("select");
-    selBgTipe.appendChild(MugenUI.el("option", { value: "light" }, "Light (polos terang)"));
-    selBgTipe.appendChild(MugenUI.el("option", { value: "dark" }, "Dark (polos gelap)"));
-    selBgTipe.appendChild(MugenUI.el("option", { value: "image" }, "Image (gambar sendiri)"));
-    selBgTipe.value = content.background_tipe || "light";
-    bgCard.appendChild(MugenUI.el("label", {}, "Tipe Background"));
-    bgCard.appendChild(selBgTipe);
-
-    const bgImageWrap = MugenUI.el("div", { style: selBgTipe.value === "image" ? "margin-top:10px;" : "margin-top:10px;display:none;" });
-    const bgImagePreview = MugenUI.el("img", { class: "logo-preview", style: content.background_image_url ? "" : "display:none;", alt: "Background Website" });
-    if (content.background_image_url) bgImagePreview.src = MUGEN_API_BASE + content.background_image_url;
-    const inBgImageFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-    const btnUploadBgImage = MugenUI.el("button", { type: "button" }, "Upload / Ganti Background");
-    const btnHapusBgImage = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus Background");
-    const errorBgImage = MugenUI.el("div", { class: "login-error" });
-    bgImageWrap.appendChild(MugenUI.el("label", {}, "Gambar Background"));
-    bgImageWrap.appendChild(bgImagePreview);
-    bgImageWrap.appendChild(inBgImageFile);
-    bgImageWrap.appendChild(errorBgImage);
-    bgImageWrap.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadBgImage, btnHapusBgImage]));
-
-    const inBgOpacity = MugenUI.el("input", { type: "range", min: "0", max: "100", step: "5", value: String(content.background_opacity ?? 20) });
-    const bgOpacityLabel = MugenUI.el("span", {}, `${inBgOpacity.value}%`);
-    inBgOpacity.addEventListener("input", () => { bgOpacityLabel.textContent = `${inBgOpacity.value}%`; });
-    bgImageWrap.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Transparency / Opacity"));
-    bgImageWrap.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:nowrap;align-items:center;gap:10px;" }, [inBgOpacity, bgOpacityLabel]));
-    bgCard.appendChild(bgImageWrap);
-
-    selBgTipe.addEventListener("change", () => {
-      bgImageWrap.style.display = selBgTipe.value === "image" ? "" : "none";
-    });
-
-    btnUploadBgImage.addEventListener("click", async () => {
-      errorBgImage.textContent = "";
-      if (!inBgImageFile.files || !inBgImageFile.files[0]) { errorBgImage.textContent = "Pilih file gambar dulu."; return; }
-      try {
-        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/background-image", inBgImageFile.files[0]), { message: "Mengunggah…" });
-        content.background_image_url = hasil.background_image_url;
-        bgImagePreview.src = MUGEN_API_BASE + hasil.background_image_url + "&t=" + Date.now();
-        bgImagePreview.style.display = "";
-        MugenUI.toast("Background Website disimpan.", "success");
-      } catch (e) { errorBgImage.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-    btnHapusBgImage.addEventListener("click", async () => {
-      if (!confirm("Hapus Background Website yang sedang aktif?")) return;
-      try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/website/background-image"), { message: "Menghapus…" });
-        content.background_image_url = null;
-        bgImagePreview.style.display = "none";
-        MugenUI.toast("Background Website dihapus.", "success");
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
-
-    const errorBg = MugenUI.el("div", { class: "login-error" });
-    const btnSimpanBg = MugenUI.el("button", { class: "btn-primary", style: "margin-top:12px;" }, "Simpan Background");
-    bgCard.appendChild(errorBg);
-    bgCard.appendChild(btnSimpanBg);
-    btnSimpanBg.addEventListener("click", async () => {
-      errorBg.textContent = "";
-      try {
-        await MugenUI.withLoading(() => simpanContent({
-          background_tipe: selBgTipe.value, background_opacity: Number(inBgOpacity.value),
-        }), { message: "Menyimpan…" });
-        MugenUI.toast("Background Website disimpan.", "success");
-      } catch (e) { errorBg.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
     // --- Book Appointment (satu-satunya tombol CTA di halaman, SELALU

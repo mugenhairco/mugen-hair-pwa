@@ -213,7 +213,7 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str, tenant_i
     fungsi buat_pdf_*() di bawah (semuanya sudah menerima tenant_id untuk
     scoping data sejak Phase 1.1, tinggal diteruskan satu langkah lagi)."""
     identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
-    nama_barbershop = identitas.get("nama_barbershop") or "Developer"
+    nama_barbershop = identitas.get("nama_barbershop") or "Rivoir"
     logo_data, _ = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
     tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
 
@@ -1338,3 +1338,30 @@ def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: s
     periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Laporan Uang Kas", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_UANG_KAS, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
+
+
+# Lebar kolom Riwayat Mutasi Produk (mm), total 194mm -- Tanggal/Produk/
+# Tipe/Jumlah/Sisa Stok/Catatan (SAMA PERSIS kolom yang tampil di layar,
+# lihat produk.js loadRiwayat()).
+_LEBAR_KOLOM_MUTASI_PRODUK = [22 * mm, 40 * mm, 20 * mm, 20 * mm, 22 * mm, 70 * mm]
+_MUTASI_TIPE_LABEL = {"restock": "Restock", "jual": "Jual", "tester": "Tester"}
+
+
+def buat_pdf_mutasi_produk(produk_id: int | None, tipe: str | None, tahun: int | None, bulan: int | None,
+                            dicetak_oleh: str, tenant_id: int | None = None) -> bytes:
+    """Cetak PDF Riwayat Mutasi Produk -- kolom dan datanya SENGAJA sumbernya
+    SAMA PERSIS dengan tabel di layar (db.get_mutasi_produk_list(), lihat
+    docstring-nya untuk arti kolom `sisa_stok`), memakai filter yang sama
+    (produk/tipe/tahun/bulan, tahun/bulan OPSIONAL -- sama seperti
+    GET /mutasi -- meski tombol Cetak PDF di produk.js selalu mengisi
+    keduanya) supaya PDF yang dicetak selalu identik dengan apa yang sedang
+    tampil di halaman Produk saat tombol itu ditekan."""
+    data = db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+    header = ["Tanggal", "Produk", "Tipe", "Jumlah", "Sisa Stok", "Catatan"]
+    baris = [[
+        _sel(m["tanggal"]), _sel(m["nama_produk"]), _sel(_MUTASI_TIPE_LABEL.get(m["tipe"], m["tipe"])),
+        _sel(m["jumlah"]), _sel(m["sisa_stok"]), _sel(m.get("catatan") or "-"),
+    ] for m in data]
+    periode = _periode_text_opsional(tahun, bulan)
+    return _bangun_pdf("Riwayat Mutasi Produk", periode, dicetak_oleh, header, baris,
+                        col_widths=_LEBAR_KOLOM_MUTASI_PRODUK, tenant_id=tenant_id)

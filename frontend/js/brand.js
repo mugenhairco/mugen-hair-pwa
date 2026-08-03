@@ -12,7 +12,7 @@
 // FONDASI Multi-Tenant Phase 2.2 (Platform Branding): kalau tenant belum
 // dikenali sama sekali (browser baru, tidak ada sesi login, tidak ada
 // slug yang diingat, tidak ada subdomain/query) backend mengembalikan
-// branding PLATFORM ("Developer", lihat routers/branding.py) -- BUKAN
+// branding PLATFORM ("Rivoir", lihat routers/branding.py) -- BUKAN
 // tenant pertama yang kebetulan ada di database. DEFAULT di bawah ini
 // (dipakai SEBELUM refresh() pertama selesai) sengaja disamakan supaya
 // tidak ada "flash" nama tenant sebelum data platform yang benar termuat.
@@ -29,7 +29,7 @@
 const MugenBrand = (() => {
   const KEY = "mugen_identitas_cache";
   const DEFAULT = {
-    nama_barbershop: "Developer",
+    nama_barbershop: "Rivoir",
     logo_url: null,
     favicon_url: null,
     primary_color: "",
