@@ -605,9 +605,6 @@ const PageBookPublic = (() => {
     // service seperti alur lama (lihat renderSelectTime()).
     function renderChooseService() {
       body.appendChild(MugenUI.el("h2", {}, "Choose Service"));
-      body.appendChild(MugenUI.el("div", { class: "row book-nav-row", style: "margin-bottom:12px;" }, [
-        MugenUI.el("button", { type: "button", onclick: () => goto(1) }, "‹ Change Barber"),
-      ]));
       const listBox = MugenUI.el("div", { class: "book-service-list" });
       const totalBox = MugenUI.el("div", { class: "book-service-total" });
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -643,6 +640,12 @@ const PageBookPublic = (() => {
       updateTotal();
       body.appendChild(totalBox);
       body.appendChild(errorBox);
+      // REVISI: link "‹ Change Barber" di atas step diganti "< Back" tunggal
+      // di bawah, tepat di atas indikator lingkaran, rata kiri -- sama
+      // seperti Booking Summary (lihat renderFasePilihMetode()).
+      body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
+        MugenUI.el("button", { type: "button", onclick: () => goto(1) }, "< Back"),
+      ]));
       body.appendChild(paginationDots(2, TOTAL_STEP));
 
       const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;" }, "Continue");
@@ -660,9 +663,6 @@ const PageBookPublic = (() => {
     // ================= STEP 3: SELECT DATE (kalender visual) =================
     function renderSelectDate() {
       body.appendChild(MugenUI.el("h2", {}, `Select Date — ${state.barberNama}`));
-      body.appendChild(MugenUI.el("div", { class: "row book-nav-row", style: "margin-bottom:12px;" }, [
-        MugenUI.el("button", { type: "button", onclick: () => goto(2) }, "‹ Change Service"),
-      ]));
       const minDate = todayIso();
       const maxDate = tambahHari(todayIso(), pengaturan.maksimal_hari_kedepan);
       const hariOperasional = pengaturan.hari_operasional || HARI_KEY;
@@ -725,6 +725,9 @@ const PageBookPublic = (() => {
         calCard.appendChild(grid);
       }
       renderKalender();
+      body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
+        MugenUI.el("button", { type: "button", onclick: () => goto(2) }, "< Back"),
+      ]));
       body.appendChild(paginationDots(3, TOTAL_STEP));
     }
 
@@ -734,9 +737,6 @@ const PageBookPublic = (() => {
     // duration-aware setelah re-validasi di step Pilih Service yang lama).
     async function renderSelectTime() {
       body.appendChild(MugenUI.el("h2", {}, `Select Time — ${MugenUI.formatTanggal(state.tanggal)}`));
-      body.appendChild(MugenUI.el("div", { class: "row book-nav-row", style: "margin-bottom:12px;" }, [
-        MugenUI.el("button", { type: "button", onclick: () => goto(3) }, "‹ Change Date"),
-      ]));
       const slotBox = MugenUI.el("div");
       body.appendChild(slotBox);
       slotBox.innerHTML = "Loading available times...";
@@ -783,15 +783,15 @@ const PageBookPublic = (() => {
           slotBox.appendChild(MugenUI.el("div", { class: "book-warning" }, "No time slots available on this date. Please choose another date."));
         }
       }
+      body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
+        MugenUI.el("button", { type: "button", onclick: () => goto(3) }, "< Back"),
+      ]));
       body.appendChild(paginationDots(4, TOTAL_STEP));
     }
 
     // ================= STEP 5: YOUR DETAILS (Nama + WhatsApp) =================
     function renderYourDetails() {
       body.appendChild(MugenUI.el("h2", {}, "Your Details"));
-      body.appendChild(MugenUI.el("div", { class: "row book-nav-row", style: "margin-bottom:12px;" }, [
-        MugenUI.el("button", { type: "button", onclick: () => goto(4) }, "‹ Change Time"),
-      ]));
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Full name", value: state.nama });
       const inputWa = MugenUI.el("input", { type: "tel", placeholder: "+62 8xx-xxxx-xxxx", value: state.whatsapp });
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -801,6 +801,9 @@ const PageBookPublic = (() => {
       body.appendChild(MugenUI.el("label", {}, "WhatsApp Number"));
       body.appendChild(inputWa);
       body.appendChild(errorBox);
+      body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
+        MugenUI.el("button", { type: "button", onclick: () => goto(4) }, "< Back"),
+      ]));
       body.appendChild(paginationDots(5, TOTAL_STEP));
 
       const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;" }, "Continue");
