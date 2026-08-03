@@ -259,7 +259,8 @@ def create_payment(tenant_id: int, provider: str, virtual_account_number: str,
             "VALUES (?, ?, ?, 'pending', ?, ?, ?)",
             (tenant_id, provider, virtual_account_number, amount, expired_at, now),
         )
-        return get_payment(cur.lastrowid)
+        payment_id = cur.lastrowid
+    return get_payment(payment_id)
 
 
 def get_payment(payment_id: int) -> dict | None:
