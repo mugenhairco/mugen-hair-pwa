@@ -22,6 +22,13 @@ if ("serviceWorker" in navigator) {
 window.addEventListener("DOMContentLoaded", () => {
   MugenBrand.refresh();
   MugenRouter.init();
+  // FONDASI Multi-Tenant Phase 3: cache akses_diblokir (dari localStorage,
+  // lihat subscription.js) sudah dipakai router.js SAAT init() di atas --
+  // refresh() di sini menyegarkannya dari server di background, lalu
+  // memanggil handle() lagi supaya kalau statusnya BERBEDA dari cache
+  // (mis. baru diblokir Super Admin sejak kunjungan terakhir), halaman
+  // langsung dialihkan ke status subscription tanpa perlu navigasi manual.
+  MugenSubscription.refresh().then(() => MugenRouter.handle());
   // REVISI: Notifikasi Booking Baru -- dimulai SEKALI di sini (bukan di
   // dalam halaman Booking) supaya badge + suara tetap aktif app-wide,
   // TIDAK terikat ke halaman mana pun yang sedang dibuka Admin. Modul ini

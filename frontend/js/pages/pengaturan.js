@@ -32,7 +32,7 @@ const PagePengaturan = (() => {
     }
 
     const tabs = isOwner
-      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "User", "Backup", "Hak Akses Admin"]
+      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "User", "Backup", "Hak Akses Admin"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -66,6 +66,7 @@ const PagePengaturan = (() => {
       else if (activeTab === "Uang Harian") await renderUangHarian();
       else if (activeTab === "Karyawan") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
+      else if (activeTab === "Subscription") await renderSubscription();
       else if (activeTab === "User") await renderUser();
       else if (activeTab === "Backup") await renderBackup();
       else await renderHakAksesAdmin();
@@ -1144,6 +1145,83 @@ const PagePengaturan = (() => {
         }
       }
       loadList();
+    }
+
+    // ================= TAB: SUBSCRIPTION (FONDASI Multi-Tenant Phase 3) =================
+    // Owner-murni, READ-ONLY total (TIDAK ADA endpoint PUT/POST di sini --
+    // lihat routers/subscription.py) -- package/status/trial/grace HANYA
+    // bisa diubah Super Admin lewat Dashboard Super Admin-nya sendiri
+    // (pages/superadmin.js), sesuai cakupan Phase 3.
+    const LABEL_PACKAGE_SUBSCRIPTION = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
+    const LABEL_STATUS_SUBSCRIPTION = {
+      trial: "Trial", active: "Active", grace_period: "Grace Period",
+      expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
+    };
+    const BADGE_STATUS_SUBSCRIPTION = {
+      trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
+      expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
+    };
+
+    function formatWaktuSubscription(iso) {
+      if (!iso) return "-";
+      const [tanggal, jam] = iso.split("T");
+      return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
+    }
+
+    async function renderSubscription() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Subscription"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Informasi paket & status langganan toko ini, dikelola Super Admin. Halaman ini read-only -- hubungi penyedia layanan untuk perubahan paket atau pembayaran."));
+
+      let sub;
+      try {
+        sub = await MugenApi.get("/api/subscription/me");
+      } catch (e) {
+        if (e.status === 404) {
+          card.appendChild(MugenUI.el("div", {}, "Data subscription belum tersedia untuk toko ini."));
+        } else {
+          card.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        }
+        return;
+      }
+
+      if (sub.akses_diblokir) {
+        const peringatan = MugenUI.el("div", { class: "login-error", style: "margin-bottom:12px;" },
+          "Akses toko ini sedang dibatasi karena status subscription " +
+          `"${LABEL_STATUS_SUBSCRIPTION[sub.status] || sub.status}". Hubungi penyedia layanan untuk mengaktifkan kembali.`);
+        card.appendChild(peringatan);
+      }
+
+      const ringkasan = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;margin-bottom:8px;" }, [
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "subtitle" }, "Package"),
+          MugenUI.el("div", { style: "font-weight:700;font-size:16px;" }, LABEL_PACKAGE_SUBSCRIPTION[sub.package] || sub.package),
+        ]),
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "subtitle" }, "Status"),
+          MugenUI.el("span", { class: "badge " + (BADGE_STATUS_SUBSCRIPTION[sub.status] || "") },
+            LABEL_STATUS_SUBSCRIPTION[sub.status] || sub.status),
+        ]),
+      ]);
+      card.appendChild(ringkasan);
+
+      const tabelInfo = MugenUI.el("div", { style: "margin-top:16px;" }, [
+        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
+          MugenUI.el("span", { class: "subtitle" }, "Masa Trial"),
+          MugenUI.el("span", {}, sub.trial_start ? `${formatWaktuSubscription(sub.trial_start)} s/d ${formatWaktuSubscription(sub.trial_end)}` : "-"),
+        ]),
+        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
+          MugenUI.el("span", { class: "subtitle" }, "Grace Period"),
+          MugenUI.el("span", {}, sub.grace_start ? `${formatWaktuSubscription(sub.grace_start)} s/d ${formatWaktuSubscription(sub.grace_end)}` : "-"),
+        ]),
+        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [
+          MugenUI.el("span", { class: "subtitle" }, "Terakhir Diperbarui"),
+          MugenUI.el("span", {}, formatWaktuSubscription(sub.updated_at)),
+        ]),
+      ]);
+      card.appendChild(tabelInfo);
     }
 
     // ================= TAB: BACKUP =================

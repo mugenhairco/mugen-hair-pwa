@@ -6,7 +6,12 @@ Dua router dalam SATU file ini (pola sama seperti routers/booking.py):
    (require_admin, HANYA role 'admin' -- BUKAN require_owner_or_staff, sesuai
    cakupan Phase 3: "Owner hanya dapat melihat informasi subscription
    (read-only)", akun 'staff' TIDAK ikut melihat). Read-only total -- TIDAK
-   ADA endpoint PUT/POST di router ini.
+   ADA endpoint PUT/POST di router ini. Kekecualian: GET /status (di bawah
+   GET /me) SENGAJA terbuka untuk SEMUA role tenant (Owner/Admin/Barber,
+   get_current_user polos) -- BUKAN "informasi subscription" (package/
+   trial/grace/dst, tetap Owner-murni lewat /me), hanya SATU boolean
+   akses_diblokir supaya frontend (router.js) bisa mengalihkan SELURUH
+   akun toko yang diblokir ke halaman status, bukan cuma Owner.
 2. `superadmin_router` (prefix `/api/superadmin/subscriptions`) — KHUSUS
    role 'superadmin' (require_superadmin), mengelola package/status/trial/
    grace/config platform/pembayaran VA SELURUH tenant. SETIAP aksi tercatat
@@ -19,7 +24,7 @@ from pydantic import BaseModel
 import subscription_db
 import superadmin_audit_db
 import tenant_db
-from auth import require_admin, require_superadmin
+from auth import get_current_user, require_admin, require_superadmin
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 superadmin_router = APIRouter(prefix="/api/superadmin/subscriptions", tags=["subscription-superadmin"])
@@ -39,6 +44,19 @@ def subscription_saya(user: dict = Depends(require_admin)):
     sub = dict(sub)
     sub["akses_diblokir"] = sub["status"] in subscription_db.STATUS_AKSES_DIBLOKIR
     return sub
+
+
+@router.get("/status")
+def subscription_status(user: dict = Depends(get_current_user)):
+    """Lihat catatan akses di docstring modul -- terbuka untuk SEMUA role
+    tenant (bukan hanya Owner), murni boolean untuk kebutuhan routing
+    frontend. `tenant_id=None` (akun superadmin) dianggap TIDAK diblokir --
+    superadmin tidak terikat tenant mana pun, endpoint ini tidak relevan
+    untuknya (router.js frontend tidak pernah memanggil endpoint ini untuk
+    sesi superadmin, ini murni jaring pengaman)."""
+    if user.get("tenant_id") is None:
+        return {"akses_diblokir": False}
+    return {"akses_diblokir": subscription_db.akses_diblokir(user["tenant_id"])}
 
 
 # ============================= Super Admin =============================

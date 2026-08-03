@@ -141,6 +141,21 @@ const MugenRouter = (() => {
       return;
     }
 
+    // FONDASI Multi-Tenant Phase 3: tenant yang subscription-nya Expired/
+    // Suspended/Cancelled dialihkan ke halaman status untuk HASH APA PUN
+    // (pola sama seperti superadmin di atas) -- Owner/Admin/Barber toko itu
+    // TIDAK bisa mengakses menu lain mana pun selama diblokir, HANYA
+    // halaman ini (lihat pages/subscription_blocked.js). Dirender LANGSUNG
+    // ke appRoot (BUKAN lewat shell()) supaya sidebar sama sekali tidak
+    // ikut tampil -- data akses_diblokir dari cache MugenSubscription
+    // (lihat subscription.js, di-refresh() app.js/login.js), BUKAN dicek
+    // ulang lewat API di sini (handle() SINKRON, tidak bisa menunggu fetch).
+    if (MugenSubscription.aksesDiblokir()) {
+      appRoot.innerHTML = "";
+      PageSubscriptionBlocked.render(appRoot);
+      return;
+    }
+
     const content = shell();
 
     if (hash.startsWith("#/dashboard")) {

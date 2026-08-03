@@ -107,6 +107,13 @@ const PageLogin = (() => {
         // MugenBookingNotif.refreshNow() di bawah) supaya tidak menunda
         // perpindahan ke Dashboard.
         MugenBrand.refresh();
+        // FONDASI Multi-Tenant Phase 3: BEDA dari MugenBrand.refresh() di
+        // atas (sengaja tidak di-await) -- akses_diblokir HARUS sudah
+        // diketahui SEBELUM baris handle() di bawah supaya akun yang
+        // subscription-nya diblokir TIDAK PERNAH sempat melihat dashboard
+        // normal walau sekejap sebelum dialihkan ke halaman status (lihat
+        // subscription.js, router.js).
+        await MugenSubscription.refresh();
         // TAHAP 13 (bugfix): kalau hash URL kebetulan SUDAH persis
         // "#/dashboard" (mis. reload/bookmark #/dashboard saat sesi sudah
         // kedaluwarsa), set location.hash ke nilai yang sama TIDAK memicu

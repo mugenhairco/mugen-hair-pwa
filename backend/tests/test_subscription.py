@@ -119,6 +119,33 @@ def test_staff_dan_barber_ditolak_endpoint_subscription_me(app_client):
     assert app_client.get("/api/subscription/me", headers=headers_barber).status_code == 403
 
 
+def test_status_endpoint_terbuka_untuk_semua_role_tenant(app_client):
+    """Beda dari /me (Owner-murni) -- /status boleh dipanggil staff & barber,
+    hanya mengembalikan boolean (bukan detail package/trial/dst)."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    auth_db.tambah_user("staff1", "password123", role="staff", tenant_id=tenant["id"])
+    barber_id = db.add_barber("Andi Saputra", tenant_id=tenant["id"])
+    auth_db.tambah_user("barber1", "password123", role="barber", barber_id=barber_id, tenant_id=tenant["id"])
+
+    headers_staff = _login(app_client, "staff1", "password123")
+    headers_barber = _login(app_client, "barber1", "password123")
+
+    r1 = app_client.get("/api/subscription/status", headers=headers_staff)
+    assert r1.status_code == 200
+    assert r1.json() == {"akses_diblokir": False}
+
+    subscription_db.update_status(tenant["id"], "cancelled")
+    r2 = app_client.get("/api/subscription/status", headers=headers_barber)
+    assert r2.json() == {"akses_diblokir": True}
+
+
+def test_status_endpoint_superadmin_tidak_diblokir(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    r = app_client.get("/api/subscription/status", headers=headers)
+    assert r.status_code == 200
+    assert r.json() == {"akses_diblokir": False}
+
+
 def test_owner_tidak_bisa_lihat_subscription_tenant_lain(two_tenants):
     """Isolasi tenant: endpoint Owner SELALU pakai tenant_id dari sesi login
     sendiri (user["tenant_id"]) -- tidak ada parameter tenant_id yang bisa
