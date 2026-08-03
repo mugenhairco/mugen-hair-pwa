@@ -97,3 +97,48 @@ def pastikan_boleh_tambah_booking(tenant_id: int):
             f"Paket langganan saat ini hanya mengizinkan maksimal {limit} booking per bulan. "
             "Upgrade paket untuk menerima booking lebih banyak bulan ini."
         )
+
+
+# ============================= Downgrade =============================
+# SESUAI KEPUTUSAN cakupan Phase 4: downgrade diblokir TOTAL selama
+# pemakaian SEKARANG melebihi limit paket TUJUAN -- TIDAK ADA penonaktifan
+# otomatis barber/user/layanan/booking apa pun di sini. Owner harus
+# mengurangi pemakaian sendiri lebih dulu (mis. nonaktifkan sebagian
+# barber) baru downgrade bisa diproses -- lihat routers/billing.py::downgrade().
+
+_LABEL_LIMIT = {
+    "max_barber": "barber aktif",
+    "max_user": "akun user",
+    "max_layanan": "layanan aktif",
+    "max_booking": "booking bulan ini",
+}
+
+
+def hitung_pemakaian(tenant_id: int) -> dict:
+    """Pemakaian SEKARANG untuk setiap limit yang benar-benar ditegakkan
+    (lihat docstring modul) -- max_booking dihitung bulan kalender berjalan,
+    sama seperti pastikan_boleh_tambah_booking()."""
+    sekarang = datetime.now(WIB)
+    return {
+        "max_barber": len(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id)),
+        "max_user": len(auth_db.get_user_list(tenant_id=tenant_id)),
+        "max_layanan": len(db.get_services(hanya_aktif=True, tenant_id=tenant_id)),
+        "max_booking": len(booking_db.get_booking_list(
+            tahun=sekarang.year, bulan=sekarang.month, status_booking="aktif", tenant_id=tenant_id,
+        )),
+    }
+
+
+def evaluasi_downgrade(tenant_id: int, target_package: dict) -> list:
+    """Return daftar PESAN pelanggaran (list kosong = boleh downgrade).
+    Limit NULL di paket tujuan = tidak dibatasi, tidak ikut dicek."""
+    pemakaian = hitung_pemakaian(tenant_id)
+    pelanggaran = []
+    for kolom, label in _LABEL_LIMIT.items():
+        limit = target_package.get(kolom)
+        if limit is None:
+            continue
+        jumlah = pemakaian[kolom]
+        if jumlah > limit:
+            pelanggaran.append(f"{label} ({jumlah} terpakai, maksimal {limit} di paket tujuan)")
+    return pelanggaran

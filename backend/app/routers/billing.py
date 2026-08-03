@@ -23,7 +23,9 @@ from pydantic import BaseModel
 
 import billing_db
 import billing_invoice_db
+import billing_limits
 import midtrans_client
+import subscription_db
 import superadmin_audit_db
 import tenant_db
 from auth import require_admin, require_superadmin
@@ -97,6 +99,43 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
         snap_token=hasil_midtrans["token"], snap_redirect_url=hasil_midtrans["redirect_url"],
     )
     return invoice
+
+
+class DowngradeBody(BaseModel):
+    package_id: int
+
+
+@router.post("/downgrade")
+def downgrade(body: DowngradeBody, user: dict = Depends(require_admin)):
+    """Downgrade TIDAK lewat Midtrans (pindah ke paket yang lebih murah/
+    sama, tidak ada pembayaran) -- SESUAI KEPUTUSAN cakupan Phase 4:
+    diblokir TOTAL selama pemakaian sekarang melebihi limit paket tujuan,
+    TIDAK ADA penonaktifan otomatis apa pun (lihat billing_limits.py).
+    Upgrade (paket lebih mahal/urutan lebih tinggi) SENGAJA ditolak di sini
+    -- harus lewat /checkout supaya benar-benar dibayar."""
+    target = billing_db.get_package(body.package_id)
+    if target is None or not target["aktif"]:
+        raise HTTPException(status_code=422, detail="Paket tidak ditemukan atau tidak aktif.")
+
+    sub = subscription_db.get_subscription(user["tenant_id"])
+    current = billing_db.get_package_by_kode(sub["package"]) if sub else None
+    if current is not None and target["urutan"] > current["urutan"]:
+        raise HTTPException(status_code=422,
+                             detail="Ini upgrade paket -- gunakan proses checkout pembayaran, bukan downgrade.")
+
+    pelanggaran = billing_limits.evaluasi_downgrade(user["tenant_id"], target)
+    if pelanggaran:
+        raise HTTPException(
+            status_code=422,
+            detail="Downgrade diblokir, pemakaian saat ini melebihi batas paket tujuan -- kurangi dulu: "
+                   + "; ".join(pelanggaran),
+        )
+
+    try:
+        hasil = subscription_db.update_package(user["tenant_id"], target["kode"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return hasil
 
 
 def _pastikan_invoice_tenant_sama(user: dict, invoice: dict | None):
