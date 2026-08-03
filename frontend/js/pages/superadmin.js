@@ -21,7 +21,26 @@ const PageSuperadmin = (() => {
     buat_tenant: "Buat Toko",
     aktifkan_tenant: "Aktifkan Toko",
     nonaktifkan_tenant: "Nonaktifkan Toko",
+    // FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle).
+    ubah_package_subscription: "Ubah Package Subscription",
+    ubah_status_subscription: "Ubah Status Subscription",
+    ubah_trial_subscription: "Ubah Trial Subscription",
+    ubah_grace_subscription: "Ubah Grace Period Subscription",
+    ubah_config_subscription: "Ubah Konfigurasi Subscription",
+    buat_pembayaran_subscription: "Catat Pembayaran Subscription",
+    ubah_status_pembayaran_subscription: "Ubah Status Pembayaran Subscription",
   };
+
+  const LABEL_PACKAGE_SUBS = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
+  const LABEL_STATUS_SUBS = {
+    trial: "Trial", active: "Active", grace_period: "Grace Period",
+    expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
+  };
+  const BADGE_STATUS_SUBS = {
+    trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
+    expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
+  };
+  const LABEL_PAYMENT_STATUS = { pending: "Pending", paid: "Lunas", expired: "Kedaluwarsa", failed: "Gagal" };
 
   async function render(root) {
     root.innerHTML = "";
@@ -31,9 +50,13 @@ const PageSuperadmin = (() => {
 
     const formCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
+    const subsConfigCard = MugenUI.el("div", { class: "card" });
+    const subsManagerCard = MugenUI.el("div", { class: "card" });
     const auditCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     root.appendChild(formCard);
+    root.appendChild(subsConfigCard);
+    root.appendChild(subsManagerCard);
     root.appendChild(auditCard);
 
     // ---------------------------------------------------------------
@@ -46,7 +69,13 @@ const PageSuperadmin = (() => {
     async function loadTenantList() {
       listBody.innerHTML = "Memuat...";
       try {
-        tenantList = await MugenApi.get("/api/superadmin/tenants");
+        const [tenants, subs] = await Promise.all([
+          MugenApi.get("/api/superadmin/tenants"),
+          MugenApi.get("/api/superadmin/subscriptions"),
+        ]);
+        const subsByTenantId = {};
+        for (const s of subs) subsByTenantId[s.tenant_id] = s;
+        tenantList = tenants.map((t) => ({ ...t, subscription: subsByTenantId[t.id] || null }));
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.buildTable(
           [
@@ -57,6 +86,13 @@ const PageSuperadmin = (() => {
               format: (v) => MugenUI.el("span", {
                 class: "badge" + (v === "aktif" ? "" : " badge-libur"),
               }, v === "aktif" ? "Aktif" : "Nonaktif"),
+            },
+            {
+              key: "subscription", label: "Subscription",
+              format: (v) => v
+                ? MugenUI.el("span", { class: "badge " + (BADGE_STATUS_SUBS[v.status] || "") },
+                    `${LABEL_PACKAGE_SUBS[v.package] || v.package} / ${LABEL_STATUS_SUBS[v.status] || v.status}`)
+                : MugenUI.el("span", { class: "subtitle" }, "belum ada"),
             },
             { key: "jumlah_owner", label: "Jumlah Owner" },
             { key: "jumlah_user", label: "Jumlah User" },
@@ -85,6 +121,9 @@ const PageSuperadmin = (() => {
                   }
                 });
                 wrap.appendChild(btnToggle);
+                const btnKelolaSubs = MugenUI.el("button", {}, "Kelola Subscription");
+                btnKelolaSubs.addEventListener("click", () => renderSubscriptionManager(t));
+                wrap.appendChild(btnKelolaSubs);
                 return wrap;
               },
             },
@@ -151,7 +190,211 @@ const PageSuperadmin = (() => {
     });
 
     // ---------------------------------------------------------------
-    // 3. RIWAYAT AKSI (Audit Log)
+    // 3. KONFIGURASI SUBSCRIPTION (platform-wide, FONDASI Multi-Tenant Phase 3)
+    // ---------------------------------------------------------------
+    subsConfigCard.appendChild(MugenUI.el("h2", {}, "Konfigurasi Subscription"));
+    subsConfigCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Durasi default (hari) dipakai saat Trial/Grace Period BARU diatur ke tenant mana pun tanpa mengisi jumlah hari secara eksplisit."));
+    const inputTrialHari = MugenUI.el("input", { type: "number", min: "1" });
+    const inputGraceHari = MugenUI.el("input", { type: "number", min: "1" });
+    const btnSimpanConfig = MugenUI.el("button", { class: "btn-primary" }, "Simpan Konfigurasi");
+    const configError = MugenUI.el("div", { class: "login-error" });
+    subsConfigCard.appendChild(MugenUI.el("label", {}, "Durasi Trial Default (hari)"));
+    subsConfigCard.appendChild(inputTrialHari);
+    subsConfigCard.appendChild(MugenUI.el("label", {}, "Durasi Grace Period Default (hari)"));
+    subsConfigCard.appendChild(inputGraceHari);
+    subsConfigCard.appendChild(configError);
+    subsConfigCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanConfig));
+
+    async function loadSubsConfig() {
+      try {
+        const cfg = await MugenApi.get("/api/superadmin/subscriptions/config");
+        inputTrialHari.value = cfg.trial_hari;
+        inputGraceHari.value = cfg.grace_hari;
+      } catch (e) { configError.textContent = e.message; }
+    }
+    btnSimpanConfig.addEventListener("click", async () => {
+      configError.textContent = "";
+      try {
+        await MugenUI.withLoading(() => MugenApi.put("/api/superadmin/subscriptions/config", {
+          trial_hari: parseInt(inputTrialHari.value, 10) || null,
+          grace_hari: parseInt(inputGraceHari.value, 10) || null,
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Konfigurasi Subscription disimpan.", "success");
+        loadAuditLog();
+      } catch (e) {
+        configError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 4. KELOLA SUBSCRIPTION PER TOKO (FONDASI Multi-Tenant Phase 3)
+    // ---------------------------------------------------------------
+    subsManagerCard.appendChild(MugenUI.el("h2", {}, "Kelola Subscription Toko"));
+    const subsManagerBody = MugenUI.el("div", {}, "Klik \"Kelola Subscription\" pada salah satu toko di Daftar Toko di atas.");
+    subsManagerCard.appendChild(subsManagerBody);
+
+    async function renderSubscriptionManager(tenant) {
+      subsManagerBody.innerHTML = "Memuat...";
+      let sub;
+      try {
+        sub = await MugenApi.get(`/api/superadmin/subscriptions/${tenant.id}`);
+      } catch (e) {
+        subsManagerBody.innerHTML = "";
+        subsManagerBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+      subsManagerBody.innerHTML = "";
+      subsManagerBody.appendChild(MugenUI.el("h3", {}, tenant.nama_barbershop));
+
+      // --- Package & Status ---
+      const selPackage = MugenUI.el("select");
+      for (const k of Object.keys(LABEL_PACKAGE_SUBS)) selPackage.appendChild(MugenUI.el("option", { value: k }, LABEL_PACKAGE_SUBS[k]));
+      selPackage.value = sub.package;
+      const btnSimpanPackage = MugenUI.el("button", {}, "Simpan Package");
+      const selStatus = MugenUI.el("select");
+      for (const k of Object.keys(LABEL_STATUS_SUBS)) selStatus.appendChild(MugenUI.el("option", { value: k }, LABEL_STATUS_SUBS[k]));
+      selStatus.value = sub.status;
+      const btnSimpanStatus = MugenUI.el("button", {}, "Simpan Status");
+      const errPackageStatus = MugenUI.el("div", { class: "login-error" });
+
+      subsManagerBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;align-items:flex-end;margin-top:8px;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Package"), selPackage]),
+        btnSimpanPackage,
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+        btnSimpanStatus,
+      ]));
+      subsManagerBody.appendChild(errPackageStatus);
+
+      btnSimpanPackage.addEventListener("click", async () => {
+        errPackageStatus.textContent = "";
+        try {
+          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/package`,
+            { package: selPackage.value }), { message: "Menyimpan…" });
+          MugenUI.toast("Package disimpan.", "success");
+          loadTenantList(); loadAuditLog(); renderSubscriptionManager(tenant);
+        } catch (e) { errPackageStatus.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+      btnSimpanStatus.addEventListener("click", async () => {
+        errPackageStatus.textContent = "";
+        try {
+          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/status`,
+            { status: selStatus.value }), { message: "Menyimpan…" });
+          MugenUI.toast("Status disimpan.", "success");
+          loadTenantList(); loadAuditLog(); renderSubscriptionManager(tenant);
+        } catch (e) { errPackageStatus.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+
+      // --- Trial & Grace ---
+      const infoTrial = sub.trial_start ? `${formatWaktu(sub.trial_start)} s/d ${formatWaktu(sub.trial_end)}` : "belum diatur";
+      const infoGrace = sub.grace_start ? `${formatWaktu(sub.grace_start)} s/d ${formatWaktu(sub.grace_end)}` : "belum diatur";
+      const inputTrialHariTenant = MugenUI.el("input", { type: "number", min: "1", placeholder: "hari" });
+      const btnSetTrial = MugenUI.el("button", {}, "Set Trial (mulai sekarang)");
+      const inputGraceHariTenant = MugenUI.el("input", { type: "number", min: "1", placeholder: "hari" });
+      const btnSetGrace = MugenUI.el("button", {}, "Set Grace Period (mulai sekarang)");
+      const errTrialGrace = MugenUI.el("div", { class: "login-error" });
+
+      subsManagerBody.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, `Masa Trial saat ini: ${infoTrial}`),
+        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:4px;" }, [inputTrialHariTenant, btnSetTrial]),
+      ]));
+      subsManagerBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, `Grace Period saat ini: ${infoGrace}`),
+        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:4px;" }, [inputGraceHariTenant, btnSetGrace]),
+      ]));
+      subsManagerBody.appendChild(errTrialGrace);
+
+      btnSetTrial.addEventListener("click", async () => {
+        errTrialGrace.textContent = "";
+        try {
+          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/trial`,
+            { hari: inputTrialHariTenant.value ? parseInt(inputTrialHariTenant.value, 10) : null }), { message: "Menyimpan…" });
+          MugenUI.toast("Trial disimpan.", "success");
+          loadAuditLog(); renderSubscriptionManager(tenant);
+        } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+      btnSetGrace.addEventListener("click", async () => {
+        errTrialGrace.textContent = "";
+        try {
+          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/grace`,
+            { hari: inputGraceHariTenant.value ? parseInt(inputGraceHariTenant.value, 10) : null }), { message: "Menyimpan…" });
+          MugenUI.toast("Grace Period disimpan.", "success");
+          loadAuditLog(); renderSubscriptionManager(tenant);
+        } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+
+      // --- Pembayaran (VA) -- struktur saja, TANPA payment gateway ---
+      subsManagerBody.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Pembayaran (Virtual Account)"));
+      const paymentListBody = MugenUI.el("div");
+      subsManagerBody.appendChild(paymentListBody);
+
+      async function loadPayments() {
+        paymentListBody.innerHTML = "Memuat...";
+        try {
+          const payments = await MugenApi.get(`/api/superadmin/subscriptions/${tenant.id}/payments`);
+          paymentListBody.innerHTML = "";
+          paymentListBody.appendChild(MugenUI.buildTable(
+            [
+              { key: "provider", label: "Provider" },
+              { key: "virtual_account_number", label: "No. VA" },
+              { key: "amount", label: "Jumlah", format: (v) => MugenUI.formatRupiah(v) },
+              { key: "payment_status", label: "Status", format: (v) => LABEL_PAYMENT_STATUS[v] || v },
+              { key: "paid_at", label: "Dibayar", format: formatWaktu },
+              {
+                key: "aksi", label: "Aksi", format: (_, p) => {
+                  if (p.payment_status !== "pending") return "";
+                  const btn = MugenUI.el("button", {}, "Tandai Lunas");
+                  btn.addEventListener("click", async () => {
+                    if (!confirm("Tandai pembayaran ini sebagai Lunas?")) return;
+                    try {
+                      await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/payments/${p.id}/status`,
+                        { payment_status: "paid" }), { message: "Menyimpan…" });
+                      MugenUI.toast("Pembayaran ditandai Lunas.", "success");
+                      loadAuditLog(); loadPayments();
+                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  });
+                  return btn;
+                },
+              },
+            ],
+            payments,
+            { emptyText: "Belum ada catatan pembayaran." },
+          ));
+        } catch (e) {
+          paymentListBody.innerHTML = "";
+          paymentListBody.appendChild(MugenUI.el("div", {}, e.message));
+        }
+      }
+
+      const inputProvider = MugenUI.el("input", { type: "text", placeholder: "Provider (mis. BCA, Mandiri)" });
+      const inputVaNumber = MugenUI.el("input", { type: "text", placeholder: "Nomor Virtual Account" });
+      const inputAmount = MugenUI.el("input", { type: "number", min: "1", placeholder: "Jumlah (Rp)" });
+      const btnCatatPembayaran = MugenUI.el("button", {}, "Catat Pembayaran Baru");
+      const errPembayaran = MugenUI.el("div", { class: "login-error" });
+      subsManagerBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:12px;" }, [
+        inputProvider, inputVaNumber, inputAmount, btnCatatPembayaran,
+      ]));
+      subsManagerBody.appendChild(errPembayaran);
+
+      btnCatatPembayaran.addEventListener("click", async () => {
+        errPembayaran.textContent = "";
+        try {
+          await MugenUI.withLoading(() => MugenApi.post(`/api/superadmin/subscriptions/${tenant.id}/payments`, {
+            provider: inputProvider.value.trim(),
+            virtual_account_number: inputVaNumber.value.trim(),
+            amount: parseInt(inputAmount.value, 10) || 0,
+          }), { message: "Menyimpan…" });
+          MugenUI.toast("Pembayaran dicatat.", "success");
+          inputProvider.value = ""; inputVaNumber.value = ""; inputAmount.value = "";
+          loadAuditLog(); loadPayments();
+        } catch (e) { errPembayaran.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+
+      await loadPayments();
+    }
+
+    // ---------------------------------------------------------------
+    // 5. RIWAYAT AKSI (Audit Log)
     // ---------------------------------------------------------------
     auditCard.appendChild(MugenUI.el("h2", {}, "Riwayat Aksi"));
     const auditBody = MugenUI.el("div");
@@ -180,6 +423,7 @@ const PageSuperadmin = (() => {
     }
 
     await loadTenantList();
+    await loadSubsConfig();
     await loadAuditLog();
   }
 

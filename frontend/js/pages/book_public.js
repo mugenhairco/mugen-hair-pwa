@@ -180,7 +180,7 @@ const PageBookPublic = (() => {
     return img;
   }
 
-  function render(root) {
+  async function render(root) {
     root.innerHTML = "";
     // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
     // sudah memanggil MugenTheme.forceLight() sebelum PageBookPublic.render()
@@ -193,7 +193,43 @@ const PageBookPublic = (() => {
     // sudah menandai body.book-public-active lebih dulu). Watermark KECIL
     // footer (dev-watermark-footer) TIDAK disentuh sama sekali di mana pun.
     document.body.classList.add("book-public-active");
+
+    // FONDASI Multi-Tenant Phase 3: dicek PALING AWAL, SEBELUM endpoint
+    // publik lain mana pun (yang JUSTRU akan ditolak 403 oleh
+    // resolve_tenant_publik_aktif kalau statusnya diblokir, lihat
+    // routers/booking.py) -- supaya customer langsung melihat halaman
+    // "tidak tersedia" yang rapi, bukan error mentah dari Promise.all()
+    // gagal di renderLanding(). Endpoint ini SENDIRI selalu bisa diakses
+    // (resolve_tenant_publik polos, bukan varian _aktif).
+    try {
+      const { tersedia } = await MugenApi.get("/api/public/booking/subscription-status");
+      if (!tersedia) {
+        renderTidakTersedia(root);
+        return;
+      }
+    } catch (e) {
+      // Offline/error jaringan: lanjut ke renderLanding() seperti biasa --
+      // endpoint publik lain di sana sudah punya penanganan error sendiri
+      // (lihat catch block renderLanding()), jangan blokir halaman hanya
+      // karena SATU pengecekan awal gagal karena network, bukan karena
+      // memang diblokir Super Admin.
+    }
     renderLanding(root);
+  }
+
+  // FONDASI Multi-Tenant Phase 3: halaman "tidak tersedia" saat subscription
+  // tenant Expired/Suspended/Cancelled -- TIDAK memanggil endpoint publik
+  // lain mana pun (semuanya akan ditolak 403), murni tampilan statis.
+  function renderTidakTersedia(root) {
+    const page = MugenUI.el("div", { class: "book-public book-landing" });
+    root.appendChild(page);
+    const hero = MugenUI.el("section", { class: "book-hero" });
+    const heroContent = MugenUI.el("div", { class: "book-hero-content" });
+    heroContent.appendChild(MugenUI.el("h1", {}, "Booking Tidak Tersedia"));
+    heroContent.appendChild(MugenUI.el("div", { class: "book-hero-tagline" },
+      "Halaman booking toko ini sedang tidak tersedia. Hubungi pemilik toko untuk informasi lebih lanjut."));
+    hero.appendChild(heroContent);
+    page.appendChild(hero);
   }
 
   // ================= LANDING PAGE (website resmi) =================
