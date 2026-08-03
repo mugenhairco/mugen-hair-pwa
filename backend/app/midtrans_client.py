@@ -44,6 +44,13 @@ _CORE_API_BASE_URL = (
     "https://api.midtrans.com/v2" if MIDTRANS_IS_PRODUCTION
     else "https://api.sandbox.midtrans.com/v2"
 )
+# Dipakai frontend memuat script Snap.js yang BENAR (Sandbox vs Production)
+# -- dikirim lewat GET /api/billing/config (routers/billing.py), TIDAK
+# pernah di-hardcode di frontend supaya otomatis mengikuti MIDTRANS_IS_PRODUCTION.
+SNAP_JS_URL = (
+    "https://app.midtrans.com/snap/snap.js" if MIDTRANS_IS_PRODUCTION
+    else "https://app.sandbox.midtrans.com/snap/snap.js"
+)
 _TIMEOUT_DETIK = 15
 
 

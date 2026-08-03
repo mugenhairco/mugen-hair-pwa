@@ -658,6 +658,31 @@ CREATE TABLE IF NOT EXISTS subscription_package_features (
     created_at   TEXT NOT NULL,
     UNIQUE(package_id, feature_id)
 );
+
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap. tenant_id
+-- TANPA foreign key (pola sama seperti tabel lain di proyek ini).
+CREATE TABLE IF NOT EXISTS subscription_invoices (
+    id                  SERIAL PRIMARY KEY,
+    nomor_invoice       TEXT NOT NULL UNIQUE,
+    order_id            TEXT NOT NULL UNIQUE,
+    tenant_id           INTEGER NOT NULL,
+    package_kode        TEXT NOT NULL,
+    package_nama        TEXT NOT NULL,
+    jumlah              INTEGER NOT NULL,
+    durasi_hari         INTEGER NOT NULL,
+    metode_pembayaran   TEXT,
+    payment_type        TEXT,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    snap_token          TEXT,
+    snap_redirect_url   TEXT,
+    periode_mulai       TEXT,
+    periode_selesai     TEXT,
+    raw_notification    TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    paid_at             TEXT
+);
 """
 
 
