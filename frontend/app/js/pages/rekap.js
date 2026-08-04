@@ -195,45 +195,6 @@ const PageRekap = (() => {
       body.appendChild(pdfRow);
       body.appendChild(tableWrap);
 
-      // Rekap Barber: kolom Komisi/Kasbon/Reimburse/Total KHUSUS akun
-      // ber-role Barber (tampilan Owner/Admin di bawah TIDAK berubah sama
-      // sekali, tetap kolom "Pendapatan" gabungan seperti sebelumnya).
-      // Kasbon/Reimburse SUDAH ADA sebagai BARIS TERSENDIRI di data yang
-      // sama (tipe="kasbon"/"reimburse", lihat kasbon_db.py/reimburse_db.py
-      // gabung_ke_rekap_transaksi()) dengan nilainya sudah ada di field
-      // "pendapatan" (kasbon NEGATIF, reimburse POSITIF) -- fungsi ini
-      // TIDAK menghitung ulang satu angka pun, murni memecah field yang
-      // sudah ada ke kolom masing-masing berdasar tipe baris supaya lebih
-      // mudah dibaca daripada bercampur jadi satu kolom "Pendapatan".
-      // Kolom "Total" = field "pendapatan" apa adanya (sudah bertanda
-      // benar untuk tiap tipe baris), TIDAK PERNAH kosong. Kolom Kasbon/
-      // Reimburse hanya ditampilkan kalau ADA minimal satu baris tipe itu
-      // pada hasil periode yang sedang dilihat (kalau tidak ada sama
-      // sekali, kolomnya dihilangkan, bukan ditampilkan kosong).
-      function kolomTransaksiBarber(rowsBarber) {
-        const adaKasbon = rowsBarber.some((r) => r.tipe === "kasbon");
-        const adaReimburse = rowsBarber.some((r) => r.tipe === "reimburse");
-        return [
-          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-          { key: "nama_barber", label: "Nama" },
-          { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
-          { key: "jumlah_service", label: "Jml Service" },
-          { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-          { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-          { key: "pendapatan", label: "Komisi", format: (v, r) => (r.tipe === "transaksi" ? MugenUI.formatRupiah(v) : "-") },
-          ...(adaKasbon ? [{ key: "pendapatan", label: "Kasbon", format: (v, r) => (r.tipe === "kasbon" ? MugenUI.formatRupiah(Math.abs(v)) : "-") }] : []),
-          ...(adaReimburse ? [{ key: "pendapatan", label: "Reimburse", format: (v, r) => (r.tipe === "reimburse" ? MugenUI.formatRupiah(v) : "-") }] : []),
-          { key: "pendapatan", label: "Total", format: MugenUI.formatRupiah },
-          {
-            key: "keterangan", label: "Ket.", format: (v, r) => {
-              if (!v) return "-";
-              if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
-              return MugenUI.keteranganCell(v);
-            },
-          },
-        ];
-      }
-
       async function load() {
         tableWrap.innerHTML = "Memuat...";
         try {
@@ -244,7 +205,7 @@ const PageRekap = (() => {
           if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
           const rows = Array.isArray(data) ? data : [];
           tableWrap.appendChild(MugenUI.buildTable(
-            isAdmin ? [
+            [
               { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
               { key: "nama_barber", label: "Nama" },
               { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
@@ -337,7 +298,7 @@ const PageRekap = (() => {
                   return "-";
                 },
               }] : []),
-            ] : kolomTransaksiBarber(rows),
+            ],
             rows,
           ));
         } catch (e) {
