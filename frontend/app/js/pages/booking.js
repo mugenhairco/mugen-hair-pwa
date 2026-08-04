@@ -765,14 +765,27 @@ const PageBooking = (() => {
 
   // ================= TAB: BOOKING SETTINGS =================
   async function renderBookingSettings(body) {
-    // Link Booking: SELALU mengikuti domain saat ini (window.location.origin),
-    // bukan setting yang disimpan -- otomatis benar begitu domain berganti,
-    // tidak perlu ubah kode apa pun (lihat klarifikasi #4 spesifikasi).
     const linkCard = MugenUI.el("div", { class: "card" });
     body.appendChild(linkCard);
     linkCard.appendChild(MugenUI.el("h2", {}, "Link Booking"));
     linkCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Link ini otomatis mengikuti domain aplikasi -- bagikan ke customer."));
-    const linkBooking = `${window.location.origin}/#/book`;
+    // Link Booking: SELALU mengikuti domain saat ini (window.location.origin),
+    // bukan setting yang disimpan -- otomatis benar begitu domain berganti,
+    // tidak perlu ubah kode apa pun (lihat klarifikasi #4 spesifikasi).
+    // BUGFIX: sebelumnya hanya memakai origin ("https://domain"), tanpa
+    // path -- benar SELAMA aplikasi ini di-serve dari root domain ("/").
+    // Sejak FONDASI Multi-Tenant Phase 5 (Landing Page publik di "/",
+    // Dashboard PWA INI di "/app/"), origin saja menghasilkan link SALAH
+    // ("https://domain/#/book" -> mendarat di Landing Page yang tidak
+    // punya router hash sama sekali, BUKAN halaman /book yang sebenarnya)
+    // -- customer yang mengklik link lama/tersimpan mendarat di halaman
+    // marketing kosong, bukan halaman booking. Path saat ini
+    // (window.location.pathname, SELALU "/app/" karena file ini cuma
+    // dimuat dari sana) diikutkan juga supaya link tetap benar di mana pun
+    // aplikasi ini di-mount, otomatis, tanpa perlu ubah kode lagi kalau
+    // base path berubah lagi nanti.
+    const basePath = window.location.pathname.replace(/index\.html$/, "").replace(/\/+$/, "");
+    const linkBooking = `${window.location.origin}${basePath}/#/book`;
     const inLink = MugenUI.el("input", { type: "text", value: linkBooking, readOnly: true });
     const btnSalinLink = MugenUI.el("button", {}, "Salin Link");
     btnSalinLink.addEventListener("click", async () => {
