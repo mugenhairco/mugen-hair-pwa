@@ -72,6 +72,12 @@ const PageSuperadmin = (() => {
     const billingPackagesCard = MugenUI.el("div", { class: "card" });
     const billingFeaturesCard = MugenUI.el("div", { class: "card" });
     const billingInvoicesCard = MugenUI.el("div", { class: "card" });
+    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): tiga kartu baru,
+    // TIDAK mengubah kartu Phase 3/4 di atas sama sekali -- lihat
+    // landing_db.py/routers/landing.py.
+    const landingFaqCard = MugenUI.el("div", { class: "card" });
+    const landingTestimonialsCard = MugenUI.el("div", { class: "card" });
+    const landingContactCard = MugenUI.el("div", { class: "card" });
     const auditCard = MugenUI.el("div", { class: "card" });
     root.appendChild(listCard);
     root.appendChild(formCard);
@@ -80,6 +86,9 @@ const PageSuperadmin = (() => {
     root.appendChild(billingPackagesCard);
     root.appendChild(billingFeaturesCard);
     root.appendChild(billingInvoicesCard);
+    root.appendChild(landingFaqCard);
+    root.appendChild(landingTestimonialsCard);
+    root.appendChild(landingContactCard);
     root.appendChild(auditCard);
 
     // ---------------------------------------------------------------
@@ -682,7 +691,228 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 8. RIWAYAT AKSI (Audit Log)
+    // 8. LANDING PAGE -- FAQ (FONDASI Multi-Tenant Phase 5)
+    // ---------------------------------------------------------------
+    landingFaqCard.appendChild(MugenUI.el("h2", {}, "Landing Page -- FAQ"));
+    landingFaqCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Tambah/ubah/nonaktifkan/hapus FAQ yang tampil di halaman publik -- hanya yang Aktif yang tampil."));
+    const landingFaqListBody = MugenUI.el("div");
+    landingFaqCard.appendChild(landingFaqListBody);
+
+    async function loadLandingFaq() {
+      landingFaqListBody.innerHTML = "Memuat...";
+      try {
+        const list = await MugenApi.get("/api/superadmin/landing/faq");
+        landingFaqListBody.innerHTML = "";
+        landingFaqListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "pertanyaan", label: "Pertanyaan" },
+            { key: "jawaban", label: "Jawaban" },
+            { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? " badge-success" : " badge-danger") }, v ? "Aktif" : "Nonaktif") },
+            {
+              key: "aksi", label: "Aksi", format: (_, f) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnToggle = MugenUI.el("button", {}, f.aktif ? "Nonaktifkan" : "Aktifkan");
+                btnToggle.addEventListener("click", async () => {
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/landing/faq/${f.id}`, { aktif: !f.aktif }), { message: "Menyimpan…" });
+                    MugenUI.toast("FAQ diperbarui.", "success");
+                    loadLandingFaq();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnToggle);
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm("Hapus FAQ ini?")) return;
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/landing/faq/${f.id}`), { message: "Menghapus…" });
+                    MugenUI.toast("FAQ dihapus.", "success");
+                    loadLandingFaq();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          list,
+          { emptyText: "Belum ada FAQ." },
+        ));
+      } catch (e) {
+        landingFaqListBody.innerHTML = "";
+        landingFaqListBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    const inputFaqPertanyaan = MugenUI.el("input", { type: "text", placeholder: "Pertanyaan" });
+    const inputFaqJawaban = MugenUI.el("input", { type: "text", placeholder: "Jawaban" });
+    const btnTambahFaq = MugenUI.el("button", { class: "btn-primary" }, "Tambah FAQ");
+    const errFaq = MugenUI.el("div", { class: "login-error" });
+    landingFaqCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Tambah FAQ Baru"));
+    landingFaqCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
+      inputFaqPertanyaan, inputFaqJawaban, btnTambahFaq,
+    ]));
+    landingFaqCard.appendChild(errFaq);
+
+    btnTambahFaq.addEventListener("click", async () => {
+      errFaq.textContent = "";
+      try {
+        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/landing/faq", {
+          pertanyaan: inputFaqPertanyaan.value.trim(), jawaban: inputFaqJawaban.value.trim(),
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("FAQ ditambahkan.", "success");
+        inputFaqPertanyaan.value = ""; inputFaqJawaban.value = "";
+        loadLandingFaq();
+      } catch (e) {
+        errFaq.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 9. LANDING PAGE -- TESTIMONIAL
+    // ---------------------------------------------------------------
+    landingTestimonialsCard.appendChild(MugenUI.el("h2", {}, "Landing Page -- Testimonial"));
+    const landingTestimonialsListBody = MugenUI.el("div");
+    landingTestimonialsCard.appendChild(landingTestimonialsListBody);
+
+    async function loadLandingTestimonials() {
+      landingTestimonialsListBody.innerHTML = "Memuat...";
+      try {
+        const list = await MugenApi.get("/api/superadmin/landing/testimonials");
+        landingTestimonialsListBody.innerHTML = "";
+        landingTestimonialsListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama", label: "Nama" },
+            { key: "jabatan_toko", label: "Toko/Jabatan", format: (v) => v || "-" },
+            { key: "isi", label: "Isi" },
+            { key: "rating", label: "Rating" },
+            { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? " badge-success" : " badge-danger") }, v ? "Aktif" : "Nonaktif") },
+            {
+              key: "aksi", label: "Aksi", format: (_, t) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnToggle = MugenUI.el("button", {}, t.aktif ? "Nonaktifkan" : "Aktifkan");
+                btnToggle.addEventListener("click", async () => {
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/landing/testimonials/${t.id}`, { aktif: !t.aktif }), { message: "Menyimpan…" });
+                    MugenUI.toast("Testimonial diperbarui.", "success");
+                    loadLandingTestimonials();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnToggle);
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus testimonial dari "${t.nama}"?`)) return;
+                  try {
+                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/landing/testimonials/${t.id}`), { message: "Menghapus…" });
+                    MugenUI.toast("Testimonial dihapus.", "success");
+                    loadLandingTestimonials();
+                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                });
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          list,
+          { emptyText: "Belum ada testimonial." },
+        ));
+      } catch (e) {
+        landingTestimonialsListBody.innerHTML = "";
+        landingTestimonialsListBody.appendChild(MugenUI.el("div", {}, e.message));
+      }
+    }
+
+    const inputTestiNama = MugenUI.el("input", { type: "text", placeholder: "Nama" });
+    const inputTestiJabatan = MugenUI.el("input", { type: "text", placeholder: "Toko/Jabatan (opsional)" });
+    const inputTestiIsi = MugenUI.el("input", { type: "text", placeholder: "Isi testimonial" });
+    const inputTestiRating = MugenUI.el("input", { type: "number", min: "1", max: "5", value: "5", style: "width:70px;" });
+    const btnTambahTesti = MugenUI.el("button", { class: "btn-primary" }, "Tambah Testimonial");
+    const errTesti = MugenUI.el("div", { class: "login-error" });
+    landingTestimonialsCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Tambah Testimonial Baru"));
+    landingTestimonialsCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
+      inputTestiNama, inputTestiJabatan, inputTestiIsi, inputTestiRating, btnTambahTesti,
+    ]));
+    landingTestimonialsCard.appendChild(errTesti);
+
+    btnTambahTesti.addEventListener("click", async () => {
+      errTesti.textContent = "";
+      try {
+        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/landing/testimonials", {
+          nama: inputTestiNama.value.trim(), jabatan_toko: inputTestiJabatan.value.trim(),
+          isi: inputTestiIsi.value.trim(), rating: Number(inputTestiRating.value) || 5,
+        }), { message: "Menyimpan…" });
+        MugenUI.toast("Testimonial ditambahkan.", "success");
+        inputTestiNama.value = ""; inputTestiJabatan.value = ""; inputTestiIsi.value = ""; inputTestiRating.value = "5";
+        loadLandingTestimonials();
+      } catch (e) {
+        errTesti.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 10. LANDING PAGE -- KONTAK & STATISTIK
+    // ---------------------------------------------------------------
+    landingContactCard.appendChild(MugenUI.el("h2", {}, "Landing Page -- Kontak & Statistik"));
+    landingContactCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Active Tenants & Total Bookings dihitung otomatis dari data asli (tidak bisa diedit di sini)."));
+
+    const inputContactWhatsapp = MugenUI.el("input", { type: "text", placeholder: "WhatsApp" });
+    const inputContactEmail = MugenUI.el("input", { type: "text", placeholder: "Email" });
+    const inputContactAlamat = MugenUI.el("input", { type: "text", placeholder: "Alamat" });
+    const inputContactMaps = MugenUI.el("input", { type: "text", placeholder: "Link Google Maps (opsional)" });
+    const inputStatHappy = MugenUI.el("input", { type: "text", placeholder: "Happy Customers (mis. 500+)" });
+    const inputStatUptime = MugenUI.el("input", { type: "text", placeholder: "Uptime (mis. 99.9%)" });
+    const btnSimpanContact = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
+    const errContact = MugenUI.el("div", { class: "login-error" });
+
+    landingContactCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;" }, [
+      inputContactWhatsapp, inputContactEmail, inputContactAlamat, inputContactMaps,
+    ]));
+    landingContactCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:8px;" }, [
+      inputStatHappy, inputStatUptime, btnSimpanContact,
+    ]));
+    landingContactCard.appendChild(errContact);
+
+    async function loadLandingContact() {
+      try {
+        const [contact, stats] = await Promise.all([
+          MugenApi.get("/api/superadmin/landing/contact"),
+          MugenApi.get("/api/superadmin/landing/stats"),
+        ]);
+        inputContactWhatsapp.value = contact.platform_contact_whatsapp || "";
+        inputContactEmail.value = contact.platform_contact_email || "";
+        inputContactAlamat.value = contact.platform_contact_alamat || "";
+        inputContactMaps.value = contact.platform_contact_maps_url || "";
+        inputStatHappy.value = stats.platform_stat_happy_customers || "";
+        inputStatUptime.value = stats.platform_stat_uptime || "";
+      } catch (e) {
+        errContact.textContent = e.message;
+      }
+    }
+
+    btnSimpanContact.addEventListener("click", async () => {
+      errContact.textContent = "";
+      try {
+        await MugenUI.withLoading(() => Promise.all([
+          MugenApi.put("/api/superadmin/landing/contact", {
+            platform_contact_whatsapp: inputContactWhatsapp.value.trim(),
+            platform_contact_email: inputContactEmail.value.trim(),
+            platform_contact_alamat: inputContactAlamat.value.trim(),
+            platform_contact_maps_url: inputContactMaps.value.trim(),
+          }),
+          MugenApi.put("/api/superadmin/landing/stats", {
+            platform_stat_happy_customers: inputStatHappy.value.trim(),
+            platform_stat_uptime: inputStatUptime.value.trim(),
+          }),
+        ]), { message: "Menyimpan…" });
+        MugenUI.toast("Kontak & statistik disimpan.", "success");
+      } catch (e) {
+        errContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 11. RIWAYAT AKSI (Audit Log)
     // ---------------------------------------------------------------
     auditCard.appendChild(MugenUI.el("h2", {}, "Riwayat Aksi"));
     const auditBody = MugenUI.el("div");
@@ -715,6 +945,9 @@ const PageSuperadmin = (() => {
     await loadBillingPackages();
     await loadBillingFeatures();
     await loadBillingInvoices();
+    await loadLandingFaq();
+    await loadLandingTestimonials();
+    await loadLandingContact();
     await loadAuditLog();
   }
 
