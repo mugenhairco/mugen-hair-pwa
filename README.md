@@ -2698,6 +2698,39 @@ secara manual lewat dashboard.
    SUDAH memakai `rivoirsett.com`/`api.rivoirsett.com`, jadi langkah ini
    hanya perlu diulang kalau domainnya berubah lagi di masa depan.
 
+**Redirect domain lama (`*.onrender.com`) → domain produksi:** setelah
+custom domain aktif, siapa pun yang membuka URL `.onrender.com` bawaan
+Render (mis. dari link lama, bookmark, hasil index mesin pencari sebelum
+custom domain dipakai) tetap otomatis diarahkan ke domain produksi, TANPA
+tindakan apa pun dari pengguna:
+- **Backend**: middleware `_redirect_domain_lama()` di `main.py` — kalau
+  header `Host` request persis `mugen-hair-api.onrender.com`, backend
+  langsung membalas **HTTP 308** (path + query string dipertahankan
+  persis, method request juga dipertahankan — beda dari 301/302 yang
+  bisa mengubah POST jadi GET) ke `https://api.rivoirsett.com` + path
+  yang sama. Diuji di `backend/tests/test_domain_redirect.py`. Ini
+  SATU-SATUNYA cara mendapat redirect HTTP sungguhan di Render — platform
+  tidak punya redirect otomatis berbasis Host header untuk Web Service
+  (hanya bisa "Disable" total via Settings > Custom Domains > Render
+  Subdomain, yang membalas 404, BUKAN redirect).
+- **Frontend**: Render Static Site TIDAK BISA melakukan hal yang sama —
+  rule redirect/rewrite-nya hanya cocok berdasar PATH, identik untuk
+  domain apa pun yang mengarah ke situs statis yang sama (termasuk domain
+  produksi itu sendiri), jadi rule "redirect semua path ke rivoirsett.com"
+  akan membuat `rivoirsett.com` ikut me-redirect dirinya sendiri terus-
+  menerus. Situs statis juga tidak menjalankan kode server yang bisa
+  membaca Host header. Solusinya: script inline di baris paling awal
+  `<head>` (sebelum resource lain apa pun dimuat) di `frontend/index.html`
+  dan `frontend/app/index.html` — cek `location.hostname`, kalau cocok
+  `mugenhairco.onrender.com`, langsung `location.replace()` ke
+  `https://rivoirsett.com` + path/query/hash yang sama. BUKAN HTTP 308
+  sungguhan (tidak ada request server yang bisa dicek statusnya lewat
+  `curl -I`), tapi efeknya sama dari sisi pengguna: berpindah otomatis,
+  hampir seketika, sebelum konten apa pun sempat tampil, tanpa tindakan
+  apa pun. Kalau domain frontend `.onrender.com` yang sebenarnya berbeda
+  dari `mugenhairco.onrender.com` (cek di dashboard Render service
+  frontend), sesuaikan nilai ini di kedua file `index.html` tersebut.
+
 **Opsi B — manual lewat dashboard** (kalau backend Anda sudah ada dengan
 nama service berbeda dari `render.yaml`, atau memang tidak ingin memakai
 Blueprint):

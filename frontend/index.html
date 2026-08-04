@@ -2,6 +2,25 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
+<!-- Domain lama Render (*.onrender.com) -> domain produksi: Render Static
+     Site TIDAK punya redirect berbasis Host header di level platform (rule
+     redirect/rewrite di render.yaml/dashboard hanya cocok berdasar PATH,
+     SAMA persis untuk domain APA PUN yang mengarah ke situs statis yang
+     sama -- kalau dipaksa redirect semua path ke rivoirsett.com, domain
+     rivoirsett.com sendiri ikut kena redirect ke dirinya sendiri terus-
+     menerus/infinite loop). Situs statis juga tidak bisa menjalankan kode
+     server yang membaca Host header (lihat backend/app/main.py untuk
+     redirect HTTP 308 sungguhan di sisi backend, yang PUNYA kode server).
+     SATU-SATUNYA cara aman untuk domain statis ini: script sedini mungkin
+     di sini, SEBELUM resource lain apa pun dimuat, cek location.hostname
+     lalu location.replace() (bukan location.href, supaya domain lama tidak
+     ikut masuk riwayat back-button) ke path+query+hash yang sama persis di
+     domain produksi. -->
+<script>
+  if (location.hostname === "mugenhairco.onrender.com") {
+    location.replace("https://rivoirsett.com" + location.pathname + location.search + location.hash);
+  }
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Rivoir — Platform Manajemen Barbershop All-in-One</title>
 <meta name="description" content="Rivoir adalah platform SaaS untuk barbershop: booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans (QRIS/VA/kartu), laporan & analitik, semua dalam satu dashboard." />
@@ -50,7 +69,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=3" />
+<link rel="stylesheet" href="css/landing.css?v=4" />
 </head>
 <body>
 
@@ -218,6 +237,6 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/landing.js?v=3"></script>
+<script src="js/landing.js?v=4"></script>
 </body>
 </html>

@@ -43,6 +43,7 @@ if _APP_DIR not in sys.path:
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 import database as db
 import auth_db
@@ -147,6 +148,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Domain lama Render (*.onrender.com) -> domain produksi: permanent redirect
+# HTTP 308 (bukan 301/302 -- 308 SATU-SATUNYA kode redirect yang menjamin
+# method+body request tetap dipertahankan persis, penting karena endpoint di
+# aplikasi ini banyak yang POST/PUT/DELETE, bukan cuma GET). Render TIDAK
+# punya redirect otomatis berbasis Host header di level platform untuk Web
+# Service (hanya bisa "Disable" total = 404, lihat README > Deployment >
+# Render) -- middleware ini SATU-SATUNYA cara mendapat redirect sungguhan.
+# `request.headers.get("host")` sudah TERBUKTI diteruskan apa adanya oleh
+# Render (tenant_middleware.py sudah bergantung padanya sejak Phase 2.0),
+# jadi aman dipakai sebagai sumber kebenaran domain yang sedang diakses.
+_OLD_BACKEND_HOST = "mugen-hair-api.onrender.com"
+_NEW_BACKEND_ORIGIN = "https://api.rivoirsett.com"
+
+
+@app.middleware("http")
+async def _redirect_domain_lama(request: Request, call_next):
+    host = request.headers.get("host", "").split(":", 1)[0].lower()
+    if host == _OLD_BACKEND_HOST:
+        target = _NEW_BACKEND_ORIGIN + request.url.path
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=308)
+    return await call_next(request)
+
 
 # FONDASI Multi-Tenant Phase 2.0: resolusi tenant per-request di SATU
 # tempat (lihat tenant_middleware.py) -- request.state.requested_tenant_slug
