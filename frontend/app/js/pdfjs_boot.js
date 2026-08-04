@@ -11,8 +11,8 @@
 // pdf_preview.js tidak perlu tahu/pusing soal timing eksekusi module vs
 // skrip biasa (module SELALU dieksekusi setelah HTML di-parse, tapi tetap
 // aman ditunggu lewat event daripada berasumsi soal urutan).
-import * as pdfjsLib from "/vendor/pdfjs/pdf.min.js";
+import * as pdfjsLib from "/app/vendor/pdfjs/pdf.min.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/app/vendor/pdfjs/pdf.worker.min.js";
 window.pdfjsLib = pdfjsLib;
 window.dispatchEvent(new Event("pdfjs-ready"));

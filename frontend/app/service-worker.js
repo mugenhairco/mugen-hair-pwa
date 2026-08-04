@@ -316,7 +316,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "59";
+const ASSET_VERSION = "60";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -333,47 +333,57 @@ const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 // di sini tapi TIDAK di pdfjs_boot.js, kuncinya tidak akan pernah cocok
 // dengan permintaan sungguhan (selalu network, bukan cache -- tidak fatal,
 // tapi menghilangkan manfaat offline-nya).
+// FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): file ini (dan seluruh
+// APP_SHELL di bawah) sekarang HIDUP di /app/ (Landing Page publik BARU
+// dipasang terpisah di root "/", lihat frontend/index.html + frontend/
+// service-worker.js) -- Service Worker ini didaftarkan dari app.js dengan
+// path relatif "service-worker.js" (TIDAK diubah), yang otomatis memberi
+// scope default "/app/" (scope = folder tempat file SW berada) TANPA perlu
+// opsi `scope` eksplisit. SELURUH path di bawah karena itu diberi awalan
+// "/app/" -- KECUALI /icons/* (tetap satu folder bersama di root, dipakai
+// Landing Page maupun App yang sama).
 const _APP_SHELL_TANPA_VERSI = [
-  "/", "/index.html", "/manifest.json",
-  "/vendor/pdfjs/pdf.min.js", "/vendor/pdfjs/pdf.worker.min.js",
+  "/app/", "/app/index.html", "/app/manifest.json",
+  "/app/vendor/pdfjs/pdf.min.js", "/app/vendor/pdfjs/pdf.worker.min.js",
 ];
 const _APP_SHELL_BER_VERSI = [
-  "/config.js",
-  "/css/style.css",
-  "/js/pdfjs_boot.js",
-  "/js/state.js",
-  "/js/theme.js",
-  "/js/api.js",
-  "/js/ui.js",
-  "/js/pdf_preview.js",
-  "/js/brand.js",
-  "/js/subscription.js",
-  "/js/pwa_update.js",
-  "/js/nav.js",
-  "/js/booking_notif.js",
-  "/js/izin_notif.js",
-  "/js/router.js",
-  "/js/app.js",
-  "/js/pages/login.js",
-  "/js/pages/dashboard_owner.js",
-  "/js/pages/dashboard_barber.js",
-  "/js/pages/input_data.js",
-  "/js/pages/rekap.js",
-  "/js/pages/pengeluaran.js",
-  "/js/pages/pemasukan.js",
-  "/js/pages/uang_kas.js",
-  "/js/pages/slip_gaji.js",
-  "/js/pages/kasbon.js",
-  "/js/pages/komisi.js",
-  "/js/pages/reimburse.js",
-  "/js/pages/izin_cuti.js",
-  "/js/pages/pengaturan.js",
-  "/js/pages/billing.js",
-  "/js/pages/produk.js",
-  "/js/pages/booking.js",
-  "/js/pages/book_public.js",
-  "/js/pages/superadmin.js",
-  "/js/pages/subscription_blocked.js",
+  "/app/config.js",
+  "/app/css/style.css",
+  "/app/js/pdfjs_boot.js",
+  "/app/js/state.js",
+  "/app/js/theme.js",
+  "/app/js/api.js",
+  "/app/js/ui.js",
+  "/app/js/pdf_preview.js",
+  "/app/js/brand.js",
+  "/app/js/subscription.js",
+  "/app/js/pwa_update.js",
+  "/app/js/nav.js",
+  "/app/js/booking_notif.js",
+  "/app/js/izin_notif.js",
+  "/app/js/router.js",
+  "/app/js/app.js",
+  "/app/js/pages/login.js",
+  "/app/js/pages/register.js",
+  "/app/js/pages/dashboard_owner.js",
+  "/app/js/pages/dashboard_barber.js",
+  "/app/js/pages/input_data.js",
+  "/app/js/pages/rekap.js",
+  "/app/js/pages/pengeluaran.js",
+  "/app/js/pages/pemasukan.js",
+  "/app/js/pages/uang_kas.js",
+  "/app/js/pages/slip_gaji.js",
+  "/app/js/pages/kasbon.js",
+  "/app/js/pages/komisi.js",
+  "/app/js/pages/reimburse.js",
+  "/app/js/pages/izin_cuti.js",
+  "/app/js/pages/pengaturan.js",
+  "/app/js/pages/billing.js",
+  "/app/js/pages/produk.js",
+  "/app/js/pages/booking.js",
+  "/app/js/pages/book_public.js",
+  "/app/js/pages/superadmin.js",
+  "/app/js/pages/subscription_blocked.js",
 ];
 const APP_SHELL = [
   ..._APP_SHELL_TANPA_VERSI,
@@ -436,7 +446,7 @@ self.addEventListener("fetch", (event) => {
   // changelog v56->v57 atas kenapa ini WAJIB diubah dari cache-first.
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/index.html"))
+      fetch(event.request).catch(() => caches.match("/app/index.html"))
     );
     return;
   }
