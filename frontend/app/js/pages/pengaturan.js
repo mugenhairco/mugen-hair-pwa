@@ -1072,6 +1072,21 @@ const PagePengaturan = (() => {
               {
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  // Akun Super Admin (role="superadmin") TIDAK PERNAH ikut
+                  // terkirim ke tenant mana pun (backend memfilter list ini
+                  // per tenant_id, dan Super Admin tidak terkait tenant
+                  // mana pun -- lihat routers/pengaturan.py::list_user()),
+                  // jadi baris ini seharusnya tidak pernah dirender sama
+                  // sekali. Guard ini murni lapis pertahanan tambahan (defense
+                  // in depth) supaya tombol Edit/Hapus/Reset Password TIDAK
+                  // PERNAH tampil untuk akun yang dilindungi kalau asumsi itu
+                  // ternyata berubah -- backend juga menolak lewat 403
+                  // (lihat _pastikan_bukan_akun_dilindungi()) apa pun yang
+                  // ditampilkan di sini.
+                  if (r.role === "superadmin") {
+                    wrap.appendChild(MugenUI.el("span", { style: "color:var(--text-dim);" }, "-"));
+                    return wrap;
+                  }
                   // REVISI Hak Akses Admin: 'staff' (Admin) hanya boleh
                   // menyasar user ber-role 'barber' -- tombol aksi untuk
                   // baris Owner/Admin lain disembunyikan sama sekali di sini

@@ -1271,7 +1271,6 @@ def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
             round(bonus_customer["jumlah_service"] / bonus_customer["target"] * 100, 1)
             if bonus_customer["target"] else 0
         ),
-        "transaksi_terakhir": transaksi_bulan[:5],
     }
 
 

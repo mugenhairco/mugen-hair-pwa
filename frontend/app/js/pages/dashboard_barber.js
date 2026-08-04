@@ -106,17 +106,6 @@ const PageDashboardBarber = (() => {
           ],
           r.rincian_service,
         ));
-
-        body.appendChild(MugenUI.el("h2", {}, "Transaksi Terakhir"));
-        body.appendChild(MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
-            { key: "total_harga", label: "Nilai", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-          ],
-          r.transaksi_terakhir,
-        ));
       } catch (e) {
         body.innerHTML = "";
         body.appendChild(MugenUI.el("div", { class: "card" }, e.message));

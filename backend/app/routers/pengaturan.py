@@ -499,6 +499,21 @@ def _pastikan_target_tenant_sama(user: dict, target: dict):
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
 
 
+def _pastikan_bukan_akun_dilindungi(target: dict):
+    """Akun Super Admin (role='superadmin', tenant_id=NULL -- lihat
+    auth_db.tambah_user()) adalah akun PLATFORM, bukan milik tenant mana
+    pun -- tidak boleh diubah/dihapus/direset passwordnya lewat endpoint
+    /user/* milik satu tenant, walau pemanggil entah bagaimana tahu/
+    menebak ID-nya. 403 (BUKAN 404 seperti _pastikan_target_tenant_sama di
+    atas) sengaja dipakai di sini -- ini bukan soal isolasi data antar
+    tenant (yang memang harus disamarkan jadi "tidak ditemukan"), tapi
+    larangan eksplisit terhadap akun yang dilindungi: akun ini ADA, dan
+    permintaannya DITOLAK. Dipanggil SEBELUM _pastikan_target_tenant_sama
+    supaya percobaan menyasar Super Admin selalu dapat 403, bukan 404."""
+    if target["role"] == "superadmin":
+        raise HTTPException(status_code=403, detail="Akun ini dilindungi dan tidak bisa diubah dari sini.")
+
+
 @router.get("/user")
 def list_user(user: dict = Depends(require_owner_or_staff)):
     if user["role"] == "staff" and not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]):
@@ -539,6 +554,7 @@ def ganti_username(user_id: int, body: UsernameBody, user: dict = Depends(requir
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     try:
         pengaturan_user.ganti_username(user_id, body.username)
@@ -552,6 +568,7 @@ def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(requir
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
         if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_ganti_password", tenant_id=user["tenant_id"]):
@@ -569,6 +586,7 @@ def nonaktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff))
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
         if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
@@ -584,6 +602,7 @@ def aktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
         if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
@@ -605,6 +624,7 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     target = auth_db.get_user(user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if target["id"] == user["id"]:
         raise HTTPException(status_code=403, detail="Tidak bisa menghapus akun sendiri.")
