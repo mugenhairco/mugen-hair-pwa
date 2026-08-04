@@ -51,10 +51,79 @@ const PageDashboardBarber = (() => {
       return MugenUI.el("div", { class: "card" }, children);
     }
 
+    // Rekap Transaksi Bulanan (khusus halaman ini, akun Barber sendiri) --
+    // dipisah dari kartu ringkasan di atas: tabel rinci per transaksi untuk
+    // periode yang dipilih, PLUS tabel Kasbon dan Reimburse TERPISAH
+    // (bukan digabung jadi kolom di tabel transaksi) yang HANYA muncul
+    // kalau ada datanya periode itu. Sumbernya SAMA dengan endpoint yang
+    // sudah dipakai halaman Rekap (/api/rekap/transaksi) -- backend sudah
+    // otomatis membatasi hasil ke barber yang sedang login (lihat
+    // routers/rekap.py::rekap_transaksi()), jadi tidak ada data baru yang
+    // perlu dihitung di sini, murni menampilkan baris yang sudah ada
+    // (tipe="transaksi"/"kasbon"/"reimburse", lihat database.py/
+    // kasbon_db.py/reimburse_db.py) dengan susunan kolom yang berbeda.
+    function tabelTransaksiBulanan(rows) {
+      const transaksiRows = rows.filter((r) => r.tipe === "transaksi");
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "nama_barber", label: "Nama" },
+          { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
+          { key: "jumlah_service", label: "Jml Service" },
+          { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+          { key: "pendapatan", label: "Komisi", format: MugenUI.formatRupiah },
+          // Total baris = Uang Harian + Komisi baris itu sendiri (Kasbon/
+          // Reimburse TIDAK ikut di sini -- sudah punya tabelnya sendiri
+          // di bawah, supaya tidak dihitung dua kali).
+          { key: "pendapatan", label: "Total", format: (v, r) => MugenUI.formatRupiah((r.uang_harian || 0) + v) },
+          {
+            key: "keterangan", label: "Ket.", format: (v, r) => {
+              if (!v) return "-";
+              if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
+              return MugenUI.keteranganCell(v);
+            },
+          },
+        ],
+        transaksiRows,
+      );
+    }
+
+    // Kasbon: nilai baris "pendapatan" NEGATIF (lihat kasbon_db.py) --
+    // ditampilkan sebagai nominal positif di sini (kolom sudah berlabel
+    // "Kasbon", tandanya tidak perlu diulang).
+    function tabelKasbon(rows) {
+      const kasbonRows = rows.filter((r) => r.tipe === "kasbon");
+      if (kasbonRows.length === 0) return null;
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "pendapatan", label: "Jumlah", format: (v) => MugenUI.formatRupiah(Math.abs(v)) },
+          { key: "keterangan", label: "Keterangan" },
+        ],
+        kasbonRows,
+      );
+    }
+
+    function tabelReimburse(rows) {
+      const reimburseRows = rows.filter((r) => r.tipe === "reimburse");
+      if (reimburseRows.length === 0) return null;
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "pendapatan", label: "Jumlah", format: MugenUI.formatRupiah },
+          { key: "keterangan", label: "Keterangan" },
+        ],
+        reimburseRows,
+      );
+    }
+
     async function load() {
       body.innerHTML = "Memuat...";
       try {
-        const r = await MugenApi.get(`/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`, { useCache: true });
+        const [r, rekapRows] = await Promise.all([
+          MugenApi.get(`/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
+          MugenApi.get(`/api/rekap/transaksi?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
+        ]);
         body.innerHTML = "";
         if (r.__offline) body.appendChild(MugenUI.offlineBanner(r.__cachedAt));
 
@@ -106,6 +175,24 @@ const PageDashboardBarber = (() => {
           ],
           r.rincian_service,
         ));
+
+        const rows = Array.isArray(rekapRows) ? rekapRows : [];
+        if (rekapRows.__offline) body.appendChild(MugenUI.offlineBanner(rekapRows.__cachedAt));
+
+        body.appendChild(MugenUI.el("h2", {}, "Rekap Transaksi Bulanan"));
+        body.appendChild(tabelTransaksiBulanan(rows));
+
+        const kasbonTable = tabelKasbon(rows);
+        if (kasbonTable) {
+          body.appendChild(MugenUI.el("h2", {}, "Kasbon"));
+          body.appendChild(kasbonTable);
+        }
+
+        const reimburseTable = tabelReimburse(rows);
+        if (reimburseTable) {
+          body.appendChild(MugenUI.el("h2", {}, "Reimburse"));
+          body.appendChild(reimburseTable);
+        }
       } catch (e) {
         body.innerHTML = "";
         body.appendChild(MugenUI.el("div", { class: "card" }, e.message));
