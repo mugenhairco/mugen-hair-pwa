@@ -7,8 +7,8 @@
 //   lempar ke halaman login.
 
 // Ganti nilai ini (atau override lewat window.MUGEN_API_BASE sebelum app.js
-// dimuat) sesuai URL backend Render setelah deploy, contoh:
-// "https://mugen-hair-api.onrender.com"
+// dimuat) sesuai URL backend setelah deploy, contoh:
+// "https://api.rivoirsett.com"
 const MUGEN_API_BASE =
   window.MUGEN_API_BASE ||
   (location.hostname === "localhost" || location.hostname === "127.0.0.1"

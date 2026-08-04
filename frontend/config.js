@@ -3,6 +3,6 @@
 // proses build/bundler sama sekali, lihat README, jadi tidak ada mekanisme
 // "satu sumber kebenaran" lintas frontend/ dan frontend/app/ selain disiplin
 // manual menjaga keduanya sama). Ganti KEDUA file ini bersamaan kalau URL
-// backend Render berubah.
+// backend berubah.
 
-window.MUGEN_API_BASE = "https://mugen-hair-pwa.onrender.com";
+window.MUGEN_API_BASE = "https://api.rivoirsett.com";

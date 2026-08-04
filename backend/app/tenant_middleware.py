@@ -21,8 +21,9 @@ supaya:
    toko-a.mugenhair.app) otomatis ke-resolve TANPA perubahan kode
    endpoint apa pun -- HANYA aktif kalau Owner mengisi environment
    variable `TENANT_SUBDOMAIN_BASE_DOMAIN` (kosong = fitur ini mati
-   total, deployment sekarang di *.onrender.com TIDAK terpengaruh sama
-   sekali, byte-identik dengan sebelum middleware ini ada).
+   total -- deployment produksi saat ini (rivoirsett.com/api.rivoirsett.com)
+   TIDAK mengisinya, jadi TIDAK terpengaruh sama sekali, byte-identik
+   dengan sebelum middleware ini ada).
 
 Urutan prioritas (yang pertama ketemu & tidak kosong yang dipakai):
   query string `?tenant=` > header `X-Tenant-Slug` > subdomain Host.

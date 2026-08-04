@@ -169,8 +169,8 @@ def resolve_tenant_publik(request: Request, tenant: str | None = None) -> int:
     `request.state.requested_tenant_slug` yang sudah di-resolve
     TenantResolutionMiddleware dari header `X-Tenant-Slug` atau subdomain
     (lihat tenant_middleware.py) -- deployment yang belum memakai keduanya
-    (mis. sekarang, di *.onrender.com) selalu dapat None dari situ, jadi
-    perilakunya tetap identik sebelum Phase 2.0."""
+    (termasuk deployment produksi saat ini) selalu dapat None dari situ,
+    jadi perilakunya tetap identik sebelum Phase 2.0."""
     import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
     slug = tenant or getattr(request.state, "requested_tenant_slug", None)
     t = tenant_db.cari_tenant_publik(slug)

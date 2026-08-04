@@ -9,12 +9,12 @@ kerja backend atau frontend yang diubah untuk proyek ini.
 
 `capacitor.config.json` diatur dengan `server.url` mengarah LANGSUNG ke
 ```
-https://mugen-hair-co.onrender.com
+https://rivoirsett.com
 ```
 Artinya WebView aplikasi Android ini selalu menampilkan versi TERBARU dari
-frontend yang sudah live di Render — persis seperti membuka URL itu di
+frontend yang sudah live di produksi — persis seperti membuka URL itu di
 Chrome, hanya dibungkus jadi aplikasi native dengan ikon/splash sendiri.
-**Konsekuensinya**: setiap kali frontend di-deploy ulang ke Render, APK
+**Konsekuensinya**: setiap kali frontend di-deploy ulang, APK
 yang sudah terinstal otomatis menampilkan versi terbaru TANPA perlu
 build ulang APK — sama seperti PWA pada umumnya. APK hanya perlu dibuild
 ulang kalau `appId`/`appName`/ikon/splash/konfigurasi native lain di

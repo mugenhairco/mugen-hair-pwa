@@ -2516,7 +2516,7 @@ lokal, sudah ada nilai default yang aman):
 | `ADMIN_BOOTSTRAP_USERNAME` | Username Owner pertama (hanya dipakai sekali saat database masih kosong) | `owner` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
-| `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` (+ otomatis mengizinkan seluruh subdomain `*.onrender.com`, lihat kode) |
+| `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000,https://rivoirsett.com` (lihat kode) |
 | `TENANT_SUBDOMAIN_BASE_DOMAIN` | FONDASI Multi-Tenant Phase 2.0: domain dasar untuk resolusi tenant lewat SUBDOMAIN (mis. diisi `mugenhair.app` supaya `toko-a.mugenhair.app` otomatis ter-resolve ke tenant slug `toko-a`, lihat `tenant_middleware.py`) | kosong (subdomain resolution MATI TOTAL -- tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) |
 | `DATABASE_URL` | Connection string PostgreSQL (Render PostgreSQL, atau provider Postgres lain mana pun — kode ini generik, tidak terikat satu provider tertentu) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
@@ -2681,14 +2681,22 @@ secara manual lewat dashboard.
 3. Deploy. Setelah kedua service selesai build, catat URL masing-masing
    dari dashboard.
 4. Isi `ALLOWED_ORIGINS` di service **backend** dengan URL Static Site
-   dari langkah 3 (lihat catatan CORS di `main.py` — subdomain
-   `*.onrender.com` APAPUN sudah otomatis diizinkan tanpa ini, tapi
-   mengisinya tetap praktik yang benar dan WAJIB begitu pindah ke custom
-   domain). Simpan — Render otomatis restart dengan CORS yang benar.
+   dari langkah 3 (lihat catatan CORS di `main.py`). Simpan — Render
+   otomatis restart dengan CORS yang benar.
 5. Verifikasi: buka Landing Page (`/`) dan Dashboard (`/app/`) di URL
    Static Site, pastikan tidak ada error CORS/404 di console browser saat
    memuat data (Pricing/FAQ/Testimonial di Landing Page, login di
    Dashboard).
+6. **Custom domain** (opsional, sudah dipakai di produksi saat ini —
+   `https://rivoirsett.com` untuk frontend, `https://api.rivoirsett.com`
+   untuk backend): tab **Settings > Custom Domains** di masing-masing
+   service → tambahkan domain → ikuti instruksi DNS (CNAME/ALIAS) dari
+   Render → SSL diterbitkan otomatis begitu DNS terverifikasi. Setelah
+   custom domain aktif, update `ALLOWED_ORIGINS` (langkah 4) dan
+   `API_BASE_URL`/`SITE_URL` (envVar frontend) ke domain custom itu —
+   nilai default yang sudah di-commit di kode (`main.py`, tag SEO)
+   SUDAH memakai `rivoirsett.com`/`api.rivoirsett.com`, jadi langkah ini
+   hanya perlu diulang kalau domainnya berubah lagi di masa depan.
 
 **Opsi B — manual lewat dashboard** (kalau backend Anda sudah ada dengan
 nama service berbeda dari `render.yaml`, atau memang tidak ingin memakai
@@ -2716,7 +2724,9 @@ Blueprint):
    pembayaran sudah siap diaktifkan. **`ALLOWED_ORIGINS` diisi belakangan**
    (langkah setelah frontend dibuat, setelah tahu URL-nya).
 5. Deploy, catat URL yang diberikan Render (mis.
-   `https://mugen-hair-api-xxxx.onrender.com`).
+   `https://mugen-hair-api-xxxx.onrender.com` -- domain produksi saat ini
+   sudah dipindah ke custom domain `https://api.rivoirsett.com`, lihat
+   langkah "Custom domain" di Opsi A poin 6 di atas untuk cara mengaturnya).
 
 *Frontend (Static Site), terpisah dari service di atas:*
 1. Render Dashboard → **New > Static Site** → hubungkan repo YANG SAMA.
@@ -2736,13 +2746,13 @@ Blueprint):
 4. Tambahkan **Redirect Rule**: source `/app`, destination `/app/`, type
    Redirect (lihat catatan pada `render.yaml` soal kenapa ini wajib).
 5. Deploy, catat URL Static Site ini (mis.
-   `https://mugen-hair-frontend-xxxx.onrender.com`).
+   `https://mugen-hair-frontend-xxxx.onrender.com` -- domain produksi saat
+   ini sudah dipindah ke custom domain `https://rivoirsett.com`, lihat
+   langkah "Custom domain" di Opsi A poin 6 di atas untuk cara mengaturnya,
+   sama untuk service Static Site ini).
 6. Kembali ke service **backend**, isi `ALLOWED_ORIGINS` dengan URL
-   Static Site dari langkah 5 (walau subdomain `*.onrender.com` APAPUN
-   sudah otomatis diizinkan lewat `allow_origin_regex` di `main.py` —
-   lihat komentarnya — mengisi `ALLOWED_ORIGINS` secara eksplisit tetap
-   praktik yang benar, dan WAJIB begitu Anda pindah ke custom domain).
-   Simpan — Render otomatis restart service dengan CORS yang benar.
+   Static Site dari langkah 5. Simpan — Render otomatis restart service
+   dengan CORS yang benar.
 7. Verifikasi: buka Landing Page (`/`) dan Dashboard (`/app/`) di URL
    Static Site, pastikan tidak ada error CORS di console browser saat
    memuat data (Pricing/FAQ/Testimonial di Landing Page, login di

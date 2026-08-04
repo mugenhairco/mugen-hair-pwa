@@ -69,12 +69,12 @@ services:
       # Deployment > Backend poin 2 soal disk persisten kalau begitu).
       - key: DATABASE_URL
         sync: false
-      # Domain Static Site frontend (langkah "Frontend" di bawah) + custom
-      # domain kalau ada, dipisah koma. WAJIB diisi supaya browser tidak
-      # memblokir request API karena CORS -- lihat main.py::ALLOWED_ORIGINS
-      # (subdomain *.onrender.com APAPUN sudah otomatis diizinkan lewat
-      # allow_origin_regex, jadi baris ini terutama penting begitu Anda
-      # memakai custom domain sendiri, bukan *.onrender.com bawaan).
+      # Domain frontend produksi, dipisah koma kalau lebih dari satu (mis.
+      # kalau ada domain tambahan/staging). WAJIB diisi supaya browser tidak
+      # memblokir request API karena CORS -- lihat main.py::ALLOWED_ORIGINS.
+      # Nilai produksi saat ini: https://rivoirsett.com (kode sudah
+      # menyertakannya sebagai default cadangan juga, tapi mengisi env var
+      # ini eksplisit tetap praktik yang benar & wajib kalau domain berubah).
       - key: ALLOWED_ORIGINS
         sync: false
       - key: ADMIN_BOOTSTRAP_USERNAME
@@ -117,20 +117,20 @@ services:
     staticPublishPath: .
     autoDeployTrigger: commit
     envVars:
-      # URL layanan backend DI ATAS (mis. https://mugen-hair-api.onrender.com,
-      # TANPA trailing slash) -- SATU-SATUNYA tempat URL backend perlu
-      # diisi, dibaca saat build (buildCommand di atas), BUKAN di-hardcode
-      # ke source code. Kosongkan hanya kalau sengaja deploy tanpa build
-      # step (lihat fallback manual di README > Deployment > Frontend).
+      # URL layanan backend DI ATAS (TANPA trailing slash) -- SATU-SATUNYA
+      # tempat URL backend perlu diisi, dibaca saat build (buildCommand di
+      # atas), BUKAN di-hardcode ke source code. Nilai produksi saat ini:
+      # https://api.rivoirsett.com. Kosongkan hanya kalau sengaja deploy
+      # tanpa build step (lihat fallback manual di README > Deployment >
+      # Frontend).
       - key: API_BASE_URL
         sync: false
-      # Opsional: domain PRODUKSI Landing Page ini sendiri (mis.
-      # https://mugen-hair-frontend.onrender.com atau custom domain kalau
-      # sudah ada) -- dipakai mengganti placeholder "https://www.rivoir.id"
-      # di meta tag SEO (canonical/OG/Twitter/JSON-LD), sitemap.xml, dan
-      # robots.txt supaya tidak menunjuk ke domain yang salah. Aman
-      # dikosongkan (placeholder tetap dipakai, tidak error) sampai domain
-      # sungguhan diketahui.
+      # Opsional: domain PRODUKSI Landing Page ini sendiri, dipakai
+      # mengganti tag SEO (canonical/OG/Twitter/JSON-LD), sitemap.xml, dan
+      # robots.txt kalau domain berubah dari yang sudah di-commit langsung
+      # di source (https://rivoirsett.com) -- lihat render-build.sh. Aman
+      # dikosongkan (nilai yang sudah di-commit dipakai apa adanya, tidak
+      # error) selama domain produksi tidak berubah.
       - key: SITE_URL
         sync: false
     routes:

@@ -1,7 +1,7 @@
 {
   "name": "mugen-hair-android",
   "version": "1.0.0",
-  "description": "Wrapper Capacitor Android untuk PWA MUGEN Hair Co. (memuat https://mugen-hair-co.onrender.com langsung, TIDAK membundel salinan frontend/ -- lihat README.md di folder ini)",
+  "description": "Wrapper Capacitor Android untuk PWA MUGEN Hair Co. (memuat https://rivoirsett.com langsung, TIDAK membundel salinan frontend/ -- lihat README.md di folder ini)",
   "private": true,
   "scripts": {
     "sync": "npx cap sync android",

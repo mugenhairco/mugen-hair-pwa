@@ -2,8 +2,8 @@
 
 Resolusi subdomain HANYA aktif kalau environment variable
 TENANT_SUBDOMAIN_BASE_DOMAIN diisi -- kosong (default, termasuk
-deployment produksi SEKARANG di *.onrender.com) berarti fitur ini MATI
-TOTAL, byte-identik dengan sebelum middleware ini ada."""
+deployment produksi saat ini) berarti fitur ini MATI TOTAL, byte-identik
+dengan sebelum middleware ini ada."""
 
 import tenant_middleware
 

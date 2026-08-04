@@ -33,13 +33,18 @@ if [ -n "${SITE_URL:-}" ]; then
   # grep -rl TIDAK menemukan apa pun = exit code 1 (bukan error sungguhan,
   # cuma "tidak ada yang perlu diganti") -- ditangkap eksplisit di sini
   # supaya `set -e` di atas tidak menganggap ini kegagalan build.
-  matches="$(grep -rl 'https://www.rivoir.id' . --include='*.html' --include='*.xml' --include='*.txt' || true)"
+  # Target penggantian: https://rivoirsett.com adalah domain produksi yang
+  # SUDAH di-commit langsung ke tag SEO/sitemap.xml/robots.txt (bukan lagi
+  # placeholder) -- SITE_URL di sini murni jalur override kalau domain
+  # produksi berubah lagi di masa depan, isi git tetap benar tanpa perlu
+  # env var ini diisi sama sekali.
+  matches="$(grep -rl 'https://rivoirsett.com' . --include='*.html' --include='*.xml' --include='*.txt' || true)"
   if [ -n "$matches" ]; then
-    echo "$matches" | xargs -r sed -i "s#https://www.rivoir.id#$SITE_URL#g"
+    echo "$matches" | xargs -r sed -i "s#https://rivoirsett.com#$SITE_URL#g"
   fi
   echo "[render-build] SITE_URL diterapkan ke tag SEO/sitemap.xml/robots.txt: $SITE_URL"
 else
-  echo "[render-build] SITE_URL tidak diisi -- placeholder domain di tag SEO dibiarkan apa adanya."
+  echo "[render-build] SITE_URL tidak diisi -- domain produksi yang sudah di-commit (https://rivoirsett.com) dipakai apa adanya."
 fi
 
 echo "[render-build] Selesai."

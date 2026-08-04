@@ -7,4 +7,4 @@ Allow: /icons/
 Disallow: /app/
 Disallow: /api/
 
-Sitemap: https://www.rivoir.id/sitemap.xml
+Sitemap: https://rivoirsett.com/sitemap.xml
