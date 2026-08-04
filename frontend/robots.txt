@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /$
+Allow: /index.html
+Allow: /css/
+Allow: /js/landing.js
+Allow: /icons/
+Disallow: /app/
+Disallow: /api/
+
+Sitemap: https://www.rivoir.id/sitemap.xml

@@ -120,10 +120,17 @@ const MugenRouter = (() => {
 
     if (!loggedIn) {
       appRoot.innerHTML = "";
-      PageLogin.render(appRoot);
+      // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): Register
+      // self-service dari Landing Page publik (tombol "Get Started" ->
+      // /app/#/register) -- halaman PENUH sama seperti Login, TANPA sesi.
+      if (hash.startsWith("#/register")) {
+        PageRegister.render(appRoot);
+      } else {
+        PageLogin.render(appRoot);
+      }
       return;
     }
-    if (hash.startsWith("#/login")) {
+    if (hash.startsWith("#/login") || hash.startsWith("#/register")) {
       location.hash = "#/dashboard";
       return;
     }
@@ -150,7 +157,14 @@ const MugenRouter = (() => {
     // ikut tampil -- data akses_diblokir dari cache MugenSubscription
     // (lihat subscription.js, di-refresh() app.js/login.js), BUKAN dicek
     // ulang lewat API di sini (handle() SINKRON, tidak bisa menunggu fetch).
-    if (MugenSubscription.aksesDiblokir()) {
+    // FONDASI Multi-Tenant Phase 5: pengecualian SEMPIT -- #/billing TETAP
+    // bisa diakses walau diblokir, supaya tenant yang BARU Register (status
+    // 'expired' by design, lihat routers/tenant_registration.py) bisa
+    // langsung memilih paket & bayar sendiri TANPA perlu Super Admin
+    // mengaktifkan manual dulu. HASH lain APA PUN selain ini tetap
+    // dipaksa ke halaman blocked persis seperti sebelumnya (self-correcting:
+    // begitu user pindah ke menu lain, blokir langsung berlaku lagi).
+    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;

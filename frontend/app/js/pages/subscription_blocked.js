@@ -36,6 +36,21 @@ const PageSubscriptionBlocked = (() => {
     return btn;
   }
 
+  // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): sebelumnya halaman ini
+  // jalan buntu (HANYA tombol Keluar) -- sekarang Owner bisa langsung
+  // memilih paket & bayar sendiri lewat #/billing, yang router.js SENGAJA
+  // dikecualikan dari blokir ini (lihat router.js). Berlaku untuk SEMUA
+  // tenant yang diblokir (bukan cuma tenant baru Register) -- perbaikan UX
+  // sekaligus untuk tenant lama yang subscription-nya expired.
+  function btnBayar() {
+    const btn = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Pilih Paket / Bayar Sekarang");
+    btn.addEventListener("click", () => {
+      location.hash = "#/billing";
+      MugenRouter.handle();
+    });
+    return btn;
+  }
+
   async function render(root) {
     root.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "login-wrap" });
@@ -67,6 +82,7 @@ const PageSubscriptionBlocked = (() => {
           ]),
         ]);
         card.appendChild(info);
+        card.appendChild(MugenUI.el("div", { style: "margin-top:20px;" }, btnBayar()));
       } else {
         card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
           "Toko ini sedang tidak aktif. Hubungi penyedia layanan untuk informasi lebih lanjut."));

@@ -548,6 +548,45 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE closed_slot ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE toko_libur ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 
+-- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): kolom identitas Owner
+-- yang dikumpulkan lewat form Register publik -- lihat landing_migrasi.py
+-- (jalur SQLite) untuk penjelasan lengkap kenapa kolom ini baru ditambahkan
+-- sekarang (tabel `tenants` sebelumnya tidak pernah butuh data ini, dibuat
+-- eksklusif oleh Super Admin lewat Dashboard tanpa email/whatsapp).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_whatsapp ON tenants(whatsapp) WHERE whatsapp IS NOT NULL;
+
+-- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): FAQ & Testimonial yang
+-- ditampilkan di Landing Page publik, dikelola Super Admin (bukan hardcode,
+-- lihat landing_db.py). Berdiri sendiri, TIDAK bertenant_id (konten
+-- platform, bukan milik satu toko).
+CREATE TABLE IF NOT EXISTS landing_faq (
+    id           SERIAL PRIMARY KEY,
+    pertanyaan   TEXT NOT NULL,
+    jawaban      TEXT NOT NULL,
+    urutan       INTEGER NOT NULL DEFAULT 0,
+    aktif        INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS landing_testimonials (
+    id             SERIAL PRIMARY KEY,
+    nama           TEXT NOT NULL,
+    jabatan_toko   TEXT,
+    isi            TEXT NOT NULL,
+    foto_url       TEXT,
+    rating         INTEGER NOT NULL DEFAULT 5,
+    urutan         INTEGER NOT NULL DEFAULT 0,
+    aktif          INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
 -- FONDASI Multi-Tenant Phase 1.1: pemasukan.barber_id NULLABLE dan
 -- kas_saldo_awal/kas_penyesuaian TIDAK PUNYA barber_id sama sekali (saldo
 -- kas milik TOKO, bukan satu karyawan) -- ketiganya TIDAK BISA di-scope

@@ -91,6 +91,40 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
         return cur.lastrowid
 
 
+def get_tenant_by_email(email: str):
+    """FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): dipakai Register
+    publik untuk menolak email yang sudah dipakai tenant lain -- lihat
+    landing_migrasi.py untuk kolom `email` (baru) + unique index-nya."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE LOWER(email) = ?", (email,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_tenant_by_whatsapp(whatsapp: str):
+    """Sama seperti get_tenant_by_email() tapi untuk kolom `whatsapp`."""
+    whatsapp = (whatsapp or "").strip()
+    if not whatsapp:
+        return None
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE whatsapp = ?", (whatsapp,)).fetchone()
+        return dict(row) if row else None
+
+
+def set_registrant_info(tenant_id: int, owner_name: str, email: str, whatsapp: str) -> None:
+    """FONDASI Multi-Tenant Phase 5: dipanggil SEKALI, tepat setelah
+    buat_tenant() berhasil di alur Register publik -- buat_tenant() sendiri
+    SENGAJA TIDAK diubah (dipakai juga oleh provisioning Super Admin yang
+    tidak pernah mengisi field ini) supaya alur lama tetap identik."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tenants SET owner_name = ?, email = ?, whatsapp = ? WHERE id = ?",
+            (owner_name, email, whatsapp, tenant_id),
+        )
+
+
 def set_status(tenant_id: int, status: str) -> None:
     """FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): aktifkan/
     nonaktifkan satu tenant. Efeknya langsung terasa tanpa tunggu token

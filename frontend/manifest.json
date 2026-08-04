@@ -1,7 +1,7 @@
 {
   "name": "Rivoir",
   "short_name": "Rivoir",
-  "description": "Platform manajemen barbershop -- komisi, uang harian, bonus barber, produk, dan pengeluaran.",
+  "description": "Platform manajemen barbershop -- booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans, laporan & analitik.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -11,13 +11,7 @@
   "orientation": "portrait-primary",
   "lang": "id",
   "icons": [
-    { "src": "icons/icon-72.png", "sizes": "72x72", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-128.png", "sizes": "128x128", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-144.png", "sizes": "144x144", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-152.png", "sizes": "152x152", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }

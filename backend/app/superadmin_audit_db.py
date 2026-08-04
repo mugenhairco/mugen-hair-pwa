@@ -22,6 +22,9 @@ AKSI_VALID = {
     # lihat routers/subscription.py, subscription_db.py.
     "ubah_package_subscription", "ubah_status_subscription",
     "ubah_trial_subscription", "ubah_grace_subscription",
+    # FONDASI Multi-Tenant Phase 5 (Landing Page SaaS) -- registrasi
+    # tenant self-service lewat halaman publik, lihat routers/tenant_registration.py.
+    "registrasi_publik",
     "ubah_config_subscription", "buat_pembayaran_subscription",
     "ubah_status_pembayaran_subscription",
     # FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat

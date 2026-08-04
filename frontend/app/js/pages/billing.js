@@ -104,7 +104,12 @@ const PageBilling = (() => {
     card.appendChild(ringkasan);
   }
 
+  function _bersihkanPendingKode() {
+    try { sessionStorage.removeItem("mugen_pending_package_kode"); } catch (e) { /* abaikan */ }
+  }
+
   async function mulaiCheckout(packageId, config, onSelesai) {
+    _bersihkanPendingKode();
     let invoice;
     try {
       invoice = await MugenUI.withLoading(
@@ -123,14 +128,26 @@ const PageBilling = (() => {
       return;
     }
 
+    // BUGFIX: MugenSubscription.refresh() WAJIB di-await SEBELUM onSelesai()
+    // di jalur sukses/pending -- tanpa ini, cache localStorage akses_diblokir
+    // (dipakai router.js::handle() untuk SETIAP perpindahan menu, lihat
+    // subscription.js) tetap "diblokir" walau pembayaran sudah berhasil dan
+    // webhook sudah mengaktifkan subscription-nya di backend, sehingga Owner
+    // yang baru saja bayar masih dilempar ke halaman blocked begitu klik
+    // menu lain -- padahal seharusnya langsung bisa masuk dashboard.
+    async function segarkanLaluSelesai() {
+      await MugenSubscription.refresh();
+      onSelesai();
+    }
+
     window.snap.pay(invoice.snap_token, {
       onSuccess: () => {
         MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-        setTimeout(onSelesai, 2000);
+        setTimeout(segarkanLaluSelesai, 2000);
       },
       onPending: () => {
         MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
-        onSelesai();
+        segarkanLaluSelesai();
       },
       onError: () => {
         MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
@@ -147,6 +164,7 @@ const PageBilling = (() => {
       confirmText: "Ya, Downgrade",
     });
     if (!ok) return;
+    _bersihkanPendingKode();
     try {
       await MugenUI.withLoading(() => MugenApi.post("/api/billing/downgrade", { package_id: paket.id }),
         { message: "Memproses downgrade…" });
@@ -175,10 +193,33 @@ const PageBilling = (() => {
     const grid = MugenUI.el("div", { class: "grid-cards" });
     card.appendChild(grid);
 
+    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): paket yang diklik
+    // Owner di Landing Page (sessionStorage, lihat landing.js) disorot di
+    // sini supaya pilihannya tidak hilang begitu saja setelah harus
+    // Register dulu. BUGFIX: SENGAJA TIDAK dihapus di sini begitu dibaca --
+    // register.js (sama seperti login.js) memanggil location.hash= DAN
+    // MugenRouter.handle() eksplisit berurutan, yang berarti halaman ini
+    // ter-render DUA KALI (sekali lewat pemanggilan eksplisit, sekali lagi
+    // async lewat event "hashchange" yang otomatis terpicu) -- kalau value
+    // ini dihapus pada render PERTAMA, render KEDUA (yang akhirnya terlihat
+    // user) tidak akan menemukan apa pun lagi dan badge "Pilihan Anda" tidak
+    // pernah tampak. Dibersihkan sebagai gantinya begitu Owner benar-benar
+    // menekan salah satu tombol paket (lihat mulaiCheckout()/mulaiDowngrade()
+    // di bawah), bukan di titik render.
+    let pendingKode = null;
+    try {
+      pendingKode = sessionStorage.getItem("mugen_pending_package_kode");
+    } catch (e) { /* abaikan (mis. private mode) */ }
+    let boxDirekomendasikan = null;
+
     for (const paket of packages) {
       const isCurrent = paket.kode === sub.package;
-      const box = MugenUI.el("div", { class: "card", style: "margin-bottom:0;" + (isCurrent ? "border-color:var(--accent);" : "") });
+      const isRekomendasi = !isCurrent && pendingKode && paket.kode === pendingKode;
+      const box = MugenUI.el("div", {
+        class: "card", style: "margin-bottom:0;" + (isCurrent ? "border-color:var(--accent);" : isRekomendasi ? "border-color:var(--accent-secondary);border-width:2px;" : ""),
+      });
       box.appendChild(MugenUI.el("h2", {}, paket.nama));
+      if (isRekomendasi) box.appendChild(MugenUI.el("span", { class: "badge badge-libur", style: "margin-bottom:8px;display:inline-block;" }, "Pilihan Anda"));
       box.appendChild(MugenUI.el("div", { style: "font-size:20px;font-weight:700;" }, MugenUI.formatRupiah(paket.harga)));
       box.appendChild(MugenUI.el("div", { class: "subtitle" }, `per ${paket.durasi_hari} hari`));
       if (paket.deskripsi) box.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, paket.deskripsi));
@@ -203,6 +244,11 @@ const PageBilling = (() => {
       }
       if (btn) box.appendChild(MugenUI.el("div", {}, btn));
       grid.appendChild(box);
+      if (isRekomendasi) boxDirekomendasikan = box;
+    }
+
+    if (boxDirekomendasikan) {
+      boxDirekomendasikan.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
 
