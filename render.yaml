@@ -32,14 +32,27 @@ services:
   - type: web
     name: mugen-hair-api
     runtime: python
-    plan: starter
-    region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # README > Deployment (Produksi): dijalankan dari folder backend/app/
     # (import "flat" di seluruh modul backend, lihat catatan di main.py).
     startCommand: cd app && uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
+    # commit = deploy otomatis setiap ada push baru ke branch yang dipilih
+    # saat service ini dibuat (default Render, ditulis eksplisit di sini
+    # supaya niatnya jelas terbaca -- BUKAN off/manual). Inilah SATU-SATUNYA
+    # mekanisme "Claude -> GitHub -> Render Auto Deploy" yang diminta: begitu
+    # commit di-push ke branch itu, Render mendeteksinya sendiri lewat
+    # webhook GitHub yang sudah terpasang saat service dihubungkan ke repo
+    # -- tidak ada GitHub Actions/workflow CI tambahan yang perlu dibuat.
+    autoDeployTrigger: commit
+    # PENTING soal plan/region: sengaja TIDAK diisi di sini -- nilai enum
+    # persisnya tidak bisa diverifikasi penuh dari dokumentasi publik saat
+    # file ini ditulis, dan salah isi bisa membuat Blueprint gagal sync
+    # (persis kelas masalah yang sedang diperbaiki di revisi ini). Render
+    # memakai default (plan gratis/termurah, region default akun Anda) --
+    # aman diubah kapan saja lewat dashboard SETELAH service dibuat, tidak
+    # perlu mengedit file ini untuk itu.
     envVars:
       # Kunci penandatanganan token login -- WAJIB acak & rahasia, JANGAN
       # dipakai bersama antar deployment. generateValue:true = Render
@@ -86,17 +99,19 @@ services:
     name: mugen-hair-frontend
     runtime: static
     rootDir: frontend
-    # Tidak ada bundler/proses build sungguhan (lihat README -- seluruh
-    # HTML/CSS/JS sudah siap pakai langsung) -- buildCommand di sini HANYA
-    # menyuntikkan environment variable ($API_BASE_URL, opsional $SITE_URL)
-    # ke file statis yang sudah ada, lewat `sed` satu baris, BUKAN
-    # bundling/transpiling/minifikasi apa pun. Lihat frontend/config.js dan
-    # frontend/app/config.js untuk baris persis yang diganti.
-    buildCommand: |
-      test -n "$API_BASE_URL" && sed -i "s#window.MUGEN_API_BASE = .*#window.MUGEN_API_BASE = \"$API_BASE_URL\";#" config.js app/config.js
-      test -n "$SITE_URL" && grep -rl 'https://www.rivoir.id' . --include='*.html' --include='*.xml' --include='*.txt' | xargs -r sed -i "s#https://www.rivoir.id#$SITE_URL#g"
-      true
+    # BUGFIX: SEBELUMNYA buildCommand ditulis sebagai blok YAML multi-baris
+    # langsung di sini -- Render meruntuhkan newline antar baris itu jadi
+    # SATU baris panjang (bukan menjalankan tiap baris sebagai statement
+    # terpisah), sehingga argumen baris kedua ikut terbaca sebagai FILE oleh
+    # `sed -i` di baris pertama -- gagal build dengan "sed: can't read
+    # test: No such file or directory". buildCommand di Render Static Site
+    # HARUS satu baris -- solusinya: seluruh logika dipindah ke
+    # render-build.sh (skrip sungguhan, lihat isinya untuk penjelasan
+    # lengkap), dipanggil di sini lewat SATU baris yang tidak mungkin
+    # runtuh/ambigu lagi.
+    buildCommand: bash render-build.sh
     staticPublishPath: .
+    autoDeployTrigger: commit
     envVars:
       # URL layanan backend DI ATAS (mis. https://mugen-hair-api.onrender.com,
       # TANPA trailing slash) -- SATU-SATUNYA tempat URL backend perlu

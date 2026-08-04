@@ -2646,34 +2646,70 @@ dst supaya tidak 404.
 
 Arsitektur yang direkomendasikan sejak Phase 5: **backend sebagai Render
 Web Service, frontend sebagai Render Static Site TERPISAH** (dua service,
-dua URL berbeda). File `render.yaml` di root repo mendokumentasikan
-konfigurasi lengkap kedua service ini (lihat komentar di dalamnya) —
-bisa dipakai langsung lewat fitur **Blueprint** Render, atau sekadar jadi
-referensi kalau Anda membuat keduanya manual lewat dashboard.
+dua URL berbeda). Setelah setup SATU KALI di bawah selesai, **setiap
+`git push` ke branch yang dipilih (mis. `master`) otomatis men-deploy
+ulang KEDUA service** — Render mendeteksi commit baru lewat webhook
+GitHub yang terpasang saat service dihubungkan ke repo, tidak perlu
+GitHub Actions atau workflow CI tambahan apa pun untuk mekanisme ini
+(lihat `autoDeployTrigger: commit` di `render.yaml`).
 
-**Backend (Web Service)** — kalau belum ada:
+File `render.yaml` di root repo adalah sumber kebenaran konfigurasi kedua
+service (dipakai lewat fitur **Blueprint** Render — opsi tercepat, lihat
+di bawah) — atau jadi referensi kalau Anda membuat/sudah punya service
+secara manual lewat dashboard.
+
+**Opsi A — Blueprint (disarankan, setup satu kali paling singkat):**
+1. Render Dashboard → **New > Blueprint** → hubungkan repo ini, pilih
+   branch `master`. Render membaca `render.yaml` dan menyiapkan KEDUA
+   service (`mugen-hair-api` + `mugen-hair-frontend`) sekaligus.
+2. Render akan meminta nilai untuk setiap environment variable bertanda
+   `sync: false` di `render.yaml` — isi sekali (lihat tabel di bawah
+   untuk daftar lengkap & penjelasan tiap variable). Yang WAJIB diisi
+   segera: `DATABASE_URL`, kredensial admin bootstrap. `ALLOWED_ORIGINS`
+   boleh dikosongkan dulu (isi setelah langkah 4).
+3. Deploy. Setelah kedua service selesai build, catat URL masing-masing
+   dari dashboard.
+4. Isi `ALLOWED_ORIGINS` di service **backend** dengan URL Static Site
+   dari langkah 3 (lihat catatan CORS di `main.py` — subdomain
+   `*.onrender.com` APAPUN sudah otomatis diizinkan tanpa ini, tapi
+   mengisinya tetap praktik yang benar dan WAJIB begitu pindah ke custom
+   domain). Simpan — Render otomatis restart dengan CORS yang benar.
+5. Verifikasi: buka Landing Page (`/`) dan Dashboard (`/app/`) di URL
+   Static Site, pastikan tidak ada error CORS/404 di console browser saat
+   memuat data (Pricing/FAQ/Testimonial di Landing Page, login di
+   Dashboard).
+
+**Opsi B — manual lewat dashboard** (kalau backend Anda sudah ada dengan
+nama service berbeda dari `render.yaml`, atau memang tidak ingin memakai
+Blueprint):
+
+*Backend (Web Service), kalau belum ada:*
 1. Render Dashboard → **New > Web Service** → hubungkan repo ini.
 2. **Root Directory**: `backend`. **Build Command**: `pip install -r
    requirements.txt`. **Start Command**: `cd app && uvicorn main:app
    --host 0.0.0.0 --port $PORT`. **Health Check Path**: `/api/health`.
+   **Auto-Deploy**: `Yes` / `On Commit` (opsi ini ADA di form pembuatan
+   service maupun tab Settings-nya — pastikan bukan `Off`, itulah satu-
+   satunya saklar yang perlu dicek supaya push berikutnya otomatis ter-deploy).
 3. Isi environment variable (lihat tabel di atas + `render.yaml`):
    `SECRET_KEY` (generate acak), `DATABASE_URL` (Neon PostgreSQL),
    `ADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`,
    `SUPERADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`, dan `MIDTRANS_*` kalau
    pembayaran sudah siap diaktifkan. **`ALLOWED_ORIGINS` diisi belakangan**
-   (langkah 4 di bawah, setelah tahu URL frontend).
+   (langkah 4 di bawah frontend, setelah tahu URL-nya).
 4. Deploy, catat URL yang diberikan Render (mis.
    `https://mugen-hair-api-xxxx.onrender.com`).
 
-**Frontend (Static Site)** — terpisah dari service di atas:
+*Frontend (Static Site), terpisah dari service di atas:*
 1. Render Dashboard → **New > Static Site** → hubungkan repo YANG SAMA.
-2. **Root Directory**: `frontend`. **Build Command**:
-   ```
-   test -n "$API_BASE_URL" && sed -i "s#window.MUGEN_API_BASE = .*#window.MUGEN_API_BASE = \"$API_BASE_URL\";#" config.js app/config.js
-   ```
-   (satu baris `sed`, BUKAN bundler — lihat `render.yaml` untuk versi
-   lengkap yang juga mengisi domain di meta tag SEO). **Publish
-   Directory**: `.` (folder `frontend` itu sendiri).
+2. **Root Directory**: `frontend`. **Build Command**: `bash
+   render-build.sh` (skrip ini SUDAH ADA di repo, isinya HANYA
+   menyuntikkan environment variable ke `config.js`/tag SEO lewat `sed` —
+   BUKAN bundler; lihat isi filenya untuk penjelasan lengkap, TERMASUK
+   kenapa build command HARUS satu baris seperti ini alih-alih ditulis
+   langsung sebagai skrip multi-baris di kolom Build Command). **Publish
+   Directory**: `.` (folder `frontend` itu sendiri). **Auto-Deploy**:
+   pastikan `On Commit`, sama seperti catatan di langkah backend.
 3. Environment variable: `API_BASE_URL` = URL backend dari langkah 4 di
    atas (TANPA trailing slash) — inilah mekanisme "jangan hardcode URL
    API", nilainya disuntikkan saat build, bukan ditulis di source code.
@@ -2693,6 +2729,23 @@ referensi kalau Anda membuat keduanya manual lewat dashboard.
    Static Site, pastikan tidak ada error CORS di console browser saat
    memuat data (Pricing/FAQ/Testimonial di Landing Page, login di
    Dashboard) — kalau ada, cek kembali langkah 6.
+
+**Setelah setup (A atau B) selesai — yang TIDAK BISA diotomatisasi
+lebih lanjut, dan kenapa:**
+- **Mengisi nilai environment variable rahasia** (`DATABASE_URL`,
+  `SECRET_KEY` kalau tidak dipakai `generateValue`, kredensial admin,
+  `MIDTRANS_*`) — SENGAJA butuh tindakan manual satu kali di dashboard.
+  Nilai-nilai ini adalah kredensial sungguhan; menaruhnya di `render.yaml`
+  (ikut git, bisa dibaca siapa pun yang punya akses repo) adalah kebocoran
+  keamanan, bukan sekadar soal kepraktisan — tidak ada cara aman untuk
+  mengotomatisasi ini dari sisi kode.
+- **Redirect Rule `/app` → `/app/`** (Opsi B) dan review awal saat
+  Blueprint pertama kali dijalankan (Opsi A) — bagian dari proses
+  **pembuatan** service, bukan proses deploy berulang; sekali dikonfigurasi,
+  TIDAK perlu diulang di deploy berikutnya.
+- Di luar dua hal itu, **tidak ada langkah manual lain** — deploy
+  berikutnya (`git push` ke `master`) sepenuhnya otomatis di kedua
+  service, termasuk build, publish, dan restart.
 
 ## Reset / Buat Akun Admin (Lupa Username/Password di Production)
 
