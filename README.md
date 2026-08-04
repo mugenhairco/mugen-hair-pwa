@@ -2601,26 +2601,98 @@ pilihan Anda.
 
 ### Frontend
 
-1. Deploy folder `frontend/` apa adanya ke hosting statis mana pun
-   (Netlify, Vercel, GitHub Pages, S3+CloudFront, Nginx, dst) — tidak ada
-   proses build, semua file HTML/CSS/JS sudah siap pakai langsung.
-2. Edit **satu baris** di `frontend/config.js` supaya frontend tahu alamat
+FONDASI Multi-Tenant Phase 5: folder `frontend/` sekarang berisi **dua
+bagian** dalam satu direktori — Landing Page publik (root `frontend/`,
+path `/`) dan Dashboard PWA (`frontend/app/`, path `/app/`) — tapi
+**tetap SATU deployment statis** (satu host, satu domain, dua path).
+Jangan deploy `frontend/app/` sebagai site terpisah dari `frontend/` —
+`frontend/app/index.html` memuat asetnya lewat path relatif ("js/...",
+"css/...") yang HARUS tetap berada persis di `/app/js/...`, `/app/css/...`
+dst supaya tidak 404.
+
+1. Deploy folder `frontend/` (bukan `frontend/app/` saja) apa adanya ke
+   hosting statis mana pun (Netlify, Vercel, GitHub Pages, S3+CloudFront,
+   Render Static Site, Nginx, dst) — tidak ada proses build/bundler
+   sungguhan, semua file HTML/CSS/JS sudah siap pakai langsung.
+2. Edit **dua file** (isinya harus SAMA) supaya frontend tahu alamat
    backend yang benar:
    ```js
+   // frontend/config.js DAN frontend/app/config.js -- KEDUANYA
    window.MUGEN_API_BASE = "https://<domain-backend-anda>";
    ```
-   (Ini satu-satunya file yang perlu diedit manual setelah deploy — semua
-   pemanggilan API di seluruh aplikasi lewat `js/api.js` yang membaca nilai
-   ini.)
-3. **HTTPS wajib** untuk PWA (installable + service worker) di produksi —
+   (Kalau hosting Anda mendukung *build command*, lihat subbagian
+   **Render (dua service terpisah)** di bawah untuk cara mengisi ini lewat
+   environment variable alih-alih edit file manual tiap deploy.)
+3. Pastikan hosting Anda mengarahkan permintaan `/app` (TANPA garis miring
+   akhir) ke `/app/` (DENGAN garis miring) — kalau tidak, path relatif di
+   `frontend/app/index.html` salah resolve dan halaman tampil blank/putih.
+   Kebanyakan hosting statis modern menangani ini otomatis; kalau tidak,
+   tambahkan redirect manual (lihat `render.yaml` untuk contoh konkret di
+   Render).
+4. **HTTPS wajib** untuk PWA (installable + service worker) di produksi —
    browser hanya mengizinkan Service Worker aktif di origin HTTPS (kecuali
    `localhost`, yang dikecualikan khusus untuk development). Hampir semua
-   hosting statis modern (Netlify/Vercel/GitHub Pages/dst) sudah otomatis
-   HTTPS; kalau self-host di VPS, pasang sertifikat (mis. Let's Encrypt via
-   Certbot/Caddy).
-4. Pastikan `ALLOWED_ORIGINS` di backend (langkah 3 di atas) sudah memuat
+   hosting statis modern (Netlify/Vercel/GitHub Pages/Render/dst) sudah
+   otomatis HTTPS; kalau self-host di VPS, pasang sertifikat (mis. Let's
+   Encrypt via Certbot/Caddy).
+5. Pastikan `ALLOWED_ORIGINS` di backend (langkah 3 di atas) sudah memuat
    domain frontend ini — kalau tidak, browser akan memblokir semua request
    API karena CORS.
+6. Buka `https://<domain-frontend>/` (Landing Page) dan
+   `https://<domain-frontend>/app/` (halaman Login Dashboard) — keduanya
+   harus tampil tanpa error konsol browser.
+
+### Render (dua service terpisah)
+
+Arsitektur yang direkomendasikan sejak Phase 5: **backend sebagai Render
+Web Service, frontend sebagai Render Static Site TERPISAH** (dua service,
+dua URL berbeda). File `render.yaml` di root repo mendokumentasikan
+konfigurasi lengkap kedua service ini (lihat komentar di dalamnya) —
+bisa dipakai langsung lewat fitur **Blueprint** Render, atau sekadar jadi
+referensi kalau Anda membuat keduanya manual lewat dashboard.
+
+**Backend (Web Service)** — kalau belum ada:
+1. Render Dashboard → **New > Web Service** → hubungkan repo ini.
+2. **Root Directory**: `backend`. **Build Command**: `pip install -r
+   requirements.txt`. **Start Command**: `cd app && uvicorn main:app
+   --host 0.0.0.0 --port $PORT`. **Health Check Path**: `/api/health`.
+3. Isi environment variable (lihat tabel di atas + `render.yaml`):
+   `SECRET_KEY` (generate acak), `DATABASE_URL` (Neon PostgreSQL),
+   `ADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`,
+   `SUPERADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`, dan `MIDTRANS_*` kalau
+   pembayaran sudah siap diaktifkan. **`ALLOWED_ORIGINS` diisi belakangan**
+   (langkah 4 di bawah, setelah tahu URL frontend).
+4. Deploy, catat URL yang diberikan Render (mis.
+   `https://mugen-hair-api-xxxx.onrender.com`).
+
+**Frontend (Static Site)** — terpisah dari service di atas:
+1. Render Dashboard → **New > Static Site** → hubungkan repo YANG SAMA.
+2. **Root Directory**: `frontend`. **Build Command**:
+   ```
+   test -n "$API_BASE_URL" && sed -i "s#window.MUGEN_API_BASE = .*#window.MUGEN_API_BASE = \"$API_BASE_URL\";#" config.js app/config.js
+   ```
+   (satu baris `sed`, BUKAN bundler — lihat `render.yaml` untuk versi
+   lengkap yang juga mengisi domain di meta tag SEO). **Publish
+   Directory**: `.` (folder `frontend` itu sendiri).
+3. Environment variable: `API_BASE_URL` = URL backend dari langkah 4 di
+   atas (TANPA trailing slash) — inilah mekanisme "jangan hardcode URL
+   API", nilainya disuntikkan saat build, bukan ditulis di source code.
+   Opsional: `SITE_URL` = URL Static Site ini sendiri (langkah 5 di
+   bawah), dipakai mengganti placeholder domain di tag SEO/sitemap.
+4. Tambahkan **Redirect Rule**: source `/app`, destination `/app/`, type
+   Redirect (lihat catatan pada `render.yaml` soal kenapa ini wajib).
+5. Deploy, catat URL Static Site ini (mis.
+   `https://mugen-hair-frontend-xxxx.onrender.com`).
+6. Kembali ke service **backend**, isi `ALLOWED_ORIGINS` dengan URL
+   Static Site dari langkah 5 (walau subdomain `*.onrender.com` APAPUN
+   sudah otomatis diizinkan lewat `allow_origin_regex` di `main.py` —
+   lihat komentarnya — mengisi `ALLOWED_ORIGINS` secara eksplisit tetap
+   praktik yang benar, dan WAJIB begitu Anda pindah ke custom domain).
+   Simpan — Render otomatis restart service dengan CORS yang benar.
+7. Verifikasi: buka Landing Page (`/`) dan Dashboard (`/app/`) di URL
+   Static Site, pastikan tidak ada error CORS di console browser saat
+   memuat data (Pricing/FAQ/Testimonial di Landing Page, login di
+   Dashboard) — kalau ada, cek kembali langkah 6.
 
 ## Reset / Buat Akun Admin (Lupa Username/Password di Production)
 

@@ -1,0 +1,142 @@
+# render.yaml — Render Blueprint: backend (Web Service) + frontend (Static
+# Site) sebagai DUA layanan terpisah, masing-masing URL sendiri.
+# =============================================================================
+# CATATAN PENTING sebelum memakai file ini:
+#
+# 1. Kalau service backend Anda SUDAH ADA & berjalan di Render (dibuat lewat
+#    dashboard manual, bukan Blueprint ini), JANGAN terapkan Blueprint ini
+#    begitu saja lewat "New > Blueprint" -- itu akan membuat service BARU
+#    kalau `name:` di bawah tidak cocok persis dengan nama service Anda yang
+#    sudah ada. File ini aman dipakai sebagai:
+#      a) DOKUMENTASI konfigurasi yang seharusnya sudah terpasang di service
+#         backend Anda (cek satu-satu lewat dashboard, samakan kalau beda), atau
+#      b) referensi LANGSUNG kalau Anda memang belum punya service backend
+#         sama sekali dan ingin membuat keduanya dari nol lewat Blueprint.
+#    Kalau (a): cukup buat service Static Site BARU secara manual lewat
+#    dashboard Render mengikuti bagian "Frontend" di README > Deployment
+#    (Produksi) -- TIDAK perlu menyentuh Blueprint ini sama sekali.
+#
+# 2. Environment variable rahasia (SECRET_KEY, DATABASE_URL, kredensial admin,
+#    dst) SENGAJA ditandai `sync: false` -- Render TIDAK PERNAH mengambil
+#    nilainya dari file ini (nilai rahasia tidak boleh ikut git). Isi manual
+#    lewat dashboard Render, sekali saja per service.
+#
+# 3. File ini TIDAK membuat resource apa pun sampai Anda sendiri yang
+#    menerapkannya lewat dashboard Render ("New > Blueprint", pilih repo
+#    ini) -- menyimpan file ini ke git TIDAK memicu deployment otomatis.
+
+services:
+  # =====================================================================
+  # BACKEND — FastAPI, Render Web Service
+  # =====================================================================
+  - type: web
+    name: mugen-hair-api
+    runtime: python
+    plan: starter
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # README > Deployment (Produksi): dijalankan dari folder backend/app/
+    # (import "flat" di seluruh modul backend, lihat catatan di main.py).
+    startCommand: cd app && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      # Kunci penandatanganan token login -- WAJIB acak & rahasia, JANGAN
+      # dipakai bersama antar deployment. generateValue:true = Render
+      # membuatkan nilai acak otomatis sekali saat service pertama dibuat.
+      - key: SECRET_KEY
+        generateValue: true
+      # PostgreSQL (Neon) -- WAJIB diisi manual di dashboard (connection
+      # string berisi kredensial, tidak boleh ikut git). Kosongkan HANYA
+      # kalau sengaja memakai SQLite lokal + disk persisten (lihat README
+      # bagian Deployment > Backend poin 2 soal disk persisten kalau begitu).
+      - key: DATABASE_URL
+        sync: false
+      # Domain Static Site frontend (langkah "Frontend" di bawah) + custom
+      # domain kalau ada, dipisah koma. WAJIB diisi supaya browser tidak
+      # memblokir request API karena CORS -- lihat main.py::ALLOWED_ORIGINS
+      # (subdomain *.onrender.com APAPUN sudah otomatis diizinkan lewat
+      # allow_origin_regex, jadi baris ini terutama penting begitu Anda
+      # memakai custom domain sendiri, bukan *.onrender.com bawaan).
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        sync: false
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+      - key: SUPERADMIN_BOOTSTRAP_USERNAME
+        sync: false
+      - key: SUPERADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+      # Midtrans (FONDASI Multi-Tenant Phase 4/5 -- Billing & Payment) --
+      # kosongkan kalau belum siap menerima pembayaran (billing.py otomatis
+      # menampilkan "Pembayaran online belum aktif" ke Owner, lihat
+      # midtrans_client.py::IS_ENABLED).
+      - key: MIDTRANS_SERVER_KEY
+        sync: false
+      - key: MIDTRANS_CLIENT_KEY
+        sync: false
+      - key: MIDTRANS_IS_PRODUCTION
+        sync: false
+
+  # =====================================================================
+  # FRONTEND — Landing Page (/) + Dashboard PWA (/app/), Render Static Site
+  # =====================================================================
+  - type: web
+    name: mugen-hair-frontend
+    runtime: static
+    rootDir: frontend
+    # Tidak ada bundler/proses build sungguhan (lihat README -- seluruh
+    # HTML/CSS/JS sudah siap pakai langsung) -- buildCommand di sini HANYA
+    # menyuntikkan environment variable ($API_BASE_URL, opsional $SITE_URL)
+    # ke file statis yang sudah ada, lewat `sed` satu baris, BUKAN
+    # bundling/transpiling/minifikasi apa pun. Lihat frontend/config.js dan
+    # frontend/app/config.js untuk baris persis yang diganti.
+    buildCommand: |
+      test -n "$API_BASE_URL" && sed -i "s#window.MUGEN_API_BASE = .*#window.MUGEN_API_BASE = \"$API_BASE_URL\";#" config.js app/config.js
+      test -n "$SITE_URL" && grep -rl 'https://www.rivoir.id' . --include='*.html' --include='*.xml' --include='*.txt' | xargs -r sed -i "s#https://www.rivoir.id#$SITE_URL#g"
+      true
+    staticPublishPath: .
+    envVars:
+      # URL layanan backend DI ATAS (mis. https://mugen-hair-api.onrender.com,
+      # TANPA trailing slash) -- SATU-SATUNYA tempat URL backend perlu
+      # diisi, dibaca saat build (buildCommand di atas), BUKAN di-hardcode
+      # ke source code. Kosongkan hanya kalau sengaja deploy tanpa build
+      # step (lihat fallback manual di README > Deployment > Frontend).
+      - key: API_BASE_URL
+        sync: false
+      # Opsional: domain PRODUKSI Landing Page ini sendiri (mis.
+      # https://mugen-hair-frontend.onrender.com atau custom domain kalau
+      # sudah ada) -- dipakai mengganti placeholder "https://www.rivoir.id"
+      # di meta tag SEO (canonical/OG/Twitter/JSON-LD), sitemap.xml, dan
+      # robots.txt supaya tidak menunjuk ke domain yang salah. Aman
+      # dikosongkan (placeholder tetap dipakai, tidak error) sampai domain
+      # sungguhan diketahui.
+      - key: SITE_URL
+        sync: false
+    routes:
+      # BUGFIX penting: frontend/app/index.html memuat asetnya lewat path
+      # RELATIF ("js/app.js", "css/style.css", dst) -- relatif terhadap URL
+      # dokumen yang SEDANG dibuka. Kalau seseorang membuka "/app" TANPA
+      # garis miring akhir, browser menafsirkan aset relatif itu sebagai
+      # child dari "/" (root), BUKAN child dari "/app/", sehingga semua
+      # aset 404 dan aplikasi blank putih. Redirect ini memastikan "/app"
+      # SELALU diarahkan ke "/app/" (dengan garis miring) dulu sebelum
+      # index.html-nya dibuka.
+      - type: redirect
+        source: /app
+        destination: /app/
+    headers:
+      # /api/* TIDAK PERNAH ada di Static Site ini (seluruhnya dilayani
+      # backend terpisah) -- header ini murni jaga-jaga supaya file publik
+      # (index.html/manifest.json/dst) tidak pernah tersimpan di HTTP cache
+      # perantara dengan cara yang bisa menunda pembaruan konten (Service
+      # Worker sendiri sudah punya mekanisme versioning-nya sendiri, lihat
+      # service-worker.js/app/service-worker.js -- header ini lapis
+      # tambahan yang tidak mengganggu keduanya).
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      - path: /app/index.html
+        name: Cache-Control
+        value: no-cache

@@ -130,6 +130,16 @@ _BOOT_TIME = datetime.now(timezone.utc)
 # <token>" yang disisipkan manual oleh JS (lihat frontend/js/api.js) --
 # BUKAN cookie -- jadi allow_credentials=True di sini tidak membuka celah
 # pencurian sesi lintas origin seperti kalau aplikasi memakai cookie.
+#
+# ARSITEKTUR DUA SERVICE RENDER (render.yaml di root repo): backend ini
+# (Web Service) dan frontend (Static Site, Landing Page "/" + Dashboard PWA
+# "/app/") adalah DUA service TERPISAH dengan URL BERBEDA -- allow_origin_regex
+# di bawah SUDAH otomatis mengizinkan origin Static Site APA PUN selama masih
+# di *.onrender.com (tidak perlu tahu nama service persisnya lebih dulu).
+# Begitu Static Site itu memakai custom domain sendiri (bukan lagi
+# *.onrender.com), isi env var ALLOWED_ORIGINS di dashboard Render service
+# INI dengan domain custom itu -- lihat render.yaml untuk daftar lengkap
+# environment variable tiap service.
 _default_origins = (
     "http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000,http://localhost:8000,"
     "https://mugen-hair-co.onrender.com,https://mugenhairco.onrender.com"
