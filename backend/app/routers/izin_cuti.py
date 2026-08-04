@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import izin_cuti_db
 import laporan_pdf
 import permissions
-from auth import get_current_user, require_permission
+from auth import get_current_user, require_feature, require_permission
 
 
 router = APIRouter(prefix="/api/izin-cuti", tags=["izin-cuti"])
@@ -66,7 +66,7 @@ def list_pengajuan(barber_id: int = None, status: str = None, jenis: str = None,
 
 @router.get("/pdf")
 def list_pengajuan_pdf(barber_id: int = None, status: str = None, jenis: str = None,
-                        user: dict = Depends(get_current_user)):
+                        user: dict = Depends(get_current_user), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pengajuan_id."""
     _cek_akses_lihat(user)

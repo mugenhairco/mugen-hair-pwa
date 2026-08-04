@@ -38,8 +38,16 @@ BENAR-BENAR ditegakkan di kode karena entitasnya nyata ada."""
 
 from datetime import datetime
 
-from database import get_conn
+from database import get_conn, get_setting, set_setting
 from subscription_db import PACKAGE_VALID
+
+# Kode fitur yang SUNGGUHAN ditegakkan sistem (lihat feature_access.py) --
+# dipakai HANYA oleh seed_default_package_features() di bawah, supaya
+# instalasi/tenant yang SUDAH ADA sebelum Feature Gating ini dibangun tidak
+# tiba-tiba kehilangan Booking Online/QRIS/Export PDF begitu deploy ini
+# jalan (SEBELUM Feature Gating, ketiganya selalu menyala untuk SEMUA
+# tenant tanpa syarat apa pun -- default paket HARUS mencerminkan itu).
+_FITUR_NYATA_DEFAULT = ("booking_online", "qris", "export_pdf")
 
 _FITUR_DEFAULT = (
     ("booking_online", "Booking Online"),
@@ -147,6 +155,38 @@ def seed_default_packages():
                 (kode, _NAMA_DEFAULT.get(kode, kode.title()), _HARGA_DEFAULT.get(kode, 0),
                  _URUTAN_DEFAULT.get(kode, 0), now, now),
             )
+
+
+_KUNCI_SEED_FITUR_PAKET = "billing_seed_fitur_nyata_paket_selesai"
+
+
+def seed_default_package_features():
+    """SEKALI SAJA sepanjang umur database (ditandai lewat `settings`, BUKAN
+    dicek ulang dari isi subscription_package_features seperti
+    seed_default_packages/seed_default_features) -- assign
+    `_FITUR_NYATA_DEFAULT` (booking_online/qris/export_pdf, satu-satunya
+    fitur yang SUNGGUHAN digerbang, lihat feature_access.py) ke KEEMPAT
+    paket sekaligus, HANYA kalau migrasi ini belum pernah jalan sebelumnya.
+
+    KENAPA bukan cek "paket ini sudah punya baris fitur atau belum" (pola
+    idempotent yang dipakai fungsi seed_* lain di file ini): itu akan
+    keliru menganggap "Super Admin sengaja mencentang nol fitur untuk paket
+    ini" sama dengan "belum pernah disentuh sama sekali", lalu diam-diam
+    MENGEMBALIKAN fitur yang justru sengaja dicabut Super Admin setiap kali
+    server restart. Flag `settings` sekali-jalan ini memastikan seed HANYA
+    terjadi tepat satu kali (transisi dari "belum ada Feature Gating sama
+    sekali" ke "ada"), setelah itu Super Admin 100% memegang kendali penuh
+    lewat Dashboard tanpa gangguan apa pun dari migrasi ini lagi."""
+    if get_setting(_KUNCI_SEED_FITUR_PAKET, default=None) == "1":
+        return
+    fitur_ids = [f["id"] for f in list_features() if f["kode"] in _FITUR_NYATA_DEFAULT]
+    if fitur_ids:
+        for paket in list_packages():
+            sudah_ada = {f["id"] for f in get_package_features(paket["id"])}
+            gabungan = list(dict.fromkeys(list(sudah_ada) + fitur_ids))
+            if set(gabungan) != sudah_ada:
+                set_package_features(paket["id"], gabungan)
+    set_setting(_KUNCI_SEED_FITUR_PAKET, "1")
 
 
 def list_packages(hanya_aktif: bool = False) -> list:

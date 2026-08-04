@@ -23,7 +23,7 @@ import database as db
 import komisi_penyesuaian_db
 import laporan_pdf
 import permissions
-from auth import get_current_user, require_permission
+from auth import get_current_user, require_feature, require_permission
 
 
 router = APIRouter(prefix="/api/komisi", tags=["komisi"])
@@ -72,7 +72,7 @@ def list_penyesuaian(barber_id: int = None, tahun: int = None, bulan: int = None
 
 @router.get("/pdf")
 def list_penyesuaian_pdf(barber_id: int = None, tahun: int = None, bulan: int = None, jenis: str = None,
-                          user: dict = Depends(get_current_user)):
+                          user: dict = Depends(get_current_user), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /penyesuaian/{penyesuaian_id} supaya
     'pdf' tidak ditangkap sebagai path parameter."""
     _cek_akses_lihat(user)

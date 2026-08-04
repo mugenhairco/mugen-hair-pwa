@@ -40,7 +40,7 @@
   <meta name="apple-mobile-web-app-title" content="Rivoir" />
   <meta name="mobile-web-app-capable" content="yes" />
 
-  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=67" di
+  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=68" di
        SETIAP <link rel="stylesheet">/<script src> di bawah ini adalah
        cache-busting di lapisan URL, INDEPENDEN dari Service Worker --
        browser/CDN mana pun yang meng-cache berdasar URL persis tidak
@@ -50,7 +50,7 @@
        manapun yang dirujuk di sini (lihat komentar ASSET_VERSION di
        service-worker.js untuk alasan kenapa dua tempat ini tidak bisa
        disatukan lewat satu file "sumber kebenaran" tanpa proses build). -->
-  <link rel="stylesheet" href="css/style.css?v=67" />
+  <link rel="stylesheet" href="css/style.css?v=68" />
 </head>
 <body>
   <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
@@ -69,7 +69,7 @@
        <script>window.MUGEN_API_BASE = "https://api.rivoirsett.com";</script>
        Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
        saat development, dan bisa dioverride lewat env saat build/deploy. -->
-  <script src="config.js?v=67"></script>
+  <script src="config.js?v=68"></script>
   <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
        (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
        bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
@@ -88,45 +88,46 @@
        skrip lain) -- lihat pdfjs_boot.js untuk kenapa harus type="module"
        dan kenapa dipakai lewat window.pdfjsLib + event 'pdfjs-ready',
        bukan import langsung di pdf_preview.js. -->
-  <script type="module" src="js/pdfjs_boot.js?v=67"></script>
-  <script src="js/state.js?v=67"></script>
+  <script type="module" src="js/pdfjs_boot.js?v=68"></script>
+  <script src="js/state.js?v=68"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
        state.js) dan langsung menerapkan atribut data-theme begitu file
        ini selesai dieksekusi (lihat applyStored() di baris terakhir
        theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
        #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
-  <script src="js/theme.js?v=67"></script>
-  <script src="js/api.js?v=67"></script>
-  <script src="js/ui.js?v=67"></script>
-  <script src="js/pdf_preview.js?v=67"></script>
-  <script src="js/brand.js?v=67"></script>
-  <script src="js/subscription.js?v=67"></script>
-  <script src="js/pwa_update.js?v=67"></script>
-  <script src="js/nav.js?v=67"></script>
-  <script src="js/booking_notif.js?v=67"></script>
-  <script src="js/izin_notif.js?v=67"></script>
-  <script src="js/pages/login.js?v=67"></script>
-  <script src="js/pages/register.js?v=67"></script>
-  <script src="js/pages/dashboard_owner.js?v=67"></script>
-  <script src="js/pages/dashboard_barber.js?v=67"></script>
-  <script src="js/pages/input_data.js?v=67"></script>
-  <script src="js/pages/rekap.js?v=67"></script>
-  <script src="js/pages/pengeluaran.js?v=67"></script>
-  <script src="js/pages/pemasukan.js?v=67"></script>
-  <script src="js/pages/uang_kas.js?v=67"></script>
-  <script src="js/pages/slip_gaji.js?v=67"></script>
-  <script src="js/pages/kasbon.js?v=67"></script>
-  <script src="js/pages/komisi.js?v=67"></script>
-  <script src="js/pages/reimburse.js?v=67"></script>
-  <script src="js/pages/izin_cuti.js?v=67"></script>
-  <script src="js/pages/pengaturan.js?v=67"></script>
-  <script src="js/pages/billing.js?v=67"></script>
-  <script src="js/pages/produk.js?v=67"></script>
-  <script src="js/pages/booking.js?v=67"></script>
-  <script src="js/pages/book_public.js?v=67"></script>
-  <script src="js/pages/superadmin.js?v=67"></script>
-  <script src="js/pages/subscription_blocked.js?v=67"></script>
-  <script src="js/router.js?v=67"></script>
-  <script src="js/app.js?v=67"></script>
+  <script src="js/theme.js?v=68"></script>
+  <script src="js/api.js?v=68"></script>
+  <script src="js/ui.js?v=68"></script>
+  <script src="js/pdf_preview.js?v=68"></script>
+  <script src="js/brand.js?v=68"></script>
+  <script src="js/subscription.js?v=68"></script>
+  <script src="js/feature_access.js?v=68"></script>
+  <script src="js/pwa_update.js?v=68"></script>
+  <script src="js/nav.js?v=68"></script>
+  <script src="js/booking_notif.js?v=68"></script>
+  <script src="js/izin_notif.js?v=68"></script>
+  <script src="js/pages/login.js?v=68"></script>
+  <script src="js/pages/register.js?v=68"></script>
+  <script src="js/pages/dashboard_owner.js?v=68"></script>
+  <script src="js/pages/dashboard_barber.js?v=68"></script>
+  <script src="js/pages/input_data.js?v=68"></script>
+  <script src="js/pages/rekap.js?v=68"></script>
+  <script src="js/pages/pengeluaran.js?v=68"></script>
+  <script src="js/pages/pemasukan.js?v=68"></script>
+  <script src="js/pages/uang_kas.js?v=68"></script>
+  <script src="js/pages/slip_gaji.js?v=68"></script>
+  <script src="js/pages/kasbon.js?v=68"></script>
+  <script src="js/pages/komisi.js?v=68"></script>
+  <script src="js/pages/reimburse.js?v=68"></script>
+  <script src="js/pages/izin_cuti.js?v=68"></script>
+  <script src="js/pages/pengaturan.js?v=68"></script>
+  <script src="js/pages/billing.js?v=68"></script>
+  <script src="js/pages/produk.js?v=68"></script>
+  <script src="js/pages/booking.js?v=68"></script>
+  <script src="js/pages/book_public.js?v=68"></script>
+  <script src="js/pages/superadmin.js?v=68"></script>
+  <script src="js/pages/subscription_blocked.js?v=68"></script>
+  <script src="js/router.js?v=68"></script>
+  <script src="js/app.js?v=68"></script>
 </body>
 </html>

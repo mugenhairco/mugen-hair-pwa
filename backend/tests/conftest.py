@@ -55,7 +55,16 @@ def app_client(db_path):
 def two_tenants(app_client):
     """Dua tenant + akun Owner masing-masing, sudah login -- dipakai SEMUA
     test isolasi lintas tenant. Return dict berisi client + tenant_id +
-    header Authorization siap pakai untuk masing-masing tenant."""
+    header Authorization siap pakai untuk masing-masing tenant.
+
+    SENGAJA TIDAK membuat baris tenant_subscriptions (beda dari tenant
+    sungguhan yang selalu lewat routers/superadmin.py::buat_tenant()) --
+    test_subscription.py::test_tenant_tanpa_baris_subscription_tidak_diblokir_fail_open
+    justru bergantung pada fixture ini TIDAK punya baris subscription sama
+    sekali (mendokumentasikan perilaku fail-open Phase 3). Test yang butuh
+    tenant dengan subscription "sungguhan" (mis. test_feature_access.py)
+    memanggil subscription_db.create_default_subscription() sendiri secara
+    eksplisit di badan test-nya, BUKAN lewat fixture ini."""
     import tenant_db
     import auth_db
 
@@ -85,7 +94,10 @@ def two_tenants(app_client):
 @pytest.fixture()
 def single_tenant(app_client):
     """Satu tenant + akun Owner, sudah login -- dipakai test regresi
-    fungsional (bukan isolasi) yang cukup satu tenant saja."""
+    fungsional (bukan isolasi) yang cukup satu tenant saja.
+
+    SENGAJA TIDAK membuat baris tenant_subscriptions -- lihat catatan
+    panjang sama persis di fixture two_tenants() di atas."""
     import tenant_db
     import auth_db
 

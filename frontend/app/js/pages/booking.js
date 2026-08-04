@@ -737,6 +737,20 @@ const PageBooking = (() => {
     qrisCard.appendChild(errorBox3);
     qrisCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnUploadQris, btnHapusQris]));
 
+    // Feature Gating "qris": Owner yang paketnya tidak menyertakan fitur
+    // ini TIDAK BISA upload/ganti/hapus QRIS baru (backend menggerbang
+    // POST/DELETE /api/booking/qris sama persis, lihat routers/booking.py)
+    // -- tapi gambar QRIS yang SUDAH terupload (qrisPreview di atas) TETAP
+    // tampil apa adanya, read-only, TIDAK ikut disembunyikan/dihapus, cuma
+    // kemampuan MENGUBAHNYA yang dikunci.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("qris")) {
+      inMerchant.disabled = true;
+      inQrisFile.disabled = true;
+      btnUploadQris.disabled = true;
+      btnHapusQris.disabled = true;
+      qrisCard.appendChild(MugenFeature.upgradeBlock("QRIS"));
+    }
+
     btnUploadQris.addEventListener("click", async () => {
       errorBox3.textContent = "";
       try {

@@ -33,6 +33,10 @@ const PageSlipGaji = (() => {
   }
 
   function tombolDownloadPdfDaftar(getParams, computeFilename) {
+    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
+      return MugenFeature.upgradeBlock("Export PDF");
+    }
     const btn = MugenUI.el("button", {}, "Cetak PDF Daftar");
     btn.addEventListener("click", () => {
       const qs = new URLSearchParams(getParams());
@@ -68,9 +72,16 @@ const PageSlipGaji = (() => {
         {
           key: "aksi", label: "Aksi", format: (_, r) => {
             const wrap = MugenUI.el("div", { class: "actions-cell" });
-            const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
-            btnPdf.addEventListener("click", () => unduhPdf(r.id, r.nama_barber, r.tahun, r.bulan));
-            wrap.appendChild(btnPdf);
+            // Feature Gating "export_pdf": tombol PDF daftar di atas tabel
+            // sudah menampilkan blok upgrade kalau fitur tidak tersedia --
+            // di sini (satu tombol per baris) cukup disembunyikan saja,
+            // supaya tidak berulang kali menampilkan kartu upgrade yang
+            // sama persis untuk tiap baris.
+            if (typeof MugenFeature === "undefined" || MugenFeature.has("export_pdf")) {
+              const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
+              btnPdf.addEventListener("click", () => unduhPdf(r.id, r.nama_barber, r.tahun, r.bulan));
+              wrap.appendChild(btnPdf);
+            }
 
             if (isAdmin) {
               const btnStatus = MugenUI.el("button", {},

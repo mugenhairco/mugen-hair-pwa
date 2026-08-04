@@ -164,7 +164,10 @@ const PageUangKas = (() => {
         filename: MugenUI.namaFileAman(`Laporan Uang Kas ${periode}.pdf`),
       });
     });
-    filterCard.appendChild(btnDownloadPdf);
+    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
+    filterCard.appendChild(
+      typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")
+        ? MugenFeature.upgradeBlock("Export PDF") : btnDownloadPdf);
 
     // ================= DAFTAR PENYESUAIAN =================
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Penyesuaian Kas"));

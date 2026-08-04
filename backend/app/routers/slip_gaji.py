@@ -18,7 +18,7 @@ from pydantic import BaseModel
 import laporan_pdf
 import permissions
 import slip_gaji_db
-from auth import get_current_user, require_permission
+from auth import get_current_user, require_feature, require_permission
 
 
 router = APIRouter(prefix="/api/slip-gaji", tags=["slip-gaji"])
@@ -61,7 +61,7 @@ def list_slip_gaji(tahun: int = None, bulan: int = None, barber_id: int = None,
 
 @router.get("/pdf")
 def list_slip_gaji_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
-                        user: dict = Depends(get_current_user)):
+                        user: dict = Depends(get_current_user), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Unduh PDF Daftar Slip Gaji sesuai filter Barber/Bulan/Tahun yang
     sedang aktif di halaman -- BEDA dari GET /{slip_id}/pdf yang mencetak
     satu slip. Route ini didaftarkan SEBELUM /{slip_id} supaya 'pdf' tidak
@@ -140,7 +140,8 @@ def hapus_slip_gaji(slip_id: int, user: dict = Depends(require_permission("izin_
 
 
 @router.get("/{slip_id}/pdf")
-def unduh_pdf_slip_gaji(slip_id: int, user: dict = Depends(get_current_user)):
+def unduh_pdf_slip_gaji(slip_id: int, user: dict = Depends(get_current_user),
+                         _fitur: dict = Depends(require_feature("export_pdf"))):
     slip = slip_gaji_db.get_slip_gaji(slip_id)
     _pastikan_slip_tenant_sama(user, slip)
     _cek_akses_lihat(user, slip)

@@ -19,6 +19,10 @@ const PageProduk = (() => {
   // gaya codebase). `computeOptions` dipanggil ULANG tiap klik supaya
   // filter yang aktif SAAT diklik yang dipakai.
   function tombolCetakPdf(computeOptions) {
+    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
+      return MugenFeature.upgradeBlock("Export PDF");
+    }
     const btn = MugenUI.el("button", {}, "Cetak PDF");
     btn.addEventListener("click", () => {
       const { generate, filename } = computeOptions();

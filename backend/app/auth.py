@@ -230,6 +230,35 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
     return t["id"]
 
 
+def require_feature(kode: str):
+    """Dependency factory: FONDASI Multi-Tenant Phase 4 lanjutan (Feature
+    Gating per Paket) -- BEDA SUMBU dari require_permission() di bawah
+    (izin_* = peran DALAM satu tenant, ini = fitur yang TERMASUK di paket
+    TENANT itu sendiri). Superadmin (akun platform, tidak terikat tenant
+    mana pun) SELALU lolos tanpa syarat -- lihat feature_access.py untuk
+    penjelasan lengkap & daftar kode fitur yang sungguhan ditegakkan.
+
+    Dipasang sebagai dependency TAMBAHAN (bukan pengganti) di endpoint yang
+    sudah ada -- signature endpoint tetap punya `user: dict = Depends(...)`
+    aslinya (get_current_user/require_owner_or_staff/dst, TIDAK diubah,
+    supaya pembatasan role yang sudah ada tidak ikut berubah), ditambah satu
+    parameter baru `Depends(require_feature("kode_fitur"))` yang HANYA
+    menegakkan gate fitur, dipanggil sama seperti require_permission()."""
+    def _dep(user: dict = Depends(get_current_user)) -> dict:
+        if user["role"] == "superadmin":
+            return user
+        import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
+        tenant_id = user.get("tenant_id")
+        if tenant_id is None or not feature_access.tenant_has_feature(tenant_id, kode):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+                "message": "Fitur ini tidak tersedia di paket Anda saat ini. Upgrade paket untuk menggunakannya.",
+                "feature": kode,
+                "upgrade_required": True,
+            })
+        return user
+    return _dep
+
+
 def require_permission(key: str):
     """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
     penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).

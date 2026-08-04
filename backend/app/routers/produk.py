@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 import database as db
 import laporan_pdf
-from auth import require_owner_or_staff
+from auth import require_feature, require_owner_or_staff
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
 
@@ -137,7 +137,7 @@ def list_mutasi(produk_id: int = None, tipe: str = None, tahun: int = None,
 
 @router.get("/mutasi/pdf")
 def list_mutasi_pdf(produk_id: int = None, tipe: str = None, tahun: int = None, bulan: int = None,
-                     user: dict = Depends(require_owner_or_staff)):
+                     user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Cetak Riwayat Mutasi Produk -- filter SAMA PERSIS dengan GET /mutasi
     di atas (dipanggil tombol Cetak PDF di produk.js dengan filter aktif
     yang sedang tampil di layar), sumber data SAMA (db.get_mutasi_produk_list())

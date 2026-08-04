@@ -29,9 +29,10 @@ from pydantic import BaseModel
 import billing_limits
 import booking_db
 import database as db
+import feature_access
 import r2_storage
 import subscription_db
-from auth import require_owner_or_staff, require_barber, resolve_tenant_publik
+from auth import require_feature, require_owner_or_staff, require_barber, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
@@ -129,7 +130,18 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     metode pembayaran aktif + label/instruksi + info QRIS/transfer bank
     (kalau aktif), dan daftar tanggal Toko Libur dalam rentang kalender yang
     terlihat (supaya kalender bisa langsung meng-abu-kan tanggal itu tanpa
-    perlu tebak-tebakan per tanggal)."""
+    perlu tebak-tebakan per tanggal).
+
+    Feature Gating: kalau paket tenant ini TIDAK menyertakan fitur
+    "booking_online", balas payload PENDEK `{"booking_online": False}`
+    (BUKAN HTTPException) -- ini panggilan BOOTSTRAP halaman /book, frontend
+    (book_public.js) perlu bisa membedakan "fitur tidak tersedia" (tampilkan
+    pesan ramah) dari error jaringan biasa. Kalau tenant TIDAK punya fitur
+    "qris", "qris" dihapus dari daftar metode_aktif SEBELUM dikirim -- data
+    QRIS yang sudah diupload (kalau ada) TETAP TERSIMPAN di database, cuma
+    tidak ditawarkan ke customer selama fitur ini tidak aktif di paketnya."""
+    if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
+        return {"booking_online": False}
     booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id)
     hari_ini = date.today()
     batas = hari_ini + timedelta(days=booking_settings["maksimal_hari_kedepan"])
@@ -137,9 +149,13 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         tl["tanggal"] for tl in booking_db.get_toko_libur_list(tenant_id=tenant_id)
         if hari_ini.isoformat() <= tl["tanggal"] <= batas.isoformat()
     ]
+    payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id)
+    if not feature_access.tenant_has_feature(tenant_id, "qris"):
+        payment_settings["metode_aktif"] = [m for m in payment_settings["metode_aktif"] if m != "qris"]
     return {
+        "booking_online": True,
         **booking_settings,
-        **booking_db.get_payment_settings(tenant_id=tenant_id),
+        **payment_settings,
         "toko_libur_tanggal": toko_libur_tanggal,
     }
 
@@ -155,6 +171,11 @@ def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
 
 @public_router.get("/qris")
 def public_qris(v: str | None = None, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    # Feature Gating "qris": balas 404 SAMA PERSIS seperti "belum diatur" --
+    # sengaja tidak dibedakan supaya tidak membocorkan status paket/billing
+    # tenant ke pengunjung publik lewat pesan error yang berbeda.
+    if not feature_access.tenant_has_feature(tenant_id, "qris"):
+        raise HTTPException(status_code=404, detail="QRIS belum diatur.")
     data, content_type = booking_db.get_qris_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="QRIS belum diatur.")
@@ -174,6 +195,12 @@ class BookingCreateBody(BaseModel):
 
 @public_router.post("")
 def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    # Feature Gating "booking_online": lapis pertahanan kedua (public_pengaturan
+    # di atas SUDAH menyembunyikan wizard-nya dari frontend kalau fitur ini
+    # tidak aktif, tapi endpoint publik ini bisa dipanggil langsung tanpa
+    # lewat UI, jadi ditegakkan juga di sini).
+    if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
+        raise HTTPException(status_code=403, detail="Booking online tidak tersedia untuk toko ini.")
     try:
         billing_limits.pastikan_boleh_tambah_booking(tenant_id)  # FONDASI Multi-Tenant Phase 4
         return booking_db.buat_booking(
@@ -331,7 +358,8 @@ def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(requ
 
 
 @router.post("/qris")
-async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
+async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff),
+                       _fitur: dict = Depends(require_feature("qris"))):
     konten = await file.read()
     try:
         booking_db.simpan_qris(file.filename, konten, tenant_id=user["tenant_id"])
@@ -343,7 +371,8 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 
 
 @router.delete("/qris")
-def hapus_qris_endpoint(user: dict = Depends(require_owner_or_staff)):
+def hapus_qris_endpoint(user: dict = Depends(require_owner_or_staff),
+                         _fitur: dict = Depends(require_feature("qris"))):
     booking_db.hapus_qris(tenant_id=user["tenant_id"])
     return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
 

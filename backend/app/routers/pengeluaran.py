@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import pengeluaran_db as db_pengeluaran
-from auth import require_owner_or_staff
+from auth import require_feature, require_owner_or_staff
 
 router = APIRouter(prefix="/api/pengeluaran", tags=["pengeluaran"])
 
@@ -59,7 +59,7 @@ def _pastikan_pengeluaran_tenant_sama(user: dict, row: dict | None):
 
 @router.get("/pdf")
 def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
-                          user: dict = Depends(require_owner_or_staff)):
+                          user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{pengeluaran_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pengeluaran_id."""
     konten = laporan_pdf.buat_pdf_pengeluaran_list(tahun, bulan, kategori, cari, user["username"],

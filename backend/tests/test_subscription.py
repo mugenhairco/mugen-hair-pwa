@@ -132,18 +132,22 @@ def test_status_endpoint_terbuka_untuk_semua_role_tenant(app_client):
 
     r1 = app_client.get("/api/subscription/status", headers=headers_staff)
     assert r1.status_code == 200
-    assert r1.json() == {"akses_diblokir": False}
+    # Feature Gating (FONDASI Multi-Tenant Phase 4 lanjutan): endpoint ini
+    # SEKARANG juga membawa `package`/`features` (lihat routers/subscription.py)
+    # -- dicek per-field (bukan exact dict equality) supaya penambahan field
+    # di masa depan tidak otomatis mematahkan test ini.
+    assert r1.json()["akses_diblokir"] is False
 
     subscription_db.update_status(tenant["id"], "cancelled")
     r2 = app_client.get("/api/subscription/status", headers=headers_barber)
-    assert r2.json() == {"akses_diblokir": True}
+    assert r2.json()["akses_diblokir"] is True
 
 
 def test_status_endpoint_superadmin_tidak_diblokir(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/subscription/status", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"akses_diblokir": False}
+    assert r.json() == {"akses_diblokir": False, "package": None, "features": []}
 
 
 def test_owner_tidak_bisa_lihat_subscription_tenant_lain(two_tenants):

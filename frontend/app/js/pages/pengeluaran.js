@@ -194,7 +194,10 @@ const PagePengeluaran = (() => {
         filename: MugenUI.namaFileAman(bagian.filter(Boolean).join(" ") + ".pdf"),
       });
     });
-    filterCard.appendChild(btnDownloadPdf);
+    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
+    filterCard.appendChild(
+      typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")
+        ? MugenFeature.upgradeBlock("Export PDF") : btnDownloadPdf);
 
     // ================= DAFTAR PENGELUARAN =================
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Pengeluaran"));

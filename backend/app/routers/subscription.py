@@ -21,6 +21,7 @@ Dua router dalam SATU file ini (pola sama seperti routers/booking.py):
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import billing_db
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -53,10 +54,30 @@ def subscription_status(user: dict = Depends(get_current_user)):
     frontend. `tenant_id=None` (akun superadmin) dianggap TIDAK diblokir --
     superadmin tidak terikat tenant mana pun, endpoint ini tidak relevan
     untuknya (router.js frontend tidak pernah memanggil endpoint ini untuk
-    sesi superadmin, ini murni jaring pengaman)."""
+    sesi superadmin, ini murni jaring pengaman).
+
+    Feature Gating: `package` + `features` (daftar kode fitur yang
+    TERMASUK di paket tenant ini) diikutkan di sini juga -- frontend
+    (subscription.js::MugenSubscription) sudah menyimpan APA ADANYA respons
+    endpoint ini ke cache-nya, jadi menambah field di sini otomatis membuat
+    MugenSubscription.get().features tersedia SINKRON di seluruh halaman
+    tanpa perlu endpoint/refresh terpisah. Upgrade/downgrade paket (lewat
+    Superadmin atau webhook Midtrans) langsung berlaku di panggilan
+    berikutnya -- tidak ada apa pun yang di-cache di sisi server."""
     if user.get("tenant_id") is None:
-        return {"akses_diblokir": False}
-    return {"akses_diblokir": subscription_db.akses_diblokir(user["tenant_id"])}
+        return {"akses_diblokir": False, "package": None, "features": []}
+    tenant_id = user["tenant_id"]
+    sub = subscription_db.get_subscription(tenant_id)
+    fitur = []
+    if sub is not None:
+        paket = billing_db.get_package_by_kode(sub["package"])
+        if paket is not None:
+            fitur = [f["kode"] for f in billing_db.get_package_features(paket["id"])]
+    return {
+        "akses_diblokir": subscription_db.akses_diblokir(tenant_id),
+        "package": sub["package"] if sub else None,
+        "features": fitur,
+    }
 
 
 # ============================= Super Admin =============================

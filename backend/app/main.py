@@ -329,6 +329,7 @@ def on_startup():
         billing_db.init_billing_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages + katalog fitur (idempotent)
         billing_db.seed_default_packages()  # seed 4 baris (free/basic/pro/enterprise) kalau belum ada (idempotent)
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, QRIS, dst) kalau belum ada (idempotent)
+        billing_db.seed_default_package_features()  # Feature Gating: assign booking_online/qris/export_pdf ke SEMUA paket SEKALI SAJA, supaya tenant lama tidak kehilangan fitur yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
         migrasi_landing()  # FONDASI Multi-Tenant Phase 5: kolom tenants.owner_name/email/whatsapp + tabel landing_faq/landing_testimonials (idempotent, WAJIB setelah migrasi_tenant())
 

@@ -18,7 +18,7 @@ import database as db
 import kasbon_db
 import laporan_pdf
 import permissions
-from auth import get_current_user, require_permission
+from auth import get_current_user, require_feature, require_permission
 
 
 router = APIRouter(prefix="/api/kasbon", tags=["kasbon"])
@@ -66,7 +66,7 @@ def list_kasbon(barber_id: int = None, status: str = None, tahun: int = None, bu
 
 @router.get("/pdf")
 def list_kasbon_pdf(barber_id: int = None, status: str = None, tahun: int = None, bulan: int = None,
-                     user: dict = Depends(get_current_user)):
+                     user: dict = Depends(get_current_user), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{kasbon_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter kasbon_id."""
     _cek_akses_lihat(user)

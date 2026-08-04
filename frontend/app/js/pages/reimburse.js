@@ -19,6 +19,10 @@ const PageReimburse = (() => {
 
   // Perbaikan Alur Cetak PDF: lihat catatan sama di pages/kasbon.js.
   function tombolDownloadPdf(getParams, computeFilename) {
+    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
+      return MugenFeature.upgradeBlock("Export PDF");
+    }
     const btn = MugenUI.el("button", {}, "Cetak PDF");
     btn.addEventListener("click", () => {
       const qs = new URLSearchParams(getParams());

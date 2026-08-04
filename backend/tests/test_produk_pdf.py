@@ -53,6 +53,13 @@ def test_mutasi_produk_list_sisa_stok_per_produk_terpisah(single_tenant):
 
 def test_pdf_mutasi_produk_kolom_dan_data_sama_dengan_tabel(single_tenant):
     client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    # Feature Gating "export_pdf" (FONDASI Multi-Tenant Phase 4 lanjutan):
+    # endpoint PDF di bawah SEKARANG digerbang require_feature("export_pdf")
+    # -- single_tenant sengaja TIDAK punya baris tenant_subscriptions (lihat
+    # conftest.py), jadi tanpa baris ini akan 403. Tenant SUNGGUHAN selalu
+    # dapat baris ini otomatis (routers/superadmin.py::buat_tenant()).
+    import subscription_db
+    subscription_db.create_default_subscription(tenant_id)
     produk_id = db.tambah_produk("MT Pomade", 15000, 35000, tenant_id=tenant_id)
     db.restock_produk(produk_id, "2026-07-02", 20, "Restock awal")
     db.jual_produk(produk_id, "2026-07-10", 3, "Jual ke pelanggan")
@@ -87,6 +94,9 @@ def test_pdf_mutasi_produk_filter_tipe_dan_produk(single_tenant):
     """PDF mengikuti filter produk_id/tipe yang sama seperti tabel -- hanya
     baris yang lolos filter yang boleh muncul."""
     client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    # Feature Gating "export_pdf": lihat catatan sama di test di atas.
+    import subscription_db
+    subscription_db.create_default_subscription(tenant_id)
     id_a = db.tambah_produk("MT Shampoo Only", 10000, 20000, tenant_id=tenant_id)
     id_b = db.tambah_produk("MT Wax Excluded", 10000, 20000, tenant_id=tenant_id)
     db.restock_produk(id_a, "2026-07-01", 10, None)

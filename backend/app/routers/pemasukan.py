@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import pemasukan_db as db_pemasukan
-from auth import require_owner_or_staff
+from auth import require_feature, require_owner_or_staff
 
 router = APIRouter(prefix="/api/pemasukan", tags=["pemasukan"])
 
@@ -50,7 +50,7 @@ def list_pemasukan(tahun: int = None, bulan: int = None, tanggal: str = None,
 
 @router.get("/pdf")
 def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
-                        user: dict = Depends(require_owner_or_staff)):
+                        user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{pemasukan_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pemasukan_id."""
     konten = laporan_pdf.buat_pdf_pemasukan_list(tahun, bulan, kategori, cari, user["username"],

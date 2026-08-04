@@ -8,6 +8,13 @@ transaksi -> rekap -> dst) tetap terlihat jelas kalau ada yang gagal."""
 
 def test_alur_lengkap_satu_tenant(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
+    # Feature Gating "export_pdf" (FONDASI Multi-Tenant Phase 4 lanjutan):
+    # slip gaji PDF di bawah SEKARANG digerbang require_feature("export_pdf")
+    # -- single_tenant sengaja TIDAK punya baris tenant_subscriptions (lihat
+    # conftest.py), jadi tanpa baris ini akan 403. Tenant SUNGGUHAN selalu
+    # dapat baris ini otomatis (routers/superadmin.py::buat_tenant()).
+    import subscription_db
+    subscription_db.create_default_subscription(single_tenant["tenant_id"])
 
     # --- Barbers & Services ---
     r = client.post("/api/pengaturan/barber", json={"nama": "Budi", "uang_harian": 50000}, headers=headers)

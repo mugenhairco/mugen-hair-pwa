@@ -30,7 +30,7 @@ import pengaturan_service
 import pengaturan_user
 import permissions
 import r2_storage
-from auth import require_admin, require_owner_or_staff, require_permission, resolve_tenant_hibrid
+from auth import require_admin, require_feature, require_owner_or_staff, require_permission, resolve_tenant_hibrid
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
 
@@ -723,7 +723,8 @@ async def import_database(file: UploadFile = File(...), user: dict = Depends(req
 def download_laporan_pdf(jenis: str, barber_id: int | None = None,
                           tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
                           tahun: int | None = None, bulan: int | None = None,
-                          user: dict = Depends(require_owner_or_staff)):
+                          user: dict = Depends(require_owner_or_staff),
+                          _fitur: dict = Depends(require_feature("export_pdf"))):
     if user["role"] == "staff" and not permissions.has("izin_laporan_pdf", tenant_id=user["tenant_id"]):
         raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
     try:

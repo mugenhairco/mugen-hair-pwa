@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import uang_kas_db as db_uang_kas
-from auth import require_owner_or_staff
+from auth import require_feature, require_owner_or_staff
 
 router = APIRouter(prefix="/api/uang-kas", tags=["uang-kas"])
 
@@ -53,7 +53,8 @@ def ambil_saldo_kas(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.get("/pdf")
-def list_penyesuaian_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def list_penyesuaian_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff),
+                          _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{penyesuaian_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter penyesuaian_id."""
     konten = laporan_pdf.buat_pdf_uang_kas_list(tahun, bulan, user["username"], tenant_id=user["tenant_id"])

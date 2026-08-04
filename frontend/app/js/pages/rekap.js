@@ -10,6 +10,12 @@ const PageRekap = (() => {
   // supaya filter yang aktif SAAT diklik yang dipakai -- return
   // { generate: () => Promise<Blob>, filename: string }.
   function tombolCetakPdf(computeOptions) {
+    // Feature Gating "export_pdf": tanpa fitur ini di paket, tombolnya
+    // diganti blok upgrade -- SATU titik keputusan untuk seluruh 3 pemanggil
+    // tombolCetakPdf() di file ini (Rekap Detail/Ringkasan, Rekap Pengeluaran).
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
+      return MugenFeature.upgradeBlock("Export PDF");
+    }
     const btn = MugenUI.el("button", {}, "Cetak PDF");
     btn.addEventListener("click", () => {
       const { generate, filename } = computeOptions();

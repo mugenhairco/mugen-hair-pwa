@@ -18,7 +18,7 @@ import pengeluaran_db
 import reimburse_db
 import data_non_barber_db
 import laporan_pdf
-from auth import get_current_user, require_owner_or_staff
+from auth import get_current_user, require_feature, require_owner_or_staff
 
 router = APIRouter(prefix="/api/rekap", tags=["rekap"])
 
@@ -58,7 +58,7 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
 @router.get("/transaksi/pdf")
 def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
                          tanggal_mulai: str = None, tanggal_selesai: str = None, jenis: str = "detail",
-                         user: dict = Depends(get_current_user)):
+                         user: dict = Depends(get_current_user), _fitur: dict = Depends(require_feature("export_pdf"))):
     """jenis: 'detail' (default, format lama -- satu baris per transaksi/
     hari, TIDAK berubah) atau 'ringkasan' ("Rekap Periode (Ringkasan)" BARU
     -- satu baris per karyawan untuk seluruh periode, lihat
@@ -96,7 +96,8 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
 
 
 @router.get("/bulanan/pdf")
-def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
+def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user),
+                       _fitur: dict = Depends(require_feature("export_pdf"))):
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     konten = laporan_pdf.buat_pdf_rekap_bulanan(tahun, bulan, barber_id, user["username"],
@@ -112,6 +113,7 @@ def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends
 
 
 @router.get("/pengeluaran/pdf")
-def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff),
+                           _fitur: dict = Depends(require_feature("export_pdf"))):
     konten = laporan_pdf.buat_pdf_rekap_pengeluaran(tahun, bulan, user["username"], tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_pengeluaran")

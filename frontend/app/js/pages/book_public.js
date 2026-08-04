@@ -439,6 +439,17 @@ const PageBookPublic = (() => {
       return;
     }
 
+    // Feature Gating "booking_online": paket tenant ini tidak menyertakan
+    // fitur ini -- endpoint /pengaturan sengaja membalas payload PENDEK
+    // {"booking_online": false} (lihat routers/booking.py::public_pengaturan),
+    // tampilkan pesan ramah alih-alih lanjut ke Step 1 (Choose Barber) yang
+    // datanya sendiri sudah tidak lengkap (barbers/services tetap
+    // dipanggil di Promise.all di atas, tapi hasilnya tidak dipakai lagi).
+    if (pengaturan.booking_online === false) {
+      body.appendChild(MugenUI.el("div", { class: "card" }, "Booking online belum tersedia untuk toko ini."));
+      return;
+    }
+
     const identitas = MugenBrand.get();
 
     // Header wizard SENGAJA ringkas (logo/nama kecil + link kembali ke
