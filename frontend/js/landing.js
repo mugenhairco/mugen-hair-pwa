@@ -68,19 +68,6 @@
     requestAnimationFrame(tick);
   }
 
-  function initCounters() {
-    const section = document.getElementById("lp-stats");
-    const nums = section.querySelectorAll(".lp-stat-num");
-    let sudahJalan = false;
-    const observer = new IntersectionObserver((entries) => {
-      if (sudahJalan || !entries.some((e) => e.isIntersecting)) return;
-      sudahJalan = true;
-      nums.forEach((node) => animateCounter(node, Number(node.dataset.target) || 0));
-      observer.disconnect();
-    }, { threshold: 0.3 });
-    observer.observe(section);
-  }
-
   async function loadStats() {
     try {
       const stats = await apiGet("/api/public/landing/stats");
@@ -96,6 +83,31 @@
       // Page -- biarkan angka 0 tampil apa adanya, bagian lain tetap jalan.
       console.error(e);
     }
+  }
+
+  // BUGFIX: sebelumnya initCounters() (IntersectionObserver) dan loadStats()
+  // (fetch async) dipanggil terpisah/paralel di boot -- kalau section Trusted
+  // KEBETULAN sudah masuk viewport SEBELUM fetch selesai (umum terjadi kalau
+  // section itu ada di atas layar/viewport pendek), observer langsung
+  // menganimasikan ke nilai default "0" di HTML (data-target belum sempat
+  // diisi loadStats()), lalu MENGUNCI diri (sudahJalan=true, observer
+  // disconnect) -- update data-target yang datang belakangan dari loadStats()
+  // TIDAK PERNAH memicu animasi ulang, counter diam permanen di 0 padahal
+  // datanya sebenarnya sudah ada. initStatsSection() memastikan urutannya:
+  // TUNGGU loadStats() selesai (data-target sudah benar) SEBELUM observer
+  // mulai memantau sama sekali.
+  async function initStatsSection() {
+    await loadStats();
+    const section = document.getElementById("lp-stats");
+    const nums = section.querySelectorAll(".lp-stat-num");
+    let sudahJalan = false;
+    const observer = new IntersectionObserver((entries) => {
+      if (sudahJalan || !entries.some((e) => e.isIntersecting)) return;
+      sudahJalan = true;
+      nums.forEach((node) => animateCounter(node, Number(node.dataset.target) || 0));
+      observer.disconnect();
+    }, { threshold: 0.3 });
+    observer.observe(section);
   }
 
   // ============================= Features (contoh statis, lihat spesifikasi
@@ -151,6 +163,15 @@
     grid.innerHTML = "";
     packages.forEach((p) => {
       const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
+      const btnPilih = el("a", { href: "/app/#/register", class: "lp-btn lp-btn-primary" }, "Select Package");
+      // Ingat paket yang diklik lewat sessionStorage (sama origin dengan
+      // /app/, jadi tetap terbawa lintas navigasi) -- register.js/billing.js
+      // membaca ini untuk menyorot paket yang sama begitu Owner sampai di
+      // halaman Billing, supaya pilihan di Landing Page tidak hilang begitu
+      // saja saat harus Register dulu.
+      btnPilih.addEventListener("click", () => {
+        try { sessionStorage.setItem("mugen_pending_package_kode", p.kode); } catch (e) { /* abaikan (mis. private mode) */ }
+      });
       grid.appendChild(el("div", { class: "lp-pricing-card" }, [
         el("h3", {}, p.nama),
         el("div", { class: "lp-pricing-price" }, [
@@ -159,7 +180,7 @@
         ]),
         el("p", { class: "lp-pricing-desc" }, p.deskripsi || ""),
         el("ul", { class: "lp-pricing-features" }, fitur.length ? fitur : [el("li", {}, "-")]),
-        el("a", { href: "/app/#/register", class: "lp-btn lp-btn-primary" }, "Select Package"),
+        btnPilih,
       ]));
     });
   }
@@ -317,8 +338,7 @@
     document.getElementById("lp-year").textContent = new Date().getFullYear();
     initNavbar();
     renderFeatures();
-    initCounters();
-    loadStats();
+    initStatsSection();
     loadPackages();
     loadTestimonials();
     loadFaq();

@@ -7,7 +7,7 @@
 // benar-benar menangani request di bawah /app/ begitu SW itu aktif
 // (spesifikasi Service Worker: scope paling spesifik yang menang).
 
-const ASSET_VERSION = "1";
+const ASSET_VERSION = "2";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

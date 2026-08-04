@@ -24,7 +24,7 @@ walau statusnya masih 'expired' (lihat router.js, BUKAN bagian backend ini)."""
 import re
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 import auth_db
 import subscription_db
@@ -54,30 +54,44 @@ def _buat_slug_unik(nama_barbershop: str) -> str:
 
 
 class RegisterBody(BaseModel):
-    nama_barbershop: str
-    owner_name: str
-    email: str
-    whatsapp: str
-    password: str
-    confirm_password: str
+    nama_barbershop: str = ""
+    owner_name: str = ""
+    email: str = ""
+    whatsapp: str = ""
+    password: str = ""
+    confirm_password: str = ""
 
-    @model_validator(mode="after")
-    def _validasi(self):
-        if self.password != self.confirm_password:
-            raise ValueError("Konfirmasi password tidak cocok.")
-        if not _EMAIL_RE.match((self.email or "").strip()):
-            raise ValueError("Format email tidak valid.")
-        if not (self.whatsapp or "").strip():
-            raise ValueError("Nomor WhatsApp tidak boleh kosong.")
-        if not (self.nama_barbershop or "").strip():
-            raise ValueError("Nama Barbershop tidak boleh kosong.")
-        if not (self.owner_name or "").strip():
-            raise ValueError("Nama Owner tidak boleh kosong.")
-        return self
+
+def _validasi(body: RegisterBody) -> None:
+    """Validasi manual (BUKAN Pydantic validator) -- SENGAJA, supaya pesan
+    error-nya string polos di `detail` (pola sama persis dengan SELURUH
+    endpoint lain di aplikasi ini, lihat superadmin.py/billing.py: ValueError
+    -> HTTPException(422, detail=str(e))). Pydantic model_validator yang
+    raise ValueError dibungkus FastAPI jadi ARRAY objek error terstruktur
+    (RequestValidationError), BUKAN string -- frontend (register.js) hanya
+    tahu cara menampilkan `detail` yang berupa string, jadi validator
+    Pydantic akan membuat pesan error tidak terbaca ("[object Object]")."""
+    if not (body.nama_barbershop or "").strip():
+        raise HTTPException(status_code=422, detail="Nama Barbershop tidak boleh kosong.")
+    if not (body.owner_name or "").strip():
+        raise HTTPException(status_code=422, detail="Nama Owner tidak boleh kosong.")
+    if not _EMAIL_RE.match((body.email or "").strip()):
+        raise HTTPException(status_code=422, detail="Format email tidak valid.")
+    if not (body.whatsapp or "").strip():
+        raise HTTPException(status_code=422, detail="Nomor WhatsApp tidak boleh kosong.")
+    if body.password != body.confirm_password:
+        raise HTTPException(status_code=422, detail="Konfirmasi password tidak cocok.")
+    # Dicek DI SINI (SEBELUM tenant/user dibuat) supaya password terlalu
+    # pendek TIDAK meninggalkan baris `tenants` yatim tanpa akun Owner --
+    # auth_db.tambah_user() menegakkan aturan yang SAMA (dipanggil setelah
+    # ini juga, sebagai lapis pertahanan kedua), pesannya disamakan persis.
+    if not body.password or len(body.password) < 4:
+        raise HTTPException(status_code=422, detail="Password minimal 4 karakter.")
 
 
 @public_router.post("/register")
 def register(body: RegisterBody):
+    _validasi(body)
     email = body.email.strip().lower()
     whatsapp = body.whatsapp.strip()
 
