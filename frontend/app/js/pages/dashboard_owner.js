@@ -134,7 +134,15 @@ const PageDashboardOwner = (() => {
     }
 
     async function load() {
-      body.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton (bentuk kartu) menggantikan teks
+      // "Memuat..." -- kartu asli otomatis beranimasi masuk begitu
+      // ditambahkan (lihat .card { animation: mugen-fade-slide-in }),
+      // jadi transisi skeleton -> data terasa satu alur, bukan dua lompatan.
+      body.innerHTML = "";
+      body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
+        MugenUI.skeleton("card", { lines: 2 }), MugenUI.skeleton("card", { lines: 2 }),
+        MugenUI.skeleton("card", { lines: 2 }),
+      ]));
       try {
         const data = await MugenApi.get(`/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`, { useCache: true });
         body.innerHTML = "";
@@ -254,8 +262,12 @@ const PageDashboardOwner = (() => {
         body.appendChild(grafikCard);
 
         async function renderGrafik() {
-          grafikHarianBox.innerHTML = "Memuat...";
-          grafikBulananBox.innerHTML = "Memuat...";
+          // REVISI UI/UX Premium: skeleton menggantikan "Memuat..." --
+          // lihat catatan sama di load() di atas.
+          grafikHarianBox.innerHTML = "";
+          grafikHarianBox.appendChild(MugenUI.skeleton("line", { width: "90%" }));
+          grafikBulananBox.innerHTML = "";
+          grafikBulananBox.appendChild(MugenUI.skeleton("line", { width: "90%" }));
           const barberIdGrafik = selBarberGrafik.value;
           const qsBarber = barberIdGrafik ? `&barber_id=${barberIdGrafik}` : "";
           try {
@@ -278,14 +290,17 @@ const PageDashboardOwner = (() => {
           } catch (e) {
             grafikHarianBox.innerHTML = "";
             grafikBulananBox.innerHTML = "";
-            grafikHarianBox.appendChild(MugenUI.el("div", {}, e.message));
+            grafikHarianBox.appendChild(MugenUI.errorState(e.message));
           }
         }
-        selBarberGrafik.addEventListener("change", () => MugenUI.withLoading(renderGrafik));
+        // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar
+        // penuh -- skeleton di dalam grafikHarianBox/grafikBulananBox
+        // sendiri (di atas) sudah jadi feedback yang cukup.
+        selBarberGrafik.addEventListener("change", renderGrafik);
         renderGrafik();
       } catch (e) {
         body.innerHTML = "";
-        body.appendChild(MugenUI.el("div", { class: "card" }, e.message));
+        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
       }
     }
 
@@ -298,8 +313,11 @@ const PageDashboardOwner = (() => {
       _saveCollapseState(collapseState);
     });
 
-    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); MugenUI.withLoading(load); });
-    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); MugenUI.withLoading(load); });
+    // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+    // -- skeleton di dalam body sendiri (lihat load() di atas) sudah jadi
+    // feedback yang cukup, ganti bulan/tahun terasa instan.
+    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
+    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
     load();
   }
 

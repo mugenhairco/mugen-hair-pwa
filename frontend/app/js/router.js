@@ -16,6 +16,31 @@ const MugenRouter = (() => {
   // gara-gara sesi kedaluwarsa, lihat api.js).
   let _firstHandle = true;
 
+  // REVISI UI/UX Premium: posisi scroll SETIAP hash yang pernah dikunjungi
+  // sesi ini (in-memory, BUKAN sessionStorage -- cukup bertahan selama SPA
+  // ini hidup, "kembali ke halaman sebelumnya" tidak berarti lintas reload
+  // penuh). shell() menghapus <main id="content"> lama total tiap navigasi
+  // (lihat catatan shell() di bawah, TIDAK diubah), jadi posisi scroll-nya
+  // HARUS disimpan di sini SEBELUM itu terjadi, lalu dipulihkan setelah
+  // halaman baru selesai dirender.
+  const _scrollPos = new Map();
+  let _lastHash = null;
+
+  function _simpanScrollLama() {
+    const contentLama = document.getElementById("content");
+    if (contentLama && _lastHash) _scrollPos.set(_lastHash, contentLama.scrollTop);
+  }
+
+  function _pulihkanScroll(hash, content) {
+    const posisi = _scrollPos.get(hash);
+    if (!posisi) return;
+    // requestAnimationFrame: beri browser satu frame untuk selesai layout
+    // konten baru (tinggi tabel/daftar dst) SEBELUM scrollTop diterapkan --
+    // menerapkannya sinkron langsung setelah render() bisa gagal kalau
+    // tinggi konten belum final.
+    requestAnimationFrame(() => { content.scrollTop = posisi; });
+  }
+
   function shell() {
     appRoot.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "app-shell" });
@@ -64,6 +89,15 @@ const MugenRouter = (() => {
 
   function handle() {
     const hash = location.hash || "#/dashboard";
+    // REVISI UI/UX Premium: simpan scroll halaman SEBELUM ditinggalkan,
+    // key-nya hash SEBELUMNYA (_lastHash) -- lalu _lastHash langsung
+    // diperbarui ke hash SEKARANG supaya siap dipakai panggilan handle()
+    // berikutnya, SEBELUM shell() (kalau dipanggil di bawah) sempat
+    // menghapus DOM lama. Aman dipanggil untuk hash APA PUN (termasuk
+    // /book yang tidak memakai shell() sama sekali) -- getElementById
+    // sekadar mengembalikan null kalau elemennya tidak ada.
+    _simpanScrollLama();
+    _lastHash = hash;
 
     // REVISI UI/UX: dicek SEKALI SAJA (panggilan handle() pertama). Kalau
     // saat itu belum ada sesi tersimpan sama sekali, ini benar-benar
@@ -144,7 +178,15 @@ const MugenRouter = (() => {
     // yang diminta (superadmin tidak punya menu lain untuk dituju).
     if (user.role === "superadmin") {
       const content = shell();
-      PageSuperadmin.render(content);
+      // REVISI UI/UX Premium (bugfix): render() halaman ASYNC (fetch data
+      // dulu sebelum konten asli terpasang) -- _pulihkanScroll() TIDAK bisa
+      // dipanggil langsung sinkron di sini, satu requestAnimationFrame akan
+      // keburu jalan SEBELUM konten asli (dan tinggi sebenarnya) terpasang,
+      // sehingga scrollTop yang diterapkan hilang lagi begitu render selesai
+      // dan mengganti isi konten. Dirantai lewat Promise.resolve(...).then()
+      // supaya jalan SETELAH render() (async ATAU sync, keduanya aman)
+      // benar-benar selesai.
+      Promise.resolve(PageSuperadmin.render(content)).then(() => _pulihkanScroll(hash, content));
       return;
     }
 
@@ -171,9 +213,14 @@ const MugenRouter = (() => {
     }
 
     const content = shell();
+    // REVISI UI/UX Premium (bugfix): lihat catatan Promise.resolve(...).then()
+    // di cabang superadmin di atas -- alasan sama persis berlaku di sini,
+    // `renderResult` ditangkap per-cabang lalu di-rantai SEKALI di bawah
+    // (baris _pulihkanScroll di akhir fungsi ini).
+    let renderResult;
 
     if (hash.startsWith("#/dashboard")) {
-      resolveDashboardPage(user).render(content);
+      renderResult = resolveDashboardPage(user).render(content);
     } else if (hash.startsWith("#/input-data")) {
       // REVISI: khusus Owner/Admin (Barber tidak lagi mengakses Input Data).
       // REVISI Hak Akses Admin (kedua): 'staff' (Admin) sekarang akses PENUH
@@ -184,19 +231,19 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PageInputData.render(content);
+      renderResult = PageInputData.render(content);
     } else if (hash.startsWith("#/rekap")) {
       // REVISI Hak Akses Admin (kedua): Rekap sekarang akses PENUH untuk
       // 'staff' (Admin) sama persis seperti Owner, tanpa sistem izin --
       // Barber tetap dibatasi ke data miliknya sendiri (lihat routers/rekap.py).
-      PageRekap.render(content);
+      renderResult = PageRekap.render(content);
     } else if (hash.startsWith("#/karyawan/slip-gaji")) {
       // Modul Karyawan (Fase 1): Owner/'staff' (kalau diberi izin
       // izin_slip_gaji) mengelola SEMUA barber; Barber hanya lihat riwayat
       // miliknya sendiri, read-only -- dibedakan DI DALAM slip_gaji.js
       // lewat user.role, sama seperti pola Rekap/Booking. Perlindungan
       // sebenarnya tetap di backend (routers/slip_gaji.py).
-      PageSlipGaji.render(content);
+      renderResult = PageSlipGaji.render(content);
     } else if (hash.startsWith("#/karyawan/kasbon")) {
       // Modul Karyawan (Fase 2): Owner/'staff' (kalau diberi izin
       // izin_kasbon) mengelola kasbon SEMUA barber; Barber hanya lihat
@@ -204,7 +251,7 @@ const MugenRouter = (() => {
       // dibedakan DI DALAM kasbon.js lewat user.role, sama seperti
       // slip_gaji.js. Perlindungan sebenarnya tetap di backend
       // (routers/kasbon.py).
-      PageKasbon.render(content);
+      renderResult = PageKasbon.render(content);
     } else if (hash.startsWith("#/karyawan/komisi")) {
       // Modul Karyawan (Fase 3): Owner/'staff' (kalau diberi izin
       // izin_komisi) mengelola penyesuaian komisi SEMUA barber; Barber
@@ -212,7 +259,7 @@ const MugenRouter = (() => {
       // dibedakan DI DALAM komisi.js lewat user.role, sama seperti
       // kasbon.js. Perlindungan sebenarnya tetap di backend
       // (routers/komisi.py).
-      PageKomisi.render(content);
+      renderResult = PageKomisi.render(content);
     } else if (hash.startsWith("#/karyawan/reimburse")) {
       // Modul Karyawan (Fase 4): self-service -- Barber boleh mengajukan/
       // mengedit/menghapus klaim MILIKNYA SENDIRI (selama Pending) TANPA
@@ -220,12 +267,12 @@ const MugenRouter = (() => {
       // menyetujui/menolak klaim SEMUA barber. Dibedakan DI DALAM
       // reimburse.js lewat user.role. Perlindungan sebenarnya tetap di
       // backend (routers/reimburse.py).
-      PageReimburse.render(content);
+      renderResult = PageReimburse.render(content);
     } else if (hash.startsWith("#/karyawan/izin-cuti")) {
       // Modul Karyawan (Fase 5): pola akses SAMA PERSIS reimburse.js
       // (self-service). Perlindungan sebenarnya tetap di backend
       // (routers/izin_cuti.py).
-      PageIzinCuti.render(content);
+      renderResult = PageIzinCuti.render(content);
     } else if (hash.startsWith("#/keuangan/pemasukan")) {
       // Modul Keuangan (Fase 1): data operasional TOKO, Owner/'staff' akses
       // PENUH tanpa sistem izin, Barber tidak ada akses -- pola sama
@@ -235,7 +282,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PagePemasukan.render(content);
+      renderResult = PagePemasukan.render(content);
     } else if (hash.startsWith("#/keuangan/uang-kas")) {
       // Modul Keuangan (Fase 2, semula Transfer Kas/Bank -- dihapus &
       // diganti Uang Kas): pola akses SAMA PERSIS Pemasukan di atas.
@@ -245,7 +292,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PageUangKas.render(content);
+      renderResult = PageUangKas.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.
@@ -255,7 +302,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PagePengeluaran.render(content);
+      renderResult = PagePengeluaran.render(content);
     } else if (hash.startsWith("#/billing")) {
       // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (require_admin di
       // BACKEND juga -- routers/billing.py -- 'staff' TIDAK ikut, sama
@@ -264,7 +311,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PageBilling.render(content);
+      renderResult = PageBilling.render(content);
     } else if (hash.startsWith("#/pengaturan")) {
       // Tahap 10 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
       // boleh MASUK menu Setting (tab yang tampil difilter di dalam
@@ -275,7 +322,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PagePengaturan.render(content);
+      renderResult = PagePengaturan.render(content);
     } else if (hash.startsWith("#/produk")) {
       // Tahap 11: halaman khusus Owner/Admin (persediaan toko, bukan milik
       // barber manapun). REVISI Hak Akses Admin (kedua): 'staff' (Admin)
@@ -286,7 +333,7 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      PageProduk.render(content);
+      renderResult = PageProduk.render(content);
     } else if (hash.startsWith("#/booking")) {
       // BOOKING: halaman internal (Owner/Admin/Barber). Owner dan 'staff'
       // (Admin) full access SAMA PERSIS (Booking List, Calendar, Operating
@@ -296,10 +343,12 @@ const MugenRouter = (() => {
       // tab persis dilakukan DI DALAM booking.js sendiri (mengikuti
       // user.role), bukan di sini. Perlindungan sebenarnya tetap di backend
       // (require_owner_or_staff/require_barber di setiap endpoint /api/booking/*).
-      PageBooking.render(content);
+      renderResult = PageBooking.render(content);
     } else {
       location.hash = "#/dashboard";
+      return;
     }
+    Promise.resolve(renderResult).then(() => _pulihkanScroll(hash, content));
   }
 
   function init() {

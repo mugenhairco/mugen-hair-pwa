@@ -103,11 +103,14 @@ const PageIzinCuti = (() => {
           jenis: selJenis.value, tanggal_mulai: inputMulai.value, tanggal_selesai: inputSelesai.value,
           alasan: inputAlasan.value.trim(),
         };
+        // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
+        // tombol) menggantikan withLoading() (overlay layar penuh) untuk
+        // aksi CRUD rutin -- lihat catatan di ui.js.
         if (editingId) {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/izin-cuti/${editingId}`, body), { message: "Menyimpan…" });
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.put(`/api/izin-cuti/${editingId}`, body));
           MugenUI.toast("Pengajuan diperbarui.", "success");
         } else {
-          await MugenUI.withLoading(() => MugenApi.post("/api/izin-cuti", body), { message: "Mengajukan…" });
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/izin-cuti", body));
           MugenUI.toast("Pengajuan berhasil dikirim.", "success");
         }
         resetForm();
@@ -125,7 +128,8 @@ const PageIzinCuti = (() => {
     listCard.appendChild(listBody);
 
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
+      listBody.innerHTML = "";
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 3 }));
       try {
         const data = await MugenApi.get("/api/izin-cuti");
         const rows = Array.isArray(data) ? data : [];
@@ -148,7 +152,7 @@ const PageIzinCuti = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Batalkan pengajuan ${labelJenis(r.jenis)} tanggal ${r.tanggal_mulai}?`)) return;
                   try {
-                    await MugenApi.del(`/api/izin-cuti/${r.id}`);
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/izin-cuti/${r.id}`));
                     MugenUI.toast("Pengajuan dibatalkan.", "success");
                     loadList();
                   } catch (e) {
@@ -166,7 +170,7 @@ const PageIzinCuti = (() => {
         ));
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        listBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
       }
     }
 
@@ -220,11 +224,13 @@ const PageIzinCuti = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
-    async function ubahStatus(id, status) {
+    async function ubahStatus(btn, id, status) {
       const catatan = prompt(status === "ditolak" ? "Alasan penolakan (opsional):" : "Catatan approval (opsional):") || "";
       try {
-        await MugenUI.withLoading(() => MugenApi.put(`/api/izin-cuti/${id}/status`, { status, catatan_approval: catatan }),
-          { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
+        // tombol) menggantikan withLoading() (overlay layar penuh) untuk
+        // aksi CRUD rutin -- lihat catatan di ui.js.
+        await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/izin-cuti/${id}/status`, { status, catatan_approval: catatan }));
         MugenUI.toast(`Pengajuan ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
         if (typeof MugenIzinNotif !== "undefined") MugenIzinNotif.refreshNow();
         loadList();
@@ -233,17 +239,22 @@ const PageIzinCuti = (() => {
       }
     }
 
+    // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
+    // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
-      try {
+      await MugenUI.refreshInto(listBody, async () => {
         const qs = new URLSearchParams();
         if (filBarber.value) qs.set("barber_id", filBarber.value);
         if (filJenis.value) qs.set("jenis", filJenis.value);
         if (filStatus.value) qs.set("status", filStatus.value);
-        const data = await MugenApi.get(`/api/izin-cuti?${qs.toString()}`);
-        const rows = Array.isArray(data) ? data : [];
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.buildTable(
+        let rows;
+        try {
+          const data = await MugenApi.get(`/api/izin-cuti?${qs.toString()}`);
+          rows = Array.isArray(data) ? data : [];
+        } catch (e) {
+          return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+        }
+        return MugenUI.buildTable(
           [
             { key: "nama_barber", label: "Karyawan" },
             { key: "jenis", label: "Jenis", format: labelJenis },
@@ -258,9 +269,9 @@ const PageIzinCuti = (() => {
                 }
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnSetujui = MugenUI.el("button", {}, "Setujui");
-                btnSetujui.addEventListener("click", () => ubahStatus(r.id, "disetujui"));
+                btnSetujui.addEventListener("click", () => ubahStatus(btnSetujui, r.id, "disetujui"));
                 const btnTolak = MugenUI.el("button", { class: "btn-danger" }, "Tolak");
-                btnTolak.addEventListener("click", () => ubahStatus(r.id, "ditolak"));
+                btnTolak.addEventListener("click", () => ubahStatus(btnTolak, r.id, "ditolak"));
                 wrap.appendChild(btnSetujui);
                 wrap.appendChild(btnTolak);
                 return wrap;
@@ -269,11 +280,8 @@ const PageIzinCuti = (() => {
           ],
           rows,
           { emptyText: "Belum ada pengajuan Izin/Cuti." },
-        ));
-      } catch (e) {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
-      }
+        );
+      }, { skeleton: { kind: "table", cols: 6, rows: 4 } });
     }
 
     filBarber.addEventListener("change", loadList);

@@ -157,7 +157,7 @@ const PageBilling = (() => {
     });
   }
 
-  async function mulaiDowngrade(paket, onSelesai) {
+  async function mulaiDowngrade(btn, paket, onSelesai) {
     const ok = await MugenUI.confirmModal({
       title: "Downgrade Paket",
       message: `Pindah ke paket "${paket.nama}" sekarang? Perubahan berlaku langsung tanpa pembayaran.`,
@@ -166,8 +166,14 @@ const PageBilling = (() => {
     if (!ok) return;
     _bersihkanPendingKode();
     try {
-      await MugenUI.withLoading(() => MugenApi.post("/api/billing/downgrade", { package_id: paket.id }),
-        { message: "Memproses downgrade…" });
+      // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
+      // -- downgrade berlaku instan tanpa gateway pembayaran eksternal,
+      // beda dari mulaiCheckout() di atas yang TETAP withLoading() (transisi
+      // ke Midtrans Snap, genuinely memblokir sampai modal pembayaran siap).
+      await MugenUI.withButtonLoading(btn, () => MugenApi.post("/api/billing/downgrade", { package_id: paket.id }));
+      // Aksi besar/konfirmasi penting (perubahan paket langganan) -- toast
+      // sukses SENGAJA ditampilkan (force:true), lihat whitelist di ui.js.
+      MugenUI.toast(`Paket berhasil diubah ke "${paket.nama}".`, "success", { force: true });
     } catch (e) {
       MugenUI.toast(pesanError(e), "error");
       return;
@@ -237,7 +243,7 @@ const PageBilling = (() => {
         btn.addEventListener("click", () => mulaiCheckout(paket.id, config, onSelesai));
       } else if (current && paket.urutan < current.urutan) {
         btn = MugenUI.el("button", {}, "Downgrade");
-        btn.addEventListener("click", () => mulaiDowngrade(paket, onSelesai));
+        btn.addEventListener("click", () => mulaiDowngrade(btn, paket, onSelesai));
       } else {
         btn = MugenUI.el("button", { class: "btn-primary" }, "Pilih Paket");
         btn.addEventListener("click", () => mulaiCheckout(paket.id, config, onSelesai));
@@ -272,7 +278,8 @@ const PageBilling = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Billing & Pembayaran"));
 
-    const loadingCard = MugenUI.el("div", { class: "card" }, "Memuat data billing…");
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat data billing…".
+    const loadingCard = MugenUI.skeleton("card", { lines: 3 });
     root.appendChild(loadingCard);
 
     let sub, config, packages, invoices;
@@ -284,7 +291,8 @@ const PageBilling = (() => {
         MugenApi.get("/api/billing/invoices"),
       ]);
     } catch (e) {
-      loadingCard.textContent = pesanError(e);
+      loadingCard.innerHTML = "";
+      loadingCard.appendChild(MugenUI.errorState(pesanError(e)));
       return;
     }
     loadingCard.remove();

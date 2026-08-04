@@ -118,7 +118,14 @@ const PageDashboardBarber = (() => {
     }
 
     async function load() {
-      body.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat..." --
+      // kartu asli otomatis beranimasi masuk begitu ditambahkan (lihat
+      // .card { animation: mugen-fade-slide-in }).
+      body.innerHTML = "";
+      body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
+        MugenUI.skeleton("card", { lines: 2 }), MugenUI.skeleton("card", { lines: 2 }),
+        MugenUI.skeleton("card", { lines: 2 }),
+      ]));
       try {
         const [r, rekapRows] = await Promise.all([
           MugenApi.get(`/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
@@ -195,12 +202,14 @@ const PageDashboardBarber = (() => {
         }
       } catch (e) {
         body.innerHTML = "";
-        body.appendChild(MugenUI.el("div", { class: "card" }, e.message));
+        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
       }
     }
 
-    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); MugenUI.withLoading(load); });
-    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); MugenUI.withLoading(load); });
+    // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+    // -- skeleton di body sendiri (lihat load() di atas) sudah cukup.
+    selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
+    selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
     load();
   }
 

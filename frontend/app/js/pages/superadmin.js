@@ -98,8 +98,10 @@ const PageSuperadmin = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadTenantList() {
-      listBody.innerHTML = "Memuat...";
+      listBody.innerHTML = "";
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
       try {
         const [tenants, subs] = await Promise.all([
           MugenApi.get("/api/superadmin/tenants"),
@@ -141,10 +143,9 @@ const PageSuperadmin = (() => {
                   const statusBaru = menujuAktif ? "aktif" : "nonaktif";
                   if (!confirm(`${menujuAktif ? "Aktifkan" : "Nonaktifkan"} toko "${t.nama_barbershop}"?`)) return;
                   try {
-                    await MugenUI.withLoading(
-                      () => MugenApi.put(`/api/superadmin/tenants/${t.id}/status`, { status: statusBaru }),
-                      { message: "Menyimpan…" },
-                    );
+                    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+                    await MugenUI.withButtonLoading(btnToggle,
+                      () => MugenApi.put(`/api/superadmin/tenants/${t.id}/status`, { status: statusBaru }));
                     MugenUI.toast("Status toko diperbarui.", "success");
                     loadTenantList();
                     loadAuditLog();
@@ -165,7 +166,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.message));
+        listBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -201,13 +202,15 @@ const PageSuperadmin = (() => {
         formError.textContent = "Semua field wajib diisi.";
         return;
       }
-      btnBuatTenant.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/tenants", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnBuatTenant, () => MugenApi.post("/api/superadmin/tenants", {
           slug, nama_barbershop: nama,
           owner_username: ownerUsername, owner_password: ownerPassword,
-        }), { message: "Membuat toko…" });
-        MugenUI.toast("Toko baru dibuat.", "success");
+        }));
+        // Aksi besar/konfirmasi penting (pembuatan tenant baru) -- toast
+        // sukses SENGAJA ditampilkan (force:true), lihat whitelist di ui.js.
+        MugenUI.toast("Toko baru dibuat.", "success", { force: true });
         inputSlug.value = "";
         inputNama.value = "";
         inputOwnerUsername.value = "";
@@ -216,8 +219,6 @@ const PageSuperadmin = (() => {
         loadAuditLog();
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-      } finally {
-        btnBuatTenant.disabled = false;
       }
     });
 
@@ -248,10 +249,11 @@ const PageSuperadmin = (() => {
     btnSimpanConfig.addEventListener("click", async () => {
       configError.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/superadmin/subscriptions/config", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanConfig, () => MugenApi.put("/api/superadmin/subscriptions/config", {
           trial_hari: parseInt(inputTrialHari.value, 10) || null,
           grace_hari: parseInt(inputGraceHari.value, 10) || null,
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Konfigurasi Subscription disimpan.", "success");
         loadAuditLog();
       } catch (e) {
@@ -266,14 +268,16 @@ const PageSuperadmin = (() => {
     const subsManagerBody = MugenUI.el("div", {}, "Klik \"Kelola Subscription\" pada salah satu toko di Daftar Toko di atas.");
     subsManagerCard.appendChild(subsManagerBody);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function renderSubscriptionManager(tenant) {
-      subsManagerBody.innerHTML = "Memuat...";
+      subsManagerBody.innerHTML = "";
+      subsManagerBody.appendChild(MugenUI.skeleton("card", { lines: 3 }));
       let sub;
       try {
         sub = await MugenApi.get(`/api/superadmin/subscriptions/${tenant.id}`);
       } catch (e) {
         subsManagerBody.innerHTML = "";
-        subsManagerBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        subsManagerBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
         return;
       }
       subsManagerBody.innerHTML = "";
@@ -298,21 +302,24 @@ const PageSuperadmin = (() => {
       ]));
       subsManagerBody.appendChild(errPackageStatus);
 
+      // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading();
+      // aksi besar/konfirmasi penting (perubahan package/status subscription
+      // TENANT) -- toast sukses SENGAJA force:true, lihat whitelist di ui.js.
       btnSimpanPackage.addEventListener("click", async () => {
         errPackageStatus.textContent = "";
         try {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/package`,
-            { package: selPackage.value }), { message: "Menyimpan…" });
-          MugenUI.toast("Package disimpan.", "success");
+          await MugenUI.withButtonLoading(btnSimpanPackage, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/package`,
+            { package: selPackage.value }));
+          MugenUI.toast("Package disimpan.", "success", { force: true });
           loadTenantList(); loadAuditLog(); renderSubscriptionManager(tenant);
         } catch (e) { errPackageStatus.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
       btnSimpanStatus.addEventListener("click", async () => {
         errPackageStatus.textContent = "";
         try {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/status`,
-            { status: selStatus.value }), { message: "Menyimpan…" });
-          MugenUI.toast("Status disimpan.", "success");
+          await MugenUI.withButtonLoading(btnSimpanStatus, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/status`,
+            { status: selStatus.value }));
+          MugenUI.toast("Status disimpan.", "success", { force: true });
           loadTenantList(); loadAuditLog(); renderSubscriptionManager(tenant);
         } catch (e) { errPackageStatus.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
@@ -339,18 +346,18 @@ const PageSuperadmin = (() => {
       btnSetTrial.addEventListener("click", async () => {
         errTrialGrace.textContent = "";
         try {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/trial`,
-            { hari: inputTrialHariTenant.value ? parseInt(inputTrialHariTenant.value, 10) : null }), { message: "Menyimpan…" });
-          MugenUI.toast("Trial disimpan.", "success");
+          await MugenUI.withButtonLoading(btnSetTrial, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/trial`,
+            { hari: inputTrialHariTenant.value ? parseInt(inputTrialHariTenant.value, 10) : null }));
+          MugenUI.toast("Trial disimpan.", "success", { force: true });
           loadAuditLog(); renderSubscriptionManager(tenant);
         } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
       btnSetGrace.addEventListener("click", async () => {
         errTrialGrace.textContent = "";
         try {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/grace`,
-            { hari: inputGraceHariTenant.value ? parseInt(inputGraceHariTenant.value, 10) : null }), { message: "Menyimpan…" });
-          MugenUI.toast("Grace Period disimpan.", "success");
+          await MugenUI.withButtonLoading(btnSetGrace, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/grace`,
+            { hari: inputGraceHariTenant.value ? parseInt(inputGraceHariTenant.value, 10) : null }));
+          MugenUI.toast("Grace Period disimpan.", "success", { force: true });
           loadAuditLog(); renderSubscriptionManager(tenant);
         } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
@@ -361,7 +368,8 @@ const PageSuperadmin = (() => {
       subsManagerBody.appendChild(paymentListBody);
 
       async function loadPayments() {
-        paymentListBody.innerHTML = "Memuat...";
+        paymentListBody.innerHTML = "";
+        paymentListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
         try {
           const payments = await MugenApi.get(`/api/superadmin/subscriptions/${tenant.id}/payments`);
           paymentListBody.innerHTML = "";
@@ -379,8 +387,8 @@ const PageSuperadmin = (() => {
                   btn.addEventListener("click", async () => {
                     if (!confirm("Tandai pembayaran ini sebagai Lunas?")) return;
                     try {
-                      await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/subscriptions/payments/${p.id}/status`,
-                        { payment_status: "paid" }), { message: "Menyimpan…" });
+                      await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/superadmin/subscriptions/payments/${p.id}/status`,
+                        { payment_status: "paid" }));
                       MugenUI.toast("Pembayaran ditandai Lunas.", "success");
                       loadAuditLog(); loadPayments();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -394,7 +402,7 @@ const PageSuperadmin = (() => {
           ));
         } catch (e) {
           paymentListBody.innerHTML = "";
-          paymentListBody.appendChild(MugenUI.el("div", {}, e.message));
+          paymentListBody.appendChild(MugenUI.errorState(e.message));
         }
       }
 
@@ -411,11 +419,11 @@ const PageSuperadmin = (() => {
       btnCatatPembayaran.addEventListener("click", async () => {
         errPembayaran.textContent = "";
         try {
-          await MugenUI.withLoading(() => MugenApi.post(`/api/superadmin/subscriptions/${tenant.id}/payments`, {
+          await MugenUI.withButtonLoading(btnCatatPembayaran, () => MugenApi.post(`/api/superadmin/subscriptions/${tenant.id}/payments`, {
             provider: inputProvider.value.trim(),
             virtual_account_number: inputVaNumber.value.trim(),
             amount: parseInt(inputAmount.value, 10) || 0,
-          }), { message: "Menyimpan…" });
+          }));
           MugenUI.toast("Pembayaran dicatat.", "success");
           inputProvider.value = ""; inputVaNumber.value = ""; inputAmount.value = "";
           loadAuditLog(); loadPayments();
@@ -444,7 +452,8 @@ const PageSuperadmin = (() => {
     let _katalogFiturCache = [];
 
     async function loadBillingPackages() {
-      billingPackagesListBody.innerHTML = "Memuat...";
+      billingPackagesListBody.innerHTML = "";
+      billingPackagesListBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 3 }));
       try {
         const paket = await MugenApi.get("/api/superadmin/billing/packages");
         billingPackagesListBody.innerHTML = "";
@@ -469,12 +478,13 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         billingPackagesListBody.innerHTML = "";
-        billingPackagesListBody.appendChild(MugenUI.el("div", {}, e.message));
+        billingPackagesListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
     async function renderBillingPackageEdit(paket) {
-      billingPackageEditBody.innerHTML = "Memuat...";
+      billingPackageEditBody.innerHTML = "";
+      billingPackageEditBody.appendChild(MugenUI.skeleton("card", { lines: 3 }));
       let fiturTertandai;
       try {
         [_katalogFiturCache, fiturTertandai] = await Promise.all([
@@ -483,7 +493,7 @@ const PageSuperadmin = (() => {
         ]);
       } catch (e) {
         billingPackageEditBody.innerHTML = "";
-        billingPackageEditBody.appendChild(MugenUI.el("div", {}, e.message));
+        billingPackageEditBody.appendChild(MugenUI.errorState(e.message));
         return;
       }
       const idFiturTertandai = new Set(fiturTertandai.map((f) => f.id));
@@ -562,10 +572,10 @@ const PageSuperadmin = (() => {
         }
         const featureIds = checkboxFitur.filter((cb) => cb.checked).map((cb) => parseInt(cb.dataset.featureId, 10));
         try {
-          await MugenUI.withLoading(async () => {
+          await MugenUI.withButtonLoading(btnSimpan, async () => {
             await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}`, body);
             await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}/features`, { feature_ids: featureIds });
-          }, { message: "Menyimpan…" });
+          });
           MugenUI.toast("Paket billing disimpan.", "success");
           loadAuditLog();
           await loadBillingPackages();
@@ -588,7 +598,8 @@ const PageSuperadmin = (() => {
     billingFeaturesCard.appendChild(billingFeaturesListBody);
 
     async function loadBillingFeatures() {
-      billingFeaturesListBody.innerHTML = "Memuat...";
+      billingFeaturesListBody.innerHTML = "";
+      billingFeaturesListBody.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 3 }));
       try {
         const fitur = await MugenApi.get("/api/superadmin/billing/features");
         billingFeaturesListBody.innerHTML = "";
@@ -604,8 +615,8 @@ const PageSuperadmin = (() => {
                 const btnToggle = MugenUI.el("button", {}, f.aktif ? "Nonaktifkan" : "Aktifkan");
                 btnToggle.addEventListener("click", async () => {
                   try {
-                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/billing/features/${f.id}`,
-                      { aktif: !f.aktif }), { message: "Menyimpan…" });
+                    await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/superadmin/billing/features/${f.id}`,
+                      { aktif: !f.aktif }));
                     MugenUI.toast("Fitur diperbarui.", "success");
                     loadAuditLog(); loadBillingFeatures();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -615,7 +626,7 @@ const PageSuperadmin = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus fitur "${f.nama}" dari katalog? Fitur ini otomatis lepas dari SEMUA paket yang sudah mencentangnya.`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/billing/features/${f.id}`), { message: "Menghapus…" });
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/superadmin/billing/features/${f.id}`));
                     MugenUI.toast("Fitur dihapus.", "success");
                     loadAuditLog(); loadBillingFeatures();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -630,7 +641,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         billingFeaturesListBody.innerHTML = "";
-        billingFeaturesListBody.appendChild(MugenUI.el("div", {}, e.message));
+        billingFeaturesListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -648,9 +659,9 @@ const PageSuperadmin = (() => {
     btnTambahFitur.addEventListener("click", async () => {
       errFitur.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/billing/features", {
+        await MugenUI.withButtonLoading(btnTambahFitur, () => MugenApi.post("/api/superadmin/billing/features", {
           kode: inputFiturKode.value.trim(), nama: inputFiturNama.value.trim(), deskripsi: inputFiturDeskripsi.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Fitur ditambahkan.", "success");
         inputFiturKode.value = ""; inputFiturNama.value = ""; inputFiturDeskripsi.value = "";
         loadAuditLog(); loadBillingFeatures();
@@ -667,7 +678,8 @@ const PageSuperadmin = (() => {
     billingInvoicesCard.appendChild(billingInvoicesBody);
 
     async function loadBillingInvoices() {
-      billingInvoicesBody.innerHTML = "Memuat...";
+      billingInvoicesBody.innerHTML = "";
+      billingInvoicesBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
       try {
         const invoices = await MugenApi.get("/api/superadmin/billing/invoices");
         billingInvoicesBody.innerHTML = "";
@@ -686,7 +698,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         billingInvoicesBody.innerHTML = "";
-        billingInvoicesBody.appendChild(MugenUI.el("div", {}, e.message));
+        billingInvoicesBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -700,7 +712,8 @@ const PageSuperadmin = (() => {
     landingFaqCard.appendChild(landingFaqListBody);
 
     async function loadLandingFaq() {
-      landingFaqListBody.innerHTML = "Memuat...";
+      landingFaqListBody.innerHTML = "";
+      landingFaqListBody.appendChild(MugenUI.skeleton("table", { cols: 3, rows: 3 }));
       try {
         const list = await MugenApi.get("/api/superadmin/landing/faq");
         landingFaqListBody.innerHTML = "";
@@ -715,7 +728,7 @@ const PageSuperadmin = (() => {
                 const btnToggle = MugenUI.el("button", {}, f.aktif ? "Nonaktifkan" : "Aktifkan");
                 btnToggle.addEventListener("click", async () => {
                   try {
-                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/landing/faq/${f.id}`, { aktif: !f.aktif }), { message: "Menyimpan…" });
+                    await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/superadmin/landing/faq/${f.id}`, { aktif: !f.aktif }));
                     MugenUI.toast("FAQ diperbarui.", "success");
                     loadLandingFaq();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -725,7 +738,7 @@ const PageSuperadmin = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm("Hapus FAQ ini?")) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/landing/faq/${f.id}`), { message: "Menghapus…" });
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/superadmin/landing/faq/${f.id}`));
                     MugenUI.toast("FAQ dihapus.", "success");
                     loadLandingFaq();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -740,7 +753,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         landingFaqListBody.innerHTML = "";
-        landingFaqListBody.appendChild(MugenUI.el("div", {}, e.message));
+        landingFaqListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -757,9 +770,9 @@ const PageSuperadmin = (() => {
     btnTambahFaq.addEventListener("click", async () => {
       errFaq.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/landing/faq", {
+        await MugenUI.withButtonLoading(btnTambahFaq, () => MugenApi.post("/api/superadmin/landing/faq", {
           pertanyaan: inputFaqPertanyaan.value.trim(), jawaban: inputFaqJawaban.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("FAQ ditambahkan.", "success");
         inputFaqPertanyaan.value = ""; inputFaqJawaban.value = "";
         loadLandingFaq();
@@ -776,7 +789,8 @@ const PageSuperadmin = (() => {
     landingTestimonialsCard.appendChild(landingTestimonialsListBody);
 
     async function loadLandingTestimonials() {
-      landingTestimonialsListBody.innerHTML = "Memuat...";
+      landingTestimonialsListBody.innerHTML = "";
+      landingTestimonialsListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
       try {
         const list = await MugenApi.get("/api/superadmin/landing/testimonials");
         landingTestimonialsListBody.innerHTML = "";
@@ -793,7 +807,7 @@ const PageSuperadmin = (() => {
                 const btnToggle = MugenUI.el("button", {}, t.aktif ? "Nonaktifkan" : "Aktifkan");
                 btnToggle.addEventListener("click", async () => {
                   try {
-                    await MugenUI.withLoading(() => MugenApi.put(`/api/superadmin/landing/testimonials/${t.id}`, { aktif: !t.aktif }), { message: "Menyimpan…" });
+                    await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/superadmin/landing/testimonials/${t.id}`, { aktif: !t.aktif }));
                     MugenUI.toast("Testimonial diperbarui.", "success");
                     loadLandingTestimonials();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -803,7 +817,7 @@ const PageSuperadmin = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus testimonial dari "${t.nama}"?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/superadmin/landing/testimonials/${t.id}`), { message: "Menghapus…" });
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/superadmin/landing/testimonials/${t.id}`));
                     MugenUI.toast("Testimonial dihapus.", "success");
                     loadLandingTestimonials();
                   } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
@@ -818,7 +832,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         landingTestimonialsListBody.innerHTML = "";
-        landingTestimonialsListBody.appendChild(MugenUI.el("div", {}, e.message));
+        landingTestimonialsListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -837,10 +851,10 @@ const PageSuperadmin = (() => {
     btnTambahTesti.addEventListener("click", async () => {
       errTesti.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/superadmin/landing/testimonials", {
+        await MugenUI.withButtonLoading(btnTambahTesti, () => MugenApi.post("/api/superadmin/landing/testimonials", {
           nama: inputTestiNama.value.trim(), jabatan_toko: inputTestiJabatan.value.trim(),
           isi: inputTestiIsi.value.trim(), rating: Number(inputTestiRating.value) || 5,
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Testimonial ditambahkan.", "success");
         inputTestiNama.value = ""; inputTestiJabatan.value = ""; inputTestiIsi.value = ""; inputTestiRating.value = "5";
         loadLandingTestimonials();
@@ -893,7 +907,7 @@ const PageSuperadmin = (() => {
     btnSimpanContact.addEventListener("click", async () => {
       errContact.textContent = "";
       try {
-        await MugenUI.withLoading(() => Promise.all([
+        await MugenUI.withButtonLoading(btnSimpanContact, () => Promise.all([
           MugenApi.put("/api/superadmin/landing/contact", {
             platform_contact_whatsapp: inputContactWhatsapp.value.trim(),
             platform_contact_email: inputContactEmail.value.trim(),
@@ -904,7 +918,7 @@ const PageSuperadmin = (() => {
             platform_stat_happy_customers: inputStatHappy.value.trim(),
             platform_stat_uptime: inputStatUptime.value.trim(),
           }),
-        ]), { message: "Menyimpan…" });
+        ]));
         MugenUI.toast("Kontak & statistik disimpan.", "success");
       } catch (e) {
         errContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -919,7 +933,8 @@ const PageSuperadmin = (() => {
     auditCard.appendChild(auditBody);
 
     async function loadAuditLog() {
-      auditBody.innerHTML = "Memuat...";
+      auditBody.innerHTML = "";
+      auditBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
       try {
         const log = await MugenApi.get("/api/superadmin/audit-log");
         auditBody.innerHTML = "";
@@ -936,7 +951,7 @@ const PageSuperadmin = (() => {
         ));
       } catch (e) {
         auditBody.innerHTML = "";
-        auditBody.appendChild(MugenUI.el("div", {}, e.message));
+        auditBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 

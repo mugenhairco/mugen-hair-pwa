@@ -38,31 +38,32 @@ const PageKomisi = (() => {
     return btn;
   }
 
+  // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
+  // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
   async function tampilkanRiwayatKomisi(riwayatBody, barberId, tahun, bulan) {
-    riwayatBody.innerHTML = "Memuat...";
-    try {
-      const qs = new URLSearchParams({ tahun: String(tahun), bulan: String(bulan) });
-      if (barberId) qs.set("barber_id", String(barberId));
-      const data = await MugenApi.get(`/api/rekap/bulanan?${qs.toString()}`);
-      const rows = Array.isArray(data) ? data : [];
-      riwayatBody.innerHTML = "";
-      riwayatBody.appendChild(MugenUI.buildTable(
-        [
-          { key: "nama_barber", label: "Barber" },
-          { key: "jumlah_service", label: "Jumlah Service" },
-          { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
-          { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-          { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-          { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
-          { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },
-        ],
-        rows,
-        { emptyText: "Tidak ada data untuk periode ini." },
-      ));
-    } catch (e) {
-      riwayatBody.innerHTML = "";
-      riwayatBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
-    }
+    await MugenUI.refreshInto(riwayatBody, async () => {
+      try {
+        const qs = new URLSearchParams({ tahun: String(tahun), bulan: String(bulan) });
+        if (barberId) qs.set("barber_id", String(barberId));
+        const data = await MugenApi.get(`/api/rekap/bulanan?${qs.toString()}`);
+        const rows = Array.isArray(data) ? data : [];
+        return MugenUI.buildTable(
+          [
+            { key: "nama_barber", label: "Barber" },
+            { key: "jumlah_service", label: "Jumlah Service" },
+            { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+            { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
+            { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },
+          ],
+          rows,
+          { emptyText: "Tidak ada data untuk periode ini." },
+        );
+      } catch (e) {
+        return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+      }
+    }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
   }
 
   // ================= BARBER: riwayat penyesuaian milik sendiri, read-only =================
@@ -102,25 +103,26 @@ const PageKomisi = (() => {
 
     async function muat() {
       tampilkanRiwayatKomisi(riwayatBody, user.barber_id, selTahun.value, selBulan.value);
-      listBody.innerHTML = "Memuat...";
-      try {
-        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-        const data = await MugenApi.get(`/api/komisi/penyesuaian?${qs.toString()}`);
-        const rows = Array.isArray(data) ? data : [];
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "jenis", label: "Jenis", format: badgeJenis },
-            { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-            { key: "keterangan", label: "Keterangan" },
-          ],
-          rows,
-          { emptyText: "Tidak ada penyesuaian komisi untuk periode ini." },
-        ));
-      } catch (e) {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
-      }
+      // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
+      // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
+      await MugenUI.refreshInto(listBody, async () => {
+        try {
+          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+          const data = await MugenApi.get(`/api/komisi/penyesuaian?${qs.toString()}`);
+          const rows = Array.isArray(data) ? data : [];
+          return MugenUI.buildTable(
+            [
+              { key: "jenis", label: "Jenis", format: badgeJenis },
+              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+              { key: "keterangan", label: "Keterangan" },
+            ],
+            rows,
+            { emptyText: "Tidak ada penyesuaian komisi untuk periode ini." },
+          );
+        } catch (e) {
+          return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+        }
+      }, { skeleton: { kind: "table", cols: 3, rows: 4 } });
     }
 
     selBulan.addEventListener("change", muat);
@@ -226,28 +228,28 @@ const PageKomisi = (() => {
       if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
       if (!inputJumlah.value || Number(inputJumlah.value) <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       if (!inputKeterangan.value.trim()) { formError.textContent = "Keterangan wajib diisi."; return; }
-      btnSubmit.disabled = true;
       try {
+        // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
+        // tombol) menggantikan withLoading() (overlay layar penuh) untuk
+        // aksi CRUD rutin -- lihat catatan di ui.js.
         if (editingId) {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/komisi/penyesuaian/${editingId}`, {
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.put(`/api/komisi/penyesuaian/${editingId}`, {
             jenis: selJenis.value, jumlah: Number(inputJumlah.value) || 0,
             keterangan: inputKeterangan.value.trim(),
-          }), { message: "Menyimpan…" });
+          }));
           MugenUI.toast("Penyesuaian komisi diperbarui.", "success");
         } else {
-          await MugenUI.withLoading(() => MugenApi.post("/api/komisi/penyesuaian", {
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/komisi/penyesuaian", {
             barber_id: Number(selBarber.value), tahun: Number(selTahun.value), bulan: Number(selBulan.value),
             jenis: selJenis.value, jumlah: Number(inputJumlah.value) || 0,
             keterangan: inputKeterangan.value.trim(),
-          }), { message: "Menyimpan…" });
+          }));
           MugenUI.toast("Penyesuaian komisi disimpan.", "success");
         }
         resetForm();
         loadList();
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-      } finally {
-        btnSubmit.disabled = false;
       }
     });
 
@@ -294,7 +296,8 @@ const PageKomisi = (() => {
     async function loadList() {
       tampilkanRiwayatKomisi(riwayatBody, filBarber.value || null, filTahun.value, filBulan.value);
 
-      listBody.innerHTML = "Memuat...";
+      listBody.innerHTML = "";
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
       try {
         const qs = new URLSearchParams({ tahun: filTahun.value, bulan: filBulan.value });
         if (filBarber.value) qs.set("barber_id", filBarber.value);
@@ -318,7 +321,7 @@ const PageKomisi = (() => {
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`)) return;
                   try {
-                    await MugenApi.del(`/api/komisi/penyesuaian/${r.id}`);
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/komisi/penyesuaian/${r.id}`));
                     MugenUI.toast("Penyesuaian komisi dihapus.", "success");
                     loadList();
                   } catch (e) {
@@ -336,7 +339,7 @@ const PageKomisi = (() => {
         ));
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        listBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
       }
     }
 
