@@ -65,7 +65,15 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer
     user = auth_db.get_user(user_id)
     if user is None or not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif atau tidak ditemukan.")
-    if user.get("tenant_id") is not None:
+    # BUGFIX: sebelumnya hanya mengecek `tenant_id is not None` -- secara
+    # PRAKTIK tetap benar untuk superadmin yang dibuat lewat jalur normal
+    # (tambah_user() MEWAJIBKAN tenant_id=None untuk role ini), tapi
+    # bergantung diam-diam pada invarian itu, bukan pengecekan role
+    # eksplisit. Superadmin adalah akun PLATFORM (pengelola SELURUH tenant,
+    # lihat require_superadmin() di bawah) -- TIDAK BOLEH pernah diblokir
+    # oleh status tenant mana pun, jadi role dicek LANGSUNG di sini supaya
+    # tidak bergantung pada invarian data.
+    if user["role"] != "superadmin" and user.get("tenant_id") is not None:
         import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
         tenant = tenant_db.get_tenant(user["tenant_id"])
         if tenant is None or tenant["status"] != "aktif":

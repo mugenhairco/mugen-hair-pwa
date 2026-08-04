@@ -84,8 +84,15 @@ def login(body: LoginBody, request: Request):
     if not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif, hubungi Owner.")
 
+    # BUGFIX: superadmin (akun PLATFORM, mengelola SELURUH tenant) HARUS
+    # SELALU bisa login apa pun status tenant mana pun -- role dicek
+    # LANGSUNG di sini (bukan hanya bergantung pada invarian "superadmin
+    # selalu tenant_id=None" yang ditegakkan tambah_user()), supaya tidak
+    # ikut ditolak kalau invarian itu ternyata dilanggar. Hanya akun
+    # owner/admin ('admin'), staff, dan barber -- yang memang terikat SATU
+    # tenant -- yang divalidasi terhadap status tenant di bawah ini.
     tenant_info = None
-    if user.get("tenant_id") is not None:
+    if user["role"] != "superadmin" and user.get("tenant_id") is not None:
         t = tenant_db.get_tenant(user["tenant_id"])
         if t is None or t["status"] != "aktif":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,

@@ -203,3 +203,68 @@ def test_audit_log_mencatat_buat_tenant_dan_ubah_status(app_client):
 def test_audit_log_ditolak_untuk_akun_tenant_biasa(two_tenants):
     r = two_tenants["client"].get("/api/superadmin/audit-log", headers=two_tenants["headers_a"])
     assert r.status_code == 403
+
+
+# =============================================================================
+# BUGFIX: superadmin TIDAK BOLEH PERNAH diblokir oleh status tenant mana pun,
+# bahkan kalau (lewat data korup/jalur lama di luar tambah_user()) baris
+# usernya entah bagaimana punya tenant_id terisi dan tenant itu 'nonaktif' --
+# login() (routers/auth_router.py) dan get_current_user() (auth.py) sekarang
+# mengecek role='superadmin' LANGSUNG, bukan cuma bergantung pada invarian
+# "superadmin selalu tenant_id=None". Regresi tenant biasa (owner/admin/
+# barber TETAP diblokir kalau tenant-nya nonaktif) tetap diverifikasi di
+# bawah supaya perbaikan ini tidak melonggarkan validasi akun tenant biasa.
+# =============================================================================
+
+def test_superadmin_bisa_login_walau_tenant_id_terisi_dan_nonaktif(app_client):
+    """Simulasi data korup/jalur lama di luar tambah_user() -- superadmin
+    seharusnya TIDAK PERNAH dibuat dengan tenant_id terisi, tapi kalau
+    entah bagaimana terjadi (mis. migrasi data lama), login harus tetap
+    berhasil selama pengecekan berbasis role, bukan hanya tenant_id."""
+    import tenant_db
+
+    tenant_id = tenant_db.buat_tenant("toko-korup", "Toko Korup")
+    tenant_db.set_status(tenant_id, "nonaktif")
+
+    superadmin_id = auth_db.tambah_user("superadmin_korup", "rahasia123", role="superadmin", tenant_id=None)
+    with auth_db.get_conn() as conn:
+        conn.execute("UPDATE users SET tenant_id = ? WHERE id = ?", (tenant_id, superadmin_id))
+
+    r = app_client.post("/api/auth/login", json={"username": "superadmin_korup", "password": "rahasia123"})
+    assert r.status_code == 200, r.text
+    assert r.json()["user"]["role"] == "superadmin"
+
+    # get_current_user() (dipakai endpoint lain, mis. /api/auth/me) juga
+    # tidak boleh ikut memblokir -- bukan cuma endpoint login.
+    headers = {"Authorization": f"Bearer {r.json()['token']}"}
+    r2 = app_client.get("/api/auth/me", headers=headers)
+    assert r2.status_code == 200, r2.text
+
+
+def test_superadmin_normal_tenant_id_none_tetap_bisa_login(app_client):
+    """Baseline (bukan skenario korup): superadmin yang dibuat lewat jalur
+    normal (tenant_id=None, tanpa tenant sama sekali) tetap bisa login --
+    memastikan perbaikan tidak mengubah perilaku jalur yang sudah benar."""
+    headers = _buat_superadmin_dan_login(app_client, username="superadmin_normal")
+    r = app_client.get("/api/auth/me", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "superadmin"
+
+
+def test_owner_tenant_nonaktif_tetap_ditolak_login(two_tenants):
+    """Regresi: perbaikan superadmin TIDAK boleh melonggarkan validasi
+    akun tenant biasa -- Owner tenant yang di-nonaktifkan tetap ditolak
+    login, persis seperti sebelum perbaikan ini."""
+    import tenant_db
+
+    tenant_db.set_status(two_tenants["tenant_a"], "nonaktif")
+    r = two_tenants["client"].post("/api/auth/login", json={"username": "ownerA", "password": "passwordA123"})
+    assert r.status_code == 401, r.text
+    assert "tidak aktif" in r.json()["detail"].lower()
+
+
+def test_owner_tenant_aktif_tetap_bisa_login_normal(two_tenants):
+    """Regresi: Owner tenant AKTIF tetap login normal seperti biasa."""
+    r = two_tenants["client"].post("/api/auth/login", json={"username": "ownerA", "password": "passwordA123"})
+    assert r.status_code == 200, r.text
+    assert r.json()["tenant"]["slug"] == "test-toko-a"
