@@ -4,7 +4,7 @@ r2_storage.py — Klien penyimpanan Cloudflare R2 (S3-compatible, lewat boto3)
 Lapisan penyimpanan file EKSTERNAL yang menggantikan BLOB-di-database
 (file_asset_db.py/website_gallery.data/barbers.foto_data/reimburse.bukti_data
 -- lihat README bagian "Migrasi Cloudflare R2 (Storage File)"), supaya
-database (Neon) hanya menyimpan METADATA (nama file, tipe, KEY objek R2),
+database (PostgreSQL) hanya menyimpan METADATA (nama file, tipe, KEY objek R2),
 bukan lagi isi byte file itu sendiri.
 
 Dialek storage aktif ditentukan SEKALI saat modul ini pertama kali diimpor,

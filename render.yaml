@@ -59,10 +59,14 @@ services:
       # membuatkan nilai acak otomatis sekali saat service pertama dibuat.
       - key: SECRET_KEY
         generateValue: true
-      # PostgreSQL (Neon) -- WAJIB diisi manual di dashboard (connection
-      # string berisi kredensial, tidak boleh ikut git). Kosongkan HANYA
-      # kalau sengaja memakai SQLite lokal + disk persisten (lihat README
-      # bagian Deployment > Backend poin 2 soal disk persisten kalau begitu).
+      # PostgreSQL -- provider APAPUN (Render PostgreSQL, atau lainnya),
+      # kode ini generik dan tidak terikat satu provider tertentu. WAJIB
+      # diisi manual di dashboard (connection string berisi kredensial,
+      # tidak boleh ikut git) -- lihat README > Deployment > Render, langkah
+      # "Buat database" untuk cara membuat & mengambil connection string-nya
+      # kalau memakai Render PostgreSQL. Kosongkan HANYA kalau sengaja
+      # memakai SQLite lokal + disk persisten (lihat README bagian
+      # Deployment > Backend poin 2 soal disk persisten kalau begitu).
       - key: DATABASE_URL
         sync: false
       # Domain Static Site frontend (langkah "Frontend" di bawah) + custom

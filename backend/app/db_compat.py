@@ -1,5 +1,5 @@
 """
-db_compat.py — Lapisan kompatibilitas SQLite <-> PostgreSQL (migrasi Neon)
+db_compat.py — Lapisan kompatibilitas SQLite <-> PostgreSQL
 =============================================================================
 Dialek database aktif ditentukan SEKALI saat modul ini pertama kali diimpor,
 dari environment variable DATABASE_URL:
@@ -8,7 +8,8 @@ dari environment variable DATABASE_URL:
   database.py/auth_db.py tetap 100% jalur SQLite asli, byte-identik dengan
   sebelum file ini ada. psycopg2 TIDAK PERNAH diimpor sama sekali di jalur ini,
   jadi tidak perlu terpasang untuk menjalankan aplikasi secara lokal/SQLite.
-- Diisi (connection string Neon/Postgres lain) -> IS_POSTGRES=True. get_conn()
+- Diisi (connection string PostgreSQL -- provider APAPUN, generik, tidak
+  terikat satu provider tertentu) -> IS_POSTGRES=True. get_conn()
   di sini dipakai (didelegasikan dari database.py/auth_db.py) lewat connection
   pool (psycopg2 ThreadedConnectionPool) + wrapper cursor yang menerjemahkan
   placeholder '?' -> '%s' dan meng-emulasi `cursor.lastrowid` (lewat otomatis

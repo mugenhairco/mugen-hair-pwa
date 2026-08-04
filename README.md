@@ -1981,6 +1981,17 @@ rancangan di atas untuk kedua kondisi.
 
 ## TAHAP Migrasi PostgreSQL (Neon) — Implementasi (BELUM cutover)
 
+> **Catatan status saat ini**: bagian ini adalah CATATAN HISTORIS proses
+> migrasi SQLite -> PostgreSQL (ditulis saat Neon dipakai sebagai provider
+> pertama yang dicoba) -- dibiarkan apa adanya sebagai dokumentasi teknis
+> (arsitektur `DATABASE_URL`/`db_compat.py` yang dijelaskan di sini masih
+> 100% berlaku). Provider PostgreSQL produksi SAAT INI bisa berbeda dari
+> Neon (mis. Render PostgreSQL) -- kode tidak pernah terikat ke satu
+> provider tertentu, jadi tidak ada bagian dari catatan ini yang perlu
+> "dijalankan ulang" kalau pindah provider, cukup ganti `DATABASE_URL` di
+> environment variable deployment. Lihat bagian **Deployment (Produksi) >
+> Render** untuk langkah provider PostgreSQL saat ini.
+
 Menindaklanjuti "AUDIT KRITIS" di atas (root cause: Render Free instance
 tidak mendukung Persistent Disk sama sekali), Owner menyetujui migrasi ke
 PostgreSQL terkelola (Neon) sebagai solusi jangka panjang, dikerjakan di
@@ -2507,7 +2518,7 @@ lokal, sudah ada nilai default yang aman):
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
 | `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000` (+ otomatis mengizinkan seluruh subdomain `*.onrender.com`, lihat kode) |
 | `TENANT_SUBDOMAIN_BASE_DOMAIN` | FONDASI Multi-Tenant Phase 2.0: domain dasar untuk resolusi tenant lewat SUBDOMAIN (mis. diisi `mugenhair.app` supaya `toko-a.mugenhair.app` otomatis ter-resolve ke tenant slug `toko-a`, lihat `tenant_middleware.py`) | kosong (subdomain resolution MATI TOTAL -- tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) |
-| `DATABASE_URL` | Connection string PostgreSQL (Neon/dsb) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
+| `DATABASE_URL` | Connection string PostgreSQL (Render PostgreSQL, atau provider Postgres lain mana pun — kode ini generik, tidak terikat satu provider tertentu) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
 | `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Kredensial API Token R2 (Object Read & Write, dibatasi ke satu bucket) | kosong |
@@ -2691,13 +2702,20 @@ Blueprint):
    **Auto-Deploy**: `Yes` / `On Commit` (opsi ini ADA di form pembuatan
    service maupun tab Settings-nya — pastikan bukan `Off`, itulah satu-
    satunya saklar yang perlu dicek supaya push berikutnya otomatis ter-deploy).
-3. Isi environment variable (lihat tabel di atas + `render.yaml`):
-   `SECRET_KEY` (generate acak), `DATABASE_URL` (Neon PostgreSQL),
+3. **Buat database**: Render Dashboard → **New > PostgreSQL** (region
+   SAMA dengan Web Service ini, supaya bisa pakai koneksi internal yang
+   lebih cepat & gratis) — setelah statusnya Available, copy **Internal
+   Database URL**-nya (BUKAN External, kecuali database-nya di region
+   berbeda).
+4. Isi environment variable (lihat tabel di atas + `render.yaml`):
+   `SECRET_KEY` (generate acak), `DATABASE_URL` (Internal Database URL
+   dari langkah 3 -- connection string PostgreSQL generik, provider
+   APAPUN selama valid, kode ini tidak terikat satu provider tertentu),
    `ADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`,
    `SUPERADMIN_BOOTSTRAP_USERNAME`/`PASSWORD`, dan `MIDTRANS_*` kalau
    pembayaran sudah siap diaktifkan. **`ALLOWED_ORIGINS` diisi belakangan**
-   (langkah 4 di bawah frontend, setelah tahu URL-nya).
-4. Deploy, catat URL yang diberikan Render (mis.
+   (langkah setelah frontend dibuat, setelah tahu URL-nya).
+5. Deploy, catat URL yang diberikan Render (mis.
    `https://mugen-hair-api-xxxx.onrender.com`).
 
 *Frontend (Static Site), terpisah dari service di atas:*
