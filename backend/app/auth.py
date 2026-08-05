@@ -204,7 +204,15 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
        APA ADANYA -- integer untuk Owner/Admin/Barber biasa (branding toko
        sendiri, TIDAK BISA disuntik lewat query string manapun), atau None
        untuk superadmin (branding platform, sesuai spesifikasi "Super Admin
-       tetap branding platform, bukan branding tenant tertentu").
+       tetap branding platform, bukan branding tenant tertentu") -- role
+       'superadmin' SELALU dipetakan ke None secara EKSPLISIT di sini
+       (BUKAN cuma mengandalkan `user["tenant_id"]` yang kebetulan NULL),
+       supaya branding platform tetap benar walau baris user di database
+       ternyata korup/tidak konsisten dengan invarian "superadmin tidak
+       terikat tenant" (mis. tenant_id ter-isi lewat jalur lain di luar
+       auth_db.tambah_user(), yang seharusnya menolak kombinasi itu -- lihat
+       BUGFIX Branding Super Admin di frontend/js/brand.js untuk gejala
+       yang PERSIS ditimbulkan bug data semacam ini).
     2. Tidak ada sesi valid (pengunjung anonim / halaman Login belum
        submit) -> `tenant` (query string eksplisit, TERMASUK slug yang
        "diingat" browser dari login sebelumnya -- lihat frontend/js/
@@ -217,6 +225,8 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
             user_id = _decode_token(credentials.credentials)
             user = auth_db.get_user(user_id)
             if user is not None and user.get("aktif"):
+                if user.get("role") == "superadmin":
+                    return None
                 return user.get("tenant_id")
         except HTTPException:
             pass

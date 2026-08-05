@@ -96,6 +96,40 @@ def test_superadmin_selalu_branding_platform(app_client):
     assert r2.json()["is_platform_default"] is True
 
 
+def test_superadmin_branding_platform_walau_tenant_id_korup(two_tenants):
+    """BUGFIX KRITIS (Branding Super Admin, lihat frontend/js/brand.js):
+    auth_db.tambah_user() MEWAJIBKAN tenant_id=None untuk role
+    'superadmin' -- tapi resolve_tenant_untuk_branding() sebelumnya
+    membaca `user["tenant_id"]` APA ADANYA tanpa pengecekan role eksplisit
+    (BEDA dari get_current_user() yang SUDAH benar sejak awal, lihat
+    komentar "BUGFIX" di sana), jadi kalau baris user superadmin di
+    database SUATU SAAT punya tenant_id ter-isi (mis. data lama sebelum
+    validasi ini ada, atau diedit manual langsung ke database di luar
+    jalur tambah_user()), endpoint /api/tenant/branding tetap mengembalikan
+    branding TENANT itu, bukan platform -- gejala PERSIS yang dilaporkan
+    Owner (judul tab, logo, favicon Super Admin menampilkan nama tenant
+    terakhir). Test ini SENGAJA menyuntik korupsi itu langsung lewat SQL
+    (bypass tambah_user()) untuk membuktikan endpoint tetap benar SEKARANG
+    (memeriksa role LEBIH DULU, tidak lagi bergantung diam-diam pada
+    invarian tenant_id yang mungkin dilanggar)."""
+    client = two_tenants["client"]
+    auth_db.tambah_user("superadmin_korup", "password123", role="superadmin", tenant_id=None)
+    import database as db
+    with db.get_conn() as conn:
+        conn.execute("UPDATE users SET tenant_id = ? WHERE username = ?",
+                     (two_tenants["tenant_a"], "superadmin_korup"))
+        conn.commit()
+
+    r = client.post("/api/auth/login", json={"username": "superadmin_korup", "password": "password123"})
+    assert r.status_code == 200, r.text
+    headers = {"Authorization": f"Bearer {r.json()['token']}"}
+
+    r2 = client.get("/api/tenant/branding", headers=headers)
+    assert r2.status_code == 200
+    assert r2.json()["nama_barbershop"] == "Rivoir"
+    assert r2.json()["is_platform_default"] is True
+
+
 def test_logout_branding_tidak_berubah_ke_tenant_lain(two_tenants):
     """Endpoint branding TIDAK bergantung status login sama sekali (murni
     query/slug untuk anonim) -- setelah 'logout' (token dibuang di sisi
