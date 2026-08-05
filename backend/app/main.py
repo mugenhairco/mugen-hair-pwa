@@ -83,7 +83,7 @@ import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_in
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq/landing_testimonials (idempotent)
 from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration
 
-app = FastAPI(title="MUGEN Hair Co. API")
+app = FastAPI(title="Rivoir API", version="1.0.0")
 
 # AUDIT SINKRONISASI: logging terstruktur ke stdout (Render/hosting mana pun
 # menangkap stdout sebagai log platform secara otomatis, tidak perlu setup
@@ -137,13 +137,37 @@ _BOOT_TIME = datetime.now(timezone.utc)
 # disentuh.
 _default_origins = (
     "http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000,http://localhost:8000,"
-    "https://rivoirsett.com"
+    "https://rivoirsett.com,https://www.rivoirsett.com,https://mugen.rivoirsett.com"
 )
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+
+# BUGFIX CORS Multi-Tenant: SaaS ini punya SATU subdomain per tenant
+# (mis. mugen.rivoirsett.com, tenant1.rivoirsett.com, dst) -- daftar
+# ALLOWED_ORIGINS di atas (exact-match per origin) TIDAK BISA mengikuti
+# tenant baru yang dibuat lewat registrasi mandiri/Super Admin TANPA
+# menambah entry manual satu-satu tiap kali ada tenant baru, yang gampang
+# ketinggalan dan menyebabkan login gagal dengan CORS error persis seperti
+# laporan ini. allow_origin_regex (didukung Starlette CORSMiddleware,
+# dicek TERPISAH dari allow_origins -- origin lolos kalau cocok SALAH SATU
+# dari keduanya) mengizinkan SELURUH subdomain *.rivoirsett.com (termasuk
+# root rivoirsett.com & www) sekali jalan, otomatis ikut tenant baru
+# mana pun ke depannya, TANPA membuka akses ke domain lain di luar
+# rivoirsett.com -- pola ini AMAN dipakai bersama allow_credentials=True
+# karena Starlette selalu mengembalikan origin SPESIFIK yang cocok pada
+# header Access-Control-Allow-Origin (bukan literal "*"), sesuai standar
+# Fetch/CORS (browser MENOLAK "*" di header itu kalau request memakai
+# credentials). Boleh dioverride lewat env var ALLOWED_ORIGIN_REGEX kalau
+# domain produksi berubah di masa depan (satu-satunya tempat yang perlu
+# disentuh, sama seperti pola ALLOWED_ORIGINS di atas).
+ALLOWED_ORIGIN_REGEX = os.environ.get(
+    "ALLOWED_ORIGIN_REGEX",
+    r"^https://([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*rivoirsett\.com$",
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
