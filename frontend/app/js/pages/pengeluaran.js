@@ -32,7 +32,7 @@ const PagePengeluaran = (() => {
         MugenApi.get("/api/pengeluaran/kategori", { useCache: true }),
       ]);
     } catch (e) {
-      formCard.appendChild(MugenUI.el("div", {}, e.message));
+      formCard.appendChild(MugenUI.errorState(e.message));
       return;
     }
 
@@ -143,7 +143,8 @@ const PagePengeluaran = (() => {
 
       btnSubmit.disabled = true;
       try {
-        await MugenUI.withLoading(async () => {
+        // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
+        await MugenUI.withButtonLoading(btnSubmit, async () => {
           if (editingId) {
             await MugenApi.put(`/api/pengeluaran/${editingId}`, body);
             MugenUI.toast("Pengeluaran diperbarui.", "success");
@@ -151,7 +152,7 @@ const PagePengeluaran = (() => {
             await MugenApi.post("/api/pengeluaran", body);
             MugenUI.toast("Pengeluaran disimpan.", "success");
           }
-        }, { message: "Menyimpan…" });
+        });
         // Kategori baru yang baru saja diketik langsung ikut jadi saran berikutnya.
         if (!kategoriOptions.includes(body.kategori)) {
           kategoriOptions.push(body.kategori);
@@ -211,65 +212,73 @@ const PagePengeluaran = (() => {
     }
 
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton tabel + crossfade lewat refreshInto(),
+      // menggantikan teks "Memuat..." dan penggantian innerHTML manual.
       try {
-        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-        if (selKategori.value) qs.set("kategori", selKategori.value);
-        if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
-        const data = await MugenApi.get(`/api/pengeluaran?${qs}`, { useCache: true });
-        listBody.innerHTML = "";
-        if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        const rows = Array.isArray(data) ? data : [];
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "kategori", label: "Kategori" },
-            { key: "keterangan", label: "Keterangan" },
-            {
-              key: "sumber_dana", label: "Sumber Dana",
-              format: (v, r) => v === "karyawan" ? `Uang Karyawan (${r.nama_barber || "-"})` : "Uang Kas",
-            },
-            { key: "jumlah", label: "Nominal", format: MugenUI.formatRupiah },
-            {
-              key: "aktif", label: "Status",
-              format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif"),
-            },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                if (r.terkunci) {
-                  return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
-                }
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnEdit = MugenUI.el("button", {}, "Edit");
-                btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
-                  try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/pengeluaran/${r.id}`), { message: "Menghapus…" });
-                    MugenUI.toast("Pengeluaran dihapus.", "success");
-                    loadList();
-                  } catch (e) {
-                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnEdit);
-                wrap.appendChild(btnHapus);
-                return wrap;
+        await MugenUI.refreshInto(listBody, async () => {
+          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+          if (selKategori.value) qs.set("kategori", selKategori.value);
+          if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
+          const data = await MugenApi.get(`/api/pengeluaran?${qs}`, { useCache: true });
+          const rows = Array.isArray(data) ? data : [];
+          const box = MugenUI.el("div");
+          if (data.__offline) box.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+          box.appendChild(MugenUI.buildTable(
+            [
+              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+              { key: "kategori", label: "Kategori" },
+              { key: "keterangan", label: "Keterangan" },
+              {
+                key: "sumber_dana", label: "Sumber Dana",
+                format: (v, r) => v === "karyawan" ? `Uang Karyawan (${r.nama_barber || "-"})` : "Uang Kas",
               },
-            },
-          ],
-          rows,
-        ));
+              { key: "jumlah", label: "Nominal", format: MugenUI.formatRupiah },
+              {
+                key: "aktif", label: "Status",
+                format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif"),
+              },
+              {
+                key: "aksi", label: "Aksi", format: (_, r) => {
+                  if (r.terkunci) {
+                    return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
+                  }
+                  const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  const btnEdit = MugenUI.el("button", {}, "Edit");
+                  btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                  btnHapus.addEventListener("click", async () => {
+                    if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
+                    try {
+                      // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
+                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));
+                      MugenUI.toast("Pengeluaran dihapus.", "success");
+                      loadList();
+                    } catch (e) {
+                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnEdit);
+                  wrap.appendChild(btnHapus);
+                  return wrap;
+                },
+              },
+            ],
+            rows,
+          ));
+          return box;
+        }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.message));
+        listBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
-    selBulan.addEventListener("change", () => MugenUI.withLoading(loadList));
-    selTahun.addEventListener("change", () => MugenUI.withLoading(loadList));
-    selKategori.addEventListener("change", () => MugenUI.withLoading(loadList));
+    // REVISI UI/UX Premium: MugenUI.withLoading(...) dihapus di sini --
+    // skeleton tabel di dalam loadList()/refreshInto() (lihat atas) sudah
+    // jadi feedback loading yang cukup untuk ganti filter.
+    selBulan.addEventListener("change", loadList);
+    selTahun.addEventListener("change", loadList);
+    selKategori.addEventListener("change", loadList);
     inputCari.addEventListener("input", loadListDebounced);
 
     resetForm();

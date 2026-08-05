@@ -57,29 +57,22 @@ const PageBooking = (() => {
     // Owner-murni di pengaturan.js (Komisi/Bonus Service/Hak Akses Admin),
     // BUKAN lewat sistem izin permissions.py.
     const isOwner = user.role === "admin";
-    const tabs = [
-      "Booking List", "Calendar", "Operating Hours", "Barber Holiday", "Closed Slot", "Payment Settings", "Booking Settings",
-      ...(isOwner ? ["Website Content"] : []),
+    const tabItems = [
+      { key: "Booking List", label: "Booking List" },
+      { key: "Calendar", label: "Calendar" },
+      { key: "Operating Hours", label: "Operating Hours" },
+      { key: "Barber Holiday", label: "Barber Holiday" },
+      { key: "Closed Slot", label: "Closed Slot" },
+      { key: "Payment Settings", label: "Payment Settings" },
+      { key: "Booking Settings", label: "Booking Settings" },
+      ...(isOwner ? [{ key: "Website Content", label: "Website Content" }] : []),
     ];
-    let activeTab = tabs[0];
-    const tabBar = MugenUI.el("div", { class: "tabs" });
     const body = MugenUI.el("div");
-    root.appendChild(tabBar);
-    root.appendChild(body);
 
     let barbers = [];
     try { barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true }); } catch (e) { /* opsional */ }
 
-    function renderTabs() {
-      tabBar.innerHTML = "";
-      for (const t of tabs) {
-        const btn = MugenUI.el("button", { class: activeTab === t ? "active" : "" }, t);
-        btn.addEventListener("click", () => { activeTab = t; renderTabs(); renderBody(); });
-        tabBar.appendChild(btn);
-      }
-    }
-
-    async function renderBody() {
+    async function renderBody(activeTab) {
       body.innerHTML = "";
       if (activeTab === "Booking List") await renderBookingList(body, barbers);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
@@ -91,8 +84,14 @@ const PageBooking = (() => {
       else if (activeTab === "Website Content") await renderWebsiteContent(body);
     }
 
-    renderTabs();
-    renderBody();
+    // REVISI UI/UX Premium: MugenUI.tabs() (indikator geser halus otomatis)
+    // menggantikan tabBar/renderTabs manual.
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    root.appendChild(tabsCtl.bar);
+    root.appendChild(body);
+    requestAnimationFrame(tabsCtl.moveIndicator);
+
+    renderBody(tabsCtl.active);
   }
 
   // ================= Barber: hanya milik sendiri =================
@@ -108,8 +107,11 @@ const PageBooking = (() => {
     selTahun.value = String(today.getFullYear());
     root.insertBefore(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [selBulan, selTahun]), card);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...", filter
+    // tanpa overlay layar penuh -- lihat catatan di ui.js.
     async function load() {
-      card.innerHTML = "Memuat...";
+      card.innerHTML = "";
+      card.appendChild(MugenUI.skeleton("table", { cols: 9, rows: 4 }));
       try {
         const data = await MugenApi.get(`/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`, { useCache: true });
         card.innerHTML = "";
@@ -124,11 +126,11 @@ const PageBooking = (() => {
         card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false }));
       } catch (e) {
         card.innerHTML = "";
-        card.appendChild(MugenUI.el("div", {}, e.message));
+        card.appendChild(MugenUI.errorState(e.message));
       }
     }
-    selBulan.addEventListener("change", () => MugenUI.withLoading(load));
-    selTahun.addEventListener("change", () => MugenUI.withLoading(load));
+    selBulan.addEventListener("change", load);
+    selTahun.addEventListener("change", load);
     load();
   }
 
@@ -214,8 +216,14 @@ const PageBooking = (() => {
     body.appendChild(row);
     body.appendChild(tableWrap);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...", filter
+    // tanpa overlay layar penuh, verifikasi/batalkan booking (bookingTable
+    // sudah menonaktifkan tombolnya sendiri selama proses berjalan, lihat
+    // bookingTable() di atas) TANPA overlay layar penuh -- lihat catatan
+    // withLoading() di ui.js.
     async function load() {
-      tableWrap.innerHTML = "Memuat...";
+      tableWrap.innerHTML = "";
+      tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
       try {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber.value) qs.set("barber_id", selBarber.value);
@@ -228,8 +236,12 @@ const PageBooking = (() => {
         tableWrap.appendChild(bookingTable(rows, {
           onVerifikasi: async (r) => {
             try {
-              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/verifikasi`), { message: "Memverifikasi pembayaran…" });
-              MugenUI.toast("Pembayaran diverifikasi.", "success");
+              await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
+              // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
+              // pembayaran booking) SENGAJA memakai force:true -- satu dari
+              // sedikit titik toast sukses yang tetap ditampilkan di seluruh
+              // aplikasi (lihat daftar whitelist di ui.js::toast()).
+              MugenUI.toast("Pembayaran diverifikasi.", "success", { force: true });
               load();
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -237,7 +249,7 @@ const PageBooking = (() => {
           onBatalkan: async (r) => {
             if (!confirm(`Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`)) return;
             try {
-              await MugenUI.withLoading(() => MugenApi.post(`/api/booking/${r.id}/batalkan`), { message: "Membatalkan booking…" });
+              await MugenApi.post(`/api/booking/${r.id}/batalkan`);
               MugenUI.toast("Booking dibatalkan.", "success");
               load();
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
@@ -246,13 +258,13 @@ const PageBooking = (() => {
         }));
       } catch (e) {
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.el("div", {}, e.message));
+        tableWrap.appendChild(MugenUI.errorState(e.message));
       }
     }
-    selBulan.addEventListener("change", () => MugenUI.withLoading(load));
-    selTahun.addEventListener("change", () => MugenUI.withLoading(load));
-    selBarber.addEventListener("change", () => MugenUI.withLoading(load));
-    selStatus.addEventListener("change", () => MugenUI.withLoading(load));
+    selBulan.addEventListener("change", load);
+    selTahun.addEventListener("change", load);
+    selBarber.addEventListener("change", load);
+    selStatus.addEventListener("change", load);
     load();
   }
 
@@ -278,8 +290,10 @@ const PageBooking = (() => {
     let bookingPerTanggal = {};
     let selectedTanggal = null;
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function load() {
-      calBox.innerHTML = "Memuat...";
+      calBox.innerHTML = "";
+      calBox.appendChild(MugenUI.skeleton("card", { lines: 4 }));
       try {
         const qs = new URLSearchParams({ tahun: String(shown.getFullYear()), bulan: String(shown.getMonth() + 1) });
         if (selBarber.value) qs.set("barber_id", selBarber.value);
@@ -294,7 +308,7 @@ const PageBooking = (() => {
         renderGrid();
       } catch (e) {
         calBox.innerHTML = "";
-        calBox.appendChild(MugenUI.el("div", {}, e.message));
+        calBox.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -304,8 +318,8 @@ const PageBooking = (() => {
       const nav = MugenUI.el("div", { class: "book-calendar-nav" });
       const btnPrev = MugenUI.el("button", { type: "button" }, "‹");
       const btnNext = MugenUI.el("button", { type: "button" }, "›");
-      btnPrev.addEventListener("click", () => { shown = new Date(y, m - 1, 1); MugenUI.withLoading(load); });
-      btnNext.addEventListener("click", () => { shown = new Date(y, m + 1, 1); MugenUI.withLoading(load); });
+      btnPrev.addEventListener("click", () => { shown = new Date(y, m - 1, 1); load(); });
+      btnNext.addEventListener("click", () => { shown = new Date(y, m + 1, 1); load(); });
       nav.appendChild(btnPrev);
       nav.appendChild(MugenUI.el("div", {}, `${MugenUI.namaBulan(m + 1)} ${y}`));
       nav.appendChild(btnNext);
@@ -337,7 +351,7 @@ const PageBooking = (() => {
       detailBox.appendChild(bookingTable(bookingPerTanggal[selectedTanggal] || [], { withBarber: true }));
     }
 
-    selBarber.addEventListener("change", () => MugenUI.withLoading(load));
+    selBarber.addEventListener("change", load);
     load();
   }
 
@@ -383,7 +397,9 @@ const PageBooking = (() => {
       const hari_operasional = Object.entries(hariChecks).filter(([, cb]) => cb.checked).map(([k]) => k);
       if (!hari_operasional.length) { errorBox.textContent = "Pilih minimal satu hari operasional."; return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value, hari_operasional }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpan,
+          () => MugenApi.put("/api/booking/pengaturan", { jam_buka: inBuka.value, jam_tutup: inTutup.value, hari_operasional }));
         MugenUI.toast("Jam operasional disimpan.", "success");
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -415,8 +431,10 @@ const PageBooking = (() => {
     const liburListBody = MugenUI.el("div");
     liburListCard.appendChild(liburListBody);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadLiburToko() {
-      liburListBody.innerHTML = "Memuat...";
+      liburListBody.innerHTML = "";
+      liburListBody.appendChild(MugenUI.skeleton("table", { cols: 3, rows: 3 }));
       try {
         const data = await MugenApi.get("/api/booking/toko-libur", { useCache: true });
         liburListBody.innerHTML = "";
@@ -431,7 +449,7 @@ const PageBooking = (() => {
                 btn.addEventListener("click", async () => {
                   if (!confirm(`Hapus libur toko ${r.tanggal}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/toko-libur/${r.id}`), { message: "Menghapus…" });
+                    await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/booking/toko-libur/${r.id}`));
                     MugenUI.toast("Libur toko dihapus.", "success");
                     loadLiburToko();
                   } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -445,7 +463,7 @@ const PageBooking = (() => {
         ));
       } catch (e) {
         liburListBody.innerHTML = "";
-        liburListBody.appendChild(MugenUI.el("div", {}, e.message));
+        liburListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -453,9 +471,10 @@ const PageBooking = (() => {
       liburError.textContent = "";
       if (!inLiburTanggal.value) { liburError.textContent = "Pilih tanggal dulu."; return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/booking/toko-libur", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnTambahLibur, () => MugenApi.post("/api/booking/toko-libur", {
           tanggal: inLiburTanggal.value, keterangan: inLiburKeterangan.value.trim() || null,
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Libur toko ditambahkan.", "success");
         inLiburKeterangan.value = "";
         loadLiburToko();
@@ -493,8 +512,10 @@ const PageBooking = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
+      listBody.innerHTML = "";
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 2, rows: 3 }));
       const today = new Date();
       try {
         const data = await MugenApi.get(`/api/input-data/libur?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
@@ -510,14 +531,16 @@ const PageBooking = (() => {
         ));
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.message));
+        listBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
+    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
     btnTandai.addEventListener("click", async () => {
       errorBox.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }), { message: "Menyimpan…" });
+        await MugenUI.withButtonLoading(btnTandai,
+          () => MugenApi.post("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
         MugenUI.toast("Ditandai libur.", "success");
         loadList();
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
@@ -525,7 +548,8 @@ const PageBooking = (() => {
     btnBatalkan.addEventListener("click", async () => {
       errorBox.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }), { message: "Menghapus…" });
+        await MugenUI.withButtonLoading(btnBatalkan,
+          () => MugenApi.del("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
         MugenUI.toast("Libur dibatalkan.", "success");
         loadList();
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
@@ -570,8 +594,10 @@ const PageBooking = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
+      listBody.innerHTML = "";
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
       const today = new Date();
       try {
         const data = await MugenApi.get(`/api/booking/closed-slot?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
@@ -589,7 +615,7 @@ const PageBooking = (() => {
                 btn.addEventListener("click", async () => {
                   if (!confirm(`Hapus tutup slot ${r.tanggal} ${r.jam_mulai}-${r.jam_selesai}?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/booking/closed-slot/${r.id}`), { message: "Menghapus…" });
+                    await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/booking/closed-slot/${r.id}`));
                     MugenUI.toast("Slot dibuka kembali.", "success");
                     loadList();
                   } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -603,19 +629,20 @@ const PageBooking = (() => {
         ));
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.message));
+        listBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
+    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
     btnSimpan.addEventListener("click", async () => {
       errorBox.textContent = "";
       if (!inputJamMulai.value || !inputJamSelesai.value) { errorBox.textContent = "Isi jam mulai dan jam selesai."; return; }
       try {
-        await MugenUI.withLoading(() => MugenApi.post("/api/booking/closed-slot", {
+        await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.post("/api/booking/closed-slot", {
           barber_id: Number(selBarber.value), tanggal: inputTanggal.value,
           jam_mulai: inputJamMulai.value, jam_selesai: inputJamSelesai.value,
           keterangan: inputKeterangan.value || null,
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Slot ditutup.", "success");
         inputJamMulai.value = ""; inputJamSelesai.value = ""; inputKeterangan.value = "";
         loadList();
@@ -652,7 +679,8 @@ const PageBooking = (() => {
       errorBox1.textContent = "";
       const metode_aktif = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([k]) => k);
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_aktif }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanMetode, () => MugenApi.put("/api/booking/payment-settings", { metode_aktif }));
         MugenUI.toast("Metode pembayaran disimpan.", "success");
       } catch (e) { errorBox1.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -684,7 +712,9 @@ const PageBooking = (() => {
         if (inInstruksi[key].value.trim()) metode_instruksi[key] = inInstruksi[key].value.trim();
       }
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanLabel,
+          () => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }));
         MugenUI.toast("Label & instruksi metode pembayaran disimpan.", "success");
       } catch (e) { errorBoxLabel.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -709,9 +739,10 @@ const PageBooking = (() => {
     btnSimpanBank.addEventListener("click", async () => {
       errorBox2.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/payment-settings", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanBank, () => MugenApi.put("/api/booking/payment-settings", {
           bank_nama: inBankNama.value, bank_nomor_rekening: inBankRek.value, bank_nama_pemilik: inBankAtasNama.value,
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Info transfer bank disimpan.", "success");
       } catch (e) { errorBox2.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -751,10 +782,14 @@ const PageBooking = (() => {
       qrisCard.appendChild(MugenFeature.upgradeBlock("QRIS"));
     }
 
+    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
+    // untuk kedua tombol QRIS (upload/ganti butuh progress upload file yang
+    // bisa memakan waktu, hapus adalah aksi tunggal cepat -- keduanya cukup
+    // spinner inline, tanpa overlay layar penuh).
     btnUploadQris.addEventListener("click", async () => {
       errorBox3.textContent = "";
       try {
-        await MugenUI.withLoading(async () => {
+        await MugenUI.withButtonLoading(btnUploadQris, async () => {
           if (inMerchant.value !== (s.qris_merchant_nama || "")) {
             await MugenApi.put("/api/booking/payment-settings", { qris_merchant_nama: inMerchant.value });
           }
@@ -763,14 +798,14 @@ const PageBooking = (() => {
             qrisPreview.src = MUGEN_API_BASE + hasil.qris_url + "&t=" + Date.now();
             qrisPreview.style.display = "";
           }
-        }, { message: "Mengunggah…" });
+        });
         MugenUI.toast("QRIS disimpan.", "success");
       } catch (e) { errorBox3.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
     btnHapusQris.addEventListener("click", async () => {
       if (!confirm("Hapus QRIS yang sedang aktif?")) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/booking/qris"), { message: "Menghapus…" });
+        await MugenUI.withButtonLoading(btnHapusQris, () => MugenApi.del("/api/booking/qris"));
         qrisPreview.style.display = "none";
         MugenUI.toast("QRIS dihapus.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -837,9 +872,10 @@ const PageBooking = (() => {
     btnSimpan.addEventListener("click", async () => {
       errorBox.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/booking/pengaturan", {
           interval_menit: Number(inInterval.value), maksimal_hari_kedepan: Number(inMaksHari.value),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Pengaturan booking disimpan.", "success");
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -872,11 +908,12 @@ const PageBooking = (() => {
     btnSimpanPesan.addEventListener("click", async () => {
       errorBoxPesan.textContent = "";
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/booking/pengaturan", {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanPesan, () => MugenApi.put("/api/booking/pengaturan", {
           pesan_penutup: inPenutup.value.trim(),
           pesan_nama_kosong: inNamaKosong.value.trim(),
           pesan_whatsapp_invalid: inWaInvalid.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Pesan booking disimpan.", "success");
       } catch (e) { errorBoxPesan.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -950,7 +987,9 @@ const PageBooking = (() => {
       errorHeroImage.textContent = "";
       if (!inHeroImageFile.files || !inHeroImageFile.files[0]) { errorHeroImage.textContent = "Pilih file gambar dulu."; return; }
       try {
-        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/hero-image", inHeroImageFile.files[0]), { message: "Mengunggah…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        const hasil = await MugenUI.withButtonLoading(btnUploadHeroImage,
+          () => MugenApi.uploadFile("/api/website/hero-image", inHeroImageFile.files[0]));
         content.hero_image_url = hasil.hero_image_url;
         heroImagePreview.src = MUGEN_API_BASE + hasil.hero_image_url + "&t=" + Date.now();
         heroImagePreview.style.display = "";
@@ -960,7 +999,7 @@ const PageBooking = (() => {
     btnHapusHeroImage.addEventListener("click", async () => {
       if (!confirm("Hapus Hero Image yang sedang aktif?")) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/website/hero-image"), { message: "Menghapus…" });
+        await MugenUI.withButtonLoading(btnHapusHeroImage, () => MugenApi.del("/api/website/hero-image"));
         content.hero_image_url = null;
         heroImagePreview.style.display = "none";
         MugenUI.toast("Hero Image dihapus.", "success");
@@ -987,7 +1026,9 @@ const PageBooking = (() => {
       errorHeroVideo.textContent = "";
       if (!inHeroVideoFile.files || !inHeroVideoFile.files[0]) { errorHeroVideo.textContent = "Pilih file video dulu."; return; }
       try {
-        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/hero-video", inHeroVideoFile.files[0]), { message: "Mengunggah…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        const hasil = await MugenUI.withButtonLoading(btnUploadHeroVideo,
+          () => MugenApi.uploadFile("/api/website/hero-video", inHeroVideoFile.files[0]));
         content.hero_video_url = hasil.hero_video_url;
         heroVideoPreview.src = MUGEN_API_BASE + hasil.hero_video_url + "&t=" + Date.now();
         heroVideoPreview.style.display = "block";
@@ -997,7 +1038,7 @@ const PageBooking = (() => {
     btnHapusHeroVideo.addEventListener("click", async () => {
       if (!confirm("Hapus Hero Video yang sedang aktif?")) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/website/hero-video"), { message: "Menghapus…" });
+        await MugenUI.withButtonLoading(btnHapusHeroVideo, () => MugenApi.del("/api/website/hero-video"));
         content.hero_video_url = null;
         heroVideoPreview.style.display = "none";
         MugenUI.toast("Hero Video dihapus.", "success");
@@ -1015,9 +1056,10 @@ const PageBooking = (() => {
     btnSimpanHero.addEventListener("click", async () => {
       errorHero.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanHero, () => simpanContent({
           hero_tipe: selHeroTipe.value, tagline: inTagline.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Hero disimpan.", "success");
       } catch (e) { errorHero.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -1058,7 +1100,9 @@ const PageBooking = (() => {
       errorAboutFoto.textContent = "";
       if (!inAboutFotoFile.files || !inAboutFotoFile.files[0]) { errorAboutFoto.textContent = "Pilih file foto dulu."; return; }
       try {
-        const hasil = await MugenUI.withLoading(() => MugenApi.uploadFile("/api/website/about-foto", inAboutFotoFile.files[0]), { message: "Mengunggah…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        const hasil = await MugenUI.withButtonLoading(btnUploadAboutFoto,
+          () => MugenApi.uploadFile("/api/website/about-foto", inAboutFotoFile.files[0]));
         aboutFotoPreview.src = MUGEN_API_BASE + hasil.about_foto_url + "&t=" + Date.now();
         aboutFotoPreview.style.display = "";
         MugenUI.toast("Foto About disimpan.", "success");
@@ -1067,7 +1111,7 @@ const PageBooking = (() => {
     btnHapusAboutFoto.addEventListener("click", async () => {
       if (!confirm("Hapus Foto About yang sedang aktif?")) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del("/api/website/about-foto"), { message: "Menghapus…" });
+        await MugenUI.withButtonLoading(btnHapusAboutFoto, () => MugenApi.del("/api/website/about-foto"));
         aboutFotoPreview.style.display = "none";
         MugenUI.toast("Foto About dihapus.", "success");
       } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -1080,7 +1124,9 @@ const PageBooking = (() => {
     btnSimpanAbout.addEventListener("click", async () => {
       errorAbout.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({ about_judul: inAboutJudul.value.trim(), about_deskripsi: inAboutDeskripsi.value.trim() }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanAbout,
+          () => simpanContent({ about_judul: inAboutJudul.value.trim(), about_deskripsi: inAboutDeskripsi.value.trim() }));
         MugenUI.toast("About disimpan.", "success");
       } catch (e) { errorAbout.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -1093,12 +1139,13 @@ const PageBooking = (() => {
     const galleryGrid = MugenUI.el("div", { class: "website-gallery-grid" });
     galleryCard.appendChild(galleryGrid);
 
+    // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+    // -- dipicu drag-drop ATAU tombol ↑/↓ per item (tidak ada satu tombol
+    // tunggal untuk withButtonLoading), grid yang re-render ulang begitu
+    // selesai sudah jadi feedback yang cukup untuk aksi reorder ini.
     async function simpanUrutanGallery(disusun) {
       try {
-        gallery = await MugenUI.withLoading(
-          () => MugenApi.put("/api/website/gallery/reorder", { ordered_ids: disusun.map((f) => f.id) }),
-          { message: "Menyimpan urutan…" },
-        );
+        gallery = await MugenApi.put("/api/website/gallery/reorder", { ordered_ids: disusun.map((f) => f.id) });
         renderGalleryGrid();
       } catch (e) { MugenUI.toast(e.message, "error"); }
     }
@@ -1130,7 +1177,8 @@ const PageBooking = (() => {
         btnHapus.addEventListener("click", async () => {
           if (!confirm("Hapus item ini dari Gallery?")) return;
           try {
-            gallery = await MugenUI.withLoading(() => MugenApi.del(`/api/website/gallery/${foto.id}`), { message: "Menghapus…" });
+            // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+            gallery = await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/website/gallery/${foto.id}`));
             renderGalleryGrid();
             MugenUI.toast("Item Gallery dihapus.", "success");
           } catch (e) { MugenUI.toast(e.message, "error"); }
@@ -1172,11 +1220,12 @@ const PageBooking = (() => {
       errorGallery.textContent = "";
       if (!inGalleryFiles.files || !inGalleryFiles.files.length) { errorGallery.textContent = "Pilih minimal satu foto/video dulu."; return; }
       try {
-        await MugenUI.withLoading(async () => {
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnUploadGallery, async () => {
           for (const file of inGalleryFiles.files) {
             gallery = await MugenApi.uploadFile("/api/website/gallery", file);
           }
-        }, { message: "Mengunggah…" });
+        });
         inGalleryFiles.value = "";
         renderGalleryGrid();
         MugenUI.toast("Gallery ditambahkan.", "success");
@@ -1203,9 +1252,10 @@ const PageBooking = (() => {
     btnSimpanVisit.addEventListener("click", async () => {
       errorVisit.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanVisit, () => simpanContent({
           alamat: inAlamat.value.trim(), visit_maps_embed_url: inMapsEmbed.value.trim(), visit_maps_link: inMapsLink.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Visit Us disimpan.", "success");
       } catch (e) { errorVisit.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -1240,9 +1290,10 @@ const PageBooking = (() => {
     btnSimpanSocial.addEventListener("click", async () => {
       errorSocial.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanSocial, () => simpanContent({
           instagram: inInstagram.value.trim(), tiktok: inTiktok.value.trim(), whatsapp: inWhatsapp.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Social Media disimpan.", "success");
       } catch (e) { errorSocial.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -1262,7 +1313,8 @@ const PageBooking = (() => {
     btnSimpanContact.addEventListener("click", async () => {
       errorContact.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({ telepon: inTelepon.value.trim() }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanContact, () => simpanContent({ telepon: inTelepon.value.trim() }));
         MugenUI.toast("Contact disimpan.", "success");
       } catch (e) { errorContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
@@ -1290,10 +1342,11 @@ const PageBooking = (() => {
     btnSimpanCta.addEventListener("click", async () => {
       errorCta.textContent = "";
       try {
-        await MugenUI.withLoading(() => simpanContent({
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanCta, () => simpanContent({
           booking_cta_judul: inCtaJudul.value.trim(), booking_cta_subjudul: inCtaSubjudul.value.trim(),
           booking_cta_tombol_teks: inCtaTombolTeks.value.trim(),
-        }), { message: "Menyimpan…" });
+        }));
         MugenUI.toast("Book Appointment disimpan.", "success");
       } catch (e) { errorCta.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });

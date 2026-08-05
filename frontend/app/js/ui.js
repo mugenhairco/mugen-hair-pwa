@@ -88,15 +88,23 @@ const MugenUI = (() => {
     // `force` (opsional, default false): SATU-SATUNYA cara melewati aturan
     // "toast sukses/info dihilangkan total" di atas -- dipakai SENGAJA
     // hanya oleh fitur yang secara eksplisit diminta menampilkan notifikasi
-    // sukses (mis. Hapus Rekap Transaksi khusus Owner). Pemanggilan
-    // toast(...) yang SUDAH ADA di seluruh aplikasi TIDAK mengirim
-    // parameter ini, jadi perilakunya 100% tidak berubah.
+    // sukses (mis. Hapus Rekap Transaksi khusus Owner, atau aksi besar
+    // seperti pembayaran/booking/export/import/pembuatan tenant/perubahan
+    // langganan -- lihat REVISI UI/UX Premium). Pemanggilan toast(...) yang
+    // SUDAH ADA di seluruh aplikasi TIDAK mengirim parameter ini, jadi
+    // perilakunya 100% tidak berubah.
     if (type !== "error" && !force) return;
     const el = document.createElement("div");
     el.className = "toast " + type;
     el.textContent = message;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
+    // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya .remove()
+    // instan) -- .toast-out (style.css) memicu mugen-toast-out, dilepas
+    // dari DOM setelah durasinya selesai (var(--dur-fast), lihat CSS).
+    setTimeout(() => {
+      el.classList.add("toast-out");
+      setTimeout(() => el.remove(), 150);
+    }, 3500);
   }
 
   function el(tag, attrs = {}, children = []) {
@@ -181,6 +189,145 @@ const MugenUI = (() => {
     return wrap;
   }
 
+  // ======================= REVISI UI/UX Premium =======================
+  // Fondasi motion terpusat: skeleton loading, refreshInto() (crossfade
+  // tanpa "flash" kosong saat rebuild tabel/kartu -- menggantikan pola
+  // container.innerHTML="Memuat...";...;container.innerHTML="" yang
+  // dipakai puluhan halaman), withButtonLoading() (spinner inline di
+  // tombol, TANPA overlay layar penuh -- pengganti withLoading() untuk
+  // aksi CRUD/filter harian, lihat catatan withLoading() di bawah), tabs()
+  // (SATU implementasi tabs dipakai ulang, menggantikan 3 versi manual di
+  // booking.js/rekap.js/pengaturan.js), emptyState()/errorState() (satu
+  // pola tampilan, bukan string ad hoc per halaman). ======================
+
+  // Placeholder skeleton sebelum data asli datang -- bentuknya menyerupai
+  // data asli (jumlah kolom/baris sama) supaya TIDAK ada layout shift saat
+  // ditukar. `kind`: "table" ({cols, rows=4}), "card" ({lines=3}), atau
+  // "line" (satu baris teks, opsional {width}).
+  function skeleton(kind, opts = {}) {
+    if (kind === "table") {
+      const { cols = 4, rows = 4 } = opts;
+      const wrap = el("div", { class: "table-wrap" });
+      const table = el("table", { class: "data-table" });
+      const tbody = el("tbody");
+      for (let r = 0; r < rows; r++) {
+        const tr = el("tr", { class: "skeleton-row" });
+        for (let c = 0; c < cols; c++) {
+          tr.appendChild(el("td", {}, el("div", { class: "skeleton-block" })));
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
+    }
+    if (kind === "card") {
+      const { lines = 3 } = opts;
+      const card = el("div", { class: "card" });
+      for (let i = 0; i < lines; i++) card.appendChild(el("div", { class: "skeleton-card-block" }));
+      return card;
+    }
+    return el("div", { class: "skeleton-line", style: opts.width ? `width:${opts.width};` : "" });
+  }
+
+  // Ganti isi `container` dengan hasil `asyncRenderFn()` (harus resolve ke
+  // satu Node) lewat crossfade halus, TANPA jeda kosong/"flash" -- dipakai
+  // MENGGANTIKAN pola container.innerHTML="Memuat...";...container.innerHTML=""
+  // yang sebelumnya tersebar di puluhan halaman (filter berubah, refresh
+  // setelah CRUD, dst). Pemuatan PERTAMA kali (container masih kosong)
+  // menampilkan skeleton() (kalau `skeleton` diisi) SELAMA menunggu, bukan
+  // fade seluruh container yang belum ada isinya. Pemuatan BERIKUTNYA
+  // (container sudah ada isi lama) memudarkan isi lama sebentar sebelum
+  // ditukar -- fade-out ini berjalan BERSAMAAN dengan fetch data (bukan
+  // menunggunya), jadi tidak menambah jeda kalau fetch-nya sendiri sudah
+  // lebih lama dari durasi fade.
+  async function refreshInto(container, asyncRenderFn, { skeleton: bentukSkeleton } = {}) {
+    const sudahAdaIsi = container.children.length > 0;
+    if (sudahAdaIsi) {
+      container.classList.add("mugen-refresh-fade-out");
+    } else if (bentukSkeleton) {
+      container.appendChild(skeleton(bentukSkeleton.kind || "table", bentukSkeleton));
+    }
+    const hasil = await asyncRenderFn();
+    container.innerHTML = "";
+    container.appendChild(hasil);
+    container.classList.remove("mugen-refresh-fade-out");
+    container.classList.add("mugen-refresh-fade-in");
+    setTimeout(() => container.classList.remove("mugen-refresh-fade-in"), 220);
+    return hasil;
+  }
+
+  // Bungkus SATU tombol aksi (submit/simpan/hapus/bayar) dengan spinner
+  // inline KECIL di dalam tombol itu sendiri -- BUKAN overlay layar penuh
+  // (bandingkan withLoading() di bawah, yang SEKARANG khusus proses yang
+  // sungguh memblokir SELURUH aplikasi: boot, login, sign out, migrasi/
+  // restore/backup besar). Tombol dinonaktifkan selama proses, label asli
+  // dikembalikan apa adanya setelah selesai (sukses maupun gagal) --
+  // TIDAK ada jeda buatan sama sekali, secepat respons server yang
+  // sungguhan (REVISI UI/UX Premium: "Contextual Loading").
+  async function withButtonLoading(button, asyncFn) {
+    const labelAsli = button.textContent;
+    const disabledAsli = button.disabled;
+    button.disabled = true;
+    button.innerHTML = "";
+    button.appendChild(el("span", { class: "btn-inline-spinner" }));
+    button.appendChild(document.createTextNode(labelAsli));
+    try {
+      return await asyncFn();
+    } finally {
+      button.disabled = disabledAsli;
+      button.textContent = labelAsli;
+    }
+  }
+
+  // Tabs dengan indikator aktif yang bergeser halus -- SATU implementasi
+  // dipakai ulang (menggantikan tabBar/renderTabs manual yang sebelumnya
+  // diduplikasi di booking.js/rekap.js/pengaturan.js). `items`:
+  // [{key, label}]. Caller SENDIRI yang merender body tab lewat
+  // `onChange(key)` (isi body tiap tab beda-beda per halaman, tidak bisa
+  // digeneralisasi di sini) -- helper ini murni tab bar + indikatornya.
+  // Caller WAJIB memanggil `moveIndicator()` lewat requestAnimationFrame
+  // SETELAH `bar` di-attach ke DOM (offsetWidth/offsetLeft baru benar
+  // setelah elemen benar-benar terpasang).
+  function tabs(items, { initial, onChange } = {}) {
+    let active = initial || (items[0] && items[0].key);
+    const bar = el("div", { class: "mugen-tabs" });
+    const indicator = el("div", { class: "mugen-tabs-indicator" });
+    const tombol = {};
+    for (const item of items) {
+      const btn = el("button", { type: "button", class: item.key === active ? "active" : "" }, item.label);
+      btn.addEventListener("click", () => setActive(item.key));
+      tombol[item.key] = btn;
+      bar.appendChild(btn);
+    }
+    bar.appendChild(indicator);
+    function moveIndicator() {
+      const btn = tombol[active];
+      if (!btn) return;
+      indicator.style.width = btn.offsetWidth + "px";
+      indicator.style.transform = `translateX(${btn.offsetLeft}px)`;
+    }
+    function setActive(key) {
+      if (key === active || !tombol[key]) return;
+      tombol[active].classList.remove("active");
+      active = key;
+      tombol[active].classList.add("active");
+      moveIndicator();
+      if (onChange) onChange(active);
+    }
+    return { bar, setActive, moveIndicator, get active() { return active; } };
+  }
+
+  // Satu pola tampilan untuk state kosong/error -- menggantikan string ad
+  // hoc ("Belum ada data.", pesan error berbeda-beda) per halaman, supaya
+  // SEMUA state kosong/error terlihat & beranimasi sama persis.
+  function emptyState(text) {
+    return el("div", { class: "mugen-state" }, text);
+  }
+  function errorState(text) {
+    return el("div", { class: "mugen-state mugen-state-error" }, text);
+  }
+
   // Dialog konfirmasi modern (menggantikan confirm() bawaan browser yang
   // tidak bisa diberi styling) -- dipakai fitur yang butuh konfirmasi
   // bertingkat lebih jelas dari sekadar ya/tidak polos, mis. Hapus Rekap
@@ -204,8 +351,11 @@ const MugenUI = (() => {
       document.body.appendChild(overlay);
 
       function tutup(hasil) {
-        overlay.remove();
-        resolve(hasil);
+        // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya
+        // .remove() instan) -- .closing (style.css) memicu
+        // mugen-overlay-out/mugen-overlay-box-out, var(--dur-fast).
+        overlay.classList.add("closing");
+        setTimeout(() => { overlay.remove(); resolve(hasil); }, 120);
       }
       btnBatal.addEventListener("click", () => tutup(false));
       btnKonfirmasi.addEventListener("click", () => tutup(true));
@@ -350,5 +500,6 @@ const MugenUI = (() => {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, buatNomorTransaksi,
+    skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState,
   };
 })();

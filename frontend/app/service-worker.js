@@ -301,6 +301,23 @@
 // limit + checkbox fitur per paket, Katalog Fitur: tambah/nonaktifkan/
 // hapus, Monitoring Pembayaran: invoice seluruh toko), kartu Phase 3 yang
 // sudah ada TIDAK diubah.
+// v69 -> v70: Efisiensi polling badge notifikasi -- booking_notif.js/
+// izin_notif.js sekarang pause otomatis (Page Visibility API) saat tab
+// disembunyikan/pindah tab lain (SEBELUMNYA: setInterval POLL_MS=15000
+// terus jalan app-wide tanpa henti walau tab di background), lalu refresh
+// SEKALI + lanjut polling lagi begitu tab terlihat kembali -- mengurangi
+// request idle ke backend TANPA mengubah frekuensi (tetap 15 detik) atau
+// logika/akurasi badge sama sekali saat tab aktif dilihat.
+// v70 -> v71: badge Izin & Cuti (izin_notif.js) TIDAK lagi polling
+// periodik sama sekali (SEBELUMNYA: setInterval 15 detik + pause saat tab
+// hidden dari revisi v70 di atas) -- sekarang MURNI event-driven: refresh
+// hanya saat aplikasi pertama dibuka, tiap kali user berpindah menu
+// (router.js::handle()), dan tepat setelah aksi Setujui/Tolak
+// (izin_cuti.js) -- permintaan eksplisit Owner supaya backend TIDAK
+// dihubungi sama sekali selagi tidak ada aksi apa pun. booking_notif.js
+// (badge + suara pengingat Booking baru) TIDAK ikut diubah -- tetap
+// polling periodik (dengan pause saat tab hidden dari v70), karena
+// notifikasi booking baru butuh lebih real-time (ada suara pengingat).
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -316,7 +333,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "68";
+const ASSET_VERSION = "71";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

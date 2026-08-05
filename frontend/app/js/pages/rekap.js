@@ -42,7 +42,8 @@ const PageRekap = (() => {
       });
       if (!ok) return;
       try {
-        await MugenUI.withLoading(() => MugenApi.del(hapusUrl), { message: "Memproses…" });
+        // REVISI UI/UX Premium: spinner inline di tombol sendiri, bukan overlay layar penuh
+        await MugenUI.withButtonLoading(btn, () => MugenApi.del(hapusUrl));
         MugenUI.toast(pesanSukses, "success", { force: true });
         if (onSelesai) onSelesai();
       } catch (e) {
@@ -65,13 +66,18 @@ const PageRekap = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Rekap"));
 
-    const tabs = ["Transaksi", "Bulanan", ...(isAdmin ? ["Pengeluaran"] : [])];
-    let activeTab = "Transaksi";
-
-    const tabBar = MugenUI.el("div", { class: "tabs" });
+    // REVISI UI/UX Premium: MugenUI.tabs() (indikator geser halus otomatis)
+    // menggantikan tabBar/renderTabs manual.
+    const tabItems = [
+      { key: "Transaksi", label: "Transaksi" },
+      { key: "Bulanan", label: "Bulanan" },
+      ...(isAdmin ? [{ key: "Pengeluaran", label: "Pengeluaran" }] : []),
+    ];
     const body = MugenUI.el("div");
-    root.appendChild(tabBar);
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    root.appendChild(tabsCtl.bar);
     root.appendChild(body);
+    requestAnimationFrame(tabsCtl.moveIndicator);
 
     // Rekap Bulanan murni perhitungan komisi/tips/uang harian jasa potong
     // rambut -- TETAP khusus Barber (barbersOnly). Rekap Transaksi
@@ -89,15 +95,6 @@ const PageRekap = (() => {
           MugenApi.get("/api/input-data/karyawan", { useCache: true }),
         ]);
       } catch (e) { /* filter tetap opsional kalau gagal dimuat */ }
-    }
-
-    function renderTabs() {
-      tabBar.innerHTML = "";
-      for (const t of tabs) {
-        const btn = MugenUI.el("button", { class: activeTab === t ? "active" : "" }, t);
-        btn.addEventListener("click", () => { activeTab = t; renderTabs(); renderBody(); });
-        tabBar.appendChild(btn);
-      }
     }
 
     function filterBar({ withBarber = true, daftarKaryawan = barbersOnly, labelSemua = "Semua Barber" } = {}) {
@@ -119,8 +116,8 @@ const PageRekap = (() => {
 
     async function renderBody() {
       body.innerHTML = "";
-      if (activeTab === "Transaksi") await renderTransaksi();
-      else if (activeTab === "Bulanan") await renderBulanan();
+      if (tabsCtl.active === "Transaksi") await renderTransaksi();
+      else if (tabsCtl.active === "Bulanan") await renderBulanan();
       else await renderPengeluaran();
     }
 
@@ -202,7 +199,9 @@ const PageRekap = (() => {
       body.appendChild(tableWrap);
 
       async function load() {
-        tableWrap.innerHTML = "Memuat...";
+        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : 8, rows: 4 }));
         try {
           const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
           if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
@@ -309,12 +308,14 @@ const PageRekap = (() => {
           ));
         } catch (e) {
           tableWrap.innerHTML = "";
-          tableWrap.appendChild(MugenUI.el("div", {}, e.message));
+          tableWrap.appendChild(MugenUI.errorState(e.message));
         }
       }
-      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
-      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
-      if (selBarber) selBarber.addEventListener("change", () => MugenUI.withLoading(load));
+      // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+      // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
+      selBulan.addEventListener("change", load);
+      selTahun.addEventListener("change", load);
+      if (selBarber) selBarber.addEventListener("change", load);
       load();
     }
 
@@ -336,7 +337,9 @@ const PageRekap = (() => {
       body.appendChild(tableWrap);
 
       async function load() {
-        tableWrap.innerHTML = "Memuat...";
+        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: 11, rows: 4 }));
         try {
           const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
           if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
@@ -362,12 +365,14 @@ const PageRekap = (() => {
           ));
         } catch (e) {
           tableWrap.innerHTML = "";
-          tableWrap.appendChild(MugenUI.el("div", {}, e.message));
+          tableWrap.appendChild(MugenUI.errorState(e.message));
         }
       }
-      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
-      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
-      if (selBarber) selBarber.addEventListener("change", () => MugenUI.withLoading(load));
+      // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+      // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
+      selBulan.addEventListener("change", load);
+      selTahun.addEventListener("change", load);
+      if (selBarber) selBarber.addEventListener("change", load);
       load();
     }
 
@@ -387,7 +392,9 @@ const PageRekap = (() => {
       body.appendChild(tableWrap);
 
       async function load() {
-        tableWrap.innerHTML = "Memuat...";
+        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
         try {
           const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
           const data = await MugenApi.get(`/api/rekap/pengeluaran?${qs}`, { useCache: true });
@@ -408,15 +415,16 @@ const PageRekap = (() => {
           ));
         } catch (e) {
           tableWrap.innerHTML = "";
-          tableWrap.appendChild(MugenUI.el("div", {}, e.message));
+          tableWrap.appendChild(MugenUI.errorState(e.message));
         }
       }
-      selBulan.addEventListener("change", () => MugenUI.withLoading(load));
-      selTahun.addEventListener("change", () => MugenUI.withLoading(load));
+      // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+      // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
+      selBulan.addEventListener("change", load);
+      selTahun.addEventListener("change", load);
       load();
     }
 
-    renderTabs();
     renderBody();
   }
 

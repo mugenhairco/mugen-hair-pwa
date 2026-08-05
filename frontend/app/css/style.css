@@ -32,6 +32,19 @@
   --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
   --shadow-elevated: 0 8px 24px rgba(15,23,42,0.10);
   --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
+  /* REVISI UI/UX Premium: skala durasi + easing terpusat -- SATU sumber
+     kebenaran untuk SELURUH animasi baru di file ini (skeleton, overlay,
+     toast, tabs, sidebar collapse, dst). --ease-press di atas TIDAK diganti
+     nama (dipakai puluhan aturan lama), --ease-standard di bawah nilainya
+     SENGAJA sama persis supaya kode baru & lama terasa konsisten walau
+     pakai token berbeda. Rentang 120-320ms sesuai spesifikasi UX (durasi
+     transisi 180-300ms untuk perpindahan, mikro-interaksi boleh lebih
+     cepat/lambat sedikit di kedua ujungnya). */
+  --dur-fast: 120ms;   /* mikro: hover, press, focus ring */
+  --dur-base: 200ms;   /* default: sebagian besar transisi */
+  --dur-slow: 320ms;   /* entrance: modal, konten halaman, sidebar collapse */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1); /* entrance/exit, sedikit lebih tegas */
 }
 
 /* REVISI UI/UX: Dark Mode per akun (lihat frontend/js/theme.js) -- attribute
@@ -1159,4 +1172,199 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-wizard-enter { animation: book-wizard-enter 320ms var(--ease-press) both; }
 @media (prefers-reduced-motion: reduce) {
   .book-wizard-enter { animation: none !important; }
+}
+
+/* =======================================================================
+   REVISI UI/UX Premium: Sistem Motion Terpusat
+   =======================================================================
+   Fondasi baru dipakai MugenUI (ui.js): skeleton loading, refreshInto()
+   (crossfade tanpa "flash" saat rebuild tabel/kartu), tombol loading
+   inline (withButtonLoading), overlay/modal dengan animasi keluar
+   sungguhan (sebelumnya instant .remove()), tabs dengan indikator
+   bergeser, kartu dengan hover terangkat, dan sidebar collapse desktop.
+   SEMUA baru di sini menghormati prefers-reduced-motion sama seperti
+   animasi lama di atas. */
+
+/* ---- Skeleton loading (baru total -- sebelumnya cuma teks "Memuat...") ---- */
+@keyframes mugen-skeleton-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skeleton-line, .skeleton-row td > .skeleton-block, .skeleton-card-block {
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg) 37%, var(--border) 63%);
+  background-size: 400px 100%;
+  animation: mugen-skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+.skeleton-line { height: 14px; margin: 6px 0; }
+.skeleton-card-block { height: 20px; width: 60%; margin-bottom: 10px; }
+.skeleton-card-block:last-child { width: 40%; margin-bottom: 0; }
+.skeleton-row td > .skeleton-block { height: 13px; width: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line, .skeleton-row td > .skeleton-block, .skeleton-card-block {
+    animation: none !important;
+    background: var(--border);
+  }
+}
+
+/* ---- refreshInto(): crossfade isi container tanpa jeda kosong ---- */
+.mugen-refresh-fade-out { animation: mugen-refresh-fade-out var(--dur-fast) var(--ease-standard) both; }
+.mugen-refresh-fade-in { animation: mugen-refresh-fade-in var(--dur-base) var(--ease-emphasized) both; }
+@keyframes mugen-refresh-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes mugen-refresh-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .mugen-refresh-fade-out, .mugen-refresh-fade-in { animation: none !important; }
+}
+
+/* ---- withButtonLoading(): spinner kecil di dalam tombol, TANPA overlay
+   layar penuh -- reuse mugen-spin (sudah ada di atas untuk loading-overlay). ---- */
+.btn-inline-spinner {
+  display: inline-block; width: 15px; height: 15px; margin-right: 8px;
+  border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+  border-radius: 50%; vertical-align: -3px;
+  animation: mugen-spin 0.7s linear infinite;
+}
+button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger) .btn-inline-spinner {
+  border-color: rgba(51,65,85,0.25); border-top-color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-inline-spinner { animation-duration: 1.1s; }
+}
+
+/* ---- Overlay/modal: animasi KELUAR sungguhan (sebelumnya .remove()
+   instan di confirmModal/pdf_preview.js) -- class .closing ditambahkan
+   sesaat sebelum elemen dilepas, JS menunggu animationend. ---- */
+@keyframes mugen-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes mugen-overlay-box-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+.modal-overlay.closing, .pdf-preview-overlay.closing, .mugen-overlay.closing {
+  animation: mugen-overlay-out var(--dur-fast) var(--ease-standard) both;
+}
+.modal-overlay.closing .modal-box, .mugen-overlay.closing .mugen-overlay-box {
+  animation: mugen-overlay-box-out var(--dur-fast) var(--ease-standard) both;
+}
+.pdf-preview-overlay { animation: mugen-fade-slide-in var(--dur-slow) var(--ease-emphasized) both; }
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay.closing, .pdf-preview-overlay.closing, .mugen-overlay.closing,
+  .modal-overlay.closing .modal-box, .mugen-overlay.closing .mugen-overlay-box,
+  .pdf-preview-overlay { animation: none !important; }
+}
+
+/* ---- Toast: animasi KELUAR sungguhan (sebelumnya setTimeout+remove()
+   instan) -- .toast-out ditambahkan sebelum dilepas. ---- */
+@keyframes mugen-toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+.toast.toast-out { animation: mugen-toast-out var(--dur-fast) var(--ease-standard) both; }
+@media (prefers-reduced-motion: reduce) {
+  .toast.toast-out { animation: none !important; }
+}
+
+/* ---- Tabs: indikator aktif bergeser (sebelumnya border-bottom-color
+   berubah instan) -- SATU pola dipakai MugenUI.tabs() (ui.js), migrasi
+   dari 3 implementasi tabs manual (booking.js/rekap.js/pengaturan.js). ---- */
+.mugen-tabs { position: relative; display: flex; gap: 4px; margin-bottom: 18px;
+  border-bottom: 1px solid var(--border); overflow-x: auto; }
+.mugen-tabs button {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; box-shadow: none; min-height: auto;
+  padding: 10px 14px; color: var(--text-dim); white-space: nowrap;
+}
+.mugen-tabs button:active:not(:disabled) { transform: none; }
+.mugen-tabs button.active { color: var(--accent); font-weight: 600; }
+.mugen-tabs-indicator {
+  position: absolute; bottom: -1px; height: 2px; background: var(--accent);
+  transition: transform var(--dur-base) var(--ease-standard), width var(--dur-base) var(--ease-standard);
+}
+.mugen-tabs-body { animation: mugen-refresh-fade-in var(--dur-base) var(--ease-emphasized) both; }
+@media (prefers-reduced-motion: reduce) {
+  .mugen-tabs-indicator { transition: none !important; }
+  .mugen-tabs-body { animation: none !important; }
+}
+
+/* ---- Card: hover terangkat (sebelumnya statis begitu tampil) ---- */
+.card {
+  transition: transform var(--dur-base) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-elevated); }
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none !important; }
+  .card:hover { transform: none; }
+}
+
+/* ---- Empty/Error state: satu pola fade-in (MugenUI.emptyState()/
+   errorState(), ui.js) menggantikan string ad hoc per halaman. ---- */
+.mugen-state { padding: 20px 4px; color: var(--text-dim); animation: mugen-refresh-fade-in var(--dur-base) var(--ease-emphasized) both; }
+.mugen-state.mugen-state-error { color: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .mugen-state { animation: none !important; }
+}
+
+/* ---- Sidebar collapse (desktop) -- BARU TOTAL, sebelumnya cuma hamburger
+   mobile (buka/tutup, TIDAK disentuh). Persist via localStorage (nav.js).
+   Tidak ada ikon per menu di codebase ini -- label disingkat jadi 2 huruf
+   inisial dalam lingkaran kecil saat collapsed, BUKAN ikon custom baru,
+   supaya tidak menambah aset gambar/SVG di luar cakupan animasi. ---- */
+.sidebar { transition: width var(--dur-slow) var(--ease-standard); }
+.sidebar.collapsed { width: 72px; }
+.sidebar-collapse-btn {
+  background: none; border: none; box-shadow: none; min-height: auto;
+  color: var(--text-dim); padding: 6px 10px; margin: 0 10px 8px auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; align-self: flex-end;
+  transition: background-color var(--dur-fast) var(--ease-standard), transform var(--dur-base) var(--ease-standard);
+}
+.sidebar-collapse-btn:hover { background: var(--bg); }
+.sidebar.collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
+.sidebar.collapsed .brand-name,
+.sidebar.collapsed nav a span:not(.nav-badge):not(.nav-initial),
+.sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-initial),
+.sidebar.collapsed .nav-group-chevron,
+.sidebar.collapsed .nav-submenu,
+.sidebar.collapsed .user-box > div:not(.theme-switch-row),
+.sidebar.collapsed .btn-logout span {
+  display: none;
+}
+.sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle {
+  justify-content: center; margin: 2px 10px; position: relative;
+}
+.sidebar.collapsed .nav-initial {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--bg);
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.sidebar:not(.collapsed) .nav-initial { display: none; }
+.sidebar.collapsed .btn-logout { font-size: 0; }
+.sidebar.collapsed .btn-logout::after { content: "⏻"; font-size: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar-collapse-btn { transition: none !important; }
+}
+/* Collapse desktop-only -- di layar sempit (mobile hamburger, lihat aturan
+   .hamburger di atas) tombol collapse disembunyikan supaya tidak bentrok
+   dengan mekanisme buka/tutup sidebar mobile yang sudah ada. */
+@media (max-width: 860px) {
+  .sidebar-collapse-btn { display: none; }
+  .sidebar.collapsed { width: 220px; }
+  .sidebar.collapsed .brand-name,
+  .sidebar.collapsed nav a span:not(.nav-badge):not(.nav-initial),
+  .sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-initial),
+  .sidebar.collapsed .nav-group-chevron,
+  .sidebar.collapsed .user-box > div:not(.theme-switch-row),
+  .sidebar.collapsed .btn-logout span { display: revert; }
+  .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: space-between; }
+  .sidebar.collapsed .nav-initial { display: none; }
+  .sidebar.collapsed .btn-logout { font-size: 14px; }
+  .sidebar.collapsed .btn-logout::after { content: none; }
+}
+
+/* ---- Konten halaman: fade-out singkat SEBELUM diganti (sebelumnya hard
+   cut instan, lihat router.js) -- durasi sengaja lebih pendek dari
+   mugen-content-fade-in supaya transisi terasa satu alur, bukan dua
+   animasi terpisah yang bersaing. ---- */
+.content.mugen-leaving { animation: mugen-refresh-fade-out var(--dur-fast) var(--ease-standard) both; }
+@media (prefers-reduced-motion: reduce) {
+  .content.mugen-leaving { animation: none !important; }
 }

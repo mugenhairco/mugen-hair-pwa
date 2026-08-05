@@ -49,81 +49,84 @@ const PageSlipGaji = (() => {
     return btn;
   }
 
+  // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
+  // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
   async function loadListInto(listBody, params, isAdmin, onBerubah) {
-    listBody.innerHTML = "Memuat...";
-    try {
-      const qs = new URLSearchParams(params);
-      const data = await MugenApi.get(`/api/slip-gaji?${qs.toString()}`);
-      listBody.innerHTML = "";
-      const rows = Array.isArray(data) ? data : [];
+    await MugenUI.refreshInto(listBody, async () => {
+      try {
+        const qs = new URLSearchParams(params);
+        const data = await MugenApi.get(`/api/slip-gaji?${qs.toString()}`);
+        const rows = Array.isArray(data) ? data : [];
 
-      const kolom = [
-        { key: "periode", label: "Periode", format: (_, r) => periodeText(r) },
-      ];
-      if (isAdmin) kolom.push({ key: "nama_barber", label: "Karyawan" });
-      kolom.push(
-        { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },
-        { key: "total_diterima", label: "Total Diterima", format: MugenUI.formatRupiah },
-        {
-          key: "status", label: "Status",
-          format: (v) => MugenUI.el("span", { class: "badge" + (v === "sudah_dibayar" ? "" : " badge-libur") },
-            v === "sudah_dibayar" ? "Sudah Dibayar" : "Belum Dibayar"),
-        },
-        {
-          key: "aksi", label: "Aksi", format: (_, r) => {
-            const wrap = MugenUI.el("div", { class: "actions-cell" });
-            // Feature Gating "export_pdf": tombol PDF daftar di atas tabel
-            // sudah menampilkan blok upgrade kalau fitur tidak tersedia --
-            // di sini (satu tombol per baris) cukup disembunyikan saja,
-            // supaya tidak berulang kali menampilkan kartu upgrade yang
-            // sama persis untuk tiap baris.
-            if (typeof MugenFeature === "undefined" || MugenFeature.has("export_pdf")) {
-              const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
-              btnPdf.addEventListener("click", () => unduhPdf(r.id, r.nama_barber, r.tahun, r.bulan));
-              wrap.appendChild(btnPdf);
-            }
+        const kolom = [
+          { key: "periode", label: "Periode", format: (_, r) => periodeText(r) },
+        ];
+        if (isAdmin) kolom.push({ key: "nama_barber", label: "Karyawan" });
+        kolom.push(
+          { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },
+          { key: "total_diterima", label: "Total Diterima", format: MugenUI.formatRupiah },
+          {
+            key: "status", label: "Status",
+            format: (v) => MugenUI.el("span", { class: "badge" + (v === "sudah_dibayar" ? "" : " badge-libur") },
+              v === "sudah_dibayar" ? "Sudah Dibayar" : "Belum Dibayar"),
+          },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              // Feature Gating "export_pdf": tombol PDF daftar di atas tabel
+              // sudah menampilkan blok upgrade kalau fitur tidak tersedia --
+              // di sini (satu tombol per baris) cukup disembunyikan saja,
+              // supaya tidak berulang kali menampilkan kartu upgrade yang
+              // sama persis untuk tiap baris.
+              if (typeof MugenFeature === "undefined" || MugenFeature.has("export_pdf")) {
+                const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
+                btnPdf.addEventListener("click", () => unduhPdf(r.id, r.nama_barber, r.tahun, r.bulan));
+                wrap.appendChild(btnPdf);
+              }
 
-            if (isAdmin) {
-              const btnStatus = MugenUI.el("button", {},
-                r.status === "sudah_dibayar" ? "Batalkan Status" : "Tandai Sudah Dibayar");
-              btnStatus.addEventListener("click", async () => {
-                const statusBaru = r.status === "sudah_dibayar" ? "belum_dibayar" : "sudah_dibayar";
-                try {
-                  await MugenUI.withLoading(() => MugenApi.put(`/api/slip-gaji/${r.id}/status`, { status: statusBaru }),
-                    { message: "Menyimpan…" });
-                  MugenUI.toast("Status Slip Gaji diperbarui.", "success");
-                  onBerubah();
-                } catch (e) {
-                  MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                }
-              });
-              wrap.appendChild(btnStatus);
-
-              if (r.status !== "sudah_dibayar") {
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`)) return;
+              if (isAdmin) {
+                const btnStatus = MugenUI.el("button", {},
+                  r.status === "sudah_dibayar" ? "Batalkan Status" : "Tandai Sudah Dibayar");
+                btnStatus.addEventListener("click", async () => {
+                  const statusBaru = r.status === "sudah_dibayar" ? "belum_dibayar" : "sudah_dibayar";
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/slip-gaji/${r.id}`), { message: "Menghapus…" });
-                    MugenUI.toast("Slip Gaji dihapus.", "success");
+                    // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
+                    // tombol) menggantikan withLoading() (overlay layar penuh) untuk
+                    // aksi CRUD rutin -- lihat catatan di ui.js.
+                    await MugenUI.withButtonLoading(btnStatus, () => MugenApi.put(`/api/slip-gaji/${r.id}/status`, { status: statusBaru }));
+                    MugenUI.toast("Status Slip Gaji diperbarui.", "success");
                     onBerubah();
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }
                 });
-                wrap.appendChild(btnHapus);
-              }
-            }
-            return wrap;
-          },
-        },
-      );
+                wrap.appendChild(btnStatus);
 
-      listBody.appendChild(MugenUI.buildTable(kolom, rows, { emptyText: "Belum ada Slip Gaji." }));
-    } catch (e) {
-      listBody.innerHTML = "";
-      listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
-    }
+                if (r.status !== "sudah_dibayar") {
+                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                  btnHapus.addEventListener("click", async () => {
+                    if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`)) return;
+                    try {
+                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/slip-gaji/${r.id}`));
+                      MugenUI.toast("Slip Gaji dihapus.", "success");
+                      onBerubah();
+                    } catch (e) {
+                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnHapus);
+                }
+              }
+              return wrap;
+            },
+          },
+        );
+
+        return MugenUI.buildTable(kolom, rows, { emptyText: "Belum ada Slip Gaji." });
+      } catch (e) {
+        return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+      }
+    }, { skeleton: { kind: "table", cols: isAdmin ? 6 : 5, rows: 4 } });
   }
 
   // ================= BARBER: riwayat milik sendiri, read-only =================
@@ -365,7 +368,10 @@ const PageSlipGaji = (() => {
           body.tanggal_selesai = inputTanggalSelesai.value;
           body.jumlah_hari_masuk = Number(inputJumlahHariMasuk.value) || 0;
         }
-        await MugenUI.withLoading(() => MugenApi.post("/api/slip-gaji", body), { message: "Menghitung Slip Gaji…" });
+        // REVISI UI/UX Premium: withButtonLoading() (spinner inline di tombol)
+        // menggantikan withLoading() (overlay layar penuh) untuk aksi CRUD
+        // rutin -- lihat catatan di ui.js.
+        await MugenUI.withButtonLoading(btnGenerate, () => MugenApi.post("/api/slip-gaji", body));
         // Sinkronkan cache lokal supaya kalau karyawan yang sama dipilih lagi
         // tanpa reload halaman, Gaji Pokok yang tampil sudah yang terbaru.
         const b = barbers.find((x) => String(x.id) === selBarber.value);

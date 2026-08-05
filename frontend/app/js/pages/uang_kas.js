@@ -33,9 +33,10 @@ const PageUangKas = (() => {
 
     // ================= SALDO KAS AWAL + SALDO SAAT INI =================
     saldoCard.appendChild(MugenUI.el("h2", {}, "Saldo Kas"));
-    const saldoSaatIniText = MugenUI.el("div", { style: "font-size:1.4em;font-weight:600;" }, "Memuat...");
+    const saldoSaatIniText = MugenUI.el("div", { style: "font-size:1.4em;font-weight:600;" });
     saldoCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Saldo Kas Saat Ini"));
     saldoCard.appendChild(saldoSaatIniText);
+    saldoSaatIniText.appendChild(MugenUI.skeleton("line", { width: "140px" }));
 
     const inputSaldoAwal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
     const btnSimpanSaldoAwal = MugenUI.el("button", {}, "Simpan Saldo Kas Awal");
@@ -67,7 +68,8 @@ const PageUangKas = (() => {
       if (Number.isNaN(saldo) || saldo < 0) { saldoAwalError.textContent = "Saldo Kas Awal tidak valid."; return; }
       btnSimpanSaldoAwal.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.put("/api/uang-kas/saldo-awal", { saldo }), { message: "Menyimpan…" });
+        // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
+        await MugenUI.withButtonLoading(btnSimpanSaldoAwal, () => MugenApi.put("/api/uang-kas/saldo-awal", { saldo }));
         MugenUI.toast("Saldo Kas Awal disimpan.", "success");
         muatSaldo();
       } catch (e) {
@@ -124,11 +126,12 @@ const PageUangKas = (() => {
           tanggal: inputTanggal.value, jenis: selJenis.value,
           jumlah: Number(inputJumlah.value) || 0, keterangan: inputKeterangan.value.trim(),
         };
+        // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
         if (editingId) {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/uang-kas/${editingId}`, body), { message: "Menyimpan…" });
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.put(`/api/uang-kas/${editingId}`, body));
           MugenUI.toast("Penyesuaian kas diperbarui.", "success");
         } else {
-          await MugenUI.withLoading(() => MugenApi.post("/api/uang-kas", body), { message: "Menyimpan…" });
+          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/uang-kas", body));
           MugenUI.toast("Penyesuaian kas disimpan.", "success");
         }
         resetForm();
@@ -175,63 +178,66 @@ const PageUangKas = (() => {
     listCard.appendChild(listBody);
 
     async function loadList() {
-      listBody.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton tabel + crossfade lewat refreshInto(),
+      // menggantikan teks "Memuat..." dan penggantian innerHTML manual.
       try {
-        const qs = new URLSearchParams();
-        if (selBulan.value) qs.set("bulan", selBulan.value);
-        if (selTahun.value) qs.set("tahun", selTahun.value);
-        const data = await MugenApi.get(`/api/uang-kas?${qs}`);
-        const rows = Array.isArray(data) ? data : [];
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            {
-              key: "jenis", label: "Jenis",
-              format: (v) => MugenUI.el("span", { class: "badge" + (v === "tambah" ? "" : " badge-libur") }, v === "tambah" ? "Tambah" : "Kurang"),
-            },
-            { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-            { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnEdit = MugenUI.el("button", {}, "Edit");
-                btnEdit.addEventListener("click", () => {
-                  editingId = r.id;
-                  formTitle.textContent = `Edit Penyesuaian #${r.id}`;
-                  btnSubmit.textContent = "Simpan Perubahan";
-                  btnBatal.style.display = "";
-                  inputTanggal.value = r.tanggal;
-                  selJenis.value = r.jenis;
-                  inputJumlah.value = String(r.jumlah);
-                  inputKeterangan.value = r.keterangan || "";
-                  formError.textContent = "";
-                  formCard.scrollIntoView({ behavior: "smooth" });
-                });
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus penyesuaian kas tanggal ${r.tanggal}?`)) return;
-                  try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/uang-kas/${r.id}`), { message: "Menghapus…" });
-                    MugenUI.toast("Penyesuaian kas dihapus.", "success");
-                    muatSaldo();
-                    loadList();
-                  } catch (e) {
-                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnEdit);
-                wrap.appendChild(btnHapus);
-                return wrap;
+        await MugenUI.refreshInto(listBody, async () => {
+          const qs = new URLSearchParams();
+          if (selBulan.value) qs.set("bulan", selBulan.value);
+          if (selTahun.value) qs.set("tahun", selTahun.value);
+          const data = await MugenApi.get(`/api/uang-kas?${qs}`);
+          const rows = Array.isArray(data) ? data : [];
+          return MugenUI.buildTable(
+            [
+              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+              {
+                key: "jenis", label: "Jenis",
+                format: (v) => MugenUI.el("span", { class: "badge" + (v === "tambah" ? "" : " badge-libur") }, v === "tambah" ? "Tambah" : "Kurang"),
               },
-            },
-          ],
-          rows,
-          { emptyText: "Belum ada penyesuaian kas." },
-        ));
+              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+              { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
+              {
+                key: "aksi", label: "Aksi", format: (_, r) => {
+                  const wrap = MugenUI.el("div", { class: "actions-cell" });
+                  const btnEdit = MugenUI.el("button", {}, "Edit");
+                  btnEdit.addEventListener("click", () => {
+                    editingId = r.id;
+                    formTitle.textContent = `Edit Penyesuaian #${r.id}`;
+                    btnSubmit.textContent = "Simpan Perubahan";
+                    btnBatal.style.display = "";
+                    inputTanggal.value = r.tanggal;
+                    selJenis.value = r.jenis;
+                    inputJumlah.value = String(r.jumlah);
+                    inputKeterangan.value = r.keterangan || "";
+                    formError.textContent = "";
+                    formCard.scrollIntoView({ behavior: "smooth" });
+                  });
+                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                  btnHapus.addEventListener("click", async () => {
+                    if (!confirm(`Hapus penyesuaian kas tanggal ${r.tanggal}?`)) return;
+                    try {
+                      // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
+                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/uang-kas/${r.id}`));
+                      MugenUI.toast("Penyesuaian kas dihapus.", "success");
+                      muatSaldo();
+                      loadList();
+                    } catch (e) {
+                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnEdit);
+                  wrap.appendChild(btnHapus);
+                  return wrap;
+                },
+              },
+            ],
+            rows,
+            { emptyText: "Belum ada penyesuaian kas." },
+          );
+        }, { skeleton: { kind: "table", cols: 5, rows: 4 } });
       } catch (e) {
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        listBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
       }
     }
 

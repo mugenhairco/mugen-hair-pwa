@@ -6,6 +6,29 @@
 // brand.js (MugenBrand) dari /api/pengaturan/identitas.
 
 const MugenNav = (() => {
+  // REVISI UI/UX Premium: Sidebar Collapse (desktop) -- BARU TOTAL,
+  // sebelumnya sidebar hanya punya mode buka/tutup mobile (hamburger,
+  // TIDAK disentuh di sini). Preferensi murni per-perangkat (localStorage,
+  // BUKAN disinkronkan ke server seperti Dark Mode di theme.js -- collapse
+  // sidebar cuma masuk akal untuk layar lebar tempat sidebar ada, tidak
+  // ada alasan menyamakannya lintas perangkat).
+  const COLLAPSE_KEY = "mugen_sidebar_collapsed";
+
+  function _collapsedTersimpan() {
+    return localStorage.getItem(COLLAPSE_KEY) === "1";
+  }
+
+  // Inisial 2 huruf dari label menu -- dipakai lingkaran kecil saat
+  // sidebar collapsed (BUKAN ikon custom baru, codebase ini tidak punya
+  // aset ikon per menu sama sekali; menambah SVG/gambar untuk tiap item
+  // di luar cakupan revisi motion/animasi murni).
+  function _inisialLabel(label) {
+    const kata = String(label || "").trim().split(/\s+/).filter(Boolean);
+    if (kata.length >= 2) return (kata[0][0] + kata[1][0]).toUpperCase();
+    return (kata[0] || "?").slice(0, 2).toUpperCase();
+  }
+
+
   // REVISI Hak Akses Admin (kedua): 'staff' (label UI "Admin") sekarang
   // punya akses PENUH sama persis seperti Owner ke Input Data/Booking/
   // Pengeluaran/Produk/Rekap -- kelima menu ini TIDAK memakai sistem izin
@@ -68,12 +91,20 @@ const MugenNav = (() => {
   // dibuat ulang di sini (bukan disimpan sekali) karena seluruh sidebar
   // di-render ULANG tiap pindah menu.
   function _elLink(hash, label, activeHash, user, badge) {
-    const linkChildren = [MugenUI.el("span", {}, label)];
+    // .nav-initial (span lingkaran 2 huruf) HANYA terlihat saat
+    // .sidebar.collapsed (lihat style.css) -- selalu dibuat supaya tidak
+    // perlu render ulang saat collapse/expand, murni ditampilkan/
+    // disembunyikan lewat CSS.
+    const linkChildren = [
+      MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(label)),
+      MugenUI.el("span", {}, label),
+    ];
     if (badge && badge.roles.includes(user.role)) {
       linkChildren.push(MugenUI.el("span", { class: "nav-badge", id: badge.id, style: "display:none;" }));
     }
     return MugenUI.el("a", {
       href: hash,
+      title: label,
       class: activeHash.startsWith(hash) ? "active" : "",
     }, linkChildren);
   }
@@ -97,7 +128,12 @@ const MugenNav = (() => {
 
     const grupAktif = childrenLolos.some((c) => activeHash.startsWith(c.hash));
     const wrap = MugenUI.el("div", { class: "nav-group" + (grupAktif ? " open" : "") });
-    const toggle = MugenUI.el("button", { type: "button", class: "nav-group-toggle" }, [
+    // Sidebar collapsed: submenu grup ini ikut tersembunyi (lihat CSS
+    // .sidebar.collapsed .nav-submenu) -- toggle di sini murni jadi
+    // penanda visual (inisial) saat collapsed, Owner perlu expand sidebar
+    // dulu untuk membuka grup Karyawan/Keuangan.
+    const toggle = MugenUI.el("button", { type: "button", class: "nav-group-toggle", title: item.label }, [
+      MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(item.label)),
       MugenUI.el("span", {}, item.label),
       MugenUI.el("span", { class: "nav-group-chevron" }, "›"),
     ]);
@@ -114,7 +150,9 @@ const MugenNav = (() => {
 
   function render(activeHash) {
     const user = MugenState.getUser();
-    const sidebar = MugenUI.el("aside", { class: "sidebar" });
+    const sidebar = MugenUI.el("aside", {
+      class: "sidebar" + (_collapsedTersimpan() ? " collapsed" : ""),
+    });
 
     const brandBox = MugenUI.el("div", { class: "brand" }, [
       MugenUI.el("img", { class: "brand-logo", style: "display:none;", alt: "Logo" }),
@@ -122,6 +160,22 @@ const MugenNav = (() => {
     ]);
     sidebar.appendChild(brandBox);
     MugenBrand.applyToDom();
+
+    // REVISI UI/UX Premium: tombol collapse/expand sidebar (desktop) --
+    // disembunyikan lewat CSS di layar sempit (lihat @media 860px di
+    // style.css, mekanisme mobile TETAP hamburger seperti sebelumnya).
+    // Superadmin TIDAK ikut (menunya cuma satu link, collapse tidak
+    // berguna) -- dicek di bawah sebelum ditambahkan.
+    if (user.role !== "superadmin") {
+      const btnCollapse = MugenUI.el("button", {
+        type: "button", class: "sidebar-collapse-btn", title: "Collapse/Expand Menu",
+      }, "‹");
+      btnCollapse.addEventListener("click", () => {
+        const collapsed = sidebar.classList.toggle("collapsed");
+        localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
+      });
+      sidebar.appendChild(btnCollapse);
+    }
 
     const nav = MugenUI.el("nav");
     // FONDASI Multi-Tenant Phase 2.1: 'superadmin' TIDAK ikut menu MENU
@@ -161,7 +215,7 @@ const MugenNav = (() => {
       ]));
     }
 
-    const btnLogout = MugenUI.el("button", { class: "btn-logout" }, "Keluar");
+    const btnLogout = MugenUI.el("button", { class: "btn-logout", title: "Keluar" }, MugenUI.el("span", {}, "Keluar"));
     btnLogout.addEventListener("click", async () => {
       if (!confirm("Yakin ingin keluar?")) return;
       // REVISI: setelah konfirmasi, tampilkan loading animation + teks

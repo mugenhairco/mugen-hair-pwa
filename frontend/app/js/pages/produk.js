@@ -108,17 +108,17 @@ const PageProduk = (() => {
         produkFormError.textContent = "Harga Modal/Harga Jual tidak valid.";
         return;
       }
-      btnSimpanProduk.disabled = true;
       try {
-        await MugenUI.withLoading(async () => {
-          if (editingProdukId) {
-            await MugenApi.put(`/api/produk/${editingProdukId}`, { nama, harga_modal: hargaModal, harga_jual: hargaJual });
-            MugenUI.toast("Produk diubah.", "success");
-          } else {
-            await MugenApi.post("/api/produk", { nama, harga_modal: hargaModal, harga_jual: hargaJual });
-            MugenUI.toast("Produk ditambahkan.", "success");
-          }
-        }, { message: "Menyimpan produk…" });
+        // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
+        // tombol) menggantikan withLoading() (overlay layar penuh) untuk
+        // aksi CRUD rutin -- lihat catatan di ui.js.
+        if (editingProdukId) {
+          await MugenUI.withButtonLoading(btnSimpanProduk, () => MugenApi.put(`/api/produk/${editingProdukId}`, { nama, harga_modal: hargaModal, harga_jual: hargaJual }));
+          MugenUI.toast("Produk diubah.", "success");
+        } else {
+          await MugenUI.withButtonLoading(btnSimpanProduk, () => MugenApi.post("/api/produk", { nama, harga_modal: hargaModal, harga_jual: hargaJual }));
+          MugenUI.toast("Produk ditambahkan.", "success");
+        }
         resetProdukForm();
         await loadProdukList();
         // AUDIT SINKRONISASI: sebelumnya dropdown filter "Riwayat Mutasi"
@@ -131,8 +131,6 @@ const PageProduk = (() => {
         isiOpsiProdukFilter();
       } catch (e) {
         produkFormError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-      } finally {
-        btnSimpanProduk.disabled = false;
       }
     });
 
@@ -144,7 +142,9 @@ const PageProduk = (() => {
     produkListCard.appendChild(produkListBody);
 
     async function loadProdukList() {
-      produkListBody.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+      produkListBody.innerHTML = "";
+      produkListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
       try {
         const data = await MugenApi.get("/api/produk?hanya_aktif=true", { useCache: true });
         produkList = Array.isArray(data) ? data : [];
@@ -171,7 +171,8 @@ const PageProduk = (() => {
                 btnNonaktif.addEventListener("click", async () => {
                   if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/${p.id}`), { message: "Menghapus…" });
+                    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+                    await MugenUI.withButtonLoading(btnNonaktif, () => MugenApi.del(`/api/produk/${p.id}`));
                     MugenUI.toast("Produk dinonaktifkan.", "success");
                     loadProdukList();
                   } catch (e) {
@@ -192,7 +193,7 @@ const PageProduk = (() => {
         ));
       } catch (e) {
         produkListBody.innerHTML = "";
-        produkListBody.appendChild(MugenUI.el("div", {}, e.message));
+        produkListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
@@ -253,9 +254,10 @@ const PageProduk = (() => {
         jumlah,
         catatan: inputMutasiCatatan.value || null,
       };
-      btnSimpanMutasi.disabled = true;
       try {
-        await MugenUI.withLoading(() => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body), { message: `Memproses ${MUTASI_TIPE_LABEL[mutasiTipeAktif]}…` });
+        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+        await MugenUI.withButtonLoading(btnSimpanMutasi,
+          () => MugenApi.post(`/api/produk/${mutasiProdukAktif.id}/${mutasiTipeAktif}`, body));
         MugenUI.toast(`${MUTASI_TIPE_LABEL[mutasiTipeAktif]} disimpan.`, "success");
         mutasiFormCard.style.display = "none";
         mutasiProdukAktif = null;
@@ -263,8 +265,6 @@ const PageProduk = (() => {
         loadRiwayat();
       } catch (e) {
         mutasiFormError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-      } finally {
-        btnSimpanMutasi.disabled = false;
       }
     });
 
@@ -317,7 +317,7 @@ const PageProduk = (() => {
       for (const p of produkList) selProdukFilter.appendChild(MugenUI.el("option", { value: String(p.id) }, p.nama));
     }
 
-    function isiFormKoreksiMutasi(m) {
+    function isiFormKoreksiMutasi(btn, m) {
       // Koreksi tanggal/jumlah/catatan lewat prompt sederhana supaya tidak
       // perlu form/modal terpisah untuk aksi yang jarang dipakai ini.
       const tanggalBaru = prompt("Tanggal (YYYY-MM-DD):", m.tanggal);
@@ -328,11 +328,12 @@ const PageProduk = (() => {
       if (catatanBaru === null) return;
       (async () => {
         try {
-          await MugenUI.withLoading(() => MugenApi.put(`/api/produk/mutasi/${m.id}`, {
+          // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+          await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/produk/mutasi/${m.id}`, {
             tanggal: tanggalBaru,
             jumlah: Number(jumlahBaru),
             catatan: catatanBaru || null,
-          }), { message: "Memproses transaksi…" });
+          }));
           MugenUI.toast("Mutasi dikoreksi.", "success");
           loadProdukList();
           loadRiwayat();
@@ -343,7 +344,9 @@ const PageProduk = (() => {
     }
 
     async function loadRiwayat() {
-      riwayatBody.innerHTML = "Memuat...";
+      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+      riwayatBody.innerHTML = "";
+      riwayatBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
       try {
         const qs = new URLSearchParams({ tahun: selTahunFilter.value, bulan: selBulanFilter.value });
         if (selProdukFilter.value) qs.set("produk_id", selProdukFilter.value);
@@ -369,12 +372,13 @@ const PageProduk = (() => {
               key: "aksi", label: "Aksi", format: (_, m) => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnKoreksi = MugenUI.el("button", {}, "Koreksi");
-                btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(m));
+                btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(btnKoreksi, m));
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`)) return;
                   try {
-                    await MugenUI.withLoading(() => MugenApi.del(`/api/produk/mutasi/${m.id}`), { message: "Menghapus…" });
+                    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/produk/mutasi/${m.id}`));
                     MugenUI.toast("Data mutasi dihapus.", "success");
                     loadProdukList();
                     loadRiwayat();
@@ -393,14 +397,16 @@ const PageProduk = (() => {
         ));
       } catch (e) {
         riwayatBody.innerHTML = "";
-        riwayatBody.appendChild(MugenUI.el("div", {}, e.message));
+        riwayatBody.appendChild(MugenUI.errorState(e.message));
       }
     }
 
-    selProdukFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
-    selTipeFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
-    selBulanFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
-    selTahunFilter.addEventListener("change", () => MugenUI.withLoading(loadRiwayat));
+    // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
+    // -- skeleton di riwayatBody sendiri (di atas) sudah cukup.
+    selProdukFilter.addEventListener("change", loadRiwayat);
+    selTipeFilter.addEventListener("change", loadRiwayat);
+    selBulanFilter.addEventListener("change", loadRiwayat);
+    selTahunFilter.addEventListener("change", loadRiwayat);
 
     resetProdukForm();
     await loadProdukList();

@@ -26,6 +26,7 @@ const MugenBookingNotif = (() => {
 
   let lastCount = null; // null = belum pernah polling sukses (baseline belum diketahui)
   let reminderTimer = null;
+  let pollTimer = null;
   let audioCtx = null;
 
   // ---- Suara: satu AudioContext dipakai ulang (bukan bikin baru tiap
@@ -158,9 +159,37 @@ const MugenBookingNotif = (() => {
     _poll();
   }
 
+  function _mulaiPollInterval() {
+    if (pollTimer) return; // sudah jalan
+    pollTimer = setInterval(_poll, POLL_MS);
+  }
+
+  function _hentikanPollInterval() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  // REVISI Efisiensi Polling: interval network HANYA jalan selagi tab ini
+  // terlihat (Page Visibility API) -- di-pause total begitu tab
+  // disembunyikan/pindah tab lain (TIDAK ADA request ke backend selama
+  // itu), lalu di-refresh SEKALI + interval dilanjutkan lagi begitu tab
+  // terlihat kembali. Reminder chime (playChime(), lihat _mulaiReminder())
+  // SENGAJA TIDAK ikut di-pause -- itu murni bunyi lokal (tanpa request
+  // network sama sekali), Admin tetap perlu dengar pengingat booking
+  // pending walau tab sedang di background/diminimize.
   function init() {
     _poll();
-    setInterval(_poll, POLL_MS);
+    _mulaiPollInterval();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        _hentikanPollInterval();
+      } else {
+        _poll(); // data mungkin sudah basi selama tab disembunyikan
+        _mulaiPollInterval();
+      }
+    });
   }
 
   return { init, refreshNow };

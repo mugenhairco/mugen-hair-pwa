@@ -80,9 +80,18 @@ const MugenPdfPreview = (() => {
     document.body.appendChild(overlay);
 
     function tutup() {
-      overlay.remove();
-      loadingTask.destroy();
-      window.removeEventListener("resize", onResize);
+      // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya
+      // .remove() instan, overlay ini SEBELUMNYA tidak beranimasi sama
+      // sekali baik buka maupun tutup) -- buka sudah otomatis lewat
+      // animation di .pdf-preview-overlay (style.css), tutup di sini
+      // menunggu mugen-overlay-out selesai (var(--dur-fast)) sebelum
+      // benar-benar dilepas dari DOM.
+      overlay.classList.add("closing");
+      setTimeout(() => {
+        overlay.remove();
+        loadingTask.destroy();
+        window.removeEventListener("resize", onResize);
+      }, 120);
     }
 
     async function renderCurrentPage() {

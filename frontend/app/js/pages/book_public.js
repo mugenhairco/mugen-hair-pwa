@@ -236,7 +236,7 @@ const PageBookPublic = (() => {
   async function renderLanding(root) {
     const page = MugenUI.el("div", { class: "book-public book-landing" });
     root.appendChild(page);
-    page.appendChild(MugenUI.el("p", { class: "status-placeholder" }, "Loading…"));
+    page.appendChild(MugenUI.skeleton("card", { lines: 3 })); // skeleton selagi konten landing dimuat
 
     let content, gallery, pengaturan, identitas;
     try {
@@ -249,7 +249,7 @@ const PageBookPublic = (() => {
       identitas = MugenBrand.get();
     } catch (e) {
       page.innerHTML = "";
-      page.appendChild(MugenUI.el("div", { class: "card" }, "Failed to load this page: " + e.message));
+      page.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState("Failed to load this page: " + e.message)));
       return;
     }
     page.innerHTML = "";
@@ -412,6 +412,7 @@ const PageBookPublic = (() => {
     let body = MugenUI.el("div", { class: "book-body" });
     bodyViewport.appendChild(body);
     page.appendChild(bodyViewport);
+    body.appendChild(MugenUI.skeleton("card", { lines: 3 })); // skeleton selagi barbers/services/pengaturan dimuat
 
     // ---- state ----
     let step = 1;
@@ -435,7 +436,8 @@ const PageBookPublic = (() => {
         MugenBrand.refresh(),
       ]);
     } catch (e) {
-      body.appendChild(MugenUI.el("div", { class: "card" }, "Failed to load the booking form: " + e.message));
+      body.innerHTML = ""; // buang skeleton sebelum tampilkan error
+      body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState("Failed to load the booking form: " + e.message)));
       return;
     }
 
@@ -446,6 +448,7 @@ const PageBookPublic = (() => {
     // datanya sendiri sudah tidak lengkap (barbers/services tetap
     // dipanggil di Promise.all di atas, tapi hasilnya tidak dipakai lagi).
     if (pengaturan.booking_online === false) {
+      body.innerHTML = ""; // buang skeleton sebelum tampilkan pesan
       body.appendChild(MugenUI.el("div", { class: "card" }, "Booking online belum tersedia untuk toko ini."));
       return;
     }
@@ -736,7 +739,7 @@ const PageBookPublic = (() => {
       body.appendChild(MugenUI.el("h2", {}, `Select Time — ${MugenUI.formatTanggal(state.tanggal)}`));
       const slotBox = MugenUI.el("div");
       body.appendChild(slotBox);
-      slotBox.innerHTML = "Loading available times...";
+      slotBox.appendChild(MugenUI.skeleton("line", { width: "80%" })); // skeleton selagi slot waktu dimuat
 
       let data;
       try {
@@ -745,7 +748,7 @@ const PageBookPublic = (() => {
         );
       } catch (e) {
         slotBox.innerHTML = "";
-        slotBox.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        slotBox.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
         return;
       }
       slotBox.innerHTML = "";
@@ -943,20 +946,21 @@ const PageBookPublic = (() => {
           errorBox.textContent = "";
           if (!state.metode) { errorBox.textContent = "Please select a payment method first."; return; }
           if (state.metode === "gateway") { errorBox.textContent = "Payment Gateway is not available yet, please choose another method."; return; }
-          btnKonfirmasi.disabled = true;
           try {
-            const hasil = await MugenUI.withLoading(() => MugenApi.post("/api/public/booking", {
+            // REVISI: pakai withButtonLoading (spinner kecil di tombol) alih-alih
+            // withLoading (overlay pesan penuh) -- tombol sendiri yang mengelola
+            // disabled/enabled + label selama request berjalan.
+            const hasil = await MugenUI.withButtonLoading(btnKonfirmasi, () => MugenApi.post("/api/public/booking", {
               barber_id: state.barberId, tanggal: state.tanggal, jam_mulai: state.jam,
               service_ids: state.serviceIds, customer_nama: state.nama, customer_whatsapp: state.whatsapp,
               metode_pembayaran: state.metode,
-            }), { message: "Processing your booking…" });
+            }));
             state.bookingResult = hasil;
+            MugenUI.toast("Booking berhasil dikonfirmasi.", "success", { force: true }); // toast konfirmasi tambahan, fase "bayar" tetap tampil seperti biasa
             fase = "bayar";
             gantiFase();
           } catch (e) {
             errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-          } finally {
-            btnKonfirmasi.disabled = false;
           }
         });
         body.appendChild(btnKonfirmasi);
