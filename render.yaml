@@ -70,11 +70,14 @@ services:
       - key: DATABASE_URL
         sync: false
       # Domain frontend produksi, dipisah koma kalau lebih dari satu (mis.
-      # kalau ada domain tambahan/staging). WAJIB diisi supaya browser tidak
-      # memblokir request API karena CORS -- lihat main.py::ALLOWED_ORIGINS.
-      # Nilai produksi saat ini: https://rivoirsett.com (kode sudah
-      # menyertakannya sebagai default cadangan juga, tapi mengisi env var
-      # ini eksplisit tetap praktik yang benar & wajib kalau domain berubah).
+      # kalau ada domain tambahan/staging) -- lihat main.py::ALLOWED_ORIGINS.
+      # BUGFIX CORS Multi-Tenant: TIDAK LAGI satu-satunya lapis perlindungan
+      # -- main.py::ALLOWED_ORIGIN_REGEX (default mengizinkan SELURUH
+      # subdomain *.rivoirsett.com, termasuk root & www) sekarang mengurus
+      # domain produksi & subdomain tenant SaaS secara otomatis, jadi env
+      # var ini TIDAK WAJIB diisi lengkap lagi untuk domain rivoirsett.com
+      # -- tetap berguna untuk menambah domain LAIN di luar rivoirsett.com
+      # (mis. domain custom milik tenant tertentu, staging, dst).
       - key: ALLOWED_ORIGINS
         sync: false
       - key: ADMIN_BOOTSTRAP_USERNAME
