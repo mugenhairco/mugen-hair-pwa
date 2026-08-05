@@ -138,6 +138,61 @@ def test_detail_tenant_berisi_daftar_user_tanpa_password_hash(two_tenants):
     assert "password_hash" not in data["users"][0]
 
 
+# ---------------------------------------------------------------------------
+# FITUR Alamat Website Tenant (kolom "Alamat Website" Dashboard Super Admin)
+# ---------------------------------------------------------------------------
+
+def test_daftar_tenant_berisi_website_url_dari_slug(two_tenants):
+    """Tenant TANPA custom_domain -- website_url dibentuk otomatis dari slug
+    (https://<slug>.rivoirsett.com), TERSEDIA LANGSUNG begitu tenant dibuat
+    (item 6), TANPA perlu langkah "simpan" tambahan apa pun."""
+    client = two_tenants["client"]
+    headers = _buat_superadmin_dan_login(client)
+    r = client.get("/api/superadmin/tenants", headers=headers)
+    assert r.status_code == 200, r.text
+    by_slug = {t["slug"]: t for t in r.json()}
+    assert by_slug["test-toko-a"]["website_url"] == "https://test-toko-a.rivoirsett.com"
+    assert by_slug["test-toko-b"]["website_url"] == "https://test-toko-b.rivoirsett.com"
+
+
+def test_website_url_ikut_custom_domain_kalau_diisi(two_tenants):
+    """Kalau tenant sudah punya custom_domain (kolom SUDAH ADA di skema
+    sejak Phase 1, sebelumnya tidak pernah dibaca), website_url HARUS ikut
+    custom_domain itu, bukan subdomain slug lagi -- otomatis, TANPA
+    mengubah baris manapun (item 7)."""
+    import database as db
+
+    client = two_tenants["client"]
+    headers = _buat_superadmin_dan_login(client)
+    with db.get_conn() as conn:
+        conn.execute("UPDATE tenants SET custom_domain = ? WHERE id = ?",
+                     ("mugenhairco.com", two_tenants["tenant_a"]))
+        conn.commit()
+
+    r = client.get("/api/superadmin/tenants", headers=headers)
+    by_slug = {t["slug"]: t for t in r.json()}
+    assert by_slug["test-toko-a"]["website_url"] == "https://mugenhairco.com"
+    # Tenant lain (tanpa custom_domain) TIDAK ikut berubah.
+    assert by_slug["test-toko-b"]["website_url"] == "https://test-toko-b.rivoirsett.com"
+
+
+def test_detail_tenant_berisi_website_url(two_tenants):
+    client = two_tenants["client"]
+    headers = _buat_superadmin_dan_login(client)
+    r = client.get(f"/api/superadmin/tenants/{two_tenants['tenant_a']}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["website_url"] == "https://test-toko-a.rivoirsett.com"
+
+
+def test_get_website_url_tanpa_slug_maupun_custom_domain_kembalikan_none():
+    """Kasus defensif (item 5, "Belum dibuat") -- tidak pernah terjadi untuk
+    tenant yang dibuat lewat tenant_db.buat_tenant() (slug wajib diisi),
+    tapi fungsi murni ini harus tetap aman untuk data tidak lengkap."""
+    import tenant_db
+    assert tenant_db.get_website_url({"slug": "", "custom_domain": ""}) is None
+    assert tenant_db.get_website_url({}) is None
+
+
 def test_bootstrap_superadmin_dari_env_var(db_path, monkeypatch):
     """FONDASI Multi-Tenant Phase 2.1: main.py::_bootstrap_superadmin_pertama()
     HANYA jalan kalau KEDUA environment variable diisi eksplisit (beda dari

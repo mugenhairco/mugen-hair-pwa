@@ -101,7 +101,7 @@ const PageSuperadmin = (() => {
     // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadTenantList() {
       listBody.innerHTML = "";
-      listBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
+      listBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
       try {
         const [tenants, subs] = await Promise.all([
           MugenApi.get("/api/superadmin/tenants"),
@@ -115,6 +115,36 @@ const PageSuperadmin = (() => {
           [
             { key: "nama_barbershop", label: "Nama Barbershop" },
             { key: "slug", label: "Slug" },
+            // FITUR Alamat Website Tenant: website_url dikirim backend
+            // (routers/superadmin.py::_tenant_dengan_ringkasan(), lewat
+            // tenant_db.get_website_url() -- custom_domain kalau tenant
+            // sudah pindah domain sendiri, else subdomain dari slug) --
+            // link bisa langsung diklik (buka tab baru) PLUS tombol Salin/
+            // Buka terpisah untuk kenyamanan, supaya Super Admin tidak
+            // perlu cek manual ke Render/Cloudflare/database.
+            {
+              key: "website_url", label: "Alamat Website",
+              format: (v) => {
+                if (!v) return MugenUI.el("span", { class: "subtitle" }, "Belum dibuat");
+                const link = MugenUI.el("a", { href: v, target: "_blank", rel: "noopener noreferrer" }, v);
+                const btnSalin = MugenUI.el("button", { type: "button", title: "Salin URL" }, "📋 Salin");
+                btnSalin.addEventListener("click", async () => {
+                  try {
+                    await navigator.clipboard.writeText(v);
+                    MugenUI.toast("Alamat website disalin.", "success");
+                  } catch (e) {
+                    MugenUI.toast("Gagal menyalin otomatis -- salin manual dari link di atas.", "error");
+                  }
+                });
+                const btnBuka = MugenUI.el(
+                  "a",
+                  { href: v, target: "_blank", rel: "noopener noreferrer", class: "btn-primary", title: "Buka Website" },
+                  "↗ Buka",
+                );
+                return MugenUI.el("div", { class: "actions-cell", style: "flex-wrap:wrap;align-items:center;gap:6px;" },
+                  [link, btnSalin, btnBuka]);
+              },
+            },
             {
               key: "status", label: "Status",
               format: (v) => MugenUI.el("span", {
