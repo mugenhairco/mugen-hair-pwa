@@ -60,7 +60,7 @@ milik tenant default lewat fallback di get_setting()/file_asset_db.ambil()
 -- lihat komentar di masing-masing fungsi itu.
 """
 
-from database import get_conn
+from database import get_conn, DEFAULT_SETTINGS
 
 NAMA_TENANT_DEFAULT = "MUGEN Hair Co."
 SLUG_TENANT_DEFAULT = "mugen-hair-co"
@@ -81,6 +81,7 @@ def migrasi_tenant():
             _tambah_kolom_tenant_id(conn, tabel)
             _backfill_tenant_id(conn, tabel, tenant_id_default)
         _migrasi_prefix_settings(conn, tenant_id_default)
+        _backfill_default_settings_semua_tenant(conn)
 
 
 def _buat_tabel_tenants(conn):
@@ -153,3 +154,35 @@ def _migrasi_prefix_settings(conn, tenant_id_default: int):
         existing = conn.execute("SELECT value FROM settings WHERE key = ?", (kunci_baru,)).fetchone()
         if existing is None:
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (kunci_baru, r["value"]))
+
+
+def _backfill_default_settings_semua_tenant(conn):
+    """BUGFIX: tenant_db.buat_tenant() (dipakai routers/tenant_registration.py
+    registrasi mandiri MAUPUN routers/superadmin.py provisioning manual)
+    SEBELUM PERBAIKAN INI hanya membuat baris `tenants` itu sendiri, TIDAK
+    PERNAH men-seed satu setting pun -- database.py::get_setting()/
+    _setting_float() lalu diam-diam fallback ke "0" (BUKAN nilai default
+    pabrik yang seharusnya, mis. persentase_komisi 40%) untuk SETIAP tenant
+    yang dibuat lewat kedua jalur itu (satu-satunya tenant yang benar dari
+    awal adalah tenant default hasil migrasi di atas), sampai Owner tenant
+    itu KEBETULAN membuka & menyimpan ulang setiap halaman Setting terkait
+    sendiri -- bug nyata yang ditemukan lewat laporan Komisi selalu Rp 0
+    (lihat rekap.js/dashboard_barber.js REVISI Bugfix Komisi).
+
+    Backfill ini jalan tiap kali proses ini boot (SAMA seperti seluruh
+    migrasi lain di file ini, murah & aman diulang) untuk SEMUA tenant yang
+    ADA SAAT INI -- AMAN & idempotent (INSERT ... ON CONFLICT DO NOTHING,
+    dialek-netral persis pola database.py::init_db() men-seed DEFAULT_
+    SETTINGS) -- HANYA mengisi baris yang BENAR-BENAR belum ada, TIDAK
+    PERNAH menimpa setting yang sudah eksplisit diisi/diubah Owner tenant
+    mana pun (termasuk kalau Owner itu sengaja mengubahnya jadi 0).
+    tenant_db.buat_tenant() sendiri JUGA sudah diperbaiki (seed langsung
+    saat tenant baru dibuat) -- backfill di sini KHUSUS untuk tenant yang
+    SUDAH TERLANJUR ada sebelum perbaikan ini dipasang."""
+    tenant_ids = [r["id"] for r in conn.execute("SELECT id FROM tenants").fetchall()]
+    for tenant_id in tenant_ids:
+        for key, value in DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                (f"{tenant_id}:{key}", value),
+            )

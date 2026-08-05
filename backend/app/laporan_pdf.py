@@ -685,6 +685,27 @@ _LEBAR_KOLOM_REKAP_TRANSAKSI = {
     (True, True):   [20 * mm, 24 * mm, 28 * mm, 14 * mm, 18 * mm, 16 * mm, 18 * mm, 16 * mm, 16 * mm, 24 * mm],
 }
 
+# BUGFIX Rekap Transaksi (KHUSUS Barber, lihat parameter is_barber di
+# buat_pdf_rekap_transaksi()): susunan kolom di atas (_LEBAR_KOLOM_REKAP_
+# TRANSAKSI, dipakai Owner/Admin -- TIDAK disentuh sama sekali) tidak
+# menyertakan kolom Komisi, dan lebarnya (portrait A4, 194mm) sudah pas-
+# pasan untuk 8-10 kolom -- terbukti kolom satu kata seperti "Pendapatan"/
+# "Reimburse" pecah tengah kata ("Pendapata"/"n") kalau ditambah satu
+# kolom lagi (Komisi). Sama seperti Rekap Periode (Ringkasan, lihat
+# _LEBAR_HALAMAN_RINGKASAN di bawah) yang sudah lebih dulu pindah ke
+# LANDSCAPE untuk alasan yang sama, versi Barber (bisa sampai 11 kolom:
+# Tanggal/Nama/Service/Jml Service/Komisi/Uang Harian/Tips/Reimburse/
+# Kasbon Dibayar/Pendapatan/Ket) SEKARANG JUGA dicetak landscape (~281mm)
+# supaya setiap judul kolom muat satu baris penuh tanpa terpotong (total
+# tiap baris di bawah = 281mm, lebar tercetak A4 landscape dikurangi
+# margin kiri+kanan 8mm+8mm, SAMA seperti _LEBAR_HALAMAN_RINGKASAN).
+_LEBAR_KOLOM_REKAP_TRANSAKSI_BARBER = {
+    (False, False): [20 * mm, 30 * mm, 55 * mm, 18 * mm, 24 * mm, 24 * mm, 24 * mm, 26 * mm, 60 * mm],
+    (True, False):  [20 * mm, 28 * mm, 50 * mm, 16 * mm, 22 * mm, 22 * mm, 22 * mm, 24 * mm, 24 * mm, 53 * mm],
+    (False, True):  [20 * mm, 28 * mm, 50 * mm, 16 * mm, 22 * mm, 22 * mm, 22 * mm, 24 * mm, 24 * mm, 53 * mm],
+    (True, True):   [20 * mm, 26 * mm, 46 * mm, 15 * mm, 20 * mm, 20 * mm, 20 * mm, 22 * mm, 22 * mm, 22 * mm, 48 * mm],
+}
+
 
 def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = None, barber_id: int = None,
                                     tanggal_mulai: str = None, tanggal_selesai: str = None,
@@ -746,7 +767,7 @@ def _gabung_reimburse_kasbon_kolom(data: list, tahun: int = None, bulan: int = N
 
 def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: int | None, dicetak_oleh: str,
                               tanggal_mulai: str | None = None, tanggal_selesai: str | None = None,
-                              tenant_id: int | None = None) -> bytes:
+                              tenant_id: int | None = None, is_barber: bool = False) -> bytes:
     """tanggal_mulai/tanggal_selesai (opsional, dikirim dari input Periode
     PDF di halaman Rekap Transaksi) MENGGANTIKAN tahun/bulan sebagai
     periode kalau diisi -- filter tampilan layar (Bulan+Tahun) sendiri
@@ -755,7 +776,16 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     FONDASI Multi-Tenant Phase 1.1: `tenant_id` diteruskan ke SELURUH query
     di bawah, termasuk data_non_barber_db/reimburse_db/kasbon_db yang
     digabung (lihat _gabung_reimburse_kasbon_kolom()) -- Phase 1 sempat
-    tidak meneruskannya ke ketiga modul itu, sudah diperbaiki di sini."""
+    tidak meneruskannya ke ketiga modul itu, sudah diperbaiki di sini.
+
+    BUGFIX Rekap Transaksi (KHUSUS Barber): `is_barber` (diisi
+    routers/rekap.py dari role akun yang login, BUKAN dari barber_id yang
+    difilter -- Owner yang memfilter satu barber tetap dapat PDF LAMA apa
+    adanya) menambahkan kolom Komisi & mengubah Pendapatan supaya benar-
+    benar total baris itu (Komisi+Uang Harian+Tips+Reimburse-Kasbon),
+    dicetak LANDSCAPE (lihat _LEBAR_KOLOM_REKAP_TRANSAKSI_BARBER) supaya
+    header tidak terpotong. Default False -- PDF Owner/Admin TIDAK berubah
+    sama sekali."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
@@ -782,26 +812,54 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
                                                           tenant_id=tenant_id)
         periode = _periode_text_opsional(tahun, bulan)
 
-    header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan"]
-    if ada_reimburse:
-        header.append("Reimburse")
-    if ada_kasbon:
-        header.append("Kasbon Dibayar")
-    header.append("Ket")
-
-    baris = []
-    for r in data:
-        sel = [
-            _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel_service(r["daftar_service"]),
-            _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
-            _sel(_rupiah(r["pendapatan"])),
-        ]
+    if is_barber:
+        # Susunan BARU khusus Barber: Komisi ditambahkan setelah Jml
+        # Service, Pendapatan DIPINDAH ke akhir (setelah Reimburse/Kasbon
+        # Dibayar) supaya benar-benar terbaca sebagai TOTAL baris itu.
+        header = ["Tanggal", "Nama", "Service", "Jml Service", "Komisi", "Uang Harian", "Tips"]
         if ada_reimburse:
-            sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
+            header.append("Reimburse")
         if ada_kasbon:
-            sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
-        sel.append(_sel_keterangan(r["keterangan"]))
-        baris.append(sel)
+            header.append("Kasbon Dibayar")
+        header += ["Pendapatan", "Ket"]
+
+        baris = []
+        for r in data:
+            komisi = r["pendapatan"] - r["tips"]
+            pendapatan_total = r["pendapatan"] + r["uang_harian"] + r.get("reimburse", 0) - r.get("kasbon_dibayar", 0)
+            sel = [
+                _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel_service(r["daftar_service"]),
+                _sel(str(r["jumlah_service"])), _sel(_rupiah(komisi)),
+                _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
+            ]
+            if ada_reimburse:
+                sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
+            if ada_kasbon:
+                sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
+            sel.append(_sel(_rupiah(pendapatan_total)))
+            sel.append(_sel_keterangan(r["keterangan"]))
+            baris.append(sel)
+    else:
+        header = ["Tanggal", "Nama", "Service", "Jml Service", "Uang Harian", "Tips", "Pendapatan"]
+        if ada_reimburse:
+            header.append("Reimburse")
+        if ada_kasbon:
+            header.append("Kasbon Dibayar")
+        header.append("Ket")
+
+        baris = []
+        for r in data:
+            sel = [
+                _sel(r["tanggal"]), _sel(r["nama_barber"]), _sel_service(r["daftar_service"]),
+                _sel(str(r["jumlah_service"])), _sel(_rupiah(r["uang_harian"])), _sel(_rupiah(r["tips"])),
+                _sel(_rupiah(r["pendapatan"])),
+            ]
+            if ada_reimburse:
+                sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
+            if ada_kasbon:
+                sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
+            sel.append(_sel_keterangan(r["keterangan"]))
+            baris.append(sel)
 
     # MAINTENANCE #1 (bugfix): Ringkasan di bawah tabel SEBELUMNYA menjumlah
     # "Total Pendapatan Barber" dari get_pendapatan_transaksi() = total_komisi
@@ -861,6 +919,10 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
             ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
     total_diterima = komisi_total + uang_harian_total + tips_total + gaji_non_barber_total + reimburse_total - kasbon_total
     ringkasan_tambahan.append(f"<b>Total Diterima: {_rupiah(total_diterima)}</b>")
+    if is_barber:
+        return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
+                            col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI_BARBER[(ada_reimburse, ada_kasbon)],
+                            ringkasan_tambahan=ringkasan_tambahan, landscape_page=True, tenant_id=tenant_id)
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
                         ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)

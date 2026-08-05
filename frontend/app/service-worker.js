@@ -338,6 +338,15 @@
 // accordion sidebar (.nav-group-toggle dkk, transisi aslinya tidak
 // berubah). Semua CSS murni, tanpa JS baru kecuali penggantian atribut
 // title -> data-tooltip/aria-label di nav.js.
+// v73 -> v74: BUGFIX Rekap Transaksi (KHUSUS akun Barber, TIDAK mengubah
+// tampilan Owner/Admin/Super Admin sama sekali): kolom Komisi yang
+// sebelumnya tidak pernah ditampilkan sekarang muncul, Reimburse/Kasbon
+// Dibayar jadi kolom sendiri (bukan tersembunyi di dalam Pendapatan), dan
+// Pendapatan sekarang benar-benar total baris itu (Komisi+Uang Harian+
+// Tips, sebelumnya Uang Harian tidak ikut terhitung) -- lihat rekap.js
+// (kolomBarber, isAdmin branch TIDAK disentuh) & laporan_pdf.py
+// (buat_pdf_rekap_transaksi(is_barber=...), PDF Barber sekarang landscape
+// supaya header tidak terpotong seperti sebelumnya).
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -353,7 +362,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "73";
+const ASSET_VERSION = "74";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

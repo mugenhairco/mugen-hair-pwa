@@ -770,6 +770,25 @@ def create_all():
             (_kunci_tenant(tenant_default_id, "bonus_customer_tiers"), json.dumps(DEFAULT_BONUS_TIERS)),
         )
 
+        # BUGFIX (ditemukan lewat laporan Komisi selalu Rp 0): seeding
+        # DEFAULT_SETTINGS di atas HANYA untuk tenant_default_id -- tenant
+        # LAIN (dibuat lewat tenant_db.buat_tenant(), dipakai routers/
+        # tenant_registration.py registrasi mandiri MAUPUN routers/
+        # superadmin.py provisioning manual) TIDAK PERNAH mendapat baris
+        # settings apa pun sebelum perbaikan ini, sehingga get_setting()/
+        # _setting_float() diam-diam fallback ke "0" (mis. persentase_komisi
+        # seharusnya 40%). tenant_db.buat_tenant() sendiri sudah diperbaiki
+        # untuk men-seed tenant BARU langsung saat dibuat -- backfill di
+        # sini KHUSUS untuk tenant yang SUDAH TERLANJUR ada sebelum
+        # perbaikan itu dipasang (jalan tiap boot, aman & idempotent lewat
+        # ON CONFLICT DO NOTHING, TIDAK PERNAH menimpa setting yang sudah
+        # eksplisit diisi/diubah Owner tenant mana pun).
+        semua_tenant_id = [r["id"] for r in conn.execute("SELECT id FROM tenants").fetchall()]
+        for tid in semua_tenant_id:
+            for key, value in DEFAULT_SETTINGS.items():
+                conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
+                             (_kunci_tenant(tid, key), value))
+
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
                                        (tenant_default_id,)).fetchone()["n"]
         if jumlah_service == 0:
