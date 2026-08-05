@@ -1391,6 +1391,12 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
             "jumlah_service": sum(it["jumlah"] for it in t["items"]),
             "tips": t["tips"],
             "uang_harian": _uang_harian(t["barber_id"], t["tanggal"]),
+            # REVISI Rekap Transaksi (Barber): "komisi" field TERPISAH dari
+            # "pendapatan" (yang tetap komisi+tips apa adanya, TIDAK diubah --
+            # dipakai layar Owner/Admin & PDF lama tanpa perubahan sama
+            # sekali) supaya kolom Komisi baru khusus tampilan Barber bisa
+            # ditampilkan tanpa menghitung ulang apa pun di frontend.
+            "komisi": t["total_komisi"],
             "pendapatan": get_pendapatan_transaksi(t),
             "keterangan": "; ".join(bagian_ket),
         })

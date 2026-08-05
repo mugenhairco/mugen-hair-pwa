@@ -17,7 +17,7 @@ yang akan diperluas Super Admin nanti (lihat roadmap audit, Tahap 7)."""
 
 from datetime import datetime
 
-from database import get_conn
+from database import get_conn, DEFAULT_SETTINGS
 
 STATUS_VALID = {"aktif", "nonaktif"}
 
@@ -73,7 +73,24 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
     membuat user Owner/data awal, itu tanggung jawab pemanggil, sama seperti
     _bootstrap_admin_pertama() di main.py membuat user pertama terpisah dari
     pembuatan tenant default). Dipakai untuk pengujian Phase 1 (Tenant B)
-    dan fondasi provisioning Super Admin (lihat routers/superadmin.py)."""
+    dan fondasi provisioning Super Admin (lihat routers/superadmin.py).
+
+    BUGFIX (ditemukan lewat laporan Komisi selalu Rp 0 untuk tenant hasil
+    registrasi mandiri maupun provisioning Super Admin): SEBELUM perbaikan
+    ini, fungsi "minimal" di atas benar-benar TIDAK menyeed satu setting
+    pun -- get_setting()/_setting_float() di database.py diam-diam fallback
+    ke "0" (BUKAN nilai default pabrik seperti persentase_komisi 40%) untuk
+    SETIAP tenant yang dibuat lewat fungsi ini, sampai Owner-nya KEBETULAN
+    membuka & menyimpan ulang setiap halaman Setting terkait sendiri. Kedua
+    pemanggil (routers/tenant_registration.py registrasi mandiri &
+    routers/superadmin.py provisioning manual) TIDAK PERNAH melakukan
+    seeding tambahan apa pun setelah memanggil ini, jadi diperbaiki DI SINI
+    -- satu-satunya titik pembuatan tenant baru. Dipilih DEFAULT_SETTINGS
+    (bukan seluruh setting lain yang tersebar di banyak modul, mis. Bonus
+    Service/Booking) karena itulah yang TERBUKTI menyebabkan bug yang
+    dilaporkan; tenant yang SUDAH TERLANJUR ada sebelum perbaikan ini
+    dibackfill terpisah lewat tenant_migrasi.py::
+    _backfill_default_settings_semua_tenant() (jalan tiap boot)."""
     slug = (slug or "").strip().lower()
     nama_barbershop = (nama_barbershop or "").strip()
     if not slug:
@@ -88,7 +105,14 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
             "INSERT INTO tenants (slug, nama_barbershop, status, created_at) VALUES (?, ?, 'aktif', ?)",
             (slug, nama_barbershop, now),
         )
-        return cur.lastrowid
+        tenant_id = cur.lastrowid
+        # Tenant BARU, mustahil baris settings-nya sudah ada -- INSERT polos
+        # (bukan ON CONFLICT DO NOTHING) cukup, konsisten dengan fungsi lain
+        # di modul ini yang juga tidak defensif berlebihan untuk kasus yang
+        # secara struktural tidak mungkin terjadi.
+        for key, value in DEFAULT_SETTINGS.items():
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f"{tenant_id}:{key}", value))
+        return tenant_id
 
 
 def get_tenant_by_email(email: str):

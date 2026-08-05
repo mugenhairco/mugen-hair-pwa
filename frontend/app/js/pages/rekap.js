@@ -201,7 +201,7 @@ const PageRekap = (() => {
       async function load() {
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : 8, rows: 4 }));
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : (isAdmin ? 8 : 11), rows: 4 }));
         try {
           const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
           if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
@@ -209,28 +209,66 @@ const PageRekap = (() => {
           tableWrap.innerHTML = "";
           if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
           const rows = Array.isArray(data) ? data : [];
+          // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
+          // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
+          // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi lebih dari satu
+          // informasi sekaligus (dipisah "; ") -- ditampilkan satu baris per
+          // informasi (MugenUI.keteranganCell()), bukan digabung jadi satu
+          // baris. Dipakai KEDUA susunan kolom (Owner/Admin & Barber) di
+          // bawah, jadi diekstrak supaya tidak dobel.
+          const kolomKet = {
+            key: "keterangan", label: "Ket.", format: (v, r) => {
+              if (!v) return "-";
+              if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
+              return MugenUI.keteranganCell(v);
+            },
+          };
+          // REVISI Rekap Transaksi (KHUSUS Barber, lihat !isAdmin di bawah):
+          // susunan kolom Owner/Admin (isAdmin true, termasuk Staff)
+          // DIBIARKAN PERSIS seperti sebelumnya, TIDAK disentuh sama sekali
+          // -- permintaan eksplisit supaya perbaikan ini hanya berlaku untuk
+          // akun ber-role Barber, bukan Tenant (Owner/Admin).
+          const kolomAdmin = [
+            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+            { key: "nama_barber", label: "Nama" },
+            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
+            { key: "jumlah_service", label: "Jml Service" },
+            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
+            kolomKet,
+          ];
+          // Susunan BARU khusus Barber (BUG FIX): (1) kolom Komisi yang
+          // sebelumnya tidak ada sama sekali (field "komisi" sudah dikirim
+          // backend, lihat database.py::get_rekap_transaksi_list(), tinggal
+          // ditampilkan); (2) Reimburse/Kasbon Dibayar jadi kolom sendiri
+          // (sebelumnya nilainya "tersembunyi" di dalam Pendapatan tanpa
+          // label jelas) -- "-" untuk baris yang bukan tipe itu; (3)
+          // Pendapatan sekarang benar-benar TOTAL baris itu (Komisi + Uang
+          // Harian + Tips untuk baris transaksi -- SEBELUMNYA Uang Harian
+          // tidak ikut dihitung; baris Reimburse/Kasbon/Libur nilainya apa
+          // adanya dari backend, sudah benar sejak awal, tidak perlu
+          // dihitung ulang di sini).
+          const kolomBarber = [
+            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+            { key: "nama_barber", label: "Nama" },
+            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
+            { key: "jumlah_service", label: "Jml Service" },
+            { key: "komisi", label: "Komisi", format: (v, r) => r.tipe === "transaksi" ? MugenUI.formatRupiah(v || 0) : "-" },
+            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "pendapatan", label: "Reimburse", format: (v, r) => r.tipe === "reimburse" ? MugenUI.formatRupiah(v) : "-" },
+            { key: "pendapatan", label: "Kasbon Dibayar", format: (v, r) => r.tipe === "kasbon" ? MugenUI.formatRupiah(-v) : "-" },
+            {
+              key: "pendapatan", label: "Pendapatan", format: (v, r) => MugenUI.formatRupiah(
+                r.tipe === "transaksi" ? (r.komisi || 0) + (r.uang_harian || 0) + (r.tips || 0) : v
+              ),
+            },
+            kolomKet,
+          ];
           tableWrap.appendChild(MugenUI.buildTable(
             [
-              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "nama_barber", label: "Nama" },
-              { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
-              { key: "jumlah_service", label: "Jml Service" },
-              { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-              { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-              { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
-              // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
-              // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
-              // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi lebih dari
-              // satu informasi sekaligus (dipisah "; ") -- ditampilkan satu
-              // baris per informasi (MugenUI.keteranganCell()), bukan
-              // digabung jadi satu baris.
-              {
-                key: "keterangan", label: "Ket.", format: (v, r) => {
-                  if (!v) return "-";
-                  if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
-                  return MugenUI.keteranganCell(v);
-                },
-              },
+              ...(isAdmin ? kolomAdmin : kolomBarber),
               // Kolom Hapus KHUSUS Owner (isOwner). Empat jenis baris punya
               // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
               // (hapus klaim yang sudah disetujui, dengan peringatan lebih

@@ -70,9 +70,13 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
             tahun, bulan, barber_id, user["username"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
             tenant_id=user["tenant_id"])
     else:
+        # BUGFIX Rekap Transaksi (KHUSUS Barber): is_barber diisi dari role
+        # akun yang login (Owner yang memfilter satu barber TETAP dapat PDF
+        # lama apa adanya) -- lihat catatan lengkap di
+        # laporan_pdf.buat_pdf_rekap_transaksi().
         konten = laporan_pdf.buat_pdf_rekap_transaksi(tahun, bulan, barber_id, user["username"],
                                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
-                                                        tenant_id=user["tenant_id"])
+                                                        tenant_id=user["tenant_id"], is_barber=user["role"] == "barber")
     return _pdf_response(konten, "rekap_transaksi")
 
 
