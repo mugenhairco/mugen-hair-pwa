@@ -26,11 +26,18 @@ def _tenant_dengan_ringkasan(t: dict) -> dict:
     query ringan (get_user_list sudah dipakai luas di modul lain), supaya
     Dashboard Super Admin bisa menampilkan gambaran singkat tiap toko tanpa
     endpoint terpisah untuk kasus umum (lihat GET /tenants/{id} untuk daftar
-    user LENGKAP kalau Super Admin perlu detail)."""
+    user LENGKAP kalau Super Admin perlu detail).
+
+    FITUR Alamat Website Tenant: `website_url` (dibentuk lewat
+    tenant_db.get_website_url(), murni derivasi dari slug/custom_domain
+    yang SUDAH ADA -- TIDAK ada kolom/state baru disimpan) ditambahkan di
+    sini juga -- otomatis ikut custom_domain terbaru kapan pun tenant
+    berpindah domain, tanpa langkah "simpan ulang" apa pun."""
     hasil = dict(t)
     daftar_user = auth_db.get_user_list(tenant_id=t["id"])
     hasil["jumlah_user"] = len(daftar_user)
     hasil["jumlah_owner"] = sum(1 for u in daftar_user if u["role"] == "admin" and u["aktif"])
+    hasil["website_url"] = tenant_db.get_website_url(t)
     return hasil
 
 
@@ -49,6 +56,7 @@ def detail_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
     for u in daftar_user:
         u.pop("password_hash", None)
     hasil["users"] = daftar_user
+    hasil["website_url"] = tenant_db.get_website_url(t)
     return hasil
 
 

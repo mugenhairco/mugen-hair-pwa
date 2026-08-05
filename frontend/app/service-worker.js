@@ -347,6 +347,20 @@
 // (kolomBarber, isAdmin branch TIDAK disentuh) & laporan_pdf.py
 // (buat_pdf_rekap_transaksi(is_barber=...), PDF Barber sekarang landscape
 // supaya header tidak terpotong seperti sebelumnya).
+// v74 -> v75: BUGFIX Register (Landing Page SaaS): halaman registrasi
+// tenant baru sebelumnya bisa menampilkan nama/logo tenant LAIN yang
+// pernah login/dibuka di perangkat itu (cache branding tenant-aware,
+// pola sama seperti Login) -- SEKARANG SELALU platform "Rivoir" lewat
+// MugenBrand.refreshPlatformOnly() (brand.js) + app.js melewati
+// MugenBrand.refresh() tenant-aware khusus untuk hash #/register supaya
+// tidak balapan/menimpa balik. Halaman lain (Login, dst) TIDAK berubah.
+// v75 -> v76: FITUR Alamat Website Tenant (Dashboard Super Admin > Daftar
+// Toko): kolom baru "Alamat Website" -- URL subdomain tenant (dari slug)
+// atau custom domain (kalau sudah diisi, otomatis ikut begitu berubah di
+// masa depan), link bisa diklik langsung + tombol Salin/Buka, "Belum
+// dibuat" untuk tenant tanpa slug/domain -- lihat superadmin.js,
+// tenant_db.get_website_url(). Murni tampilan/derivasi, tidak ada kolom
+// database baru, tidak menyentuh registrasi/autentikasi/multi-tenant.
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -362,7 +376,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "74";
+const ASSET_VERSION = "76";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

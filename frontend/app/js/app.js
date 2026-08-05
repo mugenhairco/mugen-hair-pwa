@@ -54,7 +54,18 @@ if ("serviceWorker" in navigator) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  MugenBrand.refresh();
+  // BUGFIX Register (Landing Page SaaS): halaman Register SELALU platform
+  // Rivoir, TIDAK PERNAH branding tenant (lihat brand.js::
+  // refreshPlatformOnly(), dipanggil sendiri oleh PageRegister.render()
+  // di bawah lewat MugenRouter.init()/handle()) -- refresh() tenant-aware
+  // di sini (dari slug "diingat") kalau TETAP dipanggil untuk hash ini
+  // akan BALAPAN dengan refreshPlatformOnly() (keduanya sama-sama fetch
+  // async independen) dan bisa "menang" belakangan, menimpa balik DOM ke
+  // branding tenant yang kebetulan pernah dibuka di perangkat itu --
+  // dilewati KHUSUS di sini, halaman lain semuanya TIDAK berubah.
+  if (!location.hash.startsWith("#/register")) {
+    MugenBrand.refresh();
+  }
   MugenRouter.init();
   // FONDASI Multi-Tenant Phase 3: cache akses_diblokir (dari localStorage,
   // lihat subscription.js) sudah dipakai router.js SAAT init() di atas --

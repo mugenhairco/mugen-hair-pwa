@@ -14,11 +14,18 @@ const PageRegister = (() => {
     root.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "login-wrap" });
     const card = MugenUI.el("div", { class: "login-card" });
+    // BUGFIX Register: halaman ini pintu masuk PLATFORM (calon Owner
+    // BELUM PERNAH "dikenal" tenant apa pun), BUKAN halaman tenant mana
+    // pun seperti Login -- SELALU branding Rivoir, TIDAK BOLEH terpengaruh
+    // cache/slug tenant yang kebetulan "diingat" di perangkat itu dari
+    // toko lain yang pernah login/dilihat sebelumnya (lihat
+    // MugenBrand.refreshPlatformOnly() untuk penjelasan lengkap). Nama
+    // awal langsung "Rivoir" literal (BUKAN MugenBrand.get(), yang bisa
+    // membaca cache toko lain) -- refreshPlatformOnly() akan
+    // mengonfirmasi ulang ke server begitu render() ini selesai.
     card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
-    card.appendChild(MugenUI.el("h1", { class: "brand-name" }, MugenBrand.get().nama_barbershop));
+    card.appendChild(MugenUI.el("h1", { class: "brand-name" }, "Rivoir"));
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Daftarkan barbershop Anda"));
-    MugenBrand.applyToDom();
-    MugenBrand.refresh();
 
     const inputNamaBarbershop = MugenUI.el("input", { type: "text", placeholder: "Nama Barbershop", autocomplete: "organization" });
     const inputOwnerName = MugenUI.el("input", { type: "text", placeholder: "Nama Owner", autocomplete: "name" });
@@ -82,6 +89,7 @@ const PageRegister = (() => {
     card.appendChild(linkLogin);
     wrap.appendChild(card);
     root.appendChild(wrap);
+    MugenBrand.refreshPlatformOnly();
   }
 
   return { render };

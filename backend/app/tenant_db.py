@@ -15,6 +15,7 @@ Dashboard lengkap -- itu di luar cakupan Phase 1) -- hanya cukup untuk
 menjalankan pengujian isolasi dua tenant yang diminta, dan sebagai fondasi
 yang akan diperluas Super Admin nanti (lihat roadmap audit, Tahap 7)."""
 
+import os
 from datetime import datetime
 
 from database import get_conn, DEFAULT_SETTINGS
@@ -27,6 +28,40 @@ STATUS_VALID = {"aktif", "nonaktif"}
 # (tenant_db.py dipakai auth.py & routers/booking.py, TIDAK terikat jalur
 # SQLite/Postgres mana pun secara langsung).
 SLUG_TENANT_DEFAULT = "mugen-hair-co"
+
+# FITUR Alamat Website Tenant (Dashboard Super Admin): domain root platform
+# -- dipakai membentuk URL subdomain tenant (https://<slug>.<suffix>), SAMA
+# PERSIS domain yang sudah diizinkan main.py::ALLOWED_ORIGIN_REGEX (CORS).
+# Boleh dioverride lewat env var TENANT_SUBDOMAIN_SUFFIX kalau domain
+# produksi berubah di masa depan -- satu-satunya tempat yang perlu disentuh.
+TENANT_SUBDOMAIN_SUFFIX = os.environ.get("TENANT_SUBDOMAIN_SUFFIX", "rivoirsett.com")
+
+
+def get_website_url(tenant: dict) -> str | None:
+    """URL lengkap website satu tenant -- SEKADAR membentuk string dari data
+    yang SUDAH ADA (custom_domain/slug), TIDAK PERNAH mengubah/menyimpan
+    apa pun, dan TIDAK dipakai untuk resolusi tenant/otorisasi APAPUN (itu
+    tetap murni lewat sesi login/slug eksplisit, lihat cari_tenant_publik())
+    -- HANYA dipakai untuk tampilan kolom "Alamat Website" di Dashboard
+    Super Admin.
+
+    Prioritas: `custom_domain` (kolom SUDAH ADA di skema `tenants` sejak
+    Phase 1, sebelumnya belum pernah dibaca/ditulis di mana pun) kalau
+    tenant sudah pindah ke domain sendiri, else subdomain bawaan dari slug
+    -- OTOMATIS mengikuti begitu custom_domain diisi/diubah kapan pun di
+    masa depan, tanpa perlu logika tambahan di sini. None kalau tenant
+    tidak punya keduanya (seharusnya tidak pernah terjadi untuk tenant yang
+    dibuat lewat buat_tenant() -- slug WAJIB diisi -- dijaga defensif murni
+    untuk data lama/tidak lengkap)."""
+    custom_domain = (tenant.get("custom_domain") or "").strip()
+    if custom_domain:
+        if custom_domain.startswith("http://") or custom_domain.startswith("https://"):
+            return custom_domain
+        return f"https://{custom_domain}"
+    slug = (tenant.get("slug") or "").strip()
+    if slug:
+        return f"https://{slug}.{TENANT_SUBDOMAIN_SUFFIX}"
+    return None
 
 
 def get_tenant(tenant_id: int):

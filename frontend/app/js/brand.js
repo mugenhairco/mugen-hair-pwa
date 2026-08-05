@@ -166,13 +166,17 @@ const MugenBrand = (() => {
     }
   }
 
-  function applyToDom() {
-    document.title = current.nama_barbershop || DEFAULT.nama_barbershop;
+  // REVISI Register (Landing Page SaaS): diekstrak dari applyToDom() supaya
+  // bisa dipakai ULANG oleh refreshPlatformOnly() di bawah TANPA menyentuh
+  // `current`/cache localStorage sama sekali -- lihat catatan lengkap di
+  // refreshPlatformOnly().
+  function _terapkanKeDom(data) {
+    document.title = data.nama_barbershop || DEFAULT.nama_barbershop;
     document.querySelectorAll(".brand-name").forEach((el) => {
-      el.textContent = current.nama_barbershop || DEFAULT.nama_barbershop;
+      el.textContent = data.nama_barbershop || DEFAULT.nama_barbershop;
     });
     document.querySelectorAll(".brand-logo").forEach((el) => {
-      if (current.logo_url) {
+      if (data.logo_url) {
         // REVISI: sembunyikan dulu elemen sampai gambar TERBUKTI berhasil
         // dimuat (onload), dan tetap sembunyikan (bukan ikon broken-image)
         // kalau ternyata gagal dimuat (onerror) -- sebelumnya display
@@ -182,7 +186,7 @@ const MugenBrand = (() => {
         el.style.display = "none";
         el.onload = () => { el.style.display = ""; };
         el.onerror = () => { el.style.display = "none"; el.removeAttribute("src"); };
-        el.src = MUGEN_API_BASE + current.logo_url;
+        el.src = MUGEN_API_BASE + data.logo_url;
       } else {
         el.onload = null;
         el.onerror = null;
@@ -190,8 +194,42 @@ const MugenBrand = (() => {
         el.style.display = "none";
       }
     });
-    applyFavicon(current.favicon_url);
-    applyTheme(current.primary_color, current.secondary_color);
+    applyFavicon(data.favicon_url);
+    applyTheme(data.primary_color, data.secondary_color);
+  }
+
+  function applyToDom() {
+    _terapkanKeDom(current);
+  }
+
+  // BUGFIX Register (Landing Page SaaS): halaman Register adalah PINTU
+  // MASUK PLATFORM (calon Owner belum pernah "dikenal" tenant apa pun),
+  // BUKAN halaman tenant mana pun seperti Login -- sebelumnya memakai
+  // MugenBrand.get()/refresh() apa adanya (pola sama seperti Login), yang
+  // BENAR untuk Login (menampilkan branding toko yang "diingat" di
+  // perangkat itu, by design) tapi SALAH untuk Register: kalau perangkat
+  // itu PERNAH dipakai login/lihat toko tertentu, cache localStorage &
+  // slug "diingat" (state.js::getTenantSlug(), SENGAJA tidak dihapus saat
+  // logout) membuat Register ikut menampilkan nama/logo toko itu, bukan
+  // platform Rivoir.
+  //
+  // BEDA dari refresh() di atas: (1) TIDAK mengirim slug apa pun ke
+  // /api/tenant/branding -- backend SUDAH otomatis mengembalikan branding
+  // PLATFORM kalau tidak ada slug/sesi login sama sekali (lihat docstring
+  // modul ini), (2) TIDAK menulis ke cache localStorage & TIDAK mengubah
+  // `current` module-level sama sekali (memakai _terapkanKeDom() langsung
+  // dengan data platform, bukan applyToDom() yang membaca `current`) --
+  // supaya halaman LAIN yang tenant-aware (Login, dst) yang dibuka
+  // berikutnya dalam sesi SPA yang sama TETAP melihat cache tenant
+  // miliknya sendiri apa adanya, tidak ikut "tertimpa" jadi platform.
+  async function refreshPlatformOnly() {
+    _terapkanKeDom(DEFAULT);
+    try {
+      const data = await MugenApi.get("/api/tenant/branding");
+      _terapkanKeDom(data);
+    } catch (e) {
+      // offline/gagal -> tetap platform default yang sudah diterapkan di atas
+    }
   }
 
   async function refresh() {
@@ -250,5 +288,5 @@ const MugenBrand = (() => {
     return current;
   }
 
-  return { get, refresh, applyToDom };
+  return { get, refresh, applyToDom, refreshPlatformOnly };
 })();
