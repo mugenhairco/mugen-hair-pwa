@@ -349,6 +349,13 @@ const MugenRouter = (() => {
       return;
     }
     Promise.resolve(renderResult).then(() => _pulihkanScroll(hash, content));
+    // REVISI Efisiensi Polling: badge Izin & Cuti (izin_notif.js) TIDAK
+    // lagi polling periodik -- di-refresh SEKALI di sini tiap kali user
+    // benar-benar berpindah menu (handle() dipanggil SETIAP klik link
+    // sidebar/navigasi SPA), "ada aksi klik" sesuai permintaan Owner.
+    // Aman dipanggil untuk role apa pun -- modul ini sendiri yang
+    // memeriksa (lewat _bolehPoll()) apakah user admin/staff.
+    if (typeof MugenIzinNotif !== "undefined") MugenIzinNotif.refreshNow();
   }
 
   function init() {
