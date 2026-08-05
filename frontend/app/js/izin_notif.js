@@ -4,9 +4,19 @@
 // angka /api/izin-cuti/pending-count), TAPI TANPA suara pengingat --
 // approval izin/cuti tidak sekritis/se-real-time booking baru, badge
 // visual saja sudah cukup memenuhi "notifikasi admin/owner" di spesifikasi.
+//
+// REVISI Efisiensi Polling: interval HANYA jalan selagi tab ini terlihat
+// (Page Visibility API) -- di-pause total begitu tab disembunyikan/
+// diminimize/pindah tab lain (TIDAK ADA request sama sekali ke backend
+// selama itu), lalu di-refresh SEKALI + interval dilanjutkan lagi begitu
+// tab terlihat kembali. Ini mengikuti praktik umum SaaS untuk badge
+// notifikasi berbasis polling -- data tetap akurat kapan pun user benar-
+// benar melihat aplikasinya, tanpa membebani server saat tab idle di
+// background (yang sebelumnya tetap poll terus tanpa henti).
 
 const MugenIzinNotif = (() => {
   const POLL_MS = 15000;
+  let _timer = null;
 
   function _updateBadge(jumlah) {
     const badge = document.getElementById("izin-badge");
@@ -38,6 +48,18 @@ const MugenIzinNotif = (() => {
     }
   }
 
+  function _mulaiInterval() {
+    if (_timer) return; // sudah jalan
+    _timer = setInterval(_poll, POLL_MS);
+  }
+
+  function _hentikanInterval() {
+    if (_timer) {
+      clearInterval(_timer);
+      _timer = null;
+    }
+  }
+
   // Dipanggil izin_cuti.js setelah aksi Setujui/Tolak supaya badge langsung
   // ter-update saat itu juga, tidak perlu menunggu POLL_MS berikutnya.
   function refreshNow() {
@@ -46,7 +68,15 @@ const MugenIzinNotif = (() => {
 
   function init() {
     _poll();
-    setInterval(_poll, POLL_MS);
+    _mulaiInterval();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        _hentikanInterval();
+      } else {
+        _poll(); // data mungkin sudah basi selama tab disembunyikan
+        _mulaiInterval();
+      }
+    });
   }
 
   return { init, refreshNow };

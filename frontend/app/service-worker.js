@@ -301,8 +301,14 @@
 // limit + checkbox fitur per paket, Katalog Fitur: tambah/nonaktifkan/
 // hapus, Monitoring Pembayaran: invoice seluruh toko), kartu Phase 3 yang
 // sudah ada TIDAK diubah.
-//
-// CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
+// v69 -> v70: Efisiensi polling badge notifikasi -- booking_notif.js/
+// izin_notif.js sekarang pause otomatis (Page Visibility API) saat tab
+// disembunyikan/pindah tab lain (SEBELUMNYA: setInterval POLL_MS=15000
+// terus jalan app-wide tanpa henti walau tab di background), lalu refresh
+// SEKALI + lanjut polling lagi begitu tab terlihat kembali -- mengurangi
+// request idle ke backend TANPA mengubah frekuensi (tetap 15 detik) atau
+// logika/akurasi badge sama sekali saat tab aktif dilihat.
+// -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
 // yang membuat browser mendeteksi "ada Service Worker baru" adalah
 // PERBEDAAN BYTE pada file service-worker.js YANG TERDAFTAR itu sendiri
@@ -316,7 +322,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "69";
+const ASSET_VERSION = "70";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
