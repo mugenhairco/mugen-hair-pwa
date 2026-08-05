@@ -329,6 +329,15 @@
 // dibersihkan seketika, TANPA menunggu jaringan, TIDAK ADA jeda/flash
 // branding tenant sama sekali lagi (hard refresh, login baru, maupun
 // mode Incognito).
+// v72 -> v73: 4 micro-interaction terakhir dari checklist Premium UX
+// (fondasi + rollout ke seluruh halaman sudah selesai sebelumnya) --
+// shake singkat pada .login-error begitu pesan validasi muncul, transisi
+// hover/press + fade-in pada Kalender Booking publik (book_public.js),
+// tooltip CSS murni ([data-tooltip]) menggantikan title native HANYA di
+// sidebar collapsed (nav.js), dan override prefers-reduced-motion untuk
+// accordion sidebar (.nav-group-toggle dkk, transisi aslinya tidak
+// berubah). Semua CSS murni, tanpa JS baru kecuali penggantian atribut
+// title -> data-tooltip/aria-label di nav.js.
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -344,7 +353,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "72";
+const ASSET_VERSION = "73";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

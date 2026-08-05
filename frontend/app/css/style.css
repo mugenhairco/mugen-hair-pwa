@@ -1368,3 +1368,104 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 @media (prefers-reduced-motion: reduce) {
   .content.mugen-leaving { animation: none !important; }
 }
+
+/* =======================================================================
+   REVISI UI/UX Premium (lanjutan): 4 micro-interaction terakhir dari
+   checklist -- shake validasi Form Input, transisi Kalender Booking,
+   primitif Tooltip (dipakai HEMAT, hanya sidebar collapsed -- SESUAI
+   keputusan "opsional/sesuai kebutuhan", bukan sapuan menyeluruh), dan
+   polish Accordion sidebar (durasi/easing sudah konsisten sejak awal
+   lewat --ease-press, yang KURANG cuma reduced-motion override).
+   ======================================================================= */
+
+/* ---- Form Input: shake singkat begitu pesan error MUNCUL (kosong ->
+   terisi) -- CSS murni, otomatis berlaku di SELURUH halaman TANPA ubah
+   satu pun kode JS per halaman, karena semua form di app ini sudah
+   memakai SATU class (.login-error) yang sama untuk teks error (lihat
+   formError.textContent = "..." di puluhan halaman). Catatan jujur:
+   HANYA memutar ulang saat elemen berpindah dari kosong ke terisi
+   (transisi state CSS, bukan "tiap kali teks berubah") -- kasus paling
+   umum (validasi gagal pertama kali) sudah tercakup penuh; ganti pesan
+   error BERIKUTNYA tanpa sempat kosong dulu tidak ikut shake lagi,
+   trade-off yang wajar untuk solusi tanpa JS tambahan sama sekali. ---- */
+@keyframes mugen-shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.login-error:not(:empty) { animation: mugen-shake 400ms var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) {
+  .login-error:not(:empty) { animation: none !important; }
+}
+
+/* ---- Kalender Booking (book_public.js): sel tanggal sebelumnya snap
+   instan saat hover, dan grid diganti total tanpa transisi apa pun saat
+   pindah bulan (calCard.innerHTML="" lalu dibangun ulang) -- ditambah
+   transisi hover/press halus + fade-in singkat tiap grid baru terpasang
+   (otomatis terpicu, elemen BARU tiap renderKalender() dipanggil, sama
+   seperti pola .content/.card yang sudah ada). ---- */
+.book-calendar-cell {
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.book-calendar-cell:active:not(.disabled):not(.selected) { transform: scale(0.92); }
+.book-calendar-nav button { transition: color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); }
+.book-calendar-nav button:active { transform: scale(0.85); }
+.book-calendar-grid { animation: mugen-refresh-fade-in var(--dur-base) var(--ease-emphasized) both; }
+@media (prefers-reduced-motion: reduce) {
+  .book-calendar-cell, .book-calendar-nav button { transition: none !important; }
+  .book-calendar-cell:active:not(.disabled):not(.selected), .book-calendar-nav button:active { transform: none !important; }
+  .book-calendar-grid { animation: none !important; }
+}
+
+/* ---- Tooltip: primitif CSS murni ([data-tooltip], TANPA JS/dependency
+   baru), dipakai HANYA di sidebar saat collapsed -- satu-satunya tempat
+   di app ini yang benar-benar kehilangan teks label (lingkaran inisial 2
+   huruf saja, lihat nav.js), jadi pengungkapan lewat tooltip genuinely
+   dibutuhkan di sini (bukan sapuan dekoratif ke seluruh app, sesuai
+   keputusan "sesuai kebutuhan" -- elemen lain yang labelnya SUDAH
+   terlihat di layar tidak diberi tooltip sama sekali). Menggantikan
+   tooltip native browser (title, lambat + gaya tidak konsisten) yang
+   sebelumnya dipakai di elemen yang sama. ---- */
+.sidebar.collapsed [data-tooltip] { position: relative; }
+.sidebar.collapsed [data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--text);
+  color: var(--bg-card);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-elevated);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 50;
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.sidebar.collapsed [data-tooltip]:hover::after,
+.sidebar.collapsed [data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+  transition-delay: 250ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar.collapsed [data-tooltip]::after { transition: none !important; transition-delay: 0s !important; }
+}
+
+/* ---- Accordion sidebar (.nav-group Karyawan/Keuangan): durasi/easing
+   sudah konsisten sejak awal (--ease-press, sama nilainya dengan
+   --ease-standard) -- yang belum ada HANYA override reduced-motion,
+   ditambahkan di sini tanpa mengubah nilai transisi aslinya sama
+   sekali. ---- */
+@media (prefers-reduced-motion: reduce) {
+  .nav-group-toggle, .nav-group-chevron, .nav-submenu, .sidebar-collapse-btn {
+    transition: none !important;
+  }
+}
