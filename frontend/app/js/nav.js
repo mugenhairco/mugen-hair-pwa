@@ -104,7 +104,13 @@ const MugenNav = (() => {
     }
     return MugenUI.el("a", {
       href: hash,
-      title: label,
+      // REVISI UI/UX Premium: tooltip kustom (data-tooltip, lihat style.css
+      // ".sidebar.collapsed [data-tooltip]") menggantikan title -- HANYA
+      // tampak saat sidebar collapsed (satu-satunya kondisi label ini
+      // benar-benar tidak terlihat di layar). aria-label dipertahankan
+      // untuk screen reader terlepas dari state collapsed/expanded.
+      "data-tooltip": label,
+      "aria-label": label,
       class: activeHash.startsWith(hash) ? "active" : "",
     }, linkChildren);
   }
@@ -132,7 +138,9 @@ const MugenNav = (() => {
     // .sidebar.collapsed .nav-submenu) -- toggle di sini murni jadi
     // penanda visual (inisial) saat collapsed, Owner perlu expand sidebar
     // dulu untuk membuka grup Karyawan/Keuangan.
-    const toggle = MugenUI.el("button", { type: "button", class: "nav-group-toggle", title: item.label }, [
+    const toggle = MugenUI.el("button", {
+      type: "button", class: "nav-group-toggle", "data-tooltip": item.label, "aria-label": item.label,
+    }, [
       MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(item.label)),
       MugenUI.el("span", {}, item.label),
       MugenUI.el("span", { class: "nav-group-chevron" }, "›"),
@@ -215,7 +223,11 @@ const MugenNav = (() => {
       ]));
     }
 
-    const btnLogout = MugenUI.el("button", { class: "btn-logout", title: "Keluar" }, MugenUI.el("span", {}, "Keluar"));
+    // REVISI UI/UX Premium: data-tooltip (bukan title) -- teks "Keluar"
+    // ikut hilang saat sidebar collapsed (lihat style.css, cuma ikon "⏻"
+    // yang tersisa), sama seperti nav link di atas.
+    const btnLogout = MugenUI.el("button", { class: "btn-logout", "data-tooltip": "Keluar", "aria-label": "Keluar" },
+      MugenUI.el("span", {}, "Keluar"));
     btnLogout.addEventListener("click", async () => {
       if (!confirm("Yakin ingin keluar?")) return;
       // REVISI: setelah konfirmasi, tampilkan loading animation + teks
