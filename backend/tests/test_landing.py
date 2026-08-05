@@ -4,9 +4,15 @@ test_landing.py — FONDASI Multi-Tenant Phase 5: Landing Page SaaS
 Cakupan: FAQ/Testimonial publik vs Super Admin CRUD, kontak & statistik
 platform, katalog paket publik, dan alur Register self-service (unik
 email/whatsapp, password mismatch, tenant baru langsung terblokir status
-'expired', token langsung bisa dipakai login, dan #/billing tidak
-terpengaruh perubahan ini di sisi backend -- akses_diblokir() TIDAK
-diubah sama sekali)."""
+'expired', dan #/billing tidak terpengaruh perubahan ini di sisi backend
+-- akses_diblokir() TIDAK diubah sama sekali).
+
+REVISI FITUR Verifikasi Email: register() TIDAK LAGI mengembalikan
+token/auto-login (akun baru wajib verifikasi email dulu sebelum bisa
+login) -- lihat tests/test_email_auth.py untuk cakupan lengkap fitur itu
+sendiri, dua test di bawah (test_register_berhasil_membuat_tenant_
+terblokir_sampai_bayar & test_register_login_valid_untuk_endpoint_
+berlogin_setelah_verifikasi) sudah disesuaikan ke alur baru ini."""
 
 import hashlib
 
@@ -14,6 +20,7 @@ import auth_db
 import billing_db
 import billing_invoice_db
 import billing_webhook
+import database as db
 import landing_db
 import midtrans_client
 import subscription_db
@@ -192,26 +199,50 @@ def test_packages_publik_hanya_aktif_dan_bawa_fitur(app_client):
 # ============================= Register self-service =============================
 
 def test_register_berhasil_membuat_tenant_terblokir_sampai_bayar(app_client):
+    # REVISI FITUR Verifikasi Email: register() TIDAK LAGI mengembalikan
+    # token/user/tenant langsung (akun baru wajib verifikasi email dulu
+    # sebelum bisa login sama sekali -- lihat routers/tenant_registration.py
+    # & tests/test_email_auth.py untuk cakupan lengkap fitur itu) -- test
+    # ini tetap memverifikasi bagian yang TIDAK berubah: tenant + subscription
+    # 'expired' langsung terbentuk saat register, diambil lewat tenant_db
+    # (bukan dari body respons lagi).
     r = app_client.post("/api/public/registration/register", json=_payload_register())
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["token"]
-    assert body["user"]["role"] == "admin"
-    assert "password_hash" not in body["user"]
-    tenant_id = body["tenant"]["id"]
+    assert body["registered"] is True
+    assert body["email"] == "budi@contoh.com"
+
+    tenant = tenant_db.get_tenant_by_email("budi@contoh.com")
+    assert tenant is not None
+    tenant_id = tenant["id"]
 
     sub = subscription_db.get_subscription(tenant_id)
     assert sub["status"] == "expired"
     assert subscription_db.akses_diblokir(tenant_id) is True
 
-    tenant = tenant_db.get_tenant(tenant_id)
     assert tenant["email"] == "budi@contoh.com"
     assert tenant["whatsapp"] == "081234567890"
     assert tenant["owner_name"] == "Budi Santoso"
 
 
-def test_register_token_langsung_valid_untuk_endpoint_berlogin(app_client):
-    r = app_client.post("/api/public/registration/register", json=_payload_register())
+def test_register_login_valid_untuk_endpoint_berlogin_setelah_verifikasi(app_client):
+    """REVISI: login (dan token yang dihasilkannya) HANYA tersedia SETELAH
+    email diverifikasi -- lihat tests/test_email_auth.py untuk cakupan
+    lengkap gerbang verifikasi itu sendiri, test ini murni memastikan token
+    HASIL login (setelah verifikasi) tetap valid dipakai endpoint lain
+    (/api/subscription/me), SAMA seperti sebelum fitur verifikasi ada."""
+    import email_auth_db
+
+    app_client.post("/api/public/registration/register", json=_payload_register())
+    user = email_auth_db.get_user_by_email("budi@contoh.com")
+    with db.get_conn() as conn:
+        token_verifikasi = conn.execute(
+            "SELECT token FROM email_verification_tokens WHERE user_id = ?", (user["id"],)
+        ).fetchone()["token"]
+    app_client.post("/api/auth/verifikasi-email", json={"token": token_verifikasi})
+
+    r = app_client.post("/api/auth/login", json={"username": "budi@contoh.com", "password": "rahasia123"})
+    assert r.status_code == 200, r.text
     token = r.json()["token"]
 
     r2 = app_client.get("/api/subscription/me", headers={"Authorization": f"Bearer {token}"})
@@ -295,13 +326,28 @@ def test_register_tercatat_di_audit_log(app_client):
 # sama sekali juga.
 
 def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, monkeypatch):
+    import email_auth_db
+
     _aktifkan_midtrans_mock(monkeypatch)
 
     r = app_client.post("/api/public/registration/register", json=_payload_register())
     assert r.status_code == 200, r.text
-    body = r.json()
-    token = body["token"]
-    tenant_id = body["tenant"]["id"]
+    # REVISI FITUR Verifikasi Email: register() TIDAK LAGI auto-login --
+    # verifikasi dulu (lihat tests/test_email_auth.py untuk cakupan lengkap
+    # gerbang ini sendiri), baru login normal, SEBELUM lanjut ke Checkout/
+    # Webhook (yang TIDAK diubah sama sekali, sesuai instruksi eksplisit).
+    user = email_auth_db.get_user_by_email("budi@contoh.com")
+    with db.get_conn() as conn:
+        token_verifikasi = conn.execute(
+            "SELECT token FROM email_verification_tokens WHERE user_id = ?", (user["id"],)
+        ).fetchone()["token"]
+    app_client.post("/api/auth/verifikasi-email", json={"token": token_verifikasi})
+
+    r_login = app_client.post("/api/auth/login", json={"username": "budi@contoh.com", "password": "rahasia123"})
+    assert r_login.status_code == 200, r_login.text
+    login_body = r_login.json()
+    token = login_body["token"]
+    tenant_id = login_body["tenant"]["id"]
     headers = {"Authorization": f"Bearer {token}"}
 
     # Sebelum bayar: diblokir, sama seperti yang router.js baca lewat

@@ -722,6 +722,36 @@ CREATE TABLE IF NOT EXISTS subscription_invoices (
     updated_at          TEXT NOT NULL,
     paid_at             TEXT
 );
+
+-- FITUR Email, Verifikasi Email, Lupa Kata Sandi -- lihat penjelasan
+-- lengkap di email_auth_migrasi.py (jalur SQLite, SAMA PERSIS niatnya).
+-- `email`/`email_verified`/`blokir_sampai_verifikasi` TIDAK mengubah
+-- kolom `users` yang sudah ada -- `username` TETAP satu-satunya identitas
+-- login. `blokir_sampai_verifikasi` HANYA diset TRUE oleh Registrasi
+-- mandiri BARU -- tenant lama/email yang ditambahkan lewat Pengaturan >
+-- Profil TIDAK PERNAH diblokir login karenanya.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS blokir_sampai_verifikasi INTEGER NOT NULL DEFAULT 0;
+
+-- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
+-- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    token       TEXT NOT NULL UNIQUE,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    token       TEXT NOT NULL UNIQUE,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    used_at     TEXT
+);
 """
 
 

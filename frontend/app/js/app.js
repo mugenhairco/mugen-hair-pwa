@@ -63,7 +63,12 @@ window.addEventListener("DOMContentLoaded", () => {
   // async independen) dan bisa "menang" belakangan, menimpa balik DOM ke
   // branding tenant yang kebetulan pernah dibuka di perangkat itu --
   // dilewati KHUSUS di sini, halaman lain semuanya TIDAK berubah.
-  if (!location.hash.startsWith("#/register")) {
+  // REVISI Verifikasi Email/Lupa Kata Sandi: #/lupa-password,
+  // #/reset-password, #/verify-email SAMA PERSIS seperti #/register --
+  // halaman PLATFORM murni yang juga memanggil refreshPlatformOnly()
+  // sendiri, jadi rentan balapan yang sama kalau tidak dilewati di sini.
+  const HASH_PLATFORM_ONLY = ["#/register", "#/lupa-password", "#/reset-password", "#/verify-email"];
+  if (!HASH_PLATFORM_ONLY.some((h) => location.hash.startsWith(h))) {
     MugenBrand.refresh();
   }
   MugenRouter.init();

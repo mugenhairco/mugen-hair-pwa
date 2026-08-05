@@ -361,6 +361,17 @@
 // dibuat" untuk tenant tanpa slug/domain -- lihat superadmin.js,
 // tenant_db.get_website_url(). Murni tampilan/derivasi, tidak ada kolom
 // database baru, tidak menyentuh registrasi/autentikasi/multi-tenant.
+// v76 -> v77: FITUR Email, Verifikasi Email, Lupa Kata Sandi (Resend) --
+// tiga halaman publik baru (lupa_password.js, reset_password.js,
+// verify_email.js, semua branding platform Rivoir), tombol "Lupa Kata
+// Sandi?" + gerbang "email belum diverifikasi" di login.js, layar "cek
+// email Anda" menggantikan auto-login di register.js (tenant baru wajib
+// verifikasi dulu sebelum bisa login -- alur #/billing/checkout/webhook
+// itu sendiri TIDAK berubah, hanya bergeser ke SETELAH verifikasi), dan
+// tab Pengaturan > Profil (Owner menambah/verifikasi email sendiri,
+// khusus tenant lama yang belum punya). Tidak mengubah database/JWT/API
+// yang sudah ada -- lihat ui.js (ambilQueryHash), router.js (3 route
+// baru).
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -376,7 +387,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "76";
+const ASSET_VERSION = "77";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -425,6 +436,9 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/app.js",
   "/app/js/pages/login.js",
   "/app/js/pages/register.js",
+  "/app/js/pages/lupa_password.js",
+  "/app/js/pages/reset_password.js",
+  "/app/js/pages/verify_email.js",
   "/app/js/pages/dashboard_owner.js",
   "/app/js/pages/dashboard_barber.js",
   "/app/js/pages/input_data.js",

@@ -31,8 +31,13 @@ const PagePengaturan = (() => {
       }
     }
 
+    // FITUR Email, Verifikasi Email, Lupa Kata Sandi: tab "Profil" (email
+    // akun Owner sendiri) KHUSUS Owner (backend require_admin, BUKAN
+    // require_owner_or_staff -- staff TIDAK mengatur email Owner) --
+    // TIDAK masuk TAB_KE_IZIN_SETTING sama sekali, jadi otomatis TIDAK
+    // PERNAH muncul untuk staff apa pun izin yang diberikan Owner-nya.
     const tabs = isOwner
-      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "User", "Backup", "Hak Akses Admin"]
+      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "User", "Backup", "Hak Akses Admin", "Profil"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -63,6 +68,7 @@ const PagePengaturan = (() => {
       else if (activeTab === "Subscription") await renderSubscription();
       else if (activeTab === "User") await renderUser();
       else if (activeTab === "Backup") await renderBackup();
+      else if (activeTab === "Profil") await renderProfil();
       else await renderHakAksesAdmin();
     }
 
@@ -1391,6 +1397,81 @@ const PagePengaturan = (() => {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
+    }
+
+    // ================= TAB: PROFIL (email akun Owner sendiri) =================
+    // FITUR Email, Verifikasi Email, Lupa Kata Sandi -- item 5: tenant LAMA
+    // (belum tentu punya email tersimpan sama sekali) menambahkan/mengubah
+    // email di sini, TIDAK PERNAH memblokir login Owner-nya sendiri
+    // (routers/pengaturan.py::ubah_email_profil() TIDAK PERNAH menyetel
+    // blokir_sampai_verifikasi -- itu murni milik alur Registrasi mandiri).
+    async function renderProfil() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Profil Saya"));
+      card.appendChild(MugenUI.el("p", { class: "subtitle" },
+        "Email di sini dipakai untuk fitur Lupa Kata Sandi -- Owner tanpa email tersimpan tidak bisa memakai fitur itu."));
+
+      const infoBox = MugenUI.el("div", { style: "margin:12px 0;" });
+      card.appendChild(infoBox);
+
+      const inputEmail = MugenUI.el("input", { type: "email", placeholder: "Email" });
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Email");
+      card.appendChild(MugenUI.el("label", {}, "Email"));
+      card.appendChild(inputEmail);
+      card.appendChild(errorBox);
+      card.appendChild(MugenUI.el("div", { style: "margin-top:10px;" }, btnSimpan));
+
+      async function muatUlang() {
+        infoBox.innerHTML = "";
+        let akun;
+        try {
+          akun = await MugenApi.get("/api/auth/me");
+        } catch (e) {
+          infoBox.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
+        inputEmail.value = akun.email || "";
+        if (!akun.email) {
+          infoBox.appendChild(MugenUI.el("span", { class: "subtitle" }, "Belum ada email tersimpan."));
+          return;
+        }
+        infoBox.appendChild(MugenUI.el("span", {
+          class: "badge" + (akun.email_verified ? "" : " badge-libur"),
+        }, akun.email_verified ? "Terverifikasi" : "Belum Terverifikasi"));
+        if (!akun.email_verified) {
+          const btnKirimUlang = MugenUI.el("button", { type: "button", style: "margin-left:10px;" }, "Kirim Ulang Verifikasi");
+          btnKirimUlang.addEventListener("click", async () => {
+            try {
+              const res = await MugenUI.withButtonLoading(btnKirimUlang,
+                () => MugenApi.post("/api/pengaturan/profil/kirim-ulang-verifikasi", {}));
+              MugenUI.toast(res.message || "Email verifikasi telah dikirim ulang.", "success", { force: true });
+            } catch (e) {
+              MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+            }
+          });
+          infoBox.appendChild(btnKirimUlang);
+        }
+      }
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const email = inputEmail.value.trim();
+        if (!email) {
+          errorBox.textContent = "Email tidak boleh kosong.";
+          return;
+        }
+        try {
+          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/profil/email", { email }));
+          MugenUI.toast("Email disimpan. Link verifikasi telah dikirim.", "success", { force: true });
+          await muatUlang();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+
+      await muatUlang();
     }
 
     renderBody();

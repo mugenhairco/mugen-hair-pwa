@@ -1,9 +1,19 @@
-"""routers/auth_router.py — /api/auth/*: login & data akun sendiri."""
+"""routers/auth_router.py — /api/auth/*: login & data akun sendiri.
+
+FITUR Email, Verifikasi Email, Lupa Kata Sandi: tiga endpoint publik baru
+ditambahkan di bagian bawah file ini (verifikasi-email, lupa-password,
+reset-password) -- lihat email_auth_db.py untuk logika token, email_service.py
+untuk pengiriman. login() sendiri mendapat SATU gerbang tambahan (lihat
+komentar di dalamnya) -- SELAIN itu, endpoint/alur login yang sudah ada
+TIDAK diubah sama sekali."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 import auth_db
+import email_auth_db
+import email_service
+import email_templates
 import tenant_db
 from auth import buat_token, get_current_user
 
@@ -84,6 +94,24 @@ def login(body: LoginBody, request: Request):
     if not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif, hubungi Owner.")
 
+    # FITUR Verifikasi Email: blokir_sampai_verifikasi HANYA pernah diset
+    # True oleh Registrasi mandiri BARU (routers/tenant_registration.py) --
+    # tenant lama/karyawan/email yang ditambahkan lewat Pengaturan > Profil
+    # TIDAK PERNAH kena gerbang ini (lihat email_auth_migrasi.py), SESUAI
+    # permintaan eksplisit "Jangan memblokir tenant lama". detail berupa
+    # dict terstruktur (pola SAMA seperti 409 ambigu-toko di atas) supaya
+    # frontend (login.js) bisa menampilkan tombol "Kirim Ulang Email
+    # Verifikasi" tanpa menebak-nebak dari teks pesan.
+    if user.get("blokir_sampai_verifikasi") and not user.get("email_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_belum_terverifikasi",
+                "message": "Email Anda belum diverifikasi. Silakan cek email Anda, atau kirim ulang link verifikasi.",
+                "email": user.get("email"),
+            },
+        )
+
     # BUGFIX: superadmin (akun PLATFORM, mengelola SELURUH tenant) HARUS
     # SELALU bisa login apa pun status tenant mana pun -- role dicek
     # LANGSUNG di sini (bukan hanya bergantung pada invarian "superadmin
@@ -125,3 +153,82 @@ def simpan_tema(body: TemaBody, user: dict = Depends(get_current_user)):
     diperbarui = auth_db.get_user(user["id"])
     diperbarui.pop("password_hash", None)
     return diperbarui
+
+
+# ---------------------------------------------------------------------------
+# FITUR Verifikasi Email & Lupa Kata Sandi -- SEMUA endpoint di bawah ini
+# PUBLIK (tidak butuh login, sesuai sifatnya: pengguna yang memanggilnya
+# JUSTRU belum/tidak bisa login).
+# ---------------------------------------------------------------------------
+
+class VerifikasiEmailBody(BaseModel):
+    token: str = ""
+
+
+@router.post("/verifikasi-email")
+def verifikasi_email(body: VerifikasiEmailBody):
+    user = email_auth_db.verifikasi_email_dengan_token((body.token or "").strip())
+    if user is None:
+        raise HTTPException(status_code=422, detail="Link verifikasi tidak valid atau sudah kedaluwarsa.")
+    return {"ok": True, "message": "Email berhasil diverifikasi. Silakan login."}
+
+
+class LupaPasswordBody(BaseModel):
+    email: str = ""
+
+
+_PESAN_LUPA_PASSWORD_GENERIK = "Kalau email tersebut terdaftar sebagai akun Owner, kami telah mengirimkan link reset password. Silakan periksa kotak masuk (dan folder spam) Anda."
+
+
+@router.post("/lupa-password")
+def lupa_password(body: LupaPasswordBody):
+    """Item 4 (spesifikasi Lupa Kata Sandi): TIGA hasil berbeda tergantung
+    jenis akun, TIDAK PERNAH membedakan lewat status code HTTP (SELALU 200)
+    supaya tidak jadi sinyal tambahan bagi siapa pun yang mengetes endpoint
+    ini otomatis:
+    1. Email tidak ditemukan -> pesan generik (TIDAK mengonfirmasi/menolak).
+    2. Email milik Owner (role='admin') -> kirim email reset, pesan generik
+       yang SAMA PERSIS seperti kasus (1) -- respons TIDAK membocorkan
+       apakah email ini benar terdaftar sebagai Owner atau tidak ditemukan
+       sama sekali.
+    3. Email milik karyawan (role selain 'admin') -> TIDAK kirim email,
+       pesan EKSPLISIT mengarahkan ke Owner (SENGAJA beda dari kasus 1 & 2
+       -- ini memang harus menginformasikan langkah yang benar ke pengguna
+       ber-akun karyawan, sesuai instruksi eksplisit)."""
+    email = (body.email or "").strip().lower()
+    if not email:
+        return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
+    user = email_auth_db.get_user_by_email(email)
+    if user is None:
+        return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
+    if user["role"] != "admin":
+        return {
+            "message": "Password akun karyawan hanya dapat direset oleh Owner Tenant. "
+                       "Silakan hubungi pemilik atau administrator toko Anda."
+        }
+    token = email_auth_db.buat_token_reset(user["id"])
+    link = email_service.link_reset_password(token)
+    tenant = tenant_db.get_tenant(user["tenant_id"]) if user.get("tenant_id") else None
+    nama = (tenant or {}).get("owner_name") or user["username"]
+    email_service.kirim_email(
+        email, "Atur ulang password Rivoir Anda",
+        email_templates.template_reset_password(nama, link, email_auth_db.MASA_BERLAKU_RESET_JAM),
+    )
+    return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
+
+
+class ResetPasswordBody(BaseModel):
+    token: str = ""
+    password: str = ""
+    confirm_password: str = ""
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordBody):
+    if body.password != body.confirm_password:
+        raise HTTPException(status_code=422, detail="Konfirmasi password tidak cocok.")
+    try:
+        email_auth_db.pakai_token_reset((body.token or "").strip(), body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True, "message": "Password berhasil diubah. Silakan login dengan password baru Anda."}

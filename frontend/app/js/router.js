@@ -132,6 +132,28 @@ const MugenRouter = (() => {
       return;
     }
 
+    // FITUR Email, Verifikasi Email, Lupa Kata Sandi: tiga halaman PUBLIK
+    // murni berbasis token dari link email (?token=... di DALAM hash,
+    // lihat MugenUI.ambilQueryHash()) -- dicek PALING AWAL sama seperti
+    // #/book di atas (SEBELUM pengecekan isLoggedIn()) supaya link email
+    // tetap berfungsi APA PUN status sesi saat ini (termasuk kalau
+    // kebetulan device itu SEDANG login sebagai akun lain).
+    if (hash.startsWith("#/verify-email")) {
+      appRoot.innerHTML = "";
+      PageVerifyEmail.render(appRoot);
+      return;
+    }
+    if (hash.startsWith("#/reset-password")) {
+      appRoot.innerHTML = "";
+      PageResetPassword.render(appRoot);
+      return;
+    }
+    if (hash.startsWith("#/lupa-password")) {
+      appRoot.innerHTML = "";
+      PageLupaPassword.render(appRoot);
+      return;
+    }
+
     // REVISI STRUKTUR WEBSITE CONTENT: watermark developer BESAR (dev-
     // watermark-bg, di luar #app) disembunyikan KHUSUS selama di /book --
     // "Website hanya menggunakan background yang dipilih oleh Owner" tapi

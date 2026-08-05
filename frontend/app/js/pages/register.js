@@ -2,12 +2,16 @@
 // =============================================================================
 // Halaman PENUH (dirender langsung ke #app, BUKAN lewat router.js::shell(),
 // pola sama seperti PageLogin) untuk Register self-service dari Landing Page
-// publik (tombol "Get Started" -> /app/#/register). Sukses register langsung
-// login (token dikembalikan backend, lihat routers/tenant_registration.py)
-// dan diarahkan ke #/billing untuk memilih paket + bayar -- tenant baru
-// berstatus 'expired' (diblokir) sampai pembayaran berhasil, TIDAK bisa
-// masuk dashboard dulu, lihat router.js untuk pengecualian akses #/billing
-// saat diblokir.
+// publik (tombol "Get Started" -> /app/#/register).
+//
+// REVISI FITUR Verifikasi Email: sukses register SEBELUMNYA langsung
+// login (token dikembalikan backend) & diarahkan ke #/billing. SEKARANG
+// akun baru WAJIB verifikasi email dulu (routers/tenant_registration.py
+// TIDAK LAGI mengembalikan token) -- form diganti layar "cek email Anda"
+// + tombol "Kirim Ulang", Owner baru login NORMAL lewat #/login setelah
+// klik link verifikasi di emailnya. Begitu login, mekanisme #/billing
+// untuk tenant status 'expired' (router.js) TETAP jalan APA ADANYA
+// seperti sebelumnya, TIDAK diubah sama sekali.
 
 const PageRegister = (() => {
   function render(root) {
@@ -50,6 +54,31 @@ const PageRegister = (() => {
       btnSubmit,
     ]);
 
+    // FITUR Verifikasi Email: layar "cek email Anda" menggantikan form
+    // begitu register() berhasil -- BUKAN dialihkan ke halaman lain,
+    // supaya tombol "Kirim Ulang" (kalau emailnya tidak sampai) tetap
+    // langsung terlihat tanpa Owner perlu mencari-cari.
+    function tampilkanCekEmail(email) {
+      card.innerHTML = "";
+      card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
+      card.appendChild(MugenUI.el("h1", { class: "brand-name" }, "Rivoir"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Registrasi Berhasil!"));
+      card.appendChild(MugenUI.el("p", { style: "font-size:14px;color:var(--text-dim);margin:12px 0;" },
+        `Kami telah mengirimkan link verifikasi ke ${email}. Silakan cek kotak masuk (dan folder spam) Anda, lalu klik link tersebut sebelum bisa login.`));
+      const btnKirimUlang = MugenUI.el("button", { class: "btn-primary", style: "width:100%;" }, "Kirim Ulang Email Verifikasi");
+      btnKirimUlang.addEventListener("click", async () => {
+        try {
+          const res = await MugenUI.withButtonLoading(btnKirimUlang,
+            () => MugenApi.post("/api/public/registration/resend-verification", { email }));
+          MugenUI.toast(res.message || "Email verifikasi telah dikirim ulang.", "success", { force: true });
+        } catch (e) {
+          MugenUI.toast(e.message, "error");
+        }
+      });
+      card.appendChild(btnKirimUlang);
+      card.appendChild(MugenUI.el("a", { href: "#/login", style: "display:block;text-align:center;margin-top:16px;" }, "Sudah verifikasi? Masuk"));
+    }
+
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       errorBox.textContent = "";
@@ -60,22 +89,16 @@ const PageRegister = (() => {
       btnSubmit.disabled = true;
       btnSubmit.textContent = "Memproses...";
       try {
-        const res = await MugenUI.withLoading(() => MugenApi.post("/api/public/registration/register", {
+        const email = inputEmail.value.trim();
+        await MugenUI.withLoading(() => MugenApi.post("/api/public/registration/register", {
           nama_barbershop: inputNamaBarbershop.value.trim(),
           owner_name: inputOwnerName.value.trim(),
-          email: inputEmail.value.trim(),
+          email,
           whatsapp: inputWhatsapp.value.trim(),
           password: inputPassword.value,
           confirm_password: inputConfirmPassword.value,
         }), { message: "Mendaftarkan toko Anda…" });
-        MugenState.setSession(res.token, res.user, res.tenant);
-        MugenBrand.refresh();
-        await MugenSubscription.refresh();
-        // Langsung ke #/billing (BUKAN #/dashboard) -- tenant baru berstatus
-        // 'expired', router.js mengizinkan #/billing tetap diakses walau
-        // diblokir supaya Owner bisa langsung memilih paket & bayar.
-        location.hash = "#/billing";
-        MugenRouter.handle();
+        tampilkanCekEmail(email);
       } catch (e) {
         const detail = e.detail && e.detail.detail;
         errorBox.textContent = (typeof detail === "string" && detail) || e.message;

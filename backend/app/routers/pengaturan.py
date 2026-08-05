@@ -21,6 +21,9 @@ import billing_limits
 import branding_db
 import database as db
 import db_compat
+import email_auth_db
+import email_service
+import email_templates
 import laporan_pdf
 import pengaturan_barber
 import pengaturan_backup
@@ -737,3 +740,57 @@ def download_laporan_pdf(jenis: str, barber_id: int | None = None,
         raise HTTPException(status_code=422, detail=str(e))
     return Response(content=konten, media_type="application/pdf",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ================= PROFIL (akun Owner sendiri) =================
+# FITUR Email, Verifikasi Email, Lupa Kata Sandi -- item 5: tenant LAMA
+# (dibuat sebelum fitur email ini ada, atau lewat Super Admin) belum tentu
+# punya email tersimpan sama sekali. Endpoint ini KHUSUS Owner (require_admin
+# -- BUKAN require_owner_or_staff, staff/karyawan TIDAK mengatur email
+# Owner) menambah/mengubah email AKUN SENDIRI, memicu email verifikasi --
+# TIDAK PERNAH menyetel blokir_sampai_verifikasi (HANYA milik alur
+# Registrasi mandiri baru, lihat email_auth_migrasi.py), jadi Owner tenant
+# lama TIDAK PERNAH terblokir login karena ini walau belum sempat
+# memverifikasi emailnya.
+
+class ProfilEmailBody(BaseModel):
+    email: str = ""
+
+
+@router.put("/profil/email")
+def ubah_email_profil(body: ProfilEmailBody, user: dict = Depends(require_admin)):
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="Format email tidak valid.")
+    existing = email_auth_db.get_user_by_email(email)
+    if existing is not None and existing["id"] != user["id"]:
+        raise HTTPException(status_code=422, detail="Email sudah dipakai akun lain.")
+    email_auth_db.set_email_user(user["id"], email)
+    token = email_auth_db.buat_token_verifikasi(user["id"])
+    link = email_service.link_verifikasi_email(token)
+    email_service.kirim_email(
+        email, "Verifikasi email Rivoir Anda",
+        email_templates.template_verifikasi_email(user["username"], link, email_auth_db.MASA_BERLAKU_VERIFIKASI_JAM),
+    )
+    diperbarui = auth_db.get_user(user["id"])
+    diperbarui.pop("password_hash", None)
+    return diperbarui
+
+
+@router.post("/profil/kirim-ulang-verifikasi")
+def kirim_ulang_verifikasi_profil(user: dict = Depends(require_admin)):
+    """Tombol "Kirim Ulang" di halaman Profil -- BEDA dari /api/public/
+    registration/resend-verification (endpoint PUBLIK untuk akun yang
+    BELUM BISA login sama sekali): endpoint ini untuk Owner yang SUDAH
+    login (tenant lama menambah email, tapi belum sempat klik link-nya)."""
+    if not user.get("email"):
+        raise HTTPException(status_code=422, detail="Belum ada email tersimpan -- isi email Anda dulu.")
+    if user.get("email_verified"):
+        return {"ok": True, "message": "Email Anda sudah terverifikasi."}
+    token = email_auth_db.buat_token_verifikasi(user["id"])
+    link = email_service.link_verifikasi_email(token)
+    email_service.kirim_email(
+        user["email"], "Verifikasi email Rivoir Anda",
+        email_templates.template_verifikasi_email(user["username"], link, email_auth_db.MASA_BERLAKU_VERIFIKASI_JAM),
+    )
+    return {"ok": True, "message": "Email verifikasi telah dikirim ulang."}

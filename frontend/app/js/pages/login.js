@@ -47,15 +47,43 @@ const PageLogin = (() => {
     // untuk kasus normal, sesuai instruksi asli Phase 1 "jangan mengubah
     // workflow pengguna" -- pemilih toko murni fallback untuk kasus langka.
     const tenantPickerBox = MugenUI.el("div", { class: "login-tenant-picker", style: "display:none;" });
+    // FITUR Verifikasi Email: kotak KHUSUS kasus 403 "email_belum_
+    // terverifikasi" (routers/auth_router.py::login()) -- SEMBUNYI secara
+    // default (kasus langka, hanya akun hasil Registrasi mandiri yang
+    // belum sempat verifikasi), diisi & ditampilkan lewat
+    // tampilkanBelumVerifikasi() di blok catch bawah.
+    const belumVerifikasiBox = MugenUI.el("div", { style: "display:none;margin-top:8px;" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Masuk");
+
+    const linkLupaPassword = MugenUI.el("a", { href: "#/lupa-password", style: "display:block;text-align:right;font-size:13px;margin-top:6px;" }, "Lupa Kata Sandi?");
 
     const form = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Username"), inputUsername,
       MugenUI.el("label", {}, "Password"), inputPassword,
+      linkLupaPassword,
       errorBox,
       tenantPickerBox,
+      belumVerifikasiBox,
       btnSubmit,
     ]);
+
+    function tampilkanBelumVerifikasi(email) {
+      belumVerifikasiBox.innerHTML = "";
+      belumVerifikasiBox.style.display = "";
+      belumVerifikasiBox.appendChild(MugenUI.el("div", { class: "login-error" },
+        "Email Anda belum diverifikasi. Silakan cek email Anda, atau kirim ulang link verifikasi."));
+      const btnKirimUlang = MugenUI.el("button", { type: "button" }, "Kirim Ulang Email Verifikasi");
+      btnKirimUlang.addEventListener("click", async () => {
+        try {
+          const res = await MugenUI.withButtonLoading(btnKirimUlang,
+            () => MugenApi.post("/api/public/registration/resend-verification", { email }));
+          MugenUI.toast(res.message || "Email verifikasi telah dikirim ulang.", "success", { force: true });
+        } catch (e) {
+          MugenUI.toast(e.message, "error");
+        }
+      });
+      belumVerifikasiBox.appendChild(btnKirimUlang);
+    }
 
     // PENTING (correctness): TIDAK mengirim slug toko yang "diingat" dari
     // login sebelumnya (state.js::getTenantSlug()) secara otomatis di
@@ -149,9 +177,16 @@ const PageLogin = (() => {
             return;
           }
           errorBox.textContent = "";
+          belumVerifikasiBox.style.display = "none";
           tampilkanPemilihToko(detail.tenants, detail.message || "Pilih toko Anda:");
+        } else if (e.status === 403 && detail && detail.code === "email_belum_terverifikasi") {
+          // FITUR Verifikasi Email -- lihat routers/auth_router.py::login().
+          tenantPickerBox.style.display = "none";
+          errorBox.textContent = "";
+          tampilkanBelumVerifikasi(detail.email || inputUsername.value.trim());
         } else {
           tenantPickerBox.style.display = "none";
+          belumVerifikasiBox.style.display = "none";
           errorBox.textContent = (typeof detail === "string" && detail) || e.message;
         }
       } finally {
