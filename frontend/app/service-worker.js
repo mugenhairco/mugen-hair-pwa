@@ -318,6 +318,17 @@
 // (badge + suara pengingat Booking baru) TIDAK ikut diubah -- tetap
 // polling periodik (dengan pause saat tab hidden dari v70), karena
 // notifikasi booking baru butuh lebih real-time (ada suara pengingat).
+// v71 -> v72: BUGFIX KRITIS -- Super Admin sempat menampilkan branding
+// tenant TERAKHIR yang login di perangkat itu (nama/logo/favicon/warna),
+// bukan branding platform, karena cache localStorage branding & slug
+// tenant "diingat" TIDAK dihapus saat logout (by design, untuk UX tenant
+// yang login lagi) sehingga sempat terbaca/terkirim sebelum refresh()
+// selesai. brand.js sekarang mengecek role sesi SEKARANG secara SINKRON
+// di dua titik (module load + awal refresh(), SEBELUM `await` apa pun)
+// -- Super Admin SELALU dipaksa branding platform + cache tenant
+// dibersihkan seketika, TANPA menunggu jaringan, TIDAK ADA jeda/flash
+// branding tenant sama sekali lagi (hard refresh, login baru, maupun
+// mode Incognito).
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -333,7 +344,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "71";
+const ASSET_VERSION = "72";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -37,11 +37,55 @@ const MugenBrand = (() => {
     is_platform_default: true,
   };
 
+  // BUGFIX KRITIS (Branding Super Admin): akun 'superadmin' TIDAK PERNAH
+  // terikat tenant mana pun (auth.get_current_tenant_id() menolaknya),
+  // jadi TIDAK BOLEH pernah menampilkan nama/logo/favicon/warna tenant
+  // apa pun -- backend (resolve_tenant_untuk_branding()) SUDAH benar
+  // memprioritaskan tenant_id dari sesi login (None utk superadmin) di
+  // atas parameter `tenant` apa pun, TAPI dua hal di sisi FRONTEND ini
+  // sebelumnya membuat branding tenant TERAKHIR yang login di perangkat
+  // itu tetap "bocor" tampil ke Super Admin:
+  // 1. Cache localStorage (KEY di bawah) TIDAK PERNAH dihapus saat logout
+  //    (by design, untuk UX tenant yang login lagi) -- dibaca & diterapkan
+  //    INSTAN begitu modul ini dimuat, SEBELUM refresh() sempat selesai.
+  // 2. refresh() (di bawah) mengirim slug tenant "diingat"
+  //    (state.js::getTenantSlug(), JUGA sengaja tidak dihapus saat logout)
+  //    -- aman di backend (diabaikan kalau ada sesi login valid), tapi
+  //    fetch-nya tetap makan waktu jaringan, jadi ADA JEDA sebelum branding
+  //    platform yang benar diterapkan (flash branding tenant lama sekejap).
+  // Diperbaiki dengan mengecek role sesi SEKARANG di DUA titik: sinkron di
+  // sini (module load -- menangani hard refresh SAAT sudah login Super
+  // Admin) dan sinkron di AWAL refresh() SEBELUM baris `await` mana pun
+  // (menangani login BARU sebagai Super Admin dalam sesi SPA yang sama,
+  // lihat pages/login.js) -- keduanya memaksa branding platform + hapus
+  // cache SEKETIKA, TANPA menunggu jaringan sama sekali.
+  function _isSuperadminSession() {
+    try {
+      if (typeof MugenState === "undefined" || !MugenState.isLoggedIn()) return false;
+      const user = MugenState.getUser();
+      return !!user && user.role === "superadmin";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function _hapusCacheTenant() {
+    try { localStorage.removeItem(KEY); } catch (e) { /* abaikan (mis. private mode) */ }
+  }
+
   let current = DEFAULT;
-  try {
-    const cached = JSON.parse(localStorage.getItem(KEY));
-    if (cached) current = cached;
-  } catch (e) { /* cache rusak/tidak ada, pakai default */ }
+  if (_isSuperadminSession()) {
+    // Super Admin: JANGAN PERNAH baca cache branding tenant apa pun --
+    // paksa platform branding sejak baris pertama, sekaligus bersihkan
+    // sisa cache tenant lama supaya tidak nyangkut di localStorage selama
+    // sesi Super Admin aktif.
+    _hapusCacheTenant();
+  } else {
+    try {
+      const cached = JSON.parse(localStorage.getItem(KEY));
+      if (cached) current = cached;
+    } catch (e) { /* cache rusak/tidak ada, pakai default */ }
+  }
 
   // REVISI: logo/banner sempat "tidak muncul/rusak" saat aplikasi pertama
   // dibuka -- warm up cache gambar milik browser sedini mungkin (begitu modul
@@ -151,6 +195,32 @@ const MugenBrand = (() => {
   }
 
   async function refresh() {
+    // BUGFIX KRITIS (Branding Super Admin): dicek SINKRON di baris PALING
+    // AWAL, SEBELUM `await` apa pun -- javascript menjalankan bagian
+    // sinkron sebuah fungsi async SEKETIKA saat dipanggil (baru berhenti
+    // di `await` pertama), jadi `current`/DOM sudah dipaksa ke platform
+    // branding + cache tenant sudah bersih SEBELUM baris kode APA PUN
+    // setelah pemanggilan refresh() ini sempat jalan -- termasuk
+    // MugenRouter.handle() yang dipanggil TANPA await refresh() di
+    // pages/login.js begitu Super Admin BARU SAJA login (fetch di bawah
+    // TETAP dilakukan sesudahnya, murni konfirmasi/jaga-jaga kalau branding
+    // platform suatu saat jadi bisa dikonfigurasi, TIDAK ADA jeda tampilan
+    // menunggu hasilnya lebih dulu).
+    if (_isSuperadminSession()) {
+      current = DEFAULT;
+      _hapusCacheTenant();
+      applyToDom();
+      try {
+        const data = await MugenApi.get("/api/tenant/branding");
+        current = data;
+      } catch (e) {
+        // offline/gagal -> tetap platform default yang sudah diterapkan di atas
+      }
+      _hapusCacheTenant(); // jangan simpan branding platform di bawah kunci cache tenant
+      applyToDom();
+      return current;
+    }
+
     try {
       // FONDASI Multi-Tenant Phase 2.2: dua sumber "tenant yang diketahui"
       // untuk TAMPILAN branding SAJA (bukan otorisasi apa pun, endpoint ini
