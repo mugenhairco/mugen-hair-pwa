@@ -129,6 +129,67 @@ _SCRIPT_BACKFILL_BOOKING_SLUG = textwrap.dedent("""
 """)
 
 
+_SCRIPT_POOL_TIMEOUT = textwrap.dedent("""
+    import os, sys
+    sys.path.insert(0, {app_dir!r})
+    os.environ["DATABASE_URL"] = {database_url!r}
+
+    import db_compat
+    pool = db_compat._get_pool()
+    kwargs = pool._kwargs
+
+    assert kwargs.get("connect_timeout"), (
+        "connect_timeout tidak diset -- percobaan koneksi baru ke server yang "
+        "tidak membalas bisa menggantung tanpa batas waktu"
+    )
+    assert kwargs.get("keepalives") == 1, (
+        "TCP keepalive tidak aktif -- koneksi basi yang tersimpan idle di pool "
+        "bisa menggantung tanpa batas saat dipakai ulang"
+    )
+    assert kwargs.get("keepalives_idle"), "keepalives_idle tidak diset"
+    assert "statement_timeout" in (kwargs.get("options") or ""), (
+        "statement_timeout tidak diset -- satu query individual bisa "
+        "menggantung tanpa batas kalau tertahan lock/kontensi"
+    )
+
+    # Pool dengan konfigurasi ini TETAP harus bisa dipakai normal terhadap
+    # server yang sungguhan menyala (timeout/keepalive HANYA memengaruhi
+    # kasus server tidak membalas, bukan koneksi sehat biasa).
+    with db_compat.get_conn() as conn:
+        row = conn.execute("SELECT 1 AS ok").fetchone()
+        assert row["ok"] == 1
+
+    print("SUBPROCESS_OK")
+""")
+
+
+@requires_postgres
+def test_pool_postgres_pakai_connect_timeout_dan_keepalive():
+    """Regresi HOTFIX (produksi macet total di "Memuat aplikasi..." --
+    SEMUA endpoint yang menyentuh database, termasuk GET /api/tenant/
+    branding yang PALING PERTAMA dipanggil saat aplikasi boot, tidak
+    pernah membalas sama sekali, BUKAN error, benar-benar menggantung):
+    pool psycopg2 (db_compat.py::_get_pool()) SEBELUMNYA dibuat tanpa
+    connect_timeout/keepalive/statement_timeout apa pun -- percobaan
+    koneksi baru ke server yang tidak membalas (paket jaringan hilang,
+    server bermasalah, dst) bisa menggantung TANPA BATAS WAKTU tanpa
+    exception apa pun. Dibuktikan manual lewat simulasi iptables DROP
+    (butuh akses root, tidak portable dijalankan otomatis di sini):
+    SEBELUM perbaikan menggantung tanpa henti, SESUDAH perbaikan gagal
+    PERSIS dalam batas connect_timeout yang diatur. Test ini memverifikasi
+    konfigurasi pool SUNGGUHAN terpasang benar (perilaku connect_timeout/
+    keepalive itu sendiri murni tanggung jawab libpq/psycopg2, sudah
+    teruji di level library) DAN pool dengan konfigurasi ini tetap bisa
+    dipakai normal terhadap server yang sungguhan menyala."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _SCRIPT_POOL_TIMEOUT.format(app_dir=APP_DIR, database_url=DATABASE_URL)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "SUBPROCESS_OK" in proc.stdout, (
+        f"stdout:\n{proc.stdout}\n\nstderr:\n{proc.stderr}"
+    )
+
+
 @requires_postgres
 def test_backfill_booking_slug_banyak_tenant_bentrok_nama_terhadap_postgres_sungguhan():
     """Regresi HOTFIX v3 produksi: psycopg2.errors.OutOfMemory ("out of
