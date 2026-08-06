@@ -126,6 +126,37 @@ def ubah_status_tenant(tenant_id: int, body: StatusTenantBody, user: dict = Depe
     return _tenant_dengan_ringkasan(t)
 
 
+class UbahSlugBody(BaseModel):
+    slug: str
+
+
+@router.put("/tenants/{tenant_id}/slug")
+def ubah_slug_tenant(tenant_id: int, body: UbahSlugBody, user: dict = Depends(require_superadmin)):
+    """FITUR Migrasi Subdomain: SATU-SATUNYA cara mengubah `slug` tenant
+    (subdomain dashboard/login/booking utama) setelah tenant dibuat --
+    slug immutable di luar jalur ini. Dipakai untuk memigrasikan tenant
+    lama ke subdomain baru (mis. "mugen-hair-co" -> "mugen") TANPA
+    kehilangan data apa pun -- hanya kolom `slug` yang berubah, seluruh
+    data tenant (user, barber, booking, transaksi, dst) tetap utuh.
+    tenant_db.set_slug() menegakkan validasi format + keunikan; SENGAJA
+    TIDAK memblokir tenant default (beda dengan hapus_tenant() di atas)
+    karena migrasi tenant default itu justru pemakaian utamanya."""
+    t = tenant_db.get_tenant(tenant_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+    slug_lama = t["slug"]
+    try:
+        tenant_db.set_slug(tenant_id, body.slug)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    t_baru = tenant_db.get_tenant(tenant_id)
+    superadmin_audit_db.catat(
+        user["username"], "ubah_slug_tenant", tenant_id=tenant_id, tenant_slug=t_baru["slug"],
+        detail=f"slug_lama={slug_lama!r}, slug_baru={t_baru['slug']!r}",
+    )
+    return _tenant_dengan_ringkasan(t_baru)
+
+
 class HapusTenantBody(BaseModel):
     konfirmasi_slug: str
 

@@ -22,6 +22,7 @@ const PageSuperadmin = (() => {
     aktifkan_tenant: "Aktifkan Toko",
     nonaktifkan_tenant: "Nonaktifkan Toko",
     hapus_tenant: "Hapus Toko",
+    ubah_slug_tenant: "Ubah Slug Toko",
     // FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle).
     ubah_package_subscription: "Ubah Package Subscription",
     ubah_status_subscription: "Ubah Status Subscription",
@@ -215,6 +216,32 @@ const PageSuperadmin = (() => {
                   }
                 });
                 wrap.appendChild(btnToggle);
+                // FITUR Migrasi Subdomain: ganti slug (subdomain dashboard/
+                // login/booking utama, {slug}.rivoirsett.com) tenant yang
+                // sudah ada -- backend (tenant_db.set_slug()) memvalidasi
+                // format+keunikan, SENGAJA tidak memblokir tenant utama
+                // (justru dipakai untuk migrasi "mugen-hair-co" -> "mugen").
+                // Perubahan subdomain langsung berdampak (URL lama berhenti
+                // berfungsi), jadi tetap minta konfirmasi jelas.
+                const btnUbahSlug = MugenUI.el("button", {}, "Ubah Slug");
+                btnUbahSlug.addEventListener("click", async () => {
+                  const slugBaru = prompt(
+                    `Ganti subdomain toko "${t.nama_barbershop}" -- URL lama (${t.slug}.rivoirsett.com) akan BERHENTI berfungsi begitu disimpan. Masukkan slug baru:`,
+                    t.slug,
+                  );
+                  if (slugBaru === null) return;
+                  if (!slugBaru.trim() || slugBaru.trim().toLowerCase() === t.slug.trim().toLowerCase()) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnUbahSlug,
+                      () => MugenApi.put(`/api/superadmin/tenants/${t.id}/slug`, { slug: slugBaru.trim() }));
+                    MugenUI.toast("Slug toko diperbarui.", "success", { force: true });
+                    loadTenantList();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error", { force: true });
+                  }
+                });
+                wrap.appendChild(btnUbahSlug);
                 const btnKelolaSubs = MugenUI.el("button", {}, "Kelola Subscription");
                 btnKelolaSubs.addEventListener("click", () => renderSubscriptionManager(t));
                 wrap.appendChild(btnKelolaSubs);

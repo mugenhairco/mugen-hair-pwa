@@ -491,3 +491,157 @@ def test_endpoint_hapus_tenant_akun_biasa_ditolak(two_tenants):
     assert r.status_code == 403
     import tenant_db
     assert tenant_db.get_tenant(two_tenants["tenant_b"]) is not None
+
+
+# =============================================================================
+# FITUR Migrasi Subdomain: ganti slug tenant lewat tenant_db.set_slug() +
+# PUT /api/superadmin/tenants/{id}/slug -- SATU-SATUNYA cara mengubah slug
+# tenant yang sudah dibuat, dipakai untuk memigrasikan tenant lama (mis.
+# "mugen-hair-co" -> "mugen") ke arsitektur subdomain penuh tanpa
+# kehilangan data apa pun.
+# =============================================================================
+
+def test_set_slug_berhasil_dan_data_lain_tidak_berubah():
+    import tenant_db
+
+    tenant_id = tenant_db.buat_tenant("toko-lama", "Toko Lama")
+    tenant_db.set_slug(tenant_id, "toko-baru")
+    t = tenant_db.get_tenant(tenant_id)
+    assert t["slug"] == "toko-baru"
+    assert t["nama_barbershop"] == "Toko Lama"  # data lain tidak tersentuh
+    assert t["id"] == tenant_id  # baris SAMA, bukan tenant baru
+
+
+def test_set_slug_boleh_ganti_slug_tenant_default():
+    """SENGAJA tidak diblokir -- ini justru pemakaian utama fitur ini,
+    beda dengan hapus_tenant() yang melarang keras tenant default."""
+    import tenant_db
+
+    default_tenant = tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT)
+    assert default_tenant is not None
+    try:
+        tenant_db.set_slug(default_tenant["id"], "mugen")
+        assert tenant_db.get_tenant(default_tenant["id"])["slug"] == "mugen"
+        assert tenant_db.get_tenant_by_slug("mugen")["id"] == default_tenant["id"]
+        assert tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT) is None
+    finally:
+        # Kembalikan supaya tidak mengganggu test lain yang bergantung pada
+        # SLUG_TENANT_DEFAULT (mis. hapus_tenant() guard tests).
+        tenant_db.set_slug(default_tenant["id"], tenant_db.SLUG_TENANT_DEFAULT)
+
+
+def test_set_slug_format_tidak_valid_ditolak():
+    import tenant_db
+
+    tenant_id = tenant_db.buat_tenant("toko-format", "Toko Format")
+    for slug_salah in ("Toko Besar", "toko_besar", "-toko", "toko-", "toko besar", ""):
+        try:
+            tenant_db.set_slug(tenant_id, slug_salah)
+            assert False, f"Harus ditolak: {slug_salah!r}"
+        except ValueError:
+            pass
+    assert tenant_db.get_tenant(tenant_id)["slug"] == "toko-format"  # tidak berubah
+
+
+def test_set_slug_bentrok_dengan_tenant_lain_ditolak(two_tenants):
+    import tenant_db
+
+    try:
+        tenant_db.set_slug(two_tenants["tenant_a"], "test-toko-b")
+        assert False, "Harus ditolak: slug sudah dipakai tenant lain"
+    except ValueError as e:
+        assert "sudah dipakai" in str(e).lower()
+    assert tenant_db.get_tenant(two_tenants["tenant_a"])["slug"] == "test-toko-a"
+
+
+def test_set_slug_bentrok_dengan_booking_slug_tenant_lain_ditolak(two_tenants):
+    """slug dan booking_slug satu pool keunikan gabungan -- lihat
+    tenant_db._slug_dipakai()."""
+    import tenant_db
+
+    tenant_db.set_booking_slug(two_tenants["tenant_b"], "khususbooking")
+    try:
+        tenant_db.set_slug(two_tenants["tenant_a"], "khususbooking")
+        assert False, "Harus ditolak: sudah dipakai booking_slug tenant lain"
+    except ValueError:
+        pass
+
+
+def test_set_slug_label_direservasi_ditolak(two_tenants):
+    import tenant_db
+
+    for label in ("admin", "www", "api", "app"):
+        try:
+            tenant_db.set_slug(two_tenants["tenant_a"], label)
+            assert False, f"Harus ditolak: label direservasi {label!r}"
+        except ValueError:
+            pass
+
+
+def test_set_slug_tenant_tidak_ada_ditolak():
+    import tenant_db
+
+    try:
+        tenant_db.set_slug(999999, "toko-hantu")
+        assert False, "Harus ditolak: tenant tidak ditemukan"
+    except ValueError as e:
+        assert "tidak ditemukan" in str(e).lower()
+
+
+def test_endpoint_ubah_slug_berhasil_dan_tercatat_audit_log(two_tenants):
+    import tenant_db
+    import superadmin_audit_db
+
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].put(
+        f"/api/superadmin/tenants/{two_tenants['tenant_a']}/slug",
+        headers=headers, json={"slug": "test-toko-a-baru"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["slug"] == "test-toko-a-baru"
+    assert tenant_db.get_tenant(two_tenants["tenant_a"])["slug"] == "test-toko-a-baru"
+
+    log = superadmin_audit_db.list_log()
+    entri = next((l for l in log if l["aksi"] == "ubah_slug_tenant"), None)
+    assert entri is not None, "aksi ubah_slug_tenant harus tercatat di audit log"
+    assert entri["tenant_slug"] == "test-toko-a-baru"
+
+    # Login lewat slug LAMA tidak lagi berfungsi, slug BARU langsung jalan.
+    r2 = two_tenants["client"].post(
+        "/api/auth/login?tenant=test-toko-a",
+        json={"username": "ownerA", "password": "passwordA123"},
+    )
+    assert r2.status_code == 404, r2.text
+    r3 = two_tenants["client"].post(
+        "/api/auth/login?tenant=test-toko-a-baru",
+        json={"username": "ownerA", "password": "passwordA123"},
+    )
+    assert r3.status_code == 200, r3.text
+
+
+def test_endpoint_ubah_slug_format_tidak_valid_ditolak_422(two_tenants):
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].put(
+        f"/api/superadmin/tenants/{two_tenants['tenant_a']}/slug",
+        headers=headers, json={"slug": "Slug Salah Format"},
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_endpoint_ubah_slug_tenant_tidak_ada_404(two_tenants):
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].put(
+        "/api/superadmin/tenants/999999/slug",
+        headers=headers, json={"slug": "toko-hantu"},
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_endpoint_ubah_slug_akun_biasa_ditolak(two_tenants):
+    r = two_tenants["client"].put(
+        f"/api/superadmin/tenants/{two_tenants['tenant_b']}/slug",
+        headers=two_tenants["headers_a"], json={"slug": "coba-ambil-alih"},
+    )
+    assert r.status_code == 403
+    import tenant_db
+    assert tenant_db.get_tenant(two_tenants["tenant_b"])["slug"] == "test-toko-b"

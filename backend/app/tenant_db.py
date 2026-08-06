@@ -164,6 +164,51 @@ def set_booking_slug(tenant_id: int, booking_slug: str) -> None:
             raise ValueError(f"Booking slug '{booking_slug}' sudah dipakai, silakan pilih yang lain.")
 
 
+_SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+
+
+def set_slug(tenant_id: int, slug_baru: str) -> None:
+    """FITUR Migrasi Subdomain (arsitektur SaaS subdomain penuh): ganti
+    `slug` tenant -- subdomain dashboard/login/booking UTAMA tenant
+    ({slug}.rivoirsett.com), berbeda dari booking_slug yang murni untuk
+    URL booking publik custom (lihat set_booking_slug()). `slug` immutable
+    di luar jalur ini (satu-satunya cara mengubahnya setelah tenant
+    dibuat, dipakai Super Admin lewat PUT /api/superadmin/tenants/{id}/
+    slug -- routers/superadmin.py). Divalidasi FORMAT (label DNS valid --
+    huruf kecil/angka/dash, tidak diawali/diakhiri dash, BEDA dari
+    _BOOKING_SLUG_RE yang tidak mengizinkan dash sama sekali) dan
+    KEUNIKAN (pool gabungan slug+booking_slug SELURUH tenant + label
+    sistem reservasi, lewat _slug_dipakai() yang sama dipakai
+    set_booking_slug()) SEBELUM disimpan.
+
+    SENGAJA TIDAK memblokir mengganti slug tenant SLUG_TENANT_DEFAULT --
+    justru itulah pemakaian UTAMANYA (migrasi tenant Mugen dari
+    "mugen-hair-co" ke "mugen" saat arsitektur pindah ke subdomain penuh,
+    root domain tidak lagi melayani data tenant apa pun). Larangan
+    menghapus tenant default (lihat hapus_tenant()) TIDAK berlaku di sini
+    -- mengganti nama beda dengan menghapus, tenant & seluruh datanya
+    tetap utuh, hanya `slug`-nya yang berubah."""
+    slug_baru = (slug_baru or "").strip().lower()
+    if not slug_baru:
+        raise ValueError("Slug tidak boleh kosong.")
+    if not _SLUG_RE.match(slug_baru):
+        raise ValueError(
+            "Slug hanya boleh berisi huruf kecil, angka, dan tanda hubung (-), "
+            "tidak boleh diawali/diakhiri tanda hubung."
+        )
+    if get_tenant(tenant_id) is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    if _slug_dipakai(slug_baru, kecuali_tenant_id=tenant_id):
+        raise ValueError(f"Slug '{slug_baru}' sudah dipakai, silakan pilih yang lain.")
+    with get_conn() as conn:
+        # HARDENING: lapis pertahanan TERAKHIR terhadap race TOCTOU,
+        # pola SAMA seperti set_booking_slug()/buat_tenant() di atas.
+        try:
+            conn.execute("UPDATE tenants SET slug = ? WHERE id = ?", (slug_baru, tenant_id))
+        except IntegrityError:
+            raise ValueError(f"Slug '{slug_baru}' sudah dipakai, silakan pilih yang lain.")
+
+
 def get_tenant(tenant_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
@@ -241,27 +286,30 @@ def tenant_aktif(tenant_id: int) -> bool:
 
 
 def cari_tenant_publik(slug: str | None):
-    """FONDASI Multi-Tenant Phase 1: mekanisme SEMENTARA resolusi tenant
-    untuk endpoint publik booking (tanpa sesi login, lihat
-    routers/booking.py::resolve_tenant_publik()) -- resolusi PENUH lewat
-    subdomain/custom domain per tenant ADA DI LUAR CAKUPAN Phase 1 (custom
-    domain eksplisit di luar cakupan Phase 1, lihat roadmap audit Fase 2).
-    `slug` kosong (None) = tenant default (SATU-SATUNYA tenant yang ada di
-    deployment single-tenant SEKARANG) -- perilaku LAMA sebelum Phase 1
-    TIDAK BERUBAH SAMA SEKALI selama frontend belum mengirim parameter ini.
+    """Resolusi tenant untuk endpoint publik (tanpa sesi login, lihat
+    routers/booking.py::resolve_tenant_publik()) -- `slug` ketemu lewat
+    kolom `slug` ATAU `booking_slug` (get_tenant_by_slug_atau_booking_slug())
+    dipakai SELURUH endpoint publik yang memanggil fungsi ini lewat
+    resolve_tenant_publik() (routers/booking.py public_router,
+    routers/website.py, routers/pengaturan.py identitas/logo publik).
     Return dict tenant (bukan cuma id) supaya caller bisa cek status
-    aktif juga, atau None kalau slug diisi tapi tidak ditemukan.
+    aktif juga.
 
-    FITUR URL Booking Publik per Tenant: `slug` yang tidak ketemu lewat
-    kolom `slug` di-fallback ke kolom `booking_slug` lewat
-    get_tenant_by_slug_atau_booking_slug() -- SATU-SATUNYA perubahan di
-    sini, transparan untuk SELURUH endpoint publik yang memanggil fungsi
-    ini lewat resolve_tenant_publik() (routers/booking.py public_router,
-    routers/website.py, routers/pengaturan.py identitas/logo publik),
-    TIDAK ADA endpoint yang perlu diubah satu per satu."""
-    if slug:
-        return get_tenant_by_slug_atau_booking_slug(slug)
-    return get_tenant_by_slug(SLUG_TENANT_DEFAULT)
+    HOTFIX Migrasi Subdomain (arsitektur SaaS subdomain penuh): `slug`
+    kosong SEKARANG return None (BUKAN lagi diam-diam jatuh ke
+    SLUG_TENANT_DEFAULT seperti sebelum migrasi ini) -- root domain
+    (rivoirsett.com, tanpa subdomain tenant apa pun) TIDAK BOLEH LAGI
+    diam-diam menyajikan data tenant mana pun (bahkan tenant default
+    sekalipun); caller (resolve_tenant_publik(), auth.py) sudah menangani
+    None dengan 404 "Tenant tidak ditemukan" -- konsisten dengan
+    resolve_tenant_untuk_branding() yang SEJAK AWAL sudah begini (lihat
+    docstringnya). TIDAK ADA lagi konsep "tenant default" untuk resolusi
+    endpoint publik -- SETIAP tenant, termasuk yang pertama kali dibuat,
+    HANYA bisa diakses lewat slug/booking_slug/subdomain miliknya sendiri
+    yang eksplisit."""
+    if not slug:
+        return None
+    return get_tenant_by_slug_atau_booking_slug(slug)
 
 
 def buat_tenant(slug: str, nama_barbershop: str, booking_slug: str | None = None) -> int:
