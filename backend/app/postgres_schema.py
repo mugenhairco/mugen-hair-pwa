@@ -853,10 +853,26 @@ def create_all():
     berikutnya yang gagal akan menunjukkan PERSIS fase mana yang terakhir
     selesai sebelum macet -- tanpa ini, log produksi cuma diam total sejak
     "Menjalankan postgres_schema.create_all()" sampai timeout, tidak
-    memberi petunjuk apa pun sedang macet di baris/fase mana."""
+    memberi petunjuk apa pun sedang macet di baris/fase mana.
+
+    HOTFIX v4->v5 (lihat juga docstring _backfill_booking_slug() di bawah
+    untuk kronologi lengkap): dibuktikan lewat reproduksi lokal bahwa DDL
+    di sini (ALTER TABLE tenants dkk.) SAMA-SAMA bisa tertahan kalau ada
+    transaksi lain sedang memegang lock di tabel `tenants` -- dan
+    dibuktikan juga bahwa statement_timeout dari `options` koneksi pool
+    (db_compat.py) TIDAK BISA diandalkan 100% sebagai satu-satunya lapisan
+    proteksi (di produksi, macet total tanpa error apa pun sampai timeout
+    Render, PADAHAL statement_timeout seharusnya membatalkan dalam 30
+    detik). SET LOCAL lock_timeout eksplisit di bawah -- perintah SQL
+    biasa lewat koneksi yang sama, BUKAN parameter startup yang bisa
+    diam-diam tidak berlaku -- jadi lapisan proteksi TERPISAH yang lebih
+    bisa dipercaya: kalau transaksi ini tertahan lock, GAGAL CEPAT (10
+    detik) dengan traceback jelas di log, bukan menggantung diam sampai
+    timeout deploy."""
     _mulai = time.monotonic()
     _logger.info("[postgres_schema] create_all(): mulai -- membuka koneksi/transaksi.")
     with db_compat.get_conn() as conn:
+        conn.execute("SET LOCAL lock_timeout = '10s'")
         _logger.info("[postgres_schema] create_all(): koneksi didapat (%.2fs) -- mulai DDL.", time.monotonic() - _mulai)
         for statement in _TABLES.strip().split(";\n\n"):
             statement = statement.strip()
@@ -1193,8 +1209,36 @@ def _backfill_booking_slug():
     manapun. Verifikasi keunikan TETAP langsung ke database setiap saat
     (sifat "coba lalu mundur" dari v2 dipertahankan, cuma batas
     transaksinya yang diperkecil) -- tidak bergantung pada kalkulasi di
-    memori yang bisa basi kalau ada penulis lain."""
+    memori yang bisa basi kalau ada penulis lain.
+
+    HOTFIX v4->v5 (produksi MACET TOTAL persis di UPDATE pertama fungsi ini
+    -- dibuktikan lewat log bertahap: create_all() di atas SELESAI 1.38
+    detik, lalu "_backfill_booking_slug(): N tenant total, M perlu
+    backfill." tercatat, TAPI TIDAK ADA log apa pun sesudahnya, bahkan
+    untuk tenant PERTAMA, sampai Render timeout -- tenant di database
+    dikonfirmasi SEDIKIT, jadi bukan soal volume): pool sudah punya
+    statement_timeout=30 detik (lihat db_compat.py) yang SEHARUSNYA
+    membatalkan statement yang menunggu lock terlalu lama -- tapi diamnya
+    log berlanjut JAUH melewati 30 detik itu tanpa error apa pun, artinya
+    UPDATE ini menunggu SESUATU (kemungkinan besar row lock yang masih
+    dipegang sesi basi dari percobaan deploy SEBELUMNYA yang gagal/
+    dibatalkan tidak bersih) TANPA benar-benar dibatasi statement_timeout
+    pada koneksi yang dipakai ulang ini.
+
+    Diperbaiki dengan lock_timeout EKSPLISIT (perintah SQL biasa, dikirim
+    langsung lewat koneksi yang sama -- TIDAK BISA diam-diam diabaikan
+    seperti parameter startup) SEBELUM setiap percobaan UPDATE, dan
+    percobaan yang gagal karena lock_timeout TIDAK dianggap fatal --
+    backfill booking_slug untuk tenant LAMA bukan syarat aplikasi ini bisa
+    boot (tenant BARU sudah dapat booking_slug langsung saat dibuat, lihat
+    tenant_db.py::buat_tenant()) -- tenant itu dilewati untuk boot ini dan
+    otomatis dicoba ulang di restart berikutnya (fungsi ini idempotent,
+    lihat docstring modul), TIDAK PERNAH menghalangi seluruh aplikasi
+    gagal start hanya karena satu baris tenant lama kebetulan sedang
+    terkunci sesi lain."""
     import re
+
+    from psycopg2.errors import LockNotAvailable
 
     import tenant_middleware  # import lokal: hindari import siklik
     from db_compat import IntegrityError
@@ -1220,11 +1264,19 @@ def _backfill_booking_slug():
                 continue
             try:
                 with db_compat.get_conn() as conn:
+                    conn.execute("SET LOCAL lock_timeout = '5s'")
                     conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (kandidat, r["id"]))
             except IntegrityError:
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
+            except LockNotAvailable:
+                _logger.warning(
+                    "[postgres_schema] _backfill_booking_slug(): tenant id=%s DILEWATI (%.2fs) -- baris "
+                    "terkunci sesi lain lebih dari 5 detik. TIDAK fatal, akan dicoba ulang otomatis di "
+                    "restart berikutnya.", r["id"], time.monotonic() - _mulai,
+                )
+                break
             _logger.info("[postgres_schema] _backfill_booking_slug(): tenant id=%s -> booking_slug=%s (%.2fs).",
                          r["id"], kandidat, time.monotonic() - _mulai)
             break
