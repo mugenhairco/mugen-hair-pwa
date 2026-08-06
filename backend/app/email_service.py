@@ -2,8 +2,9 @@
 Resend (pengiriman email transaksional)
 =============================================================================
 Kredensial ditentukan SEKALI saat modul ini pertama kali diimpor, dari
-environment variable RESEND_API_KEY/EMAIL_FROM (pola SAMA PERSIS seperti
-midtrans_client.py menentukan MIDTRANS_*/r2_storage.py menentukan R2_*):
+environment variable RESEND_API_KEY/MAIL_FROM/MAIL_FROM_NAME (pola SAMA
+PERSIS seperti midtrans_client.py menentukan MIDTRANS_*/r2_storage.py
+menentukan R2_*):
 
 - RESEND_API_KEY kosong -> IS_ENABLED=False. kirim_email() TIDAK PERNAH
   memanggil jaringan sama sekali, cukup mencatat log & mengembalikan False
@@ -12,7 +13,9 @@ midtrans_client.py menentukan MIDTRANS_*/r2_storage.py menentukan R2_*):
   akun/tenant, dst) walau email tidak terkirim, SESUAI aturan "kegagalan
   pengiriman email tidak boleh membuat aplikasi crash".
 - Terisi -> IS_ENABLED=True, kirim_email() memanggil REST API Resend
-  sungguhan (POST /emails).
+  sungguhan (POST /emails), header From selalu "MAIL_FROM_NAME
+  <MAIL_FROM>" (mis. "Rivoir <noreply@rivoirsett.com>") -- SATU tempat
+  ini membentuknya, tidak pernah dirakit ulang di pemanggil mana pun.
 
 Cloudflare Email Routing (penerima email masuk ke noreply@rivoirsett.com,
 diteruskan ke Gmail) TIDAK melibatkan modul ini sama sekali -- itu murni
@@ -27,7 +30,14 @@ import requests
 logger = logging.getLogger("mugen.email")
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@rivoirsett.com").strip()
+MAIL_FROM = os.environ.get("MAIL_FROM", "noreply@rivoirsett.com").strip()
+MAIL_FROM_NAME = os.environ.get("MAIL_FROM_NAME", "Rivoir").strip()
+# Header "From" lengkap dibentuk SEKALI di sini (format standar RFC 5322
+# "Nama <email>", yang juga dipahami Resend) -- kirim_email() di bawah
+# TIDAK PERNAH merakit ulang string ini, supaya SETIAP email yang terkirim
+# lewat modul ini (verifikasi/reset password/undangan user) selalu
+# konsisten "Rivoir <noreply@rivoirsett.com>" apa adanya.
+_FROM_HEADER = f"{MAIL_FROM_NAME} <{MAIL_FROM}>" if MAIL_FROM_NAME else MAIL_FROM
 
 # Dipakai membentuk link verifikasi/reset password di dalam isi email
 # (routers/tenant_registration.py, routers/auth_router.py, routers/
@@ -68,7 +78,7 @@ def kirim_email(to: str, subject: str, html: str) -> bool:
     try:
         resp = requests.post(
             _RESEND_URL,
-            json={"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html},
+            json={"from": _FROM_HEADER, "to": [to], "subject": subject, "html": html},
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             timeout=_TIMEOUT_DETIK,
         )

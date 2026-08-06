@@ -167,9 +167,16 @@ class VerifikasiEmailBody(BaseModel):
 
 @router.post("/verifikasi-email")
 def verifikasi_email(body: VerifikasiEmailBody):
-    user = email_auth_db.verifikasi_email_dengan_token((body.token or "").strip())
-    if user is None:
+    """Token sekali pakai (lihat email_auth_db.py) -- klik ulang link yang
+    SUDAH pernah dipakai TIDAK dianggap error (status "sudah_dipakai" ->
+    tetap 200, pesan berbeda), supaya membuka link yang sama dua kali
+    (dua tab, email client yang me-render ulang) tidak menakuti pengguna
+    dengan pesan error padahal akunnya sebenarnya sudah terverifikasi."""
+    hasil = email_auth_db.verifikasi_email_dengan_token((body.token or "").strip())
+    if hasil["status"] == "tidak_valid":
         raise HTTPException(status_code=422, detail="Link verifikasi tidak valid atau sudah kedaluwarsa.")
+    if hasil["status"] == "sudah_dipakai":
+        return {"ok": True, "message": "Email ini sudah diverifikasi sebelumnya. Silakan login."}
     return {"ok": True, "message": "Email berhasil diverifikasi. Silakan login."}
 
 

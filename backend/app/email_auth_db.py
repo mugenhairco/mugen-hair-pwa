@@ -11,8 +11,9 @@ diuji terpisah dari jaringan.
 
 Token dibuat dengan `secrets.token_urlsafe` (acak kriptografis, TIDAK
 terkait/tidak menyentuh mekanisme token SESI LOGIN di auth.py sama
-sekali) -- SATU KALI PAKAI untuk reset password (kolom `used_at`), dan
-kedaluwarsa lewat `expires_at` untuk keduanya."""
+sekali) -- SATU KALI PAKAI untuk verifikasi email MAUPUN reset password
+(kolom `used_at` di kedua tabel), dan kedaluwarsa lewat `expires_at`
+untuk keduanya."""
 
 import secrets
 from datetime import datetime, timedelta
@@ -87,26 +88,39 @@ def buat_token_verifikasi(user_id: int) -> str:
     return token
 
 
-def verifikasi_email_dengan_token(token: str):
-    """Return dict user (SUDAH terverifikasi & blokir_sampai_verifikasi
-    dilepas) kalau token valid & belum kedaluwarsa, None kalau tidak
-    valid/kedaluwarsa. Token TIDAK dihapus setelah dipakai (klik ulang
-    link yang SAMA aman, idempotent -- email_verified sudah 1, UPDATE
-    berikutnya no-op) -- BEDA dari token reset password yang sekali pakai
-    (mengubah password adalah aksi sensitif, verifikasi email bukan)."""
+def verifikasi_email_dengan_token(token: str) -> dict:
+    """Sekali pakai (kolom `used_at`, SAMA seperti token reset password) --
+    return {"status": ..., "user": dict|None}, TIGA kemungkinan status:
+    - "berhasil": token valid & belum kedaluwarsa/dipakai -- ditandai
+      used_at DALAM transaksi yang sama, email_verified=1 &
+      blokir_sampai_verifikasi dilepas.
+    - "sudah_dipakai": token itu SAH tapi SUDAH pernah dipakai sebelumnya
+      -- BUKAN dianggap error ke pengguna (lihat routers/auth_router.py),
+      cukup pesan "sudah diverifikasi sebelumnya" -- kasus nyata: klik
+      ulang link yang sama (dua tab, email client yang me-render ulang).
+    - "tidak_valid": token tidak ada sama sekali ATAU sudah kedaluwarsa.
+    Pengecekan ulang di DALAM fungsi ini (bukan mengandalkan pemanggil
+    sudah tahu token valid) mencegah race condition token yang SAMA
+    dipakai dua kali nyaris bersamaan, pola sama seperti pakai_token_reset()."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM email_verification_tokens WHERE token = ? AND expires_at > ?",
             (token, _sekarang_iso()),
         ).fetchone()
         if row is None:
-            return None
+            return {"status": "tidak_valid", "user": None}
+        if row["used_at"] is not None:
+            user = conn.execute("SELECT * FROM users WHERE id = ?", (row["user_id"],)).fetchone()
+            return {"status": "sudah_dipakai", "user": dict(user) if user else None}
+        conn.execute(
+            "UPDATE email_verification_tokens SET used_at = ? WHERE token = ?", (_sekarang_iso(), token)
+        )
         conn.execute(
             "UPDATE users SET email_verified = 1, blokir_sampai_verifikasi = 0 WHERE id = ?",
             (row["user_id"],),
         )
         user = conn.execute("SELECT * FROM users WHERE id = ?", (row["user_id"],)).fetchone()
-        return dict(user) if user else None
+        return {"status": "berhasil", "user": dict(user) if user else None}
 
 
 # ---------------------------------------------------------------------------

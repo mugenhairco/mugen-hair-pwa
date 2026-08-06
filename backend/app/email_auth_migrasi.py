@@ -50,6 +50,7 @@ def migrasi_email_auth():
     with get_conn() as conn:
         _migrasi_kolom_users(conn)
         _migrasi_tabel_verifikasi(conn)
+        _migrasi_kolom_verifikasi_used_at(conn)
         _migrasi_tabel_reset_password(conn)
 
 
@@ -79,9 +80,19 @@ def _migrasi_tabel_verifikasi(conn):
             user_id     INTEGER NOT NULL,
             token       TEXT NOT NULL UNIQUE,
             expires_at  TEXT NOT NULL,
-            created_at  TEXT NOT NULL
+            created_at  TEXT NOT NULL,
+            used_at     TEXT
         )
     """)
+
+
+def _migrasi_kolom_verifikasi_used_at(conn):
+    """REVISI Integrasi Resend: token verifikasi email SEKARANG sekali
+    pakai juga (sebelumnya sengaja idempotent) -- lihat email_auth_db.py
+    untuk penjelasan UX klik ulang link yang sudah dipakai."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(email_verification_tokens)").fetchall()]
+    if "used_at" not in kolom:
+        conn.execute("ALTER TABLE email_verification_tokens ADD COLUMN used_at TEXT")
 
 
 def _migrasi_tabel_reset_password(conn):

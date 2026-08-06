@@ -33,6 +33,7 @@ import pengaturan_service
 import pengaturan_user
 import permissions
 import r2_storage
+import tenant_db
 from auth import require_admin, require_feature, require_owner_or_staff, require_permission, resolve_tenant_hibrid
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
@@ -480,6 +481,17 @@ class UserBody(BaseModel):
     password: str
     role: str
     barber_id: int | None = None
+    # FITUR Undangan User Tenant: OPSIONAL -- kosong (default) = perilaku
+    # LAMA persis apa adanya (akun tanpa email, TIDAK PERNAH diblokir
+    # login, sama seperti tenant lama -- lihat item 5 Sistem Email). Kalau
+    # diisi, dikirim email undangan (template_undangan_user()) berisi link
+    # verifikasi yang SAMA mekanismenya dengan Registrasi mandiri/Profil --
+    # TIDAK PERNAH menandai blokir_sampai_verifikasi (login TETAP langsung
+    # bisa dengan password yang diatur Owner, sesuai desain yang sudah ada).
+    email: str = ""
+
+
+_LABEL_ROLE = {"admin": "Owner", "staff": "Admin", "barber": "Barber"}
 
 
 class UsernameBody(BaseModel):
@@ -538,12 +550,37 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
         barber_target = db.get_barber(body.barber_id)
         if barber_target is None or barber_target.get("tenant_id") != user["tenant_id"]:
             raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
+    email = (body.email or "").strip().lower()
+    if email:
+        if "@" not in email:
+            raise HTTPException(status_code=422, detail="Format email tidak valid.")
+        if email_auth_db.get_user_by_email(email) is not None:
+            raise HTTPException(status_code=422, detail="Email sudah dipakai akun lain.")
     try:
         billing_limits.pastikan_boleh_tambah_user(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id,
                                       tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    if email:
+        # FITUR Undangan User Tenant: TIDAK PERNAH tandai
+        # blokir_sampai_verifikasi (lihat catatan UserBody.email di atas) --
+        # kegagalan kirim (email_service.kirim_email() best-effort, TIDAK
+        # PERNAH raise) TIDAK PERNAH menggagalkan pembuatan user itu sendiri.
+        email_auth_db.set_email_user(new_id, email)
+        token = email_auth_db.buat_token_verifikasi(new_id)
+        link = email_service.link_verifikasi_email(token)
+        tenant = tenant_db.get_tenant(user["tenant_id"])
+        nama_tenant = (tenant or {}).get("nama_barbershop") or "Rivoir"
+        email_service.kirim_email(
+            email, "Anda diundang bergabung di Rivoir",
+            email_templates.template_undangan_user(
+                body.username, nama_tenant, _LABEL_ROLE.get(body.role, body.role), body.username,
+                link, email_auth_db.MASA_BERLAKU_VERIFIKASI_JAM,
+            ),
+        )
+
     hasil = auth_db.get_user(new_id)
     hasil.pop("password_hash", None)
     return hasil
