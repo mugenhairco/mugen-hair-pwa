@@ -215,6 +215,100 @@ def test_backfill_booking_slug_banyak_tenant_bentrok_nama_terhadap_postgres_sung
     )
 
 
+_SCRIPT_LOCK_TIMEOUT_BOOT = textwrap.dedent("""
+    import os, sys, threading, time
+    sys.path.insert(0, {app_dir!r})
+    os.environ["DATABASE_URL"] = {database_url!r}
+
+    import db_compat
+    with db_compat.get_conn() as conn:
+        conn.execute("DROP SCHEMA public CASCADE")
+        conn.execute("CREATE SCHEMA public")
+
+    import postgres_schema
+    postgres_schema.create_all()
+
+    with db_compat.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO tenants (slug, nama_barbershop, status, created_at) "
+            "VALUES ('toko-terkunci', 'Toko Terkunci', 'aktif', '2020-01-01T00:00:00')"
+        )
+        tenant_id = conn.execute("SELECT id FROM tenants WHERE slug = 'toko-terkunci'").fetchone()["id"]
+
+    # Sesi TERPISAH (koneksi psycopg2 langsung, BUKAN lewat pool db_compat)
+    # memegang row lock di tenant ini lewat transaksi yang SENGAJA belum
+    # di-commit -- mensimulasikan sesi basi/zombie dari percobaan deploy
+    # sebelumnya yang macet, seperti yang terjadi di produksi.
+    import psycopg2
+    lock_conn = psycopg2.connect({database_url!r})
+    lock_cur = lock_conn.cursor()
+    lock_cur.execute("BEGIN")
+    lock_cur.execute("UPDATE tenants SET nama_barbershop = nama_barbershop WHERE id = %s", (tenant_id,))
+
+    def lepas_lock_setelah(detik):
+        time.sleep(detik)
+        lock_conn.commit()
+        lock_conn.close()
+
+    pelepas = threading.Thread(target=lepas_lock_setelah, args=(8,))
+    pelepas.start()
+
+    # HOTFIX v4->v5: lock dipegang 8 detik (lebih lama dari lock_timeout
+    # backfill 5 detik) -- _backfill_booking_slug() HARUS tetap kembali
+    # normal (TIDAK menggantung, TIDAK melempar exception) dalam waktu
+    # singkat, melewati tenant yang terkunci untuk boot ini.
+    t0 = time.monotonic()
+    postgres_schema._backfill_booking_slug()
+    elapsed = time.monotonic() - t0
+    assert elapsed < 7, f"_backfill_booking_slug() menggantung {{elapsed}}s -- seharusnya dilewati cepat lewat lock_timeout"
+
+    with db_compat.get_conn() as conn:
+        row = conn.execute("SELECT booking_slug FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+    assert row["booking_slug"] is None, "seharusnya masih kosong -- dilewati karena lock, bukan diisi paksa"
+
+    pelepas.join()
+
+    # Restart berikutnya (lock sudah lepas): backfill harus berhasil normal.
+    postgres_schema._backfill_booking_slug()
+    with db_compat.get_conn() as conn:
+        row2 = conn.execute("SELECT booking_slug FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+    assert row2["booking_slug"] == "tokoterkunci", "seharusnya terisi di percobaan berikutnya setelah lock lepas"
+
+    print("SUBPROCESS_OK")
+""")
+
+
+@requires_postgres
+def test_backfill_booking_slug_lewati_tenant_terkunci_tanpa_menggantung():
+    """Regresi HOTFIX v4->v5 (produksi macet total lagi setelah PR #84 --
+    log bertahap membuktikan create_all() SELESAI CEPAT (1.38s) tapi
+    _backfill_booking_slug() macet TOTAL di percobaan UPDATE tenant
+    PERTAMA, tanpa error apa pun, sampai Render membatalkan deploy karena
+    port-scan timeout -- padahal jumlah tenant di produksi SEDIKIT,
+    menyingkirkan hipotesis "banyak round-trip". Dugaan paling mungkin:
+    baris tenant itu terkunci sesi lain (sisa percobaan deploy sebelumnya
+    yang gagal/dibatalkan tidak bersih) dan statement_timeout dari
+    `options` koneksi pool TERNYATA tidak cukup diandalkan sebagai satu-
+    satunya lapisan proteksi di produksi.
+
+    Diperbaiki dengan SET LOCAL lock_timeout eksplisit (perintah SQL biasa
+    lewat koneksi yang sama, bukan parameter startup) sebelum tiap
+    percobaan UPDATE -- kalau tertahan lock lebih dari 5 detik, tenant itu
+    DILEWATI (bukan fatal) untuk boot ini, otomatis dicoba ulang restart
+    berikutnya, TIDAK PERNAH menghalangi seluruh aplikasi gagal start.
+    Test ini mereproduksi persis skenario itu: sesi terpisah memegang row
+    lock di satu tenant, memverifikasi _backfill_booking_slug() tetap
+    kembali cepat (TIDAK menggantung) dan tenant lain/berikutnya tidak
+    ikut terganggu."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _SCRIPT_LOCK_TIMEOUT_BOOT.format(app_dir=APP_DIR, database_url=DATABASE_URL)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert "SUBPROCESS_OK" in proc.stdout, (
+        f"stdout:\n{proc.stdout}\n\nstderr:\n{proc.stderr}"
+    )
+
+
 def test_tables_tidak_mengandung_karakter_pemicu_placeholder_psycopg2():
     """Regresi bug produksi (Phase 3): db_compat._translate() menerjemahkan
     SETIAP tanda tanya literal di _TABLES (postgres_schema.py) -- termasuk
