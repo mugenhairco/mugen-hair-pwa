@@ -817,36 +817,67 @@ const PageBooking = (() => {
     const linkCard = MugenUI.el("div", { class: "card" });
     body.appendChild(linkCard);
     linkCard.appendChild(MugenUI.el("h2", {}, "Link Booking"));
-    linkCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Link ini otomatis mengikuti domain aplikasi -- bagikan ke customer."));
-    // Link Booking: SELALU mengikuti domain saat ini (window.location.origin),
-    // bukan setting yang disimpan -- otomatis benar begitu domain berganti,
-    // tidak perlu ubah kode apa pun (lihat klarifikasi #4 spesifikasi).
-    // BUGFIX: sebelumnya hanya memakai origin ("https://domain"), tanpa
-    // path -- benar SELAMA aplikasi ini di-serve dari root domain ("/").
-    // Sejak FONDASI Multi-Tenant Phase 5 (Landing Page publik di "/",
-    // Dashboard PWA INI di "/app/"), origin saja menghasilkan link SALAH
-    // ("https://domain/#/book" -> mendarat di Landing Page yang tidak
-    // punya router hash sama sekali, BUKAN halaman /book yang sebenarnya)
-    // -- customer yang mengklik link lama/tersimpan mendarat di halaman
-    // marketing kosong, bukan halaman booking. Path saat ini
-    // (window.location.pathname, SELALU "/app/" karena file ini cuma
-    // dimuat dari sana) diikutkan juga supaya link tetap benar di mana pun
-    // aplikasi ini di-mount, otomatis, tanpa perlu ubah kode lagi kalau
-    // base path berubah lagi nanti.
-    const basePath = window.location.pathname.replace(/index\.html$/, "").replace(/\/+$/, "");
-    const linkBooking = `${window.location.origin}${basePath}/#/book`;
-    const inLink = MugenUI.el("input", { type: "text", value: linkBooking, readOnly: true });
+    linkCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Setiap toko punya alamat booking publik sendiri (subdomain) -- bagikan ke customer, atau ubah bagian depannya di bawah."));
+
+    // FITUR URL Booking Publik per Tenant: Link Booking SEKARANG dibentuk
+    // backend dari booking_slug tenant (subdomain <booking_slug>.<domain>/
+    // app/#/book, lihat routers/booking.py::ambil_booking_slug()/
+    // tenant_db.py::get_booking_url()) -- BUKAN lagi window.location.origin
+    // polos (link lama itu TETAP berfungsi apa adanya sebagai jalur akses
+    // internal, tidak dihapus/diubah -- ini murni link yang DITAMPILKAN &
+    // disalin di sini, supaya benar dari device MANA PUN, bukan cuma dari
+    // domain yang kebetulan sedang dibuka Owner saat itu). Selalu ikut
+    // booking_slug TERKINI (dibaca ulang dari server, tidak ada state lokal
+    // yang bisa basi) -- begitu diubah lewat form di bawah, link ini ikut
+    // berubah otomatis tanpa reload halaman.
+    const inLink = MugenUI.el("input", { type: "text", value: "", readOnly: true });
     const btnSalinLink = MugenUI.el("button", {}, "Salin Link");
+    const btnBukaLink = MugenUI.el(
+      "a", { href: "#", target: "_blank", rel: "noopener noreferrer", class: "btn-primary" }, "Buka",
+    );
+    linkCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;" }, [inLink, btnSalinLink, btnBukaLink]));
     btnSalinLink.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(linkBooking);
+        await navigator.clipboard.writeText(inLink.value);
         MugenUI.toast("Link booking disalin.", "success");
       } catch (e) {
         inLink.select();
         MugenUI.toast("Gagal menyalin otomatis -- link sudah disorot, salin manual (Ctrl+C).", "error");
       }
     });
-    linkCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;" }, [inLink, btnSalinLink]));
+
+    const inSlug = MugenUI.el("input", { type: "text", placeholder: "mis. mugenhairco" });
+    const errorBoxSlug = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanSlug = MugenUI.el("button", { class: "btn-primary" }, "Simpan Alamat Booking");
+    linkCard.appendChild(MugenUI.el("label", { style: "margin-top:12px;" },
+      "Ubah Alamat Booking (huruf kecil & angka saja, tanpa spasi/karakter khusus)"));
+    linkCard.appendChild(inSlug);
+    linkCard.appendChild(errorBoxSlug);
+    linkCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSlug));
+
+    function terapkanBookingSlug(hasil) {
+      inLink.value = hasil.booking_url || "";
+      btnBukaLink.href = hasil.booking_url || "#";
+      inSlug.value = hasil.booking_slug || "";
+    }
+
+    try {
+      terapkanBookingSlug(await MugenApi.get("/api/booking/booking-slug"));
+    } catch (e) {
+      errorBoxSlug.textContent = e.message;
+    }
+
+    btnSimpanSlug.addEventListener("click", async () => {
+      errorBoxSlug.textContent = "";
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnSimpanSlug, () => MugenApi.put(
+          "/api/booking/booking-slug", { booking_slug: inSlug.value.trim().toLowerCase() },
+        ));
+        terapkanBookingSlug(hasil);
+        MugenUI.toast("Alamat booking disimpan.", "success");
+      } catch (e) { errorBoxSlug.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+    });
 
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);

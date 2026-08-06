@@ -321,11 +321,22 @@ def test_register_slug_otomatis_dan_unik_kalau_nama_sama(app_client):
 # gaya lama), dengan angka collision menempel langsung.
 
 def test_register_slug_sesuai_contoh_spesifikasi_tanpa_pemisah(app_client):
+    # FITUR URL Booking Publik per Tenant: tenant DEFAULT hasil boot
+    # aplikasi (nama PERSIS "MUGEN Hair Co.", slug "mugen-hair-co", lihat
+    # tenant_migrasi.py) sudah dapat booking_slug "mugenhairco" lewat
+    # backfill otomatis (booking_slug_migrasi.py) begitu app_client boot --
+    # basis "mugenhairco" jadi SUDAH terpakai (pool gabungan slug+
+    # booking_slug, lihat tenant_db.py::_slug_dipakai()) SEBELUM registrasi
+    # publik manapun terjadi, jadi tenant BARU bernama sama otomatis dapat
+    # "mugenhairco2" -- MENCEGAH subdomain "mugenhairco.rivoirsett.com"
+    # ambigu antara dua tenant berbeda (tepat tujuan pool gabungan itu).
+    assert tenant_db.get_tenant_by_slug("mugen-hair-co")["booking_slug"] == "mugenhairco"
+
     r = app_client.post("/api/public/registration/register",
                          json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="mugen@contoh.com"))
     assert r.status_code == 200, r.text
     tenant = tenant_db.get_tenant_by_email("mugen@contoh.com")
-    assert tenant["slug"] == "mugenhairco"
+    assert tenant["slug"] == "mugenhairco2"
 
     r2 = app_client.post("/api/public/registration/register",
                           json=_payload_register(nama_barbershop="Bubble Shot", email="bubble@contoh.com",
@@ -336,6 +347,10 @@ def test_register_slug_sesuai_contoh_spesifikasi_tanpa_pemisah(app_client):
 
 
 def test_register_slug_collision_pakai_angka_tanpa_pemisah(app_client):
+    """Basis "mugenhairco" SUDAH terpakai booking_slug tenant DEFAULT sejak
+    boot (lihat test di atas) -- registrasi publik berulang nama sama
+    lanjut dari "mugenhairco2" (BUKAN dari "mugenhairco"), angka collision
+    tetap menempel langsung tanpa pemisah persis sesuai spesifikasi."""
     r1 = app_client.post("/api/public/registration/register",
                           json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="satu@contoh.com"))
     assert r1.status_code == 200, r1.text
@@ -351,9 +366,9 @@ def test_register_slug_collision_pakai_angka_tanpa_pemisah(app_client):
     slug1 = tenant_db.get_tenant_by_email("satu@contoh.com")["slug"]
     slug2 = tenant_db.get_tenant_by_email("dua@contoh.com")["slug"]
     slug3 = tenant_db.get_tenant_by_email("tiga@contoh.com")["slug"]
-    assert slug1 == "mugenhairco"
-    assert slug2 == "mugenhairco2"
-    assert slug3 == "mugenhairco3"
+    assert slug1 == "mugenhairco2"
+    assert slug2 == "mugenhairco3"
+    assert slug3 == "mugenhairco4"
 
 
 def test_register_nama_toko_admin_tidak_kebagian_slug_reservasi(app_client):

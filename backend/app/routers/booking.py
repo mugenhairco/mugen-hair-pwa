@@ -32,6 +32,7 @@ import database as db
 import feature_access
 import r2_storage
 import subscription_db
+import tenant_db
 from auth import require_feature, require_owner_or_staff, require_barber, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
@@ -331,6 +332,40 @@ def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(requ
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return booking_db.get_booking_settings(tenant_id=user["tenant_id"])
+
+
+def _booking_slug_hasil(tenant_id: int) -> dict:
+    t = tenant_db.get_tenant(tenant_id)
+    return {"booking_slug": t.get("booking_slug") if t else None, "booking_url": tenant_db.get_booking_url(t or {})}
+
+
+@router.get("/booking-slug")
+def ambil_booking_slug(user: dict = Depends(require_owner_or_staff)):
+    """FITUR URL Booking Publik per Tenant: dipakai Setting > Booking
+    (kartu "Link Booking" yang SUDAH ADA, TIDAK ada menu baru) untuk
+    menampilkan booking_slug TERKINI + URL lengkapnya (subdomain
+    <booking_slug>.rivoirsett.com/app/#/book, lihat tenant_db.py::
+    get_booking_url())."""
+    return _booking_slug_hasil(user["tenant_id"])
+
+
+class BookingSlugBody(BaseModel):
+    booking_slug: str
+
+
+@router.put("/booking-slug")
+def ubah_booking_slug(body: BookingSlugBody, user: dict = Depends(require_owner_or_staff)):
+    """FITUR URL Booking Publik per Tenant (item 7 spesifikasi): validasi
+    format + keunikan ditegakkan DI tenant_db.py::set_booking_slug()
+    (pool gabungan slug+booking_slug SELURUH tenant) -- pesan error di
+    sini SELALU string polos di `detail` (pola sama seperti endpoint lain
+    di aplikasi ini) supaya frontend bisa langsung menampilkannya sebagai
+    "slug tidak tersedia" tanpa pemetaan tambahan."""
+    try:
+        tenant_db.set_booking_slug(user["tenant_id"], body.booking_slug)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _booking_slug_hasil(user["tenant_id"])
 
 
 class PaymentSettingsBody(BaseModel):

@@ -234,7 +234,12 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
     slug = tenant or getattr(request.state, "requested_tenant_slug", None)
     if not slug:
         return None
-    t = tenant_db.get_tenant_by_slug(slug)
+    # FITUR URL Booking Publik per Tenant: fallback ke booking_slug kalau
+    # `slug` (dashboard/staff) tidak ketemu -- SATU-SATUNYA perubahan di
+    # sini, supaya Logo/Nama Bisnis/dst tetap tampil benar begitu customer
+    # membuka subdomain booking_slug (lihat tenant_guard.js, memakai
+    # endpoint ini untuk memutuskan "Tenant Tidak Ditemukan" atau tidak).
+    t = tenant_db.get_tenant_by_slug_atau_booking_slug(slug)
     if t is None or t["status"] != "aktif":
         return None
     return t["id"]

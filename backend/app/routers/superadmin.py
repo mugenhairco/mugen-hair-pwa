@@ -32,12 +32,19 @@ def _tenant_dengan_ringkasan(t: dict) -> dict:
     tenant_db.get_website_url(), murni derivasi dari slug/custom_domain
     yang SUDAH ADA -- TIDAK ada kolom/state baru disimpan) ditambahkan di
     sini juga -- otomatis ikut custom_domain terbaru kapan pun tenant
-    berpindah domain, tanpa langkah "simpan ulang" apa pun."""
+    berpindah domain, tanpa langkah "simpan ulang" apa pun.
+
+    FITUR URL Booking Publik per Tenant: `booking_url` (item 8 spesifikasi
+    -- kolom "Booking URL" di Dashboard Super Admin), dibentuk lewat
+    tenant_db.get_booking_url() -- SAMA polanya dengan website_url di
+    atas, otomatis ikut booking_slug terbaru kapan pun tenant mengubahnya
+    lewat Setting > Booking."""
     hasil = dict(t)
     daftar_user = auth_db.get_user_list(tenant_id=t["id"])
     hasil["jumlah_user"] = len(daftar_user)
     hasil["jumlah_owner"] = sum(1 for u in daftar_user if u["role"] == "admin" and u["aktif"])
     hasil["website_url"] = tenant_db.get_website_url(t)
+    hasil["booking_url"] = tenant_db.get_booking_url(t)
     return hasil
 
 
@@ -57,6 +64,7 @@ def detail_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
         u.pop("password_hash", None)
     hasil["users"] = daftar_user
     hasil["website_url"] = tenant_db.get_website_url(t)
+    hasil["booking_url"] = tenant_db.get_booking_url(t)
     return hasil
 
 

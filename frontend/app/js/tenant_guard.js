@@ -46,6 +46,20 @@ const MugenTenantGuard = (() => {
       // auth.py::resolve_tenant_untuk_branding()) -- SATU-SATUNYA sinyal
       // yang dipakai, TIDAK ADA endpoint terpisah yang perlu dibuat.
       if (data && data.is_platform_default) {
+        // FITUR URL Booking Publik per Tenant (item 9 spesifikasi): kalau
+        // tujuan navigasi sekarang MEMANG halaman booking publik (#/book),
+        // JANGAN tampilkan "Tenant Tidak Ditemukan" (Bahasa Indonesia, untuk
+        // aplikasi INTERNAL) di sini -- biarkan boot lanjut normal supaya
+        // PageBookPublic sendiri yang menampilkan "Booking page not found"
+        // (Bahasa Inggris, SESUAI spesifikasi -- lihat book_public.js) begitu
+        // endpoint publiknya sendiri gagal menemukan tenant lewat slug MAUPUN
+        // booking_slug. Untuk hash APA PUN yang lain (termasuk kosong/default
+        // -- akses Dashboard/Login lewat subdomain tenant), perilaku LAMA
+        // TIDAK BERUBAH sama sekali.
+        const hash = location.hash || "";
+        if (hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
+          return true;
+        }
         appRoot.innerHTML = "";
         PageTenantNotFound.render(appRoot, slug);
         return false;

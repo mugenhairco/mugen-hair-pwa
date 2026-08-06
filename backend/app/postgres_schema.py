@@ -535,6 +535,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     status             TEXT NOT NULL DEFAULT 'aktif',
     masa_aktif_sampai  TEXT,
     custom_domain      TEXT,
+    booking_slug       TEXT,
     created_at         TEXT NOT NULL
 );
 
@@ -559,6 +560,19 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email) WHERE email IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_whatsapp ON tenants(whatsapp) WHERE whatsapp IS NOT NULL;
+
+-- FITUR URL Booking Publik per Tenant: booking_slug TERPISAH dari `slug`
+-- (subdomain dashboard/staff, TIDAK BERUBAH sama sekali) -- URL booking
+-- publik sendiri per tenant (`<booking_slug>.rivoirsett.com/app/#/book`,
+-- lihat tenant_db.py::get_booking_url()/set_booking_slug()). ALTER TABLE
+-- ADD COLUMN IF NOT EXISTS di sini untuk instalasi Postgres yang SUDAH ADA
+-- sebelum kolom ini ditambahkan ke CREATE TABLE di atas (instalasi BARU
+-- sudah dapat kolomnya langsung dari CREATE TABLE) -- backfill tenant lama
+-- dilakukan Python di _backfill_booking_slug() di bawah (BUKAN SQL murni,
+-- perlu algoritma slugify + collision-numbering yang sama dengan
+-- tenant_db.py::buat_slug_unik()).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS booking_slug TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_booking_slug ON tenants(booking_slug) WHERE booking_slug IS NOT NULL;
 
 -- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): FAQ & Testimonial yang
 -- ditampilkan di Landing Page publik, dikelola Super Admin (bukan hardcode,
@@ -877,6 +891,7 @@ def create_all():
         _migrasi_subscription(conn)
         _migrasi_billing_packages(conn)
         _migrasi_billing_features(conn)
+        _backfill_booking_slug(conn)
 
 
 def _migrasi_subscription(conn):
@@ -1062,3 +1077,40 @@ def _migrasi_prefix_settings(conn, tenant_id_default: int):
         if existing is None:
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                          (kunci_baru, r["value"]))
+
+
+def _backfill_booking_slug(conn):
+    """FITUR URL Booking Publik per Tenant: backfill tenant LAMA (dibuat
+    sebelum kolom booking_slug ada) -- SENGAJA TIDAK memanggil
+    tenant_db.py::buat_slug_unik() (fungsi itu membuka KONEKSINYA SENDIRI
+    lewat db_compat.get_conn(), tidak bisa dipakai di sini karena
+    create_all() SATU transaksi besar -- ALTER TABLE booking_slug di atas
+    belum ter-commit sampai create_all() selesai, koneksi baru manapun
+    belum tentu melihatnya) -- logika slugify + collision-numbering
+    DIDUPLIKASI murni di sini, SAMA PERSIS dengan tenant_db.py (pola sama
+    seperti _migrasi_prefix_settings() di atas, lihat docstring
+    tenant_migrasi.py untuk alasan duplikasi SQLite/Postgres ini).
+    Pool keunikan dihitung SEKALI di awal lalu di-update di memori Python
+    setiap baris baru diisi (bukan re-query DB tiap iterasi) -- benar
+    walau ada beberapa tenant lama bernama persis sama."""
+    import re
+    import tenant_middleware  # import lokal: hindari import siklik
+
+    rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
+    terpakai = set(tenant_middleware.LABEL_BUKAN_TENANT)
+    for r in rows:
+        if r["slug"]:
+            terpakai.add(r["slug"])
+        if r["booking_slug"]:
+            terpakai.add(r["booking_slug"])
+    for r in rows:
+        if r["booking_slug"]:
+            continue
+        dasar = re.sub(r"[^a-z0-9]+", "", (r["nama_barbershop"] or r["slug"] or "").strip().lower()) or "toko"
+        slug = dasar
+        percobaan = 1
+        while slug in terpakai:
+            percobaan += 1
+            slug = f"{dasar}{percobaan}"
+        terpakai.add(slug)
+        conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (slug, r["id"]))
