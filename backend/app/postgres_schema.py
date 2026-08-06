@@ -1108,36 +1108,57 @@ def _migrasi_prefix_settings(conn, tenant_id_default: int):
 
 def _backfill_booking_slug(conn):
     """FITUR URL Booking Publik per Tenant: backfill tenant LAMA (dibuat
-    sebelum kolom booking_slug ada) -- SENGAJA TIDAK memanggil
-    tenant_db.py::buat_slug_unik() (fungsi itu membuka KONEKSINYA SENDIRI
-    lewat db_compat.get_conn(), tidak bisa dipakai di sini karena
-    create_all() SATU transaksi besar -- ALTER TABLE booking_slug di atas
-    belum ter-commit sampai create_all() selesai, koneksi baru manapun
-    belum tentu melihatnya) -- logika slugify + collision-numbering
-    DIDUPLIKASI murni di sini, SAMA PERSIS dengan tenant_db.py (pola sama
-    seperti _migrasi_prefix_settings() di atas, lihat docstring
-    tenant_migrasi.py untuk alasan duplikasi SQLite/Postgres ini).
-    Pool keunikan dihitung SEKALI di awal lalu di-update di memori Python
-    setiap baris baru diisi (bukan re-query DB tiap iterasi) -- benar
-    walau ada beberapa tenant lama bernama persis sama."""
+    sebelum kolom booking_slug ada).
+
+    HOTFIX v2 (crash produksi "duplicate key value violates unique
+    constraint idx_tenants_booking_slug" TERUS TERJADI walau sudah
+    dikunci lewat pg_advisory_xact_lock() di create_all()): pendekatan
+    SEBELUMNYA (hitung SELURUH kandidat di memori Python SEKALI di awal
+    berdasar snapshot SELECT, baru UPDATE polos satu-satu) diam-diam
+    mengasumsikan TIDAK ADA proses LAIN yang menulis kolom
+    slug/booking_slug SELAMA backfill ini berjalan -- asumsi itu ternyata
+    TIDAK CUKUP di produksi: pg_advisory_xact_lock() HANYA melindungi
+    proses yang SUDAH menjalankan kode BARU (yang tahu lock ini ada) --
+    instance LAMA yang kebetulan masih hidup/crash-loop dengan kode
+    SEBELUM lock itu ditambahkan (atau proses lain APA PUN yang menulis
+    tabel `tenants` di luar create_all()) SAMA SEKALI tidak tahu/tidak
+    ikut menunggu lock ini, sehingga snapshot yang dipakai untuk menghitung
+    kandidat di memori bisa jadi SUDAH BASI begitu UPDATE-nya sungguhan
+    dijalankan.
+
+    Diperbaiki total dengan pendekatan "coba lalu mundur" yang TIDAK
+    bergantung pada asumsi snapshot APA PUN: setiap kandidat langsung
+    dicoba lewat UPDATE SUNGGUHAN di dalam SAVEPOINT -- kalau bentrok
+    (IntegrityError, SIAPA PUN/KAPAN PUN penyebabnya), savepoint itu
+    di-ROLLBACK (memulihkan transaksi dari state "aborted" tanpa
+    menggagalkan create_all() secara keseluruhan) dan kandidat berikutnya
+    dicoba, sampai benar-benar dapat yang tersedia lewat verifikasi
+    LANGSUNG ke database saat itu juga -- bukan lagi lewat kalkulasi di
+    memori yang bisa salah kalau ada penulis lain."""
     import re
+
     import tenant_middleware  # import lokal: hindari import siklik
+    from db_compat import IntegrityError
 
     rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
-    terpakai = set(tenant_middleware.LABEL_BUKAN_TENANT)
-    for r in rows:
-        if r["slug"]:
-            terpakai.add(r["slug"])
-        if r["booking_slug"]:
-            terpakai.add(r["booking_slug"])
     for r in rows:
         if r["booking_slug"]:
             continue
         dasar = re.sub(r"[^a-z0-9]+", "", (r["nama_barbershop"] or r["slug"] or "").strip().lower()) or "toko"
-        slug = dasar
+        kandidat = dasar
         percobaan = 1
-        while slug in terpakai:
-            percobaan += 1
-            slug = f"{dasar}{percobaan}"
-        terpakai.add(slug)
-        conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (slug, r["id"]))
+        while True:
+            if kandidat in tenant_middleware.LABEL_BUKAN_TENANT:
+                percobaan += 1
+                kandidat = f"{dasar}{percobaan}"
+                continue
+            conn.execute("SAVEPOINT booking_slug_backfill")
+            try:
+                conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (kandidat, r["id"]))
+            except IntegrityError:
+                conn.execute("ROLLBACK TO SAVEPOINT booking_slug_backfill")
+                percobaan += 1
+                kandidat = f"{dasar}{percobaan}"
+                continue
+            conn.execute("RELEASE SAVEPOINT booking_slug_backfill")
+            break
