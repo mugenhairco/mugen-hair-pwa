@@ -48,11 +48,48 @@ _pool = None
 
 
 def _get_pool():
+    """HOTFIX (produksi macet total di "Memuat aplikasi..." -- SEMUA endpoint
+    yang menyentuh database, termasuk GET /api/tenant/branding yang PALING
+    PERTAMA dipanggil saat aplikasi boot, tidak pernah membalas SAMA SEKALI,
+    bukan error, benar-benar menggantung): pool ini SEBELUMNYA dibuat TANPA
+    connect_timeout maupun TCP keepalive apa pun. psycopg2.connect() (dipakai
+    ThreadedConnectionPool di bawah permukaan setiap kali pool perlu koneksi
+    FISIK baru -- pool KOSONG atau koneksi lama di dalamnya sudah mati diam-
+    diam di sisi server) TIDAK PUNYA batas waktu bawaan -- kalau server
+    Postgres tidak membalas SAMA SEKALI (paket jaringan hilang, server sedang
+    bermasalah, dst), panggilan itu bisa menggantung SANGAT LAMA (menit,
+    bergantung timeout TCP level OS) TANPA exception apa pun -- request HTTP
+    yang memicunya (dan SELURUH proses boot frontend yang menunggu balasan
+    itu) ikut menggantung selamanya, BUKAN gagal dengan pesan error yang bisa
+    ditangani (lihat tenant_guard.js -- SUDAH ADA penanganan kalau fetch
+    gagal/error, tapi tidak ada gunanya kalau fetch-nya tidak pernah selesai
+    sama sekali).
+
+    connect_timeout (detik) membuat percobaan KONEKSI BARU gagal cepat
+    dengan error yang jelas alih-alih menggantung tanpa batas. keepalives_*
+    membuat OS mendeteksi peer yang mati diam-diam pada koneksi yang SUDAH
+    ada (mis. tersimpan idle di pool, load balancer/NAT memutusnya tanpa
+    FIN yang benar) dalam waktu terbatas (idle 30 detik + 3x interval 10
+    detik = maksimal ~60 detik) alih-alih menggantung tanpa batas saat
+    dipakai ulang. options=statement_timeout membatasi SETIAP query
+    individual (bukan cuma fase koneksi) supaya query yang kebetulan
+    tertahan lock/kontensi lama juga gagal dengan error yang jelas, bukan
+    menggantung tanpa batas -- pertahanan berlapis untuk kelas masalah yang
+    SAMA (sesuatu yang menggantung selamanya HARUS berubah jadi error cepat
+    yang bisa ditangani, tidak pernah membiarkan request menggantung tanpa
+    batas waktu)."""
     global _pool
     if _pool is None:
         minconn = int(os.environ.get("PG_POOL_MIN", "1"))
         maxconn = int(os.environ.get("PG_POOL_MAX", "10"))
-        _pool = psycopg2.pool.ThreadedConnectionPool(minconn, maxconn, dsn=DATABASE_URL)
+        connect_timeout = int(os.environ.get("PG_CONNECT_TIMEOUT", "10"))
+        statement_timeout_ms = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", "30000"))
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn, maxconn, dsn=DATABASE_URL,
+            connect_timeout=connect_timeout,
+            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+            options=f"-c statement_timeout={statement_timeout_ms}",
+        )
     return _pool
 
 
