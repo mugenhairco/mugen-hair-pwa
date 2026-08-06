@@ -41,6 +41,17 @@ const MugenUI = (() => {
       .trim();
   }
 
+  // FITUR Email, Verifikasi Email, Lupa Kata Sandi: link dari email
+  // (#/verify-email?token=..., #/reset-password?token=...) menaruh query
+  // string DI DALAM hash (SPA hash-routed, bukan location.search biasa
+  // yang cuma baca query SEBELUM tanda "#") -- helper kecil ini mengambil
+  // bagian setelah "?" di dalam location.hash saat ini, dipakai
+  // pages/verify_email.js & pages/reset_password.js.
+  function ambilQueryHash() {
+    const idx = location.hash.indexOf("?");
+    return new URLSearchParams(idx === -1 ? "" : location.hash.slice(idx + 1));
+  }
+
   // BOOKING UI/UX #1: Nomor Transaksi -- [SERVICE_INITIAL][DD][MM][HHMM]
   // [TENANT_INITIAL], SATU-SATUNYA implementasi (dipakai layar Appointment
   // Confirmed di book_public.js DAN menu Booking > List/Calendar di
@@ -500,6 +511,6 @@ const MugenUI = (() => {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, buatNomorTransaksi,
-    skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState,
+    skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
   };
 })();

@@ -16,10 +16,20 @@ seluruh dashboard (mekanisme akses_diblokir() yang SUDAH ADA sejak Phase 3,
 TIDAK DIUBAH) sampai memilih paket & membayar lewat alur checkout Phase 4
 yang SUDAH ADA (billing.py::checkout(), TIDAK DIUBAH) -- begitu webhook
 (TIDAK DIUBAH) mengaktifkan subscription-nya, akses_diblokir() otomatis
-lolos dengan sendirinya. Owner LANGSUNG di-login-kan (token dikembalikan di
-response) supaya bisa lanjut ke halaman #/billing tanpa login manual lagi
--- router.js perlu satu pengecualian sempit supaya #/billing bisa diakses
-walau statusnya masih 'expired' (lihat router.js, BUKAN bagian backend ini)."""
+lolos dengan sendirinya.
+
+REVISI FITUR Verifikasi Email: Owner SEBELUMNYA langsung di-login-kan di
+sini (token dikembalikan di response register()) supaya bisa lanjut ke
+#/billing tanpa login manual. SEKARANG akun baru WAJIB verifikasi email
+dulu sebelum bisa login sama sekali (blokir_sampai_verifikasi, lihat
+email_auth_migrasi.py) -- register() TIDAK LAGI mengembalikan token/
+auto-login, hanya konfirmasi "cek email Anda". Begitu email diverifikasi,
+Owner login NORMAL lewat /api/auth/login (TIDAK DIUBAH) -- mekanisme
+akses_diblokir()/redirect ke #/billing di atas TETAP jalan APA ADANYA
+persis seperti sebelumnya begitu mereka login (status masih 'expired'),
+jadi alur checkout Phase 4 TIDAK berubah SAMA SEKALI, hanya titik "kapan
+pertama kali login" yang bergeser dari "saat register" jadi "setelah
+verifikasi email"."""
 
 import re
 
@@ -27,10 +37,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import auth_db
+import email_auth_db
+import email_service
+import email_templates
 import subscription_db
 import superadmin_audit_db
 import tenant_db
-from auth import buat_token
 
 public_router = APIRouter(prefix="/api/public/registration", tags=["registration-public"])
 
@@ -89,6 +101,21 @@ def _validasi(body: RegisterBody) -> None:
         raise HTTPException(status_code=422, detail="Password minimal 4 karakter.")
 
 
+def _kirim_email_verifikasi(user_id: int, email: str, nama_penerima: str) -> None:
+    """Best-effort -- kegagalan pengiriman TIDAK PERNAH melempar exception
+    ke pemanggil (email_service.kirim_email() sendiri sudah menangkap
+    SEMUA kegagalan & mengembalikan bool, lihat modul itu), SESUAI aturan
+    eksplisit "kegagalan pengiriman email tidak menyebabkan aplikasi
+    crash". Dipakai register() (kirim pertama) & resend_verification()
+    (kirim ulang) supaya isi emailnya identik."""
+    token = email_auth_db.buat_token_verifikasi(user_id)
+    link = email_service.link_verifikasi_email(token)
+    email_service.kirim_email(
+        email, "Verifikasi email Rivoir Anda",
+        email_templates.template_verifikasi_email(nama_penerima, link, email_auth_db.MASA_BERLAKU_VERIFIKASI_JAM),
+    )
+
+
 @public_router.post("/register")
 def register(body: RegisterBody):
     _validasi(body)
@@ -99,6 +126,13 @@ def register(body: RegisterBody):
         raise HTTPException(status_code=422, detail="Email sudah terdaftar.")
     if tenant_db.get_tenant_by_whatsapp(whatsapp) is not None:
         raise HTTPException(status_code=422, detail="Nomor WhatsApp sudah terdaftar.")
+    # FITUR Verifikasi Email: "Email wajib unik" ditegakkan juga lewat
+    # kolom users.email (BARU) -- get_tenant_by_email() di atas HANYA
+    # mengecek data registrant tenant, belum tentu sama dengan users.email
+    # kalau di masa depan ada jalur lain yang mengisi email tanpa lewat
+    # sini (mis. Pengaturan > Profil tenant lama).
+    if email_auth_db.get_user_by_email(email) is not None:
+        raise HTTPException(status_code=422, detail="Email sudah terdaftar.")
 
     slug = _buat_slug_unik(body.nama_barbershop)
     try:
@@ -117,13 +151,46 @@ def register(body: RegisterBody):
     # memakai mekanisme akses_diblokir() Phase 3 yang SUDAH ADA apa adanya.
     subscription_db.create_default_subscription(tenant_id, status="expired")
 
+    # FITUR Verifikasi Email: akun BARU (lihat docstring modul ini di atas
+    # untuk penjelasan lengkap kenapa register() TIDAK LAGI auto-login).
+    email_auth_db.set_email_user(user_id, email)
+    email_auth_db.tandai_blokir_sampai_verifikasi(user_id)
+    _kirim_email_verifikasi(user_id, email, body.owner_name.strip())
+
     superadmin_audit_db.catat(
         "registrasi-publik", "registrasi_publik", tenant_id=tenant_id, tenant_slug=slug,
         detail=f"nama_barbershop={body.nama_barbershop!r}, email={email!r}",
     )
 
-    user = auth_db.get_user(user_id)
-    token = buat_token(user_id)
-    user.pop("password_hash", None)
-    tenant = tenant_db.get_tenant(tenant_id)
-    return {"token": token, "user": user, "tenant": tenant}
+    return {
+        "registered": True,
+        "email": email,
+        "message": "Registrasi berhasil. Silakan cek email Anda untuk memverifikasi akun sebelum bisa login.",
+    }
+
+
+class ResendVerificationBody(BaseModel):
+    email: str = ""
+
+
+@public_router.post("/resend-verification")
+def resend_verification(body: ResendVerificationBody):
+    """Tombol "Kirim Ulang Email Verifikasi" -- respons SELALU generik
+    (tidak membedakan email ditemukan/tidak/sudah terverifikasi) supaya
+    endpoint publik ini tidak bisa dipakai menebak-nebak email mana yang
+    terdaftar, konsisten dengan prinsip yang sama dipakai routers/
+    email_auth.py::lupa_password()."""
+    email = (body.email or "").strip().lower()
+    pesan = "Kalau email tersebut terdaftar dan belum diverifikasi, kami telah mengirimkan ulang link verifikasi."
+    if not email:
+        return {"message": pesan}
+    user = email_auth_db.get_user_by_email(email)
+    if user is not None and not user["email_verified"]:
+        # Nama penerima: owner_name tersimpan di tenants (set_registrant_info()
+        # saat register()), bukan di users -- diambil dari sana kalau ada,
+        # fallback ke username supaya tetap terkirim walau tenant-nya (jarang
+        # terjadi) tidak punya baris registrant info.
+        tenant = tenant_db.get_tenant(user["tenant_id"]) if user.get("tenant_id") else None
+        nama = (tenant or {}).get("owner_name") or user["username"]
+        _kirim_email_verifikasi(user["id"], email, nama)
+    return {"message": pesan}

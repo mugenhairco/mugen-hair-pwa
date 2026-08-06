@@ -59,6 +59,7 @@ from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
 from revisi_setting_migrasi import migrasi_revisi_setting
 from karyawan_migrasi import migrasi_karyawan
+from email_auth_migrasi import migrasi_email_auth
 from r2_storage_migrasi import migrasi_r2_storage
 import tenant_migrasi
 from tenant_migrasi import migrasi_tenant
@@ -356,6 +357,7 @@ def on_startup():
         billing_db.seed_default_package_features()  # Feature Gating: assign booking_online/qris/export_pdf ke SEMUA paket SEKALI SAJA, supaya tenant lama tidak kehilangan fitur yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
         migrasi_landing()  # FONDASI Multi-Tenant Phase 5: kolom tenants.owner_name/email/whatsapp + tabel landing_faq/landing_testimonials (idempotent, WAJIB setelah migrasi_tenant())
+        migrasi_email_auth()  # Email/Verifikasi Email/Lupa Kata Sandi: kolom users.email/email_verified/blokir_sampai_verifikasi + tabel email_verification_tokens/password_reset_tokens (idempotent)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
