@@ -277,3 +277,60 @@ def test_buat_tenant_lapis_pertahanan_terakhir_saat_toctou(two_tenants, monkeypa
     except ValueError as e:
         assert "sudah dipakai" in str(e)
     assert len(tenant_db.list_tenants()) == jumlah_sebelum
+
+
+# ============================================================================
+# FITUR Subdomain Tenant Otomatis: Login/Dashboard/Booking/halaman publik
+# SEMUA harus bisa diakses lewat SATU subdomain https://{booking_slug}.
+# rivoirsett.com yang sama -- lihat routers/auth_router.py::login().
+# ============================================================================
+
+def test_login_lewat_subdomain_booking_slug_yang_berbeda_dari_slug(two_tenants):
+    """GAP yang ditemukan: sebelum perbaikan ini, login() HANYA resolve
+    lewat kolom `slug` (subdomain dashboard/staff) -- begitu Owner
+    mengubah booking_slug jadi berbeda dari slug awal (mis. slug tetap
+    "test-toko-a" tapi booking_slug diubah jadi "mugen"), membuka
+    mugen.rivoirsett.com dan mencoba LOGIN dari sana akan gagal 404
+    "Barbershop tidak ditemukan" walau branding/booking publik di
+    subdomain yang sama sudah resolve dengan benar -- login() sekarang
+    HARUS ikut fallback ke booking_slug seperti resolve_tenant_publik()/
+    resolve_tenant_untuk_branding()."""
+    client = two_tenants["client"]
+    r = client.put("/api/booking/booking-slug", json={"booking_slug": "mugen"},
+                    headers=two_tenants["headers_a"])
+    assert r.status_code == 200, r.text
+    assert tenant_db.get_tenant(two_tenants["tenant_a"])["slug"] == "test-toko-a"
+
+    r2 = client.post(
+        "/api/auth/login",
+        json={"username": "ownerA", "password": "passwordA123"},
+        headers={"X-Tenant-Slug": "mugen"},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["tenant"]["slug"] == "test-toko-a"
+
+
+def test_login_lewat_subdomain_slug_asli_tetap_berfungsi(two_tenants):
+    """Regresi: subdomain `slug` asli (dashboard/staff, TIDAK diedit)
+    tetap 100% berfungsi seperti sebelumnya setelah fallback booking_slug
+    ditambahkan -- `slug` tetap prioritas utama, fallback HANYA dicoba
+    kalau lookup `slug` gagal."""
+    client = two_tenants["client"]
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "ownerA", "password": "passwordA123"},
+        headers={"X-Tenant-Slug": "test-toko-a"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["tenant"]["slug"] == "test-toko-a"
+
+
+def test_login_subdomain_tidak_dikenal_tetap_404(app_client):
+    """Regresi: subdomain yang BUKAN slug maupun booking_slug tenant mana
+    pun tetap 404 (bukan diam-diam login ke tenant default/salah)."""
+    r = app_client.post(
+        "/api/auth/login",
+        json={"username": "siapapun", "password": "sembarang123"},
+        headers={"X-Tenant-Slug": "tidak-ada-begini"},
+    )
+    assert r.status_code == 404, r.text
