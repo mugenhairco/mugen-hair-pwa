@@ -208,13 +208,41 @@ const PageBookPublic = (() => {
         return;
       }
     } catch (e) {
-      // Offline/error jaringan: lanjut ke renderLanding() seperti biasa --
-      // endpoint publik lain di sana sudah punya penanganan error sendiri
-      // (lihat catch block renderLanding()), jangan blokir halaman hanya
-      // karena SATU pengecekan awal gagal karena network, bukan karena
-      // memang diblokir Super Admin.
+      // FITUR URL Booking Publik per Tenant (item 9 spesifikasi): 404 di
+      // sini SATU-SATUNYA berarti resolve_tenant_publik() (auth.py) gagal
+      // total menemukan tenant apa pun (slug MAUPUN booking_slug tidak
+      // cocok) -- tampilkan halaman ramah "Booking page not found"
+      // (Bahasa Inggris, SESUAI teks spesifikasi persis), BUKAN error
+      // server mentah. Status LAIN (0/offline, 5xx, dst): lanjut ke
+      // renderLanding() seperti biasa -- endpoint publik lain di sana
+      // sudah punya penanganan error sendiri (lihat catch block
+      // renderLanding()), jangan blokir halaman hanya karena SATU
+      // pengecekan awal gagal karena network, bukan karena memang tidak
+      // ditemukan/diblokir Super Admin.
+      if (e && e.status === 404) {
+        renderBookingPageNotFound(root);
+        return;
+      }
     }
     renderLanding(root);
+  }
+
+  // FITUR URL Booking Publik per Tenant (item 9 spesifikasi): halaman
+  // "Booking page not found" -- dipakai KHUSUS saat tenant/booking_slug-nya
+  // sendiri tidak ditemukan (404), BEDA dari renderTidakTersedia() (tenant
+  // DITEMUKAN tapi subscription-nya tidak aktif -- pesan & penyebabnya
+  // beda total). Teks Bahasa Inggris SESUAI spesifikasi persis, konsisten
+  // dengan halaman ini yang sudah sepenuhnya Bahasa Inggris.
+  function renderBookingPageNotFound(root) {
+    const page = MugenUI.el("div", { class: "book-public book-landing" });
+    root.appendChild(page);
+    const hero = MugenUI.el("section", { class: "book-hero" });
+    const heroContent = MugenUI.el("div", { class: "book-hero-content" });
+    heroContent.appendChild(MugenUI.el("h1", {}, "Booking page not found"));
+    heroContent.appendChild(MugenUI.el("div", { class: "book-hero-tagline" },
+      "This booking link is invalid or no longer available."));
+    hero.appendChild(heroContent);
+    page.appendChild(hero);
   }
 
   // FONDASI Multi-Tenant Phase 3: halaman "tidak tersedia" saat subscription

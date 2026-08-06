@@ -16,6 +16,7 @@ menjalankan pengujian isolasi dua tenant yang diminta, dan sebagai fondasi
 yang akan diperluas Super Admin nanti (lihat roadmap audit, Tahap 7)."""
 
 import os
+import re
 from datetime import datetime
 
 from database import get_conn, DEFAULT_SETTINGS
@@ -64,6 +65,97 @@ def get_website_url(tenant: dict) -> str | None:
     return None
 
 
+def get_booking_url(tenant: dict) -> str | None:
+    """FITUR URL Booking Publik per Tenant: URL lengkap halaman booking
+    PUBLIK tenant -- SELALU subdomain berbasis `booking_slug` (BUKAN
+    custom_domain, beda dari get_website_url() di atas -- booking_slug
+    independen, bisa berbeda dari domain website tenant), diikuti path
+    "/app/#/book" (SAMA PERSIS pola "Link Booking" yang sudah ada di
+    Setting > Booking/booking.js -- lihat komentar BUGFIX di sana kenapa
+    origin polos tanpa path salah) supaya link SELALU langsung berfungsi,
+    tidak bergantung pada default routing subdomain kosong. None kalau
+    tenant belum punya booking_slug sama sekali (seharusnya tidak pernah
+    terjadi untuk tenant yang dibuat lewat buat_tenant() sejak fitur ini
+    ada -- dijaga defensif untuk data lama sebelum migrasi backfill)."""
+    booking_slug = (tenant.get("booking_slug") or "").strip()
+    if not booking_slug:
+        return None
+    return f"https://{booking_slug}.{TENANT_SUBDOMAIN_SUFFIX}/app/#/book"
+
+
+def _slugify_dasar(nama: str) -> str:
+    """SAMA PERSIS algoritma yang dipakai routers/tenant_registration.py
+    sebelumnya (dipusatkan di sini supaya `slug` DAN `booking_slug`
+    memakai basis identik) -- SELURUH karakter selain huruf/angka dibuang
+    TOTAL (BUKAN diganti "-"), sesuai spesifikasi produk eksplisit, mis.
+    "MUGEN Hair Co." -> "mugenhairco"."""
+    slug = re.sub(r"[^a-z0-9]+", "", (nama or "").strip().lower())
+    return slug or "toko"
+
+
+def _slug_dipakai(slug: str, kecuali_tenant_id: int | None = None) -> bool:
+    """FITUR URL Booking Publik per Tenant: `slug` DAN `booking_slug`
+    resolve lewat subdomain *.rivoirsett.com yang SAMA (lihat
+    get_tenant_by_slug_atau_booking_slug()) -- jadi keduanya HARUS
+    dianggap SATU pool keunikan (plus label sistem yang direservasi, lihat
+    tenant_middleware.LABEL_BUKAN_TENANT) supaya tidak pernah ada dua
+    tenant kebagian subdomain publik yang sama, apa pun kombinasi
+    kolomnya. `kecuali_tenant_id` dipakai saat MENGEDIT booking_slug
+    tenant yang sudah ada, supaya tenant itu tidak dianggap bertabrakan
+    dengan slug/booking_slug MILIKNYA SENDIRI."""
+    import tenant_middleware  # import lokal: hindari import siklik saat modul ini dimuat lebih dulu
+    if slug in tenant_middleware.LABEL_BUKAN_TENANT:
+        return True
+    with get_conn() as conn:
+        query = "SELECT id FROM tenants WHERE (slug = ? OR booking_slug = ?)"
+        params = [slug, slug]
+        if kecuali_tenant_id is not None:
+            query += " AND id != ?"
+            params.append(kecuali_tenant_id)
+        row = conn.execute(query, params).fetchone()
+        return row is not None
+
+
+def buat_slug_unik(nama_barbershop: str, kecuali_tenant_id: int | None = None) -> str:
+    """Angka collision LANGSUNG menempel tanpa pemisah (mis. "mugenhairco2",
+    BUKAN "mugenhairco-2") -- SESUAI spesifikasi produk eksplisit. Dipakai
+    baik untuk `slug` (saat tenant dibuat, lewat buat_tenant() di bawah)
+    maupun `booking_slug` (saat diedit lewat Setting > Booking, lihat
+    set_booking_slug())."""
+    dasar = _slugify_dasar(nama_barbershop)
+    slug = dasar
+    percobaan = 1
+    while _slug_dipakai(slug, kecuali_tenant_id):
+        percobaan += 1
+        slug = f"{dasar}{percobaan}"
+    return slug
+
+
+_BOOKING_SLUG_RE = re.compile(r"^[a-z0-9]+$")
+
+
+def set_booking_slug(tenant_id: int, booking_slug: str) -> None:
+    """FITUR URL Booking Publik per Tenant (item 7 spesifikasi): tenant
+    mengubah booking_slug lewat Setting > Booking -- divalidasi FORMAT
+    (huruf kecil + angka saja, sama seperti `slug`) dan KEUNIKAN (pool
+    gabungan slug+booking_slug SELURUH tenant + label sistem, lihat
+    _slug_dipakai()) SEBELUM disimpan. Link Booking & QR Code di frontend
+    otomatis ikut berubah begitu ini disimpan (keduanya dibentuk dari
+    booking_slug TERKINI setiap kali dibaca, TIDAK ADA state tersimpan
+    terpisah, lihat get_booking_url())."""
+    booking_slug = (booking_slug or "").strip().lower()
+    if not booking_slug:
+        raise ValueError("Booking slug tidak boleh kosong.")
+    if not _BOOKING_SLUG_RE.match(booking_slug):
+        raise ValueError("Booking slug hanya boleh berisi huruf kecil dan angka, tanpa spasi/karakter khusus.")
+    if get_tenant(tenant_id) is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    if _slug_dipakai(booking_slug, kecuali_tenant_id=tenant_id):
+        raise ValueError(f"Booking slug '{booking_slug}' sudah dipakai, silakan pilih yang lain.")
+    with get_conn() as conn:
+        conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (booking_slug, tenant_id))
+
+
 def get_tenant(tenant_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
@@ -74,6 +166,32 @@ def get_tenant_by_slug(slug: str):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tenants WHERE slug = ?", (slug,)).fetchone()
         return dict(row) if row else None
+
+
+def get_tenant_by_booking_slug(booking_slug: str):
+    """FITUR URL Booking Publik per Tenant: kolom `booking_slug` TERPISAH
+    dari `slug` (slug tetap dipakai subdomain dashboard/staff APA ADANYA,
+    tidak pernah berubah otomatis) -- dipakai HANYA sebagai fallback lewat
+    get_tenant_by_slug_atau_booking_slug() di bawah, TIDAK PERNAH dipanggil
+    langsung untuk resolusi login/branding/Super Admin."""
+    booking_slug = (booking_slug or "").strip().lower()
+    if not booking_slug:
+        return None
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE booking_slug = ?", (booking_slug,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_tenant_by_slug_atau_booking_slug(slug: str):
+    """FITUR URL Booking Publik per Tenant: `slug` (subdomain dashboard/
+    staff, PRIORITAS -- perilaku LAMA tidak berubah sama sekali) dulu, baru
+    fallback ke `booking_slug` (URL booking publik customer, lihat
+    set_booking_slug()) kalau tidak ketemu. Dipakai cari_tenant_publik()
+    (endpoint publik booking/website/identitas) DAN
+    auth.py::resolve_tenant_untuk_branding() (supaya Logo/Nama Bisnis/dst
+    tetap tampil benar begitu customer membuka subdomain booking_slug) --
+    TIDAK PERNAH dipakai resolusi sesi login (itu murni lewat token)."""
+    return get_tenant_by_slug(slug) or get_tenant_by_booking_slug(slug)
 
 
 def get_tenant_by_custom_domain(host: str):
@@ -124,13 +242,21 @@ def cari_tenant_publik(slug: str | None):
     deployment single-tenant SEKARANG) -- perilaku LAMA sebelum Phase 1
     TIDAK BERUBAH SAMA SEKALI selama frontend belum mengirim parameter ini.
     Return dict tenant (bukan cuma id) supaya caller bisa cek status
-    aktif juga, atau None kalau slug diisi tapi tidak ditemukan."""
+    aktif juga, atau None kalau slug diisi tapi tidak ditemukan.
+
+    FITUR URL Booking Publik per Tenant: `slug` yang tidak ketemu lewat
+    kolom `slug` di-fallback ke kolom `booking_slug` lewat
+    get_tenant_by_slug_atau_booking_slug() -- SATU-SATUNYA perubahan di
+    sini, transparan untuk SELURUH endpoint publik yang memanggil fungsi
+    ini lewat resolve_tenant_publik() (routers/booking.py public_router,
+    routers/website.py, routers/pengaturan.py identitas/logo publik),
+    TIDAK ADA endpoint yang perlu diubah satu per satu."""
     if slug:
-        return get_tenant_by_slug(slug)
+        return get_tenant_by_slug_atau_booking_slug(slug)
     return get_tenant_by_slug(SLUG_TENANT_DEFAULT)
 
 
-def buat_tenant(slug: str, nama_barbershop: str) -> int:
+def buat_tenant(slug: str, nama_barbershop: str, booking_slug: str | None = None) -> int:
     """Pembuatan tenant MINIMAL -- hanya baris `tenants` itu sendiri (belum
     membuat user Owner/data awal, itu tanggung jawab pemanggil, sama seperti
     _bootstrap_admin_pertama() di main.py membuat user pertama terpisah dari
@@ -169,13 +295,37 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
     import tenant_middleware  # import lokal: hindari import siklik saat modul ini dimuat lebih dulu
     if slug in tenant_middleware.LABEL_BUKAN_TENANT:
         raise ValueError(f"Slug '{slug}' adalah nama sistem yang direservasi, tidak bisa dipakai tenant.")
-    if get_tenant_by_slug(slug) is not None:
+    # FITUR URL Booking Publik per Tenant: dicek terhadap pool GABUNGAN
+    # slug+booking_slug SELURUH tenant (_slug_dipakai(), BUKAN lagi hanya
+    # get_tenant_by_slug()) -- supaya slug baru TIDAK PERNAH bisa
+    # bertabrakan dengan booking_slug tenant lain yang sudah diedit lewat
+    # Setting > Booking (keduanya resolve lewat subdomain *.rivoirsett.com
+    # yang SAMA, lihat get_tenant_by_slug_atau_booking_slug()).
+    if _slug_dipakai(slug):
         raise ValueError(f"Slug '{slug}' sudah dipakai tenant lain.")
+    # FITUR URL Booking Publik per Tenant: booking_slug OTOMATIS dibuat
+    # saat tenant pertama kali dibuat (spesifikasi item 2). Kalau `slug`
+    # yang diberikan pemanggil KEBETULAN sudah berformat valid (huruf kecil
+    # + angka saja -- SELALU benar untuk slug hasil buat_slug_unik(), TIDAK
+    # SELALU benar untuk slug yang diketik manual lewat form Super Admin,
+    # yang boleh mengandung "-" dst) dipakai ulang APA ADANYA (paling
+    # intuitif, booking_slug = slug). Kalau TIDAK (mis. mengandung "-"),
+    # dihitung ulang dari nama_barbershop lewat buat_slug_unik() supaya
+    # booking_slug SELALU valid sejak awal dibuat -- tidak pernah gagal
+    # validasi format begitu Owner sekadar menyimpan ulang nilai yang sama
+    # tanpa mengubah apa pun lewat Setting > Booking (lihat set_booking_slug()).
+    # TIDAK PERNAH ikut berubah otomatis kalau nama_barbershop diedit
+    # belakangan (kolom terpisah, hanya berubah lewat set_booking_slug()
+    # eksplisit) -- caller boleh override lewat parameter `booking_slug`
+    # kalau perlu nilai lain.
+    booking_slug = (booking_slug or "").strip().lower()
+    if not booking_slug:
+        booking_slug = slug if _BOOKING_SLUG_RE.match(slug) else buat_slug_unik(nama_barbershop)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO tenants (slug, nama_barbershop, status, created_at) VALUES (?, ?, 'aktif', ?)",
-            (slug, nama_barbershop, now),
+            "INSERT INTO tenants (slug, nama_barbershop, status, booking_slug, created_at) VALUES (?, ?, 'aktif', ?, ?)",
+            (slug, nama_barbershop, booking_slug, now),
         )
         tenant_id = cur.lastrowid
         # Tenant BARU, mustahil baris settings-nya sudah ada -- INSERT polos

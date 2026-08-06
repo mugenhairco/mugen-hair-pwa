@@ -145,6 +145,36 @@ const PageSuperadmin = (() => {
                   [link, btnSalin, btnBuka]);
               },
             },
+            // FITUR URL Booking Publik per Tenant (item 8 spesifikasi):
+            // booking_url dikirim backend (routers/superadmin.py::
+            // _tenant_dengan_ringkasan(), lewat tenant_db.get_booking_url()
+            // -- subdomain dari booking_slug TERKINI + path "/app/#/book")
+            // -- pola KOLOM SAMA PERSIS dengan Alamat Website di atas
+            // (link + tombol Salin + tombol Buka Booking), TERPISAH karena
+            // booking_slug bisa berbeda dari slug/custom_domain tenant.
+            {
+              key: "booking_url", label: "Booking URL",
+              format: (v) => {
+                if (!v) return MugenUI.el("span", { class: "subtitle" }, "Belum dibuat");
+                const link = MugenUI.el("a", { href: v, target: "_blank", rel: "noopener noreferrer" }, v);
+                const btnSalin = MugenUI.el("button", { type: "button", title: "Salin URL" }, "📋 Salin");
+                btnSalin.addEventListener("click", async () => {
+                  try {
+                    await navigator.clipboard.writeText(v);
+                    MugenUI.toast("Booking URL disalin.", "success");
+                  } catch (e) {
+                    MugenUI.toast("Gagal menyalin otomatis -- salin manual dari link di atas.", "error");
+                  }
+                });
+                const btnBuka = MugenUI.el(
+                  "a",
+                  { href: v, target: "_blank", rel: "noopener noreferrer", class: "btn-primary", title: "Buka Booking" },
+                  "↗ Buka Booking",
+                );
+                return MugenUI.el("div", { class: "actions-cell", style: "flex-wrap:wrap;align-items:center;gap:6px;" },
+                  [link, btnSalin, btnBuka]);
+              },
+            },
             {
               key: "status", label: "Status",
               format: (v) => MugenUI.el("span", {

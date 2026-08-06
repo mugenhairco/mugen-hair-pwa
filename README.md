@@ -2730,6 +2730,27 @@ Env var `TENANT_SUBDOMAIN_SUFFIX` (backend, tabel di atas) dan
 SUDAH default ke `rivoirsett.com` — HANYA perlu diubah kalau domain
 produksi berganti di masa depan (dua tempat itu, samakan nilainya).
 
+**URL Booking Publik per Tenant (`booking_slug`):** setiap tenant JUGA
+punya kolom `booking_slug` TERPISAH dari `slug` di atas — `slug` tetap
+subdomain dashboard/staff (Login, TIDAK PERNAH berubah otomatis),
+`booking_slug` khusus URL booking publik customer
+(`https://<booking_slug>.rivoirsett.com/app/#/book`, lihat kartu "Link
+Booking" di Setting > Booking). Dibuat OTOMATIS saat tenant pertama kali
+dibuat (basis nama barbershop, algoritma sama seperti `slug` — huruf
+kecil+angka saja, angka collision menempel langsung, mis. "mugenhairco",
+"mugenhairco2") dan TIDAK ikut berubah kalau nama barbershop diedit
+belakangan — Owner bisa menggantinya kapan pun lewat Setting > Booking
+(divalidasi unik terhadap `slug`+`booking_slug` SELURUH tenant lain +
+label sistem reservasi, supaya tidak pernah bertabrakan). Dashboard Super
+Admin menampilkan kolom "Booking URL" (Salin/Buka Booking) di samping
+"Alamat Website" yang sudah ada. Subdomain `booking_slug` yang tidak
+dikenal menampilkan halaman "Booking page not found" (Bahasa Inggris,
+KHUSUS di dalam halaman /book — beda dari "Tenant Tidak Ditemukan" di
+atas yang berlaku untuk subdomain dashboard/staff yang tidak dikenal).
+Tidak butuh env var/setup DNS tambahan apa pun di luar wildcard
+`*.rivoirsett.com` yang sudah didaftarkan untuk `slug` di atas — kolom
+`booking_slug` resolve lewat wildcard yang SAMA.
+
 **Redirect domain lama (`*.onrender.com`) → domain produksi:** setelah
 custom domain aktif, siapa pun yang membuka URL `.onrender.com` bawaan
 Render (mis. dari link lama, bookmark, hasil index mesin pencari sebelum
