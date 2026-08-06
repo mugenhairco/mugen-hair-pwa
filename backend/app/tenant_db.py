@@ -20,6 +20,7 @@ import re
 from datetime import datetime
 
 from database import get_conn, DEFAULT_SETTINGS
+from db_compat import IntegrityError
 
 STATUS_VALID = {"aktif", "nonaktif"}
 
@@ -153,7 +154,14 @@ def set_booking_slug(tenant_id: int, booking_slug: str) -> None:
     if _slug_dipakai(booking_slug, kecuali_tenant_id=tenant_id):
         raise ValueError(f"Booking slug '{booking_slug}' sudah dipakai, silakan pilih yang lain.")
     with get_conn() as conn:
-        conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (booking_slug, tenant_id))
+        # HARDENING: lapis pertahanan TERAKHIR terhadap race TOCTOU yang
+        # SAMA seperti buat_tenant() di atas -- SELALU UPDATE baris yang
+        # SUDAH ADA (tenant_id sudah dipastikan ada lewat get_tenant() di
+        # atas), TIDAK PERNAH membuat baris baru.
+        try:
+            conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (booking_slug, tenant_id))
+        except IntegrityError:
+            raise ValueError(f"Booking slug '{booking_slug}' sudah dipakai, silakan pilih yang lain.")
 
 
 def get_tenant(tenant_id: int):
@@ -323,10 +331,27 @@ def buat_tenant(slug: str, nama_barbershop: str, booking_slug: str | None = None
         booking_slug = slug if _BOOKING_SLUG_RE.match(slug) else buat_slug_unik(nama_barbershop)
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO tenants (slug, nama_barbershop, status, booking_slug, created_at) VALUES (?, ?, 'aktif', ?, ?)",
-            (slug, nama_barbershop, booking_slug, now),
-        )
+        # HARDENING (crash produksi "duplicate key value violates unique
+        # constraint" saat startup, lihat booking_slug_migrasi.py/
+        # postgres_schema.py::_backfill_booking_slug() untuk penjelasan akar
+        # masalah race SEJENIS): _slug_dipakai() di atas adalah cek
+        # "terlebih dahulu" (TOCTOU -- masih ada celah waktu SANGAT kecil
+        # antara cek itu dan INSERT ini kalau dua request/proses berbarengan
+        # membuat tenant dengan slug/booking_slug yang SAMA persis).
+        # try/except di sini SATU-SATUNYA lapis pertahanan TERAKHIR --
+        # mengubah IntegrityError mentah dari database (yang kalau lolos
+        # akan jadi HTTP 500 tak jelas ke pemanggil) jadi ValueError yang
+        # SAMA persis pesannya dengan hasil cek di atas, BUKAN membuat
+        # baris tenant baru yang "menimpa" yang sudah ada -- INSERT yang
+        # gagal TETAP gagal total (tidak ada baris yatim tersisa).
+        try:
+            cur = conn.execute(
+                "INSERT INTO tenants (slug, nama_barbershop, status, booking_slug, created_at) "
+                "VALUES (?, ?, 'aktif', ?, ?)",
+                (slug, nama_barbershop, booking_slug, now),
+            )
+        except IntegrityError:
+            raise ValueError(f"Slug '{slug}' sudah dipakai tenant lain.")
         tenant_id = cur.lastrowid
         # Tenant BARU, mustahil baris settings-nya sudah ada -- INSERT polos
         # (bukan ON CONFLICT DO NOTHING) cukup, konsisten dengan fungsi lain

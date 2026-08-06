@@ -164,3 +164,116 @@ def test_regresi_branding_subdomain_booking_slug_tidak_dianggap_tenant_tidak_dit
     r = client.get("/api/tenant/branding", headers={"X-Tenant-Slug": "bslugberbeda"})
     assert r.status_code == 200, r.text
     assert r.json()["is_platform_default"] is False
+
+
+# ============================================================================
+# HOTFIX: crash produksi "duplicate key value violates unique constraint
+# idx_tenants_booking_slug" saat startup (crash-loop) -- lihat
+# booking_slug_migrasi.py::_backfill_booking_slug()/postgres_schema.py untuk
+# penjelasan akar masalah (backfill sebelumnya tidak aman kalau proses
+# startup kebetulan berjalan berbarengan lebih dari sekali).
+# ============================================================================
+
+def test_migrasi_booking_slug_idempotent_dipanggil_ulang(app_client):
+    """Startup HARUS bisa dipanggil berkali-kali tanpa error -- migrasi
+    (termasuk backfill booking_slug) sudah jalan sekali otomatis saat
+    app_client boot; memanggilnya lagi secara manual TIDAK BOLEH melempar
+    exception apa pun, dan TIDAK BOLEH mengubah booking_slug yang sudah
+    ada (idempotent penuh, bukan cuma "tidak crash")."""
+    import booking_slug_migrasi
+
+    sebelum = {t["id"]: t["booking_slug"] for t in tenant_db.list_tenants()}
+    booking_slug_migrasi.migrasi_booking_slug()
+    booking_slug_migrasi.migrasi_booking_slug()
+    booking_slug_migrasi.migrasi_booking_slug()
+    sesudah = {t["id"]: t["booking_slug"] for t in tenant_db.list_tenants()}
+    assert sebelum == sesudah
+
+
+def test_backfill_booking_slug_dua_tenant_lama_nama_sama_tidak_bentrok(app_client):
+    """Simulasi data LAMA (dari sebelum kolom booking_slug ada): dua baris
+    tenants dibuat LANGSUNG lewat SQL (bypass tenant_db.buat_tenant(),
+    yang sekarang SELALU mengisi booking_slug sejak awal) dengan
+    nama_barbershop PERSIS SAMA dan booking_slug NULL -- persis kondisi
+    yang dulu memicu backfill menghasilkan kandidat bentrok. Backfill
+    HARUS menomori otomatis TANPA melempar IntegrityError/UniqueViolation
+    apa pun, sesuai algoritma yang SAMA dengan buat_slug_unik()."""
+    import booking_slug_migrasi
+    from database import get_conn
+
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO tenants (slug, nama_barbershop, status, created_at) VALUES (?, ?, 'aktif', ?)",
+            ("legacy-toko-a", "Toko Legacy", "2020-01-01T00:00:00"),
+        )
+        conn.execute(
+            "INSERT INTO tenants (slug, nama_barbershop, status, created_at) VALUES (?, ?, 'aktif', ?)",
+            ("legacy-toko-b", "Toko Legacy", "2020-01-01T00:00:00"),
+        )
+
+    booking_slug_migrasi.migrasi_booking_slug()
+
+    slug_a = tenant_db.get_tenant_by_slug("legacy-toko-a")["booking_slug"]
+    slug_b = tenant_db.get_tenant_by_slug("legacy-toko-b")["booking_slug"]
+    assert slug_a is not None and slug_b is not None
+    assert slug_a != slug_b
+    assert {slug_a, slug_b} == {"tokolegacy", "tokolegacy2"}
+
+
+def test_buat_tenant_gagal_bersih_kalau_slug_bentrok_race(two_tenants):
+    """HARDENING: buat_tenant() sekarang punya lapis pertahanan TERAKHIR
+    (try/except IntegrityError -> ValueError) selain cek "terlebih
+    dahulu" -- pesan errornya tetap ValueError yang ramah (BUKAN
+    IntegrityError/UniqueViolation mentah yang bisa lolos jadi HTTP 500),
+    dan TIDAK ADA baris tenant baru yang tertinggal (INSERT gagal total)."""
+    jumlah_sebelum = len(tenant_db.list_tenants())
+    try:
+        tenant_db.buat_tenant("test-toko-a", "Duplikat Slug")
+        assert False, "Harus ditolak: slug sudah dipakai tenant lain."
+    except ValueError as e:
+        assert "sudah dipakai" in str(e)
+    assert len(tenant_db.list_tenants()) == jumlah_sebelum
+
+
+def test_set_booking_slug_gagal_bersih_kalau_bentrok_race(two_tenants):
+    """HARDENING SAMA seperti buat_tenant() di atas, untuk set_booking_slug()
+    (endpoint PUT /api/booking/booking-slug)."""
+    slug_b = tenant_db.get_tenant(two_tenants["tenant_b"])["booking_slug"]
+    try:
+        tenant_db.set_booking_slug(two_tenants["tenant_a"], slug_b)
+        assert False, "Harus ditolak: booking_slug sudah dipakai tenant lain."
+    except ValueError as e:
+        assert "sudah dipakai" in str(e)
+    # Booking slug tenant A TIDAK BERUBAH sama sekali setelah percobaan gagal.
+    assert tenant_db.get_tenant(two_tenants["tenant_a"])["booking_slug"] != slug_b
+
+
+def test_set_booking_slug_lapis_pertahanan_terakhir_saat_toctou(two_tenants, monkeypatch):
+    """Menguji KHUSUS cabang `except IntegrityError` (lapis pertahanan
+    TERAKHIR) di set_booking_slug() -- bukan cabang pengecekan
+    "terlebih dahulu" (_slug_dipakai(), diuji terpisah di atas) --
+    dengan memalsukan _slug_dipakai() supaya lolos padahal nilainya
+    SUDAH dipakai tenant lain, meniru race TOCTOU sungguhan. UPDATE yang
+    gagal HARUS diterjemahkan jadi ValueError yang ramah, BUKAN
+    IntegrityError/UniqueViolation mentah yang bisa lolos jadi HTTP 500."""
+    monkeypatch.setattr(tenant_db, "_slug_dipakai", lambda *a, **k: False)
+    slug_b = tenant_db.get_tenant(two_tenants["tenant_b"])["booking_slug"]
+    try:
+        tenant_db.set_booking_slug(two_tenants["tenant_a"], slug_b)
+        assert False, "Harus ditolak lewat lapis pertahanan terakhir (IntegrityError)."
+    except ValueError as e:
+        assert "sudah dipakai" in str(e)
+
+
+def test_buat_tenant_lapis_pertahanan_terakhir_saat_toctou(two_tenants, monkeypatch):
+    """Sama seperti di atas, untuk buat_tenant() -- cabang
+    `except IntegrityError` dipicu langsung (bukan cabang pengecekan
+    "terlebih dahulu")."""
+    monkeypatch.setattr(tenant_db, "_slug_dipakai", lambda *a, **k: False)
+    jumlah_sebelum = len(tenant_db.list_tenants())
+    try:
+        tenant_db.buat_tenant("test-toko-a", "Duplikat Slug Lewat Race")
+        assert False, "Harus ditolak lewat lapis pertahanan terakhir (IntegrityError)."
+    except ValueError as e:
+        assert "sudah dipakai" in str(e)
+    assert len(tenant_db.list_tenants()) == jumlah_sebelum
