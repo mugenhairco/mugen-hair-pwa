@@ -43,6 +43,7 @@ import email_templates
 import subscription_db
 import superadmin_audit_db
 import tenant_db
+from tenant_middleware import LABEL_BUKAN_TENANT
 
 public_router = APIRouter(prefix="/api/public/registration", tags=["registration-public"])
 
@@ -50,18 +51,35 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _slugify(nama: str) -> str:
-    slug = nama.strip().lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+    """FITUR Subdomain Otomatis per Tenant: slug JADI langsung dipakai
+    sebagai subdomain (`<slug>.rivoirsett.com`, lihat tenant_middleware.py)
+    -- SELURUH karakter selain huruf/angka dibuang TOTAL (BUKAN diganti
+    "-", label DNS boleh mengandung "-" tapi spesifikasi produk ini
+    eksplisit minta tanpa pemisah, mis. "MUGEN Hair Co." -> "mugenhairco",
+    "Bubble Shot" -> "bubbleshot")."""
+    slug = re.sub(r"[^a-z0-9]+", "", nama.strip().lower())
     return slug or "toko"
 
 
+def _slug_terpakai(slug: str) -> bool:
+    """`slug` dianggap "terpakai" juga kalau bertabrakan dengan label
+    subdomain yang DIRESERVASI platform (admin/www/api/app/dst, lihat
+    tenant_middleware.py) -- supaya barbershop bernama persis "Admin" TIDAK
+    PERNAH kebagian slug "admin" (yang HARUS selalu berarti Dashboard
+    Super Admin, tidak pernah tenant mana pun) -- otomatis mendapat
+    "admin2" dst lewat mekanisme angka collision yang sama."""
+    return slug in LABEL_BUKAN_TENANT or tenant_db.get_tenant_by_slug(slug) is not None
+
+
 def _buat_slug_unik(nama_barbershop: str) -> str:
+    """Angka collision LANGSUNG menempel tanpa pemisah (mis. "mugenhairco2",
+    BUKAN "mugenhairco-2") -- SESUAI spesifikasi produk eksplisit."""
     dasar = _slugify(nama_barbershop)
     slug = dasar
     percobaan = 1
-    while tenant_db.get_tenant_by_slug(slug) is not None:
+    while _slug_terpakai(slug):
         percobaan += 1
-        slug = f"{dasar}-{percobaan}"
+        slug = f"{dasar}{percobaan}"
     return slug
 
 

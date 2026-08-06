@@ -372,6 +372,15 @@
 // khusus tenant lama yang belum punya). Tidak mengubah database/JWT/API
 // yang sudah ada -- lihat ui.js (ambilQueryHash), router.js (3 route
 // baru).
+// v77 -> v78: FITUR Subdomain Otomatis per Tenant -- slug hasil registrasi
+// mandiri sekarang tanpa pemisah ("mugenhairco", bukan "mugen-hair-co"),
+// resolusi tenant dari subdomain (<slug>.rivoirsett.com) AKTIF SECARA
+// DEFAULT (sebelumnya opt-in lewat env var kosong), halaman baru "Tenant
+// Tidak Ditemukan" (pages/tenant_not_found.js) ditampilkan lewat
+// tenant_guard.js di app.js kalau subdomain yang dibuka tidak dikenal
+// backend. Root Landing Page (frontend/index.html) redirect bare
+// subdomain tenant ke /app/. Tidak mengubah database/JWT/API/isolasi
+// data multi-tenant yang sudah ada.
 //
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
@@ -387,7 +396,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "77";
+const ASSET_VERSION = "78";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -458,6 +467,8 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/book_public.js",
   "/app/js/pages/superadmin.js",
   "/app/js/pages/subscription_blocked.js",
+  "/app/js/pages/tenant_not_found.js",
+  "/app/js/tenant_guard.js",
 ];
 const APP_SHELL = [
   ..._APP_SHELL_TANPA_VERSI,

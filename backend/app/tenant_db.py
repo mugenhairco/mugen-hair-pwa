@@ -76,6 +76,33 @@ def get_tenant_by_slug(slug: str):
         return dict(row) if row else None
 
 
+def get_tenant_by_custom_domain(host: str):
+    """FITUR Subdomain Otomatis per Tenant: fondasi resolusi Custom Domain
+    (mis. `mugenhairco.com` milik tenant sendiri, BUKAN subdomain bawaan
+    `mugenhairco.rivoirsett.com`) -- lihat tenant_middleware.py, dipanggil
+    sebagai fallback KHUSUS kalau Host request TIDAK cocok pola subdomain
+    `*.rivoirsett.com` sama sekali. Kolom `custom_domain` SUDAH ADA di
+    skema `tenants` sejak Phase 1 tapi belum pernah dibaca untuk resolusi
+    APAPUN sebelum ini (hanya dipakai get_website_url() untuk TAMPILAN) --
+    TIDAK ADA endpoint tulis untuk kolom ini SAMA SEKALI sampai sekarang,
+    jadi fallback ini murni "siap dipakai begitu fitur pengisian Custom
+    Domain-nya sendiri dibuat" (tidak ada baris yang akan cocok sebelum
+    itu, murni forward-compat sesuai permintaan -- TIDAK mengubah perilaku
+    resolusi tenant manapun yang sudah berjalan). Pencocokan case-
+    insensitive & mengabaikan skema/trailing slash (disimpan sebagai host
+    polos, tapi dijaga defensif kalau suatu saat diisi dengan format URL
+    penuh)."""
+    host = (host or "").strip().lower()
+    if not host:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tenants WHERE LOWER(REPLACE(REPLACE(custom_domain, 'https://', ''), 'http://', '')) = ?",
+            (host,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def list_tenants():
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM tenants ORDER BY created_at").fetchall()
@@ -132,6 +159,16 @@ def buat_tenant(slug: str, nama_barbershop: str) -> int:
         raise ValueError("Slug tenant tidak boleh kosong.")
     if not nama_barbershop:
         raise ValueError("Nama barbershop tidak boleh kosong.")
+    # FITUR Subdomain Otomatis per Tenant: ditegakkan DI SINI (satu-satunya
+    # titik pembuatan tenant, dipakai BAIK registrasi mandiri MAUPUN
+    # provisioning manual Super Admin) supaya label subdomain yang
+    # DIRESERVASI platform (admin/www/api/app/dst, lihat
+    # tenant_middleware.py) TIDAK PERNAH bisa dipakai sebagai slug tenant
+    # mana pun -- terutama "admin", yang HARUS selalu berarti Dashboard
+    # Super Admin (admin.rivoirsett.com), tidak pernah tenant mana pun.
+    import tenant_middleware  # import lokal: hindari import siklik saat modul ini dimuat lebih dulu
+    if slug in tenant_middleware.LABEL_BUKAN_TENANT:
+        raise ValueError(f"Slug '{slug}' adalah nama sistem yang direservasi, tidak bisa dipakai tenant.")
     if get_tenant_by_slug(slug) is not None:
         raise ValueError(f"Slug '{slug}' sudah dipakai tenant lain.")
     now = datetime.now().isoformat(timespec="seconds")

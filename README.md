@@ -2517,7 +2517,7 @@ lokal, sudah ada nilai default yang aman):
 | `ADMIN_BOOTSTRAP_PASSWORD` | Password Owner pertama | `ganti-password-ini` |
 | `SECRET_KEY` | Kunci penandatanganan token login — **wajib diisi acak & rahasia saat deploy** | kunci development (TIDAK aman untuk produksi) |
 | `ALLOWED_ORIGINS` | Daftar origin frontend yang boleh memanggil API ini (dipisah koma) — CORS | `localhost:5500,127.0.0.1:5500,localhost:3000,localhost:8000,https://rivoirsett.com` (lihat kode) |
-| `TENANT_SUBDOMAIN_BASE_DOMAIN` | FONDASI Multi-Tenant Phase 2.0: domain dasar untuk resolusi tenant lewat SUBDOMAIN (mis. diisi `mugenhair.app` supaya `toko-a.mugenhair.app` otomatis ter-resolve ke tenant slug `toko-a`, lihat `tenant_middleware.py`) | kosong (subdomain resolution MATI TOTAL -- tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) |
+| `TENANT_SUBDOMAIN_SUFFIX` | FITUR Subdomain Otomatis per Tenant: domain dasar untuk resolusi tenant lewat SUBDOMAIN, AKTIF SECARA DEFAULT (mis. `mugenhairco.rivoirsett.com` otomatis ter-resolve ke tenant slug `mugenhairco`, lihat `tenant_middleware.py`/`tenant_db.py`). Kosongkan untuk MEMATIKAN resolusi subdomain sama sekali (tenant tetap bisa di-resolve lewat query string `?tenant=`/header `X-Tenant-Slug`/slug eksplisit di form Login) | `rivoirsett.com` |
 | `DATABASE_URL` | Connection string PostgreSQL (Render PostgreSQL, atau provider Postgres lain mana pun — kode ini generik, tidak terikat satu provider tertentu) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
 | `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
 | `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
@@ -2697,6 +2697,35 @@ secara manual lewat dashboard.
    nilai default yang sudah di-commit di kode (`main.py`, tag SEO)
    SUDAH memakai `rivoirsett.com`/`api.rivoirsett.com`, jadi langkah ini
    hanya perlu diulang kalau domainnya berubah lagi di masa depan.
+
+**Subdomain otomatis per tenant (`<slug>.rivoirsett.com`) — setup satu
+kali:** kode sudah SEPENUHNYA otomatis begitu langkah operasional berikut
+selesai (TIDAK ADA langkah manual berulang per tenant baru):
+1. **DNS (Cloudflare, atau registrar/DNS provider Anda):** tambahkan SATU
+   record wildcard `*` (CNAME atau A, tergantung provider hosting) yang
+   mengarah ke domain frontend produksi (`rivoirsett.com`) — record ini
+   membuat SEMUA subdomain (`mugenhairco.rivoirsett.com`, tenant apa pun
+   yang didaftarkan setelahnya, dst) otomatis mengarah ke server yang sama
+   TANPA perlu menambah record baru lagi setiap ada tenant baru.
+2. **Render (Static Site frontend):** tab **Settings > Custom Domains** →
+   tambahkan domain wildcard `*.rivoirsett.com` (fitur *Wildcard Custom
+   Domains*, tersedia di plan tertentu Render — cek dashboard/dokumentasi
+   Render terbaru kalau opsi ini tidak muncul) supaya Render menerima &
+   melayani request untuk SUBDOMAIN APA PUN di bawah `rivoirsett.com`
+   dengan berkas statis yang SAMA (differensiasi tenant 100% terjadi di
+   sisi klien lewat `location.hostname`, lihat `frontend/app/js/
+   tenant_guard.js`) — SSL wildcard diterbitkan otomatis oleh Render sekali
+   domain ini terverifikasi.
+3. Verifikasi: buka `<slug-tenant-aktif>.rivoirsett.com` di browser —
+   harus langsung menampilkan halaman Login toko tersebut (branding sudah
+   ikut otomatis). Coba juga subdomain yang SENGAJA tidak ada (mis.
+   `tidak-ada-begini.rivoirsett.com`) — harus menampilkan halaman "Tenant
+   Tidak Ditemukan", bukan Landing Page/Login toko lain.
+
+Env var `TENANT_SUBDOMAIN_SUFFIX` (backend, tabel di atas) dan
+`window.MUGEN_TENANT_BASE_DOMAIN` (frontend, `frontend/app/config.js`)
+SUDAH default ke `rivoirsett.com` — HANYA perlu diubah kalau domain
+produksi berganti di masa depan (dua tempat itu, samakan nilainya).
 
 **Redirect domain lama (`*.onrender.com`) → domain produksi:** setelah
 custom domain aktif, siapa pun yang membuka URL `.onrender.com` bawaan
