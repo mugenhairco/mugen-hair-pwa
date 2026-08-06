@@ -53,7 +53,20 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  // FITUR Subdomain Otomatis per Tenant: dicek PALING AWAL, SEBELUM baris
+  // apa pun di bawah ini -- kalau domain yang sedang dibuka BERBENTUK
+  // subdomain tenant (mis. mugenhairco.rivoirsett.com) TAPI slug-nya tidak
+  // dikenal backend, halaman "Tenant Tidak Ditemukan" langsung dirender
+  // & seluruh boot NORMAL di bawah (router/subscription/notifikasi dkk)
+  // DIHENTIKAN -- lihat tenant_guard.js. Untuk domain BUKAN subdomain
+  // tenant (root/www/app/api/admin, mayoritas mutlak trafik hari ini),
+  // fungsi ini resolve SEKETIKA tanpa fetch apa pun, jadi TIDAK menambah
+  // delay boot sama sekali.
+  const appRoot = document.getElementById("app");
+  const lanjut = await MugenTenantGuard.cekLaluRender(appRoot);
+  if (!lanjut) return;
+
   // BUGFIX Register (Landing Page SaaS): halaman Register SELALU platform
   // Rivoir, TIDAK PERNAH branding tenant (lihat brand.js::
   // refreshPlatformOnly(), dipanggil sendiri oleh PageRegister.render()

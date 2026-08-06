@@ -16,6 +16,8 @@ berlogin_setelah_verifikasi) sudah disesuaikan ke alur baru ini."""
 
 import hashlib
 
+import pytest
+
 import auth_db
 import billing_db
 import billing_invoice_db
@@ -310,6 +312,70 @@ def test_register_slug_otomatis_dan_unik_kalau_nama_sama(app_client):
     tenant1 = tenant_db.get_tenant_by_email("budi@contoh.com")
     tenant2 = tenant_db.get_tenant_by_email("lain2@contoh.com")
     assert tenant1["slug"] != tenant2["slug"]
+
+
+# ============================= FITUR Subdomain Otomatis per Tenant =============================
+# Slug hasil registrasi mandiri LANGSUNG dipakai sebagai subdomain
+# (<slug>.rivoirsett.com, lihat tenant_middleware.py) -- spesifikasi
+# produk eksplisit minta TANPA pemisah apa pun (bukan lagi "mugen-hair-co"
+# gaya lama), dengan angka collision menempel langsung.
+
+def test_register_slug_sesuai_contoh_spesifikasi_tanpa_pemisah(app_client):
+    r = app_client.post("/api/public/registration/register",
+                         json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="mugen@contoh.com"))
+    assert r.status_code == 200, r.text
+    tenant = tenant_db.get_tenant_by_email("mugen@contoh.com")
+    assert tenant["slug"] == "mugenhairco"
+
+    r2 = app_client.post("/api/public/registration/register",
+                          json=_payload_register(nama_barbershop="Bubble Shot", email="bubble@contoh.com",
+                                                  whatsapp="081199999999"))
+    assert r2.status_code == 200, r2.text
+    tenant2 = tenant_db.get_tenant_by_email("bubble@contoh.com")
+    assert tenant2["slug"] == "bubbleshot"
+
+
+def test_register_slug_collision_pakai_angka_tanpa_pemisah(app_client):
+    r1 = app_client.post("/api/public/registration/register",
+                          json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="satu@contoh.com"))
+    assert r1.status_code == 200, r1.text
+    r2 = app_client.post("/api/public/registration/register",
+                          json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="dua@contoh.com",
+                                                  whatsapp="081188888888"))
+    assert r2.status_code == 200, r2.text
+    r3 = app_client.post("/api/public/registration/register",
+                          json=_payload_register(nama_barbershop="MUGEN Hair Co.", email="tiga@contoh.com",
+                                                  whatsapp="081177777777"))
+    assert r3.status_code == 200, r3.text
+
+    slug1 = tenant_db.get_tenant_by_email("satu@contoh.com")["slug"]
+    slug2 = tenant_db.get_tenant_by_email("dua@contoh.com")["slug"]
+    slug3 = tenant_db.get_tenant_by_email("tiga@contoh.com")["slug"]
+    assert slug1 == "mugenhairco"
+    assert slug2 == "mugenhairco2"
+    assert slug3 == "mugenhairco3"
+
+
+def test_register_nama_toko_admin_tidak_kebagian_slug_reservasi(app_client):
+    """Barbershop bernama persis "Admin" TIDAK PERNAH boleh kebagian slug
+    "admin" -- subdomain itu HARUS selalu berarti Dashboard Super Admin
+    (item 8 spesifikasi), tidak pernah tenant mana pun."""
+    r = app_client.post("/api/public/registration/register",
+                         json=_payload_register(nama_barbershop="Admin", email="admin-toko@contoh.com"))
+    assert r.status_code == 200, r.text
+    tenant = tenant_db.get_tenant_by_email("admin-toko@contoh.com")
+    assert tenant["slug"] != "admin"
+    assert tenant["slug"] == "admin2"
+
+
+def test_buat_tenant_manual_menolak_slug_reservasi(app_client):
+    """Provisioning manual Super Admin (routers/superadmin.py) memakai
+    tenant_db.buat_tenant() yang SAMA -- reservasi ditegakkan di SATU
+    titik ini, jadi berlaku untuk KEDUA jalur pembuatan tenant."""
+    with pytest.raises(ValueError):
+        tenant_db.buat_tenant("admin", "Toko Nakal")
+    with pytest.raises(ValueError):
+        tenant_db.buat_tenant("www", "Toko Nakal Lagi")
 
 
 def test_register_tercatat_di_audit_log(app_client):
