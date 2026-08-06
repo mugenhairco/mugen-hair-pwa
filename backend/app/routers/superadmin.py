@@ -2,7 +2,10 @@
 =============================================================================
 Seluruh endpoint di sini KHUSUS akun `role='superadmin'` (require_superadmin,
 lihat auth.py) -- mengelola SELURUH tenant dari satu tempat: daftar toko,
-buat toko baru (+ akun Owner pertamanya), dan aktifkan/nonaktifkan toko.
+buat toko baru (+ akun Owner pertamanya), aktifkan/nonaktifkan toko, dan
+hapus toko PERMANEN (khusus tenant testing/development -- tenant utama
+"mugen-hair-co" & tenant terakhir yang tersisa TIDAK PERNAH bisa dihapus,
+lihat tenant_db.hapus_tenant()).
 
 TIDAK ADA endpoint di sini yang membaca/mengubah data BISNIS tenant mana pun
 (transaksi, booking, dst) -- itu tetap murni urusan Owner/Admin masing-
@@ -121,6 +124,66 @@ def ubah_status_tenant(tenant_id: int, body: StatusTenantBody, user: dict = Depe
     aksi = "aktifkan_tenant" if body.status == "aktif" else "nonaktifkan_tenant"
     superadmin_audit_db.catat(user["username"], aksi, tenant_id=tenant_id, tenant_slug=t["slug"] if t else None)
     return _tenant_dengan_ringkasan(t)
+
+
+class UbahSlugBody(BaseModel):
+    slug: str
+
+
+@router.put("/tenants/{tenant_id}/slug")
+def ubah_slug_tenant(tenant_id: int, body: UbahSlugBody, user: dict = Depends(require_superadmin)):
+    """FITUR Migrasi Subdomain: SATU-SATUNYA cara mengubah `slug` tenant
+    (subdomain dashboard/login/booking utama) setelah tenant dibuat --
+    slug immutable di luar jalur ini. Dipakai untuk memigrasikan tenant
+    lama ke subdomain baru (mis. "mugen-hair-co" -> "mugen") TANPA
+    kehilangan data apa pun -- hanya kolom `slug` yang berubah, seluruh
+    data tenant (user, barber, booking, transaksi, dst) tetap utuh.
+    tenant_db.set_slug() menegakkan validasi format + keunikan; SENGAJA
+    TIDAK memblokir tenant default (beda dengan hapus_tenant() di atas)
+    karena migrasi tenant default itu justru pemakaian utamanya."""
+    t = tenant_db.get_tenant(tenant_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+    slug_lama = t["slug"]
+    try:
+        tenant_db.set_slug(tenant_id, body.slug)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    t_baru = tenant_db.get_tenant(tenant_id)
+    superadmin_audit_db.catat(
+        user["username"], "ubah_slug_tenant", tenant_id=tenant_id, tenant_slug=t_baru["slug"],
+        detail=f"slug_lama={slug_lama!r}, slug_baru={t_baru['slug']!r}",
+    )
+    return _tenant_dengan_ringkasan(t_baru)
+
+
+class HapusTenantBody(BaseModel):
+    konfirmasi_slug: str
+
+
+@router.delete("/tenants/{tenant_id}")
+def hapus_tenant(tenant_id: int, body: HapusTenantBody, user: dict = Depends(require_superadmin)):
+    """FITUR Hapus Tenant: penghapusan PERMANEN, TIDAK bisa dibatalkan --
+    dipakai untuk membersihkan tenant testing/development. `konfirmasi_slug`
+    WAJIB persis sama dengan slug tenant yang akan dihapus (lapis pertahanan
+    KEDUA, ditegakkan backend -- TIDAK cukup hanya konfirmasi di frontend,
+    supaya klik keliru/panggilan API langsung tanpa lewat UI tetap tertolak).
+    tenant_db.hapus_tenant() sendiri sudah menegakkan dua penjaga lain (tidak
+    bisa hapus mugen-hair-co, tidak bisa hapus tenant terakhir)."""
+    t = tenant_db.get_tenant(tenant_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+    if body.konfirmasi_slug.strip().lower() != t["slug"].strip().lower():
+        raise HTTPException(status_code=422, detail="Konfirmasi slug tidak cocok -- penghapusan dibatalkan.")
+    try:
+        tenant_terhapus = tenant_db.hapus_tenant(tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(
+        user["username"], "hapus_tenant", tenant_id=tenant_id, tenant_slug=tenant_terhapus["slug"],
+        detail=f"nama_barbershop={tenant_terhapus['nama_barbershop']!r}",
+    )
+    return {"ok": True, "slug": tenant_terhapus["slug"]}
 
 
 @router.get("/audit-log")

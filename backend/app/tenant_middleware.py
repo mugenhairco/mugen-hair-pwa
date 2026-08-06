@@ -20,11 +20,12 @@ di-resolve SEKALI per request lalu ditaruh di
    DNS/kode tambahan apa pun per tenant baru -- wildcard DNS (*.rivoirsett.com,
    dikonfigurasi SEKALI di Cloudflare/registrar, di luar cakupan kode ini)
    membuat SETIAP subdomain sampai ke server yang sama, middleware inilah
-   yang membaca header Host dan memetakannya ke slug tenant. AKTIF SECARA
-   DEFAULT (base domain "rivoirsett.com") -- boleh dioverride/dimatikan
-   lewat environment variable TENANT_SUBDOMAIN_SUFFIX kalau domain produksi
-   berubah di masa depan (satu-satunya tempat yang perlu disentuh, kosongkan
-   env var ini untuk MEMATIKAN resolusi subdomain sama sekali).
+   yang membaca subdomain asal request dan memetakannya ke slug tenant.
+   AKTIF SECARA DEFAULT (base domain "rivoirsett.com") -- boleh
+   dioverride/dimatikan lewat environment variable TENANT_SUBDOMAIN_SUFFIX
+   kalau domain produksi berubah di masa depan (satu-satunya tempat yang
+   perlu disentuh, kosongkan env var ini untuk MEMATIKAN resolusi
+   subdomain sama sekali).
 4. FITUR Custom Domain (persiapan): kalau Host request SAMA SEKALI TIDAK
    cocok pola subdomain `*.rivoirsett.com` (mis. tenant sudah pindah ke
    domain sendiri, `mugenhairco.com`), dicoba SEKALI lagi lewat
@@ -36,17 +37,40 @@ di-resolve SEKALI per request lalu ditaruh di
    TANPA perlu mengubah endpoint/frontend mana pun lagi.
 
 Urutan prioritas (yang pertama ketemu & tidak kosong yang dipakai):
-  query string `?tenant=` > header `X-Tenant-Slug` > subdomain Host >
-  custom domain Host.
+  query string `?tenant=` > header `X-Tenant-Slug` > subdomain > custom
+  domain.
 
 PENTING: middleware ini HANYA menaruh *kandidat* slug ke request.state --
 TIDAK PERNAH memutuskan sendiri apakah slug itu valid/aktif (itu tetap
 tanggung jawab tenant_db.py, dipanggil dari resolve_tenant_publik()/
 routers/auth_router.py, sama seperti sebelumnya). Middleware murni lapisan
 "cari input dari mana", bukan lapisan otorisasi.
+
+HOTFIX Migrasi Subdomain (arsitektur SaaS subdomain penuh -- root domain
+jadi Landing Page murni, setiap tenant HANYA lewat subdomain sendiri):
+ditemukan lewat audit bahwa topologi deployment produksi SEBENARNYA adalah
+DUA DOMAIN TERPISAH -- frontend di `{slug}.rivoirsett.com` (berbeda-beda
+per tenant), backend API SELALU di SATU domain tetap `api.rivoirsett.com`
+(TIDAK PERNAH berubah per tenant). Header `Host` pada request YANG SAMPAI
+DI BACKEND karena itu SELALU berisi "api.rivoirsett.com" apa pun subdomain
+tenant yang sedang dibuka pengguna di browser -- membaca Host untuk
+resolusi subdomain/custom domain di topologi split-domain ini TIDAK PERNAH
+BERGUNA (subdomain/custom domain tenant tidak akan pernah cocok, karena
+yang dilihat justru domain API itu sendiri). Yang SUNGGUHAN membawa
+informasi domain/subdomain asal request adalah header `Origin` -- dikirim
+BROWSER OTOMATIS (tidak bisa dipalsukan lewat JS halaman) untuk SETIAP
+request cross-origin, sudah lama dipakai `ALLOWED_ORIGIN_REGEX` (main.py,
+CORS) untuk tujuan yang sama. Diperbaiki dengan membaca `Origin` LEBIH
+DULU (fallback ke `Host` hanya untuk request yang genuinely tidak membawa
+Origin -- curl/server-ke-server/webhook, di mana Host memang satu-satunya
+sinyal yang ada, walau untuk kasus itu pun Host tetap akan
+"api.rivoirsett.com" sehingga tidak ter-resolve ke tenant mana pun -- itu
+benar/diharapkan, bukan regresi, permintaan non-browser TIDAK dimaksudkan
+membawa subdomain tenant tersirat).
 """
 
 import os
+from urllib.parse import urlparse
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -67,6 +91,17 @@ SUBDOMAIN_BASE_DOMAIN = os.environ.get("TENANT_SUBDOMAIN_SUFFIX", "rivoirsett.co
 # dan Super Admin manual (routers/superadmin.py::buat_tenant()) ditolak
 # eksplisit kalau mencoba memakai slug yang sama).
 LABEL_BUKAN_TENANT = {"www", "api", "app", "admin", "mail", "ftp"}
+
+
+def _hostname_dari_origin_atau_host(request) -> str:
+    """HOTFIX Migrasi Subdomain: Origin (kalau ada) lebih dipercaya
+    daripada Host -- lihat docstring modul untuk alasan lengkapnya."""
+    origin = request.headers.get("origin", "")
+    if origin:
+        hostname = urlparse(origin).hostname
+        if hostname:
+            return hostname
+    return request.headers.get("host", "")
 
 
 def _slug_dari_subdomain(host: str) -> str | None:
@@ -101,7 +136,7 @@ def _slug_dari_custom_domain(host: str) -> str | None:
 
 class TenantResolutionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        host = request.headers.get("host", "")
+        host = _hostname_dari_origin_atau_host(request)
         slug = (
             request.query_params.get("tenant")
             or request.headers.get("x-tenant-slug")

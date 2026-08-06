@@ -110,3 +110,96 @@ def test_custom_domain_tidak_dicoba_untuk_subdomain_rivoirsett():
     luar rivoirsett.com)."""
     assert tenant_middleware._slug_dari_custom_domain("mugenhairco.rivoirsett.com") is None
     assert tenant_middleware._slug_dari_custom_domain("rivoirsett.com") is None
+
+
+# =============================================================================
+# HOTFIX Migrasi Subdomain: Origin header (BUKAN Host) adalah sumber yang
+# benar untuk resolusi subdomain/custom domain di topologi deployment
+# produksi (frontend di {slug}.rivoirsett.com, backend API SELALU tetap di
+# satu domain api.rivoirsett.com -- Host header yang SAMPAI ke backend
+# TIDAK PERNAH membawa subdomain tenant, cuma domain API itu sendiri).
+# Ditemukan karena test_branding_lewat_subdomain_default() di atas (dan
+# semua test lain di file ini) memakai TestClient yang membiarkan Host
+# diset LANGSUNG tanpa Origin sama sekali -- caranya tidak meniru
+# perilaku browser sungguhan (yang SELALU mengirim Origin untuk request
+# cross-origin, TIDAK PERNAH mengizinkan JS memalsukan Host), jadi celah
+# ini tidak pernah tertangkap test yang sudah ada.
+# =============================================================================
+
+def test_resolusi_utamakan_origin_bukan_host(monkeypatch):
+    """Skenario browser SUNGGUHAN: frontend tenant di subdomain sendiri
+    memanggil API yang selalu satu domain tetap -- Host header di request
+    yang SAMPAI ke backend adalah domain API (TIDAK berguna untuk
+    resolusi), Origin header (dikirim otomatis browser, tidak bisa
+    dipalsukan lewat JS halaman) yang membawa subdomain tenant
+    sebenarnya."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "rivoirsett.com")
+
+    class _FakeRequest:
+        headers = {"origin": "https://mugen.rivoirsett.com", "host": "api.rivoirsett.com"}
+
+    hostname = tenant_middleware._hostname_dari_origin_atau_host(_FakeRequest())
+    assert hostname == "mugen.rivoirsett.com"
+    assert tenant_middleware._slug_dari_subdomain(hostname) == "mugen"
+
+
+def test_resolusi_fallback_ke_host_kalau_tidak_ada_origin(monkeypatch):
+    """Request tanpa Origin (curl/server-ke-server/webhook, bukan browser,
+    atau test yang meniru Host langsung seperti seluruh test lain di file
+    ini) -- fallback ke Host, perilaku LAMA tidak berubah sama sekali."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "rivoirsett.com")
+
+    class _FakeRequest:
+        headers = {"host": "mugen.rivoirsett.com"}
+
+    hostname = tenant_middleware._hostname_dari_origin_atau_host(_FakeRequest())
+    assert hostname == "mugen.rivoirsett.com"
+
+
+def test_branding_lewat_origin_bukan_host(two_tenants):
+    """End-to-end lewat header Origin (bukan Host) -- meniru persis
+    request cross-origin browser sungguhan dari subdomain tenant ke
+    domain API yang terpisah."""
+    client = two_tenants["client"]
+    r = client.get(
+        "/api/tenant/branding",
+        headers={"Host": "api.rivoirsett.com", "Origin": "https://test-toko-a.rivoirsett.com"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_platform_default"] is False
+
+
+# =============================================================================
+# HOTFIX Migrasi Subdomain: root domain (tanpa slug tenant apa pun yang
+# ter-resolve) TIDAK BOLEH LAGI diam-diam menyajikan data tenant default --
+# tenant_db.cari_tenant_publik(None) sekarang return None, bukan fallback
+# ke SLUG_TENANT_DEFAULT.
+# =============================================================================
+
+def test_cari_tenant_publik_slug_kosong_return_none():
+    assert tenant_db.cari_tenant_publik(None) is None
+    assert tenant_db.cari_tenant_publik("") is None
+
+
+def test_endpoint_publik_tanpa_tenant_404_bukan_default_tenant(app_client):
+    """Root domain (request publik TANPA ?tenant=, TANPA header X-Tenant-
+    Slug, TANPA subdomain/Origin yang cocok) HARUS 404 -- bukan lagi
+    diam-diam menyajikan data tenant default (mugen-hair-co) seperti
+    sebelum migrasi subdomain ini."""
+    r = app_client.get("/api/public/booking/barbers")
+    assert r.status_code == 404, r.text
+    assert "tidak ditemukan" in r.json()["detail"].lower()
+
+    r2 = app_client.get("/api/public/booking/services")
+    assert r2.status_code == 404
+
+    r3 = app_client.get("/api/website/content")
+    assert r3.status_code == 404
+
+
+def test_endpoint_publik_dengan_tenant_eksplisit_tetap_berfungsi(app_client):
+    """Regresi: subdomain/?tenant= eksplisit tetap berfungsi normal --
+    HANYA fallback implisit yang dihapus, bukan resolusi tenant secara
+    umum."""
+    r = app_client.get("/api/public/booking/barbers?tenant=mugen-hair-co")
+    assert r.status_code == 200, r.text

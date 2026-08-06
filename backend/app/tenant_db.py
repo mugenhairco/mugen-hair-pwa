@@ -164,6 +164,51 @@ def set_booking_slug(tenant_id: int, booking_slug: str) -> None:
             raise ValueError(f"Booking slug '{booking_slug}' sudah dipakai, silakan pilih yang lain.")
 
 
+_SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
+
+
+def set_slug(tenant_id: int, slug_baru: str) -> None:
+    """FITUR Migrasi Subdomain (arsitektur SaaS subdomain penuh): ganti
+    `slug` tenant -- subdomain dashboard/login/booking UTAMA tenant
+    ({slug}.rivoirsett.com), berbeda dari booking_slug yang murni untuk
+    URL booking publik custom (lihat set_booking_slug()). `slug` immutable
+    di luar jalur ini (satu-satunya cara mengubahnya setelah tenant
+    dibuat, dipakai Super Admin lewat PUT /api/superadmin/tenants/{id}/
+    slug -- routers/superadmin.py). Divalidasi FORMAT (label DNS valid --
+    huruf kecil/angka/dash, tidak diawali/diakhiri dash, BEDA dari
+    _BOOKING_SLUG_RE yang tidak mengizinkan dash sama sekali) dan
+    KEUNIKAN (pool gabungan slug+booking_slug SELURUH tenant + label
+    sistem reservasi, lewat _slug_dipakai() yang sama dipakai
+    set_booking_slug()) SEBELUM disimpan.
+
+    SENGAJA TIDAK memblokir mengganti slug tenant SLUG_TENANT_DEFAULT --
+    justru itulah pemakaian UTAMANYA (migrasi tenant Mugen dari
+    "mugen-hair-co" ke "mugen" saat arsitektur pindah ke subdomain penuh,
+    root domain tidak lagi melayani data tenant apa pun). Larangan
+    menghapus tenant default (lihat hapus_tenant()) TIDAK berlaku di sini
+    -- mengganti nama beda dengan menghapus, tenant & seluruh datanya
+    tetap utuh, hanya `slug`-nya yang berubah."""
+    slug_baru = (slug_baru or "").strip().lower()
+    if not slug_baru:
+        raise ValueError("Slug tidak boleh kosong.")
+    if not _SLUG_RE.match(slug_baru):
+        raise ValueError(
+            "Slug hanya boleh berisi huruf kecil, angka, dan tanda hubung (-), "
+            "tidak boleh diawali/diakhiri tanda hubung."
+        )
+    if get_tenant(tenant_id) is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    if _slug_dipakai(slug_baru, kecuali_tenant_id=tenant_id):
+        raise ValueError(f"Slug '{slug_baru}' sudah dipakai, silakan pilih yang lain.")
+    with get_conn() as conn:
+        # HARDENING: lapis pertahanan TERAKHIR terhadap race TOCTOU,
+        # pola SAMA seperti set_booking_slug()/buat_tenant() di atas.
+        try:
+            conn.execute("UPDATE tenants SET slug = ? WHERE id = ?", (slug_baru, tenant_id))
+        except IntegrityError:
+            raise ValueError(f"Slug '{slug_baru}' sudah dipakai, silakan pilih yang lain.")
+
+
 def get_tenant(tenant_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
@@ -241,27 +286,30 @@ def tenant_aktif(tenant_id: int) -> bool:
 
 
 def cari_tenant_publik(slug: str | None):
-    """FONDASI Multi-Tenant Phase 1: mekanisme SEMENTARA resolusi tenant
-    untuk endpoint publik booking (tanpa sesi login, lihat
-    routers/booking.py::resolve_tenant_publik()) -- resolusi PENUH lewat
-    subdomain/custom domain per tenant ADA DI LUAR CAKUPAN Phase 1 (custom
-    domain eksplisit di luar cakupan Phase 1, lihat roadmap audit Fase 2).
-    `slug` kosong (None) = tenant default (SATU-SATUNYA tenant yang ada di
-    deployment single-tenant SEKARANG) -- perilaku LAMA sebelum Phase 1
-    TIDAK BERUBAH SAMA SEKALI selama frontend belum mengirim parameter ini.
+    """Resolusi tenant untuk endpoint publik (tanpa sesi login, lihat
+    routers/booking.py::resolve_tenant_publik()) -- `slug` ketemu lewat
+    kolom `slug` ATAU `booking_slug` (get_tenant_by_slug_atau_booking_slug())
+    dipakai SELURUH endpoint publik yang memanggil fungsi ini lewat
+    resolve_tenant_publik() (routers/booking.py public_router,
+    routers/website.py, routers/pengaturan.py identitas/logo publik).
     Return dict tenant (bukan cuma id) supaya caller bisa cek status
-    aktif juga, atau None kalau slug diisi tapi tidak ditemukan.
+    aktif juga.
 
-    FITUR URL Booking Publik per Tenant: `slug` yang tidak ketemu lewat
-    kolom `slug` di-fallback ke kolom `booking_slug` lewat
-    get_tenant_by_slug_atau_booking_slug() -- SATU-SATUNYA perubahan di
-    sini, transparan untuk SELURUH endpoint publik yang memanggil fungsi
-    ini lewat resolve_tenant_publik() (routers/booking.py public_router,
-    routers/website.py, routers/pengaturan.py identitas/logo publik),
-    TIDAK ADA endpoint yang perlu diubah satu per satu."""
-    if slug:
-        return get_tenant_by_slug_atau_booking_slug(slug)
-    return get_tenant_by_slug(SLUG_TENANT_DEFAULT)
+    HOTFIX Migrasi Subdomain (arsitektur SaaS subdomain penuh): `slug`
+    kosong SEKARANG return None (BUKAN lagi diam-diam jatuh ke
+    SLUG_TENANT_DEFAULT seperti sebelum migrasi ini) -- root domain
+    (rivoirsett.com, tanpa subdomain tenant apa pun) TIDAK BOLEH LAGI
+    diam-diam menyajikan data tenant mana pun (bahkan tenant default
+    sekalipun); caller (resolve_tenant_publik(), auth.py) sudah menangani
+    None dengan 404 "Tenant tidak ditemukan" -- konsisten dengan
+    resolve_tenant_untuk_branding() yang SEJAK AWAL sudah begini (lihat
+    docstringnya). TIDAK ADA lagi konsep "tenant default" untuk resolusi
+    endpoint publik -- SETIAP tenant, termasuk yang pertama kali dibuat,
+    HANYA bisa diakses lewat slug/booking_slug/subdomain miliknya sendiri
+    yang eksplisit."""
+    if not slug:
+        return None
+    return get_tenant_by_slug_atau_booking_slug(slug)
 
 
 def buat_tenant(slug: str, nama_barbershop: str, booking_slug: str | None = None) -> int:
@@ -394,6 +442,133 @@ def set_registrant_info(tenant_id: int, owner_name: str, email: str, whatsapp: s
             "UPDATE tenants SET owner_name = ?, email = ?, whatsapp = ? WHERE id = ?",
             (owner_name, email, whatsapp, tenant_id),
         )
+
+
+def hapus_tenant(tenant_id: int) -> dict:
+    """FITUR Hapus Tenant (Super Admin Dashboard): penghapusan PERMANEN satu
+    tenant beserta SELURUH data yang menjadi miliknya -- TIDAK bisa
+    dibatalkan, TIDAK ada mekanisme undo. Dipakai untuk membersihkan tenant
+    testing/development, lihat routers/superadmin.py::hapus_tenant() untuk
+    lapis konfirmasi tambahan (harus mengetik ulang slug tenant) sebelum
+    endpoint ini pernah dipanggil.
+
+    DUA PENJAGA KESELAMATAN KERAS (tidak bisa dilewati parameter apa pun):
+    1. Tenant dengan slug SLUG_TENANT_DEFAULT ("mugen-hair-co", TOKO UTAMA
+       produksi) TIDAK PERNAH bisa dihapus lewat fungsi ini, apa pun
+       alasannya -- konsisten dengan aturan yang berlaku SELAMA proyek ini
+       ("jangan pernah menghapus/mengubah data mugen-hair-co").
+    2. Tidak bisa menghapus tenant TERAKHIR yang tersisa -- aplikasi ini
+       butuh minimal SATU tenant untuk tetap berfungsi (auth.py/tenant_
+       middleware.py mengasumsikan selalu ada tenant default).
+
+    Urutan DELETE di bawah mengikuti PERSIS seluruh foreign key di skema
+    (lihat postgres_schema.py::_TABLES / tenant_migrasi.py) -- anak
+    (leaf) dihapus dulu, baru tabel induk/root, supaya tidak pernah
+    melanggar constraint DAN tidak meninggalkan orphan record sama sekali.
+    SATU transaksi (lewat get_conn() yang sama seperti seluruh modul ini,
+    otomatis bekerja di SQLite maupun PostgreSQL lewat db_compat) --
+    kalau ADA SATU SAJA langkah yang gagal, SEMUANYA otomatis rollback,
+    tidak ada penghapusan sebagian.
+
+    `settings`/`file_asset` TIDAK punya kolom tenant_id -- diisolasi lewat
+    prefix "<tenant_id>:" di kolom key (lihat _kunci_tenant() di
+    database.py/postgres_schema.py). Pola LIKE dihitung PENUH di Python
+    lalu dikirim sebagai SATU parameter (BUKAN digabung pakai `||` di teks
+    SQL) -- karakter '%' literal di TEKS query (bukan di dalam parameter)
+    akan disalahartikan psycopg2 sebagai placeholder format-string
+    (jebakan SAMA PERSIS yang sudah didokumentasikan di postgres_schema.py
+    soal `_TABLES`, ditemukan lagi di sini lewat pengujian terhadap
+    PostgreSQL sungguhan -- "IndexError: tuple index out of range").
+    Portable di kedua dialek dan TIDAK PERNAH salah cocok dengan tenant
+    lain (mis. tenant id=2 tidak pernah cocok dengan prefix "20:" atau
+    "23:", karena karakter SETELAH digit id harus persis ':').
+
+    Return dict tenant yang baru saja dihapus (snapshot SEBELUM
+    dihapus -- dipakai pemanggil untuk audit log & pesan konfirmasi ke
+    Super Admin, lihat superadmin_audit_db.catat())."""
+    tenant = get_tenant(tenant_id)
+    if tenant is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    if tenant["slug"] == SLUG_TENANT_DEFAULT:
+        raise ValueError(f"Tenant '{SLUG_TENANT_DEFAULT}' adalah toko utama, tidak bisa dihapus.")
+    if len(list_tenants()) <= 1:
+        raise ValueError("Tidak bisa menghapus satu-satunya tenant yang tersisa.")
+
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM transaksi_detail WHERE transaksi_id IN ("
+            "SELECT tr.id FROM transaksi tr JOIN barbers b ON b.id = tr.barber_id WHERE b.tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM kasbon_pembayaran WHERE kasbon_id IN ("
+            "SELECT k.id FROM kasbon k JOIN barbers b ON b.id = k.barber_id WHERE b.tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM booking_items WHERE booking_id IN (SELECT id FROM bookings WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM produk_mutasi WHERE produk_id IN (SELECT id FROM produk WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM email_verification_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)",
+            (tenant_id,))
+        # pengeluaran mereferensikan kas_penyesuaian_id & reimburse_id --
+        # WAJIB dihapus sebelum keduanya.
+        conn.execute("DELETE FROM pengeluaran WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM transaksi WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM slip_gaji WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM kasbon WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM komisi_penyesuaian WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM reimburse WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM izin_cuti WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM data_non_barber WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM absensi_libur WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute("DELETE FROM closed_slot WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM bookings WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM pemasukan WHERE tenant_id = ?", (tenant_id,))
+        # users.barber_id -> barbers, WAJIB dihapus sebelum barbers.
+        conn.execute("DELETE FROM users WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM kas_penyesuaian WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM kas_saldo_awal WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM website_gallery WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM toko_libur WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM produk WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM services WHERE tenant_id = ?", (tenant_id,))
+        # Root: barbers -- HANYA setelah SEMUA anak di atas bersih.
+        conn.execute("DELETE FROM barbers WHERE tenant_id = ?", (tenant_id,))
+        _pola_prefix = f"{tenant_id}:%"
+        conn.execute("DELETE FROM settings WHERE key LIKE ?", (_pola_prefix,))
+        conn.execute("DELETE FROM file_asset WHERE key LIKE ?", (_pola_prefix,))
+        conn.execute("DELETE FROM tenant_subscriptions WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM tenant_subscription_payments WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM subscription_invoices WHERE tenant_id = ?", (tenant_id,))
+        # Riwayat audit LAMA milik tenant ini ikut dihapus -- entri audit
+        # BARU untuk aksi penghapusan ini sendiri dicatat TERPISAH oleh
+        # pemanggil (routers/superadmin.py) SETELAH fungsi ini selesai,
+        # lihat superadmin_audit_db.catat().
+        conn.execute("DELETE FROM superadmin_audit_log WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
+
+    return tenant
 
 
 def set_status(tenant_id: int, status: str) -> None:

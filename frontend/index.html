@@ -32,11 +32,18 @@
      sungguhan lewat backend apakah slug-nya benar valid, lihat
      app/js/tenant_guard.js -- kalau tidak valid, /app/ sendiri yang
      menampilkan "Tenant Tidak Ditemukan", BUKAN blok ini). Domain root/www
-     dan label sistem lain (api/app/admin/dst) TIDAK ikut redirect. -->
+     dan label sistem murni (api/app/mail/ftp) TIDAK ikut redirect.
+     HOTFIX Migrasi Subdomain: "admin" SENGAJA ikut redirect ke /app/ juga
+     (beda dari sebelumnya) -- spesifikasi arsitektur eksplisit meminta
+     "admin.{domain} -> Super Admin", jadi bare admin.rivoirsett.com harus
+     langsung ke Login Super Admin, bukan Landing Page marketing. Ini TIDAK
+     mengubah tenant_guard.js/tenant_middleware.py::LABEL_BUKAN_TENANT --
+     "admin" tetap TIDAK PERNAH dianggap slug tenant di situ, murni array
+     RESERVED di sini (kontrol redirect halaman ini saja) yang berubah. -->
 <script>
   (function () {
     var BASE_DOMAIN = "rivoirsett.com";
-    var RESERVED = ["www", "api", "app", "admin", "mail", "ftp"];
+    var RESERVED = ["www", "api", "app", "mail", "ftp"];
     var host = location.hostname.toLowerCase();
     if (host.length > BASE_DOMAIN.length + 1 && host.slice(-(BASE_DOMAIN.length + 1)) === "." + BASE_DOMAIN) {
       var label = host.slice(0, -(BASE_DOMAIN.length + 1));

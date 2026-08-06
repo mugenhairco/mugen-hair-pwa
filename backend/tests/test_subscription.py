@@ -360,12 +360,14 @@ def test_tenants_status_nonaktif_tidak_terpengaruh_subscription_aktif(app_client
 # ============================= Penegakan akses: /book publik =============================
 
 def test_book_publik_normal_saat_trial_active_grace(app_client):
+    # HOTFIX Migrasi Subdomain: endpoint publik TIDAK LAGI diam-diam jatuh
+    # ke tenant default kalau ?tenant= kosong -- WAJIB eksplisit.
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
     for status in ("trial", "active", "grace_period"):
         subscription_db.update_status(tenant["id"], status)
-        r = app_client.get("/api/public/booking/barbers")
+        r = app_client.get(f"/api/public/booking/barbers?tenant={tenant['slug']}")
         assert r.status_code == 200, f"status={status}: {r.text}"
-        r2 = app_client.get("/api/public/booking/subscription-status")
+        r2 = app_client.get(f"/api/public/booking/subscription-status?tenant={tenant['slug']}")
         assert r2.json() == {"tersedia": True}
 
 
@@ -373,15 +375,15 @@ def test_book_publik_diblokir_saat_expired_suspended_cancelled(app_client):
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
     for status in ("expired", "suspended", "cancelled"):
         subscription_db.update_status(tenant["id"], status)
-        r = app_client.get("/api/public/booking/barbers")
+        r = app_client.get(f"/api/public/booking/barbers?tenant={tenant['slug']}")
         assert r.status_code == 403, f"status={status}: {r.text}"
-        r2 = app_client.get("/api/public/booking/services")
+        r2 = app_client.get(f"/api/public/booking/services?tenant={tenant['slug']}")
         assert r2.status_code == 403
-        r3 = app_client.get("/api/public/booking/pengaturan")
+        r3 = app_client.get(f"/api/public/booking/pengaturan?tenant={tenant['slug']}")
         assert r3.status_code == 403
         # subscription-status sendiri TETAP bisa diakses (justru untuk
         # melaporkan status ini ke frontend).
-        r4 = app_client.get("/api/public/booking/subscription-status")
+        r4 = app_client.get(f"/api/public/booking/subscription-status?tenant={tenant['slug']}")
         assert r4.status_code == 200
         assert r4.json() == {"tersedia": False}
 
@@ -389,7 +391,7 @@ def test_book_publik_diblokir_saat_expired_suspended_cancelled(app_client):
 def test_book_publik_buat_booking_diblokir_saat_suspended(app_client):
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
     subscription_db.update_status(tenant["id"], "suspended")
-    r = app_client.post("/api/public/booking", json={
+    r = app_client.post(f"/api/public/booking?tenant={tenant['slug']}", json={
         "barber_id": 1, "tanggal": "2026-01-01", "jam_mulai": "10:00",
         "service_ids": [1], "customer_nama": "Test", "customer_whatsapp": "0800",
         "metode_pembayaran": "cash",

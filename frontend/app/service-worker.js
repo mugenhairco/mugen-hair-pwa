@@ -403,7 +403,14 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "80";
+// v81 -> v82: HOTFIX Migrasi Subdomain -- redirect URL lama root domain
+// (rivoirsett.com/app/*) -> mugen.rivoirsett.com (index.html), tombol Ubah
+// Slug tenant di Super Admin (superadmin.js). CATATAN: v80 -> v81
+// (PR "Fitur Hapus Tenant") sebelumnya HANYA menaikkan angka ini tanpa ikut
+// menaikkan query "?v=..." di index.html (kelalaian, diperbaiki sekarang --
+// kedua tempat WAJIB sama, lihat komentar panjang di bawah) -- v82 dipakai
+// SEKALIGUS untuk menutup celah itu.
+const ASSET_VERSION = "82";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

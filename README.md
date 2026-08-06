@@ -3210,3 +3210,88 @@ menyentuh kode aslinya sama sekali:
    lagi crash `500`.
 7. `python -m py_compile` untuk seluruh file backend yang disentuh/baru —
    tidak ada syntax error.
+
+## CHANGELOG — Migrasi Arsitektur SaaS Subdomain (Root Domain jadi Landing Page murni)
+
+Resolusi tenant lewat subdomain (`TENANT_SUBDOMAIN_SUFFIX`, Custom
+Domain, reservasi label `admin`/`www`/`api`/dst — lihat bagian
+**Deployment (Produksi) > Subdomain otomatis per tenant** di atas) SUDAH
+dibangun dan AKTIF SECARA DEFAULT di produksi sebelum migrasi ini —
+tapi diam-diam TIDAK PERNAH benar-benar berfungsi, karena middleware
+membaca header **Host**. Topologi deployment produksi sesungguhnya
+adalah DUA DOMAIN TERPISAH: frontend di `{slug}.rivoirsett.com` (beda
+per tenant), backend API SELALU di SATU domain tetap
+`api.rivoirsett.com`. Akibatnya header Host yang SAMPAI di backend
+SELALU berisi `api.rivoirsett.com`, apa pun subdomain tenant yang
+sedang dibuka pengguna di browser — subdomain tidak pernah bisa
+ter-resolve dari situ.
+
+### Perbaikan
+
+- **`backend/app/tenant_middleware.py`** — resolusi sekarang mengutamakan
+  header **Origin** (dikirim otomatis browser untuk setiap request
+  cross-origin, sudah lama dipakai `ALLOWED_ORIGIN_REGEX`/CORS untuk
+  tujuan yang sama, TIDAK BISA dipalsukan lewat JS halaman), fallback ke
+  Host hanya untuk request yang genuinely tidak membawa Origin
+  (curl/server-ke-server/webhook). Urutan prioritas lain (`?tenant=` >
+  `X-Tenant-Slug` > subdomain > custom domain) TIDAK berubah.
+- **`tenant_db.py::cari_tenant_publik()`** — root domain (request publik
+  TANPA slug yang ter-resolve sama sekali) sekarang **404**, BUKAN lagi
+  diam-diam menyajikan data tenant default (Mugen Hair Co). Sebelum
+  perbaikan ini, root domain `rivoirsett.com` secara tidak sengaja selalu
+  menampilkan data Mugen Hair Co — sekarang murni Landing Page/marketing,
+  sama sekali tidak pernah membawa data tenant mana pun.
+- **`tenant_db.py::set_slug()` + Super Admin > tombol "Ubah Slug"** —
+  sebelumnya slug tenant TIDAK BISA diubah sama sekali setelah dibuat.
+  Dipakai untuk memindahkan Mugen Hair Co dari slug lama `mugen-hair-co`
+  ke slug baru `mugen` (subdomain `mugen.rivoirsett.com`), dan tersedia
+  untuk tenant lain yang butuh ganti slug di kemudian hari (divalidasi
+  format huruf-kecil/angka/dash + unik terhadap slug/`booking_slug`
+  seluruh tenant lain, sama seperti validasi saat tenant dibuat).
+- **Redirect `rivoirsett.com`/`www.rivoirsett.com` → `mugen.rivoirsett.com`**
+  (`frontend/app/index.html`, inline script paling awal `<head>`, pola
+  SAMA seperti redirect `*.onrender.com` yang sudah ada) — untuk
+  link/bookmark lama yang masih mengarah ke root domain (satu-satunya
+  tenant yang PERNAH bisa diakses lewat root domain sebelum migrasi ini).
+  Path/query/hash dipertahankan persis.
+
+### Langkah infra manual (yang benar-benar tersisa)
+
+Karena resolusi subdomain SUDAH terpasang aktif-secara-default sejak
+sebelum migrasi ini (bukan fitur baru yang perlu "diaktifkan" lewat env
+var), **tidak ada env var backend/frontend baru yang perlu diisi** —
+`TENANT_SUBDOMAIN_SUFFIX` (backend) dan `window.MUGEN_TENANT_BASE_DOMAIN`
+(`frontend/app/config.js`) sudah default `rivoirsett.com` sejak awal.
+Yang benar-benar tersisa hanya:
+
+1. **Cloudflare DNS**: wildcard `*` sudah aktif per konfirmasi pemilik
+   proyek — tidak ada tindakan tambahan di sisi ini.
+2. **Render, service Static Site `mugen-hair-frontend`** (BUKAN service
+   backend `mugen-hair-api`): pastikan domain wildcard `*.rivoirsett.com`
+   sudah ditambahkan di tab **Settings > Custom Domains** service ini
+   (lihat langkah lengkap di bagian **Deployment (Produksi) > Subdomain
+   otomatis per tenant** di atas — sudah didokumentasikan sebelum migrasi
+   ini, cek dashboard kalau belum yakin sudah ditambahkan; DNS wildcard
+   di Cloudflare saja TIDAK CUKUP, Render sendiri juga harus meng-klaim
+   domainnya supaya SSL wildcard diterbitkan dan request diterima).
+3. **Setelah deploy**: buka Super Admin Dashboard → tombol "Ubah Slug" di
+   baris tenant Mugen Hair Co → ganti dari `mugen-hair-co` menjadi
+   `mugen` (tercatat di log audit Super Admin sebagai `ubah_slug_tenant`).
+4. **Verifikasi**: buka `mugen.rivoirsett.com` → harus langsung Login
+   Mugen Hair Co dengan branding benar; buka `rivoirsett.com` (root) →
+   harus otomatis redirect ke `mugen.rivoirsett.com`; buka
+   `admin.rivoirsett.com` → tetap Super Admin, tidak pernah tertukar
+   resolusi tenant; buka subdomain acak yang tidak terdaftar (mis.
+   `tidak-ada-begini.rivoirsett.com`) → halaman "Tenant Tidak Ditemukan",
+   bukan data tenant lain.
+
+### Pengujian
+
+Full backend suite (`pytest tests/`): 378 passed, hanya 13 kegagalan
+pyo3 PDF-rendering yang sudah diketahui tidak terkait migrasi ini
+(pre-existing, dikonfirmasi lewat isolasi `git stash` tidak berubah oleh
+perubahan apa pun di atas). Termasuk test baru khusus resolusi
+Origin-vs-Host (`test_tenant_middleware.py`), penghapusan fallback
+tenant default (`test_tenant_middleware.py`,
+`test_billing_limits.py`, `test_subscription.py`), dan `set_slug()` +
+endpoint Super Admin-nya (`test_superadmin.py`).

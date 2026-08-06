@@ -214,11 +214,13 @@ def test_http_public_booking_ditolak_saat_limit_tercapai(app_client):
         "service_ids": [service_id], "customer_nama": "Budi",
         "customer_whatsapp": "081234567890", "metode_pembayaran": "cash",
     }
-    r1 = app_client.post("/api/public/booking", json=body)
+    # HOTFIX Migrasi Subdomain: endpoint publik TIDAK LAGI diam-diam
+    # jatuh ke tenant default kalau ?tenant= kosong -- WAJIB eksplisit.
+    r1 = app_client.post(f"/api/public/booking?tenant={tenant['slug']}", json=body)
     assert r1.status_code == 200, r1.text
 
     body["jam_mulai"] = "13:00"
-    r2 = app_client.post("/api/public/booking", json=body)
+    r2 = app_client.post(f"/api/public/booking?tenant={tenant['slug']}", json=body)
     assert r2.status_code == 422
     assert "maksimal 1 booking" in r2.json()["detail"]
 

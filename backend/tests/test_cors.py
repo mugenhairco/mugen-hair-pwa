@@ -40,12 +40,18 @@ def test_preflight_login_diizinkan_untuk_subdomain_rivoirsett(app_client, origin
 
 @pytest.mark.parametrize("origin", _ORIGIN_RIVOIR)
 def test_post_login_membawa_header_cors_walau_gagal_auth(app_client, origin):
-    """CORS header HARUS ada di response APA PUN status HTTP-nya (401
-    kredensial salah termasuk) -- kalau tidak, browser tetap memblokir
-    walau backend sebenarnya sudah merespons dengan benar."""
+    """CORS header HARUS ada di response APA PUN status HTTP-nya -- baik
+    401 (kredensial salah, origin root domain yang tidak ter-resolve ke
+    tenant mana pun sehingga lintas-tenant) maupun 404 (HOTFIX Migrasi
+    Subdomain: Origin sekarang jadi sumber resolusi tenant di
+    tenant_middleware.py, jadi origin berbentuk subdomain tenant yang
+    TIDAK terdaftar di database -- mis. mugen/tenant1/tenant2 di
+    app_client yang cuma punya tenant default -- ikut gagal ditemukan)
+    -- kalau tidak, browser tetap memblokir walau backend sebenarnya
+    sudah merespons dengan benar."""
     r = app_client.post("/api/auth/login", json={"username": "x", "password": "y"},
                          headers={"Origin": origin})
-    assert r.status_code == 401
+    assert r.status_code in (401, 404)
     assert r.headers.get("access-control-allow-origin") == origin
 
 
