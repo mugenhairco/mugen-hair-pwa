@@ -17,7 +17,7 @@ from datetime import datetime
 from database import get_conn
 
 AKSI_VALID = {
-    "buat_tenant", "aktifkan_tenant", "nonaktifkan_tenant",
+    "buat_tenant", "aktifkan_tenant", "nonaktifkan_tenant", "hapus_tenant",
     # FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle) --
     # lihat routers/subscription.py, subscription_db.py.
     "ubah_package_subscription", "ubah_status_subscription",

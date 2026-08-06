@@ -21,6 +21,7 @@ const PageSuperadmin = (() => {
     buat_tenant: "Buat Toko",
     aktifkan_tenant: "Aktifkan Toko",
     nonaktifkan_tenant: "Nonaktifkan Toko",
+    hapus_tenant: "Hapus Toko",
     // FONDASI Multi-Tenant Phase 3 (Subscription & Tenant Lifecycle).
     ubah_package_subscription: "Ubah Package Subscription",
     ubah_status_subscription: "Ubah Status Subscription",
@@ -217,6 +218,34 @@ const PageSuperadmin = (() => {
                 const btnKelolaSubs = MugenUI.el("button", {}, "Kelola Subscription");
                 btnKelolaSubs.addEventListener("click", () => renderSubscriptionManager(t));
                 wrap.appendChild(btnKelolaSubs);
+                // FITUR Hapus Tenant: khusus tenant testing/development --
+                // backend (tenant_db.hapus_tenant()) menolak keras tenant
+                // "mugen-hair-co" & tenant terakhir yang tersisa, apa pun
+                // yang terjadi di sisi tombol ini. Konfirmasi DUA LAPIS di
+                // sisi UI (harus mengetik ULANG slug persis, bukan sekadar
+                // klik "OK") supaya klik keliru pada aksi PERMANEN/tidak
+                // bisa dibatalkan ini sangat kecil kemungkinannya.
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  const ketik = prompt(
+                    `PERMANEN, TIDAK BISA DIBATALKAN. Ini akan menghapus toko "${t.nama_barbershop}" beserta SELURUH datanya (user, barber, booking, transaksi, dst).\n\nKetik ulang slug toko ini untuk konfirmasi: ${t.slug}`,
+                  );
+                  if (ketik === null) return;
+                  if (ketik.trim().toLowerCase() !== t.slug.trim().toLowerCase()) {
+                    MugenUI.toast("Slug tidak cocok -- penghapusan dibatalkan.", "error", { force: true });
+                    return;
+                  }
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus,
+                      () => MugenApi.del(`/api/superadmin/tenants/${t.id}`, { konfirmasi_slug: ketik.trim() }));
+                    MugenUI.toast(`Toko "${t.nama_barbershop}" dihapus permanen.`, "success", { force: true });
+                    loadTenantList();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error", { force: true });
+                  }
+                });
+                wrap.appendChild(btnHapus);
                 return wrap;
               },
             },

@@ -323,3 +323,171 @@ def test_owner_tenant_aktif_tetap_bisa_login_normal(two_tenants):
     r = two_tenants["client"].post("/api/auth/login", json={"username": "ownerA", "password": "passwordA123"})
     assert r.status_code == 200, r.text
     assert r.json()["tenant"]["slug"] == "test-toko-a"
+
+
+# =============================================================================
+# FITUR Hapus Tenant -- penghapusan PERMANEN tenant testing/development,
+# lihat tenant_db.hapus_tenant() untuk daftar lengkap tabel yang dibersihkan
+# & urutan FK-nya, dan routers/superadmin.py::hapus_tenant() untuk lapis
+# konfirmasi slug yang ditegakkan backend.
+# =============================================================================
+
+def _isi_data_lengkap(tenant_id: int, prefix: str):
+    """Isi satu tenant dengan data di banyak tabel sekaligus (barber, service,
+    transaksi, transaksi_detail, settings) -- dipakai memverifikasi cascade
+    delete benar-benar membersihkan SEMUANYA, bukan cuma baris `tenants`."""
+    import database as db
+
+    barber_id = db.add_barber(f"{prefix}-barber", tenant_id=tenant_id)
+    service_id = db.add_service(f"{prefix}-service", 50000, tenant_id=tenant_id)
+    transaksi_id = db.tambah_transaksi("2026-08-01", barber_id, [{"service_id": service_id, "jumlah": 1}])
+    with db.get_conn() as conn:
+        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f"{tenant_id}:kunci_test", "nilai_test"))
+    return {"barber_id": barber_id, "service_id": service_id, "transaksi_id": transaksi_id}
+
+
+def test_hapus_tenant_membersihkan_semua_tabel_tanpa_menyentuh_tenant_lain(two_tenants):
+    import database as db
+    import tenant_db
+
+    tenant_a = two_tenants["tenant_a"]
+    tenant_b = two_tenants["tenant_b"]
+    data_a = _isi_data_lengkap(tenant_a, "a")
+    data_b = _isi_data_lengkap(tenant_b, "b")
+
+    hasil = tenant_db.hapus_tenant(tenant_a)
+    assert hasil["slug"] == "test-toko-a"
+
+    # Tenant A + SELURUH data anaknya benar-benar hilang.
+    assert tenant_db.get_tenant(tenant_a) is None
+    assert db.get_barber(data_a["barber_id"]) is None
+    with db.get_conn() as conn:
+        assert conn.execute("SELECT * FROM services WHERE id = ?", (data_a["service_id"],)).fetchone() is None
+        assert conn.execute("SELECT * FROM transaksi WHERE id = ?", (data_a["transaksi_id"],)).fetchone() is None
+        assert conn.execute("SELECT * FROM transaksi_detail WHERE transaksi_id = ?",
+                             (data_a["transaksi_id"],)).fetchone() is None
+        assert conn.execute("SELECT * FROM settings WHERE key = ?", (f"{tenant_a}:kunci_test",)).fetchone() is None
+        # users (Owner "ownerA") ikut terhapus -- tidak ada lagi akun yatim.
+        assert conn.execute("SELECT * FROM users WHERE tenant_id = ?", (tenant_a,)).fetchall() == []
+
+    # Tenant B (dan seluruh datanya) SAMA SEKALI tidak tersentuh.
+    assert tenant_db.get_tenant(tenant_b) is not None
+    assert db.get_barber(data_b["barber_id"]) is not None
+    with db.get_conn() as conn:
+        assert conn.execute("SELECT * FROM services WHERE id = ?", (data_b["service_id"],)).fetchone() is not None
+        assert conn.execute("SELECT * FROM settings WHERE key = ?", (f"{tenant_b}:kunci_test",)).fetchone() is not None
+        users_b = conn.execute("SELECT * FROM users WHERE tenant_id = ?", (tenant_b,)).fetchall()
+        assert len(users_b) == 1
+
+
+def test_hapus_tenant_tidak_bisa_hapus_mugen_hair_co(two_tenants):
+    """Penjaga keselamatan KERAS -- tenant utama TIDAK PERNAH bisa dihapus
+    lewat fungsi ini, apa pun alasannya."""
+    import tenant_db
+
+    default_tenant = tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT)
+    assert default_tenant is not None, "tenant default seharusnya sudah dibuat migrasi saat boot"
+    try:
+        tenant_db.hapus_tenant(default_tenant["id"])
+        assert False, "Harus ditolak: tidak boleh menghapus tenant utama"
+    except ValueError as e:
+        assert "utama" in str(e).lower() or "mugen-hair-co" in str(e).lower()
+    # Tetap ada, tidak berubah sama sekali.
+    assert tenant_db.get_tenant(default_tenant["id"]) is not None
+
+
+def test_hapus_tenant_tidak_bisa_hapus_tenant_terakhir(app_client):
+    """Penjaga keselamatan KERAS kedua -- kalau (secara hipotetis) hanya
+    tersisa satu tenant, tenant itu tidak boleh dihapus supaya aplikasi
+    tidak pernah kehilangan tenant sama sekali. Slug tenant satu-satunya
+    ini diganti dulu lewat SQL langsung (bypass hapus_tenant()) supaya
+    penjaga PERTAMA (tidak boleh hapus mugen-hair-co) tidak ikut memblokir
+    -- murni menguji penjaga KEDUA secara terisolasi. Di produksi
+    sungguhan skenario "tenant terakhir BUKAN mugen-hair-co" tidak pernah
+    terjadi (tenant default selalu ada & tidak bisa dihapus) -- ini murni
+    pengujian defense-in-depth untuk penjaga keduanya."""
+    import tenant_db
+    import database as db
+
+    semua = tenant_db.list_tenants()
+    assert len(semua) == 1  # hanya tenant default, dibuat migrasi saat boot
+    tenant_id = semua[0]["id"]
+    with db.get_conn() as conn:
+        conn.execute("UPDATE tenants SET slug = ? WHERE id = ?", ("bukan-default", tenant_id))
+    try:
+        tenant_db.hapus_tenant(tenant_id)
+        assert False, "Harus ditolak: tidak boleh menghapus satu-satunya tenant"
+    except ValueError as e:
+        assert "satu-satunya" in str(e).lower()
+
+
+def test_hapus_tenant_tenant_tidak_ada_ditolak():
+    import tenant_db
+
+    try:
+        tenant_db.hapus_tenant(999999)
+        assert False, "Harus ditolak: tenant tidak ditemukan"
+    except ValueError as e:
+        assert "tidak ditemukan" in str(e).lower()
+
+
+def test_endpoint_hapus_tenant_konfirmasi_slug_salah_ditolak(two_tenants):
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].request(
+        "DELETE", f"/api/superadmin/tenants/{two_tenants['tenant_a']}",
+        headers=headers, json={"konfirmasi_slug": "slug-yang-salah"},
+    )
+    assert r.status_code == 422, r.text
+    assert "tidak cocok" in r.json()["detail"].lower()
+    # Tenant TETAP ada -- konfirmasi salah tidak menghapus apa pun.
+    import tenant_db
+    assert tenant_db.get_tenant(two_tenants["tenant_a"]) is not None
+
+
+def test_endpoint_hapus_tenant_berhasil_dan_tercatat_di_audit_log(two_tenants):
+    import tenant_db
+    import superadmin_audit_db
+
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].request(
+        "DELETE", f"/api/superadmin/tenants/{two_tenants['tenant_a']}",
+        headers=headers, json={"konfirmasi_slug": "test-toko-a"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["slug"] == "test-toko-a"
+    assert tenant_db.get_tenant(two_tenants["tenant_a"]) is None
+
+    log = superadmin_audit_db.list_log()
+    entri = next((l for l in log if l["aksi"] == "hapus_tenant"), None)
+    assert entri is not None, "aksi hapus_tenant harus tercatat di audit log"
+    assert entri["tenant_slug"] == "test-toko-a"
+
+    # Owner tenant yang sudah dihapus tidak bisa login lagi sama sekali.
+    r2 = two_tenants["client"].post("/api/auth/login", json={"username": "ownerA", "password": "passwordA123"})
+    assert r2.status_code == 401, r2.text
+
+
+def test_endpoint_hapus_tenant_mugen_hair_co_ditolak_dengan_422(two_tenants):
+    import tenant_db
+
+    default_tenant = tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT)
+    headers = _buat_superadmin_dan_login(two_tenants["client"])
+    r = two_tenants["client"].request(
+        "DELETE", f"/api/superadmin/tenants/{default_tenant['id']}",
+        headers=headers, json={"konfirmasi_slug": default_tenant["slug"]},
+    )
+    assert r.status_code == 422, r.text
+    assert tenant_db.get_tenant(default_tenant["id"]) is not None
+
+
+def test_endpoint_hapus_tenant_akun_biasa_ditolak(two_tenants):
+    """Akun tenant biasa (bukan superadmin) tidak bisa memanggil endpoint
+    ini sama sekali -- require_superadmin (auth.py) menolak lebih dulu,
+    sebelum sempat memeriksa konfirmasi slug apa pun."""
+    r = two_tenants["client"].request(
+        "DELETE", f"/api/superadmin/tenants/{two_tenants['tenant_b']}",
+        headers=two_tenants["headers_a"], json={"konfirmasi_slug": "test-toko-b"},
+    )
+    assert r.status_code == 403
+    import tenant_db
+    assert tenant_db.get_tenant(two_tenants["tenant_b"]) is not None

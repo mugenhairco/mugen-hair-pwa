@@ -2,7 +2,10 @@
 =============================================================================
 Seluruh endpoint di sini KHUSUS akun `role='superadmin'` (require_superadmin,
 lihat auth.py) -- mengelola SELURUH tenant dari satu tempat: daftar toko,
-buat toko baru (+ akun Owner pertamanya), dan aktifkan/nonaktifkan toko.
+buat toko baru (+ akun Owner pertamanya), aktifkan/nonaktifkan toko, dan
+hapus toko PERMANEN (khusus tenant testing/development -- tenant utama
+"mugen-hair-co" & tenant terakhir yang tersisa TIDAK PERNAH bisa dihapus,
+lihat tenant_db.hapus_tenant()).
 
 TIDAK ADA endpoint di sini yang membaca/mengubah data BISNIS tenant mana pun
 (transaksi, booking, dst) -- itu tetap murni urusan Owner/Admin masing-
@@ -121,6 +124,35 @@ def ubah_status_tenant(tenant_id: int, body: StatusTenantBody, user: dict = Depe
     aksi = "aktifkan_tenant" if body.status == "aktif" else "nonaktifkan_tenant"
     superadmin_audit_db.catat(user["username"], aksi, tenant_id=tenant_id, tenant_slug=t["slug"] if t else None)
     return _tenant_dengan_ringkasan(t)
+
+
+class HapusTenantBody(BaseModel):
+    konfirmasi_slug: str
+
+
+@router.delete("/tenants/{tenant_id}")
+def hapus_tenant(tenant_id: int, body: HapusTenantBody, user: dict = Depends(require_superadmin)):
+    """FITUR Hapus Tenant: penghapusan PERMANEN, TIDAK bisa dibatalkan --
+    dipakai untuk membersihkan tenant testing/development. `konfirmasi_slug`
+    WAJIB persis sama dengan slug tenant yang akan dihapus (lapis pertahanan
+    KEDUA, ditegakkan backend -- TIDAK cukup hanya konfirmasi di frontend,
+    supaya klik keliru/panggilan API langsung tanpa lewat UI tetap tertolak).
+    tenant_db.hapus_tenant() sendiri sudah menegakkan dua penjaga lain (tidak
+    bisa hapus mugen-hair-co, tidak bisa hapus tenant terakhir)."""
+    t = tenant_db.get_tenant(tenant_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+    if body.konfirmasi_slug.strip().lower() != t["slug"].strip().lower():
+        raise HTTPException(status_code=422, detail="Konfirmasi slug tidak cocok -- penghapusan dibatalkan.")
+    try:
+        tenant_terhapus = tenant_db.hapus_tenant(tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(
+        user["username"], "hapus_tenant", tenant_id=tenant_id, tenant_slug=tenant_terhapus["slug"],
+        detail=f"nama_barbershop={tenant_terhapus['nama_barbershop']!r}",
+    )
+    return {"ok": True, "slug": tenant_terhapus["slug"]}
 
 
 @router.get("/audit-log")

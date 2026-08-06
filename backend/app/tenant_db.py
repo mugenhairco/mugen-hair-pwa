@@ -396,6 +396,133 @@ def set_registrant_info(tenant_id: int, owner_name: str, email: str, whatsapp: s
         )
 
 
+def hapus_tenant(tenant_id: int) -> dict:
+    """FITUR Hapus Tenant (Super Admin Dashboard): penghapusan PERMANEN satu
+    tenant beserta SELURUH data yang menjadi miliknya -- TIDAK bisa
+    dibatalkan, TIDAK ada mekanisme undo. Dipakai untuk membersihkan tenant
+    testing/development, lihat routers/superadmin.py::hapus_tenant() untuk
+    lapis konfirmasi tambahan (harus mengetik ulang slug tenant) sebelum
+    endpoint ini pernah dipanggil.
+
+    DUA PENJAGA KESELAMATAN KERAS (tidak bisa dilewati parameter apa pun):
+    1. Tenant dengan slug SLUG_TENANT_DEFAULT ("mugen-hair-co", TOKO UTAMA
+       produksi) TIDAK PERNAH bisa dihapus lewat fungsi ini, apa pun
+       alasannya -- konsisten dengan aturan yang berlaku SELAMA proyek ini
+       ("jangan pernah menghapus/mengubah data mugen-hair-co").
+    2. Tidak bisa menghapus tenant TERAKHIR yang tersisa -- aplikasi ini
+       butuh minimal SATU tenant untuk tetap berfungsi (auth.py/tenant_
+       middleware.py mengasumsikan selalu ada tenant default).
+
+    Urutan DELETE di bawah mengikuti PERSIS seluruh foreign key di skema
+    (lihat postgres_schema.py::_TABLES / tenant_migrasi.py) -- anak
+    (leaf) dihapus dulu, baru tabel induk/root, supaya tidak pernah
+    melanggar constraint DAN tidak meninggalkan orphan record sama sekali.
+    SATU transaksi (lewat get_conn() yang sama seperti seluruh modul ini,
+    otomatis bekerja di SQLite maupun PostgreSQL lewat db_compat) --
+    kalau ADA SATU SAJA langkah yang gagal, SEMUANYA otomatis rollback,
+    tidak ada penghapusan sebagian.
+
+    `settings`/`file_asset` TIDAK punya kolom tenant_id -- diisolasi lewat
+    prefix "<tenant_id>:" di kolom key (lihat _kunci_tenant() di
+    database.py/postgres_schema.py). Pola LIKE dihitung PENUH di Python
+    lalu dikirim sebagai SATU parameter (BUKAN digabung pakai `||` di teks
+    SQL) -- karakter '%' literal di TEKS query (bukan di dalam parameter)
+    akan disalahartikan psycopg2 sebagai placeholder format-string
+    (jebakan SAMA PERSIS yang sudah didokumentasikan di postgres_schema.py
+    soal `_TABLES`, ditemukan lagi di sini lewat pengujian terhadap
+    PostgreSQL sungguhan -- "IndexError: tuple index out of range").
+    Portable di kedua dialek dan TIDAK PERNAH salah cocok dengan tenant
+    lain (mis. tenant id=2 tidak pernah cocok dengan prefix "20:" atau
+    "23:", karena karakter SETELAH digit id harus persis ':').
+
+    Return dict tenant yang baru saja dihapus (snapshot SEBELUM
+    dihapus -- dipakai pemanggil untuk audit log & pesan konfirmasi ke
+    Super Admin, lihat superadmin_audit_db.catat())."""
+    tenant = get_tenant(tenant_id)
+    if tenant is None:
+        raise ValueError("Tenant tidak ditemukan.")
+    if tenant["slug"] == SLUG_TENANT_DEFAULT:
+        raise ValueError(f"Tenant '{SLUG_TENANT_DEFAULT}' adalah toko utama, tidak bisa dihapus.")
+    if len(list_tenants()) <= 1:
+        raise ValueError("Tidak bisa menghapus satu-satunya tenant yang tersisa.")
+
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM transaksi_detail WHERE transaksi_id IN ("
+            "SELECT tr.id FROM transaksi tr JOIN barbers b ON b.id = tr.barber_id WHERE b.tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM kasbon_pembayaran WHERE kasbon_id IN ("
+            "SELECT k.id FROM kasbon k JOIN barbers b ON b.id = k.barber_id WHERE b.tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM booking_items WHERE booking_id IN (SELECT id FROM bookings WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM produk_mutasi WHERE produk_id IN (SELECT id FROM produk WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM email_verification_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ?)",
+            (tenant_id,))
+        # pengeluaran mereferensikan kas_penyesuaian_id & reimburse_id --
+        # WAJIB dihapus sebelum keduanya.
+        conn.execute("DELETE FROM pengeluaran WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM transaksi WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM slip_gaji WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM kasbon WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM komisi_penyesuaian WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM reimburse WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM izin_cuti WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM data_non_barber WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute(
+            "DELETE FROM absensi_libur WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
+        conn.execute("DELETE FROM closed_slot WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM bookings WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM pemasukan WHERE tenant_id = ?", (tenant_id,))
+        # users.barber_id -> barbers, WAJIB dihapus sebelum barbers.
+        conn.execute("DELETE FROM users WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM kas_penyesuaian WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM kas_saldo_awal WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM website_gallery WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM toko_libur WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM produk WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM services WHERE tenant_id = ?", (tenant_id,))
+        # Root: barbers -- HANYA setelah SEMUA anak di atas bersih.
+        conn.execute("DELETE FROM barbers WHERE tenant_id = ?", (tenant_id,))
+        _pola_prefix = f"{tenant_id}:%"
+        conn.execute("DELETE FROM settings WHERE key LIKE ?", (_pola_prefix,))
+        conn.execute("DELETE FROM file_asset WHERE key LIKE ?", (_pola_prefix,))
+        conn.execute("DELETE FROM tenant_subscriptions WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM tenant_subscription_payments WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM subscription_invoices WHERE tenant_id = ?", (tenant_id,))
+        # Riwayat audit LAMA milik tenant ini ikut dihapus -- entri audit
+        # BARU untuk aksi penghapusan ini sendiri dicatat TERPISAH oleh
+        # pemanggil (routers/superadmin.py) SETELAH fungsi ini selesai,
+        # lihat superadmin_audit_db.catat().
+        conn.execute("DELETE FROM superadmin_audit_log WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
+
+    return tenant
+
+
 def set_status(tenant_id: int, status: str) -> None:
     """FONDASI Multi-Tenant Phase 2.1 (Super Admin Dashboard): aktifkan/
     nonaktifkan satu tenant. Efeknya langsung terasa tanpa tunggu token
