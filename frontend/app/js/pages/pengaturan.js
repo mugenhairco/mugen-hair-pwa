@@ -989,6 +989,13 @@ const PagePengaturan = (() => {
       formCard.appendChild(MugenUI.el("h2", {}, "Tambah User"));
       const inputUsername = MugenUI.el("input", { type: "text", placeholder: "Username" });
       const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password (min. 4 karakter)" });
+      // FITUR Undangan User Tenant: OPSIONAL -- kosongkan kalau user ini
+      // tidak punya/belum perlu email (perilaku SAMA PERSIS seperti
+      // sebelumnya). Diisi -> email undangan verifikasi terkirim otomatis
+      // (backend, lihat routers/pengaturan.py::tambah_user()), password
+      // yang diketik di atas TETAP langsung berlaku, TIDAK menunggu
+      // verifikasi apa pun.
+      const inputEmail = MugenUI.el("input", { type: "email", placeholder: "Email (opsional -- kirim undangan verifikasi)" });
       const selRole = MugenUI.el("select");
       if (!isStaffActor) {
         selRole.appendChild(MugenUI.el("option", { value: "admin" }, "Owner"));
@@ -1008,6 +1015,8 @@ const PagePengaturan = (() => {
       formCard.appendChild(inputUsername);
       formCard.appendChild(MugenUI.el("label", {}, "Password"));
       formCard.appendChild(inputPassword);
+      formCard.appendChild(MugenUI.el("label", {}, "Email (opsional)"));
+      formCard.appendChild(inputEmail);
       formCard.appendChild(MugenUI.el("label", {}, "Role"));
       formCard.appendChild(selRole);
       formCard.appendChild(MugenUI.el("label", {}, "Terhubung ke Barber (khusus role Barber)"));
@@ -1026,9 +1035,10 @@ const PagePengaturan = (() => {
             password: inputPassword.value,
             role: selRole.value,
             barber_id: selRole.value === "barber" ? Number(selBarberAkun.value) : null,
+            email: inputEmail.value.trim(),
           }));
-          MugenUI.toast("User ditambahkan.", "success");
-          inputUsername.value = ""; inputPassword.value = "";
+          MugenUI.toast(inputEmail.value.trim() ? "User ditambahkan, email undangan terkirim." : "User ditambahkan.", "success");
+          inputUsername.value = ""; inputPassword.value = ""; inputEmail.value = "";
           if (isStaffActor) { selBarberAkun.style.display = ""; } else { selRole.value = "admin"; selBarberAkun.style.display = "none"; }
           loadList();
         } catch (e) {

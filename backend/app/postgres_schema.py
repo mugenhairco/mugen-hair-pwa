@@ -756,7 +756,8 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
     user_id     INTEGER NOT NULL,
     token       TEXT NOT NULL UNIQUE,
     expires_at  TEXT NOT NULL,
-    created_at  TEXT NOT NULL
+    created_at  TEXT NOT NULL,
+    used_at     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -767,6 +768,15 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     created_at  TEXT NOT NULL,
     used_at     TEXT
 );
+
+-- REVISI Integrasi Resend: token verifikasi email SEKARANG sekali pakai
+-- juga (item 5 spesifikasi "hanya dapat digunakan satu kali") -- BEDA
+-- dari desain awal (idempotent, klik ulang aman) -- lihat
+-- email_auth_db.py::verifikasi_email_dengan_token() untuk penjelasan UX
+-- klik ulang (tidak dianggap error, pesan "sudah diverifikasi
+-- sebelumnya"). CREATE TABLE di atas sudah membawa kolom ini untuk
+-- instalasi BARU; ALTER di bawah untuk instalasi yang SUDAH ADA.
+ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS used_at TEXT;
 """
 
 

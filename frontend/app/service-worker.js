@@ -382,6 +382,13 @@
 // subdomain tenant ke /app/. Tidak mengubah database/JWT/API/isolasi
 // data multi-tenant yang sudah ada.
 //
+// v78 -> v79: FITUR Undangan User Tenant -- field Email opsional di form
+// "Tambah User" (Pengaturan > User, pengaturan.js), kirim email undangan
+// verifikasi otomatis kalau diisi (backend: routers/pengaturan.py,
+// email_templates.py::template_undangan_user()). Tidak mengubah alur
+// login/pembuatan user yang sudah ada (password Owner tetap langsung
+// berlaku, TIDAK menunggu verifikasi apa pun).
+//
 // CATATAN PENTING soal ASSET_VERSION di bawah -- WAJIB angka literal DI
 // FILE INI (BUKAN diimpor dari file lain mana pun): satu-satunya sinyal
 // yang membuat browser mendeteksi "ada Service Worker baru" adalah
@@ -396,7 +403,7 @@
 // SAMA -- dua tempat, disiplin manual, TIDAK BISA disatukan lewat import
 // selama proyek ini tidak memakai proses build (lihat README "tidak ada
 // proses build").
-const ASSET_VERSION = "78";
+const ASSET_VERSION = "79";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

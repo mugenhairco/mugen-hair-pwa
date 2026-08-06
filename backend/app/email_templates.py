@@ -76,6 +76,36 @@ def template_verifikasi_email(nama_penerima: str, link_verifikasi: str, masa_ber
     return _kerangka("Verifikasi email Anda", isi)
 
 
+def template_undangan_user(nama_penerima: str, nama_tenant: str, nama_role: str, username: str,
+                            link_verifikasi: str, masa_berlaku_jam: int) -> str:
+    """FITUR Undangan User Tenant: dikirim SEKALI saat Owner/Admin membuat
+    akun karyawan baru DENGAN email terisi (routers/pengaturan.py::
+    tambah_user()) -- BEDA dari template_verifikasi_email() (Registrasi
+    mandiri, calon Owner belum tentu tahu apa itu Rivoir) dalam nada &
+    konteks (karyawan yang SUDAH ditambahkan Owner ke toko yang SUDAH
+    berjalan) -- mekanisme link/token/masa berlakunya SAMA PERSIS (satu
+    fungsi backend yang sama, email_auth_db.buat_token_verifikasi())."""
+    isi = f"""
+      <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">
+        Halo {nama_penerima},<br><br>
+        Anda telah ditambahkan sebagai <strong>{nama_role}</strong> di
+        <strong>{nama_tenant}</strong> pada platform Rivoir, dengan username
+        <strong>{username}</strong>. Silakan verifikasi email Anda supaya
+        bisa memakai fitur Lupa Kata Sandi kalau suatu saat diperlukan.
+      </p>
+      {_tombol("Verifikasi Email", link_verifikasi)}
+      <p style="margin:0;font-size:13px;color:{_TEKS_DIM};line-height:1.6;">
+        Link ini berlaku selama {masa_berlaku_jam} jam. Kalau tombol di atas
+        tidak berfungsi, salin dan tempel URL berikut ke browser Anda:<br>
+        <span style="word-break:break-all;color:{_AKSEN};">{link_verifikasi}</span>
+      </p>
+      <p style="margin:16px 0 0;font-size:13px;color:{_TEKS_DIM};">
+        Password akun Anda sudah diatur oleh pemilik toko -- hubungi mereka
+        langsung kalau Anda belum tahu password-nya.
+      </p>"""
+    return _kerangka("Anda diundang bergabung di Rivoir", isi)
+
+
 def template_reset_password(nama_penerima: str, link_reset: str, masa_berlaku_jam: int) -> str:
     isi = f"""
       <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">

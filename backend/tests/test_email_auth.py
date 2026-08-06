@@ -352,3 +352,120 @@ def test_superadmin_login_tidak_terpengaruh(app_client):
 def test_login_biasa_single_tenant_tidak_terpengaruh(single_tenant):
     r = single_tenant["client"].post("/api/auth/login", json={"username": "owner1", "password": "password123"})
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# 10 (Integrasi Resend): token verifikasi email SEKARANG sekali pakai juga
+# ---------------------------------------------------------------------------
+
+def test_verifikasi_token_sekali_pakai_klik_ulang_pesan_beda_tapi_tetap_200(app_client):
+    """Item 5 spesifikasi ("hanya dapat digunakan satu kali") -- BEDA dari
+    desain awal (idempotent). Klik ulang link yang SUDAH dipakai TETAP
+    200 (bukan dianggap error tajam ke pengguna), tapi pesannya berbeda
+    dari klik PERTAMA yang benar-benar berhasil."""
+    _daftar_tenant_baru(app_client)
+    user = email_auth_db.get_user_by_email("owner@example.com")
+    token = _ambil_token_verifikasi(user["id"])
+
+    r1 = app_client.post("/api/auth/verifikasi-email", json={"token": token})
+    r2 = app_client.post("/api/auth/verifikasi-email", json={"token": token})
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json()["message"] != r2.json()["message"]
+    assert "sebelumnya" in r2.json()["message"].lower()
+
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT used_at FROM email_verification_tokens WHERE token = ?", (token,)
+        ).fetchone()
+    assert row["used_at"] is not None
+
+
+def test_verifikasi_token_kedaluwarsa_tetap_ditolak_walau_belum_dipakai(app_client):
+    _daftar_tenant_baru(app_client)
+    user = email_auth_db.get_user_by_email("owner@example.com")
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE email_verification_tokens SET expires_at = '2000-01-01T00:00:00' WHERE user_id = ?",
+            (user["id"],),
+        )
+    token = _ambil_token_verifikasi(user["id"])
+    r = app_client.post("/api/auth/verifikasi-email", json={"token": token})
+    assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# 11 (Integrasi Resend): Undangan User Tenant
+# ---------------------------------------------------------------------------
+
+def test_tambah_user_dengan_email_kirim_undangan_tanpa_blokir_login(single_tenant):
+    client = single_tenant["client"]
+    headers = single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = db.add_barber("Rudi", uang_harian=50000, tenant_id=tenant_id)
+
+    r = client.post("/api/pengaturan/user", headers=headers, json={
+        "username": "rudi_barber", "password": "password123", "role": "barber",
+        "barber_id": barber_id, "email": "rudi@example.com",
+    })
+    assert r.status_code == 200, r.text
+    new_user = auth_db.get_user_by_username("rudi_barber", tenant_id=tenant_id)
+    assert new_user["email"] == "rudi@example.com"
+    assert new_user["email_verified"] == 0
+    # KHUSUS undangan -- TIDAK PERNAH blokir_sampai_verifikasi (BEDA dari
+    # Registrasi mandiri) -- karyawan baru langsung bisa login dengan
+    # password yang diatur Owner, TIDAK menunggu verifikasi apa pun.
+    assert new_user["blokir_sampai_verifikasi"] == 0
+
+    with db.get_conn() as conn:
+        jumlah_token = conn.execute(
+            "SELECT COUNT(*) AS n FROM email_verification_tokens WHERE user_id = ?", (new_user["id"],)
+        ).fetchone()["n"]
+    assert jumlah_token == 1
+
+    r_login = client.post("/api/auth/login", json={"username": "rudi_barber", "password": "password123"})
+    assert r_login.status_code == 200, r_login.text
+
+
+def test_tambah_user_tanpa_email_perilaku_lama_apa_adanya(single_tenant):
+    client = single_tenant["client"]
+    headers = single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = db.add_barber("Tanpa Email", uang_harian=50000, tenant_id=tenant_id)
+
+    r = client.post("/api/pengaturan/user", headers=headers, json={
+        "username": "tanpa_email_barber", "password": "password123", "role": "barber", "barber_id": barber_id,
+    })
+    assert r.status_code == 200, r.text
+    new_user = auth_db.get_user_by_username("tanpa_email_barber", tenant_id=tenant_id)
+    assert new_user["email"] in (None, "")
+
+    r_login = client.post("/api/auth/login", json={"username": "tanpa_email_barber", "password": "password123"})
+    assert r_login.status_code == 200
+
+
+def test_tambah_user_email_sudah_dipakai_akun_lain_ditolak(two_tenants):
+    client = two_tenants["client"]
+    email_auth_db.set_email_user(
+        auth_db.get_user_by_username("ownerB", tenant_id=two_tenants["tenant_b"])["id"], "dipakai2@example.com"
+    )
+    barber_id = db.add_barber("Barber A", uang_harian=50000, tenant_id=two_tenants["tenant_a"])
+    r = client.post("/api/pengaturan/user", headers=two_tenants["headers_a"], json={
+        "username": "barber_a", "password": "password123", "role": "barber",
+        "barber_id": barber_id, "email": "dipakai2@example.com",
+    })
+    assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# 12 (Integrasi Resend): header From "Nama <email>"
+# ---------------------------------------------------------------------------
+
+def test_email_service_from_header_gabungan_nama_dan_alamat():
+    """Item 4 spesifikasi: "From: Rivoir <noreply@rivoirsett.com>" -- default
+    MAIL_FROM/MAIL_FROM_NAME (env var TIDAK diisi di lingkungan test) HARUS
+    menghasilkan header From persis format ini."""
+    import email_service
+    assert email_service.MAIL_FROM == "noreply@rivoirsett.com"
+    assert email_service.MAIL_FROM_NAME == "Rivoir"
+    assert email_service._FROM_HEADER == "Rivoir <noreply@rivoirsett.com>"
