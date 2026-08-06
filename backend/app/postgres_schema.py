@@ -1235,13 +1235,42 @@ def _backfill_booking_slug():
     otomatis dicoba ulang di restart berikutnya (fungsi ini idempotent,
     lihat docstring modul), TIDAK PERNAH menghalangi seluruh aplikasi
     gagal start hanya karena satu baris tenant lama kebetulan sedang
-    terkunci sesi lain."""
+    terkunci sesi lain.
+
+    HOTFIX v5->v6 (produksi TETAP macet total di titik yang PERSIS SAMA
+    walau commit 3639757 -- MERGE PR #86 yang membawa SET LOCAL
+    lock_timeout eksplisit -- sudah dikonfirmasi live: dikonfirmasi lewat
+    "Klik event deploy" oleh user, commit yang gagal MEMANG commit yang
+    membawa fix itu. TIDAK ADA log "DILEWATI" atau log sukses apa pun
+    sesudah "N tenant total, M perlu backfill." -- kalau SET LOCAL
+    lock_timeout benar-benar terkirim, seharusnya SALAH SATU dari dua log
+    itu muncul dalam <=5 detik. Diamnya berlanjut jauh melampaui itu,
+    artinya macetnya BUKAN di eksekusi statement SQL yang tertahan lock
+    (yang sudah dibatasi lock_timeout) -- macet SEBELUM statement itu
+    sempat terkirim sama sekali lewat koneksi yang dipakai ulang dari
+    pool (koneksi FISIK yang sama sudah dipakai lebih dari 15 kali
+    berturut-turut sepanjang boot ini, di create_all() dan SELECT tenant
+    di atas -- SATU-SATUNYA hal yang benar-benar baru di percobaan
+    UPDATE pertama loop ini adalah: reuse koneksi pool YANG KE-SEKIAN
+    KALINYA, bukan soal lock Postgres).
+
+    Diperbaiki dengan BERHENTI memakai koneksi pool sama sekali di sini:
+    setiap percobaan sekarang membuka koneksi psycopg2 BARU secara
+    langsung (bukan db_compat.get_conn()/pool), dengan connect_timeout
+    (mekanisme libpq paling dasar & paling teruji untuk membatasi fase
+    KONEKSI -- BEDA dari options/SET LOCAL yang sudah terbukti dua kali
+    tidak bisa diandalkan pada koneksi yang dipakai ulang), lalu ditutup
+    eksplisit (TIDAK PERNAH dikembalikan ke pool) segera setelah dipakai.
+    Ini menghilangkan variabel "koneksi lama yang entah kenapa bermasalah
+    saat dipakai ulang" sama sekali dari persamaan, apa pun akar
+    masalahnya persisnya. Kegagalan APA PUN pada satu percobaan (gagal
+    konek, lock, bentrok kandidat, atau error lain yang tidak terduga)
+    TIDAK PERNAH dianggap fatal -- backfill tenant lama tetap bukan
+    syarat aplikasi ini bisa boot, tenant yang gagal cukup dilewati dan
+    otomatis dicoba ulang di restart berikutnya."""
     import re
 
-    from psycopg2.errors import LockNotAvailable
-
     import tenant_middleware  # import lokal: hindari import siklik
-    from db_compat import IntegrityError
 
     with db_compat.get_conn() as conn:
         rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
@@ -1262,21 +1291,67 @@ def _backfill_booking_slug():
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
-            try:
-                with db_compat.get_conn() as conn:
-                    conn.execute("SET LOCAL lock_timeout = '5s'")
-                    conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (kandidat, r["id"]))
-            except IntegrityError:
+            hasil = _coba_backfill_koneksi_baru(r["id"], kandidat)
+            if hasil == "bentrok":
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
-            except LockNotAvailable:
+            if hasil == "dilewati":
                 _logger.warning(
-                    "[postgres_schema] _backfill_booking_slug(): tenant id=%s DILEWATI (%.2fs) -- baris "
-                    "terkunci sesi lain lebih dari 5 detik. TIDAK fatal, akan dicoba ulang otomatis di "
-                    "restart berikutnya.", r["id"], time.monotonic() - _mulai,
+                    "[postgres_schema] _backfill_booking_slug(): tenant id=%s DILEWATI (%.2fs) -- lihat log "
+                    "di atas untuk alasannya. TIDAK fatal, akan dicoba ulang otomatis di restart berikutnya.",
+                    r["id"], time.monotonic() - _mulai,
                 )
                 break
             _logger.info("[postgres_schema] _backfill_booking_slug(): tenant id=%s -> booking_slug=%s (%.2fs).",
                          r["id"], kandidat, time.monotonic() - _mulai)
             break
+
+
+def _coba_backfill_koneksi_baru(tenant_id: int, kandidat: str) -> str:
+    """Satu percobaan UPDATE tenants.booking_slug lewat koneksi psycopg2
+    yang BENAR-BENAR BARU (connect() langsung, BUKAN db_compat.get_conn()/
+    pool) -- lihat docstring HOTFIX v5->v6 di _backfill_booking_slug() di
+    atas untuk alasan lengkapnya. Koneksi ini SELALU ditutup di akhir
+    (finally), TIDAK PERNAH dikembalikan ke pool mana pun.
+
+    Return: "ok" (berhasil), "bentrok" (booking_slug ini sudah dipakai
+    tenant lain, coba kandidat berikutnya), atau "dilewati" (gagal karena
+    sebab lain -- koneksi timeout, lock timeout, atau error tak terduga
+    apa pun -- TIDAK PERNAH melempar exception ke pemanggil, supaya SATU
+    tenant yang bermasalah tidak pernah menggagalkan seluruh boot)."""
+    import psycopg2
+    import psycopg2.extras
+
+    _t0 = time.monotonic()
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            db_compat.DATABASE_URL,
+            connect_timeout=10,
+            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+            options="-c lock_timeout=5000 -c statement_timeout=10000",
+        )
+        _logger.info("[postgres_schema] _backfill_booking_slug(): tenant id=%s koneksi baru didapat (%.2fs).",
+                     tenant_id, time.monotonic() - _t0)
+        cur = conn.cursor()
+        # SET eksplisit sebagai pertahanan LAPIS KEDUA -- kalau parameter
+        # `options` di atas (startup parameter) ternyata tidak berlaku di
+        # lingkungan tertentu, perintah SQL biasa ini tidak bisa diam-diam
+        # diabaikan dengan cara yang sama.
+        cur.execute("SET lock_timeout = '5s'")
+        cur.execute("SET statement_timeout = '10s'")
+        cur.execute("UPDATE tenants SET booking_slug = %s WHERE id = %s", (kandidat, tenant_id))
+        conn.commit()
+        return "ok"
+    except psycopg2.IntegrityError:
+        return "bentrok"
+    except Exception as e:
+        _logger.warning(
+            "[postgres_schema] _backfill_booking_slug(): tenant id=%s GAGAL (%.2fs) -- %s: %s",
+            tenant_id, time.monotonic() - _t0, type(e).__name__, e,
+        )
+        return "dilewati"
+    finally:
+        if conn is not None:
+            conn.close()
