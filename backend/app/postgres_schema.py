@@ -799,59 +799,83 @@ def create_all():
     init_db() di jalur SQLite). TIDAK PERNAH menghapus/menimpa data yang
     sudah ada (CREATE TABLE IF NOT EXISTS + ON CONFLICT DO NOTHING).
 
-    HOTFIX (crash produksi "duplicate key value violates unique constraint
-    idx_tenants_booking_slug" saat startup, menyebabkan crash-loop): fungsi
-    ini (termasuk _backfill_booking_slug() di bawah) SECARA MATEMATIS benar
-    untuk SATU eksekusi tunggal (setiap kandidat slug baru langsung ditandai
-    "terpakai" di memori SEBELUM baris berikutnya diproses, jadi tidak
-    mungkin dua baris dalam SATU panggilan create_all() menghasilkan nilai
-    yang sama) -- tapi TIDAK aman kalau create_all() kebetulan dipanggil
-    lebih dari SATU PROSES secara bersamaan terhadap database yang SAMA
-    (mis. deploy rolling Render yang sempat overlap sebentar dengan proses
-    lama, atau restart cepat berturut-turut sebelum proses sebelumnya benar-
-    benar berhenti) -- dua proses independen bisa menghitung kandidat yang
-    SAMA dari snapshot data yang SAMA (belum saling melihat perubahan
-    masing-masing sebelum salah satunya commit), dan proses kedua gagal
-    dengan UniqueViolation persis seperti yang terjadi di produksi.
+    HOTFIX (crash produksi "psycopg2.errors.OutOfMemory: out of shared
+    memory" / "You might need to increase max_locks_per_transaction" saat
+    startup): fungsi ini SEBELUMNYA menjalankan SELURUH isinya (90+
+    statement DDL di _TABLES, PLUS seluruh fungsi migrasi/seeding di bawah)
+    dalam SATU transaksi besar -- setiap CREATE TABLE/ALTER TABLE/CREATE
+    INDEX (AccessExclusiveLock, TIDAK bisa lewat "fast path" lock manager
+    Postgres) menahan lock-nya sampai TRANSAKSI itu commit, jadi lock-nya
+    MENUMPUK terus sepanjang fungsi ini berjalan alih-alih dilepas segera
+    setelah masing-masing statement selesai. Begitu jumlah objek terkunci
+    sekaligus melebihi kapasitas shared lock table Postgres (dihitung dari
+    `max_locks_per_transaction x (max_connections + max_prepared_transactions)`,
+    kapasitasnya BISA jauh lebih kecil di plan Postgres terkelola/gratis
+    dibanding instalasi lokal default) seluruh transaksi gagal dengan
+    "out of shared memory" -- TERBUKTI lewat reproduksi lokal terhadap
+    PostgreSQL sungguhan (bukan simulasi): bahkan versi kode SEBELUM fitur
+    booking_slug ada pun gagal persis sama begitu kapasitas lock table
+    dibuat cukup kecil, jadi ini BUKAN bug baru dari booking_slug -- murni
+    fungsi ini SELALU rapuh menumpuk lock dalam satu transaksi raksasa,
+    baru benar-benar ketahuan sekarang.
 
-    pg_advisory_xact_lock() DI SINI (SEBELUM statement APA PUN lainnya)
-    memaksa SELURUH create_all() berjalan EKSKLUSIF satu proses pada satu
-    waktu -- proses lain yang kebetulan memanggil create_all() di saat yang
-    sama akan MENUNGGU (bukan gagal) sampai proses pertama selesai commit/
-    rollback, lalu melanjutkan terhadap data yang SUDAH konsisten (kalau
-    proses pertama berhasil, booking_slug SEMUA tenant sudah terisi --
-    proses kedua otomatis tidak menemukan apa pun lagi untuk di-backfill).
-    Lock ini TERIKAT TRANSAKSI (xact, BUKAN session) -- otomatis terlepas
-    begitu transaksi ini commit/rollback, TIDAK PERNAH tertinggal menempel
-    ke koneksi yang dikembalikan ke connection pool (lihat db_compat.py)."""
-    with db_compat.get_conn() as conn:
-        conn.execute("SELECT pg_advisory_xact_lock(822233441101)")
-        for statement in _TABLES.strip().split(";\n\n"):
-            statement = statement.strip()
-            if statement:
+    Diperbaiki dengan memecah create_all() jadi BANYAK transaksi kecil
+    (satu per statement DDL, satu per fungsi migrasi/seeding) -- SETIAP
+    potongan SUDAH idempotent sejak awal (CREATE TABLE IF NOT EXISTS/
+    ALTER TABLE ADD COLUMN IF NOT EXISTS/ON CONFLICT DO NOTHING/dst, lihat
+    komentar masing-masing), jadi memecahnya jadi transaksi terpisah TIDAK
+    mengubah hasil akhirnya sama sekali -- lock tiap potongan dilepas
+    (commit) SEBELUM potongan berikutnya mulai, sehingga jumlah lock yang
+    ditahan BERSAMAAN di titik mana pun sepanjang boot jauh lebih kecil.
+    Kalau proses ini terhenti di tengah jalan (mis. container di-restart
+    paksa), potongan yang SUDAH commit tetap tersimpan dan potongan yang
+    BELUM sempat jalan otomatis dicoba lagi di boot berikutnya -- SAMA
+    PERSIS filosofi "aman dipanggil ulang" yang sudah dipegang fungsi ini
+    sejak awal, sekarang berlaku juga di dalam SATU pemanggilan, bukan
+    cuma antar-restart.
+
+    _backfill_booking_slug() TIDAK LAGI dibungkus pg_advisory_xact_lock()
+    (HOTFIX sebelumnya) -- lock terikat-transaksi itu tidak lagi cocok
+    dipakai sejak _backfill_booking_slug() sendiri direstrukturisasi jadi
+    banyak transaksi kecil (satu per percobaan kandidat, lihat docstring-
+    nya) untuk alasan yang SAMA seperti seluruh fungsi ini (lock/
+    subtransaksi yang menumpuk di satu transaksi menghabiskan shared
+    memory Postgres). Fungsi itu SUDAH aman terhadap race dari proses
+    lain manapun lewat pola "coba lalu mundur" (setiap kandidat
+    diverifikasi LANGSUNG ke database saat itu juga, IntegrityError
+    ditangkap dan kandidat berikutnya dicoba) -- tidak butuh lock
+    tambahan apa pun untuk itu."""
+    for statement in _TABLES.strip().split(";\n\n"):
+        statement = statement.strip()
+        if statement:
+            with db_compat.get_conn() as conn:
                 conn.execute(statement)
 
-        # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan
-        # data produksi yang sudah berjalan) + backfill tenant_id untuk
-        # baris yang belum punya (baris BARU setelah Phase 1 aktif sudah
-        # diisi tenant_id-nya sendiri saat dibuat, jadi TIDAK ikut tertimpa
-        # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
+    # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan
+    # data produksi yang sudah berjalan) + backfill tenant_id untuk
+    # baris yang belum punya (baris BARU setelah Phase 1 aktif sudah
+    # diisi tenant_id-nya sendiri saat dibuat, jadi TIDAK ikut tertimpa
+    # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
+    with db_compat.get_conn() as conn:
         tenant_default_id = _pastikan_tenant_default(conn)
-        for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
-                      "website_gallery", "bookings", "closed_slot", "toko_libur",
-                      # FONDASI Multi-Tenant Phase 1.1 -- lihat ALTER TABLE di atas.
-                      "pemasukan", "kas_saldo_awal", "kas_penyesuaian"):
+    for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
+                  "website_gallery", "bookings", "closed_slot", "toko_libur",
+                  # FONDASI Multi-Tenant Phase 1.1 -- lihat ALTER TABLE di atas.
+                  "pemasukan", "kas_saldo_awal", "kas_penyesuaian"):
+        with db_compat.get_conn() as conn:
             conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_default_id,))
 
-        # FONDASI Multi-Tenant Phase 1: salin (bukan pindah/hapus) SEMUA
-        # baris `settings` LAMA (key polos, dari sebelum Phase 1 aktif) ke
-        # bentuk ber-prefix tenant default -- WAJIB dijalankan SEBELUM
-        # seeding default hardcode di bawah, supaya toko produksi yang
-        # SUDAH mengustomisasi setting (mis. persentase_komisi diubah dari
-        # 40 ke nilai lain) tidak diam-diam ter-reset ke nilai pabrik begitu
-        # get_setting() mulai membaca key ber-prefix (lihat database.py).
+    # FONDASI Multi-Tenant Phase 1: salin (bukan pindah/hapus) SEMUA
+    # baris `settings` LAMA (key polos, dari sebelum Phase 1 aktif) ke
+    # bentuk ber-prefix tenant default -- WAJIB dijalankan SEBELUM
+    # seeding default hardcode di bawah, supaya toko produksi yang
+    # SUDAH mengustomisasi setting (mis. persentase_komisi diubah dari
+    # 40 ke nilai lain) tidak diam-diam ter-reset ke nilai pabrik begitu
+    # get_setting() mulai membaca key ber-prefix (lihat database.py).
+    with db_compat.get_conn() as conn:
         _migrasi_prefix_settings(conn, tenant_default_id)
 
+    with db_compat.get_conn() as conn:
         for key, value in DEFAULT_SETTINGS.items():
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                          (_kunci_tenant(tenant_default_id, key), value))
@@ -866,25 +890,28 @@ def create_all():
             (_kunci_tenant(tenant_default_id, "bonus_customer_tiers"), json.dumps(DEFAULT_BONUS_TIERS)),
         )
 
-        # BUGFIX (ditemukan lewat laporan Komisi selalu Rp 0): seeding
-        # DEFAULT_SETTINGS di atas HANYA untuk tenant_default_id -- tenant
-        # LAIN (dibuat lewat tenant_db.buat_tenant(), dipakai routers/
-        # tenant_registration.py registrasi mandiri MAUPUN routers/
-        # superadmin.py provisioning manual) TIDAK PERNAH mendapat baris
-        # settings apa pun sebelum perbaikan ini, sehingga get_setting()/
-        # _setting_float() diam-diam fallback ke "0" (mis. persentase_komisi
-        # seharusnya 40%). tenant_db.buat_tenant() sendiri sudah diperbaiki
-        # untuk men-seed tenant BARU langsung saat dibuat -- backfill di
-        # sini KHUSUS untuk tenant yang SUDAH TERLANJUR ada sebelum
-        # perbaikan itu dipasang (jalan tiap boot, aman & idempotent lewat
-        # ON CONFLICT DO NOTHING, TIDAK PERNAH menimpa setting yang sudah
-        # eksplisit diisi/diubah Owner tenant mana pun).
+    # BUGFIX (ditemukan lewat laporan Komisi selalu Rp 0): seeding
+    # DEFAULT_SETTINGS di atas HANYA untuk tenant_default_id -- tenant
+    # LAIN (dibuat lewat tenant_db.buat_tenant(), dipakai routers/
+    # tenant_registration.py registrasi mandiri MAUPUN routers/
+    # superadmin.py provisioning manual) TIDAK PERNAH mendapat baris
+    # settings apa pun sebelum perbaikan ini, sehingga get_setting()/
+    # _setting_float() diam-diam fallback ke "0" (mis. persentase_komisi
+    # seharusnya 40%). tenant_db.buat_tenant() sendiri sudah diperbaiki
+    # untuk men-seed tenant BARU langsung saat dibuat -- backfill di
+    # sini KHUSUS untuk tenant yang SUDAH TERLANJUR ada sebelum
+    # perbaikan itu dipasang (jalan tiap boot, aman & idempotent lewat
+    # ON CONFLICT DO NOTHING, TIDAK PERNAH menimpa setting yang sudah
+    # eksplisit diisi/diubah Owner tenant mana pun).
+    with db_compat.get_conn() as conn:
         semua_tenant_id = [r["id"] for r in conn.execute("SELECT id FROM tenants").fetchall()]
-        for tid in semua_tenant_id:
+    for tid in semua_tenant_id:
+        with db_compat.get_conn() as conn:
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                              (_kunci_tenant(tid, key), value))
 
+    with db_compat.get_conn() as conn:
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
                                        (tenant_default_id,)).fetchone()["n"]
         if jumlah_service == 0:
@@ -899,6 +926,7 @@ def create_all():
                     (nama, harga, pakai_potongan, tenant_default_id, i),
                 )
 
+    with db_compat.get_conn() as conn:
         for key in ("bonus_service_acuan_service_ids", "uang_harian_acuan_service_ids"):
             kunci = _kunci_tenant(tenant_default_id, key)
             existing = conn.execute("SELECT value FROM settings WHERE key = ?", (kunci,)).fetchone()
@@ -911,14 +939,20 @@ def create_all():
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                          (kunci, json.dumps(service_ids)))
 
+    with db_compat.get_conn() as conn:
         conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")
 
+    with db_compat.get_conn() as conn:
         _normalisasi_urutan_service_kolisi(conn)
+    with db_compat.get_conn() as conn:
         _normalisasi_urutan_barber_kolisi(conn)
+    with db_compat.get_conn() as conn:
         _migrasi_subscription(conn)
+    with db_compat.get_conn() as conn:
         _migrasi_billing_packages(conn)
+    with db_compat.get_conn() as conn:
         _migrasi_billing_features(conn)
-        _backfill_booking_slug(conn)
+    _backfill_booking_slug()
 
 
 def _migrasi_subscription(conn):
@@ -1106,41 +1140,45 @@ def _migrasi_prefix_settings(conn, tenant_id_default: int):
                          (kunci_baru, r["value"]))
 
 
-def _backfill_booking_slug(conn):
+def _backfill_booking_slug():
     """FITUR URL Booking Publik per Tenant: backfill tenant LAMA (dibuat
     sebelum kolom booking_slug ada).
 
-    HOTFIX v2 (crash produksi "duplicate key value violates unique
-    constraint idx_tenants_booking_slug" TERUS TERJADI walau sudah
-    dikunci lewat pg_advisory_xact_lock() di create_all()): pendekatan
-    SEBELUMNYA (hitung SELURUH kandidat di memori Python SEKALI di awal
-    berdasar snapshot SELECT, baru UPDATE polos satu-satu) diam-diam
-    mengasumsikan TIDAK ADA proses LAIN yang menulis kolom
-    slug/booking_slug SELAMA backfill ini berjalan -- asumsi itu ternyata
-    TIDAK CUKUP di produksi: pg_advisory_xact_lock() HANYA melindungi
-    proses yang SUDAH menjalankan kode BARU (yang tahu lock ini ada) --
-    instance LAMA yang kebetulan masih hidup/crash-loop dengan kode
-    SEBELUM lock itu ditambahkan (atau proses lain APA PUN yang menulis
-    tabel `tenants` di luar create_all()) SAMA SEKALI tidak tahu/tidak
-    ikut menunggu lock ini, sehingga snapshot yang dipakai untuk menghitung
-    kandidat di memori bisa jadi SUDAH BASI begitu UPDATE-nya sungguhan
-    dijalankan.
+    HOTFIX v3 (crash produksi "psycopg2.errors.OutOfMemory: out of shared
+    memory" -- TERBUKTI lewat reproduksi terhadap PostgreSQL sungguhan,
+    traceback persis menunjuk ke UPDATE di dalam fungsi ini): versi
+    SEBELUMNYA (v2) memakai SAVEPOINT per kandidat, TAPI seluruh loop ini
+    (semua tenant, semua percobaan kandidat tiap tenant) masih berjalan di
+    DALAM SATU TRANSAKSI BESAR yang sama (dibungkus create_all()).
+    SAVEPOINT adalah SUBTRANSAKSI -- lock yang diambil DI DALAM subtransaksi
+    TIDAK BISA lewat "fast path" lock manager Postgres (optimasi yang
+    HANYA berlaku untuk transaksi tingkat-atas), jadi SETIAP percobaan
+    kandidat (bukan cuma setiap tenant -- tenant yang bernama sama/mirip
+    bisa butuh BANYAK percobaan berurutan) menambah tekanan ke shared lock
+    table yang kapasitasnya TERBATAS. Reproduksi lokal terhadap PostgreSQL
+    sungguhan (bukan simulasi) MEMBUKTIKAN: sekumpulan tenant yang saling
+    bertabrakan nama memicu banyak SAVEPOINT berurutan dalam satu
+    transaksi dan gagal persis dengan pesan yang sama seperti produksi.
 
-    Diperbaiki total dengan pendekatan "coba lalu mundur" yang TIDAK
-    bergantung pada asumsi snapshot APA PUN: setiap kandidat langsung
-    dicoba lewat UPDATE SUNGGUHAN di dalam SAVEPOINT -- kalau bentrok
-    (IntegrityError, SIAPA PUN/KAPAN PUN penyebabnya), savepoint itu
-    di-ROLLBACK (memulihkan transaksi dari state "aborted" tanpa
-    menggagalkan create_all() secara keseluruhan) dan kandidat berikutnya
-    dicoba, sampai benar-benar dapat yang tersedia lewat verifikasi
-    LANGSUNG ke database saat itu juga -- bukan lagi lewat kalkulasi di
-    memori yang bisa salah kalau ada penulis lain."""
+    Diperbaiki dengan MENGHILANGKAN subtransaksi sama sekali: setiap
+    PERCOBAAN kandidat sekarang transaksi PENUH tersendiri (bukan
+    savepoint di dalam transaksi bersama) -- berhasil = commit, bentrok
+    (IntegrityError) = transaksi itu sendiri otomatis rollback (lewat
+    db_compat.get_conn(), lihat modul itu) lalu kandidat berikutnya
+    dicoba di transaksi BARU. Locknya dilepas SEPENUHNYA setelah setiap
+    percobaan, tidak pernah menumpuk lintas tenant ATAU lintas percobaan
+    manapun. Verifikasi keunikan TETAP langsung ke database setiap saat
+    (sifat "coba lalu mundur" dari v2 dipertahankan, cuma batas
+    transaksinya yang diperkecil) -- tidak bergantung pada kalkulasi di
+    memori yang bisa basi kalau ada penulis lain."""
     import re
 
     import tenant_middleware  # import lokal: hindari import siklik
     from db_compat import IntegrityError
 
-    rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
+    with db_compat.get_conn() as conn:
+        rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
+
     for r in rows:
         if r["booking_slug"]:
             continue
@@ -1152,13 +1190,11 @@ def _backfill_booking_slug(conn):
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
-            conn.execute("SAVEPOINT booking_slug_backfill")
             try:
-                conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (kandidat, r["id"]))
+                with db_compat.get_conn() as conn:
+                    conn.execute("UPDATE tenants SET booking_slug = ? WHERE id = ?", (kandidat, r["id"]))
             except IntegrityError:
-                conn.execute("ROLLBACK TO SAVEPOINT booking_slug_backfill")
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
-            conn.execute("RELEASE SAVEPOINT booking_slug_backfill")
             break
