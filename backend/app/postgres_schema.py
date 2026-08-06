@@ -20,10 +20,19 @@ SQLite (lihat README bagian Migrasi PostgreSQL untuk pemetaan lengkapnya).
 """
 
 import json
+import logging
 import os
+import time
 from datetime import datetime, timedelta
 
 import db_compat
+
+# Logger BERNAMA SAMA dengan main.py ("mugen") -- basicConfig() sudah
+# dipanggil di sana sebelum modul ini pernah diimpor (create_all() hanya
+# dipanggil dari main.py::on_startup()), jadi logger ini otomatis memakai
+# konfigurasi (format + level + output stdout) yang sama, tanpa perlu
+# import main.py (hindari import siklik).
+_logger = logging.getLogger("mugen")
 
 # FONDASI Multi-Tenant Phase 1 -- SAMA PERSIS dengan tenant_migrasi.py
 # (jalur SQLite), lihat file itu untuk penjelasan arsitektur lengkap.
@@ -834,12 +843,26 @@ def create_all():
     sekali (lihat docstring-nya). Ini titik keseimbangan yang benar:
     performa boot kembali cepat (SATU round-trip untuk hampir semua isi
     fungsi ini) TANPA mengembalikan resiko shared-memory yang sudah
-    terbukti nyata di produksi."""
+    terbukti nyata di produksi.
+
+    HOTFIX observability (deploy commit d3c0ca7/PR #84 TETAP gagal port-scan
+    timeout di produksi walau tenant di database SEDIKIT -- hipotesis
+    "banyak tenant -> banyak round-trip" jadi TIDAK BERLAKU, membuktikan
+    fungsi ini benar-benar MENGGANTUNG, bukan cuma lambat): ditambahkan log
+    bertahap PER FASE (dengan elapsed time) di bawah ini SEHINGGA deploy
+    berikutnya yang gagal akan menunjukkan PERSIS fase mana yang terakhir
+    selesai sebelum macet -- tanpa ini, log produksi cuma diam total sejak
+    "Menjalankan postgres_schema.create_all()" sampai timeout, tidak
+    memberi petunjuk apa pun sedang macet di baris/fase mana."""
+    _mulai = time.monotonic()
+    _logger.info("[postgres_schema] create_all(): mulai -- membuka koneksi/transaksi.")
     with db_compat.get_conn() as conn:
+        _logger.info("[postgres_schema] create_all(): koneksi didapat (%.2fs) -- mulai DDL.", time.monotonic() - _mulai)
         for statement in _TABLES.strip().split(";\n\n"):
             statement = statement.strip()
             if statement:
                 conn.execute(statement)
+        _logger.info("[postgres_schema] create_all(): DDL selesai (%.2fs).", time.monotonic() - _mulai)
 
         # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan
         # data produksi yang sudah berjalan) + backfill tenant_id untuk
@@ -847,11 +870,15 @@ def create_all():
         # diisi tenant_id-nya sendiri saat dibuat, jadi TIDAK ikut tertimpa
         # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
         tenant_default_id = _pastikan_tenant_default(conn)
+        _logger.info("[postgres_schema] create_all(): tenant default id=%s siap (%.2fs).",
+                     tenant_default_id, time.monotonic() - _mulai)
         for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
                       "website_gallery", "bookings", "closed_slot", "toko_libur",
                       # FONDASI Multi-Tenant Phase 1.1 -- lihat ALTER TABLE di atas.
                       "pemasukan", "kas_saldo_awal", "kas_penyesuaian"):
             conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_default_id,))
+        _logger.info("[postgres_schema] create_all(): backfill tenant_id per-tabel selesai (%.2fs).",
+                     time.monotonic() - _mulai)
 
         # FONDASI Multi-Tenant Phase 1: salin (bukan pindah/hapus) SEMUA
         # baris `settings` LAMA (key polos, dari sebelum Phase 1 aktif) ke
@@ -861,6 +888,8 @@ def create_all():
         # 40 ke nilai lain) tidak diam-diam ter-reset ke nilai pabrik begitu
         # get_setting() mulai membaca key ber-prefix (lihat database.py).
         _migrasi_prefix_settings(conn, tenant_default_id)
+        _logger.info("[postgres_schema] create_all(): migrasi prefix settings selesai (%.2fs).",
+                     time.monotonic() - _mulai)
 
         for key, value in DEFAULT_SETTINGS.items():
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
@@ -890,10 +919,14 @@ def create_all():
         # ON CONFLICT DO NOTHING, TIDAK PERNAH menimpa setting yang sudah
         # eksplisit diisi/diubah Owner tenant mana pun).
         semua_tenant_id = [r["id"] for r in conn.execute("SELECT id FROM tenants").fetchall()]
+        _logger.info("[postgres_schema] create_all(): jumlah tenant=%s (%.2fs) -- mulai backfill DEFAULT_SETTINGS per-tenant.",
+                     len(semua_tenant_id), time.monotonic() - _mulai)
         for tid in semua_tenant_id:
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                              (_kunci_tenant(tid, key), value))
+        _logger.info("[postgres_schema] create_all(): backfill DEFAULT_SETTINGS per-tenant selesai (%.2fs).",
+                     time.monotonic() - _mulai)
 
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
                                        (tenant_default_id,)).fetchone()["n"]
@@ -922,14 +955,27 @@ def create_all():
                          (kunci, json.dumps(service_ids)))
 
         conn.execute("INSERT INTO kas_saldo_awal (id, saldo) VALUES (1, 0) ON CONFLICT DO NOTHING")
+        _logger.info("[postgres_schema] create_all(): seed service/acuan/kas_saldo_awal selesai (%.2fs).",
+                     time.monotonic() - _mulai)
 
         _normalisasi_urutan_service_kolisi(conn)
+        _logger.info("[postgres_schema] create_all(): normalisasi urutan service selesai (%.2fs).",
+                     time.monotonic() - _mulai)
         _normalisasi_urutan_barber_kolisi(conn)
+        _logger.info("[postgres_schema] create_all(): normalisasi urutan barber selesai (%.2fs).",
+                     time.monotonic() - _mulai)
         _migrasi_subscription(conn)
+        _logger.info("[postgres_schema] create_all(): migrasi subscription selesai (%.2fs).",
+                     time.monotonic() - _mulai)
         _migrasi_billing_packages(conn)
         _migrasi_billing_features(conn)
+        _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs) -- commit transaksi.",
+                     time.monotonic() - _mulai)
 
+    _logger.info("[postgres_schema] create_all(): transaksi utama COMMIT (%.2fs) -- mulai _backfill_booking_slug().",
+                 time.monotonic() - _mulai)
     _backfill_booking_slug()
+    _logger.info("[postgres_schema] create_all(): SELESAI TOTAL (%.2fs).", time.monotonic() - _mulai)
 
 
 def _migrasi_subscription(conn):
@@ -1156,6 +1202,11 @@ def _backfill_booking_slug():
     with db_compat.get_conn() as conn:
         rows = conn.execute("SELECT id, slug, nama_barbershop, booking_slug FROM tenants").fetchall()
 
+    _mulai = time.monotonic()
+    _perlu_backfill = [r for r in rows if not r["booking_slug"]]
+    _logger.info("[postgres_schema] _backfill_booking_slug(): %s tenant total, %s perlu backfill.",
+                 len(rows), len(_perlu_backfill))
+
     for r in rows:
         if r["booking_slug"]:
             continue
@@ -1174,4 +1225,6 @@ def _backfill_booking_slug():
                 percobaan += 1
                 kandidat = f"{dasar}{percobaan}"
                 continue
+            _logger.info("[postgres_schema] _backfill_booking_slug(): tenant id=%s -> booking_slug=%s (%.2fs).",
+                         r["id"], kandidat, time.monotonic() - _mulai)
             break
