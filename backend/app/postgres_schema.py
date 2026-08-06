@@ -797,8 +797,35 @@ ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS used_at TEXT;
 def create_all():
     """Idempotent -- aman dipanggil tiap kali proses ini boot (sama seperti
     init_db() di jalur SQLite). TIDAK PERNAH menghapus/menimpa data yang
-    sudah ada (CREATE TABLE IF NOT EXISTS + ON CONFLICT DO NOTHING)."""
+    sudah ada (CREATE TABLE IF NOT EXISTS + ON CONFLICT DO NOTHING).
+
+    HOTFIX (crash produksi "duplicate key value violates unique constraint
+    idx_tenants_booking_slug" saat startup, menyebabkan crash-loop): fungsi
+    ini (termasuk _backfill_booking_slug() di bawah) SECARA MATEMATIS benar
+    untuk SATU eksekusi tunggal (setiap kandidat slug baru langsung ditandai
+    "terpakai" di memori SEBELUM baris berikutnya diproses, jadi tidak
+    mungkin dua baris dalam SATU panggilan create_all() menghasilkan nilai
+    yang sama) -- tapi TIDAK aman kalau create_all() kebetulan dipanggil
+    lebih dari SATU PROSES secara bersamaan terhadap database yang SAMA
+    (mis. deploy rolling Render yang sempat overlap sebentar dengan proses
+    lama, atau restart cepat berturut-turut sebelum proses sebelumnya benar-
+    benar berhenti) -- dua proses independen bisa menghitung kandidat yang
+    SAMA dari snapshot data yang SAMA (belum saling melihat perubahan
+    masing-masing sebelum salah satunya commit), dan proses kedua gagal
+    dengan UniqueViolation persis seperti yang terjadi di produksi.
+
+    pg_advisory_xact_lock() DI SINI (SEBELUM statement APA PUN lainnya)
+    memaksa SELURUH create_all() berjalan EKSKLUSIF satu proses pada satu
+    waktu -- proses lain yang kebetulan memanggil create_all() di saat yang
+    sama akan MENUNGGU (bukan gagal) sampai proses pertama selesai commit/
+    rollback, lalu melanjutkan terhadap data yang SUDAH konsisten (kalau
+    proses pertama berhasil, booking_slug SEMUA tenant sudah terisi --
+    proses kedua otomatis tidak menemukan apa pun lagi untuk di-backfill).
+    Lock ini TERIKAT TRANSAKSI (xact, BUKAN session) -- otomatis terlepas
+    begitu transaksi ini commit/rollback, TIDAK PERNAH tertinggal menempel
+    ke koneksi yang dikembalikan ke connection pool (lihat db_compat.py)."""
     with db_compat.get_conn() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(822233441101)")
         for statement in _TABLES.strip().split(";\n\n"):
             statement = statement.strip()
             if statement:

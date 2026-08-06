@@ -65,7 +65,15 @@ def login(body: LoginBody, request: Request):
 
     tenant_id = None
     if slug:
-        t = tenant_db.get_tenant_by_slug(slug)
+        # FITUR Subdomain Tenant Otomatis: `slug` (subdomain dashboard/staff,
+        # PRIORITAS -- perilaku LAMA tidak berubah sama sekali) dicoba dulu,
+        # baru fallback ke `booking_slug` (lihat tenant_db.py::
+        # get_tenant_by_slug_atau_booking_slug()) -- supaya Login TETAP bisa
+        # diakses dari subdomain <booking_slug>.rivoirsett.com begitu Owner
+        # sudah mengubahnya berbeda dari `slug` awal (item 4/5 spesifikasi:
+        # "Login tenant... harus menggunakan subdomain tersebut", "Backend
+        # harus mengidentifikasi tenant berdasarkan subdomain yang diakses").
+        t = tenant_db.get_tenant_by_slug_atau_booking_slug(slug)
         if t is None or t["status"] != "aktif":
             raise HTTPException(status_code=404, detail="Barbershop tidak ditemukan.")
         tenant_id = t["id"]
