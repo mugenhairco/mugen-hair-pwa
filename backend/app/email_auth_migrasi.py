@@ -64,14 +64,22 @@ def _migrasi_kolom_users(conn):
 
 
 def _migrasi_tabel_verifikasi(conn):
+    # BUGFIX DEPLOY (lihat postgres_schema.py untuk kronologi lengkap):
+    # "FOREIGN KEY (user_id) REFERENCES users(id)" dihapus di sini juga,
+    # murni supaya definisi tabel SQLite & PostgreSQL SAMA PERSIS (pola
+    # user_id/tenant_id TANPA foreign key sudah dipakai di SELURUH tabel
+    # lain proyek ini) -- instalasi SQLite sendiri TIDAK pernah tersandung
+    # bug ini (kolom `users.id` di jalur SQLite selalu INTEGER PRIMARY KEY
+    # AUTOINCREMENT yang valid sejak awal), tapi baris `users` produksi
+    # PostgreSQL yang sudah lama berjalan ternyata tidak (lagi) punya
+    # constraint UNIQUE/PRIMARY KEY murni pada `id` untuk dirujuk FK baru.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS email_verification_tokens (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id     INTEGER NOT NULL,
             token       TEXT NOT NULL UNIQUE,
             expires_at  TEXT NOT NULL,
-            created_at  TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            created_at  TEXT NOT NULL
         )
     """)
 
@@ -84,7 +92,6 @@ def _migrasi_tabel_reset_password(conn):
             token       TEXT NOT NULL UNIQUE,
             expires_at  TEXT NOT NULL,
             created_at  TEXT NOT NULL,
-            used_at     TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            used_at     TEXT
         )
     """)

@@ -736,9 +736,24 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS blokir_sampai_verifikasi INTEGER NOT 
 
 -- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
 -- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).
+-- BUGFIX DEPLOY: `user_id` SENGAJA TANPA "REFERENCES users(id)" (pola SAMA
+-- seperti tenant_id/user_id di SELURUH tabel lain proyek ini, lihat mis.
+-- subscription_invoices/pemasukan di atas) -- versi awal fitur ini SEMPAT
+-- memakainya, dan langsung meng-crash boot produksi:
+-- "psycopg2.errors.InvalidForeignKey: there is no unique constraint
+-- matching given keys for referenced table 'users'" -- tabel `users` di
+-- database produksi yang SUDAH BERJALAN ternyata TIDAK (lagi) punya
+-- constraint UNIQUE/PRIMARY KEY murni pada `id` yang bisa dirujuk FK baru
+-- (riwayat korupsi tenant_id sebelumnya di tabel ini, lihat log commit
+-- "BUGFIX KRITIS ... tenant_id korup di DB") -- CREATE TABLE IF NOT EXISTS
+-- users (...) di atas TIDAK PERNAH benar-benar dieksekusi ulang pada
+-- instalasi yang sudah ada, jadi definisi PRIMARY KEY di sana tidak
+-- menolong sama sekali. Menghapus FK ini (sama seperti pola tabel lain)
+-- membuat migrasi ini idempotent & aman dijalankan pada schema produksi
+-- apa adanya, tanpa perlu memperbaiki tabel `users` yang sudah berjalan.
 CREATE TABLE IF NOT EXISTS email_verification_tokens (
     id          SERIAL PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
+    user_id     INTEGER NOT NULL,
     token       TEXT NOT NULL UNIQUE,
     expires_at  TEXT NOT NULL,
     created_at  TEXT NOT NULL
@@ -746,7 +761,7 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id          SERIAL PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
+    user_id     INTEGER NOT NULL,
     token       TEXT NOT NULL UNIQUE,
     expires_at  TEXT NOT NULL,
     created_at  TEXT NOT NULL,
