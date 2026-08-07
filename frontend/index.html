@@ -10,6 +10,24 @@
       location.replace("https://rivoirsett.com" + location.pathname + location.search + location.hash);
     }
   </script>
+  <!-- HOTFIX Migrasi Subdomain: root domain (rivoirsett.com/www.rivoirsett.com,
+       TANPA subdomain tenant apa pun) TIDAK BOLEH LAGI menampilkan Dashboard/
+       Login/Booking siapa pun -- backend (tenant_db.cari_tenant_publik())
+       sudah berhenti diam-diam jatuh ke tenant default untuk request tanpa
+       slug, jadi mengakses /app/ langsung di root domain sekarang hanya akan
+       menampilkan error "Tenant tidak ditemukan" di mana-mana, membingungkan
+       untuk siapa pun yang masih punya link/bookmark LAMA (satu-satunya
+       tenant yang PERNAH bisa diakses lewat root domain, sebelum migrasi
+       subdomain ini, adalah Mugen Hair Co) -- diarahkan otomatis ke
+       subdomain barunya, path/query/hash yang sama persis dipertahankan,
+       pola SAMA seperti redirect onrender.com di atas. TIDAK memicu apa pun
+       untuk subdomain tenant manapun (mis. mugen.rivoirsett.com sendiri,
+       atau admin.rivoirsett.com) -- HANYA root/www bare. -->
+  <script>
+    if (location.hostname === "rivoirsett.com" || location.hostname === "www.rivoirsett.com") {
+      location.replace("https://mugen.rivoirsett.com" + location.pathname + location.search + location.hash);
+    }
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>Rivoir</title>
   <!-- TAHAP 10 + FONDASI Multi-Tenant Phase 2.2: judul di atas hanya
