@@ -1,274 +1,138 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8" />
-<!-- Domain lama Render (*.onrender.com) -> domain produksi: Render Static
-     Site TIDAK punya redirect berbasis Host header di level platform (rule
-     redirect/rewrite di render.yaml/dashboard hanya cocok berdasar PATH,
-     SAMA persis untuk domain APA PUN yang mengarah ke situs statis yang
-     sama -- kalau dipaksa redirect semua path ke rivoirsett.com, domain
-     rivoirsett.com sendiri ikut kena redirect ke dirinya sendiri terus-
-     menerus/infinite loop). Situs statis juga tidak bisa menjalankan kode
-     server yang membaca Host header (lihat backend/app/main.py untuk
-     redirect HTTP 308 sungguhan di sisi backend, yang PUNYA kode server).
-     SATU-SATUNYA cara aman untuk domain statis ini: script sedini mungkin
-     di sini, SEBELUM resource lain apa pun dimuat, cek location.hostname
-     lalu location.replace() (bukan location.href, supaya domain lama tidak
-     ikut masuk riwayat back-button) ke path+query+hash yang sama persis di
-     domain produksi. -->
-<script>
-  if (location.hostname === "mugenhairco.onrender.com") {
-    location.replace("https://rivoirsett.com" + location.pathname + location.search + location.hash);
-  }
-</script>
-<!-- FITUR Subdomain Otomatis per Tenant: situs statis ini SATU deployment
-     yang sama untuk root "/" (Landing Page SaaS, halaman ini) MAUPUN "/app/"
-     (Dashboard PWA -- Login/Booking/dst) -- begitu wildcard DNS
-     (*.rivoirsett.com) membawa trafik <slug>.rivoirsett.com KE SINI juga
-     (root, path "/"), pengunjung yang membuka bare subdomain tenant
-     seharusnya langsung melihat Login/Booking toko itu, BUKAN Landing Page
-     marketing platform umum ini -- redirect SEDINI mungkin (pola sama
-     dengan blok onrender.com di atas) ke /app/ (yang PUNYA pengecekan
-     sungguhan lewat backend apakah slug-nya benar valid, lihat
-     app/js/tenant_guard.js -- kalau tidak valid, /app/ sendiri yang
-     menampilkan "Tenant Tidak Ditemukan", BUKAN blok ini). Domain root/www
-     dan label sistem murni (api/app/mail/ftp) TIDAK ikut redirect.
-     HOTFIX Migrasi Subdomain: "admin" SENGAJA ikut redirect ke /app/ juga
-     (beda dari sebelumnya) -- spesifikasi arsitektur eksplisit meminta
-     "admin.{domain} -> Super Admin", jadi bare admin.rivoirsett.com harus
-     langsung ke Login Super Admin, bukan Landing Page marketing. Ini TIDAK
-     mengubah tenant_guard.js/tenant_middleware.py::LABEL_BUKAN_TENANT --
-     "admin" tetap TIDAK PERNAH dianggap slug tenant di situ, murni array
-     RESERVED di sini (kontrol redirect halaman ini saja) yang berubah. -->
-<script>
-  (function () {
-    var BASE_DOMAIN = "rivoirsett.com";
-    var RESERVED = ["www", "api", "app", "mail", "ftp"];
-    var host = location.hostname.toLowerCase();
-    if (host.length > BASE_DOMAIN.length + 1 && host.slice(-(BASE_DOMAIN.length + 1)) === "." + BASE_DOMAIN) {
-      var label = host.slice(0, -(BASE_DOMAIN.length + 1));
-      if (label && label.indexOf(".") === -1 && RESERVED.indexOf(label) === -1) {
-        location.replace("/app/" + location.search + location.hash);
-      }
+  <meta charset="UTF-8" />
+  <!-- Domain lama Render (*.onrender.com) -> domain produksi: lihat
+       penjelasan lengkap di frontend/index.html (root Landing Page) --
+       situs statis ini SATU deployment yang sama, jadi alasannya identik. -->
+  <script>
+    if (location.hostname === "mugenhairco.onrender.com") {
+      location.replace("https://rivoirsett.com" + location.pathname + location.search + location.hash);
     }
-  })();
-</script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Rivoir — Platform Manajemen Barbershop All-in-One</title>
-<meta name="description" content="Rivoir adalah platform SaaS untuk barbershop: booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans (QRIS/VA/kartu), laporan & analitik, semua dalam satu dashboard." />
-<link rel="canonical" href="https://rivoirsett.com/" />
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <title>Rivoir</title>
+  <!-- TAHAP 10 + FONDASI Multi-Tenant Phase 2.2: judul di atas hanya
+       fallback PLATFORM awal sebelum JS jalan -- brand.js akan menimpa
+       document.title dengan nama barbershop tenant (kalau sudah dikenali)
+       dari /api/tenant/branding begitu halaman selesai dimuat. "Rivoir"
+       (BUKAN nama tenant tertentu) sengaja dipakai di sini supaya
+       deployment white-label baru tidak menampilkan identitas satu
+       barbershop tertentu sebelum tenant-nya sendiri diketahui. -->
+  <meta name="theme-color" content="#F5F7FA" />
+  <meta name="description" content="Platform manajemen barbershop -- komisi, uang harian, bonus barber, produk, dan pengeluaran." />
+  <link rel="manifest" href="manifest.json" />
 
-<!-- Open Graph -->
-<meta property="og:type" content="website" />
-<meta property="og:site_name" content="Rivoir" />
-<meta property="og:title" content="Rivoir — Platform Manajemen Barbershop All-in-One" />
-<meta property="og:description" content="Booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans, laporan & analitik — semua dalam satu dashboard." />
-<meta property="og:url" content="https://rivoirsett.com/" />
-<meta property="og:image" content="https://rivoirsett.com/icons/icon-512.png" />
-<meta property="og:locale" content="id_ID" />
+  <!-- TAHAP 13: set ikon lengkap (sebelumnya manifest.json/tag di bawah ini
+       menunjuk ke file icons/* yang belum pernah ada di repo -- PWA jadi
+       tidak bisa di-install dengan benar di banyak browser/OS). -->
+  <link rel="icon" type="image/x-icon" href="../icons/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="../icons/icon-512.png" />
+  <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
 
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Rivoir — Platform Manajemen Barbershop All-in-One" />
-<meta name="twitter:description" content="Booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans, laporan & analitik — semua dalam satu dashboard." />
-<meta name="twitter:image" content="https://rivoirsett.com/icons/icon-512.png" />
+  <!-- Splash screen iOS: Safari modern (15+) otomatis membuat launch screen
+       dari ikon + background_color manifest begitu tag "web-app-capable" di
+       bawah ini ada, tanpa perlu puluhan gambar apple-touch-startup-image
+       per resolusi device. -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Rivoir" />
+  <meta name="mobile-web-app-capable" content="yes" />
 
-<meta name="theme-color" content="#F5F7FA" />
-<link rel="manifest" href="manifest.json" />
-<link rel="icon" type="image/x-icon" href="icons/favicon.ico" />
-<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-
-<!-- Structured Data (JSON-LD): Organization + SoftwareApplication, dipakai
-     mesin pencari untuk rich snippet (bukan visual apa pun di halaman). -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "Rivoir",
-  "url": "https://rivoirsett.com/",
-  "logo": "https://rivoirsett.com/icons/icon-512.png"
-}
-</script>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Rivoir",
-  "applicationCategory": "BusinessApplication",
-  "operatingSystem": "Web",
-  "description": "Platform manajemen barbershop: booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans, laporan & analitik."
-}
-</script>
-
-<link rel="stylesheet" href="css/landing.css?v=4" />
+  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=82" di
+       SETIAP <link rel="stylesheet">/<script src> di bawah ini adalah
+       cache-busting di lapisan URL, INDEPENDEN dari Service Worker --
+       browser/CDN mana pun yang meng-cache berdasar URL persis tidak
+       punya alasan menyajikan byte lama begitu query string-nya beda.
+       WAJIB dinaikkan BERSAMAAN dengan ASSET_VERSION di service-worker.js
+       ke angka yang SAMA setiap deploy yang mengubah isi file JS/CSS
+       manapun yang dirujuk di sini (lihat komentar ASSET_VERSION di
+       service-worker.js untuk alasan kenapa dua tempat ini tidak bisa
+       disatukan lewat satu file "sumber kebenaran" tanpa proses build). -->
+  <link rel="stylesheet" href="css/style.css?v=82" />
 </head>
 <body>
+  <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
+       supaya tidak pernah ikut terhapus/tertimpa render ulang SPA (setiap
+       halaman melakukan root.innerHTML = "" pada #app saja) dan tidak ada
+       jalan untuk menonaktifkannya lewat menu Setting mana pun. -->
+  <div class="dev-watermark-bg" aria-hidden="true">Rivoir</div>
 
-<header class="lp-navbar" id="lp-navbar">
-  <div class="lp-container lp-navbar-inner">
-    <a class="lp-brand" href="#hero">
-      <img src="icons/icon-192.png" alt="" class="lp-brand-logo" />
-      <span>Rivoir</span>
-    </a>
-    <nav class="lp-nav-links" id="lp-nav-links">
-      <a href="#features">Features</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
-      <a href="#contact">Contact</a>
-      <a href="/app/#/login" class="lp-nav-login">Login</a>
-      <a href="/app/#/register" class="lp-btn lp-btn-primary lp-nav-cta">Get Started</a>
-    </nav>
-    <button class="lp-hamburger" id="lp-hamburger" type="button" aria-label="Buka menu">
-      <span></span><span></span><span></span>
-    </button>
+  <div id="app">
+    <p class="status-placeholder">Memuat aplikasi...</p>
   </div>
-</header>
 
-<main id="hero">
+  <div class="dev-watermark-footer" aria-hidden="true">Powered by Rivoir</div>
 
-  <!-- 2. Hero -->
-  <section class="lp-hero">
-    <div class="lp-container lp-hero-inner">
-      <div class="lp-hero-copy lp-fade-in">
-        <h1>Kelola Barbershop Anda, <span class="lp-accent">Semua dalam Satu Dashboard</span></h1>
-        <p class="lp-hero-desc">Booking online, jadwal barber, manajemen pelanggan, pembayaran QRIS/VA/kartu lewat Midtrans, laporan & analitik — Rivoir menyatukan semuanya supaya Anda fokus mengembangkan toko, bukan mengurus administrasi.</p>
-        <div class="lp-hero-actions">
-          <a href="/app/#/register" class="lp-btn lp-btn-primary lp-btn-lg">Get Started</a>
-          <a href="#pricing" class="lp-btn lp-btn-outline lp-btn-lg">View Pricing</a>
-        </div>
-      </div>
-      <div class="lp-hero-mockup lp-fade-in-delay" aria-hidden="true">
-        <div class="lp-mockup-frame">
-          <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
-          <div class="lp-mockup-body">
-            <div class="lp-mockup-card lp-mockup-card-wide"></div>
-            <div class="lp-mockup-row">
-              <div class="lp-mockup-card"></div>
-              <div class="lp-mockup-card"></div>
-            </div>
-            <div class="lp-mockup-card lp-mockup-card-tall"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+  <!-- Ganti nilai ini ke URL backend setelah deploy, contoh:
+       <script>window.MUGEN_API_BASE = "https://api.rivoirsett.com";</script>
+       Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
+       saat development, dan bisa dioverride lewat env saat build/deploy. -->
+  <script src="config.js?v=82"></script>
+  <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
+       (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
+       bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
+       supaya logo/banner tersedia lebih cepat saat aplikasi pertama dibuka. -->
+  <script>
+    if (window.MUGEN_API_BASE) {
+      const preconnect = document.createElement("link");
+      preconnect.rel = "preconnect";
+      preconnect.href = window.MUGEN_API_BASE;
+      document.head.appendChild(preconnect);
+    }
+  </script>
 
-  <!-- 3. Trusted -->
-  <section class="lp-trusted">
-    <div class="lp-container lp-trusted-grid" id="lp-stats">
-      <div class="lp-stat"><span class="lp-stat-num" data-target="0">0</span><span class="lp-stat-label">Active Tenants</span></div>
-      <div class="lp-stat"><span class="lp-stat-num" data-target="0">0</span><span class="lp-stat-label">Total Bookings</span></div>
-      <div class="lp-stat"><span class="lp-stat-num" data-target="0">0</span><span class="lp-stat-label">Happy Customers</span></div>
-      <div class="lp-stat"><span class="lp-stat-num-text">-</span><span class="lp-stat-label">Uptime</span></div>
-    </div>
-  </section>
-
-  <!-- 4. Features -->
-  <section class="lp-section" id="features">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Semua yang Dibutuhkan Barbershop Modern</h2>
-      <div class="lp-features-grid" id="lp-features-grid"></div>
-    </div>
-  </section>
-
-  <!-- 5. Workflow -->
-  <section class="lp-section lp-section-alt">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Mulai dalam Hitungan Menit</h2>
-      <ol class="lp-timeline" id="lp-timeline">
-        <li><span class="lp-timeline-num">1</span><div><h3>Register</h3><p>Daftarkan barbershop Anda lewat form singkat.</p></div></li>
-        <li><span class="lp-timeline-num">2</span><div><h3>Choose Package</h3><p>Pilih paket sesuai kebutuhan toko Anda.</p></div></li>
-        <li><span class="lp-timeline-num">3</span><div><h3>Payment</h3><p>Bayar aman lewat QRIS, Virtual Account, atau kartu (Midtrans).</p></div></li>
-        <li><span class="lp-timeline-num">4</span><div><h3>Tenant Activated</h3><p>Toko Anda otomatis aktif begitu pembayaran berhasil.</p></div></li>
-        <li><span class="lp-timeline-num">5</span><div><h3>Login</h3><p>Masuk ke dashboard toko Anda sendiri.</p></div></li>
-        <li><span class="lp-timeline-num">6</span><div><h3>Start Using System</h3><p>Kelola booking, barber, dan laporan sehari-hari.</p></div></li>
-      </ol>
-    </div>
-  </section>
-
-  <!-- 6. Pricing -->
-  <section class="lp-section" id="pricing">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Pilih Paket yang Sesuai</h2>
-      <p class="lp-section-sub">Harga & fitur di bawah diatur langsung oleh penyedia layanan — selalu up to date.</p>
-      <div class="lp-pricing-grid" id="lp-pricing-grid"><p class="lp-loading">Memuat paket…</p></div>
-    </div>
-  </section>
-
-  <!-- 7. Package Comparison -->
-  <section class="lp-section lp-section-alt">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Bandingkan Paket</h2>
-      <div class="lp-table-scroll">
-        <table class="lp-compare-table" id="lp-compare-table"><tbody><tr><td class="lp-loading">Memuat perbandingan…</td></tr></tbody></table>
-      </div>
-    </div>
-  </section>
-
-  <!-- 8. Screenshots -->
-  <section class="lp-section" id="screenshots">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Lihat Rivoir Beraksi</h2>
-      <div class="lp-carousel" id="lp-screenshots">
-        <div class="lp-carousel-track">
-          <div class="lp-shot-placeholder"><span>Dashboard</span></div>
-          <div class="lp-shot-placeholder"><span>Booking</span></div>
-          <div class="lp-shot-placeholder"><span>Calendar</span></div>
-          <div class="lp-shot-placeholder"><span>Report</span></div>
-          <div class="lp-shot-placeholder"><span>Settings</span></div>
-          <div class="lp-shot-placeholder"><span>Barber</span></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 9. Testimonials -->
-  <section class="lp-section lp-section-alt">
-    <div class="lp-container">
-      <h2 class="lp-section-title">Kata Mereka yang Sudah Pakai Rivoir</h2>
-      <div class="lp-carousel" id="lp-testimonials"><p class="lp-loading">Memuat testimonial…</p></div>
-    </div>
-  </section>
-
-  <!-- 10. FAQ -->
-  <section class="lp-section" id="faq">
-    <div class="lp-container lp-container-narrow">
-      <h2 class="lp-section-title">Pertanyaan yang Sering Diajukan</h2>
-      <div class="lp-faq-list" id="lp-faq-list"><p class="lp-loading">Memuat FAQ…</p></div>
-    </div>
-  </section>
-
-  <!-- 11. Contact -->
-  <section class="lp-section lp-section-alt" id="contact">
-    <div class="lp-container lp-container-narrow">
-      <h2 class="lp-section-title">Hubungi Kami</h2>
-      <div class="lp-contact-grid" id="lp-contact-grid"><p class="lp-loading">Memuat kontak…</p></div>
-    </div>
-  </section>
-
-</main>
-
-<!-- 12. Footer -->
-<footer class="lp-footer">
-  <div class="lp-container lp-footer-inner">
-    <div class="lp-footer-brand">
-      <img src="icons/icon-192.png" alt="" class="lp-brand-logo" />
-      <span>Rivoir</span>
-    </div>
-    <div class="lp-footer-links">
-      <a href="/app/#/login">Login</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
-      <a href="#contact">Contact</a>
-    </div>
-    <div class="lp-footer-legal">
-      <span>&copy; <span id="lp-year"></span> Rivoir. All rights reserved.</span>
-    </div>
-  </div>
-</footer>
-
-<script src="config.js"></script>
-<script src="js/landing.js?v=4"></script>
+  <!-- Preview PDF (Cetak PDF): PDF.js dimuat lewat modul terpisah SEDINI
+       mungkin (fetch besar ~1.8MB berjalan di background, tidak memblokir
+       skrip lain) -- lihat pdfjs_boot.js untuk kenapa harus type="module"
+       dan kenapa dipakai lewat window.pdfjsLib + event 'pdfjs-ready',
+       bukan import langsung di pdf_preview.js. -->
+  <script type="module" src="js/pdfjs_boot.js?v=82"></script>
+  <script src="js/state.js?v=82"></script>
+  <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
+       state.js) dan langsung menerapkan atribut data-theme begitu file
+       ini selesai dieksekusi (lihat applyStored() di baris terakhir
+       theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
+       #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
+  <script src="js/theme.js?v=82"></script>
+  <script src="js/api.js?v=82"></script>
+  <script src="js/ui.js?v=82"></script>
+  <script src="js/pdf_preview.js?v=82"></script>
+  <script src="js/brand.js?v=82"></script>
+  <script src="js/subscription.js?v=82"></script>
+  <script src="js/feature_access.js?v=82"></script>
+  <script src="js/pwa_update.js?v=82"></script>
+  <script src="js/nav.js?v=82"></script>
+  <script src="js/booking_notif.js?v=82"></script>
+  <script src="js/izin_notif.js?v=82"></script>
+  <script src="js/pages/login.js?v=82"></script>
+  <script src="js/pages/register.js?v=82"></script>
+  <script src="js/pages/lupa_password.js?v=82"></script>
+  <script src="js/pages/reset_password.js?v=82"></script>
+  <script src="js/pages/verify_email.js?v=82"></script>
+  <script src="js/pages/dashboard_owner.js?v=82"></script>
+  <script src="js/pages/dashboard_barber.js?v=82"></script>
+  <script src="js/pages/input_data.js?v=82"></script>
+  <script src="js/pages/rekap.js?v=82"></script>
+  <script src="js/pages/pengeluaran.js?v=82"></script>
+  <script src="js/pages/pemasukan.js?v=82"></script>
+  <script src="js/pages/uang_kas.js?v=82"></script>
+  <script src="js/pages/slip_gaji.js?v=82"></script>
+  <script src="js/pages/kasbon.js?v=82"></script>
+  <script src="js/pages/komisi.js?v=82"></script>
+  <script src="js/pages/reimburse.js?v=82"></script>
+  <script src="js/pages/izin_cuti.js?v=82"></script>
+  <script src="js/pages/pengaturan.js?v=82"></script>
+  <script src="js/pages/billing.js?v=82"></script>
+  <script src="js/pages/produk.js?v=82"></script>
+  <script src="js/pages/booking.js?v=82"></script>
+  <script src="js/pages/book_public.js?v=82"></script>
+  <script src="js/pages/superadmin.js?v=82"></script>
+  <script src="js/pages/subscription_blocked.js?v=82"></script>
+  <script src="js/pages/tenant_not_found.js?v=82"></script>
+  <script src="js/tenant_guard.js?v=82"></script>
+  <script src="js/router.js?v=82"></script>
+  <script src="js/app.js?v=82"></script>
 </body>
 </html>
