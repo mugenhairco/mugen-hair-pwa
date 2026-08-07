@@ -453,20 +453,10 @@ def hapus_tenant(tenant_id: int) -> dict:
     endpoint ini pernah dipanggil.
 
     DUA PENJAGA KESELAMATAN KERAS (tidak bisa dilewati parameter apa pun):
-    1. Tenant dengan kolom `is_toko_utama = True` TIDAK PERNAH bisa dihapus
-       lewat fungsi ini, apa pun alasannya -- konsisten dengan aturan yang
-       berlaku SELAMA proyek ini ("jangan pernah menghapus/mengubah data
-       toko utama produksi").
-       INSIDEN (HOTFIX Migrasi Subdomain): SEBELUM perbaikan ini, penjaga
-       ini mengecek `tenant["slug"] == SLUG_TENANT_DEFAULT` -- begitu slug
-       toko utama diganti lewat fitur "Ubah Slug" (mis. "mugen-hair-co" ->
-       "mugen"), pengecekan itu SELALU gagal cocok sejak saat itu, dan
-       proteksinya diam-diam berhenti berlaku untuk tenant itu. Diperbaiki
-       dengan flag PERMANEN `is_toko_utama` (lihat
-       tenant_migrasi.py/postgres_schema.py::_backfill_toko_utama() --
-       di-set SEKALI SAJA saat migrasi, TIDAK PERNAH berubah lagi apa pun
-       yang terjadi pada slug tenant itu setelahnya) -- TIDAK terikat slug
-       sama sekali lagi.
+    1. Tenant dengan slug SLUG_TENANT_DEFAULT ("mugen-hair-co", TOKO UTAMA
+       produksi) TIDAK PERNAH bisa dihapus lewat fungsi ini, apa pun
+       alasannya -- konsisten dengan aturan yang berlaku SELAMA proyek ini
+       ("jangan pernah menghapus/mengubah data mugen-hair-co").
     2. Tidak bisa menghapus tenant TERAKHIR yang tersisa -- aplikasi ini
        butuh minimal SATU tenant untuk tetap berfungsi (auth.py/tenant_
        middleware.py mengasumsikan selalu ada tenant default).
@@ -499,8 +489,8 @@ def hapus_tenant(tenant_id: int) -> dict:
     tenant = get_tenant(tenant_id)
     if tenant is None:
         raise ValueError("Tenant tidak ditemukan.")
-    if tenant.get("is_toko_utama"):
-        raise ValueError(f"Tenant '{tenant['slug']}' adalah toko utama, tidak bisa dihapus.")
+    if tenant["slug"] == SLUG_TENANT_DEFAULT:
+        raise ValueError(f"Tenant '{SLUG_TENANT_DEFAULT}' adalah toko utama, tidak bisa dihapus.")
     if len(list_tenants()) <= 1:
         raise ValueError("Tidak bisa menghapus satu-satunya tenant yang tersisa.")
 

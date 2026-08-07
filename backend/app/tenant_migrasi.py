@@ -76,9 +76,7 @@ _TABEL_TENANT_LANGSUNG = [
 def migrasi_tenant():
     with get_conn() as conn:
         _buat_tabel_tenants(conn)
-        _tambah_kolom_is_toko_utama(conn)
         tenant_id_default = _pastikan_tenant_default(conn)
-        _backfill_toko_utama(conn)
         for tabel in _TABEL_TENANT_LANGSUNG:
             _tambah_kolom_tenant_id(conn, tabel)
             _backfill_tenant_id(conn, tabel, tenant_id_default)
@@ -100,44 +98,12 @@ def _buat_tabel_tenants(conn):
     """)
 
 
-def _tambah_kolom_is_toko_utama(conn):
-    """HOTFIX Migrasi Subdomain (insiden kehilangan data toko utama, lihat
-    kronologi lengkap di docstring _pastikan_tenant_default() di bawah)."""
-    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(tenants)").fetchall()]
-    if kolom and "is_toko_utama" not in kolom:
-        conn.execute("ALTER TABLE tenants ADD COLUMN is_toko_utama INTEGER NOT NULL DEFAULT 0")
-
-
 def _pastikan_tenant_default(conn) -> int:
     """Tenant pertama, merepresentasikan data yang SUDAH berjalan produksi
-    sebelum Phase 1 ini -- dibuat SEKALI (idempotent), seluruh baris lama
-    di-backfill ke tenant ini supaya Owner existing tidak kehilangan
-    akses/data apa pun.
-
-    INSIDEN kehilangan data toko utama (HOTFIX Migrasi Subdomain): SEBELUM
-    perbaikan ini, fungsi ini HANYA mengecek `WHERE slug = SLUG_TENANT_DEFAULT`
-    -- begitu Super Admin mengganti slug toko utama lewat fitur "Ubah Slug"
-    (mis. "mugen-hair-co" -> "mugen"), pengecekan itu SELALU gagal
-    menemukan tenant mana pun sejak saat itu, sehingga fungsi ini (dipanggil
-    SETIAP kali proses ini boot/restart) mengira toko utama "hilang" dan
-    diam-diam MEMBUAT TENANT BARU YANG KOSONG bernama sama pada RESTART
-    BERIKUTNYA -- tenant asli (dengan slug baru, berikut SELURUH datanya)
-    sebenarnya tetap ada, tapi dua tenant bernama sama ("MUGEN Hair Co.")
-    tampil berdampingan di Dashboard Super Admin, membuka celah salah pilih
-    saat menghapus tenant lain -- dikombinasikan dengan hapus_tenant() yang
-    JUGA masih mengecek slug (lihat riwayat perbaikan di tenant_db.py),
-    berujung toko utama produksi PRODUKSI SUNGGUHAN terhapus permanen tanpa
-    backup. Diperbaiki dengan mengecek APAKAH ADA TENANT SAMA SEKALI (bukan
-    lagi slug spesifik) -- tenant baru HANYA dibuat kalau tabel `tenants`
-    benar-benar kosong total (instalasi pertama kali); kalau sudah ada
-    tenant lain (apa pun slug-nya, mis. karena rename yang sah), tenant
-    PALING LAMA (id terkecil) dipakai sebagai target backfill baris legacy
-    tanpa tenant_id -- TIDAK PERNAH membuat baris baru lagi selama masih
-    ada tenant yang tersisa."""
+    sebelum Phase 1 ini -- dibuat SEKALI (idempotent lewat cek slug),
+    seluruh baris lama di-backfill ke tenant ini supaya Owner existing
+    tidak kehilangan akses/data apa pun."""
     row = conn.execute("SELECT id FROM tenants WHERE slug = ?", (SLUG_TENANT_DEFAULT,)).fetchone()
-    if row:
-        return row["id"]
-    row = conn.execute("SELECT id FROM tenants ORDER BY id LIMIT 1").fetchone()
     if row:
         return row["id"]
     from datetime import datetime
@@ -147,21 +113,6 @@ def _pastikan_tenant_default(conn) -> int:
         (SLUG_TENANT_DEFAULT, NAMA_TENANT_DEFAULT, now),
     )
     return cur.lastrowid
-
-
-def _backfill_toko_utama(conn) -> None:
-    """HOTFIX Migrasi Subdomain (insiden kehilangan data toko utama): set
-    flag PERMANEN `tenants.is_toko_utama` -- SATU-SATUNYA yang dicek
-    tenant_db.py::hapus_tenant() untuk melindungi toko utama dari
-    penghapusan, menggantikan pengecekan slug yang TERBUKTI rapuh (lihat
-    docstring _pastikan_tenant_default() di atas untuk kronologi lengkap
-    insidennya). Idempotent & SEKALI SAJA seumur hidup database: no-op
-    begitu ADA tenant mana pun yang sudah ter-flag. WAJIB dipanggil SETELAH
-    _pastikan_tenant_default() (supaya tenant defaultnya sudah pasti ada)."""
-    sudah_ada = conn.execute("SELECT 1 FROM tenants WHERE is_toko_utama = 1 LIMIT 1").fetchone()
-    if sudah_ada:
-        return
-    conn.execute("UPDATE tenants SET is_toko_utama = 1 WHERE slug = ?", (SLUG_TENANT_DEFAULT,))
 
 
 def _tambah_kolom_tenant_id(conn, tabel: str):
