@@ -399,13 +399,13 @@ def test_hapus_tenant_tidak_bisa_hapus_mugen_hair_co(two_tenants):
 def test_hapus_tenant_tidak_bisa_hapus_tenant_terakhir(app_client):
     """Penjaga keselamatan KERAS kedua -- kalau (secara hipotetis) hanya
     tersisa satu tenant, tenant itu tidak boleh dihapus supaya aplikasi
-    tidak pernah kehilangan tenant sama sekali. Slug tenant satu-satunya
-    ini diganti dulu lewat SQL langsung (bypass hapus_tenant()) supaya
-    penjaga PERTAMA (tidak boleh hapus mugen-hair-co) tidak ikut memblokir
-    -- murni menguji penjaga KEDUA secara terisolasi. Di produksi
-    sungguhan skenario "tenant terakhir BUKAN mugen-hair-co" tidak pernah
-    terjadi (tenant default selalu ada & tidak bisa dihapus) -- ini murni
-    pengujian defense-in-depth untuk penjaga keduanya."""
+    tidak pernah kehilangan tenant sama sekali. Slug DAN flag
+    is_toko_utama tenant satu-satunya ini dilepas dulu lewat SQL langsung
+    (bypass hapus_tenant()) supaya penjaga PERTAMA (tidak boleh hapus toko
+    utama) tidak ikut memblokir -- murni menguji penjaga KEDUA secara
+    terisolasi. Di produksi sungguhan skenario "tenant terakhir BUKAN toko
+    utama" tidak pernah terjadi (tenant default selalu ada & tidak bisa
+    dihapus) -- ini murni pengujian defense-in-depth untuk penjaga keduanya."""
     import tenant_db
     import database as db
 
@@ -413,7 +413,7 @@ def test_hapus_tenant_tidak_bisa_hapus_tenant_terakhir(app_client):
     assert len(semua) == 1  # hanya tenant default, dibuat migrasi saat boot
     tenant_id = semua[0]["id"]
     with db.get_conn() as conn:
-        conn.execute("UPDATE tenants SET slug = ? WHERE id = ?", ("bukan-default", tenant_id))
+        conn.execute("UPDATE tenants SET slug = ?, is_toko_utama = 0 WHERE id = ?", ("bukan-default", tenant_id))
     try:
         tenant_db.hapus_tenant(tenant_id)
         assert False, "Harus ditolak: tidak boleh menghapus satu-satunya tenant"
@@ -524,10 +524,56 @@ def test_set_slug_boleh_ganti_slug_tenant_default():
         assert tenant_db.get_tenant(default_tenant["id"])["slug"] == "mugen"
         assert tenant_db.get_tenant_by_slug("mugen")["id"] == default_tenant["id"]
         assert tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT) is None
+        # INSIDEN kehilangan data toko utama (HOTFIX Migrasi Subdomain):
+        # proteksi hapus_tenant() HARUS tetap berlaku walau slug tenant ini
+        # sudah bukan SLUG_TENANT_DEFAULT lagi -- sebelum perbaikan ini,
+        # penjaganya mengecek slug secara langsung dan diam-diam berhenti
+        # melindungi tenant ini TEPAT di titik kode ini.
+        try:
+            tenant_db.hapus_tenant(default_tenant["id"])
+            assert False, "Harus tetap ditolak walau slug sudah diganti dari SLUG_TENANT_DEFAULT"
+        except ValueError as e:
+            assert "utama" in str(e).lower()
     finally:
         # Kembalikan supaya tidak mengganggu test lain yang bergantung pada
         # SLUG_TENANT_DEFAULT (mis. hapus_tenant() guard tests).
         tenant_db.set_slug(default_tenant["id"], tenant_db.SLUG_TENANT_DEFAULT)
+
+
+def test_insiden_rename_lalu_restart_tidak_membuat_tenant_duplikat(app_client):
+    """Regresi LANGSUNG dari insiden produksi: rename slug toko utama lewat
+    "Ubah Slug" (set_slug()), lalu backend restart (migrasi_tenant() jalan
+    ulang, SAMA seperti setiap boot proses backend sungguhan) -- SEBELUM
+    perbaikan ini, _pastikan_tenant_default() akan mengira toko utama
+    "hilang" (tidak ada tenant ber-slug SLUG_TENANT_DEFAULT lagi) dan
+    diam-diam membuat tenant BARU YANG KOSONG dengan nama sama, membuat DUA
+    tenant "MUGEN Hair Co." tampil di Dashboard Super Admin -- akar
+    kebingungan yang berujung tenant asli terhapus tanpa sengaja."""
+    import tenant_db
+    import tenant_migrasi
+
+    default_tenant = tenant_db.get_tenant_by_slug(tenant_db.SLUG_TENANT_DEFAULT)
+    assert default_tenant is not None
+    tenant_db.set_slug(default_tenant["id"], "mugen")
+
+    # Simulasikan restart backend -- migrasi_tenant() dipanggil ULANG
+    # persis seperti setiap kali proses backend sungguhan boot.
+    tenant_migrasi.migrasi_tenant()
+
+    semua = tenant_db.list_tenants()
+    assert len(semua) == 1, (
+        f"Tidak boleh ada tenant duplikat baru setelah restart pasca rename, "
+        f"ditemukan {len(semua)} tenant: {[t['slug'] for t in semua]}"
+    )
+    assert semua[0]["id"] == default_tenant["id"]
+    assert semua[0]["slug"] == "mugen"  # slug hasil rename TETAP, tidak ditimpa balik
+
+    # Proteksi hapus_tenant() juga harus tetap berlaku setelah "restart" ini.
+    try:
+        tenant_db.hapus_tenant(default_tenant["id"])
+        assert False, "Tenant utama harus tetap terlindungi setelah restart pasca rename"
+    except ValueError as e:
+        assert "utama" in str(e).lower()
 
 
 def test_set_slug_format_tidak_valid_ditolak():

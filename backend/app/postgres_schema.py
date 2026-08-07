@@ -583,6 +583,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_whatsapp ON tenants(whatsapp) WHER
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS booking_slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_booking_slug ON tenants(booking_slug) WHERE booking_slug IS NOT NULL;
 
+-- HOTFIX Migrasi Subdomain (insiden kehilangan data toko utama): flag
+-- PERMANEN, TIDAK PERNAH berubah lagi setelah di-set sekali oleh
+-- _backfill_toko_utama() di bawah -- SATU-SATUNYA yang dicek
+-- tenant_db.py::hapus_tenant() untuk melindungi toko utama produksi,
+-- menggantikan pengecekan slug == TENANT_DEFAULT_SLUG yang TERBUKTI rapuh
+-- (berhenti berlaku begitu slug tenant itu diganti lewat fitur "Ubah
+-- Slug", lihat kronologi lengkap di docstring _pastikan_tenant_default()
+-- dan _backfill_toko_utama() di bawah).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_toko_utama BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): FAQ & Testimonial yang
 -- ditampilkan di Landing Page publik, dikelola Super Admin (bukan hardcode,
 -- lihat landing_db.py). Berdiri sendiri, TIDAK bertenant_id (konten
@@ -886,6 +896,7 @@ def create_all():
         # diisi tenant_id-nya sendiri saat dibuat, jadi TIDAK ikut tertimpa
         # di sini -- lihat _TABEL_TENANT_LANGSUNG, WHERE tenant_id IS NULL).
         tenant_default_id = _pastikan_tenant_default(conn)
+        _backfill_toko_utama(conn)
         _logger.info("[postgres_schema] create_all(): tenant default id=%s siap (%.2fs).",
                      tenant_default_id, time.monotonic() - _mulai)
         for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
@@ -1131,8 +1142,34 @@ def _normalisasi_urutan_barber_kolisi(conn):
 def _pastikan_tenant_default(conn) -> int:
     """Sama persis logikanya dengan tenant_migrasi.py::_pastikan_tenant_default()
     (jalur SQLite) -- diduplikasi murni karena jalur Postgres/SQLite memang
-    dua file skema yang sudah terpisah sejak awal proyek ini (lihat db_compat.py)."""
+    dua file skema yang sudah terpisah sejak awal proyek ini (lihat db_compat.py).
+
+    INSIDEN kehilangan data toko utama (HOTFIX Migrasi Subdomain): SEBELUM
+    perbaikan ini, fungsi ini HANYA mengecek `WHERE slug = TENANT_DEFAULT_SLUG`
+    -- begitu Super Admin mengganti slug toko utama lewat fitur "Ubah Slug"
+    (mis. "mugen-hair-co" -> "mugen", bagian dari migrasi arsitektur
+    subdomain), pengecekan itu SELALU gagal menemukan tenant mana pun sejak
+    saat itu, sehingga fungsi ini (dipanggil SETIAP kali proses ini boot/
+    restart, lihat create_all()) mengira toko utama "hilang" dan diam-diam
+    MEMBUAT TENANT BARU YANG KOSONG bernama sama pada RESTART BERIKUTNYA --
+    tenant asli (dengan slug baru, berikut SELURUH data barbers/transaksi/
+    users-nya) sebenarnya tetap ada, tapi Super Admin yang menghapus tenant
+    lain lewat Dashboard bisa keliru mengira tenant baru-kosong inilah yang
+    asli (dua-duanya sempat tampil dengan nama "MUGEN Hair Co.") dan
+    menghapus tenant yang salah -- kombinasi bug ini dengan hapus_tenant()
+    yang JUGA masih mengecek slug (lihat riwayat perbaikan di sana)
+    berujung toko utama produksi benar-benar terhapus permanen tanpa
+    backup. Diperbaiki dengan mengecek APAKAH ADA TENANT SAMA SEKALI
+    (bukan lagi slug spesifik) -- tenant baru HANYA dibuat kalau tabel
+    `tenants` benar-benar kosong total (instalasi pertama kali); kalau
+    sudah ada tenant lain (apa pun slug-nya, mis. karena rename yang sah),
+    tenant PALING LAMA (id terkecil) yang dipakai sebagai target backfill
+    baris legacy tanpa tenant_id -- TIDAK PERNAH membuat baris baru lagi
+    selama masih ada tenant yang tersisa."""
     row = conn.execute("SELECT id FROM tenants WHERE slug = ?", (TENANT_DEFAULT_SLUG,)).fetchone()
+    if row:
+        return row["id"]
+    row = conn.execute("SELECT id FROM tenants ORDER BY id LIMIT 1").fetchone()
     if row:
         return row["id"]
     from datetime import datetime
@@ -1142,6 +1179,28 @@ def _pastikan_tenant_default(conn) -> int:
         (TENANT_DEFAULT_SLUG, TENANT_DEFAULT_NAMA, now),
     )
     return cur.lastrowid
+
+
+def _backfill_toko_utama(conn) -> None:
+    """HOTFIX Migrasi Subdomain (insiden kehilangan data toko utama): set
+    flag PERMANEN `tenants.is_toko_utama` -- SATU-SATUNYA yang dicek
+    tenant_db.py::hapus_tenant() untuk melindungi toko utama dari
+    penghapusan, menggantikan pengecekan slug yang TERBUKTI rapuh (lihat
+    docstring _pastikan_tenant_default() di atas untuk kronologi lengkap
+    insidennya).
+
+    Idempotent & SEKALI SAJA seumur hidup database: no-op begitu ADA tenant
+    mana pun yang sudah ter-flag (TIDAK PERNAH memindahkan/menimpa flag ke
+    tenant lain walau slug tenant yang sudah ter-flag berubah lagi di masa
+    depan) -- kalau belum ada satu pun yang ter-flag, tenant yang SAAT INI
+    bernama sesuai TENANT_DEFAULT_SLUG yang dipilih (kasus normal: instalasi
+    lama yang baru pertama kali menjalankan migrasi ini). WAJIB dipanggil
+    SETELAH _pastikan_tenant_default() (supaya tenant defaultnya sudah
+    pasti ada)."""
+    sudah_ada = conn.execute("SELECT 1 FROM tenants WHERE is_toko_utama = TRUE LIMIT 1").fetchone()
+    if sudah_ada:
+        return
+    conn.execute("UPDATE tenants SET is_toko_utama = TRUE WHERE slug = ?", (TENANT_DEFAULT_SLUG,))
 
 
 def _kunci_tenant(tenant_id: int, key: str) -> str:
