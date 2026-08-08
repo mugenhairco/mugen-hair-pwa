@@ -835,30 +835,46 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 8. PAYMENT GATEWAY BILLING SAAS (Midtrans, platform-wide -- Owner
-    // tenant membayar LANGGANAN platform lewat menu Billing > Perpanjang
-    // Paket, TERPISAH TOTAL dari kartu "Payment Gateway" booking customer
-    // di bawah, lihat billing_gateway_db.py/routers/billing.py). Kredensial
-    // di sini sebelumnya HANYA lewat environment variable MIDTRANS_* --
-    // sekarang tersimpan di database, berlaku langsung tanpa deploy ulang.
+    // 8. PAYMENT GATEWAY BILLING SAAS (platform-wide, provider-agnostic --
+    // Owner tenant membayar LANGGANAN platform lewat menu Billing >
+    // Perpanjang Paket, TERPISAH TOTAL dari kartu "Payment Gateway" booking
+    // customer di bawah, lihat billing_gateway_db.py/routers/billing.py).
+    // Kredensial di sini sebelumnya HANYA lewat environment variable
+    // MIDTRANS_* -- sekarang tersimpan di database, berlaku langsung tanpa
+    // deploy ulang. Field SENGAJA generik (BUKAN spesifik satu provider --
+    // TIDAK ADA dropdown Provider) supaya form yang sama tetap terpakai
+    // kalau kelak platform pindah provider PGW; TIDAK semua field wajib
+    // diisi, tiap provider butuh kombinasi kredensial berbeda.
     // ---------------------------------------------------------------
-    billingGatewayCard.appendChild(MugenUI.el("h2", {}, "Billing SaaS -- Payment Gateway (Midtrans)"));
+    billingGatewayCard.appendChild(MugenUI.el("h2", {}, "Billing SaaS – Payment Gateway"));
     billingGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Kredensial Midtrans milik PLATFORM (Rivoir) -- dipakai SELURUH tenant saat Owner membayar/memperpanjang paket langganan lewat menu Billing. Terpisah total dari Payment Gateway booking customer di bawah."));
+      "Kredensial Payment Gateway milik PLATFORM (Rivoir) -- dipakai SELURUH tenant saat Owner membayar/memperpanjang paket langganan lewat menu Billing. Terpisah total dari Payment Gateway booking customer di bawah. Isi hanya field yang dibutuhkan provider yang dipakai."));
 
     const inBillingEnv = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "sandbox" }, "Sandbox"),
       MugenUI.el("option", { value: "production" }, "Production"),
     ]);
+    const inBillingApiKey = MugenUI.el("input", { type: "password", autocomplete: "off" });
     const inBillingServerKey = MugenUI.el("input", { type: "password", autocomplete: "off" });
     const inBillingClientKey = MugenUI.el("input", { type: "text", autocomplete: "off" });
+    const inBillingMerchantId = MugenUI.el("input", { type: "text" });
+    const inBillingSecretKey = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inBillingWebhookUrl = MugenUI.el("input", { type: "text", placeholder: "https://api.rivoirsett.com/api/..." });
 
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
     billingGatewayCard.appendChild(inBillingEnv);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "API Key"));
+    billingGatewayCard.appendChild(inBillingApiKey);
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key"));
     billingGatewayCard.appendChild(inBillingServerKey);
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key"));
     billingGatewayCard.appendChild(inBillingClientKey);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Merchant ID"));
+    billingGatewayCard.appendChild(inBillingMerchantId);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Secret Key"));
+    billingGatewayCard.appendChild(inBillingSecretKey);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Webhook / Callback URL"));
+    billingGatewayCard.appendChild(inBillingWebhookUrl);
 
     const errorBillingGateway = MugenUI.el("div", { class: "login-error" });
     const btnSimpanBillingGateway = MugenUI.el("button", { class: "btn-primary" }, "Simpan Payment Gateway Billing SaaS");
@@ -869,15 +885,21 @@ const PageSuperadmin = (() => {
       try {
         const cfg = await MugenApi.get("/api/superadmin/billing/gateway-config");
         inBillingEnv.value = cfg.environment || "sandbox";
+        inBillingApiKey.value = cfg.api_key || "";
         inBillingServerKey.value = cfg.server_key || "";
         inBillingClientKey.value = cfg.client_key || "";
+        inBillingMerchantId.value = cfg.merchant_id || "";
+        inBillingSecretKey.value = cfg.secret_key || "";
+        inBillingWebhookUrl.value = cfg.webhook_url || "";
       } catch (e) { errorBillingGateway.textContent = e.message; }
     }
     btnSimpanBillingGateway.addEventListener("click", async () => {
       errorBillingGateway.textContent = "";
       try {
         await MugenUI.withButtonLoading(btnSimpanBillingGateway, () => MugenApi.put("/api/superadmin/billing/gateway-config", {
-          environment: inBillingEnv.value, server_key: inBillingServerKey.value, client_key: inBillingClientKey.value,
+          environment: inBillingEnv.value, api_key: inBillingApiKey.value, server_key: inBillingServerKey.value,
+          client_key: inBillingClientKey.value, merchant_id: inBillingMerchantId.value,
+          secret_key: inBillingSecretKey.value, webhook_url: inBillingWebhookUrl.value,
         }));
         MugenUI.toast("Konfigurasi Payment Gateway Billing SaaS disimpan.", "success");
         loadAuditLog();

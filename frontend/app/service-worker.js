@@ -419,13 +419,19 @@
 // Admin, DB-backed (superadmin.js, billing_gateway_db.py, midtrans_client.py).
 // css/style.css juga berubah (kelas baru book-countdown/book-va-*/
 // book-qris-placeholder untuk flow Payment Gateway booking).
-// v83 -> v84: BUGFIX Rekap -- tombol Hapus untuk baris "Keterangan Libur"
+// v83 -> v84: REVISI kartu "Billing SaaS -- Payment Gateway" di Super Admin
+// (superadmin.js) supaya provider-agnostic -- judul dilepas dari
+// "(Midtrans)", TIDAK ADA dropdown Provider, form diperluas jadi tujuh
+// field generik (environment/api_key/server_key/client_key/merchant_id/
+// secret_key/webhook_url, tidak semua wajib diisi). Alur checkout/webhook/
+// aktivasi (midtrans_client.py/billing_webhook.py) TIDAK diubah.
+// v84 -> v85: BUGFIX Rekap -- tombol Hapus untuk baris "Keterangan Libur"
 // di kolom Aksi (rekap.js), sebelumnya selalu dash karena baris ini tidak
 // punya "id" (dihapus lewat barber_id+tanggal, bukan id). Notifikasi sukses
 // Setting > Bonus Service/Target Bonus Service/Uang Harian/Hak Akses Admin
 // (pengaturan.js) sekarang selalu tampil (force:true, sebelumnya bisa
 // senyap kalau toast lain baru saja tampil).
-const ASSET_VERSION = "84";
+const ASSET_VERSION = "85";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
