@@ -77,7 +77,14 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
     if tahun is None or bulan is None:
         tahun, bulan = _bulan_ini()
     barbers = db.get_barbers(tenant_id=user["tenant_id"])
-    ringkasan_per_barber = [_tanpa_kolom_biner_ringkasan(db.get_ringkasan_barber_bulan(b["id"], tahun, bulan)) for b in barbers]
+    # AUDIT KONEKSI (psycopg2.pool.PoolError "connection pool exhausted" di
+    # produksi): SEBELUMNYA memanggil db.get_ringkasan_barber_bulan() satu-
+    # satu per barber, masing-masing ~15 checkout koneksi terpisah -- untuk
+    # toko dengan banyak barber, SATU load Dashboard Owner bisa menghabiskan
+    # ratusan checkout sekaligus. get_ringkasan_semua_barber_bulan() (versi
+    # batch, rumus IDENTIK, lihat docstring-nya) menghitung SEMUA barber
+    # lewat segelintir query saja.
+    ringkasan_per_barber = [_tanpa_kolom_biner_ringkasan(r) for r in db.get_ringkasan_semua_barber_bulan(barbers, tahun, bulan, tenant_id=user["tenant_id"])]
     total_toko = {
         "nilai_service": sum(r["nilai_service"] for r in ringkasan_per_barber),
         "komisi": sum(r["komisi"] for r in ringkasan_per_barber),
@@ -167,14 +174,11 @@ def grafik_harian(tahun: int, bulan: int, barber_id: int = None, user: dict = De
     jumlah_hari = calendar.monthrange(tahun, bulan)[1]
     barbers = _barber_terpilih(barber_id, user["tenant_id"])
 
-    pendapatan_per_hari = {h: 0 for h in range(1, jumlah_hari + 1)}
-    for b in barbers:
-        for t in db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=b["id"]):
-            hari = int(t["tanggal"][8:10])
-            pendapatan_per_hari[hari] = pendapatan_per_hari.get(hari, 0) + t["total_komisi"] + t["tips"]
-        for hari in range(1, jumlah_hari + 1):
-            tanggal_iso = f"{tahun:04d}-{bulan:02d}-{hari:02d}"
-            pendapatan_per_hari[hari] += db.hitung_uang_harian_per_hari(b, tanggal_iso)
+    # AUDIT KONEKSI: SEBELUMNYA satu checkout koneksi per barber PER HARI
+    # (sampai ~31x per barber) -- get_pendapatan_harian_semua_barber() (versi
+    # batch, rumus IDENTIK, lihat docstring-nya) mengambil seluruh transaksi
+    # bulan itu lewat SATU query lalu mengelompokkan per hari di Python.
+    pendapatan_per_hari = db.get_pendapatan_harian_semua_barber(barbers, tahun, bulan, jumlah_hari, tenant_id=user["tenant_id"])
 
     return [{"tanggal": h, "pendapatan": pendapatan_per_hari[h]} for h in range(1, jumlah_hari + 1)]
 
@@ -189,8 +193,13 @@ def grafik_bulanan(tahun: int, barber_id: int = None, user: dict = Depends(requi
     bonus wajar diikutkan di sini karena memang perhitungan bulanan."""
     barbers = _barber_terpilih(barber_id, user["tenant_id"])
 
+    # AUDIT KONEKSI: SEBELUMNYA get_ringkasan_barber_bulan() (per barber, ~15
+    # checkout koneksi) dipanggil untuk SETIAP barber x SETIAP bulan (12x) --
+    # sekarang get_ringkasan_semua_barber_bulan() dipanggil sekali PER BULAN
+    # (bukan lagi per barber juga), rumus IDENTIK.
     hasil = []
     for bulan in range(1, 13):
-        total = sum(db.get_ringkasan_barber_bulan(b["id"], tahun, bulan)["total_pendapatan"] for b in barbers)
+        ringkasan_bulan = db.get_ringkasan_semua_barber_bulan(barbers, tahun, bulan, tenant_id=user["tenant_id"])
+        total = sum(r["total_pendapatan"] for r in ringkasan_bulan)
         hasil.append({"bulan": bulan, "pendapatan": total})
     return hasil
