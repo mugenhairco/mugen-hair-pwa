@@ -170,7 +170,7 @@ def test_booking_diblokir_saat_mencapai_limit_bulan_ini(app_client):
 
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
                              service_ids=[service_id], customer_nama="Budi",
-                             customer_whatsapp="081234567890", metode_pembayaran="cash",
+                             customer_whatsapp="081234567890", metode_pembayaran="transfer",
                              tenant_id=tenant["id"])
 
     try:
@@ -192,7 +192,7 @@ def test_booking_dibatalkan_tidak_memakan_kuota(app_client):
 
     booking = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
                                        service_ids=[service_id], customer_nama="Budi",
-                                       customer_whatsapp="081234567890", metode_pembayaran="cash",
+                                       customer_whatsapp="081234567890", metode_pembayaran="transfer",
                                        tenant_id=tenant["id"])
     booking_db.batalkan_booking(booking["id"])
 
@@ -212,7 +212,7 @@ def test_http_public_booking_ditolak_saat_limit_tercapai(app_client):
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
         "service_ids": [service_id], "customer_nama": "Budi",
-        "customer_whatsapp": "081234567890", "metode_pembayaran": "cash",
+        "customer_whatsapp": "081234567890", "metode_pembayaran": "transfer",
     }
     # HOTFIX Migrasi Subdomain: endpoint publik TIDAK LAGI diam-diam
     # jatuh ke tenant default kalau ?tenant= kosong -- WAJIB eksplisit.
@@ -233,9 +233,9 @@ def test_dua_tenant_kuota_booking_terpisah(two_tenants):
 
     # tenant_db.buat_tenant() (fixture two_tenants) TIDAK ikut men-seed
     # booking settings (beda dari tenant default yang dapat migrasi_booking()
-    # saat boot) -- metode pembayaran "cash" harus diaktifkan manual dulu
+    # saat boot) -- metode pembayaran "transfer" harus diaktifkan manual dulu
     # supaya buat_booking() di bawah tidak ditolak karena alasan LAIN.
-    booking_db.update_payment_settings(metode_aktif=["cash"], tenant_id=two_tenants["tenant_a"])
+    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=two_tenants["tenant_a"])
 
     barber_a, service_a = _siapkan_barber_dan_service(two_tenants["tenant_a"])
 
@@ -245,7 +245,7 @@ def test_dua_tenant_kuota_booking_terpisah(two_tenants):
 
     booking_db.buat_booking(barber_id=barber_a, tanggal=tanggal, jam_mulai="10:00",
                              service_ids=[service_a], customer_nama="Budi",
-                             customer_whatsapp="081234567890", metode_pembayaran="cash",
+                             customer_whatsapp="081234567890", metode_pembayaran="transfer",
                              tenant_id=two_tenants["tenant_a"])
 
     try:

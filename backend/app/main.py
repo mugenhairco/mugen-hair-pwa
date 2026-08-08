@@ -83,7 +83,7 @@ import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (
 import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq/landing_testimonials (idempotent)
 from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -269,6 +269,7 @@ app.include_router(billing_webhook.public_router)
 app.include_router(landing.public_router)
 app.include_router(landing.router)
 app.include_router(tenant_registration.public_router)
+app.include_router(payment_gateway.router)
 
 
 @app.on_event("startup")

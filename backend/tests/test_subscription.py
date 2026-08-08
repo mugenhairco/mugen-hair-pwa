@@ -394,7 +394,7 @@ def test_book_publik_buat_booking_diblokir_saat_suspended(app_client):
     r = app_client.post(f"/api/public/booking?tenant={tenant['slug']}", json={
         "barber_id": 1, "tanggal": "2026-01-01", "jam_mulai": "10:00",
         "service_ids": [1], "customer_nama": "Test", "customer_whatsapp": "0800",
-        "metode_pembayaran": "cash",
+        "metode_pembayaran": "transfer",
     })
     assert r.status_code == 403
 
