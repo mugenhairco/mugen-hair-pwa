@@ -22,9 +22,15 @@
        subdomain barunya, path/query/hash yang sama persis dipertahankan,
        pola SAMA seperti redirect onrender.com di atas. TIDAK memicu apa pun
        untuk subdomain tenant manapun (mis. mugen.rivoirsett.com sendiri,
-       atau admin.rivoirsett.com) -- HANYA root/www bare. -->
+       atau admin.rivoirsett.com) -- HANYA root/www bare.
+       PENGECUALIAN #/register: root domain sekarang juga jadi tempat
+       Landing Page SaaS mengarahkan tombol "Get Started" ke /app/#/register
+       (lihat router.js) -- rute ini SENGAJA berjalan TANPA sesi/tenant di
+       root domain, jadi TIDAK BOLEH ikut dilempar ke mugen.rivoirsett.com
+       seperti bookmark lama lainnya. -->
   <script>
-    if (location.hostname === "rivoirsett.com" || location.hostname === "www.rivoirsett.com") {
+    if ((location.hostname === "rivoirsett.com" || location.hostname === "www.rivoirsett.com") &&
+        !location.hash.startsWith("#/register")) {
       location.replace("https://mugen.rivoirsett.com" + location.pathname + location.search + location.hash);
     }
   </script>
