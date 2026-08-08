@@ -419,7 +419,13 @@
 // Admin, DB-backed (superadmin.js, billing_gateway_db.py, midtrans_client.py).
 // css/style.css juga berubah (kelas baru book-countdown/book-va-*/
 // book-qris-placeholder untuk flow Payment Gateway booking).
-const ASSET_VERSION = "83";
+// v83 -> v84: BUGFIX Rekap -- tombol Hapus untuk baris "Keterangan Libur"
+// di kolom Aksi (rekap.js), sebelumnya selalu dash karena baris ini tidak
+// punya "id" (dihapus lewat barber_id+tanggal, bukan id). Notifikasi sukses
+// Setting > Bonus Service/Target Bonus Service/Uang Harian/Hak Akses Admin
+// (pengaturan.js) sekarang selalu tampil (force:true, sebelumnya bisa
+// senyap kalau toast lain baru saja tampil).
+const ASSET_VERSION = "84";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

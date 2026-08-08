@@ -119,7 +119,7 @@ const PagePengaturan = (() => {
         const service_ids = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([id]) => Number(id));
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(endpoint, { service_ids }));
-          MugenUI.toast(`Pengaturan ${judul} disimpan.`, "success");
+          MugenUI.toast(`Pengaturan ${judul} disimpan.`, "success", { force: true });
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
@@ -448,10 +448,10 @@ const PagePengaturan = (() => {
           await MugenUI.withButtonLoading(btnTierSimpan, async () => {
             if (editingTarget !== null) {
               await MugenApi.put(`/api/pengaturan/bonus-tiers/${editingTarget}`, { target, bonus: bonusNilai });
-              MugenUI.toast("Tier diperbarui.", "success");
+              MugenUI.toast("Tier diperbarui.", "success", { force: true });
             } else {
               await MugenApi.post("/api/pengaturan/bonus-tiers", { target, bonus: bonusNilai });
-              MugenUI.toast("Tier ditambahkan.", "success");
+              MugenUI.toast("Tier ditambahkan.", "success", { force: true });
             }
           });
           resetTierForm();
@@ -505,7 +505,7 @@ const PagePengaturan = (() => {
         if (!target || target <= 0) { targetError.textContent = "Target harus lebih dari 0."; return; }
         try {
           await MugenUI.withButtonLoading(btnSimpanTarget, () => MugenApi.put("/api/pengaturan/uang-harian-target", { target }));
-          MugenUI.toast("Target Uang Harian disimpan.", "success");
+          MugenUI.toast("Target Uang Harian disimpan.", "success", { force: true });
         } catch (e) {
           targetError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
@@ -1402,7 +1402,7 @@ const PagePengaturan = (() => {
         for (const [key, cb] of Object.entries(checkboxes)) body2[key] = cb.checked;
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/hak-akses-admin", { izin: body2 }));
-          MugenUI.toast("Hak akses Admin disimpan.", "success");
+          MugenUI.toast("Hak akses Admin disimpan.", "success", { force: true });
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
