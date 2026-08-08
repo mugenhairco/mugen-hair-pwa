@@ -1139,6 +1139,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .book-field-row-total .book-field-value { font-weight: 700; font-size: 17px; color: var(--accent); }
 .book-selesai-detail hr { margin: 6px 0 10px; border-color: var(--border); }
 
+/* Payment Gateway (Menunggu Pembayaran/Payment Failed/Payment Expired) --
+   TAMBAHAN, tidak mengubah rule .book-selesai*/.book-summary-card* di atas
+   sama sekali (lihat renderPayment() di book_public.js). */
+.book-selesai-icon-gagal { background: var(--danger); }
+.book-countdown {
+  font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--accent); margin-top: 4px;
+}
+.book-va-row {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--bg); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 12px; margin-top: 8px;
+}
+.book-va-nomor { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; }
+.book-qris-placeholder {
+  width: 200px; height: 200px; margin: 8px auto; border-radius: 10px;
+  background: repeating-conic-gradient(var(--border) 0% 25%, var(--bg) 0% 50%) 0 0 / 20px 20px;
+  border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-weight: 600; text-align: center;
+}
+
 /* Review Booking (Booking Summary, step 6): satu blok per info (label +
    value SAJA -- link "< Back" tunggal ada di bawah halaman, lihat
    .book-nav-row & renderFasePilihMetode() di book_public.js). */

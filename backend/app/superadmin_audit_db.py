@@ -35,6 +35,9 @@ AKSI_VALID = {
     "ubah_paket_billing",
     "tambah_fitur_billing", "ubah_fitur_billing", "hapus_fitur_billing",
     "ubah_fitur_paket_billing",
+    # Payment Gateway (booking publik, platform-wide) -- lihat
+    # routers/payment_gateway.py, payment_gateway_db.py.
+    "ubah_config_payment_gateway",
 }
 
 

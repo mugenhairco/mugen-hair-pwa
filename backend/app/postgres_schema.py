@@ -68,7 +68,7 @@ DEFAULT_BOOKING_SETTINGS = {
     "booking_jam_tutup": "20:00",
     "booking_interval_menit": "60",
     "booking_maksimal_hari_kedepan": "30",
-    "booking_metode_aktif": '["cash", "transfer"]',
+    "booking_metode_aktif": '["transfer"]',
     "booking_qris_merchant_nama": "",
     "booking_qris_filename": "",
     "booking_bank_nama": "",

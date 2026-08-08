@@ -30,6 +30,7 @@ import billing_limits
 import booking_db
 import database as db
 import feature_access
+import payment_gateway_db
 import r2_storage
 import subscription_db
 import tenant_db
@@ -157,6 +158,13 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         "booking_online": True,
         **booking_settings,
         **payment_settings,
+        # Payment Gateway: daftar channel (QRIS/VA/GoPay/dst) + urutannya
+        # dikonfigurasi PLATFORM-WIDE oleh Super Admin (payment_gateway_db.py),
+        # BUKAN per-tenant -- hanya relevan kalau tenant ini mengaktifkan
+        # metode "gateway" di atas, tapi dikirim apa adanya di sini (pola
+        # sama seperti qris_url/bank_nama yang juga selalu dikirim terlepas
+        # metode itu aktif atau tidak).
+        "pgw_channels": payment_gateway_db.get_public_channels(),
         "toko_libur_tanggal": toko_libur_tanggal,
     }
 
