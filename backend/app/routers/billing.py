@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import billing_db
+import billing_gateway_db
 import billing_invoice_db
 import billing_limits
 import midtrans_client
@@ -56,12 +57,13 @@ def config_midtrans(user: dict = Depends(require_admin)):
     sama sekali) -- dipakai frontend memutuskan mau memuat snap.js
     Sandbox atau Production, dan `enabled=False` dipakai menampilkan
     pesan "Billing belum aktif" alih-alih tombol checkout yang pasti
-    gagal kalau Super Admin belum mengisi env var MIDTRANS_*."""
+    gagal kalau Super Admin belum mengisi kredensial (lihat
+    GET/PUT /api/superadmin/billing/gateway-config di bawah)."""
     return {
-        "enabled": midtrans_client.IS_ENABLED,
-        "client_key": midtrans_client.MIDTRANS_CLIENT_KEY,
-        "is_production": midtrans_client.MIDTRANS_IS_PRODUCTION,
-        "snap_js_url": midtrans_client.SNAP_JS_URL,
+        "enabled": midtrans_client.is_enabled(),
+        "client_key": midtrans_client.client_key(),
+        "is_production": midtrans_client.is_production(),
+        "snap_js_url": midtrans_client.snap_js_url(),
     }
 
 
@@ -71,7 +73,7 @@ class CheckoutBody(BaseModel):
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
-    if not midtrans_client.IS_ENABLED:
+    if not midtrans_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
     paket = billing_db.get_package(body.package_id)
@@ -156,6 +158,36 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
 
 
 # ============================= Super Admin =============================
+
+
+# ---- Payment Gateway Billing SaaS (Midtrans, platform-wide) ----
+# TERPISAH TOTAL dari Payment Gateway Booking Customer (payment_gateway_db.py/
+# routers/payment_gateway.py, prefix /api/superadmin/payment-gateway) --
+# kredensial ini untuk Owner tenant membayar LANGGANAN platform (Free/
+# Basic/Pro/Enterprise), bukan untuk customer membayar booking. Lihat
+# billing_gateway_db.py untuk penjelasan lengkap.
+@superadmin_router.get("/gateway-config")
+def ambil_gateway_config(user: dict = Depends(require_superadmin)):
+    return billing_gateway_db.get_config()
+
+
+class BillingGatewayConfigBody(BaseModel):
+    server_key: str | None = None
+    client_key: str | None = None
+    environment: str | None = None
+
+
+@superadmin_router.put("/gateway-config")
+def ubah_gateway_config(body: BillingGatewayConfigBody, user: dict = Depends(require_superadmin)):
+    try:
+        hasil = billing_gateway_db.update_config(
+            server_key=body.server_key, client_key=body.client_key, environment=body.environment,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "ubah_config_billing_gateway",
+                               detail=f"environment={hasil['environment']}, enabled={hasil['enabled']}")
+    return hasil
 
 
 @superadmin_router.get("/packages")

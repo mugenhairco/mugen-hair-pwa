@@ -80,6 +80,7 @@ import data_non_barber_db
 import superadmin_audit_db
 from subscription_migrasi import migrasi_subscription
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
+import billing_gateway_db  # Payment Gateway Billing SaaS (Midtrans, platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
 import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq/landing_testimonials (idempotent)
 from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
@@ -358,6 +359,7 @@ def on_startup():
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, QRIS, dst) kalau belum ada (idempotent)
         billing_db.seed_default_package_features()  # Feature Gating: assign booking_online/qris/export_pdf ke SEMUA paket SEKALI SAJA, supaya tenant lama tidak kehilangan fitur yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
+        billing_gateway_db.migrasi_billing_gateway()  # Payment Gateway Billing SaaS: bootstrap kredensial dari env var MIDTRANS_* lama ke database, HANYA kalau belum pernah diisi (idempotent)
         migrasi_landing()  # FONDASI Multi-Tenant Phase 5: kolom tenants.owner_name/email/whatsapp + tabel landing_faq/landing_testimonials (idempotent, WAJIB setelah migrasi_tenant())
         migrasi_email_auth()  # Email/Verifikasi Email/Lupa Kata Sandi: kolom users.email/email_verified/blokir_sampai_verifikasi + tabel email_verification_tokens/password_reset_tokens (idempotent)
         migrasi_booking_slug()  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())

@@ -14,9 +14,9 @@ import hashlib
 from datetime import datetime, timedelta
 
 import billing_db
+import billing_gateway_db
 import billing_invoice_db
 import billing_webhook
-import midtrans_client
 import subscription_db
 import tenant_db
 
@@ -59,7 +59,10 @@ def _tenant_default():
 
 
 def _dengan_server_key(monkeypatch):
-    monkeypatch.setattr(midtrans_client, "MIDTRANS_SERVER_KEY", SERVER_KEY)
+    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
+        "server_key": SERVER_KEY, "client_key": "dummy-client-key",
+        "environment": "sandbox", "enabled": True,
+    })
 
 
 # ============================= Validasi keamanan =============================

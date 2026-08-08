@@ -20,6 +20,7 @@ import pytest
 
 import auth_db
 import billing_db
+import billing_gateway_db
 import billing_invoice_db
 import billing_webhook
 import database as db
@@ -39,10 +40,14 @@ class _FakeResponse:
         return self._payload
 
 
+_MIDTRANS_SERVER_KEY_TEST = "SB-Mid-server-test"
+
+
 def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc"):
-    monkeypatch.setattr(midtrans_client, "IS_ENABLED", True)
-    monkeypatch.setattr(midtrans_client, "MIDTRANS_SERVER_KEY", "SB-Mid-server-test")
-    monkeypatch.setattr(midtrans_client, "MIDTRANS_CLIENT_KEY", "SB-Mid-client-test")
+    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
+        "server_key": _MIDTRANS_SERVER_KEY_TEST, "client_key": "SB-Mid-client-test",
+        "environment": "sandbox", "enabled": True,
+    })
 
     def fake_post(url, json, headers, timeout):
         return _FakeResponse(201, {"token": token, "redirect_url": redirect})
@@ -443,7 +448,7 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
     invoice = r.json()
 
     # Webhook Midtrans (TIDAK DIUBAH SAMA SEKALI) memproses notifikasi paid.
-    payload = _webhook_payload(invoice["order_id"], invoice["jumlah"], midtrans_client.MIDTRANS_SERVER_KEY)
+    payload = _webhook_payload(invoice["order_id"], invoice["jumlah"], _MIDTRANS_SERVER_KEY_TEST)
     hasil = billing_webhook.proses_notifikasi(payload)
     assert hasil["status"] == "paid"
 

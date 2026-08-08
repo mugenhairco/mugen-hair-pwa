@@ -39,6 +39,9 @@ const PageSuperadmin = (() => {
     ubah_fitur_paket_billing: "Ubah Fitur Paket Billing",
     // Payment Gateway (booking publik, platform-wide).
     ubah_config_payment_gateway: "Ubah Konfigurasi Payment Gateway",
+    // Payment Gateway Billing SaaS (Midtrans, platform-wide, TERPISAH dari
+    // Payment Gateway booking di atas).
+    ubah_config_billing_gateway: "Ubah Konfigurasi Payment Gateway Billing SaaS",
   };
 
   const LABEL_STATUS_INVOICE = {
@@ -76,6 +79,11 @@ const PageSuperadmin = (() => {
     const billingPackagesCard = MugenUI.el("div", { class: "card" });
     const billingFeaturesCard = MugenUI.el("div", { class: "card" });
     const billingInvoicesCard = MugenUI.el("div", { class: "card" });
+    // Payment Gateway Billing SaaS (Midtrans, platform-wide) -- TERPISAH
+    // TOTAL dari kartu "Payment Gateway" (booking customer) di bawah:
+    // kredensial di sini untuk Owner tenant membayar LANGGANAN platform,
+    // BUKAN untuk customer membayar booking -- lihat billing_gateway_db.py.
+    const billingGatewayCard = MugenUI.el("div", { class: "card" });
     // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): tiga kartu baru,
     // TIDAK mengubah kartu Phase 3/4 di atas sama sekali -- lihat
     // landing_db.py/routers/landing.py.
@@ -94,6 +102,7 @@ const PageSuperadmin = (() => {
     root.appendChild(billingPackagesCard);
     root.appendChild(billingFeaturesCard);
     root.appendChild(billingInvoicesCard);
+    root.appendChild(billingGatewayCard);
     root.appendChild(landingFaqCard);
     root.appendChild(landingTestimonialsCard);
     root.appendChild(landingContactCard);
@@ -826,7 +835,59 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 8. LANDING PAGE -- FAQ (FONDASI Multi-Tenant Phase 5)
+    // 8. PAYMENT GATEWAY BILLING SAAS (Midtrans, platform-wide -- Owner
+    // tenant membayar LANGGANAN platform lewat menu Billing > Perpanjang
+    // Paket, TERPISAH TOTAL dari kartu "Payment Gateway" booking customer
+    // di bawah, lihat billing_gateway_db.py/routers/billing.py). Kredensial
+    // di sini sebelumnya HANYA lewat environment variable MIDTRANS_* --
+    // sekarang tersimpan di database, berlaku langsung tanpa deploy ulang.
+    // ---------------------------------------------------------------
+    billingGatewayCard.appendChild(MugenUI.el("h2", {}, "Billing SaaS -- Payment Gateway (Midtrans)"));
+    billingGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Kredensial Midtrans milik PLATFORM (Rivoir) -- dipakai SELURUH tenant saat Owner membayar/memperpanjang paket langganan lewat menu Billing. Terpisah total dari Payment Gateway booking customer di bawah."));
+
+    const inBillingEnv = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "sandbox" }, "Sandbox"),
+      MugenUI.el("option", { value: "production" }, "Production"),
+    ]);
+    const inBillingServerKey = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inBillingClientKey = MugenUI.el("input", { type: "text", autocomplete: "off" });
+
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
+    billingGatewayCard.appendChild(inBillingEnv);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key"));
+    billingGatewayCard.appendChild(inBillingServerKey);
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key"));
+    billingGatewayCard.appendChild(inBillingClientKey);
+
+    const errorBillingGateway = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanBillingGateway = MugenUI.el("button", { class: "btn-primary" }, "Simpan Payment Gateway Billing SaaS");
+    billingGatewayCard.appendChild(errorBillingGateway);
+    billingGatewayCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanBillingGateway));
+
+    async function loadBillingGatewayConfig() {
+      try {
+        const cfg = await MugenApi.get("/api/superadmin/billing/gateway-config");
+        inBillingEnv.value = cfg.environment || "sandbox";
+        inBillingServerKey.value = cfg.server_key || "";
+        inBillingClientKey.value = cfg.client_key || "";
+      } catch (e) { errorBillingGateway.textContent = e.message; }
+    }
+    btnSimpanBillingGateway.addEventListener("click", async () => {
+      errorBillingGateway.textContent = "";
+      try {
+        await MugenUI.withButtonLoading(btnSimpanBillingGateway, () => MugenApi.put("/api/superadmin/billing/gateway-config", {
+          environment: inBillingEnv.value, server_key: inBillingServerKey.value, client_key: inBillingClientKey.value,
+        }));
+        MugenUI.toast("Konfigurasi Payment Gateway Billing SaaS disimpan.", "success");
+        loadAuditLog();
+      } catch (e) {
+        errorBillingGateway.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 9. LANDING PAGE -- FAQ (FONDASI Multi-Tenant Phase 5)
     // ---------------------------------------------------------------
     landingFaqCard.appendChild(MugenUI.el("h2", {}, "Landing Page -- FAQ"));
     landingFaqCard.appendChild(MugenUI.el("div", { class: "subtitle" },
@@ -1203,6 +1264,7 @@ const PageSuperadmin = (() => {
     await loadBillingPackages();
     await loadBillingFeatures();
     await loadBillingInvoices();
+    await loadBillingGatewayConfig();
     await loadLandingFaq();
     await loadLandingTestimonials();
     await loadLandingContact();
