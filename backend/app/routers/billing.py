@@ -160,20 +160,25 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
 # ============================= Super Admin =============================
 
 
-# ---- Payment Gateway Billing SaaS (Midtrans, platform-wide) ----
+# ---- Payment Gateway Billing SaaS (platform-wide, provider-agnostic) ----
 # TERPISAH TOTAL dari Payment Gateway Booking Customer (payment_gateway_db.py/
 # routers/payment_gateway.py, prefix /api/superadmin/payment-gateway) --
 # kredensial ini untuk Owner tenant membayar LANGGANAN platform (Free/
-# Basic/Pro/Enterprise), bukan untuk customer membayar booking. Lihat
-# billing_gateway_db.py untuk penjelasan lengkap.
+# Basic/Pro/Enterprise), bukan untuk customer membayar booking. Field-nya
+# SENGAJA generik (bukan spesifik Midtrans) -- lihat billing_gateway_db.py
+# untuk penjelasan lengkap kenapa TIDAK semua field wajib diisi.
 @superadmin_router.get("/gateway-config")
 def ambil_gateway_config(user: dict = Depends(require_superadmin)):
     return billing_gateway_db.get_config()
 
 
 class BillingGatewayConfigBody(BaseModel):
+    api_key: str | None = None
     server_key: str | None = None
     client_key: str | None = None
+    merchant_id: str | None = None
+    secret_key: str | None = None
+    webhook_url: str | None = None
     environment: str | None = None
 
 
@@ -181,7 +186,9 @@ class BillingGatewayConfigBody(BaseModel):
 def ubah_gateway_config(body: BillingGatewayConfigBody, user: dict = Depends(require_superadmin)):
     try:
         hasil = billing_gateway_db.update_config(
-            server_key=body.server_key, client_key=body.client_key, environment=body.environment,
+            api_key=body.api_key, server_key=body.server_key, client_key=body.client_key,
+            merchant_id=body.merchant_id, secret_key=body.secret_key, webhook_url=body.webhook_url,
+            environment=body.environment,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
