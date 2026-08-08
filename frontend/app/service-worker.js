@@ -425,7 +425,13 @@
 // field generik (environment/api_key/server_key/client_key/merchant_id/
 // secret_key/webhook_url, tidak semua wajib diisi). Alur checkout/webhook/
 // aktivasi (midtrans_client.py/billing_webhook.py) TIDAK diubah.
-const ASSET_VERSION = "84";
+// v84 -> v85: BUGFIX Rekap -- tombol Hapus untuk baris "Keterangan Libur"
+// di kolom Aksi (rekap.js), sebelumnya selalu dash karena baris ini tidak
+// punya "id" (dihapus lewat barber_id+tanggal, bukan id). Notifikasi sukses
+// Setting > Bonus Service/Target Bonus Service/Uang Harian/Hak Akses Admin
+// (pengaturan.js) sekarang selalu tampil (force:true, sebelumnya bisa
+// senyap kalau toast lain baru saja tampil).
+const ASSET_VERSION = "85";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
