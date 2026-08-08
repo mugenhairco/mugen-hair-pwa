@@ -38,6 +38,10 @@ AKSI_VALID = {
     # Payment Gateway (booking publik, platform-wide) -- lihat
     # routers/payment_gateway.py, payment_gateway_db.py.
     "ubah_config_payment_gateway",
+    # Payment Gateway Billing SaaS (Midtrans, platform-wide, TERPISAH dari
+    # Payment Gateway booking di atas) -- lihat routers/billing.py,
+    # billing_gateway_db.py.
+    "ubah_config_billing_gateway",
 }
 
 

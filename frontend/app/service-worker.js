@@ -410,7 +410,16 @@
 // menaikkan query "?v=..." di index.html (kelalaian, diperbaiki sekarang --
 // kedua tempat WAJIB sama, lihat komentar panjang di bawah) -- v82 dipakai
 // SEKALIGUS untuk menutup celah itu.
-const ASSET_VERSION = "82";
+// v82 -> v83: Payment Gateway booking customer (Checkout/Choose Payment
+// Channel/Menunggu Pembayaran/Payment Failed/Expired, book_public.js) +
+// penghapusan metode Cash (book_public.js, booking.js) + kartu "Payment
+// Gateway" booking di Super Admin (superadmin.js, payment_gateway_db.py) --
+// DAN Payment Gateway Billing SaaS (Midtrans) dipindah dari environment
+// variable ke kartu "Billing SaaS -- Payment Gateway (Midtrans)" di Super
+// Admin, DB-backed (superadmin.js, billing_gateway_db.py, midtrans_client.py).
+// css/style.css juga berubah (kelas baru book-countdown/book-va-*/
+// book-qris-placeholder untuk flow Payment Gateway booking).
+const ASSET_VERSION = "83";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

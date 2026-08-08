@@ -8,6 +8,7 @@ Midtrans sungguhan), riwayat invoice Owner (terisolasi per tenant), dan
 monitoring invoice Super Admin lintas tenant."""
 
 import billing_db
+import billing_gateway_db
 import billing_invoice_db
 import midtrans_client
 import tenant_db
@@ -37,9 +38,10 @@ def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia
 
 def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc",
                              status_code=201):
-    monkeypatch.setattr(midtrans_client, "IS_ENABLED", True)
-    monkeypatch.setattr(midtrans_client, "MIDTRANS_SERVER_KEY", "SB-Mid-server-test")
-    monkeypatch.setattr(midtrans_client, "MIDTRANS_CLIENT_KEY", "SB-Mid-client-test")
+    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
+        "server_key": "SB-Mid-server-test", "client_key": "SB-Mid-client-test",
+        "environment": "sandbox", "enabled": True,
+    })
 
     def fake_post(url, json, headers, timeout):
         return _FakeResponse(status_code, {"token": token, "redirect_url": redirect})
@@ -92,7 +94,8 @@ def test_config_midtrans_tidak_membocorkan_server_key(app_client, monkeypatch):
 
 def test_config_midtrans_disabled_saat_belum_dikonfigurasi(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    monkeypatch.setattr(midtrans_client, "IS_ENABLED", False)
+    # Config fresh test DB SUDAH default disabled (belum pernah diisi Super
+    # Admin) -- tidak perlu monkeypatch apa pun untuk memastikan itu.
 
     r = app_client.get("/api/billing/config", headers=headers)
     assert r.json()["enabled"] is False
@@ -120,7 +123,8 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
 
 def test_checkout_tanpa_midtrans_dikonfigurasi_503(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    monkeypatch.setattr(midtrans_client, "IS_ENABLED", False)
+    # Config fresh test DB SUDAH default disabled (belum pernah diisi Super
+    # Admin) -- tidak perlu monkeypatch apa pun untuk memastikan itu.
     pro = billing_db.get_package_by_kode("pro")
 
     r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})
