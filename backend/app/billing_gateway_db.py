@@ -1,14 +1,24 @@
-"""billing_gateway_db.py — Konfigurasi Payment Gateway Billing SaaS (Midtrans, PLATFORM-WIDE)
+"""billing_gateway_db.py — Konfigurasi Payment Gateway Billing SaaS (PLATFORM-WIDE)
 =================================================================================
 Kredensial untuk Owner tenant membayar LANGGANAN platform ini (paket Free/
 Basic/Pro/Enterprise, menu Billing > Perpanjang Paket) -- SATU merchant
-Midtrans milik platform (Rivoir), dipakai SELURUH tenant, dibayarkan KE
-platform (bukan ke tenant mana pun). TERPISAH TOTAL dari
-`payment_gateway_db.py` (kredensial PGW untuk CUSTOMER membayar BOOKING ke
-tenant, channel QRIS/VA/GoPay/dst) -- dua merchant/dua tujuan uang yang
-berbeda, sengaja disimpan di modul & key `settings` yang berbeda, TIDAK
-saling bergantung sama sekali (mengubah salah satu tidak pernah memengaruhi
-yang lain).
+milik platform (Rivoir), dipakai SELURUH tenant, dibayarkan KE platform
+(bukan ke tenant mana pun). TERPISAH TOTAL dari `payment_gateway_db.py`
+(kredensial PGW untuk CUSTOMER membayar BOOKING ke tenant, channel QRIS/VA/
+GoPay/dst) -- dua merchant/dua tujuan uang yang berbeda, sengaja disimpan di
+modul & key `settings` yang berbeda, TIDAK saling bergantung sama sekali
+(mengubah salah satu tidak pernah memengaruhi yang lain).
+
+REVISI (fleksibilitas provider): form konfigurasi SENGAJA generik -- tujuh
+field (environment, api_key, server_key, client_key, merchant_id,
+secret_key, webhook_url) mencakup kebutuhan kredensial payment gateway
+manapun, BUKAN field yang diberi nama/diasumsikan khusus Midtrans. Provider
+yang BENAR-BENAR terpasang saat ini tetap Midtrans (lihat midtrans_client.py,
+TIDAK diubah oleh revisi ini -- hanya memakai server_key/client_key/
+environment dari sini, field lain disimpan tapi belum dipakai kode apa pun)
+-- kalau kelak pindah provider, field yang relevan untuk provider baru itu
+tinggal diisi lewat form yang SAMA, TIDAK PERNAH semua field wajib diisi
+sekaligus (provider berbeda butuh kombinasi kredensial berbeda).
 
 Sebelumnya kredensial ini murni environment variable (MIDTRANS_SERVER_KEY/
 MIDTRANS_CLIENT_KEY/MIDTRANS_IS_PRODUCTION, dibaca SEKALI oleh
@@ -34,31 +44,58 @@ import database as db
 
 ENVIRONMENT_VALID = {"sandbox", "production"}
 
+_KUNCI_API_KEY = "billing_pgw_api_key"
 _KUNCI_SERVER_KEY = "billing_pgw_server_key"
 _KUNCI_CLIENT_KEY = "billing_pgw_client_key"
+_KUNCI_MERCHANT_ID = "billing_pgw_merchant_id"
+_KUNCI_SECRET_KEY = "billing_pgw_secret_key"
+_KUNCI_WEBHOOK_URL = "billing_pgw_webhook_url"
 _KUNCI_ENVIRONMENT = "billing_pgw_environment"
 
 
 def get_config() -> dict:
+    api_key = db.get_setting(_KUNCI_API_KEY, "", tenant_id=None)
     server_key = db.get_setting(_KUNCI_SERVER_KEY, "", tenant_id=None)
     client_key = db.get_setting(_KUNCI_CLIENT_KEY, "", tenant_id=None)
+    merchant_id = db.get_setting(_KUNCI_MERCHANT_ID, "", tenant_id=None)
+    secret_key = db.get_setting(_KUNCI_SECRET_KEY, "", tenant_id=None)
+    webhook_url = db.get_setting(_KUNCI_WEBHOOK_URL, "", tenant_id=None)
     environment = db.get_setting(_KUNCI_ENVIRONMENT, "sandbox", tenant_id=None)
     if environment not in ENVIRONMENT_VALID:
         environment = "sandbox"
     return {
+        "api_key": api_key,
         "server_key": server_key,
         "client_key": client_key,
+        "merchant_id": merchant_id,
+        "secret_key": secret_key,
+        "webhook_url": webhook_url,
         "environment": environment,
+        # "enabled": provider yang TERPASANG saat ini (Midtrans, lihat
+        # midtrans_client.py) HANYA butuh server_key+client_key -- field
+        # lain (api_key/merchant_id/secret_key/webhook_url) disediakan
+        # untuk provider LAIN yang mungkin butuh kombinasi berbeda, belum
+        # ikut menentukan enabled selama provider aktifnya masih Midtrans.
         "enabled": bool(server_key and client_key),
     }
 
 
-def update_config(server_key: str = None, client_key: str = None, environment: str = None) -> dict:
+def update_config(api_key: str = None, server_key: str = None, client_key: str = None,
+                   merchant_id: str = None, secret_key: str = None, webhook_url: str = None,
+                   environment: str = None) -> dict:
     data = {}
+    if api_key is not None:
+        data[_KUNCI_API_KEY] = api_key.strip()
     if server_key is not None:
         data[_KUNCI_SERVER_KEY] = server_key.strip()
     if client_key is not None:
         data[_KUNCI_CLIENT_KEY] = client_key.strip()
+    if merchant_id is not None:
+        data[_KUNCI_MERCHANT_ID] = merchant_id.strip()
+    if secret_key is not None:
+        data[_KUNCI_SECRET_KEY] = secret_key.strip()
+    if webhook_url is not None:
+        data[_KUNCI_WEBHOOK_URL] = webhook_url.strip()
     if environment is not None:
         if environment not in ENVIRONMENT_VALID:
             raise ValueError("Environment harus 'sandbox' atau 'production'.")

@@ -419,7 +419,13 @@
 // Admin, DB-backed (superadmin.js, billing_gateway_db.py, midtrans_client.py).
 // css/style.css juga berubah (kelas baru book-countdown/book-va-*/
 // book-qris-placeholder untuk flow Payment Gateway booking).
-const ASSET_VERSION = "83";
+// v83 -> v84: REVISI kartu "Billing SaaS -- Payment Gateway" di Super Admin
+// (superadmin.js) supaya provider-agnostic -- judul dilepas dari
+// "(Midtrans)", TIDAK ADA dropdown Provider, form diperluas jadi tujuh
+// field generik (environment/api_key/server_key/client_key/merchant_id/
+// secret_key/webhook_url, tidak semua wajib diisi). Alur checkout/webhook/
+// aktivasi (midtrans_client.py/billing_webhook.py) TIDAK diubah.
+const ASSET_VERSION = "84";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
