@@ -81,15 +81,115 @@ const PageBookPublic = (() => {
     return digits.replace(/^\+/, "");
   }
 
-  // Pagination dots (○ ○ ● ○ ○ ○) -- pengganti teks "Langkah X dari Y",
-  // ditaruh di BAWAH konten step (tepat di atas tombol Next/Continue),
-  // BUKAN di atas halaman seperti progress bar lama.
+  // REVISI UI/UX Premium: step tracker (dot + garis penghubung berselang-
+  // seling dalam SATU baris flex, TANPA positioning absolut) menggantikan
+  // pagination dots polos -- dot yang SUDAH dilewati tampil "completed"
+  // (centang kecil), dot AKTIF berdenyut (glow ring), garis di antara dot
+  // yang sudah dilewati ikut terisi warna aksen. Signature/nama fungsi
+  // TIDAK berubah (dipanggil persis sama di semua step), murni presentasi.
   function paginationDots(langkahAktif, totalLangkah) {
-    const wrap = MugenUI.el("div", { class: "book-pagination-dots" });
+    const wrap = MugenUI.el("div", { class: "book-step-track" });
     for (let i = 1; i <= totalLangkah; i++) {
-      wrap.appendChild(MugenUI.el("span", { class: "book-dot-page" + (i === langkahAktif ? " active" : "") }));
+      const status = i < langkahAktif ? " completed" : i === langkahAktif ? " active" : "";
+      wrap.appendChild(MugenUI.el("span", { class: "book-dot-page" + status }));
+      if (i < totalLangkah) {
+        wrap.appendChild(MugenUI.el("span", { class: "book-step-line" + (i < langkahAktif ? " filled" : "") }));
+      }
     }
     return wrap;
+  }
+
+  // REVISI UI/UX Premium: empty state ringan (ikon bulat + teks + aksi
+  // opsional) -- menggantikan `<div class="subtitle">` polos untuk kondisi
+  // "belum ada data" (barber/slot/metode pembayaran/channel kosong), TANPA
+  // mengubah KAPAN kondisi ini muncul (logika pengecekan tetap sama persis
+  // di masing-masing pemanggil, ini murni tampilannya).
+  function kosongState(ikon, teks, tombolAksi) {
+    const el = MugenUI.el("div", { class: "book-empty" }, [
+      MugenUI.el("div", { class: "book-empty-icon" }, ikon),
+      MugenUI.el("div", {}, teks),
+    ]);
+    if (tombolAksi) el.appendChild(MugenUI.el("div", { class: "book-empty-action" }, tombolAksi));
+    return el;
+  }
+
+  // REVISI UI/UX Premium: kartu error ringkas + tombol "Try Again" yang
+  // memanggil ULANG fungsi render yang sama persis (retry murni re-render,
+  // TIDAK ADA endpoint/logika baru) -- dipakai di ketiga titik try/catch
+  // yang sebelumnya hanya menampilkan errorState() tanpa cara memulihkan
+  // diri selain refresh manual browser.
+  function errorStateRetry(pesan, onRetry) {
+    const btn = MugenUI.el("button", { class: "btn-primary", type: "button", style: "margin-top:14px;" }, "Try Again");
+    btn.addEventListener("click", onRetry);
+    return MugenUI.el("div", { class: "card", style: "text-align:center;" }, [
+      MugenUI.errorState(pesan),
+      btn,
+    ]);
+  }
+
+  // REVISI UI/UX Premium: reveal-on-scroll ringan (IntersectionObserver,
+  // sekali per elemen, satu observer dipakai bersama) -- pola yang SAMA
+  // dipakai Landing Page SaaS (lp-reveal), versi book-scoped di sini murni
+  // presentasi, TIDAK menyentuh urutan/isi section yang sudah ditentukan
+  // dinamis oleh data (lihat renderLanding()).
+  let bookRevealObserver = null;
+  function bookRevealObserve(elements) {
+    if (!elements.length) return;
+    if (!("IntersectionObserver" in window)) {
+      elements.forEach((el) => el.classList.add("book-in-view"));
+      return;
+    }
+    if (!bookRevealObserver) {
+      bookRevealObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("book-in-view");
+          bookRevealObserver.unobserve(entry.target);
+        });
+      }, { threshold: 0.12, rootMargin: "0px 0px -30px 0px" });
+    }
+    elements.forEach((el) => bookRevealObserver.observe(el));
+  }
+
+  // REVISI UI/UX Premium: kalender .ics (RFC 5545) dibuat MURNI di sisi
+  // klien dari data booking yang SUDAH ada di layar (tanggal/jam_mulai/
+  // jam_selesai/nama_barber/daftar_service) -- TIDAK ADA endpoint/field
+  // baru dari backend. Tombol "Add to Calendar" pada layar Appointment
+  // Confirmed mengunduh file ini lewat pola blob yang sama seperti
+  // unduhGambar() di atas.
+  function buatIcs(r, namaBarbershop) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const [th, bl, tg] = [r.tanggal.slice(0, 4), r.tanggal.slice(5, 7), r.tanggal.slice(8, 10)];
+    const [jm, mm] = r.jam_mulai.split(":");
+    const [js, ms] = (r.jam_selesai || r.jam_mulai).split(":");
+    const dtStart = `${th}${bl}${tg}T${pad(jm)}${pad(mm)}00`;
+    const dtEnd = `${th}${bl}${tg}T${pad(js)}${pad(ms)}00`;
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const esc = (s) => String(s || "").replace(/[\\;,]/g, (m) => "\\" + m).replace(/\n/g, "\\n");
+    const lines = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Rivoir//Booking//EN",
+      "BEGIN:VEVENT",
+      `UID:booking-${r.id || Date.now()}@rivoir`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${esc((namaBarbershop || "Rivoir") + " — " + (r.daftar_service || "Appointment"))}`,
+      `DESCRIPTION:${esc(`Barber: ${r.nama_barber || "-"}\\nService: ${r.daftar_service || "-"}`)}`,
+      "END:VEVENT", "END:VCALENDAR",
+    ];
+    return lines.join("\r\n");
+  }
+
+  function unduhIcs(r, namaBarbershop) {
+    const blob = new Blob([buatIcs(r, namaBarbershop)], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (namaBarbershop || "Rivoir").replace(/[^a-zA-Z0-9]+/g, "-") + "-Appointment.ics";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // REVISI: tombol "Download QRIS" -- ambil EKSTENSI file asli dari query
@@ -277,7 +377,7 @@ const PageBookPublic = (() => {
       identitas = MugenBrand.get();
     } catch (e) {
       page.innerHTML = "";
-      page.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState("Failed to load this page: " + e.message)));
+      page.appendChild(errorStateRetry("Failed to load this page: " + e.message, () => { root.innerHTML = ""; renderLanding(root); }));
       return;
     }
     page.innerHTML = "";
@@ -313,7 +413,7 @@ const PageBookPublic = (() => {
 
     // ---- About -- section (dan judulnya) hanya tampil kalau ADA isinya. ----
     if (content.about_judul || content.about_deskripsi || content.about_foto_url) {
-      const about = MugenUI.el("section", { class: "book-section book-about" });
+      const about = MugenUI.el("section", { class: "book-section book-about book-reveal" });
       if (content.about_foto_url) {
         about.appendChild(gambarAman(MUGEN_API_BASE + content.about_foto_url, { alt: "About", class: "book-about-foto" }));
       }
@@ -326,7 +426,7 @@ const PageBookPublic = (() => {
 
     // ---- Gallery ----
     if (gallery.length) {
-      const gallerySec = MugenUI.el("section", { class: "book-section book-gallery" });
+      const gallerySec = MugenUI.el("section", { class: "book-section book-gallery book-reveal" });
       gallerySec.appendChild(MugenUI.el("h2", {}, "Our Work"));
       const slider = MugenUI.el("div", { class: "book-gallery-slider" });
       for (const foto of gallery) {
@@ -348,7 +448,7 @@ const PageBookPublic = (() => {
     // ---- Visit Us -- HANYA peta/alamat/link (Opening Hours sekarang
     // section tersendiri di bawah, TIDAK lagi digabung ke sini). ----
     if (content.visit_maps_embed_url || content.alamat || content.visit_maps_link) {
-      const visit = MugenUI.el("section", { class: "book-section book-visit" });
+      const visit = MugenUI.el("section", { class: "book-section book-visit book-reveal" });
       visit.appendChild(MugenUI.el("h2", {}, "Visit Us"));
       if (content.visit_maps_embed_url) {
         visit.appendChild(MugenUI.el("iframe", {
@@ -372,7 +472,7 @@ const PageBookPublic = (() => {
     if (hariAktif.length) {
       const aktifTerurut = URUTAN_HARI_TAMPIL.filter((h) => hariAktif.includes(h));
       const liburTerurut = URUTAN_HARI_TAMPIL.filter((h) => !hariAktif.includes(h));
-      const hours = MugenUI.el("section", { class: "book-section book-hours" });
+      const hours = MugenUI.el("section", { class: "book-section book-hours book-reveal" });
       hours.appendChild(MugenUI.el("h2", {}, "Opening Hours"));
       hours.appendChild(MugenUI.el("div", {},
         `${aktifTerurut.map((h) => LABEL_HARI_EN[h]).join(", ")}: ${pengaturan.jam_buka} – ${pengaturan.jam_tutup}`));
@@ -388,12 +488,13 @@ const PageBookPublic = (() => {
     // Subheading boleh kosong (layout menyesuaikan tanpa jarak kosong),
     // TAPI tombolnya SELALU tampil apa pun isinya, dan SELALU menuju
         // halaman booking (bukan link yang bisa diatur Owner). ----
-    const bookCta = MugenUI.el("section", { class: "book-section book-cta" });
+    const bookCta = MugenUI.el("section", { class: "book-section book-cta book-reveal" });
     if (content.booking_cta_judul) bookCta.appendChild(MugenUI.el("h2", {}, content.booking_cta_judul));
     if (content.booking_cta_subjudul) bookCta.appendChild(MugenUI.el("div", { class: "subtitle" }, content.booking_cta_subjudul));
     const btnCta = MugenUI.el("button", { class: "btn-primary book-cta-btn", type: "button" },
       content.booking_cta_tombol_teks || "Book Appointment");
     btnCta.addEventListener("click", bukaWizard);
+    tambahkanEfekRipple(btnCta);
     bookCta.appendChild(btnCta);
     page.appendChild(bookCta);
 
@@ -406,7 +507,7 @@ const PageBookPublic = (() => {
     if (content.tiktok) social.push({ label: "TikTok", href: content.tiktok, svg: IKON_TIKTOK_SVG });
     if (content.whatsapp) social.push({ label: "WhatsApp", href: `https://wa.me/${nomorKeFormatInternasional(content.whatsapp)}`, svg: IKON_WHATSAPP_SVG });
     if (social.length) {
-      const connect = MugenUI.el("section", { class: "book-section book-connect" });
+      const connect = MugenUI.el("section", { class: "book-section book-connect book-reveal" });
       connect.appendChild(MugenUI.el("h2", {}, "Connect With Us"));
       const row = MugenUI.el("div", { class: "book-connect-row" });
       for (const s of social) {
@@ -424,6 +525,12 @@ const PageBookPublic = (() => {
     // developer sudah ditangani GLOBAL lewat .dev-watermark-footer
     // (index.html, tampil di semua halaman termasuk ini) -- tidak perlu
     // elemen footer tambahan apa pun di sini.
+
+    // REVISI UI/UX Premium: reveal-on-scroll untuk section landing di atas
+    // (About/Gallery/Visit/Hours/Book Appointment/Connect) -- dipanggil
+    // TERAKHIR, setelah SEMUA section (yang datanya ada) sudah ter-append,
+    // supaya observer melihat posisi akhir elemen yang sebenarnya.
+    bookRevealObserve(page.querySelectorAll(".book-reveal"));
   }
 
   // ================= WIZARD BOOKING =================
@@ -465,7 +572,7 @@ const PageBookPublic = (() => {
       ]);
     } catch (e) {
       body.innerHTML = ""; // buang skeleton sebelum tampilkan error
-      body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState("Failed to load the booking form: " + e.message)));
+      body.appendChild(errorStateRetry("Failed to load the booking form: " + e.message, () => { root.innerHTML = ""; renderWizard(root); }));
       return;
     }
 
@@ -618,9 +725,10 @@ const PageBookPublic = (() => {
         }
         grid.appendChild(card);
       }
-      body.appendChild(grid);
-      if (!barbers.length) {
-        body.appendChild(MugenUI.el("div", { class: "subtitle" }, "No barbers available for booking right now."));
+      if (barbers.length) {
+        body.appendChild(grid);
+      } else {
+        body.appendChild(kosongState("✂️", "No barbers available for booking right now."));
       }
       body.appendChild(paginationDots(1, TOTAL_STEP));
     }
@@ -677,6 +785,7 @@ const PageBookPublic = (() => {
       body.appendChild(paginationDots(2, TOTAL_STEP));
 
       const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;" }, "Continue");
+      tambahkanEfekRipple(btnLanjut);
       btnLanjut.addEventListener("click", () => {
         errorBox.textContent = "";
         if (!state.serviceIds.length) {
@@ -776,14 +885,19 @@ const PageBookPublic = (() => {
         );
       } catch (e) {
         slotBox.innerHTML = "";
-        slotBox.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        slotBox.appendChild(errorStateRetry(e.detail && e.detail.detail ? e.detail.detail : e.message, () => {
+          body.innerHTML = "";
+          renderSelectTime();
+        }));
         return;
       }
       slotBox.innerHTML = "";
 
+      const btnPilihTanggalLain = MugenUI.el("button", { type: "button" }, "Choose another date");
+      btnPilihTanggalLain.addEventListener("click", () => goto(3));
+
       if (data.barber_libur) {
-        slotBox.appendChild(MugenUI.el("div", { class: "book-warning" },
-          `${state.barberNama} is on leave on this date. Please choose another date or barber.`));
+        slotBox.appendChild(kosongState("🌴", `${state.barberNama} is on leave on this date. Please choose another date or barber.`, btnPilihTanggalLain));
       } else {
         const grid = MugenUI.el("div", { class: "book-slot-grid" });
         for (const s of data.slots) {
@@ -808,7 +922,10 @@ const PageBookPublic = (() => {
           MugenUI.el("span", { class: "book-legend-item" }, [MugenUI.el("span", { class: "book-dot book-slot-closed" }), " Closed"]),
         ]));
         if (!data.slots.some((s) => s.status === "available")) {
+          const btnTanggalLain2 = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:10px;" }, "Choose another date");
+          btnTanggalLain2.addEventListener("click", () => goto(3));
           slotBox.appendChild(MugenUI.el("div", { class: "book-warning" }, "No time slots available on this date. Please choose another date."));
+          slotBox.appendChild(btnTanggalLain2);
         }
       }
       body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
@@ -835,6 +952,7 @@ const PageBookPublic = (() => {
       body.appendChild(paginationDots(5, TOTAL_STEP));
 
       const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;" }, "Continue");
+      tambahkanEfekRipple(btnLanjut);
       btnLanjut.addEventListener("click", () => {
         errorBox.textContent = "";
         const nomorBersih = inputWa.value.trim().replace(/[\s-]/g, "");
@@ -962,6 +1080,7 @@ const PageBookPublic = (() => {
         ]));
         body.appendChild(paginationDots(6, TOTAL_STEP));
         const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Lanjut ke Pembayaran");
+        tambahkanEfekRipple(btnLanjut);
         btnLanjut.addEventListener("click", () => { fase = "metode"; gantiFase(); });
         body.appendChild(btnLanjut);
       }
@@ -974,7 +1093,7 @@ const PageBookPublic = (() => {
         const errorBox = MugenUI.el("div", { class: "login-error" });
 
         if (!metodeAktif.length) {
-          metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "No payment method is active yet. Please contact the barbershop."));
+          metodeBox.appendChild(kosongState("💳", "No payment method is active yet. Please contact the barbershop."));
         } else if (metodeAktif.length === 1) {
           state.metode = metodeAktif[0];
           metodeBox.appendChild(MugenUI.el("button", {
@@ -1004,6 +1123,7 @@ const PageBookPublic = (() => {
         body.appendChild(paginationDots(6, TOTAL_STEP));
 
         const btnKonfirmasi = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Confirm");
+        tambahkanEfekRipple(btnKonfirmasi);
         btnKonfirmasi.addEventListener("click", async () => {
           errorBox.textContent = "";
           if (!state.metode) { errorBox.textContent = "Please select a payment method first."; return; }
@@ -1046,6 +1166,7 @@ const PageBookPublic = (() => {
         ]));
 
         const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Continue");
+        tambahkanEfekRipple(btnLanjut);
         btnLanjut.addEventListener("click", () => goto(7));
         body.appendChild(btnLanjut);
       }
@@ -1066,7 +1187,7 @@ const PageBookPublic = (() => {
         }
 
         if (!pgwChannels.length) {
-          listBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "No gateway channel is active yet. Please contact the barbershop."));
+          listBox.appendChild(kosongState("🏦", "No gateway channel is active yet. Please contact the barbershop."));
         }
         for (const ch of pgwChannels) {
           if (ch === "va") {
@@ -1157,6 +1278,7 @@ const PageBookPublic = (() => {
         body.appendChild(btnBatal);
 
         const btnCek = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:8px;" }, "Cek Status Pembayaran");
+        tambahkanEfekRipple(btnCek);
         btnCek.addEventListener("click", async () => {
           try {
             // Belum ada webhook PGW sungguhan (lihat catatan di atas
@@ -1195,6 +1317,11 @@ const PageBookPublic = (() => {
           const mm = String(Math.floor(sisaDetik / 60)).padStart(2, "0");
           const ss = String(sisaDetik % 60).padStart(2, "0");
           countdownEl.textContent = `${mm}:${ss}`;
+          // REVISI UI/UX Premium: pil countdown berubah warna (netral -> merah
+          // berdenyut) begitu sisa waktu < 1 menit, murni penanda visual
+          // urgensi -- TIDAK mengubah kapan expired sungguhan terjadi (logika
+          // di atas, sisaMs <= 0, tidak disentuh).
+          countdownEl.classList.toggle("book-countdown-urgent", sisaDetik < 60);
         }, 1000);
       }
 
@@ -1206,6 +1333,7 @@ const PageBookPublic = (() => {
           MugenUI.el("div", { class: "subtitle" }, state.pgwGagalAlasan || "Pembayaran gagal, silakan coba lagi."),
         ]));
         const btnUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Coba Lagi");
+        tambahkanEfekRipple(btnUlang);
         btnUlang.addEventListener("click", () => {
           state.pgwDeadline = Date.now() + DURASI_COUNTDOWN_MS;
           if (state.pgwChannel === "va") state.pgwVaNomor = buatNomorVA();
@@ -1226,6 +1354,7 @@ const PageBookPublic = (() => {
           MugenUI.el("div", { class: "subtitle" }, "Batas waktu pembayaran sudah lewat. Silakan buat pembayaran baru."),
         ]));
         const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Buat Pembayaran Baru");
+        tambahkanEfekRipple(btnBaru);
         btnBaru.addEventListener("click", () => { fase = "channel"; gantiFase(); });
         body.appendChild(btnBaru);
       }
@@ -1263,13 +1392,39 @@ const PageBookPublic = (() => {
         MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" },
           pengaturan.pesan_penutup || "Thank you! We'll reach out to you on WhatsApp shortly to confirm."),
       ]));
-      const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "margin-top:16px;" }, "Book Another Appointment");
+
+      const actions = MugenUI.el("div", { class: "book-selesai-actions" });
+
+      // REVISI UI/UX Premium: "Add to Calendar" -- file .ics dibuat MURNI di
+      // klien dari data booking yang sudah tampil di layar (lihat buatIcs()),
+      // TIDAK memanggil endpoint apa pun.
+      const btnKalender = MugenUI.el("button", { type: "button" }, "📅 Add to Calendar");
+      tambahkanEfekRipple(btnKalender);
+      btnKalender.addEventListener("click", () => unduhIcs(r, identitas.nama_barbershop));
+      actions.appendChild(btnKalender);
+
+      const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Book Another Appointment");
+      tambahkanEfekRipple(btnBaru);
       btnBaru.addEventListener("click", () => {
         state.barberId = null; state.barberNama = ""; state.tanggal = null; state.jam = null;
         state.serviceIds = []; state.nama = ""; state.whatsapp = ""; state.metode = null;
         goto(1);
       });
-      body.appendChild(btnBaru);
+      actions.appendChild(btnBaru);
+
+      // "Back to Home" -- kembali ke Landing Page (renderLanding), reuse
+      // fungsi render() yang sama persis dipanggil router.js saat #/book
+      // pertama dibuka (bukan endpoint/logika baru).
+      const btnBeranda = MugenUI.el("button", { type: "button" }, "Back to Home");
+      tambahkanEfekRipple(btnBeranda);
+      btnBeranda.addEventListener("click", () => {
+        window.removeEventListener("popstate", onPopState);
+        root.innerHTML = "";
+        render(root);
+      });
+      actions.appendChild(btnBeranda);
+
+      body.appendChild(actions);
     }
 
     pushHistoryStep(1);
