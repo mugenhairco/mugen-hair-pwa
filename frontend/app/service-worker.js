@@ -410,7 +410,16 @@
 // menaikkan query "?v=..." di index.html (kelalaian, diperbaiki sekarang --
 // kedua tempat WAJIB sama, lihat komentar panjang di bawah) -- v82 dipakai
 // SEKALIGUS untuk menutup celah itu.
-const ASSET_VERSION = "82";
+// v82 -> v83: FITUR Logo Resmi Rivoir -- seluruh file ikon platform di
+// icons/ (favicon.ico, icon-72..512.png, icon-maskable-192/512.png,
+// apple-touch-icon.png) diganti dari logo pita infinity lama ke logo "R"
+// resmi Rivoir (nama file TIDAK berubah, jadi ASSET_VERSION WAJIB naik
+// supaya pengguna yang sudah install PWA ini tidak terus melihat ikon
+// lama dari cache). Ini favicon PLATFORM/default (fallback saat tenant
+// belum punya favicon_url sendiri, lihat app/js/brand.js) -- BUKAN
+// perubahan pada mekanisme favicon per-tenant itu sendiri, yang tetap
+// utuh apa adanya.
+const ASSET_VERSION = "83";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
