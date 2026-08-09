@@ -81,10 +81,20 @@ def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia
 
 
 def _payload_register(**override):
+    """FITUR Username Registrasi Mandiri: `username` sekarang field
+    TERPISAH & WAJIB (lihat riwayat perbaikan di routers/
+    tenant_registration.py::register()) -- default diturunkan dari bagian
+    lokal alamat email (mis. "budi@contoh.com" -> "budi") SETELAH override
+    diterapkan ke email, supaya test yang SUDAH membedakan `email` antar
+    panggilan (pola paling umum di file ini untuk mendaftar >1 tenant
+    dalam satu test) otomatis dapat username unik juga, tanpa perlu
+    override eksplisit satu-satu di puluhan pemanggilan yang sudah ada."""
+    email = override.get("email", "budi@contoh.com")
     payload = {
         "nama_barbershop": "Barbershop Uji Coba",
         "owner_name": "Budi Santoso",
-        "email": "budi@contoh.com",
+        "username": email.split("@")[0],
+        "email": email,
         "whatsapp": "081234567890",
         "password": "rahasia123",
         "confirm_password": "rahasia123",
@@ -248,7 +258,7 @@ def test_register_login_valid_untuk_endpoint_berlogin_setelah_verifikasi(app_cli
         ).fetchone()["token"]
     app_client.post("/api/auth/verifikasi-email", json={"token": token_verifikasi})
 
-    r = app_client.post("/api/auth/login", json={"username": "budi@contoh.com", "password": "rahasia123"})
+    r = app_client.post("/api/auth/login", json={"username": "budi", "password": "rahasia123"})
     assert r.status_code == 200, r.text
     token = r.json()["token"]
 
@@ -429,7 +439,7 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
         ).fetchone()["token"]
     app_client.post("/api/auth/verifikasi-email", json={"token": token_verifikasi})
 
-    r_login = app_client.post("/api/auth/login", json={"username": "budi@contoh.com", "password": "rahasia123"})
+    r_login = app_client.post("/api/auth/login", json={"username": "budi", "password": "rahasia123"})
     assert r_login.status_code == 200, r_login.text
     login_body = r_login.json()
     token = login_body["token"]

@@ -133,6 +133,16 @@ const PageSuperadmin = (() => {
           [
             { key: "nama_barbershop", label: "Nama Barbershop" },
             { key: "slug", label: "Slug" },
+            // FITUR Username Tenant di Super Admin: owner_username dikirim
+            // backend (routers/superadmin.py::_tenant_dengan_ringkasan())
+            // -- username akun Owner aktif toko itu, dipakai tenant untuk
+            // login (lihat FITUR Username Registrasi Mandiri di register.js/
+            // tenant_registration.py). "-" kalau toko belum punya Owner
+            // aktif (mis. baru dibuat lalu akunnya dinonaktifkan).
+            {
+              key: "owner_username", label: "Username",
+              format: (v) => v || MugenUI.el("span", { class: "subtitle" }, "-"),
+            },
             // FITUR Alamat Website Tenant: website_url dikirim backend
             // (routers/superadmin.py::_tenant_dengan_ringkasan(), lewat
             // tenant_db.get_website_url() -- custom_domain kalau tenant

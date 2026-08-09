@@ -14,16 +14,48 @@ const PageLogin = (() => {
     // TIDAK ikut animasi lagi.
     const animateEntrance = MugenState.consumeLoginEntrance();
     const card = MugenUI.el("div", { class: "login-card" + (animateEntrance ? " login-entrance" : "") });
+    // BUGFIX Login Global: sebelumnya SELALU memakai MugenBrand.get()
+    // (cache localStorage / slug "diingat" dari login sebelumnya, lihat
+    // brand.js) untuk judul awal -- di subdomain tenant ini benar (device
+    // yang dipakai berulang untuk satu toko sebaiknya tidak "flash" ke
+    // branding platform dulu), TAPI SALAH di domain utama/global (mis.
+    // rivoirsett.com/app/#/login tanpa subdomain tenant): kalau perangkat
+    // itu PERNAH dipakai login ke toko tertentu (mis. sebelum migrasi
+    // subdomain, root domain dulu memang jalur akses Mugen), nama toko
+    // lama itu tetap "nyangkut" dan tampil di halaman Login global,
+    // padahal halaman ini seharusnya netral/platform.
+    //
+    // MugenTenantGuard.slugDariHostname() (SUDAH ADA, tenant_guard.js)
+    // adalah SATU-SATUNYA sumber kebenaran "apakah domain saat ini
+    // berbentuk subdomain tenant" yang sudah dipakai app.js untuk
+    // menggerbangi boot aplikasi -- dipakai ULANG di sini (BUKAN logika
+    // baru) supaya konsisten: ADA slug dari subdomain -> perilaku LAMA
+    // apa adanya (branding toko, sesuai spesifikasi "nama tenant hanya
+    // ditampilkan lewat subdomain tenant/setelah ter-resolve"). TIDAK ADA
+    // (domain utama, admin.rivoirsett.com, dst) -> paksa "Rivoir" +
+    // MugenBrand.refreshPlatformOnly() (SUDAH ADA, pola identik dengan
+    // pages/register.js -- TIDAK membaca/menyimpan cache slug tenant sama
+    // sekali, backend tetap yang memutuskan lewat resolve_tenant_untuk_
+    // branding(), jadi custom domain tenant di masa depan tetap otomatis
+    // benar begitu backend berhasil resolve).
+    const adaSlugTenantDariSubdomain =
+      typeof MugenTenantGuard !== "undefined" && !!MugenTenantGuard.slugDariHostname();
     card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
-    card.appendChild(MugenUI.el("h1", { class: "brand-name" }, MugenBrand.get().nama_barbershop));
+    card.appendChild(MugenUI.el("h1", { class: "brand-name" },
+      adaSlugTenantDariSubdomain ? MugenBrand.get().nama_barbershop : "Rivoir"));
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Masuk ke akun Anda"));
-    // REVISI: terapkan dulu dari cache localStorage (lewat applyToDom(), bukan
-    // langsung tunggu refresh() yang butuh roundtrip ke server) supaya logo
-    // yang sudah pernah tersimpan langsung tampil tanpa delay/flash kosong
-    // saat halaman Login pertama kali dibuka -- refresh() tetap dipanggil
-    // sesudahnya untuk menyegarkan data di background.
-    MugenBrand.applyToDom();
-    MugenBrand.refresh();
+    if (adaSlugTenantDariSubdomain) {
+      // REVISI: terapkan dulu dari cache localStorage (lewat applyToDom(),
+      // bukan langsung tunggu refresh() yang butuh roundtrip ke server)
+      // supaya logo yang sudah pernah tersimpan langsung tampil tanpa
+      // delay/flash kosong saat halaman Login pertama kali dibuka --
+      // refresh() tetap dipanggil sesudahnya untuk menyegarkan data di
+      // background.
+      MugenBrand.applyToDom();
+      MugenBrand.refresh();
+    } else {
+      MugenBrand.refreshPlatformOnly();
+    }
 
     // BUGFIX: tanpa atribut ini, keyboard HP (iOS/Android) otomatis
     // meng-kapital-kan huruf pertama username yang diketik user (perilaku

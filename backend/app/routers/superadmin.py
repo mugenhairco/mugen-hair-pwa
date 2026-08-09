@@ -41,11 +41,20 @@ def _tenant_dengan_ringkasan(t: dict) -> dict:
     -- kolom "Booking URL" di Dashboard Super Admin), dibentuk lewat
     tenant_db.get_booking_url() -- SAMA polanya dengan website_url di
     atas, otomatis ikut booking_slug terbaru kapan pun tenant mengubahnya
-    lewat Setting > Booking."""
+    lewat Setting > Booking.
+
+    FITUR Username Tenant di Super Admin: `owner_username` -- username
+    akun Owner ('admin', aktif) toko itu, supaya Super Admin bisa langsung
+    lihat username yang dipakai tenant untuk login tanpa buka detail user
+    satu per satu (GET /tenants/{id}). Dari daftar_user yang SUDAH diquery
+    di atas (bukan query baru) -- kalau toko punya lebih dari satu Owner
+    aktif, digabung dengan ", " supaya tetap satu kolom."""
     hasil = dict(t)
     daftar_user = auth_db.get_user_list(tenant_id=t["id"])
     hasil["jumlah_user"] = len(daftar_user)
-    hasil["jumlah_owner"] = sum(1 for u in daftar_user if u["role"] == "admin" and u["aktif"])
+    daftar_owner_aktif = [u for u in daftar_user if u["role"] == "admin" and u["aktif"]]
+    hasil["jumlah_owner"] = len(daftar_owner_aktif)
+    hasil["owner_username"] = ", ".join(u["username"] for u in daftar_owner_aktif) or None
     hasil["website_url"] = tenant_db.get_website_url(t)
     hasil["booking_url"] = tenant_db.get_booking_url(t)
     return hasil
