@@ -38,10 +38,15 @@ def test_superadmin_bisa_lihat_daftar_seluruh_tenant(two_tenants):
     # tenant dari fixture two_tenants -- superadmin melihat SEMUANYA sekaligus.
     assert "test-toko-a" in slugs
     assert "test-toko-b" in slugs
-    for t in r.json():
-        if t["slug"] in ("test-toko-a", "test-toko-b"):
-            assert t["jumlah_user"] == 1
-            assert t["jumlah_owner"] == 1
+    by_slug = {t["slug"]: t for t in r.json()}
+    for slug in ("test-toko-a", "test-toko-b"):
+        assert by_slug[slug]["jumlah_user"] == 1
+        assert by_slug[slug]["jumlah_owner"] == 1
+    # FITUR Username Tenant di Super Admin: owner_username menunjukkan
+    # username akun Owner aktif toko itu (lihat conftest.py::two_tenants,
+    # ownerA/ownerB untuk tenant_a/tenant_b).
+    assert by_slug["test-toko-a"]["owner_username"] == "ownerA"
+    assert by_slug["test-toko-b"]["owner_username"] == "ownerB"
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_superadmin(two_tenants):
@@ -74,6 +79,7 @@ def test_buat_tenant_baru_lewat_superadmin_dan_owner_bisa_login(app_client):
     assert data["slug"] == "toko-baru"
     assert data["status"] == "aktif"
     assert data["jumlah_owner"] == 1
+    assert data["owner_username"] == "ownerbaru"
 
     # Owner toko baru langsung bisa login tanpa langkah manual tambahan.
     r2 = app_client.post("/api/auth/login", json={"username": "ownerbaru", "password": "passwordbaru123"})

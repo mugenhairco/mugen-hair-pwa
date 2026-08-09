@@ -30,9 +30,14 @@ import email_auth_db
 import tenant_db
 
 
-def _daftar_tenant_baru(client, email="owner@example.com", nama="Toko Uji"):
+def _daftar_tenant_baru(client, email="owner@example.com", nama="Toko Uji", username="budi_owner"):
+    """FITUR Username Registrasi Mandiri: `username` sekarang field
+    TERPISAH dari email (SEBELUMNYA diam-diam sama dengan email -- lihat
+    riwayat perbaikan di routers/tenant_registration.py::register()),
+    default "budi_owner" dipakai LOGIN di seluruh test file ini yang
+    sebelumnya memakai email sebagai username."""
     return client.post("/api/public/registration/register", json={
-        "nama_barbershop": nama, "owner_name": "Budi Owner",
+        "nama_barbershop": nama, "owner_name": "Budi Owner", "username": username,
         "email": email, "whatsapp": "081234567890" + email[:3],
         "password": "password123", "confirm_password": "password123",
     })
@@ -77,7 +82,7 @@ def test_register_akun_blokir_sampai_verifikasi(app_client):
 
 def test_login_ditolak_sebelum_verifikasi_dengan_kode_terstruktur(app_client):
     _daftar_tenant_baru(app_client)
-    r = app_client.post("/api/auth/login", json={"username": "owner@example.com", "password": "password123"})
+    r = app_client.post("/api/auth/login", json={"username": "budi_owner", "password": "password123"})
     assert r.status_code == 403
     detail = r.json()["detail"]
     assert detail["code"] == "email_belum_terverifikasi"
@@ -91,7 +96,7 @@ def test_login_berhasil_setelah_verifikasi(app_client):
     r = app_client.post("/api/auth/verifikasi-email", json={"token": token})
     assert r.status_code == 200
 
-    r2 = app_client.post("/api/auth/login", json={"username": "owner@example.com", "password": "password123"})
+    r2 = app_client.post("/api/auth/login", json={"username": "budi_owner", "password": "password123"})
     assert r2.status_code == 200, r2.text
     assert r2.json()["token"]
 
@@ -220,8 +225,8 @@ def test_reset_password_berhasil_dan_password_lama_tidak_berlaku(app_client):
     })
     assert r.status_code == 200
 
-    assert app_client.post("/api/auth/login", json={"username": "owner@example.com", "password": "password123"}).status_code == 401
-    assert app_client.post("/api/auth/login", json={"username": "owner@example.com", "password": "passwordbaru456"}).status_code == 200
+    assert app_client.post("/api/auth/login", json={"username": "budi_owner", "password": "password123"}).status_code == 401
+    assert app_client.post("/api/auth/login", json={"username": "budi_owner", "password": "passwordbaru456"}).status_code == 200
 
 
 def test_reset_password_konfirmasi_tidak_cocok_ditolak(app_client):
@@ -337,6 +342,79 @@ def test_registrasi_email_duplikat_ditolak(app_client):
     _daftar_tenant_baru(app_client, email="duplikat@example.com", nama="Toko Pertama")
     r = _daftar_tenant_baru(app_client, email="duplikat@example.com", nama="Toko Kedua")
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# 10 (FITUR Username Registrasi Mandiri): username wajib diisi, unik di
+# SELURUH sistem (lintas tenant), langsung tersimpan & langsung dipakai
+# login -- lihat riwayat perbaikan di routers/tenant_registration.py.
+# ---------------------------------------------------------------------------
+
+def test_registrasi_username_kosong_ditolak(app_client):
+    r = _daftar_tenant_baru(app_client, username="")
+    assert r.status_code == 422, r.text
+    assert isinstance(r.json()["detail"], str)
+    assert "username" in r.json()["detail"].lower()
+    # Tenant TIDAK boleh terlanjur dibuat -- konsisten dengan pengecekan
+    # field wajib lain (nama_barbershop/owner_name/whatsapp) yang SUDAH
+    # ADA, dicek SEBELUM tenant_db.buat_tenant() dipanggil sama sekali.
+    assert tenant_db.get_tenant_by_email("owner@example.com") is None
+
+
+def test_registrasi_username_hanya_spasi_ditolak(app_client):
+    r = _daftar_tenant_baru(app_client, username="   ")
+    assert r.status_code == 422, r.text
+    assert "username" in r.json()["detail"].lower()
+
+
+def test_registrasi_username_dipakai_tenant_lain_ditolak(app_client):
+    """Bentrok LINTAS TENANT -- email & whatsapp SENGAJA dibuat beda supaya
+    murni menguji pengecekan username, bukan ikut kena penolakan email/
+    whatsapp duplikat yang sudah diuji terpisah di atas."""
+    r1 = _daftar_tenant_baru(app_client, email="pertama@example.com", nama="Toko Pertama", username="tokosama")
+    assert r1.status_code == 200, r1.text
+    r2 = _daftar_tenant_baru(app_client, email="kedua@example.com", nama="Toko Kedua", username="tokosama")
+    assert r2.status_code == 422, r2.text
+    assert "username" in r2.json()["detail"].lower()
+    # Toko kedua TIDAK terlanjur dibuat -- pengecekan username terjadi
+    # SEBELUM tenant_db.buat_tenant() (pola sama dengan email/whatsapp).
+    assert tenant_db.get_tenant_by_email("kedua@example.com") is None
+
+
+def test_registrasi_username_dipakai_akun_non_registrasi_ditolak(app_client):
+    """Keunikan berlaku GLOBAL -- termasuk terhadap akun yang dibuat lewat
+    jalur LAIN (mis. tenant_db.buat_tenant() + auth_db.tambah_user()
+    langsung, pola provisioning manual Super Admin), BUKAN cuma sesama
+    hasil registrasi mandiri."""
+    tenant_id = tenant_db.buat_tenant("toko-manual", "Toko Manual")
+    auth_db.tambah_user("dipakaisudah", "password123", role="admin", tenant_id=tenant_id)
+
+    r = _daftar_tenant_baru(app_client, email="baru@example.com", username="dipakaisudah")
+    assert r.status_code == 422, r.text
+    assert "username" in r.json()["detail"].lower()
+
+
+def test_registrasi_username_tersimpan_dan_bisa_langsung_login(app_client):
+    """Item 6 spesifikasi: username yang DIPILIH pengguna (BUKAN email)
+    langsung tersimpan bersama akun Owner & bisa dipakai login begitu
+    email diverifikasi."""
+    r = _daftar_tenant_baru(app_client, email="pemilik@example.com", username="pemiliktoko99")
+    assert r.status_code == 200, r.text
+
+    user = email_auth_db.get_user_by_email("pemilik@example.com")
+    assert user["username"] == "pemiliktoko99"
+
+    token = _ambil_token_verifikasi(user["id"])
+    app_client.post("/api/auth/verifikasi-email", json={"token": token})
+
+    # Login pakai USERNAME yang dipilih, BUKAN pakai email.
+    r_login = app_client.post("/api/auth/login", json={"username": "pemiliktoko99", "password": "password123"})
+    assert r_login.status_code == 200, r_login.text
+
+    # Email itu sendiri BUKAN username yang valid (membuktikan keduanya
+    # sungguhan field terpisah, bukan diam-diam disamakan lagi).
+    r_login_email = app_client.post("/api/auth/login", json={"username": "pemilik@example.com", "password": "password123"})
+    assert r_login_email.status_code == 401
 
 
 # ---------------------------------------------------------------------------

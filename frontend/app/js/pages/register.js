@@ -33,6 +33,16 @@ const PageRegister = (() => {
 
     const inputNamaBarbershop = MugenUI.el("input", { type: "text", placeholder: "Nama Barbershop", autocomplete: "organization" });
     const inputOwnerName = MugenUI.el("input", { type: "text", placeholder: "Nama Owner", autocomplete: "name" });
+    // FITUR Registrasi: Username WAJIB diisi & unik di seluruh sistem
+    // (dicek backend, lihat routers/tenant_registration.py::register())
+    // -- dipakai LANGSUNG untuk login setelah verifikasi email, MENGGANTI
+    // perilaku lama yang diam-diam memakai email sebagai username.
+    // autocapitalize/autocorrect/spellcheck dimatikan, pola sama seperti
+    // input username di pages/login.js (BUGFIX autocapitalize keyboard HP).
+    const inputUsername = MugenUI.el("input", {
+      type: "text", placeholder: "Username", autocomplete: "username",
+      autocapitalize: "off", autocorrect: "off", spellcheck: "false",
+    });
     const inputEmail = MugenUI.el("input", { type: "email", placeholder: "Email", autocomplete: "email" });
     const inputWhatsapp = MugenUI.el("input", { type: "tel", placeholder: "Nomor WhatsApp", autocomplete: "tel" });
     const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password", autocomplete: "new-password" });
@@ -46,6 +56,7 @@ const PageRegister = (() => {
     const form = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Nama Barbershop"), inputNamaBarbershop,
       MugenUI.el("label", {}, "Nama Owner"), inputOwnerName,
+      MugenUI.el("label", {}, "Username"), inputUsername,
       MugenUI.el("label", {}, "Email"), inputEmail,
       MugenUI.el("label", {}, "Nomor WhatsApp"), inputWhatsapp,
       MugenUI.el("label", {}, "Password"), inputPassword,
@@ -82,6 +93,10 @@ const PageRegister = (() => {
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       errorBox.textContent = "";
+      if (!inputUsername.value.trim()) {
+        errorBox.textContent = "Username tidak boleh kosong.";
+        return;
+      }
       if (inputPassword.value !== inputConfirmPassword.value) {
         errorBox.textContent = "Konfirmasi password tidak cocok.";
         return;
@@ -93,6 +108,7 @@ const PageRegister = (() => {
         await MugenUI.withLoading(() => MugenApi.post("/api/public/registration/register", {
           nama_barbershop: inputNamaBarbershop.value.trim(),
           owner_name: inputOwnerName.value.trim(),
+          username: inputUsername.value.trim(),
           email,
           whatsapp: inputWhatsapp.value.trim(),
           password: inputPassword.value,

@@ -52,6 +52,7 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 class RegisterBody(BaseModel):
     nama_barbershop: str = ""
     owner_name: str = ""
+    username: str = ""
     email: str = ""
     whatsapp: str = ""
     password: str = ""
@@ -71,6 +72,8 @@ def _validasi(body: RegisterBody) -> None:
         raise HTTPException(status_code=422, detail="Nama Barbershop tidak boleh kosong.")
     if not (body.owner_name or "").strip():
         raise HTTPException(status_code=422, detail="Nama Owner tidak boleh kosong.")
+    if not (body.username or "").strip():
+        raise HTTPException(status_code=422, detail="Username tidak boleh kosong.")
     if not _EMAIL_RE.match((body.email or "").strip()):
         raise HTTPException(status_code=422, detail="Format email tidak valid.")
     if not (body.whatsapp or "").strip():
@@ -105,6 +108,7 @@ def register(body: RegisterBody):
     _validasi(body)
     email = body.email.strip().lower()
     whatsapp = body.whatsapp.strip()
+    username = body.username.strip()
 
     if tenant_db.get_tenant_by_email(email) is not None:
         raise HTTPException(status_code=422, detail="Email sudah terdaftar.")
@@ -117,6 +121,18 @@ def register(body: RegisterBody):
     # sini (mis. Pengaturan > Profil tenant lama).
     if email_auth_db.get_user_by_email(email) is not None:
         raise HTTPException(status_code=422, detail="Email sudah terdaftar.")
+    # FITUR Username Registrasi Mandiri: unik di SELURUH sistem (lintas
+    # tenant) -- SENGAJA beda dari constraint asli users(tenant_id,
+    # username) di auth_db.tambah_user()/skema (per-tenant, dua tenant
+    # BOLEH punya username sama -- tetap berlaku apa adanya untuk jalur
+    # LAIN yang membuat user, mis. Setting > User Owner/Super Admin,
+    # TIDAK disentuh di sini). Dicek DI SINI (SEBELUM tenant/user dibuat,
+    # pola sama dengan pengecekan email/whatsapp di atas) supaya username
+    # bentrok tidak meninggalkan baris `tenants` yatim tanpa akun Owner.
+    # get_user_by_username() TANPA tenant_id (auth_db.py) mencari lintas
+    # SELURUH tenant -- fungsi yang SUDAH ADA, tidak perlu diubah.
+    if auth_db.get_user_by_username(username) is not None:
+        raise HTTPException(status_code=422, detail="Username sudah digunakan, silakan pilih username lain.")
 
     slug = tenant_db.buat_slug_unik(body.nama_barbershop)
     try:
@@ -126,7 +142,7 @@ def register(body: RegisterBody):
     tenant_db.set_registrant_info(tenant_id, body.owner_name.strip(), email, whatsapp)
 
     try:
-        user_id = auth_db.tambah_user(username=email, password=body.password, role="admin", tenant_id=tenant_id)
+        user_id = auth_db.tambah_user(username=username, password=body.password, role="admin", tenant_id=tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Toko dibuat, tapi akun Owner gagal: {e}")
 
