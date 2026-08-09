@@ -32,7 +32,16 @@ EXT_KE_CONTENT_TYPE = {
 def get_identitas(tenant_id: int = None) -> dict:
     data = {k: db.get_setting(k, "", tenant_id=tenant_id) for k in IDENTITAS_KEYS}
     logo_filename = file_asset_db.ambil_meta("logo", tenant_id=tenant_id)
-    data["logo_url"] = f"/api/pengaturan/logo?v={logo_filename}" if logo_filename else None
+    if logo_filename:
+        # AUDIT 404 file media: <img src> yang memuat url ini tidak bisa
+        # membawa Bearer token/Origin (lihat tenant_db.slug_untuk_url_media()
+        # untuk penjelasan lengkap) -- slug disisipkan di sini supaya GET
+        # /api/pengaturan/logo bisa resolve tenant-nya lewat query string.
+        import tenant_db  # import lokal: hindari import siklik
+        slug = tenant_db.slug_untuk_url_media(tenant_id)
+        data["logo_url"] = f"/api/pengaturan/logo?v={logo_filename}" + (f"&tenant={slug}" if slug else "")
+    else:
+        data["logo_url"] = None
     return data
 
 
