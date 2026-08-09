@@ -7,7 +7,7 @@
 // benar-benar menangani request di bawah /app/ begitu SW itu aktif
 // (spesifikasi Service Worker: scope paling spesifik yang menang).
 
-const ASSET_VERSION = "7";
+const ASSET_VERSION = "8";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
@@ -19,6 +19,7 @@ const APP_SHELL = [
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
+  "/icons/logo-rivoir.png",
 ];
 
 self.addEventListener("install", (event) => {

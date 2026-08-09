@@ -85,7 +85,14 @@ a { color: inherit; text-decoration: none; }
 }
 .lp-navbar-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
 .lp-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.15rem; }
-.lp-brand-logo { width: 28px; height: 28px; border-radius: 6px; }
+/* FITUR Logo Resmi Rivoir: wordmark PNG (icons/logo-rivoir.png, latar
+   transparan) MENGGANTIKAN kombinasi ikon kotak + teks "Rivoir" lama --
+   height tetap (bukan width), width:auto supaya rasio asli logo terjaga
+   di ukuran apa pun. Dipakai di navbar (di sini) & footer (ukuran sedikit
+   lebih besar, lihat .lp-brand-logo-footer) -- HANYA Landing Page, TIDAK
+   menyentuh branding dinamis per-tenant di app/js/brand.js. */
+.lp-brand-logo-full { height: 30px; width: auto; display: block; }
+.lp-brand-logo-footer { height: 34px; width: auto; display: block; }
 .lp-nav-links { display: flex; align-items: center; gap: 24px; }
 .lp-nav-links a:not(.lp-btn) { color: var(--text-dim); font-weight: 500; font-size: 0.95rem; }
 .lp-nav-links a:not(.lp-btn):hover { color: var(--text); }

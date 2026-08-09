@@ -431,7 +431,16 @@
 // Setting > Bonus Service/Target Bonus Service/Uang Harian/Hak Akses Admin
 // (pengaturan.js) sekarang selalu tampil (force:true, sebelumnya bisa
 // senyap kalau toast lain baru saja tampil).
-const ASSET_VERSION = "85";
+// v85 -> v86: FITUR Logo Resmi Rivoir -- seluruh file ikon platform di
+// icons/ (favicon.ico, icon-72..512.png, icon-maskable-192/512.png,
+// apple-touch-icon.png) diganti dari logo pita infinity lama ke logo "R"
+// resmi Rivoir (nama file TIDAK berubah, jadi ASSET_VERSION WAJIB naik
+// supaya pengguna yang sudah install PWA ini tidak terus melihat ikon
+// lama dari cache). Ini favicon PLATFORM/default (fallback saat tenant
+// belum punya favicon_url sendiri, lihat app/js/brand.js) -- BUKAN
+// perubahan pada mekanisme favicon per-tenant itu sendiri, yang tetap
+// utuh apa adanya.
+const ASSET_VERSION = "86";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
