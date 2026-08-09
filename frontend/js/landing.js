@@ -35,6 +35,35 @@
     return "Rp " + Number(n || 0).toLocaleString("id-ID");
   }
 
+  // ============================= Scroll reveal =============================
+  // Fade+slide sekali per elemen (BUKAN animasi berulang tiap scroll) --
+  // satu IntersectionObserver dipakai bersama untuk SEMUA elemen ".lp-reveal"
+  // (baik yang sudah ada di HTML sejak awal maupun yang baru ditambahkan
+  // lewat render dinamis Pricing/FAQ/Testimonial/Contact di bawah), supaya
+  // ringan (satu observer, bukan satu per elemen) dan otomatis tidak
+  // menganimasikan apa pun untuk pengguna dengan prefers-reduced-motion
+  // (CSS-nya sendiri yang menonaktifkan transition, lihat landing.css).
+  let revealObserver = null;
+  function revealObserve(elements) {
+    if (!("IntersectionObserver" in window)) {
+      elements.forEach((node) => node.classList.add("lp-in-view"));
+      return;
+    }
+    if (!revealObserver) {
+      revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("lp-in-view");
+          revealObserver.unobserve(entry.target);
+        });
+      }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+    }
+    elements.forEach((node) => revealObserver.observe(node));
+  }
+  function initScrollReveal() {
+    revealObserve(document.querySelectorAll(".lp-reveal"));
+  }
+
   // ============================= Navbar =============================
 
   function initNavbar() {
@@ -133,13 +162,14 @@
   function renderFeatures() {
     const grid = document.getElementById("lp-features-grid");
     grid.innerHTML = "";
-    FEATURES.forEach((f) => {
-      grid.appendChild(el("div", { class: "lp-feature-card" }, [
+    FEATURES.forEach((f, i) => {
+      grid.appendChild(el("div", { class: `lp-feature-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
         el("div", { class: "lp-feature-icon" }, f.icon),
         el("h3", {}, f.title),
         el("p", {}, f.desc),
       ]));
     });
+    revealObserve(grid.querySelectorAll(".lp-reveal"));
   }
 
   // ============================= Pricing + Comparison (WAJIB dari database) =============================
@@ -161,7 +191,7 @@
 
   function renderPricing(grid, packages) {
     grid.innerHTML = "";
-    packages.forEach((p) => {
+    packages.forEach((p, i) => {
       const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
       const btnPilih = el("a", { href: "/app/#/register", class: "lp-btn lp-btn-primary" }, "Select Package");
       // Ingat paket yang diklik lewat sessionStorage (sama origin dengan
@@ -172,7 +202,7 @@
       btnPilih.addEventListener("click", () => {
         try { sessionStorage.setItem("mugen_pending_package_kode", p.kode); } catch (e) { /* abaikan (mis. private mode) */ }
       });
-      grid.appendChild(el("div", { class: "lp-pricing-card" }, [
+      grid.appendChild(el("div", { class: `lp-pricing-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
         el("h3", {}, p.nama),
         el("div", { class: "lp-pricing-price" }, [
           p.harga > 0 ? formatRupiah(p.harga) : "Gratis",
@@ -183,6 +213,7 @@
         btnPilih,
       ]));
     });
+    revealObserve(grid.querySelectorAll(".lp-reveal"));
   }
 
   function renderCompareTable(table, packages) {
@@ -228,6 +259,10 @@
 
   // ============================= Testimonials (WAJIB dari database) =============================
 
+  function inisial(nama) {
+    return (nama || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+  }
+
   async function loadTestimonials() {
     const wrap = document.getElementById("lp-testimonials");
     try {
@@ -238,15 +273,21 @@
         return;
       }
       const track = el("div", { class: "lp-carousel-track" });
-      list.forEach((t) => {
-        track.appendChild(el("div", { class: "lp-testimonial-card" }, [
+      list.forEach((t, i) => {
+        track.appendChild(el("div", { class: `lp-testimonial-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
           el("div", { class: "lp-testimonial-rating" }, "★".repeat(t.rating) + "☆".repeat(5 - t.rating)),
           el("p", { class: "lp-testimonial-isi" }, `"${t.isi}"`),
-          el("div", { class: "lp-testimonial-nama" }, t.nama),
-          t.jabatan_toko ? el("div", { class: "lp-testimonial-jabatan" }, t.jabatan_toko) : null,
-        ].filter(Boolean)));
+          el("div", { class: "lp-testimonial-foot" }, [
+            el("div", { class: "lp-testimonial-avatar" }, inisial(t.nama)),
+            el("div", {}, [
+              el("div", { class: "lp-testimonial-nama" }, t.nama),
+              t.jabatan_toko ? el("div", { class: "lp-testimonial-jabatan" }, t.jabatan_toko) : null,
+            ].filter(Boolean)),
+          ]),
+        ]));
       });
       wrap.appendChild(track);
+      revealObserve(track.querySelectorAll(".lp-reveal"));
     } catch (e) {
       wrap.innerHTML = "";
       wrap.appendChild(el("p", { class: "lp-loading" }, "Testimonial belum tersedia."));
@@ -267,7 +308,7 @@
       }
       list.forEach((f) => {
         const answer = el("div", { class: "lp-faq-answer" }, el("div", { class: "lp-faq-answer-inner" }, f.jawaban));
-        const item = el("div", { class: "lp-faq-item" }, [
+        const item = el("div", { class: "lp-faq-item lp-reveal" }, [
           el("button", { type: "button", class: "lp-faq-question" }, [
             el("span", {}, f.pertanyaan),
             el("span", { class: "lp-faq-icon" }, "+"),
@@ -280,6 +321,7 @@
         });
         wrap.appendChild(item);
       });
+      revealObserve(wrap.querySelectorAll(".lp-reveal"));
     } catch (e) {
       wrap.innerHTML = "";
       wrap.appendChild(el("p", { class: "lp-loading" }, "FAQ belum tersedia."));
@@ -304,17 +346,18 @@
         return;
       }
       items.forEach(([label, value]) => {
-        grid.appendChild(el("div", { class: "lp-contact-item" }, [
+        grid.appendChild(el("div", { class: "lp-contact-item lp-reveal" }, [
           el("div", { class: "lp-contact-label" }, label),
           el("div", { class: "lp-contact-value" }, value),
         ]));
       });
       if (c.platform_contact_maps_url) {
-        grid.appendChild(el("a", { href: c.platform_contact_maps_url, target: "_blank", rel: "noopener", class: "lp-contact-item" }, [
+        grid.appendChild(el("a", { href: c.platform_contact_maps_url, target: "_blank", rel: "noopener", class: "lp-contact-item lp-reveal" }, [
           el("div", { class: "lp-contact-label" }, "Lokasi"),
           el("div", { class: "lp-contact-value" }, "Buka di Google Maps"),
         ]));
       }
+      revealObserve(grid.querySelectorAll(".lp-reveal"));
     } catch (e) {
       grid.innerHTML = "";
       grid.appendChild(el("p", { class: "lp-loading" }, "Kontak belum tersedia."));
@@ -344,5 +387,10 @@
     loadFaq();
     loadContact();
     registerServiceWorker();
+    // Elemen ".lp-reveal" statis (sudah ada di HTML sejak awal, mis. judul
+    // section/timeline/screenshot mockup) -- yang ditambahkan dinamis lewat
+    // render di atas (Pricing/FAQ/Testimonial/Contact) sudah diobservasi
+    // masing-masing lewat revealObserve() di fungsi render-nya sendiri.
+    initScrollReveal();
   });
 })();

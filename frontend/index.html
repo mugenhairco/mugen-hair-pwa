@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=4" />
+<link rel="stylesheet" href="css/landing.css?v=7" />
 </head>
 <body>
 
@@ -131,24 +131,48 @@
   <section class="lp-hero">
     <div class="lp-container lp-hero-inner">
       <div class="lp-hero-copy lp-fade-in">
+        <span class="lp-hero-badge"><span class="lp-dot"></span> Platform SaaS All-in-One untuk Barbershop</span>
         <h1>Kelola Barbershop Anda, <span class="lp-accent">Semua dalam Satu Dashboard</span></h1>
         <p class="lp-hero-desc">Booking online, jadwal barber, manajemen pelanggan, pembayaran QRIS/VA/kartu lewat Midtrans, laporan & analitik — Rivoir menyatukan semuanya supaya Anda fokus mengembangkan toko, bukan mengurus administrasi.</p>
         <div class="lp-hero-actions">
           <a href="/app/#/register" class="lp-btn lp-btn-primary lp-btn-lg">Get Started</a>
           <a href="#pricing" class="lp-btn lp-btn-outline lp-btn-lg">View Pricing</a>
         </div>
+        <div class="lp-hero-note">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Toko Anda aktif otomatis begitu pembayaran berhasil
+        </div>
       </div>
       <div class="lp-hero-mockup lp-fade-in-delay" aria-hidden="true">
         <div class="lp-mockup-frame">
-          <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+          <div class="lp-mockup-topbar"><span></span><span></span><span></span><span class="lp-mockup-topbar-title">Dashboard — Rivoir</span></div>
           <div class="lp-mockup-body">
-            <div class="lp-mockup-card lp-mockup-card-wide"></div>
-            <div class="lp-mockup-row">
-              <div class="lp-mockup-card"></div>
-              <div class="lp-mockup-card"></div>
+            <div class="lp-mockup-kpis">
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value">18</div></div>
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up">Rp 4,85jt</div></div>
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pelanggan Baru</div><div class="lp-mockup-kpi-value">6</div></div>
             </div>
-            <div class="lp-mockup-card lp-mockup-card-tall"></div>
+            <div class="lp-mockup-chart" role="img" aria-label="Grafik pendapatan mingguan">
+              <span style="height:38%"></span><span style="height:62%"></span><span style="height:48%"></span>
+              <span style="height:80%"></span><span style="height:56%"></span><span style="height:94%"></span><span style="height:70%"></span>
+            </div>
+            <div class="lp-mockup-list">
+              <div class="lp-mockup-list-row">
+                <div class="lp-mockup-avatar">AL</div>
+                <div class="lp-mockup-list-text"><div class="lp-mockup-list-title">Ali — Haircut + Beard</div><div class="lp-mockup-list-sub">14:00 · Dimas</div></div>
+                <span class="lp-mockup-badge lp-mockup-badge-success">Selesai</span>
+              </div>
+              <div class="lp-mockup-list-row">
+                <div class="lp-mockup-avatar">BU</div>
+                <div class="lp-mockup-list-text"><div class="lp-mockup-list-title">Budi — Fade</div><div class="lp-mockup-list-sub">15:30 · Yoga</div></div>
+                <span class="lp-mockup-badge lp-mockup-badge-warning">Menunggu</span>
+              </div>
+            </div>
           </div>
+        </div>
+        <div class="lp-hero-float lp-fade-in-delay-2" aria-hidden="true">
+          <span class="lp-hero-float-icon">✓</span>
+          <span class="lp-hero-float-text"><strong>Rp 32,4jt</strong>Pendapatan bulan ini</span>
         </div>
       </div>
     </div>
@@ -167,7 +191,9 @@
   <!-- 4. Features -->
   <section class="lp-section" id="features">
     <div class="lp-container">
-      <h2 class="lp-section-title">Semua yang Dibutuhkan Barbershop Modern</h2>
+      <span class="lp-section-eyebrow lp-reveal">Fitur</span>
+      <h2 class="lp-section-title lp-reveal">Semua yang Dibutuhkan Barbershop Modern</h2>
+      <p class="lp-section-sub lp-reveal">Satu platform untuk operasional harian, dari booking pelanggan sampai laporan keuangan.</p>
       <div class="lp-features-grid" id="lp-features-grid"></div>
     </div>
   </section>
@@ -175,14 +201,15 @@
   <!-- 5. Workflow -->
   <section class="lp-section lp-section-alt">
     <div class="lp-container">
-      <h2 class="lp-section-title">Mulai dalam Hitungan Menit</h2>
+      <span class="lp-section-eyebrow lp-reveal">Cara Kerja</span>
+      <h2 class="lp-section-title lp-reveal">Mulai dalam Hitungan Menit</h2>
       <ol class="lp-timeline" id="lp-timeline">
-        <li><span class="lp-timeline-num">1</span><div><h3>Register</h3><p>Daftarkan barbershop Anda lewat form singkat.</p></div></li>
-        <li><span class="lp-timeline-num">2</span><div><h3>Choose Package</h3><p>Pilih paket sesuai kebutuhan toko Anda.</p></div></li>
-        <li><span class="lp-timeline-num">3</span><div><h3>Payment</h3><p>Bayar aman lewat QRIS, Virtual Account, atau kartu (Midtrans).</p></div></li>
-        <li><span class="lp-timeline-num">4</span><div><h3>Tenant Activated</h3><p>Toko Anda otomatis aktif begitu pembayaran berhasil.</p></div></li>
-        <li><span class="lp-timeline-num">5</span><div><h3>Login</h3><p>Masuk ke dashboard toko Anda sendiri.</p></div></li>
-        <li><span class="lp-timeline-num">6</span><div><h3>Start Using System</h3><p>Kelola booking, barber, dan laporan sehari-hari.</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">1</span><div><h3>Register</h3><p>Daftarkan barbershop Anda lewat form singkat.</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">2</span><div><h3>Choose Package</h3><p>Pilih paket sesuai kebutuhan toko Anda.</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">3</span><div><h3>Payment</h3><p>Bayar aman lewat QRIS, Virtual Account, atau kartu (Midtrans).</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">4</span><div><h3>Tenant Activated</h3><p>Toko Anda otomatis aktif begitu pembayaran berhasil.</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">5</span><div><h3>Login</h3><p>Masuk ke dashboard toko Anda sendiri.</p></div></li>
+        <li class="lp-reveal"><span class="lp-timeline-num">6</span><div><h3>Start Using System</h3><p>Kelola booking, barber, dan laporan sehari-hari.</p></div></li>
       </ol>
     </div>
   </section>
@@ -190,8 +217,9 @@
   <!-- 6. Pricing -->
   <section class="lp-section" id="pricing">
     <div class="lp-container">
-      <h2 class="lp-section-title">Pilih Paket yang Sesuai</h2>
-      <p class="lp-section-sub">Harga & fitur di bawah diatur langsung oleh penyedia layanan — selalu up to date.</p>
+      <span class="lp-section-eyebrow lp-reveal">Harga</span>
+      <h2 class="lp-section-title lp-reveal">Pilih Paket yang Sesuai</h2>
+      <p class="lp-section-sub lp-reveal">Harga & fitur di bawah diatur langsung oleh penyedia layanan — selalu up to date.</p>
       <div class="lp-pricing-grid" id="lp-pricing-grid"><p class="lp-loading">Memuat paket…</p></div>
     </div>
   </section>
@@ -199,8 +227,9 @@
   <!-- 7. Package Comparison -->
   <section class="lp-section lp-section-alt">
     <div class="lp-container">
-      <h2 class="lp-section-title">Bandingkan Paket</h2>
-      <div class="lp-table-scroll">
+      <span class="lp-section-eyebrow lp-reveal">Perbandingan</span>
+      <h2 class="lp-section-title lp-reveal">Bandingkan Paket</h2>
+      <div class="lp-table-scroll lp-reveal">
         <table class="lp-compare-table" id="lp-compare-table"><tbody><tr><td class="lp-loading">Memuat perbandingan…</td></tr></tbody></table>
       </div>
     </div>
@@ -209,24 +238,119 @@
   <!-- 8. Screenshots -->
   <section class="lp-section" id="screenshots">
     <div class="lp-container">
-      <h2 class="lp-section-title">Lihat Rivoir Beraksi</h2>
-      <div class="lp-carousel" id="lp-screenshots">
+      <span class="lp-section-eyebrow lp-reveal">Produk</span>
+      <h2 class="lp-section-title lp-reveal">Lihat Rivoir Beraksi</h2>
+      <p class="lp-section-sub lp-reveal">Tampilan dashboard, booking, kalender, dan laporan — dengan data contoh untuk gambaran alur kerja sehari-hari.</p>
+      <div class="lp-carousel" id="lp-screenshots" aria-hidden="true">
         <div class="lp-carousel-track">
-          <div class="lp-shot-placeholder"><span>Dashboard</span></div>
-          <div class="lp-shot-placeholder"><span>Booking</span></div>
-          <div class="lp-shot-placeholder"><span>Calendar</span></div>
-          <div class="lp-shot-placeholder"><span>Report</span></div>
-          <div class="lp-shot-placeholder"><span>Settings</span></div>
-          <div class="lp-shot-placeholder"><span>Barber</span></div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div class="lp-mockup-kpis">
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking</div><div class="lp-mockup-kpi-value">18</div></div>
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Omzet</div><div class="lp-mockup-kpi-value lp-up">4,85jt</div></div>
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Baru</div><div class="lp-mockup-kpi-value">6</div></div>
+              </div>
+              <div class="lp-mockup-chart" style="height:60px;margin-top:10px;">
+                <span style="height:40%"></span><span style="height:65%"></span><span style="height:50%"></span>
+                <span style="height:85%"></span><span style="height:58%"></span><span style="height:95%"></span>
+              </div>
+            </div>
+            <div class="lp-shot-label">Dashboard</div>
+          </div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div class="lp-mockup-list" style="margin-top:8px;">
+                <div class="lp-mockup-list-row">
+                  <div class="lp-mockup-avatar">RS</div>
+                  <div class="lp-mockup-list-text"><div class="lp-mockup-list-title">Rangga — Haircut</div><div class="lp-mockup-list-sub">09:00 · Dimas</div></div>
+                  <span class="lp-mockup-badge lp-mockup-badge-success">Selesai</span>
+                </div>
+                <div class="lp-mockup-list-row">
+                  <div class="lp-mockup-avatar">IP</div>
+                  <div class="lp-mockup-list-text"><div class="lp-mockup-list-title">Ilham — Beard Trim</div><div class="lp-mockup-list-sub">10:30 · Yoga</div></div>
+                  <span class="lp-mockup-badge lp-mockup-badge-warning">Menunggu</span>
+                </div>
+                <div class="lp-mockup-list-row">
+                  <div class="lp-mockup-avatar">SN</div>
+                  <div class="lp-mockup-list-text"><div class="lp-mockup-list-title">Sandi — Fade + Wash</div><div class="lp-mockup-list-sub">11:15 · Dimas</div></div>
+                  <span class="lp-mockup-badge lp-mockup-badge-info">Dikonfirmasi</span>
+                </div>
+              </div>
+            </div>
+            <div class="lp-shot-label">Booking</div>
+          </div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div class="lp-mockup-cal" style="margin-top:8px;height:150px;">
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Sen</div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell lp-busy"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Sel</div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell lp-busy-2"></div><div class="lp-mockup-cal-cell"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Rab</div><div class="lp-mockup-cal-cell lp-busy"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Kam</div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell lp-busy"></div><div class="lp-mockup-cal-cell lp-busy-2"></div><div class="lp-mockup-cal-cell"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Jum</div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell lp-busy"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Sab</div><div class="lp-mockup-cal-cell lp-busy-2"></div><div class="lp-mockup-cal-cell lp-busy"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell lp-busy"></div></div>
+                <div class="lp-mockup-cal-day"><div class="lp-mockup-cal-head">Min</div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div><div class="lp-mockup-cal-cell"></div></div>
+              </div>
+            </div>
+            <div class="lp-shot-label">Calendar</div>
+          </div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div class="lp-mockup-hbars" style="margin-top:10px;">
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Dimas</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:88%"></div></div><span class="lp-mockup-hbar-value">Rp 12,4jt</span></div>
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Yoga</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:66%"></div></div><span class="lp-mockup-hbar-value">Rp 9,1jt</span></div>
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Rendra</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:48%"></div></div><span class="lp-mockup-hbar-value">Rp 6,7jt</span></div>
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Fajar</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:32%"></div></div><span class="lp-mockup-hbar-value">Rp 4,2jt</span></div>
+                <div class="lp-mockup-total"><span>Total Bulan Ini</span><span>Rp 32,4jt</span></div>
+              </div>
+            </div>
+            <div class="lp-shot-label">Report</div>
+          </div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div class="lp-mockup-barbers" style="margin-top:8px;">
+                <div class="lp-mockup-barber-row"><div class="lp-mockup-avatar">DI</div><div><div class="lp-mockup-barber-name">Dimas</div><div class="lp-mockup-barber-tag">Senin–Sabtu</div></div><span class="lp-mockup-stars">★★★★★</span></div>
+                <div class="lp-mockup-barber-row"><div class="lp-mockup-avatar">YO</div><div><div class="lp-mockup-barber-name">Yoga</div><div class="lp-mockup-barber-tag">Selasa–Minggu</div></div><span class="lp-mockup-stars">★★★★☆</span></div>
+                <div class="lp-mockup-barber-row"><div class="lp-mockup-avatar">RE</div><div><div class="lp-mockup-barber-name">Rendra</div><div class="lp-mockup-barber-tag">Senin–Jumat</div></div><span class="lp-mockup-stars">★★★★★</span></div>
+              </div>
+            </div>
+            <div class="lp-shot-label">Barber</div>
+          </div>
+
+          <div class="lp-shot lp-reveal">
+            <div class="lp-shot-frame">
+              <div class="lp-mockup-topbar"><span></span><span></span><span></span></div>
+              <div style="margin-top:8px;">
+                <div class="lp-mockup-field-label">Nama Barbershop</div>
+                <div class="lp-mockup-field">Rivoir Barbershop — Kelapa Gading</div>
+                <div class="lp-mockup-toggle-row"><span>Notifikasi Booking Baru</span><span class="lp-mockup-toggle lp-on"></span></div>
+                <div class="lp-mockup-toggle-row"><span>Konfirmasi Otomatis</span><span class="lp-mockup-toggle lp-on"></span></div>
+                <div class="lp-mockup-toggle-row"><span>Mode Uji Coba</span><span class="lp-mockup-toggle"></span></div>
+              </div>
+            </div>
+            <div class="lp-shot-label">Settings</div>
+          </div>
+
         </div>
       </div>
+      <p class="lp-carousel-hint">Geser untuk melihat lebih banyak →</p>
     </div>
   </section>
 
   <!-- 9. Testimonials -->
   <section class="lp-section lp-section-alt">
     <div class="lp-container">
-      <h2 class="lp-section-title">Kata Mereka yang Sudah Pakai Rivoir</h2>
+      <span class="lp-section-eyebrow lp-reveal">Testimoni</span>
+      <h2 class="lp-section-title lp-reveal">Kata Mereka yang Sudah Pakai Rivoir</h2>
       <div class="lp-carousel" id="lp-testimonials"><p class="lp-loading">Memuat testimonial…</p></div>
     </div>
   </section>
@@ -234,7 +358,8 @@
   <!-- 10. FAQ -->
   <section class="lp-section" id="faq">
     <div class="lp-container lp-container-narrow">
-      <h2 class="lp-section-title">Pertanyaan yang Sering Diajukan</h2>
+      <span class="lp-section-eyebrow lp-reveal">FAQ</span>
+      <h2 class="lp-section-title lp-reveal">Pertanyaan yang Sering Diajukan</h2>
       <div class="lp-faq-list" id="lp-faq-list"><p class="lp-loading">Memuat FAQ…</p></div>
     </div>
   </section>
@@ -242,33 +367,70 @@
   <!-- 11. Contact -->
   <section class="lp-section lp-section-alt" id="contact">
     <div class="lp-container lp-container-narrow">
-      <h2 class="lp-section-title">Hubungi Kami</h2>
+      <span class="lp-section-eyebrow lp-reveal">Kontak</span>
+      <h2 class="lp-section-title lp-reveal">Hubungi Kami</h2>
       <div class="lp-contact-grid" id="lp-contact-grid"><p class="lp-loading">Memuat kontak…</p></div>
+    </div>
+  </section>
+
+  <!-- 12. CTA -->
+  <section class="lp-cta">
+    <div class="lp-container">
+      <div class="lp-cta-box lp-reveal">
+        <h2>Siap Mengelola Barbershop Lebih Rapi?</h2>
+        <p>Daftarkan toko Anda hari ini, pilih paket yang sesuai, dan mulai kelola booking, barber, serta laporan dari satu dashboard.</p>
+        <div class="lp-cta-actions">
+          <a href="/app/#/register" class="lp-btn lp-btn-primary lp-btn-lg">Get Started</a>
+          <a href="#pricing" class="lp-btn lp-btn-outline lp-btn-lg">Lihat Paket</a>
+        </div>
+      </div>
     </div>
   </section>
 
 </main>
 
-<!-- 12. Footer -->
+<!-- 13. Footer -->
 <footer class="lp-footer">
-  <div class="lp-container lp-footer-inner">
-    <div class="lp-footer-brand">
-      <img src="icons/icon-192.png" alt="" class="lp-brand-logo" />
-      <span>Rivoir</span>
+  <div class="lp-container">
+    <div class="lp-footer-grid">
+      <div>
+        <div class="lp-footer-brand">
+          <img src="icons/icon-192.png" alt="" class="lp-brand-logo" />
+          <span>Rivoir</span>
+        </div>
+        <p class="lp-footer-tagline">Platform manajemen barbershop all-in-one: booking online, jadwal barber, pembayaran, dan laporan dalam satu dashboard.</p>
+      </div>
+      <div>
+        <p class="lp-footer-col-title">Produk</p>
+        <div class="lp-footer-col-links">
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#screenshots">Lihat Rivoir Beraksi</a>
+        </div>
+      </div>
+      <div>
+        <p class="lp-footer-col-title">Perusahaan</p>
+        <div class="lp-footer-col-links">
+          <a href="#faq">FAQ</a>
+          <a href="#contact">Contact</a>
+        </div>
+      </div>
+      <div>
+        <p class="lp-footer-col-title">Akun</p>
+        <div class="lp-footer-col-links">
+          <a href="/app/#/login">Login</a>
+          <a href="/app/#/register">Daftar Toko Baru</a>
+        </div>
+      </div>
     </div>
-    <div class="lp-footer-links">
-      <a href="/app/#/login">Login</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
-      <a href="#contact">Contact</a>
-    </div>
-    <div class="lp-footer-legal">
-      <span>&copy; <span id="lp-year"></span> Rivoir. All rights reserved.</span>
+    <div class="lp-footer-bottom">
+      <span class="lp-footer-legal">&copy; <span id="lp-year"></span> Rivoir. All rights reserved.</span>
+      <span class="lp-footer-badge"><span class="lp-dot"></span> Dibangun untuk barbershop Indonesia</span>
     </div>
   </div>
 </footer>
 
 <script src="config.js"></script>
-<script src="js/landing.js?v=4"></script>
+<script src="js/landing.js?v=7"></script>
 </body>
 </html>
