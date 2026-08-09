@@ -22,6 +22,8 @@ Dua migrasi idempotent di sini, aman dipanggil berulang kali:
    nilai yang sudah diatur Owner).
 """
 
+import json
+
 from database import get_conn
 
 DEFAULT_BOOKING_SETTINGS = {
@@ -29,7 +31,7 @@ DEFAULT_BOOKING_SETTINGS = {
     "booking_jam_tutup": "20:00",
     "booking_interval_menit": "60",
     "booking_maksimal_hari_kedepan": "30",
-    "booking_metode_aktif": '["cash", "transfer"]',
+    "booking_metode_aktif": '["transfer"]',
     "booking_qris_merchant_nama": "",
     "booking_qris_filename": "",
     "booking_bank_nama": "",
@@ -42,6 +44,7 @@ def migrasi_booking():
     with get_conn() as conn:
         _migrasi_durasi_service(conn)
         _seed_booking_settings(conn)
+        _hapus_metode_cash(conn)
 
 
 def _migrasi_durasi_service(conn):
@@ -57,3 +60,29 @@ def _seed_booking_settings(conn):
         if existing is not None:
             continue  # sudah pernah diisi (migrasi sebelumnya atau admin), jangan menimpa
         conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, default_value))
+
+
+def _hapus_metode_cash(conn):
+    """HAPUS METODE CASH: strip "cash" dari `booking_metode_aktif` milik
+    SEMUA tenant yang sudah pernah menyimpannya (key `settings` berpola
+    `{tenant_id}:booking_metode_aktif` -- lihat `_kunci_tenant()` di
+    database.py -- atau key polos `booking_metode_aktif` untuk instalasi
+    single-tenant lama). Cash sudah dihapus total dari METODE_VALID
+    (booking_db.py) -- baris ini murni membersihkan data LAMA yang
+    mungkin masih menyebut "cash" supaya daftar metode aktif yang
+    ditampilkan ke customer tidak pernah lagi berisi metode yang sudah
+    tidak ada kode-nya sama sekali. Idempotent: hanya menulis ulang baris
+    yang benar-benar berubah, aman dipanggil berkali-kali."""
+    rows = conn.execute(
+        "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
+        "OR key LIKE '%:booking_metode_aktif'"
+    ).fetchall()
+    for row in rows:
+        try:
+            metode_aktif = json.loads(row["value"])
+        except (TypeError, ValueError):
+            continue  # data korup/tidak terduga -- jangan sentuh, bukan tanggung jawab migrasi ini
+        if not isinstance(metode_aktif, list) or "cash" not in metode_aktif:
+            continue
+        baru = [m for m in metode_aktif if m != "cash"]
+        conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(baru), row["key"]))

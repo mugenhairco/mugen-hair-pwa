@@ -64,7 +64,7 @@ PAYMENT_SETTINGS_KEYS = [
     "booking_metode_aktif", "booking_qris_merchant_nama",
     "booking_bank_nama", "booking_bank_nomor_rekening", "booking_bank_nama_pemilik",
 ]
-METODE_VALID = {"cash", "transfer", "qris", "gateway"}
+METODE_VALID = {"transfer", "qris", "gateway"}
 
 # PENYEMPURNAAN FORM BOOKING: hari dalam seminggu (index Python-style,
 # senin=0 .. minggu=6, sama seperti datetime.weekday()) yang toko buka.
@@ -263,14 +263,12 @@ def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
 # ini SAMA PERSIS dengan teks yang sebelumnya hardcode di frontend, supaya
 # tampilan tidak berubah sampai Owner sengaja menggantinya).
 DEFAULT_METODE_NAMA = {
-    "cash": "Cash (bayar di tempat)", "transfer": "Transfer Bank",
-    "qris": "QRIS", "gateway": "Payment Gateway",
+    "transfer": "Transfer Bank", "qris": "QRIS", "gateway": "Payment Gateway",
 }
 DEFAULT_METODE_INSTRUKSI = {
-    "cash": "Silakan bayar tunai langsung di tempat saat kedatangan.",
     "transfer": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi transfer Anda.",
     "qris": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi pembayaran Anda.",
-    "gateway": "Payment Gateway segera hadir. Silakan pilih metode pembayaran lain.",
+    "gateway": "Selesaikan pembayaran lewat channel yang Anda pilih. Booking otomatis terkonfirmasi begitu pembayaran berhasil.",
 }
 
 
@@ -291,12 +289,20 @@ def get_payment_settings(tenant_id: int = None) -> dict:
     except (TypeError, ValueError):
         metode_instruksi_custom = {}
     qris_filename = file_asset_db.ambil_meta("qris", tenant_id=tenant_id)
+    qris_url = None
+    if qris_filename:
+        # AUDIT 404 file media: <img src> QRIS TIDAK BISA membawa Bearer
+        # token/Origin (lihat tenant_db.slug_untuk_url_media() untuk
+        # penjelasan lengkap -- bug yang sama dengan logo/favicon).
+        import tenant_db  # import lokal: hindari import siklik
+        slug = tenant_db.slug_untuk_url_media(tenant_id)
+        qris_url = f"/api/public/booking/qris?v={qris_filename}" + (f"&tenant={slug}" if slug else "")
     return {
         "metode_aktif": metode_aktif,
         "metode_nama": {**DEFAULT_METODE_NAMA, **metode_nama_custom},
         "metode_instruksi": {**DEFAULT_METODE_INSTRUKSI, **metode_instruksi_custom},
         "qris_merchant_nama": s["booking_qris_merchant_nama"],
-        "qris_url": f"/api/public/booking/qris?v={qris_filename}" if qris_filename else None,
+        "qris_url": qris_url,
         "bank_nama": s["booking_bank_nama"],
         "bank_nomor_rekening": s["booking_bank_nomor_rekening"],
         "bank_nama_pemilik": s["booking_bank_nama_pemilik"],
@@ -678,8 +684,6 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     metode_aktif = get_payment_settings(tenant_id=tenant_id)["metode_aktif"]
     if metode_pembayaran not in metode_aktif:
         raise ValueError("Metode pembayaran itu sedang tidak aktif.")
-    if metode_pembayaran == "gateway":
-        raise ValueError("Payment Gateway belum tersedia, silakan pilih metode lain.")
     _validasi_tanggal(tanggal)
     _validasi_jam(jam_mulai)
 
@@ -702,15 +706,22 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
 
     jam_selesai = _ke_hhmm(_ke_menit(jam_mulai) + total_durasi)
     now = datetime.now().isoformat(timespec="seconds")
+    # Payment Gateway: berbeda dari transfer/qris (yang staff verifikasi
+    # manual), booking "gateway" hanya sampai di sini SETELAH wizard publik
+    # (book_public.js) memastikan pembayarannya sukses lewat channel PGW
+    # (customer sudah menekan "Cek Status Pembayaran") -- jadi booking-nya
+    # langsung tercatat 'terverifikasi', TIDAK ikut antrean "Menunggu
+    # Verifikasi" staff seperti metode manual lainnya.
+    status_pembayaran_awal = "terverifikasi" if metode_pembayaran == "gateway" else "menunggu_verifikasi"
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
             "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
             "status_pembayaran, status_booking, catatan, created_at, tenant_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'menunggu_verifikasi', 'aktif', ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?)",
             (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
              customer_whatsapp.strip(), total_harga, total_durasi, metode_pembayaran,
-             (catatan or "").strip() or None, now, tenant_id),
+             status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id),
         )
         booking_id = cur.lastrowid
         for s in items:

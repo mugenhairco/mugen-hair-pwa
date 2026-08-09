@@ -25,11 +25,15 @@ const PageRekap = (() => {
   }
 
   // Tombol aksi generik dipakai kolom "Aksi" Rekap Transaksi (Owner) --
-  // satu pola untuk hapus transaksi/reimburse dan batalkan pembayaran
-  // kasbon, supaya konfirmasi/loading/toast/refresh-nya konsisten.
-  // `onSelesai` (opsional) dipanggil setelah sukses menghapus/membatalkan,
-  // dipakai renderTransaksi() untuk memuat ulang tabel.
-  function tombolAksi({ label, title, confirmTitle, confirmMessage, hapusUrl, pesanSukses, onSelesai }) {
+  // satu pola untuk hapus transaksi/reimburse/Keterangan Libur dan
+  // batalkan pembayaran kasbon, supaya konfirmasi/loading/toast/refresh-nya
+  // konsisten. `onSelesai` (opsional) dipanggil setelah sukses menghapus/
+  // membatalkan, dipakai renderTransaksi() untuk memuat ulang tabel.
+  // `hapusBody` (opsional): baris "libur" TIDAK punya `id` (dihapus lewat
+  // kombinasi barber_id+tanggal di body, bukan lewat path param seperti
+  // transaksi/reimburse/kasbon/non_barber -- lihat DELETE /api/input-data/libur,
+  // pola SAMA seperti tombol "Batalkan Libur" yang sudah ada di Input Data).
+  function tombolAksi({ label, title, confirmTitle, confirmMessage, hapusUrl, hapusBody, pesanSukses, onSelesai }) {
     const wrap = MugenUI.el("div", { class: "actions-cell" });
     const btn = MugenUI.el("button", { type: "button", class: "btn-danger", title }, label);
     btn.addEventListener("click", async () => {
@@ -43,11 +47,11 @@ const PageRekap = (() => {
       if (!ok) return;
       try {
         // REVISI UI/UX Premium: spinner inline di tombol sendiri, bukan overlay layar penuh
-        await MugenUI.withButtonLoading(btn, () => MugenApi.del(hapusUrl));
+        await MugenUI.withButtonLoading(btn, () => MugenApi.del(hapusUrl, hapusBody));
         MugenUI.toast(pesanSukses, "success", { force: true });
         if (onSelesai) onSelesai();
       } catch (e) {
-        MugenUI.toast(e.message, "error");
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
       }
     });
     wrap.appendChild(btn);
@@ -269,7 +273,7 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.buildTable(
             [
               ...(isAdmin ? kolomAdmin : kolomBarber),
-              // Kolom Hapus KHUSUS Owner (isOwner). Empat jenis baris punya
+              // Kolom Hapus KHUSUS Owner (isOwner). Lima jenis baris punya
               // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
               // (hapus klaim yang sudah disetujui, dengan peringatan lebih
               // kuat karena ini uang yang sudah cair), "kasbon" (batalkan
@@ -278,10 +282,28 @@ const PageRekap = (() => {
               // dihapus dari sini supaya tidak bentrok dengan status Slip
               // Gaji terkait, harus lewat pembatalan status Slip Gaji itu
               // sendiri), "non_barber" (hapus entri Gaji Non-Barber, Input
-              // Data Non-Barber). Baris "libur" tidak punya "id" sama sekali
-              // jadi otomatis dash.
+              // Data Non-Barber), "libur" (hapus Keterangan Libur -- REVISI:
+              // sebelumnya SELALU dash karena baris ini tidak punya "id" sama
+              // sekali, dicek TERPISAH dari baris lain SEBELUM gerbang
+              // `r.id == null` di bawah supaya tidak ikut ke-skip; dihapus
+              // lewat kombinasi barber_id+tanggal, bukan id, lihat
+              // tombolAksi()/DELETE /api/input-data/libur).
               ...(isOwner ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
+                  if (r.tipe === "libur") {
+                    return tombolAksi({
+                      label: "🗑 Hapus", title: "Hapus Keterangan Libur",
+                      confirmTitle: "Hapus Keterangan Libur",
+                      confirmMessage: [
+                        `Apakah Anda yakin ingin menghapus keterangan libur ${r.nama_barber} pada ${MugenUI.formatTanggal(r.tanggal)}?`,
+                        "Barber ini akan dianggap masuk kerja seperti biasa pada tanggal tersebut setelah dihapus.",
+                      ],
+                      hapusUrl: "/api/input-data/libur",
+                      hapusBody: { barber_id: r.barber_id, tanggal: r.tanggal },
+                      pesanSukses: "Keterangan libur berhasil dihapus.",
+                      onSelesai: load,
+                    });
+                  }
                   if (r.id == null) return "-";
                   if (r.tipe === "transaksi") {
                     return tombolAksi({

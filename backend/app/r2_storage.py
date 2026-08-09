@@ -151,15 +151,41 @@ def get_bytes(object_key: str):
     pola `if data is None: raise HTTPException(404, ...)` yang sama persis
     dipakai untuk "belum pernah upload" -- kegagalan baca R2 diperlakukan
     setara "tidak ada", supaya UI tidak pernah pecah gara-gara error 500,
-    cukup menampilkan gambar kosong seperti sebelum file diupload)."""
-    if not IS_ENABLED or not object_key:
+    cukup menampilkan gambar kosong seperti sebelum file diupload).
+
+    AUDIT 404 file media (Logo/Foto Karyawan/dst -- semua lewat fungsi ini):
+    kedua early-return di bawah SEBELUMNYA sama sekali tidak tercatat di
+    log, jadi endpoint GET yang memanggil ambil()/get_foto_barber_data()/dst
+    (lihat file_asset_db.py, booking_db.py, reimburse_db.py,
+    website_content.py) hanya kelihatan 404 tanpa petunjuk APAKAH baris
+    r2_key di database memang menunjuk ke object yang sudah tidak ada di
+    bucket, ATAU R2_* belum/tidak lagi terisi di proses ini walau baris
+    r2_key-nya ada (dua penyebab beda, gejala akhirnya identik: 404).
+    Log di sini SATU-SATUNYA titik untuk SEMUA jenis file media (logo,
+    favicon, hero image/video, foto about, QRIS, foto barber, bukti
+    reimburse, galeri) karena semuanya lewat get_bytes() ini -- tidak perlu
+    menambah log terpisah di tiap modul pemanggil."""
+    if not object_key:
+        return None, None
+    if not IS_ENABLED:
+        logger.warning(
+            "R2 get_bytes: object_key=%s ada di database TAPI R2_* belum/tidak lengkap "
+            "di proses ini (IS_ENABLED=False) -- fallback ke kolom BLOB lama (kosong kalau "
+            "file ini aslinya diupload saat R2 aktif), endpoint pemanggil akan 404.",
+            object_key,
+        )
         return None, None
     try:
         obj = _get_client().get_object(Bucket=R2_BUCKET_NAME, Key=object_key)
         return obj["Body"].read(), obj.get("ContentType") or "application/octet-stream"
     except ClientError as e:
         kode = e.response.get("Error", {}).get("Code", "")
-        if kode not in ("NoSuchKey", "404"):
+        if kode in ("NoSuchKey", "404"):
+            logger.warning(
+                "R2 get_object: object_key=%s ada di database TAPI TIDAK DITEMUKAN di bucket "
+                "%s (kode=%s) -- endpoint pemanggil akan 404.", object_key, R2_BUCKET_NAME, kode,
+            )
+        else:
             logger.error("R2 get_object gagal (key=%s): %s", object_key, e)
         return None, None
     except BotoCoreError as e:

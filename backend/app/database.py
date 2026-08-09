@@ -1015,12 +1015,19 @@ def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai
 # apa pun (lihat get_bonus_customer_tiers/set_bonus_customer_tiers).
 # ---------------------------------------------------------------------------
 
-def get_jumlah_service_dry_cut_cut_wash_bulan(barber_id: int, tahun: int, bulan: int) -> int:
+def get_jumlah_service_dry_cut_cut_wash_bulan(barber_id: int, tahun: int, bulan: int, tenant_id=None) -> int:
     """Total jumlah service ACUAN (dipilih Owner lewat Setting > Bonus Service,
     BUKAN lagi hardcode Dry Cut + Cut & Wash -- nama fungsi dipertahankan
     supaya pemanggil lain tidak perlu diubah) seorang barber dalam satu
-    bulan. Dipakai sebagai acuan Target Service pada Bonus Customer."""
-    acuan_ids = get_bonus_service_acuan_ids()
+    bulan. Dipakai sebagai acuan Target Service pada Bonus Customer.
+
+    BUGFIX Multi-Tenant (acuan_ids sebelumnya diambil TANPA tenant_id, jadi
+    SELURUH tenant memakai satu daftar service acuan global yang sama --
+    milik tenant mana pun yang kebetulan menyimpannya, alih-alih daftar
+    milik tenant masing-masing yang sudah benar tersimpan lewat Setting >
+    Bonus Service, PUT /api/pengaturan/bonus-service-acuan): kini konsisten
+    dengan pola get_uang_harian_acuan_ids()/target_uang_harian_per_hari()."""
+    acuan_ids = get_bonus_service_acuan_ids(tenant_id=tenant_id)
     if not acuan_ids:
         return 0
     placeholder = ", ".join("?" for _ in acuan_ids)
@@ -1164,17 +1171,16 @@ def set_bonus_customer_tiers(tiers: list, tenant_id=None) -> None:
     set_setting("bonus_customer_tiers", json.dumps(bersih), tenant_id=tenant_id)
 
 
-def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: int = None) -> dict:
-    """FONDASI Multi-Tenant Phase 1: fungsi ini hanya menerima barber_id
-    (bukan dict barber lengkap) -- tenant_id diambil lewat satu get_barber()
-    tambahan di sini (bukan mengubah signature fungsi, dipanggil dari banyak
-    tempat) supaya setting Bonus Customer (tiers/maksimal libur/potongan)
-    yang dibaca konsisten milik tenant barber ini, bukan tenant lain."""
-    barber = get_barber(barber_id)
-    tenant_id = barber.get("tenant_id") if barber else None
-    jumlah_service = get_jumlah_service_dry_cut_cut_wash_bulan(barber_id, tahun, bulan)
-    tiers = get_bonus_customer_tiers(tenant_id=tenant_id)
-
+def _hitung_bonus_customer_inti(jumlah_service: int, tiers: list, hari_libur: int, maksimal_libur: int,
+                                 potongan_persen: float, potongan_persen_tampil: int,
+                                 nama_service_acuan: list) -> dict:
+    """Inti murni (TANPA I/O) dari hitung_bonus_customer() -- diekstrak APA
+    ADANYA (rumus tidak diubah satu karakter pun) supaya bisa dipakai ULANG
+    oleh get_ringkasan_semua_barber_bulan() (AUDIT KONEKSI: versi batch utk
+    Dashboard, lihat komentar di sana) TANPA menduplikasi logika bisnis --
+    satu-satunya tempat rumus tier/potongan bonus customer dihitung tetap di
+    sini, kedua pemanggil (single-barber & batch) dijamin menghasilkan angka
+    yang identik karena keduanya lewat fungsi yang SAMA persis."""
     tier_tercapai = None
     tier_berikutnya = None
     for tier in tiers:  # sudah terurut naik dari get_bonus_customer_tiers()
@@ -1185,11 +1191,6 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
 
     tercapai = tier_tercapai is not None
     nominal = tier_tercapai["bonus"] if tier_tercapai else 0
-
-    if hari_libur is None:
-        hari_libur = get_hari_libur(barber_id, tahun, bulan)
-    maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer", tenant_id=tenant_id))
-    potongan_persen = _setting_float("potongan_bonus_customer_persen", tenant_id=tenant_id) / 100.0
     libur_melebihi = hari_libur > maksimal_libur
 
     if not tercapai:
@@ -1210,7 +1211,7 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
 
     return {
         "jumlah_service": jumlah_service,
-        "nama_service_acuan": get_bonus_service_acuan_nama(),
+        "nama_service_acuan": nama_service_acuan,
         "tiers": tiers,
         "tier_tercapai": tier_tercapai,
         "tier_berikutnya": tier_berikutnya,
@@ -1219,9 +1220,38 @@ def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: in
         "hari_libur": hari_libur,
         "maksimal_hari_libur": maksimal_libur,
         "libur_melebihi": libur_melebihi,
-        "potongan_persen": int(_setting_float("potongan_bonus_customer_persen")),
+        "potongan_persen": potongan_persen_tampil,
         "bonus": bonus,
     }
+
+
+def hitung_bonus_customer(barber_id: int, tahun: int, bulan: int, hari_libur: int = None) -> dict:
+    """FONDASI Multi-Tenant Phase 1: fungsi ini hanya menerima barber_id
+    (bukan dict barber lengkap) -- tenant_id diambil lewat satu get_barber()
+    tambahan di sini (bukan mengubah signature fungsi, dipanggil dari banyak
+    tempat) supaya setting Bonus Customer (tiers/maksimal libur/potongan)
+    yang dibaca konsisten milik tenant barber ini, bukan tenant lain."""
+    barber = get_barber(barber_id)
+    tenant_id = barber.get("tenant_id") if barber else None
+    # BUGFIX Multi-Tenant: tenant_id sekarang diteruskan ke kedua fungsi
+    # acuan Bonus Service di bawah (SEBELUMNYA tidak, lihat catatan lengkap
+    # di get_jumlah_service_dry_cut_cut_wash_bulan()) -- sebelum ini SEMUA
+    # tenant membaca satu daftar acuan service global yang sama, bukan
+    # daftar milik tenant masing-masing yang sudah benar tersimpan lewat
+    # Setting > Bonus Service.
+    jumlah_service = get_jumlah_service_dry_cut_cut_wash_bulan(barber_id, tahun, bulan, tenant_id=tenant_id)
+    tiers = get_bonus_customer_tiers(tenant_id=tenant_id)
+
+    if hari_libur is None:
+        hari_libur = get_hari_libur(barber_id, tahun, bulan)
+    maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer", tenant_id=tenant_id))
+    potongan_persen = _setting_float("potongan_bonus_customer_persen", tenant_id=tenant_id) / 100.0
+
+    return _hitung_bonus_customer_inti(
+        jumlah_service, tiers, hari_libur, maksimal_libur, potongan_persen,
+        int(_setting_float("potongan_bonus_customer_persen")),
+        get_bonus_service_acuan_nama(tenant_id=tenant_id),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1272,6 +1302,183 @@ def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
             if bonus_customer["target"] else 0
         ),
     }
+
+
+def get_ringkasan_semua_barber_bulan(barbers: list, tahun: int, bulan: int, tenant_id=None) -> list:
+    """AUDIT KONEKSI (produksi: psycopg2.pool.PoolError "connection pool
+    exhausted" di Dashboard Owner): versi BATCH dari get_ringkasan_barber_bulan()
+    di atas -- menghitung ringkasan SEMUA barber sekaligus lewat segelintir
+    query (bukan ~15 query TERPISAH per barber seperti memanggil
+    get_ringkasan_barber_bulan() satu-satu di dalam loop, akar penyebab
+    sebenarnya: bukan connection yang bocor/tidak dikembalikan -- SETIAP
+    get_conn() di database.py SUDAH benar dipasangkan lewat try/finally
+    (lihat db_compat.py) -- melainkan volume checkout yang meledak linear
+    terhadap jumlah barber, sampai beberapa Owner membuka Dashboard
+    bersamaan menghabiskan seluruh slot pool sekaligus).
+
+    Rumus HARUS identik dengan get_ringkasan_barber_bulan() -- TIDAK ADA
+    logika bisnis baru di sini, murni pengambilan data yang sama dengan
+    query TERGABUNG (get_transaksi_list/get_libur_list TANPA filter
+    barber_id, dikelompokkan ulang per barber di Python) + setting/tier
+    Bonus Customer yang diambil SEKALI (bukan per-barber, karena nilainya
+    milik TENANT, sama untuk semua barber dalam satu request) + delegasi ke
+    _hitung_bonus_customer_inti() -- fungsi INTI YANG SAMA PERSIS dipakai
+    hitung_bonus_customer(), supaya hasil akhirnya dijamin sama.
+
+    CATATAN (BUGFIX Multi-Tenant terpisah, lihat get_jumlah_service_dry_cut_cut_wash_bulan()):
+    acuan Bonus Service (nama_service_acuan/acuan_bs_ids di bawah) sekarang
+    diambil DENGAN tenant_id, konsisten dengan hitung_bonus_customer() yang
+    juga sudah diperbaiki -- SEBELUMNYA baik fungsi single-barber maupun
+    versi batch ini SAMA-SAMA memakai key setting tanpa prefix (satu daftar
+    acuan global dipakai SELURUH tenant); potongan_persen yang ditampilkan
+    (bukan dipakai hitung) TETAP diambil tanpa tenant_id, konsisten dengan
+    kode asli -- itu quirk terpisah, di luar cakupan bugfix ini."""
+    if not barbers:
+        return []
+
+    transaksi_semua = get_transaksi_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+    libur_semua = get_libur_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+
+    # Setting/tier Bonus Customer & Uang Harian: milik TENANT, bukan per
+    # barber -- diambil SEKALI untuk seluruh batch (bukan di dalam loop).
+    tiers = get_bonus_customer_tiers(tenant_id=tenant_id)
+    maksimal_libur = int(_setting_float("maksimal_hari_libur_bonus_customer", tenant_id=tenant_id))
+    potongan_persen = _setting_float("potongan_bonus_customer_persen", tenant_id=tenant_id) / 100.0
+    potongan_persen_tampil = int(_setting_float("potongan_bonus_customer_persen"))
+    nama_service_acuan = get_bonus_service_acuan_nama(tenant_id=tenant_id)
+    acuan_bs_ids = set(get_bonus_service_acuan_ids(tenant_id=tenant_id))
+
+    # target/acuan Uang Harian BOLEH beda per tenant_id barber (dicache per
+    # tenant_id yang benar-benar muncul, biasanya cuma satu dalam satu
+    # request karena barbers sudah difilter per tenant di router).
+    acuan_uh_cache = {}
+
+    def _acuan_uh(tid):
+        if tid not in acuan_uh_cache:
+            acuan_uh_cache[tid] = (set(get_uang_harian_acuan_ids(tenant_id=tid)), target_uang_harian_per_hari(tenant_id=tid))
+        return acuan_uh_cache[tid]
+
+    per_barber_transaksi = {}
+    for t in transaksi_semua:
+        per_barber_transaksi.setdefault(t["barber_id"], []).append(t)
+
+    per_barber_libur = {}
+    for l in libur_semua:
+        per_barber_libur[l["barber_id"]] = per_barber_libur.get(l["barber_id"], 0) + 1
+
+    hasil = []
+    for barber in barbers:
+        barber_id = barber["id"]
+        transaksi_bulan = per_barber_transaksi.get(barber_id, [])
+
+        nilai_service = sum(t["total_harga"] for t in transaksi_bulan)
+        tips = sum(t["tips"] for t in transaksi_bulan)
+        komisi = sum(t["total_komisi"] for t in transaksi_bulan)
+
+        acuan_uh_ids, target_uh = _acuan_uh(barber.get("tenant_id"))
+        jumlah_per_hari_uh = {}
+        rincian_map = {}
+        jumlah_service_bulan = 0
+        jumlah_service_acuan_bs = 0
+        for t in transaksi_bulan:
+            for it in t["items"]:
+                jml = it["jumlah"]
+                jumlah_service_bulan += jml
+                rincian_map[it["nama_service"]] = rincian_map.get(it["nama_service"], 0) + jml
+                if it["service_id"] in acuan_bs_ids:
+                    jumlah_service_acuan_bs += jml
+                if it["service_id"] in acuan_uh_ids:
+                    jumlah_per_hari_uh[t["tanggal"]] = jumlah_per_hari_uh.get(t["tanggal"], 0) + jml
+
+        nominal_uh = int(barber["uang_harian"] or 0)
+        uang_harian = sum(nominal_uh for jumlah in jumlah_per_hari_uh.values() if jumlah >= target_uh)
+
+        rincian_service = sorted(
+            [{"nama_service": k, "jumlah": v} for k, v in rincian_map.items()],
+            key=lambda x: (-x["jumlah"], x["nama_service"]),
+        )
+
+        hari_libur = per_barber_libur.get(barber_id, 0)
+        bonus_customer = _hitung_bonus_customer_inti(
+            jumlah_service_acuan_bs, tiers, hari_libur, maksimal_libur, potongan_persen,
+            potongan_persen_tampil, nama_service_acuan,
+        )
+
+        total_pendapatan = komisi + tips + uang_harian + bonus_customer["bonus"]
+
+        hasil.append({
+            "barber": barber,
+            "tahun": tahun,
+            "bulan": bulan,
+            "jumlah_customer": len(transaksi_bulan),
+            "jumlah_service_bulan": jumlah_service_bulan,
+            "rincian_service": rincian_service,
+            "nilai_service": nilai_service,
+            "komisi": komisi,
+            "tips": tips,
+            "uang_harian": uang_harian,
+            "bonus_customer": bonus_customer["bonus"],
+            "bonus_customer_detail": bonus_customer,
+            "total_pendapatan": total_pendapatan,
+            "target_bonus_customer": bonus_customer["target"],
+            "progress_target": (
+                round(bonus_customer["jumlah_service"] / bonus_customer["target"] * 100, 1)
+                if bonus_customer["target"] else 0
+            ),
+        })
+    return hasil
+
+
+def get_pendapatan_harian_semua_barber(barbers: list, tahun: int, bulan: int, jumlah_hari: int, tenant_id=None) -> dict:
+    """AUDIT KONEKSI: versi BATCH dari pola di routers/dashboard.py::grafik_harian()
+    -- endpoint itu SEBELUMNYA memanggil db.get_transaksi_list() per barber
+    DITAMBAH db.hitung_uang_harian_per_hari() per barber PER HARI (sampai
+    ~31x per barber, lihat AUDIT KONEKSI di get_ringkasan_semua_barber_bulan
+    di atas untuk penjelasan lengkap akar penyebab pool exhaustion). Di sini
+    seluruh transaksi bulan itu diambil SEKALI, dikelompokkan per
+    (barber_id, tanggal) di Python -- rumus per hari TETAP SAMA PERSIS:
+    komisi + tips hari itu, ditambah nominal uang_harian barber HANYA jika
+    jumlah service acuan (Setting > Uang Harian) hari itu >= target."""
+    pendapatan_per_hari = {h: 0 for h in range(1, jumlah_hari + 1)}
+    if not barbers:
+        return pendapatan_per_hari
+
+    barber_ids = {b["id"] for b in barbers}
+    barber_by_id = {b["id"]: b for b in barbers}
+    transaksi_semua = get_transaksi_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+
+    acuan_uh_cache = {}
+
+    def _acuan_uh(tid):
+        if tid not in acuan_uh_cache:
+            acuan_uh_cache[tid] = (set(get_uang_harian_acuan_ids(tenant_id=tid)), target_uang_harian_per_hari(tenant_id=tid))
+        return acuan_uh_cache[tid]
+
+    jumlah_acuan_per_barber_hari = {}  # (barber_id, tanggal) -> jumlah service acuan Uang Harian
+    for t in transaksi_semua:
+        barber_id = t["barber_id"]
+        if barber_id not in barber_ids:
+            continue
+        hari = int(t["tanggal"][8:10])
+        pendapatan_per_hari[hari] = pendapatan_per_hari.get(hari, 0) + t["total_komisi"] + t["tips"]
+
+        acuan_ids, _target = _acuan_uh(barber_by_id[barber_id].get("tenant_id"))
+        for it in t["items"]:
+            if it["service_id"] in acuan_ids:
+                key = (barber_id, t["tanggal"])
+                jumlah_acuan_per_barber_hari[key] = jumlah_acuan_per_barber_hari.get(key, 0) + it["jumlah"]
+
+    for barber in barbers:
+        barber_id = barber["id"]
+        _acuan_ids, target = _acuan_uh(barber.get("tenant_id"))
+        nominal = int(barber["uang_harian"] or 0)
+        for hari in range(1, jumlah_hari + 1):
+            tanggal_iso = f"{tahun:04d}-{bulan:02d}-{hari:02d}"
+            jumlah = jumlah_acuan_per_barber_hari.get((barber_id, tanggal_iso), 0)
+            if jumlah >= target:
+                pendapatan_per_hari[hari] += nominal
+
+    return pendapatan_per_hari
 
 
 def get_pendapatan_transaksi(transaksi: dict) -> int:

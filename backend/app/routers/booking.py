@@ -30,6 +30,7 @@ import billing_limits
 import booking_db
 import database as db
 import feature_access
+import payment_gateway_db
 import r2_storage
 import subscription_db
 import tenant_db
@@ -93,12 +94,19 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
     hari_ini = date.today().isoformat()
     barbers = sorted(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id), key=lambda b: (b.get("urutan") or 0, b["nama"]))
+    # AUDIT 404 file media: <img src> yang memuat foto_url di bawah tidak
+    # bisa membawa Bearer token/Origin (lihat tenant_db.slug_untuk_url_media()
+    # untuk penjelasan lengkap) -- slug disisipkan di sini supaya GET
+    # /api/public/booking/barber-foto/{id} bisa resolve tenant-nya lewat
+    # query string, sama seperti perbaikan logo/favicon.
+    slug = tenant_db.slug_untuk_url_media(tenant_id)
+    param_tenant = f"&tenant={slug}" if slug else ""
     hasil = []
     for b in barbers:
         cuti = b.get("status_booking") == "cuti"
         hasil.append({
             "id": b["id"], "nama": b["nama"],
-            "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}" if b.get("foto_filename") else None,
+            "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}{param_tenant}" if b.get("foto_filename") else None,
             "libur_hari_ini": cuti or booking_db.is_barber_libur(b["id"], hari_ini),
         })
     return hasil
@@ -157,6 +165,13 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         "booking_online": True,
         **booking_settings,
         **payment_settings,
+        # Payment Gateway: daftar channel (QRIS/VA/GoPay/dst) + urutannya
+        # dikonfigurasi PLATFORM-WIDE oleh Super Admin (payment_gateway_db.py),
+        # BUKAN per-tenant -- hanya relevan kalau tenant ini mengaktifkan
+        # metode "gateway" di atas, tapi dikirim apa adanya di sini (pola
+        # sama seperti qris_url/bank_nama yang juga selalu dikirim terlepas
+        # metode itu aktif atau tidak).
+        "pgw_channels": payment_gateway_db.get_public_channels(),
         "toko_libur_tanggal": toko_libur_tanggal,
     }
 

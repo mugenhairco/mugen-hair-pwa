@@ -410,7 +410,28 @@
 // menaikkan query "?v=..." di index.html (kelalaian, diperbaiki sekarang --
 // kedua tempat WAJIB sama, lihat komentar panjang di bawah) -- v82 dipakai
 // SEKALIGUS untuk menutup celah itu.
-// v82 -> v83: FITUR Logo Resmi Rivoir -- seluruh file ikon platform di
+// v82 -> v83: Payment Gateway booking customer (Checkout/Choose Payment
+// Channel/Menunggu Pembayaran/Payment Failed/Expired, book_public.js) +
+// penghapusan metode Cash (book_public.js, booking.js) + kartu "Payment
+// Gateway" booking di Super Admin (superadmin.js, payment_gateway_db.py) --
+// DAN Payment Gateway Billing SaaS (Midtrans) dipindah dari environment
+// variable ke kartu "Billing SaaS -- Payment Gateway (Midtrans)" di Super
+// Admin, DB-backed (superadmin.js, billing_gateway_db.py, midtrans_client.py).
+// css/style.css juga berubah (kelas baru book-countdown/book-va-*/
+// book-qris-placeholder untuk flow Payment Gateway booking).
+// v83 -> v84: REVISI kartu "Billing SaaS -- Payment Gateway" di Super Admin
+// (superadmin.js) supaya provider-agnostic -- judul dilepas dari
+// "(Midtrans)", TIDAK ADA dropdown Provider, form diperluas jadi tujuh
+// field generik (environment/api_key/server_key/client_key/merchant_id/
+// secret_key/webhook_url, tidak semua wajib diisi). Alur checkout/webhook/
+// aktivasi (midtrans_client.py/billing_webhook.py) TIDAK diubah.
+// v84 -> v85: BUGFIX Rekap -- tombol Hapus untuk baris "Keterangan Libur"
+// di kolom Aksi (rekap.js), sebelumnya selalu dash karena baris ini tidak
+// punya "id" (dihapus lewat barber_id+tanggal, bukan id). Notifikasi sukses
+// Setting > Bonus Service/Target Bonus Service/Uang Harian/Hak Akses Admin
+// (pengaturan.js) sekarang selalu tampil (force:true, sebelumnya bisa
+// senyap kalau toast lain baru saja tampil).
+// v85 -> v86: FITUR Logo Resmi Rivoir -- seluruh file ikon platform di
 // icons/ (favicon.ico, icon-72..512.png, icon-maskable-192/512.png,
 // apple-touch-icon.png) diganti dari logo pita infinity lama ke logo "R"
 // resmi Rivoir (nama file TIDAK berubah, jadi ASSET_VERSION WAJIB naik
@@ -419,7 +440,7 @@
 // belum punya favicon_url sendiri, lihat app/js/brand.js) -- BUKAN
 // perubahan pada mekanisme favicon per-tenant itu sendiri, yang tetap
 // utuh apa adanya.
-const ASSET_VERSION = "83";
+const ASSET_VERSION = "86";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

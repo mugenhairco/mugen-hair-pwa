@@ -15,7 +15,16 @@
 const PageBooking = (() => {
   const STATUS_BAYAR_LABEL = { menunggu_verifikasi: "Menunggu Verifikasi", terverifikasi: "Terverifikasi" };
   const STATUS_BOOKING_LABEL = { aktif: "Aktif", dibatalkan: "Dibatalkan" };
+  // METODE_LABEL: "cash" SENGAJA dipertahankan di sini walau metode ini
+  // sudah dihapus total dari sistem (lihat METODE_AKTIF_OPTIONS di bawah) --
+  // murni supaya booking LAMA yang metode_pembayaran-nya masih "cash"
+  // (data historis, tidak pernah diubah retroaktif) tetap tampil dengan
+  // label yang benar di kolom "Metode" Booking List (lihat pemakaian
+  // METODE_LABEL[v] di bawah), bukan string mentah "cash".
   const METODE_LABEL = { cash: "Cash", transfer: "Transfer Bank", qris: "QRIS", gateway: "Payment Gateway" };
+  // Metode yang BENAR-BENAR bisa dipilih Owner (Payment Settings) & customer
+  // (halaman booking) sekarang -- Cash sudah dihapus total dari flow booking.
+  const METODE_AKTIF_OPTIONS = ["transfer", "qris", "gateway"];
 
   // REVISI: nomor WhatsApp customer di Menu Booking ditampilkan sebagai link
   // wa.me yang bisa langsung diklik admin (buka chat, tanpa pesan otomatis),
@@ -663,12 +672,12 @@ const PageBooking = (() => {
     try { s = await MugenApi.get("/api/booking/payment-settings"); } catch (e) { card.appendChild(MugenUI.el("div", {}, e.message)); return; }
 
     const checkboxes = {};
-    for (const [key, label] of Object.entries(METODE_LABEL)) {
+    for (const key of METODE_AKTIF_OPTIONS) {
+      const label = METODE_LABEL[key];
       const cb = MugenUI.el("input", { type: "checkbox" });
       cb.checked = s.metode_aktif.includes(key);
       checkboxes[key] = cb;
-      const catatan = key === "gateway" ? " (segera hadir -- customer belum bisa memilih metode ini walau diaktifkan)" : "";
-      card.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" }, [cb, `${label}${catatan}`]));
+      card.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" }, [cb, label]));
     }
 
     const errorBox1 = MugenUI.el("div", { class: "login-error" });
@@ -692,7 +701,8 @@ const PageBooking = (() => {
     labelCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Nama tombol & pesan yang dilihat customer per metode di halaman booking. Kosongkan untuk pakai default."));
     const inNama = {}, inInstruksi = {};
-    for (const [key, label] of Object.entries(METODE_LABEL)) {
+    for (const key of METODE_AKTIF_OPTIONS) {
+      const label = METODE_LABEL[key];
       inNama[key] = MugenUI.el("input", { type: "text", value: (s.metode_nama && s.metode_nama[key]) || "" });
       inInstruksi[key] = MugenUI.el("textarea", {}, (s.metode_instruksi && s.metode_instruksi[key]) || "");
       labelCard.appendChild(MugenUI.el("label", {}, `Nama Tampilan — ${label}`));
@@ -707,7 +717,7 @@ const PageBooking = (() => {
     btnSimpanLabel.addEventListener("click", async () => {
       errorBoxLabel.textContent = "";
       const metode_nama = {}, metode_instruksi = {};
-      for (const key of Object.keys(METODE_LABEL)) {
+      for (const key of METODE_AKTIF_OPTIONS) {
         if (inNama[key].value.trim()) metode_nama[key] = inNama[key].value.trim();
         if (inInstruksi[key].value.trim()) metode_instruksi[key] = inInstruksi[key].value.trim();
       }
