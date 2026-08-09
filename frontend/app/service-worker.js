@@ -440,7 +440,26 @@
 // belum punya favicon_url sendiri, lihat app/js/brand.js) -- BUKAN
 // perubahan pada mekanisme favicon per-tenant itu sendiri, yang tetap
 // utuh apa adanya.
-const ASSET_VERSION = "86";
+// v86 -> v87: REVISI UI/UX Premium Web Booking Tenant -- redesign visual
+// menyeluruh halaman /book (style.css blok .book-*, book_public.js) supaya
+// identitas visualnya selaras dengan aplikasi kasir: hero premium (scrim
+// gradient + glass tagline), step tracker bergaya, kartu/tombol premium
+// (gradient, hover lift, ripple diperluas ke lebih banyak tombol), empty
+// state & error state (tombol Try Again) baru, reveal-on-scroll section
+// landing, kalender .ics client-side di layar Appointment Confirmed. TIDAK
+// ADA perubahan API/endpoint/logika booking/validasi -- murni tampilan.
+// v87 -> v88: BUGFIX Landing Page /book dirender dobel -- app.js SENGAJA
+// memanggil MugenRouter.handle() dua kali saat boot (sekali langsung via
+// init(), sekali lagi setelah MugenSubscription.refresh() resolve, untuk
+// keperluan halaman internal), dan untuk hash #/book (yang punya operasi
+// async sendiri) ini membuat PageBookPublic.render() terpanggil dua kali
+// tumpang tindih -- seluruh section landing (Hero/About/Opening Hours/Book
+// Appointment CTA/dst) tampil dobel, terlihat seperti halaman kembar.
+// Ditambahkan guard di router.js (handle()): panggilan handle() kedua
+// dengan hash PERSIS SAMA seperti panggilan sebelumnya (tanpa navigasi
+// nyata di antaranya) tidak lagi memicu render ulang. TIDAK ADA perubahan
+// API/endpoint/logika booking -- murni perbaikan struktur render.
+const ASSET_VERSION = "88";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

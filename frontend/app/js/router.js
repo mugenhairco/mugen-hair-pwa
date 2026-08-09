@@ -89,6 +89,11 @@ const MugenRouter = (() => {
 
   function handle() {
     const hash = location.hash || "#/dashboard";
+    // BUGFIX Landing Page /book dirender dobel: hashSebelumnya diambil
+    // SEBELUM _lastHash ditimpa di bawah -- dipakai HANYA oleh guard #/book
+    // (lihat komentar di sana), tidak mengubah perilaku _lastHash yang sudah
+    // ada untuk fitur scroll.
+    const hashSebelumnya = _lastHash;
     // REVISI UI/UX Premium: simpan scroll halaman SEBELUM ditinggalkan,
     // key-nya hash SEBELUMNYA (_lastHash) -- lalu _lastHash langsung
     // diperbarui ke hash SEKARANG supaya siap dipakai panggilan handle()
@@ -127,6 +132,26 @@ const MugenRouter = (() => {
       // sempat di halaman internal ber-Dark Mode lalu pindah ke sini
       // tanpa reload penuh (perilaku SPA biasa).
       MugenTheme.forceLight();
+      // BUGFIX "Landing Page dobel": app.js SENGAJA memanggil handle() DUA
+      // KALI setiap boot -- sekali langsung lewat MugenRouter.init(), lalu
+      // sekali lagi lewat MugenSubscription.refresh().then(() =>
+      // MugenRouter.handle()) supaya halaman INTERNAL yang bergantung ke
+      // status blokir subscription (cache akses_diblokir) ikut ter-refresh
+      // (lihat komentar app.js). /book tidak pernah butuh panggilan kedua
+      // itu -- subscription-nya dicek sendiri lewat endpoint terpisah
+      // (/api/public/booking/subscription-status di dalam
+      // PageBookPublic.render()). Tanpa guard ini, panggilan kedua memanggil
+      // PageBookPublic.render(appRoot) LAGI sebelum render pertama selesai
+      // (keduanya penuh operasi async), dan karena render() TIDAK menghapus
+      // isi appRoot milik pemanggil lain, appRoot berakhir berisi DUA salinan
+      // penuh halaman (Hero/About/Opening Hours/Book Appointment dst
+      // masing-masing tampil dua kali, seperti "halaman kembar"). Guard:
+      // hash yang PERSIS SAMA dengan panggilan handle() sebelumnya (tanpa
+      // ada navigasi lain di antaranya) tidak perlu dirender ulang dari nol
+      // -- navigasi baru yang sungguhan (termasuk kembali ke /book setelah
+      // sempat pindah ke hash lain) selalu punya hashSebelumnya yang beda,
+      // jadi tetap dirender seperti biasa.
+      if (hash === hashSebelumnya) return;
       appRoot.innerHTML = "";
       PageBookPublic.render(appRoot);
       return;
