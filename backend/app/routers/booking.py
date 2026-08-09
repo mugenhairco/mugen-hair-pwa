@@ -94,12 +94,19 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
     hari_ini = date.today().isoformat()
     barbers = sorted(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id), key=lambda b: (b.get("urutan") or 0, b["nama"]))
+    # AUDIT 404 file media: <img src> yang memuat foto_url di bawah tidak
+    # bisa membawa Bearer token/Origin (lihat tenant_db.slug_untuk_url_media()
+    # untuk penjelasan lengkap) -- slug disisipkan di sini supaya GET
+    # /api/public/booking/barber-foto/{id} bisa resolve tenant-nya lewat
+    # query string, sama seperti perbaikan logo/favicon.
+    slug = tenant_db.slug_untuk_url_media(tenant_id)
+    param_tenant = f"&tenant={slug}" if slug else ""
     hasil = []
     for b in barbers:
         cuti = b.get("status_booking") == "cuti"
         hasil.append({
             "id": b["id"], "nama": b["nama"],
-            "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}" if b.get("foto_filename") else None,
+            "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}{param_tenant}" if b.get("foto_filename") else None,
             "libur_hari_ini": cuti or booking_db.is_barber_libur(b["id"], hari_ini),
         })
     return hasil

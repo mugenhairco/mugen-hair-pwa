@@ -289,12 +289,20 @@ def get_payment_settings(tenant_id: int = None) -> dict:
     except (TypeError, ValueError):
         metode_instruksi_custom = {}
     qris_filename = file_asset_db.ambil_meta("qris", tenant_id=tenant_id)
+    qris_url = None
+    if qris_filename:
+        # AUDIT 404 file media: <img src> QRIS TIDAK BISA membawa Bearer
+        # token/Origin (lihat tenant_db.slug_untuk_url_media() untuk
+        # penjelasan lengkap -- bug yang sama dengan logo/favicon).
+        import tenant_db  # import lokal: hindari import siklik
+        slug = tenant_db.slug_untuk_url_media(tenant_id)
+        qris_url = f"/api/public/booking/qris?v={qris_filename}" + (f"&tenant={slug}" if slug else "")
     return {
         "metode_aktif": metode_aktif,
         "metode_nama": {**DEFAULT_METODE_NAMA, **metode_nama_custom},
         "metode_instruksi": {**DEFAULT_METODE_INSTRUKSI, **metode_instruksi_custom},
         "qris_merchant_nama": s["booking_qris_merchant_nama"],
-        "qris_url": f"/api/public/booking/qris?v={qris_filename}" if qris_filename else None,
+        "qris_url": qris_url,
         "bank_nama": s["booking_bank_nama"],
         "bank_nomor_rekening": s["booking_bank_nomor_rekening"],
         "bank_nama_pemilik": s["booking_bank_nama_pemilik"],

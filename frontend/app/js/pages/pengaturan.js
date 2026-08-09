@@ -652,7 +652,12 @@ const PagePengaturan = (() => {
             [
               {
                 key: "foto_filename", label: "Foto", format: (v, r) => v
-                  ? MugenUI.el("img", { src: MUGEN_API_BASE + `/api/public/booking/barber-foto/${r.id}` + `?v=${v}`, class: "book-barber-foto", style: "width:40px;height:40px;margin:0;" })
+                  // AUDIT 404 file media: <img src> tidak bisa membawa Bearer
+                  // token (lihat backend tenant_db.slug_untuk_url_media() utk
+                  // penjelasan lengkap -- bug yang sama dengan logo/favicon/
+                  // QRIS) -- tenant disisipkan lewat MugenState (slug toko
+                  // yang berhasil login, sudah tersimpan sejak state.js).
+                  ? MugenUI.el("img", { src: MUGEN_API_BASE + `/api/public/booking/barber-foto/${r.id}` + `?v=${v}&tenant=${MugenState.getTenantSlug()}`, class: "book-barber-foto", style: "width:40px;height:40px;margin:0;" })
                   : MugenUI.el("div", { class: "book-barber-foto-kosong", style: "width:40px;height:40px;margin:0;font-size:14px;" }, r.nama.charAt(0).toUpperCase()),
               },
               { key: "nama", label: "Nama" },
@@ -1107,7 +1112,11 @@ const PagePengaturan = (() => {
                     if (!baru) return;
                     try {
                       await MugenUI.withButtonLoading(btnPassword, () => MugenApi.put(`/api/pengaturan/user/${r.id}/password`, { password: baru }));
-                      MugenUI.toast("Password diperbarui.", "success");
+                      // Password TIDAK ditampilkan di tabel manapun (beda
+                      // dari Ganti Username, yang reaksinya kelihatan lewat
+                      // loadList()) -- tanpa force:true di sini, klik yang
+                      // berhasil terlihat identik dengan tidak terjadi apa-apa.
+                      MugenUI.toast("Password diperbarui.", "success", { force: true });
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
                   const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");

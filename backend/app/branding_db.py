@@ -65,11 +65,19 @@ def get_branding(tenant_id: int = None) -> dict:
     identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
     konten = website_content.get_content(tenant_id=tenant_id)
     favicon_filename = file_asset_db.ambil_meta("favicon", tenant_id=tenant_id)
+    favicon_url = None
+    if favicon_filename:
+        # AUDIT 404 file media: sama seperti logo_url (lihat
+        # pengaturan_identitas.get_identitas()) -- <img src> favicon juga
+        # butuh slug di query string, tidak bisa lewat Bearer token/Origin.
+        import tenant_db  # import lokal: hindari import siklik
+        slug = tenant_db.slug_untuk_url_media(tenant_id)
+        favicon_url = f"/api/pengaturan/favicon?v={favicon_filename}" + (f"&tenant={slug}" if slug else "")
     return {
         "nama_barbershop": identitas["nama_barbershop"],
         "email": identitas["email"],
         "logo_url": identitas["logo_url"],
-        "favicon_url": f"/api/pengaturan/favicon?v={favicon_filename}" if favicon_filename else None,
+        "favicon_url": favicon_url,
         "tagline": konten.get("tagline", ""),
         "alamat": konten.get("alamat", ""),
         "whatsapp": konten.get("whatsapp", ""),

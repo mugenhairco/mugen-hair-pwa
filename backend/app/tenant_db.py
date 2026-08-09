@@ -215,6 +215,35 @@ def get_tenant(tenant_id: int):
         return dict(row) if row else None
 
 
+def slug_untuk_url_media(tenant_id: int | None) -> str:
+    """AUDIT 404 file media (Logo/Foto Karyawan/dst): endpoint GET yang
+    menyajikan bytes gambar (mis. /api/pengaturan/logo, /api/pengaturan/
+    favicon, /api/public/booking/barber-foto/{id}) diakses browser lewat
+    tag <img src="...">, BUKAN fetch()/XHR -- tag <img> TIDAK PERNAH bisa
+    menyertakan header Authorization (Bearer token) ATAUPUN header Origin
+    (browser hanya mengirim Origin untuk permintaan cross-origin lewat
+    fetch()/XHR, TIDAK untuk permintaan subresource sederhana seperti
+    <img>/<script>/<link> -- lihat tenant_middleware.py::
+    _hostname_dari_origin_atau_host()). Host request yang sampai ke backend
+    SELALU "api.rivoirsett.com" (domain API tetap, beda dari subdomain
+    tenant di browser -- lihat docstring tenant_middleware.py), dan "api"
+    sendiri ada di LABEL_BUKAN_TENANT -- jadi middleware TIDAK PERNAH bisa
+    menyimpulkan tenant dari permintaan <img> semacam ini lewat sinyal
+    manapun KECUALI query string `?tenant=<slug>` di URL-nya sendiri (satu-
+    satunya sinyal yang tag <img> BISA bawa, karena itu bagian dari `src`).
+
+    Dipakai endpoint JSON yang SUDAH berhasil resolve tenant_id-nya sendiri
+    (identitas/branding/daftar barber publik) untuk menyisipkan slug ke
+    *_url yang mereka kembalikan, supaya permintaan <img> BERIKUTNYA yang
+    memuat url itu ikut membawa sinyal yang sama. Return "" (bukan None)
+    kalau tenant_id kosong/tenant tidak ditemukan/belum punya slug, supaya
+    pemanggil bisa langsung menyisipkan hasilnya tanpa cek None terpisah."""
+    if tenant_id is None:
+        return ""
+    t = get_tenant(tenant_id)
+    return (t.get("slug") or "") if t else ""
+
+
 def get_tenant_by_slug(slug: str):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tenants WHERE slug = ?", (slug,)).fetchone()

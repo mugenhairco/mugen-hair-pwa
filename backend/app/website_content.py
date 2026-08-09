@@ -114,13 +114,22 @@ def init_website_db():
 # ---------------------------------------------------------------------------
 
 def get_content(tenant_id: int = None) -> dict:
+    # AUDIT 404 file media: <img>/<video> src TIDAK BISA membawa Bearer
+    # token/Origin (lihat tenant_db.slug_untuk_url_media() untuk penjelasan
+    # lengkap -- bug yang sama dengan logo/favicon) -- &tenant=<slug>
+    # disisipkan di sini supaya GET hero-image/hero-video/about-foto bisa
+    # resolve tenant-nya lewat query string.
+    import tenant_db  # import lokal: hindari import siklik
+    slug = tenant_db.slug_untuk_url_media(tenant_id)
+    param_tenant = f"&tenant={slug}" if slug else ""
+
     data = {k: db.get_setting(k, DEFAULT_VALUES.get(k, ""), tenant_id=tenant_id) for k in WEBSITE_CONTENT_KEYS}
     hero_image_filename = file_asset_db.ambil_meta("hero_image", tenant_id=tenant_id)
-    data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}" if hero_image_filename else None
+    data["hero_image_url"] = f"/api/website/hero-image?v={hero_image_filename}{param_tenant}" if hero_image_filename else None
     hero_video_filename = file_asset_db.ambil_meta("hero_video", tenant_id=tenant_id)
-    data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}" if hero_video_filename else None
+    data["hero_video_url"] = f"/api/website/hero-video?v={hero_video_filename}{param_tenant}" if hero_video_filename else None
     about_foto_filename = file_asset_db.ambil_meta("about_foto", tenant_id=tenant_id)
-    data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}" if about_foto_filename else None
+    data["about_foto_url"] = f"/api/website/about-foto?v={about_foto_filename}{param_tenant}" if about_foto_filename else None
     return data
 
 
@@ -190,6 +199,11 @@ def hapus_about_foto(tenant_id: int = None):
 # ---------------------------------------------------------------------------
 
 def get_gallery(tenant_id: int = None) -> list:
+    # AUDIT 404 file media: sama seperti get_content() di atas.
+    import tenant_db  # import lokal: hindari import siklik
+    slug = tenant_db.slug_untuk_url_media(tenant_id)
+    param_tenant = f"&tenant={slug}" if slug else ""
+
     with get_conn() as conn:
         if tenant_id is not None:
             rows = conn.execute("SELECT * FROM website_gallery WHERE tenant_id = ? ORDER BY urutan ASC, id ASC",
@@ -199,7 +213,7 @@ def get_gallery(tenant_id: int = None) -> list:
         return [
             {
                 "id": r["id"],
-                "foto_url": f"/api/website/gallery/{r['id']}/foto?v={r['filename']}",
+                "foto_url": f"/api/website/gallery/{r['id']}/foto?v={r['filename']}{param_tenant}",
                 "tipe": r["tipe"],
                 "urutan": r["urutan"],
             }
