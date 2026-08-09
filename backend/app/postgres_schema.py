@@ -813,6 +813,56 @@ ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS used_at TEXT;
 """
 
 
+def _pastikan_primary_key_settings(conn) -> None:
+    """HOTFIX (produksi: HTTP 500 di SETIAP endpoint Setting yang menyimpan
+    lewat database.py::set_setting()/set_settings_bulk() -- Komisi, Bonus
+    Service, Uang Harian, Target Bonus Service, Hak Akses Admin, SEMUANYA
+    lewat fungsi yang sama -- log traceback produksi menunjukkan
+    psycopg2.errors.InvalidColumnReference "there is no unique or
+    exclusion constraint matching the ON CONFLICT specification").
+
+    set_setting()/set_settings_bulk() memakai
+    "INSERT ... ON CONFLICT(key) DO UPDATE" -- bentuk ON CONFLICT dengan
+    target kolom eksplisit ini WAJIB ada UNIQUE/PRIMARY KEY constraint
+    PERSIS di kolom `key` di PostgreSQL, atau Postgres MENOLAK statement-nya
+    SAMA SEKALI (untuk baris apa pun, bukan cuma yang benar-benar bentrok).
+    Tabel `settings` DIDEKLARASIKAN dengan `key TEXT PRIMARY KEY` di _TABLES
+    di atas -- TAPI constraint itu TIDAK ADA di database produksi yang
+    sudah berjalan: `CREATE TABLE IF NOT EXISTS` (dipakai supaya data lama
+    tidak pernah terhapus) TIDAK PERNAH mengubah tabel yang SUDAH ADA, jadi
+    kalau tabel ini pernah terbentuk (versi kode/langkah lama, atau proses
+    migrasi awal) tanpa constraint tsb, constraint itu tidak pernah otomatis
+    muncul di deploy manapun sesudahnya walau kode di _TABLES sudah benar.
+
+    Efek samping dari constraint yang hilang ini: seeding DEFAULT_SETTINGS/
+    IDENTITAS_DEFAULT/dst di bawah SENGAJA memakai "ON CONFLICT DO NOTHING"
+    TANPA target kolom (bentuk itu TIDAK butuh constraint apa pun, makanya
+    create_all() sendiri tidak pernah error) -- tapi tanpa constraint, tidak
+    ada yang mendeteksi baris itu sebagai "bentrok", jadi SETIAP boot/
+    restart proses ini kemungkinan diam-diam menyisipkan BARIS DUPLIKAT
+    baru per key, bukan di-skip. Makanya fungsi ini membersihkan duplikat
+    (menyisakan SATU baris per key -- untuk key seeding hardcode nilainya
+    identik jadi baris mana pun yang tersisa tidak masalah) SEBELUM
+    menambahkan constraint, supaya ALTER TABLE tidak ikut gagal karena data
+    yang sudah kadung duplikat."""
+    ada = conn.execute(
+        "SELECT 1 FROM information_schema.table_constraints tc "
+        "JOIN information_schema.key_column_usage kcu "
+        "  ON tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name "
+        "WHERE tc.table_name = 'settings' AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE') "
+        "  AND kcu.column_name = 'key'"
+    ).fetchone()
+    if ada:
+        return
+    _logger.warning(
+        "[postgres_schema] create_all(): tabel settings TIDAK punya PRIMARY KEY/UNIQUE "
+        "constraint di kolom key -- membersihkan duplikat & menambahkan constraint sekarang."
+    )
+    conn.execute("DELETE FROM settings a USING settings b WHERE a.key = b.key AND a.ctid < b.ctid")
+    conn.execute("ALTER TABLE settings ADD CONSTRAINT settings_pkey PRIMARY KEY (key)")
+    _logger.warning("[postgres_schema] create_all(): constraint settings_pkey berhasil ditambahkan.")
+
+
 def create_all():
     """Idempotent -- aman dipanggil tiap kali proses ini boot (sama seperti
     init_db() di jalur SQLite). TIDAK PERNAH menghapus/menimpa data yang
@@ -889,6 +939,10 @@ def create_all():
             if statement:
                 conn.execute(statement)
         _logger.info("[postgres_schema] create_all(): DDL selesai (%.2fs).", time.monotonic() - _mulai)
+
+        _pastikan_primary_key_settings(conn)
+        _logger.info("[postgres_schema] create_all(): constraint settings.key diverifikasi (%.2fs).",
+                     time.monotonic() - _mulai)
 
         # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan
         # data produksi yang sudah berjalan) + backfill tenant_id untuk
