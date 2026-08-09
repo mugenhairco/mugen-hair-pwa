@@ -33,28 +33,11 @@
   --cta-grad-2: #0F172A;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0F172A;
-    --bg-card: #1E293B;
-    --bg-alt: #16213A;
-    --border: #334155;
-    --text: #F1F5F9;
-    --text-dim: #94A3B8;
-    --accent: #64748B;
-    --accent-hover: #94A3B8;
-    --accent-secondary: #22D3EE;
-    --success: #4ADE80;
-    --warning: #FB923C;
-    --danger: #F87171;
-    --info: #60A5FA;
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.25);
-    --shadow-md: 0 12px 28px rgba(0,0,0,0.35);
-    --shadow-lg: 0 24px 64px rgba(0,0,0,0.45);
-    --cta-grad-1: #0E7490;
-    --cta-grad-2: #164E63;
-  }
-}
+/* Landing Page SENGAJA selalu terang -- TIDAK ikut prefers-color-scheme
+   sistem (beda dari app/css/style.css yang punya varian gelap untuk
+   dashboard internal). Halaman publik/marketing ini disepakati satu
+   tampilan saja, jadi tidak ada blok @media (prefers-color-scheme: dark)
+   di sini. */
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
