@@ -29,10 +29,13 @@ main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA
 dibuat di postgres_schema.py.
 """
 
+import logging
 from datetime import datetime
 
 import r2_storage
 from database import get_conn, _kunci_tenant
+
+logger = logging.getLogger("mugen.file_asset")
 
 KEY_TO_PREFIX = {
     "logo": "logos",
@@ -111,10 +114,18 @@ def ambil(key: str, tenant_id: int = None):
     """Return (data: bytes, content_type: str) kalau ada, atau (None, None).
     R2 diprioritaskan kalau `r2_key` terisi; kalau tidak (baris lama/R2
     nonaktif), fallback ke kolom `data` (BLOB) seperti sebelum migrasi R2."""
+    key_db = _kunci_tenant(tenant_id, key)
     with get_conn() as conn:
         row = conn.execute("SELECT content_type, data, r2_key FROM file_asset WHERE key = ?",
-                            (_kunci_tenant(tenant_id, key),)).fetchone()
+                            (key_db,)).fetchone()
     if row is None:
+        # AUDIT 404 file media: dibedakan dari kegagalan R2 (lihat log di
+        # r2_storage.get_bytes()) -- di sini artinya BELUM PERNAH ada baris
+        # tersimpan sama sekali utk key ini (belum pernah upload, ATAU
+        # tenant_id saat membaca beda dengan saat menyimpan -- key_db yang
+        # dicari lewat _kunci_tenant() di atas persis yang tercatat di log
+        # ini untuk memastikan mana penyebabnya).
+        logger.warning("file_asset.ambil: TIDAK ADA baris utk key_db=%s -- endpoint pemanggil akan 404.", key_db)
         return None, None
     if row["r2_key"]:
         data, content_type = r2_storage.get_bytes(row["r2_key"])
@@ -122,6 +133,10 @@ def ambil(key: str, tenant_id: int = None):
             return data, content_type or row["content_type"]
     if row["data"]:
         return bytes(row["data"]), row["content_type"]
+    logger.warning(
+        "file_asset.ambil: baris utk key_db=%s ADA tapi tidak punya r2_key maupun data BLOB "
+        "-- endpoint pemanggil akan 404.", key_db,
+    )
     return None, None
 
 
