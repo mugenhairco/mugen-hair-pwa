@@ -148,6 +148,31 @@ services:
       - type: redirect
         source: /app
         destination: /app/
+      # FITUR Kompatibilitas URL Booking (Instagram Bio dkk): halaman booking
+      # publik SEBELUMNYA hanya bisa diakses lewat hash route "/app/#/book" --
+      # karakter "#" itu otomatis di-encode jadi "%23" oleh Instagram Bio
+      # (dan beberapa platform lain) begitu link ditempel, sehingga link-nya
+      # gagal terbuka. "/book" dan "/app/book" di bawah ini adalah PATH ASLI
+      # (bukan hash) yang di-rewrite (BUKAN redirect -- URL di address bar
+      # TETAP "/book"/"/app/book", supaya me-refresh halaman itu juga tetap
+      # berfungsi, bukan 404) ke `app/index.html` yang sama -- begitu index.html
+      # ini dimuat, router.js (lihat MugenRouter.handle()) mendeteksi
+      # location.pathname-nya sendiri (bukan hash) dan langsung merender
+      # PageBookPublic, PERSIS seperti sebelumnya untuk hash "#/book". Varian
+      # "/book/*" & "/app/book/*" disertakan supaya PERSIS sama cakupannya
+      # dengan pola hash lama (hash === "#/book" || hash.startsWith("#/book/")).
+      - type: rewrite
+        source: /book
+        destination: /app/index.html
+      - type: rewrite
+        source: /book/*
+        destination: /app/index.html
+      - type: rewrite
+        source: /app/book
+        destination: /app/index.html
+      - type: rewrite
+        source: /app/book/*
+        destination: /app/index.html
     headers:
       # /api/* TIDAK PERNAH ada di Static Site ini (seluruhnya dilayani
       # backend terpisah) -- header ini murni jaga-jaga supaya file publik

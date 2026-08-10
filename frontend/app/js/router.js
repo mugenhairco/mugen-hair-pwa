@@ -26,6 +26,25 @@ const MugenRouter = (() => {
   const _scrollPos = new Map();
   let _lastHash = null;
 
+  // FITUR Kompatibilitas URL Booking (Instagram Bio dkk): "/book" atau
+  // "/app/book" (PATH ASLI, BUKAN hash "#/book") -- render.yaml me-rewrite
+  // KEDUA path ini ke app/index.html yang sama (lihat komentar routes di
+  // sana), jadi begitu index.html ini dimuat lewat salah satu path itu,
+  // location.hash-nya KOSONG (URL asli di address bar tidak pernah punya
+  // "#" sama sekali). Dicek lewat location.pathname, TERPISAH dari
+  // pengecekan hash "#/book" yang sudah ada di bawah -- keduanya harus
+  // tetap didukung bersamaan (hash lama untuk link yang sudah kadung
+  // disebar, path baru untuk link baru yang aman ditempel di Instagram
+  // Bio). Pola startsWith("/book/")/("/app/book/") menjaga cakupannya
+  // SAMA PERSIS dengan pola hash "#/book/..." di bawah. Duplikasi kecil
+  // yang SAMA persis ada di tenant_guard.js (dipanggil lebih dulu saat
+  // boot) -- pola konsisten dengan gaya codebase ini: helper kecil per-
+  // modul, bukan cross-import lintas closure.
+  function pathAdalahHalamanBook() {
+    const p = location.pathname;
+    return p === "/book" || p.startsWith("/book/") || p === "/app/book" || p.startsWith("/app/book/");
+  }
+
   function _simpanScrollLama() {
     const contentLama = document.getElementById("content");
     if (contentLama && _lastHash) _scrollPos.set(_lastHash, contentLama.scrollTop);
@@ -125,7 +144,7 @@ const MugenRouter = (() => {
     // admin+barber, lihat bagian bawah handle()) ikut ketangkap di sini juga
     // karena "booking" kebetulan diawali huruf "book", sehingga halaman
     // Booking internal itu jadi ikut ditampilkan tanpa login sama sekali.
-    if (hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
+    if (pathAdalahHalamanBook() || hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
       // REVISI UI/UX: Web Booking SENGAJA TIDAK mengikuti Dark Mode akun,
       // dipaksa di sini (bukan hanya di dalam book_public.js) supaya
       // benar dari titik NAVIGASI manapun -- termasuk kalau sebelumnya

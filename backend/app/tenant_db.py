@@ -71,17 +71,30 @@ def get_booking_url(tenant: dict) -> str | None:
     PUBLIK tenant -- SELALU subdomain berbasis `booking_slug` (BUKAN
     custom_domain, beda dari get_website_url() di atas -- booking_slug
     independen, bisa berbeda dari domain website tenant), diikuti path
-    "/app/#/book" (SAMA PERSIS pola "Link Booking" yang sudah ada di
-    Setting > Booking/booking.js -- lihat komentar BUGFIX di sana kenapa
-    origin polos tanpa path salah) supaya link SELALU langsung berfungsi,
-    tidak bergantung pada default routing subdomain kosong. None kalau
-    tenant belum punya booking_slug sama sekali (seharusnya tidak pernah
-    terjadi untuk tenant yang dibuat lewat buat_tenant() sejak fitur ini
-    ada -- dijaga defensif untuk data lama sebelum migrasi backfill)."""
+    "/book" (SAMA PERSIS pola "Link Booking" yang sudah ada di Setting >
+    Booking/booking.js -- lihat komentar BUGFIX di sana kenapa origin
+    polos tanpa path salah) supaya link SELALU langsung berfungsi, tidak
+    bergantung pada default routing subdomain kosong. None kalau tenant
+    belum punya booking_slug sama sekali (seharusnya tidak pernah terjadi
+    untuk tenant yang dibuat lewat buat_tenant() sejak fitur ini ada --
+    dijaga defensif untuk data lama sebelum migrasi backfill).
+
+    FITUR Kompatibilitas URL Booking (Instagram Bio dkk): SEBELUMNYA path-nya
+    "/app/#/book" (hash route) -- Instagram Bio (dan beberapa platform lain)
+    otomatis meng-encode karakter "#" jadi "%23" begitu link ditempel,
+    sehingga link lama itu gagal terbuka. "/book" di sini adalah PATH ASLI
+    (bukan hash) yang di-rewrite ke app/index.html oleh server (lihat
+    render.yaml, routes untuk "/book"/"/app/book") -- router.js (frontend)
+    lalu mendeteksi location.pathname-nya sendiri dan merender halaman
+    booking yang SAMA PERSIS seperti sebelumnya. Hash "/app/#/book" TETAP
+    didukung penuh sebagai kompatibilitas mundur (lihat router.js/
+    tenant_guard.js) untuk link lama yang sudah kadung disebar -- hanya
+    link BARU yang dibuat/ditampilkan mulai sekarang yang memakai bentuk
+    path bersih ini."""
     booking_slug = (tenant.get("booking_slug") or "").strip()
     if not booking_slug:
         return None
-    return f"https://{booking_slug}.{TENANT_SUBDOMAIN_SUFFIX}/app/#/book"
+    return f"https://{booking_slug}.{TENANT_SUBDOMAIN_SUFFIX}/book"
 
 
 def _slugify_dasar(nama: str) -> str:

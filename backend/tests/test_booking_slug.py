@@ -67,7 +67,7 @@ def test_resolusi_publik_lewat_booking_slug_setelah_diedit(two_tenants):
     assert r.status_code == 200, r.text
     assert r.json()["booking_slug"] == "customslugunik"
     assert r.json()["booking_url"].startswith("https://customslugunik.")
-    assert r.json()["booking_url"].endswith("/app/#/book")
+    assert r.json()["booking_url"].endswith("/book")
 
     # Resolusi publik: slug LAMA ("test-toko-a") TIDAK LAGI relevan untuk
     # booking_slug (kolom `slug` tenant TIDAK IKUT berubah, tetap valid
@@ -111,7 +111,7 @@ def test_ambil_booking_slug(two_tenants):
     r = client.get("/api/booking/booking-slug", headers=two_tenants["headers_a"])
     assert r.status_code == 200, r.text
     assert r.json()["booking_slug"]
-    assert r.json()["booking_url"].endswith("/app/#/book")
+    assert r.json()["booking_url"].endswith("/book")
 
 
 def test_booking_page_not_found_saat_slug_tidak_dikenal(app_client):
@@ -134,7 +134,7 @@ def test_superadmin_tenant_list_ada_kolom_booking_url(two_tenants):
     r2 = two_tenants["client"].get("/api/superadmin/tenants", headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 200, r2.text
     daftar = {t["slug"]: t for t in r2.json()}
-    assert daftar["test-toko-a"]["booking_url"].endswith("/app/#/book")
+    assert daftar["test-toko-a"]["booking_url"].endswith("/book")
     assert "customslugunik" not in daftar  # sanity: belum diedit di test ini
 
 

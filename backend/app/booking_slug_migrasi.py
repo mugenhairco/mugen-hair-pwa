@@ -2,7 +2,7 @@
 booking_slug_migrasi.py — FITUR URL Booking Publik per Tenant
 =============================================================================
 Menambahkan kolom `tenants.booking_slug` -- URL booking publik SENDIRI per
-tenant (`<booking_slug>.rivoirsett.com/app/#/book`, lihat tenant_db.py::
+tenant (`<booking_slug>.rivoirsett.com/book`, lihat tenant_db.py::
 get_booking_url()/set_booking_slug()), TERPISAH dari `slug` (subdomain
 dashboard/staff, TIDAK BERUBAH sama sekali). Idempotent (ALTER TABLE ADD
 COLUMN dicek dulu, sama pola dengan landing_migrasi.py), WAJIB dipanggil

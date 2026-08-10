@@ -56,8 +56,16 @@ const MugenTenantGuard = (() => {
         // booking_slug. Untuk hash APA PUN yang lain (termasuk kosong/default
         // -- akses Dashboard/Login lewat subdomain tenant), perilaku LAMA
         // TIDAK BERUBAH sama sekali.
+        // FITUR Kompatibilitas URL Booking (Instagram Bio dkk): "/book" atau
+        // "/app/book" (PATH ASLI, BUKAN hash) sekarang JUGA dianggap tujuan
+        // navigasi halaman booking publik, sama seperti hash "#/book" di
+        // atas -- lihat komentar pathAdalahHalamanBook() di router.js untuk
+        // penjelasan lengkap kenapa duplikasi kecil ini ada di dua tempat.
         const hash = location.hash || "";
-        if (hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
+        const path = location.pathname;
+        const pathAdalahHalamanBook = path === "/book" || path.startsWith("/book/") ||
+          path === "/app/book" || path.startsWith("/app/book/");
+        if (pathAdalahHalamanBook || hash === "#/book" || hash.startsWith("#/book/") || hash.startsWith("#/book?")) {
           return true;
         }
         appRoot.innerHTML = "";
