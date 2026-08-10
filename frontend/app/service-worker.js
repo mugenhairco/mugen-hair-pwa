@@ -471,7 +471,25 @@
 // ditampilkan Setting > Booking/Super Admin -- hash "/app/#/book" LAMA
 // tetap didukung penuh (kompatibilitas mundur), TIDAK ADA perubahan API/
 // endpoint/logika booking, murni cara URL-nya diakses.
-const ASSET_VERSION = "89";
+// v89 -> v90: PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali
+// dibuka) -- diprofilkan (Playwright + CDP network throttling ~4Mbps/50ms
+// RTT, meniru kondisi mobile): waktu sampai Hero booking terlihat 2942ms,
+// bottleneck TERBESAR adalah pdfjs_boot.js yang men-`import` STATIS
+// vendor/pdfjs/pdf.min.js (512KB) di SETIAP halaman termasuk /book -- file
+// besar ini sendirian memonopoli bandwidth ~2000ms dan menunda SEMUA
+// request lain (termasuk panggilan API booking). pdfjs_boot.js sekarang
+// HANYA mengunduhnya lewat `import()` DINAMIS begitu fitur Preview PDF
+// sungguhan dipakai (pdf_preview.js::ensurePdfJs() memicunya) -- fitur
+// Preview PDF sendiri TIDAK berubah perilakunya sama sekali (diverifikasi
+// end-to-end: klik Cetak PDF, canvas preview tetap render dengan benar).
+// Hasil setelah perbaikan: waktu sampai Hero terlihat turun ke ~1930ms
+// (turun ~35%, ~1000ms lebih cepat), diukur konsisten di 3x pengulangan.
+// Sempat dicoba juga menambah "defer" ke ~35 <script> lain di index.html,
+// TAPI diukur TIDAK memberi perbaikan tambahan (browser modern sudah
+// mengunduh script paralel walau tanpa "defer") -- TIDAK jadi dipakai,
+// lihat komentar di index.html. TIDAK ADA perubahan UI/alur booking/
+// database/fitur lain -- murni KAPAN pdf.min.js diunduh.
+const ASSET_VERSION = "90";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

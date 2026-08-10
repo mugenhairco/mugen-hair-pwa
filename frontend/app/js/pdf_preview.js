@@ -21,9 +21,17 @@
 // konsisten di semua perangkat (banyak browser Android/PWA ter-install
 // tidak bisa menampilkan PDF inline lewat <iframe> sama sekali).
 const MugenPdfPreview = (() => {
+  // PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali dibuka):
+  // pdfjs_boot.js TIDAK LAGI mengunduh pdf.min.js secara otomatis di setiap
+  // halaman -- di sini SEKARANG yang memicu unduhannya (lewat
+  // window.MugenMuatPdfJs(), lihat pdfjs_boot.js), TEPAT saat Preview PDF
+  // sungguhan dibuka (satu-satunya pemanggil open() di bawah). Perilaku
+  // dari sudut pandang pemanggil open() TIDAK berubah sama sekali (masih
+  // menunggu PDF.js siap sebelum lanjut, cuma sekarang unduhannya juga baru
+  // dimulai di titik ini, bukan sudah selesai dari awal boot aplikasi).
   function ensurePdfJs() {
     if (window.pdfjsLib) return Promise.resolve();
-    return new Promise((resolve) => window.addEventListener("pdfjs-ready", () => resolve(), { once: true }));
+    return window.MugenMuatPdfJs();
   }
 
   async function open({ generate, filename }) {
