@@ -359,7 +359,7 @@ def ambil_booking_slug(user: dict = Depends(require_owner_or_staff)):
     """FITUR URL Booking Publik per Tenant: dipakai Setting > Booking
     (kartu "Link Booking" yang SUDAH ADA, TIDAK ada menu baru) untuk
     menampilkan booking_slug TERKINI + URL lengkapnya (subdomain
-    <booking_slug>.rivoirsett.com/app/#/book, lihat tenant_db.py::
+    <booking_slug>.rivoirsett.com/book, lihat tenant_db.py::
     get_booking_url())."""
     return _booking_slug_hasil(user["tenant_id"])
 

@@ -572,7 +572,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_whatsapp ON tenants(whatsapp) WHER
 
 -- FITUR URL Booking Publik per Tenant: booking_slug TERPISAH dari `slug`
 -- (subdomain dashboard/staff, TIDAK BERUBAH sama sekali) -- URL booking
--- publik sendiri per tenant (`<booking_slug>.rivoirsett.com/app/#/book`,
+-- publik sendiri per tenant (`<booking_slug>.rivoirsett.com/book`,
 -- lihat tenant_db.py::get_booking_url()/set_booking_slug()). ALTER TABLE
 -- ADD COLUMN IF NOT EXISTS di sini untuk instalasi Postgres yang SUDAH ADA
 -- sebelum kolom ini ditambahkan ke CREATE TABLE di atas (instalasi BARU

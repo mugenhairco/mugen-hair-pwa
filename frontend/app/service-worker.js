@@ -459,7 +459,19 @@
 // dengan hash PERSIS SAMA seperti panggilan sebelumnya (tanpa navigasi
 // nyata di antaranya) tidak lagi memicu render ulang. TIDAK ADA perubahan
 // API/endpoint/logika booking -- murni perbaikan struktur render.
-const ASSET_VERSION = "88";
+// v88 -> v89: FITUR Kompatibilitas URL Booking (Instagram Bio dkk) -- link
+// booking publik SEBELUMNYA hash route "/app/#/book" (Instagram Bio dkk
+// otomatis meng-encode "#" jadi "%23" begitu ditempel, link jadi gagal
+// terbuka). router.js/tenant_guard.js sekarang JUGA mendeteksi PATH ASLI
+// "/book" & "/app/book" (bukan cuma hash "#/book") lewat location.pathname,
+// dipasangkan dengan rewrite rule server baru (lihat render.yaml) supaya
+// refresh halaman juga tetap berfungsi di path itu. Backend: tenant_db.py::
+// get_booking_url() sekarang menghasilkan "https://<booking_slug>.
+// rivoirsett.com/book" (bukan lagi "/app/#/book") untuk link BARU yang
+// ditampilkan Setting > Booking/Super Admin -- hash "/app/#/book" LAMA
+// tetap didukung penuh (kompatibilitas mundur), TIDAK ADA perubahan API/
+// endpoint/logika booking, murni cara URL-nya diakses.
+const ASSET_VERSION = "89";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
