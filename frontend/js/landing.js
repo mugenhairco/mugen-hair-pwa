@@ -81,64 +81,6 @@
     links.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => links.classList.remove("lp-open")));
   }
 
-  // ============================= Animated counters =============================
-
-  function animateCounter(node, target, suffix) {
-    const start = 0;
-    const duration = 1200;
-    const startTime = performance.now();
-    function tick(now) {
-      const progress = Math.min(1, (now - startTime) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const value = Math.round(start + (target - start) * eased);
-      node.textContent = value.toLocaleString("id-ID") + (suffix || "");
-      if (progress < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-
-  async function loadStats() {
-    try {
-      const stats = await apiGet("/api/public/landing/stats");
-      const section = document.getElementById("lp-stats");
-      const nums = section.querySelectorAll(".lp-stat-num");
-      nums[0].dataset.target = stats.active_tenants || 0;
-      nums[1].dataset.target = stats.total_bookings || 0;
-      nums[2].dataset.target = Number(stats.platform_stat_happy_customers) || 0;
-      const uptimeNode = section.querySelector(".lp-stat-num-text");
-      uptimeNode.textContent = stats.platform_stat_uptime || "-";
-    } catch (e) {
-      // Statistik gagal dimuat BUKAN alasan menyembunyikan seluruh Landing
-      // Page -- biarkan angka 0 tampil apa adanya, bagian lain tetap jalan.
-      console.error(e);
-    }
-  }
-
-  // BUGFIX: sebelumnya initCounters() (IntersectionObserver) dan loadStats()
-  // (fetch async) dipanggil terpisah/paralel di boot -- kalau section Trusted
-  // KEBETULAN sudah masuk viewport SEBELUM fetch selesai (umum terjadi kalau
-  // section itu ada di atas layar/viewport pendek), observer langsung
-  // menganimasikan ke nilai default "0" di HTML (data-target belum sempat
-  // diisi loadStats()), lalu MENGUNCI diri (sudahJalan=true, observer
-  // disconnect) -- update data-target yang datang belakangan dari loadStats()
-  // TIDAK PERNAH memicu animasi ulang, counter diam permanen di 0 padahal
-  // datanya sebenarnya sudah ada. initStatsSection() memastikan urutannya:
-  // TUNGGU loadStats() selesai (data-target sudah benar) SEBELUM observer
-  // mulai memantau sama sekali.
-  async function initStatsSection() {
-    await loadStats();
-    const section = document.getElementById("lp-stats");
-    const nums = section.querySelectorAll(".lp-stat-num");
-    let sudahJalan = false;
-    const observer = new IntersectionObserver((entries) => {
-      if (sudahJalan || !entries.some((e) => e.isIntersecting)) return;
-      sudahJalan = true;
-      nums.forEach((node) => animateCounter(node, Number(node.dataset.target) || 0));
-      observer.disconnect();
-    }, { threshold: 0.3 });
-    observer.observe(section);
-  }
-
   // ============================= Features (contoh statis, lihat spesifikasi
   // Phase 5 -- HANYA Pricing & FAQ yang wajib dari database) =============
 
@@ -174,13 +116,21 @@
 
   // ============================= Pricing + Comparison (WAJIB dari database) =============================
 
+  // FITUR Landing Page & Pricing (paket 6 bulan): siklus aktif disimpan di
+  // luar renderPricing() supaya toggle Bulanan/6 Bulan bisa render ULANG
+  // grid yang SAMA (packages sudah di-fetch sekali) tanpa fetch API lagi.
+  let _siklusAktif = "bulanan";
+  let _packagesTerkini = [];
+
   async function loadPackages() {
     const grid = document.getElementById("lp-pricing-grid");
     const table = document.getElementById("lp-compare-table");
     try {
       const packages = await apiGet("/api/public/landing/packages");
-      renderPricing(grid, packages);
+      _packagesTerkini = packages;
+      renderPricing(grid, packages, _siklusAktif);
       renderCompareTable(table, packages);
+      initCycleToggle();
     } catch (e) {
       grid.innerHTML = "";
       grid.appendChild(el("p", { class: "lp-loading" }, "Paket belum tersedia saat ini."));
@@ -189,31 +139,89 @@
     }
   }
 
-  function renderPricing(grid, packages) {
+  // FITUR Landing Page & Pricing (Enterprise Exclusive): benefit "Custom
+  // Feature Request" HANYA untuk paket kode "enterprise" -- murni tampilan
+  // (tidak ada toggle/fitur baru di subscription_features, lihat
+  // spesifikasi item 5: pengajuan fitur khusus melalui proses evaluasi
+  // TERPISAH dari sistem, bukan sesuatu yang di-otomasi di aplikasi ini).
+  function benefitEnterprise() {
+    return el("div", { class: "lp-enterprise-benefit" }, [
+      el("span", { class: "lp-pricing-badge lp-pricing-badge-enterprise", style: "position:static;transform:none;display:inline-block;margin-bottom:8px;" }, "Enterprise Exclusive"),
+      el("div", {}, [
+        el("strong", {}, "Custom Feature Request — "),
+        "ajukan pengembangan fitur khusus sesuai kebutuhan bisnis Anda. Setiap permintaan melalui proses evaluasi (tidak otomatis disetujui), dan permintaan yang disetujui diprioritaskan untuk pelanggan Enterprise.",
+      ]),
+    ]);
+  }
+
+  function renderPricing(grid, packages, siklus) {
     grid.innerHTML = "";
     packages.forEach((p, i) => {
       const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
       const btnPilih = el("a", { href: "/app/#/register", class: "lp-btn lp-btn-primary" }, "Select Package");
-      // Ingat paket yang diklik lewat sessionStorage (sama origin dengan
-      // /app/, jadi tetap terbawa lintas navigasi) -- register.js/billing.js
-      // membaca ini untuk menyorot paket yang sama begitu Owner sampai di
-      // halaman Billing, supaya pilihan di Landing Page tidak hilang begitu
-      // saja saat harus Register dulu.
+      // Ingat paket (+ siklus) yang diklik lewat sessionStorage (sama origin
+      // dengan /app/, jadi tetap terbawa lintas navigasi) -- register.js/
+      // billing.js membaca ini untuk menyorot paket & siklus yang sama
+      // begitu Owner sampai di halaman Billing, supaya pilihan di Landing
+      // Page tidak hilang begitu saja saat harus Register dulu.
       btnPilih.addEventListener("click", () => {
-        try { sessionStorage.setItem("mugen_pending_package_kode", p.kode); } catch (e) { /* abaikan (mis. private mode) */ }
+        try {
+          sessionStorage.setItem("mugen_pending_package_kode", p.kode);
+          sessionStorage.setItem("mugen_pending_package_siklus", siklus);
+        } catch (e) { /* abaikan (mis. private mode) */ }
       });
-      grid.appendChild(el("div", { class: `lp-pricing-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
-        el("h3", {}, p.nama),
-        el("div", { class: "lp-pricing-price" }, [
-          p.harga > 0 ? formatRupiah(p.harga) : "Gratis",
-          el("small", {}, p.harga > 0 ? ` / ${p.durasi_hari} hari` : ""),
-        ]),
-        el("p", { class: "lp-pricing-desc" }, p.deskripsi || ""),
-        el("ul", { class: "lp-pricing-features" }, fitur.length ? fitur : [el("li", {}, "-")]),
-        btnPilih,
+
+      // pakai6: paket ini BENAR-BENAR menampilkan harga 6 bulan sekarang --
+      // hanya kalau toggle aktif "6bulan" DAN paket ini punya harga_6bulan
+      // (paket Free/harga 0, atau paket yang belum diisi Super Admin, tetap
+      // menampilkan harga bulanan apa adanya, TIDAK ada tampilan kosong/rusak).
+      const pakai6 = siklus === "6bulan" && p.harga > 0 && p.harga_6bulan;
+      const hargaTampil = pakai6 ? p.harga_6bulan : p.harga;
+      const labelDurasi = p.harga > 0 ? (pakai6 ? " / 6 bulan" : ` / ${p.durasi_hari} hari`) : "";
+      const hematRupiah = pakai6 ? (p.harga * 6 - p.harga_6bulan) : 0;
+
+      const card = el("div", {
+        class: `lp-pricing-card lp-reveal lp-reveal-${(i % 3) + 1}` + (p.kode === "enterprise" ? " lp-pricing-card-featured" : ""),
+      });
+      if (pakai6 && hematRupiah > 0) {
+        card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "Paling Hemat"));
+      }
+      card.appendChild(el("h3", {}, p.nama));
+      card.appendChild(el("div", { class: "lp-pricing-price" }, [
+        hargaTampil > 0 ? formatRupiah(hargaTampil) : "Gratis",
+        el("small", {}, labelDurasi),
       ]));
+      if (pakai6 && hematRupiah > 0) {
+        card.appendChild(el("div", { class: "lp-pricing-save-note" }, `Hemat ${formatRupiah(hematRupiah)} dibanding bulanan`));
+      }
+      card.appendChild(el("p", { class: "lp-pricing-desc" }, p.deskripsi || ""));
+      if (p.kode === "enterprise") card.appendChild(benefitEnterprise());
+      card.appendChild(el("ul", { class: "lp-pricing-features" }, fitur.length ? fitur : [el("li", {}, "-")]));
+      card.appendChild(btnPilih);
+      grid.appendChild(card);
     });
     revealObserve(grid.querySelectorAll(".lp-reveal"));
+  }
+
+  // FITUR Landing Page & Pricing (paket 6 bulan): toggle Bulanan/6 Bulan di
+  // atas grid Pricing -- render ULANG grid yang sama (packages sudah di
+  // memory) dengan siklus baru, TANPA fetch API lagi. addEventListener
+  // dipasang HANYA SEKALI (guard lewat dataset) karena loadPackages() bisa
+  // saja dipanggil ulang di masa depan.
+  function initCycleToggle() {
+    const toggle = document.getElementById("lp-cycle-toggle");
+    if (!toggle || toggle.dataset.wired === "1") return;
+    toggle.dataset.wired = "1";
+    toggle.querySelectorAll(".lp-cycle-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        _siklusAktif = btn.dataset.siklus;
+        toggle.querySelectorAll(".lp-cycle-btn").forEach((b) => {
+          b.classList.toggle("lp-cycle-active", b === btn);
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        renderPricing(document.getElementById("lp-pricing-grid"), _packagesTerkini, _siklusAktif);
+      });
+    });
   }
 
   function renderCompareTable(table, packages) {
@@ -381,7 +389,6 @@
     document.getElementById("lp-year").textContent = new Date().getFullYear();
     initNavbar();
     renderFeatures();
-    initStatsSection();
     loadPackages();
     loadTestimonials();
     loadFaq();

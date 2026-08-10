@@ -121,6 +121,46 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
     assert data["nomor_invoice"].startswith("INV-")
 
 
+# FITUR Landing Page & Pricing (paket 6 bulan): checkout dengan siklus
+# "6bulan" HARUS memakai harga_6bulan (bukan harga bulanan) + durasi
+# efektif durasi_hari*6 -- lihat routers/billing.py::checkout().
+def test_checkout_6bulan_sukses_pakai_harga_dan_durasi_6bulan(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_midtrans_mock(monkeypatch)
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga=250000, harga_6bulan=1200000, durasi_hari=30)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": pro["id"], "siklus": "6bulan"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["jumlah"] == 1200000
+    assert data["durasi_hari"] == 180
+    assert data["package_kode"] == "pro"
+
+
+def test_checkout_6bulan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_midtrans_mock(monkeypatch)
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga_6bulan=None)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": pro["id"], "siklus": "6bulan"})
+    assert r.status_code == 422
+    assert "tidak menawarkan siklus 6 bulan" in r.json()["detail"]
+
+
+def test_checkout_siklus_tidak_dikenal_422(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_midtrans_mock(monkeypatch)
+    pro = billing_db.get_package_by_kode("pro")
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": pro["id"], "siklus": "tahunan"})
+    assert r.status_code == 422
+
+
 def test_checkout_tanpa_midtrans_dikonfigurasi_503(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     # Config fresh test DB SUDAH default disabled (belum pernah diisi Super

@@ -105,15 +105,22 @@ const PageBilling = (() => {
   }
 
   function _bersihkanPendingKode() {
-    try { sessionStorage.removeItem("mugen_pending_package_kode"); } catch (e) { /* abaikan */ }
+    try {
+      sessionStorage.removeItem("mugen_pending_package_kode");
+      sessionStorage.removeItem("mugen_pending_package_siklus");
+    } catch (e) { /* abaikan */ }
   }
 
-  async function mulaiCheckout(packageId, config, onSelesai) {
+  // FITUR Landing Page & Pricing (paket 6 bulan): siklus "bulanan" (default,
+  // TIDAK mengubah perilaku lama) atau "6bulan" -- diteruskan APA ADANYA ke
+  // body checkout, backend (routers/billing.py) yang menghitung harga/durasi
+  // efektifnya (lihat komentar di sana), di sini murni meneruskan pilihan.
+  async function mulaiCheckout(packageId, siklus, config, onSelesai) {
     _bersihkanPendingKode();
     let invoice;
     try {
       invoice = await MugenUI.withLoading(
-        () => MugenApi.post("/api/billing/checkout", { package_id: packageId }),
+        () => MugenApi.post("/api/billing/checkout", { package_id: packageId, siklus: siklus || "bulanan" }),
         { message: "Menyiapkan pembayaran…" },
       );
     } catch (e) {
@@ -188,6 +195,47 @@ const PageBilling = (() => {
     return wrap;
   }
 
+  // FITUR Landing Page & Pricing (Enterprise Exclusive): benefit "Custom
+  // Feature Request" HANYA untuk paket kode "enterprise" -- murni tampilan,
+  // pola SAMA PERSIS dengan frontend/js/landing.js::benefitEnterprise()
+  // (versi Landing Page publik), disalin di sini pakai gaya inline yang
+  // sudah dipakai file ini sendiri (BUKAN nambah class baru ke app/css/
+  // style.css yang dipakai bersama seluruh halaman internal lain).
+  function benefitEnterprise() {
+    return MugenUI.el("div", {
+      style: "background:var(--bg-input);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--text-dim);margin:10px 0;line-height:1.5;",
+    }, [
+      MugenUI.el("span", {
+        class: "badge", style: "background:var(--accent);color:#fff;margin-bottom:6px;display:inline-block;",
+      }, "Enterprise Exclusive"),
+      MugenUI.el("div", {}, [
+        MugenUI.el("strong", { style: "color:var(--text);" }, "Custom Feature Request — "),
+        "ajukan pengembangan fitur khusus sesuai kebutuhan bisnis Anda. Setiap permintaan melalui proses evaluasi (tidak otomatis disetujui), dan permintaan yang disetujui diprioritaskan untuk pelanggan Enterprise.",
+      ]),
+    ]);
+  }
+
+  // FITUR Landing Page & Pricing (paket 6 bulan): toggle Bulanan/6 Bulan --
+  // gaya inline (bukan class app/css/style.css baru, pola sama seperti
+  // benefitEnterprise() di atas) supaya perubahan tetap terkurung di file
+  // Billing ini saja.
+  function toggleSiklus(siklusAktif, onChange) {
+    const wrap = MugenUI.el("div", {
+      style: "display:inline-flex;gap:4px;background:var(--bg-input);border:1px solid var(--border);border-radius:999px;padding:4px;margin-bottom:16px;",
+    });
+    [["bulanan", "Bulanan"], ["6bulan", "6 Bulan · Hemat Lebih Banyak"]].forEach(([nilai, label]) => {
+      const aktif = nilai === siklusAktif;
+      const btn = MugenUI.el("button", {
+        type: "button",
+        style: "border:none;border-radius:999px;padding:8px 16px;font-weight:600;font-size:13px;cursor:pointer;"
+          + (aktif ? "background:var(--accent);color:#fff;" : "background:transparent;color:var(--text-dim);"),
+      }, label);
+      btn.addEventListener("click", () => { if (nilai !== siklusAktif) onChange(nilai); });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
   function renderPaketCard(root, sub, config, packages, onSelesai) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
@@ -196,11 +244,10 @@ const PageBilling = (() => {
       "Upgrade langsung dibayar lewat Midtrans (VA/QRIS/kartu). Downgrade & Perpanjang paket yang sama TIDAK memerlukan pembayaran baru di sini kecuali memang paket berbayar."));
 
     const current = packages.find((p) => p.kode === sub.package) || null;
-    const grid = MugenUI.el("div", { class: "grid-cards" });
-    card.appendChild(grid);
 
-    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): paket yang diklik
-    // Owner di Landing Page (sessionStorage, lihat landing.js) disorot di
+    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): paket (+ SEKARANG
+    // siklus, FITUR Landing Page & Pricing paket 6 bulan) yang diklik Owner
+    // di Landing Page (sessionStorage, lihat landing.js) disorot/dipilih di
     // sini supaya pilihannya tidak hilang begitu saja setelah harus
     // Register dulu. BUGFIX: SENGAJA TIDAK dihapus di sini begitu dibaca --
     // register.js (sama seperti login.js) memanggil location.hash= DAN
@@ -212,50 +259,90 @@ const PageBilling = (() => {
     // pernah tampak. Dibersihkan sebagai gantinya begitu Owner benar-benar
     // menekan salah satu tombol paket (lihat mulaiCheckout()/mulaiDowngrade()
     // di bawah), bukan di titik render.
-    let pendingKode = null;
+    let pendingKode = null, pendingSiklus = "bulanan";
     try {
       pendingKode = sessionStorage.getItem("mugen_pending_package_kode");
+      const s = sessionStorage.getItem("mugen_pending_package_siklus");
+      if (s === "bulanan" || s === "6bulan") pendingSiklus = s;
     } catch (e) { /* abaikan (mis. private mode) */ }
-    let boxDirekomendasikan = null;
 
-    for (const paket of packages) {
-      const isCurrent = paket.kode === sub.package;
-      const isRekomendasi = !isCurrent && pendingKode && paket.kode === pendingKode;
-      const box = MugenUI.el("div", {
-        class: "card", style: "margin-bottom:0;" + (isCurrent ? "border-color:var(--accent);" : isRekomendasi ? "border-color:var(--accent-secondary);border-width:2px;" : ""),
-      });
-      box.appendChild(MugenUI.el("h2", {}, paket.nama));
-      if (isRekomendasi) box.appendChild(MugenUI.el("span", { class: "badge badge-libur", style: "margin-bottom:8px;display:inline-block;" }, "Pilihan Anda"));
-      box.appendChild(MugenUI.el("div", { style: "font-size:20px;font-weight:700;" }, MugenUI.formatRupiah(paket.harga)));
-      box.appendChild(MugenUI.el("div", { class: "subtitle" }, `per ${paket.durasi_hari} hari`));
-      if (paket.deskripsi) box.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, paket.deskripsi));
-      box.appendChild(kartuFitur(paket.fitur));
+    let siklusAktif = pendingSiklus;
+    const toggleWrap = MugenUI.el("div", {});
+    const grid = MugenUI.el("div", { class: "grid-cards" });
+    card.appendChild(toggleWrap);
+    card.appendChild(grid);
 
-      let btn;
-      if (isCurrent) {
-        box.appendChild(MugenUI.el("span", { class: "badge badge-success", style: "margin-bottom:10px;display:inline-block;" }, "Paket Aktif"));
-        if (paket.harga > 0) {
-          btn = MugenUI.el("button", { class: "btn-primary" }, "Perpanjang");
-          btn.addEventListener("click", () => mulaiCheckout(paket.id, config, onSelesai));
+    function gambarUlangToggle() {
+      toggleWrap.innerHTML = "";
+      toggleWrap.appendChild(toggleSiklus(siklusAktif, (nilai) => {
+        siklusAktif = nilai;
+        gambarUlangToggle();
+        gambarUlangGrid();
+      }));
+    }
+
+    function gambarUlangGrid() {
+      grid.innerHTML = "";
+      let boxDirekomendasikan = null;
+      for (const paket of packages) {
+        const isCurrent = paket.kode === sub.package;
+        const isRekomendasi = !isCurrent && pendingKode && paket.kode === pendingKode;
+        const box = MugenUI.el("div", {
+          class: "card", style: "margin-bottom:0;" + (isCurrent ? "border-color:var(--accent);" : isRekomendasi ? "border-color:var(--accent-secondary);border-width:2px;" : ""),
+        });
+        box.appendChild(MugenUI.el("h2", {}, paket.nama));
+        if (isRekomendasi) box.appendChild(MugenUI.el("span", { class: "badge badge-libur", style: "margin-bottom:8px;display:inline-block;" }, "Pilihan Anda"));
+
+        // pakai6: paket ini BENAR-BENAR menampilkan harga 6 bulan sekarang --
+        // hanya kalau toggle aktif "6bulan" DAN paket ini punya harga_6bulan
+        // (paket Free/harga 0, atau belum diisi Super Admin, tetap
+        // menampilkan harga bulanan apa adanya).
+        const pakai6 = siklusAktif === "6bulan" && paket.harga > 0 && paket.harga_6bulan;
+        const hargaTampil = pakai6 ? paket.harga_6bulan : paket.harga;
+        const hematRupiah = pakai6 ? (paket.harga * 6 - paket.harga_6bulan) : 0;
+        if (pakai6 && hematRupiah > 0) {
+          box.appendChild(MugenUI.el("span", {
+            style: "background:var(--success);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;margin-bottom:8px;display:inline-block;margin-left:8px;",
+          }, "Paling Hemat"));
         }
-      } else if (current && paket.urutan > current.urutan) {
-        btn = MugenUI.el("button", { class: "btn-primary" }, "Upgrade");
-        btn.addEventListener("click", () => mulaiCheckout(paket.id, config, onSelesai));
-      } else if (current && paket.urutan < current.urutan) {
-        btn = MugenUI.el("button", {}, "Downgrade");
-        btn.addEventListener("click", () => mulaiDowngrade(btn, paket, onSelesai));
-      } else {
-        btn = MugenUI.el("button", { class: "btn-primary" }, "Pilih Paket");
-        btn.addEventListener("click", () => mulaiCheckout(paket.id, config, onSelesai));
+        box.appendChild(MugenUI.el("div", { style: "font-size:20px;font-weight:700;" }, MugenUI.formatRupiah(hargaTampil)));
+        box.appendChild(MugenUI.el("div", { class: "subtitle" }, pakai6 ? "per 6 bulan" : `per ${paket.durasi_hari} hari`));
+        if (pakai6 && hematRupiah > 0) {
+          box.appendChild(MugenUI.el("div", { style: "color:var(--success);font-size:12px;font-weight:600;margin-top:2px;" },
+            `Hemat ${MugenUI.formatRupiah(hematRupiah)} dibanding bulanan`));
+        }
+        if (paket.deskripsi) box.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, paket.deskripsi));
+        if (paket.kode === "enterprise") box.appendChild(benefitEnterprise());
+        box.appendChild(kartuFitur(paket.fitur));
+
+        let btn;
+        if (isCurrent) {
+          box.appendChild(MugenUI.el("span", { class: "badge badge-success", style: "margin-bottom:10px;display:inline-block;" }, "Paket Aktif"));
+          if (paket.harga > 0) {
+            btn = MugenUI.el("button", { class: "btn-primary" }, "Perpanjang");
+            btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+          }
+        } else if (current && paket.urutan > current.urutan) {
+          btn = MugenUI.el("button", { class: "btn-primary" }, "Upgrade");
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+        } else if (current && paket.urutan < current.urutan) {
+          btn = MugenUI.el("button", {}, "Downgrade");
+          btn.addEventListener("click", () => mulaiDowngrade(btn, paket, onSelesai));
+        } else {
+          btn = MugenUI.el("button", { class: "btn-primary" }, "Pilih Paket");
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+        }
+        if (btn) box.appendChild(MugenUI.el("div", {}, btn));
+        grid.appendChild(box);
+        if (isRekomendasi) boxDirekomendasikan = box;
       }
-      if (btn) box.appendChild(MugenUI.el("div", {}, btn));
-      grid.appendChild(box);
-      if (isRekomendasi) boxDirekomendasikan = box;
+      if (boxDirekomendasikan) {
+        boxDirekomendasikan.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     }
 
-    if (boxDirekomendasikan) {
-      boxDirekomendasikan.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    gambarUlangToggle();
+    gambarUlangGrid();
   }
 
   function renderInvoiceCard(root, invoices) {

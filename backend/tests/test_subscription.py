@@ -235,7 +235,9 @@ def test_superadmin_config_platform(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/subscriptions/config", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"trial_hari": 14, "grace_hari": 7}
+    # FITUR Landing Page & Pricing (Free Trial 30 Hari): default trial_hari
+    # dinaikkan 14 -> 30 (subscription_db.DEFAULT_TRIAL_HARI).
+    assert r.json() == {"trial_hari": 30, "grace_hari": 7}
 
     r2 = app_client.put("/api/superadmin/subscriptions/config", headers=headers,
                          json={"trial_hari": 21, "grace_hari": 3})

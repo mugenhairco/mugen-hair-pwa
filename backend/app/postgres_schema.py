@@ -695,6 +695,7 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     kode         TEXT NOT NULL UNIQUE,
     nama         TEXT NOT NULL,
     harga        INTEGER NOT NULL DEFAULT 0,
+    harga_6bulan INTEGER,
     durasi_hari  INTEGER NOT NULL DEFAULT 30,
     aktif        INTEGER NOT NULL DEFAULT 1,
     urutan       INTEGER NOT NULL DEFAULT 0,
@@ -707,6 +708,13 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+
+-- FITUR Landing Page & Pricing (paket 6 bulan): instalasi Postgres yang
+-- SUDAH ADA sebelum kolom ini ditambahkan ke CREATE TABLE di atas
+-- (instalasi baru sudah dapat kolomnya langsung) -- lihat billing_db.py
+-- untuk penjelasan lengkap kenapa NULL = paket ini tidak menawarkan
+-- siklus 6 bulan.
+ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_6bulan INTEGER;
 
 CREATE TABLE IF NOT EXISTS subscription_features (
     id           SERIAL PRIMARY KEY,

@@ -489,7 +489,13 @@
 // mengunduh script paralel walau tanpa "defer") -- TIDAK jadi dipakai,
 // lihat komentar di index.html. TIDAK ADA perubahan UI/alur booking/
 // database/fitur lain -- murni KAPAN pdf.min.js diunduh.
-const ASSET_VERSION = "90";
+// v90 -> v91: FITUR Landing Page & Pricing -- Setting > Billing (billing.js)
+// dapat toggle siklus Bulanan/6 Bulan (badge "Paling Hemat", hitung hemat
+// dibanding bulanan) + benefit "Custom Feature Request" khusus paket
+// Enterprise, siklus terpilih dikirim ke POST /api/billing/checkout.
+// TIDAK ADA perubahan pada Dashboard/Booking/POS/modul internal lain --
+// HANYA billing.js yang berubah.
+const ASSET_VERSION = "91";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

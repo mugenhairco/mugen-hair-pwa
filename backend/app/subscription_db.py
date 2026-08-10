@@ -51,7 +51,13 @@ PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed"}
 
 # Default platform (dipakai kalau Super Admin belum pernah mengatur lewat
 # GET/PUT /api/superadmin/subscriptions/config) -- durasi dalam HARI.
-DEFAULT_TRIAL_HARI = 14
+# FITUR Landing Page & Pricing (Free Trial): dinaikkan dari 14 -> 30 supaya
+# tenant self-service (routers/tenant_registration.py) benar-benar mendapat
+# "Free Trial 30 Hari" seperti yang dijanjikan Landing Page -- HANYA nilai
+# default-nya yang berubah, mekanisme trial itu sendiri (set_trial()/
+# STATUS_VALID/dst di bawah) SAMA SEKALI TIDAK disentuh. Super Admin tetap
+# bebas mengubah nilai ini kapan pun lewat Dashboard-nya.
+DEFAULT_TRIAL_HARI = 30
 DEFAULT_GRACE_HARI = 7
 
 # Kunci `settings` PLATFORM-WIDE (tenant_id=None, TIDAK diprefix per-tenant --

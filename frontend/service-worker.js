@@ -7,7 +7,13 @@
 // benar-benar menangani request di bawah /app/ begitu SW itu aktif
 // (spesifikasi Service Worker: scope paling spesifik yang menang).
 
-const ASSET_VERSION = "8";
+// v8 -> v9: FITUR Landing Page & Pricing -- hero/copywriting baru (pembeda
+// "setiap barber punya aplikasi sendiri"), section Differentiator baru
+// (Owner Dashboard + Barber App, menggantikan section Statistik yang
+// dihapus total), Free Trial 30 Hari sebagai CTA utama, toggle siklus
+// Bulanan/6 Bulan + badge hemat di Pricing, benefit Enterprise Exclusive
+// (Custom Feature Request) -- landing.css & landing.js berubah.
+const ASSET_VERSION = "9";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
