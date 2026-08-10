@@ -69,6 +69,13 @@ def config_midtrans(user: dict = Depends(require_admin)):
 
 class CheckoutBody(BaseModel):
     package_id: int
+    # FITUR Landing Page & Pricing (paket 6 bulan): "bulanan" (default, TIDAK
+    # mengubah perilaku lama sama sekali) atau "6bulan" -- lihat blok siklus
+    # di bawah untuk cara efektif harga/durasi-nya dihitung. TIDAK ADA nilai
+    # lain yang diterima (divalidasi manual, BUKAN Literal[...] Pydantic,
+    # supaya pesan errornya tetap format {"detail": "..."} polos yang sudah
+    # konsisten dipakai endpoint lain di proyek ini).
+    siklus: str = "bulanan"
 
 
 @router.post("/checkout")
@@ -76,11 +83,28 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     if not midtrans_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
+    if body.siklus not in ("bulanan", "6bulan"):
+        raise HTTPException(status_code=422, detail="Siklus langganan tidak dikenal.")
     paket = billing_db.get_package(body.package_id)
     if paket is None or not paket["aktif"]:
         raise HTTPException(status_code=422, detail="Paket tidak ditemukan atau tidak aktif.")
     if paket["harga"] <= 0:
         raise HTTPException(status_code=422, detail="Paket ini tidak memerlukan pembayaran.")
+
+    # FITUR Landing Page & Pricing (paket 6 bulan): siklus "6bulan" mengganti
+    # harga/durasi EFEKTIF yang dipakai checkout ini (harga_6bulan, durasi
+    # SELALU durasi_hari*6 -- lihat billing_db.py kenapa tidak ada kolom
+    # durasi terpisah) SEBELUM diteruskan ke Midtrans & buat_invoice() di
+    # bawah -- KEDUANYA murni menyalin apa pun yang ada di dict `paket` ini
+    # sebagai snapshot (lihat billing_invoice_db.buat_invoice()), jadi
+    # TIDAK ADA perubahan kode di midtrans_client.py/billing_invoice_db.py/
+    # billing_webhook.py sama sekali untuk mendukung siklus 6 bulan --
+    # masa aktif subscription (periode_selesai = periode_mulai + durasi_hari
+    # invoice, lihat billing_webhook.py) otomatis ikut durasi efektif ini.
+    if body.siklus == "6bulan":
+        if not paket.get("harga_6bulan"):
+            raise HTTPException(status_code=422, detail="Paket ini tidak menawarkan siklus 6 bulan.")
+        paket = {**paket, "harga": paket["harga_6bulan"], "durasi_hari": paket["durasi_hari"] * 6}
 
     tenant = tenant_db.get_tenant(user["tenant_id"])
     order_id = billing_invoice_db.buat_order_id(user["tenant_id"])
@@ -205,6 +229,7 @@ def list_packages(user: dict = Depends(require_superadmin)):
 class PackageUpdateBody(BaseModel):
     nama: str | None = None
     harga: int | None = None
+    harga_6bulan: int | None = None
     durasi_hari: int | None = None
     aktif: bool | None = None
     urutan: int | None = None

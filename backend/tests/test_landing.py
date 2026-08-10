@@ -3,9 +3,10 @@ test_landing.py — FONDASI Multi-Tenant Phase 5: Landing Page SaaS
 =============================================================================
 Cakupan: FAQ/Testimonial publik vs Super Admin CRUD, kontak & statistik
 platform, katalog paket publik, dan alur Register self-service (unik
-email/whatsapp, password mismatch, tenant baru langsung terblokir status
-'expired', dan #/billing tidak terpengaruh perubahan ini di sisi backend
--- akses_diblokir() TIDAK diubah sama sekali).
+email/whatsapp, password mismatch, tenant baru langsung dapat Free Trial
+30 hari status 'trial' -- lihat routers/tenant_registration.py -- TIDAK
+diblokir sama sekali, dan #/billing tidak terpengaruh perubahan ini di
+sisi backend -- akses_diblokir() TIDAK diubah sama sekali).
 
 REVISI FITUR Verifikasi Email: register() TIDAK LAGI mengembalikan
 token/auto-login (akun baru wajib verifikasi email dulu sebelum bisa
@@ -15,6 +16,7 @@ terblokir_sampai_bayar & test_register_login_valid_untuk_endpoint_
 berlogin_setelah_verifikasi) sudah disesuaikan ke alur baru ini."""
 
 import hashlib
+from datetime import datetime
 
 import pytest
 
@@ -215,14 +217,17 @@ def test_packages_publik_hanya_aktif_dan_bawa_fitur(app_client):
 
 # ============================= Register self-service =============================
 
-def test_register_berhasil_membuat_tenant_terblokir_sampai_bayar(app_client):
+def test_register_berhasil_membuat_tenant_trial_30_hari_tidak_diblokir(app_client):
     # REVISI FITUR Verifikasi Email: register() TIDAK LAGI mengembalikan
     # token/user/tenant langsung (akun baru wajib verifikasi email dulu
     # sebelum bisa login sama sekali -- lihat routers/tenant_registration.py
     # & tests/test_email_auth.py untuk cakupan lengkap fitur itu) -- test
     # ini tetap memverifikasi bagian yang TIDAK berubah: tenant + subscription
-    # 'expired' langsung terbentuk saat register, diambil lewat tenant_db
-    # (bukan dari body respons lagi).
+    # langsung terbentuk saat register, diambil lewat tenant_db (bukan dari
+    # body respons lagi).
+    # FITUR Landing Page & Pricing (Free Trial 30 Hari): subscription baru
+    # SEKARANG status 'trial' (BUKAN lagi 'expired') dan TIDAK diblokir --
+    # lihat routers/tenant_registration.py untuk penjelasan lengkap.
     r = app_client.post("/api/public/registration/register", json=_payload_register())
     assert r.status_code == 200, r.text
     body = r.json()
@@ -234,8 +239,16 @@ def test_register_berhasil_membuat_tenant_terblokir_sampai_bayar(app_client):
     tenant_id = tenant["id"]
 
     sub = subscription_db.get_subscription(tenant_id)
-    assert sub["status"] == "expired"
-    assert subscription_db.akses_diblokir(tenant_id) is True
+    assert sub["status"] == "trial"
+    assert sub["trial_start"] is not None
+    assert sub["trial_end"] is not None
+    # 30 hari (DEFAULT_TRIAL_HARI) -- dibandingkan via tanggal saja (bukan
+    # jam/detik persis) supaya tidak rapuh terhadap selisih waktu eksekusi
+    # test yang sangat kecil.
+    mulai = datetime.fromisoformat(sub["trial_start"]).date()
+    selesai = datetime.fromisoformat(sub["trial_end"]).date()
+    assert (selesai - mulai).days == subscription_db.DEFAULT_TRIAL_HARI == 30
+    assert subscription_db.akses_diblokir(tenant_id) is False
 
     assert tenant["email"] == "budi@contoh.com"
     assert tenant["whatsapp"] == "081234567890"
@@ -264,7 +277,8 @@ def test_register_login_valid_untuk_endpoint_berlogin_setelah_verifikasi(app_cli
 
     r2 = app_client.get("/api/subscription/me", headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "expired"
+    # FITUR Landing Page & Pricing (Free Trial 30 Hari): 'trial', bukan lagi 'expired'.
+    assert r2.json()["status"] == "trial"
 
 
 def test_register_email_duplikat_ditolak(app_client):
@@ -416,10 +430,12 @@ def test_register_tercatat_di_audit_log(app_client):
 
 
 # ============================= Integrasi penuh: Register -> Checkout -> Webhook =============================
-# Jalur PALING PENTING di Phase 5 -- membuktikan tenant self-service BENAR-
-# BENAR bisa keluar dari status 'expired' (diblokir) lewat checkout Midtrans
-# Phase 4 yang TIDAK diubah sama sekali, sampai ke webhook yang TIDAK diubah
-# sama sekali juga.
+# Jalur PALING PENTING di Phase 5 -- membuktikan tenant self-service (SEKARANG
+# 'trial', TIDAK diblokir -- FITUR Landing Page & Pricing Free Trial 30 Hari)
+# tetap BISA upgrade ke paket berbayar kapan pun selama trial lewat checkout
+# Midtrans Phase 4 yang TIDAK diubah sama sekali (selain penambahan siklus 6
+# bulan opsional, TIDAK dipakai di test ini -- default "bulanan"), sampai ke
+# webhook yang TIDAK diubah sama sekali juga.
 
 def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, monkeypatch):
     import email_auth_db
@@ -446,11 +462,13 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
     tenant_id = login_body["tenant"]["id"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Sebelum bayar: diblokir, sama seperti yang router.js baca lewat
-    # /api/subscription/status.
+    # Sebelum bayar: TIDAK diblokir (masih trial), sama seperti yang
+    # router.js baca lewat /api/subscription/status -- BEDA dari perilaku
+    # LAMA (dulu 'expired'/diblokir sampai bayar), lihat routers/
+    # tenant_registration.py untuk penjelasan lengkap perubahan ini.
     r = app_client.get("/api/subscription/status", headers=headers)
     assert r.status_code == 200, r.text
-    assert r.json()["akses_diblokir"] is True
+    assert r.json()["akses_diblokir"] is False
 
     pro = billing_db.get_package_by_kode("pro")
     r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})

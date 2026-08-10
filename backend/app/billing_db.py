@@ -77,7 +77,17 @@ LIMIT_FIELDS = ("max_barber", "max_user", "max_layanan", "max_booking", "max_cab
 
 _URUTAN_DEFAULT = {"free": 1, "basic": 2, "pro": 3, "enterprise": 4}
 _NAMA_DEFAULT = {"free": "Free", "basic": "Basic", "pro": "Pro", "enterprise": "Enterprise"}
-_HARGA_DEFAULT = {"free": 0, "basic": 99000, "pro": 249000, "enterprise": 599000}
+_HARGA_DEFAULT = {"free": 0, "basic": 188000, "pro": 250000, "enterprise": 350000}
+
+# FITUR Landing Page & Pricing (paket 6 bulan): harga OPSIONAL untuk siklus
+# langganan 6 bulan -- NULL (default) berarti paket ini HANYA menawarkan
+# siklus bulanan (frontend tidak menampilkan opsi 6 Bulan untuk paket itu,
+# lihat routers/billing.py::checkout()). SENGAJA kolom terpisah dari
+# `harga` (bulanan) yang SUDAH ADA, BUKAN kolom "durasi_hari_6bulan" baru --
+# durasi 6-bulan SELALU dihitung `durasi_hari * 6` (lihat checkout()),
+# konsisten dengan makna "6 Bulan" itu sendiri, tanpa perlu Super Admin
+# mengisi durasi terpisah yang gampang tidak sinkron.
+_HARGA_6BULAN_DEFAULT = {"free": None, "basic": 950000, "pro": 1200000, "enterprise": 1800000}
 
 
 def init_billing_db():
@@ -88,6 +98,7 @@ def init_billing_db():
                 kode         TEXT NOT NULL UNIQUE,
                 nama         TEXT NOT NULL,
                 harga        INTEGER NOT NULL DEFAULT 0,
+                harga_6bulan INTEGER,
                 durasi_hari  INTEGER NOT NULL DEFAULT 30,
                 aktif        INTEGER NOT NULL DEFAULT 1,
                 urutan       INTEGER NOT NULL DEFAULT 0,
@@ -101,6 +112,12 @@ def init_billing_db():
                 updated_at   TEXT NOT NULL
             )
         """)
+        # Instalasi SQLite yang SUDAH ADA sebelum kolom ini ditambahkan ke
+        # CREATE TABLE di atas (instalasi baru sudah dapat kolomnya
+        # langsung) -- pola sama seperti website_content.py::init_website_db().
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(subscription_packages)").fetchall()]
+        if kolom and "harga_6bulan" not in kolom:
+            conn.execute("ALTER TABLE subscription_packages ADD COLUMN harga_6bulan INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS subscription_features (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,11 +167,35 @@ def seed_default_packages():
                 continue
             conn.execute(
                 "INSERT INTO subscription_packages "
-                "(kode, nama, harga, durasi_hari, aktif, urutan, deskripsi, created_at, updated_at) "
-                "VALUES (?, ?, ?, 30, 1, ?, '', ?, ?)",
+                "(kode, nama, harga, harga_6bulan, durasi_hari, aktif, urutan, deskripsi, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 30, 1, ?, '', ?, ?)",
                 (kode, _NAMA_DEFAULT.get(kode, kode.title()), _HARGA_DEFAULT.get(kode, 0),
-                 _URUTAN_DEFAULT.get(kode, 0), now, now),
+                 _HARGA_6BULAN_DEFAULT.get(kode), _URUTAN_DEFAULT.get(kode, 0), now, now),
             )
+
+
+_KUNCI_MIGRASI_HARGA_PRICING_2 = "billing_migrasi_harga_pricing_2_selesai"
+
+
+def migrasi_harga_pricing_v2():
+    """FITUR Landing Page & Pricing (revisi paket 6 bulan): SEKALI SAJA
+    sepanjang umur database (flag `settings`, pola SAMA PERSIS seperti
+    seed_default_package_features() -- BUKAN dicek ulang dari nilai harga
+    yang ada, supaya kalau Super Admin SUDAH mengubah harga basic/pro/
+    enterprise secara manual sebelum migrasi ini pernah jalan, perubahan
+    itu TIDAK diam-diam ditimpa lagi setiap kali server restart) menetapkan
+    harga bulanan + harga 6 bulan BARU untuk basic/pro/enterprise sesuai
+    daftar harga resmi terbaru (`_HARGA_DEFAULT`/`_HARGA_6BULAN_DEFAULT` di
+    atas) -- SEKALI dijalankan, Super Admin 100% memegang kendali penuh
+    lewat Dashboard tanpa gangguan apa pun dari migrasi ini lagi, PERSIS
+    seperti paket free (harga tetap 0, tidak disentuh migrasi ini)."""
+    if get_setting(_KUNCI_MIGRASI_HARGA_PRICING_2, default=None) == "1":
+        return
+    for kode in ("basic", "pro", "enterprise"):
+        paket = get_package_by_kode(kode)
+        if paket is not None:
+            update_package(paket["id"], harga=_HARGA_DEFAULT[kode], harga_6bulan=_HARGA_6BULAN_DEFAULT[kode])
+    set_setting(_KUNCI_MIGRASI_HARGA_PRICING_2, "1")
 
 
 _KUNCI_SEED_FITUR_PAKET = "billing_seed_fitur_nyata_paket_selesai"
@@ -212,13 +253,13 @@ def get_package_by_kode(kode: str) -> dict | None:
 
 def update_package(package_id: int, **fields) -> dict:
     """Dipanggil Super Admin (routers/billing.py) -- fields yang diterima:
-    nama, harga, durasi_hari, aktif, urutan, deskripsi, + LIMIT_FIELDS.
-    `kode` SENGAJA TIDAK BISA diubah lewat sini (identitas baris, dipakai
-    tenant_subscriptions.package -- mengubahnya akan memutus keterkaitan
-    seluruh tenant yang sudah memakai kode itu)."""
+    nama, harga, harga_6bulan, durasi_hari, aktif, urutan, deskripsi, +
+    LIMIT_FIELDS. `kode` SENGAJA TIDAK BISA diubah lewat sini (identitas
+    baris, dipakai tenant_subscriptions.package -- mengubahnya akan memutus
+    keterkaitan seluruh tenant yang sudah memakai kode itu)."""
     if get_package(package_id) is None:
         raise ValueError("Paket tidak ditemukan.")
-    kolom_diizinkan = {"nama", "harga", "durasi_hari", "aktif", "urutan", "deskripsi", *LIMIT_FIELDS}
+    kolom_diizinkan = {"nama", "harga", "harga_6bulan", "durasi_hari", "aktif", "urutan", "deskripsi", *LIMIT_FIELDS}
     aman = {k: v for k, v in fields.items() if k in kolom_diizinkan}
     if not aman:
         return get_package(package_id)
@@ -231,6 +272,10 @@ def update_package(package_id: int, **fields) -> dict:
         raise ValueError("Nama paket tidak boleh kosong.")
     if "harga" in aman and (aman["harga"] is None or aman["harga"] < 0):
         raise ValueError("Harga tidak boleh negatif.")
+    # harga_6bulan BOLEH None (paket ini tidak menawarkan siklus 6 bulan) --
+    # HANYA divalidasi tidak negatif kalau memang diisi.
+    if "harga_6bulan" in aman and aman["harga_6bulan"] is not None and aman["harga_6bulan"] < 0:
+        raise ValueError("Harga 6 bulan tidak boleh negatif.")
     if "durasi_hari" in aman and (not aman["durasi_hari"] or aman["durasi_hari"] < 1):
         raise ValueError("Durasi langganan minimal 1 hari.")
     for limit_key in LIMIT_FIELDS:

@@ -43,6 +43,43 @@ def test_seed_idempotent_tidak_menimpa_perubahan(app_client):
     assert free2["harga"] == 123456
 
 
+# FITUR Landing Page & Pricing (paket 6 bulan + revisi harga): app_client
+# fixture SUDAH memicu on_startup() (termasuk migrasi_harga_pricing_v2())
+# SEKALI sebelum test ini jalan -- test di bawah memverifikasi HASIL
+# migrasi itu (harga bulanan + 6 bulan basic/pro/enterprise sesuai daftar
+# harga resmi terbaru), BUKAN memanggilnya lagi secara manual.
+def test_migrasi_harga_pricing_v2_set_harga_resmi_terbaru(app_client):
+    basic = billing_db.get_package_by_kode("basic")
+    pro = billing_db.get_package_by_kode("pro")
+    enterprise = billing_db.get_package_by_kode("enterprise")
+    free = billing_db.get_package_by_kode("free")
+
+    assert basic["harga"] == 188000
+    assert basic["harga_6bulan"] == 950000
+    assert pro["harga"] == 250000
+    assert pro["harga_6bulan"] == 1200000
+    assert enterprise["harga"] == 350000
+    assert enterprise["harga_6bulan"] == 1800000
+    assert free["harga"] == 0
+    assert free["harga_6bulan"] is None
+
+
+def test_migrasi_harga_pricing_v2_idempotent_tidak_menimpa_perubahan(app_client):
+    """Sama pola dengan test_seed_idempotent_tidak_menimpa_perubahan() di
+    atas -- migrasi ini SEKALI SAJA sepanjang umur database (flag settings,
+    lihat docstring billing_db.migrasi_harga_pricing_v2()), memanggilnya
+    lagi TIDAK BOLEH menimpa perubahan yang sudah dibuat Super Admin
+    setelah migrasi pertama selesai."""
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga=999000, harga_6bulan=None)
+
+    billing_db.migrasi_harga_pricing_v2()
+
+    pro2 = billing_db.get_package_by_kode("pro")
+    assert pro2["harga"] == 999000
+    assert pro2["harga_6bulan"] is None
+
+
 # ============================= CRUD Super Admin =============================
 
 def test_superadmin_list_packages(app_client):
@@ -74,6 +111,32 @@ def test_superadmin_ubah_atribut_paket(app_client):
     assert data["max_barber"] == 3
     assert data["max_cabang"] == 1
     assert data["kode"] == "basic"  # kode TIDAK berubah
+
+
+def test_superadmin_ubah_harga_6bulan(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    basic = billing_db.get_package_by_kode("basic")
+
+    r = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                        json={"harga_6bulan": 950000})
+    assert r.status_code == 200, r.text
+    assert r.json()["harga_6bulan"] == 950000
+
+    # None eksplisit -- paket ini tidak lagi menawarkan siklus 6 bulan
+    # (pola sama seperti LIMIT_FIELDS, lihat billing_db.update_package()).
+    r2 = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                         json={"harga_6bulan": None})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["harga_6bulan"] is None
+
+
+def test_superadmin_harga_6bulan_negatif_ditolak(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    basic = billing_db.get_package_by_kode("basic")
+
+    r = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                        json={"harga_6bulan": -1000})
+    assert r.status_code == 422
 
 
 def test_superadmin_nonaktifkan_paket(app_client):

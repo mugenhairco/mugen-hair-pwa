@@ -9,14 +9,26 @@ KEPUTUSAN ARSITEKTUR PENTING (lihat plan Phase 5 untuk detail lengkap):
 tenant + akun Owner dibuat DI SINI, SAAT REGISTER -- BUKAN oleh webhook
 Midtrans saat pembayaran berhasil (billing_webhook.py TIDAK DISENTUH SAMA
 SEKALI, sesuai instruksi eksplisit "JANGAN mengubah logika Webhook").
-Subscription tenant baru langsung diberi status 'expired' (SALAH SATU
-status yang SUDAH ADA di subscription_db.STATUS_AKSES_DIBLOKIR, TIDAK ADA
-status baru yang ditambahkan) -- tenant baru otomatis TERBLOKIR dari
-seluruh dashboard (mekanisme akses_diblokir() yang SUDAH ADA sejak Phase 3,
-TIDAK DIUBAH) sampai memilih paket & membayar lewat alur checkout Phase 4
-yang SUDAH ADA (billing.py::checkout(), TIDAK DIUBAH) -- begitu webhook
-(TIDAK DIUBAH) mengaktifkan subscription-nya, akses_diblokir() otomatis
-lolos dengan sendirinya.
+
+FITUR Landing Page & Pricing (Free Trial 30 Hari): subscription tenant baru
+SEKARANG langsung diberi status 'trial' (SEBELUMNYA 'expired' -- lihat
+riwayat git untuk versi lama) lewat subscription_db.create_default_
+subscription() yang SUDAH ADA (TIDAK ADA status/tabel/mekanisme baru --
+'trial' SUDAH menjadi salah satu STATUS_VALID sejak Phase 3, hanya SEKARANG
+benar-benar dipakai di titik register() ini) -- trial_start/trial_end
+otomatis terisi dari DEFAULT_TRIAL_HARI (subscription_db.py, 30 hari) atau
+konfigurasi Super Admin kalau sudah pernah diatur (get_platform_config()).
+Selama trial, tenant TIDAK diblokir (status 'trial' BUKAN anggota
+STATUS_AKSES_DIBLOKIR) -- Owner bisa langsung memakai seluruh fitur begitu
+email terverifikasi, TANPA membayar dulu. Begitu trial_end lewat, Super
+Admin (manual, ATAU proses batch terpisah di masa depan -- TIDAK ADA di
+cakupan task ini) mengubah status jadi 'expired'/'grace_period', barulah
+akses_diblokir() (TIDAK DIUBAH sejak Phase 3) mulai berlaku -- Owner
+memilih paket & membayar lewat alur checkout Phase 4 yang SUDAH ADA
+(billing.py::checkout(), TIDAK DIUBAH selain penambahan siklus 6 bulan)
+untuk keluar dari blokir, PERSIS seperti alur upgrade dari trial expired
+manapun -- mekanisme webhook (TIDAK DIUBAH) yang mengaktifkan subscription
+tetap sama persis.
 
 REVISI FITUR Verifikasi Email: Owner SEBELUMNYA langsung di-login-kan di
 sini (token dikembalikan di response register()) supaya bisa lanjut ke
@@ -24,9 +36,8 @@ sini (token dikembalikan di response register()) supaya bisa lanjut ke
 dulu sebelum bisa login sama sekali (blokir_sampai_verifikasi, lihat
 email_auth_migrasi.py) -- register() TIDAK LAGI mengembalikan token/
 auto-login, hanya konfirmasi "cek email Anda". Begitu email diverifikasi,
-Owner login NORMAL lewat /api/auth/login (TIDAK DIUBAH) -- mekanisme
-akses_diblokir()/redirect ke #/billing di atas TETAP jalan APA ADANYA
-persis seperti sebelumnya begitu mereka login (status masih 'expired'),
+Owner login NORMAL lewat /api/auth/login (TIDAK DIUBAH) langsung masuk ke
+Dashboard (BUKAN #/billing lagi -- status masih 'trial', TIDAK diblokir),
 jadi alur checkout Phase 4 TIDAK berubah SAMA SEKALI, hanya titik "kapan
 pertama kali login" yang bergeser dari "saat register" jadi "setelah
 verifikasi email"."""
@@ -146,10 +157,12 @@ def register(body: RegisterBody):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Toko dibuat, tapi akun Owner gagal: {e}")
 
-    # Status 'expired' (BUKAN status baru -- lihat docstring modul ini):
-    # tenant baru langsung terblokir dari dashboard sampai membayar,
-    # memakai mekanisme akses_diblokir() Phase 3 yang SUDAH ADA apa adanya.
-    subscription_db.create_default_subscription(tenant_id, status="expired")
+    # FITUR Landing Page & Pricing (Free Trial 30 Hari): status 'trial'
+    # (BUKAN status baru -- lihat docstring modul ini) -- tenant baru
+    # langsung mendapat akses penuh selama masa trial (DEFAULT_TRIAL_HARI,
+    # subscription_db.py), memakai mekanisme trial_start/trial_end Phase 3
+    # yang SUDAH ADA apa adanya.
+    subscription_db.create_default_subscription(tenant_id, status="trial")
 
     # FITUR Verifikasi Email: akun BARU (lihat docstring modul ini di atas
     # untuk penjelasan lengkap kenapa register() TIDAK LAGI auto-login).
