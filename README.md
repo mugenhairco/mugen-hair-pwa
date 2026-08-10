@@ -2831,6 +2831,22 @@ Blueprint):
    bawah), dipakai mengganti placeholder domain di tag SEO/sitemap.
 4. Tambahkan **Redirect Rule**: source `/app`, destination `/app/`, type
    Redirect (lihat catatan pada `render.yaml` soal kenapa ini wajib).
+4b. **FITUR Kompatibilitas URL Booking (Instagram Bio dkk):** tambahkan
+   JUGA 4 **Rewrite Rule** berikut (BUKAN Redirect — URL di address bar
+   harus tetap `/book`/`/app/book`, supaya refresh halaman tetap
+   berfungsi, bukan 404) supaya link "Link Booking" (Setting > Booking)
+   yang sekarang berbentuk path bersih (lihat tenant_db.py::
+   get_booking_url()) benar-benar bisa dibuka — TANPA rule ini, membuka
+   `/book` menampilkan "Not Found" walau kode di repo sudah benar (rule
+   `routes:` di `render.yaml` HANYA dokumentasi/referensi, TIDAK otomatis
+   ter-sync ke service yang sudah berjalan lewat `git push` biasa, sama
+   seperti Redirect Rule `/app` di poin 4 di atas):
+   | Source | Destination | Type |
+   |---|---|---|
+   | `/book` | `/app/index.html` | Rewrite |
+   | `/book/*` | `/app/index.html` | Rewrite |
+   | `/app/book` | `/app/index.html` | Rewrite |
+   | `/app/book/*` | `/app/index.html` | Rewrite |
 5. Deploy, catat URL Static Site ini (mis.
    `https://mugen-hair-frontend-xxxx.onrender.com` -- domain produksi saat
    ini sudah dipindah ke custom domain `https://rivoirsett.com`, lihat
@@ -2853,10 +2869,14 @@ lebih lanjut, dan kenapa:**
   (ikut git, bisa dibaca siapa pun yang punya akses repo) adalah kebocoran
   keamanan, bukan sekadar soal kepraktisan — tidak ada cara aman untuk
   mengotomatisasi ini dari sisi kode.
-- **Redirect Rule `/app` → `/app/`** (Opsi B) dan review awal saat
-  Blueprint pertama kali dijalankan (Opsi A) — bagian dari proses
-  **pembuatan** service, bukan proses deploy berulang; sekali dikonfigurasi,
-  TIDAK perlu diulang di deploy berikutnya.
+- **Redirect Rule `/app` → `/app/`** dan **ke-4 Rewrite Rule `/book`
+  dkk** (Opsi B, poin 4 & 4b) dan review awal saat Blueprint pertama kali
+  dijalankan (Opsi A) — bagian dari proses **pembuatan** service, bukan
+  proses deploy berulang; sekali dikonfigurasi, TIDAK perlu diulang di
+  deploy berikutnya. Kalau service frontend SUDAH ADA dan dibuat SEBELUM
+  fitur Kompatibilitas URL Booking ini ada, ke-4 Rewrite Rule di poin 4b
+  perlu ditambahkan MANUAL satu kali lewat dashboard (tab Redirects/
+  Rewrites) — bukan otomatis walau `render.yaml` di repo sudah diperbarui.
 - Di luar dua hal itu, **tidak ada langkah manual lain** — deploy
   berikutnya (`git push` ke `master`) sepenuhnya otomatis di kedua
   service, termasuk build, publish, dan restart.

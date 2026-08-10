@@ -80,7 +80,7 @@
   <meta name="apple-mobile-web-app-title" content="Rivoir" />
   <meta name="mobile-web-app-capable" content="yes" />
 
-  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=89" di
+  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=90" di
        SETIAP <link rel="stylesheet">/<script src> di bawah ini adalah
        cache-busting di lapisan URL, INDEPENDEN dari Service Worker --
        browser/CDN mana pun yang meng-cache berdasar URL persis tidak
@@ -90,7 +90,7 @@
        manapun yang dirujuk di sini (lihat komentar ASSET_VERSION di
        service-worker.js untuk alasan kenapa dua tempat ini tidak bisa
        disatukan lewat satu file "sumber kebenaran" tanpa proses build). -->
-  <link rel="stylesheet" href="css/style.css?v=89" />
+  <link rel="stylesheet" href="css/style.css?v=90" />
 </head>
 <body>
   <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
@@ -109,7 +109,7 @@
        <script>window.MUGEN_API_BASE = "https://api.rivoirsett.com";</script>
        Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
        saat development, dan bisa dioverride lewat env saat build/deploy. -->
-  <script src="config.js?v=89"></script>
+  <script src="config.js?v=90"></script>
   <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
        (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
        bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
@@ -123,56 +123,71 @@
     }
   </script>
 
-  <!-- Preview PDF (Cetak PDF): PDF.js dimuat lewat modul terpisah SEDINI
-       mungkin (fetch besar ~1.8MB berjalan di background, tidak memblokir
-       skrip lain) -- lihat pdfjs_boot.js untuk kenapa harus type="module"
-       dan kenapa dipakai lewat window.pdfjsLib + event 'pdfjs-ready',
-       bukan import langsung di pdf_preview.js. -->
-  <script type="module" src="js/pdfjs_boot.js?v=89"></script>
-  <script src="js/state.js?v=89"></script>
+  <!-- Preview PDF (Cetak PDF): file bootstrap PDF.js -- KECIL, hanya
+       mendefinisikan cara memuatnya, TIDAK LAGI langsung mengunduh
+       pdf.min.js (512KB) di sini (lihat PERBAIKAN PERFORMA di
+       pdfjs_boot.js -- pengukuran SEBELUMNYA yang mengira fetch besar itu
+       "berjalan di background, tidak memblokir" TERNYATA salah, itu
+       bottleneck utama /book). Tetap type="module" supaya bisa `import()`
+       dinamis file lokal vendor/pdfjs/ -- lihat pdfjs_boot.js untuk kenapa
+       dipakai lewat window.pdfjsLib + event 'pdfjs-ready', bukan import
+       langsung di pdf_preview.js. -->
+  <script type="module" src="js/pdfjs_boot.js?v=90"></script>
+  <script src="js/state.js?v=90"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
        state.js) dan langsung menerapkan atribut data-theme begitu file
        ini selesai dieksekusi (lihat applyStored() di baris terakhir
        theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
        #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
-  <script src="js/theme.js?v=89"></script>
-  <script src="js/api.js?v=89"></script>
-  <script src="js/ui.js?v=89"></script>
-  <script src="js/pdf_preview.js?v=89"></script>
-  <script src="js/brand.js?v=89"></script>
-  <script src="js/subscription.js?v=89"></script>
-  <script src="js/feature_access.js?v=89"></script>
-  <script src="js/pwa_update.js?v=89"></script>
-  <script src="js/nav.js?v=89"></script>
-  <script src="js/booking_notif.js?v=89"></script>
-  <script src="js/izin_notif.js?v=89"></script>
-  <script src="js/pages/login.js?v=89"></script>
-  <script src="js/pages/register.js?v=89"></script>
-  <script src="js/pages/lupa_password.js?v=89"></script>
-  <script src="js/pages/reset_password.js?v=89"></script>
-  <script src="js/pages/verify_email.js?v=89"></script>
-  <script src="js/pages/dashboard_owner.js?v=89"></script>
-  <script src="js/pages/dashboard_barber.js?v=89"></script>
-  <script src="js/pages/input_data.js?v=89"></script>
-  <script src="js/pages/rekap.js?v=89"></script>
-  <script src="js/pages/pengeluaran.js?v=89"></script>
-  <script src="js/pages/pemasukan.js?v=89"></script>
-  <script src="js/pages/uang_kas.js?v=89"></script>
-  <script src="js/pages/slip_gaji.js?v=89"></script>
-  <script src="js/pages/kasbon.js?v=89"></script>
-  <script src="js/pages/komisi.js?v=89"></script>
-  <script src="js/pages/reimburse.js?v=89"></script>
-  <script src="js/pages/izin_cuti.js?v=89"></script>
-  <script src="js/pages/pengaturan.js?v=89"></script>
-  <script src="js/pages/billing.js?v=89"></script>
-  <script src="js/pages/produk.js?v=89"></script>
-  <script src="js/pages/booking.js?v=89"></script>
-  <script src="js/pages/book_public.js?v=89"></script>
-  <script src="js/pages/superadmin.js?v=89"></script>
-  <script src="js/pages/subscription_blocked.js?v=89"></script>
-  <script src="js/pages/tenant_not_found.js?v=89"></script>
-  <script src="js/tenant_guard.js?v=89"></script>
-  <script src="js/router.js?v=89"></script>
-  <script src="js/app.js?v=89"></script>
+  <script src="js/theme.js?v=90"></script>
+  <!-- PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali dibuka):
+       sempat dicoba menambah atribut "defer" di ke-35 script di bawah ini
+       supaya browser mengunduhnya paralel, bukan satu-satu berurutan.
+       Diukur (Playwright + CDP network throttling ~4Mbps/50ms RTT, meniru
+       kondisi mobile): TERNYATA browser modern (preload scanner Chrome)
+       SUDAH mengunduh script <script src> biasa secara paralel walau tanpa
+       "defer" -- percobaan "defer" tidak memberi perbaikan terukur sama
+       sekali (varians pengukuran, bukan perbaikan sungguhan), jadi TIDAK
+       jadi dipakai di sini (lihat vendor/pdfjs/pdf.min.js di atas untuk
+       bottleneck SUNGGUHAN yang ditemukan & diperbaiki). Dicatat di sini
+       supaya tidak ada yang mencoba "defer" lagi tanpa mengukur ulang. -->
+  <script src="js/api.js?v=90"></script>
+  <script src="js/ui.js?v=90"></script>
+  <script src="js/pdf_preview.js?v=90"></script>
+  <script src="js/brand.js?v=90"></script>
+  <script src="js/subscription.js?v=90"></script>
+  <script src="js/feature_access.js?v=90"></script>
+  <script src="js/pwa_update.js?v=90"></script>
+  <script src="js/nav.js?v=90"></script>
+  <script src="js/booking_notif.js?v=90"></script>
+  <script src="js/izin_notif.js?v=90"></script>
+  <script src="js/pages/login.js?v=90"></script>
+  <script src="js/pages/register.js?v=90"></script>
+  <script src="js/pages/lupa_password.js?v=90"></script>
+  <script src="js/pages/reset_password.js?v=90"></script>
+  <script src="js/pages/verify_email.js?v=90"></script>
+  <script src="js/pages/dashboard_owner.js?v=90"></script>
+  <script src="js/pages/dashboard_barber.js?v=90"></script>
+  <script src="js/pages/input_data.js?v=90"></script>
+  <script src="js/pages/rekap.js?v=90"></script>
+  <script src="js/pages/pengeluaran.js?v=90"></script>
+  <script src="js/pages/pemasukan.js?v=90"></script>
+  <script src="js/pages/uang_kas.js?v=90"></script>
+  <script src="js/pages/slip_gaji.js?v=90"></script>
+  <script src="js/pages/kasbon.js?v=90"></script>
+  <script src="js/pages/komisi.js?v=90"></script>
+  <script src="js/pages/reimburse.js?v=90"></script>
+  <script src="js/pages/izin_cuti.js?v=90"></script>
+  <script src="js/pages/pengaturan.js?v=90"></script>
+  <script src="js/pages/billing.js?v=90"></script>
+  <script src="js/pages/produk.js?v=90"></script>
+  <script src="js/pages/booking.js?v=90"></script>
+  <script src="js/pages/book_public.js?v=90"></script>
+  <script src="js/pages/superadmin.js?v=90"></script>
+  <script src="js/pages/subscription_blocked.js?v=90"></script>
+  <script src="js/pages/tenant_not_found.js?v=90"></script>
+  <script src="js/tenant_guard.js?v=90"></script>
+  <script src="js/router.js?v=90"></script>
+  <script src="js/app.js?v=90"></script>
 </body>
 </html>
