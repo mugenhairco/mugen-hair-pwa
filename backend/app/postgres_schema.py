@@ -1058,6 +1058,7 @@ def create_all():
                      time.monotonic() - _mulai)
         _migrasi_billing_packages(conn)
         _migrasi_billing_features(conn)
+        _migrasi_harga_pricing_v2(conn)
         _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs) -- commit transaksi.",
                      time.monotonic() - _mulai)
 
@@ -1157,6 +1158,42 @@ def _migrasi_billing_features(conn):
             "VALUES (?, ?, '', 1, ?, ?, ?)",
             (kode, nama, urutan, now, now),
         )
+
+
+_HARGA_PRICING_V2 = {
+    "basic": (188000, 950000),
+    "pro": (250000, 1200000),
+    "enterprise": (350000, 1800000),
+}
+_KUNCI_MIGRASI_HARGA_PRICING_2 = "billing_migrasi_harga_pricing_2_selesai"
+
+
+def _migrasi_harga_pricing_v2(conn):
+    """FITUR Landing Page & Pricing (revisi paket 6 bulan) -- versi
+    PostgreSQL, SAMA PERSIS logikanya dengan
+    billing_db.py::migrasi_harga_pricing_v2() (jalur SQLite) -- diduplikasi
+    di sini dengan alasan yang sama seperti _migrasi_billing_packages() di
+    atas (modul ini TIDAK mengimpor billing_db.py). SEKALI SAJA sepanjang
+    umur database (flag `settings`, kunci SAMA PERSIS dengan jalur SQLite
+    supaya konsisten lintas backend) menetapkan harga bulanan + harga 6
+    bulan BARU untuk basic/pro/enterprise -- SEKALI dijalankan, Super Admin
+    100% memegang kendali penuh lewat Dashboard tanpa gangguan apa pun dari
+    migrasi ini lagi, PERSIS seperti paket free (tidak disentuh migrasi
+    ini)."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (_KUNCI_MIGRASI_HARGA_PRICING_2,)).fetchone()
+    if row is not None and row["value"] == "1":
+        return
+    now = datetime.now().isoformat(timespec="seconds")
+    for kode, (harga, harga_6bulan) in _HARGA_PRICING_V2.items():
+        conn.execute(
+            "UPDATE subscription_packages SET harga = ?, harga_6bulan = ?, updated_at = ? WHERE kode = ?",
+            (harga, harga_6bulan, now, kode),
+        )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (_KUNCI_MIGRASI_HARGA_PRICING_2, "1"),
+    )
 
 
 def _normalisasi_urutan_service_kolisi(conn):

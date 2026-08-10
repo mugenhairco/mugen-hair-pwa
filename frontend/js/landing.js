@@ -6,6 +6,21 @@
 (function () {
   "use strict";
 
+  // BUGFIX: navigasi Back/Forward browser (termasuk PWA standalone yang
+  // di-resume dari background) SECARA DEFAULT me-restore posisi scroll
+  // TERAKHIR sebelum pengguna meninggalkan halaman -- sehingga "memasuki"
+  // Landing Page ini (mis. lewat tombol Back dari /app/#/register) bisa
+  // mendarat di TENGAH halaman, bukan di atas. history.scrollRestoration
+  // "manual" menonaktifkan restorasi otomatis itu supaya Landing Page ini
+  // SELALU mulai dari atas -- KECUALI URL memang membawa hash eksplisit
+  // (mis. diklik dari link Pricing/FAQ di navbar), yang tetap dihormati.
+  if ("scrollRestoration" in history) {
+    history.scrollRestoration = "manual";
+  }
+  if (!location.hash) {
+    window.scrollTo(0, 0);
+  }
+
   function apiBase() {
     if (window.MUGEN_API_BASE) return window.MUGEN_API_BASE;
     if (["localhost", "127.0.0.1"].includes(location.hostname)) return "http://localhost:8000";
