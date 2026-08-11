@@ -36,15 +36,19 @@ def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia
     return _login(client, username, password)
 
 
-def _aktifkan_billing_gateway_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc",
-                             status_code=201):
+# PROVIDER RESMI: Faspay Xpress v4 -- buat_transaksi() SELALU return
+# token=None (Faspay tidak punya konsep token checkout seperti Snap, murni
+# redirect_url), respons sukses provider ditandai response_code "00".
+def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/checkout/abc", status_code=200):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
-        "server_key": "SB-Mid-server-test", "client_key": "SB-Mid-client-test",
-        "environment": "sandbox", "enabled": True,
+        "merchant_id": "37070-test", "server_key": "bot-test-checkout", "secret_key": "p-test-checkout",
+        "client_key": "", "environment": "sandbox", "enabled": True,
     })
 
     def fake_post(url, json, headers, timeout):
-        return _FakeResponse(status_code, {"token": token, "redirect_url": redirect})
+        if status_code >= 400:
+            return _FakeResponse(status_code, {"response_code": "99", "response_desc": "Ditolak"})
+        return _FakeResponse(status_code, {"response_code": "00", "response_desc": "Success", "redirect_url": redirect})
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
@@ -87,9 +91,13 @@ def test_config_billing_gateway_tidak_membocorkan_server_key(app_client, monkeyp
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["enabled"] is True
-    assert data["client_key"] == "SB-Mid-client-test"
+    # Faspay Xpress v4 TIDAK punya JS SDK/client-side key -- client_key()
+    # SELALU None terlepas dari kredensial yang tersimpan.
+    assert data["client_key"] is None
+    assert data["checkout_script_url"] is None
     assert "server_key" not in data
-    assert "SB-Mid-server-test" not in str(data)
+    assert "bot-test-checkout" not in str(data)
+    assert "p-test-checkout" not in str(data)
 
 
 def test_config_billing_gateway_disabled_saat_belum_dikonfigurasi(app_client, monkeypatch):
@@ -115,7 +123,9 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
     assert data["status"] == "pending"
     assert data["package_kode"] == "pro"
     assert data["jumlah"] == 249000
-    assert data["snap_token"] == "snap-token-abc"
+    # Faspay Xpress v4: token SELALU None, checkout murni redirect_url.
+    assert data["snap_token"] is None
+    assert data["snap_redirect_url"] == "https://example.test/checkout/abc"
     assert data["tenant_id"] == tenant["id"]
     assert data["order_id"].startswith(f"SUB-{tenant['id']}-")
     assert data["nomor_invoice"].startswith("INV-")

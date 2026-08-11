@@ -13,7 +13,6 @@ yang sesuai filter. SEMUA transaksi dibuat langsung lewat modul Python
 TIDAK PERNAH memanggil provider sungguhan."""
 
 import csv
-import hashlib
 import io
 import itertools
 
@@ -25,11 +24,18 @@ import booking_db
 import booking_gateway_db
 import booking_gateway_webhook
 import database as db
+import gateway_client_base
 import payment_gateway_db
 import tenant_db
 
-BILLING_SERVER_KEY = "SB-Mid-server-test-transaction-report"
-PGW_SERVER_KEY = "SB-Mid-server-test-transaction-report-pgw"
+# PROVIDER RESMI: Faspay Xpress v4 -- kredensial test SENGAJA nilai fiktif
+# (BEDA dari kredensial development sungguhan Merchant ID 37070/User ID
+# bot37070/Password p@ssw0rd yang dikirim tim Faspay), lihat catatan
+# keamanan yang sama di test_billing_webhook.py/test_booking_gateway.py.
+BILLING_USER_ID = "bot-test-transaction-report"
+BILLING_PASSWORD = "p-test-transaction-report"
+PGW_USER_ID = "bot-test-transaction-report-pgw"
+PGW_PASSWORD = "p-test-transaction-report-pgw"
 _urutan_unik = itertools.count(1)
 
 
@@ -41,42 +47,40 @@ def _buat_superadmin_dan_login(client, username="superadmin-trx", password="raha
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-def _hitung_signature_billing(order_id, status_code, gross_amount, server_key=BILLING_SERVER_KEY):
-    raw = f"{order_id}{status_code}{gross_amount}{server_key}"
-    return hashlib.sha512(raw.encode()).hexdigest()
+def _hitung_signature_billing(bill_no, payment_status_code, user_id=BILLING_USER_ID, password=BILLING_PASSWORD):
+    return gateway_client_base.sign_sha1_of_md5([user_id, password, bill_no, payment_status_code])
 
 
 def _buat_invoice_paid(tenant_id, package_kode="pro", harga=249000):
-    billing_gateway_db.update_config(server_key=BILLING_SERVER_KEY, client_key="dummy-client-key")
+    billing_gateway_db.update_config(server_key=BILLING_USER_ID, secret_key=BILLING_PASSWORD, merchant_id="37070-test")
     paket = billing_db.get_package_by_kode(package_kode)
     billing_db.update_package(paket["id"], harga=harga, durasi_hari=30)
     paket = billing_db.get_package(paket["id"])
     order_id = billing_invoice_db.buat_order_id(tenant_id)
     invoice = billing_invoice_db.buat_invoice(order_id, tenant_id, paket,
-                                               snap_token="tok", snap_redirect_url="https://example.test/x")
-    status_code = "200"
-    gross_amount = f"{invoice['jumlah']}.00"
+                                               snap_token=None, snap_redirect_url="https://example.test/x")
+    payment_status_code = "2"
+    bill_total = f"{invoice['jumlah']}.00"
     payload = {
-        "order_id": order_id, "status_code": status_code, "gross_amount": gross_amount,
-        "transaction_status": "settlement", "payment_type": "qris",
-        "signature_key": _hitung_signature_billing(order_id, status_code, gross_amount),
+        "bill_no": order_id, "payment_status_code": payment_status_code, "bill_total": bill_total,
+        "payment_channel": "Bank Transfer", "trx_id": "TRX-TEST-1",
+        "signature": _hitung_signature_billing(order_id, payment_status_code),
     }
     return billing_webhook.proses_notifikasi(payload)
 
 
 def _buat_invoice_pending(tenant_id, package_kode="basic", harga=99000):
-    billing_gateway_db.update_config(server_key=BILLING_SERVER_KEY, client_key="dummy-client-key")
+    billing_gateway_db.update_config(server_key=BILLING_USER_ID, secret_key=BILLING_PASSWORD, merchant_id="37070-test")
     paket = billing_db.get_package_by_kode(package_kode)
     billing_db.update_package(paket["id"], harga=harga, durasi_hari=30)
     paket = billing_db.get_package(paket["id"])
     order_id = billing_invoice_db.buat_order_id(tenant_id)
     return billing_invoice_db.buat_invoice(order_id, tenant_id, paket,
-                                            snap_token="tok", snap_redirect_url="https://example.test/x")
+                                            snap_token=None, snap_redirect_url="https://example.test/x")
 
 
-def _hitung_signature_pgw(order_id, status_code, gross_amount, server_key=PGW_SERVER_KEY):
-    raw = f"{order_id}{status_code}{gross_amount}{server_key}"
-    return hashlib.sha512(raw.encode()).hexdigest()
+def _hitung_signature_pgw(bill_no, payment_status_code, user_id=PGW_USER_ID, password=PGW_PASSWORD):
+    return gateway_client_base.sign_sha1_of_md5([user_id, password, bill_no, payment_status_code])
 
 
 def _siapkan_barber_dan_service(tenant_id, nominal=100000):
@@ -93,7 +97,7 @@ def _buat_booking_transaksi_paid(tenant_id, customer_nama="Budi Santoso", nomina
     from datetime import timedelta
     from booking_db import _hari_ini_wib
 
-    payment_gateway_db.update_config(server_key=PGW_SERVER_KEY, client_key="dummy-client-key")
+    payment_gateway_db.update_config(server_key=PGW_USER_ID, secret_key=PGW_PASSWORD, merchant_id="37070-test")
     barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
     booking = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
@@ -107,12 +111,12 @@ def _buat_booking_transaksi_paid(tenant_id, customer_nama="Budi Santoso", nomina
         booking["customer_nama"], booking["nama_barber"], booking["daftar_service"], booking["total_harga"],
         checkout_token="tok-test", checkout_redirect_url="https://example.test/pay",
     )
-    status_code = "200"
-    gross_amount = f"{transaksi['nominal']}.00"
+    payment_status_code = "2"
+    bill_total = f"{transaksi['nominal']}.00"
     payload = {
-        "order_id": order_id, "status_code": status_code, "gross_amount": gross_amount,
-        "transaction_status": "settlement", "payment_type": "qris",
-        "signature_key": _hitung_signature_pgw(order_id, status_code, gross_amount),
+        "bill_no": order_id, "payment_status_code": payment_status_code, "bill_total": bill_total,
+        "payment_channel": "Bank Transfer", "trx_id": "TRX-TEST-2",
+        "signature": _hitung_signature_pgw(order_id, payment_status_code),
     }
     return booking_gateway_webhook.proses_notifikasi(payload)
 
@@ -121,7 +125,7 @@ def _buat_booking_transaksi_pending(tenant_id, customer_nama="Ani Wijaya", nomin
     from datetime import timedelta
     from booking_db import _hari_ini_wib
 
-    payment_gateway_db.update_config(server_key=PGW_SERVER_KEY, client_key="dummy-client-key")
+    payment_gateway_db.update_config(server_key=PGW_USER_ID, secret_key=PGW_PASSWORD, merchant_id="37070-test")
     barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
     booking = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",

@@ -131,13 +131,6 @@ const PageBilling = (() => {
       return;
     }
 
-    try {
-      await muatSnapJs(config.snap_js_url, config.client_key);
-    } catch (e) {
-      MugenUI.toast(e.message, "error");
-      return;
-    }
-
     // BUGFIX: MugenSubscription.refresh() WAJIB di-await SEBELUM onSelesai()
     // di jalur sukses/pending -- tanpa ini, cache localStorage akses_diblokir
     // (dipakai router.js::handle() untuk SETIAP perpindahan menu, lihat
@@ -150,21 +143,72 @@ const PageBilling = (() => {
       onSelesai();
     }
 
-    window.snap.pay(invoice.snap_token, {
-      onSuccess: () => {
+    // PROVIDER RESMI: Faspay Xpress v4 -- checkout HANYA hosted redirect
+    // (config.checkout_script_url selalu null, TIDAK ADA script/token
+    // seperti Snap), jadi cabang window.snap.pay() di bawah TIDAK PERNAH
+    // dipakai untuk Faspay -- dipertahankan sebagai jalur adapter generik
+    // kalau provider lain (yang punya script checkout) dipasang nanti,
+    // SAMA seperti pola bukaCheckoutGateway() di pages/book_public.js.
+    if (config.checkout_script_url && config.client_key) {
+      try {
+        await muatSnapJs(config.checkout_script_url, config.client_key);
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+        return;
+      }
+      window.snap.pay(invoice.snap_token, {
+        onSuccess: () => {
+          MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
+          setTimeout(segarkanLaluSelesai, 2000);
+        },
+        onPending: () => {
+          MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
+          segarkanLaluSelesai();
+        },
+        onError: () => {
+          MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
+          onSelesai();
+        },
+        onClose: onSelesai,
+      });
+      return;
+    }
+
+    // Halaman checkout Faspay dibuka di TAB BARU (AUDIT: window.open() bisa
+    // diblokir browser kalau dipanggil di luar gesture klik langsung --
+    // POST /api/billing/checkout di atas SUDAH selesai duluan, jadi deteksi
+    // & beri tahu Owner kalau itu terjadi, sama seperti book_public.js).
+    const jendela = window.open(invoice.snap_redirect_url, "_blank", "noopener,noreferrer");
+    if (!jendela || jendela.closed) {
+      MugenUI.toast("Halaman pembayaran diblokir browser -- izinkan pop-up untuk situs ini lalu coba lagi.", "error");
+    } else {
+      MugenUI.toast("Selesaikan pembayaran di tab baru -- status akan diperbarui otomatis di sini setelah dikonfirmasi.", "info", { force: true });
+    }
+
+    // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
+    // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah
+    // lewat webhook di backend, polling ini murni menunggu itu lalu
+    // menyegarkan tampilan halaman ini.
+    let sisaPercobaan = 150; // ~150 x 4 detik = 10 menit
+    const pollTimer = setInterval(async () => {
+      sisaPercobaan -= 1;
+      if (sisaPercobaan <= 0) { clearInterval(pollTimer); return; }
+      let terbaru;
+      try {
+        terbaru = await MugenApi.get(`/api/billing/invoices/${invoice.id}`);
+      } catch (e) {
+        return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
+      }
+      if (terbaru.status === "paid") {
+        clearInterval(pollTimer);
         MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-        setTimeout(segarkanLaluSelesai, 2000);
-      },
-      onPending: () => {
-        MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
         segarkanLaluSelesai();
-      },
-      onError: () => {
-        MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
+      } else if (["denied", "cancelled", "expired"].includes(terbaru.status)) {
+        clearInterval(pollTimer);
+        MugenUI.toast("Pembayaran tidak berhasil. Silakan coba lagi.", "error");
         onSelesai();
-      },
-      onClose: onSelesai,
-    });
+      }
+    }, 4000);
   }
 
   async function mulaiDowngrade(btn, paket, onSelesai) {

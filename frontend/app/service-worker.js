@@ -526,7 +526,7 @@
 // (Detail modal), dan billing.js (Riwayat Pembayaran). book_public.js:
 // popup checkout yang diblokir browser sekarang terdeteksi & diberi tahu
 // (toast), bukan diam-diam gagal tanpa keterangan.
-const ASSET_VERSION = "94";
+const ASSET_VERSION = "95";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

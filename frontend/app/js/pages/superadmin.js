@@ -950,15 +950,15 @@ const PageSuperadmin = (() => {
 
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
     billingGatewayCard.appendChild(inBillingEnv);
-    billingGatewayCard.appendChild(MugenUI.el("label", {}, "API Key"));
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "API Key (tidak dipakai Faspay)"));
     billingGatewayCard.appendChild(inBillingApiKey);
-    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key"));
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key (Faspay: User ID)"));
     billingGatewayCard.appendChild(inBillingServerKey);
-    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key"));
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key (tidak dipakai Faspay)"));
     billingGatewayCard.appendChild(inBillingClientKey);
-    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Merchant ID"));
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Merchant ID (Faspay: Merchant ID)"));
     billingGatewayCard.appendChild(inBillingMerchantId);
-    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Secret Key"));
+    billingGatewayCard.appendChild(MugenUI.el("label", {}, "Secret Key (Faspay: Password)"));
     billingGatewayCard.appendChild(inBillingSecretKey);
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Webhook / Callback URL"));
     billingGatewayCard.appendChild(inBillingWebhookUrl);
@@ -969,6 +969,14 @@ const PageSuperadmin = (() => {
     // murni catatan Super Admin sendiri.
     billingGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
       `URL webhook aktif: ${MUGEN_API_BASE}/api/public/billing/midtrans-webhook`));
+    // Provider RESMI: Faspay Xpress v4 -- satu akun Faspay HANYA bisa
+    // mendaftarkan SATU Payment Notification URL & SATU Return URL untuk
+    // KEDUA modul (Billing SaaS ini & Payment Gateway booking di bawah),
+    // lihat gateway_notification_dispatch.py -- URL di atas TETAP aktif
+    // (dipanggil secara internal), tapi yang benar-benar didaftarkan ke
+    // Faspay adalah dispatcher tunggal di bawah ini.
+    billingGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
+      `Faspay Xpress v4: URL Payment Notification & Return URL yang SUNGGUHAN didaftarkan ke Faspay untuk SATU akun ini (dipakai bersama Payment Gateway booking di bawah) -- Payment Notification: ${MUGEN_API_BASE}/api/public/gateway/faspay-notification, Return URL: ${MUGEN_API_BASE}/api/public/gateway/faspay-return`));
 
     const errorBillingGateway = MugenUI.el("div", { class: "login-error" });
     const btnSimpanBillingGateway = MugenUI.el("button", { class: "btn-primary" }, "Simpan Payment Gateway Billing SaaS");
@@ -1196,15 +1204,15 @@ const PageSuperadmin = (() => {
     paymentGatewayCard.appendChild(inPgwProvider);
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
     paymentGatewayCard.appendChild(selPgwEnv);
-    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "API Key"));
+    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "API Key (tidak dipakai Faspay)"));
     paymentGatewayCard.appendChild(inPgwApiKey);
-    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key"));
+    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key (Faspay: User ID)"));
     paymentGatewayCard.appendChild(inPgwServerKey);
-    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key"));
+    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Client Key (tidak dipakai Faspay)"));
     paymentGatewayCard.appendChild(inPgwClientKey);
-    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Merchant ID"));
+    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Merchant ID (Faspay: Merchant ID)"));
     paymentGatewayCard.appendChild(inPgwMerchantId);
-    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Secret Key"));
+    paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Secret Key (Faspay: Password)"));
     paymentGatewayCard.appendChild(inPgwSecretKey);
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Webhook / Callback URL"));
     paymentGatewayCard.appendChild(inPgwWebhookUrl);
@@ -1213,6 +1221,12 @@ const PageSuperadmin = (() => {
     // catatan Super Admin sendiri.
     paymentGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
       `URL webhook aktif: ${MUGEN_API_BASE}/api/public/booking/gateway-webhook`));
+    // Provider RESMI: Faspay Xpress v4 -- lihat catatan identik di kartu
+    // "Billing SaaS – Payment Gateway" di atas (satu akun Faspay dipakai
+    // bersama, HANYA satu Payment Notification URL & satu Return URL yang
+    // bisa didaftarkan).
+    paymentGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
+      `Faspay Xpress v4: URL Payment Notification & Return URL yang SUNGGUHAN didaftarkan ke Faspay untuk SATU akun ini (dipakai bersama Billing SaaS di atas) -- Payment Notification: ${MUGEN_API_BASE}/api/public/gateway/faspay-notification, Return URL: ${MUGEN_API_BASE}/api/public/gateway/faspay-return`));
 
     paymentGatewayCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Pembayaran (aktif & urutan tampil)"));
     const pgwChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });

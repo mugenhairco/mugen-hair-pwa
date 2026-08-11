@@ -119,7 +119,17 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
         "id": paket["kode"], "price": paket["harga"], "quantity": 1,
         "name": f"Paket {paket['nama']} ({paket['durasi_hari']} hari)"[:50],
     }]
-    customer_details = {"first_name": (tenant["nama_barbershop"] if tenant else "Owner")[:50]}
+    # AUDIT (perbaikan pasca-audit kesiapan): "phone"/"email" ditambahkan
+    # (SEBELUMNYA hanya "first_name") -- Faspay Xpress v4 mewajibkan
+    # msisdn+email di request checkout (lihat billing_gateway_client.py).
+    # tenant["whatsapp"]/tenant["email"] diisi Owner saat registrasi
+    # (tenant_db.set_registrant_info()) -- boleh kosong untuk tenant lama,
+    # client-nya sendiri sudah punya fallback aman kalau kosong.
+    customer_details = {
+        "first_name": (tenant["nama_barbershop"] if tenant else "Owner")[:50],
+        "phone": tenant.get("whatsapp") if tenant else None,
+        "email": tenant.get("email") if tenant else None,
+    }
     try:
         hasil_gateway = billing_gateway_client.buat_transaksi(
             order_id, paket["harga"], item_details, customer_details=customer_details,

@@ -32,7 +32,12 @@ bookings selain status_pembayaran/status_booking yang SUDAH ADA):
 - "diproses"/"menunggu_pembayaran"/"refund" -> TIDAK ada cascade ke
   `bookings` (booking tetap seperti apa adanya, hanya baris transaksi yang
   berubah -- refund adalah peristiwa PASCA booking selesai, tidak pernah
-  membatalkan/mengaktifkan ulang booking secara otomatis)."""
+  membatalkan/mengaktifkan ulang booking secara otomatis).
+
+PROVIDER RESMI: Faspay Xpress v4 -- payload notifikasi memakai field
+`bill_no`/`payment_status_code`/`bill_total`/`signature` (BUKAN
+`order_id`/`transaction_status`/`gross_amount`/`signature_key` ala
+Midtrans), lihat payment_gateway_client.py untuk pemetaan lengkap."""
 
 import json
 from datetime import datetime
@@ -41,27 +46,27 @@ import booking_db
 import booking_gateway_db
 import payment_gateway_client
 
-_TRANSACTION_STATUS_VALID = {"capture", "settlement", "pending", "deny", "cancel", "expire", "refund", "partial_refund"}
+# 9 kode status resmi Faspay (dokumentasi Payment Notification): 0
+# Unprocessed, 1 In Process, 2 Payment Success, 3 Payment Failed, 4 Payment
+# Reversal, 5 No bills found, 7 Payment Expired, 8 Payment Cancelled, 9
+# Unknown. Kode 5 & 9 SENGAJA TIDAK dipetakan (ditolak sebagai "tidak
+# dikenal") -- keduanya menandakan sesuatu yang janggal di sisi Faspay
+# sendiri, bukan status pembayaran yang sah untuk diterapkan.
+_STATUS_CODE_KE_UNIFIED = {
+    "0": "menunggu_pembayaran",
+    "1": "diproses",
+    "2": "berhasil",
+    "3": "gagal",
+    "4": "refund",
+    "7": "kedaluwarsa",
+    "8": "dibatalkan",
+}
 
 
-def _map_status(transaction_status: str, fraud_status: str = None) -> str:
-    if transaction_status not in _TRANSACTION_STATUS_VALID:
-        raise ValueError(f"transaction_status tidak dikenal: {transaction_status}")
-    if transaction_status == "capture":
-        if fraud_status == "accept":
-            return "berhasil"
-        if fraud_status == "challenge":
-            return "diproses"
-        return "gagal"
-    return {
-        "settlement": "berhasil",
-        "pending": "menunggu_pembayaran",
-        "deny": "gagal",
-        "cancel": "dibatalkan",
-        "expire": "kedaluwarsa",
-        "refund": "refund",
-        "partial_refund": "refund",
-    }[transaction_status]
+def _map_status(payment_status_code: str) -> str:
+    if payment_status_code not in _STATUS_CODE_KE_UNIFIED:
+        raise ValueError(f"payment_status_code tidak dikenal: {payment_status_code}")
+    return _STATUS_CODE_KE_UNIFIED[payment_status_code]
 
 
 def _terapkan_status(transaksi: dict, status_baru: str, sumber: str, payment_type: str = None,
@@ -112,43 +117,45 @@ def _terapkan_status(transaksi: dict, status_baru: str, sumber: str, payment_typ
 
 def proses_notifikasi(payload: dict) -> dict:
     """Return transaksi TERBARU setelah diproses. Melempar ValueError untuk
-    SEMUA kegagalan validasi (signature/order_id/amount/status tidak
-    dikenal) -- routers/booking_gateway_webhook.py menerjemahkannya jadi
-    HTTP 400, TANPA efek samping (transaksi/booking) tersisa kalau validasi
-    manapun gagal."""
-    order_id = str(payload.get("order_id") or "")
-    status_code = str(payload.get("status_code") or "")
-    gross_amount = str(payload.get("gross_amount") or "")
-    signature_key = str(payload.get("signature_key") or "")
-    transaction_status = str(payload.get("transaction_status") or "")
-    fraud_status = payload.get("fraud_status")
-    payment_type = payload.get("payment_type")
+    SEMUA kegagalan validasi (signature/bill_no/bill_total/status tidak
+    dikenal) -- routers/gateway_notification.py & routers/booking_gateway_webhook.py
+    menerjemahkannya jadi HTTP 400, TANPA efek samping (transaksi/booking)
+    tersisa kalau validasi manapun gagal.
 
-    if not payment_gateway_client.verifikasi_signature(order_id, status_code, gross_amount, signature_key):
+    Payload SESUAI format resmi Faspay Xpress v4 Payment Notification --
+    lihat payment_gateway_client.py::verifikasi_signature() untuk formula
+    signature (BEDA dari formula checkout)."""
+    bill_no = str(payload.get("bill_no") or "")
+    payment_status_code = str(payload.get("payment_status_code") or "")
+    bill_total = str(payload.get("bill_total") or "")
+    signature_key = str(payload.get("signature") or "")
+    payment_channel = payload.get("payment_channel")
+    trx_id = payload.get("trx_id")
+    payment_reff = payload.get("payment_reff")
+
+    if not payment_gateway_client.verifikasi_signature(bill_no, payment_status_code, signature_key):
         raise ValueError("Signature tidak valid.")
 
-    transaksi = booking_gateway_db.get_transaksi_by_order_id(order_id)
+    transaksi = booking_gateway_db.get_transaksi_by_order_id(bill_no)
     if transaksi is None:
-        raise ValueError(f"order_id tidak dikenal: {order_id}")
+        raise ValueError(f"order_id tidak dikenal: {bill_no}")
 
     try:
-        gross_amount_angka = int(float(gross_amount))
+        bill_total_angka = int(float(bill_total))
     except (TypeError, ValueError):
-        raise ValueError("gross_amount tidak valid.")
-    if gross_amount_angka != int(transaksi["nominal"]):
+        raise ValueError("bill_total tidak valid.")
+    if bill_total_angka != int(transaksi["nominal"]):
         raise ValueError(
-            f"gross_amount tidak cocok dengan transaksi (payload={gross_amount_angka}, "
+            f"bill_total tidak cocok dengan transaksi (payload={bill_total_angka}, "
             f"transaksi={transaksi['nominal']})."
         )
 
-    status_baru = _map_status(transaction_status, fraud_status)
-    transaction_id_provider = payload.get("transaction_id")
-    reference_id_provider = payload.get("reference_id") or payload.get("biller_reference") or payload.get("approval_code")
+    status_baru = _map_status(payment_status_code)
 
     return _terapkan_status(
-        transaksi, status_baru, sumber="webhook", payment_type=payment_type,
-        transaction_id_provider=str(transaction_id_provider) if transaction_id_provider else None,
-        reference_id_provider=str(reference_id_provider) if reference_id_provider else None,
+        transaksi, status_baru, sumber="webhook", payment_type=payment_channel,
+        transaction_id_provider=str(trx_id) if trx_id else None,
+        reference_id_provider=str(payment_reff) if payment_reff and payment_reff != "null" else None,
         raw_notification=json.dumps(payload),
     )
 
@@ -175,28 +182,26 @@ def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
         raise ValueError("Transaksi tidak ditemukan.")
 
     hasil_provider = payment_gateway_client.cek_status_transaksi(transaksi["order_id"])
-    transaction_status = str(hasil_provider.get("transaction_status") or "")
-    fraud_status = hasil_provider.get("fraud_status")
-    gross_amount = str(hasil_provider.get("gross_amount") or "")
+    payment_status_code = str(hasil_provider.get("payment_status_code") or "")
+    bill_total = str(hasil_provider.get("bill_total") or "")
 
     try:
-        gross_amount_angka = int(float(gross_amount))
+        bill_total_angka = int(float(bill_total))
     except (TypeError, ValueError):
-        gross_amount_angka = None
-    if gross_amount_angka is not None and gross_amount_angka != int(transaksi["nominal"]):
+        bill_total_angka = None
+    if bill_total_angka is not None and bill_total_angka != int(transaksi["nominal"]):
         raise ValueError(
-            f"gross_amount dari provider tidak cocok dengan transaksi (provider={gross_amount_angka}, "
+            f"bill_total dari provider tidak cocok dengan transaksi (provider={bill_total_angka}, "
             f"transaksi={transaksi['nominal']})."
         )
 
-    status_baru = _map_status(transaction_status, fraud_status)
-    transaction_id_provider = hasil_provider.get("transaction_id")
-    reference_id_provider = (hasil_provider.get("reference_id") or hasil_provider.get("biller_reference")
-                              or hasil_provider.get("approval_code"))
+    status_baru = _map_status(payment_status_code)
+    trx_id = hasil_provider.get("trx_id")
+    payment_reff = hasil_provider.get("payment_reff")
 
     return _terapkan_status(
-        transaksi, status_baru, sumber="rekonsiliasi_manual", payment_type=hasil_provider.get("payment_type"),
-        transaction_id_provider=str(transaction_id_provider) if transaction_id_provider else None,
-        reference_id_provider=str(reference_id_provider) if reference_id_provider else None,
+        transaksi, status_baru, sumber="rekonsiliasi_manual", payment_type=hasil_provider.get("payment_channel"),
+        transaction_id_provider=str(trx_id) if trx_id else None,
+        reference_id_provider=str(payment_reff) if payment_reff and payment_reff != "null" else None,
         raw_notification=json.dumps(hasil_provider),
     )

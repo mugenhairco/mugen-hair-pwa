@@ -55,30 +55,28 @@ STATUS_EXPIRED = "expired"
 # mengubah status lagi (lihat _terapkan_status_invoice() di bawah).
 STATUS_FINAL = {STATUS_PAID, STATUS_DENIED, STATUS_CANCELLED, STATUS_EXPIRED}
 
-# SESUAI cakupan Phase 4: enam transaction_status Midtrans yang wajib
-# ditangani (settlement/capture/pending/expire/cancel/deny).
-_TRANSACTION_STATUS_VALID = {"capture", "settlement", "pending", "deny", "cancel", "expire"}
+# PROVIDER RESMI: Faspay Xpress v4 -- 9 kode payment_status_code resmi
+# (dokumentasi Payment Notification): 0 Unprocessed, 1 In Process, 2
+# Payment Success, 3 Payment Failed, 4 Payment Reversal, 5 No bills found,
+# 7 Payment Expired, 8 Payment Cancelled, 9 Unknown. Kode 4/5/9 SENGAJA
+# TIDAK dipetakan (ditolak sebagai "tidak dikenal") -- langganan SaaS TIDAK
+# punya konsep refund/reversal (lihat billing_invoice_db.STATUS_VALID,
+# beda dari booking_gateway_db yang punya status "refund"), dan 5/9
+# menandakan sesuatu yang janggal di sisi Faspay sendiri.
+_STATUS_CODE_KE_STATUS = {
+    "0": STATUS_PENDING,
+    "1": STATUS_PENDING,
+    "2": STATUS_PAID,
+    "3": STATUS_DENIED,
+    "7": STATUS_EXPIRED,
+    "8": STATUS_CANCELLED,
+}
 
 
-def _map_status(transaction_status: str, fraud_status: str = None) -> str:
-    """capture+accept -> paid, capture+challenge -> pending (perlu tinjauan
-    manual, KHUSUS kartu kredit), capture+lainnya -> denied. settlement
-    selalu paid (VA/QRIS/dst -- tidak ada tahap fraud review)."""
-    if transaction_status not in _TRANSACTION_STATUS_VALID:
-        raise ValueError(f"transaction_status tidak dikenal: {transaction_status}")
-    if transaction_status == "capture":
-        if fraud_status == "accept":
-            return STATUS_PAID
-        if fraud_status == "challenge":
-            return STATUS_PENDING
-        return STATUS_DENIED
-    return {
-        "settlement": STATUS_PAID,
-        "pending": STATUS_PENDING,
-        "deny": STATUS_DENIED,
-        "cancel": STATUS_CANCELLED,
-        "expire": STATUS_EXPIRED,
-    }[transaction_status]
+def _map_status(payment_status_code: str) -> str:
+    if payment_status_code not in _STATUS_CODE_KE_STATUS:
+        raise ValueError(f"payment_status_code tidak dikenal: {payment_status_code}")
+    return _STATUS_CODE_KE_STATUS[payment_status_code]
 
 
 def _hitung_periode_mulai(tenant_id: int, sekarang: datetime, exclude_invoice_id: int) -> datetime:
@@ -166,37 +164,39 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
 
 def proses_notifikasi(payload: dict) -> dict:
     """Return invoice TERBARU setelah diproses. Melempar ValueError untuk
-    SEMUA kegagalan validasi (signature/order_id/amount/status tidak
-    dikenal) -- routers/billing_webhook.py menerjemahkannya jadi HTTP 400,
-    TANPA efek samping (invoice/subscription) tersisa kalau validasi
-    manapun gagal."""
-    order_id = str(payload.get("order_id") or "")
-    status_code = str(payload.get("status_code") or "")
-    gross_amount = str(payload.get("gross_amount") or "")
-    signature_key = str(payload.get("signature_key") or "")
-    transaction_status = str(payload.get("transaction_status") or "")
-    fraud_status = payload.get("fraud_status")
-    payment_type = payload.get("payment_type")
+    SEMUA kegagalan validasi (signature/bill_no/bill_total/status tidak
+    dikenal) -- routers/gateway_notification.py & routers/billing_webhook.py
+    menerjemahkannya jadi HTTP 400, TANPA efek samping (invoice/subscription)
+    tersisa kalau validasi manapun gagal.
 
-    if not billing_gateway_client.verifikasi_signature(order_id, status_code, gross_amount, signature_key):
+    Payload SESUAI format resmi Faspay Xpress v4 Payment Notification --
+    lihat billing_gateway_client.py::verifikasi_signature() untuk formula
+    signature."""
+    bill_no = str(payload.get("bill_no") or "")
+    payment_status_code = str(payload.get("payment_status_code") or "")
+    bill_total = str(payload.get("bill_total") or "")
+    signature_key = str(payload.get("signature") or "")
+    payment_channel = payload.get("payment_channel")
+
+    if not billing_gateway_client.verifikasi_signature(bill_no, payment_status_code, signature_key):
         raise ValueError("Signature tidak valid.")
 
-    invoice = billing_invoice_db.get_invoice_by_order_id(order_id)
+    invoice = billing_invoice_db.get_invoice_by_order_id(bill_no)
     if invoice is None:
-        raise ValueError(f"order_id tidak dikenal: {order_id}")
+        raise ValueError(f"order_id tidak dikenal: {bill_no}")
 
     try:
-        gross_amount_angka = int(float(gross_amount))
+        bill_total_angka = int(float(bill_total))
     except (TypeError, ValueError):
-        raise ValueError("gross_amount tidak valid.")
-    if gross_amount_angka != int(invoice["jumlah"]):
+        raise ValueError("bill_total tidak valid.")
+    if bill_total_angka != int(invoice["jumlah"]):
         raise ValueError(
-            f"gross_amount tidak cocok dengan invoice (payload={gross_amount_angka}, "
+            f"bill_total tidak cocok dengan invoice (payload={bill_total_angka}, "
             f"invoice={invoice['jumlah']})."
         )
 
-    status_baru = _map_status(transaction_status, fraud_status)
-    return _terapkan_status_invoice(invoice, status_baru, sumber="webhook", payment_type=payment_type,
+    status_baru = _map_status(payment_status_code)
+    return _terapkan_status_invoice(invoice, status_baru, sumber="webhook", payment_type=payment_channel,
                                      raw_notification=json.dumps(payload))
 
 
@@ -212,7 +212,7 @@ def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
     TIDAK memerlukan verifikasi signature -- panggilan ini KELUAR ke provider
     memakai Server Key milik server sendiri (billing_gateway_client.
     cek_status_transaksi(), Core API GET), BUKAN data masuk dari luar --
-    tapi tetap memvalidasi gross_amount dari respons provider (defense-in-
+    tapi tetap memvalidasi bill_total dari respons provider (defense-in-
     depth) dan tetap lewat _terapkan_status_invoice() yang SAMA PERSIS
     dipakai webhook resmi."""
     invoice = billing_invoice_db.get_invoice(invoice_id)
@@ -220,21 +220,20 @@ def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
         raise ValueError("Invoice tidak ditemukan.")
 
     hasil_provider = billing_gateway_client.cek_status_transaksi(invoice["order_id"])
-    transaction_status = str(hasil_provider.get("transaction_status") or "")
-    fraud_status = hasil_provider.get("fraud_status")
-    gross_amount = str(hasil_provider.get("gross_amount") or "")
+    payment_status_code = str(hasil_provider.get("payment_status_code") or "")
+    bill_total = str(hasil_provider.get("bill_total") or "")
 
     try:
-        gross_amount_angka = int(float(gross_amount))
+        bill_total_angka = int(float(bill_total))
     except (TypeError, ValueError):
-        gross_amount_angka = None
-    if gross_amount_angka is not None and gross_amount_angka != int(invoice["jumlah"]):
+        bill_total_angka = None
+    if bill_total_angka is not None and bill_total_angka != int(invoice["jumlah"]):
         raise ValueError(
-            f"gross_amount dari provider tidak cocok dengan invoice (provider={gross_amount_angka}, "
+            f"bill_total dari provider tidak cocok dengan invoice (provider={bill_total_angka}, "
             f"invoice={invoice['jumlah']})."
         )
 
-    status_baru = _map_status(transaction_status, fraud_status)
+    status_baru = _map_status(payment_status_code)
     return _terapkan_status_invoice(invoice, status_baru, sumber="rekonsiliasi_manual",
-                                     payment_type=hasil_provider.get("payment_type"),
+                                     payment_type=hasil_provider.get("payment_channel"),
                                      raw_notification=json.dumps(hasil_provider))

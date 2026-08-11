@@ -1,50 +1,71 @@
 """billing_gateway_client.py — Klien Payment Gateway untuk Langganan SaaS
 =============================================================================
-REVISI (proyek TIDAK terikat satu provider): file ini SEBELUMNYA bernama
-`midtrans_client.py` -- direname supaya tidak lagi mengasumsikan Midtrans
-sebagai provider TETAP proyek ini. Kredensial (lihat billing_gateway_db.py,
-field generik: provider/environment/api_key/server_key/client_key/
-merchant_id/secret_key/webhook_url) dan HTTP/error handling (gateway_client_base.py)
-sudah generik -- SATU-SATUNYA bagian yang masih spesifik satu provider di
-bawah ini adalah BENTUK KONKRET permintaan/respons (endpoint Snap/Core API,
-field `token`/`redirect_url`, formula signature order_id+status_code+
-gross_amount+ServerKey) -- itu KARENA provider Payment Gateway resmi belum
-ditentukan/belum ada credential-nya saat file ini ditulis, dan bentuk ini
-SATU-SATUNYA protokol nyata yang sudah terbukti bekerja & teruji penuh di
-proyek ini. Anggap fungsi-fungsi di bawah sebagai ADAPTER KONKRET SAAT INI,
-BUKAN kontrak permanen -- begitu provider resmi ditentukan & credential-nya
-datang, HANYA ISI fungsi-fungsi ini yang perlu diganti mengikuti dokumentasi
-provider itu (nama fungsi/pemanggil di routers/billing.py & billing_webhook.py
-TIDAK perlu berubah sama sekali, itulah gunanya modul terpisah ini).
+CATATAN ARSITEKTUR (Implementasi Payment Gateway & Riwayat Transaksi
+Multi-Tenant): SATU provider Payment Gateway dipakai untuk KEDUA jenis
+transaksi (langganan SaaS & booking customer), TAPI diimplementasikan
+sebagai DUA modul TERPISAH TOTAL -- file ini (langganan SaaS) vs
+payment_gateway_client.py (booking customer). Yang BOLEH dipakai bersama
+HANYA komponen level-rendah (gateway_client_base.py) -- business logic/
+webhook processing/riwayat transaksi/pengelolaan pembayaran TETAP terpisah
+total, TIDAK saling bergantung sama sekali.
+
+PROVIDER RESMI: Faspay Xpress v4 (kredensial development dikonfirmasi tim
+Faspay -- Merchant ID 37070, akun "RivoiR", SATU Merchant ID dipakai untuk
+KEDUA sistem sekarang -- lihat gateway_notification_dispatch.py untuk
+kenapa ini tidak melanggar pemisahan business logic). Dokumentasi resmi:
+https://docs.faspay.co.id/merchant-integration/api-reference-1/xpress/xpress-version-4
 
 Kredensial dibaca DINAMIS dari `billing_gateway_db.get_config()` (tabel
-`settings`, dikelola Super Admin lewat UI) SETIAP fungsi di sini dipanggil
--- BUKAN konstanta module-level -- supaya perubahan kredensial lewat Super
-Admin langsung berlaku SAAT ITU JUGA, tanpa perlu restart/redeploy proses
-backend.
+`settings`, dikelola Super Admin lewat UI) SETIAP fungsi di sini dipanggil.
+Field generik proyek ini dipetakan ke istilah Faspay (lihat catatan lengkap
+di billing_gateway_db.py):
+- `merchant_id` -> Merchant ID Faspay
+- `server_key`  -> User ID Faspay
+- `secret_key`  -> Password Faspay
+- `client_key`/`api_key` -> TIDAK dipakai (tidak ada JS SDK, checkout murni
+  redirect ke halaman Faspay, lihat client_script_url() di bawah)
 
-- Server Key/Client Key kosong -> enabled=False. Endpoint checkout
-  (routers/billing.py) WAJIB mengecek is_enabled() dan balas 503 dengan
-  pesan jelas -- modul ini TIDAK PERNAH membuat proses gagal boot hanya
-  karena kredensial belum diisi (Super Admin belum sempat mengisi Billing
-  SaaS Payment Gateway di halaman Super Admin).
-- Terisi -> enabled=True, buat_transaksi()/cek_status_transaksi()
-  memanggil REST API provider sungguhan (Sandbox ATAU Production, sesuai
-  environment yang tersimpan).
+- Merchant ID/Server Key/Secret Key kosong -> enabled=False. Endpoint
+  checkout (routers/billing.py) WAJIB mengecek is_enabled() dan balas 503
+  dengan pesan jelas.
+- Terisi -> enabled=True, buat_transaksi() memanggil REST API Faspay
+  Xpress v4 sungguhan (Sandbox ATAU Production).
 
 verifikasi_signature() TIDAK bergantung pada enabled() sama sekali --
-fungsi MURNI (SHA512 + satu baca config, tanpa network), dipanggil webhook
-handler untuk memvalidasi SETIAP notifikasi masuk SEBELUM mempercayai isi
-payload-nya sama sekali -- SESUAI aturan keamanan "validasi Signature Key,
-Server Key, Order ID, transaction amount, jangan pernah percaya data dari
-client begitu saja"."""
+fungsi MURNI, dipanggil billing_webhook.py untuk memvalidasi SETIAP
+notifikasi masuk SEBELUM mempercayai isi payload-nya sama sekali.
 
-import base64
+CATATAN keterbatasan (disepakati eksplisit, JANGAN diimplementasikan
+berdasarkan tebakan): dokumentasi resmi Faspay Xpress v4 yang dipakai
+belum mencakup endpoint Inquiry/Check Status -- cek_status_transaksi() di
+bawah SENGAJA melempar error jelas, fitur "Cek Ulang ke Provider" untuk
+langganan SaaS nonaktif sementara sampai dokumentasi resmi endpoint itu
+tersedia."""
+
+from datetime import datetime, timedelta
 
 import billing_gateway_db
 import gateway_client_base as core
 
 _TIMEOUT_DETIK = 15
+
+_SANDBOX_URL = "https://xpress-sandbox.faspay.co.id/v4/post"
+# BELUM dikonfirmasi tim Faspay secara eksplisit -- lihat catatan yang sama
+# di payment_gateway_client.py, WAJIB dikonfirmasi ulang sebelum cutover
+# Production sungguhan.
+_PRODUCTION_URL = "https://xpress.faspay.co.id/v4/post"
+
+# SATU Return URL statis (konfirmasi resmi tim Faspay: hanya satu bisa
+# didaftarkan per Merchant ID) -- dipakai BERSAMA payment_gateway_client.py
+# (nilai yang SAMA, didefinisikan terpisah di masing-masing modul supaya
+# kedua modul tetap tidak saling import satu sama lain). Endpoint ini murni
+# tampilan (relay), TIDAK PERNAH mengubah status pembayaran -- lihat
+# routers/gateway_notification.py.
+RETURN_URL_RELAY = "https://api.rivoirsett.com/api/public/gateway/faspay-return"
+
+_EMAIL_FALLBACK = "support@rivoirsett.com"
+_MSISDN_FALLBACK = "628000000000"
+_MERCHANT_LOGO = "https://rivoirsett.com/icons/icon-192.png"
 
 
 def is_enabled() -> bool:
@@ -55,78 +76,89 @@ def is_production() -> bool:
     return billing_gateway_db.get_config()["environment"] == "production"
 
 
-def client_key() -> str:
-    """Client Key MEMANG dirancang dipakai di frontend (beda dengan Server
-    Key yang tidak pernah dikirim ke client sama sekali) -- dipakai
-    frontend Owner memuat script checkout provider dan memicu popup bayar."""
-    return billing_gateway_db.get_config()["client_key"]
+def client_key() -> str | None:
+    """Faspay Xpress v4 TIDAK punya JS SDK/client-side key -- checkout
+    murni redirect penuh ke halaman Faspay. Return None supaya frontend
+    (billing.js) mengenali "tidak ada script checkout" dan jatuh ke jalur
+    redirect_url."""
+    return None
 
 
-def client_script_url() -> str:
-    """URL script checkout hosted provider (dimuat frontend, lihat
-    billing.js) -- SAAT INI mengarah ke Snap.js Midtrans (adapter konkret
-    placeholder, lihat catatan modul), ganti sesuai dokumentasi provider
-    resmi begitu ditentukan."""
-    is_prod = billing_gateway_db.get_config()["environment"] == "production"
-    return "https://app.midtrans.com/snap/snap.js" if is_prod else "https://app.sandbox.midtrans.com/snap/snap.js"
+def client_script_url() -> str | None:
+    """Lihat catatan client_key()."""
+    return None
 
 
-def _checkout_base_url(is_prod: bool) -> str:
-    return "https://app.midtrans.com/snap/v1" if is_prod else "https://app.sandbox.midtrans.com/snap/v1"
-
-
-def _status_base_url(is_prod: bool) -> str:
-    return "https://api.midtrans.com/v2" if is_prod else "https://api.sandbox.midtrans.com/v2"
-
-
-def _auth_header(server_key: str) -> dict:
-    """Basic Auth: Server Key sebagai username, password kosong -- SESUAI
-    dokumentasi resmi provider saat ini (base64("SERVER_KEY:"))."""
-    token = base64.b64encode(f"{server_key}:".encode()).decode()
-    return {"Authorization": f"Basic {token}", "Content-Type": "application/json", "Accept": "application/json"}
+def _base_url(is_prod: bool) -> str:
+    return _PRODUCTION_URL if is_prod else _SANDBOX_URL
 
 
 def buat_transaksi(order_id: str, gross_amount: int, item_details: list,
                     customer_details: dict = None) -> dict:
-    """Buat transaksi checkout hosted -- return {"token", "redirect_url"}
-    dari provider (frontend memanggil script checkout dengan ini). Melempar
-    GatewayNotConfiguredError kalau belum dikonfigurasi, GatewayTimeoutError/
-    GatewayRequestError kalau providernya sendiri bermasalah -- pemanggil
-    (endpoint checkout) tetap WAJIB mengecek is_enabled() lebih dulu supaya
-    bisa balas 503 yang jelas."""
+    """Buat transaksi checkout Faspay Xpress v4 -- return {"token": None,
+    "redirect_url": ...} (Faspay tidak punya konsep token checkout seperti
+    Snap). Melempar GatewayNotConfiguredError kalau belum dikonfigurasi,
+    GatewayTimeoutError/GatewayRequestError kalau providernya sendiri
+    bermasalah -- pemanggil (routers/billing.py) tetap WAJIB mengecek
+    is_enabled() lebih dulu supaya bisa balas 503 yang jelas."""
     cfg = billing_gateway_db.get_config()
     if not cfg["enabled"]:
-        raise core.GatewayNotConfiguredError("Payment Gateway langganan SaaS belum dikonfigurasi Super Admin (Server Key/Client Key kosong).")
+        raise core.GatewayNotConfiguredError("Payment Gateway langganan SaaS belum dikonfigurasi Super Admin (Merchant ID/Server Key/Secret Key kosong).")
+
+    customer_details = customer_details or {}
+    cust_name = (customer_details.get("first_name") or "Owner").strip()[:32]
+    msisdn = (customer_details.get("phone") or "").strip() or _MSISDN_FALLBACK
+    email = (customer_details.get("email") or "").strip() or _EMAIL_FALLBACK
+    cust_no = msisdn
+
+    sekarang = datetime.now()
+    bill_total = int(gross_amount)
     payload = {
-        "transaction_details": {"order_id": order_id, "gross_amount": int(gross_amount)},
-        "item_details": item_details,
+        "merchant_id": str(cfg["merchant_id"]),
+        "bill_no": order_id,
+        "bill_date": sekarang.strftime("%Y-%m-%d %H:%M:%S"),
+        "bill_expired": (sekarang + timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S"),
+        "bill_desc": f"Pembayaran langganan #{order_id}"[:128],
+        "bill_gross": str(bill_total),
+        "bill_miscfee": "0",
+        "bill_total": str(bill_total),
+        "cust_no": cust_no,
+        "cust_name": cust_name,
+        "return_url": RETURN_URL_RELAY,
+        "msisdn": msisdn,
+        "email": email,
+        "item": [
+            {"product": str(it.get("name") or "Langganan")[:50], "qty": str(it.get("quantity") or 1), "amount": str(it["price"])}
+            for it in item_details
+        ],
+        "merchant_logo": _MERCHANT_LOGO,
+        "signature": core.sign_sha1_of_md5([cfg["server_key"], cfg["secret_key"], order_id, str(bill_total)]),
     }
-    if customer_details:
-        payload["customer_details"] = customer_details
-    data = core.post_json(f"{_checkout_base_url(cfg['environment'] == 'production')}/transactions", payload,
-                           _auth_header(cfg["server_key"]), timeout=_TIMEOUT_DETIK)
-    return {"token": data["token"], "redirect_url": data["redirect_url"]}
+    data = core.post_json(_base_url(cfg["environment"] == "production"), payload,
+                           {"Content-Type": "application/json"}, timeout=_TIMEOUT_DETIK)
+    if str(data.get("response_code")) != "00":
+        raise core.GatewayRequestError(f"Faspay menolak permintaan checkout: {data.get('response_desc')}")
+    return {"token": None, "redirect_url": data["redirect_url"]}
 
 
 def cek_status_transaksi(order_id: str) -> dict:
-    """GET status transaksi (Core API, BUKAN checkout API) -- dipakai untuk
-    rekonsiliasi manual/troubleshooting (mis. webhook tidak pernah sampai
-    karena masalah jaringan), TIDAK dipakai di alur normal (webhook handler
-    sudah cukup dari notifikasi POST langsung)."""
+    """SENGAJA belum diimplementasikan -- lihat catatan modul soal
+    dokumentasi resmi Faspay Xpress v4 yang belum mencakup endpoint
+    Inquiry/Check Status. Fitur "Cek Ulang ke Provider" akan melempar error
+    ini apa adanya (dibungkus 502 oleh router) sampai dokumentasi resmi
+    endpoint ini tersedia."""
+    raise core.GatewayError(
+        "Faspay Xpress: endpoint Inquiry/Check Status belum tersedia di dokumentasi resmi -- "
+        "fitur \"Cek Ulang ke Provider\" nonaktif sementara. Notifikasi webhook Faspay tetap "
+        "otomatis dikirim ulang hingga 3x, tunggu notifikasi resmi berikutnya."
+    )
+
+
+def verifikasi_signature(bill_no: str, payment_status_code: str, signature_key: str) -> bool:
+    """SHA1(MD5(user_id + password + bill_no + payment_status_code)) --
+    formula RESMI Faspay untuk Payment Notification/Return URL. Return
+    False kalau kredensial belum dikonfigurasi."""
     cfg = billing_gateway_db.get_config()
-    if not cfg["enabled"]:
-        raise core.GatewayNotConfiguredError("Payment Gateway langganan SaaS belum dikonfigurasi Super Admin (Server Key/Client Key kosong).")
-    return core.get_json(f"{_status_base_url(cfg['environment'] == 'production')}/{order_id}/status",
-                          _auth_header(cfg["server_key"]), timeout=_TIMEOUT_DETIK)
-
-
-def verifikasi_signature(order_id: str, status_code: str, gross_amount: str, signature_key: str) -> bool:
-    """SHA512(order_id + status_code + gross_amount + ServerKey) -- formula
-    SESUAI dokumentasi provider saat ini (adapter konkret placeholder,
-    lihat catatan modul -- ganti urutan field di sini kalau provider resmi
-    nanti pakai formula berbeda, callernya di billing_webhook.py TIDAK perlu
-    berubah). `gross_amount` HARUS string PERSIS seperti dikirim provider di
-    payload notifikasi (mis. "150000.00", bukan angka Python) -- signature
-    dihitung dari representasi teksnya, bukan nilai numeriknya."""
-    server_key = billing_gateway_db.get_config()["server_key"]
-    return core.verify_sha512([order_id, status_code, gross_amount], server_key, signature_key)
+    if not (cfg["server_key"] and cfg["secret_key"]):
+        return False
+    return core.verify_sha1_of_md5([cfg["server_key"], cfg["secret_key"], bill_no, payment_status_code], signature_key)

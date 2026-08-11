@@ -260,7 +260,13 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
         {"id": str(it["service_id"]), "price": it["harga"], "quantity": 1, "name": it["nama_service"][:50]}
         for it in booking["items"]
     ]
-    customer_details = {"first_name": booking["customer_nama"][:50]}
+    # AUDIT (perbaikan pasca-audit kesiapan): "phone" ditambahkan (SEBELUMNYA
+    # hanya "first_name") -- Faspay Xpress v4 mewajibkan msisdn di request
+    # checkout (lihat payment_gateway_client.py). Form booking publik
+    # SENGAJA TIDAK punya field email (keputusan eksplisit) -- "email"
+    # SENGAJA TIDAK diisi di sini, client-nya sendiri yang pakai fallback
+    # support@rivoirsett.com HANYA untuk memenuhi syarat API Faspay.
+    customer_details = {"first_name": booking["customer_nama"][:50], "phone": booking["customer_whatsapp"]}
     channels = payment_gateway_db.get_config()["metode_aktif"]
     try:
         hasil_gateway = payment_gateway_client.buat_transaksi(

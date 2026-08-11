@@ -82,6 +82,28 @@ def get_json(url: str, headers: dict, timeout: int = _TIMEOUT_DETIK_DEFAULT) -> 
     return resp.json()
 
 
+def sign_sha1_of_md5(parts: list) -> str:
+    """SHA1(MD5(concat(parts))) -- pola signature Faspay (Xpress v4): dua
+    tahap hash, kredensial (user_id/password) DIMASUKKAN LANGSUNG di dalam
+    `parts` pada posisi yang ditentukan pemanggil (BEDA dari verify_sha512()
+    yang menempelkan `key` generik di UJUNG) -- modul ini tetap tidak tahu
+    apa pun soal Faspay spesifik, murni komputasi hash dua-tahap generik."""
+    joined = "".join(str(p) for p in parts)
+    tahap1 = hashlib.md5(joined.encode()).hexdigest()
+    return hashlib.sha1(tahap1.encode()).hexdigest()
+
+
+def verify_sha1_of_md5(parts: list, signature: str) -> bool:
+    """Verifikasi SHA1(MD5(concat(parts))) == signature -- lihat
+    sign_sha1_of_md5(). Return False (bukan exception) kalau `signature`
+    kosong -- pemanggil (webhook handler) HARUS menolak notifikasi tanpa
+    signature sama sekali, bukan lolos begitu saja."""
+    if not signature:
+        return False
+    hitung = sign_sha1_of_md5(parts)
+    return hmac.compare_digest(hitung, signature)
+
+
 def verify_sha512(parts: list, key: str, signature: str) -> bool:
     """Verifikasi signature SHA512(concat(parts) + key) == signature --
     GENERIK soal urutan/isi `parts` (provider berbeda bisa punya formula

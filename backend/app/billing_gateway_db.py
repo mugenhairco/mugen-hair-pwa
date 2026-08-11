@@ -13,15 +13,13 @@ REVISI (proyek TIDAK terikat satu provider tetap): form konfigurasi SENGAJA
 generik -- tujuh field (environment, api_key, server_key, client_key,
 merchant_id, secret_key, webhook_url) mencakup kebutuhan kredensial payment
 gateway manapun, BUKAN field yang diberi nama/diasumsikan khusus satu
-provider. Provider Payment Gateway RESMI proyek ini belum ditentukan --
-kode konkret yang memanggil field ini saat ini (lihat billing_gateway_client.py,
-TIDAK diubah oleh revisi ini -- hanya memakai server_key/client_key/
-environment dari sini, field lain disimpan tapi belum dipakai kode apa pun)
-memakai bentuk protokol Midtrans sebagai ADAPTER PLACEHOLDER (satu-satunya
-protokol yang sudah teruji bekerja di proyek ini), anggap sebagai legacy/
-sementara -- kalau provider resmi sudah ditentukan, field yang relevan
-tinggal diisi lewat form yang SAMA, TIDAK PERNAH semua field wajib diisi
-sekaligus (provider berbeda butuh kombinasi kredensial berbeda).
+provider. Provider Payment Gateway RESMI proyek ini adalah Faspay Xpress
+v4 (kredensial development dikonfirmasi tim Faspay, lihat
+billing_gateway_client.py) -- field yang dipakai: merchant_id, server_key
+(diisi User ID Faspay), secret_key (diisi Password Faspay). client_key/
+api_key TIDAK dipakai Faspay (tidak ada JS SDK client-side), tetap
+disediakan untuk provider LAIN yang mungkin butuh kombinasi field berbeda
+di masa depan -- TIDAK PERNAH semua field wajib diisi sekaligus.
 
 Sebelumnya kredensial ini murni environment variable (MIDTRANS_SERVER_KEY/
 MIDTRANS_CLIENT_KEY/MIDTRANS_IS_PRODUCTION, dibaca SEKALI oleh
@@ -74,12 +72,12 @@ def get_config() -> dict:
         "secret_key": secret_key,
         "webhook_url": webhook_url,
         "environment": environment,
-        # "enabled": adapter konkret yang TERPASANG saat ini (lihat
-        # billing_gateway_client.py) HANYA butuh server_key+client_key --
-        # field lain (api_key/merchant_id/secret_key/webhook_url) disediakan
-        # untuk provider LAIN yang mungkin butuh kombinasi berbeda, belum
-        # ikut menentukan enabled selama adapter konkretnya belum berubah.
-        "enabled": bool(server_key and client_key),
+        # "enabled": adapter konkret yang TERPASANG saat ini (Faspay Xpress
+        # v4, lihat billing_gateway_client.py) butuh merchant_id+server_key
+        # (dipetakan ke User ID Faspay)+secret_key (dipetakan ke Password
+        # Faspay) -- client_key TIDAK dipakai Faspay (tidak ada JS SDK),
+        # tetap disimpan untuk provider LAIN yang mungkin butuh field itu.
+        "enabled": bool(merchant_id and server_key and secret_key),
     }
 
 

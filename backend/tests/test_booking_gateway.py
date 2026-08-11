@@ -30,32 +30,43 @@ import payment_gateway_db
 import tenant_db
 from booking_db import _hari_ini_wib
 
-SERVER_KEY = "SB-Mid-server-test-booking-gateway"
+USER_ID = "bot37070-test"
+PASSWORD = "p-test-booking-gateway"
 _urutan_unik = itertools.count(1)
 
 
-def _hitung_signature(order_id, status_code, gross_amount, server_key=SERVER_KEY):
-    raw = f"{order_id}{status_code}{gross_amount}{server_key}"
-    return hashlib.sha512(raw.encode()).hexdigest()
+def _hitung_signature(bill_no, payment_status_code, user_id=USER_ID, password=PASSWORD):
+    """SHA1(MD5(user_id + password + bill_no + payment_status_code)) --
+    formula RESMI Faspay Xpress v4 Payment Notification."""
+    tahap1 = hashlib.md5(f"{user_id}{password}{bill_no}{payment_status_code}".encode()).hexdigest()
+    return hashlib.sha1(tahap1.encode()).hexdigest()
 
 
-def _payload(order_id, transaction_status, gross_amount, status_code="200",
-             fraud_status=None, payment_type="qris", server_key=SERVER_KEY):
-    p = {
-        "order_id": order_id,
-        "status_code": status_code,
-        "gross_amount": f"{gross_amount}.00",
-        "transaction_status": transaction_status,
-        "payment_type": payment_type,
+def _payload(order_id, payment_status_code, nominal, payment_channel="QRIS",
+             user_id=USER_ID, password=PASSWORD):
+    """Payload notifikasi berformat Faspay Xpress v4 Payment Notification --
+    lihat booking_gateway_webhook.py::proses_notifikasi() untuk field yang
+    dibaca."""
+    return {
+        "request": "Payment Notification",
+        "trx_id": "89850370" + order_id[-8:] if len(order_id) >= 8 else "8985037012345678",
+        "merchant_id": "37070",
+        "merchant": "RivoiR",
+        "bill_no": order_id,
+        "payment_reff": "null",
+        "payment_date": "2026-01-01 10:00:00",
+        "payment_status_code": payment_status_code,
+        "payment_status_desc": "Payment Status",
+        "bill_total": str(int(nominal)),
+        "payment_total": str(int(nominal)),
+        "payment_channel_uid": "402",
+        "payment_channel": payment_channel,
+        "signature": _hitung_signature(order_id, payment_status_code, user_id, password),
     }
-    if fraud_status is not None:
-        p["fraud_status"] = fraud_status
-    p["signature_key"] = _hitung_signature(order_id, status_code, p["gross_amount"], server_key)
-    return p
 
 
 def _aktifkan_pgw():
-    payment_gateway_db.update_config(server_key=SERVER_KEY, client_key="dummy-client-key")
+    payment_gateway_db.update_config(merchant_id="37070", server_key=USER_ID, secret_key=PASSWORD)
 
 
 def _tenant_default():
@@ -181,8 +192,8 @@ def test_signature_tidak_valid_ditolak(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
-    payload["signature_key"] = "signature-palsu"
+    payload = _payload(transaksi["order_id"], "2", transaksi["nominal"])
+    payload["signature"] = "signature-palsu"
 
     try:
         booking_gateway_webhook.proses_notifikasi(payload)
@@ -194,7 +205,7 @@ def test_signature_tidak_valid_ditolak(app_client):
 
 def test_order_id_tidak_dikenal_ditolak(app_client):
     _aktifkan_pgw()
-    payload = _payload("BOOK-TIDAK-ADA", "settlement", 100000)
+    payload = _payload("BOOK-TIDAK-ADA", "2", 100000)
     try:
         booking_gateway_webhook.proses_notifikasi(payload)
         assert False, "harus melempar ValueError"
@@ -207,7 +218,7 @@ def test_gross_amount_dimanipulasi_ditolak(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"], nominal=100000)
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", 1000)  # dipalsukan jadi kecil
+    payload = _payload(transaksi["order_id"], "2", 1000)  # dipalsukan jadi kecil
 
     try:
         booking_gateway_webhook.proses_notifikasi(payload)
@@ -222,7 +233,7 @@ def test_transaction_status_tidak_dikenal_ditolak(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "refund_ganda_tidak_dikenal", transaksi["nominal"])
+    payload = _payload(transaksi["order_id"], "99", transaksi["nominal"])  # kode tidak dikenal
     try:
         booking_gateway_webhook.proses_notifikasi(payload)
         assert False, "harus melempar ValueError"
@@ -237,11 +248,11 @@ def test_settlement_berhasil_booking_terverifikasi(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"], payment_type="qris")
+    payload = _payload(transaksi["order_id"], "2", transaksi["nominal"], payment_channel="QRIS")
 
     hasil = booking_gateway_webhook.proses_notifikasi(payload)
     assert hasil["status_pembayaran"] == "berhasil"
-    assert hasil["channel_pembayaran"] == "qris"
+    assert hasil["channel_pembayaran"] == "QRIS"
     assert hasil["paid_at"] is not None
 
     updated_booking = booking_db.get_booking(booking["id"])
@@ -249,13 +260,12 @@ def test_settlement_berhasil_booking_terverifikasi(app_client):
     assert updated_booking["status_booking"] == "aktif"
 
 
-def test_capture_challenge_menjadi_diproses_tanpa_cascade(app_client):
+def test_in_process_menjadi_diproses_tanpa_cascade(app_client):
     _aktifkan_pgw()
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "capture", transaksi["nominal"],
-                        fraud_status="challenge", payment_type="credit_card")
+    payload = _payload(transaksi["order_id"], "1", transaksi["nominal"], payment_channel="Kartu Kredit")
 
     hasil = booking_gateway_webhook.proses_notifikasi(payload)
     assert hasil["status_pembayaran"] == "diproses"
@@ -267,12 +277,12 @@ def test_capture_challenge_menjadi_diproses_tanpa_cascade(app_client):
 def test_deny_cancel_expire_membatalkan_booking(app_client):
     _aktifkan_pgw()
     tenant = _tenant_default()
-    for i, (transaction_status, expected_status) in enumerate([
-        ("deny", "gagal"), ("cancel", "dibatalkan"), ("expire", "kedaluwarsa"),
+    for i, (payment_status_code, expected_status) in enumerate([
+        ("3", "gagal"), ("8", "dibatalkan"), ("7", "kedaluwarsa"),
     ]):
         booking = _buat_booking_gateway(tenant["id"], hari_offset=2 + i)
         transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-        payload = _payload(transaksi["order_id"], transaction_status, transaksi["nominal"])
+        payload = _payload(transaksi["order_id"], payment_status_code, transaksi["nominal"])
 
         hasil = booking_gateway_webhook.proses_notifikasi(payload)
         assert hasil["status_pembayaran"] == expected_status
@@ -286,9 +296,9 @@ def test_refund_tidak_mengubah_status_booking(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "2", transaksi["nominal"]))
 
-    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "refund", transaksi["nominal"]))
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "4", transaksi["nominal"]))
     assert hasil["status_pembayaran"] == "refund"
     assert booking_db.get_booking(booking["id"])["status_booking"] == "aktif"
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
@@ -301,7 +311,7 @@ def test_notifikasi_duplikat_tidak_double_cascade(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+    payload = _payload(transaksi["order_id"], "2", transaksi["nominal"])
 
     hasil1 = booking_gateway_webhook.proses_notifikasi(payload)
     hasil2 = booking_gateway_webhook.proses_notifikasi(payload)  # provider kirim ulang notifikasi yang sama
@@ -318,7 +328,7 @@ def test_endpoint_webhook_sukses(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+    payload = _payload(transaksi["order_id"], "2", transaksi["nominal"])
 
     r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
     assert r.status_code == 200, r.text
@@ -330,8 +340,8 @@ def test_endpoint_webhook_signature_salah_400(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
-    payload["signature_key"] = "salah"
+    payload = _payload(transaksi["order_id"], "2", transaksi["nominal"])
+    payload["signature"] = "salah"
 
     r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
     assert r.status_code == 400
@@ -344,7 +354,7 @@ def test_endpoint_webhook_tanpa_login_bisa_diakses(app_client):
     tenant = _tenant_default()
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
-    payload = _payload(transaksi["order_id"], "pending", transaksi["nominal"])
+    payload = _payload(transaksi["order_id"], "0", transaksi["nominal"])
 
     r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
     assert r.status_code == 200, r.text
@@ -424,7 +434,7 @@ def test_detail_transaksi_menyertakan_status_log(two_tenants):
     booking_a = _buat_booking_gateway(tenant_a)
     transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
     booking_gateway_webhook.proses_notifikasi(
-        _payload(transaksi_a["order_id"], "settlement", transaksi_a["nominal"]))
+        _payload(transaksi_a["order_id"], "2", transaksi_a["nominal"]))
 
     r = client.get(f"/api/booking/transactions/{transaksi_a['id']}", headers=headers_a)
     assert r.status_code == 200, r.text
@@ -447,12 +457,12 @@ def test_notifikasi_basi_setelah_berhasil_tidak_membatalkan_booking_yang_sudah_d
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
 
     # settlement diproses lebih dulu -- booking terverifikasi, slot terisi.
-    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "2", transaksi["nominal"]))
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
 
     # notifikasi "cancel" BASI (tertunda di jaringan, datang belakangan) --
     # HARUS ditolak, TIDAK boleh membatalkan booking yang sudah dibayar.
-    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "cancel", transaksi["nominal"]))
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "8", transaksi["nominal"]))
     assert hasil["status_pembayaran"] == "berhasil"  # TETAP berhasil, TIDAK turun jadi "dibatalkan"
 
     booking_setelah = booking_db.get_booking(booking["id"])
@@ -479,10 +489,10 @@ def test_notifikasi_basi_setelah_gagal_tidak_diterapkan(app_client):
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
 
-    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "deny", transaksi["nominal"]))
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "3", transaksi["nominal"]))
     assert booking_db.get_booking(booking["id"])["status_booking"] == "dibatalkan"
 
-    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "2", transaksi["nominal"]))
     assert hasil["status_pembayaran"] == "gagal"  # TETAP gagal, TIDAK "diperbaiki" jadi berhasil
 
 
@@ -494,8 +504,8 @@ def test_berhasil_ke_refund_tetap_diizinkan_meski_status_sudah_final(app_client)
     booking = _buat_booking_gateway(tenant["id"])
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
 
-    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
-    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "refund", transaksi["nominal"]))
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "2", transaksi["nominal"]))
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "4", transaksi["nominal"]))
     assert hasil["status_pembayaran"] == "refund"
 
     log = booking_gateway_db.list_status_log(transaksi["id"])
@@ -520,8 +530,8 @@ def test_rekonsiliasi_manual_menerapkan_status_dari_provider(app_client, monkeyp
     assert transaksi["status_pembayaran"] == "menunggu_pembayaran"
 
     monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
-        "transaction_status": "settlement", "gross_amount": f"{transaksi['nominal']}.00",
-        "payment_type": "qris", "transaction_id": "prov-txn-123",
+        "payment_status_code": "2", "bill_total": str(transaksi["nominal"]),
+        "payment_channel": "QRIS", "trx_id": "prov-txn-123",
     })
 
     hasil = booking_gateway_webhook.rekonsiliasi_manual(transaksi["id"], tenant_id=tenant["id"])
@@ -541,7 +551,7 @@ def test_rekonsiliasi_manual_gross_amount_tidak_cocok_ditolak(app_client, monkey
     transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
 
     monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
-        "transaction_status": "settlement", "gross_amount": "1000.00", "payment_type": "qris",
+        "payment_status_code": "2", "bill_total": "1000", "payment_channel": "QRIS",
     })
 
     try:
@@ -550,6 +560,18 @@ def test_rekonsiliasi_manual_gross_amount_tidak_cocok_ditolak(app_client, monkey
     except ValueError as e:
         assert "tidak cocok" in str(e)
     assert booking_gateway_db.get_transaksi(transaksi["id"])["status_pembayaran"] == "menunggu_pembayaran"
+
+
+def test_cek_status_transaksi_belum_tersedia_untuk_faspay(app_client):
+    """Keputusan eksplisit: dokumentasi resmi Faspay Xpress v4 yang dipakai
+    TIDAK mencakup endpoint Inquiry/Check Status -- cek_status_transaksi()
+    SENGAJA melempar error jelas (TANPA memanggil HTTP apa pun/menebak
+    endpoint), bukan diimplementasikan berdasarkan asumsi."""
+    try:
+        payment_gateway_client.cek_status_transaksi("BOOK-1-1-dummy")
+        assert False, "harus melempar GatewayError"
+    except gateway_client_base.GatewayError as e:
+        assert "Inquiry" in str(e) or "Check Status" in str(e)
 
 
 def test_rekonsiliasi_manual_transaksi_tenant_lain_ditolak(two_tenants):
@@ -574,7 +596,7 @@ def test_endpoint_cek_ulang_transaksi_sukses(two_tenants, monkeypatch):
     booking_a = _buat_booking_gateway(tenant_a)
     transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
     monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
-        "transaction_status": "settlement", "gross_amount": f"{transaksi_a['nominal']}.00", "payment_type": "gopay",
+        "payment_status_code": "2", "bill_total": str(transaksi_a["nominal"]), "payment_channel": "GoPay",
     })
 
     r = client.post(f"/api/booking/transactions/{transaksi_a['id']}/cek-ulang", headers=headers_a)
