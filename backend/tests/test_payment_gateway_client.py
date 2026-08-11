@@ -1,24 +1,31 @@
 """
-test_billing_gateway_client.py — FONDASI Multi-Tenant Phase 4: Klien Payment Gateway Langganan SaaS
+test_payment_gateway_client.py — Implementasi Payment Gateway & Riwayat
+Transaksi Multi-Tenant: Klien Payment Gateway Booking Customer
 =============================================================================
-Provider RESMI: Faspay Xpress v4 (lihat billing_gateway_client.py) --
-kredensial datang dari `billing_gateway_db.get_config()` (DB-backed,
-platform-wide Billing SaaS), BUKAN konstanta module-level yang dibaca dari
-environment variable saat modul diimpor. Seluruh pengujian di sini tetap
-memakai mock/simulasi (monkeypatch billing_gateway_db.get_config() + fungsi
-requests.post) -- TIDAK PERNAH memanggil provider sungguhan maupun database
-sungguhan, supaya suite ini tetap hijau tanpa kredensial provider apa pun.
+Provider RESMI: Faspay Xpress v4 (lihat payment_gateway_client.py) --
+kredensial datang dari `payment_gateway_db.get_config()` (DB-backed,
+platform-wide Payment Gateway booking), BUKAN konstanta module-level.
+Seluruh pengujian di sini memakai mock/simulasi (monkeypatch
+payment_gateway_db.get_config() + fungsi requests.post) -- TIDAK PERNAH
+memanggil provider sungguhan maupun database sungguhan.
+
+Sebelum audit ini, payment_gateway_client.py (booking) TIDAK punya test
+langsung sama sekali (hanya diuji tidak langsung lewat mock penuh di
+test_booking_gateway.py) -- file ini menutup celah itu, pola SAMA PERSIS
+dengan test_billing_gateway_client.py (langganan SaaS) yang sudah ada.
 
 KEAMANAN: kredensial test di sini SENGAJA nilai fiktif yang jelas berbeda
 dari kredensial development sungguhan (Merchant ID 37070/User ID bot37070/
 Password p@ssw0rd yang dikirim tim Faspay) -- TIDAK PERNAH menaruh
 kredensial sungguhan di source code."""
 
+import datetime as dt_module
+
 import pytest
 
-import billing_gateway_client
-import billing_gateway_db
 import gateway_client_base
+import payment_gateway_client
+import payment_gateway_db
 
 
 class _FakeResponse:
@@ -32,57 +39,57 @@ class _FakeResponse:
 
 
 def _cfg(merchant_id: str = "", server_key: str = "", secret_key: str = "",
-         client_key: str = "", environment: str = "sandbox") -> dict:
+         client_key: str = "", environment: str = "sandbox", metode_aktif: list = None) -> dict:
     return {
-        "merchant_id": merchant_id, "server_key": server_key, "secret_key": secret_key,
-        "client_key": client_key, "environment": environment,
-        "enabled": bool(merchant_id and server_key and secret_key),
+        "pgw_merchant_id": merchant_id, "pgw_server_key": server_key, "pgw_secret_key": secret_key,
+        "pgw_client_key": client_key, "pgw_environment": environment,
+        "metode_aktif": metode_aktif or [],
     }
 
 
 _MID = "37070-test"
-_USER_ID = "bot-test-billing-client"
-_PASSWORD = "p-test-billing-client"
+_USER_ID = "bot-test-payment-client"
+_PASSWORD = "p-test-payment-client"
 
 
 # ============================= is_enabled / client_key / client_script_url =============================
 
 def test_is_enabled_ikuti_config(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg())
-    assert billing_gateway_client.is_enabled() is False
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config", lambda: _cfg())
+    assert payment_gateway_client.is_enabled() is False
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    assert billing_gateway_client.is_enabled() is True
+    assert payment_gateway_client.is_enabled() is True
 
 
 def test_is_production_ikuti_config(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg(environment="production"))
-    assert billing_gateway_client.is_production() is True
-    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg(environment="sandbox"))
-    assert billing_gateway_client.is_production() is False
+    monkeypatch.setattr(payment_gateway_db, "get_config", lambda: _cfg(environment="production"))
+    assert payment_gateway_client.is_production() is True
+    monkeypatch.setattr(payment_gateway_db, "get_config", lambda: _cfg(environment="sandbox"))
+    assert payment_gateway_client.is_production() is False
 
 
 def test_client_key_dan_script_url_selalu_none(monkeypatch):
     """Faspay Xpress v4 TIDAK punya JS SDK/client-side key -- checkout murni
     redirect ke halaman Faspay, terlepas dari status konfigurasi apa pun --
-    frontend (billing.js) mengenali None ini untuk jatuh ke jalur
+    frontend (book_public.js) mengenali None ini untuk jatuh ke jalur
     window.open(redirect_url)."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    assert billing_gateway_client.client_key() is None
-    assert billing_gateway_client.client_script_url() is None
+    assert payment_gateway_client.client_key() is None
+    assert payment_gateway_client.client_script_url() is None
 
 
 # ============================= buat_transaksi =============================
 
 def test_buat_transaksi_gagal_kalau_belum_dikonfigurasi(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg())
+    monkeypatch.setattr(payment_gateway_db, "get_config", lambda: _cfg())
     with pytest.raises(gateway_client_base.GatewayNotConfiguredError, match="belum dikonfigurasi"):
-        billing_gateway_client.buat_transaksi("ORDER-1", 100000, [])
+        payment_gateway_client.buat_transaksi("BOOK-1", 100000, [])
 
 
 def test_buat_transaksi_sukses(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     dipanggil = {}
@@ -97,30 +104,27 @@ def test_buat_transaksi_sukses(monkeypatch):
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    hasil = billing_gateway_client.buat_transaksi(
-        "ORDER-100", 150000,
-        [{"id": "pkg-basic", "price": 150000, "quantity": 1, "name": "Paket Basic"}],
-        customer_details={"first_name": "Budi", "phone": "081234567890", "email": "budi@example.test"},
+    hasil = payment_gateway_client.buat_transaksi(
+        "BOOK-1-1-abc", 150000,
+        [{"id": "1", "price": 150000, "quantity": 1, "name": "Dry Cut"}],
+        customer_details={"first_name": "Budi", "phone": "081234567890"},
     )
     assert hasil == {"token": None, "redirect_url": "https://xpress-sandbox.faspay.co.id/checkout/abc"}
     assert dipanggil["url"] == "https://xpress-sandbox.faspay.co.id/v4/post"
     payload = dipanggil["json"]
     assert payload["merchant_id"] == _MID
-    assert payload["bill_no"] == "ORDER-100"
+    assert payload["bill_no"] == "BOOK-1-1-abc"
     assert payload["bill_total"] == "150000"
     assert payload["cust_name"] == "Budi"
     assert payload["msisdn"] == "081234567890"
-    assert payload["email"] == "budi@example.test"
-    assert payload["item"] == [{"product": "Paket Basic", "qty": "1", "amount": "150000"}]
+    assert payload["email"] == "support@rivoirsett.com"  # fallback -- form booking publik tidak punya field email
+    assert payload["item"] == [{"product": "Dry Cut", "qty": "1", "amount": "150000"}]
     assert payload["signature"] == gateway_client_base.sign_sha1_of_md5(
-        [_USER_ID, _PASSWORD, "ORDER-100", "150000"])
+        [_USER_ID, _PASSWORD, "BOOK-1-1-abc", "150000"])
 
 
-def test_buat_transaksi_fallback_email_msisdn_kalau_kosong(monkeypatch):
-    """customer_details boleh tidak lengkap (mis. Owner tenant lama belum
-    isi whatsapp/email saat registrasi) -- WAJIB tetap terkirim ke Faspay
-    pakai nilai fallback, bukan meledak/mengirim string kosong."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+def test_buat_transaksi_fallback_msisdn_kalau_kosong(monkeypatch):
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     dipanggil = {}
@@ -131,14 +135,13 @@ def test_buat_transaksi_fallback_email_msisdn_kalau_kosong(monkeypatch):
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    billing_gateway_client.buat_transaksi("ORDER-101", 50000, [], customer_details={})
-    assert dipanggil["json"]["email"] == "support@rivoirsett.com"
+    payment_gateway_client.buat_transaksi("BOOK-1", 50000, [], customer_details={})
     assert dipanggil["json"]["msisdn"] == "628000000000"
-    assert dipanggil["json"]["cust_name"] == "Owner"
+    assert dipanggil["json"]["cust_name"] == "Customer"
 
 
 def test_buat_transaksi_response_code_bukan_00_melempar_gateway_request_error(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     def fake_post(url, json, headers, timeout):
@@ -147,16 +150,13 @@ def test_buat_transaksi_response_code_bukan_00_melempar_gateway_request_error(mo
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
     with pytest.raises(gateway_client_base.GatewayRequestError, match="menolak"):
-        billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
+        payment_gateway_client.buat_transaksi("BOOK-1", 150000, [])
 
 
 def test_buat_transaksi_timeout_melempar_gateway_timeout_error(monkeypatch):
-    """REGRESI temuan audit: exception jaringan/timeout sebelumnya TIDAK
-    ditangkap sama sekali, bisa lolos jadi HTTP 500 mentah -- sekarang
-    gateway_client_base.post_json() menerjemahkannya jadi GatewayTimeoutError."""
     import requests as requests_lib
 
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     def fake_post(url, json, headers, timeout):
@@ -165,11 +165,11 @@ def test_buat_transaksi_timeout_melempar_gateway_timeout_error(monkeypatch):
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
     with pytest.raises(gateway_client_base.GatewayTimeoutError):
-        billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
+        payment_gateway_client.buat_transaksi("BOOK-1", 150000, [])
 
 
 def test_buat_transaksi_environment_production_pakai_base_url_production(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD,
                                       environment="production"))
 
@@ -181,7 +181,7 @@ def test_buat_transaksi_environment_production_pakai_base_url_production(monkeyp
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
+    payment_gateway_client.buat_transaksi("BOOK-1", 150000, [])
     assert dipanggil["url"] == "https://xpress.faspay.co.id/v4/post"
 
 
@@ -190,11 +190,8 @@ def test_buat_transaksi_bill_expired_wib_setelah_bill_date(monkeypatch):
     bill_date/bill_expired WAJIB dihitung dari gateway_client_base.now_wib()
     (Asia/Jakarta), BUKAN datetime.now() polos yang di server Render
     (default UTC, 7 jam di belakang WIB) membuat Faspay menganggap
-    bill_expired sudah lewat. Waktu "sekarang" dikunci lewat monkeypatch
-    supaya assert bisa memverifikasi angka jam PERSIS, bukan cuma format."""
-    import datetime as dt_module
-
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    bill_expired sudah lewat."""
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
     waktu_tetap = dt_module.datetime(2026, 8, 11, 14, 0, 0, tzinfo=gateway_client_base.WIB)
     monkeypatch.setattr(gateway_client_base, "now_wib", lambda: waktu_tetap)
@@ -207,7 +204,7 @@ def test_buat_transaksi_bill_expired_wib_setelah_bill_date(monkeypatch):
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
+    payment_gateway_client.buat_transaksi("BOOK-1", 150000, [])
     payload = dipanggil["json"]
     assert payload["bill_date"] == "2026-08-11 14:00:00"
     assert payload["bill_expired"] == "2026-08-11 14:30:00"
@@ -215,10 +212,10 @@ def test_buat_transaksi_bill_expired_wib_setelah_bill_date(monkeypatch):
 
 def test_buat_transaksi_item_product_disanitasi(monkeypatch):
     """AUDIT (UAT Faspay -- "item[product] must be alphanumeric"): nama
-    paket asli boleh mengandung tanda kurung/simbol (mis. "Paket Pro (30
-    hari)") -- Faspay menolaknya mentah-mentah, item[].product WAJIB sudah
-    disanitasi jadi alphanumeric+spasi sebelum dikirim."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    layanan sungguhan lazim mengandung simbol (mis. "Cut & Wash", "Hair
+    Coloring (Full)") -- Faspay menolaknya mentah-mentah, item[].product
+    WAJIB sudah disanitasi jadi alphanumeric+spasi sebelum dikirim."""
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     dipanggil = {}
@@ -229,15 +226,21 @@ def test_buat_transaksi_item_product_disanitasi(monkeypatch):
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    billing_gateway_client.buat_transaksi(
-        "ORDER-100", 150000,
-        [{"id": "pkg-pro", "price": 150000, "quantity": 1, "name": "Paket Pro (30 hari)"}],
+    payment_gateway_client.buat_transaksi(
+        "BOOK-1", 200000,
+        [
+            {"id": "1", "price": 100000, "quantity": 1, "name": "Cut & Wash"},
+            {"id": "2", "price": 100000, "quantity": 1, "name": "Hair Coloring (Full)"},
+        ],
     )
-    assert dipanggil["json"]["item"] == [{"product": "Paket Pro 30 hari", "qty": "1", "amount": "150000"}]
+    assert dipanggil["json"]["item"] == [
+        {"product": "Cut Wash", "qty": "1", "amount": "100000"},
+        {"product": "Hair Coloring Full", "qty": "1", "amount": "100000"},
+    ]
 
 
 def test_buat_transaksi_item_product_kosong_pakai_fallback(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
 
     dipanggil = {}
@@ -248,10 +251,10 @@ def test_buat_transaksi_item_product_kosong_pakai_fallback(monkeypatch):
 
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    billing_gateway_client.buat_transaksi(
-        "ORDER-100", 150000, [{"id": "x", "price": 150000, "quantity": 1, "name": "###"}],
+    payment_gateway_client.buat_transaksi(
+        "BOOK-1", 100000, [{"id": "1", "price": 100000, "quantity": 1, "name": "###"}],
     )
-    assert dipanggil["json"]["item"] == [{"product": "Langganan", "qty": "1", "amount": "150000"}]
+    assert dipanggil["json"]["item"] == [{"product": "Layanan", "qty": "1", "amount": "100000"}]
 
 
 # ============================= cek_status_transaksi (SENGAJA dinonaktifkan) =============================
@@ -259,12 +262,12 @@ def test_buat_transaksi_item_product_kosong_pakai_fallback(monkeypatch):
 def test_cek_status_transaksi_belum_tersedia_untuk_faspay(monkeypatch):
     """SESUAI KEPUTUSAN: dokumentasi resmi Faspay Xpress v4 belum mencakup
     endpoint Inquiry/Check Status -- fitur "Cek Ulang ke Provider" untuk
-    langganan SaaS SENGAJA dinonaktifkan (melempar error jelas), BUKAN
-    diimplementasikan berdasarkan tebakan endpoint."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    booking SENGAJA dinonaktifkan (melempar error jelas), BUKAN
+    diimplementasikan berdasarkan tebakan."""
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
     with pytest.raises(gateway_client_base.GatewayError, match="Inquiry/Check Status belum tersedia"):
-        billing_gateway_client.cek_status_transaksi("ORDER-1")
+        payment_gateway_client.cek_status_transaksi("BOOK-1")
 
 
 # ============================= verifikasi_signature =============================
@@ -274,40 +277,33 @@ def _hitung_signature(bill_no, payment_status_code, user_id=_USER_ID, password=_
 
 
 def test_verifikasi_signature_selalu_false_tanpa_kredensial(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg())
-    assert billing_gateway_client.verifikasi_signature("ORDER-1", "2", "apapun") is False
+    monkeypatch.setattr(payment_gateway_db, "get_config", lambda: _cfg())
+    assert payment_gateway_client.verifikasi_signature("BOOK-1", "2", "apapun") is False
 
 
 def test_verifikasi_signature_valid(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    sig = _hitung_signature("ORDER-100", "2")
-    assert billing_gateway_client.verifikasi_signature("ORDER-100", "2", sig) is True
+    sig = _hitung_signature("BOOK-1", "2")
+    assert payment_gateway_client.verifikasi_signature("BOOK-1", "2", sig) is True
 
 
 def test_verifikasi_signature_status_code_diubah_ditolak(monkeypatch):
-    """Regresi keamanan langsung dari spesifikasi Phase 4: "jangan pernah
-    percaya data dari client begitu saja" -- signature yang dihitung dari
-    payment_status_code ASLI HARUS ditolak kalau status yang dibandingkan
-    diam-diam diubah (mis. payload notifikasi dipalsukan)."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    sig_asli = _hitung_signature("ORDER-100", "2")
-    assert billing_gateway_client.verifikasi_signature("ORDER-100", "3", sig_asli) is False
+    sig_asli = _hitung_signature("BOOK-1", "2")
+    assert payment_gateway_client.verifikasi_signature("BOOK-1", "3", sig_asli) is False
 
 
 def test_verifikasi_signature_bill_no_diubah_ditolak(monkeypatch):
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    sig_asli = _hitung_signature("ORDER-100", "2")
-    assert billing_gateway_client.verifikasi_signature("ORDER-LAIN", "2", sig_asli) is False
+    sig_asli = _hitung_signature("BOOK-1", "2")
+    assert payment_gateway_client.verifikasi_signature("BOOK-LAIN", "2", sig_asli) is False
 
 
 def test_verifikasi_signature_kredensial_salah_ditolak(monkeypatch):
-    """Signature dihitung dari User ID/Password LAIN (mis. hasil kebocoran/
-    salah tempel kredensial) HARUS ditolak begitu kredensial aktif di
-    deployment ini berbeda."""
-    monkeypatch.setattr(billing_gateway_db, "get_config",
+    monkeypatch.setattr(payment_gateway_db, "get_config",
                          lambda: _cfg(merchant_id=_MID, server_key=_USER_ID, secret_key=_PASSWORD))
-    sig_dari_kredensial_lain = _hitung_signature("ORDER-100", "2", user_id="bot-lain", password="password-lain")
-    assert billing_gateway_client.verifikasi_signature("ORDER-100", "2", sig_dari_kredensial_lain) is False
+    sig_dari_kredensial_lain = _hitung_signature("BOOK-1", "2", user_id="bot-lain", password="password-lain")
+    assert payment_gateway_client.verifikasi_signature("BOOK-1", "2", sig_dari_kredensial_lain) is False

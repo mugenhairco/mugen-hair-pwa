@@ -42,7 +42,7 @@ bawah SENGAJA melempar error jelas, fitur "Cek Ulang ke Provider" untuk
 langganan SaaS nonaktif sementara sampai dokumentasi resmi endpoint itu
 tersedia."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import billing_gateway_db
 import gateway_client_base as core
@@ -111,7 +111,7 @@ def buat_transaksi(order_id: str, gross_amount: int, item_details: list,
     email = (customer_details.get("email") or "").strip() or _EMAIL_FALLBACK
     cust_no = msisdn
 
-    sekarang = datetime.now()
+    sekarang = core.now_wib()
     bill_total = int(gross_amount)
     payload = {
         "merchant_id": str(cfg["merchant_id"]),
@@ -128,7 +128,8 @@ def buat_transaksi(order_id: str, gross_amount: int, item_details: list,
         "msisdn": msisdn,
         "email": email,
         "item": [
-            {"product": str(it.get("name") or "Langganan")[:50], "qty": str(it.get("quantity") or 1), "amount": str(it["price"])}
+            {"product": core.sanitize_item_product(it.get("name"), fallback="Langganan"),
+             "qty": str(it.get("quantity") or 1), "amount": str(it["price"])}
             for it in item_details
         ],
         "merchant_logo": _MERCHANT_LOGO,

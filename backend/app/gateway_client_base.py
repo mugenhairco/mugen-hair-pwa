@@ -21,10 +21,56 @@ Gateway, tidak peduli jenis transaksinya."""
 import hashlib
 import hmac
 import logging
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
 _TIMEOUT_DETIK_DEFAULT = 15
+
+# AUDIT (UAT Faspay -- "bill expired must be greater than today"): Faspay
+# (perusahaan Indonesia) memvalidasi bill_date/bill_expired terhadap jam
+# WIB mereka sendiri -- server Render tempat aplikasi ini berjalan default
+# UTC (7 jam di BELAKANG WIB, pola sama seperti booking_db.py::_sekarang_wib()
+# -- lihat catatan panjang di sana), jadi datetime.now() polos yang
+# sebelumnya dipakai billing_gateway_client.py/payment_gateway_client.py
+# mengirim jam yang menurut Faspay masih ~7 jam di masa lalu, ditolak
+# sebagai "sudah lewat" walau sebenarnya baru saja dibuat. now_wib() di
+# bawah SATU-SATUNYA sumber waktu untuk seluruh field tanggal/jam yang
+# dikirim ke Faspay -- TIDAK PERNAH datetime.now() polos lagi.
+WIB = ZoneInfo("Asia/Jakarta")
+
+
+def now_wib() -> datetime:
+    """Waktu sekarang di Asia/Jakarta (WIB) -- WAJIB dipakai untuk
+    bill_date/bill_expired (dan field tanggal Faspay lain di masa depan),
+    lihat catatan di atas. .strftime() pada hasil ini tetap menghasilkan
+    string polos "YYYY-MM-DD HH:MM:SS" sesuai format resmi Faspay (offset
+    timezone TIDAK ikut ditulis, hanya dipakai memastikan ANGKA jam/menitnya
+    benar WIB)."""
+    return datetime.now(WIB)
+
+
+# AUDIT (UAT Faspay -- "item[product] must be alphanumeric"): field
+# `item[].product` ditolak Faspay begitu berisi karakter selain huruf/
+# angka/spasi -- SANGAT umum muncul di nama layanan/paket sungguhan (mis.
+# "Cut & Wash", "Paket Pro (30 hari)"). Karakter terlarang diganti SATU
+# spasi (bukan dihapus langsung) supaya kata tidak menempel jadi satu
+# ("Cut&Wash" salah, harus jadi "Cut Wash"), baru spasi berlebih dirapikan.
+_PRODUCT_TERLARANG = re.compile(r"[^A-Za-z0-9 ]+")
+_PRODUCT_SPASI_GANDA = re.compile(r"\s+")
+
+
+def sanitize_item_product(text: str, fallback: str, max_len: int = 50) -> str:
+    """Bersihkan nama produk untuk field `item[].product` Faspay Xpress v4
+    -- lihat catatan di atas. `fallback` dipakai kalau hasil akhirnya kosong
+    sama sekali (mis. nama aslinya HANYA simbol, atau None/string kosong)."""
+    bersih = _PRODUCT_TERLARANG.sub(" ", text or "")
+    bersih = _PRODUCT_SPASI_GANDA.sub(" ", bersih).strip()
+    if not bersih:
+        bersih = fallback
+    return bersih[:max_len]
 
 
 class GatewayError(Exception):
