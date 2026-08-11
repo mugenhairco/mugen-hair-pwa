@@ -7,12 +7,18 @@ Menambahkan:
   menyimpan data ini (dibuat eksklusif lewat Dashboard Super Admin, tanpa
   email/whatsapp -- lihat tenant_migrasi.py). Ditambah lewat ALTER TABLE,
   BUKAN membuat ulang tabel `tenants`, sama seperti pola pengeluaran_migrasi.py.
-- Tabel BARU `landing_faq` & `landing_testimonials` -- konten Landing Page
-  publik yang dikelola Super Admin (bukan hardcode).
+- Tabel BARU `landing_faq` -- konten Landing Page publik yang dikelola
+  Super Admin (bukan hardcode).
+
+REVISI Restrukturisasi Super Admin & Landing Page: fitur Testimonial
+dihapus total -- tabel `landing_testimonials` (kalau sempat terbuat di
+instalasi lama) di-DROP di sini, BUKAN dibuat lagi.
 
 Aman dipanggil berulang kali (idempotent), TIDAK PERNAH menghapus/menimpa
-data lama. WAJIB dipanggil setelah migrasi_tenant() (kolom `tenants` yang
-ditambah di sini mengasumsikan tabel `tenants` sudah ada)."""
+data lama SELAIN landing_testimonials di atas (permintaan eksplisit
+pembersihan fitur Testimonial). WAJIB dipanggil setelah migrasi_tenant()
+(kolom `tenants` yang ditambah di sini mengasumsikan tabel `tenants` sudah
+ada)."""
 
 from database import get_conn
 
@@ -46,17 +52,4 @@ def migrasi_landing():
             )
         """)
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS landing_testimonials (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                nama           TEXT NOT NULL,
-                jabatan_toko   TEXT,
-                isi            TEXT NOT NULL,
-                foto_url       TEXT,
-                rating         INTEGER NOT NULL DEFAULT 5,
-                urutan         INTEGER NOT NULL DEFAULT 0,
-                aktif          INTEGER NOT NULL DEFAULT 1,
-                created_at     TEXT NOT NULL,
-                updated_at     TEXT NOT NULL
-            )
-        """)
+        conn.execute("DROP TABLE IF EXISTS landing_testimonials")

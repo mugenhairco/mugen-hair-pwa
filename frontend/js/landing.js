@@ -129,7 +129,7 @@
     revealObserve(grid.querySelectorAll(".lp-reveal"));
   }
 
-  // ============================= Pricing + Comparison (WAJIB dari database) =============================
+  // ============================= Pricing (WAJIB dari database) =============================
 
   // FITUR Landing Page & Pricing (paket 6 bulan): siklus aktif disimpan di
   // luar renderPricing() supaya toggle Bulanan/6 Bulan bisa render ULANG
@@ -139,17 +139,14 @@
 
   async function loadPackages() {
     const grid = document.getElementById("lp-pricing-grid");
-    const table = document.getElementById("lp-compare-table");
     try {
       const packages = await apiGet("/api/public/landing/packages");
       _packagesTerkini = packages;
       renderPricing(grid, packages, _siklusAktif);
-      renderCompareTable(table, packages);
       initCycleToggle();
     } catch (e) {
       grid.innerHTML = "";
       grid.appendChild(el("p", { class: "lp-loading" }, "Paket belum tersedia saat ini."));
-      table.innerHTML = "";
       console.error(e);
     }
   }
@@ -200,6 +197,8 @@
       });
       if (pakai6 && hematRupiah > 0) {
         card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "Paling Hemat"));
+      } else if (p.kode === "enterprise") {
+        card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-popular" }, "★ Paling Populer"));
       }
       card.appendChild(el("h3", {}, p.nama));
       card.appendChild(el("div", { class: "lp-pricing-price" }, [
@@ -239,85 +238,6 @@
     });
   }
 
-  function renderCompareTable(table, packages) {
-    table.innerHTML = "";
-    const semuaFitur = [];
-    const kodeTerlihat = new Set();
-    packages.forEach((p) => (p.fitur || []).forEach((f) => {
-      if (!kodeTerlihat.has(f.kode)) { kodeTerlihat.add(f.kode); semuaFitur.push(f); }
-    }));
-
-    const thead = el("thead", {}, el("tr", {}, [
-      el("th", {}, "Fitur"),
-      ...packages.map((p) => el("th", {}, p.nama)),
-    ]));
-
-    const rows = [];
-    rows.push(el("tr", {}, [
-      el("td", {}, "Harga"),
-      ...packages.map((p) => el("td", {}, p.harga > 0 ? formatRupiah(p.harga) : "Gratis")),
-    ]));
-    rows.push(el("tr", {}, [
-      el("td", {}, "Max Barber"),
-      ...packages.map((p) => el("td", {}, p.max_barber == null ? "Unlimited" : String(p.max_barber))),
-    ]));
-    rows.push(el("tr", {}, [
-      el("td", {}, "Booking / bulan"),
-      ...packages.map((p) => el("td", {}, p.max_booking == null ? "Unlimited" : String(p.max_booking))),
-    ]));
-    semuaFitur.forEach((f) => {
-      rows.push(el("tr", {}, [
-        el("td", {}, f.nama),
-        ...packages.map((p) => {
-          const punya = (p.fitur || []).some((pf) => pf.kode === f.kode);
-          return el("td", {}, punya ? "✓" : "—");
-        }),
-      ]));
-    });
-
-    const tbody = el("tbody", {}, rows);
-    table.appendChild(thead);
-    table.appendChild(tbody);
-  }
-
-  // ============================= Testimonials (WAJIB dari database) =============================
-
-  function inisial(nama) {
-    return (nama || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
-  }
-
-  async function loadTestimonials() {
-    const wrap = document.getElementById("lp-testimonials");
-    try {
-      const list = await apiGet("/api/public/landing/testimonials");
-      wrap.innerHTML = "";
-      if (!list.length) {
-        wrap.appendChild(el("p", { class: "lp-loading" }, "Belum ada testimonial."));
-        return;
-      }
-      const track = el("div", { class: "lp-carousel-track" });
-      list.forEach((t, i) => {
-        track.appendChild(el("div", { class: `lp-testimonial-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
-          el("div", { class: "lp-testimonial-rating" }, "★".repeat(t.rating) + "☆".repeat(5 - t.rating)),
-          el("p", { class: "lp-testimonial-isi" }, `"${t.isi}"`),
-          el("div", { class: "lp-testimonial-foot" }, [
-            el("div", { class: "lp-testimonial-avatar" }, inisial(t.nama)),
-            el("div", {}, [
-              el("div", { class: "lp-testimonial-nama" }, t.nama),
-              t.jabatan_toko ? el("div", { class: "lp-testimonial-jabatan" }, t.jabatan_toko) : null,
-            ].filter(Boolean)),
-          ]),
-        ]));
-      });
-      wrap.appendChild(track);
-      revealObserve(track.querySelectorAll(".lp-reveal"));
-    } catch (e) {
-      wrap.innerHTML = "";
-      wrap.appendChild(el("p", { class: "lp-loading" }, "Testimonial belum tersedia."));
-      console.error(e);
-    }
-  }
-
   // ============================= FAQ (WAJIB dari database) =============================
 
   async function loadFaq() {
@@ -353,37 +273,68 @@
   }
 
   // ============================= Contact (dari Super Admin) =============================
+  // FITUR Hubungi Kami Dinamis: HANYA dua field (Email & WhatsApp, lihat
+  // landing_db.py::_CONTACT_KEYS) -- masing-masing dirender sebagai link
+  // yang bisa langsung diklik (mailto:/wa.me), BUKAN teks statis. Field
+  // yang kosong TIDAK ditampilkan sama sekali (bukan baris kosong).
+
+  // wa.me butuh format internasional TANPA "+"/spasi/tanda hubung, dan
+  // nomor Indonesia yang diketik dengan awalan "0" (kebiasaan lokal) perlu
+  // diganti "62" (kode negara) -- SEKEDAR normalisasi tampilan link, TIDAK
+  // mengubah/menyimpan ulang nilai yang tersimpan di database.
+  function nomorWaMe(nomor) {
+    let digit = String(nomor || "").replace(/\D/g, "");
+    if (digit.startsWith("0")) digit = "62" + digit.slice(1);
+    else if (!digit.startsWith("62")) digit = "62" + digit;
+    return digit;
+  }
 
   async function loadContact() {
     const grid = document.getElementById("lp-contact-grid");
     try {
       const c = await apiGet("/api/public/landing/contact");
       grid.innerHTML = "";
-      const items = [
-        ["WhatsApp", c.platform_contact_whatsapp],
-        ["Email", c.platform_contact_email],
-        ["Alamat", c.platform_contact_alamat],
-      ].filter(([, v]) => v);
+      const items = [];
+      if (c.platform_contact_email) {
+        items.push(el("a", { href: `mailto:${c.platform_contact_email}`, class: "lp-contact-item lp-reveal" }, [
+          el("div", { class: "lp-contact-label" }, "Email"),
+          el("div", { class: "lp-contact-value" }, c.platform_contact_email),
+        ]));
+      }
+      if (c.platform_contact_whatsapp) {
+        items.push(el("a", {
+          href: `https://wa.me/${nomorWaMe(c.platform_contact_whatsapp)}`, target: "_blank", rel: "noopener", class: "lp-contact-item lp-reveal",
+        }, [
+          el("div", { class: "lp-contact-label" }, "WhatsApp"),
+          el("div", { class: "lp-contact-value" }, c.platform_contact_whatsapp),
+        ]));
+      }
       if (!items.length) {
         grid.appendChild(el("p", { class: "lp-loading" }, "Kontak belum diatur."));
         return;
       }
-      items.forEach(([label, value]) => {
-        grid.appendChild(el("div", { class: "lp-contact-item lp-reveal" }, [
-          el("div", { class: "lp-contact-label" }, label),
-          el("div", { class: "lp-contact-value" }, value),
-        ]));
-      });
-      if (c.platform_contact_maps_url) {
-        grid.appendChild(el("a", { href: c.platform_contact_maps_url, target: "_blank", rel: "noopener", class: "lp-contact-item lp-reveal" }, [
-          el("div", { class: "lp-contact-label" }, "Lokasi"),
-          el("div", { class: "lp-contact-value" }, "Buka di Google Maps"),
-        ]));
-      }
+      items.forEach((item) => grid.appendChild(item));
       revealObserve(grid.querySelectorAll(".lp-reveal"));
     } catch (e) {
       grid.innerHTML = "";
       grid.appendChild(el("p", { class: "lp-loading" }, "Kontak belum tersedia."));
+      console.error(e);
+    }
+  }
+
+  // ============================= Footer (tagline dari Super Admin) =============================
+  // HANYA tagline yang dinamis -- kolom link navigasi & teks copyright
+  // TETAP hardcode di index.html (di luar cakupan permintaan). Tagline
+  // hardcode yang sudah ada di index.html dibiarkan apa adanya kalau
+  // Super Admin belum pernah mengisi (bukan kosong/rusak).
+
+  async function loadFooter() {
+    const taglineEl = document.getElementById("lp-footer-tagline");
+    if (!taglineEl) return;
+    try {
+      const f = await apiGet("/api/public/landing/footer");
+      if (f.platform_footer_tagline) taglineEl.textContent = f.platform_footer_tagline;
+    } catch (e) {
       console.error(e);
     }
   }
@@ -405,14 +356,14 @@
     initNavbar();
     renderFeatures();
     loadPackages();
-    loadTestimonials();
     loadFaq();
     loadContact();
+    loadFooter();
     registerServiceWorker();
     // Elemen ".lp-reveal" statis (sudah ada di HTML sejak awal, mis. judul
     // section/timeline/screenshot mockup) -- yang ditambahkan dinamis lewat
-    // render di atas (Pricing/FAQ/Testimonial/Contact) sudah diobservasi
-    // masing-masing lewat revealObserve() di fungsi render-nya sendiri.
+    // render di atas (Pricing/FAQ/Contact) sudah diobservasi masing-masing
+    // lewat revealObserve() di fungsi render-nya sendiri.
     initScrollReveal();
   });
 })();

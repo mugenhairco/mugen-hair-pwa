@@ -1,8 +1,8 @@
 """
 test_landing.py — FONDASI Multi-Tenant Phase 5: Landing Page SaaS
 =============================================================================
-Cakupan: FAQ/Testimonial publik vs Super Admin CRUD, kontak & statistik
-platform, katalog paket publik, dan alur Register self-service (unik
+Cakupan: FAQ publik vs Super Admin CRUD, kontak platform, katalog paket
+publik, dan alur Register self-service (unik
 email/whatsapp, password mismatch, tenant baru langsung dapat Free Trial
 30 hari status 'trial' -- lihat routers/tenant_registration.py -- TIDAK
 diblokir sama sekali, dan #/billing tidak terpengaruh perubahan ini di
@@ -141,28 +141,7 @@ def test_faq_superadmin_endpoint_ditolak_akun_biasa(two_tenants):
     assert r.status_code == 403
 
 
-# ============================= Testimonial =============================
-
-def test_testimonial_publik_hanya_yang_aktif(app_client):
-    landing_db.create_testimonial("Pak Joko", "Sangat membantu operasional toko saya.")
-    nonaktif = landing_db.create_testimonial("Pak Slamet", "Testimoni nonaktif")
-    landing_db.update_testimonial(nonaktif["id"], aktif=False)
-
-    r = app_client.get("/api/public/landing/testimonials")
-    assert r.status_code == 200, r.text
-    nama = {t["nama"] for t in r.json()}
-    assert "Pak Joko" in nama
-    assert "Pak Slamet" not in nama
-
-
-def test_testimonial_rating_invalid_ditolak(app_client):
-    headers = _buat_superadmin_dan_login(app_client)
-    r = app_client.post("/api/superadmin/landing/testimonials", headers=headers,
-                         json={"nama": "Pak Joko", "isi": "Bagus", "rating": 9})
-    assert r.status_code == 422
-
-
-# ============================= Kontak & Statistik =============================
+# ============================= Kontak =============================
 
 def test_kontak_platform_default_kosong_lalu_bisa_diubah_superadmin(app_client):
     headers = _buat_superadmin_dan_login(app_client)
@@ -180,26 +159,19 @@ def test_kontak_platform_default_kosong_lalu_bisa_diubah_superadmin(app_client):
     assert r.json()["platform_contact_email"] == "cs@rivoir.id"
 
 
-def test_stats_publik_active_tenants_dihitung_live(two_tenants):
-    # BOOT juga membuat tenant default (_bootstrap_admin_pertama()), jadi
-    # jumlahnya BUKAN pas 2 -- bandingkan terhadap tenant_db langsung
-    # supaya test tidak bergantung ke detail bootstrap.
-    diharapkan = len(tenant_db.list_tenants())
-    r = two_tenants["client"].get("/api/public/landing/stats")
-    assert r.status_code == 200, r.text
-    assert r.json()["active_tenants"] == diharapkan
-    assert diharapkan >= 2
-
-
-def test_stats_manual_diedit_superadmin(app_client):
+def test_footer_platform_default_kosong_lalu_bisa_diubah_superadmin(app_client):
     headers = _buat_superadmin_dan_login(app_client)
-    r = app_client.put("/api/superadmin/landing/stats", headers=headers,
-                        json={"platform_stat_happy_customers": "500", "platform_stat_uptime": "99.9%"})
+
+    r = app_client.get("/api/public/landing/footer")
+    assert r.status_code == 200, r.text
+    assert r.json()["platform_footer_tagline"] == ""
+
+    r = app_client.put("/api/superadmin/landing/footer", headers=headers,
+                        json={"platform_footer_tagline": "Platform manajemen barbershop all-in-one."})
     assert r.status_code == 200, r.text
 
-    r = app_client.get("/api/public/landing/stats")
-    assert r.json()["platform_stat_happy_customers"] == "500"
-    assert r.json()["platform_stat_uptime"] == "99.9%"
+    r = app_client.get("/api/public/landing/footer")
+    assert r.json()["platform_footer_tagline"] == "Platform manajemen barbershop all-in-one."
 
 
 # ============================= Katalog paket publik =============================

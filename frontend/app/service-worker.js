@@ -495,7 +495,14 @@
 // Enterprise, siklus terpilih dikirim ke POST /api/billing/checkout.
 // TIDAK ADA perubahan pada Dashboard/Booking/POS/modul internal lain --
 // HANYA billing.js yang berubah.
-const ASSET_VERSION = "91";
+// v91 -> v92: Revisi Landing Page & Restrukturisasi Super Admin --
+// pages/superadmin.js dipecah jadi 5 tab (Dashboard/Tenant/Paket/Landing
+// Page/Payment Gateway, lihat MugenUI.tabs()), fitur Testimonial dihapus
+// total dari kartu Landing Page, kartu Kontak disederhanakan (Email &
+// WhatsApp saja) + kartu Footer (tagline) baru. TIDAK ADA perubahan pada
+// Dashboard/Booking/POS/modul internal lain -- HANYA superadmin.js yang
+// berubah.
+const ASSET_VERSION = "92";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

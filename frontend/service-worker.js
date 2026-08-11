@@ -16,7 +16,13 @@
 // v9 -> v10: BUGFIX scroll -- Landing Page kadang mendarat di tengah
 // halaman (bukan di atas) saat dimasuki lewat navigasi Back/Forward
 // browser (history.scrollRestoration dipaksa "manual" di landing.js).
-const ASSET_VERSION = "10";
+// v10 -> v11: Revisi Landing Page -- section "Bandingkan Paket" (tabel
+// perbandingan) & "Testimoni" dihapus total (info fitur paket cukup di
+// kartu Pricing), section "Hubungi Kami" sekarang dinamis (link
+// mailto:/wa.me dari Email & WhatsApp yang diatur Super Admin, field
+// kosong disembunyikan), footer tagline dinamis, kartu Pricing dipoles
+// (hover scale + glow, badge "Paling Populer").
+const ASSET_VERSION = "11";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
