@@ -15,7 +15,6 @@ sendiri, dua test di bawah (test_register_berhasil_membuat_tenant_
 terblokir_sampai_bayar & test_register_login_valid_untuk_endpoint_
 berlogin_setelah_verifikasi) sudah disesuaikan ke alur baru ini."""
 
-import hashlib
 from datetime import datetime
 
 import pytest
@@ -26,8 +25,8 @@ import billing_gateway_db
 import billing_invoice_db
 import billing_webhook
 import database as db
+import gateway_client_base
 import landing_db
-import midtrans_client
 import subscription_db
 import tenant_db
 
@@ -42,36 +41,38 @@ class _FakeResponse:
         return self._payload
 
 
-_MIDTRANS_SERVER_KEY_TEST = "SB-Mid-server-test"
+# PROVIDER RESMI: Faspay Xpress v4 -- kredensial test SENGAJA nilai fiktif
+# (BEDA dari kredensial development sungguhan yang dikirim tim Faspay).
+_FASPAY_USER_ID_TEST = "bot-test-landing"
+_FASPAY_PASSWORD_TEST = "p-test-landing"
 
 
-def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc"):
+def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/checkout/abc"):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
-        "server_key": _MIDTRANS_SERVER_KEY_TEST, "client_key": "SB-Mid-client-test",
-        "environment": "sandbox", "enabled": True,
+        "merchant_id": "37070-test", "server_key": _FASPAY_USER_ID_TEST, "secret_key": _FASPAY_PASSWORD_TEST,
+        "client_key": "", "environment": "sandbox", "enabled": True,
     })
 
     def fake_post(url, json, headers, timeout):
-        return _FakeResponse(201, {"token": token, "redirect_url": redirect})
+        return _FakeResponse(200, {"response_code": "00", "response_desc": "Success", "redirect_url": redirect})
 
-    monkeypatch.setattr(midtrans_client.requests, "post", fake_post)
-
-
-def _hitung_signature(order_id, status_code, gross_amount, server_key):
-    raw = f"{order_id}{status_code}{gross_amount}{server_key}"
-    return hashlib.sha512(raw.encode()).hexdigest()
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
 
-def _webhook_payload(order_id, gross_amount, server_key):
-    status_code = "200"
-    gross_amount_str = f"{gross_amount}.00"
+def _hitung_signature(bill_no, payment_status_code, user_id=_FASPAY_USER_ID_TEST, password=_FASPAY_PASSWORD_TEST):
+    return gateway_client_base.sign_sha1_of_md5([user_id, password, bill_no, payment_status_code])
+
+
+def _webhook_payload(order_id, gross_amount, server_key=_FASPAY_USER_ID_TEST):
+    payment_status_code = "2"
+    bill_total = f"{gross_amount}.00"
     return {
-        "order_id": order_id,
-        "status_code": status_code,
-        "gross_amount": gross_amount_str,
-        "transaction_status": "settlement",
-        "payment_type": "bank_transfer",
-        "signature_key": _hitung_signature(order_id, status_code, gross_amount_str, server_key),
+        "bill_no": order_id,
+        "payment_status_code": payment_status_code,
+        "bill_total": bill_total,
+        "payment_channel": "Bank Transfer",
+        "trx_id": "TRX-TEST-LANDING",
+        "signature": _hitung_signature(order_id, payment_status_code, user_id=server_key),
     }
 
 
@@ -405,14 +406,14 @@ def test_register_tercatat_di_audit_log(app_client):
 # Jalur PALING PENTING di Phase 5 -- membuktikan tenant self-service (SEKARANG
 # 'trial', TIDAK diblokir -- FITUR Landing Page & Pricing Free Trial 30 Hari)
 # tetap BISA upgrade ke paket berbayar kapan pun selama trial lewat checkout
-# Midtrans Phase 4 yang TIDAK diubah sama sekali (selain penambahan siklus 6
+# Payment Gateway Phase 4 yang TIDAK diubah sama sekali (selain penambahan siklus 6
 # bulan opsional, TIDAK dipakai di test ini -- default "bulanan"), sampai ke
 # webhook yang TIDAK diubah sama sekali juga.
 
 def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, monkeypatch):
     import email_auth_db
 
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
 
     r = app_client.post("/api/public/registration/register", json=_payload_register())
     assert r.status_code == 200, r.text
@@ -447,8 +448,8 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
     assert r.status_code == 200, r.text
     invoice = r.json()
 
-    # Webhook Midtrans (TIDAK DIUBAH SAMA SEKALI) memproses notifikasi paid.
-    payload = _webhook_payload(invoice["order_id"], invoice["jumlah"], _MIDTRANS_SERVER_KEY_TEST)
+    # Webhook Payment Notification Faspay memproses notifikasi paid.
+    payload = _webhook_payload(invoice["order_id"], invoice["jumlah"])
     hasil = billing_webhook.proses_notifikasi(payload)
     assert hasil["status"] == "paid"
 

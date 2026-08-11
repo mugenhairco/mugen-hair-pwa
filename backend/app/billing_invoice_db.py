@@ -1,7 +1,7 @@
 """billing_invoice_db.py — FONDASI Multi-Tenant Phase 4: Invoice & Checkout
 =============================================================================
-Tabel `subscription_invoices` -- SATU baris per percobaan checkout Midtrans
-(Snap), BUKAN per periode langganan (Owner boleh checkout berkali-kali,
+Tabel `subscription_invoices` -- SATU baris per percobaan checkout Payment
+Gateway, BUKAN per periode langganan (Owner boleh checkout berkali-kali,
 mis. transaksi pertama expired lalu coba lagi -- setiap percobaan tetap
 tercatat, TIDAK saling menimpa). `tenant_id` TANPA foreign key (pola sama
 seperti seluruh tabel lain di proyek ini, lihat catatan panjang di
@@ -11,14 +11,18 @@ subscription_packages), supaya kalau Super Admin mengubah harga/nama paket
 SETELAH invoice ini dibuat, riwayat invoice lama tetap menampilkan apa yang
 BENAR-BENAR dibayar customer saat itu.
 
-`order_id` (dikirim ke Midtrans, harus unik) DIBUAT lebih dulu (buat_order_id(),
-murni generate string, TIDAK menyentuh DB) SEBELUM baris invoice ini dibuat --
-routers/billing.py::checkout() memanggil Midtrans DULU pakai order_id itu,
-baru insert baris di sini SETELAH Midtrans mengonfirmasi (dapat snap_token).
+`order_id` (field DB `snap_token`/`snap_redirect_url` -- nama kolom historis,
+TIDAK diganti supaya tidak perlu migrasi skema, lihat billing_gateway_client.py
+untuk provider RESMI yang sekarang mengisinya: Faspay Xpress v4, murni
+redirect_url tanpa token) DIBUAT lebih dulu (buat_order_id(), murni generate
+string, TIDAK menyentuh DB) SEBELUM baris invoice ini dibuat -- routers/
+billing.py::checkout() memanggil Payment Gateway DULU pakai order_id itu,
+baru insert baris di sini SETELAH provider mengonfirmasi (dapat redirect_url).
 Ini SENGAJA supaya tidak ada baris invoice "menggantung" (status pending
-tanpa token sama sekali) kalau panggilan ke Midtrans gagal di tengah jalan.
+tanpa redirect_url sama sekali) kalau panggilan ke provider gagal di tengah
+jalan.
 
-Status webhook Midtrans (settlement/capture/pending/expire/cancel/deny,
+Status Payment Notification Faspay Xpress v4 (payment_status_code 0-9,
 lihat billing_webhook.py -- modul berikutnya) dipetakan ke STATUS_VALID di
 sini yang lebih sederhana untuk ditampilkan ke Owner/Super Admin."""
 
@@ -55,6 +59,24 @@ def init_billing_invoice_db():
                 paid_at             TEXT
             )
         """)
+        # Riwayat Transaksi (Implementasi Payment Gateway & Riwayat Transaksi
+        # Multi-Tenant): baris BARU tiap kali status invoice benar-benar
+        # berubah (bukan snapshot kolom `status` yang menimpa nilai lama) --
+        # dipakai Detail Transaksi Super Admin ("Riwayat perubahan status
+        # pembayaran") tanpa mengubah kolom subscription_invoices yang sudah
+        # ada. Diisi dari billing_webhook.py::proses_notifikasi(), pola sama
+        # seperti superadmin_audit_log (write-once, tidak pernah diedit/
+        # dihapus dari sisi aplikasi).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_invoice_status_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id      INTEGER NOT NULL,
+                status_lama     TEXT,
+                status_baru     TEXT NOT NULL,
+                sumber          TEXT NOT NULL,
+                waktu           TEXT NOT NULL
+            )
+        """)
 
 
 def _now() -> str:
@@ -62,9 +84,9 @@ def _now() -> str:
 
 
 def buat_order_id(tenant_id: int) -> str:
-    """Murni generate string (TIDAK menyentuh DB) -- dipakai sebagai
-    `transaction_details.order_id` di panggilan Midtrans SEBELUM baris
-    invoice ini benar-benar dibuat (lihat docstring modul)."""
+    """Murni generate string (TIDAK menyentuh DB) -- dipakai sebagai `bill_no`
+    di panggilan Payment Gateway (Faspay Xpress v4) SEBELUM baris invoice ini
+    benar-benar dibuat (lihat docstring modul)."""
     return f"SUB-{tenant_id}-{uuid.uuid4().hex[:16]}"
 
 
@@ -135,3 +157,24 @@ def update_invoice(invoice_id: int, **fields) -> dict:
     with get_conn() as conn:
         conn.execute(f"UPDATE subscription_invoices SET {set_clause}, updated_at = ? WHERE id = ?", params)
     return get_invoice(invoice_id)
+
+
+def catat_status_log(invoice_id: int, status_lama: str, status_baru: str, sumber: str = "webhook"):
+    """Dipanggil billing_webhook.py::proses_notifikasi() TEPAT SEBELUM
+    update_invoice() -- SATU baris per transisi status sungguhan (webhook
+    yang idempoten/status sama TIDAK memanggil ini sama sekali, lihat
+    penjaga di proses_notifikasi())."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO subscription_invoice_status_log (invoice_id, status_lama, status_baru, sumber, waktu) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (invoice_id, status_lama, status_baru, sumber, _now()),
+        )
+
+
+def list_status_log(invoice_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM subscription_invoice_status_log WHERE invoice_id = ? ORDER BY id ASC", (invoice_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]

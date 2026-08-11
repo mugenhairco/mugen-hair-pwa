@@ -34,6 +34,7 @@ import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import booking_gateway_db
 import database as db
 import file_asset_db
 import r2_storage
@@ -706,13 +707,17 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
 
     jam_selesai = _ke_hhmm(_ke_menit(jam_mulai) + total_durasi)
     now = datetime.now().isoformat(timespec="seconds")
-    # Payment Gateway: berbeda dari transfer/qris (yang staff verifikasi
-    # manual), booking "gateway" hanya sampai di sini SETELAH wizard publik
-    # (book_public.js) memastikan pembayarannya sukses lewat channel PGW
-    # (customer sudah menekan "Cek Status Pembayaran") -- jadi booking-nya
-    # langsung tercatat 'terverifikasi', TIDAK ikut antrean "Menunggu
-    # Verifikasi" staff seperti metode manual lainnya.
-    status_pembayaran_awal = "terverifikasi" if metode_pembayaran == "gateway" else "menunggu_verifikasi"
+    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: SEMUA
+    # metode (termasuk "gateway") SEKARANG mulai 'menunggu_verifikasi' --
+    # SEBELUMNYA "gateway" langsung dianggap 'terverifikasi' begitu wizard
+    # publik melapor sendiri (self-report, TANPA verifikasi pembayaran
+    # nyata sama sekali). Status pembayaran booking "gateway" HANYA boleh
+    # berubah jadi 'terverifikasi' lewat booking_gateway_webhook.py
+    # (webhook resmi provider tervalidasi signature), TIDAK PERNAH dari
+    # klaim customer/frontend -- lihat routers/booking.py::public_buat_booking()
+    # untuk alur checkout gateway (buat transaksi provider SETELAH baris
+    # ini dibuat).
+    status_pembayaran_awal = "menunggu_verifikasi"
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
@@ -733,6 +738,33 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     return get_booking(booking_id)
 
 
+def _perkaya_status_gateway(booking: dict):
+    """Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant:
+    tambahkan field gateway_status/gateway_channel/gateway_transaction_id/
+    gateway_reference_id/gateway_paid_at dari transaksi Payment Gateway
+    TERBARU milik booking ini (null kalau bukan booking metode "gateway",
+    atau belum ada percobaan checkout sama sekali) -- TIDAK mengubah kolom
+    bookings.status_pembayaran yang sudah ada, murni field TAMBAHAN untuk
+    tampilan status 7-state yang lebih rinci (Daftar/Detail Booking)."""
+    booking["gateway_transaksi_id"] = None
+    booking["gateway_status"] = None
+    booking["gateway_channel"] = None
+    booking["gateway_transaction_id"] = None
+    booking["gateway_reference_id"] = None
+    booking["gateway_paid_at"] = None
+    if booking.get("metode_pembayaran") != "gateway":
+        return
+    transaksi = booking_gateway_db.get_transaksi_terkini_untuk_booking(booking["id"])
+    if transaksi is None:
+        return
+    booking["gateway_transaksi_id"] = transaksi["id"]
+    booking["gateway_status"] = transaksi["status_pembayaran"]
+    booking["gateway_channel"] = transaksi["channel_pembayaran"]
+    booking["gateway_transaction_id"] = transaksi["transaction_id_provider"]
+    booking["gateway_reference_id"] = transaksi["reference_id_provider"]
+    booking["gateway_paid_at"] = transaksi["paid_at"]
+
+
 def get_booking(booking_id: int):
     with get_conn() as conn:
         row = conn.execute(
@@ -749,6 +781,7 @@ def get_booking(booking_id: int):
         ).fetchall()
         booking["items"] = [dict(i) for i in items]
         booking["daftar_service"] = ", ".join(i["nama_service"] for i in items)
+        _perkaya_status_gateway(booking)
         return booking
 
 
@@ -783,8 +816,24 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         per_booking = {}
         for r in rows:
             per_booking.setdefault(r["booking_id"], []).append(r["nama_service"])
+        transaksi_per_booking = booking_gateway_db.get_transaksi_terkini_untuk_booking_batch(ids)
         for h in headers:
             h["daftar_service"] = ", ".join(per_booking.get(h["id"], []))
+            h["gateway_transaksi_id"] = None
+            h["gateway_status"] = None
+            h["gateway_channel"] = None
+            h["gateway_transaction_id"] = None
+            h["gateway_reference_id"] = None
+            h["gateway_paid_at"] = None
+            if h.get("metode_pembayaran") == "gateway":
+                transaksi = transaksi_per_booking.get(h["id"])
+                if transaksi is not None:
+                    h["gateway_transaksi_id"] = transaksi["id"]
+                    h["gateway_status"] = transaksi["status_pembayaran"]
+                    h["gateway_channel"] = transaksi["channel_pembayaran"]
+                    h["gateway_transaction_id"] = transaksi["transaction_id_provider"]
+                    h["gateway_reference_id"] = transaksi["reference_id_provider"]
+                    h["gateway_paid_at"] = transaksi["paid_at"]
         return headers
 
 

@@ -3315,3 +3315,102 @@ Origin-vs-Host (`test_tenant_middleware.py`), penghapusan fallback
 tenant default (`test_tenant_middleware.py`,
 `test_billing_limits.py`, `test_subscription.py`), dan `set_slug()` +
 endpoint Super Admin-nya (`test_superadmin.py`).
+
+## Runbook — Mengaktifkan Payment Gateway Sungguhan (Booking & Billing SaaS)
+
+Ditulis sebagai tindak lanjut audit kesiapan Implementasi Payment Gateway &
+Riwayat Transaksi Multi-Tenant. Provider RESMI yang dipakai: **Faspay
+Xpress v4** (hosted checkout -- POST transaksi → `redirect_url`, TIDAK ada
+JS SDK/token seperti Snap, customer diarahkan langsung ke halaman Faspay).
+SATU akun/Merchant ID Faspay dipakai bersama untuk **Billing SaaS**
+(langganan tenant, prefix invoice `SUB-`) dan **Booking Customer** (prefix
+invoice `BOOK-`) -- business logic & webhook processing kedua sistem TETAP
+terpisah total di kode (lihat `gateway_notification_dispatch.py`), hanya
+Payment Notification URL & Return URL yang digabung karena keterbatasan
+teknis Faspay (satu akun hanya bisa mendaftarkan satu dari masing-masing).
+
+### 1. Dapatkan kredensial Faspay
+
+Hubungi tim Faspay untuk kredensial development/sandbox: **Merchant ID**,
+**User ID**, **Password** (dan untuk Production nanti, ulangi proses yang
+sama untuk kredensial Production terpisah). Dokumentasi resmi: [Faspay
+Xpress v4](https://docs.faspay.co.id/merchant-integration/api-reference-1/xpress/xpress-version-4).
+
+### 2. Isi kredensial di Super Admin
+
+Super Admin → tab **Payment Gateway** → isi kredensial Faspay di KEDUA
+kartu (field sama, mapping berikut berlaku di keduanya):
+
+| Field di form | Diisi dengan |
+| --- | --- |
+| Merchant ID | Merchant ID Faspay |
+| Server Key | User ID Faspay |
+| Secret Key | Password Faspay |
+| API Key / Client Key | (kosongkan -- Faspay tidak punya konsep ini) |
+
+- **"Billing SaaS – Payment Gateway"**: kredensial dipakai saat Owner
+  membayar/memperpanjang paket langganan.
+- **"Payment Gateway"** (booking): kredensial dipakai saat customer bayar
+  booking lewat halaman `/book` publik. Field "Channel Pembayaran" SENGAJA
+  tidak memfilter apa pun saat ini (Faspay belum menyediakan daftar kode
+  channel resmi) -- Faspay menampilkan seluruh channel yang aktif di
+  Merchant ID begitu saja.
+
+### 3. Daftarkan URL ke tim Faspay
+
+Faspay HANYA bisa mendaftarkan **satu** Payment Notification URL dan
+**satu** Return URL per Merchant ID -- kedua kartu di atas menampilkan URL
+yang sama (dispatcher tunggal), salin PERSIS ke tim Faspay:
+
+- **Payment Notification URL**: `https://<domain-backend>/api/public/gateway/faspay-notification`
+- **Return URL**: `https://<domain-backend>/api/public/gateway/faspay-return`
+
+Catatan resmi dari tim Faspay (WAJIB dipahami sebelum uji coba): parameter
+`return_url` HANYA benar-benar dipakai untuk channel **Kartu Kredit** --
+channel lain (QRIS, Virtual Account, e-wallet, dll.) tidak pernah mendarat
+di Return URL sama sekali, jadi status pembayaran TIDAK PERNAH boleh
+berubah dari halaman itu (murni relay/UX, lihat
+`routers/gateway_notification.py`) -- satu-satunya sumber kebenaran status
+pembayaran adalah Payment Notification webhook.
+
+Endpoint lama per-modul (`/api/public/billing/midtrans-webhook`,
+`/api/public/booking/gateway-webhook`) TETAP berfungsi penuh (dipanggil
+secara internal oleh dispatcher) tapi BUKAN yang didaftarkan ke Faspay --
+jangan salah salin.
+
+### 4. Uji ulang lewat Sandbox SEBELUM Production
+
+1. Set Environment = Sandbox di kedua kartu, gunakan simulator resmi Faspay
+   ([simulator.faspay.co.id/simulator](https://simulator.faspay.co.id/simulator))
+   untuk mensimulasikan pembayaran.
+2. Lakukan SATU checkout Billing sungguhan (Owner: Setting > Billing >
+   pilih paket berbayar) dan SATU checkout Booking sungguhan (halaman
+   `/book` publik, pilih metode Payment Gateway).
+3. Pastikan notifikasi webhook BENAR-BENAR sampai: status invoice/transaksi
+   berubah otomatis jadi "Berhasil"/"Paid" TANPA aksi manual apa pun di
+   aplikasi -- kalau macet di "Menunggu Pembayaran" lebih dari beberapa
+   menit, cek dulu Merchant ID/User ID/Password di form Super Admin (salah
+   satu keliru = signature selalu gagal, notifikasi ditolak diam-diam
+   dengan 400 di log backend).
+4. **Test manual via curl** (opsional, untuk memastikan endpoint hidup TANPA
+   menunggu provider): `curl -X POST https://<domain-backend>/api/public/gateway/faspay-notification -H "Content-Type: application/json" -d '{"bill_no":"BOOK-TIDAK-ADA","payment_status_code":"2","bill_total":"1000.00","signature":"salah"}'`
+   -- HARUS balas `400` (bukan 500/timeout), membuktikan endpoint hidup &
+   dispatcher/validasi signature aktif.
+5. **"Cek Ulang ke Provider"** (rekonsiliasi manual) SENGAJA DINONAKTIFKAN
+   untuk Faspay saat ini -- `cek_status_transaksi()` melempar error jelas
+   alih-alih menebak endpoint Inquiry/Check Status yang belum
+   didokumentasikan Faspay ke kami. Aktifkan kembali di
+   `billing_gateway_client.py`/`payment_gateway_client.py` begitu
+   dokumentasi resmi endpoint itu tersedia.
+
+### 5. Baru pindah ke Production
+
+Ulangi langkah 2-4 dengan kredensial Production dari Faspay (Merchant ID/
+User ID/Password Production BERBEDA dari sandbox), environment diganti
+"Production" di kedua kartu. **Base URL Production Faspay belum
+dikonfirmasi resmi oleh tim Faspay** (`payment_gateway_client.py`/
+`billing_gateway_client.py` memakai `https://xpress.faspay.co.id/v4/post`
+sebagai dugaan berpola dari URL sandbox) -- konfirmasikan URL ini ke tim
+Faspay SEBELUM cutover Production. JANGAN skip langkah 4 -- tanpa
+verifikasi sandbox, kegagalan konfigurasi (kredensial tertukar, base URL
+salah) baru ketahuan saat customer/Owner sungguhan sudah membayar.

@@ -1,11 +1,11 @@
-"""routers/billing.py — FONDASI Multi-Tenant Phase 4: Billing & Payment (Midtrans)
+"""routers/billing.py — FONDASI Multi-Tenant Phase 4: Billing & Payment (Langganan SaaS)
 =============================================================================
 Dua router dalam SATU file ini (pola sama seperti routers/subscription.py):
 
 1. `router` (prefix `/api/billing`) — Owner SATU TENANT sendiri
    (require_admin, sama seperti /api/subscription/me di Phase 3): lihat
-   katalog paket aktif untuk upgrade, checkout Midtrans Snap, riwayat
-   invoice/pembayaran miliknya sendiri.
+   katalog paket aktif untuk upgrade, checkout Payment Gateway (langganan
+   SaaS), riwayat invoice/pembayaran miliknya sendiri.
 2. `superadmin_router` (prefix `/api/superadmin/billing`) — KHUSUS
    Super Admin: konfigurasi atribut subscription_packages (nama/harga/
    durasi/status/urutan/deskripsi/limit pemakaian), katalog fitur
@@ -13,19 +13,25 @@ Dua router dalam SATU file ini (pola sama seperti routers/subscription.py):
    invoice/pembayaran SEMUA tenant. SETIAP aksi ubah konfigurasi tercatat
    ke superadmin_audit_log, pola sama persis dengan routers/subscription.py.
 
-Webhook Midtrans (publik, tanpa login) ada di file TERPISAH
+Webhook Payment Gateway (publik, tanpa login) ada di file TERPISAH
 (routers/billing_webhook.py, modul berikutnya) -- BUKAN di sini, supaya
 endpoint publik yang menerima payload dari luar tetap gampang diaudit
-terpisah dari endpoint berlogin."""
+terpisah dari endpoint berlogin. Modul client sungguhan ada di
+billing_gateway_client.py -- TERPISAH TOTAL dari payment_gateway_client.py
+(Payment Gateway booking customer), lihat catatan lengkap di modul itu
+soal kenapa dua jenis transaksi ini dipisah walau bisa jadi satu provider
+yang sama."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import billing_db
+import billing_gateway_client
 import billing_gateway_db
 import billing_invoice_db
 import billing_limits
-import midtrans_client
+import billing_webhook
+import gateway_client_base
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -51,19 +57,20 @@ def daftar_paket_aktif(user: dict = Depends(require_admin)):
 
 
 @router.get("/config")
-def config_midtrans(user: dict = Depends(require_admin)):
-    """Info PUBLIK Midtrans (Client Key MEMANG dirancang dipakai di
-    frontend, beda dengan Server Key yang tidak pernah dikirim ke client
-    sama sekali) -- dipakai frontend memutuskan mau memuat snap.js
-    Sandbox atau Production, dan `enabled=False` dipakai menampilkan
-    pesan "Billing belum aktif" alih-alih tombol checkout yang pasti
-    gagal kalau Super Admin belum mengisi kredensial (lihat
-    GET/PUT /api/superadmin/billing/gateway-config di bawah)."""
+def config_billing_gateway(user: dict = Depends(require_admin)):
+    """Info PUBLIK Payment Gateway langganan SaaS (Client Key MEMANG
+    dirancang dipakai di frontend, beda dengan Server Key yang tidak
+    pernah dikirim ke client sama sekali) -- dipakai frontend memutuskan
+    mau memuat script checkout Sandbox atau Production, dan
+    `enabled=False` dipakai menampilkan pesan "Billing belum aktif"
+    alih-alih tombol checkout yang pasti gagal kalau Super Admin belum
+    mengisi kredensial (lihat GET/PUT /api/superadmin/billing/gateway-config
+    di bawah)."""
     return {
-        "enabled": midtrans_client.is_enabled(),
-        "client_key": midtrans_client.client_key(),
-        "is_production": midtrans_client.is_production(),
-        "snap_js_url": midtrans_client.snap_js_url(),
+        "enabled": billing_gateway_client.is_enabled(),
+        "client_key": billing_gateway_client.client_key(),
+        "is_production": billing_gateway_client.is_production(),
+        "checkout_script_url": billing_gateway_client.client_script_url(),
     }
 
 
@@ -80,7 +87,7 @@ class CheckoutBody(BaseModel):
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
-    if not midtrans_client.is_enabled():
+    if not billing_gateway_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
     if body.siklus not in ("bulanan", "6bulan"):
@@ -94,10 +101,10 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     # FITUR Landing Page & Pricing (paket 6 bulan): siklus "6bulan" mengganti
     # harga/durasi EFEKTIF yang dipakai checkout ini (harga_6bulan, durasi
     # SELALU durasi_hari*6 -- lihat billing_db.py kenapa tidak ada kolom
-    # durasi terpisah) SEBELUM diteruskan ke Midtrans & buat_invoice() di
-    # bawah -- KEDUANYA murni menyalin apa pun yang ada di dict `paket` ini
-    # sebagai snapshot (lihat billing_invoice_db.buat_invoice()), jadi
-    # TIDAK ADA perubahan kode di midtrans_client.py/billing_invoice_db.py/
+    # durasi terpisah) SEBELUM diteruskan ke Payment Gateway & buat_invoice()
+    # di bawah -- KEDUANYA murni menyalin apa pun yang ada di dict `paket`
+    # ini sebagai snapshot (lihat billing_invoice_db.buat_invoice()), jadi
+    # TIDAK ADA perubahan kode di billing_gateway_client.py/billing_invoice_db.py/
     # billing_webhook.py sama sekali untuk mendukung siklus 6 bulan --
     # masa aktif subscription (periode_selesai = periode_mulai + durasi_hari
     # invoice, lihat billing_webhook.py) otomatis ikut durasi efektif ini.
@@ -112,17 +119,27 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
         "id": paket["kode"], "price": paket["harga"], "quantity": 1,
         "name": f"Paket {paket['nama']} ({paket['durasi_hari']} hari)"[:50],
     }]
-    customer_details = {"first_name": (tenant["nama_barbershop"] if tenant else "Owner")[:50]}
+    # AUDIT (perbaikan pasca-audit kesiapan): "phone"/"email" ditambahkan
+    # (SEBELUMNYA hanya "first_name") -- Faspay Xpress v4 mewajibkan
+    # msisdn+email di request checkout (lihat billing_gateway_client.py).
+    # tenant["whatsapp"]/tenant["email"] diisi Owner saat registrasi
+    # (tenant_db.set_registrant_info()) -- boleh kosong untuk tenant lama,
+    # client-nya sendiri sudah punya fallback aman kalau kosong.
+    customer_details = {
+        "first_name": (tenant["nama_barbershop"] if tenant else "Owner")[:50],
+        "phone": tenant.get("whatsapp") if tenant else None,
+        "email": tenant.get("email") if tenant else None,
+    }
     try:
-        hasil_midtrans = midtrans_client.buat_transaksi_snap(
+        hasil_gateway = billing_gateway_client.buat_transaksi(
             order_id, paket["harga"], item_details, customer_details=customer_details,
         )
-    except RuntimeError as e:
+    except gateway_client_base.GatewayError as e:
         raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
     invoice = billing_invoice_db.buat_invoice(
         order_id, user["tenant_id"], paket,
-        snap_token=hasil_midtrans["token"], snap_redirect_url=hasil_midtrans["redirect_url"],
+        snap_token=hasil_gateway["token"], snap_redirect_url=hasil_gateway["redirect_url"],
     )
     return invoice
 
@@ -133,7 +150,7 @@ class DowngradeBody(BaseModel):
 
 @router.post("/downgrade")
 def downgrade(body: DowngradeBody, user: dict = Depends(require_admin)):
-    """Downgrade TIDAK lewat Midtrans (pindah ke paket yang lebih murah/
+    """Downgrade TIDAK lewat Payment Gateway (pindah ke paket yang lebih murah/
     sama, tidak ada pembayaran) -- SESUAI KEPUTUSAN cakupan Phase 4:
     diblokir TOTAL selama pemakaian sekarang melebihi limit paket tujuan,
     TIDAK ADA penonaktifan otomatis apa pun (lihat billing_limits.py).
@@ -179,6 +196,23 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
     invoice = billing_invoice_db.get_invoice(invoice_id)
     _pastikan_invoice_tenant_sama(user, invoice)
     return invoice
+
+
+@router.post("/invoices/{invoice_id}/cek-ulang")
+def cek_ulang_invoice(invoice_id: int, user: dict = Depends(require_admin)):
+    """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+    perbaikan pasca-audit kesiapan): jalur RESMI untuk invoice yang macet
+    karena webhook TIDAK PERNAH sampai sama sekali. TIDAK PERNAH menerima
+    klaim status dari Owner -- endpoint ini murni memicu server memanggil
+    ULANG API provider (Server Key sendiri) lalu menerapkan hasilnya lewat
+    jalur SAMA PERSIS dengan webhook resmi (lihat billing_webhook.py::
+    rekonsiliasi_manual())."""
+    try:
+        return billing_webhook.rekonsiliasi_manual(invoice_id, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
 
 
 # ============================= Super Admin =============================

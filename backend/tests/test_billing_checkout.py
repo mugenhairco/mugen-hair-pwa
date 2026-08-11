@@ -1,16 +1,16 @@
 """
 test_billing_checkout.py — FONDASI Multi-Tenant Phase 4: Invoice & Checkout
 =============================================================================
-Cakupan: GET katalog paket aktif + fitur, GET config Midtrans (client key
-publik, TIDAK PERNAH server key), POST checkout (mock Midtrans lewat
-monkeypatch midtrans_client.requests.post -- TIDAK PERNAH memanggil
-Midtrans sungguhan), riwayat invoice Owner (terisolasi per tenant), dan
-monitoring invoice Super Admin lintas tenant."""
+Cakupan: GET katalog paket aktif + fitur, GET config Payment Gateway
+langganan SaaS (client key publik, TIDAK PERNAH server key), POST checkout
+(mock provider lewat monkeypatch gateway_client_base.requests.post --
+TIDAK PERNAH memanggil provider sungguhan), riwayat invoice Owner
+(terisolasi per tenant), dan monitoring invoice Super Admin lintas tenant."""
 
 import billing_db
 import billing_gateway_db
 import billing_invoice_db
-import midtrans_client
+import gateway_client_base
 import tenant_db
 
 
@@ -36,17 +36,21 @@ def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia
     return _login(client, username, password)
 
 
-def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc",
-                             status_code=201):
+# PROVIDER RESMI: Faspay Xpress v4 -- buat_transaksi() SELALU return
+# token=None (Faspay tidak punya konsep token checkout seperti Snap, murni
+# redirect_url), respons sukses provider ditandai response_code "00".
+def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/checkout/abc", status_code=200):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
-        "server_key": "SB-Mid-server-test", "client_key": "SB-Mid-client-test",
-        "environment": "sandbox", "enabled": True,
+        "merchant_id": "37070-test", "server_key": "bot-test-checkout", "secret_key": "p-test-checkout",
+        "client_key": "", "environment": "sandbox", "enabled": True,
     })
 
     def fake_post(url, json, headers, timeout):
-        return _FakeResponse(status_code, {"token": token, "redirect_url": redirect})
+        if status_code >= 400:
+            return _FakeResponse(status_code, {"response_code": "99", "response_desc": "Ditolak"})
+        return _FakeResponse(status_code, {"response_code": "00", "response_desc": "Success", "redirect_url": redirect})
 
-    monkeypatch.setattr(midtrans_client.requests, "post", fake_post)
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
 
 def _owner_login(app_client):
@@ -79,20 +83,24 @@ def test_daftar_paket_aktif_tidak_membawa_paket_nonaktif(app_client):
     assert "enterprise" not in {p["kode"] for p in r.json()}
 
 
-def test_config_midtrans_tidak_membocorkan_server_key(app_client, monkeypatch):
+def test_config_billing_gateway_tidak_membocorkan_server_key(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
 
     r = app_client.get("/api/billing/config", headers=headers)
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["enabled"] is True
-    assert data["client_key"] == "SB-Mid-client-test"
+    # Faspay Xpress v4 TIDAK punya JS SDK/client-side key -- client_key()
+    # SELALU None terlepas dari kredensial yang tersimpan.
+    assert data["client_key"] is None
+    assert data["checkout_script_url"] is None
     assert "server_key" not in data
-    assert "SB-Mid-server-test" not in str(data)
+    assert "bot-test-checkout" not in str(data)
+    assert "p-test-checkout" not in str(data)
 
 
-def test_config_midtrans_disabled_saat_belum_dikonfigurasi(app_client, monkeypatch):
+def test_config_billing_gateway_disabled_saat_belum_dikonfigurasi(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     # Config fresh test DB SUDAH default disabled (belum pernah diisi Super
     # Admin) -- tidak perlu monkeypatch apa pun untuk memastikan itu.
@@ -105,7 +113,7 @@ def test_config_midtrans_disabled_saat_belum_dikonfigurasi(app_client, monkeypat
 
 def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], harga=249000)
 
@@ -115,7 +123,9 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
     assert data["status"] == "pending"
     assert data["package_kode"] == "pro"
     assert data["jumlah"] == 249000
-    assert data["snap_token"] == "snap-token-abc"
+    # Faspay Xpress v4: token SELALU None, checkout murni redirect_url.
+    assert data["snap_token"] is None
+    assert data["snap_redirect_url"] == "https://example.test/checkout/abc"
     assert data["tenant_id"] == tenant["id"]
     assert data["order_id"].startswith(f"SUB-{tenant['id']}-")
     assert data["nomor_invoice"].startswith("INV-")
@@ -126,7 +136,7 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
 # efektif durasi_hari*6 -- lihat routers/billing.py::checkout().
 def test_checkout_6bulan_sukses_pakai_harga_dan_durasi_6bulan(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], harga=250000, harga_6bulan=1200000, durasi_hari=30)
 
@@ -141,7 +151,7 @@ def test_checkout_6bulan_sukses_pakai_harga_dan_durasi_6bulan(app_client, monkey
 
 def test_checkout_6bulan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], harga_6bulan=None)
 
@@ -153,7 +163,7 @@ def test_checkout_6bulan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkey
 
 def test_checkout_siklus_tidak_dikenal_422(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
 
     r = app_client.post("/api/billing/checkout", headers=headers,
@@ -161,7 +171,7 @@ def test_checkout_siklus_tidak_dikenal_422(app_client, monkeypatch):
     assert r.status_code == 422
 
 
-def test_checkout_tanpa_midtrans_dikonfigurasi_503(app_client, monkeypatch):
+def test_checkout_tanpa_gateway_dikonfigurasi_503(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     # Config fresh test DB SUDAH default disabled (belum pernah diisi Super
     # Admin) -- tidak perlu monkeypatch apa pun untuk memastikan itu.
@@ -173,7 +183,7 @@ def test_checkout_tanpa_midtrans_dikonfigurasi_503(app_client, monkeypatch):
 
 def test_checkout_paket_tidak_ada_422(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
 
     r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": 999999})
     assert r.status_code == 422
@@ -181,7 +191,7 @@ def test_checkout_paket_tidak_ada_422(app_client, monkeypatch):
 
 def test_checkout_paket_nonaktif_422(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], aktif=False)
 
@@ -191,7 +201,7 @@ def test_checkout_paket_nonaktif_422(app_client, monkeypatch):
 
 def test_checkout_paket_gratis_ditolak(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     free = billing_db.get_package_by_kode("free")
 
     r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": free["id"]})
@@ -199,9 +209,9 @@ def test_checkout_paket_gratis_ditolak(app_client, monkeypatch):
     assert "tidak memerlukan pembayaran" in r.json()["detail"]
 
 
-def test_checkout_midtrans_gagal_502_dan_tidak_membuat_invoice(app_client, monkeypatch):
+def test_checkout_gateway_gagal_502_dan_tidak_membuat_invoice(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch, status_code=401)
+    _aktifkan_billing_gateway_mock(monkeypatch, status_code=401)
     pro = billing_db.get_package_by_kode("pro")
 
     r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})
@@ -213,7 +223,7 @@ def test_checkout_midtrans_gagal_502_dan_tidak_membuat_invoice(app_client, monke
 
 def test_daftar_invoice_saya(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
 
     app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})
@@ -226,7 +236,7 @@ def test_daftar_invoice_saya(app_client, monkeypatch):
 
 def test_detail_invoice_saya(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]}).json()
 
@@ -236,7 +246,7 @@ def test_detail_invoice_saya(app_client, monkeypatch):
 
 
 def test_invoice_tenant_lain_404(two_tenants, monkeypatch):
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     import auth_db
     auth_db.tambah_user("ownerA2", "passwordA123", role="admin", tenant_id=two_tenants["tenant_a"])
     headers_a = _login(two_tenants["client"], "ownerA2", "passwordA123")
@@ -253,7 +263,7 @@ def test_invoice_tenant_lain_404(two_tenants, monkeypatch):
 
 def test_superadmin_list_invoices_semua_tenant(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})
 
@@ -272,7 +282,7 @@ def test_akun_tenant_biasa_ditolak_endpoint_superadmin_invoices(two_tenants):
 
 def test_superadmin_detail_invoice_tenant_manapun(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
     invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]}).json()
 

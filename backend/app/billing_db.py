@@ -1,5 +1,5 @@
 """
-billing_db.py — FONDASI Multi-Tenant Phase 4: Billing & Payment (Midtrans)
+billing_db.py — FONDASI Multi-Tenant Phase 4: Billing & Payment (Payment Gateway)
 =============================================================================
 Konfigurasi paket langganan (nama/harga/durasi/status/urutan/deskripsi/
 batas pemakaian) yang bisa diatur Super Admin -- TIDAK ADA satu pun nilai

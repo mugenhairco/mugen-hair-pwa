@@ -38,12 +38,18 @@ def test_get_config_default_kosong_dan_disabled(app_client):
 
 
 def test_update_config_menyimpan_dan_enabled_true(app_client):
+    # PROVIDER RESMI Faspay Xpress v4: enabled=True butuh merchant_id
+    # (Merchant ID) + server_key (User ID) + secret_key (Password) --
+    # client_key TIDAK dipakai Faspay (tetap tersimpan apa adanya untuk
+    # provider lain), lihat billing_gateway_db.py::get_config().
     hasil = billing_gateway_db.update_config(
-        server_key="SB-server-abc", client_key="SB-client-abc", environment="production",
+        server_key="SB-server-abc", client_key="SB-client-abc",
+        merchant_id="MID-abc", secret_key="SB-secret-abc", environment="production",
     )
     assert hasil == {
         **_CONFIG_KOSONG,
         "server_key": "SB-server-abc", "client_key": "SB-client-abc",
+        "merchant_id": "MID-abc", "secret_key": "SB-secret-abc",
         "environment": "production", "enabled": True,
     }
     assert billing_gateway_db.get_config() == hasil
@@ -67,12 +73,14 @@ def test_update_config_semua_field_generik_tersimpan(app_client):
 
 def test_update_config_field_boleh_kosong_sebagian(app_client):
     """SESUAI KEPUTUSAN: tidak semua field wajib diisi -- provider yang
-    hanya butuh server_key+client_key (mis. Midtrans) boleh membiarkan
-    api_key/merchant_id/secret_key/webhook_url tetap kosong selamanya."""
-    hasil = billing_gateway_db.update_config(server_key="only-server", client_key="only-client")
+    tidak butuh client_key/api_key (Faspay Xpress v4, TIDAK ada JS SDK)
+    boleh membiarkan keduanya tetap kosong selamanya, enabled=True cukup
+    dari merchant_id+server_key+secret_key."""
+    hasil = billing_gateway_db.update_config(
+        server_key="only-server", merchant_id="only-merchant", secret_key="only-secret",
+    )
     assert hasil["api_key"] == ""
-    assert hasil["merchant_id"] == ""
-    assert hasil["secret_key"] == ""
+    assert hasil["client_key"] == ""
     assert hasil["webhook_url"] == ""
     assert hasil["enabled"] is True
 
@@ -104,10 +112,14 @@ def test_migrasi_bootstrap_dari_env_var_sekali_saja(app_client, monkeypatch):
     billing_gateway_db.migrasi_billing_gateway()
 
     cfg = billing_gateway_db.get_config()
+    # Bootstrap lama HANYA mengisi server_key/client_key/environment dari
+    # env var MIDTRANS_* -- enabled TETAP False karena adapter konkret
+    # sekarang (Faspay Xpress v4) juga butuh merchant_id+secret_key yang
+    # tidak pernah ada di skema env var lama ini sama sekali.
     assert cfg == {
         **_CONFIG_KOSONG,
         "server_key": "ENV-server-lama", "client_key": "ENV-client-lama",
-        "environment": "production", "enabled": True,
+        "environment": "production", "enabled": False,
     }
 
 
@@ -144,13 +156,14 @@ def test_superadmin_get_dan_put_gateway_config(app_client):
 
     r2 = app_client.put("/api/superadmin/billing/gateway-config", headers=headers, json={
         "server_key": "SB-server-xyz", "client_key": "SB-client-xyz", "environment": "production",
-        "merchant_id": "MID-1", "webhook_url": "https://example.test/webhook",
+        "merchant_id": "MID-1", "secret_key": "SB-secret-xyz", "webhook_url": "https://example.test/webhook",
     })
     assert r2.status_code == 200, r2.text
     assert r2.json() == {
         **_CONFIG_KOSONG,
         "server_key": "SB-server-xyz", "client_key": "SB-client-xyz", "environment": "production",
-        "merchant_id": "MID-1", "webhook_url": "https://example.test/webhook", "enabled": True,
+        "merchant_id": "MID-1", "secret_key": "SB-secret-xyz",
+        "webhook_url": "https://example.test/webhook", "enabled": True,
     }
 
     log = app_client.get("/api/superadmin/audit-log", headers=headers).json()

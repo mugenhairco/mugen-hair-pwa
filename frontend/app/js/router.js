@@ -359,6 +359,18 @@ const MugenRouter = (() => {
         return;
       }
       renderResult = PageUangKas.render(content);
+    } else if (hash.startsWith("#/keuangan/riwayat-transaksi")) {
+      // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant:
+      // riwayat transaksi Payment Gateway booking TOKO INI SENDIRI (lihat
+      // pages/riwayat_transaksi.js) -- pola akses SAMA PERSIS Pemasukan/
+      // Uang Kas di atas. Perlindungan sebenarnya tetap di backend
+      // (require_owner_or_staff di /api/booking/transactions, SELALU
+      // di-scope tenant_id dari akun login).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = PageRiwayatTransaksi.render(content);
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

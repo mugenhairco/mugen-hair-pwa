@@ -678,7 +678,7 @@ CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     created_at              TEXT NOT NULL
 );
 
--- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway) -- lihat
 -- billing_db.py (jalur SQLite) untuk penjelasan lengkap. `kode` TANPA
 -- foreign key ke mana pun (dicocokkan ke tenant_subscriptions.package di
 -- kode aplikasi, bukan di database), sama seperti tenant_id di tabel lain.
@@ -731,9 +731,9 @@ CREATE TABLE IF NOT EXISTS subscription_package_features (
     UNIQUE(package_id, feature_id)
 );
 
--- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
--- billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap. tenant_id
--- TANPA foreign key (pola sama seperti tabel lain di proyek ini).
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway langganan SaaS) --
+-- lihat billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap.
+-- tenant_id TANPA foreign key (pola sama seperti tabel lain di proyek ini).
 CREATE TABLE IF NOT EXISTS subscription_invoices (
     id                  SERIAL PRIMARY KEY,
     nomor_invoice       TEXT NOT NULL UNIQUE,
@@ -754,6 +754,57 @@ CREATE TABLE IF NOT EXISTS subscription_invoices (
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL,
     paid_at             TEXT
+);
+
+-- Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: riwayat
+-- transisi status invoice (lihat billing_invoice_db.py::catat_status_log()
+-- jalur SQLite untuk penjelasan lengkap) -- dipakai Detail Transaksi Super
+-- Admin, write-once dari sisi aplikasi.
+CREATE TABLE IF NOT EXISTS subscription_invoice_status_log (
+    id              SERIAL PRIMARY KEY,
+    invoice_id      INTEGER NOT NULL,
+    status_lama     TEXT,
+    status_baru     TEXT NOT NULL,
+    sumber          TEXT NOT NULL,
+    waktu           TEXT NOT NULL
+);
+
+-- Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: Payment
+-- Gateway BOOKING customer -- lihat booking_gateway_migrasi.py (jalur
+-- SQLite) untuk penjelasan lengkap. TERPISAH TOTAL dari
+-- subscription_invoices/subscription_invoice_status_log di atas (langganan
+-- SaaS) -- dua jenis transaksi, TIDAK saling bergantung sama sekali.
+CREATE TABLE IF NOT EXISTS booking_payment_transactions (
+    id                      SERIAL PRIMARY KEY,
+    tenant_id               INTEGER NOT NULL,
+    tenant_nama             TEXT NOT NULL,
+    booking_id              INTEGER NOT NULL,
+    order_id                TEXT NOT NULL UNIQUE,
+    nomor_transaksi         TEXT NOT NULL UNIQUE,
+    customer_nama           TEXT NOT NULL,
+    barber_nama             TEXT NOT NULL,
+    layanan                 TEXT NOT NULL,
+    nominal                 INTEGER NOT NULL,
+    metode_pembayaran       TEXT NOT NULL DEFAULT 'gateway',
+    channel_pembayaran      TEXT,
+    status_pembayaran       TEXT NOT NULL DEFAULT 'menunggu_pembayaran',
+    transaction_id_provider TEXT,
+    reference_id_provider   TEXT,
+    checkout_token          TEXT,
+    checkout_redirect_url   TEXT,
+    raw_notification        TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    paid_at                 TEXT
+);
+
+CREATE TABLE IF NOT EXISTS booking_payment_status_log (
+    id              SERIAL PRIMARY KEY,
+    transaction_id  INTEGER NOT NULL,
+    status_lama     TEXT,
+    status_baru     TEXT NOT NULL,
+    sumber          TEXT NOT NULL,
+    waktu           TEXT NOT NULL
 );
 
 -- FITUR Email, Verifikasi Email, Lupa Kata Sandi -- lihat penjelasan

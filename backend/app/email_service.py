@@ -3,8 +3,9 @@ Resend (pengiriman email transaksional)
 =============================================================================
 Kredensial ditentukan SEKALI saat modul ini pertama kali diimpor, dari
 environment variable RESEND_API_KEY/MAIL_FROM/MAIL_FROM_NAME (pola SAMA
-PERSIS seperti midtrans_client.py menentukan MIDTRANS_*/r2_storage.py
-menentukan R2_*):
+PERSIS seperti r2_storage.py menentukan R2_* -- BEDA dari
+billing_gateway_client.py/payment_gateway_client.py yang kredensialnya
+DB-backed, bukan env var, lihat modul itu):
 
 - RESEND_API_KEY kosong -> IS_ENABLED=False. kirim_email() TIDAK PERNAH
   memanggil jaringan sama sekali, cukup mencatat log & mengembalikan False

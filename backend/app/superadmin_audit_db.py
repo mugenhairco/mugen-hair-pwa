@@ -30,7 +30,7 @@ AKSI_VALID = {
     "registrasi_publik",
     "ubah_config_subscription", "buat_pembayaran_subscription",
     "ubah_status_pembayaran_subscription",
-    # FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+    # FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway) -- lihat
     # routers/billing.py, billing_db.py.
     "ubah_paket_billing",
     "tambah_fitur_billing", "ubah_fitur_billing", "hapus_fitur_billing",
@@ -38,8 +38,8 @@ AKSI_VALID = {
     # Payment Gateway (booking publik, platform-wide) -- lihat
     # routers/payment_gateway.py, payment_gateway_db.py.
     "ubah_config_payment_gateway",
-    # Payment Gateway Billing SaaS (Midtrans, platform-wide, TERPISAH dari
-    # Payment Gateway booking di atas) -- lihat routers/billing.py,
+    # Payment Gateway Billing SaaS (Faspay Xpress v4, platform-wide, TERPISAH
+    # dari Payment Gateway booking di atas) -- lihat routers/billing.py,
     # billing_gateway_db.py.
     "ubah_config_billing_gateway",
 }

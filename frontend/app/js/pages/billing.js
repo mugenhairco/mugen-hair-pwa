@@ -1,16 +1,19 @@
-// pages/billing.js — FONDASI Multi-Tenant Phase 4: Billing & Payment (Midtrans)
+// pages/billing.js — FONDASI Multi-Tenant Phase 4: Billing & Payment Gateway
 // =============================================================================
 // Halaman BARU, KHUSUS Owner (require_admin, sama seperti Setting > Subscription
 // Phase 3 -- staff TIDAK ikut melihat, lihat nav.js) -- TERPISAH TOTAL dari tab
 // "Subscription" read-only di pages/pengaturan.js (Phase 3, TIDAK diubah sama
 // sekali di sini): paket aktif + periode + status, katalog paket untuk upgrade/
-// downgrade/perpanjang, checkout Midtrans Snap, riwayat invoice/pembayaran.
+// downgrade/perpanjang, checkout Payment Gateway hosted, riwayat invoice/pembayaran.
 //
-// Snap.js Midtrans dimuat DINAMIS (bukan <script> tetap di index.html) --
-// proyek ini sengaja tanpa bundler/CDN tetap apa pun (lihat README), dan
-// Snap.js HANYA dibutuhkan tepat saat Owner menekan tombol checkout, jadi
-// tidak ada gunanya dimuat di awal (apalagi kalau Midtrans belum
-// dikonfigurasi Super Admin sama sekali -- lihat GET /api/billing/config).
+// PROVIDER RESMI: Faspay Xpress v4 (billing_gateway_client.py) -- checkout
+// hosted murni redirect_url (config.checkout_script_url/client_key SELALU
+// null, Faspay tidak punya JS SDK), lihat cabang window.open() di
+// mulaiCheckout() di bawah. Cabang window.snap.pay() DIPERTAHANKAN sebagai
+// jalur adapter generik (script dimuat DINAMIS, bukan <script> tetap di
+// index.html -- proyek ini sengaja tanpa bundler/CDN tetap apa pun, lihat
+// README) kalau kelak provider lain yang punya script checkout dipasang --
+// TIDAK PERNAH dipakai untuk Faspay.
 
 const PageBilling = (() => {
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
@@ -59,7 +62,7 @@ const PageBilling = (() => {
       script.onload = () => resolve();
       script.onerror = () => {
         _snapLoadPromise = null;
-        reject(new Error("Gagal memuat modul pembayaran Midtrans. Periksa koneksi internet Anda."));
+        reject(new Error("Gagal memuat modul pembayaran. Periksa koneksi internet Anda."));
       };
       document.head.appendChild(script);
     });
@@ -115,7 +118,7 @@ const PageBilling = (() => {
   // TIDAK mengubah perilaku lama) atau "6bulan" -- diteruskan APA ADANYA ke
   // body checkout, backend (routers/billing.py) yang menghitung harga/durasi
   // efektifnya (lihat komentar di sana), di sini murni meneruskan pilihan.
-  async function mulaiCheckout(packageId, siklus, config, onSelesai) {
+  async function mulaiCheckout(packageId, siklus, config, onSelesai, btnPemicu) {
     _bersihkanPendingKode();
     let invoice;
     try {
@@ -125,13 +128,6 @@ const PageBilling = (() => {
       );
     } catch (e) {
       MugenUI.toast(pesanError(e), "error");
-      return;
-    }
-
-    try {
-      await muatSnapJs(config.snap_js_url, config.client_key);
-    } catch (e) {
-      MugenUI.toast(e.message, "error");
       return;
     }
 
@@ -147,21 +143,81 @@ const PageBilling = (() => {
       onSelesai();
     }
 
-    window.snap.pay(invoice.snap_token, {
-      onSuccess: () => {
+    // PROVIDER RESMI: Faspay Xpress v4 -- checkout HANYA hosted redirect
+    // (config.checkout_script_url selalu null, TIDAK ADA script/token
+    // seperti Snap), jadi cabang window.snap.pay() di bawah TIDAK PERNAH
+    // dipakai untuk Faspay -- dipertahankan sebagai jalur adapter generik
+    // kalau provider lain (yang punya script checkout) dipasang nanti,
+    // SAMA seperti pola bukaCheckoutGateway() di pages/book_public.js.
+    if (config.checkout_script_url && config.client_key) {
+      try {
+        await muatSnapJs(config.checkout_script_url, config.client_key);
+      } catch (e) {
+        MugenUI.toast(e.message, "error");
+        return;
+      }
+      window.snap.pay(invoice.snap_token, {
+        onSuccess: () => {
+          MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
+          setTimeout(segarkanLaluSelesai, 2000);
+        },
+        onPending: () => {
+          MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
+          segarkanLaluSelesai();
+        },
+        onError: () => {
+          MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
+          onSelesai();
+        },
+        onClose: onSelesai,
+      });
+      return;
+    }
+
+    // Halaman checkout Faspay dibuka di TAB BARU (AUDIT: window.open() bisa
+    // diblokir browser kalau dipanggil di luar gesture klik langsung --
+    // POST /api/billing/checkout di atas SUDAH selesai duluan, jadi deteksi
+    // & beri tahu Owner kalau itu terjadi, sama seperti book_public.js).
+    const jendela = window.open(invoice.snap_redirect_url, "_blank", "noopener,noreferrer");
+    if (!jendela || jendela.closed) {
+      MugenUI.toast("Halaman pembayaran diblokir browser -- izinkan pop-up untuk situs ini lalu coba lagi.", "error");
+    } else {
+      MugenUI.toast("Selesaikan pembayaran di tab baru -- status akan diperbarui otomatis di sini setelah dikonfirmasi.", "info", { force: true });
+    }
+
+    // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
+    // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah
+    // lewat webhook di backend, polling ini murni menunggu itu lalu
+    // menyegarkan tampilan halaman ini. AUDIT (pre-merge): #app dibongkar
+    // total (innerHTML="") setiap kali Owner pindah menu (lihat router.js::
+    // shell()) -- TANPA guard ini, timer tetap menyala di background sampai
+    // 10 menit walau Owner sudah meninggalkan halaman Billing, membuat
+    // polling sia-sia (dan onSelesai() akhirnya me-render ULANG ke DOM
+    // yatim yang sudah tidak terlihat). btnPemicu (tombol yang diklik) jadi
+    // penanda "masih di halaman ini" -- begitu #app dibongkar, tombol itu
+    // ikut lepas dari document, pola SAMA PERSIS dengan
+    // document.body.contains(countdownEl) di book_public.js.
+    let sisaPercobaan = 150; // ~150 x 4 detik = 10 menit
+    const pollTimer = setInterval(async () => {
+      if (btnPemicu && !document.body.contains(btnPemicu)) { clearInterval(pollTimer); return; }
+      sisaPercobaan -= 1;
+      if (sisaPercobaan <= 0) { clearInterval(pollTimer); return; }
+      let terbaru;
+      try {
+        terbaru = await MugenApi.get(`/api/billing/invoices/${invoice.id}`);
+      } catch (e) {
+        return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
+      }
+      if (terbaru.status === "paid") {
+        clearInterval(pollTimer);
         MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-        setTimeout(segarkanLaluSelesai, 2000);
-      },
-      onPending: () => {
-        MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
         segarkanLaluSelesai();
-      },
-      onError: () => {
-        MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
+      } else if (["denied", "cancelled", "expired"].includes(terbaru.status)) {
+        clearInterval(pollTimer);
+        MugenUI.toast("Pembayaran tidak berhasil. Silakan coba lagi.", "error");
         onSelesai();
-      },
-      onClose: onSelesai,
-    });
+      }
+    }, 4000);
   }
 
   async function mulaiDowngrade(btn, paket, onSelesai) {
@@ -176,7 +232,8 @@ const PageBilling = (() => {
       // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
       // -- downgrade berlaku instan tanpa gateway pembayaran eksternal,
       // beda dari mulaiCheckout() di atas yang TETAP withLoading() (transisi
-      // ke Midtrans Snap, genuinely memblokir sampai modal pembayaran siap).
+      // ke checkout hosted Payment Gateway, genuinely memblokir sampai modal
+      // pembayaran siap).
       await MugenUI.withButtonLoading(btn, () => MugenApi.post("/api/billing/downgrade", { package_id: paket.id }));
       // Aksi besar/konfirmasi penting (perubahan paket langganan) -- toast
       // sukses SENGAJA ditampilkan (force:true), lihat whitelist di ui.js.
@@ -241,7 +298,7 @@ const PageBilling = (() => {
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Pilih Paket"));
     card.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Upgrade langsung dibayar lewat Midtrans (VA/QRIS/kartu). Downgrade & Perpanjang paket yang sama TIDAK memerlukan pembayaran baru di sini kecuali memang paket berbayar."));
+      "Upgrade langsung dibayar lewat Payment Gateway (VA/QRIS/kartu). Downgrade & Perpanjang paket yang sama TIDAK memerlukan pembayaran baru di sini kecuali memang paket berbayar."));
 
     const current = packages.find((p) => p.kode === sub.package) || null;
 
@@ -320,17 +377,17 @@ const PageBilling = (() => {
           box.appendChild(MugenUI.el("span", { class: "badge badge-success", style: "margin-bottom:10px;display:inline-block;" }, "Paket Aktif"));
           if (paket.harga > 0) {
             btn = MugenUI.el("button", { class: "btn-primary" }, "Perpanjang");
-            btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+            btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
           }
         } else if (current && paket.urutan > current.urutan) {
           btn = MugenUI.el("button", { class: "btn-primary" }, "Upgrade");
-          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
         } else if (current && paket.urutan < current.urutan) {
           btn = MugenUI.el("button", {}, "Downgrade");
           btn.addEventListener("click", () => mulaiDowngrade(btn, paket, onSelesai));
         } else {
           btn = MugenUI.el("button", { class: "btn-primary" }, "Pilih Paket");
-          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
         }
         if (btn) box.appendChild(MugenUI.el("div", {}, btn));
         grid.appendChild(box);
@@ -345,7 +402,7 @@ const PageBilling = (() => {
     gambarUlangGrid();
   }
 
-  function renderInvoiceCard(root, invoices) {
+  function renderInvoiceCard(root, invoices, reload) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Riwayat Pembayaran"));
@@ -357,6 +414,28 @@ const PageBilling = (() => {
       { key: "metode_pembayaran", label: "Metode", format: (v) => v || "-" },
       { key: "status", label: "Status", format: (v) => MugenUI.el("span", { class: "badge " + (BADGE_STATUS_INVOICE[v] || "") }, LABEL_STATUS_INVOICE[v] || v) },
       { key: "created_at", label: "Tanggal", format: (v) => formatWaktu(v) },
+      {
+        // AUDIT (perbaikan pasca-audit kesiapan): jalur RESMI untuk invoice
+        // yang macet karena webhook TIDAK PERNAH sampai sama sekali --
+        // HANYA muncul untuk status "pending" (belum final), server yang
+        // memanggil ulang provider (Server Key sendiri), Owner TIDAK PERNAH
+        // bisa mengklaim status sendiri (lihat routers/billing.py::
+        // cek_ulang_invoice()).
+        key: "aksi", label: "Aksi", format: (_, inv) => {
+          if (inv.status !== "pending") return "-";
+          const btn = MugenUI.el("button", { type: "button" }, "Cek Ulang ke Provider");
+          btn.addEventListener("click", async () => {
+            try {
+              await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/billing/invoices/${inv.id}/cek-ulang`));
+              MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
+              reload();
+            } catch (e) {
+              MugenUI.toast(pesanError(e), "error");
+            }
+          });
+          return btn;
+        },
+      },
     ];
     card.appendChild(MugenUI.buildTable(kolom, invoices, { emptyText: "Belum ada riwayat pembayaran." }));
   }
@@ -386,7 +465,7 @@ const PageBilling = (() => {
 
     renderStatusCard(root, sub, invoices, packages, config);
     renderPaketCard(root, sub, config, packages, () => render(root));
-    renderInvoiceCard(root, invoices);
+    renderInvoiceCard(root, invoices, () => render(root));
   }
 
   return { render };

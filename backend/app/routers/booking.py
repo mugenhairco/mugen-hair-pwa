@@ -28,8 +28,12 @@ from pydantic import BaseModel
 
 import billing_limits
 import booking_db
+import booking_gateway_db
+import booking_gateway_webhook
 import database as db
 import feature_access
+import gateway_client_base
+import payment_gateway_client
 import payment_gateway_db
 import r2_storage
 import subscription_db
@@ -172,6 +176,13 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         # sama seperti qris_url/bank_nama yang juga selalu dikirim terlepas
         # metode itu aktif atau tidak).
         "pgw_channels": payment_gateway_db.get_public_channels(),
+        # Payment Gateway: Client Key + URL script checkout hosted -- SENGAJA
+        # dikirim apa adanya terlepas metode "gateway" aktif/tidak (Client
+        # Key MEMANG dirancang untuk frontend, lihat payment_gateway_client.py),
+        # dipakai book_public.js memuat script checkout PERSIS begitu customer
+        # pilih metode Payment Gateway (pola sama seperti billing.js muat Snap.js).
+        "pgw_client_key": payment_gateway_client.client_key() if payment_gateway_client.is_enabled() else None,
+        "pgw_checkout_script_url": payment_gateway_client.client_script_url() if payment_gateway_client.is_enabled() else None,
         "toko_libur_tanggal": toko_libur_tanggal,
     }
 
@@ -217,9 +228,15 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     # lewat UI, jadi ditegakkan juga di sini).
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         raise HTTPException(status_code=403, detail="Booking online tidak tersedia untuk toko ini.")
+    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: kalau
+    # metode "gateway" TAPI Super Admin belum mengisi kredensial Payment
+    # Gateway booking platform-wide, TOLAK SEBELUM booking dibuat sama
+    # sekali -- BUKAN membuat booking yang tidak akan pernah bisa dibayar.
+    if body.metode_pembayaran == "gateway" and not payment_gateway_client.is_enabled():
+        raise HTTPException(status_code=503, detail="Payment Gateway belum aktif -- silakan pilih metode pembayaran lain.")
     try:
         billing_limits.pastikan_boleh_tambah_booking(tenant_id)  # FONDASI Multi-Tenant Phase 4
-        return booking_db.buat_booking(
+        booking = booking_db.buat_booking(
             barber_id=body.barber_id, tanggal=body.tanggal, jam_mulai=body.jam_mulai,
             service_ids=body.service_ids, customer_nama=body.customer_nama,
             customer_whatsapp=body.customer_whatsapp, metode_pembayaran=body.metode_pembayaran,
@@ -227,6 +244,67 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    if body.metode_pembayaran != "gateway":
+        return booking
+
+    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: booking
+    # SUDAH tersimpan (status_pembayaran='menunggu_verifikasi', slot
+    # TERISI) -- sekarang buat transaksi checkout SUNGGUHAN ke provider.
+    # Gagal (provider tidak bisa dihubungi/menolak) -> booking DIBATALKAN
+    # OTOMATIS (membebaskan slot lagi, TIDAK ADA booking menggantung yang
+    # tidak bisa dibayar) -- BUKAN dibiarkan tersimpan tanpa jalan bayar.
+    tenant = tenant_db.get_tenant(tenant_id)
+    order_id = booking_gateway_db.buat_order_id(tenant_id, booking["id"])
+    item_details = [
+        {"id": str(it["service_id"]), "price": it["harga"], "quantity": 1, "name": it["nama_service"][:50]}
+        for it in booking["items"]
+    ]
+    # AUDIT (perbaikan pasca-audit kesiapan): "phone" ditambahkan (SEBELUMNYA
+    # hanya "first_name") -- Faspay Xpress v4 mewajibkan msisdn di request
+    # checkout (lihat payment_gateway_client.py). Form booking publik
+    # SENGAJA TIDAK punya field email (keputusan eksplisit) -- "email"
+    # SENGAJA TIDAK diisi di sini, client-nya sendiri yang pakai fallback
+    # support@rivoirsett.com HANYA untuk memenuhi syarat API Faspay.
+    customer_details = {"first_name": booking["customer_nama"][:50], "phone": booking["customer_whatsapp"]}
+    channels = payment_gateway_db.get_config()["metode_aktif"]
+    try:
+        hasil_gateway = payment_gateway_client.buat_transaksi(
+            order_id, booking["total_harga"], item_details,
+            customer_details=customer_details, enabled_channels=channels,
+        )
+    except gateway_client_base.GatewayError as e:
+        booking_db.batalkan_booking(booking["id"])
+        raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
+
+    transaksi = booking_gateway_db.buat_transaksi(
+        order_id, tenant_id, tenant["nama_barbershop"] if tenant else "-", booking["id"],
+        booking["customer_nama"], booking["nama_barber"], booking["daftar_service"], booking["total_harga"],
+        checkout_token=hasil_gateway["token"], checkout_redirect_url=hasil_gateway["redirect_url"],
+    )
+    booking["gateway_order_id"] = order_id
+    booking["checkout_token"] = transaksi["checkout_token"]
+    booking["checkout_redirect_url"] = transaksi["checkout_redirect_url"]
+    return booking
+
+
+@public_router.get("/gateway-status/{order_id}")
+def public_gateway_status(order_id: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    """Endpoint READ-ONLY untuk wizard booking publik POLL status
+    pembayaran (lihat book_public.js) -- TIDAK PERNAH mengubah status apa
+    pun, murni membaca. Status pembayaran booking HANYA berubah lewat
+    booking_gateway_webhook.py (notifikasi resmi provider tervalidasi
+    signature), TIDAK PERNAH dari endpoint ini/klik customer. Payload
+    SENGAJA minim (status + info tampilan dasar saja, TANPA data sensitif
+    toko) karena endpoint ini publik tanpa login."""
+    transaksi = booking_gateway_db.get_transaksi_by_order_id(order_id)
+    if transaksi is None or transaksi["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    return {
+        "status_pembayaran": transaksi["status_pembayaran"],
+        "channel_pembayaran": transaksi["channel_pembayaran"],
+        "nominal": transaksi["nominal"],
+    }
 
 
 # =====================================================================
@@ -261,6 +339,50 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
                                         status_booking=status_booking, tenant_id=user["tenant_id"])
 
 
+@router.get("/transactions")
+def list_transaksi_gateway(
+    tanggal_mulai: str = None, tanggal_selesai: str = None,
+    status_pembayaran: str = None, metode_pembayaran: str = None,
+    user: dict = Depends(require_owner_or_staff),
+):
+    """Riwayat Transaksi Tenant (Implementasi Payment Gateway & Riwayat
+    Transaksi Multi-Tenant) -- SELALU di-scope tenant_id dari akun login,
+    TIDAK PERNAH menerima tenant_id dari parameter request (lihat
+    booking_gateway_db.py::list_transaksi() untuk alasan lengkap isolasi
+    multi-tenant)."""
+    return booking_gateway_db.list_transaksi(
+        tenant_id=user["tenant_id"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+        status_pembayaran=status_pembayaran, metode_pembayaran=metode_pembayaran,
+    )
+
+
+@router.get("/transactions/{transaksi_id}")
+def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+    transaksi = booking_gateway_db.get_transaksi(transaksi_id, tenant_id=user["tenant_id"])
+    if transaksi is None:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    transaksi["status_log"] = booking_gateway_db.list_status_log(transaksi_id)
+    return transaksi
+
+
+@router.post("/transactions/{transaksi_id}/cek-ulang")
+def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+    """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+    perbaikan pasca-audit kesiapan): jalur RESMI untuk transaksi yang macet
+    karena webhook TIDAK PERNAH sampai sama sekali (bukan telat/duplikat --
+    itu sudah ditangani otomatis). TIDAK PERNAH menerima klaim status dari
+    staff -- endpoint ini murni memicu server memanggil ULANG API provider
+    (Server Key sendiri) lalu menerapkan hasilnya lewat jalur yang SAMA
+    PERSIS dengan webhook resmi (lihat booking_gateway_webhook.py::
+    rekonsiliasi_manual()), TERMASUK guard urutan status yang sama."""
+    try:
+        return booking_gateway_webhook.rekonsiliasi_manual(transaksi_id, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
+
+
 @router.get("/belum-dikonfirmasi")
 def jumlah_belum_dikonfirmasi(user: dict = Depends(require_owner_or_staff)):
     """REVISI: Notifikasi Booking Baru -- di-poll berkala oleh frontend
@@ -272,7 +394,19 @@ def jumlah_belum_dikonfirmasi(user: dict = Depends(require_owner_or_staff)):
 
 @router.post("/{booking_id}/verifikasi")
 def verifikasi_booking(booking_id: int, user: dict = Depends(require_owner_or_staff)):
-    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
+    booking = booking_db.get_booking(booking_id)
+    _pastikan_booking_tenant_sama(user, booking)
+    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: booking
+    # metode "gateway" TIDAK BOLEH diverifikasi manual oleh staff -- status
+    # pembayarannya HANYA boleh berubah lewat webhook resmi provider
+    # (booking_gateway_webhook.py), SAMA SEKALI TIDAK PERNAH dari klik siapa
+    # pun (customer MAUPUN staff) supaya tidak ada celah "tandai lunas"
+    # tanpa pembayaran nyata.
+    if booking["metode_pembayaran"] == "gateway":
+        raise HTTPException(
+            status_code=422,
+            detail="Booking Payment Gateway tidak bisa diverifikasi manual -- status hanya berubah otomatis begitu pembayaran terkonfirmasi dari provider.",
+        )
     try:
         booking_db.verifikasi_pembayaran(booking_id)
     except ValueError as e:

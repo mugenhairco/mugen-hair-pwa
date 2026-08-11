@@ -62,7 +62,7 @@ def subscription_status(user: dict = Depends(get_current_user)):
     endpoint ini ke cache-nya, jadi menambah field di sini otomatis membuat
     MugenSubscription.get().features tersedia SINKRON di seluruh halaman
     tanpa perlu endpoint/refresh terpisah. Upgrade/downgrade paket (lewat
-    Superadmin atau webhook Midtrans) langsung berlaku di panggilan
+    Superadmin atau webhook Payment Gateway) langsung berlaku di panggilan
     berikutnya -- tidak ada apa pun yang di-cache di sisi server."""
     if user.get("tenant_id") is None:
         return {"akses_diblokir": False, "package": None, "features": []}

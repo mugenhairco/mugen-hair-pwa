@@ -1,7 +1,7 @@
 {
   "name": "Rivoir",
   "short_name": "Rivoir",
-  "description": "Platform manajemen barbershop -- booking online, jadwal barber, manajemen pelanggan, pembayaran Midtrans, laporan & analitik.",
+  "description": "Platform manajemen barbershop -- booking online, jadwal barber, manajemen pelanggan, pembayaran Payment Gateway, laporan & analitik.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
