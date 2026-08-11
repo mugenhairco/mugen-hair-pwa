@@ -7,8 +7,8 @@ routers/superadmin.py::buat_tenant()).
 
 KEPUTUSAN ARSITEKTUR PENTING (lihat plan Phase 5 untuk detail lengkap):
 tenant + akun Owner dibuat DI SINI, SAAT REGISTER -- BUKAN oleh webhook
-Midtrans saat pembayaran berhasil (billing_webhook.py TIDAK DISENTUH SAMA
-SEKALI, sesuai instruksi eksplisit "JANGAN mengubah logika Webhook").
+Payment Gateway saat pembayaran berhasil (billing_webhook.py TIDAK DISENTUH
+SAMA SEKALI, sesuai instruksi eksplisit "JANGAN mengubah logika Webhook").
 
 FITUR Landing Page & Pricing (Free Trial 30 Hari): subscription tenant baru
 SEKARANG langsung diberi status 'trial' (SEBELUMNYA 'expired' -- lihat

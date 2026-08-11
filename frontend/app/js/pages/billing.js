@@ -6,14 +6,14 @@
 // sekali di sini): paket aktif + periode + status, katalog paket untuk upgrade/
 // downgrade/perpanjang, checkout Payment Gateway hosted, riwayat invoice/pembayaran.
 //
-// Script checkout hosted provider dimuat DINAMIS (bukan <script> tetap di
-// index.html) -- proyek ini sengaja tanpa bundler/CDN tetap apa pun (lihat
-// README), dan script itu HANYA dibutuhkan tepat saat Owner menekan tombol
-// checkout, jadi tidak ada gunanya dimuat di awal (apalagi kalau Payment
-// Gateway belum dikonfigurasi Super Admin sama sekali -- lihat GET
-// /api/billing/config). Bentuk konkret (window.snap.pay(), lihat
-// billing_gateway_client.py) adalah adapter placeholder -- provider resmi
-// belum ditentukan.
+// PROVIDER RESMI: Faspay Xpress v4 (billing_gateway_client.py) -- checkout
+// hosted murni redirect_url (config.checkout_script_url/client_key SELALU
+// null, Faspay tidak punya JS SDK), lihat cabang window.open() di
+// mulaiCheckout() di bawah. Cabang window.snap.pay() DIPERTAHANKAN sebagai
+// jalur adapter generik (script dimuat DINAMIS, bukan <script> tetap di
+// index.html -- proyek ini sengaja tanpa bundler/CDN tetap apa pun, lihat
+// README) kalau kelak provider lain yang punya script checkout dipasang --
+// TIDAK PERNAH dipakai untuk Faspay.
 
 const PageBilling = (() => {
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
@@ -118,7 +118,7 @@ const PageBilling = (() => {
   // TIDAK mengubah perilaku lama) atau "6bulan" -- diteruskan APA ADANYA ke
   // body checkout, backend (routers/billing.py) yang menghitung harga/durasi
   // efektifnya (lihat komentar di sana), di sini murni meneruskan pilihan.
-  async function mulaiCheckout(packageId, siklus, config, onSelesai) {
+  async function mulaiCheckout(packageId, siklus, config, onSelesai, btnPemicu) {
     _bersihkanPendingKode();
     let invoice;
     try {
@@ -188,9 +188,18 @@ const PageBilling = (() => {
     // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
     // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah
     // lewat webhook di backend, polling ini murni menunggu itu lalu
-    // menyegarkan tampilan halaman ini.
+    // menyegarkan tampilan halaman ini. AUDIT (pre-merge): #app dibongkar
+    // total (innerHTML="") setiap kali Owner pindah menu (lihat router.js::
+    // shell()) -- TANPA guard ini, timer tetap menyala di background sampai
+    // 10 menit walau Owner sudah meninggalkan halaman Billing, membuat
+    // polling sia-sia (dan onSelesai() akhirnya me-render ULANG ke DOM
+    // yatim yang sudah tidak terlihat). btnPemicu (tombol yang diklik) jadi
+    // penanda "masih di halaman ini" -- begitu #app dibongkar, tombol itu
+    // ikut lepas dari document, pola SAMA PERSIS dengan
+    // document.body.contains(countdownEl) di book_public.js.
     let sisaPercobaan = 150; // ~150 x 4 detik = 10 menit
     const pollTimer = setInterval(async () => {
+      if (btnPemicu && !document.body.contains(btnPemicu)) { clearInterval(pollTimer); return; }
       sisaPercobaan -= 1;
       if (sisaPercobaan <= 0) { clearInterval(pollTimer); return; }
       let terbaru;
@@ -368,17 +377,17 @@ const PageBilling = (() => {
           box.appendChild(MugenUI.el("span", { class: "badge badge-success", style: "margin-bottom:10px;display:inline-block;" }, "Paket Aktif"));
           if (paket.harga > 0) {
             btn = MugenUI.el("button", { class: "btn-primary" }, "Perpanjang");
-            btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+            btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
           }
         } else if (current && paket.urutan > current.urutan) {
           btn = MugenUI.el("button", { class: "btn-primary" }, "Upgrade");
-          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
         } else if (current && paket.urutan < current.urutan) {
           btn = MugenUI.el("button", {}, "Downgrade");
           btn.addEventListener("click", () => mulaiDowngrade(btn, paket, onSelesai));
         } else {
           btn = MugenUI.el("button", { class: "btn-primary" }, "Pilih Paket");
-          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai));
+          btn.addEventListener("click", () => mulaiCheckout(paket.id, siklusAktif, config, onSelesai, btn));
         }
         if (btn) box.appendChild(MugenUI.el("div", {}, btn));
         grid.appendChild(box);

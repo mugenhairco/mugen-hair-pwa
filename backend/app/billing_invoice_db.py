@@ -1,7 +1,7 @@
 """billing_invoice_db.py — FONDASI Multi-Tenant Phase 4: Invoice & Checkout
 =============================================================================
-Tabel `subscription_invoices` -- SATU baris per percobaan checkout Midtrans
-(Snap), BUKAN per periode langganan (Owner boleh checkout berkali-kali,
+Tabel `subscription_invoices` -- SATU baris per percobaan checkout Payment
+Gateway, BUKAN per periode langganan (Owner boleh checkout berkali-kali,
 mis. transaksi pertama expired lalu coba lagi -- setiap percobaan tetap
 tercatat, TIDAK saling menimpa). `tenant_id` TANPA foreign key (pola sama
 seperti seluruh tabel lain di proyek ini, lihat catatan panjang di
@@ -11,14 +11,18 @@ subscription_packages), supaya kalau Super Admin mengubah harga/nama paket
 SETELAH invoice ini dibuat, riwayat invoice lama tetap menampilkan apa yang
 BENAR-BENAR dibayar customer saat itu.
 
-`order_id` (dikirim ke Midtrans, harus unik) DIBUAT lebih dulu (buat_order_id(),
-murni generate string, TIDAK menyentuh DB) SEBELUM baris invoice ini dibuat --
-routers/billing.py::checkout() memanggil Midtrans DULU pakai order_id itu,
-baru insert baris di sini SETELAH Midtrans mengonfirmasi (dapat snap_token).
+`order_id` (field DB `snap_token`/`snap_redirect_url` -- nama kolom historis,
+TIDAK diganti supaya tidak perlu migrasi skema, lihat billing_gateway_client.py
+untuk provider RESMI yang sekarang mengisinya: Faspay Xpress v4, murni
+redirect_url tanpa token) DIBUAT lebih dulu (buat_order_id(), murni generate
+string, TIDAK menyentuh DB) SEBELUM baris invoice ini dibuat -- routers/
+billing.py::checkout() memanggil Payment Gateway DULU pakai order_id itu,
+baru insert baris di sini SETELAH provider mengonfirmasi (dapat redirect_url).
 Ini SENGAJA supaya tidak ada baris invoice "menggantung" (status pending
-tanpa token sama sekali) kalau panggilan ke Midtrans gagal di tengah jalan.
+tanpa redirect_url sama sekali) kalau panggilan ke provider gagal di tengah
+jalan.
 
-Status webhook Midtrans (settlement/capture/pending/expire/cancel/deny,
+Status Payment Notification Faspay Xpress v4 (payment_status_code 0-9,
 lihat billing_webhook.py -- modul berikutnya) dipetakan ke STATUS_VALID di
 sini yang lebih sederhana untuk ditampilkan ke Owner/Super Admin."""
 
@@ -80,9 +84,9 @@ def _now() -> str:
 
 
 def buat_order_id(tenant_id: int) -> str:
-    """Murni generate string (TIDAK menyentuh DB) -- dipakai sebagai
-    `transaction_details.order_id` di panggilan Midtrans SEBELUM baris
-    invoice ini benar-benar dibuat (lihat docstring modul)."""
+    """Murni generate string (TIDAK menyentuh DB) -- dipakai sebagai `bill_no`
+    di panggilan Payment Gateway (Faspay Xpress v4) SEBELUM baris invoice ini
+    benar-benar dibuat (lihat docstring modul)."""
     return f"SUB-{tenant_id}-{uuid.uuid4().hex[:16]}"
 
 

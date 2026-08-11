@@ -678,7 +678,7 @@ CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     created_at              TEXT NOT NULL
 );
 
--- FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) -- lihat
+-- FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway) -- lihat
 -- billing_db.py (jalur SQLite) untuk penjelasan lengkap. `kode` TANPA
 -- foreign key ke mana pun (dicocokkan ke tenant_subscriptions.package di
 -- kode aplikasi, bukan di database), sama seperti tenant_id di tabel lain.

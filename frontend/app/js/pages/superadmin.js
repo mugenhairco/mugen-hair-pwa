@@ -1229,6 +1229,15 @@ const PageSuperadmin = (() => {
       `Faspay Xpress v4: URL Payment Notification & Return URL yang SUNGGUHAN didaftarkan ke Faspay untuk SATU akun ini (dipakai bersama Billing SaaS di atas) -- Payment Notification: ${MUGEN_API_BASE}/api/public/gateway/faspay-notification, Return URL: ${MUGEN_API_BASE}/api/public/gateway/faspay-return`));
 
     paymentGatewayCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Pembayaran (aktif & urutan tampil)"));
+    // AUDIT (pre-merge): SESUAI keputusan eksplisit soal payment_channel --
+    // daftar/urutan di bawah ini BELUM benar-benar mengontrol apa pun untuk
+    // Faspay saat ini (payment_gateway_client.py SENGAJA TIDAK mengirim
+    // payment_channel di buat_transaksi() -- Faspay menampilkan SEMUA
+    // channel aktif di Merchant ID apa adanya, terlepas pengaturan ini).
+    // Tersimpan supaya siap dipakai begitu Faspay menyediakan daftar kode
+    // channel resmi -- TIDAK dihapus dari UI, hanya belum berefek.
+    paymentGatewayCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },
+      "Belum berefek ke halaman pembayaran Faspay saat ini -- Faspay menampilkan semua channel aktif di Merchant ID apa adanya. Pengaturan ini tersimpan untuk diaktifkan begitu Faspay menyediakan daftar kode channel resmi."));
     const pgwChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
     paymentGatewayCard.appendChild(pgwChannelList);
 
