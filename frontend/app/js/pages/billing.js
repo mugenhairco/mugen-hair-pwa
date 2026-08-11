@@ -349,7 +349,7 @@ const PageBilling = (() => {
     gambarUlangGrid();
   }
 
-  function renderInvoiceCard(root, invoices) {
+  function renderInvoiceCard(root, invoices, reload) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Riwayat Pembayaran"));
@@ -361,6 +361,28 @@ const PageBilling = (() => {
       { key: "metode_pembayaran", label: "Metode", format: (v) => v || "-" },
       { key: "status", label: "Status", format: (v) => MugenUI.el("span", { class: "badge " + (BADGE_STATUS_INVOICE[v] || "") }, LABEL_STATUS_INVOICE[v] || v) },
       { key: "created_at", label: "Tanggal", format: (v) => formatWaktu(v) },
+      {
+        // AUDIT (perbaikan pasca-audit kesiapan): jalur RESMI untuk invoice
+        // yang macet karena webhook TIDAK PERNAH sampai sama sekali --
+        // HANYA muncul untuk status "pending" (belum final), server yang
+        // memanggil ulang provider (Server Key sendiri), Owner TIDAK PERNAH
+        // bisa mengklaim status sendiri (lihat routers/billing.py::
+        // cek_ulang_invoice()).
+        key: "aksi", label: "Aksi", format: (_, inv) => {
+          if (inv.status !== "pending") return "-";
+          const btn = MugenUI.el("button", { type: "button" }, "Cek Ulang ke Provider");
+          btn.addEventListener("click", async () => {
+            try {
+              await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/billing/invoices/${inv.id}/cek-ulang`));
+              MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
+              reload();
+            } catch (e) {
+              MugenUI.toast(pesanError(e), "error");
+            }
+          });
+          return btn;
+        },
+      },
     ];
     card.appendChild(MugenUI.buildTable(kolom, invoices, { emptyText: "Belum ada riwayat pembayaran." }));
   }
@@ -390,7 +412,7 @@ const PageBilling = (() => {
 
     renderStatusCard(root, sub, invoices, packages, config);
     renderPaketCard(root, sub, config, packages, () => render(root));
-    renderInvoiceCard(root, invoices);
+    renderInvoiceCard(root, invoices, () => render(root));
   }
 
   return { render };

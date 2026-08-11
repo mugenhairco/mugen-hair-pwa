@@ -30,6 +30,7 @@ import billing_gateway_client
 import billing_gateway_db
 import billing_invoice_db
 import billing_limits
+import billing_webhook
 import gateway_client_base
 import subscription_db
 import superadmin_audit_db
@@ -185,6 +186,23 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
     invoice = billing_invoice_db.get_invoice(invoice_id)
     _pastikan_invoice_tenant_sama(user, invoice)
     return invoice
+
+
+@router.post("/invoices/{invoice_id}/cek-ulang")
+def cek_ulang_invoice(invoice_id: int, user: dict = Depends(require_admin)):
+    """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+    perbaikan pasca-audit kesiapan): jalur RESMI untuk invoice yang macet
+    karena webhook TIDAK PERNAH sampai sama sekali. TIDAK PERNAH menerima
+    klaim status dari Owner -- endpoint ini murni memicu server memanggil
+    ULANG API provider (Server Key sendiri) lalu menerapkan hasilnya lewat
+    jalur SAMA PERSIS dengan webhook resmi (lihat billing_webhook.py::
+    rekonsiliasi_manual())."""
+    try:
+        return billing_webhook.rekonsiliasi_manual(invoice_id, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
 
 
 # ============================= Super Admin =============================

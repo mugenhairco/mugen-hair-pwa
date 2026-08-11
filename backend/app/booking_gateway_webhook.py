@@ -64,6 +64,52 @@ def _map_status(transaction_status: str, fraud_status: str = None) -> str:
     }[transaction_status]
 
 
+def _terapkan_status(transaksi: dict, status_baru: str, sumber: str, payment_type: str = None,
+                      transaction_id_provider=None, reference_id_provider=None, raw_notification: str = None) -> dict:
+    """Titik SATU-SATUNYA yang benar-benar menulis perubahan status transaksi
+    booking + cascade ke `bookings` -- dipanggil proses_notifikasi() (webhook
+    resmi) DAN rekonsiliasi_manual() (staff cek ulang manual ke provider
+    lewat Core API, untuk transaksi yang macet karena webhook TIDAK PERNAH
+    sampai sama sekali), supaya KEDUA jalur PERSIS sama aturannya (guard
+    urutan status, cascade, idempotensi) -- tidak ada jalur pintas kedua yang
+    berperilaku beda.
+
+    AUDIT (perbaikan pasca-audit kesiapan): booking_gateway_db.update_status()
+    bisa MENOLAK transisi (transaksi sudah final, notifikasi ini basi/keluar
+    urutan -- lihat docstring-nya) -- kalau ditolak, status_pembayaran hasil
+    TIDAK SAMA dengan status_baru yang diminta, dan cascade ke `bookings`
+    WAJIB TIDAK dieksekusi sama sekali (sebelumnya cascade selalu jalan
+    berdasarkan status_baru yang DIMINTA, bukan status yang BENAR-BENAR
+    tersimpan -- celah yang memungkinkan notifikasi basi tetap membatalkan
+    booking yang sudah terverifikasi/dibayar)."""
+    transaksi_setelah = booking_gateway_db.update_status(
+        transaksi["id"], status_baru, sumber=sumber,
+        channel_pembayaran=payment_type, transaction_id_provider=transaction_id_provider,
+        reference_id_provider=reference_id_provider, raw_notification=raw_notification,
+        paid_at=datetime.now().isoformat(timespec="seconds") if status_baru == "berhasil" else None,
+    )
+
+    if transaksi_setelah["status_pembayaran"] != status_baru:
+        # Idempoten (status sudah sama) ATAU ditolak guard urutan status --
+        # KEDUANYA berarti tidak ada apa pun yang berubah, cascade TIDAK
+        # boleh dieksekusi (booking_db.verifikasi_pembayaran()/batalkan_booking()
+        # sudah idempoten sendiri, tapi lebih murah/jelas dihentikan di sini).
+        return transaksi_setelah
+
+    if status_baru == "berhasil":
+        try:
+            booking_db.verifikasi_pembayaran(transaksi["booking_id"])
+        except ValueError:
+            pass  # booking sudah dibatalkan duluan (mis. kedaluwarsa manual) -- transaksi tetap tercatat "berhasil" apa adanya, tidak menimpa keputusan pembatalan
+    elif status_baru in ("gagal", "kedaluwarsa", "dibatalkan"):
+        try:
+            booking_db.batalkan_booking(transaksi["booking_id"])
+        except ValueError:
+            pass  # booking sudah tidak ada -- abaikan, transaksi tetap tercatat
+
+    return booking_gateway_db.get_transaksi(transaksi["id"])
+
+
 def proses_notifikasi(payload: dict) -> dict:
     """Return transaksi TERBARU setelah diproses. Melempar ValueError untuk
     SEMUA kegagalan validasi (signature/order_id/amount/status tidak
@@ -96,38 +142,61 @@ def proses_notifikasi(payload: dict) -> dict:
         )
 
     status_baru = _map_status(transaction_status, fraud_status)
-
-    if transaksi["status_pembayaran"] == status_baru:
-        # Notifikasi duplikat (retry provider) -- tidak ada apa pun yang
-        # perlu diubah lagi, TERMASUK tidak mengulang cascade ke `bookings`
-        # (booking_db.verifikasi_pembayaran()/batalkan_booking() sudah
-        # idempoten sendiri, tapi lebih murah/jelas dihentikan di sini).
-        return transaksi
-
-    extra = {
-        "channel_pembayaran": payment_type,
-        "raw_notification": json.dumps(payload),
-    }
     transaction_id_provider = payload.get("transaction_id")
-    if transaction_id_provider:
-        extra["transaction_id_provider"] = str(transaction_id_provider)
     reference_id_provider = payload.get("reference_id") or payload.get("biller_reference") or payload.get("approval_code")
-    if reference_id_provider:
-        extra["reference_id_provider"] = str(reference_id_provider)
-    if status_baru == "berhasil":
-        extra["paid_at"] = datetime.now().isoformat(timespec="seconds")
 
-    booking_gateway_db.update_status(transaksi["id"], status_baru, sumber="webhook", **extra)
+    return _terapkan_status(
+        transaksi, status_baru, sumber="webhook", payment_type=payment_type,
+        transaction_id_provider=str(transaction_id_provider) if transaction_id_provider else None,
+        reference_id_provider=str(reference_id_provider) if reference_id_provider else None,
+        raw_notification=json.dumps(payload),
+    )
 
-    if status_baru == "berhasil":
-        try:
-            booking_db.verifikasi_pembayaran(transaksi["booking_id"])
-        except ValueError:
-            pass  # booking sudah dibatalkan duluan (mis. kedaluwarsa manual) -- transaksi tetap tercatat "berhasil" apa adanya, tidak menimpa keputusan pembatalan
-    elif status_baru in ("gagal", "kedaluwarsa", "dibatalkan"):
-        try:
-            booking_db.batalkan_booking(transaksi["booking_id"])
-        except ValueError:
-            pass  # booking sudah tidak ada -- abaikan, transaksi tetap tercatat
 
-    return booking_gateway_db.get_transaksi(transaksi["id"])
+def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
+    """AUDIT (perbaikan pasca-audit kesiapan): jalur RESMI satu-satunya untuk
+    memperbaiki transaksi yang macet karena webhook TIDAK PERNAH sampai sama
+    sekali (beda dari retry/notifikasi basi yang sudah ditangani
+    proses_notifikasi()+_terapkan_status() di atas) -- dipakai Owner/staff
+    lewat tombol "Cek Ulang ke Provider" di Riwayat Transaksi Tenant.
+    `tenant_id` WAJIB dari sesi login -- transaksi tenant lain TIDAK PERNAH
+    bisa direkonsiliasi lewat sini (lihat booking_gateway_db.get_transaksi()).
+
+    TIDAK memerlukan verifikasi signature -- panggilan ini KELUAR ke provider
+    memakai Server Key milik server sendiri (payment_gateway_client.
+    cek_status_transaksi(), Core API GET), BUKAN data masuk dari luar yang
+    perlu divalidasi asalnya -- tapi tetap memvalidasi gross_amount dari
+    respons provider (defense-in-depth) dan tetap lewat _terapkan_status()
+    yang SAMA PERSIS dipakai webhook resmi, supaya tidak ada jalur pintas
+    kedua yang berperilaku beda (guard urutan status/cascade/log tetap
+    seragam)."""
+    transaksi = booking_gateway_db.get_transaksi(transaksi_id, tenant_id=tenant_id)
+    if transaksi is None:
+        raise ValueError("Transaksi tidak ditemukan.")
+
+    hasil_provider = payment_gateway_client.cek_status_transaksi(transaksi["order_id"])
+    transaction_status = str(hasil_provider.get("transaction_status") or "")
+    fraud_status = hasil_provider.get("fraud_status")
+    gross_amount = str(hasil_provider.get("gross_amount") or "")
+
+    try:
+        gross_amount_angka = int(float(gross_amount))
+    except (TypeError, ValueError):
+        gross_amount_angka = None
+    if gross_amount_angka is not None and gross_amount_angka != int(transaksi["nominal"]):
+        raise ValueError(
+            f"gross_amount dari provider tidak cocok dengan transaksi (provider={gross_amount_angka}, "
+            f"transaksi={transaksi['nominal']})."
+        )
+
+    status_baru = _map_status(transaction_status, fraud_status)
+    transaction_id_provider = hasil_provider.get("transaction_id")
+    reference_id_provider = (hasil_provider.get("reference_id") or hasil_provider.get("biller_reference")
+                              or hasil_provider.get("approval_code"))
+
+    return _terapkan_status(
+        transaksi, status_baru, sumber="rekonsiliasi_manual", payment_type=hasil_provider.get("payment_type"),
+        transaction_id_provider=str(transaction_id_provider) if transaction_id_provider else None,
+        reference_id_provider=str(reference_id_provider) if reference_id_provider else None,
+        raw_notification=json.dumps(hasil_provider),
+    )

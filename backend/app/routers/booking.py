@@ -29,6 +29,7 @@ from pydantic import BaseModel
 import billing_limits
 import booking_db
 import booking_gateway_db
+import booking_gateway_webhook
 import database as db
 import feature_access
 import gateway_client_base
@@ -356,6 +357,24 @@ def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_own
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
     transaksi["status_log"] = booking_gateway_db.list_status_log(transaksi_id)
     return transaksi
+
+
+@router.post("/transactions/{transaksi_id}/cek-ulang")
+def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+    """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+    perbaikan pasca-audit kesiapan): jalur RESMI untuk transaksi yang macet
+    karena webhook TIDAK PERNAH sampai sama sekali (bukan telat/duplikat --
+    itu sudah ditangani otomatis). TIDAK PERNAH menerima klaim status dari
+    staff -- endpoint ini murni memicu server memanggil ULANG API provider
+    (Server Key sendiri) lalu menerapkan hasilnya lewat jalur yang SAMA
+    PERSIS dengan webhook resmi (lihat booking_gateway_webhook.py::
+    rekonsiliasi_manual()), TERMASUK guard urutan status yang sama."""
+    try:
+        return booking_gateway_webhook.rekonsiliasi_manual(transaksi_id, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
 
 
 @router.get("/belum-dikonfirmasi")

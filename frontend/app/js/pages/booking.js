@@ -56,6 +56,15 @@ const PageBooking = (() => {
     return `${MugenUI.formatTanggal(tanggal)} ${(jam || "").slice(0, 8)}`.trim();
   }
 
+  // AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+  // perbaikan pasca-audit kesiapan): sama seperti riwayat_transaksi.js --
+  // status YANG BELUM FINAL saja boleh dicek ulang manual ke provider,
+  // KHUSUS untuk transaksi yang macet karena webhook TIDAK PERNAH sampai
+  // sama sekali (server yang memanggil ulang provider, staff TIDAK PERNAH
+  // bisa mengklaim status sendiri -- lihat routers/booking.py::
+  // cek_ulang_transaksi_gateway()).
+  const STATUS_GATEWAY_BOLEH_CEK_ULANG = new Set(["menunggu_pembayaran", "diproses"]);
+
   function bukaDetailGateway(transaksi) {
     const body = [
       MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
@@ -91,7 +100,27 @@ const PageBooking = (() => {
         { emptyText: "Belum ada perubahan status." },
       ),
     ];
-    MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
+
+    let modal;
+    if (STATUS_GATEWAY_BOLEH_CEK_ULANG.has(transaksi.status_pembayaran)) {
+      const btnCekUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" },
+        "Cek Ulang ke Provider");
+      btnCekUlang.addEventListener("click", async () => {
+        try {
+          const updated = await MugenUI.withButtonLoading(btnCekUlang,
+            () => MugenApi.post(`/api/booking/transactions/${transaksi.id}/cek-ulang`));
+          modal.close();
+          MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
+          bukaDetailGateway(updated);
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      body.push(btnCekUlang);
+      body.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:6px;" },
+        "Pakai ini HANYA kalau status di sini tidak kunjung berubah walau customer sudah membayar -- server akan menanyakan ulang status LANGSUNG ke provider."));
+    }
+    modal = MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
   }
 
   // REVISI: nomor WhatsApp customer di Menu Booking ditampilkan sebagai link

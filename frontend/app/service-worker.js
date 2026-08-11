@@ -516,7 +516,17 @@
 // baru "Riwayat Transaksi" (monitoring lintas-tenant + filter/cari/ringkasan/
 // detail/export CSV) + hint URL webhook aktif, label "Midtrans" di
 // billing.js/superadmin.js/landing.js/index.html/manifest.json digenerikkan.
-const ASSET_VERSION = "93";
+// v93 -> v94: Perbaikan pasca-audit kesiapan Payment Gateway (booking &
+// langganan SaaS) -- webhook TIDAK LAGI bisa "diturunkan" statusnya oleh
+// notifikasi basi/keluar urutan (guard STATUS_FINAL di booking_gateway_db.py/
+// billing_webhook.py, celah yang sebelumnya bisa membatalkan booking yang
+// SUDAH DIBAYAR). Endpoint baru "Cek Ulang ke Provider" (jalur rekonsiliasi
+// manual untuk transaksi/invoice yang macet karena webhook tidak pernah
+// sampai) -- tombolnya ditambahkan di riwayat_transaksi.js, booking.js
+// (Detail modal), dan billing.js (Riwayat Pembayaran). book_public.js:
+// popup checkout yang diblokir browser sekarang terdeteksi & diberi tahu
+// (toast), bukan diam-diam gagal tanpa keterangan.
+const ASSET_VERSION = "94";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

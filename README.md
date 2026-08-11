@@ -3315,3 +3315,65 @@ Origin-vs-Host (`test_tenant_middleware.py`), penghapusan fallback
 tenant default (`test_tenant_middleware.py`,
 `test_billing_limits.py`, `test_subscription.py`), dan `set_slug()` +
 endpoint Super Admin-nya (`test_superadmin.py`).
+
+## Runbook — Mengaktifkan Payment Gateway Sungguhan (Booking & Billing SaaS)
+
+Ditulis sebagai tindak lanjut audit kesiapan Implementasi Payment Gateway &
+Riwayat Transaksi Multi-Tenant. Seluruh kode SUDAH siap secara struktural
+(signature/amount tervalidasi, guard urutan status, rekonsiliasi manual,
+isolasi tenant, test coverage) TAPI **belum pernah dites ke provider
+sungguhan** karena belum ada kredensial -- langkah ini WAJIB dilakukan
+sebelum benar-benar go-live menerima pembayaran nyata.
+
+### 1. Dapatkan kredensial dari provider yang dipilih
+
+Sandbox key dulu, jangan langsung Production. Bentuk konkret modul client
+sekarang (`billing_gateway_client.py`/`payment_gateway_client.py`) memakai
+protokol Midtrans Snap/Core API sebagai **adapter placeholder** -- kalau
+provider yang dipilih BUKAN Midtrans, kedua file itu (endpoint, field
+request/response, formula signature) perlu disesuaikan dengan dokumentasi
+provider tersebut TERLEBIH DAHULU sebelum langkah di bawah, business logic/
+webhook/UI di sekelilingnya TIDAK perlu berubah.
+
+### 2. Isi kredensial + daftarkan URL webhook
+
+- **Billing SaaS** (Owner bayar langganan platform): Super Admin →
+  tab **Payment Gateway** → kartu **"Billing SaaS – Payment Gateway"** →
+  isi Environment/API Key/Server Key/Client Key/dst. Kartu ini menampilkan
+  **"URL webhook aktif"** -- salin PERSIS URL itu
+  (`.../api/public/billing/midtrans-webhook` -- nama URL ini SENGAJA TIDAK
+  diganti biar provider produksi yang sudah terlanjur mendaftarkannya tidak
+  putus) ke dashboard provider.
+- **Booking Customer** (customer bayar booking ke tenant, platform-wide satu
+  merchant account): kartu **"Payment Gateway"** di tab yang sama -- isi
+  kredensial, salin **"URL webhook aktif"**-nya
+  (`.../api/public/booking/gateway-webhook`) ke dashboard provider.
+
+### 3. Uji ulang lewat Sandbox SEBELUM Production
+
+1. Set Environment = Sandbox di kedua kartu.
+2. Lakukan SATU checkout Billing sungguhan (Owner: Setting > Billing > pilih
+   paket berbayar) dan SATU checkout Booking sungguhan (halaman `/book`
+   publik, pilih metode Payment Gateway) memakai kartu/akun uji coba
+   sandbox provider.
+3. Pastikan notifikasi webhook BENAR-BENAR sampai: status invoice/transaksi
+   berubah otomatis jadi "Berhasil"/"Paid" TANPA aksi manual apa pun di
+   aplikasi -- kalau macet di "Menunggu Pembayaran" lebih dari beberapa
+   menit, cek dulu URL webhook di dashboard provider (typo/salah environment
+   adalah penyebab paling umum).
+4. **Test manual via curl** (opsional, untuk memastikan endpoint hidup TANPA
+   menunggu provider): `curl -X POST https://<domain-backend>/api/public/booking/gateway-webhook -H "Content-Type: application/json" -d '{"order_id":"BOOK-TIDAK-ADA","status_code":"200","gross_amount":"1000.00","transaction_status":"settlement","signature_key":"salah"}'`
+   -- HARUS balas `400 {"detail":"Signature tidak valid."}` (bukan 500/timeout),
+   membuktikan endpoint hidup & validasi signature aktif.
+5. Kalau webhook sandbox TIDAK PERNAH sampai walau pembayaran sandbox
+   sukses di sisi provider (bukan cuma telat), pakai tombol **"Cek Ulang ke
+   Provider"** di Billing > Riwayat Pembayaran / Riwayat Transaksi Tenant --
+   ini memanggil status LANGSUNG ke provider (Core API), jalur cadangan
+   resmi untuk kasus webhook hilang total.
+
+### 4. Baru pindah ke Production
+
+Ulangi langkah 2-3 dengan kredensial & URL webhook Production, environment
+diganti "Production" di kedua kartu. JANGAN skip langkah 3 -- tanpa
+verifikasi sandbox, kegagalan konfigurasi (URL webhook salah, signature key
+tertukar) baru ketahuan saat customer/Owner sungguhan sudah membayar.

@@ -159,13 +159,41 @@ def update_status(transaksi_id: int, status_baru: str, sumber: str = "webhook", 
     billing_webhook.py -- mencegah notifikasi duplikat memicu efek samping
     dobel). `extra_fields` yang diizinkan: channel_pembayaran,
     transaction_id_provider, reference_id_provider, raw_notification,
-    paid_at."""
+    paid_at.
+
+    AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+    perbaikan pasca-audit kesiapan): webhook provider TIDAK MENJAMIN urutan
+    pengiriman -- retry/network delay bisa membuat notifikasi LAMA (mis.
+    "pending"/"deny"/"cancel" yang sempat tertunda) datang SETELAH notifikasi
+    "settlement" yang sudah lebih dulu diproses. TANPA penjagaan ini,
+    transaksi yang SUDAH final (STATUS_FINAL) bisa "diturunkan" lagi oleh
+    notifikasi basi tersebut -- pemanggil (booking_gateway_webhook.py) lalu
+    ikut mengeksekusi cascade-nya (mis. batalkan_booking() untuk booking yang
+    SUDAH DIBAYAR). Begitu status SUDAH final, HANYA satu transisi lanjutan
+    yang sah: "berhasil" -> "refund" (peristiwa PASCA pembayaran selesai) --
+    transisi final lain (termasuk final->final maupun final->non-final)
+    DITOLAK, dicatat ke status_log dengan sumber "webhook_diabaikan"/
+    "rekonsiliasi_diabaikan" untuk audit/troubleshooting, TANPA mengubah
+    status_pembayaran tersimpan. Pemanggil WAJIB mengecek return value --
+    kalau status_pembayaran hasilnya TIDAK SAMA dengan status_baru yang
+    diminta, berarti transisi ini ditolak guard ini (lihat
+    booking_gateway_webhook.py::_terapkan_status())."""
     if status_baru not in STATUS_VALID:
         raise ValueError(f"Status pembayaran booking tidak dikenal: {status_baru}")
     transaksi = get_transaksi(transaksi_id)
     if transaksi is None:
         raise ValueError("Transaksi tidak ditemukan.")
-    if transaksi["status_pembayaran"] == status_baru:
+    status_lama = transaksi["status_pembayaran"]
+    if status_lama == status_baru:
+        return transaksi
+    if status_lama in STATUS_FINAL and not (status_lama == "berhasil" and status_baru == "refund"):
+        sumber_diabaikan = "rekonsiliasi_diabaikan" if sumber == "rekonsiliasi_manual" else "webhook_diabaikan"
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO booking_payment_status_log (transaction_id, status_lama, status_baru, sumber, waktu) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (transaksi_id, status_lama, status_baru, sumber_diabaikan, _now()),
+            )
         return transaksi
 
     with get_conn() as conn:
@@ -176,7 +204,14 @@ def update_status(transaksi_id: int, status_baru: str, sumber: str = "webhook", 
         )
         kolom_diizinkan = {"channel_pembayaran", "transaction_id_provider", "reference_id_provider",
                             "raw_notification", "paid_at"}
-        aman = {k: v for k, v in extra_fields.items() if k in kolom_diizinkan}
+        # `v is not None`: pemanggil (booking_gateway_webhook.py::_terapkan_status())
+        # SELALU meneruskan seluruh field ini apa adanya (termasuk None kalau
+        # notifikasi/respons provider tidak menyertakannya) -- None WAJIB berarti
+        # "jangan sentuh kolom ini", BUKAN "timpa jadi NULL", supaya paid_at/
+        # transaction_id_provider/dst yang sudah tercatat tidak pernah terhapus
+        # oleh transisi status lanjutan yang responsnya lebih minim (mis.
+        # "berhasil" -> "refund" TIDAK boleh menghapus paid_at yang sudah ada).
+        aman = {k: v for k, v in extra_fields.items() if k in kolom_diizinkan and v is not None}
         aman["status_pembayaran"] = status_baru
         set_clause = ", ".join(f"{k} = ?" for k in aman)
         conn.execute(

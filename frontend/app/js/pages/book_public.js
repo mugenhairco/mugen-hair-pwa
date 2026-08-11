@@ -1213,7 +1213,18 @@ const PageBookPublic = (() => {
           }
         }
         if (r.checkout_redirect_url) {
-          window.open(r.checkout_redirect_url, "_blank", "noopener,noreferrer");
+          // AUDIT (perbaikan pasca-audit kesiapan): window.open() di sini
+          // dipanggil SETELAH jeda async sungguhan (booking dibuat ke server
+          // lebih dulu) -- browser modern SERING memblokir popup yang dibuka
+          // di luar rangkaian gesture pengguna langsung, TANPA error yang
+          // bisa ditangkap try/catch (hasilnya cuma null, diam-diam). Kalau
+          // itu terjadi, customer sebelumnya cuma diam di layar "Menunggu
+          // Konfirmasi" tanpa tahu kenapa tidak ada apa pun yang terbuka --
+          // sekarang terdeteksi & diberi tahu jelas untuk klik tombol manual.
+          const jendela = window.open(r.checkout_redirect_url, "_blank", "noopener,noreferrer");
+          if (!jendela || jendela.closed) {
+            MugenUI.toast("Halaman pembayaran diblokir browser -- klik tombol \"Buka Halaman Pembayaran\" di bawah untuk membukanya manual.", "error");
+          }
         }
       }
 

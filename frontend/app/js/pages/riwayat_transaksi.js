@@ -37,7 +37,16 @@ const PageRiwayatTransaksi = (() => {
     return `${MugenUI.formatTanggal(tanggal)} ${(jam || "").slice(0, 8)}`.trim();
   }
 
-  function bukaDetail(transaksi) {
+  // AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
+  // perbaikan pasca-audit kesiapan): status YANG BELUM FINAL saja yang boleh
+  // dicek ulang manual ke provider (POST .../cek-ulang) -- jalur ini KHUSUS
+  // untuk transaksi yang macet karena webhook TIDAK PERNAH sampai sama
+  // sekali, TIDAK PERNAH mengizinkan staff "mengklaim" status sendiri (lihat
+  // routers/booking.py::cek_ulang_transaksi_gateway() -- server yang
+  // memanggil ulang provider, bukan menerima input status dari sini).
+  const STATUS_BOLEH_CEK_ULANG = new Set(["menunggu_pembayaran", "diproses"]);
+
+  function bukaDetail(transaksi, { onSelesai } = {}) {
     const body = [
       MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"), statusBadge(transaksi.status_pembayaran)]),
@@ -73,7 +82,28 @@ const PageRiwayatTransaksi = (() => {
         { emptyText: "Belum ada perubahan status." },
       ),
     ];
-    MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
+
+    let modal;
+    if (STATUS_BOLEH_CEK_ULANG.has(transaksi.status_pembayaran)) {
+      const btnCekUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" },
+        "Cek Ulang ke Provider");
+      btnCekUlang.addEventListener("click", async () => {
+        try {
+          const updated = await MugenUI.withButtonLoading(btnCekUlang,
+            () => MugenApi.post(`/api/booking/transactions/${transaksi.id}/cek-ulang`));
+          modal.close();
+          MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
+          if (onSelesai) onSelesai();
+          bukaDetail(updated, { onSelesai });
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      body.push(btnCekUlang);
+      body.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:6px;" },
+        "Pakai ini HANYA kalau status di sini tidak kunjung berubah walau customer sudah membayar -- server akan menanyakan ulang status LANGSUNG ke provider."));
+    }
+    modal = MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
   }
 
   async function render(root) {
@@ -130,7 +160,7 @@ const PageRiwayatTransaksi = (() => {
                 btn.addEventListener("click", async () => {
                   try {
                     const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(`/api/booking/transactions/${t.id}`));
-                    bukaDetail(detail);
+                    bukaDetail(detail, { onSelesai: muatDaftar });
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }

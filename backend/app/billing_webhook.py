@@ -46,6 +46,15 @@ STATUS_DENIED = "denied"
 STATUS_CANCELLED = "cancelled"
 STATUS_EXPIRED = "expired"
 
+# AUDIT (perbaikan pasca-audit kesiapan): begitu invoice mencapai salah satu
+# status ini, TIDAK ADA transisi lanjutan yang sah sama sekali (beda dari
+# booking_gateway_db.STATUS_FINAL yang masih mengizinkan "berhasil" ->
+# "refund" -- langganan SaaS TIDAK punya konsep refund, lihat
+# billing_invoice_db.STATUS_VALID). Webhook TIDAK MENJAMIN urutan pengiriman
+# -- notifikasi basi yang datang setelah status final TIDAK BOLEH menurunkan/
+# mengubah status lagi (lihat _terapkan_status_invoice() di bawah).
+STATUS_FINAL = {STATUS_PAID, STATUS_DENIED, STATUS_CANCELLED, STATUS_EXPIRED}
+
 # SESUAI cakupan Phase 4: enam transaction_status Midtrans yang wajib
 # ditangani (settlement/capture/pending/expire/cancel/deny).
 _TRANSACTION_STATUS_VALID = {"capture", "settlement", "pending", "deny", "cancel", "expire"}
@@ -102,6 +111,59 @@ def _aktifkan_subscription(tenant_id: int, package_kode: str):
     subscription_db.update_status(tenant_id, "active")
 
 
+def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
+                              payment_type: str = None, raw_notification: str = None) -> dict:
+    """Titik SATU-SATUNYA yang benar-benar menulis perubahan status invoice +
+    aktivasi subscription -- dipanggil proses_notifikasi() (webhook resmi)
+    DAN rekonsiliasi_manual() (Owner cek ulang manual ke provider, untuk
+    invoice yang macet karena webhook TIDAK PERNAH sampai sama sekali),
+    supaya KEDUA jalur PERSIS sama aturannya.
+
+    AUDIT (perbaikan pasca-audit kesiapan): webhook TIDAK MENJAMIN urutan
+    pengiriman -- notifikasi basi yang datang SETELAH invoice sudah "paid"/
+    final TIDAK BOLEH menurunkan status lagi (lihat STATUS_FINAL di atas --
+    BEDA dari booking_gateway_db.STATUS_FINAL, di sini TIDAK ADA pengecualian
+    sama sekali karena langganan SaaS tidak punya status refund). Transisi
+    yang ditolak dicatat ke status_log dengan sumber "webhook_diabaikan"/
+    "rekonsiliasi_diabaikan" untuk audit/troubleshooting, TANPA mengubah
+    status invoice tersimpan."""
+    if invoice["status"] == status_baru:
+        # Notifikasi duplikat (retry provider) untuk status yang SAMA
+        # dengan yang sudah tercatat -- tidak ada apa pun yang perlu
+        # diubah lagi (lihat catatan IDEMPOTEN di docstring modul), TERMASUK
+        # TIDAK menambah baris status_log (log hanya mencatat TRANSISI
+        # sungguhan, bukan notifikasi yang diam-diam sama).
+        return invoice
+
+    if invoice["status"] in STATUS_FINAL:
+        sumber_diabaikan = "rekonsiliasi_diabaikan" if sumber == "rekonsiliasi_manual" else "webhook_diabaikan"
+        billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber_diabaikan)
+        return invoice
+
+    billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber)
+
+    fields = {"status": status_baru}
+    if payment_type is not None:
+        fields["payment_type"] = payment_type
+        fields["metode_pembayaran"] = payment_type
+    if raw_notification is not None:
+        fields["raw_notification"] = raw_notification
+    if status_baru == STATUS_PAID:
+        sekarang = datetime.now()
+        periode_mulai = _hitung_periode_mulai(invoice["tenant_id"], sekarang, exclude_invoice_id=invoice["id"])
+        periode_selesai = periode_mulai + timedelta(days=invoice["durasi_hari"])
+        fields["periode_mulai"] = periode_mulai.isoformat(timespec="seconds")
+        fields["periode_selesai"] = periode_selesai.isoformat(timespec="seconds")
+        fields["paid_at"] = sekarang.isoformat(timespec="seconds")
+
+    billing_invoice_db.update_invoice(invoice["id"], **fields)
+
+    if status_baru == STATUS_PAID:
+        _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"])
+
+    return billing_invoice_db.get_invoice(invoice["id"])
+
+
 def proses_notifikasi(payload: dict) -> dict:
     """Return invoice TERBARU setelah diproses. Melempar ValueError untuk
     SEMUA kegagalan validasi (signature/order_id/amount/status tidak
@@ -134,34 +196,45 @@ def proses_notifikasi(payload: dict) -> dict:
         )
 
     status_baru = _map_status(transaction_status, fraud_status)
+    return _terapkan_status_invoice(invoice, status_baru, sumber="webhook", payment_type=payment_type,
+                                     raw_notification=json.dumps(payload))
 
-    if invoice["status"] == status_baru:
-        # Notifikasi duplikat (retry provider) untuk status yang SAMA
-        # dengan yang sudah tercatat -- tidak ada apa pun yang perlu
-        # diubah lagi (lihat catatan IDEMPOTEN di docstring modul), TERMASUK
-        # TIDAK menambah baris status_log (log hanya mencatat TRANSISI
-        # sungguhan, bukan notifikasi yang diam-diam sama).
-        return invoice
 
-    billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber="webhook")
+def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
+    """AUDIT (perbaikan pasca-audit kesiapan): jalur RESMI satu-satunya
+    untuk memperbaiki invoice yang macet karena webhook TIDAK PERNAH sampai
+    sama sekali (beda dari retry/notifikasi basi yang sudah ditangani
+    proses_notifikasi()+_terapkan_status_invoice() di atas) -- dipakai Owner
+    lewat tombol "Cek Ulang ke Provider" di Billing > Riwayat Invoice.
+    `tenant_id` WAJIB dari sesi login -- invoice tenant lain TIDAK PERNAH
+    bisa direkonsiliasi lewat sini.
 
-    fields = {
-        "status": status_baru,
-        "payment_type": payment_type,
-        "metode_pembayaran": payment_type,
-        "raw_notification": json.dumps(payload),
-    }
-    if status_baru == STATUS_PAID:
-        sekarang = datetime.now()
-        periode_mulai = _hitung_periode_mulai(invoice["tenant_id"], sekarang, exclude_invoice_id=invoice["id"])
-        periode_selesai = periode_mulai + timedelta(days=invoice["durasi_hari"])
-        fields["periode_mulai"] = periode_mulai.isoformat(timespec="seconds")
-        fields["periode_selesai"] = periode_selesai.isoformat(timespec="seconds")
-        fields["paid_at"] = sekarang.isoformat(timespec="seconds")
+    TIDAK memerlukan verifikasi signature -- panggilan ini KELUAR ke provider
+    memakai Server Key milik server sendiri (billing_gateway_client.
+    cek_status_transaksi(), Core API GET), BUKAN data masuk dari luar --
+    tapi tetap memvalidasi gross_amount dari respons provider (defense-in-
+    depth) dan tetap lewat _terapkan_status_invoice() yang SAMA PERSIS
+    dipakai webhook resmi."""
+    invoice = billing_invoice_db.get_invoice(invoice_id)
+    if invoice is None or invoice["tenant_id"] != tenant_id:
+        raise ValueError("Invoice tidak ditemukan.")
 
-    billing_invoice_db.update_invoice(invoice["id"], **fields)
+    hasil_provider = billing_gateway_client.cek_status_transaksi(invoice["order_id"])
+    transaction_status = str(hasil_provider.get("transaction_status") or "")
+    fraud_status = hasil_provider.get("fraud_status")
+    gross_amount = str(hasil_provider.get("gross_amount") or "")
 
-    if status_baru == STATUS_PAID:
-        _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"])
+    try:
+        gross_amount_angka = int(float(gross_amount))
+    except (TypeError, ValueError):
+        gross_amount_angka = None
+    if gross_amount_angka is not None and gross_amount_angka != int(invoice["jumlah"]):
+        raise ValueError(
+            f"gross_amount dari provider tidak cocok dengan invoice (provider={gross_amount_angka}, "
+            f"invoice={invoice['jumlah']})."
+        )
 
-    return billing_invoice_db.get_invoice(invoice["id"])
+    status_baru = _map_status(transaction_status, fraud_status)
+    return _terapkan_status_invoice(invoice, status_baru, sumber="rekonsiliasi_manual",
+                                     payment_type=hasil_provider.get("payment_type"),
+                                     raw_notification=json.dumps(hasil_provider))

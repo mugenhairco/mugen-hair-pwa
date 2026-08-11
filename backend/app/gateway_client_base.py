@@ -19,6 +19,7 @@ perilaku timeout/error SELALU konsisten di seluruh integrasi Payment
 Gateway, tidak peduli jenis transaksinya."""
 
 import hashlib
+import hmac
 import logging
 
 import requests
@@ -93,4 +94,9 @@ def verify_sha512(parts: list, key: str, signature: str) -> bool:
         return False
     raw = "".join(parts) + key
     hitung = hashlib.sha512(raw.encode()).hexdigest()
-    return hitung == signature
+    # AUDIT (perbaikan pasca-audit kesiapan): hmac.compare_digest() (bukan
+    # `==` polos) -- perbandingan waktu-konstan supaya durasi perbandingan
+    # tidak membocorkan informasi soal seberapa banyak karakter awal yang
+    # cocok (celah timing attack teoretis, risiko nyata rendah lewat HTTPS
+    # tapi ini hardening standar untuk perbandingan signature/token).
+    return hmac.compare_digest(hitung, signature)

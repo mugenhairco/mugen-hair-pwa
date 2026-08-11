@@ -13,7 +13,9 @@ signature dihitung manual -- TIDAK PERNAH memanggil Midtrans sungguhan."""
 import hashlib
 from datetime import datetime, timedelta
 
+import auth_db
 import billing_db
+import billing_gateway_client
 import billing_gateway_db
 import billing_invoice_db
 import billing_webhook
@@ -295,11 +297,18 @@ def test_notifikasi_duplikat_status_pending_tidak_error(app_client, monkeypatch)
     assert hasil1["status"] == hasil2["status"] == "pending"
 
 
-def test_status_log_mencatat_transisi_sungguhan_saja(app_client, monkeypatch):
+def test_status_log_mencatat_transisi_sungguhan_dan_transisi_basi_diabaikan(app_client, monkeypatch):
     """Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: SATU
     baris log per transisi status SUNGGUHAN -- notifikasi duplikat (status
     sama dengan yang sudah tercatat, termasuk status awal 'pending' invoice
-    baru) TIDAK menambah baris log."""
+    baru) TIDAK menambah baris log.
+
+    AUDIT (perbaikan pasca-audit kesiapan): webhook TIDAK MENJAMIN urutan
+    pengiriman -- notifikasi BASI yang datang SETELAH invoice sudah final
+    (mis. "settlement" yang tertunda di jaringan, sampai SETELAH "cancel"
+    sudah lebih dulu diproses) TIDAK BOLEH mengubah status invoice lagi,
+    TAPI TETAP dicatat ke status_log (sumber "webhook_diabaikan") supaya
+    kejanggalan ini terlihat untuk troubleshooting."""
     _dengan_server_key(monkeypatch)
     tenant = _tenant_default()
     invoice = _buat_invoice(tenant["id"])
@@ -309,17 +318,21 @@ def test_status_log_mencatat_transisi_sungguhan_saja(app_client, monkeypatch):
     payload_paid = _payload(invoice["order_id"], "settlement", invoice["jumlah"])
 
     billing_webhook.proses_notifikasi(payload_pending)  # status awal SUDAH 'pending', no-op TANPA log
-    billing_webhook.proses_notifikasi(payload_cancel)  # transisi sungguhan #1: pending -> cancelled
+    hasil1 = billing_webhook.proses_notifikasi(payload_cancel)  # transisi sungguhan: pending -> cancelled
     billing_webhook.proses_notifikasi(payload_cancel)  # duplikat, TIDAK nambah log
-    billing_webhook.proses_notifikasi(payload_paid)  # transisi sungguhan #2: cancelled -> paid
+    hasil2 = billing_webhook.proses_notifikasi(payload_paid)  # BASI -- invoice sudah final "cancelled", DITOLAK
+
+    assert hasil1["status"] == "cancelled"
+    assert hasil2["status"] == "cancelled"  # TETAP cancelled, TIDAK "diperbaiki" jadi paid oleh notifikasi basi
 
     log = billing_invoice_db.list_status_log(invoice["id"])
     assert len(log) == 2
     assert log[0]["status_lama"] == "pending"
     assert log[0]["status_baru"] == "cancelled"
+    assert log[0]["sumber"] == "webhook"
     assert log[1]["status_lama"] == "cancelled"
     assert log[1]["status_baru"] == "paid"
-    assert all(l["sumber"] == "webhook" for l in log)
+    assert log[1]["sumber"] == "webhook_diabaikan"
 
 
 def test_tenant_tanpa_subscription_sebelumnya_dapat_baris_baru(app_client, monkeypatch):
@@ -366,3 +379,95 @@ def test_endpoint_webhook_tanpa_login_bisa_diakses(app_client, monkeypatch):
 
     r = app_client.post("/api/public/billing/midtrans-webhook", json=payload)
     assert r.status_code == 200, r.text
+
+
+# ============================= AUDIT: rekonsiliasi manual (perbaikan pasca-audit kesiapan) =============================
+
+def _login_owner(client, tenant_id, username="owner-rekon", password="rahasia123"):
+    auth_db.tambah_user(username, password, role="admin", tenant_id=tenant_id)
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def test_rekonsiliasi_manual_menerapkan_status_dari_provider(app_client, monkeypatch):
+    """Regresi langsung dari temuan audit kesiapan: webhook yang TIDAK
+    PERNAH sampai sama sekali sebelumnya membuat invoice macet selamanya
+    tanpa jalan pemulihan (cek_status_transaksi() sudah ada tapi tidak
+    pernah dipanggil). rekonsiliasi_manual() memanggil ULANG provider
+    langsung (di sini di-monkeypatch, TIDAK PERNAH memanggil provider
+    sungguhan) lalu menerapkan hasilnya lewat jalur SAMA PERSIS webhook."""
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    invoice = _buat_invoice(tenant["id"], package_kode="pro", harga=249000)
+    assert invoice["status"] == "pending"
+
+    monkeypatch.setattr(billing_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": f"{invoice['jumlah']}.00", "payment_type": "gopay",
+    })
+
+    hasil = billing_webhook.rekonsiliasi_manual(invoice["id"], tenant_id=tenant["id"])
+    assert hasil["status"] == "paid"
+    assert hasil["paid_at"] is not None
+    sub = subscription_db.get_subscription(tenant["id"])
+    assert sub["package"] == "pro"
+
+    log = billing_invoice_db.list_status_log(invoice["id"])
+    assert len(log) == 1
+    assert log[0]["sumber"] == "rekonsiliasi_manual"
+
+
+def test_rekonsiliasi_manual_gross_amount_tidak_cocok_ditolak(app_client, monkeypatch):
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    invoice = _buat_invoice(tenant["id"], harga=249000)
+
+    monkeypatch.setattr(billing_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": "1000.00", "payment_type": "gopay",
+    })
+
+    try:
+        billing_webhook.rekonsiliasi_manual(invoice["id"], tenant_id=tenant["id"])
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak cocok" in str(e)
+    assert billing_invoice_db.get_invoice(invoice["id"])["status"] == "pending"
+
+
+def test_rekonsiliasi_manual_invoice_tenant_lain_ditolak(app_client, monkeypatch):
+    _dengan_server_key(monkeypatch)
+    tenant_a = _tenant_default()
+    tenant_b = tenant_db.buat_tenant("test-toko-rekon-b", "Test Toko Rekon B")
+    invoice = _buat_invoice(tenant_a["id"])
+
+    try:
+        billing_webhook.rekonsiliasi_manual(invoice["id"], tenant_id=tenant_b)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak ditemukan" in str(e)
+
+
+def test_endpoint_cek_ulang_invoice_sukses(app_client, monkeypatch):
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    invoice = _buat_invoice(tenant["id"])
+    headers = _login_owner(app_client, tenant["id"])
+
+    monkeypatch.setattr(billing_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": f"{invoice['jumlah']}.00", "payment_type": "qris",
+    })
+
+    r = app_client.post(f"/api/billing/invoices/{invoice['id']}/cek-ulang", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "paid"
+
+
+def test_endpoint_cek_ulang_invoice_tenant_lain_ditolak(app_client, monkeypatch):
+    _dengan_server_key(monkeypatch)
+    tenant_a = _tenant_default()
+    tenant_b = tenant_db.buat_tenant("test-toko-rekon-http-b", "Test Toko Rekon HTTP B")
+    invoice = _buat_invoice(tenant_a["id"])
+    headers_b = _login_owner(app_client, tenant_b, username="owner-rekon-b")
+
+    r = app_client.post(f"/api/billing/invoices/{invoice['id']}/cek-ulang", headers=headers_b)
+    assert r.status_code == 422

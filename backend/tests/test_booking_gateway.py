@@ -430,3 +430,166 @@ def test_detail_transaksi_menyertakan_status_log(two_tenants):
     assert r.status_code == 200, r.text
     assert r.json()["status_pembayaran"] == "berhasil"
     assert len(r.json()["status_log"]) == 1
+
+
+# ============================= AUDIT: guard urutan status (perbaikan pasca-audit kesiapan) =============================
+
+def test_notifikasi_basi_setelah_berhasil_tidak_membatalkan_booking_yang_sudah_dibayar(app_client):
+    """Regresi langsung dari temuan audit kesiapan: webhook TIDAK MENJAMIN
+    urutan pengiriman -- notifikasi "cancel"/"deny"/"expire" yang tertunda
+    di jaringan provider bisa datang SETELAH "settlement" yang sudah lebih
+    dulu diproses. TANPA guard, ini akan membatalkan booking yang SUDAH
+    DIBAYAR (batalkan_booking() dipanggil berdasarkan status_baru yang
+    DIMINTA notifikasi, bukan status yang BENAR-BENAR tersimpan)."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+
+    # settlement diproses lebih dulu -- booking terverifikasi, slot terisi.
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+
+    # notifikasi "cancel" BASI (tertunda di jaringan, datang belakangan) --
+    # HARUS ditolak, TIDAK boleh membatalkan booking yang sudah dibayar.
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "cancel", transaksi["nominal"]))
+    assert hasil["status_pembayaran"] == "berhasil"  # TETAP berhasil, TIDAK turun jadi "dibatalkan"
+
+    booking_setelah = booking_db.get_booking(booking["id"])
+    assert booking_setelah["status_pembayaran"] == "terverifikasi"
+    assert booking_setelah["status_booking"] == "aktif"  # slot TIDAK dibebaskan
+
+    log = booking_gateway_db.list_status_log(transaksi["id"])
+    assert len(log) == 2
+    assert log[0]["status_baru"] == "berhasil"
+    assert log[0]["sumber"] == "webhook"
+    assert log[1]["status_lama"] == "berhasil"
+    assert log[1]["status_baru"] == "dibatalkan"
+    assert log[1]["sumber"] == "webhook_diabaikan"  # dicatat untuk audit, TAPI TIDAK diterapkan
+
+
+def test_notifikasi_basi_setelah_gagal_tidak_diterapkan(app_client):
+    """Sisi lain guard yang sama: begitu transaksi final ("gagal"), booking
+    SUDAH dibatalkan (slot bebas) -- notifikasi "settlement" yang datang
+    belakangan TIDAK BOLEH memverifikasi ulang booking yang sudah tidak
+    aktif (mencegah transaksi tercatat "berhasil" padahal booking-nya sudah
+    hilang/dibatalkan orang lain sudah bisa mengisi slot itu)."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "deny", transaksi["nominal"]))
+    assert booking_db.get_booking(booking["id"])["status_booking"] == "dibatalkan"
+
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    assert hasil["status_pembayaran"] == "gagal"  # TETAP gagal, TIDAK "diperbaiki" jadi berhasil
+
+
+def test_berhasil_ke_refund_tetap_diizinkan_meski_status_sudah_final(app_client):
+    """Satu-satunya pengecualian guard urutan status: "berhasil" -> "refund"
+    tetap sah (peristiwa PASCA pembayaran selesai)."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "refund", transaksi["nominal"]))
+    assert hasil["status_pembayaran"] == "refund"
+
+    log = booking_gateway_db.list_status_log(transaksi["id"])
+    assert log[-1]["status_baru"] == "refund"
+    assert log[-1]["sumber"] == "webhook"  # diterapkan sungguhan, BUKAN diabaikan
+
+
+# ============================= AUDIT: rekonsiliasi manual (perbaikan pasca-audit kesiapan) =============================
+
+def test_rekonsiliasi_manual_menerapkan_status_dari_provider(app_client, monkeypatch):
+    """Regresi langsung dari temuan audit kesiapan: webhook yang TIDAK
+    PERNAH sampai sama sekali (bukan telat -- hilang total) sebelumnya
+    membuat transaksi macet selamanya tanpa jalan pemulihan (cek_status_
+    transaksi() sudah ada tapi tidak pernah dipanggil). rekonsiliasi_manual()
+    memanggil ULANG provider langsung (di sini di-monkeypatch, TIDAK PERNAH
+    memanggil provider sungguhan) lalu menerapkan hasilnya lewat jalur SAMA
+    PERSIS dengan webhook resmi."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    assert transaksi["status_pembayaran"] == "menunggu_pembayaran"
+
+    monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": f"{transaksi['nominal']}.00",
+        "payment_type": "qris", "transaction_id": "prov-txn-123",
+    })
+
+    hasil = booking_gateway_webhook.rekonsiliasi_manual(transaksi["id"], tenant_id=tenant["id"])
+    assert hasil["status_pembayaran"] == "berhasil"
+    assert hasil["transaction_id_provider"] == "prov-txn-123"
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+
+    log = booking_gateway_db.list_status_log(transaksi["id"])
+    assert len(log) == 1
+    assert log[0]["sumber"] == "rekonsiliasi_manual"
+
+
+def test_rekonsiliasi_manual_gross_amount_tidak_cocok_ditolak(app_client, monkeypatch):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"], nominal=100000)
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+
+    monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": "1000.00", "payment_type": "qris",
+    })
+
+    try:
+        booking_gateway_webhook.rekonsiliasi_manual(transaksi["id"], tenant_id=tenant["id"])
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak cocok" in str(e)
+    assert booking_gateway_db.get_transaksi(transaksi["id"])["status_pembayaran"] == "menunggu_pembayaran"
+
+
+def test_rekonsiliasi_manual_transaksi_tenant_lain_ditolak(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    _aktifkan_pgw()
+    booking_a = _buat_booking_gateway(tenant_a)
+    transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
+
+    try:
+        booking_gateway_webhook.rekonsiliasi_manual(transaksi_a["id"], tenant_id=tenant_b)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak ditemukan" in str(e)
+
+
+def test_endpoint_cek_ulang_transaksi_sukses(two_tenants, monkeypatch):
+    client = two_tenants["client"]
+    tenant_a = two_tenants["tenant_a"]
+    headers_a = two_tenants["headers_a"]
+    _aktifkan_pgw()
+
+    booking_a = _buat_booking_gateway(tenant_a)
+    transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
+    monkeypatch.setattr(payment_gateway_client, "cek_status_transaksi", lambda order_id: {
+        "transaction_status": "settlement", "gross_amount": f"{transaksi_a['nominal']}.00", "payment_type": "gopay",
+    })
+
+    r = client.post(f"/api/booking/transactions/{transaksi_a['id']}/cek-ulang", headers=headers_a)
+    assert r.status_code == 200, r.text
+    assert r.json()["status_pembayaran"] == "berhasil"
+
+
+def test_endpoint_cek_ulang_transaksi_tenant_lain_ditolak(two_tenants, monkeypatch):
+    client = two_tenants["client"]
+    tenant_a = two_tenants["tenant_a"]
+    headers_b = two_tenants["headers_b"]
+    _aktifkan_pgw()
+
+    booking_a = _buat_booking_gateway(tenant_a)
+    transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
+
+    r = client.post(f"/api/booking/transactions/{transaksi_a['id']}/cek-ulang", headers=headers_b)
+    assert r.status_code == 422
