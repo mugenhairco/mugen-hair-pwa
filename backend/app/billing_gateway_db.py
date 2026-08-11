@@ -9,21 +9,24 @@ GoPay/dst) -- dua merchant/dua tujuan uang yang berbeda, sengaja disimpan di
 modul & key `settings` yang berbeda, TIDAK saling bergantung sama sekali
 (mengubah salah satu tidak pernah memengaruhi yang lain).
 
-REVISI (fleksibilitas provider): form konfigurasi SENGAJA generik -- tujuh
-field (environment, api_key, server_key, client_key, merchant_id,
-secret_key, webhook_url) mencakup kebutuhan kredensial payment gateway
-manapun, BUKAN field yang diberi nama/diasumsikan khusus Midtrans. Provider
-yang BENAR-BENAR terpasang saat ini tetap Midtrans (lihat midtrans_client.py,
+REVISI (proyek TIDAK terikat satu provider tetap): form konfigurasi SENGAJA
+generik -- tujuh field (environment, api_key, server_key, client_key,
+merchant_id, secret_key, webhook_url) mencakup kebutuhan kredensial payment
+gateway manapun, BUKAN field yang diberi nama/diasumsikan khusus satu
+provider. Provider Payment Gateway RESMI proyek ini belum ditentukan --
+kode konkret yang memanggil field ini saat ini (lihat billing_gateway_client.py,
 TIDAK diubah oleh revisi ini -- hanya memakai server_key/client_key/
 environment dari sini, field lain disimpan tapi belum dipakai kode apa pun)
--- kalau kelak pindah provider, field yang relevan untuk provider baru itu
+memakai bentuk protokol Midtrans sebagai ADAPTER PLACEHOLDER (satu-satunya
+protokol yang sudah teruji bekerja di proyek ini), anggap sebagai legacy/
+sementara -- kalau provider resmi sudah ditentukan, field yang relevan
 tinggal diisi lewat form yang SAMA, TIDAK PERNAH semua field wajib diisi
 sekaligus (provider berbeda butuh kombinasi kredensial berbeda).
 
 Sebelumnya kredensial ini murni environment variable (MIDTRANS_SERVER_KEY/
 MIDTRANS_CLIENT_KEY/MIDTRANS_IS_PRODUCTION, dibaca SEKALI oleh
-midtrans_client.py saat modul itu pertama kali diimpor -- lihat riwayat git
-modul ini) -- sekarang dipindah ke tabel `settings` yang SUDAH ADA
+billing_gateway_client.py saat modul itu pertama kali diimpor -- lihat
+riwayat git modul ini) -- sekarang dipindah ke tabel `settings` yang SUDAH ADA
 (tenant_id=None, key POLOS tidak diprefix, pola SAMA PERSIS dengan
 `payment_gateway_db.py`/`subscription_db.get_platform_config()`/
 `landing_db.get_contact()`) supaya Super Admin bisa mengubahnya lewat UI
@@ -71,11 +74,11 @@ def get_config() -> dict:
         "secret_key": secret_key,
         "webhook_url": webhook_url,
         "environment": environment,
-        # "enabled": provider yang TERPASANG saat ini (Midtrans, lihat
-        # midtrans_client.py) HANYA butuh server_key+client_key -- field
-        # lain (api_key/merchant_id/secret_key/webhook_url) disediakan
+        # "enabled": adapter konkret yang TERPASANG saat ini (lihat
+        # billing_gateway_client.py) HANYA butuh server_key+client_key --
+        # field lain (api_key/merchant_id/secret_key/webhook_url) disediakan
         # untuk provider LAIN yang mungkin butuh kombinasi berbeda, belum
-        # ikut menentukan enabled selama provider aktifnya masih Midtrans.
+        # ikut menentukan enabled selama adapter konkretnya belum berubah.
         "enabled": bool(server_key and client_key),
     }
 

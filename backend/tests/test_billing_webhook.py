@@ -295,6 +295,33 @@ def test_notifikasi_duplikat_status_pending_tidak_error(app_client, monkeypatch)
     assert hasil1["status"] == hasil2["status"] == "pending"
 
 
+def test_status_log_mencatat_transisi_sungguhan_saja(app_client, monkeypatch):
+    """Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: SATU
+    baris log per transisi status SUNGGUHAN -- notifikasi duplikat (status
+    sama dengan yang sudah tercatat, termasuk status awal 'pending' invoice
+    baru) TIDAK menambah baris log."""
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    invoice = _buat_invoice(tenant["id"])
+    assert invoice["status"] == "pending"
+    payload_pending = _payload(invoice["order_id"], "pending", invoice["jumlah"])
+    payload_cancel = _payload(invoice["order_id"], "cancel", invoice["jumlah"])
+    payload_paid = _payload(invoice["order_id"], "settlement", invoice["jumlah"])
+
+    billing_webhook.proses_notifikasi(payload_pending)  # status awal SUDAH 'pending', no-op TANPA log
+    billing_webhook.proses_notifikasi(payload_cancel)  # transisi sungguhan #1: pending -> cancelled
+    billing_webhook.proses_notifikasi(payload_cancel)  # duplikat, TIDAK nambah log
+    billing_webhook.proses_notifikasi(payload_paid)  # transisi sungguhan #2: cancelled -> paid
+
+    log = billing_invoice_db.list_status_log(invoice["id"])
+    assert len(log) == 2
+    assert log[0]["status_lama"] == "pending"
+    assert log[0]["status_baru"] == "cancelled"
+    assert log[1]["status_lama"] == "cancelled"
+    assert log[1]["status_baru"] == "paid"
+    assert all(l["sumber"] == "webhook" for l in log)
+
+
 def test_tenant_tanpa_subscription_sebelumnya_dapat_baris_baru(app_client, monkeypatch):
     """Tenant yang SOMEHOW checkout tanpa pernah punya baris
     tenant_subscriptions (fixture two_tenants, dibuat lewat

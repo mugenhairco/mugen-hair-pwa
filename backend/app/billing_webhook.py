@@ -1,32 +1,43 @@
-"""billing_webhook.py — FONDASI Multi-Tenant Phase 4: Aktivasi Otomatis dari Webhook Midtrans
+"""billing_webhook.py — FONDASI Multi-Tenant Phase 4: Aktivasi Otomatis dari Webhook Payment Gateway
 =============================================================================
 Logika MURNI (tanpa FastAPI/Request) supaya bisa diuji langsung dengan
 payload buatan sendiri, tanpa HTTP -- routers/billing_webhook.py (endpoint
-publik `POST /api/public/billing/midtrans-webhook`) hanya membaca body JSON
-lalu memanggil proses_notifikasi() di sini, menerjemahkan ValueError jadi
-HTTP 400.
+publik `POST /api/public/billing/midtrans-webhook` -- URL SENGAJA TIDAK
+diganti nama walau kodenya sudah generik, lihat catatan di router itu)
+hanya membaca body JSON lalu memanggil proses_notifikasi() di sini,
+menerjemahkan ValueError jadi HTTP 400.
+
+Webhook langganan SaaS ini TERPISAH TOTAL dari booking_gateway_webhook.py
+(webhook Payment Gateway booking customer) -- dua jenis transaksi, dua
+modul webhook, TIDAK saling bergantung/berbagi logika bisnis sama sekali
+(lihat catatan arsitektur di payment_gateway_client.py).
 
 KEAMANAN (SESUAI aturan eksplisit Phase 4 "jangan pernah percaya data dari
 client begitu saja") -- SEMUA TIGA harus lolos sebelum satu baris pun
 diubah:
-1. Signature Key (midtrans_client.verifikasi_signature()) -- notifikasi
+1. Signature Key (billing_gateway_client.verifikasi_signature()) -- notifikasi
    yang signature-nya tidak cocok DITOLAK TOTAL, tidak peduli isi payload-nya.
 2. order_id HARUS invoice yang benar-benar dibuat lewat checkout (bukan
    dikarang begitu saja).
 3. gross_amount HARUS SAMA PERSIS dengan `jumlah` yang tercatat di invoice
    saat checkout dibuat -- BUKAN dipercaya dari payload notifikasi.
 
-IDEMPOTEN: Midtrans SECARA RESMI bisa mengirim notifikasi yang sama lebih
+IDEMPOTEN: provider SECARA RESMI bisa mengirim notifikasi yang sama lebih
 dari sekali (retry) -- kalau status invoice yang tersimpan SUDAH SAMA
 dengan status baru dari notifikasi ini, tidak ada perubahan apa pun yang
 dilakukan lagi (mencegah periode aktif "diperpanjang dobel" oleh
-notifikasi duplikat untuk transaksi yang sama)."""
+notifikasi duplikat untuk transaksi yang sama).
+
+RIWAYAT STATUS: setiap transisi status SUNGGUHAN (bukan notifikasi
+idempoten) dicatat ke `subscription_invoice_status_log`
+(billing_invoice_db.catat_status_log()) -- dipakai Detail Transaksi Super
+Admin, TIDAK memengaruhi logika aktivasi di atas sama sekali."""
 
 import json
 from datetime import datetime, timedelta
 
+import billing_gateway_client
 import billing_invoice_db
-import midtrans_client
 import subscription_db
 
 STATUS_PAID = "paid"
@@ -105,7 +116,7 @@ def proses_notifikasi(payload: dict) -> dict:
     fraud_status = payload.get("fraud_status")
     payment_type = payload.get("payment_type")
 
-    if not midtrans_client.verifikasi_signature(order_id, status_code, gross_amount, signature_key):
+    if not billing_gateway_client.verifikasi_signature(order_id, status_code, gross_amount, signature_key):
         raise ValueError("Signature tidak valid.")
 
     invoice = billing_invoice_db.get_invoice_by_order_id(order_id)
@@ -125,10 +136,14 @@ def proses_notifikasi(payload: dict) -> dict:
     status_baru = _map_status(transaction_status, fraud_status)
 
     if invoice["status"] == status_baru:
-        # Notifikasi duplikat (retry Midtrans) untuk status yang SAMA
+        # Notifikasi duplikat (retry provider) untuk status yang SAMA
         # dengan yang sudah tercatat -- tidak ada apa pun yang perlu
-        # diubah lagi (lihat catatan IDEMPOTEN di docstring modul).
+        # diubah lagi (lihat catatan IDEMPOTEN di docstring modul), TERMASUK
+        # TIDAK menambah baris status_log (log hanya mencatat TRANSISI
+        # sungguhan, bukan notifikasi yang diam-diam sama).
         return invoice
+
+    billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber="webhook")
 
     fields = {
         "status": status_baru,

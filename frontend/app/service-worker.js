@@ -502,7 +502,21 @@
 // WhatsApp saja) + kartu Footer (tagline) baru. TIDAK ADA perubahan pada
 // Dashboard/Booking/POS/modul internal lain -- HANYA superadmin.js yang
 // berubah.
-const ASSET_VERSION = "92";
+// v92 -> v93: Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant
+// -- proyek berhenti mengasumsikan Midtrans sebagai provider tetap (satu
+// provider generik, dua modul TERPISAH: billing_gateway_client.py untuk
+// langganan SaaS, payment_gateway_client.py BARU untuk booking customer).
+// Payment Gateway booking SEKARANG SUNGGUHAN (bukan simulasi) -- book_public.js
+// dirombak total: fase channel/VA palsu/tombol "Cek Status Pembayaran" yang
+// menandai lunas sendiri DIHAPUS, diganti checkout hosted provider sungguhan
+// + polling read-only status pembayaran (booking_gateway_webhook.py, HANYA
+// webhook resmi provider yang boleh mengubah status). booking.js (badge
+// status 7-state + tombol Detail untuk booking gateway), riwayat_transaksi.js
+// BARU (menu Keuangan > Riwayat Transaksi tenant), superadmin.js dapat tab
+// baru "Riwayat Transaksi" (monitoring lintas-tenant + filter/cari/ringkasan/
+// detail/export CSV) + hint URL webhook aktif, label "Midtrans" di
+// billing.js/superadmin.js/landing.js/index.html/manifest.json digenerikkan.
+const ASSET_VERSION = "93";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -571,6 +585,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/produk.js",
   "/app/js/pages/booking.js",
   "/app/js/pages/book_public.js",
+  "/app/js/pages/riwayat_transaksi.js",
   "/app/js/pages/superadmin.js",
   "/app/js/pages/subscription_blocked.js",
   "/app/js/pages/tenant_not_found.js",

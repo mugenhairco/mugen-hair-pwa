@@ -55,6 +55,24 @@ def init_billing_invoice_db():
                 paid_at             TEXT
             )
         """)
+        # Riwayat Transaksi (Implementasi Payment Gateway & Riwayat Transaksi
+        # Multi-Tenant): baris BARU tiap kali status invoice benar-benar
+        # berubah (bukan snapshot kolom `status` yang menimpa nilai lama) --
+        # dipakai Detail Transaksi Super Admin ("Riwayat perubahan status
+        # pembayaran") tanpa mengubah kolom subscription_invoices yang sudah
+        # ada. Diisi dari billing_webhook.py::proses_notifikasi(), pola sama
+        # seperti superadmin_audit_log (write-once, tidak pernah diedit/
+        # dihapus dari sisi aplikasi).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_invoice_status_log (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id      INTEGER NOT NULL,
+                status_lama     TEXT,
+                status_baru     TEXT NOT NULL,
+                sumber          TEXT NOT NULL,
+                waktu           TEXT NOT NULL
+            )
+        """)
 
 
 def _now() -> str:
@@ -135,3 +153,24 @@ def update_invoice(invoice_id: int, **fields) -> dict:
     with get_conn() as conn:
         conn.execute(f"UPDATE subscription_invoices SET {set_clause}, updated_at = ? WHERE id = ?", params)
     return get_invoice(invoice_id)
+
+
+def catat_status_log(invoice_id: int, status_lama: str, status_baru: str, sumber: str = "webhook"):
+    """Dipanggil billing_webhook.py::proses_notifikasi() TEPAT SEBELUM
+    update_invoice() -- SATU baris per transisi status sungguhan (webhook
+    yang idempoten/status sama TIDAK memanggil ini sama sekali, lihat
+    penjaga di proses_notifikasi())."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO subscription_invoice_status_log (invoice_id, status_lama, status_baru, sumber, waktu) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (invoice_id, status_lama, status_baru, sumber, _now()),
+        )
+
+
+def list_status_log(invoice_id: int) -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM subscription_invoice_status_log WHERE invoice_id = ? ORDER BY id ASC", (invoice_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]

@@ -26,8 +26,8 @@ import billing_gateway_db
 import billing_invoice_db
 import billing_webhook
 import database as db
+import gateway_client_base
 import landing_db
-import midtrans_client
 import subscription_db
 import tenant_db
 
@@ -45,7 +45,7 @@ class _FakeResponse:
 _MIDTRANS_SERVER_KEY_TEST = "SB-Mid-server-test"
 
 
-def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc"):
+def _aktifkan_billing_gateway_mock(monkeypatch, token="snap-token-abc", redirect="https://example.test/snap/abc"):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: {
         "server_key": _MIDTRANS_SERVER_KEY_TEST, "client_key": "SB-Mid-client-test",
         "environment": "sandbox", "enabled": True,
@@ -54,7 +54,7 @@ def _aktifkan_midtrans_mock(monkeypatch, token="snap-token-abc", redirect="https
     def fake_post(url, json, headers, timeout):
         return _FakeResponse(201, {"token": token, "redirect_url": redirect})
 
-    monkeypatch.setattr(midtrans_client.requests, "post", fake_post)
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
 
 def _hitung_signature(order_id, status_code, gross_amount, server_key):
@@ -405,14 +405,14 @@ def test_register_tercatat_di_audit_log(app_client):
 # Jalur PALING PENTING di Phase 5 -- membuktikan tenant self-service (SEKARANG
 # 'trial', TIDAK diblokir -- FITUR Landing Page & Pricing Free Trial 30 Hari)
 # tetap BISA upgrade ke paket berbayar kapan pun selama trial lewat checkout
-# Midtrans Phase 4 yang TIDAK diubah sama sekali (selain penambahan siklus 6
+# Payment Gateway Phase 4 yang TIDAK diubah sama sekali (selain penambahan siklus 6
 # bulan opsional, TIDAK dipakai di test ini -- default "bulanan"), sampai ke
 # webhook yang TIDAK diubah sama sekali juga.
 
 def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, monkeypatch):
     import email_auth_db
 
-    _aktifkan_midtrans_mock(monkeypatch)
+    _aktifkan_billing_gateway_mock(monkeypatch)
 
     r = app_client.post("/api/public/registration/register", json=_payload_register())
     assert r.status_code == 200, r.text

@@ -1,0 +1,432 @@
+"""
+test_booking_gateway.py — Implementasi Payment Gateway & Riwayat Transaksi
+Multi-Tenant: Payment Gateway Booking Customer (Sistem B)
+=============================================================================
+Cakupan: booking metode "gateway" SELALU mulai "menunggu_verifikasi" (bukan
+langsung terverifikasi saat dibuat -- regresi keamanan langsung dari audit),
+checkout sukses membuat baris transaksi + booking diperkaya checkout_token/
+redirect_url, checkout gagal (provider bermasalah) membatalkan booking
+otomatis (slot bebas lagi), signature/order_id/gross_amount WAJIB lolos
+sebelum efek samping apa pun (webhook), idempoten terhadap notifikasi
+duplikat, status "berhasil" -> booking terverifikasi, status
+"gagal"/"kedaluwarsa"/"dibatalkan" -> booking dibatalkan, "refund" TIDAK
+mengubah status booking, verifikasi manual staff DITOLAK untuk booking
+gateway (hanya webhook resmi yang boleh), isolasi tenant di
+GET /api/booking/transactions[/{id}]. SEMUA test memakai payload buatan
+sendiri dengan signature dihitung manual, panggilan provider di-monkeypatch
+-- TIDAK PERNAH memanggil provider sungguhan."""
+
+import hashlib
+import itertools
+from datetime import timedelta
+
+import booking_db
+import booking_gateway_db
+import booking_gateway_webhook
+import database as db
+import gateway_client_base
+import payment_gateway_client
+import payment_gateway_db
+import tenant_db
+from booking_db import _hari_ini_wib
+
+SERVER_KEY = "SB-Mid-server-test-booking-gateway"
+_urutan_unik = itertools.count(1)
+
+
+def _hitung_signature(order_id, status_code, gross_amount, server_key=SERVER_KEY):
+    raw = f"{order_id}{status_code}{gross_amount}{server_key}"
+    return hashlib.sha512(raw.encode()).hexdigest()
+
+
+def _payload(order_id, transaction_status, gross_amount, status_code="200",
+             fraud_status=None, payment_type="qris", server_key=SERVER_KEY):
+    p = {
+        "order_id": order_id,
+        "status_code": status_code,
+        "gross_amount": f"{gross_amount}.00",
+        "transaction_status": transaction_status,
+        "payment_type": payment_type,
+    }
+    if fraud_status is not None:
+        p["fraud_status"] = fraud_status
+    p["signature_key"] = _hitung_signature(order_id, status_code, p["gross_amount"], server_key)
+    return p
+
+
+def _aktifkan_pgw():
+    payment_gateway_db.update_config(server_key=SERVER_KEY, client_key="dummy-client-key")
+
+
+def _tenant_default():
+    return tenant_db.get_tenant_by_slug("mugen-hair-co")
+
+
+def _siapkan_barber_dan_service(tenant_id, nominal=100000):
+    """`barbers.nama`/`services.nama` UNIQUE GLOBAL (technical debt pra-multi-
+    tenant, tidak diubah di sini) -- sertakan tenant_id + counter unik di
+    nama supaya test yang memanggil helper ini berkali-kali (dua tenant,
+    atau berkali-kali dalam satu tenant) tidak bentrok UNIQUE constraint."""
+    booking_db.update_payment_settings(metode_aktif=["transfer", "gateway"], tenant_id=tenant_id)
+    n = next(_urutan_unik)
+    barber_id = db.add_barber(f"Barber Gateway T{tenant_id}-{n}", tenant_id=tenant_id)
+    service_id = db.add_service(f"Potong Rambut T{tenant_id}-{n}", nominal, tenant_id=tenant_id)
+    return barber_id, service_id
+
+
+def _buat_booking_gateway(tenant_id, nominal=100000, hari_offset=1):
+    barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
+    tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
+    return booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
+                                    service_ids=[service_id], customer_nama="Budi",
+                                    customer_whatsapp="081234567890", metode_pembayaran="gateway",
+                                    tenant_id=tenant_id)
+
+
+def _buat_transaksi_untuk_booking(tenant_id, booking, nominal=None):
+    tenant = tenant_db.get_tenant(tenant_id)
+    order_id = booking_gateway_db.buat_order_id(tenant_id, booking["id"])
+    return booking_gateway_db.buat_transaksi(
+        order_id, tenant_id, tenant["nama_barbershop"] if tenant else "-", booking["id"],
+        booking["customer_nama"], booking["nama_barber"], booking["daftar_service"],
+        nominal if nominal is not None else booking["total_harga"],
+        checkout_token="tok-test", checkout_redirect_url="https://example.test/pay",
+    )
+
+
+# ============================= buat_booking(): status awal SELALU menunggu =============================
+
+def test_booking_gateway_selalu_mulai_menunggu_verifikasi(app_client):
+    """Regresi keamanan (audit): booking metode 'gateway' TIDAK PERNAH
+    langsung 'terverifikasi' saat dibuat -- HANYA webhook resmi provider
+    yang boleh mengubahnya jadi 'terverifikasi'."""
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    assert booking["status_pembayaran"] == "menunggu_verifikasi"
+
+
+# ============================= Checkout endpoint (HTTP) =============================
+
+def test_checkout_gateway_503_belum_dikonfigurasi(app_client):
+    tenant = _tenant_default()
+    barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
+        "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
+        "metode_pembayaran": "gateway",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 503
+
+
+def test_checkout_gateway_sukses(app_client, monkeypatch):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
+    monkeypatch.setattr(payment_gateway_client, "buat_transaksi",
+                         lambda *a, **kw: {"token": "tok-checkout", "redirect_url": "https://example.test/pay"})
+
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
+        "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
+        "metode_pembayaran": "gateway",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 200, r.text
+    hasil = r.json()
+    assert hasil["status_pembayaran"] == "menunggu_verifikasi"
+    assert hasil["checkout_token"] == "tok-checkout"
+    assert hasil["checkout_redirect_url"] == "https://example.test/pay"
+    assert hasil["gateway_order_id"]
+
+    transaksi = booking_gateway_db.get_transaksi_by_order_id(hasil["gateway_order_id"])
+    assert transaksi is not None
+    assert transaksi["tenant_id"] == tenant["id"]
+    assert transaksi["status_pembayaran"] == "menunggu_pembayaran"
+    assert transaksi["nominal"] == hasil["total_harga"]
+
+
+def test_checkout_gateway_gagal_membatalkan_booking_otomatis(app_client, monkeypatch):
+    """Provider gagal dihubungi/menolak -> booking yang SUDAH tersimpan
+    (mengisi slot) dibatalkan otomatis, TIDAK menggantung tanpa jalan bayar."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
+
+    def _gagal(*a, **kw):
+        raise gateway_client_base.GatewayTimeoutError("Provider timeout.")
+    monkeypatch.setattr(payment_gateway_client, "buat_transaksi", _gagal)
+
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
+        "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
+        "metode_pembayaran": "gateway",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 502
+
+    # Slot bebas lagi -- booking baru di jam/tanggal yang sama (metode lain) harus berhasil.
+    body2 = dict(body, metode_pembayaran="transfer")
+    r2 = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body2)
+    assert r2.status_code == 200, r2.text
+
+
+# ============================= Webhook: validasi keamanan =============================
+
+def test_signature_tidak_valid_ditolak(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+    payload["signature_key"] = "signature-palsu"
+
+    try:
+        booking_gateway_webhook.proses_notifikasi(payload)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "Signature" in str(e)
+    assert booking_gateway_db.get_transaksi(transaksi["id"])["status_pembayaran"] == "menunggu_pembayaran"
+
+
+def test_order_id_tidak_dikenal_ditolak(app_client):
+    _aktifkan_pgw()
+    payload = _payload("BOOK-TIDAK-ADA", "settlement", 100000)
+    try:
+        booking_gateway_webhook.proses_notifikasi(payload)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak dikenal" in str(e)
+
+
+def test_gross_amount_dimanipulasi_ditolak(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"], nominal=100000)
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", 1000)  # dipalsukan jadi kecil
+
+    try:
+        booking_gateway_webhook.proses_notifikasi(payload)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak cocok" in str(e)
+    assert booking_gateway_db.get_transaksi(transaksi["id"])["status_pembayaran"] == "menunggu_pembayaran"
+
+
+def test_transaction_status_tidak_dikenal_ditolak(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "refund_ganda_tidak_dikenal", transaksi["nominal"])
+    try:
+        booking_gateway_webhook.proses_notifikasi(payload)
+        assert False, "harus melempar ValueError"
+    except ValueError as e:
+        assert "tidak dikenal" in str(e)
+
+
+# ============================= Cascade ke booking =============================
+
+def test_settlement_berhasil_booking_terverifikasi(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"], payment_type="qris")
+
+    hasil = booking_gateway_webhook.proses_notifikasi(payload)
+    assert hasil["status_pembayaran"] == "berhasil"
+    assert hasil["channel_pembayaran"] == "qris"
+    assert hasil["paid_at"] is not None
+
+    updated_booking = booking_db.get_booking(booking["id"])
+    assert updated_booking["status_pembayaran"] == "terverifikasi"
+    assert updated_booking["status_booking"] == "aktif"
+
+
+def test_capture_challenge_menjadi_diproses_tanpa_cascade(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "capture", transaksi["nominal"],
+                        fraud_status="challenge", payment_type="credit_card")
+
+    hasil = booking_gateway_webhook.proses_notifikasi(payload)
+    assert hasil["status_pembayaran"] == "diproses"
+    updated_booking = booking_db.get_booking(booking["id"])
+    assert updated_booking["status_pembayaran"] == "menunggu_verifikasi"
+    assert updated_booking["status_booking"] == "aktif"
+
+
+def test_deny_cancel_expire_membatalkan_booking(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    for i, (transaction_status, expected_status) in enumerate([
+        ("deny", "gagal"), ("cancel", "dibatalkan"), ("expire", "kedaluwarsa"),
+    ]):
+        booking = _buat_booking_gateway(tenant["id"], hari_offset=2 + i)
+        transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+        payload = _payload(transaksi["order_id"], transaction_status, transaksi["nominal"])
+
+        hasil = booking_gateway_webhook.proses_notifikasi(payload)
+        assert hasil["status_pembayaran"] == expected_status
+        assert booking_db.get_booking(booking["id"])["status_booking"] == "dibatalkan"
+
+
+def test_refund_tidak_mengubah_status_booking(app_client):
+    """Refund adalah peristiwa PASCA booking selesai -- TIDAK PERNAH
+    membatalkan/mengaktifkan ulang booking secara otomatis."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "settlement", transaksi["nominal"]))
+
+    hasil = booking_gateway_webhook.proses_notifikasi(_payload(transaksi["order_id"], "refund", transaksi["nominal"]))
+    assert hasil["status_pembayaran"] == "refund"
+    assert booking_db.get_booking(booking["id"])["status_booking"] == "aktif"
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+
+
+# ============================= Idempoten =============================
+
+def test_notifikasi_duplikat_tidak_double_cascade(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+
+    hasil1 = booking_gateway_webhook.proses_notifikasi(payload)
+    hasil2 = booking_gateway_webhook.proses_notifikasi(payload)  # provider kirim ulang notifikasi yang sama
+    assert hasil1["paid_at"] == hasil2["paid_at"]
+
+    log = booking_gateway_db.list_status_log(transaksi["id"])
+    assert len(log) == 1
+
+
+# ============================= Endpoint HTTP webhook =============================
+
+def test_endpoint_webhook_sukses(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+
+    r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "berhasil"
+
+
+def test_endpoint_webhook_signature_salah_400(app_client):
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "settlement", transaksi["nominal"])
+    payload["signature_key"] = "salah"
+
+    r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
+    assert r.status_code == 400
+
+
+def test_endpoint_webhook_tanpa_login_bisa_diakses(app_client):
+    """Endpoint ini PUBLIK -- provider TIDAK PERNAH mengirim Authorization
+    header apa pun, jadi TIDAK BOLEH ada dependency auth apa pun di sini."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+    payload = _payload(transaksi["order_id"], "pending", transaksi["nominal"])
+
+    r = app_client.post("/api/public/booking/gateway-webhook", json=payload)
+    assert r.status_code == 200, r.text
+
+
+def test_endpoint_gateway_status_publik_read_only(app_client):
+    """GET /api/public/booking/gateway-status/{order_id} -- dipakai polling
+    wizard booking publik, payload minim TANPA data sensitif toko."""
+    _aktifkan_pgw()
+    tenant = _tenant_default()
+    booking = _buat_booking_gateway(tenant["id"])
+    transaksi = _buat_transaksi_untuk_booking(tenant["id"], booking)
+
+    r = app_client.get(f"/api/public/booking/gateway-status/{transaksi['order_id']}",
+                        params={"tenant": "mugen-hair-co"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status_pembayaran"] == "menunggu_pembayaran"
+    assert set(data.keys()) == {"status_pembayaran", "channel_pembayaran", "nominal"}
+
+
+# ============================= Verifikasi manual staff DITOLAK =============================
+
+def test_verifikasi_manual_ditolak_untuk_booking_gateway(two_tenants):
+    client, headers_a, tenant_a = two_tenants["client"], two_tenants["headers_a"], two_tenants["tenant_a"]
+    booking = _buat_booking_gateway(tenant_a)
+
+    r = client.post(f"/api/booking/{booking['id']}/verifikasi", headers=headers_a)
+    assert r.status_code == 422
+    assert "gateway" in r.json()["detail"].lower() or "Payment Gateway" in r.json()["detail"]
+
+    # Booking TETAP menunggu_verifikasi -- tidak ada celah tandai lunas manual.
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "menunggu_verifikasi"
+
+
+# ============================= Isolasi Multi-Tenant =============================
+
+def test_list_transaksi_terisolasi_per_tenant(two_tenants):
+    client = two_tenants["client"]
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    headers_a, headers_b = two_tenants["headers_a"], two_tenants["headers_b"]
+
+    booking_a = _buat_booking_gateway(tenant_a)
+    _buat_transaksi_untuk_booking(tenant_a, booking_a)
+    booking_b = _buat_booking_gateway(tenant_b)
+    _buat_transaksi_untuk_booking(tenant_b, booking_b)
+
+    ra = client.get("/api/booking/transactions", headers=headers_a)
+    assert ra.status_code == 200, ra.text
+    assert len(ra.json()) == 1
+    assert ra.json()[0]["tenant_id"] == tenant_a
+
+    rb = client.get("/api/booking/transactions", headers=headers_b)
+    assert rb.status_code == 200, rb.text
+    assert len(rb.json()) == 1
+    assert rb.json()[0]["tenant_id"] == tenant_b
+
+
+def test_detail_transaksi_tenant_lain_404(two_tenants):
+    client = two_tenants["client"]
+    tenant_a = two_tenants["tenant_a"]
+    headers_b = two_tenants["headers_b"]
+
+    booking_a = _buat_booking_gateway(tenant_a)
+    transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
+
+    r = client.get(f"/api/booking/transactions/{transaksi_a['id']}", headers=headers_b)
+    assert r.status_code == 404
+
+
+def test_detail_transaksi_menyertakan_status_log(two_tenants):
+    client = two_tenants["client"]
+    tenant_a = two_tenants["tenant_a"]
+    headers_a = two_tenants["headers_a"]
+    _aktifkan_pgw()
+
+    booking_a = _buat_booking_gateway(tenant_a)
+    transaksi_a = _buat_transaksi_untuk_booking(tenant_a, booking_a)
+    booking_gateway_webhook.proses_notifikasi(
+        _payload(transaksi_a["order_id"], "settlement", transaksi_a["nominal"]))
+
+    r = client.get(f"/api/booking/transactions/{transaksi_a['id']}", headers=headers_a)
+    assert r.status_code == 200, r.text
+    assert r.json()["status_pembayaran"] == "berhasil"
+    assert len(r.json()["status_log"]) == 1

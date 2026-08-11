@@ -1,16 +1,19 @@
-// pages/billing.js — FONDASI Multi-Tenant Phase 4: Billing & Payment (Midtrans)
+// pages/billing.js — FONDASI Multi-Tenant Phase 4: Billing & Payment Gateway
 // =============================================================================
 // Halaman BARU, KHUSUS Owner (require_admin, sama seperti Setting > Subscription
 // Phase 3 -- staff TIDAK ikut melihat, lihat nav.js) -- TERPISAH TOTAL dari tab
 // "Subscription" read-only di pages/pengaturan.js (Phase 3, TIDAK diubah sama
 // sekali di sini): paket aktif + periode + status, katalog paket untuk upgrade/
-// downgrade/perpanjang, checkout Midtrans Snap, riwayat invoice/pembayaran.
+// downgrade/perpanjang, checkout Payment Gateway hosted, riwayat invoice/pembayaran.
 //
-// Snap.js Midtrans dimuat DINAMIS (bukan <script> tetap di index.html) --
-// proyek ini sengaja tanpa bundler/CDN tetap apa pun (lihat README), dan
-// Snap.js HANYA dibutuhkan tepat saat Owner menekan tombol checkout, jadi
-// tidak ada gunanya dimuat di awal (apalagi kalau Midtrans belum
-// dikonfigurasi Super Admin sama sekali -- lihat GET /api/billing/config).
+// Script checkout hosted provider dimuat DINAMIS (bukan <script> tetap di
+// index.html) -- proyek ini sengaja tanpa bundler/CDN tetap apa pun (lihat
+// README), dan script itu HANYA dibutuhkan tepat saat Owner menekan tombol
+// checkout, jadi tidak ada gunanya dimuat di awal (apalagi kalau Payment
+// Gateway belum dikonfigurasi Super Admin sama sekali -- lihat GET
+// /api/billing/config). Bentuk konkret (window.snap.pay(), lihat
+// billing_gateway_client.py) adalah adapter placeholder -- provider resmi
+// belum ditentukan.
 
 const PageBilling = (() => {
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
@@ -59,7 +62,7 @@ const PageBilling = (() => {
       script.onload = () => resolve();
       script.onerror = () => {
         _snapLoadPromise = null;
-        reject(new Error("Gagal memuat modul pembayaran Midtrans. Periksa koneksi internet Anda."));
+        reject(new Error("Gagal memuat modul pembayaran. Periksa koneksi internet Anda."));
       };
       document.head.appendChild(script);
     });
@@ -176,7 +179,8 @@ const PageBilling = (() => {
       // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
       // -- downgrade berlaku instan tanpa gateway pembayaran eksternal,
       // beda dari mulaiCheckout() di atas yang TETAP withLoading() (transisi
-      // ke Midtrans Snap, genuinely memblokir sampai modal pembayaran siap).
+      // ke checkout hosted Payment Gateway, genuinely memblokir sampai modal
+      // pembayaran siap).
       await MugenUI.withButtonLoading(btn, () => MugenApi.post("/api/billing/downgrade", { package_id: paket.id }));
       // Aksi besar/konfirmasi penting (perubahan paket langganan) -- toast
       // sukses SENGAJA ditampilkan (force:true), lihat whitelist di ui.js.
@@ -241,7 +245,7 @@ const PageBilling = (() => {
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Pilih Paket"));
     card.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Upgrade langsung dibayar lewat Midtrans (VA/QRIS/kartu). Downgrade & Perpanjang paket yang sama TIDAK memerlukan pembayaran baru di sini kecuali memang paket berbayar."));
+      "Upgrade langsung dibayar lewat Payment Gateway (VA/QRIS/kartu). Downgrade & Perpanjang paket yang sama TIDAK memerlukan pembayaran baru di sini kecuali memang paket berbayar."));
 
     const current = packages.find((p) => p.kode === sub.package) || null;
 

@@ -1,21 +1,25 @@
 """
-test_midtrans_client.py — FONDASI Multi-Tenant Phase 4: Klien Midtrans Snap API
+test_billing_gateway_client.py — FONDASI Multi-Tenant Phase 4: Klien Payment Gateway Langganan SaaS
 =============================================================================
-Kredensial sekarang datang dari `billing_gateway_db.get_config()` (DB-backed,
-platform-wide Billing SaaS -- lihat billing_gateway_db.py), BUKAN lagi
-konstanta module-level MIDTRANS_* yang dibaca dari environment variable saat
-modul diimpor. SESUAI KEPUTUSAN cakupan Phase 4: seluruh pengujian di sini
-tetap memakai mock/simulasi (monkeypatch billing_gateway_db.get_config() +
-fungsi requests.post/requests.get) -- TIDAK PERNAH memanggil Midtrans
-sungguhan maupun database sungguhan, supaya suite ini tetap hijau tanpa
-kredensial Midtrans apa pun."""
+File ini SEBELUMNYA bernama test_midtrans_client.py, mengikuti rename
+midtrans_client.py -> billing_gateway_client.py (proyek tidak lagi
+mengasumsikan Midtrans sebagai provider tetap -- lihat catatan lengkap di
+billing_gateway_client.py). Kredensial datang dari
+`billing_gateway_db.get_config()` (DB-backed, platform-wide Billing SaaS --
+lihat billing_gateway_db.py), BUKAN konstanta module-level yang dibaca dari
+environment variable saat modul diimpor. Seluruh pengujian di sini tetap
+memakai mock/simulasi (monkeypatch billing_gateway_db.get_config() + fungsi
+requests.post/requests.get) -- TIDAK PERNAH memanggil provider sungguhan
+maupun database sungguhan, supaya suite ini tetap hijau tanpa kredensial
+provider apa pun."""
 
 import hashlib
 
 import pytest
 
+import billing_gateway_client
 import billing_gateway_db
-import midtrans_client
+import gateway_client_base
 
 
 class _FakeResponse:
@@ -39,20 +43,20 @@ def _cfg(server_key: str = "", client_key: str = "", environment: str = "sandbox
 
 def test_is_enabled_false_tanpa_kredensial(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg())
-    with pytest.raises(RuntimeError, match="belum dikonfigurasi"):
-        midtrans_client.buat_transaksi_snap("ORDER-1", 100000, [])
-    with pytest.raises(RuntimeError, match="belum dikonfigurasi"):
-        midtrans_client.cek_status_transaksi("ORDER-1")
+    with pytest.raises(gateway_client_base.GatewayNotConfiguredError, match="belum dikonfigurasi"):
+        billing_gateway_client.buat_transaksi("ORDER-1", 100000, [])
+    with pytest.raises(gateway_client_base.GatewayNotConfiguredError, match="belum dikonfigurasi"):
+        billing_gateway_client.cek_status_transaksi("ORDER-1")
 
 
 def test_verifikasi_signature_selalu_false_tanpa_server_key(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config", lambda: _cfg(server_key=""))
-    assert midtrans_client.verifikasi_signature("ORDER-1", "200", "100000.00", "apapun") is False
+    assert billing_gateway_client.verifikasi_signature("ORDER-1", "200", "100000.00", "apapun") is False
 
 
-# ============================= buat_transaksi_snap =============================
+# ============================= buat_transaksi =============================
 
-def test_buat_transaksi_snap_sukses(monkeypatch):
+def test_buat_transaksi_sukses(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-test", client_key="SB-Mid-client-test"))
 
@@ -62,42 +66,60 @@ def test_buat_transaksi_snap_sukses(monkeypatch):
         dipanggil["url"] = url
         dipanggil["json"] = json
         dipanggil["headers"] = headers
-        return _FakeResponse(201, {"token": "snap-token-abc", "redirect_url": "https://example.test/snap/abc"})
+        return _FakeResponse(201, {"token": "checkout-token-abc", "redirect_url": "https://example.test/checkout/abc"})
 
-    monkeypatch.setattr(midtrans_client.requests, "post", fake_post)
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    hasil = midtrans_client.buat_transaksi_snap(
+    hasil = billing_gateway_client.buat_transaksi(
         "ORDER-100", 150000,
         [{"id": "pkg-basic", "price": 150000, "quantity": 1, "name": "Paket Basic"}],
         customer_details={"first_name": "Budi"},
     )
-    assert hasil == {"token": "snap-token-abc", "redirect_url": "https://example.test/snap/abc"}
+    assert hasil == {"token": "checkout-token-abc", "redirect_url": "https://example.test/checkout/abc"}
     assert dipanggil["url"].endswith("/snap/v1/transactions")
     assert dipanggil["json"]["transaction_details"] == {"order_id": "ORDER-100", "gross_amount": 150000}
     assert dipanggil["headers"]["Authorization"].startswith("Basic ")
 
 
-def test_buat_transaksi_snap_gagal_melempar_runtimeerror(monkeypatch):
+def test_buat_transaksi_gagal_melempar_gateway_request_error(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-test", client_key="SB-Mid-client-test"))
 
     def fake_post(url, json, headers, timeout):
         return _FakeResponse(401, {"error_messages": ["Access denied"]})
 
-    monkeypatch.setattr(midtrans_client.requests, "post", fake_post)
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
-    with pytest.raises(RuntimeError, match="menolak"):
-        midtrans_client.buat_transaksi_snap("ORDER-100", 150000, [])
+    with pytest.raises(gateway_client_base.GatewayRequestError, match="menolak"):
+        billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
 
 
-def test_snap_js_url_sandbox_vs_production(monkeypatch):
+def test_buat_transaksi_timeout_melempar_gateway_timeout_error(monkeypatch):
+    """REGRESI temuan audit: exception jaringan/timeout sebelumnya TIDAK
+    ditangkap sama sekali, bisa lolos jadi HTTP 500 mentah -- sekarang
+    gateway_client_base.post_json() menerjemahkannya jadi GatewayTimeoutError."""
+    import requests as requests_lib
+
+    monkeypatch.setattr(billing_gateway_db, "get_config",
+                         lambda: _cfg(server_key="SB-Mid-server-test", client_key="SB-Mid-client-test"))
+
+    def fake_post(url, json, headers, timeout):
+        raise requests_lib.exceptions.ConnectTimeout("connection timed out")
+
+    monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
+
+    with pytest.raises(gateway_client_base.GatewayTimeoutError):
+        billing_gateway_client.buat_transaksi("ORDER-100", 150000, [])
+
+
+def test_client_script_url_sandbox_vs_production(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="x", client_key="y", environment="sandbox"))
-    assert "sandbox" in midtrans_client.snap_js_url()
+    assert "sandbox" in billing_gateway_client.client_script_url()
 
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="x", client_key="y", environment="production"))
-    assert "sandbox" not in midtrans_client.snap_js_url()
+    assert "sandbox" not in billing_gateway_client.client_script_url()
 
 
 # ============================= cek_status_transaksi =============================
@@ -109,9 +131,9 @@ def test_cek_status_transaksi_sukses(monkeypatch):
         assert url.endswith("/ORDER-100/status")
         return _FakeResponse(200, {"transaction_status": "settlement", "order_id": "ORDER-100"})
 
-    monkeypatch.setattr(midtrans_client.requests, "get", fake_get)
+    monkeypatch.setattr(gateway_client_base.requests, "get", fake_get)
 
-    hasil = midtrans_client.cek_status_transaksi("ORDER-100")
+    hasil = billing_gateway_client.cek_status_transaksi("ORDER-100")
     assert hasil["transaction_status"] == "settlement"
 
 
@@ -126,7 +148,7 @@ def test_verifikasi_signature_valid(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-rahasia", client_key="x"))
     sig = _hitung_signature("ORDER-100", "200", "150000.00", "SB-Mid-server-rahasia")
-    assert midtrans_client.verifikasi_signature("ORDER-100", "200", "150000.00", sig) is True
+    assert billing_gateway_client.verifikasi_signature("ORDER-100", "200", "150000.00", sig) is True
 
 
 def test_verifikasi_signature_amount_diubah_ditolak(monkeypatch):
@@ -137,14 +159,14 @@ def test_verifikasi_signature_amount_diubah_ditolak(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-rahasia", client_key="x"))
     sig_asli = _hitung_signature("ORDER-100", "200", "150000.00", "SB-Mid-server-rahasia")
-    assert midtrans_client.verifikasi_signature("ORDER-100", "200", "1.00", sig_asli) is False
+    assert billing_gateway_client.verifikasi_signature("ORDER-100", "200", "1.00", sig_asli) is False
 
 
 def test_verifikasi_signature_order_id_diubah_ditolak(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-rahasia", client_key="x"))
     sig_asli = _hitung_signature("ORDER-100", "200", "150000.00", "SB-Mid-server-rahasia")
-    assert midtrans_client.verifikasi_signature("ORDER-LAIN", "200", "150000.00", sig_asli) is False
+    assert billing_gateway_client.verifikasi_signature("ORDER-LAIN", "200", "150000.00", sig_asli) is False
 
 
 def test_verifikasi_signature_server_key_salah_ditolak(monkeypatch):
@@ -154,4 +176,4 @@ def test_verifikasi_signature_server_key_salah_ditolak(monkeypatch):
     monkeypatch.setattr(billing_gateway_db, "get_config",
                          lambda: _cfg(server_key="SB-Mid-server-benar", client_key="x"))
     sig_dari_key_lain = _hitung_signature("ORDER-100", "200", "150000.00", "SB-Mid-server-lain")
-    assert midtrans_client.verifikasi_signature("ORDER-100", "200", "150000.00", sig_dari_key_lain) is False
+    assert billing_gateway_client.verifikasi_signature("ORDER-100", "200", "150000.00", sig_dari_key_lain) is False

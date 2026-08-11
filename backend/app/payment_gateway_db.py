@@ -1,24 +1,23 @@
-"""payment_gateway_db.py — Konfigurasi Payment Gateway (PLATFORM-WIDE)
+"""payment_gateway_db.py — Konfigurasi Payment Gateway Booking Customer (PLATFORM-WIDE)
 =========================================================================
 SATU merchant account PGW dipakai bersama oleh SELURUH tenant (customer
 booking di toko mana pun membayar lewat channel yang sama) -- BEDA dari
-Midtrans di midtrans_client.py/routers/billing.py, yang untuk Owner
-membayar LANGGANAN platform ini, bukan customer membayar booking. Kedua
-integrasi ini sengaja terpisah total, tidak saling berbagi kredensial.
+billing_gateway_db.py, yang untuk Owner membayar LANGGANAN platform ini,
+bukan customer membayar booking. Dua jenis transaksi yang boleh memakai
+provider Payment Gateway yang SAMA, TAPI kredensial/konfigurasi/business
+logic/webhook/riwayat transaksi masing-masing TETAP terpisah total, tidak
+saling bergantung sama sekali -- lihat catatan arsitektur lengkap di
+payment_gateway_client.py.
 
 Kredensial (API key/server key/client key/merchant ID/secret key) DB-backed
 lewat tabel `settings` generik dengan `tenant_id=None` (key POLOS, tidak
 diprefix per-tenant) -- pola SAMA PERSIS dengan
-subscription_db.get_platform_config()/landing_db.get_contact(), BUKAN env
-var seperti midtrans_client.py -- supaya Super Admin bisa mengisi/mengubah
-kapan saja lewat UI tanpa perlu redeploy.
+subscription_db.get_platform_config()/landing_db.get_contact() -- supaya
+Super Admin bisa mengisi/mengubah kapan saja lewat UI tanpa perlu redeploy.
 
-Belum ada panggilan API sungguhan ke provider PGW mana pun di sini (lihat
-booking_db.py::buat_booking() -- booking "gateway" langsung dianggap
-terverifikasi begitu wizard publik melapor pembayaran sukses) -- modul ini
-murni tempat menyimpan kredensial yang akan dipakai begitu integrasi
-sungguhan dipasang, dan tempat mengatur channel mana yang aktif + urutan
-tampilnya di wizard booking publik.
+Modul client sungguhan (buat transaksi, cek status, verifikasi signature)
+ada di payment_gateway_client.py -- lihat modul itu untuk alur pembayaran
+booking end-to-end (checkout -> webhook -> update status booking).
 """
 
 import json

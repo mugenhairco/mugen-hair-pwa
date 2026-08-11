@@ -374,6 +374,32 @@ const MugenUI = (() => {
     });
   }
 
+  // Modal INFORMASI (bukan konfirmasi) -- dipakai menampilkan detail
+  // (mis. Detail Transaksi Payment Gateway di pages/booking.js/
+  // riwayat_transaksi.js/superadmin.js) tanpa perlu halaman terpisah.
+  // `body`: node DOM atau array node -- caller yang membangun kontennya
+  // sendiri (struktur detail beda-beda per fitur, tidak bisa digeneralisasi
+  // di sini). Pola overlay/box SAMA PERSIS confirmModal() di atas supaya
+  // konsisten secara visual, HANYA tombolnya beda (satu tombol Tutup).
+  function infoModal({ title, body } = {}) {
+    const overlay = el("div", { class: "modal-overlay" });
+    const box = el("div", { class: "modal-box" });
+    if (title) box.appendChild(el("h3", {}, title));
+    (Array.isArray(body) ? body : [body]).forEach((node) => { if (node) box.appendChild(node); });
+    const btnTutup = el("button", { type: "button", class: "btn-primary" }, "Tutup");
+    box.appendChild(el("div", { class: "modal-actions" }, [btnTutup]));
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function tutup() {
+      overlay.classList.add("closing");
+      setTimeout(() => overlay.remove(), 120);
+    }
+    btnTutup.addEventListener("click", tutup);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(); });
+    return { close: tutup };
+  }
+
   function offlineBanner(cachedAt) {
     const waktu = new Date(cachedAt).toLocaleString("id-ID");
     return el("div", { class: "offline-banner" },
@@ -510,7 +536,7 @@ const MugenUI = (() => {
   return {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
-    themeSwitch, confirmModal, buatNomorTransaksi,
+    themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
   };
 })();

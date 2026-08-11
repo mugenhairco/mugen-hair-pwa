@@ -72,6 +72,11 @@ const MugenNav = (() => {
       { hash: "#/keuangan/pemasukan", label: "Pemasukan", roles: ["admin", "staff"] },
       { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
       { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"] },
+      // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant:
+      // riwayat transaksi Payment Gateway booking milik toko ini sendiri
+      // (lihat pages/riwayat_transaksi.js) -- roles SAMA dengan Pemasukan/
+      // Pengeluaran/Uang Kas (data finansial toko, staff akses penuh).
+      { hash: "#/keuangan/riwayat-transaksi", label: "Riwayat Transaksi", roles: ["admin", "staff"] },
     ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di

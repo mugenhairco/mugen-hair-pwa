@@ -26,6 +26,74 @@ const PageBooking = (() => {
   // (halaman booking) sekarang -- Cash sudah dihapus total dari flow booking.
   const METODE_AKTIF_OPTIONS = ["transfer", "qris", "gateway"];
 
+  // Vocabulary status Payment Gateway (7 state) -- HANYA dipakai untuk booking
+  // dengan metode_pembayaran === "gateway". Status ini SELALU berasal dari
+  // gateway_status yang diperkaya backend (booking_db.py::_perkaya_status_gateway
+  // / get_booking_list()) dari booking_payment_transactions, TIDAK PERNAH dari
+  // status_pembayaran 2-state lama -- konsisten dengan riwayat_transaksi.js.
+  const STATUS_GATEWAY_LABEL = {
+    menunggu_pembayaran: "Menunggu Pembayaran",
+    diproses: "Sedang Diproses",
+    berhasil: "Berhasil",
+    gagal: "Gagal",
+    kedaluwarsa: "Kedaluwarsa",
+    dibatalkan: "Dibatalkan",
+    refund: "Refund",
+  };
+  const STATUS_GATEWAY_BADGE = {
+    menunggu_pembayaran: "badge-libur",
+    diproses: "badge-libur",
+    berhasil: "badge-success",
+    gagal: "badge-danger",
+    kedaluwarsa: "badge-danger",
+    dibatalkan: "badge-danger",
+    refund: "badge-warning",
+  };
+
+  function waktuLengkapGateway(iso) {
+    if (!iso) return "-";
+    const [tanggal, jam] = iso.split("T");
+    return `${MugenUI.formatTanggal(tanggal)} ${(jam || "").slice(0, 8)}`.trim();
+  }
+
+  function bukaDetailGateway(transaksi) {
+    const body = [
+      MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"),
+          MugenUI.el("span", { class: "badge" + (STATUS_GATEWAY_BADGE[transaksi.status_pembayaran] ? " " + STATUS_GATEWAY_BADGE[transaksi.status_pembayaran] : "") },
+            STATUS_GATEWAY_LABEL[transaksi.status_pembayaran] || transaksi.status_pembayaran)]),
+        MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Nominal"), MugenUI.el("div", {}, MugenUI.formatRupiah(transaksi.nominal))]),
+      ]),
+      MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Metode"), MugenUI.el("div", {}, transaksi.metode_pembayaran || "-")]),
+        MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Channel"), MugenUI.el("div", {}, transaksi.channel_pembayaran || "-")]),
+      ]),
+      MugenUI.el("div", { style: "margin-bottom:10px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, "Waktu Dibuat"), MugenUI.el("div", {}, waktuLengkapGateway(transaksi.created_at)),
+      ]),
+      MugenUI.el("div", { style: "margin-bottom:10px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, "Waktu Dibayar"), MugenUI.el("div", {}, waktuLengkapGateway(transaksi.paid_at)),
+      ]),
+      MugenUI.el("div", { style: "margin-bottom:10px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, "Transaction ID (Provider)"), MugenUI.el("div", {}, transaksi.transaction_id_provider || "-"),
+      ]),
+      MugenUI.el("div", { style: "margin-bottom:10px;" }, [
+        MugenUI.el("div", { class: "subtitle" }, "Reference ID (Provider)"), MugenUI.el("div", {}, transaksi.reference_id_provider || "-"),
+      ]),
+      MugenUI.el("h3", { style: "margin-top:16px;" }, "Riwayat Perubahan Status"),
+      MugenUI.buildTable(
+        [
+          { key: "waktu", label: "Waktu", format: waktuLengkapGateway },
+          { key: "status_lama", label: "Dari", format: (v) => STATUS_GATEWAY_LABEL[v] || v || "-" },
+          { key: "status_baru", label: "Ke", format: (v) => STATUS_GATEWAY_LABEL[v] || v },
+        ],
+        transaksi.status_log || [],
+        { emptyText: "Belum ada perubahan status." },
+      ),
+    ];
+    MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
+  }
+
   // REVISI: nomor WhatsApp customer di Menu Booking ditampilkan sebagai link
   // wa.me yang bisa langsung diklik admin (buka chat, tanpa pesan otomatis),
   // supaya admin tidak perlu copy-paste nomor manual. wa.me mewajibkan format
@@ -161,8 +229,19 @@ const PageBooking = (() => {
       { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
       { key: "metode_pembayaran", label: "Metode", format: (v) => METODE_LABEL[v] || v },
       {
+        // Booking metode "gateway": status pembayaran HANYA boleh berubah lewat
+        // webhook resmi provider (lihat routers/booking.py::verifikasi_booking()),
+        // jadi tampilkan vocabulary 7-state gateway_status (diperkaya backend)
+        // -- bukan status_pembayaran 2-state lama yang berhenti di "menunggu_verifikasi"
+        // sampai webhook benar-benar mengonfirmasi.
         key: "status_pembayaran", label: "Status Bayar",
-        format: (v) => MugenUI.el("span", { class: "badge" + (v === "terverifikasi" ? " badge-success" : " badge-libur") }, STATUS_BAYAR_LABEL[v] || v),
+        format: (v, r) => {
+          if (r.metode_pembayaran === "gateway") {
+            const gs = r.gateway_status || "menunggu_pembayaran";
+            return MugenUI.el("span", { class: "badge" + (STATUS_GATEWAY_BADGE[gs] ? " " + STATUS_GATEWAY_BADGE[gs] : "") }, STATUS_GATEWAY_LABEL[gs] || gs);
+          }
+          return MugenUI.el("span", { class: "badge" + (v === "terverifikasi" ? " badge-success" : " badge-libur") }, STATUS_BAYAR_LABEL[v] || v);
+        },
       },
       {
         key: "status_booking", label: "Status",
@@ -173,11 +252,26 @@ const PageBooking = (() => {
       columns.push({
         key: "aksi", label: "Aksi", format: (_, r) => {
           const wrap = MugenUI.el("div", { class: "actions-cell" });
-          if (onVerifikasi && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
+          // Booking gateway TIDAK PERNAH bisa diverifikasi manual (backend
+          // menolak 422 -- lihat routers/booking.py::verifikasi_booking()),
+          // jadi tombol "Verifikasi" disembunyikan untuk metode ini.
+          if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", {}, "Verifikasi");
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               try { await onVerifikasi(r); } finally { btn.disabled = false; }
+            });
+            wrap.appendChild(btn);
+          }
+          if (r.metode_pembayaran === "gateway" && r.gateway_transaksi_id) {
+            const btn = MugenUI.el("button", {}, "Detail");
+            btn.addEventListener("click", async () => {
+              try {
+                const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(`/api/booking/transactions/${r.gateway_transaksi_id}`));
+                bukaDetailGateway(detail);
+              } catch (e) {
+                MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+              }
             });
             wrap.appendChild(btn);
           }

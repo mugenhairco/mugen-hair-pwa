@@ -80,11 +80,12 @@ import data_non_barber_db
 import superadmin_audit_db
 from subscription_migrasi import migrasi_subscription
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
-import billing_gateway_db  # Payment Gateway Billing SaaS (Midtrans, platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
-import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
+import billing_gateway_db  # Payment Gateway Billing SaaS (platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
+import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq, drop landing_testimonials (idempotent)
 from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway
+from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -271,6 +272,8 @@ app.include_router(landing.public_router)
 app.include_router(landing.router)
 app.include_router(tenant_registration.public_router)
 app.include_router(payment_gateway.router)
+app.include_router(booking_gateway_webhook.public_router)
+app.include_router(transaction_report.router)
 
 
 @app.on_event("startup")
@@ -359,8 +362,9 @@ def on_startup():
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, QRIS, dst) kalau belum ada (idempotent)
         billing_db.seed_default_package_features()  # Feature Gating: assign booking_online/qris/export_pdf ke SEMUA paket SEKALI SAJA, supaya tenant lama tidak kehilangan fitur yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_pricing_v2()  # FITUR Landing Page & Pricing (paket 6 bulan): set harga bulanan + 6 bulan basic/pro/enterprise ke daftar harga resmi terbaru, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
-        billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices (idempotent)
+        billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
         billing_gateway_db.migrasi_billing_gateway()  # Payment Gateway Billing SaaS: bootstrap kredensial dari env var MIDTRANS_* lama ke database, HANYA kalau belum pernah diisi (idempotent)
+        migrasi_booking_gateway()  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions + booking_payment_status_log (idempotent)
         migrasi_landing()  # FONDASI Multi-Tenant Phase 5: kolom tenants.owner_name/email/whatsapp + tabel landing_faq, drop landing_testimonials (idempotent, WAJIB setelah migrasi_tenant())
         migrasi_email_auth()  # Email/Verifikasi Email/Lupa Kata Sandi: kolom users.email/email_verified/blokir_sampai_verifikasi + tabel email_verification_tokens/password_reset_tokens (idempotent)
         migrasi_booking_slug()  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())

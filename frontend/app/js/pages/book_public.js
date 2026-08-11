@@ -36,6 +36,30 @@
 // muncul di dalam wizard booking.
 
 const PageBookPublic = (() => {
+  // Payment Gateway booking (Implementasi Payment Gateway & Riwayat Transaksi
+  // Multi-Tenant): script checkout hosted provider dimuat DINAMIS persis
+  // begitu customer pilih metode "gateway" -- pola SAMA PERSIS dengan
+  // muatSnapJs() di pages/billing.js (checkout SaaS Owner), scope module
+  // (bukan per-render) supaya tidak dimuat ulang kalau customer bolak-balik
+  // fase dalam satu kunjungan wizard yang sama.
+  let _pgwScriptLoadPromise = null;
+  function muatPgwCheckoutScript(src, clientKey) {
+    if (window.snap) return Promise.resolve();
+    if (_pgwScriptLoadPromise) return _pgwScriptLoadPromise;
+    _pgwScriptLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.setAttribute("data-client-key", clientKey);
+      script.onload = () => resolve();
+      script.onerror = () => {
+        _pgwScriptLoadPromise = null;
+        reject(new Error("Gagal memuat modul pembayaran."));
+      };
+      document.head.appendChild(script);
+    });
+    return _pgwScriptLoadPromise;
+  }
+
   // Nama hari/bulan Bahasa Inggris KHUSUS untuk halaman publik ini -- TIDAK
   // mengubah MugenUI.namaBulan/dst (dipakai aplikasi admin internal, tetap
   // Bahasa Indonesia). HARI_KEY tetap kunci Indonesia (kontrak dengan
@@ -966,21 +990,24 @@ const PageBookPublic = (() => {
     }
 
     // ================= STEP 6: PAYMENT =================
-    // Beberapa fase TANPA menambah step/goto baru (pagination dots tetap di
-    // titik ke-6 dari 6 selama fase ini): checkout -> metode -> lalu
+    // Fase (TANPA menambah step/goto baru -- pagination dots tetap di titik
+    // ke-6 dari 6 selama semua fase ini): checkout -> metode -> lalu
     // bercabang dua --
-    //   Transfer/QRIS: -> bayar (TIDAK BERUBAH dari sebelumnya: booking
-    //     SUDAH dikirim ke server di titik ini, halaman ini murni instruksi).
-    //   Payment Gateway: -> channel -> waiting -> berhasil (goto(7), reuse
-    //     renderConfirmed()) / gagal / kedaluwarsa.
-    // Booking BARU benar-benar dikirim ke server (POST /api/public/booking)
-    // di DUA titik: tombol Confirm fase "metode" untuk Transfer/QRIS (SAMA
-    // PERSIS perilaku lama), dan tombol "Cek Status Pembayaran" fase
-    // "waiting" untuk Payment Gateway -- SENGAJA baru di titik itu (bukan
-    // lebih awal, begitu channel dipilih) supaya Batalkan Pesanan/Gagal/
-    // Kedaluwarsa selama simulasi channel PGW TIDAK PERNAH meninggalkan
-    // baris booking "menunggu_verifikasi" menggantung di database (belum
-    // ada webhook PGW sungguhan yang bisa membatalkannya otomatis nanti).
+    //   Transfer/QRIS: -> bayar (booking SUDAH dikirim ke server di titik
+    //     Confirm, halaman ini murni instruksi).
+    //   Payment Gateway: -> waiting (poll status) -> berhasil (goto(7),
+    //     reuse renderConfirmed()) / gagal / kedaluwarsa.
+    // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant:
+    // booking Payment Gateway SEKARANG SUNGGUHAN (bukan simulasi) -- Confirm
+    // di fase "metode" langsung POST /api/public/booking untuk KEDUA jalur
+    // (Transfer/QRIS MAUPUN Gateway, SAMA PERSIS), backend (routers/booking.py)
+    // yang membuat transaksi checkout ke provider & mengembalikan
+    // checkout_token/checkout_redirect_url. TIDAK ADA tombol/aksi frontend
+    // mana pun yang menandai pembayaran "berhasil" sendiri -- status HANYA
+    // pernah berubah lewat booking_gateway_webhook.py (notifikasi resmi
+    // provider tervalidasi signature), fase "waiting" di sini murni POLL
+    // GET /api/public/booking/gateway-status/{order_id} (read-only) untuk
+    // tahu kapan webhook sudah mengonfirmasi.
     function renderPayment() {
       let fase = "checkout";
       const dipilih = services.filter((s) => state.serviceIds.includes(s.id));
@@ -989,17 +1016,8 @@ const PageBookPublic = (() => {
       const metodeNama = pengaturan.metode_nama || {};
       const metodeInstruksi = pengaturan.metode_instruksi || {};
       const metodeAktif = pengaturan.metode_aktif || [];
-      // Payment Gateway: daftar channel (QRIS/VA/GoPay/dst) + urutannya
-      // dikonfigurasi PLATFORM-WIDE oleh Super Admin (payment_gateway_db.py,
-      // dikirim lewat /api/public/booking/pengaturan sebagai pgw_channels)
-      // -- hanya relevan kalau tenant ini mengaktifkan metode "gateway".
-      const pgwChannels = (pengaturan.pgw_channels && pengaturan.pgw_channels.aktif) || [];
-      const pgwChannelNama = (pengaturan.pgw_channels && pengaturan.pgw_channels.nama) || {};
-      // Belum ada integrasi PGW sungguhan (lihat catatan di atas) -- daftar
-      // bank VA ini PLACEHOLDER murni untuk keperluan dokumentasi/screenshot,
-      // BUKAN daftar bank yang benar-benar didukung provider mana pun.
-      const VA_BANK_LIST = ["BCA", "Mandiri", "BNI", "BRI"];
-      const DURASI_COUNTDOWN_MS = 15 * 60 * 1000;
+      const POLLING_INTERVAL_MS = 3000;
+      const DURASI_ESTIMASI_MS = 15 * 60 * 1000;
 
       function baris(label, value, tebal) {
         return MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:4px 0;" + (tebal ? "font-weight:700;" : "") }, [
@@ -1014,12 +1032,6 @@ const PageBookPublic = (() => {
           service_ids: state.serviceIds, customer_nama: state.nama, customer_whatsapp: state.whatsapp,
           metode_pembayaran: metode,
         };
-      }
-
-      // Placeholder murni (BUKAN nomor VA sungguhan dari provider mana pun)
-      // -- belum ada integrasi PGW nyata, lihat catatan di atas fungsi ini.
-      function buatNomorVA() {
-        return "8" + String(Date.now()).slice(-11);
       }
 
       function isiKontenMetode() {
@@ -1127,20 +1139,21 @@ const PageBookPublic = (() => {
         btnKonfirmasi.addEventListener("click", async () => {
           errorBox.textContent = "";
           if (!state.metode) { errorBox.textContent = "Please select a payment method first."; return; }
-          if (state.metode === "gateway") {
-            // Payment Gateway: BELUM mengirim apa pun ke server -- lanjut
-            // dulu ke pemilihan channel (QRIS/VA/GoPay/dst), booking baru
-            // dikirim di fase "waiting" begitu pembayaran simulasi berhasil.
-            fase = "channel";
-            gantiFase();
-            return;
-          }
           try {
             // REVISI: pakai withButtonLoading (spinner kecil di tombol) alih-alih
             // withLoading (overlay pesan penuh) -- tombol sendiri yang mengelola
-            // disabled/enabled + label selama request berjalan.
+            // disabled/enabled + label selama request berjalan. Booking SUNGGUHAN
+            // dikirim di sini untuk SEMUA metode termasuk "gateway" -- backend
+            // (routers/booking.py::public_buat_booking()) yang membuat transaksi
+            // checkout ke provider & mengembalikan checkout_token/redirect_url
+            // kalau metodenya "gateway".
             const hasil = await MugenUI.withButtonLoading(btnKonfirmasi, () => MugenApi.post("/api/public/booking", buatPayloadBooking(state.metode)));
             state.bookingResult = hasil;
+            if (state.metode === "gateway") {
+              fase = "waiting";
+              gantiFase();
+              return;
+            }
             MugenUI.toast("Booking berhasil dikonfirmasi.", "success", { force: true }); // toast konfirmasi tambahan, fase "bayar" tetap tampil seperti biasa
             fase = "bayar";
             gantiFase();
@@ -1171,56 +1184,52 @@ const PageBookPublic = (() => {
         body.appendChild(btnLanjut);
       }
 
-      // ---- fase "channel": pilih channel Payment Gateway ----
-      function renderFaseChannel() {
-        body.appendChild(MugenUI.el("h2", {}, "Choose Payment Channel"));
-        const listBox = MugenUI.el("div", { class: "book-metode-list" });
-        body.appendChild(listBox);
-
-        function pilihChannel(channel, bankNama) {
-          state.pgwChannel = channel;
-          state.pgwBank = bankNama || null;
-          state.pgwDeadline = Date.now() + DURASI_COUNTDOWN_MS;
-          state.pgwVaNomor = channel === "va" ? buatNomorVA() : null;
-          fase = "waiting";
-          gantiFase();
-        }
-
-        if (!pgwChannels.length) {
-          listBox.appendChild(kosongState("🏦", "No gateway channel is active yet. Please contact the barbershop."));
-        }
-        for (const ch of pgwChannels) {
-          if (ch === "va") {
-            listBox.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, pgwChannelNama.va || "Virtual Account"));
-            for (const bank of VA_BANK_LIST) {
-              const btnBank = MugenUI.el("button", { type: "button", class: "book-metode-btn" }, `VA ${bank}`);
-              btnBank.addEventListener("click", () => pilihChannel("va", bank));
-              listBox.appendChild(btnBank);
-            }
-          } else {
-            const btn = MugenUI.el("button", { type: "button", class: "book-metode-btn" }, pgwChannelNama[ch] || ch);
-            btn.addEventListener("click", () => pilihChannel(ch));
-            listBox.appendChild(btn);
+      // Buka halaman checkout hosted provider -- adapter konkret placeholder
+      // (script window.snap.pay(), SAMA persis pola muatSnapJs()/snap.pay() di
+      // pages/billing.js) di belakang interface generik: ganti isi fungsi ini
+      // saja begitu provider resmi ditentukan, TANPA mengubah alur fase di
+      // sekitarnya. Fallback ke checkout_redirect_url (tab baru) kalau script
+      // gagal dimuat -- supaya customer tetap punya jalan bayar apa pun
+      // penyebabnya (mis. adblocker/koneksi lambat).
+      async function bukaCheckoutGateway() {
+        const r = state.bookingResult;
+        if (pengaturan.pgw_checkout_script_url && pengaturan.pgw_client_key) {
+          try {
+            await muatPgwCheckoutScript(pengaturan.pgw_checkout_script_url, pengaturan.pgw_client_key);
+            // onSuccess/onPending/onError/onClose HANYA dipakai sebagai
+            // penanda tampilan sementara (toast) -- TIDAK PERNAH dipakai
+            // untuk memutuskan status pembayaran sungguhan. Fase "waiting"
+            // SELALU tetap poll gateway-status (backend/webhook) untuk
+            // keputusan akhir, terlepas callback apa pun yang terjadi di sini.
+            window.snap.pay(r.checkout_token, {
+              onSuccess: () => MugenUI.toast("Pembayaran diterima, menunggu konfirmasi akhir…", "info", { force: true }),
+              onPending: () => MugenUI.toast("Pembayaran sedang diproses…", "info", { force: true }),
+              onError: () => MugenUI.toast("Pembayaran gagal di halaman provider. Anda bisa mencoba lagi lewat tombol di bawah.", "error"),
+              onClose: () => { /* dibiarkan -- polling tetap berjalan di fase "waiting" */ },
+            });
+            return;
+          } catch (e) {
+            MugenUI.toast(e.message, "error");
           }
         }
-
-        body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
-          MugenUI.el("button", { type: "button", onclick: () => { fase = "metode"; gantiFase(); } }, "< Back"),
-        ]));
-        body.appendChild(paginationDots(6, TOTAL_STEP));
+        if (r.checkout_redirect_url) {
+          window.open(r.checkout_redirect_url, "_blank", "noopener,noreferrer");
+        }
       }
 
-      // ---- fase "waiting": Menunggu Pembayaran (+ QRIS/VA/e-wallet) ----
+      // ---- fase "waiting": Menunggu konfirmasi Payment Gateway (poll) ----
       function renderFaseWaiting() {
         const invoiceRef = MugenUI.buatNomorTransaksi(
           { daftar_service: dipilih.map((s) => s.nama).join(", "), tanggal: state.tanggal, jam_mulai: state.jam },
           identitas.nama_barbershop,
         );
-        body.appendChild(MugenUI.el("h2", {}, "Menunggu Pembayaran"));
+        const orderId = state.bookingResult.gateway_order_id;
+        body.appendChild(MugenUI.el("h2", {}, "Menunggu Konfirmasi Pembayaran"));
+        const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran di halaman yang baru dibuka.");
         const countdownEl = MugenUI.el("div", { class: "book-countdown" }, "15:00");
         body.appendChild(MugenUI.el("div", { class: "card" }, [
           MugenUI.el("div", { style: "text-align:center;" }, [
-            MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran sebelum"),
+            statusLabelEl,
             countdownEl,
           ]),
           MugenUI.el("hr"),
@@ -1231,96 +1240,61 @@ const PageBookPublic = (() => {
           MugenUI.el("hr"),
           baris("Total Payment", MugenUI.formatRupiah(totalHarga), true),
         ]));
+        body.appendChild(MugenUI.el("div", { class: "subtitle", style: "text-align:center;margin-bottom:8px;" },
+          "Status di halaman ini otomatis diperbarui begitu pembayaran Anda dikonfirmasi resmi oleh provider -- tidak perlu refresh manual."));
 
-        const panel = MugenUI.el("div", { class: "card" });
-        body.appendChild(panel);
-        if (state.pgwChannel === "va") {
-          panel.appendChild(MugenUI.el("div", {}, `Bank: VA ${state.pgwBank}`));
-          panel.appendChild(MugenUI.el("div", { class: "book-va-row" }, [
-            MugenUI.el("span", { class: "book-va-nomor" }, state.pgwVaNomor),
-          ]));
-          const btnCopyVa = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Salin Nomor VA");
-          btnCopyVa.addEventListener("click", async () => {
-            try {
-              await navigator.clipboard.writeText(state.pgwVaNomor);
-              MugenUI.toast("Nomor VA disalin.", "success", { force: true });
-            } catch (e) {
-              MugenUI.toast("Gagal menyalin otomatis -- nomor VA sudah ditampilkan, salin manual.", "error");
-            }
-          });
-          panel.appendChild(btnCopyVa);
-          panel.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
-            "Bayar lewat ATM/m-banking/internet banking ke Virtual Account di atas sejumlah TEPAT Total Payment."));
-        } else if (state.pgwChannel === "qris") {
-          panel.appendChild(MugenUI.el("div", { class: "book-qris-placeholder" }, "QR Code"));
-          panel.appendChild(MugenUI.el("div", { style: "text-align:center;margin-top:8px;font-weight:600;" }, MugenUI.formatRupiah(totalHarga)));
-          panel.appendChild(MugenUI.el("div", { style: "text-align:center;" }, identitas.nama_barbershop || ""));
-          panel.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;text-align:center;" },
-            "Scan QR code di atas lewat aplikasi e-wallet/m-banking mana pun yang mendukung QRIS."));
-        } else {
-          panel.appendChild(MugenUI.el("div", {}, `Selesaikan pembayaran lewat aplikasi ${pgwChannelNama[state.pgwChannel] || state.pgwChannel} Anda.`));
-          panel.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:6px;" },
-            "Anda akan menerima notifikasi push/OTP dari aplikasi tersebut untuk menyelesaikan pembayaran."));
-        }
+        const btnBuka = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;" }, "Buka Halaman Pembayaran");
+        tambahkanEfekRipple(btnBuka);
+        btnBuka.addEventListener("click", () => bukaCheckoutGateway());
+        body.appendChild(btnBuka);
+        // Langsung buka begitu fase ini pertama kali tampil -- customer tidak
+        // perlu klik dua kali (Confirm lalu Buka Halaman Pembayaran).
+        bukaCheckoutGateway();
 
-        const btnBatal = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:12px;" }, "Batalkan Pesanan");
-        btnBatal.addEventListener("click", async () => {
-          const ok = await MugenUI.confirmModal({
-            title: "Batalkan Pesanan?",
-            message: "Pembayaran akan dibatalkan dan Anda perlu mengulang dari pemilihan metode pembayaran.",
-            confirmText: "Ya, Batalkan", danger: true,
-          });
-          if (!ok) return;
-          state.pgwGagalAlasan = "Pembayaran dibatalkan oleh pelanggan.";
-          fase = "gagal";
-          gantiFase();
-        });
-        body.appendChild(btnBatal);
-
-        const btnCek = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:8px;" }, "Cek Status Pembayaran");
-        tambahkanEfekRipple(btnCek);
-        btnCek.addEventListener("click", async () => {
+        // Polling + countdown SAMA-SAMA self-clear begitu elemen ini sudah
+        // tidak ada di DOM lagi (user pindah fase/keluar wizard lewat cara
+        // APA PUN) -- pola guard yang sama seperti timer lain di file ini.
+        const pollTimer = setInterval(async () => {
+          if (!document.body.contains(countdownEl)) { clearInterval(pollTimer); return; }
+          let status;
           try {
-            // Belum ada webhook PGW sungguhan (lihat catatan di atas
-            // renderPayment()) -- booking BARU dikirim ke server di sini,
-            // begitu customer melapor pembayaran (lewat channel manapun)
-            // sudah selesai. buat_booking() (backend) langsung menandai
-            // booking "gateway" terverifikasi/Lunas, TIDAK ikut antrean
-            // manual staff seperti Transfer/QRIS.
-            const hasil = await MugenUI.withButtonLoading(btnCek, () => MugenApi.post("/api/public/booking", buatPayloadBooking("gateway")));
-            state.bookingResult = hasil;
+            status = await MugenApi.get(`/api/public/booking/gateway-status/${orderId}`);
+          } catch (e) {
+            return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
+          }
+          if (status.status_pembayaran === "berhasil") {
+            clearInterval(pollTimer);
             MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
             goto(7);
-          } catch (e) {
-            state.pgwGagalAlasan = e.detail && e.detail.detail ? e.detail.detail : "Pembayaran gagal, silakan coba lagi.";
+          } else if (["gagal", "dibatalkan"].includes(status.status_pembayaran)) {
+            clearInterval(pollTimer);
             fase = "gagal";
             gantiFase();
-          }
-        });
-        body.appendChild(btnCek);
-
-        // Countdown self-clears begitu countdownEl sudah tidak ada di DOM
-        // lagi (user pindah fase/step/keluar wizard lewat cara APA PUN,
-        // termasuk tombol Back Android/Swipe Back iPhone/Browser Back) --
-        // pola guard yang sama seperti start/stop interval di booking_notif.js,
-        // TANPA perlu menghubungkan diri ke goto()/onPopState() bersama.
-        const timer = setInterval(() => {
-          if (!document.body.contains(countdownEl)) { clearInterval(timer); return; }
-          const sisaMs = state.pgwDeadline - Date.now();
-          if (sisaMs <= 0) {
-            clearInterval(timer);
+          } else if (status.status_pembayaran === "kedaluwarsa") {
+            clearInterval(pollTimer);
             fase = "kedaluwarsa";
             gantiFase();
+          } else if (status.status_pembayaran === "diproses") {
+            statusLabelEl.textContent = "Pembayaran sedang diproses provider…";
+          }
+        }, POLLING_INTERVAL_MS);
+
+        // Countdown MURNI tampilan (estimasi batas waktu umum provider) --
+        // TIDAK PERNAH mengubah fase sendiri begitu habis (status
+        // "kedaluwarsa" sungguhan hanya datang dari polling di atas/webhook).
+        const deadline = Date.now() + DURASI_ESTIMASI_MS;
+        const countdownTimer = setInterval(() => {
+          if (!document.body.contains(countdownEl)) { clearInterval(countdownTimer); return; }
+          const sisaMs = deadline - Date.now();
+          if (sisaMs <= 0) {
+            clearInterval(countdownTimer);
+            countdownEl.textContent = "00:00";
             return;
           }
           const sisaDetik = Math.floor(sisaMs / 1000);
           const mm = String(Math.floor(sisaDetik / 60)).padStart(2, "0");
           const ss = String(sisaDetik % 60).padStart(2, "0");
           countdownEl.textContent = `${mm}:${ss}`;
-          // REVISI UI/UX Premium: pil countdown berubah warna (netral -> merah
-          // berdenyut) begitu sisa waktu < 1 menit, murni penanda visual
-          // urgensi -- TIDAK mengubah kapan expired sungguhan terjadi (logika
-          // di atas, sisaMs <= 0, tidak disentuh).
           countdownEl.classList.toggle("book-countdown-urgent", sisaDetik < 60);
         }, 1000);
       }
@@ -1330,20 +1304,12 @@ const PageBookPublic = (() => {
         body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
           MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "✕"),
           MugenUI.el("h2", {}, "Payment Failed"),
-          MugenUI.el("div", { class: "subtitle" }, state.pgwGagalAlasan || "Pembayaran gagal, silakan coba lagi."),
+          MugenUI.el("div", { class: "subtitle" }, "Pembayaran gagal atau dibatalkan. Silakan buat pemesanan baru untuk mencoba lagi."),
         ]));
         const btnUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Coba Lagi");
         tambahkanEfekRipple(btnUlang);
-        btnUlang.addEventListener("click", () => {
-          state.pgwDeadline = Date.now() + DURASI_COUNTDOWN_MS;
-          if (state.pgwChannel === "va") state.pgwVaNomor = buatNomorVA();
-          fase = "waiting";
-          gantiFase();
-        });
+        btnUlang.addEventListener("click", () => { fase = "metode"; gantiFase(); });
         body.appendChild(btnUlang);
-        const btnGanti = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:8px;" }, "Ganti Metode Pembayaran");
-        btnGanti.addEventListener("click", () => { fase = "channel"; gantiFase(); });
-        body.appendChild(btnGanti);
       }
 
       // ---- fase "kedaluwarsa": Payment Expired ----
@@ -1355,7 +1321,7 @@ const PageBookPublic = (() => {
         ]));
         const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Buat Pembayaran Baru");
         tambahkanEfekRipple(btnBaru);
-        btnBaru.addEventListener("click", () => { fase = "channel"; gantiFase(); });
+        btnBaru.addEventListener("click", () => { fase = "metode"; gantiFase(); });
         body.appendChild(btnBaru);
       }
 
@@ -1363,7 +1329,6 @@ const PageBookPublic = (() => {
         body.innerHTML = "";
         if (fase === "bayar") renderFasePembayaran();
         else if (fase === "metode") renderFaseMetode();
-        else if (fase === "channel") renderFaseChannel();
         else if (fase === "waiting") renderFaseWaiting();
         else if (fase === "gagal") renderFaseGagal();
         else if (fase === "kedaluwarsa") renderFaseKedaluwarsa();

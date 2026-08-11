@@ -104,7 +104,7 @@
     { icon: "🗓️", title: "Calendar", desc: "Jadwal barber & slot tersedia terlihat jelas dalam satu kalender." },
     { icon: "✂️", title: "Barber Schedule", desc: "Atur jadwal & hari libur tiap barber tanpa bentrok booking." },
     { icon: "👥", title: "Customer Management", desc: "Riwayat pelanggan tersimpan rapi untuk layanan yang lebih personal." },
-    { icon: "💳", title: "Midtrans", desc: "Pembayaran online terintegrasi Midtrans, aman & terpercaya." },
+    { icon: "💳", title: "Payment Gateway", desc: "Pembayaran online terintegrasi Payment Gateway, aman & terpercaya." },
     { icon: "📱", title: "QRIS", desc: "Terima pembayaran QRIS langsung dari pelanggan." },
     { icon: "🏦", title: "Virtual Account", desc: "Dukungan transfer Virtual Account dari berbagai bank." },
     { icon: "📊", title: "Reports", desc: "Laporan transaksi, komisi, dan pengeluaran otomatis." },
