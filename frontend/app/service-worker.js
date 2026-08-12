@@ -526,7 +526,12 @@
 // (Detail modal), dan billing.js (Riwayat Pembayaran). book_public.js:
 // popup checkout yang diblokir browser sekarang terdeteksi & diberi tahu
 // (toast), bukan diam-diam gagal tanpa keterangan.
-const ASSET_VERSION = "96";
+// v96 -> v97: toast SUKSES/INFO diaktifkan kembali untuk SEMUA tombol
+// Simpan/Edit/Hapus/Input (sebelumnya cuma aksi besar seperti pembayaran/
+// booking) -- ui.js::toast() tidak lagi menyaring type non-error secara
+// default, ditambah penataan tumpukan (stacking) supaya beberapa toast
+// yang tampil hampir bersamaan tidak saling menimpa.
+const ASSET_VERSION = "97";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
