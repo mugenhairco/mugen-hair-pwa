@@ -2522,7 +2522,7 @@ lokal, sudah ada nilai default yang aman):
 | `MAIL_FROM` / `MAIL_FROM_NAME` | Alamat & nama pengirim SEMUA email transaksional — digabung jadi header `From: <MAIL_FROM_NAME> <<MAIL_FROM>>` (mis. `Rivoir <noreply@rivoirsett.com>`) | `noreply@rivoirsett.com` / `Rivoir` |
 | `FRONTEND_BASE_URL` | Domain ROOT platform (BUKAN subdomain tenant mana pun) dipakai membentuk link verifikasi/reset password di dalam isi email — satu nilai ini berlaku untuk SEMUA tenant sekaligus | `https://rivoirsett.com` |
 | `DATABASE_URL` | Connection string PostgreSQL (Render PostgreSQL, atau provider Postgres lain mana pun — kode ini generik, tidak terikat satu provider tertentu) — kosong berarti pakai SQLite lokal (lihat bagian **Migrasi PostgreSQL**) | kosong (SQLite) |
-| `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) | `1` / `10` |
+| `PG_POOL_MIN` / `PG_POOL_MAX` | Ukuran connection pool ke PostgreSQL (hanya relevan kalau `DATABASE_URL` diisi) — `PG_POOL_MAX` dinaikkan dari `10` supaya tidak gampang "connection pool exhausted" saat satu page load menembakkan banyak request database hampir bersamaan (lihat komentar `_get_pool()` di `db_compat.py`) | `1` / `20` |
 | `R2_ACCOUNT_ID` | Account ID Cloudflare — dipakai menyusun `R2_ENDPOINT_URL` otomatis kalau `R2_ENDPOINT_URL` tidak diisi terpisah (lihat bagian **Migrasi Cloudflare R2**) | kosong |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Kredensial API Token R2 (Object Read & Write, dibatasi ke satu bucket) | kosong |
 | `R2_BUCKET_NAME` | Nama bucket R2 tujuan upload | kosong |
