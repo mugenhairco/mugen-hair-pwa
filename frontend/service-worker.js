@@ -26,7 +26,11 @@
 // "center focus + peek" (satu item besar di tengah, tetangga kiri/kanan
 // mengintip mengecil/pudar, geser via drag/swipe/tombol panah/keyboard) --
 // komponen baru js/lp-slider.js, ditambahkan ke precache di bawah.
-const ASSET_VERSION = "12";
+// v12 -> v13: Kartu yang sedang di tengah slider (Fitur & Pricing) kini
+// bisa diklik LAGI ("dipilih") untuk membuka modal detail -- deskripsi
+// lebih lengkap + poin manfaat untuk Fitur, rincian paket + tombol Select
+// Package untuk Pricing.
+const ASSET_VERSION = "13";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

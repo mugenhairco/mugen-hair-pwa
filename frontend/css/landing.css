@@ -377,10 +377,23 @@ a { color: inherit; text-decoration: none; }
   flex: 0 0 var(--slide-w); width: var(--slide-w); scroll-snap-align: center;
   transform: scale(0.82); opacity: 0.5; cursor: pointer;
 }
-.lp-slider-slide.lp-slide-active { cursor: default; }
+/* Kartu aktif/di tengah bisa diklik LAGI untuk "membuka menu"-nya (modal
+   detail, lihat js/lp-slider.js onSelect & js/landing.js openFeatureDetail/
+   openPricingDetail) -- makanya cursor tetap pointer (BUKAN default). */
+.lp-slider-slide.lp-slide-active { cursor: pointer; }
 .lp-slider-slide .lp-feature-card, .lp-slider-slide .lp-pricing-card { height: 100%; }
 #lp-features-slider { --slide-w: min(520px, 84vw); }
 #lp-pricing-slider { --slide-w: min(320px, 80vw); }
+
+/* Petunjuk "Lihat detail" -- HANYA terlihat di kartu yang sedang aktif/di
+   tengah (yang bisa membuka modal), disembunyikan di kartu peek supaya
+   tidak membingungkan (klik di kartu peek cuma menggeser ke tengah dulu). */
+.lp-slide-detail-hint {
+  display: inline-block; margin-top: 10px; font-size: 0.82rem; font-weight: 600; color: var(--accent-secondary);
+  visibility: hidden;
+}
+.lp-slider-slide.lp-slide-active .lp-slide-detail-hint { visibility: visible; }
+.lp-pricing-card .lp-slide-detail-hint { margin-top: 0; margin-bottom: 12px; text-align: center; }
 
 .lp-slider-arrow {
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
@@ -412,6 +425,49 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 520px) {
   #lp-features-slider { --slide-w: 88vw; }
   #lp-pricing-slider { --slide-w: 84vw; }
+}
+
+/* ---------- Detail Modal (Fitur & Pricing) ----------
+   Muncul saat kartu di tengah slider "dipilih" (klik lagi/Enter-Space),
+   lihat js/lp-slider.js onSelect & js/landing.js openDetailModal(). */
+body.lp-modal-open { overflow: hidden; }
+.lp-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(15,23,42,0.55);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: lpModalFadeIn 0.2s ease;
+}
+@keyframes lpModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.lp-modal-box {
+  background: var(--bg-card); border-radius: 20px; padding: 32px; max-width: 480px; width: 100%;
+  max-height: 85vh; overflow-y: auto; position: relative; box-shadow: var(--shadow-lg);
+  animation: lpModalPop 0.25s var(--ease);
+}
+@keyframes lpModalPop { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.lp-modal-close {
+  position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg-alt); cursor: pointer; font-size: 1.2rem;
+  line-height: 1; color: var(--text-dim); display: flex; align-items: center; justify-content: center;
+}
+.lp-modal-close:hover { background: var(--border); color: var(--text); }
+.lp-modal-icon {
+  font-size: 1.8rem; width: 52px; height: 52px; border-radius: 14px; background: var(--bg-alt);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
+}
+.lp-modal-title { margin: 0 0 12px; font-size: 1.3rem; font-weight: 800; padding-right: 28px; }
+.lp-modal-desc { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; margin: 0 0 16px; }
+.lp-modal-price { font-size: 1.7rem; font-weight: 800; margin-bottom: 4px; }
+.lp-modal-price small { display: block; font-size: 0.85rem; color: var(--text-dim); font-weight: 400; margin-top: 2px; }
+.lp-modal-list { list-style: none; margin: 0 0 20px; padding: 0; }
+.lp-modal-list li { padding: 8px 0 8px 24px; border-top: 1px solid var(--border); font-size: 0.9rem; position: relative; }
+.lp-modal-list li:first-child { border-top: none; }
+.lp-modal-list-check li::before { content: "✓"; position: absolute; left: 0; top: 8px; color: var(--success); font-weight: 700; font-size: 0.85rem; }
+.lp-modal-footer .lp-btn { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-modal-overlay, .lp-modal-box { animation: none; }
+}
+@media (max-width: 520px) {
+  .lp-modal-box { padding: 24px 20px; border-radius: 16px; }
 }
 
 /* ---------- Carousel (Screenshots) ---------- */

@@ -17,6 +17,13 @@
 //   .lp-slider-dots             -- opsional, container kosong (diisi satu
 //                                   `.lp-slider-dot` per slide oleh init()).
 //
+// init(container, opts) menerima opts.onSelect(index, slideEl) opsional --
+// dipanggil saat slide yang SUDAH aktif/di tengah diklik LAGI (atau
+// Enter/Space saat track fokus), yaitu momen "planet dipilih" (lihat video
+// referensi: klik pertama pada slide pinggir cuma menggeser ke tengah,
+// klik/pilih LAGI baru "membuka menu"-nya) -- pemanggil yang memutuskan apa
+// artinya "dipilih" itu (mis. buka modal detail), file ini TIDAK tahu.
+//
 // Native CSS scroll-snap dipakai sebagai mekanisme geser utama (drag/swipe
 // touch & trackpad GRATIS dari browser, jauh lebih robust daripada
 // reimplementasi drag-pointer manual) -- JS di sini HANYA menambahkan: efek
@@ -33,9 +40,16 @@
     return KURANGI_GERAK ? "auto" : "smooth";
   }
 
-  function init(container) {
+  // opts.onSelect(index, slideEl) -- opsional, dipanggil saat slide yang
+  // SUDAH aktif/di tengah diklik lagi (atau Enter/Space saat track fokus)
+  // -- "memilih planet" itu sendiri, BEDA dari sekadar menggeser ke tengah.
+  // Elemen interaktif di dalam slide (link/tombol/dst) TIDAK memicu ini,
+  // supaya klik ke tombol seperti "Select Package" tetap berfungsi normal
+  // (lihat onSlideClick di bawah).
+  function init(container, opts) {
     const track = container.querySelector(".lp-slider-track");
     if (!track) return null;
+    const onSelect = opts && opts.onSelect;
 
     // Spacer kiri/kanan (lebar dinamis, ikut CSS var --slide-w yang sama
     // dipakai slide) -- TANPA ini, scroll-snap-align:center pada slide
@@ -134,20 +148,36 @@
     function onKeydown(e) {
       if (e.key === "ArrowLeft") { e.preventDefault(); goTo(indexAktif - 1); }
       else if (e.key === "ArrowRight") { e.preventDefault(); goTo(indexAktif + 1); }
+      else if ((e.key === "Enter" || e.key === " ") && onSelect) {
+        // HANYA kalau fokus persis di track (bukan di link/tombol anak yang
+        // ikut fokus lewat Tab) -- kalau tidak, Enter di tombol "Select
+        // Package" akan ikut membuka detail alih-alih menjalankan tombolnya.
+        if (e.target !== track) return;
+        e.preventDefault();
+        onSelect(indexAktif, slides[indexAktif]);
+      }
     }
     track.addEventListener("keydown", onKeydown);
 
-    // Klik langsung pada slide yang sedang "mengintip" (bukan slide aktif)
-    // -- pindahkan ke tengah, meniru interaksi klik planet di pinggir pada
-    // referensi video. Slide aktif sendiri TIDAK usah menangkap klik (biar
-    // tombol/link di dalamnya, mis. "Select Package", tetap berfungsi normal).
+    // Klik pada slide yang sedang "mengintip" (bukan slide aktif) --
+    // pindahkan ke tengah dulu, meniru interaksi klik planet di pinggir
+    // pada referensi video (klik pertama = pilih mana yang mau dilihat,
+    // BUKAN langsung membuka detail). Klik LAGI pada slide yang SUDAH aktif
+    // (di tengah) baru memicu onSelect ("membuka menu/detail"-nya) --
+    // KECUALI kliknya kena elemen interaktif (link/tombol/dst di
+    // dalamnya, mis. "Select Package"), yang harus tetap berfungsi normal.
     function onSlideClick(e) {
       const slide = e.target.closest(".lp-slider-slide");
-      if (!slide || slide.classList.contains("lp-slide-active")) return;
+      if (!slide) return;
       const i = slides.indexOf(slide);
       if (i === -1) return;
-      e.preventDefault();
-      goTo(i);
+      if (!slide.classList.contains("lp-slide-active")) {
+        e.preventDefault();
+        goTo(i);
+        return;
+      }
+      if (!onSelect || e.target.closest("a, button, input, select, textarea, label")) return;
+      onSelect(i, slide);
     }
     track.addEventListener("click", onSlideClick, true);
 
