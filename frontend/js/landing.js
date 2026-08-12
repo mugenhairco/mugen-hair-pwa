@@ -117,16 +117,19 @@
   ];
 
   function renderFeatures() {
-    const grid = document.getElementById("lp-features-grid");
-    grid.innerHTML = "";
-    FEATURES.forEach((f, i) => {
-      grid.appendChild(el("div", { class: `lp-feature-card lp-reveal lp-reveal-${(i % 3) + 1}` }, [
-        el("div", { class: "lp-feature-icon" }, f.icon),
-        el("h3", {}, f.title),
-        el("p", {}, f.desc),
+    const container = document.getElementById("lp-features-slider");
+    const track = container.querySelector(".lp-slider-track");
+    track.innerHTML = "";
+    FEATURES.forEach((f) => {
+      track.appendChild(el("div", { class: "lp-slider-slide" }, [
+        el("div", { class: "lp-feature-card" }, [
+          el("div", { class: "lp-feature-icon" }, f.icon),
+          el("h3", {}, f.title),
+          el("p", {}, f.desc),
+        ]),
       ]));
     });
-    revealObserve(grid.querySelectorAll(".lp-reveal"));
+    window.LpSlider.init(container);
   }
 
   // ============================= Pricing (WAJIB dari database) =============================
@@ -136,17 +139,23 @@
   // grid yang SAMA (packages sudah di-fetch sekali) tanpa fetch API lagi.
   let _siklusAktif = "bulanan";
   let _packagesTerkini = [];
+  // Instance LpSlider Pricing yang sedang aktif -- disimpan di modul supaya
+  // initCycleToggle() bisa destroy()-nya sebelum render ulang (cegah
+  // listener menumpuk) sekaligus baca getActiveIndex() supaya toggle
+  // Bulanan/6 Bulan tidak "melompat" balik ke paket pertama.
+  let _pricingSlider = null;
 
   async function loadPackages() {
-    const grid = document.getElementById("lp-pricing-grid");
+    const container = document.getElementById("lp-pricing-slider");
     try {
       const packages = await apiGet("/api/public/landing/packages");
       _packagesTerkini = packages;
-      renderPricing(grid, packages, _siklusAktif);
+      renderPricing(container, packages, _siklusAktif);
       initCycleToggle();
     } catch (e) {
-      grid.innerHTML = "";
-      grid.appendChild(el("p", { class: "lp-loading" }, "Paket belum tersedia saat ini."));
+      const track = container.querySelector(".lp-slider-track");
+      track.innerHTML = "";
+      track.appendChild(el("p", { class: "lp-loading" }, "Paket belum tersedia saat ini."));
       console.error(e);
     }
   }
@@ -166,9 +175,10 @@
     ]);
   }
 
-  function renderPricing(grid, packages, siklus) {
-    grid.innerHTML = "";
-    packages.forEach((p, i) => {
+  function renderPricing(container, packages, siklus, activeIndex) {
+    const track = container.querySelector(".lp-slider-track");
+    track.innerHTML = "";
+    packages.forEach((p) => {
       const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
       const btnPilih = el("a", { href: "/app/#/register", class: "lp-btn lp-btn-primary" }, "Select Package");
       // Ingat paket (+ siklus) yang diklik lewat sessionStorage (sama origin
@@ -193,7 +203,7 @@
       const hematRupiah = pakai6 ? (p.harga * 6 - p.harga_6bulan) : 0;
 
       const card = el("div", {
-        class: `lp-pricing-card lp-reveal lp-reveal-${(i % 3) + 1}` + (p.kode === "enterprise" ? " lp-pricing-card-featured" : ""),
+        class: "lp-pricing-card" + (p.kode === "enterprise" ? " lp-pricing-card-featured" : ""),
       });
       if (pakai6 && hematRupiah > 0) {
         card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "Paling Hemat"));
@@ -212,14 +222,20 @@
       if (p.kode === "enterprise") card.appendChild(benefitEnterprise());
       card.appendChild(el("ul", { class: "lp-pricing-features" }, fitur.length ? fitur : [el("li", {}, "-")]));
       card.appendChild(btnPilih);
-      grid.appendChild(card);
+      track.appendChild(el("div", { class: "lp-slider-slide" }, [card]));
     });
-    revealObserve(grid.querySelectorAll(".lp-reveal"));
+    if (_pricingSlider) _pricingSlider.destroy();
+    _pricingSlider = window.LpSlider.init(container);
+    if (_pricingSlider && typeof activeIndex === "number") {
+      _pricingSlider.goTo(activeIndex, { instant: true });
+    }
   }
 
   // FITUR Landing Page & Pricing (paket 6 bulan): toggle Bulanan/6 Bulan di
-  // atas grid Pricing -- render ULANG grid yang sama (packages sudah di
-  // memory) dengan siklus baru, TANPA fetch API lagi. addEventListener
+  // atas grid Pricing -- render ULANG slider yang sama (packages sudah di
+  // memory) dengan siklus baru, TANPA fetch API lagi. Posisi (paket yang
+  // sedang di tengah) dipertahankan lewat getActiveIndex()/goTo() supaya
+  // toggle tidak "melompat" balik ke paket pertama. addEventListener
   // dipasang HANYA SEKALI (guard lewat dataset) karena loadPackages() bisa
   // saja dipanggil ulang di masa depan.
   function initCycleToggle() {
@@ -233,7 +249,8 @@
           b.classList.toggle("lp-cycle-active", b === btn);
           b.setAttribute("aria-selected", b === btn ? "true" : "false");
         });
-        renderPricing(document.getElementById("lp-pricing-grid"), _packagesTerkini, _siklusAktif);
+        const activeIndex = _pricingSlider ? _pricingSlider.getActiveIndex() : 0;
+        renderPricing(document.getElementById("lp-pricing-slider"), _packagesTerkini, _siklusAktif, activeIndex);
       });
     });
   }

@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=11" />
+<link rel="stylesheet" href="css/landing.css?v=12" />
 </head>
 <body>
 
@@ -268,7 +268,14 @@
       <span class="lp-section-eyebrow lp-reveal">Fitur</span>
       <h2 class="lp-section-title lp-reveal">Semua yang Dibutuhkan Barbershop Modern</h2>
       <p class="lp-section-sub lp-reveal">Satu platform untuk operasional harian, dari booking pelanggan sampai laporan keuangan.</p>
-      <div class="lp-features-grid" id="lp-features-grid"></div>
+      <div class="lp-slider lp-reveal" id="lp-features-slider">
+        <div class="lp-slider-viewport">
+          <div class="lp-slider-track" tabindex="0" aria-label="Daftar fitur, geser untuk melihat lebih banyak"></div>
+          <button type="button" class="lp-slider-arrow lp-slider-arrow-prev" aria-label="Fitur sebelumnya">‹</button>
+          <button type="button" class="lp-slider-arrow lp-slider-arrow-next" aria-label="Fitur berikutnya">›</button>
+        </div>
+        <div class="lp-slider-dots"></div>
+      </div>
     </div>
   </section>
 
@@ -298,7 +305,16 @@
         <button type="button" class="lp-cycle-btn lp-cycle-active" data-siklus="bulanan" role="tab" aria-selected="true">Bulanan</button>
         <button type="button" class="lp-cycle-btn" data-siklus="6bulan" role="tab" aria-selected="false">6 Bulan <span class="lp-cycle-save-badge">Hemat Lebih Banyak</span></button>
       </div>
-      <div class="lp-pricing-grid" id="lp-pricing-grid"><p class="lp-loading">Memuat paket…</p></div>
+      <div class="lp-slider lp-reveal" id="lp-pricing-slider">
+        <div class="lp-slider-viewport">
+          <div class="lp-slider-track" tabindex="0" aria-label="Daftar paket harga, geser untuk melihat lebih banyak">
+            <p class="lp-loading">Memuat paket…</p>
+          </div>
+          <button type="button" class="lp-slider-arrow lp-slider-arrow-prev" aria-label="Paket sebelumnya">‹</button>
+          <button type="button" class="lp-slider-arrow lp-slider-arrow-next" aria-label="Paket berikutnya">›</button>
+        </div>
+        <div class="lp-slider-dots"></div>
+      </div>
     </div>
   </section>
 
@@ -488,6 +504,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/landing.js?v=11"></script>
+<script src="js/lp-slider.js?v=12"></script>
+<script src="js/landing.js?v=12"></script>
 </body>
 </html>
