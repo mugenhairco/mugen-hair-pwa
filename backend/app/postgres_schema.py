@@ -861,6 +861,21 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 -- sebelumnya"). CREATE TABLE di atas sudah membawa kolom ini untuk
 -- instalasi BARU; ALTER di bawah untuk instalasi yang SUDAH ADA.
 ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS used_at TEXT;
+
+-- BUGFIX performa (produksi: psycopg2.pool.PoolError "connection pool
+-- exhausted" di Dashboard Owner, grafik-harian/grafik-bulanan sampai
+-- puluhan detik) -- diaudit sampai akar penyebabnya: TIDAK ADA index sama
+-- sekali di seluruh skema ini sebelumnya (SELAIN primary key), jadi SETIAP
+-- query yang menyaring `transaksi` (tabel paling sering diakses -- Rekap,
+-- Dashboard, Laporan PDF) selalu full table scan. Empat index di bawah
+-- (kolom yang paling sering dipakai WHERE/JOIN, lihat get_transaksi_list()/
+-- _lengkapi_transaksi_batch() di database.py) murni PENAMBAHAN struktur
+-- baca (TIDAK mengubah satu baris data pun) -- aman & idempotent lewat
+-- "IF NOT EXISTS", sama seperti pola ALTER TABLE di seluruh file ini.
+CREATE INDEX IF NOT EXISTS idx_transaksi_tanggal ON transaksi(tanggal);
+CREATE INDEX IF NOT EXISTS idx_transaksi_barber_id ON transaksi(barber_id);
+CREATE INDEX IF NOT EXISTS idx_transaksi_detail_transaksi_id ON transaksi_detail(transaksi_id);
+CREATE INDEX IF NOT EXISTS idx_barbers_tenant_id ON barbers(tenant_id);
 """
 
 

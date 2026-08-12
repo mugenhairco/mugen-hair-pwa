@@ -78,10 +78,24 @@ def _get_pool():
     SAMA (sesuatu yang menggantung selamanya HARUS berubah jadi error cepat
     yang bisa ditangani, tidak pernah membiarkan request menggantung tanpa
     batas waktu)."""
+    # BUGFIX "connection pool exhausted": default lama (10) terlalu kecil
+    # untuk satu kali page load Owner Dashboard -- diaudit langsung dari log
+    # produksi, SATU page load menembakkan 12+ request yang menyentuh
+    # database hampir bersamaan (foto galeri, hero image, booking, grafik
+    # harian/bulanan, dst). Ditambah kemungkinan cold-start Neon (compute
+    # auto-suspend saat idle, request pertama setelah idle bisa makan
+    # puluhan detik) -- selama jendela lambat itu, koneksi yang sedang
+    # menunggu balasan Neon TETAP terhitung "dipakai", jadi request lain
+    # yang datang bersamaan gampang kehabisan slot pool. Nilai baru (20)
+    # bukan solusi tunggal (batas koneksi Neon di sisi server sendiri tetap
+    # berlaku, lihat README), tapi memberi headroom yang jauh lebih realistis
+    # untuk pola trafik sekarang -- tetap bisa dioverride lewat env var
+    # PG_POOL_MAX kalau perlu disetel lebih presisi per rencana Neon yang
+    # dipakai.
     global _pool
     if _pool is None:
         minconn = int(os.environ.get("PG_POOL_MIN", "1"))
-        maxconn = int(os.environ.get("PG_POOL_MAX", "10"))
+        maxconn = int(os.environ.get("PG_POOL_MAX", "20"))
         connect_timeout = int(os.environ.get("PG_CONNECT_TIMEOUT", "10"))
         statement_timeout_ms = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", "30000"))
         _pool = psycopg2.pool.ThreadedConnectionPool(

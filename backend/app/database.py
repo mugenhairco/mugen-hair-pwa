@@ -153,6 +153,15 @@ def init_db():
             )
         """)
 
+        # BUGFIX performa (lihat index PERSIS SAMA di postgres_schema.py::_TABLES
+        # untuk kronologi lengkap -- ditambahkan di sini juga supaya perilaku
+        # SQLite lokal tetap konsisten dengan PostgreSQL produksi): kolom yang
+        # paling sering dipakai WHERE/JOIN oleh get_transaksi_list()/
+        # _lengkapi_transaksi_batch() di bawah.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_transaksi_tanggal ON transaksi(tanggal)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_transaksi_barber_id ON transaksi(barber_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_transaksi_detail_transaksi_id ON transaksi_detail(transaksi_id)")
+
         if cols_lama:
             # pindahkan tiap baris lama menjadi 1 header transaksi + 1 baris detail (jumlah=1),
             # id header dipertahankan sama supaya histori/link lama tetap konsisten.
