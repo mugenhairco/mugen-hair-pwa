@@ -22,13 +22,22 @@
 // mailto:/wa.me dari Email & WhatsApp yang diatur Super Admin, field
 // kosong disembunyikan), footer tagline dinamis, kartu Pricing dipoles
 // (hover scale + glow, badge "Paling Populer").
-const ASSET_VERSION = "11";
+// v11 -> v12: Section Fitur & Pricing diganti dari grid statis jadi slider
+// "center focus + peek" (satu item besar di tengah, tetangga kiri/kanan
+// mengintip mengecil/pudar, geser via drag/swipe/tombol panah/keyboard) --
+// komponen baru js/lp-slider.js, ditambahkan ke precache di bawah.
+// v12 -> v13: Kartu yang sedang di tengah slider (Fitur & Pricing) kini
+// bisa diklik LAGI ("dipilih") untuk membuka modal detail -- deskripsi
+// lebih lengkap + poin manfaat untuk Fitur, rincian paket + tombol Select
+// Package untuk Pricing.
+const ASSET_VERSION = "13";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
   "/", "/index.html", "/manifest.json",
   "/config.js",
   `/css/landing.css?v=${ASSET_VERSION}`,
+  `/js/lp-slider.js?v=${ASSET_VERSION}`,
   `/js/landing.js?v=${ASSET_VERSION}`,
   "/icons/favicon.ico",
   "/icons/icon-192.png",
