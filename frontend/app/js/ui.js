@@ -86,36 +86,54 @@ const MugenUI = (() => {
     return `${inisialService(daftarService)}${dd}${mm}${hhmm}${inisialTenant(namaTenant)}`;
   }
 
-  // REVISI UI/UX: toast SUKSES/INFO dihilangkan total sesuai instruksi
-  // ("Hilangkan seluruh toast/snackbar sukses. Toast hanya muncul jika
-  // terjadi error") -- diubah SATU tempat ini (bukan menghapus tiap
-  // pemanggilan toast(...,"success") satu-satu di puluhan file) supaya
-  // perilakunya konsisten di mana pun toast() dipanggil, dan pemanggilan
-  // yang sudah ada tidak perlu diubah/dihapus satu per satu (aman kalau
-  // ada yang terlewat). Loading spinner + teks proses (lihat withLoading
-  // di bawah) sudah cukup jadi umpan balik sukses -- perubahan langsung
-  // terlihat di UI (list ter-refresh, dst) tanpa perlu snackbar tambahan.
+  // REVISI Tombol Simpan/Edit/Hapus/Input: toast SUKSES/INFO diaktifkan
+  // KEMBALI untuk SEMUA tombol (BUKAN cuma aksi besar seperti sebelumnya)
+  // -- instruksi lama ("Hilangkan seluruh toast/snackbar sukses. Toast
+  // hanya muncul jika terjadi error") DIBALIK atas permintaan eksplisit:
+  // beberapa Owner melaporkan tombol Simpan/Edit/Input "tidak memberi
+  // pemberitahuan apa pun" -- loading spinner + list ter-refresh TERNYATA
+  // tidak cukup terasa sebagai konfirmasi, terutama saat server sempat
+  // lambat (lihat bugfix connection pool exhausted). `force` di bawah
+  // TIDAK PERNAH menyaring apa pun lagi (parameter dibiarkan ada, TIDAK
+  // dihapus, supaya SELURUH pemanggilan `toast(..., {force: true})` yang
+  // sudah ada di puluhan file TIDAK PERLU diubah satu per satu -- aman
+  // kalau ada yang terlewat, persis pola yang sama dipakai saat toast
+  // sukses SEBELUMNYA dimatikan lewat SATU tempat ini). Praktis efeknya:
+  // seluruh pemanggilan toast(...,"success"/"info") yang SUDAH ADA di
+  // puluhan file (ditulis dengan pesan yang sudah rapi, cuma sebelumnya
+  // diam) langsung aktif tanpa perlu disentuh satu per satu.
   function toast(message, type = "info", { force = false } = {}) {
-    // `force` (opsional, default false): SATU-SATUNYA cara melewati aturan
-    // "toast sukses/info dihilangkan total" di atas -- dipakai SENGAJA
-    // hanya oleh fitur yang secara eksplisit diminta menampilkan notifikasi
-    // sukses (mis. Hapus Rekap Transaksi khusus Owner, atau aksi besar
-    // seperti pembayaran/booking/export/import/pembuatan tenant/perubahan
-    // langganan -- lihat REVISI UI/UX Premium). Pemanggilan toast(...) yang
-    // SUDAH ADA di seluruh aplikasi TIDAK mengirim parameter ini, jadi
-    // perilakunya 100% tidak berubah.
-    if (type !== "error" && !force) return;
     const el = document.createElement("div");
     el.className = "toast " + type;
     el.textContent = message;
+    _tumpukToast.push(el);
+    _aturPosisiTumpukanToast();
     document.body.appendChild(el);
     // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya .remove()
     // instan) -- .toast-out (style.css) memicu mugen-toast-out, dilepas
     // dari DOM setelah durasinya selesai (var(--dur-fast), lihat CSS).
     setTimeout(() => {
       el.classList.add("toast-out");
-      setTimeout(() => el.remove(), 150);
+      setTimeout(() => {
+        el.remove();
+        _tumpukToast = _tumpukToast.filter((t) => t !== el);
+        _aturPosisiTumpukanToast();
+      }, 150);
     }, 3500);
+  }
+
+  // Tumpukan toast (BARU -- sebelumnya tidak pernah dibutuhkan karena
+  // hanya toast error yang muncul, jarang lebih dari satu bersamaan):
+  // sekarang toast sukses/info AKTIF di semua tombol, jadi beberapa toast
+  // bisa tampil hampir bersamaan (mis. dua aksi cepat berurutan) --
+  // digeser vertikal berurutan ke bawah supaya tidak saling menimpa.
+  let _tumpukToast = [];
+  function _aturPosisiTumpukanToast() {
+    let atas = 16;
+    for (const t of _tumpukToast) {
+      t.style.top = atas + "px";
+      atas += t.offsetHeight + 10;
+    }
   }
 
   function el(tag, attrs = {}, children = []) {
