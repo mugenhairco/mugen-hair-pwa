@@ -74,7 +74,21 @@
 // otomatis sesuai section yang sedang terlihat, dengan underline animasi
 // (landing.css .lp-nav-active). Menghormati prefers-reduced-motion (loncat
 // instan, tanpa animasi, kalau pengguna mengaktifkannya).
-const ASSET_VERSION = "19";
+// v19 -> v20: REVISI Smooth Scroll (feedback Owner) -- kurva easing diganti
+// easeOutCubic (0.33,1,0.68,1, khusus scroll, sebelumnya --ease/(0.16,1,
+// 0.3,1) yang "meledak" di awal lalu nyaris diam mendekati tujuan, terasa
+// tersentak berhenti) + durasi dilebarkan (600-1300ms, dari 450-900ms)
+// supaya perlambatan mendekati section sungguh terasa. BUGFIX: halaman
+// sekarang SELALU mulai dari atas tanpa syarat (sebelumnya dilewati kalau
+// URL sudah membawa hash dari klik menu sebelumnya, sehingga refresh/buka
+// ulang bisa memicu native anchor-jump instan browser dan "mendarat di
+// tengah halaman") -- hash di URL tetap dihormati, tapi lewat animasi
+// scroll halus milik sendiri setelah halaman siap, bukan native jump.
+// FITUR BARU: animasi pulse (membesar/mengecil, landing.css .lp-pulse) di
+// 3 tombol "Mulai Free Trial", badge "★ Paling Populer", dan badge "Hemat
+// Lebih Banyak" -- menarik perhatian, dijeda saat hover/focus, dihormati
+// prefers-reduced-motion.
+const ASSET_VERSION = "20";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

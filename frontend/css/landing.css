@@ -67,10 +67,31 @@ a { color: inherit; text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4 {
+  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4, .lp-pulse {
     animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important;
   }
 }
+
+/* ---------- Pulse (membesar/mengecil terus-menerus, MURNI menarik
+   perhatian ke CTA -- badge "Paling Populer" & "Hemat Lebih Banyak" bukan
+   elemen yang bisa diklik sendiri, animasi ini tidak mengklaim sebaliknya,
+   cuma menonjolkan tombol/pilihan di sebelahnya). Dijeda saat hover/focus
+   supaya tidak mengganggu interaksi, dan dihormati prefers-reduced-motion
+   di atas. */
+@keyframes lp-pulse-btn {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.045); }
+}
+@keyframes lp-pulse-badge {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.08); }
+}
+@keyframes lp-pulse-tag {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+.lp-pulse { animation: lp-pulse-btn 2.2s ease-in-out infinite; }
+.lp-pulse:hover, .lp-pulse:focus-visible { animation-play-state: paused; }
 
 /* ---------- Navbar ---------- */
 .lp-navbar {
@@ -376,8 +397,11 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-dim); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; display: flex; align-items: center; gap: 8px; white-space: nowrap;
 }
 .lp-cycle-btn.lp-cycle-active { background: var(--accent); color: #fff; }
-.lp-cycle-save-badge { background: var(--success); color: #fff; font-size: 0.62rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.lp-cycle-save-badge { background: var(--success); color: #fff; font-size: 0.62rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; display: inline-block; }
 .lp-cycle-btn.lp-cycle-active .lp-cycle-save-badge { background: rgba(255,255,255,0.22); }
+.lp-cycle-save-badge.lp-pulse { animation: lp-pulse-tag 1.6s ease-in-out infinite; }
+/* Sudah dipilih -- tidak perlu lagi menarik perhatian ke dirinya sendiri. */
+.lp-cycle-btn.lp-cycle-active .lp-cycle-save-badge.lp-pulse { animation: none; transform: none; }
 
 /* REVISI Penyempurnaan Tampilan (item 5): hover lebih premium -- kartu naik
    SEKALIGUS sedikit membesar (translateY + scale bareng, satu transform
@@ -416,6 +440,7 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, var(--accent-secondary), #0E7490); color: #fff;
   box-shadow: 0 6px 18px rgba(8,145,178,0.45);
 }
+.lp-pricing-badge-popular.lp-pulse { animation-name: lp-pulse-badge; }
 .lp-pricing-card h3 { margin: 0 0 6px; font-size: 1.1rem; font-weight: 700; }
 .lp-pricing-price { font-size: 1.9rem; font-weight: 800; margin: 8px 0 2px; letter-spacing: -0.01em; }
 /* display:block (bukan inline default <small>) -- SEBELUMNYA " / 30 hari"
