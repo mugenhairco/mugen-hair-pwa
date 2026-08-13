@@ -42,7 +42,28 @@
 // slider Fitur (landing.js) -- pesan WhatsApp otomatis ke pelanggan dari
 // nomor toko sendiri (fitur backend sudah ada, ini murni menampilkannya
 // di Landing Page).
-const ASSET_VERSION = "15";
+// v15 -> v16: kartu "Notifikasi WhatsApp" BERDIRI SENDIRI ditambahkan ke
+// section "Yang Membedakan Kami" (index.html), bersebelahan dengan kartu
+// Aplikasi Barber -- preview bubble chat WhatsApp mini (landing.css:
+// .lp-wa-preview/.lp-wa-bubble, grid-template-columns showcase jadi 4
+// kolom untuk menampung kartu ketiga ini).
+// v16 -> v17: REVISI tata letak v16 -- kartu Notifikasi WhatsApp DIPINDAH
+// keluar dari .lp-diff-showcase (dikembalikan ke 3 kolom semula) ke grid
+// baris kedua BARU (.lp-diff-extra-grid, 2 kolom) supaya tidak berdesakan
+// dengan pasangan utama Dashboard Owner<->Aplikasi Barber. Kartu BARU
+// "Absensi Karyawan" (Check In/Out berbasis jarak lewat Aplikasi Barber,
+// preview Status Hari Ini + Jarak dari Toko: landing.css .lp-absensi-*)
+// ditambahkan bersebelahan dengan Notifikasi WhatsApp di grid baru ini.
+// Kartu fitur "Employee Attendance" juga ditambahkan ke slider Fitur
+// (landing.js).
+// v17 -> v18: kartu Notifikasi WhatsApp & Absensi Karyawan dilengkapi
+// ilustrasi HP (.lp-phone-frame, konsisten dengan kartu Aplikasi Barber)
+// -- WhatsApp: screenshot chat mini (header hijau WA + bubble percakapan,
+// landing.css .lp-wa-phone/.lp-wa-screen/.lp-wa-chat-*), Absensi:
+// ilustrasi maps murni CSS (pin + radius geofence putus-putus, landing.css
+// .lp-absensi-map/-radius/-pin/-badge) menggantikan preview kartu polos
+// sebelumnya.
+const ASSET_VERSION = "18";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

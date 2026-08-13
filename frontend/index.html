@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=15" />
+<link rel="stylesheet" href="css/landing.css?v=18" />
 </head>
 <body>
 
@@ -267,6 +267,75 @@
             <li>Pendapatan pribadi &amp; komisi</li>
             <li>Riwayat layanan</li>
             <li>Jadwal kerja</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- FITUR unggulan TAMBAHAN, berdiri sendiri (bukan poin di daftar
+           kartu Owner/Barber di atas) -- baris kedua supaya kartu utama
+           (Dashboard Owner <-> Aplikasi Barber, dengan connector "Sinkron
+           Real-time") tidak berdesakan. Notifikasi WhatsApp & Absensi
+           Karyawan sama-sama dikerjakan LEWAT Aplikasi Barber, jadi
+           ditempatkan tepat di bawahnya. -->
+      <div class="lp-diff-extra-grid">
+        <div class="lp-diff-card lp-diff-card-wa lp-reveal lp-reveal-3">
+          <div class="lp-diff-card-head">
+            <span class="lp-diff-icon">💬</span>
+            <div>
+              <h3>Notifikasi WhatsApp</h3>
+              <p>Pesan otomatis ke pelanggan dari nomor toko sendiri</p>
+            </div>
+          </div>
+          <div class="lp-phone-frame lp-wa-phone">
+            <div class="lp-phone-notch"></div>
+            <div class="lp-wa-screen">
+              <div class="lp-wa-chat-header">
+                <span class="lp-wa-chat-avatar">✂️</span>
+                <span class="lp-wa-chat-name">Rivoir Barbershop</span>
+              </div>
+              <div class="lp-wa-chat-body">
+                <div class="lp-wa-bubble">Halo Budi, terima kasih sudah booking. Silakan selesaikan pembayaran <b>Rp 150.000</b> lewat QRIS ya 🙏</div>
+                <div class="lp-wa-bubble">Pembayaran Anda telah kami terima &amp; verifikasi. Sampai jumpa! ✅</div>
+              </div>
+            </div>
+          </div>
+          <ul class="lp-diff-list">
+            <li>Reminder otomatis saat pelanggan pilih QRIS</li>
+            <li>Konfirmasi otomatis saat pembayaran diverifikasi</li>
+            <li>Notifikasi otomatis saat booking dibatalkan</li>
+            <li>Dikirim dari nomor &amp; isi pesan toko sendiri</li>
+          </ul>
+        </div>
+
+        <!-- FITUR Absensi Karyawan (GPS Geofencing): kartu BERDIRI SENDIRI,
+             permintaan eksplisit Owner -- barber Check In/Out lewat
+             Aplikasi Barber sendiri, jarak ke toko dihitung otomatis. -->
+        <div class="lp-diff-card lp-diff-card-absensi lp-reveal lp-reveal-4">
+          <div class="lp-diff-card-head">
+            <span class="lp-diff-icon">📍</span>
+            <div>
+              <h3>Absensi Karyawan</h3>
+              <p>Check In/Out otomatis berbasis jarak lewat Aplikasi Barber</p>
+            </div>
+          </div>
+          <div class="lp-phone-frame lp-absensi-phone">
+            <div class="lp-phone-notch"></div>
+            <div class="lp-phone-screen">
+              <div class="lp-phone-header">Absensi</div>
+              <div class="lp-absensi-map">
+                <div class="lp-absensi-map-radius"></div>
+                <span class="lp-absensi-map-pin">📍</span>
+                <span class="lp-absensi-map-badge">Dalam radius</span>
+              </div>
+              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Status Hari Ini</div><div class="lp-mockup-kpi-value lp-up">Tepat Waktu</div></div>
+              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Jarak dari Toko</div><div class="lp-mockup-kpi-value">42 meter</div></div>
+            </div>
+          </div>
+          <ul class="lp-diff-list">
+            <li>Barber Check In/Out sendiri lewat Aplikasi Barber</li>
+            <li>Lokasi &amp; jarak ke toko diverifikasi otomatis (GPS)</li>
+            <li>Terlambat/tidak Check In-Out otomatis terdeteksi</li>
+            <li>Owner pantau kehadiran seluruh barber dari satu dashboard</li>
           </ul>
         </div>
       </div>
@@ -515,7 +584,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=15"></script>
-<script src="js/landing.js?v=15"></script>
+<script src="js/lp-slider.js?v=18"></script>
+<script src="js/landing.js?v=18"></script>
 </body>
 </html>

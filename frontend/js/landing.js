@@ -162,6 +162,15 @@
         "Dikirim dari nomor WhatsApp toko sendiri, isi pesan bisa diatur bebas",
       ],
     } },
+    { icon: "📍", title: "Employee Attendance", desc: "Barber Check In/Out sendiri lewat Aplikasi Barber, jarak ke toko diverifikasi otomatis.", detail: {
+      ringkasan: "Barber Check In/Check Out sendiri lewat Aplikasi Barber -- lokasi GPS & jarak ke toko diverifikasi otomatis di backend, bukan sekadar klaim dari HP. Owner bisa pantau kehadiran, keterlambatan, sampai barber yang lupa Check In/Out dari satu dashboard.",
+      poin: [
+        "Barber Check In/Out sendiri lewat Aplikasi Barber, tanpa alat fingerprint",
+        "Jarak ke toko dihitung & diverifikasi otomatis (radius bisa diatur)",
+        "Status Tepat Waktu/Terlambat/Tidak Check In-Out otomatis terdeteksi",
+        "Dashboard kehadiran seluruh barber real-time untuk Owner",
+      ],
+    } },
     { icon: "🗓️", title: "Calendar", desc: "Jadwal barber & slot tersedia terlihat jelas dalam satu kalender.", detail: {
       ringkasan: "Satu tampilan kalender menampilkan jadwal seluruh barber sekaligus, sehingga admin bisa memantau kepadatan toko dan menambah booking manual dengan cepat.",
       poin: [

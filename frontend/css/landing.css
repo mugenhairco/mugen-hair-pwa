@@ -63,10 +63,11 @@ a { color: inherit; text-decoration: none; }
 .lp-reveal-1.lp-in-view { transition-delay: 0.08s; }
 .lp-reveal-2.lp-in-view { transition-delay: 0.16s; }
 .lp-reveal-3.lp-in-view { transition-delay: 0.24s; }
+.lp-reveal-4.lp-in-view { transition-delay: 0.32s; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3 {
+  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4 {
     animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important;
   }
 }
@@ -216,6 +217,13 @@ a { color: inherit; text-decoration: none; }
 .lp-diff-showcase {
   display: grid; grid-template-columns: 1fr auto 1fr; gap: 28px; align-items: start; margin-top: 48px;
 }
+/* Baris kedua -- kartu fitur unggulan TAMBAHAN (Notifikasi WhatsApp,
+   Absensi Karyawan), keduanya dikerjakan lewat Aplikasi Barber jadi
+   ditaruh persis di bawah baris utama, grid 2 kolom sendiri supaya
+   tidak berdesakan dengan kartu Dashboard Owner/Aplikasi Barber di atas. */
+.lp-diff-extra-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 28px;
+}
 .lp-diff-card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 28px;
   box-shadow: var(--shadow-sm); transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
@@ -233,6 +241,59 @@ a { color: inherit; text-decoration: none; }
 .lp-diff-list li { padding: 8px 0 8px 24px; border-top: 1px solid var(--border); font-size: 0.88rem; position: relative; }
 .lp-diff-list li:first-child { border-top: none; }
 .lp-diff-list li::before { content: "✓"; position: absolute; left: 0; top: 8px; color: var(--success); font-weight: 700; font-size: 0.8rem; }
+
+/* Kartu "Notifikasi WhatsApp" -- mini preview bubble chat (warna hijau
+   WhatsApp yang dikenali, SENGAJA fixed bukan token tema -- Landing Page
+   selalu terang, dan hijau bubble WhatsApp tetap sama persis di app
+   aslinya baik mode terang maupun gelap, jadi tidak perlu ikut palet).
+   Dibungkus .lp-phone-frame yang SAMA dengan kartu Aplikasi Barber
+   (bukan .lp-mockup-frame browser) supaya konsisten terbaca sebagai
+   "screenshot HP", sesuai permintaan Owner. */
+.lp-wa-phone { max-width: 200px; margin: 0 auto 20px; }
+.lp-wa-screen {
+  background: #E5DDD5; border-radius: 20px; padding: 0; display: flex; flex-direction: column;
+  overflow: hidden; height: 220px;
+}
+.lp-wa-chat-header {
+  background: #075E54; color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.lp-wa-chat-avatar {
+  width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.18);
+  display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0;
+}
+.lp-wa-chat-name { font-size: 0.78rem; font-weight: 700; }
+.lp-wa-chat-body { padding: 12px 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.lp-wa-bubble {
+  background: #DCF8C6; color: #1F2937; font-size: 0.72rem; line-height: 1.45;
+  padding: 8px 10px; border-radius: 10px 10px 2px 10px; align-self: flex-end; max-width: 88%;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Kartu "Absensi Karyawan" -- phone frame SAMA dengan Aplikasi Barber,
+   berisi ilustrasi maps (murni CSS, bukan peta sungguhan -- konsisten
+   dengan mockup lain di halaman ini yang semuanya ilustrasi, bukan
+   screenshot asli) + kartu Status Hari Ini/Jarak dari Toko. */
+.lp-absensi-phone { max-width: 200px; margin: 0 auto 20px; }
+.lp-absensi-map {
+  position: relative; height: 120px; border-radius: 14px; margin-bottom: 10px; overflow: hidden;
+  background-color: #BFE3C8;
+  background-image:
+    linear-gradient(0deg, transparent 24%, rgba(255,255,255,.5) 25%, rgba(255,255,255,.5) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.5) 75%, rgba(255,255,255,.5) 76%, transparent 77%, transparent),
+    linear-gradient(90deg, transparent 24%, rgba(255,255,255,.5) 25%, rgba(255,255,255,.5) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.5) 75%, rgba(255,255,255,.5) 76%, transparent 77%, transparent);
+  background-size: 26px 26px;
+}
+.lp-absensi-map-radius {
+  position: absolute; top: 50%; left: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
+  border-radius: 50%; border: 2px dashed rgba(37,99,235,0.55); background: rgba(37,99,235,0.14);
+}
+.lp-absensi-map-pin {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 1.6rem;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
+}
+.lp-absensi-map-badge {
+  position: absolute; left: 8px; bottom: 8px; background: var(--success); color: #fff;
+  font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+}
 
 .lp-diff-connector { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 96px; }
 .lp-diff-connector-line {
@@ -614,6 +675,7 @@ a.lp-contact-item:hover, .lp-contact-item:hover { transform: translateY(-3px); b
   .lp-hero-note { justify-content: center; }
   .lp-hero-mockup { max-width: 480px; margin: 0 auto; }
   .lp-diff-showcase { grid-template-columns: 1fr; }
+  .lp-diff-extra-grid { grid-template-columns: 1fr; }
   .lp-diff-connector { flex-direction: row; padding-top: 0; }
   .lp-diff-connector-line {
     width: auto; height: 2px; flex: 1; min-height: 0;
