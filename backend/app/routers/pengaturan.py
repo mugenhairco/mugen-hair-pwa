@@ -34,6 +34,8 @@ import pengaturan_user
 import permissions
 import r2_storage
 import tenant_db
+import whatsapp_service
+import whatsapp_templates
 from auth import require_admin, require_feature, require_owner_or_staff, require_permission, resolve_tenant_hibrid
 
 router = APIRouter(prefix="/api/pengaturan", tags=["pengaturan"])
@@ -217,6 +219,71 @@ def simpan_komisi(body: KomisiBody, user: dict = Depends(require_admin)):
     db.set_settings_bulk(data, tenant_id=user["tenant_id"])
     semua = db.get_all_settings(tenant_id=user["tenant_id"])
     return {k: semua.get(k) for k in KOMISI_KEYS}
+
+
+# ================= WHATSAPP (FITUR Notifikasi WhatsApp Otomatis Booking) =================
+# Token Fonnte PER TENANT (Owner menghubungkan nomor WhatsApp TOKO-nya
+# sendiri lewat scan QR di situs Fonnte, lalu tempel token API-nya di sini)
+# -- lihat docstring lengkap whatsapp_service.py. KHUSUS Owner (require_admin,
+# BUKAN require_permission) -- kredensial pihak ketiga, sama seperti tab
+# Komisi/Bonus Service, TIDAK didelegasikan ke staff lewat Hak Akses Admin.
+
+def _whatsapp_state(tenant_id: int) -> dict:
+    return {
+        "fonnte_token": whatsapp_service.get_token(tenant_id=tenant_id),
+        "aktif": whatsapp_service.is_enabled(tenant_id=tenant_id),
+        # REVISI: teks pesan bisa diatur sendiri -- `templates` = teks CUSTOM
+        # tenant ini (kosong = belum diubah), `defaults`/`jenis_pesan` dikirim
+        # SEKALI di sini supaya frontend tidak perlu menduplikasi teks
+        # default/label/placeholder-nya sendiri (satu sumber kebenaran:
+        # whatsapp_templates.py).
+        "templates": whatsapp_service.get_templates(tenant_id=tenant_id),
+        "defaults": whatsapp_templates.DEFAULT_TEMPLATES,
+        "jenis_pesan": [{"jenis": j, "label": l, "deskripsi": d} for j, l, d in whatsapp_templates.JENIS_PESAN],
+        "placeholder_info": [{"placeholder": p, "keterangan": k} for p, k in whatsapp_templates.PLACEHOLDER_INFO],
+    }
+
+
+@router.get("/whatsapp")
+def ambil_whatsapp(user: dict = Depends(require_admin)):
+    return _whatsapp_state(user["tenant_id"])
+
+
+class WhatsappBody(BaseModel):
+    fonnte_token: str | None = None
+    templates: dict[str, str] | None = None
+
+
+@router.put("/whatsapp")
+def simpan_whatsapp(body: WhatsappBody, user: dict = Depends(require_admin)):
+    if body.fonnte_token is not None:
+        whatsapp_service.set_token(body.fonnte_token, tenant_id=user["tenant_id"])
+    if body.templates is not None:
+        try:
+            whatsapp_service.set_templates(body.templates, tenant_id=user["tenant_id"])
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    return _whatsapp_state(user["tenant_id"])
+
+
+class WhatsappTesBody(BaseModel):
+    nomor_tujuan: str
+
+
+@router.post("/whatsapp/tes")
+def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin)):
+    """Kirim satu pesan tes ke nomor yang diisi Owner -- supaya Owner bisa
+    memastikan token Fonnte-nya benar SEBELUM mengandalkannya untuk
+    notifikasi booking sungguhan."""
+    if not whatsapp_service.is_enabled(tenant_id=user["tenant_id"]):
+        raise HTTPException(status_code=422, detail="Token Fonnte belum diisi.")
+    berhasil = whatsapp_service.kirim_whatsapp(
+        body.nomor_tujuan, "Ini pesan tes dari Rivoir -- token WhatsApp Anda berhasil terhubung.",
+        tenant_id=user["tenant_id"],
+    )
+    if not berhasil:
+        raise HTTPException(status_code=422, detail="Pesan tes gagal dikirim -- periksa kembali token Fonnte Anda.")
+    return {"ok": True}
 
 
 # ================= TARGET BONUS SERVICE (tier bertingkat) — REVISI =================

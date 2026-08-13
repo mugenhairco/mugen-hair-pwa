@@ -269,8 +269,15 @@ def test_api_settings_staff_dengan_izin_boleh_ubah(single_tenant):
 def test_api_barber_check_in_dan_today(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
+    # Jendela jam kerja dilebarkan (00:00-23:59) supaya test ini TIDAK
+    # bergantung pada jam berapa sungguhan test dijalankan (default
+    # 09:00-20:00 akan gagal kalau dijalankan malam hari WIB) -- beda dari
+    # test_check_in_*/test_check_out_* di atas yang sengaja monkeypatch
+    # attendance_db._sekarang_wib() langsung, endpoint API di sini lebih
+    # sederhana dilebarkan jendelanya saja.
     r = client.put("/api/attendance/settings",
-                    json={"lokasi_latitude": TOKO_LAT, "lokasi_longitude": TOKO_LNG, "radius_meter": 500},
+                    json={"lokasi_latitude": TOKO_LAT, "lokasi_longitude": TOKO_LNG, "radius_meter": 500,
+                          "jam_masuk": "00:00", "jam_pulang": "23:59"},
                     headers=headers)
     assert r.status_code == 200
 

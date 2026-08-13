@@ -30,6 +30,7 @@ selalu dipakai dan tidak boleh dibalik):
 """
 
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -37,7 +38,10 @@ from zoneinfo import ZoneInfo
 import booking_gateway_db
 import database as db
 import file_asset_db
+import pengaturan_identitas
 import r2_storage
+import whatsapp_service
+import whatsapp_templates
 from database import get_conn
 
 # PENYEMPURNAAN: "hari ini"/"jam sekarang" untuk keperluan slot booking HARUS
@@ -48,6 +52,8 @@ from database import get_conn
 # (7 jam di belakang WIB), ini bisa salah tanggal (dekat tengah malam WIB)
 # maupun salah menentukan jam yang "sudah lewat".
 WIB = ZoneInfo("Asia/Jakarta")
+
+logger = logging.getLogger("mugen.booking")
 
 
 def _sekarang_wib() -> datetime:
@@ -663,6 +669,27 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
             raise ValueError("Jam yang dipilih sudah dibooking, silakan pilih jam lain.")
 
 
+def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
+    """FITUR Notifikasi WhatsApp Otomatis Booking: dipanggil dari
+    buat_booking()/verifikasi_pembayaran()/batalkan_booking() di bawah --
+    "best effort", TIDAK PERNAH melempar exception maupun menggagalkan
+    operasi booking utamanya kalau pengiriman WhatsApp gagal/token belum
+    diisi (lihat whatsapp_service.kirim_whatsapp()). `booking` WAJIB sudah
+    lengkap (hasil get_booking(), punya daftar_service/total_harga/dst).
+    `jenis` = salah satu whatsapp_service.TEMPLATE_SETTING_KEYS -- teks
+    pesan diambil dari template CUSTOM milik tenant kalau Owner sudah
+    mengaturnya lewat Setting > WhatsApp, kalau belum fallback ke
+    whatsapp_templates.DEFAULT_TEMPLATES (lihat render())."""
+    try:
+        tenant_id = booking.get("tenant_id")
+        nama_toko = pengaturan_identitas.get_identitas(tenant_id=tenant_id).get("nama_barbershop") or "Kami"
+        template_text = whatsapp_service.get_templates(tenant_id=tenant_id).get(jenis)
+        pesan = whatsapp_templates.render(jenis, booking, nama_toko, template_text)
+        whatsapp_service.kirim_whatsapp(booking["customer_whatsapp"], pesan, tenant_id=tenant_id)
+    except Exception as e:
+        logger.error("Notifikasi WhatsApp booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
+
+
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
                   catatan: str = None, tenant_id: int = None) -> dict:
@@ -735,7 +762,15 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
                 "VALUES (?, ?, ?, ?, ?)",
                 (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
             )
-    return get_booking(booking_id)
+    booking_baru = get_booking(booking_id)
+    # FITUR Notifikasi WhatsApp Otomatis Booking: HANYA metode "qris" (QRIS
+    # offline yang di-upload Owner, customer scan sendiri) yang butuh
+    # reminder segera bayar -- metode lain (cash/transfer dibayar langsung
+    # di tempat/rekening, "gateway" dapat pesan sendiri lewat
+    # verifikasi_pembayaran() begitu Faspay konfirmasi sukses).
+    if metode_pembayaran == "qris":
+        _kirim_notifikasi_wa_booking(booking_baru, "reminder_qris")
+    return booking_baru
 
 
 def _perkaya_status_gateway(booking: dict):
@@ -853,10 +888,19 @@ def hitung_booking_belum_dikonfirmasi(tenant_id: int = None) -> int:
 
 
 def batalkan_booking(booking_id: int):
-    if get_booking(booking_id) is None:
+    booking = get_booking(booking_id)
+    if booking is None:
         raise ValueError("Booking tidak ditemukan.")
+    # FITUR Notifikasi WhatsApp Otomatis Booking: cek status SEBELUM update
+    # supaya panggilan berulang (klik dobel Admin, retry webhook Faspay
+    # lewat _terapkan_status() di booking_gateway_webhook.py) TIDAK kirim
+    # pesan pembatalan berkali-kali -- idempoten, pola sama seperti guard
+    # transaksi_setelah["status_pembayaran"] != status_baru di sana.
+    sudah_dibatalkan = booking["status_booking"] == "dibatalkan"
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_booking = 'dibatalkan' WHERE id = ?", (booking_id,))
+    if not sudah_dibatalkan:
+        _kirim_notifikasi_wa_booking(get_booking(booking_id), "pembatalan")
 
 
 def verifikasi_pembayaran(booking_id: int):
@@ -865,8 +909,17 @@ def verifikasi_pembayaran(booking_id: int):
         raise ValueError("Booking tidak ditemukan.")
     if booking["status_booking"] != "aktif":
         raise ValueError("Booking ini sudah dibatalkan.")
+    # FITUR Notifikasi WhatsApp Otomatis Booking: pesan konfirmasi ini
+    # SATU-SATUNYA yang mewakili DUA pemicu sekaligus -- Admin/Owner klik
+    # "Verifikasi" manual (QRIS offline) MAUPUN webhook Faspay otomatis
+    # (metode "gateway", lihat booking_gateway_webhook.py::_terapkan_status())
+    # -- keduanya memanggil fungsi yang SAMA PERSIS ini. Guard idempoten
+    # sama seperti batalkan_booking() di atas.
+    sudah_terverifikasi = booking["status_pembayaran"] == "terverifikasi"
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_pembayaran = 'terverifikasi' WHERE id = ?", (booking_id,))
+    if not sudah_terverifikasi:
+        _kirim_notifikasi_wa_booking(get_booking(booking_id), "konfirmasi_pembayaran")
 
 
 # ---------------------------------------------------------------------------
