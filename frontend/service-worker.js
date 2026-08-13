@@ -111,7 +111,21 @@
 // (aturan CSS overflow 2 sumbu), badge yang menonjol -15px ke atas kartu
 // jadi kepotong dari atas. Diberi padding-top ekstra KHUSUS di slider
 // Pricing (bukan slider Fitur yang tidak punya badge menonjol ini).
-const ASSET_VERSION = "22";
+// v22 -> v23: REVISI pulse kartu fitur unggulan (feedback Owner) -- pulse
+// (skala+shadow) dipindah dari kartu (.lp-diff-card) ke gambar/mockup DI
+// DALAMNYA (.lp-diff-mockup Dashboard Owner, .lp-phone-frame Aplikasi
+// Barber/WhatsApp/Absensi). FITUR BARU: isi mockup "hidup" -- Dashboard
+// Owner: "Booking Hari Ini" berputar 18->50->18, bar Dimas & Yoga tumbuh
+// dari kecil ke 3/4 (nominal ikut naik) lalu reset, berulang. Aplikasi
+// Barber: tangan 👋 melambai pelan berulang, "Pendapatan Bulan Ini" &
+// "Komisi Saya" turun dari maksimum ke minimum lalu reset, berulang.
+// Notifikasi WhatsApp: 2 bubble chat diketik satu per satu (efek
+// typewriter), lalu reset & ulang. Absensi Karyawan: lingkaran radius
+// mengecil terus, begitu kecil pin 📍 jatuh dari atas, "Jarak dari Toko"
+// turun 70m->10m mengikuti progress radius yang sama persis, lalu reset
+// & ulang. Semua murni dekoratif/data dummy, dimatikan total untuk
+// prefers-reduced-motion.
+const ASSET_VERSION = "23";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

@@ -130,6 +130,209 @@
     revealObserve(document.querySelectorAll(".lp-reveal"));
   }
 
+  // ==================== Animasi konten mockup fitur unggulan =============
+  // FITUR (feedback Owner): kartu Dashboard Owner/Aplikasi Barber/
+  // Notifikasi WhatsApp/Absensi Karyawan di section "Kenapa Rivoir"
+  // sebelumnya statis -- angka & isi mockup di dalamnya sekarang "hidup"
+  // (angka berjalan, bar tumbuh, tangan melambai, chat mengetik, radius
+  // mengecil + pin jatuh) supaya terasa lebih menarik. Murni dekoratif,
+  // data dummy, TIDAK terhubung ke API apa pun. Dimatikan total untuk
+  // prefers-reduced-motion (angka/teks yang terus berubah tetap dianggap
+  // motion, bukan cuma transform/opacity CSS).
+  function _formatJt(nilaiJutaan) {
+    return "Rp " + nilaiJutaan.toFixed(1).replace(".", ",") + "jt";
+  }
+
+  // Booking Hari Ini: 18 -> 19 -> ... -> 50 -> balik 18, berulang terus.
+  function initBookingCounter() {
+    const el = document.getElementById("lp-diff-booking-count");
+    if (!el) return;
+    let count = 18;
+    setInterval(() => {
+      count = count >= 50 ? 18 : count + 1;
+      el.textContent = String(count);
+    }, 180);
+  }
+
+  // Bar Dimas & Yoga: lebar + nominal tumbuh dari kecil ke 3/4 (cepat),
+  // lalu reset ke kecil dan ulang -- keduanya jalan bareng (progress sama),
+  // nilai target beda supaya tidak kembar.
+  function initDashboardBars() {
+    const barDimas = document.getElementById("lp-diff-bar-dimas");
+    const valDimas = document.getElementById("lp-diff-val-dimas");
+    const barYoga = document.getElementById("lp-diff-bar-yoga");
+    const valYoga = document.getElementById("lp-diff-val-yoga");
+    if (!barDimas || !valDimas || !barYoga || !valYoga) return;
+    const DIMAS = { minPct: 20, maxPct: 75, minVal: 3.8, maxVal: 12.4 };
+    const YOGA = { minPct: 15, maxPct: 75, minVal: 2.2, maxVal: 9.1 };
+    const GROW_MS = 1400;
+    const HOLD_MS = 500;
+    const PAUSE_MS = 300;
+    function frame(t) {
+      const e = _scrollEase(t);
+      barDimas.style.width = (DIMAS.minPct + (DIMAS.maxPct - DIMAS.minPct) * e) + "%";
+      valDimas.textContent = _formatJt(DIMAS.minVal + (DIMAS.maxVal - DIMAS.minVal) * e);
+      barYoga.style.width = (YOGA.minPct + (YOGA.maxPct - YOGA.minPct) * e) + "%";
+      valYoga.textContent = _formatJt(YOGA.minVal + (YOGA.maxVal - YOGA.minVal) * e);
+    }
+    function cycle() {
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / GROW_MS);
+        frame(t);
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
+      }
+      requestAnimationFrame(tick);
+    }
+    cycle();
+  }
+
+  // Aplikasi Barber: Pendapatan Bulan Ini & Komisi Saya turun terus dari
+  // nilai maksimum ke minimum, lalu reset ke maksimum dan ulang (arah
+  // KEBALIKAN dari bar Dashboard -- sengaja beda supaya kedua kartu tidak
+  // terasa seragam).
+  function initBarberCounters() {
+    const pendapatanEl = document.getElementById("lp-diff-pendapatan-barber");
+    const komisiEl = document.getElementById("lp-diff-komisi-barber");
+    if (!pendapatanEl || !komisiEl) return;
+    const PENDAPATAN = { max: 12.4, min: 5.0 };
+    const KOMISI = { max: 4.9, min: 2.0 };
+    const DURATION_MS = 2200;
+    const HOLD_MS = 500;
+    const PAUSE_MS = 300;
+    function frame(t) {
+      const e = _scrollEase(t);
+      pendapatanEl.textContent = _formatJt(PENDAPATAN.max - (PENDAPATAN.max - PENDAPATAN.min) * e);
+      komisiEl.textContent = _formatJt(KOMISI.max - (KOMISI.max - KOMISI.min) * e);
+    }
+    function cycle() {
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / DURATION_MS);
+        frame(t);
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
+      }
+      requestAnimationFrame(tick);
+    }
+    cycle();
+  }
+
+  // Notifikasi WhatsApp: 2 bubble chat diketik satu per satu (efek
+  // typewriter), lalu jeda, kosongkan lagi, ulang dari awal terus-menerus.
+  // Teks disimpan di data-text dengan penanda "|...|" untuk bagian yang
+  // harus tebal (mis. nominal) -- dipisah per segmen supaya <b> tetap utuh
+  // sambil tetap "diketik" karakter demi karakter.
+  function _typeIntoBubble(el, speedMs) {
+    return new Promise((resolve) => {
+      const raw = el.dataset.text || "";
+      const parts = raw.split("|");
+      el.textContent = "";
+      let partIndex = 0;
+      let charIndex = 0;
+      let boldNode = null;
+      function step() {
+        if (partIndex >= parts.length) { resolve(); return; }
+        const part = parts[partIndex];
+        if (charIndex >= part.length) {
+          partIndex++; charIndex = 0; boldNode = null;
+          step();
+          return;
+        }
+        const isBold = partIndex % 2 === 1;
+        const ch = part[charIndex];
+        if (isBold) {
+          if (!boldNode) { boldNode = document.createElement("b"); el.appendChild(boldNode); }
+          boldNode.appendChild(document.createTextNode(ch));
+        } else {
+          el.appendChild(document.createTextNode(ch));
+        }
+        charIndex++;
+        setTimeout(step, speedMs);
+      }
+      step();
+    });
+  }
+  function initWhatsAppTyping() {
+    const bubble1 = document.getElementById("lp-diff-wa-bubble-1");
+    const bubble2 = document.getElementById("lp-diff-wa-bubble-2");
+    if (!bubble1 || !bubble2) return;
+    const TYPE_SPEED_MS = 28;
+    const GAP_MS = 500;
+    const HOLD_MS = 1800;
+    const RESTART_MS = 700;
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+    async function cycle() {
+      bubble1.style.opacity = "0"; bubble1.textContent = "";
+      bubble2.style.opacity = "0"; bubble2.textContent = "";
+      await sleep(RESTART_MS);
+      bubble1.style.opacity = "1";
+      await _typeIntoBubble(bubble1, TYPE_SPEED_MS);
+      await sleep(GAP_MS);
+      bubble2.style.opacity = "1";
+      await _typeIntoBubble(bubble2, TYPE_SPEED_MS);
+      await sleep(HOLD_MS);
+      cycle();
+    }
+    cycle();
+  }
+
+  // Absensi Karyawan: lingkaran radius mengecil terus, begitu sampai
+  // kecil pin jatuh dari atas, "Jarak dari Toko" turun 70m->10m mengikuti
+  // progress radius yang SAMA PERSIS (satu sumber kebenaran), lalu reset
+  // dan ulang.
+  function initAbsensiAnimation() {
+    const radiusEl = document.getElementById("lp-diff-absensi-radius");
+    const pinEl = document.getElementById("lp-diff-absensi-pin");
+    const jarakEl = document.getElementById("lp-diff-absensi-jarak");
+    if (!radiusEl || !pinEl || !jarakEl) return;
+    const SHRINK_MS = 2400;
+    const HOLD_MS = 900;
+    const PAUSE_MS = 400;
+    const MIN_SCALE = 0.32;
+    const JARAK_MAX = 70;
+    const JARAK_MIN = 10;
+    function frame(t) {
+      const e = _scrollEase(t);
+      radiusEl.style.transform = `scale(${1 - (1 - MIN_SCALE) * e})`;
+      jarakEl.textContent = Math.round(JARAK_MAX - (JARAK_MAX - JARAK_MIN) * e) + " meter";
+    }
+    function dropPin() {
+      pinEl.classList.remove("lp-diff-pin-drop");
+      pinEl.classList.add("lp-diff-pin-reset");
+      // Paksa reflow supaya animasi bisa diputar ulang dari awal tiap siklus
+      // (menambah class yang sama tanpa reflow tidak akan restart animasi).
+      void pinEl.offsetWidth;
+      pinEl.classList.remove("lp-diff-pin-reset");
+      pinEl.classList.add("lp-diff-pin-drop");
+    }
+    function cycle() {
+      radiusEl.style.transform = "";
+      pinEl.classList.remove("lp-diff-pin-drop");
+      pinEl.classList.add("lp-diff-pin-reset");
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / SHRINK_MS);
+        frame(t);
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        dropPin();
+        setTimeout(() => setTimeout(cycle, PAUSE_MS), HOLD_MS);
+      }
+      requestAnimationFrame(tick);
+    }
+    cycle();
+  }
+
+  function initDiffMockupAnimations() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    initBookingCounter();
+    initDashboardBars();
+    initBarberCounters();
+    initWhatsAppTyping();
+    initAbsensiAnimation();
+  }
+
   // ============================= Navbar =============================
 
   function initNavbar() {
@@ -751,6 +954,7 @@
     initNavbar();
     initSmoothAnchors();
     initScrollSpy();
+    initDiffMockupAnimations();
     renderFeatures();
     loadPackages();
     loadFaq();
