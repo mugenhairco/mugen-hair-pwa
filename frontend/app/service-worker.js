@@ -536,7 +536,13 @@
 // tab baru "Absensi" di Setting (pengaturan.js) untuk Pengaturan Absensi
 // (Jam Masuk/Pulang, Toleransi, Radius, Lokasi Toko). Modul berdiri
 // sendiri, TIDAK mengubah halaman lain yang sudah ada.
-const ASSET_VERSION = "98";
+// v98 -> v99: FITUR Notifikasi WhatsApp Otomatis Booking -- tab baru
+// "WhatsApp" di Setting (pengaturan.js, KHUSUS Owner) untuk menghubungkan
+// token Fonnte milik toko sendiri. Pesan otomatis dikirim dari backend
+// (booking_db.py) saat customer pilih QRIS, saat pembayaran diverifikasi
+// (manual/gateway), dan saat booking dibatalkan -- TIDAK ada halaman/route
+// frontend baru selain tab Setting ini.
+const ASSET_VERSION = "99";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
