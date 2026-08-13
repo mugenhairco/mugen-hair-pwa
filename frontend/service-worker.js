@@ -42,7 +42,12 @@
 // slider Fitur (landing.js) -- pesan WhatsApp otomatis ke pelanggan dari
 // nomor toko sendiri (fitur backend sudah ada, ini murni menampilkannya
 // di Landing Page).
-const ASSET_VERSION = "15";
+// v15 -> v16: kartu "Notifikasi WhatsApp" BERDIRI SENDIRI ditambahkan ke
+// section "Yang Membedakan Kami" (index.html), bersebelahan dengan kartu
+// Aplikasi Barber -- preview bubble chat WhatsApp mini (landing.css:
+// .lp-wa-preview/.lp-wa-bubble, grid-template-columns showcase jadi 4
+// kolom untuk menampung kartu ketiga ini).
+const ASSET_VERSION = "16";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
