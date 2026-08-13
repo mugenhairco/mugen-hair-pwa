@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=22" />
+<link rel="stylesheet" href="css/landing.css?v=23" />
 </head>
 <body>
 
@@ -198,7 +198,7 @@
       <p class="lp-section-sub lp-reveal">Saat pelanggan booking, jadwalnya langsung masuk real-time ke aplikasi pribadi barber yang bersangkutan — bukan sekadar catatan di dashboard Owner. Setiap barber punya akses sendiri ke jadwal, komisi, dan pendapatannya.</p>
 
       <div class="lp-diff-showcase">
-        <div class="lp-diff-card lp-pulse lp-reveal lp-reveal-1">
+        <div class="lp-diff-card lp-reveal lp-reveal-1">
           <div class="lp-diff-card-head">
             <span class="lp-diff-icon">🖥️</span>
             <div>
@@ -206,17 +206,17 @@
               <p>Kendali penuh atas seluruh operasional toko</p>
             </div>
           </div>
-          <div class="lp-mockup-frame lp-diff-mockup">
+          <div class="lp-mockup-frame lp-diff-mockup lp-pulse">
             <div class="lp-mockup-topbar"><span></span><span></span><span></span><span class="lp-mockup-topbar-title">Dashboard Owner</span></div>
             <div class="lp-mockup-body">
               <div class="lp-mockup-kpis">
-                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value">18</div></div>
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value" id="lp-diff-booking-count">18</div></div>
                 <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up">Rp 32,4jt</div></div>
                 <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Barber Aktif</div><div class="lp-mockup-kpi-value">4</div></div>
               </div>
               <div class="lp-mockup-hbars">
-                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Dimas</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:88%"></div></div><span class="lp-mockup-hbar-value">Rp 12,4jt</span></div>
-                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Yoga</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" style="width:66%"></div></div><span class="lp-mockup-hbar-value">Rp 9,1jt</span></div>
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Dimas</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" id="lp-diff-bar-dimas" style="width:20%"></div></div><span class="lp-mockup-hbar-value" id="lp-diff-val-dimas">Rp 3,8jt</span></div>
+                <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Yoga</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" id="lp-diff-bar-yoga" style="width:15%"></div></div><span class="lp-mockup-hbar-value" id="lp-diff-val-yoga">Rp 2,2jt</span></div>
               </div>
             </div>
           </div>
@@ -234,7 +234,7 @@
           <span class="lp-diff-connector-line"></span>
         </div>
 
-        <div class="lp-diff-card lp-diff-card-phone lp-pulse lp-reveal lp-reveal-2">
+        <div class="lp-diff-card lp-diff-card-phone lp-reveal lp-reveal-2">
           <div class="lp-diff-card-head">
             <span class="lp-diff-icon">📱</span>
             <div>
@@ -242,12 +242,12 @@
               <p>Akses pribadi untuk setiap barber</p>
             </div>
           </div>
-          <div class="lp-phone-frame">
+          <div class="lp-phone-frame lp-pulse">
             <div class="lp-phone-notch"></div>
             <div class="lp-phone-screen">
-              <div class="lp-phone-header">Halo, Dimas 👋</div>
-              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Pendapatan Bulan Ini</div><div class="lp-mockup-kpi-value lp-up">Rp 12,4jt</div></div>
-              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Komisi Saya</div><div class="lp-mockup-kpi-value">Rp 4,9jt</div></div>
+              <div class="lp-phone-header">Halo, Dimas <span class="lp-diff-wave">👋</span></div>
+              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Pendapatan Bulan Ini</div><div class="lp-mockup-kpi-value lp-up" id="lp-diff-pendapatan-barber">Rp 12,4jt</div></div>
+              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Komisi Saya</div><div class="lp-mockup-kpi-value" id="lp-diff-komisi-barber">Rp 4,9jt</div></div>
               <div class="lp-mockup-list">
                 <div class="lp-mockup-list-row">
                   <div class="lp-mockup-avatar">AL</div>
@@ -278,7 +278,7 @@
            Karyawan sama-sama dikerjakan LEWAT Aplikasi Barber, jadi
            ditempatkan tepat di bawahnya. -->
       <div class="lp-diff-extra-grid">
-        <div class="lp-diff-card lp-diff-card-wa lp-pulse lp-reveal lp-reveal-3">
+        <div class="lp-diff-card lp-diff-card-wa lp-reveal lp-reveal-3">
           <div class="lp-diff-card-head">
             <span class="lp-diff-icon">💬</span>
             <div>
@@ -286,16 +286,16 @@
               <p>Pesan otomatis ke pelanggan dari nomor toko sendiri</p>
             </div>
           </div>
-          <div class="lp-phone-frame lp-wa-phone">
+          <div class="lp-phone-frame lp-wa-phone lp-pulse">
             <div class="lp-phone-notch"></div>
             <div class="lp-wa-screen">
               <div class="lp-wa-chat-header">
                 <span class="lp-wa-chat-avatar">✂️</span>
                 <span class="lp-wa-chat-name">Rivoir Barbershop</span>
               </div>
-              <div class="lp-wa-chat-body">
-                <div class="lp-wa-bubble">Halo Budi, terima kasih sudah booking. Silakan selesaikan pembayaran <b>Rp 150.000</b> lewat QRIS ya 🙏</div>
-                <div class="lp-wa-bubble">Pembayaran Anda telah kami terima &amp; verifikasi. Sampai jumpa! ✅</div>
+              <div class="lp-wa-chat-body" id="lp-diff-wa-body">
+                <div class="lp-wa-bubble" id="lp-diff-wa-bubble-1" data-text="Halo Budi, terima kasih sudah booking. Silakan selesaikan pembayaran |Rp 150.000| lewat QRIS ya 🙏"></div>
+                <div class="lp-wa-bubble" id="lp-diff-wa-bubble-2" data-text="Pembayaran Anda telah kami terima &amp; verifikasi. Sampai jumpa! ✅"></div>
               </div>
             </div>
           </div>
@@ -310,7 +310,7 @@
         <!-- FITUR Absensi Karyawan (GPS Geofencing): kartu BERDIRI SENDIRI,
              permintaan eksplisit Owner -- barber Check In/Out lewat
              Aplikasi Barber sendiri, jarak ke toko dihitung otomatis. -->
-        <div class="lp-diff-card lp-diff-card-absensi lp-pulse lp-reveal lp-reveal-4">
+        <div class="lp-diff-card lp-diff-card-absensi lp-reveal lp-reveal-4">
           <div class="lp-diff-card-head">
             <span class="lp-diff-icon">📍</span>
             <div>
@@ -318,17 +318,17 @@
               <p>Check In/Out otomatis berbasis jarak lewat Aplikasi Barber</p>
             </div>
           </div>
-          <div class="lp-phone-frame lp-absensi-phone">
+          <div class="lp-phone-frame lp-absensi-phone lp-pulse">
             <div class="lp-phone-notch"></div>
             <div class="lp-phone-screen">
               <div class="lp-phone-header">Absensi</div>
-              <div class="lp-absensi-map">
-                <div class="lp-absensi-map-radius"></div>
-                <span class="lp-absensi-map-pin">📍</span>
+              <div class="lp-absensi-map" id="lp-diff-absensi-map">
+                <div class="lp-absensi-map-radius" id="lp-diff-absensi-radius"></div>
+                <span class="lp-absensi-map-pin" id="lp-diff-absensi-pin">📍</span>
                 <span class="lp-absensi-map-badge">Dalam radius</span>
               </div>
               <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Status Hari Ini</div><div class="lp-mockup-kpi-value lp-up">Tepat Waktu</div></div>
-              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Jarak dari Toko</div><div class="lp-mockup-kpi-value">42 meter</div></div>
+              <div class="lp-mockup-kpi lp-phone-kpi"><div class="lp-mockup-kpi-label">Jarak dari Toko</div><div class="lp-mockup-kpi-value" id="lp-diff-absensi-jarak">70 meter</div></div>
             </div>
           </div>
           <ul class="lp-diff-list">
@@ -584,7 +584,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=22"></script>
-<script src="js/landing.js?v=22"></script>
+<script src="js/lp-slider.js?v=23"></script>
+<script src="js/landing.js?v=23"></script>
 </body>
 </html>

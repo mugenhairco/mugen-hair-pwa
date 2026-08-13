@@ -67,9 +67,15 @@ a { color: inherit; text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4, .lp-pulse, .lp-diff-card {
+  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4, .lp-pulse {
     animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important;
   }
+  /* Animasi konten dekoratif kartu fitur unggulan (angka berjalan, bar
+     tumbuh, tangan melambai, chat mengetik, radius mengecil + pin jatuh)
+     dimatikan lewat guard JS (window.matchMedia di landing.js), BUKAN di
+     sini -- karena itu perubahan teks/DOM lewat JS, bukan animasi CSS. */
+  .lp-diff-wave { animation: none !important; }
+  .lp-absensi-map-pin { animation: none !important; opacity: 1 !important; transform: translate(-50%, -100%) !important; }
 }
 
 /* ---------- Pulse (membesar/mengecil terus-menerus + shadow "bernapas"
@@ -111,14 +117,19 @@ a { color: inherit; text-decoration: none; }
 .lp-pulse { animation: lp-pulse-btn 1.1s ease-in-out infinite; }
 .lp-pulse:hover, .lp-pulse:focus-visible { animation-play-state: paused; }
 .lp-cta-box .lp-btn-primary.lp-pulse { animation-name: lp-pulse-btn-glow; }
-/* Kartu baru mulai pulse SETELAH animasi reveal (fade+slide masuk)
-   selesai -- delay lebih panjang dari transition reveal (0.6s + jeda
-   stagger lp-reveal-1..4) supaya tidak berebut properti transform dengan
-   transition reveal (animation SELALU menang atas transition kalau jalan
-   bersamaan di properti yang sama, jadi kalau langsung dimulai dari 0,
-   slide-in masuknya jadi hilang/terpotong). */
-.lp-diff-card.lp-pulse { animation: lp-pulse-card 1.1s ease-in-out infinite; animation-delay: 1s; }
-.lp-diff-card.lp-pulse:hover, .lp-diff-card.lp-pulse:focus-within { animation-play-state: paused; }
+/* REVISI (feedback Owner): pulse kartu fitur unggulan sebelumnya di kartu
+   itu sendiri (.lp-diff-card) -- dipindah ke GAMBAR/mockup DI DALAMNYA
+   (.lp-diff-mockup untuk Dashboard Owner, .lp-phone-frame untuk Aplikasi
+   Barber/Notifikasi WhatsApp/Absensi Karyawan) supaya lebih menonjolkan
+   ilustrasinya, bukan kartunya. Mockup/phone-frame ini TIDAK ikut
+   .lp-reveal (hanya kartu pembungkusnya yang punya fade+slide masuk),
+   jadi TIDAK perlu animation-delay seperti sebelumnya -- tidak ada
+   transition transform yang bisa berebut properti di elemen ini. */
+.lp-diff-mockup.lp-pulse, .lp-phone-frame.lp-pulse { animation: lp-pulse-card 1.1s ease-in-out infinite; }
+.lp-diff-card:hover .lp-diff-mockup.lp-pulse, .lp-diff-card:hover .lp-phone-frame.lp-pulse,
+.lp-diff-card:focus-within .lp-diff-mockup.lp-pulse, .lp-diff-card:focus-within .lp-phone-frame.lp-pulse {
+  animation-play-state: paused;
+}
 
 /* ---------- Navbar ---------- */
 .lp-navbar {
@@ -348,11 +359,34 @@ a { color: inherit; text-decoration: none; }
 .lp-absensi-map-radius {
   position: absolute; top: 50%; left: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
   border-radius: 50%; border: 2px dashed rgba(37,99,235,0.55); background: rgba(37,99,235,0.14);
+  /* FITUR: skala radius DIATUR landing.js (transform:scale() inline,
+     bukan lewat @keyframes) supaya persis sinkron dengan angka "Jarak
+     dari Toko" yang juga diubah JS -- keduanya harus jalan di progress
+     yang SAMA PERSIS di setiap frame, jadi satu sumber kebenaran (loop
+     JS), bukan dua animasi terpisah (CSS + JS) yang bisa nyimpang. */
+  transition: none;
 }
 .lp-absensi-map-pin {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 1.6rem;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
 }
+/* Default (tanpa JS/sebelum JS jalan) pin TETAP terlihat di posisi
+   diam -- fallback aman kalau JS gagal/lambat. .lp-diff-pin-reset HANYA
+   dipakai landing.js sesaat sebelum memicu drop tiap siklus (supaya
+   animasinya bisa diulang dari awal), bukan status default. */
+.lp-absensi-map-pin.lp-diff-pin-reset { opacity: 0; }
+/* FITUR: pin "jatuh dari atas" -- dipicu landing.js dengan menambah class
+   ini persis saat radius selesai mengecil (lihat initAbsensiAnimation()).
+   Titik awal (-100% - 50px, BUKAN di luar .lp-absensi-map sama sekali)
+   sengaja masih di dalam batas peta (tinggi 120px, overflow:hidden) --
+   supaya tidak ikut terpotong seperti bug shadow CTA sebelumnya. */
+@keyframes lp-absensi-pin-drop {
+  0% { transform: translate(-50%, calc(-100% - 50px)); opacity: 0; }
+  55% { transform: translate(-50%, calc(-100% + 6px)); opacity: 1; }
+  75% { transform: translate(-50%, calc(-100% - 3px)); }
+  100% { transform: translate(-50%, -100%); opacity: 1; }
+}
+.lp-absensi-map-pin.lp-diff-pin-drop { animation: lp-absensi-pin-drop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 .lp-absensi-map-badge {
   position: absolute; left: 8px; bottom: 8px; background: var(--success); color: #fff;
   font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
@@ -382,6 +416,19 @@ a { color: inherit; text-decoration: none; }
 .lp-phone-header { font-size: 0.85rem; font-weight: 700; }
 .lp-phone-kpi { padding: 8px 10px; }
 .lp-phone-kpi .lp-mockup-kpi-value { font-size: 0.9rem; }
+/* FITUR: emoji tangan "Halo, Dimas 👋" melambai pelan berulang -- rotasi
+   bolak-balik, transform-origin digeser ke pergelangan (kanan-bawah
+   emoji) supaya lambaiannya terasa dari pergelangan, bukan berputar di
+   tengah emoji. */
+.lp-diff-wave { display: inline-block; transform-origin: 70% 70%; animation: lp-diff-wave 2.4s ease-in-out infinite; }
+@keyframes lp-diff-wave {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-8deg); }
+  45% { transform: rotate(14deg); }
+  60% { transform: rotate(-4deg); }
+  75%, 100% { transform: rotate(0deg); }
+}
 
 /* ---------- Sections ---------- */
 .lp-section { padding: 88px 0; }
