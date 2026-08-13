@@ -63,7 +63,18 @@
 // ilustrasi maps murni CSS (pin + radius geofence putus-putus, landing.css
 // .lp-absensi-map/-radius/-pin/-badge) menggantikan preview kartu polos
 // sebelumnya.
-const ASSET_VERSION = "18";
+// v18 -> v19: Smooth Scroll & Scroll-Spy custom -- scroll-behavior:smooth
+// bawaan browser (kurva linear, sama rata semua jarak) diganti animasi JS
+// (landing.js::smoothScrollTo(), durasi mengikuti jarak, easing SAMA
+// PERSIS --ease/cubic-bezier(0.16,1,0.3,1) yang sudah dipakai transisi CSS
+// lain) untuk SEMUA link "#id" di halaman (navbar/footer/tombol CTA).
+// Offset navbar fixed ikut dihitung supaya section tidak ketutupan
+// (sebelumnya tidak ada kompensasi sama sekali). Scroll-spy baru
+// (initScrollSpy(), IntersectionObserver) menyalakan link menu navbar
+// otomatis sesuai section yang sedang terlihat, dengan underline animasi
+// (landing.css .lp-nav-active). Menghormati prefers-reduced-motion (loncat
+// instan, tanpa animasi, kalau pengguna mengaktifkannya).
+const ASSET_VERSION = "19";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
