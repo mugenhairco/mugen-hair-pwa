@@ -88,7 +88,19 @@
 // 3 tombol "Mulai Free Trial", badge "★ Paling Populer", dan badge "Hemat
 // Lebih Banyak" -- menarik perhatian, dijeda saat hover/focus, dihormati
 // prefers-reduced-motion.
-const ASSET_VERSION = "20";
+// v20 -> v21: REVISI Pulse & Smooth Scroll (feedback Owner) -- animasi
+// pulse dipercepat 2x (durasi dibagi dua: tombol 1.1s dari 2.2s, badge
+// "Hemat Lebih Banyak" 0.8s dari 1.6s) + shadow "bernapas" ditambahkan ke
+// SEMUA target pulse (membesar/mengecil bareng skalanya, varian cyan
+// glow khusus tombol di dalam .lp-cta-box karena background gradiennya
+// gelap). Pulse (skala jauh lebih halus + shadow) diterapkan juga ke 4
+// kartu fitur unggulan di section "Kenapa Rivoir" (Dashboard Owner,
+// Aplikasi Barber, Notifikasi WhatsApp, Absensi Karyawan) -- animasi
+// ditunda 1 detik supaya tidak berebut transform dengan animasi reveal
+// (fade+slide masuk) yang jalan lebih dulu saat kartu pertama terlihat.
+// Durasi Smooth Scroll dilipatgandakan 2x lagi (1200-2600ms, dari
+// 600-1300ms) karena masih terasa terlalu cepat.
+const ASSET_VERSION = "21";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
