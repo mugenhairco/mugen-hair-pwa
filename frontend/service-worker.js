@@ -100,7 +100,18 @@
 // (fade+slide masuk) yang jalan lebih dulu saat kartu pertama terlihat.
 // Durasi Smooth Scroll dilipatgandakan 2x lagi (1200-2600ms, dari
 // 600-1300ms) karena masih terasa terlalu cepat.
-const ASSET_VERSION = "21";
+// v21 -> v22: BUGFIX shadow pulse tidak terlihat -- .lp-cta-box punya
+// overflow:hidden (dipakai supaya glow dekoratif ::before-nya ikut
+// membulat mengikuti sudut kotak) yang TANPA SADAR ikut memotong habis
+// shadow pulse tombol "Mulai Free Trial 30 Hari" di dalamnya. Diganti:
+// ::before diberi border-radius sendiri (jadi tetap membulat rapi TANPA
+// overflow di parent), overflow:hidden di .lp-cta-box dihapus. Bug serupa
+// juga ditemukan di badge "★ Paling Populer" -- slider Pricing
+// (.lp-slider-track) overflow-x:auto MEMAKSA overflow-y jadi auto juga
+// (aturan CSS overflow 2 sumbu), badge yang menonjol -15px ke atas kartu
+// jadi kepotong dari atas. Diberi padding-top ekstra KHUSUS di slider
+// Pricing (bukan slider Fitur yang tidak punya badge menonjol ini).
+const ASSET_VERSION = "22";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

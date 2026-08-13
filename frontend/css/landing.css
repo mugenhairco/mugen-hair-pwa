@@ -518,6 +518,17 @@ a { color: inherit; text-decoration: none; }
 .lp-slider-slide .lp-feature-card, .lp-slider-slide .lp-pricing-card { height: 100%; }
 #lp-features-slider { --slide-w: min(520px, 84vw); }
 #lp-pricing-slider { --slide-w: min(320px, 80vw); }
+/* BUGFIX: .lp-slider-track (di bawah) diberi overflow-x:auto supaya bisa
+   digeser -- tapi itu MEMAKSA overflow-y jadi "auto" juga (aturan CSS:
+   satu sumbu overflow bukan "visible" memaksa sumbu lainnya ikut jadi
+   scroll container, tidak bisa "visible" sendirian), jadi otomatis
+   men-clip vertikal juga. Badge "★ Paling Populer" (top:-15px relatif ke
+   kartu, lihat .lp-pricing-badge-popular) menonjol ke ATAS kartu lebih
+   jauh daripada padding-top track (4px) -- badge & shadow pulse-nya jadi
+   terpotong dari atas. HANYA slider Pricing yang diberi padding-top
+   ekstra (bukan .lp-slider-track umum, supaya slider Fitur yang tidak
+   punya badge menonjol seperti ini tidak ikut kena spasi tambahan). */
+#lp-pricing-slider .lp-slider-track { padding-top: 40px; }
 
 /* Petunjuk "Lihat detail" -- HANYA terlihat di kartu yang sedang aktif/di
    tengah (yang bisa membuka modal), disembunyikan di kartu peek supaya
@@ -697,10 +708,18 @@ a.lp-contact-item:hover, .lp-contact-item:hover { transform: translateY(-3px); b
 .lp-cta-box {
   background: linear-gradient(135deg, var(--cta-grad-1), var(--cta-grad-2));
   border-radius: 24px; padding: 56px 40px; text-align: center; color: #fff;
-  position: relative; overflow: hidden;
+  position: relative;
 }
+/* BUGFIX: overflow:hidden di .lp-cta-box SEBELUMNYA dipakai supaya glow
+   dekoratif ::before di bawah ini tidak "meluber" persegi keluar dari
+   sudut membulat kotak -- tapi itu JUGA memotong habis shadow pulse
+   tombol "Mulai Free Trial" di dalamnya (jadi tidak terlihat sama
+   sekali). Diganti: ::before diberi border-radius sendiri (sama dengan
+   parent) supaya tetap ter-clip rapi ke sudut membulat TANPA overflow
+   di parent, jadi shadow tombol bisa "meluber" keluar sebagaimana
+   mestinya. */
 .lp-cta-box::before {
-  content: ""; position: absolute; inset: 0;
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
   background: radial-gradient(50% 80% at 85% 0%, rgba(34,211,238,0.25), transparent 70%);
   pointer-events: none;
 }
