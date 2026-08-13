@@ -56,7 +56,14 @@
 // ditambahkan bersebelahan dengan Notifikasi WhatsApp di grid baru ini.
 // Kartu fitur "Employee Attendance" juga ditambahkan ke slider Fitur
 // (landing.js).
-const ASSET_VERSION = "17";
+// v17 -> v18: kartu Notifikasi WhatsApp & Absensi Karyawan dilengkapi
+// ilustrasi HP (.lp-phone-frame, konsisten dengan kartu Aplikasi Barber)
+// -- WhatsApp: screenshot chat mini (header hijau WA + bubble percakapan,
+// landing.css .lp-wa-phone/.lp-wa-screen/.lp-wa-chat-*), Absensi:
+// ilustrasi maps murni CSS (pin + radius geofence putus-putus, landing.css
+// .lp-absensi-map/-radius/-pin/-badge) menggantikan preview kartu polos
+// sebelumnya.
+const ASSET_VERSION = "18";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

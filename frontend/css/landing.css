@@ -245,26 +245,55 @@ a { color: inherit; text-decoration: none; }
 /* Kartu "Notifikasi WhatsApp" -- mini preview bubble chat (warna hijau
    WhatsApp yang dikenali, SENGAJA fixed bukan token tema -- Landing Page
    selalu terang, dan hijau bubble WhatsApp tetap sama persis di app
-   aslinya baik mode terang maupun gelap, jadi tidak perlu ikut palet). */
-.lp-wa-preview {
-  background: var(--bg-alt); border-radius: 16px; padding: 18px 16px; margin-bottom: 20px;
-  display: flex; justify-content: flex-end;
+   aslinya baik mode terang maupun gelap, jadi tidak perlu ikut palet).
+   Dibungkus .lp-phone-frame yang SAMA dengan kartu Aplikasi Barber
+   (bukan .lp-mockup-frame browser) supaya konsisten terbaca sebagai
+   "screenshot HP", sesuai permintaan Owner. */
+.lp-wa-phone { max-width: 200px; margin: 0 auto 20px; }
+.lp-wa-screen {
+  background: #E5DDD5; border-radius: 20px; padding: 0; display: flex; flex-direction: column;
+  overflow: hidden; height: 220px;
 }
+.lp-wa-chat-header {
+  background: #075E54; color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.lp-wa-chat-avatar {
+  width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.18);
+  display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0;
+}
+.lp-wa-chat-name { font-size: 0.78rem; font-weight: 700; }
+.lp-wa-chat-body { padding: 12px 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .lp-wa-bubble {
-  background: #DCF8C6; color: #1F2937; font-size: 0.82rem; line-height: 1.5;
-  padding: 10px 14px; border-radius: 12px 12px 2px 12px; max-width: 240px; box-shadow: var(--shadow-sm);
+  background: #DCF8C6; color: #1F2937; font-size: 0.72rem; line-height: 1.45;
+  padding: 8px 10px; border-radius: 10px 10px 2px 10px; align-self: flex-end; max-width: 88%;
+  box-shadow: var(--shadow-sm);
 }
 
-/* Kartu "Absensi Karyawan" -- mini preview Status Hari Ini + Jarak dari
-   Toko, meniru ringkas apa yang barber lihat di halaman Absensi Aplikasi
-   Barber sungguhan (lihat frontend/app/js/pages/absensi.js). */
-.lp-absensi-preview {
-  background: var(--bg-alt); border-radius: 16px; padding: 16px; margin-bottom: 20px;
-  display: flex; flex-direction: column; gap: 10px;
+/* Kartu "Absensi Karyawan" -- phone frame SAMA dengan Aplikasi Barber,
+   berisi ilustrasi maps (murni CSS, bukan peta sungguhan -- konsisten
+   dengan mockup lain di halaman ini yang semuanya ilustrasi, bukan
+   screenshot asli) + kartu Status Hari Ini/Jarak dari Toko. */
+.lp-absensi-phone { max-width: 200px; margin: 0 auto 20px; }
+.lp-absensi-map {
+  position: relative; height: 120px; border-radius: 14px; margin-bottom: 10px; overflow: hidden;
+  background-color: #BFE3C8;
+  background-image:
+    linear-gradient(0deg, transparent 24%, rgba(255,255,255,.5) 25%, rgba(255,255,255,.5) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.5) 75%, rgba(255,255,255,.5) 76%, transparent 77%, transparent),
+    linear-gradient(90deg, transparent 24%, rgba(255,255,255,.5) 25%, rgba(255,255,255,.5) 26%, transparent 27%, transparent 74%, rgba(255,255,255,.5) 75%, rgba(255,255,255,.5) 76%, transparent 77%, transparent);
+  background-size: 26px 26px;
 }
-.lp-absensi-row { display: flex; align-items: center; justify-content: space-between; }
-.lp-absensi-label { font-size: 0.82rem; color: var(--text-dim); }
-.lp-absensi-value { font-size: 0.9rem; font-weight: 700; }
+.lp-absensi-map-radius {
+  position: absolute; top: 50%; left: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
+  border-radius: 50%; border: 2px dashed rgba(37,99,235,0.55); background: rgba(37,99,235,0.14);
+}
+.lp-absensi-map-pin {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 1.6rem;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.25));
+}
+.lp-absensi-map-badge {
+  position: absolute; left: 8px; bottom: 8px; background: var(--success); color: #fff;
+  font-size: 0.62rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+}
 
 .lp-diff-connector { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 96px; }
 .lp-diff-connector-line {
