@@ -12,14 +12,24 @@
   // Landing Page ini (mis. lewat tombol Back dari /app/#/register) bisa
   // mendarat di TENGAH halaman, bukan di atas. history.scrollRestoration
   // "manual" menonaktifkan restorasi otomatis itu supaya Landing Page ini
-  // SELALU mulai dari atas -- KECUALI URL memang membawa hash eksplisit
-  // (mis. diklik dari link Pricing/FAQ di navbar), yang tetap dihormati.
+  // SELALU mulai dari atas.
   if ("scrollRestoration" in history) {
     history.scrollRestoration = "manual";
   }
-  if (!location.hash) {
-    window.scrollTo(0, 0);
-  }
+  // REVISI KEDUA (feedback Owner): baris ini SEBELUMNYA hanya dijalankan
+  // kalau location.hash KOSONG -- tapi scrollToHash() di bawah selalu
+  // memanggil history.pushState(hash) setiap kali menu diklik, jadi URL
+  // address bar tetap membawa hash terakhir yang pernah diklik. Kalau
+  // pengunjung me-refresh atau membuka ulang halaman ini persis dengan
+  // hash lama itu masih di URL, browser melakukan native anchor-jump
+  // (INSTAN, tanpa kompensasi offset navbar, terjadi SEBELUM skrip ini
+  // sempat jalan) -- persis gejala "mendarat di tengah halaman" yang
+  // dikeluhkan. Sekarang SELALU dipaksa ke atas dulu tanpa syarat; kalau
+  // memang ada hash di URL (mis. deep link dibagikan), baru diarahkan
+  // ULANG ke situ dengan animasi scroll halus milik Landing Page sendiri
+  // (bukan native jump), lihat pemanggilan scrollToHash() di dalam
+  // DOMContentLoaded paling bawah file ini.
+  window.scrollTo(0, 0);
 
   function apiBase() {
     if (window.MUGEN_API_BASE) return window.MUGEN_API_BASE;
@@ -142,17 +152,24 @@
   // terasa kaku -- kurva animasinya linear/sama rata untuk jarak dekat
   // maupun jauh, dan link menu tidak pernah menandai section mana yang
   // sedang aktif. Diganti animasi scroll custom (durasi mengikuti jarak,
-  // easing SAMA PERSIS --ease yang sudah dipakai transisi CSS lain di
-  // halaman ini -- cubic-bezier(0.16,1,0.3,1)) + scroll-spy (link menu
-  // otomatis menyala saat section-nya terlihat, bukan cuma saat diklik).
-  // Berlaku untuk SEMUA link "#id" di halaman (navbar, footer, tombol CTA
-  // "Lihat Paket") lewat event delegation di document, bukan cuma navbar.
+  // easing kustom) + scroll-spy (link menu otomatis menyala saat section-nya
+  // terlihat, bukan cuma saat diklik). Berlaku untuk SEMUA link "#id" di
+  // halaman (navbar, footer, tombol CTA "Lihat Paket") lewat event
+  // delegation di document, bukan cuma navbar.
+  //
+  // REVISI KEDUA (feedback Owner): kurva awal (--ease/cubic-bezier(0.16,1,
+  // 0.3,1), sama dengan transisi hover cepat di halaman ini) ternyata
+  // TERLALU "meledak" di awal -- >90% jarak sudah ditempuh sebelum 30%
+  // durasi berlalu, sisanya nyaris diam, jadi terasa tersentak berhenti
+  // BUKAN melambat halus. Diganti easeOutCubic (0.33,1,0.68,1, KHUSUS untuk
+  // scroll, SENGAJA beda dari --ease yang tetap dipakai transisi hover
+  // pendek) -- perlambatan tersebar merata sepanjang durasi, mendekati
+  // tujuan terasa jelas melambat, bukan berhenti tiba-tiba. Durasi juga
+  // dinaikkan (600-1300ms, dari 450-900ms) supaya fase perlambatan itu
+  // sungguh-sungguh punya waktu untuk dirasakan.
 
   // Evaluator cubic-bezier(x1,y1,x2,y2) generik (Newton-Raphson, pola sama
-  // seperti implementasi referensi spesifikasi CSS Easing) -- SATU-SATUNYA
-  // cara memakai kurva --ease yang identik di JS (CSS custom property tidak
-  // bisa dibaca balik jadi angka x1/y1/x2/y2, jadi nilainya disalin manual
-  // di sini -- WAJIB diperbarui kalau --ease di landing.css pernah diubah).
+  // seperti implementasi referensi spesifikasi CSS Easing).
   function makeBezierEase(x1, y1, x2, y2) {
     function A(a1, a2) { return 1 - 3 * a2 + 3 * a1; }
     function B(a1, a2) { return 3 * a2 - 6 * a1; }
@@ -170,7 +187,7 @@
     }
     return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : calc(tForX(x), y1, y2));
   }
-  const _scrollEase = makeBezierEase(0.16, 1, 0.3, 1); // == --ease di landing.css
+  const _scrollEase = makeBezierEase(0.33, 1, 0.68, 1); // easeOutCubic, khusus scroll
 
   function _navbarOffset() {
     const navbar = document.getElementById("lp-navbar");
@@ -191,7 +208,7 @@
       const startY = window.scrollY;
       const diff = targetY - startY;
       if (Math.abs(diff) < 1) { resolve(); return; }
-      const duration = Math.min(900, Math.max(450, Math.abs(diff) * 0.6));
+      const duration = Math.min(1300, Math.max(600, Math.abs(diff) * 0.85));
       // scroll-behavior:smooth bawaan browser HARUS dimatikan sementara --
       // kalau tidak, window.scrollTo() tiap frame di bawah akan dianimasikan
       // ULANG oleh browser (smoothing dobel, hasilnya malah tersendat).
@@ -547,7 +564,7 @@
       if (pakai6 && hematRupiah > 0) {
         card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "Paling Hemat"));
       } else if (p.kode === "enterprise") {
-        card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-popular" }, "★ Paling Populer"));
+        card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-popular lp-pulse" }, "★ Paling Populer"));
       }
       card.appendChild(el("h3", {}, p.nama));
       card.appendChild(el("div", { class: "lp-pricing-price" }, [
@@ -741,5 +758,18 @@
     // render di atas (Pricing/FAQ/Contact) sudah diobservasi masing-masing
     // lewat revealObserve() di fungsi render-nya sendiri.
     initScrollReveal();
+    // Deep link (URL sudah membawa hash, mis. dibagikan atau hasil klik
+    // menu sebelum refresh): halaman sudah dipaksa ke atas duluan di atas,
+    // sekarang baru diarahkan ke section itu dengan animasi scroll halus
+    // milik sendiri -- BUKAN native anchor-jump instan bawaan browser.
+    // Ditunda sampai event "load" (BUKAN langsung di sini/DOMContentLoaded)
+    // supaya gambar (logo, ilustrasi HP, dst) sudah selesai dimuat dan
+    // ukurannya sudah pasti -- kalau dihitung lebih awal, gambar yang baru
+    // selesai dimuat belakangan bisa menggeser tinggi halaman DI ATAS
+    // section tujuan pas animasi sedang berjalan, hasilnya tetap sedikit
+    // meleset dari section yang benar.
+    if (location.hash && document.querySelector(location.hash)) {
+      window.addEventListener("load", () => scrollToHash(location.hash), { once: true });
+    }
   });
 })();
