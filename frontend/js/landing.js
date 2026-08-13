@@ -137,6 +137,127 @@
     links.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => links.classList.remove("lp-open")));
   }
 
+  // ======================= Smooth Scroll & Scroll-Spy =======================
+  // REVISI: `html { scroll-behavior: smooth }` bawaan browser (landing.css)
+  // terasa kaku -- kurva animasinya linear/sama rata untuk jarak dekat
+  // maupun jauh, dan link menu tidak pernah menandai section mana yang
+  // sedang aktif. Diganti animasi scroll custom (durasi mengikuti jarak,
+  // easing SAMA PERSIS --ease yang sudah dipakai transisi CSS lain di
+  // halaman ini -- cubic-bezier(0.16,1,0.3,1)) + scroll-spy (link menu
+  // otomatis menyala saat section-nya terlihat, bukan cuma saat diklik).
+  // Berlaku untuk SEMUA link "#id" di halaman (navbar, footer, tombol CTA
+  // "Lihat Paket") lewat event delegation di document, bukan cuma navbar.
+
+  // Evaluator cubic-bezier(x1,y1,x2,y2) generik (Newton-Raphson, pola sama
+  // seperti implementasi referensi spesifikasi CSS Easing) -- SATU-SATUNYA
+  // cara memakai kurva --ease yang identik di JS (CSS custom property tidak
+  // bisa dibaca balik jadi angka x1/y1/x2/y2, jadi nilainya disalin manual
+  // di sini -- WAJIB diperbarui kalau --ease di landing.css pernah diubah).
+  function makeBezierEase(x1, y1, x2, y2) {
+    function A(a1, a2) { return 1 - 3 * a2 + 3 * a1; }
+    function B(a1, a2) { return 3 * a2 - 6 * a1; }
+    function C(a1) { return 3 * a1; }
+    function calc(t, a1, a2) { return ((A(a1, a2) * t + B(a1, a2)) * t + C(a1)) * t; }
+    function slope(t, a1, a2) { return 3 * A(a1, a2) * t * t + 2 * B(a1, a2) * t + C(a1); }
+    function tForX(x) {
+      let t = x;
+      for (let i = 0; i < 6; i++) {
+        const s = slope(t, x1, x2);
+        if (s === 0) return t;
+        t -= (calc(t, x1, x2) - x) / s;
+      }
+      return t;
+    }
+    return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : calc(tForX(x), y1, y2));
+  }
+  const _scrollEase = makeBezierEase(0.16, 1, 0.3, 1); // == --ease di landing.css
+
+  function _navbarOffset() {
+    const navbar = document.getElementById("lp-navbar");
+    return (navbar ? navbar.offsetHeight : 64) + 12; // +12px jarak napas
+  }
+
+  function _targetScrollY(el) {
+    const y = el.getBoundingClientRect().top + window.scrollY - _navbarOffset();
+    const maxY = document.documentElement.scrollHeight - window.innerHeight;
+    return Math.max(0, Math.min(y, maxY));
+  }
+
+  // Durasi mengikuti jarak (klik menu section tetangga terasa lebih cepat
+  // daripada section jauh) -- ciri khas landing page premium, BUKAN durasi
+  // tetap seperti scroll-behavior:smooth bawaan browser.
+  function smoothScrollTo(targetY) {
+    return new Promise((resolve) => {
+      const startY = window.scrollY;
+      const diff = targetY - startY;
+      if (Math.abs(diff) < 1) { resolve(); return; }
+      const duration = Math.min(900, Math.max(450, Math.abs(diff) * 0.6));
+      // scroll-behavior:smooth bawaan browser HARUS dimatikan sementara --
+      // kalau tidak, window.scrollTo() tiap frame di bawah akan dianimasikan
+      // ULANG oleh browser (smoothing dobel, hasilnya malah tersendat).
+      const htmlEl = document.documentElement;
+      const prevBehavior = htmlEl.style.scrollBehavior;
+      htmlEl.style.scrollBehavior = "auto";
+      const startTime = performance.now();
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        window.scrollTo(0, startY + diff * _scrollEase(t));
+        if (t < 1) {
+          requestAnimationFrame(step);
+        } else {
+          htmlEl.style.scrollBehavior = prevBehavior;
+          resolve();
+        }
+      }
+      requestAnimationFrame(step);
+    });
+  }
+
+  function scrollToHash(hash) {
+    const el = document.querySelector(hash);
+    if (!el) return;
+    const targetY = _targetScrollY(el);
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const done = reduceMotion ? (window.scrollTo(0, targetY), Promise.resolve()) : smoothScrollTo(targetY);
+    done.then(() => { if (history.pushState) history.pushState(null, "", hash); });
+  }
+
+  function initSmoothAnchors() {
+    document.addEventListener("click", (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const hash = a.getAttribute("href");
+      if (!hash || hash.length < 2) return;
+      if (!document.querySelector(hash)) return; // biarkan default kalau target tidak ada
+      e.preventDefault();
+      scrollToHash(hash);
+    });
+  }
+
+  // Link menu navbar menyala otomatis mengikuti section yang SEDANG
+  // terlihat saat pengunjung scroll manual -- bukan cuma saat diklik.
+  function initScrollSpy() {
+    const navLinks = Array.from(document.querySelectorAll('#lp-nav-links a[href^="#"]'));
+    if (!navLinks.length || !("IntersectionObserver" in window)) return;
+    const targetToLink = new Map();
+    navLinks.forEach((a) => {
+      const el = document.querySelector(a.getAttribute("href"));
+      if (el) targetToLink.set(el, a);
+    });
+    if (!targetToLink.size) return;
+    const band = _navbarOffset();
+    const spy = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const active = targetToLink.get(entry.target);
+        if (!active) return;
+        navLinks.forEach((l) => l.classList.remove("lp-nav-active"));
+        active.classList.add("lp-nav-active");
+      });
+    }, { rootMargin: `-${band}px 0px -65% 0px`, threshold: 0 });
+    targetToLink.forEach((_a, el) => spy.observe(el));
+  }
+
   // ============================= Features (contoh statis, lihat spesifikasi
   // Phase 5 -- HANYA Pricing & FAQ yang wajib dari database) =============
 
@@ -607,6 +728,8 @@
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("lp-year").textContent = new Date().getFullYear();
     initNavbar();
+    initSmoothAnchors();
+    initScrollSpy();
     renderFeatures();
     loadPackages();
     loadFaq();

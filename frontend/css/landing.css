@@ -95,8 +95,23 @@ a { color: inherit; text-decoration: none; }
 .lp-brand-logo-full { height: 30px; width: auto; display: block; }
 .lp-brand-logo-footer { height: 34px; width: auto; display: block; }
 .lp-nav-links { display: flex; align-items: center; gap: 24px; }
-.lp-nav-links a:not(.lp-btn) { color: var(--text-dim); font-weight: 500; font-size: 0.95rem; }
+.lp-nav-links a:not(.lp-btn) {
+  color: var(--text-dim); font-weight: 500; font-size: 0.95rem; position: relative; padding-bottom: 4px;
+}
 .lp-nav-links a:not(.lp-btn):hover { color: var(--text); }
+/* REVISI Smooth Scroll & Scroll-Spy: underline yang muncul/hilang halus
+   (bukan warna statis) -- link menu "menyala" otomatis sesuai section yang
+   sedang terlihat (landing.js::initScrollSpy()), transisi memakai kurva
+   --ease yang sama dengan animasi scroll custom-nya supaya terasa satu
+   sistem yang konsisten. */
+.lp-nav-links a:not(.lp-btn)::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+  background: var(--accent-secondary); border-radius: 999px;
+  transform: scaleX(0); transform-origin: left; transition: transform 0.35s var(--ease);
+}
+.lp-nav-links a:not(.lp-btn):hover::after { transform: scaleX(1); opacity: 0.45; }
+.lp-nav-links a.lp-nav-active { color: var(--text); }
+.lp-nav-links a.lp-nav-active::after { transform: scaleX(1); opacity: 1; }
 .lp-nav-login { display: inline-block; }
 .lp-hamburger { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 8px; }
 .lp-hamburger span { width: 22px; height: 2px; background: var(--text); display: block; border-radius: 2px; }
