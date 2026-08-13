@@ -896,9 +896,22 @@ CREATE TABLE IF NOT EXISTS attendance_settings (
     tenant_id         INTEGER
 );
 
+-- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
+-- SAMA seperti user_id/tenant_id di tabel lain sepanjang file ini, lihat
+-- catatan panjang di email_verification_tokens di atas untuk kejadian
+-- PERSIS sama pada tabel `users`) -- versi awal fitur ini SEMPAT memakainya,
+-- dan langsung meng-crash boot produksi: "psycopg2.errors.InvalidForeignKey:
+-- there is no unique constraint matching given keys for referenced table
+-- 'barbers'" -- tabel `barbers` di database produksi yang SUDAH BERJALAN
+-- ternyata TIDAK (lagi) punya constraint UNIQUE/PRIMARY KEY murni pada `id`
+-- yang bisa dirujuk FK baru (CREATE TABLE IF NOT EXISTS barbers (...) di
+-- atas TIDAK PERNAH benar-benar dieksekusi ulang pada instalasi yang sudah
+-- ada, jadi definisi PRIMARY KEY di sana tidak menolong sama sekali).
+-- Menghapus FK ini membuat migrasi ini idempotent & aman dijalankan pada
+-- schema produksi apa adanya.
 CREATE TABLE IF NOT EXISTS attendance_logs (
     id                    SERIAL PRIMARY KEY,
-    barber_id             INTEGER NOT NULL REFERENCES barbers(id),
+    barber_id             INTEGER NOT NULL,
     tanggal               TEXT NOT NULL,
     check_in_at           TEXT,
     check_in_latitude     DOUBLE PRECISION,
