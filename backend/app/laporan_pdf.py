@@ -34,6 +34,7 @@ import izin_cuti_db
 import uang_kas_db
 import data_non_barber_db
 import rekap_ringkasan
+import attendance_db
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -1324,6 +1325,71 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
     ]
     return _bangun_pdf("Laporan Izin & Cuti", "Semua Periode", dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
+
+
+# Modul BARU Absensi: label status hari ini (5 nilai workflow, lihat
+# attendance_db.hitung_status_hari_ini()) + ketepatan check-in (2 nilai,
+# kolom terpisah check_in_status) -- lihat penjelasan desain lengkap di
+# docstring attendance_db.py.
+_LABEL_STATUS_ABSENSI = {
+    "belum_check_in": "Belum Check In", "sedang_bekerja": "Sedang Bekerja",
+    "sudah_check_out": "Sudah Check Out", "tidak_check_in": "Tidak Check In",
+    "tidak_check_out": "Tidak Check Out",
+}
+_LABEL_KETEPATAN_ABSENSI = {"tepat_waktu": "Tepat Waktu", "terlambat": "Terlambat"}
+
+
+def _label_status_absensi(row: dict) -> str:
+    label = _LABEL_STATUS_ABSENSI.get(row["status"], row["status"])
+    ketepatan = _LABEL_KETEPATAN_ABSENSI.get(row.get("check_in_status"))
+    return f"{label} ({ketepatan})" if ketepatan and row["status"] == "sedang_bekerja" else label
+
+
+def _durasi_kerja_text(menit: int | None) -> str:
+    if menit is None:
+        return "-"
+    jam, sisa_menit = divmod(int(menit), 60)
+    return f"{jam}j {sisa_menit}m"
+
+
+def _jam_dari_iso(nilai: str | None) -> str:
+    if not nilai:
+        return "-"
+    return nilai[11:16] if len(nilai) >= 16 else nilai
+
+
+# Lebar kolom Laporan Absensi (mm), total 194mm -- Barber/Tanggal/Check In/
+# Check Out/Status/Durasi Kerja, mengikuti tabel Dashboard Absensi Owner/
+# Admin (lihat pages/absensi.js) apa adanya.
+_LEBAR_KOLOM_ABSENSI = [40 * mm, 26 * mm, 26 * mm, 26 * mm, 46 * mm, 30 * mm]
+
+
+def buat_pdf_absensi_list(tanggal: str | None, tanggal_dari: str | None, tanggal_sampai: str | None,
+                           barber_id: int | None, status: str | None, dicetak_oleh: str,
+                           tenant_id: int | None = None) -> bytes:
+    data = attendance_db.get_log_list(tenant_id, tanggal=tanggal, tanggal_dari=tanggal_dari,
+                                       tanggal_sampai=tanggal_sampai, barber_id=barber_id, status=status)
+    header = ["Barber", "Tanggal", "Check In", "Check Out", "Status", "Durasi Kerja"]
+    baris = [[
+        _sel(r["nama_barber"]), _sel(r["tanggal"]), _sel(_jam_dari_iso(r.get("check_in_at"))),
+        _sel(_jam_dari_iso(r.get("check_out_at"))), _sel(_label_status_absensi(r)),
+        _sel(_durasi_kerja_text(r.get("durasi_kerja_menit"))),
+    ] for r in data]
+    jumlah_terlambat = sum(1 for r in data if r.get("check_in_status") == "terlambat")
+    jumlah_tidak_checkin = sum(1 for r in data if r["status"] == "tidak_check_in")
+    jumlah_tidak_checkout = sum(1 for r in data if r["status"] == "tidak_check_out")
+    ringkasan_tambahan = [
+        f"<b>Total Baris: {len(data)}</b> (Terlambat: {jumlah_terlambat}, "
+        f"Tidak Check In: {jumlah_tidak_checkin}, Tidak Check Out: {jumlah_tidak_checkout})",
+    ]
+    if tanggal:
+        periode = f"Tanggal {tanggal}"
+    elif tanggal_dari or tanggal_sampai:
+        periode = _periode_text_rentang(tanggal_dari or tanggal_sampai, tanggal_sampai or tanggal_dari)
+    else:
+        periode = "Semua Periode"
+    return _bangun_pdf("Laporan Absensi", periode, dicetak_oleh, header, baris,
+                        col_widths=_LEBAR_KOLOM_ABSENSI, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
 # Lebar kolom Laporan Pemasukan/Pengeluaran (mm), total 194mm -- Tanggal/

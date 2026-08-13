@@ -44,3 +44,9 @@ tzdata>=2024.1
 # pernah crash saat boot).
 requests>=2.31.0
 
+# Modul BARU Absensi: Export Excel Laporan Absensi (lihat attendance_excel.py)
+# -- Laporan lain di aplikasi ini HANYA punya export PDF (reportlab), Excel
+# ATAS PERMINTAAN EKSPLISIT spesifikasi Absensi ("Export -> Excel, PDF"),
+# pemakaian PERTAMA library ini di proyek.
+openpyxl>=3.1.0
+

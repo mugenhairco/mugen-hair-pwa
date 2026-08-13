@@ -56,6 +56,14 @@ const MugenNav = (() => {
       { hash: "#/karyawan/izin-cuti", label: "Izin & Cuti", roles: ["admin", "staff", "barber"],
         badgeId: "izin-badge", badgeRoles: ["admin", "staff"] },
     ]},
+    // Modul BARU Absensi (GPS Check In/Out Geofencing) -- berdiri sendiri,
+    // TIDAK terhubung ke Izin & Cuti/Barber Holiday (keputusan eksplisit
+    // Owner). Barber: self-service Check In/Out + riwayat sendiri. Owner/
+    // Admin: dashboard + daftar semua barber (lihat routers/attendance.py
+    // untuk detail hak akses -- Pengaturan Absensi TETAP di menu Setting,
+    // bukan di sini, sesuai struktur spesifikasi "Owner memiliki menu:
+    // Pengaturan -> Absensi").
+    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"] },
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"],
