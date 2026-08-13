@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=16" />
+<link rel="stylesheet" href="css/landing.css?v=17" />
 </head>
 <body>
 
@@ -269,10 +269,15 @@
             <li>Jadwal kerja</li>
           </ul>
         </div>
+      </div>
 
-        <!-- FITUR Notifikasi WhatsApp: kartu BERDIRI SENDIRI (bukan poin
-             tambahan di daftar kartu lain), ditempatkan bersebelahan
-             dengan kartu Aplikasi Barber -- permintaan eksplisit Owner. -->
+      <!-- FITUR unggulan TAMBAHAN, berdiri sendiri (bukan poin di daftar
+           kartu Owner/Barber di atas) -- baris kedua supaya kartu utama
+           (Dashboard Owner <-> Aplikasi Barber, dengan connector "Sinkron
+           Real-time") tidak berdesakan. Notifikasi WhatsApp & Absensi
+           Karyawan sama-sama dikerjakan LEWAT Aplikasi Barber, jadi
+           ditempatkan tepat di bawahnya. -->
+      <div class="lp-diff-extra-grid">
         <div class="lp-diff-card lp-diff-card-wa lp-reveal lp-reveal-3">
           <div class="lp-diff-card-head">
             <span class="lp-diff-icon">💬</span>
@@ -289,6 +294,35 @@
             <li>Konfirmasi otomatis saat pembayaran diverifikasi</li>
             <li>Notifikasi otomatis saat booking dibatalkan</li>
             <li>Dikirim dari nomor &amp; isi pesan toko sendiri</li>
+          </ul>
+        </div>
+
+        <!-- FITUR Absensi Karyawan (GPS Geofencing): kartu BERDIRI SENDIRI,
+             permintaan eksplisit Owner -- barber Check In/Out lewat
+             Aplikasi Barber sendiri, jarak ke toko dihitung otomatis. -->
+        <div class="lp-diff-card lp-diff-card-absensi lp-reveal lp-reveal-4">
+          <div class="lp-diff-card-head">
+            <span class="lp-diff-icon">📍</span>
+            <div>
+              <h3>Absensi Karyawan</h3>
+              <p>Check In/Out otomatis berbasis jarak lewat Aplikasi Barber</p>
+            </div>
+          </div>
+          <div class="lp-absensi-preview">
+            <div class="lp-absensi-row">
+              <span class="lp-absensi-label">Status Hari Ini</span>
+              <span class="lp-mockup-badge lp-mockup-badge-success">Tepat Waktu</span>
+            </div>
+            <div class="lp-absensi-row">
+              <span class="lp-absensi-label">Jarak dari Toko</span>
+              <span class="lp-absensi-value">42 meter</span>
+            </div>
+          </div>
+          <ul class="lp-diff-list">
+            <li>Barber Check In/Out sendiri lewat Aplikasi Barber</li>
+            <li>Lokasi &amp; jarak ke toko diverifikasi otomatis (GPS)</li>
+            <li>Terlambat/tidak Check In-Out otomatis terdeteksi</li>
+            <li>Owner pantau kehadiran seluruh barber dari satu dashboard</li>
           </ul>
         </div>
       </div>
@@ -537,7 +571,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=16"></script>
-<script src="js/landing.js?v=16"></script>
+<script src="js/lp-slider.js?v=17"></script>
+<script src="js/landing.js?v=17"></script>
 </body>
 </html>

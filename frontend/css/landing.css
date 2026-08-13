@@ -63,10 +63,11 @@ a { color: inherit; text-decoration: none; }
 .lp-reveal-1.lp-in-view { transition-delay: 0.08s; }
 .lp-reveal-2.lp-in-view { transition-delay: 0.16s; }
 .lp-reveal-3.lp-in-view { transition-delay: 0.24s; }
+.lp-reveal-4.lp-in-view { transition-delay: 0.32s; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3 {
+  .lp-fade-in, .lp-fade-in-delay, .lp-reveal, .lp-reveal-1, .lp-reveal-2, .lp-reveal-3, .lp-reveal-4 {
     animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important;
   }
 }
@@ -214,7 +215,14 @@ a { color: inherit; text-decoration: none; }
    lihat spesifikasi item 3 "Hapus Statistik Landing Page"). */
 .lp-differentiator { background: var(--bg-alt); }
 .lp-diff-showcase {
-  display: grid; grid-template-columns: 1fr auto 1fr 1fr; gap: 28px; align-items: start; margin-top: 48px;
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 28px; align-items: start; margin-top: 48px;
+}
+/* Baris kedua -- kartu fitur unggulan TAMBAHAN (Notifikasi WhatsApp,
+   Absensi Karyawan), keduanya dikerjakan lewat Aplikasi Barber jadi
+   ditaruh persis di bawah baris utama, grid 2 kolom sendiri supaya
+   tidak berdesakan dengan kartu Dashboard Owner/Aplikasi Barber di atas. */
+.lp-diff-extra-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 28px;
 }
 .lp-diff-card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 28px;
@@ -246,6 +254,17 @@ a { color: inherit; text-decoration: none; }
   background: #DCF8C6; color: #1F2937; font-size: 0.82rem; line-height: 1.5;
   padding: 10px 14px; border-radius: 12px 12px 2px 12px; max-width: 240px; box-shadow: var(--shadow-sm);
 }
+
+/* Kartu "Absensi Karyawan" -- mini preview Status Hari Ini + Jarak dari
+   Toko, meniru ringkas apa yang barber lihat di halaman Absensi Aplikasi
+   Barber sungguhan (lihat frontend/app/js/pages/absensi.js). */
+.lp-absensi-preview {
+  background: var(--bg-alt); border-radius: 16px; padding: 16px; margin-bottom: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.lp-absensi-row { display: flex; align-items: center; justify-content: space-between; }
+.lp-absensi-label { font-size: 0.82rem; color: var(--text-dim); }
+.lp-absensi-value { font-size: 0.9rem; font-weight: 700; }
 
 .lp-diff-connector { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 96px; }
 .lp-diff-connector-line {
@@ -627,6 +646,7 @@ a.lp-contact-item:hover, .lp-contact-item:hover { transform: translateY(-3px); b
   .lp-hero-note { justify-content: center; }
   .lp-hero-mockup { max-width: 480px; margin: 0 auto; }
   .lp-diff-showcase { grid-template-columns: 1fr; }
+  .lp-diff-extra-grid { grid-template-columns: 1fr; }
   .lp-diff-connector { flex-direction: row; padding-top: 0; }
   .lp-diff-connector-line {
     width: auto; height: 2px; flex: 1; min-height: 0;

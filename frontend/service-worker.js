@@ -47,7 +47,16 @@
 // Aplikasi Barber -- preview bubble chat WhatsApp mini (landing.css:
 // .lp-wa-preview/.lp-wa-bubble, grid-template-columns showcase jadi 4
 // kolom untuk menampung kartu ketiga ini).
-const ASSET_VERSION = "16";
+// v16 -> v17: REVISI tata letak v16 -- kartu Notifikasi WhatsApp DIPINDAH
+// keluar dari .lp-diff-showcase (dikembalikan ke 3 kolom semula) ke grid
+// baris kedua BARU (.lp-diff-extra-grid, 2 kolom) supaya tidak berdesakan
+// dengan pasangan utama Dashboard Owner<->Aplikasi Barber. Kartu BARU
+// "Absensi Karyawan" (Check In/Out berbasis jarak lewat Aplikasi Barber,
+// preview Status Hari Ini + Jarak dari Toko: landing.css .lp-absensi-*)
+// ditambahkan bersebelahan dengan Notifikasi WhatsApp di grid baru ini.
+// Kartu fitur "Employee Attendance" juga ditambahkan ke slider Fitur
+// (landing.js).
+const ASSET_VERSION = "17";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
