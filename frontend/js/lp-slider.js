@@ -130,12 +130,25 @@
     }
     track.addEventListener("scroll", onScroll, { passive: true });
 
+    // BUGFIX kritis: scrollIntoView() menelusuri SEMUA ancestor yang bisa
+    // discroll -- termasuk document/window itu sendiri, BUKAN cuma track
+    // ini. Karena slider ini letaknya di bawah lipatan (section Fitur/
+    // Pricing), goTo(0, {instant:true}) yang dipanggil saat init() (di
+    // bawah, sebelum pengunjung sempat menggeser apa pun) ikut men-scroll
+    // SELURUH HALAMAN ke bawah supaya slide pertama "terlihat" -- gejala
+    // "pengunjung mendarat di tengah halaman, bukan di atas". Diganti
+    // hitungan scroll horizontal MURNI di dalam track ini sendiri lewat
+    // track.scrollTo() -- TIDAK PERNAH menyentuh scroll vertikal
+    // document/window sama sekali, apa pun posisi slider di halaman.
     function goTo(i, opts) {
       const target = slides[Math.max(0, Math.min(slides.length - 1, i))];
       if (!target) return;
-      target.scrollIntoView({
+      const trackRect = track.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const selisihKeTengah = (targetRect.left + targetRect.width / 2) - (trackRect.left + trackRect.width / 2);
+      track.scrollTo({
+        left: track.scrollLeft + selisihKeTengah,
         behavior: (opts && opts.instant) ? "auto" : scrollBehavior(),
-        inline: "center", block: "nearest",
       });
     }
 

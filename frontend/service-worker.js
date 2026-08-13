@@ -30,7 +30,15 @@
 // bisa diklik LAGI ("dipilih") untuk membuka modal detail -- deskripsi
 // lebih lengkap + poin manfaat untuk Fitur, rincian paket + tombol Select
 // Package untuk Pricing.
-const ASSET_VERSION = "13";
+// v13 -> v14: BUGFIX KRITIS -- lp-slider.js::goTo() sebelumnya memakai
+// scrollIntoView(), yang menelusuri SEMUA ancestor yang bisa discroll
+// termasuk document/window itu sendiri -- karena slider berada di bawah
+// lipatan (section Fitur/Pricing), posisi awal slider (dipanggil saat
+// init(), sebelum pengunjung berinteraksi apa pun) ikut men-scroll
+// SELURUH HALAMAN ke bawah, gejalanya "pengunjung mendarat di tengah
+// halaman". Diganti scroll horizontal murni lewat track.scrollTo(),
+// tidak pernah menyentuh scroll vertikal document/window sama sekali.
+const ASSET_VERSION = "14";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
