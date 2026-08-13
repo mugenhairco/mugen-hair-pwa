@@ -172,25 +172,31 @@ a { color: inherit; text-decoration: none; }
 .lp-mockup-badge-warning { background: rgba(234,88,12,0.12); color: var(--warning); }
 .lp-mockup-badge-info { background: rgba(37,99,235,0.12); color: var(--info); }
 
-/* padding-bottom/padding-right reservoir DI SINI (bukan overlap negatif ke
-   dalam .lp-mockup-frame) -- supaya kartu "Pendapatan bulan ini" TIDAK
-   PERNAH menutupi baris booking/badge di dalam mockup, berapa pun tinggi
-   kontennya (mockup KPI/chart/list di atas bisa berubah tanpa membuat
-   float ini menabrak konten lagi). */
-.lp-hero-mockup { position: relative; padding: 0 28px 40px 0; }
+/* padding-bottom/padding-left reservoir DI SINI (bukan overlap negatif ke
+   dalam .lp-mockup-frame) -- supaya mockup Aplikasi Barber yang menimpa
+   TIDAK PERNAH menutupi baris booking/badge di dalam mockup Dashboard,
+   berapa pun tinggi kontennya (mockup KPI/chart/list di atas bisa berubah
+   tanpa membuat overlap ini menabrak konten lagi). */
+.lp-hero-mockup { position: relative; padding: 0 0 44px 24px; }
 .lp-hero-mockup::after {
-  content: ""; position: absolute; inset: 18px 10px 22px 18px; z-index: -1; border-radius: 18px;
+  content: ""; position: absolute; inset: 18px 18px 22px 10px; z-index: -1; border-radius: 18px;
   background: var(--bg-alt); border: 1px solid var(--border);
 }
-.lp-hero-float {
-  position: absolute; right: 0; bottom: 0; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow-md); display: flex; align-items: center; gap: 10px;
-  animation: lpFloat 4.5s ease-in-out infinite; max-width: 200px;
+/* REVISI Hero: mockup Aplikasi Barber (skala kecil) menimpa sudut
+   kiri-bawah mockup Dashboard -- gantinya badge "Pendapatan bulan ini"
+   polos, meniru komposisi "mockup besar + mockup kecil menimpa" pada
+   referensi desain, SEKALIGUS langsung memvisualkan pembeda utama Rivoir
+   (Owner Dashboard + Aplikasi Barber) sejak Hero. .lp-phone-frame dipakai
+   APA ADANYA (sama seperti section Differentiator di bawah) hanya
+   diperkecil lewat transform:scale() -- supaya SATU definisi ukuran asli
+   tetap jadi sumber kebenaran, tidak ada duplikasi ukuran phone frame. */
+.lp-hero-float-phone {
+  position: absolute; left: -16px; bottom: -18px; z-index: 2;
+  transform: scale(0.62); transform-origin: bottom left;
+  animation: lpFloat 4.5s ease-in-out infinite;
 }
-.lp-hero-float-icon { width: 30px; height: 30px; border-radius: 50%; background: rgba(22,163,74,0.14); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 0.95rem; }
-.lp-hero-float-text { font-size: 0.72rem; color: var(--text-dim); }
-.lp-hero-float-text strong { display: block; font-size: 0.85rem; color: var(--text); }
-@keyframes lpFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.lp-hero-float-phone .lp-phone-frame { margin-bottom: 0; }
+@keyframes lpFloat { 0%, 100% { transform: scale(0.62) translateY(0); } 50% { transform: scale(0.62) translateY(-8px); } }
 
 /* Animasi ringan: fade+slide masuk sekali (bukan berulang, tidak berlebihan) */
 .lp-fade-in, .lp-fade-in-delay { opacity: 0; transform: translateY(16px); animation: lpFadeIn 0.7s var(--ease) forwards; }
@@ -199,7 +205,7 @@ a { color: inherit; text-decoration: none; }
 @keyframes lpFadeIn { to { opacity: 1; transform: translateY(0); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-hero-float, .lp-diff-connector-badge { animation: none; }
+  .lp-hero-float-phone, .lp-diff-connector-badge { animation: none; }
 }
 
 /* ---------- Differentiator: Owner Dashboard + Barber App ----------
@@ -551,6 +557,10 @@ body.lp-modal-open { overflow: hidden; }
   text-align: center; transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
 }
 a.lp-contact-item:hover, .lp-contact-item:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.lp-contact-icon {
+  width: 44px; height: 44px; border-radius: 50%; background: var(--bg-alt); color: var(--accent-secondary);
+  display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;
+}
 .lp-contact-item .lp-contact-label { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 6px; }
 .lp-contact-item .lp-contact-value { font-weight: 700; }
 
