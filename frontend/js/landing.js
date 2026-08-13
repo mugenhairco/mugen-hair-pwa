@@ -167,6 +167,10 @@
   // tujuan terasa jelas melambat, bukan berhenti tiba-tiba. Durasi juga
   // dinaikkan (600-1300ms, dari 450-900ms) supaya fase perlambatan itu
   // sungguh-sungguh punya waktu untuk dirasakan.
+  //
+  // REVISI KETIGA (feedback Owner): durasi masih terasa terlalu cepat --
+  // dilipatgandakan 2x (1200-2600ms, dari 600-1300ms) supaya scroll ke
+  // menu yang diklik terasa jauh lebih santai/mewah.
 
   // Evaluator cubic-bezier(x1,y1,x2,y2) generik (Newton-Raphson, pola sama
   // seperti implementasi referensi spesifikasi CSS Easing).
@@ -208,7 +212,7 @@
       const startY = window.scrollY;
       const diff = targetY - startY;
       if (Math.abs(diff) < 1) { resolve(); return; }
-      const duration = Math.min(1300, Math.max(600, Math.abs(diff) * 0.85));
+      const duration = Math.min(2600, Math.max(1200, Math.abs(diff) * 1.7));
       // scroll-behavior:smooth bawaan browser HARUS dimatikan sementara --
       // kalau tidak, window.scrollTo() tiap frame di bawah akan dianimasikan
       // ULANG oleh browser (smoothing dobel, hasilnya malah tersendat).
