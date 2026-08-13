@@ -339,6 +339,14 @@ const MugenRouter = (() => {
       // (self-service). Perlindungan sebenarnya tetap di backend
       // (routers/izin_cuti.py).
       renderResult = PageIzinCuti.render(content);
+    } else if (hash.startsWith("#/absensi")) {
+      // Modul BARU Absensi (GPS Check In/Out Geofencing): berdiri sendiri,
+      // TIDAK terhubung ke Izin & Cuti/Barber Holiday. Pola akses sama
+      // seperti izin-cuti.js (self-service Barber vs Owner/Admin -- semua
+      // role boleh lihat halamannya sendiri-sendiri, dibedakan DI DALAM
+      // absensi.js lewat user.role). Perlindungan sebenarnya tetap di
+      // backend (routers/attendance.py).
+      renderResult = PageAbsensi.render(content);
     } else if (hash.startsWith("#/keuangan/pemasukan")) {
       // Modul Keuangan (Fase 1): data operasional TOKO, Owner/'staff' akses
       // PENUH tanpa sistem izin, Barber tidak ada akses -- pola sama

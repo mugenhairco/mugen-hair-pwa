@@ -63,6 +63,15 @@ PERMISSION_DEFS = [
     # Identitas lama, atau sebaliknya) sesuai instruksi "Admin dapat
     # mengubah Branding jika memiliki izin".
     ("izin_setting_branding", "setting", "Tab Branding", False),
+    # ---- Absensi (modul GPS Check In/Out) ----
+    # Lihat spesifikasi (chat) untuk pembagian peran: Owner ('admin') akses
+    # penuh TANPA syarat (seperti biasa). 'staff' (Admin) SELALU boleh
+    # MELIHAT (dashboard/riwayat/laporan Absensi -- tidak digerbang
+    # permission apa pun, sama seperti pengeluaran.py), tapi MENGUBAH
+    # Pengaturan Absensi (jam kerja/radius/lokasi toko) wajib izin eksplisit
+    # ini dari Owner (lihat require_permission("izin_absensi_pengaturan")
+    # di routers/attendance.py).
+    ("izin_absensi_pengaturan", "absensi", "Kelola Pengaturan Absensi", False),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}

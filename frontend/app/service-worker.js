@@ -531,7 +531,12 @@
 // booking) -- ui.js::toast() tidak lagi menyaring type non-error secara
 // default, ditambah penataan tumpukan (stacking) supaya beberapa toast
 // yang tampil hampir bersamaan tidak saling menimpa.
-const ASSET_VERSION = "97";
+// v97 -> v98: Modul BARU Absensi (GPS Check In/Out Geofencing) -- halaman
+// baru js/pages/absensi.js (menu sidebar "Absensi", nav.js/router.js),
+// tab baru "Absensi" di Setting (pengaturan.js) untuk Pengaturan Absensi
+// (Jam Masuk/Pulang, Toleransi, Radius, Lokasi Toko). Modul berdiri
+// sendiri, TIDAK mengubah halaman lain yang sudah ada.
+const ASSET_VERSION = "98";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -595,6 +600,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/komisi.js",
   "/app/js/pages/reimburse.js",
   "/app/js/pages/izin_cuti.js",
+  "/app/js/pages/absensi.js",
   "/app/js/pages/pengaturan.js",
   "/app/js/pages/billing.js",
   "/app/js/pages/produk.js",

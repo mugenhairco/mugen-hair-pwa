@@ -876,6 +876,78 @@ CREATE INDEX IF NOT EXISTS idx_transaksi_tanggal ON transaksi(tanggal);
 CREATE INDEX IF NOT EXISTS idx_transaksi_barber_id ON transaksi(barber_id);
 CREATE INDEX IF NOT EXISTS idx_transaksi_detail_transaksi_id ON transaksi_detail(transaksi_id);
 CREATE INDEX IF NOT EXISTS idx_barbers_tenant_id ON barbers(tenant_id);
+
+-- FITUR Absensi (GPS Check In/Out Geofencing) -- modul BARU, MANDIRI (lihat
+-- docstring lengkap di attendance_db.py, jalur SQLite yang SAMA PERSIS).
+-- SENGAJA TIDAK terhubung ke izin_cuti/absensi_libur sama sekali (keputusan
+-- eksplisit Owner). Index tenant_id/barber_id/tanggal ditambahkan LANGSUNG
+-- sejak awal (pelajaran dari BUGFIX performa index transaksi di atas -- tidak
+-- menunggu sampai jadi masalah produksi).
+CREATE TABLE IF NOT EXISTS attendance_settings (
+    id                INTEGER PRIMARY KEY,
+    jam_masuk         TEXT NOT NULL DEFAULT '09:00',
+    toleransi_menit   INTEGER NOT NULL DEFAULT 15,
+    jam_pulang        TEXT NOT NULL DEFAULT '20:00',
+    radius_meter      INTEGER NOT NULL DEFAULT 500,
+    lokasi_nama       TEXT,
+    lokasi_latitude   DOUBLE PRECISION,
+    lokasi_longitude  DOUBLE PRECISION,
+    updated_at        TEXT,
+    tenant_id         INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS attendance_logs (
+    id                    SERIAL PRIMARY KEY,
+    barber_id             INTEGER NOT NULL REFERENCES barbers(id),
+    tanggal               TEXT NOT NULL,
+    check_in_at           TEXT,
+    check_in_latitude     DOUBLE PRECISION,
+    check_in_longitude    DOUBLE PRECISION,
+    check_in_accuracy     DOUBLE PRECISION,
+    check_in_speed        DOUBLE PRECISION,
+    check_in_heading      DOUBLE PRECISION,
+    check_in_jarak_meter  DOUBLE PRECISION,
+    check_in_status       TEXT,
+    check_in_browser      TEXT,
+    check_in_device       TEXT,
+    check_in_ip           TEXT,
+    check_out_at          TEXT,
+    check_out_latitude    DOUBLE PRECISION,
+    check_out_longitude   DOUBLE PRECISION,
+    check_out_accuracy    DOUBLE PRECISION,
+    check_out_speed       DOUBLE PRECISION,
+    check_out_heading     DOUBLE PRECISION,
+    check_out_jarak_meter DOUBLE PRECISION,
+    check_out_browser     TEXT,
+    check_out_device      TEXT,
+    check_out_ip          TEXT,
+    durasi_kerja_menit    INTEGER,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT,
+    tenant_id             INTEGER,
+    UNIQUE(barber_id, tanggal)
+);
+
+CREATE TABLE IF NOT EXISTS attendance_audit_logs (
+    id           SERIAL PRIMARY KEY,
+    barber_id    INTEGER,
+    aksi         TEXT NOT NULL,
+    sukses       INTEGER NOT NULL,
+    alasan_gagal TEXT,
+    waktu_server TEXT NOT NULL,
+    latitude     DOUBLE PRECISION,
+    longitude    DOUBLE PRECISION,
+    accuracy     DOUBLE PRECISION,
+    browser      TEXT,
+    device       TEXT,
+    ip_address   TEXT,
+    tenant_id    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_logs_tenant_tanggal ON attendance_logs(tenant_id, tanggal);
+CREATE INDEX IF NOT EXISTS idx_attendance_logs_barber_id ON attendance_logs(barber_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_tenant_id ON attendance_audit_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_barber_id ON attendance_audit_logs(barber_id);
 """
 
 
