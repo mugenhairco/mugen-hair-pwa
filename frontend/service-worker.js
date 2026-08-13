@@ -38,7 +38,11 @@
 // SELURUH HALAMAN ke bawah, gejalanya "pengunjung mendarat di tengah
 // halaman". Diganti scroll horizontal murni lewat track.scrollTo(),
 // tidak pernah menyentuh scroll vertikal document/window sama sekali.
-const ASSET_VERSION = "14";
+// v14 -> v15: kartu fitur baru "WhatsApp Notification" ditambahkan ke
+// slider Fitur (landing.js) -- pesan WhatsApp otomatis ke pelanggan dari
+// nomor toko sendiri (fitur backend sudah ada, ini murni menampilkannya
+// di Landing Page).
+const ASSET_VERSION = "15";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
