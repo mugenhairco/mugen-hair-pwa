@@ -153,6 +153,15 @@
         "Slot terkunci real-time sehingga tidak ada double booking",
       ],
     } },
+    { icon: "💬", title: "WhatsApp Notification", desc: "Pesan WhatsApp otomatis ke pelanggan dari nomor toko sendiri, tanpa admin ketik manual.", detail: {
+      ringkasan: "Pelanggan otomatis menerima pesan WhatsApp dari nomor toko Anda sendiri -- saat memilih pembayaran QRIS, saat pembayaran diverifikasi (manual maupun otomatis lewat Payment Gateway), dan saat booking dibatalkan. Admin tidak perlu chat satu-satu lagi, dan isi pesannya bisa diatur sesuai gaya toko sendiri.",
+      poin: [
+        "Reminder otomatis \"segera bayar\" saat pelanggan pilih QRIS",
+        "Konfirmasi otomatis begitu pembayaran diverifikasi",
+        "Notifikasi pembatalan otomatis kalau booking tidak dibayar tepat waktu",
+        "Dikirim dari nomor WhatsApp toko sendiri, isi pesan bisa diatur bebas",
+      ],
+    } },
     { icon: "🗓️", title: "Calendar", desc: "Jadwal barber & slot tersedia terlihat jelas dalam satu kalender.", detail: {
       ringkasan: "Satu tampilan kalender menampilkan jadwal seluruh barber sekaligus, sehingga admin bisa memantau kepadatan toko dan menambah booking manual dengan cepat.",
       poin: [
