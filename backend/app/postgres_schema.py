@@ -898,7 +898,7 @@ CREATE TABLE IF NOT EXISTS attendance_settings (
 
 -- REVISI: besar anggaran limit Keterlambatan & Pulang Lebih Awal (menit/
 -- bulan, lihat attendance_db.py::hitung_ringkasan_bulan()) sekarang bisa
--- diatur Owner/Admin lewat Setting > Absensi, bukan konstanta tetap 120 --
+-- diatur Owner/Admin lewat menu Absensi, bukan konstanta tetap 120 --
 -- ADD COLUMN IF NOT EXISTS untuk instalasi Postgres yang SUDAH ADA (pola
 -- sama seperti barbers.gaji_pokok di atas).
 ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_terlambat INTEGER NOT NULL DEFAULT 120;

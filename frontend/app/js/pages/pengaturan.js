@@ -13,12 +13,14 @@ const PagePengaturan = (() => {
     "Tampilan": "izin_setting_tampilan",
     "User": "izin_setting_user",
     "Backup": "izin_setting_backup",
-    // Modul BARU Absensi: tab Pengaturan Absensi (Jam Masuk/Pulang, Toleransi,
-    // Radius, Lokasi Toko) -- staff HANYA melihat tab ini kalau Owner
-    // memberi izin_absensi_pengaturan (sama gate-nya dengan endpoint
-    // PUT /api/attendance/settings, lihat routers/attendance.py).
-    "Absensi": "izin_absensi_pengaturan",
   };
+  // REVISI (feedback Owner): form Pengaturan Absensi (Jam Masuk/Pulang,
+  // Toleransi, Radius, Limit Keterlambatan/Pulang Lebih Awal, Lokasi Toko)
+  // DIPINDAHKAN dari sini ke menu utama Absensi sendiri (lihat
+  // pages/absensi.js::renderPengaturanAbsensi()) -- tidak lagi jadi tab di
+  // Setting. Permission izin_absensi_pengaturan TETAP ada & tetap diberikan
+  // lewat tab Hak Akses Admin di bawah (gate-nya sekarang melindungi kartu
+  // itu di halaman Absensi, bukan tab Setting ini).
 
   async function render(root) {
     root.innerHTML = "";
@@ -42,7 +44,7 @@ const PagePengaturan = (() => {
     // TIDAK masuk TAB_KE_IZIN_SETTING sama sekali, jadi otomatis TIDAK
     // PERNAH muncul untuk staff apa pun izin yang diberikan Owner-nya.
     const tabs = isOwner
-      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "Absensi", "WhatsApp", "User", "Backup", "Hak Akses Admin", "Profil"]
+      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "WhatsApp", "User", "Backup", "Hak Akses Admin", "Profil"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -71,7 +73,6 @@ const PagePengaturan = (() => {
       else if (activeTab === "Karyawan") await renderBarber();
       else if (activeTab === "Layanan") await renderLayanan();
       else if (activeTab === "Subscription") await renderSubscription();
-      else if (activeTab === "Absensi") await renderAbsensi();
       else if (activeTab === "WhatsApp") await renderWhatsapp();
       else if (activeTab === "User") await renderUser();
       else if (activeTab === "Backup") await renderBackup();
@@ -1423,118 +1424,6 @@ const PagePengaturan = (() => {
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/hak-akses-admin", { izin: body2 }));
           MugenUI.toast("Hak akses Admin disimpan.", "success", { force: true });
-        } catch (e) {
-          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-    }
-
-    // ================= TAB: ABSENSI (Modul BARU -- Pengaturan Absensi) =================
-    // Struktur sesuai spesifikasi ("Owner memiliki menu: Pengaturan -> Absensi").
-    // 'staff' hanya melihat tab ini kalau diberi izin_absensi_pengaturan
-    // (lihat TAB_KE_IZIN_SETTING di atas) -- backend PUT /api/attendance/settings
-    // menegakkan izin yang SAMA lewat require_permission(), jadi tab ini TIDAK
-    // PERNAH satu-satunya lapis perlindungan.
-    async function renderAbsensi() {
-      const card = MugenUI.el("div", { class: "card" });
-      body.appendChild(card);
-      card.appendChild(MugenUI.el("h2", {}, "Pengaturan Absensi"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Atur jam kerja & radius geofencing untuk Check In/Check Out Barber."));
-
-      let settings;
-      try {
-        settings = await MugenApi.get("/api/attendance/settings");
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
-        return;
-      }
-
-      const inputJamMasuk = MugenUI.el("input", { type: "time", value: settings.jam_masuk || "09:00" });
-      const inputToleransi = MugenUI.el("input", { type: "number", min: "0", value: String(settings.toleransi_menit ?? 15) });
-      const inputJamPulang = MugenUI.el("input", { type: "time", value: settings.jam_pulang || "20:00" });
-      const selRadius = MugenUI.el("select", {}, [100, 250, 500, 750, 1000].map((r) =>
-        MugenUI.el("option", { value: String(r) }, `${r} meter`)));
-      selRadius.value = String(settings.radius_meter || 500);
-
-      card.appendChild(MugenUI.el("label", {}, "Jam Masuk"));
-      card.appendChild(inputJamMasuk);
-      card.appendChild(MugenUI.el("label", {}, "Toleransi Masuk (menit)"));
-      card.appendChild(inputToleransi);
-      card.appendChild(MugenUI.el("label", {}, "Jam Pulang"));
-      card.appendChild(inputJamPulang);
-      card.appendChild(MugenUI.el("label", {}, "Radius Absensi"));
-      card.appendChild(selRadius);
-
-      card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Limit Keterlambatan & Pulang Lebih Awal"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Setiap barber punya anggaran menit/bulan (otomatis reset tiap tanggal 1) untuk keterlambatan Check In dan untuk pulang lebih awal saat Check Out -- dua anggaran ini TERPISAH. Limit habis TIDAK memblokir Check In/Check Out, hanya dicatat di Keterangan (dengan tanda merah)."));
-      const inputBatasTerlambat = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_terlambat ?? 120) });
-      const inputBatasPulangAwal = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_pulang_awal ?? 120) });
-      card.appendChild(MugenUI.el("label", {}, "Limit Keterlambatan (menit/bulan)"));
-      card.appendChild(inputBatasTerlambat);
-      card.appendChild(MugenUI.el("label", {}, "Limit Pulang Lebih Awal (menit/bulan)"));
-      card.appendChild(inputBatasPulangAwal);
-
-      card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Lokasi Toko"));
-      const inputLokasiNama = MugenUI.el("input", { type: "text", value: settings.lokasi_nama || "", placeholder: "Contoh: Rivoir Barbershop Pusat" });
-      const inputLat = MugenUI.el("input", { type: "text", value: settings.lokasi_latitude != null ? String(settings.lokasi_latitude) : "", placeholder: "Latitude", readonly: "" });
-      const inputLng = MugenUI.el("input", { type: "text", value: settings.lokasi_longitude != null ? String(settings.lokasi_longitude) : "", placeholder: "Longitude", readonly: "" });
-      const btnLokasiSaatIni = MugenUI.el("button", {}, "Gunakan Lokasi Saat Ini");
-      const lokasiError = MugenUI.el("div", { class: "login-error" });
-
-      card.appendChild(MugenUI.el("label", {}, "Nama Lokasi"));
-      card.appendChild(inputLokasiNama);
-      card.appendChild(MugenUI.el("label", {}, "Latitude"));
-      card.appendChild(inputLat);
-      card.appendChild(MugenUI.el("label", {}, "Longitude"));
-      card.appendChild(inputLng);
-      card.appendChild(lokasiError);
-      card.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, btnLokasiSaatIni));
-
-      btnLokasiSaatIni.addEventListener("click", () => {
-        lokasiError.textContent = "";
-        if (!navigator.geolocation) {
-          lokasiError.textContent = "Perangkat/browser ini tidak mendukung Geolocation.";
-          return;
-        }
-        btnLokasiSaatIni.disabled = true;
-        btnLokasiSaatIni.textContent = "Mengambil lokasi…";
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            inputLat.value = String(pos.coords.latitude);
-            inputLng.value = String(pos.coords.longitude);
-            btnLokasiSaatIni.disabled = false;
-            btnLokasiSaatIni.textContent = "Gunakan Lokasi Saat Ini";
-          },
-          (err) => {
-            lokasiError.textContent = "Gagal mengambil lokasi: " + (err.message || "izin lokasi ditolak.");
-            btnLokasiSaatIni.disabled = false;
-            btnLokasiSaatIni.textContent = "Gunakan Lokasi Saat Ini";
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-        );
-      });
-
-      const errorBox = MugenUI.el("div", { class: "login-error" });
-      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Absensi");
-      card.appendChild(errorBox);
-      card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
-
-      btnSimpan.addEventListener("click", async () => {
-        errorBox.textContent = "";
-        const body2 = {
-          jam_masuk: inputJamMasuk.value, toleransi_menit: Number(inputToleransi.value),
-          jam_pulang: inputJamPulang.value, radius_meter: Number(selRadius.value),
-          lokasi_nama: inputLokasiNama.value.trim(),
-          batas_menit_terlambat: Number(inputBatasTerlambat.value),
-          batas_menit_pulang_awal: Number(inputBatasPulangAwal.value),
-        };
-        if (inputLat.value) body2.lokasi_latitude = Number(inputLat.value);
-        if (inputLng.value) body2.lokasi_longitude = Number(inputLng.value);
-        try {
-          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/attendance/settings", body2));
-          MugenUI.toast("Pengaturan Absensi disimpan.", "success");
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }

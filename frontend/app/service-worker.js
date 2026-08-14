@@ -567,7 +567,17 @@
 // "keterangan_per_tanggal" versi kaya ini cuma dihitung di endpoint
 // ringkasan-bulan, TIDAK PERNAH sampai ke kolom Keterangan tabel utama --
 // celah yang diperbaiki di attendance_db.py::get_log_list()/_lengkapi()).
-const ASSET_VERSION = "101";
+// v101 -> v102: REVISI UI Absensi (feedback Owner) -- form "Pengaturan
+// Absensi" (Jam Masuk/Pulang, Toleransi, Radius, Limit Keterlambatan/
+// Pulang Lebih Awal, Lokasi Toko) DIPINDAHKAN dari tab Setting > Absensi
+// ke menu utama Absensi sendiri (kartu baru di atas Dashboard, lihat
+// pages/absensi.js::renderPengaturanAbsensi()) -- satu tempat, tidak lagi
+// terpisah dari panel Sisa Limit/Koreksi/Daftar Absensi. Tab "Absensi" di
+// Setting (pages/pengaturan.js) DIHAPUS total. Gate izin_absensi_pengaturan
+// TIDAK berubah (staff tetap perlu izin ini, sekarang melindungi kartu di
+// halaman Absensi, bukan tab Setting). TIDAK ADA perubahan endpoint/logika
+// backend.
+const ASSET_VERSION = "102";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -71,7 +71,7 @@ STATUS_HARI_INI_VALID = {"belum_check_in", "sedang_bekerja", "sudah_check_out",
 # keterangan supaya Owner tahu. REVISI: besar anggaran (per tenant, TERPISAH
 # untuk keterlambatan vs pulang lebih awal) sekarang bisa diatur Owner/Admin
 # lewat attendance_settings.batas_menit_terlambat/batas_menit_pulang_awal
-# (Setting > Absensi) -- konstanta di bawah HANYA dipakai sebagai nilai
+# (menu Absensi, kartu Pengaturan Absensi) -- konstanta di bawah HANYA dipakai sebagai nilai
 # default baris pengaturan baru.
 BATAS_LIMIT_MENIT_DEFAULT = 120
 # Sisa limit <= ini -> frontend menampilkan ikon peringatan + teks merah.
@@ -517,7 +517,7 @@ def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bu
     habis" (keputusan Owner: limit habis TIDAK memblokir absensi, cuma
     dicatat). Batas limit sendiri (menit/bulan, terpisah untuk keterlambatan
     vs pulang lebih awal) diambil dari attendance_settings -- BISA DIATUR
-    Owner/Admin lewat Setting > Absensi (lihat set_settings())."""
+    Owner/Admin lewat menu Absensi, kartu Pengaturan Absensi (lihat set_settings())."""
     if tahun is None or bulan is None:
         sekarang = _sekarang_wib()
         tahun, bulan = tahun or sekarang.year, bulan or sekarang.month
