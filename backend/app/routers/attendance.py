@@ -233,6 +233,17 @@ def hapus_audit_log(user: dict = Depends(require_admin)):
     return {"ok": True, "jumlah_dihapus": jumlah}
 
 
+@router.delete("/riwayat")
+def hapus_riwayat(barber_id: int = None, user: dict = Depends(require_owner_or_staff)):
+    """Reset/hapus PERMANEN riwayat Check In/Out (attendance_logs) --
+    mengantisipasi data yang menumpuk (permintaan Owner). barber_id diisi ->
+    hanya riwayat barber itu; kosong -> SEMUA barber. Owner ATAU Admin
+    (staff) boleh -- BEDA dari DELETE /audit di atas (KHUSUS Owner), karena
+    ini murni pembersihan data operasional, bukan bukti investigasi."""
+    jumlah = attendance_db.hapus_riwayat_absensi(user["tenant_id"], barber_id=barber_id)
+    return {"ok": True, "jumlah_dihapus": jumlah}
+
+
 # ---------------------------------------------------------------------------
 # Ringkasan limit Keterlambatan & Pulang Lebih Awal (bulanan)
 # ---------------------------------------------------------------------------
