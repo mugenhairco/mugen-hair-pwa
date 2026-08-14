@@ -1728,3 +1728,58 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------
+   REVISI UI/UX Absensi Barber (feedback Owner) -- diagram lingkaran
+   (progress ring) Sisa Limit, ilustrasi status hari ini, animasi baris
+   Riwayat, dan shake Keterangan limit habis (pages/absensi.js::
+   renderBarberView()). Semua SVG dibuat manual (TANPA aset gambar/
+   library eksternal, pola sama seperti barChart() di ui.js) supaya PWA
+   tetap ringan & bisa dipakai offline.
+   --------------------------------------------------------------------- */
+.mugen-ring-wrap { position: relative; flex: none; }
+.mugen-ring-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; pointer-events: none;
+}
+.mugen-ring-value { font-weight: 700; font-size: 16px; color: var(--text); line-height: 1.15; }
+.mugen-ring-sublabel { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.mugen-ring-arc {
+  transition: stroke-dashoffset var(--dur-slow) var(--ease-standard), stroke var(--dur-base) var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mugen-ring-arc { transition: none !important; }
+}
+
+.mugen-status-illus {
+  position: relative; width: 56px; height: 56px; flex: none;
+  display: flex; align-items: center; justify-content: center; color: var(--accent);
+}
+.mugen-status-illus.tone-success { color: var(--success); }
+.mugen-status-illus.tone-danger { color: var(--danger); }
+.mugen-status-illus svg { width: 100%; height: 100%; }
+.mugen-status-illus .mugen-pulse-ring {
+  position: absolute; inset: 6px; border-radius: 50%; border: 2px solid var(--success);
+  animation: mugen-pulse-ring 1.8s var(--ease-standard) infinite;
+}
+@keyframes mugen-pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mugen-status-illus .mugen-pulse-ring { animation: none !important; opacity: 0; }
+}
+
+@keyframes mugen-row-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.mugen-row-in { animation: mugen-row-fade-in var(--dur-base) var(--ease-standard) both; }
+@media (prefers-reduced-motion: reduce) {
+  .mugen-row-in { animation: none !important; }
+}
+
+.mugen-keterangan-alert { animation: mugen-shake 400ms var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) {
+  .mugen-keterangan-alert { animation: none !important; }
+}

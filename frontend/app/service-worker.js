@@ -590,7 +590,17 @@
 // Admin/staff SAMA-SAMA boleh, TANPA delegasi permission terpisah, BEDA
 // dari Hapus Log Audit yang KHUSUS Owner) untuk mengantisipasi data yang
 // menumpuk. Bisa pilih satu barber atau "Semua Barber".
-const ASSET_VERSION = "104";
+// v104 -> v105: REVISI UI/UX Absensi Barber (feedback Owner) -- dasbord
+// Absensi barber dibuat lebih menarik: "Sisa Limit Bulan Ini" jadi diagram
+// lingkaran (progress ring) animasi, "Status Absensi Hari Ini" jadi ilustrasi
+// SVG per status + animasi pulse khusus "Sedang Bekerja", baris "Riwayat
+// Absensi Saya" fade-in bertahap saat dimuat, dan baris "Keterangan" limit
+// habis animasi shake sekali saat muncul (ui.js, css/style.css). Tombol
+// Check In/Check Out & Ajukan Koreksi sekarang WAJIB konfirmasi lewat modal
+// (MugenUI.confirmModal) sebelum jalan, dan semua pesan error (termasuk izin
+// lokasi ditolak) sekarang tampil sebagai modal (MugenUI.infoModal), BUKAN
+// teks merah inline lagi (pages/absensi.js). TIDAK ada perubahan backend.
+const ASSET_VERSION = "105";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

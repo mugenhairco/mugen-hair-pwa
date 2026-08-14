@@ -26,6 +26,41 @@ const PageAbsensi = (() => {
     return MugenUI.el("span", { class: cls }, label);
   }
 
+  // Ilustrasi status hari ini (REVISI UI/UX Absensi Barber, feedback
+  // Owner) -- SVG line-icon dibuat manual (TANPA aset gambar/library
+  // eksternal, codebase ini memang sengaja tidak punya aset ikon sama
+  // sekali, lihat nav.js) supaya PWA tetap ringan & bisa dipakai offline.
+  // "sedang_bekerja" dapat cincin berdenyut (.mugen-pulse-ring, style.css)
+  // supaya terasa "hidup"/real-time, status lain statis.
+  const _ICON_SVG = {
+    belum_check_in: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+    sedang_bekerja: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M7 12h2.5l1.5-4 3 8 1.5-4H17"/></svg>',
+    sudah_check_out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>',
+    tidak: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5l9 15.5H3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></svg>',
+  };
+
+  // Baris tabel fade-in bertahap (stagger) saat pertama dimuat -- REVISI
+  // UI/UX Absensi Barber (feedback Owner), HANYA dipakai Riwayat Absensi
+  // Saya (bukan diterapkan ke buildTable() secara global, supaya tabel
+  // lain di aplikasi TIDAK ikut berubah). Delay dibatasi maksimal 8 baris
+  // pertama (40ms/baris) supaya tabel panjang tidak terasa lambat.
+  function beriAnimasiBaris(tableWrap) {
+    tableWrap.querySelectorAll("tbody tr").forEach((tr, i) => {
+      tr.classList.add("mugen-row-in");
+      tr.style.animationDelay = `${Math.min(i, 8) * 40}ms`;
+    });
+    return tableWrap;
+  }
+
+  function statusIlustrasi(status) {
+    const isTidak = status === "tidak_check_in" || status === "tidak_check_out";
+    const svgKey = isTidak ? "tidak" : (_ICON_SVG[status] ? status : "belum_check_in");
+    const tone = status === "sedang_bekerja" || status === "sudah_check_out" ? "tone-success" : isTidak ? "tone-danger" : "";
+    const wrap = MugenUI.el("div", { class: `mugen-status-illus ${tone}`.trim(), html: _ICON_SVG[svgKey] });
+    if (status === "sedang_bekerja") wrap.appendChild(MugenUI.el("div", { class: "mugen-pulse-ring" }));
+    return wrap;
+  }
+
   function jamDariIso(v) {
     if (!v) return "-";
     return v.length >= 16 ? v.slice(11, 16) : v;
@@ -56,7 +91,9 @@ const PageAbsensi = (() => {
     if (!list || !list.length) return "-";
     return MugenUI.el("div", {}, list.map((teks) => {
       const habis = teks.includes("sudah habis");
-      return MugenUI.el("div", { style: habis ? "color:var(--danger);" : "" }, habis ? `⚠️ ${teks}` : teks);
+      return MugenUI.el("div", {
+        class: habis ? "mugen-keterangan-alert" : "", style: habis ? "color:var(--danger);" : "",
+      }, habis ? `⚠️ ${teks}` : teks);
     }));
   }
 
@@ -90,6 +127,24 @@ const PageAbsensi = (() => {
     });
   }
 
+  // Diagram lingkaran (progress ring) Sisa Limit -- REVISI UI/UX Absensi
+  // Barber (feedback Owner), HANYA dipakai kartu "Sisa Limit Bulan Ini"
+  // milik Barber sendiri (tabel Sisa Limit di sisi Owner/Admin, semua
+  // barber sekaligus, TETAP format tabel biasa -- ring per-baris di tabel
+  // besar tidak praktis). Ring menunjukkan sisa (bukan terpakai) supaya
+  // penuh = anggaran masih utuh, mengosong = anggaran menipis/habis --
+  // warna ikut ambang peringatan yang SAMA dengan formatSisaLimit().
+  function ringLimit(judul, sisa, batas, ambang) {
+    const pct = batas > 0 ? (sisa / batas) * 100 : 0;
+    const habis = sisa <= (ambang ?? 40);
+    const ring = MugenUI.progressRing(pct, { warna: habis ? "var(--danger)" : "var(--accent)", value: sisa, unit: "menit", ukuran: 108, tebal: 11 });
+    return MugenUI.el("div", { style: "display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;" }, [
+      MugenUI.el("div", { class: "subtitle" }, judul),
+      ring,
+      habis ? MugenUI.el("div", { class: "badge badge-danger" }, "⚠️ Hampir/Sudah Habis") : null,
+    ].filter(Boolean));
+  }
+
   function infoItem(label, value) {
     return MugenUI.el("div", {}, [
       MugenUI.el("div", { class: "subtitle" }, label),
@@ -119,7 +174,8 @@ const PageAbsensi = (() => {
       body.innerHTML = "";
       const log = data.log, status = data.status;
 
-      body.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;margin-bottom:16px;" }, [
+      body.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;margin-bottom:16px;align-items:center;" }, [
+        statusIlustrasi(status),
         infoItem("Status Hari Ini", badgeStatus({ status, check_in_status: log && log.check_in_status })),
         infoItem("Jam Check In", jamDariIso(log && log.check_in_at)),
         infoItem("Jam Check Out", jamDariIso(log && log.check_out_at)),
@@ -137,32 +193,40 @@ const PageAbsensi = (() => {
           "Anda tidak Check Out hari ini."));
       }
 
-      const errBox = MugenUI.el("div", { class: "login-error" });
       const btnCheckIn = MugenUI.el("button", { class: "btn-primary" }, "Check In");
       const btnCheckOut = MugenUI.el("button", { class: "btn-primary" }, "Check Out");
       btnCheckIn.disabled = !!(log && log.check_in_at);
       btnCheckOut.disabled = !(log && log.check_in_at) || !!(log && log.check_out_at);
-      body.appendChild(errBox);
       body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;gap:10px;" }, [btnCheckIn, btnCheckOut]));
 
-      async function lakukanAksi(btn, endpoint, labelSukses) {
-        errBox.textContent = "";
-        btn.disabled = true;
+      // REVISI UI/UX Absensi Barber (feedback Owner): modal konfirmasi
+      // (box tengah layar, MugenUI.confirmModal() -- SUDAH ADA & dipakai
+      // di banyak halaman lain, bukan komponen baru) SEBELUM lokasi
+      // GPS diminta/dikirim, DAN modal (bukan lagi teks kecil merah)
+      // untuk error apa pun (izin lokasi ditolak, validasi backend, dst).
+      async function lakukanAksi(btn, endpoint, labelSukses, konfirmasi) {
+        const ok = await MugenUI.confirmModal(konfirmasi);
+        if (!ok) return;
         try {
-          const coords = await ambilLokasi();
-          await MugenUI.withButtonLoading(btn, () => MugenApi.post(endpoint, {
-            latitude: coords.latitude, longitude: coords.longitude,
-            accuracy: coords.accuracy, speed: coords.speed, heading: coords.heading,
-          }));
+          await MugenUI.withButtonLoading(btn, async () => {
+            const coords = await ambilLokasi();
+            await MugenApi.post(endpoint, {
+              latitude: coords.latitude, longitude: coords.longitude,
+              accuracy: coords.accuracy, speed: coords.speed, heading: coords.heading,
+            });
+          });
           MugenUI.toast(labelSukses, "success");
           load();
         } catch (e) {
-          errBox.textContent = (e.detail && e.detail.detail) ? e.detail.detail : e.message;
-          btn.disabled = false;
+          MugenUI.infoModal({ title: "Gagal", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
         }
       }
-      btnCheckIn.addEventListener("click", () => lakukanAksi(btnCheckIn, "/api/attendance/check-in", "Check In berhasil."));
-      btnCheckOut.addEventListener("click", () => lakukanAksi(btnCheckOut, "/api/attendance/check-out", "Check Out berhasil."));
+      btnCheckIn.addEventListener("click", () => lakukanAksi(btnCheckIn, "/api/attendance/check-in", "Check In berhasil.", {
+        title: "Konfirmasi Check In", message: "Anda akan Check In sekarang menggunakan lokasi perangkat ini. Lanjutkan?", confirmText: "Check In",
+      }));
+      btnCheckOut.addEventListener("click", () => lakukanAksi(btnCheckOut, "/api/attendance/check-out", "Check Out berhasil.", {
+        title: "Konfirmasi Check Out", message: "Anda akan Check Out sekarang menggunakan lokasi perangkat ini. Lanjutkan?", confirmText: "Check Out",
+      }));
     }
     load();
 
@@ -180,14 +244,14 @@ const PageAbsensi = (() => {
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
-        return MugenUI.buildTable([
+        return beriAnimasiBaris(MugenUI.buildTable([
           { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
           { key: "check_in_at", label: "Check In", format: jamDariIso },
           { key: "check_out_at", label: "Check Out", format: jamDariIso },
           { key: "status", label: "Status", format: (_, r) => badgeStatus(r) },
           { key: "durasi_kerja_menit", label: "Durasi Kerja", format: durasiText },
           { key: "keterangan", label: "Keterangan", format: keteranganText },
-        ], rows, { emptyText: "Belum ada riwayat absensi." });
+        ], rows, { emptyText: "Belum ada riwayat absensi." }));
       }, { skeleton: { kind: "table", cols: 6, rows: 4 } });
     }
     loadHistory();
@@ -210,9 +274,9 @@ const PageAbsensi = (() => {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
         limitSubtitle.textContent = `Limit Keterlambatan: ${r.batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${r.batas_menit_pulang_awal} menit/bulan. Diatur Owner/Admin di menu Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
-        return MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;" }, [
-          infoItem("Sisa Limit Terlambat", formatSisaLimit(r.sisa_limit_terlambat, r.ambang_peringatan_menit)),
-          infoItem("Sisa Limit Pulang Lebih Awal", formatSisaLimit(r.sisa_limit_pulang_awal, r.ambang_peringatan_menit)),
+        return MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:32px;justify-content:center;" }, [
+          ringLimit("Sisa Limit Terlambat", r.sisa_limit_terlambat, r.batas_menit_terlambat, r.ambang_peringatan_menit),
+          ringLimit("Sisa Limit Pulang Lebih Awal", r.sisa_limit_pulang_awal, r.batas_menit_pulang_awal, r.ambang_peringatan_menit),
         ]);
       }, { skeleton: { kind: "card", lines: 1 } });
     }
@@ -232,7 +296,6 @@ const PageAbsensi = (() => {
     const kJam = MugenUI.el("input", { type: "time" });
     const kAlasan = MugenUI.el("input", { type: "text", placeholder: "Wajib diisi, mis. \"Lupa check-in, HP mati\"" });
     const kBtn = MugenUI.el("button", { class: "btn-primary" }, "Ajukan Koreksi");
-    const kError = MugenUI.el("div", { class: "login-error" });
     koreksiCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     koreksiCard.appendChild(kTanggal);
     koreksiCard.appendChild(MugenUI.el("label", {}, "Jenis"));
@@ -241,7 +304,6 @@ const PageAbsensi = (() => {
     koreksiCard.appendChild(kJam);
     koreksiCard.appendChild(MugenUI.el("label", {}, "Alasan"));
     koreksiCard.appendChild(kAlasan);
-    koreksiCard.appendChild(kError);
     koreksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [kBtn]));
 
     const koreksiListBody = MugenUI.el("div");
@@ -286,9 +348,30 @@ const PageAbsensi = (() => {
     loadKoreksiSaya();
 
     kBtn.addEventListener("click", async () => {
-      kError.textContent = "";
-      if (!kJam.value) { kError.textContent = "Jam yang seharusnya wajib diisi."; return; }
-      if (!kAlasan.value.trim()) { kError.textContent = "Alasan wajib diisi."; return; }
+      if (!kJam.value) {
+        MugenUI.infoModal({ title: "Belum Lengkap", body: MugenUI.el("p", {}, "Jam yang seharusnya wajib diisi.") });
+        return;
+      }
+      if (!kAlasan.value.trim()) {
+        MugenUI.infoModal({ title: "Belum Lengkap", body: MugenUI.el("p", {}, "Alasan wajib diisi.") });
+        return;
+      }
+      // REVISI UI/UX Absensi Barber (feedback Owner): modal konfirmasi
+      // (box tengah layar) menampilkan RINGKASAN yang akan diajukan,
+      // supaya barber sempat memeriksa ulang sebelum benar-benar
+      // terkirim ke Admin/Owner.
+      const ok = await MugenUI.confirmModal({
+        title: "Konfirmasi Pengajuan Koreksi",
+        message: [
+          `Jenis: ${LABEL_JENIS_KOREKSI[kJenis.value] || kJenis.value}`,
+          `Tanggal: ${MugenUI.formatTanggal(kTanggal.value)}`,
+          `Jam yang Seharusnya: ${kJam.value}`,
+          `Alasan: ${kAlasan.value.trim()}`,
+          "Ajukan koreksi ini ke Admin/Owner?",
+        ],
+        confirmText: "Ajukan",
+      });
+      if (!ok) return;
       try {
         await MugenUI.withButtonLoading(kBtn, () => MugenApi.post("/api/attendance/koreksi", {
           tanggal: kTanggal.value, jenis: kJenis.value, waktu_diajukan: kJam.value, alasan: kAlasan.value.trim(),
@@ -297,7 +380,7 @@ const PageAbsensi = (() => {
         kJam.value = ""; kAlasan.value = "";
         loadKoreksiSaya();
       } catch (e) {
-        kError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        MugenUI.infoModal({ title: "Gagal Mengajukan Koreksi", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
       }
     });
   }

@@ -478,6 +478,76 @@ const MugenUI = (() => {
     return el("div", { style: "overflow-x:auto;" }, svg);
   }
 
+  // Diagram lingkaran (progress ring) SVG, dibuat manual TANPA library
+  // eksternal (pola sama seperti barChart() di atas) -- dipakai kartu
+  // "Sisa Limit Bulan Ini" Absensi Barber (pages/absensi.js). `pct` 0-100
+  // menentukan seberapa penuh arc-nya, `value`+`unit` ditampilkan di
+  // tengah lingkaran dengan animasi hitung naik dari 0 (rAF, ~700ms,
+  // ease-out) begitu elemen ini terpasang ke DOM. Arc-nya sendiri
+  // "menggambar diri sendiri" lewat transisi CSS stroke-dashoffset
+  // (.mugen-ring-arc, style.css) -- warna arc mengikuti `warna` (caller
+  // yang menentukan, mis. var(--danger) saat limit hampir/sudah habis).
+  function progressRing(pct, { warna = "var(--accent)", ukuran = 96, tebal = 10, value = 0, unit = "" } = {}) {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const r = (ukuran - tebal) / 2;
+    const keliling = 2 * Math.PI * r;
+    const persenAman = Math.max(0, Math.min(100, pct));
+
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", String(ukuran));
+    svg.setAttribute("height", String(ukuran));
+    svg.setAttribute("viewBox", `0 0 ${ukuran} ${ukuran}`);
+
+    const bg = document.createElementNS(svgNS, "circle");
+    bg.setAttribute("cx", String(ukuran / 2));
+    bg.setAttribute("cy", String(ukuran / 2));
+    bg.setAttribute("r", String(r));
+    bg.setAttribute("fill", "none");
+    bg.setAttribute("stroke", "var(--border)");
+    bg.setAttribute("stroke-width", String(tebal));
+    svg.appendChild(bg);
+
+    const arc = document.createElementNS(svgNS, "circle");
+    arc.setAttribute("cx", String(ukuran / 2));
+    arc.setAttribute("cy", String(ukuran / 2));
+    arc.setAttribute("r", String(r));
+    arc.setAttribute("fill", "none");
+    arc.setAttribute("stroke", warna);
+    arc.setAttribute("stroke-width", String(tebal));
+    arc.setAttribute("stroke-linecap", "round");
+    arc.setAttribute("transform", `rotate(-90 ${ukuran / 2} ${ukuran / 2})`);
+    arc.setAttribute("class", "mugen-ring-arc");
+    arc.style.strokeDasharray = String(keliling);
+    arc.style.strokeDashoffset = String(keliling); // mulai kosong -> animasi ke posisi sungguhan
+    svg.appendChild(arc);
+
+    const nilaiEl = el("div", { class: "mugen-ring-value" }, "0" + (unit ? ` ${unit}` : ""));
+    const wrap = el("div", { class: "mugen-ring-wrap", style: `width:${ukuran}px;height:${ukuran}px;` }, [
+      svg,
+      el("div", { class: "mugen-ring-center" }, nilaiEl),
+    ]);
+
+    // Animasi arc + angka BARU jalan setelah elemen benar-benar terpasang
+    // ke DOM (requestAnimationFrame ganda supaya browser sempat "commit"
+    // state awal stroke-dashoffset penuh dulu, baru transisi ke posisi
+    // akhir -- kalau langsung diset di sini, browser bisa menganggap itu
+    // nilai awal dan animasinya tidak pernah terlihat).
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      arc.style.strokeDashoffset = String(keliling - (persenAman / 100) * keliling);
+      const durasi = 700, mulai = performance.now(), dari = 0;
+      function tick(sekarang) {
+        const progres = Math.min(1, (sekarang - mulai) / durasi);
+        const ease = 1 - Math.pow(1 - progres, 3); // ease-out cubic
+        const angka = Math.round(dari + (value - dari) * ease);
+        nilaiEl.textContent = String(angka) + (unit ? ` ${unit}` : "");
+        if (progres < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }));
+
+    return wrap;
+  }
+
   // Overlay loading global (spinner melingkar di tengah aplikasi). Pakai
   // hitungan referensi (bukan boolean) supaya kalau beberapa withLoading()
   // kebetulan tumpang tindih, overlay-nya baru hilang setelah SEMUANYA
@@ -553,7 +623,7 @@ const MugenUI = (() => {
 
   return {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
-    serviceCell, keteranganCell, offlineBanner, barChart, showLoading, hideLoading, withLoading,
+    serviceCell, keteranganCell, offlineBanner, barChart, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
   };
