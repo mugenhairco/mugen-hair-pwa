@@ -727,6 +727,23 @@ const PageAbsensi = (() => {
     auditCard.appendChild(MugenUI.el("h2", {}, "Log Audit Percobaan Check In/Out"));
     auditCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Rekam SEMUA percobaan Check In/Check Out (berhasil maupun gagal) untuk investigasi -- termasuk alasan penolakan, akurasi GPS, browser, device, dan IP Address."));
+    // Hapus PERMANEN (sampai ke database) -- KHUSUS Owner (backend
+    // require_admin, TIDAK bisa didelegasikan ke staff lewat Hak Akses
+    // Admin), karena log ini sendiri adalah bukti investigasi Fake GPS.
+    if (isOwnerAktif) {
+      const btnHapusAudit = MugenUI.el("button", { class: "btn-danger", style: "margin-bottom:10px;" }, "Hapus Semua Log Audit");
+      btnHapusAudit.addEventListener("click", async () => {
+        if (!confirm("Hapus SEMUA Log Audit Percobaan Check In/Out secara permanen? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database).")) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnHapusAudit, () => MugenApi.del("/api/attendance/audit"));
+          MugenUI.toast(`${hasil.jumlah_dihapus} baris Log Audit dihapus.`, "success");
+          loadAudit();
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      auditCard.appendChild(btnHapusAudit);
+    }
     const auditBody = MugenUI.el("div");
     auditCard.appendChild(auditBody);
 

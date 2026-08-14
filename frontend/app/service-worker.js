@@ -577,7 +577,13 @@
 // TIDAK berubah (staff tetap perlu izin ini, sekarang melindungi kartu di
 // halaman Absensi, bukan tab Setting). TIDAK ADA perubahan endpoint/logika
 // backend.
-const ASSET_VERSION = "102";
+// v102 -> v103: FITUR Hapus Log Audit (feedback Owner) -- tombol "Hapus
+// Semua Log Audit" baru di kartu "Log Audit Percobaan Check In/Out" (menu
+// Absensi), hard delete PERMANEN sampai ke database (DELETE
+// /api/attendance/audit, backend require_admin -- KHUSUS Owner, TIDAK bisa
+// didelegasikan ke staff karena log ini sendiri bukti investigasi Fake
+// GPS). Tombol hanya tampil untuk Owner.
+const ASSET_VERSION = "103";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
