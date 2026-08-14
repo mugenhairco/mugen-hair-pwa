@@ -153,6 +153,35 @@ a { color: inherit; text-decoration: none; }
    menyentuh branding dinamis per-tenant di app/js/brand.js. */
 .lp-brand-logo-full { height: 30px; width: auto; display: block; }
 .lp-brand-logo-footer { height: 34px; width: auto; display: block; }
+/* FITUR: efek shine/kilau bergerak kiri->kanan di atas logo, berulang.
+   <img> TIDAK bisa punya ::before/::after (elemen "replaced", tidak
+   didukung browser mana pun) -- jadi sapuan cahayanya dibuat di elemen
+   PEMBUNGKUS <span> ini, lalu di-mask ke BENTUK ASLI logo (mask-image
+   memakai file PNG yang sama, mask-size:contain sama seperti <img> di
+   dalamnya) supaya sapuannya cuma terlihat di pixel logo yang solid,
+   bukan kotak persegi transparan di sekelilingnya. */
+.lp-brand-logo-shine { position: relative; display: inline-block; }
+.lp-brand-logo-shine::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,0.9) 50%, transparent 65%);
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  -webkit-mask-image: url("../icons/logo-rivoir.png"); mask-image: url("../icons/logo-rivoir.png");
+  -webkit-mask-size: contain; mask-size: contain;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  animation: lp-logo-shine 3.2s ease-in-out infinite;
+}
+/* Sapuan (kiri->kanan) cuma di separuh pertama durasi, separuh sisanya
+   "istirahat" di kanan sebelum lompat balik ke kiri dan mulai lagi --
+   supaya tidak berkedip terus-menerus tanpa jeda. */
+@keyframes lp-logo-shine {
+  0% { background-position: -100% 0; }
+  50%, 100% { background-position: 200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-brand-logo-shine::after { animation: none; background-position: 200% 0; }
+}
 .lp-nav-links { display: flex; align-items: center; gap: 24px; }
 .lp-nav-links a:not(.lp-btn) {
   color: var(--text-dim); font-weight: 500; font-size: 0.95rem; position: relative; padding-bottom: 4px;

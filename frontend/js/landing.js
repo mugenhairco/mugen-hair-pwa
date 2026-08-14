@@ -130,93 +130,120 @@
     revealObserve(document.querySelectorAll(".lp-reveal"));
   }
 
-  // ==================== Animasi konten mockup fitur unggulan =============
-  // FITUR (feedback Owner): kartu Dashboard Owner/Aplikasi Barber/
-  // Notifikasi WhatsApp/Absensi Karyawan di section "Kenapa Rivoir"
-  // sebelumnya statis -- angka & isi mockup di dalamnya sekarang "hidup"
-  // (angka berjalan, bar tumbuh, tangan melambai, chat mengetik, radius
-  // mengecil + pin jatuh) supaya terasa lebih menarik. Murni dekoratif,
-  // data dummy, TIDAK terhubung ke API apa pun. Dimatikan total untuk
-  // prefers-reduced-motion (angka/teks yang terus berubah tetap dianggap
-  // motion, bukan cuma transform/opacity CSS).
+  // ==================== Animasi konten mockup dashboard ==================
+  // FITUR (feedback Owner): mockup Dashboard di Hero DAN kartu Dashboard
+  // Owner/Aplikasi Barber/Notifikasi WhatsApp/Absensi Karyawan di section
+  // "Kenapa Rivoir" sebelumnya statis -- angka & isi mockup di dalamnya
+  // sekarang "hidup" (angka berjalan, grafik/bar tumbuh, tangan melambai,
+  // chat mengetik, radius mengecil + pin jatuh) supaya terasa lebih
+  // menarik. Murni dekoratif, data dummy, TIDAK terhubung ke API apa pun.
+  // Dimatikan total untuk prefers-reduced-motion (angka/teks yang terus
+  // berubah tetap dianggap motion, bukan cuma transform/opacity CSS).
   function _formatJt(nilaiJutaan) {
     return "Rp " + nilaiJutaan.toFixed(1).replace(".", ",") + "jt";
   }
-
-  // Booking Hari Ini: 18 -> 19 -> ... -> 50 -> balik 18, berulang terus.
-  function initBookingCounter() {
-    const el = document.getElementById("lp-diff-booking-count");
-    if (!el) return;
-    let count = 18;
-    setInterval(() => {
-      count = count >= 50 ? 18 : count + 1;
-      el.textContent = String(count);
-    }, 180);
+  // Format "pintar" untuk counter yang bergerak per kelipatan 0,5jt (lihat
+  // _initSteppedCounter di bawah) -- BEDA dari _formatJt (selalu 1 desimal)
+  // karena di sini nilai BOLAK-BALIK antara bulat & setengahan (mis. 20,5
+  // lalu 21 lalu 21,5), jadi angka bulat SENGAJA tidak dipaksa ",0" di
+  // belakangnya (feedback Owner: "20,5 21 21,5", bukan "21,0").
+  function _formatJtSmart(nilaiJutaan) {
+    const dibulatkan = Math.round(nilaiJutaan * 100) / 100;
+    let s = dibulatkan.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return "Rp " + s.replace(".", ",") + "jt";
   }
 
-  // Bar Dimas & Yoga: lebar + nominal tumbuh dari kecil ke 3/4 (cepat),
-  // lalu reset ke kecil dan ulang -- keduanya jalan bareng (progress sama),
-  // nilai target beda supaya tidak kembar.
+  // Loop generik dipakai bareng oleh beberapa animasi mockup di bawah:
+  // frameFn(t) dipanggil tiap frame dari t=0->1 (durationMs, easing
+  // _scrollEase), tahan sebentar di t=1 (holdMs), reset ke t=0, jeda
+  // (pauseMs), ulang terus -- satu sumber pola timing, tidak diduplikasi
+  // tiap fungsi.
+  function _growHoldResetLoop(frameFn, durationMs, holdMs, pauseMs) {
+    function cycle() {
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / durationMs);
+        frameFn(_scrollEase(t));
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        setTimeout(() => { frameFn(0); setTimeout(cycle, pauseMs); }, holdMs);
+      }
+      requestAnimationFrame(tick);
+    }
+    cycle();
+  }
+
+  // Counter "berjalan per step" generik (angka bulat ATAU kelipatan uang
+  // tetap, mis. 0,5jt) -- dipakai SEMUA counter bertipe ini di halaman
+  // (Booking Hari Ini x2, Pelanggan Baru, Pendapatan Dashboard Owner,
+  // Barber Aktif) lewat SATU konstanta interval yang sama (STEP_TICK_MS)
+  // supaya kecepatan pergerakan angkanya konsisten di semua tempat
+  // (feedback Owner: "kecepatan pergerakan angka harus sama semua").
+  // min ditampilkan dulu (cocok dengan nilai statis di HTML sebagai
+  // fallback sebelum JS jalan), lalu naik per `step` tiap tick sampai
+  // max, balik ke min, ulang terus.
+  const STEP_TICK_MS = 180;
+  function _initSteppedCounter(elId, min, max, step, formatFn) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    let value = min;
+    setInterval(() => {
+      value = value >= max - 1e-9 ? min : Math.min(max, value + step);
+      el.textContent = formatFn(value);
+    }, STEP_TICK_MS);
+  }
+
+  // Grafik batang mockup Dashboard di Hero: tinggi tiap batang tumbuh dari
+  // kecil ke tinggi aslinya (data-target, disimpan di HTML) lalu reset,
+  // berulang -- SEMUA batang jalan bareng (progress sama).
+  function initHeroChart() {
+    const chart = document.getElementById("lp-hero-chart");
+    if (!chart) return;
+    const bars = Array.from(chart.querySelectorAll("span"));
+    if (!bars.length) return;
+    const targets = bars.map((b) => parseFloat(b.dataset.target) || 0);
+    const MIN_PCT = 10;
+    _growHoldResetLoop((e) => {
+      bars.forEach((bar, i) => { bar.style.height = (MIN_PCT + (targets[i] - MIN_PCT) * e) + "%"; });
+    }, 1400, 500, 300);
+  }
+
+  // Bar Dimas & Yoga: lebar + nominal tumbuh dari kecil ke target (cepat),
+  // lalu reset ke kecil dan ulang -- keduanya jalan bareng (progress sama).
+  // REVISI (feedback Owner): Dimas pendapatannya lebih tinggi dari Yoga,
+  // jadi bar-nya harus konsisten lebih PENUH juga (maxPct beda, bukan
+  // sama-sama mentok 3/4) -- proporsional dengan rasio nominal keduanya
+  // (12,4jt : 9,1jt) supaya lebar bar selalu mencerminkan besar-kecil
+  // pendapatan sungguhan di setiap titik animasi, bukan cuma di akhir.
   function initDashboardBars() {
     const barDimas = document.getElementById("lp-diff-bar-dimas");
     const valDimas = document.getElementById("lp-diff-val-dimas");
     const barYoga = document.getElementById("lp-diff-bar-yoga");
     const valYoga = document.getElementById("lp-diff-val-yoga");
     if (!barDimas || !valDimas || !barYoga || !valYoga) return;
-    const DIMAS = { minPct: 20, maxPct: 75, minVal: 3.8, maxVal: 12.4 };
-    const YOGA = { minPct: 15, maxPct: 75, minVal: 2.2, maxVal: 9.1 };
-    const GROW_MS = 1400;
-    const HOLD_MS = 500;
-    const PAUSE_MS = 300;
-    function frame(t) {
-      const e = _scrollEase(t);
+    const DIMAS = { minPct: 24, maxPct: 80, minVal: 3.8, maxVal: 12.4 };
+    const YOGA = { minPct: 16, maxPct: 58, minVal: 2.2, maxVal: 9.1 };
+    _growHoldResetLoop((e) => {
       barDimas.style.width = (DIMAS.minPct + (DIMAS.maxPct - DIMAS.minPct) * e) + "%";
       valDimas.textContent = _formatJt(DIMAS.minVal + (DIMAS.maxVal - DIMAS.minVal) * e);
       barYoga.style.width = (YOGA.minPct + (YOGA.maxPct - YOGA.minPct) * e) + "%";
       valYoga.textContent = _formatJt(YOGA.minVal + (YOGA.maxVal - YOGA.minVal) * e);
-    }
-    function cycle() {
-      const start = performance.now();
-      function tick(now) {
-        const t = Math.min(1, (now - start) / GROW_MS);
-        frame(t);
-        if (t < 1) { requestAnimationFrame(tick); return; }
-        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
-      }
-      requestAnimationFrame(tick);
-    }
-    cycle();
+    }, 1400, 500, 300);
   }
 
-  // Aplikasi Barber: Pendapatan Bulan Ini & Komisi Saya turun terus dari
-  // nilai maksimum ke minimum, lalu reset ke maksimum dan ulang (arah
-  // KEBALIKAN dari bar Dashboard -- sengaja beda supaya kedua kartu tidak
-  // terasa seragam).
+  // Aplikasi Barber: Pendapatan Bulan Ini & Komisi Saya naik terus dari
+  // nilai minimum ke maksimum (REVISI feedback Owner -- SEBELUMNYA turun
+  // besar->kecil, sekarang dibalik kecil->besar), lalu reset ke minimum
+  // dan ulang.
   function initBarberCounters() {
     const pendapatanEl = document.getElementById("lp-diff-pendapatan-barber");
     const komisiEl = document.getElementById("lp-diff-komisi-barber");
     if (!pendapatanEl || !komisiEl) return;
-    const PENDAPATAN = { max: 12.4, min: 5.0 };
-    const KOMISI = { max: 4.9, min: 2.0 };
-    const DURATION_MS = 2200;
-    const HOLD_MS = 500;
-    const PAUSE_MS = 300;
-    function frame(t) {
-      const e = _scrollEase(t);
-      pendapatanEl.textContent = _formatJt(PENDAPATAN.max - (PENDAPATAN.max - PENDAPATAN.min) * e);
-      komisiEl.textContent = _formatJt(KOMISI.max - (KOMISI.max - KOMISI.min) * e);
-    }
-    function cycle() {
-      const start = performance.now();
-      function tick(now) {
-        const t = Math.min(1, (now - start) / DURATION_MS);
-        frame(t);
-        if (t < 1) { requestAnimationFrame(tick); return; }
-        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
-      }
-      requestAnimationFrame(tick);
-    }
-    cycle();
+    const PENDAPATAN = { min: 5.0, max: 12.4 };
+    const KOMISI = { min: 2.0, max: 4.9 };
+    _growHoldResetLoop((e) => {
+      pendapatanEl.textContent = _formatJt(PENDAPATAN.min + (PENDAPATAN.max - PENDAPATAN.min) * e);
+      komisiEl.textContent = _formatJt(KOMISI.min + (KOMISI.max - KOMISI.min) * e);
+    }, 2200, 500, 300);
   }
 
   // Notifikasi WhatsApp: 2 bubble chat diketik satu per satu (efek
@@ -326,7 +353,18 @@
 
   function initDiffMockupAnimations() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    initBookingCounter();
+    // Mockup Dashboard di Hero (BUKAN kartu fitur unggulan section "Kenapa
+    // Rivoir" -- dua mockup dashboard berbeda, dua elemen terpisah). Semua
+    // counter di sini pakai _initSteppedCounter (STEP_TICK_MS yang sama)
+    // supaya kecepatan pergerakan angkanya konsisten satu sama lain.
+    _initSteppedCounter("lp-hero-booking-count", 18, 50, 1, (v) => String(v));
+    _initSteppedCounter("lp-hero-pendapatan", 4.85, 20, 0.5, _formatJtSmart);
+    _initSteppedCounter("lp-hero-pelanggan-baru", 11, 50, 1, (v) => String(v));
+    initHeroChart();
+    // Kartu fitur unggulan (section "Kenapa Rivoir").
+    _initSteppedCounter("lp-diff-booking-count", 18, 50, 1, (v) => String(v));
+    _initSteppedCounter("lp-diff-pendapatan-owner", 20.5, 50, 0.5, _formatJtSmart);
+    _initSteppedCounter("lp-diff-barber-aktif", 5, 15, 1, (v) => String(v));
     initDashboardBars();
     initBarberCounters();
     initWhatsAppTyping();

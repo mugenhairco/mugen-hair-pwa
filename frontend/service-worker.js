@@ -125,7 +125,26 @@
 // turun 70m->10m mengikuti progress radius yang sama persis, lalu reset
 // & ulang. Semua murni dekoratif/data dummy, dimatikan total untuk
 // prefers-reduced-motion.
-const ASSET_VERSION = "23";
+// v23 -> v24: REVISI feedback Owner. Mockup Dashboard di HERO (bukan
+// kartu fitur unggulan) sekarang juga "hidup" -- "Booking Hari Ini"
+// berputar 18->50->18, grafik batang mingguan tumbuh dari kecil ke
+// tinggi aslinya lalu reset, berulang. Kartu Dashboard Owner: bar Dimas
+// dibuat KONSISTEN lebih penuh dari Yoga (proporsional dengan nominal
+// pendapatan asli, sebelumnya sama-sama mentok 3/4). Kartu Aplikasi
+// Barber: arah "Pendapatan Bulan Ini" & "Komisi Saya" DIBALIK -- naik
+// dari kecil ke besar (sebelumnya turun besar ke kecil). FITUR BARU:
+// efek shine/kilau bergerak kiri->kanan di logo Rivoir (navbar & footer,
+// landing.css .lp-brand-logo-shine, di-mask ke bentuk asli logo),
+// berulang, dimatikan untuk prefers-reduced-motion.
+// v24 -> v25: REVISI feedback Owner. Mockup Dashboard di Hero: "Pendapatan"
+// (Rp 4,85jt->20jt) & "Pelanggan Baru" (11->50) sekarang ikut berjalan
+// bareng "Booking Hari Ini" -- SEMUA counter di mockup ini pakai satu
+// konstanta interval yang sama (STEP_TICK_MS di landing.js) supaya
+// kecepatan pergerakan angkanya konsisten. Kartu Dashboard Owner (fitur
+// unggulan): "Pendapatan" (20,5jt->50jt, naik per 0,5jt: 20,5 / 21 /
+// 21,5 / ...) & "Barber Aktif" (5->15) ditambahkan, jalan di kecepatan
+// yang sama juga.
+const ASSET_VERSION = "25";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

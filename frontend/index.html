@@ -101,14 +101,16 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=23" />
+<link rel="stylesheet" href="css/landing.css?v=25" />
 </head>
 <body>
 
 <header class="lp-navbar" id="lp-navbar">
   <div class="lp-container lp-navbar-inner">
     <a class="lp-brand" href="#hero">
-      <img src="icons/logo-rivoir.png" alt="Rivoir" class="lp-brand-logo-full" />
+      <span class="lp-brand-logo-shine">
+        <img src="icons/logo-rivoir.png" alt="Rivoir" class="lp-brand-logo-full" />
+      </span>
     </a>
     <nav class="lp-nav-links" id="lp-nav-links">
       <a href="#differentiator">Kenapa Rivoir</a>
@@ -148,13 +150,13 @@
           <div class="lp-mockup-topbar"><span></span><span></span><span></span><span class="lp-mockup-topbar-title">Dashboard — Rivoir</span></div>
           <div class="lp-mockup-body">
             <div class="lp-mockup-kpis">
-              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value">18</div></div>
-              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up">Rp 4,85jt</div></div>
-              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pelanggan Baru</div><div class="lp-mockup-kpi-value">6</div></div>
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value" id="lp-hero-booking-count">18</div></div>
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up" id="lp-hero-pendapatan">Rp 4,85jt</div></div>
+              <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pelanggan Baru</div><div class="lp-mockup-kpi-value" id="lp-hero-pelanggan-baru">11</div></div>
             </div>
-            <div class="lp-mockup-chart" role="img" aria-label="Grafik pendapatan mingguan">
-              <span style="height:38%"></span><span style="height:62%"></span><span style="height:48%"></span>
-              <span style="height:80%"></span><span style="height:56%"></span><span style="height:94%"></span><span style="height:70%"></span>
+            <div class="lp-mockup-chart" id="lp-hero-chart" role="img" aria-label="Grafik pendapatan mingguan">
+              <span data-target="38" style="height:38%"></span><span data-target="62" style="height:62%"></span><span data-target="48" style="height:48%"></span>
+              <span data-target="80" style="height:80%"></span><span data-target="56" style="height:56%"></span><span data-target="94" style="height:94%"></span><span data-target="70" style="height:70%"></span>
             </div>
             <div class="lp-mockup-list">
               <div class="lp-mockup-list-row">
@@ -211,8 +213,8 @@
             <div class="lp-mockup-body">
               <div class="lp-mockup-kpis">
                 <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Booking Hari Ini</div><div class="lp-mockup-kpi-value" id="lp-diff-booking-count">18</div></div>
-                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up">Rp 32,4jt</div></div>
-                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Barber Aktif</div><div class="lp-mockup-kpi-value">4</div></div>
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Pendapatan</div><div class="lp-mockup-kpi-value lp-up" id="lp-diff-pendapatan-owner">Rp 20,5jt</div></div>
+                <div class="lp-mockup-kpi"><div class="lp-mockup-kpi-label">Barber Aktif</div><div class="lp-mockup-kpi-value" id="lp-diff-barber-aktif">5</div></div>
               </div>
               <div class="lp-mockup-hbars">
                 <div class="lp-mockup-hbar-row"><span class="lp-mockup-hbar-name">Dimas</span><div class="lp-mockup-hbar-track"><div class="lp-mockup-hbar-fill" id="lp-diff-bar-dimas" style="width:20%"></div></div><span class="lp-mockup-hbar-value" id="lp-diff-val-dimas">Rp 3,8jt</span></div>
@@ -549,7 +551,9 @@
     <div class="lp-footer-grid">
       <div>
         <div class="lp-footer-brand">
-          <img src="icons/logo-rivoir.png" alt="Rivoir" class="lp-brand-logo-full lp-brand-logo-footer" />
+          <span class="lp-brand-logo-shine">
+            <img src="icons/logo-rivoir.png" alt="Rivoir" class="lp-brand-logo-full lp-brand-logo-footer" />
+          </span>
         </div>
         <p class="lp-footer-tagline" id="lp-footer-tagline">Platform manajemen barbershop all-in-one: booking online, jadwal barber, pembayaran, dan laporan dalam satu dashboard.</p>
       </div>
@@ -584,7 +588,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=23"></script>
-<script src="js/landing.js?v=23"></script>
+<script src="js/lp-slider.js?v=25"></script>
+<script src="js/landing.js?v=25"></script>
 </body>
 </html>
