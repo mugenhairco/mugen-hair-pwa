@@ -1466,6 +1466,16 @@ const PagePengaturan = (() => {
       card.appendChild(MugenUI.el("label", {}, "Radius Absensi"));
       card.appendChild(selRadius);
 
+      card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Limit Keterlambatan & Pulang Lebih Awal"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Setiap barber punya anggaran menit/bulan (otomatis reset tiap tanggal 1) untuk keterlambatan Check In dan untuk pulang lebih awal saat Check Out -- dua anggaran ini TERPISAH. Limit habis TIDAK memblokir Check In/Check Out, hanya dicatat di Keterangan (dengan tanda merah)."));
+      const inputBatasTerlambat = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_terlambat ?? 120) });
+      const inputBatasPulangAwal = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_pulang_awal ?? 120) });
+      card.appendChild(MugenUI.el("label", {}, "Limit Keterlambatan (menit/bulan)"));
+      card.appendChild(inputBatasTerlambat);
+      card.appendChild(MugenUI.el("label", {}, "Limit Pulang Lebih Awal (menit/bulan)"));
+      card.appendChild(inputBatasPulangAwal);
+
       card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Lokasi Toko"));
       const inputLokasiNama = MugenUI.el("input", { type: "text", value: settings.lokasi_nama || "", placeholder: "Contoh: Rivoir Barbershop Pusat" });
       const inputLat = MugenUI.el("input", { type: "text", value: settings.lokasi_latitude != null ? String(settings.lokasi_latitude) : "", placeholder: "Latitude", readonly: "" });
@@ -1517,6 +1527,8 @@ const PagePengaturan = (() => {
           jam_masuk: inputJamMasuk.value, toleransi_menit: Number(inputToleransi.value),
           jam_pulang: inputJamPulang.value, radius_meter: Number(selRadius.value),
           lokasi_nama: inputLokasiNama.value.trim(),
+          batas_menit_terlambat: Number(inputBatasTerlambat.value),
+          batas_menit_pulang_awal: Number(inputBatasPulangAwal.value),
         };
         if (inputLat.value) body2.lokasi_latitude = Number(inputLat.value);
         if (inputLng.value) body2.lokasi_longitude = Number(inputLng.value);

@@ -896,6 +896,14 @@ CREATE TABLE IF NOT EXISTS attendance_settings (
     tenant_id         INTEGER
 );
 
+-- REVISI: besar anggaran limit Keterlambatan & Pulang Lebih Awal (menit/
+-- bulan, lihat attendance_db.py::hitung_ringkasan_bulan()) sekarang bisa
+-- diatur Owner/Admin lewat Setting > Absensi, bukan konstanta tetap 120 --
+-- ADD COLUMN IF NOT EXISTS untuk instalasi Postgres yang SUDAH ADA (pola
+-- sama seperti barbers.gaji_pokok di atas).
+ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_terlambat INTEGER NOT NULL DEFAULT 120;
+ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_pulang_awal INTEGER NOT NULL DEFAULT 120;
+
 -- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
 -- SAMA seperti user_id/tenant_id di tabel lain sepanjang file ini, lihat
 -- catatan panjang di email_verification_tokens di atas untuk kejadian

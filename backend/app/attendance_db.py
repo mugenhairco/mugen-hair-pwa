@@ -60,16 +60,20 @@ STATUS_HARI_INI_VALID = {"belum_check_in", "sedang_bekerja", "sudah_check_out",
                           "tidak_check_in", "tidak_check_out"}
 
 # FITUR Limit Keterlambatan & Pulang Lebih Awal (keputusan Owner): SATU
-# barber punya "anggaran" 120 menit/bulan untuk keterlambatan Check In, dan
-# 120 menit/bulan TERPISAH untuk pulang lebih awal saat Check Out -- setiap
-# kejadian mengurangi anggaran sejumlah menitnya, direset otomatis tiap
-# tanggal 1 (dihitung ON-THE-FLY dari attendance_logs bulan berjalan, TIDAK
-# ADA kolom "sisa limit" tersimpan/proses reset terjadwal -- pola sama
+# barber punya "anggaran" menit/bulan untuk keterlambatan Check In, dan
+# anggaran menit/bulan TERPISAH untuk pulang lebih awal saat Check Out --
+# setiap kejadian mengurangi anggaran sejumlah menitnya, direset otomatis
+# tiap tanggal 1 (dihitung ON-THE-FLY dari attendance_logs bulan berjalan,
+# TIDAK ADA kolom "sisa limit" tersimpan/proses reset terjadwal -- pola sama
 # seperti billing_limits.py::pastikan_boleh_tambah_booking, lihat
 # hitung_ringkasan_bulan() di bawah). Limit habis TIDAK memblokir Check
 # In/Out (keputusan eksplisit Owner) -- cuma menambahkan catatan di
-# keterangan supaya Owner tahu.
-BATAS_LIMIT_MENIT = 120
+# keterangan supaya Owner tahu. REVISI: besar anggaran (per tenant, TERPISAH
+# untuk keterlambatan vs pulang lebih awal) sekarang bisa diatur Owner/Admin
+# lewat attendance_settings.batas_menit_terlambat/batas_menit_pulang_awal
+# (Setting > Absensi) -- konstanta di bawah HANYA dipakai sebagai nilai
+# default baris pengaturan baru.
+BATAS_LIMIT_MENIT_DEFAULT = 120
 # Sisa limit <= ini -> frontend menampilkan ikon peringatan + teks merah.
 AMBANG_PERINGATAN_MENIT = 40
 
@@ -84,6 +88,8 @@ DEFAULT_SETTINGS = {
     "lokasi_nama": "",
     "lokasi_latitude": None,
     "lokasi_longitude": None,
+    "batas_menit_terlambat": BATAS_LIMIT_MENIT_DEFAULT,
+    "batas_menit_pulang_awal": BATAS_LIMIT_MENIT_DEFAULT,
 }
 
 
@@ -91,18 +97,28 @@ def init_attendance_db():
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance_settings (
-                id                INTEGER PRIMARY KEY,
-                jam_masuk         TEXT NOT NULL DEFAULT '09:00',
-                toleransi_menit   INTEGER NOT NULL DEFAULT 15,
-                jam_pulang        TEXT NOT NULL DEFAULT '20:00',
-                radius_meter      INTEGER NOT NULL DEFAULT 500,
-                lokasi_nama       TEXT,
-                lokasi_latitude   REAL,
-                lokasi_longitude  REAL,
-                updated_at        TEXT,
-                tenant_id         INTEGER
+                id                        INTEGER PRIMARY KEY,
+                jam_masuk                 TEXT NOT NULL DEFAULT '09:00',
+                toleransi_menit           INTEGER NOT NULL DEFAULT 15,
+                jam_pulang                TEXT NOT NULL DEFAULT '20:00',
+                radius_meter              INTEGER NOT NULL DEFAULT 500,
+                lokasi_nama               TEXT,
+                lokasi_latitude           REAL,
+                lokasi_longitude          REAL,
+                updated_at                TEXT,
+                tenant_id                 INTEGER,
+                batas_menit_terlambat     INTEGER NOT NULL DEFAULT 120,
+                batas_menit_pulang_awal   INTEGER NOT NULL DEFAULT 120
             )
         """)
+        # Instalasi SQLite yang SUDAH ADA sebelum dua kolom limit di atas
+        # ditambahkan ke CREATE TABLE (instalasi baru sudah dapat kolomnya
+        # langsung) -- pola sama seperti billing_db.py::init_billing_db().
+        kolom_settings = [r["name"] for r in conn.execute("PRAGMA table_info(attendance_settings)").fetchall()]
+        if kolom_settings and "batas_menit_terlambat" not in kolom_settings:
+            conn.execute("ALTER TABLE attendance_settings ADD COLUMN batas_menit_terlambat INTEGER NOT NULL DEFAULT 120")
+        if kolom_settings and "batas_menit_pulang_awal" not in kolom_settings:
+            conn.execute("ALTER TABLE attendance_settings ADD COLUMN batas_menit_pulang_awal INTEGER NOT NULL DEFAULT 120")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance_logs (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,9 +235,11 @@ def haversine_meter(lat1: float, lng1: float, lat2: float, lng2: float) -> float
 
 def _pastikan_baris_settings(conn, tenant_id: int):
     conn.execute(
-        """INSERT INTO attendance_settings (id, jam_masuk, toleransi_menit, jam_pulang, radius_meter, tenant_id)
-           VALUES (?, '09:00', 15, '20:00', 500, ?) ON CONFLICT DO NOTHING""",
-        (tenant_id, tenant_id),
+        """INSERT INTO attendance_settings
+               (id, jam_masuk, toleransi_menit, jam_pulang, radius_meter, tenant_id,
+                batas_menit_terlambat, batas_menit_pulang_awal)
+           VALUES (?, '09:00', 15, '20:00', 500, ?, ?, ?) ON CONFLICT DO NOTHING""",
+        (tenant_id, tenant_id, BATAS_LIMIT_MENIT_DEFAULT, BATAS_LIMIT_MENIT_DEFAULT),
     )
 
 
@@ -234,7 +252,8 @@ def get_settings(tenant_id: int) -> dict:
 
 def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = None,
                   jam_pulang: str = None, radius_meter: int = None, lokasi_nama: str = None,
-                  lokasi_latitude: float = None, lokasi_longitude: float = None) -> dict:
+                  lokasi_latitude: float = None, lokasi_longitude: float = None,
+                  batas_menit_terlambat: int = None, batas_menit_pulang_awal: int = None) -> dict:
     existing = get_settings(tenant_id)
     jam_masuk_baru = jam_masuk if jam_masuk is not None else existing["jam_masuk"]
     jam_pulang_baru = jam_pulang if jam_pulang is not None else existing["jam_pulang"]
@@ -251,12 +270,21 @@ def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = N
     radius_baru = radius_meter if radius_meter is not None else existing["radius_meter"]
     if radius_baru not in RADIUS_VALID:
         raise ValueError(f"Radius Absensi tidak valid, pilih salah satu: {sorted(RADIUS_VALID)} meter.")
+    batas_terlambat_baru = (batas_menit_terlambat if batas_menit_terlambat is not None
+                             else existing["batas_menit_terlambat"])
+    if batas_terlambat_baru is None or batas_terlambat_baru < 0:
+        raise ValueError("Limit Keterlambatan tidak boleh negatif.")
+    batas_pulang_awal_baru = (batas_menit_pulang_awal if batas_menit_pulang_awal is not None
+                               else existing["batas_menit_pulang_awal"])
+    if batas_pulang_awal_baru is None or batas_pulang_awal_baru < 0:
+        raise ValueError("Limit Pulang Lebih Awal tidak boleh negatif.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         _pastikan_baris_settings(conn, tenant_id)
         fields, values = ["jam_masuk = ?", "toleransi_menit = ?", "jam_pulang = ?", "radius_meter = ?",
-                           "updated_at = ?"], [jam_masuk_baru, int(toleransi_baru), jam_pulang_baru,
-                                                int(radius_baru), now]
+                           "batas_menit_terlambat = ?", "batas_menit_pulang_awal = ?", "updated_at = ?"], [
+            jam_masuk_baru, int(toleransi_baru), jam_pulang_baru, int(radius_baru),
+            int(batas_terlambat_baru), int(batas_pulang_awal_baru), now]
         if lokasi_nama is not None:
             fields.append("lokasi_nama = ?"); values.append(lokasi_nama.strip())
         if lokasi_latitude is not None:
@@ -346,7 +374,13 @@ def get_log_hari_ini(barber_id: int, tenant_id: int = None) -> dict | None:
     return log
 
 
-def _lengkapi(row: dict, settings: dict = None) -> dict:
+# Sentinel supaya _lengkapi() bisa membedakan "keterangan_kaya tidak
+# diisi caller" (fallback ke versi ringan) dari "keterangan_kaya diisi TAPI
+# baris ini memang tidak ada kejadian" (list kosong yang VALID).
+_TIDAK_DIISI = object()
+
+
+def _lengkapi(row: dict, settings: dict = None, keterangan_kaya=_TIDAK_DIISI) -> dict:
     barber = get_barber(row["barber_id"])
     row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
     row["tenant_id"] = row.get("tenant_id") if row.get("tenant_id") is not None else (
@@ -355,18 +389,27 @@ def _lengkapi(row: dict, settings: dict = None) -> dict:
         settings = get_settings(row["tenant_id"])
     if settings is not None:
         row["status"] = hitung_status_hari_ini(row, settings)
-        # Keterangan ringan per baris (TANPA info "limit habis" -- itu
-        # butuh total berjalan satu bulan penuh, lihat hitung_ringkasan_bulan()
-        # di bawah untuk itu, supaya list harian/rentang tanggal di sini
-        # tidak perlu query tambahan per baris).
-        keterangan = []
-        menit_terlambat = _menit_terlambat_baris(row, settings)
-        if menit_terlambat is not None:
-            keterangan.append(f"Terlambat {menit_terlambat} menit pada {_format_tanggal_id(row['tanggal'])}")
-        menit_pulang_awal = _menit_pulang_awal_baris(row, settings)
-        if menit_pulang_awal is not None:
-            keterangan.append(f"Pulang lebih awal {menit_pulang_awal} menit pada {_format_tanggal_id(row['tanggal'])}")
-        row["keterangan"] = keterangan
+        if keterangan_kaya is not _TIDAK_DIISI:
+            # Versi KAYA (dari hitung_ringkasan_bulan()) -- termasuk suffix
+            # "... limit ... bulan ini sudah habis" kalau kejadian ini
+            # terjadi saat anggaran bulanan sudah terpakai habis (dipakai
+            # get_log_list() supaya kolom Keterangan di Daftar Absensi/
+            # Riwayat Absensi bisa ditandai merah -- lihat keteranganText()
+            # di frontend).
+            row["keterangan"] = keterangan_kaya
+        else:
+            # Keterangan ringan per baris (TANPA info "limit habis" -- itu
+            # butuh total berjalan satu bulan penuh, lihat hitung_ringkasan_bulan()
+            # di bawah untuk itu, supaya baris tunggal (mis. get_log()) tidak
+            # perlu query tambahan satu bulan penuh).
+            keterangan = []
+            menit_terlambat = _menit_terlambat_baris(row, settings)
+            if menit_terlambat is not None:
+                keterangan.append(f"Terlambat {menit_terlambat} menit pada {_format_tanggal_id(row['tanggal'])}")
+            menit_pulang_awal = _menit_pulang_awal_baris(row, settings)
+            if menit_pulang_awal is not None:
+                keterangan.append(f"Pulang lebih awal {menit_pulang_awal} menit pada {_format_tanggal_id(row['tanggal'])}")
+            row["keterangan"] = keterangan
     return row
 
 
@@ -398,7 +441,22 @@ def get_log_list(tenant_id: int, tanggal: str = None, tanggal_dari: str = None, 
     q += " ORDER BY l.tanggal DESC, l.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
-    hasil = [_lengkapi(r, settings) for r in rows]
+
+    # Keterangan KAYA per baris (termasuk suffix "... sudah habis" kalau
+    # kejadian ini terjadi saat anggaran bulanan barber itu sudah terpakai
+    # habis) -- di-cache per (barber_id, tahun, bulan) supaya rentang
+    # tanggal yang mencakup banyak baris di bulan yang sama tidak memanggil
+    # hitung_ringkasan_bulan() berulang-ulang untuk kombinasi yang sama.
+    ringkasan_cache: dict[tuple[int, int, int], dict] = {}
+
+    def _keterangan_kaya(barber_id_baris: int, tanggal_baris: str) -> list:
+        tahun, bulan = int(tanggal_baris[:4]), int(tanggal_baris[5:7])
+        kunci = (barber_id_baris, tahun, bulan)
+        if kunci not in ringkasan_cache:
+            ringkasan_cache[kunci] = hitung_ringkasan_bulan(barber_id_baris, tenant_id, tahun, bulan)
+        return ringkasan_cache[kunci]["keterangan_per_tanggal"].get(tanggal_baris, [])
+
+    hasil = [_lengkapi(r, settings, keterangan_kaya=_keterangan_kaya(r["barber_id"], r["tanggal"])) for r in rows]
 
     tanggal_tunggal = tanggal or (_hari_ini_wib() if tanggal_dari is None and tanggal_sampai is None else None)
     if tanggal_tunggal is not None and barber_id is None:
@@ -454,14 +512,18 @@ def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bu
     berjalan, pola sama seperti billing_limits.py::pastikan_boleh_tambah_booking).
 
     Baris diproses URUT TANGGAL NAIK, total dijumlahkan bertahap -- baris
-    yang membuat total TEMBUS/SAMA DENGAN BATAS_LIMIT_MENIT (dan semua
+    yang membuat total TEMBUS/SAMA DENGAN batas limit tenant ini (dan semua
     baris SETELAHNYA bulan itu) diberi tambahan keterangan "... sudah
     habis" (keputusan Owner: limit habis TIDAK memblokir absensi, cuma
-    dicatat)."""
+    dicatat). Batas limit sendiri (menit/bulan, terpisah untuk keterlambatan
+    vs pulang lebih awal) diambil dari attendance_settings -- BISA DIATUR
+    Owner/Admin lewat Setting > Absensi (lihat set_settings())."""
     if tahun is None or bulan is None:
         sekarang = _sekarang_wib()
         tahun, bulan = tahun or sekarang.year, bulan or sekarang.month
     settings = get_settings(tenant_id)
+    batas_terlambat = settings["batas_menit_terlambat"]
+    batas_pulang_awal = settings["batas_menit_pulang_awal"]
     prefix = f"{tahun:04d}-{bulan:02d}"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(
@@ -478,18 +540,18 @@ def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bu
         catatan = []
         menit_terlambat = _menit_terlambat_baris(row, settings)
         if menit_terlambat is not None:
-            sudah_habis_sebelumnya = total_terlambat >= BATAS_LIMIT_MENIT
+            sudah_habis_sebelumnya = total_terlambat >= batas_terlambat
             total_terlambat += menit_terlambat
             teks = f"Terlambat {menit_terlambat} menit pada {_format_tanggal_id(row['tanggal'])}"
-            if sudah_habis_sebelumnya or total_terlambat >= BATAS_LIMIT_MENIT:
+            if sudah_habis_sebelumnya or total_terlambat >= batas_terlambat:
                 teks += " — limit keterlambatan bulan ini sudah habis"
             catatan.append(teks)
         menit_pulang_awal = _menit_pulang_awal_baris(row, settings)
         if menit_pulang_awal is not None:
-            sudah_habis_sebelumnya = total_pulang_awal >= BATAS_LIMIT_MENIT
+            sudah_habis_sebelumnya = total_pulang_awal >= batas_pulang_awal
             total_pulang_awal += menit_pulang_awal
             teks = f"Pulang lebih awal {menit_pulang_awal} menit pada {_format_tanggal_id(row['tanggal'])}"
-            if sudah_habis_sebelumnya or total_pulang_awal >= BATAS_LIMIT_MENIT:
+            if sudah_habis_sebelumnya or total_pulang_awal >= batas_pulang_awal:
                 teks += " — limit pulang lebih awal bulan ini sudah habis"
             catatan.append(teks)
         if catatan:
@@ -499,12 +561,13 @@ def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bu
         "barber_id": barber_id,
         "tahun": tahun,
         "bulan": bulan,
-        "batas_limit_menit": BATAS_LIMIT_MENIT,
+        "batas_menit_terlambat": batas_terlambat,
+        "batas_menit_pulang_awal": batas_pulang_awal,
         "ambang_peringatan_menit": AMBANG_PERINGATAN_MENIT,
         "menit_terlambat_terpakai": total_terlambat,
-        "sisa_limit_terlambat": max(0, BATAS_LIMIT_MENIT - total_terlambat),
+        "sisa_limit_terlambat": max(0, batas_terlambat - total_terlambat),
         "menit_pulang_awal_terpakai": total_pulang_awal,
-        "sisa_limit_pulang_awal": max(0, BATAS_LIMIT_MENIT - total_pulang_awal),
+        "sisa_limit_pulang_awal": max(0, batas_pulang_awal - total_pulang_awal),
         "keterangan_per_tanggal": keterangan_per_tanggal,
     }
 

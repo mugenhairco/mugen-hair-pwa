@@ -556,7 +556,18 @@
 // alasan), diproses (Setujui/Tolak) Owner/Admin di menu Absensi (izin
 // baru izin_absensi_koreksi untuk staff, ditambahkan ke tab Hak Akses
 // Admin di pengaturan.js).
-const ASSET_VERSION = "100";
+// v100 -> v101: REVISI Batas Absensi (feedback Owner lanjutan) -- besar
+// limit Keterlambatan & Pulang Lebih Awal (sebelumnya konstanta tetap 120
+// menit/bulan) SEKARANG BISA DIATUR Owner/Admin lewat Setting > Absensi
+// (attendance_settings.batas_menit_terlambat/batas_menit_pulang_awal,
+// dua field baru terpisah). Kolom Keterangan di Daftar Absensi Owner &
+// Riwayat Absensi Saya Barber sekarang benar-benar menandai ikon
+// peringatan + teks merah begitu SATU kejadian (terlambat/pulang lebih
+// awal) terjadi SAAT limit bulan itu sudah habis (sebelumnya baris
+// "keterangan_per_tanggal" versi kaya ini cuma dihitung di endpoint
+// ringkasan-bulan, TIDAK PERNAH sampai ke kolom Keterangan tabel utama --
+// celah yang diperbaiki di attendance_db.py::get_log_list()/_lengkapi()).
+const ASSET_VERSION = "101";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

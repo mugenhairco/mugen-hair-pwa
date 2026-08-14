@@ -49,10 +49,15 @@ const PageAbsensi = (() => {
     return MugenUI.el("span", {}, teks);
   }
 
+  // Keterangan yang terjadi SAAT limit bulanan sudah habis (teks dari
+  // backend memuat suffix "... sudah habis", lihat hitung_ringkasan_bulan())
+  // ditandai ikon warning + teks merah -- konsisten dengan formatSisaLimit().
   function keteranganText(list) {
     if (!list || !list.length) return "-";
-    return MugenUI.el("div", {}, list.map((teks) =>
-      MugenUI.el("div", { style: teks.includes("sudah habis") ? "color:var(--danger);" : "" }, teks)));
+    return MugenUI.el("div", {}, list.map((teks) => {
+      const habis = teks.includes("sudah habis");
+      return MugenUI.el("div", { style: habis ? "color:var(--danger);" : "" }, habis ? `⚠️ ${teks}` : teks);
+    }));
   }
 
   const LABEL_JENIS_KOREKSI = { check_in: "Check In", check_out: "Check Out" };
@@ -191,8 +196,9 @@ const PageAbsensi = (() => {
     const limitCard = MugenUI.el("div", { class: "card" });
     root.appendChild(limitCard);
     limitCard.appendChild(MugenUI.el("h2", {}, "Sisa Limit Bulan Ini"));
-    limitCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit 120 menit/bulan, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan."));
+    const limitSubtitle = MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit menit/bulan (diatur Owner/Admin), otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.");
+    limitCard.appendChild(limitSubtitle);
     const limitBody = MugenUI.el("div");
     limitCard.appendChild(limitBody);
     async function loadLimitSaya() {
@@ -203,6 +209,7 @@ const PageAbsensi = (() => {
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
+        limitSubtitle.textContent = `Limit Keterlambatan: ${r.batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${r.batas_menit_pulang_awal} menit/bulan. Diatur Owner/Admin di Setting > Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
         return MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;" }, [
           infoItem("Sisa Limit Terlambat", formatSisaLimit(r.sisa_limit_terlambat, r.ambang_peringatan_menit)),
           infoItem("Sisa Limit Pulang Lebih Awal", formatSisaLimit(r.sisa_limit_pulang_awal, r.ambang_peringatan_menit)),
@@ -339,8 +346,9 @@ const PageAbsensi = (() => {
     const limitCard = MugenUI.el("div", { class: "card" });
     root.appendChild(limitCard);
     limitCard.appendChild(MugenUI.el("h2", {}, "Sisa Limit Bulan Ini"));
-    limitCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit 120 menit/bulan per barber, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan."));
+    const limitSubtitle = MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit menit/bulan per barber (diatur di sini di Setting > Absensi), otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.");
+    limitCard.appendChild(limitSubtitle);
     const limitBody = MugenUI.el("div");
     limitCard.appendChild(limitBody);
     async function loadLimit() {
@@ -350,6 +358,9 @@ const PageAbsensi = (() => {
           rows = await MugenApi.get("/api/attendance/ringkasan-bulan");
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+        }
+        if (rows.length) {
+          limitSubtitle.textContent = `Limit Keterlambatan: ${rows[0].batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${rows[0].batas_menit_pulang_awal} menit/bulan per barber. Diatur di Setting > Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
         }
         return MugenUI.buildTable([
           { key: "nama_barber", label: "Barber" },

@@ -532,3 +532,96 @@ def test_api_ringkasan_bulan(single_tenant):
     assert r.status_code == 200
     assert isinstance(r.json(), list)
     assert any(item["barber_id"] == barber_a for item in r.json())
+
+
+# ---------------------------------------------------------------------------
+# FITUR (revisi feedback Owner): Limit Keterlambatan/Pulang Lebih Awal BISA
+# DIATUR Owner/Admin (sebelumnya konstanta tetap 120 menit/bulan) + kolom
+# Keterangan di Daftar Absensi/Riwayat ditandai merah begitu SATU kejadian
+# terjadi SAAT limit bulan itu sudah habis.
+# ---------------------------------------------------------------------------
+
+def test_settings_batas_limit_default_dan_bisa_diatur(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    default = attendance_db.get_settings(tenant_id)
+    assert default["batas_menit_terlambat"] == 120
+    assert default["batas_menit_pulang_awal"] == 120
+
+    updated = attendance_db.set_settings(tenant_id, batas_menit_terlambat=60, batas_menit_pulang_awal=30)
+    assert updated["batas_menit_terlambat"] == 60
+    assert updated["batas_menit_pulang_awal"] == 30
+    # Pengaturan lain TIDAK ikut berubah (hanya field yang diisi).
+    assert updated["jam_masuk"] == "09:00"
+
+
+def test_settings_batas_limit_negatif_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    with pytest.raises(ValueError, match="Limit Keterlambatan"):
+        attendance_db.set_settings(tenant_id, batas_menit_terlambat=-1)
+    with pytest.raises(ValueError, match="Limit Pulang Lebih Awal"):
+        attendance_db.set_settings(tenant_id, batas_menit_pulang_awal=-5)
+
+
+def test_ringkasan_bulan_memakai_batas_limit_custom_tenant(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)  # jam_masuk 09:00, toleransi 15
+    attendance_db.set_settings(tenant_id, batas_menit_terlambat=60)
+    barber_a = _barber(tenant_id)
+
+    # 2 hari, masing-masing terlambat 40 menit --> total 80, melewati limit
+    # custom 60 (BUKAN default 120) di hari kedua.
+    for hari in (10, 11):
+        monkeypatch.setattr(attendance_db, "_sekarang_wib",
+                             lambda hari=hari: datetime(2026, 8, hari, 9, 40, tzinfo=WIB))
+        attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    ringkasan = attendance_db.hitung_ringkasan_bulan(barber_a, tenant_id, 2026, 8)
+    assert ringkasan["batas_menit_terlambat"] == 60
+    assert ringkasan["menit_terlambat_terpakai"] == 80
+    assert ringkasan["sisa_limit_terlambat"] == 0
+    assert not any("habis" in c for c in ringkasan["keterangan_per_tanggal"]["2026-08-10"])
+    assert any("sudah habis" in c for c in ringkasan["keterangan_per_tanggal"]["2026-08-11"])
+
+
+def test_get_log_list_menandai_keterangan_sudah_habis_saat_limit_terlampaui(single_tenant, monkeypatch):
+    """Kolom Keterangan yang dikembalikan get_log_list() (dipakai Daftar
+    Absensi Owner & Riwayat Absensi Saya Barber) HARUS memuat suffix
+    "sudah habis" begitu SATU kejadian terjadi saat limit bulan itu sudah
+    terpakai habis -- ini yang membuat frontend keteranganText() menandai
+    baris itu ikon warning + teks merah (revisi feedback Owner)."""
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    attendance_db.set_settings(tenant_id, batas_menit_terlambat=60)
+    barber_a = _barber(tenant_id, "Barber Habis")
+
+    for hari in (10, 11):
+        monkeypatch.setattr(attendance_db, "_sekarang_wib",
+                             lambda hari=hari: datetime(2026, 8, hari, 9, 40, tzinfo=WIB))
+        attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    hasil = attendance_db.get_log_list(tenant_id, tanggal_dari="2026-08-01", tanggal_sampai="2026-08-31",
+                                        barber_id=barber_a)
+    by_tanggal = {r["tanggal"]: r for r in hasil}
+    assert not any("habis" in k for k in by_tanggal["2026-08-10"]["keterangan"])
+    assert any("sudah habis" in k for k in by_tanggal["2026-08-11"]["keterangan"])
+
+
+def test_api_settings_batas_limit_dan_ringkasan_mengikuti(single_tenant, monkeypatch):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id, "Barber Setting API")
+
+    r_put = client.put("/api/attendance/settings",
+                        json={"batas_menit_terlambat": 45, "batas_menit_pulang_awal": 45}, headers=headers)
+    assert r_put.status_code == 200
+    assert r_put.json()["batas_menit_terlambat"] == 45
+
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 50, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    r_ringkasan = client.get("/api/attendance/ringkasan-bulan", params={"barber_id": barber_a}, headers=headers)
+    assert r_ringkasan.status_code == 200
+    body2 = r_ringkasan.json()
+    assert body2["batas_menit_terlambat"] == 45
+    assert body2["sisa_limit_terlambat"] == 0  # 50 menit terlambat > limit 45

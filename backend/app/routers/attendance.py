@@ -83,6 +83,8 @@ class SettingsBody(BaseModel):
     lokasi_nama: str | None = None
     lokasi_latitude: float | None = None
     lokasi_longitude: float | None = None
+    batas_menit_terlambat: int | None = None
+    batas_menit_pulang_awal: int | None = None
 
 
 @router.put("/settings")
@@ -92,6 +94,7 @@ def ubah_settings(body: SettingsBody, user: dict = Depends(require_permission("i
             user["tenant_id"], jam_masuk=body.jam_masuk, toleransi_menit=body.toleransi_menit,
             jam_pulang=body.jam_pulang, radius_meter=body.radius_meter, lokasi_nama=body.lokasi_nama,
             lokasi_latitude=body.lokasi_latitude, lokasi_longitude=body.lokasi_longitude,
+            batas_menit_terlambat=body.batas_menit_terlambat, batas_menit_pulang_awal=body.batas_menit_pulang_awal,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
