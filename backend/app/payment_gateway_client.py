@@ -62,11 +62,10 @@ _TIMEOUT_DETIK = 15
 
 # Konfirmasi resmi tim Faspay: Sandbox development.
 _SANDBOX_URL = "https://xpress-sandbox.faspay.co.id/v4/post"
-# BELUM dikonfirmasi tim Faspay secara eksplisit (mengikuti pola penamaan
-# Sandbox -> Production yang konsisten dipakai Faspay di produk lain) --
-# WAJIB dikonfirmasi ulang ke tim Faspay SEBELUM cutover Production
-# sungguhan (lihat README "Runbook -- Mengaktifkan Payment Gateway
-# Sungguhan"), JANGAN dipakai tanpa verifikasi.
+# Konfirmasi resmi tim Faspay (chat WhatsApp, daftar lengkap endpoint
+# Production Faspay -- Xpress V4 termasuk di dalamnya): URL ini SAMA PERSIS
+# dengan dugaan sebelumnya (pola penamaan Sandbox -> Production), sekarang
+# resmi terkonfirmasi, aman dipakai untuk cutover Production.
 _PRODUCTION_URL = "https://xpress.faspay.co.id/v4/post"
 
 # Konfirmasi resmi tim Faspay: HANYA SATU Return URL statis bisa

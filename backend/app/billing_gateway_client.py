@@ -50,9 +50,8 @@ import gateway_client_base as core
 _TIMEOUT_DETIK = 15
 
 _SANDBOX_URL = "https://xpress-sandbox.faspay.co.id/v4/post"
-# BELUM dikonfirmasi tim Faspay secara eksplisit -- lihat catatan yang sama
-# di payment_gateway_client.py, WAJIB dikonfirmasi ulang sebelum cutover
-# Production sungguhan.
+# Sekarang resmi terkonfirmasi tim Faspay -- lihat catatan yang sama di
+# payment_gateway_client.py.
 _PRODUCTION_URL = "https://xpress.faspay.co.id/v4/post"
 
 # SATU Return URL statis (konfirmasi resmi tim Faspay: hanya satu bisa
