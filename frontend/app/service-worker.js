@@ -600,7 +600,20 @@
 // (MugenUI.confirmModal) sebelum jalan, dan semua pesan error (termasuk izin
 // lokasi ditolak) sekarang tampil sebagai modal (MugenUI.infoModal), BUKAN
 // teks merah inline lagi (pages/absensi.js). TIDAK ada perubahan backend.
-const ASSET_VERSION = "105";
+// v105 -> v106: PERBAIKAN PERFORMA (loading awal lambat) -- 20 modul
+// js/pages/*.js yang besar (dashboard_owner.js, dashboard_barber.js,
+// input_data.js, rekap.js, pengeluaran.js, pemasukan.js, uang_kas.js,
+// riwayat_transaksi.js, slip_gaji.js, kasbon.js, komisi.js, reimburse.js,
+// izin_cuti.js, absensi.js, pengaturan.js, billing.js, produk.js,
+// booking.js, book_public.js, superadmin.js -- total ratusan KB) TIDAK lagi
+// dimuat lewat <script> biasa di index.html di awal aplikasi dibuka,
+// SEKARANG dimuat DINAMIS oleh modul baru js/page_loader.js HANYA saat
+// menunya benar-benar dibuka (router.js, index.html). File-file itu TETAP
+// terdaftar di APP_SHELL di bawah (precache saat instalasi TIDAK berubah,
+// jadi tetap berfungsi offline persis seperti sebelumnya begitu Service
+// Worker pernah selesai terpasang sekali) -- yang berubah HANYA kapan
+// browser memintanya (lazy, bukan di awal), bukan APAKAH di-cache.
+const ASSET_VERSION = "106";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -645,6 +658,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/nav.js",
   "/app/js/booking_notif.js",
   "/app/js/izin_notif.js",
+  "/app/js/page_loader.js",
   "/app/js/router.js",
   "/app/js/app.js",
   "/app/js/pages/login.js",

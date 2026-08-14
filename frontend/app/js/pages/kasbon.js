@@ -430,3 +430,13 @@ const PageKasbon = (() => {
 
   return { render };
 })();
+
+// PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js
+// (bukan <script> biasa lagi, lihat index.html/router.js) -- top-level
+// "const" TIDAK menempel ke objek window di browser (beda dari "var"),
+// jadi page_loader.js TIDAK BISA mendeteksi lewat window.PageKasbon begitu saja
+// setelah script ini selesai dimuat. Baris di bawah ini SATU-SATUNYA
+// perubahan di file ini untuk mendukung lazy-load -- expose eksplisit ke
+// window supaya page_loader.js bisa memverifikasi modul benar-benar
+// berhasil dimuat sebelum memanggil render()-nya.
+window.PageKasbon = PageKasbon;
