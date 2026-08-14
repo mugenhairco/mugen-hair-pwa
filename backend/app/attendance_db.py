@@ -607,6 +607,37 @@ def catat_audit(barber_id: int, aksi: str, sukses: bool, alasan_gagal: str = Non
         )
 
 
+def hapus_semua_audit_log(tenant_id: int) -> int:
+    """Hapus PERMANEN (hard delete, sampai ke database) SELURUH baris
+    attendance_audit_logs milik tenant ini -- diminta Owner untuk
+    membersihkan riwayat percobaan Check In/Out yang menumpuk. BEDA dari
+    seluruh tabel lain di modul ini (attendance_logs/attendance_koreksi
+    TIDAK PERNAH dihapus lewat aplikasi) -- audit log SENGAJA dikecualikan
+    dari prinsip itu karena murni log investigasi teknis (Fake GPS dkk),
+    bukan data historis absensi/gaji yang harus dipertahankan. Mengembalikan
+    jumlah baris yang terhapus (untuk pesan konfirmasi UI)."""
+    with get_conn() as conn:
+        return conn.execute("DELETE FROM attendance_audit_logs WHERE tenant_id = ?", (tenant_id,)).rowcount
+
+
+def hapus_riwayat_absensi(tenant_id: int, barber_id: int = None) -> int:
+    """Hapus PERMANEN (hard delete, sampai ke database) riwayat Check In/Out
+    (attendance_logs) milik tenant ini -- diminta Owner/Admin untuk
+    mengantisipasi data yang menumpuk. barber_id diisi -> HANYA riwayat
+    barber itu yang terhapus; kosong -> SEMUA barber di tenant ini. TIDAK
+    menyentuh attendance_koreksi/attendance_audit_logs sama sekali --
+    masing-masing sudah punya alur/tombol hapus sendiri (lihat
+    hapus_pengajuan_koreksi()/hapus_semua_audit_log()). Mengembalikan jumlah
+    baris yang terhapus (untuk pesan konfirmasi UI)."""
+    with get_conn() as conn:
+        if barber_id is not None:
+            return conn.execute(
+                "DELETE FROM attendance_logs WHERE tenant_id = ? AND barber_id = ?",
+                (tenant_id, barber_id),
+            ).rowcount
+        return conn.execute("DELETE FROM attendance_logs WHERE tenant_id = ?", (tenant_id,)).rowcount
+
+
 def get_audit_list(tenant_id: int, barber_id: int = None, tanggal_dari: str = None,
                     tanggal_sampai: str = None) -> list:
     q = "SELECT * FROM attendance_audit_logs WHERE tenant_id = ?"

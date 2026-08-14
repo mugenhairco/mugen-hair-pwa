@@ -29,7 +29,8 @@ from pydantic import BaseModel
 import attendance_db
 import laporan_pdf
 import permissions
-from auth import get_current_user, require_barber, require_feature, require_owner_or_staff, require_permission
+from auth import (get_current_user, require_admin, require_barber, require_feature, require_owner_or_staff,
+                   require_permission)
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -219,6 +220,28 @@ def audit_log(barber_id: int = None, tanggal_dari: str = None, tanggal_sampai: s
     percobaan check-in/out, berhasil MAUPUN gagal."""
     return attendance_db.get_audit_list(user["tenant_id"], barber_id=barber_id, tanggal_dari=tanggal_dari,
                                          tanggal_sampai=tanggal_sampai)
+
+
+@router.delete("/audit")
+def hapus_audit_log(user: dict = Depends(require_admin)):
+    """Hapus PERMANEN seluruh Log Audit (diminta Owner) -- KHUSUS Owner
+    (require_admin, TIDAK bisa didelegasikan lewat Hak Akses Admin ke staff)
+    karena log ini sendiri adalah alat investigasi Fake GPS/kecurangan --
+    staff yang berkepentingan dalam hasil investigasi tidak boleh punya
+    kuasa menghapus buktinya."""
+    jumlah = attendance_db.hapus_semua_audit_log(user["tenant_id"])
+    return {"ok": True, "jumlah_dihapus": jumlah}
+
+
+@router.delete("/riwayat")
+def hapus_riwayat(barber_id: int = None, user: dict = Depends(require_owner_or_staff)):
+    """Reset/hapus PERMANEN riwayat Check In/Out (attendance_logs) --
+    mengantisipasi data yang menumpuk (permintaan Owner). barber_id diisi ->
+    hanya riwayat barber itu; kosong -> SEMUA barber. Owner ATAU Admin
+    (staff) boleh -- BEDA dari DELETE /audit di atas (KHUSUS Owner), karena
+    ini murni pembersihan data operasional, bukan bukti investigasi."""
+    jumlah = attendance_db.hapus_riwayat_absensi(user["tenant_id"], barber_id=barber_id)
+    return {"ok": True, "jumlah_dihapus": jumlah}
 
 
 # ---------------------------------------------------------------------------

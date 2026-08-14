@@ -727,6 +727,23 @@ const PageAbsensi = (() => {
     auditCard.appendChild(MugenUI.el("h2", {}, "Log Audit Percobaan Check In/Out"));
     auditCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Rekam SEMUA percobaan Check In/Check Out (berhasil maupun gagal) untuk investigasi -- termasuk alasan penolakan, akurasi GPS, browser, device, dan IP Address."));
+    // Hapus PERMANEN (sampai ke database) -- KHUSUS Owner (backend
+    // require_admin, TIDAK bisa didelegasikan ke staff lewat Hak Akses
+    // Admin), karena log ini sendiri adalah bukti investigasi Fake GPS.
+    if (isOwnerAktif) {
+      const btnHapusAudit = MugenUI.el("button", { class: "btn-danger", style: "margin-bottom:10px;" }, "Hapus Semua Log Audit");
+      btnHapusAudit.addEventListener("click", async () => {
+        if (!confirm("Hapus SEMUA Log Audit Percobaan Check In/Out secara permanen? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database).")) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnHapusAudit, () => MugenApi.del("/api/attendance/audit"));
+          MugenUI.toast(`${hasil.jumlah_dihapus} baris Log Audit dihapus.`, "success");
+          loadAudit();
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      auditCard.appendChild(btnHapusAudit);
+    }
     const auditBody = MugenUI.el("div");
     auditCard.appendChild(auditBody);
 
@@ -752,6 +769,41 @@ const PageAbsensi = (() => {
       }, { skeleton: { kind: "table", cols: 9, rows: 4 } });
     }
     loadAudit();
+
+    // ---- Reset Riwayat Absensi Karyawan (mengantisipasi data menumpuk) ----
+    // BEDA dari Hapus Log Audit di atas: ini menghapus attendance_logs
+    // (riwayat Check In/Out sungguhan), bukan sekadar log investigasi --
+    // TAPI Owner ATAU Admin (staff) SAMA-SAMA boleh (backend
+    // require_owner_or_staff, TANPA delegasi permission terpisah), sesuai
+    // permintaan Owner.
+    const resetCard = MugenUI.el("div", { class: "card" });
+    root.appendChild(resetCard);
+    resetCard.appendChild(MugenUI.el("h2", {}, "Reset Riwayat Absensi Karyawan"));
+    resetCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Hapus PERMANEN riwayat Check In/Out (Daftar Absensi, Sisa Limit, Keterangan) untuk mengantisipasi data yang menumpuk. Pilih satu barber, atau \"Semua Barber\" untuk menghapus riwayat SELURUH karyawan. Tindakan ini TIDAK BISA dibatalkan."));
+    const selResetBarber = MugenUI.el("select");
+    selResetBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
+    for (const b of barbers) selResetBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+    const btnResetRiwayat = MugenUI.el("button", { class: "btn-danger" }, "Hapus Riwayat Absensi");
+    resetCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:10px;" },
+      [selResetBarber, btnResetRiwayat]));
+
+    btnResetRiwayat.addEventListener("click", async () => {
+      const namaBarberDipilih = selResetBarber.value
+        ? (barbers.find((b) => String(b.id) === selResetBarber.value) || {}).nama
+        : "SEMUA barber";
+      if (!confirm(`Hapus PERMANEN riwayat Check In/Out milik ${namaBarberDipilih}? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database).`)) return;
+      try {
+        const qs = selResetBarber.value ? `?barber_id=${selResetBarber.value}` : "";
+        const hasil = await MugenUI.withButtonLoading(btnResetRiwayat, () => MugenApi.del(`/api/attendance/riwayat${qs}`));
+        MugenUI.toast(`${hasil.jumlah_dihapus} baris riwayat absensi dihapus.`, "success");
+        loadDashboard();
+        loadLimit();
+        loadList();
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    });
   }
 
   async function render(root) {

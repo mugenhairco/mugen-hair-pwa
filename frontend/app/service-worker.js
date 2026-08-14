@@ -577,7 +577,20 @@
 // TIDAK berubah (staff tetap perlu izin ini, sekarang melindungi kartu di
 // halaman Absensi, bukan tab Setting). TIDAK ADA perubahan endpoint/logika
 // backend.
-const ASSET_VERSION = "102";
+// v102 -> v103: FITUR Hapus Log Audit (feedback Owner) -- tombol "Hapus
+// Semua Log Audit" baru di kartu "Log Audit Percobaan Check In/Out" (menu
+// Absensi), hard delete PERMANEN sampai ke database (DELETE
+// /api/attendance/audit, backend require_admin -- KHUSUS Owner, TIDAK bisa
+// didelegasikan ke staff karena log ini sendiri bukti investigasi Fake
+// GPS). Tombol hanya tampil untuk Owner.
+// v103 -> v104: FITUR Reset Riwayat Absensi Karyawan (feedback Owner) --
+// kartu baru "Reset Riwayat Absensi Karyawan" di menu Absensi (bawah kartu
+// Log Audit), hard delete PERMANEN attendance_logs (DELETE
+// /api/attendance/riwayat, backend require_owner_or_staff -- Owner ATAU
+// Admin/staff SAMA-SAMA boleh, TANPA delegasi permission terpisah, BEDA
+// dari Hapus Log Audit yang KHUSUS Owner) untuk mengantisipasi data yang
+// menumpuk. Bisa pilih satu barber atau "Semua Barber".
+const ASSET_VERSION = "104";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

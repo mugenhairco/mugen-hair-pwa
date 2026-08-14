@@ -625,3 +625,139 @@ def test_api_settings_batas_limit_dan_ringkasan_mengikuti(single_tenant, monkeyp
     body2 = r_ringkasan.json()
     assert body2["batas_menit_terlambat"] == 45
     assert body2["sisa_limit_terlambat"] == 0  # 50 menit terlambat > limit 45
+
+
+# ---------------------------------------------------------------------------
+# FITUR (feedback Owner): Hapus PERMANEN Log Audit Percobaan Check In/Out
+# ---------------------------------------------------------------------------
+
+def test_hapus_semua_audit_log_hard_delete(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id)
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+    attendance_db.catat_audit(barber_a, "check_in", False, alasan_gagal="Sudah Check In hari ini.",
+                               tenant_id=tenant_id)
+    assert len(attendance_db.get_audit_list(tenant_id)) == 2
+
+    jumlah = attendance_db.hapus_semua_audit_log(tenant_id)
+    assert jumlah == 2
+    assert attendance_db.get_audit_list(tenant_id) == []
+
+
+def test_hapus_semua_audit_log_tidak_ikut_hapus_tenant_lain(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = _barber(tenant_a, "Barber A")
+    barber_b = _barber(tenant_b, "Barber B")
+    attendance_db.catat_audit(barber_a, "check_in", True, tenant_id=tenant_a)
+    attendance_db.catat_audit(barber_b, "check_in", True, tenant_id=tenant_b)
+
+    attendance_db.hapus_semua_audit_log(tenant_a)
+    assert attendance_db.get_audit_list(tenant_a) == []
+    assert len(attendance_db.get_audit_list(tenant_b)) == 1
+
+
+def test_api_hapus_audit_log_khusus_owner(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Audit API")
+    attendance_db.catat_audit(barber_a, "check_in", True, tenant_id=tenant_id)
+
+    import auth_db
+    auth_db.tambah_user("staffaudit", "passwordS123", role="staff", tenant_id=tenant_id)
+    r_login_staff = client.post("/api/auth/login", json={"username": "staffaudit", "password": "passwordS123"})
+    headers_staff = {"Authorization": f"Bearer {r_login_staff.json()['token']}"}
+    # staff DITOLAK walau diberi SEMUA izin lain -- endpoint ini require_admin murni.
+    client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_absensi_koreksi": True,
+                                                                  "izin_absensi_pengaturan": True}}, headers=headers)
+    r_login_staff2 = client.post("/api/auth/login", json={"username": "staffaudit", "password": "passwordS123"})
+    headers_staff2 = {"Authorization": f"Bearer {r_login_staff2.json()['token']}"}
+    assert client.delete("/api/attendance/audit", headers=headers_staff2).status_code == 403
+    assert len(attendance_db.get_audit_list(tenant_id)) == 1
+
+    r_owner = client.delete("/api/attendance/audit", headers=headers)
+    assert r_owner.status_code == 200, r_owner.text
+    assert r_owner.json()["jumlah_dihapus"] == 1
+    assert attendance_db.get_audit_list(tenant_id) == []
+
+
+# ---------------------------------------------------------------------------
+# FITUR (feedback Owner): Reset/Hapus Riwayat Absensi Karyawan (attendance_logs)
+# ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_absensi_satu_barber(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id, "Barber A")
+    barber_b = _barber(tenant_id, "Barber B")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+    attendance_db.check_in(tenant_id, barber_b, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    jumlah = attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_a)
+    assert jumlah == 1
+    # barber_id diisi -> get_log_list() TIDAK membuat baris semu, jadi baris
+    # yang sungguhan dihapus membuat hasilnya kosong.
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_a) == []
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_b)[0]["check_in_at"] is not None
+
+
+def test_hapus_riwayat_absensi_semua_barber(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id, "Barber A")
+    barber_b = _barber(tenant_id, "Barber B")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+    attendance_db.check_in(tenant_id, barber_b, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    jumlah = attendance_db.hapus_riwayat_absensi(tenant_id)
+    assert jumlah == 2
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_a) == []
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_b) == []
+
+
+def test_hapus_riwayat_absensi_tidak_ikut_hapus_tenant_lain(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = _barber(tenant_a, "Barber A")
+    barber_b = _barber(tenant_b, "Barber B")
+    _atur_lokasi_toko(tenant_a)
+    _atur_lokasi_toko(tenant_b)
+    attendance_db.check_in(tenant_a, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+    attendance_db.check_in(tenant_b, barber_b, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    attendance_db.hapus_riwayat_absensi(tenant_a)
+    assert attendance_db.get_log_list(tenant_a, tanggal=_hari_ini())[0]["check_in_at"] is None
+    assert attendance_db.get_log_list(tenant_b, tanggal=_hari_ini())[0]["check_in_at"] is not None
+
+
+def _hari_ini():
+    return datetime.now(WIB).strftime("%Y-%m-%d")
+
+
+def test_api_hapus_riwayat_owner_dan_staff_sama_sama_boleh(single_tenant, monkeypatch):
+    """BEDA dari DELETE /audit (KHUSUS Owner) -- DELETE /riwayat boleh
+    Owner MAUPUN staff (Admin) TANPA butuh izin delegasi terpisah."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id, "Barber Riwayat API")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    import auth_db
+    auth_db.tambah_user("staffriwayat", "passwordS123", role="staff", tenant_id=tenant_id)
+    r_login_staff = client.post("/api/auth/login", json={"username": "staffriwayat", "password": "passwordS123"})
+    headers_staff = {"Authorization": f"Bearer {r_login_staff.json()['token']}"}
+    auth_db.tambah_user("barberriwayat", "passwordB123", role="barber", barber_id=barber_a, tenant_id=tenant_id)
+    r_login_barber = client.post("/api/auth/login", json={"username": "barberriwayat", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login_barber.json()['token']}"}
+
+    # Barber TIDAK boleh sama sekali (require_owner_or_staff).
+    assert client.delete("/api/attendance/riwayat", headers=headers_barber).status_code == 403
+
+    # staff (Admin) boleh, TANPA izin delegasi apa pun.
+    r_staff = client.delete(f"/api/attendance/riwayat?barber_id={barber_a}", headers=headers_staff)
+    assert r_staff.status_code == 200, r_staff.text
+    assert r_staff.json()["jumlah_dihapus"] == 1
