@@ -218,6 +218,127 @@ def audit_log(barber_id: int = None, tanggal_dari: str = None, tanggal_sampai: s
                                          tanggal_sampai=tanggal_sampai)
 
 
+# ---------------------------------------------------------------------------
+# Ringkasan limit Keterlambatan & Pulang Lebih Awal (bulanan)
+# ---------------------------------------------------------------------------
+
+@router.get("/ringkasan-bulan")
+def ringkasan_bulan(tahun: int = None, bulan: int = None, barber_id: int = None,
+                     user: dict = Depends(get_current_user)):
+    """Barber: SELALU ringkasan miliknya sendiri (barber_id diabaikan).
+    Owner/Admin: satu barber (barber_id diisi) atau SEMUA barber aktif
+    (barber_id kosong) -- panel "Sisa Limit Bulan Ini" di menu Absensi."""
+    if user["role"] == "barber":
+        if user.get("barber_id") is None:
+            raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
+        return attendance_db.hitung_ringkasan_bulan(user["barber_id"], user["tenant_id"], tahun, bulan)
+    _cek_akses_lihat(user)
+    if barber_id is not None:
+        return attendance_db.hitung_ringkasan_bulan(barber_id, user["tenant_id"], tahun, bulan)
+    return attendance_db.get_ringkasan_bulan_semua_barber(user["tenant_id"], tahun, bulan)
+
+
+# ---------------------------------------------------------------------------
+# Koreksi Absensi (barber lupa Check In/Check Out) -- pola akses SAMA
+# PERSIS routers/izin_cuti.py: self-service (barber ajukan/hapus MILIKNYA
+# sendiri selama masih 'pending'), approve/reject wajib
+# izin_absensi_koreksi untuk staff (Owner selalu boleh).
+# ---------------------------------------------------------------------------
+
+def _cek_akses_koreksi(user: dict, koreksi: dict = None):
+    if user["role"] == "admin":
+        return
+    if user["role"] == "staff":
+        return  # melihat/mengajukan TIDAK digerbang permission (sama seperti view Absensi lain)
+    if user["role"] == "barber":
+        if koreksi is not None and koreksi["barber_id"] != user.get("barber_id"):
+            raise HTTPException(status_code=403, detail="Tidak bisa melihat pengajuan koreksi milik barber lain.")
+        return
+    raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+
+
+def _pastikan_koreksi_tenant_sama(user: dict, koreksi: dict | None):
+    if koreksi is None or koreksi.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Pengajuan koreksi tidak ditemukan.")
+
+
+@router.get("/koreksi")
+def list_koreksi(barber_id: int = None, status: str = None, user: dict = Depends(get_current_user)):
+    _cek_akses_koreksi(user)
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+    return attendance_db.get_koreksi_list(user["tenant_id"], barber_id=barber_id, status=status)
+
+
+@router.get("/koreksi/pending-count")
+def koreksi_pending_count(user: dict = Depends(get_current_user)):
+    """Badge notifikasi menu Absensi -- HANYA admin/staff yang berkepentingan."""
+    if user["role"] in ("admin", "staff"):
+        return {"jumlah": attendance_db.get_jumlah_koreksi_pending(user["tenant_id"])}
+    return {"jumlah": 0}
+
+
+class KoreksiBody(BaseModel):
+    barber_id: int | None = None  # diabaikan untuk role barber, wajib untuk admin/staff
+    tanggal: str
+    jenis: str
+    waktu_diajukan: str
+    alasan: str
+
+
+@router.post("/koreksi")
+def buat_koreksi(body: KoreksiBody, user: dict = Depends(get_current_user)):
+    if user["role"] == "barber":
+        if user.get("barber_id") is None:
+            raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
+        barber_id = user["barber_id"]
+    elif user["role"] in ("admin", "staff"):
+        if body.barber_id is None:
+            raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
+        barber_id = body.barber_id
+    else:
+        raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+    try:
+        return attendance_db.buat_pengajuan_koreksi(
+            barber_id, body.tanggal, body.jenis, body.waktu_diajukan, body.alasan,
+            diajukan_oleh=user["username"], tenant_id=user["tenant_id"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.delete("/koreksi/{koreksi_id}")
+def hapus_koreksi(koreksi_id: int, user: dict = Depends(get_current_user)):
+    koreksi = attendance_db.get_koreksi(koreksi_id)
+    _pastikan_koreksi_tenant_sama(user, koreksi)
+    if user["role"] == "barber" and koreksi["barber_id"] != user.get("barber_id"):
+        raise HTTPException(status_code=403, detail="Bukan pengajuan milik Anda.")
+    elif user["role"] not in ("admin", "staff", "barber"):
+        raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+    try:
+        attendance_db.hapus_pengajuan_koreksi(koreksi_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
+class KoreksiStatusBody(BaseModel):
+    status: str
+    catatan_approval: str = ""
+
+
+@router.put("/koreksi/{koreksi_id}/status")
+def ubah_status_koreksi(koreksi_id: int, body: KoreksiStatusBody,
+                         user: dict = Depends(require_permission("izin_absensi_koreksi"))):
+    _pastikan_koreksi_tenant_sama(user, attendance_db.get_koreksi(koreksi_id))
+    try:
+        return attendance_db.set_status_koreksi(koreksi_id, body.status,
+                                                 catatan_approval=body.catatan_approval,
+                                                 disetujui_oleh=user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.get("/{log_id}")
 def detail_absensi(log_id: int, user: dict = Depends(get_current_user)):
     _cek_akses_lihat(user)

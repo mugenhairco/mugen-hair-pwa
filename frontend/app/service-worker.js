@@ -542,7 +542,21 @@
 // (booking_db.py) saat customer pilih QRIS, saat pembayaran diverifikasi
 // (manual/gateway), dan saat booking dibatalkan -- TIDAK ada halaman/route
 // frontend baru selain tab Setting ini.
-const ASSET_VERSION = "99";
+// v99 -> v100: FITUR Batas Absensi (feedback Owner) -- Check In sekarang
+// ditolak KERAS kalau sebelum jam_masuk (celah lama: bisa Check In
+// sebelum toko buka). Check Out sebelum jam_pulang SEKARANG DIIZINKAN
+// (sebelumnya ditolak keras) tapi memotong limit "Pulang Lebih Awal"
+// bulanan -- SAMA seperti limit "Keterlambatan" bulanan untuk Check In
+// terlambat (120 menit/bulan masing-masing, reset otomatis tiap tanggal
+// 1, TIDAK PERNAH memblokir absensi walau limit habis -- cuma dicatat di
+// Keterangan). Panel baru "Sisa Limit Bulan Ini" (ikon peringatan + teks
+// merah kalau sisa <=40 menit) & kolom "Keterangan" ditambahkan ke
+// absensi.js (Barber & Owner/Admin). FITUR BARU: Koreksi Absensi -- Barber
+// lupa Check In/Check Out bisa mengajukan koreksi (jam yang seharusnya +
+// alasan), diproses (Setujui/Tolak) Owner/Admin di menu Absensi (izin
+// baru izin_absensi_koreksi untuk staff, ditambahkan ke tab Hak Akses
+// Admin di pengaturan.js).
+const ASSET_VERSION = "100";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -59,6 +59,23 @@ CHECK_IN_STATUS_VALID = {"tepat_waktu", "terlambat"}
 STATUS_HARI_INI_VALID = {"belum_check_in", "sedang_bekerja", "sudah_check_out",
                           "tidak_check_in", "tidak_check_out"}
 
+# FITUR Limit Keterlambatan & Pulang Lebih Awal (keputusan Owner): SATU
+# barber punya "anggaran" 120 menit/bulan untuk keterlambatan Check In, dan
+# 120 menit/bulan TERPISAH untuk pulang lebih awal saat Check Out -- setiap
+# kejadian mengurangi anggaran sejumlah menitnya, direset otomatis tiap
+# tanggal 1 (dihitung ON-THE-FLY dari attendance_logs bulan berjalan, TIDAK
+# ADA kolom "sisa limit" tersimpan/proses reset terjadwal -- pola sama
+# seperti billing_limits.py::pastikan_boleh_tambah_booking, lihat
+# hitung_ringkasan_bulan() di bawah). Limit habis TIDAK memblokir Check
+# In/Out (keputusan eksplisit Owner) -- cuma menambahkan catatan di
+# keterangan supaya Owner tahu.
+BATAS_LIMIT_MENIT = 120
+# Sisa limit <= ini -> frontend menampilkan ikon peringatan + teks merah.
+AMBANG_PERINGATAN_MENIT = 40
+
+JENIS_KOREKSI_VALID = {"check_in", "check_out"}
+STATUS_KOREKSI_VALID = {"pending", "disetujui", "ditolak"}
+
 DEFAULT_SETTINGS = {
     "jam_masuk": "09:00",
     "toleransi_menit": 15,
@@ -136,10 +153,37 @@ def init_attendance_db():
                 tenant_id    INTEGER
             )
         """)
+        # FITUR Koreksi Absensi: barber lupa Check In/Check Out mengajukan
+        # koreksi (jam yang seharusnya + alasan), Owner/Admin approve/reject
+        # -- pola SAMA PERSIS izin_cuti_db.py (status pending/disetujui/
+        # ditolak, catatan_approval, self-service selama masih pending).
+        # SENGAJA tabel terpisah (bukan menambah kolom ke attendance_logs)
+        # supaya riwayat pengajuan (termasuk yang ditolak) tetap tersimpan
+        # utuh, tidak tertimpa.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attendance_koreksi (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                barber_id         INTEGER NOT NULL,
+                tanggal           TEXT NOT NULL,
+                jenis             TEXT NOT NULL,
+                waktu_diajukan    TEXT NOT NULL,
+                alasan            TEXT NOT NULL,
+                status            TEXT NOT NULL DEFAULT 'pending',
+                catatan_approval  TEXT,
+                diajukan_oleh     TEXT,
+                disetujui_oleh    TEXT,
+                tanggal_approval  TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT,
+                tenant_id         INTEGER
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_logs_tenant_tanggal ON attendance_logs(tenant_id, tanggal)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_logs_barber_id ON attendance_logs(barber_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_tenant_id ON attendance_audit_logs(tenant_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_barber_id ON attendance_audit_logs(barber_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_tenant_id ON attendance_koreksi(tenant_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_barber_id ON attendance_koreksi(barber_id)")
 
 
 def _sekarang_wib() -> datetime:
@@ -242,6 +286,43 @@ def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = N
 # Bekerja" pada request berikutnya -- nyaris tidak pernah terlihat).
 # ---------------------------------------------------------------------------
 
+_NAMA_BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
+                  "Agustus", "September", "Oktober", "November", "Desember"]
+
+
+def _format_tanggal_id(tanggal: str) -> str:
+    """'2026-08-14' -> '14 Agustus 2026' (nama bulan Indonesia, tanpa bergantung locale OS)."""
+    tgl = datetime.strptime(tanggal, "%Y-%m-%d")
+    return f"{tgl.day} {_NAMA_BULAN_ID[tgl.month]} {tgl.year}"
+
+
+def _menit_terlambat_baris(row: dict, settings: dict) -> int | None:
+    """None kalau baris ini BUKAN keterlambatan (tidak terlambat / belum
+    check-in) -- else jumlah menit terlambat (>=0), dihitung dari jam_masuk
+    (BUKAN dari batas toleransi -- toleransi hanya menentukan status
+    tepat_waktu/terlambat, tapi menit yang mengurangi limit dihitung penuh
+    dari jam_masuk supaya "Terlambat 10 menit" cocok dengan selisih
+    sungguhan antara jam kedatangan dan jam masuk)."""
+    if row.get("check_in_status") != "terlambat" or not row.get("check_in_at"):
+        return None
+    jam_masuk_dt = _gabung_jam(row["tanggal"], settings["jam_masuk"])
+    check_in_dt = datetime.fromisoformat(row["check_in_at"])
+    return max(0, round((check_in_dt - jam_masuk_dt).total_seconds() / 60))
+
+
+def _menit_pulang_awal_baris(row: dict, settings: dict) -> int | None:
+    """None kalau baris ini BUKAN pulang lebih awal (belum check-out / check-
+    out di atas atau tepat jam_pulang) -- else jumlah menit pulang lebih
+    awal (>=0)."""
+    if not row.get("check_out_at"):
+        return None
+    jam_pulang_dt = _gabung_jam(row["tanggal"], settings["jam_pulang"])
+    check_out_dt = datetime.fromisoformat(row["check_out_at"])
+    if check_out_dt >= jam_pulang_dt:
+        return None
+    return max(0, round((jam_pulang_dt - check_out_dt).total_seconds() / 60))
+
+
 def hitung_status_hari_ini(log: dict | None, settings: dict, sekarang: datetime = None) -> str:
     sekarang = sekarang or _sekarang_wib()
     tanggal = sekarang.strftime("%Y-%m-%d")
@@ -274,6 +355,18 @@ def _lengkapi(row: dict, settings: dict = None) -> dict:
         settings = get_settings(row["tenant_id"])
     if settings is not None:
         row["status"] = hitung_status_hari_ini(row, settings)
+        # Keterangan ringan per baris (TANPA info "limit habis" -- itu
+        # butuh total berjalan satu bulan penuh, lihat hitung_ringkasan_bulan()
+        # di bawah untuk itu, supaya list harian/rentang tanggal di sini
+        # tidak perlu query tambahan per baris).
+        keterangan = []
+        menit_terlambat = _menit_terlambat_baris(row, settings)
+        if menit_terlambat is not None:
+            keterangan.append(f"Terlambat {menit_terlambat} menit pada {_format_tanggal_id(row['tanggal'])}")
+        menit_pulang_awal = _menit_pulang_awal_baris(row, settings)
+        if menit_pulang_awal is not None:
+            keterangan.append(f"Pulang lebih awal {menit_pulang_awal} menit pada {_format_tanggal_id(row['tanggal'])}")
+        row["keterangan"] = keterangan
     return row
 
 
@@ -347,6 +440,89 @@ def get_ringkasan_dashboard(tenant_id: int) -> dict:
         "tidak_check_in": sum(1 for r in daftar if r["status"] == "tidak_check_in"),
         "tidak_check_out": sum(1 for r in daftar if r["status"] == "tidak_check_out"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Ringkasan limit Keterlambatan & Pulang Lebih Awal (bulanan, per barber)
+# ---------------------------------------------------------------------------
+
+def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bulan: int = None) -> dict:
+    """Ringkasan limit SATU barber untuk SATU bulan kalender (default bulan
+    berjalan, WIB, kalau tahun/bulan tidak diisi). Dihitung ON-THE-FLY dari
+    attendance_logs (bukan kolom "sisa limit" tersimpan -- limit "reset
+    sendiri" tiap tanggal 1 karena query di sini cuma memandang baris bulan
+    berjalan, pola sama seperti billing_limits.py::pastikan_boleh_tambah_booking).
+
+    Baris diproses URUT TANGGAL NAIK, total dijumlahkan bertahap -- baris
+    yang membuat total TEMBUS/SAMA DENGAN BATAS_LIMIT_MENIT (dan semua
+    baris SETELAHNYA bulan itu) diberi tambahan keterangan "... sudah
+    habis" (keputusan Owner: limit habis TIDAK memblokir absensi, cuma
+    dicatat)."""
+    if tahun is None or bulan is None:
+        sekarang = _sekarang_wib()
+        tahun, bulan = tahun or sekarang.year, bulan or sekarang.month
+    settings = get_settings(tenant_id)
+    prefix = f"{tahun:04d}-{bulan:02d}"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(
+            """SELECT * FROM attendance_logs WHERE barber_id = ? AND tenant_id = ?
+                   AND tanggal LIKE ? ORDER BY tanggal ASC""",
+            (barber_id, tenant_id, prefix + "-%"),
+        ).fetchall()]
+
+    total_terlambat = 0
+    total_pulang_awal = 0
+    keterangan_per_tanggal: dict[str, list[str]] = {}
+
+    for row in rows:
+        catatan = []
+        menit_terlambat = _menit_terlambat_baris(row, settings)
+        if menit_terlambat is not None:
+            sudah_habis_sebelumnya = total_terlambat >= BATAS_LIMIT_MENIT
+            total_terlambat += menit_terlambat
+            teks = f"Terlambat {menit_terlambat} menit pada {_format_tanggal_id(row['tanggal'])}"
+            if sudah_habis_sebelumnya or total_terlambat >= BATAS_LIMIT_MENIT:
+                teks += " — limit keterlambatan bulan ini sudah habis"
+            catatan.append(teks)
+        menit_pulang_awal = _menit_pulang_awal_baris(row, settings)
+        if menit_pulang_awal is not None:
+            sudah_habis_sebelumnya = total_pulang_awal >= BATAS_LIMIT_MENIT
+            total_pulang_awal += menit_pulang_awal
+            teks = f"Pulang lebih awal {menit_pulang_awal} menit pada {_format_tanggal_id(row['tanggal'])}"
+            if sudah_habis_sebelumnya or total_pulang_awal >= BATAS_LIMIT_MENIT:
+                teks += " — limit pulang lebih awal bulan ini sudah habis"
+            catatan.append(teks)
+        if catatan:
+            keterangan_per_tanggal[row["tanggal"]] = catatan
+
+    return {
+        "barber_id": barber_id,
+        "tahun": tahun,
+        "bulan": bulan,
+        "batas_limit_menit": BATAS_LIMIT_MENIT,
+        "ambang_peringatan_menit": AMBANG_PERINGATAN_MENIT,
+        "menit_terlambat_terpakai": total_terlambat,
+        "sisa_limit_terlambat": max(0, BATAS_LIMIT_MENIT - total_terlambat),
+        "menit_pulang_awal_terpakai": total_pulang_awal,
+        "sisa_limit_pulang_awal": max(0, BATAS_LIMIT_MENIT - total_pulang_awal),
+        "keterangan_per_tanggal": keterangan_per_tanggal,
+    }
+
+
+def get_ringkasan_bulan_semua_barber(tenant_id: int, tahun: int = None, bulan: int = None) -> list:
+    """Ringkasan limit SEMUA barber aktif milik tenant, untuk satu bulan
+    (default bulan berjalan) -- dipakai Owner/Admin di menu Absensi (panel
+    "Sisa Limit Bulan Ini")."""
+    with get_conn() as conn:
+        aktif = [dict(r) for r in conn.execute(
+            "SELECT id, nama FROM barbers WHERE tenant_id = ? AND aktif = 1 ORDER BY nama", (tenant_id,)
+        ).fetchall()]
+    hasil = []
+    for b in aktif:
+        ringkasan = hitung_ringkasan_bulan(b["id"], tenant_id, tahun, bulan)
+        ringkasan["nama_barber"] = b["nama"]
+        hasil.append(ringkasan)
+    return hasil
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +600,9 @@ def validasi_checkin(tenant_id: int, barber_id: int, latitude, longitude, accura
 
     sekarang = _sekarang_wib()
     tanggal = sekarang.strftime("%Y-%m-%d")
+    jam_masuk_dt = _gabung_jam(tanggal, settings["jam_masuk"])
+    if sekarang < jam_masuk_dt:
+        raise ValueError(f"Belum waktunya Check In (toko buka jam {settings['jam_masuk']}).")
     jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
     if sekarang >= jam_pulang_dt:
         raise ValueError("Sudah melewati jam pulang. Tidak bisa Check In lagi hari ini.")
@@ -451,11 +630,11 @@ def validasi_checkout(tenant_id: int, barber_id: int, latitude, longitude, accur
     if existing.get("check_out_at"):
         raise ValueError("Anda sudah Check Out hari ini.")
 
-    sekarang = _sekarang_wib()
-    tanggal = sekarang.strftime("%Y-%m-%d")
-    jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
-    if sekarang < jam_pulang_dt:
-        raise ValueError(f"Belum waktunya Check Out (jam pulang {settings['jam_pulang']}).")
+    # REVISI (feedback Owner): SEBELUMNYA Check Out sebelum jam_pulang
+    # ditolak KERAS di sini -- sekarang SENGAJA diizinkan (pulang lebih
+    # awal tetap tercatat, cuma memotong limit "pulang lebih awal" bulanan
+    # dan diberi keterangan, TIDAK PERNAH memblokir Check Out). Lihat
+    # _menit_pulang_awal_baris()/hitung_ringkasan_bulan().
 
     jarak = None
     if settings.get("lokasi_latitude") is not None and settings.get("lokasi_longitude") is not None:
@@ -512,3 +691,181 @@ def check_out(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None
     catat_audit(barber_id, "check_out", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
     return get_log(existing["id"])
+
+
+# ---------------------------------------------------------------------------
+# Koreksi Absensi (barber lupa Check In/Check Out, mengajukan koreksi ke
+# Owner/Admin) -- pola akses SAMA PERSIS izin_cuti_db.py: self-service
+# (barber ajukan/hapus MILIKNYA sendiri selama masih 'pending'), approve/
+# reject eksklusif Owner/Admin.
+# ---------------------------------------------------------------------------
+
+def _lengkapi_koreksi(row: dict) -> dict:
+    barber = get_barber(row["barber_id"])
+    row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
+    return row
+
+
+def get_koreksi(koreksi_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM attendance_koreksi WHERE id = ?", (koreksi_id,)).fetchone()
+        return _lengkapi_koreksi(dict(row)) if row else None
+
+
+def get_koreksi_list(tenant_id: int, barber_id: int = None, status: str = None) -> list:
+    q = "SELECT * FROM attendance_koreksi WHERE tenant_id = ?"
+    params = [tenant_id]
+    if barber_id is not None:
+        q += " AND barber_id = ?"; params.append(barber_id)
+    if status is not None:
+        q += " AND status = ?"; params.append(status)
+    q += " ORDER BY created_at DESC, id DESC"
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    return [_lengkapi_koreksi(r) for r in rows]
+
+
+def get_jumlah_koreksi_pending(tenant_id: int) -> int:
+    """Dipakai badge notifikasi (Owner/Admin di menu Absensi), pola sama
+    seperti izin_cuti_db.get_jumlah_pending()."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS jumlah FROM attendance_koreksi WHERE tenant_id = ? AND status = 'pending'",
+            (tenant_id,),
+        ).fetchone()
+    return int(row["jumlah"] or 0)
+
+
+def buat_pengajuan_koreksi(barber_id: int, tanggal: str, jenis: str, waktu_diajukan: str, alasan: str,
+                            diajukan_oleh: str = "", tenant_id: int = None) -> dict:
+    barber = get_barber(barber_id)
+    if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
+        raise ValueError("Barber tidak ditemukan.")
+    if jenis not in JENIS_KOREKSI_VALID:
+        raise ValueError(f"Jenis tidak dikenal: {jenis}")
+    try:
+        datetime.strptime(tanggal, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        raise ValueError("Format Tanggal tidak valid (harus YYYY-MM-DD).")
+    try:
+        jam, menit = (int(x) for x in waktu_diajukan.split(":"))
+        if not (0 <= jam <= 23 and 0 <= menit <= 59):
+            raise ValueError
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("Format jam yang diajukan tidak valid (harus HH:MM).")
+    alasan = (alasan or "").strip()
+    if not alasan:
+        raise ValueError("Alasan wajib diisi.")
+    with get_conn() as conn:
+        sudah_ada = conn.execute(
+            """SELECT id FROM attendance_koreksi WHERE barber_id = ? AND tanggal = ? AND jenis = ?
+                   AND status = 'pending'""",
+            (barber_id, tanggal, jenis),
+        ).fetchone()
+    if sudah_ada:
+        raise ValueError("Sudah ada pengajuan koreksi untuk tanggal & jenis yang sama, "
+                          "masih menunggu keputusan Admin/Owner.")
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO attendance_koreksi (barber_id, tanggal, jenis, waktu_diajukan, alasan, status,
+                                                 diajukan_oleh, created_at, tenant_id)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+            (barber_id, tanggal, jenis, waktu_diajukan, alasan, diajukan_oleh, now, tenant_id),
+        )
+        koreksi_id = cur.lastrowid
+    return get_koreksi(koreksi_id)
+
+
+def hapus_pengajuan_koreksi(koreksi_id: int):
+    existing = get_koreksi(koreksi_id)
+    if existing is None:
+        raise ValueError("Pengajuan koreksi tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Pengajuan yang sudah diproses (Disetujui/Ditolak) tidak bisa dihapus lagi.")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM attendance_koreksi WHERE id = ?", (koreksi_id,))
+
+
+def _terapkan_koreksi_ke_log(koreksi: dict):
+    """Dipanggil HANYA saat koreksi disetujui -- terapkan jam yang diajukan
+    ke attendance_logs (buat baris baru kalau belum ada SAMA SEKALI hari
+    itu, mis. barber lupa Check In total sehingga tidak pernah tercatat).
+    Kolom *_browser diisi penanda "(Dikoreksi Admin/Owner)" supaya Owner
+    langsung tahu baris ini bukan hasil Check In/Out GPS asli saat melihat
+    detail."""
+    barber_id, tanggal, tenant_id = koreksi["barber_id"], koreksi["tanggal"], koreksi["tenant_id"]
+    waktu_iso = _gabung_jam(tanggal, koreksi["waktu_diajukan"]).isoformat(timespec="seconds")
+    now = datetime.now().isoformat(timespec="seconds")
+    PENANDA = "(Dikoreksi Admin/Owner)"
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM attendance_logs WHERE barber_id = ? AND tanggal = ?", (barber_id, tanggal)
+        ).fetchone()
+        row = dict(row) if row else None
+
+        if koreksi["jenis"] == "check_in":
+            settings = get_settings(tenant_id)
+            batas_toleransi_dt = _gabung_jam(tanggal, settings["jam_masuk"]) + timedelta(minutes=settings["toleransi_menit"])
+            status_ketepatan = "terlambat" if _gabung_jam(tanggal, koreksi["waktu_diajukan"]) > batas_toleransi_dt else "tepat_waktu"
+            if row is None:
+                conn.execute(
+                    """INSERT INTO attendance_logs (barber_id, tanggal, check_in_at, check_in_status,
+                           check_in_browser, created_at, tenant_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (barber_id, tanggal, waktu_iso, status_ketepatan, PENANDA, now, tenant_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE attendance_logs SET check_in_at = ?, check_in_status = ?, check_in_browser = ?,
+                           updated_at = ? WHERE id = ?""",
+                    (waktu_iso, status_ketepatan, PENANDA, now, row["id"]),
+                )
+        else:
+            if row is None:
+                conn.execute(
+                    """INSERT INTO attendance_logs (barber_id, tanggal, check_out_at, check_out_browser,
+                           created_at, tenant_id)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (barber_id, tanggal, waktu_iso, PENANDA, now, tenant_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE attendance_logs SET check_out_at = ?, check_out_browser = ?, updated_at = ?
+                           WHERE id = ?""",
+                    (waktu_iso, PENANDA, now, row["id"]),
+                )
+
+        # Recompute durasi_kerja_menit kalau SEKARANG check_in_at & check_out_at
+        # keduanya sudah terisi (baik dari sebelumnya maupun baru dikoreksi).
+        row_terbaru = conn.execute(
+            "SELECT * FROM attendance_logs WHERE barber_id = ? AND tanggal = ?", (barber_id, tanggal)
+        ).fetchone()
+        row_terbaru = dict(row_terbaru) if row_terbaru else None
+        if row_terbaru and row_terbaru.get("check_in_at") and row_terbaru.get("check_out_at"):
+            check_in_dt = datetime.fromisoformat(row_terbaru["check_in_at"])
+            check_out_dt = datetime.fromisoformat(row_terbaru["check_out_at"])
+            durasi_menit = max(0, int((check_out_dt - check_in_dt).total_seconds() // 60))
+            conn.execute("UPDATE attendance_logs SET durasi_kerja_menit = ? WHERE id = ?",
+                         (durasi_menit, row_terbaru["id"]))
+
+
+def set_status_koreksi(koreksi_id: int, status: str, catatan_approval: str = "",
+                        disetujui_oleh: str = "") -> dict:
+    if status not in {"disetujui", "ditolak"}:
+        raise ValueError(f"Status tidak dikenal: {status}")
+    existing = get_koreksi(koreksi_id)
+    if existing is None:
+        raise ValueError("Pengajuan koreksi tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Pengajuan ini sudah diproses sebelumnya.")
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE attendance_koreksi SET status = ?, catatan_approval = ?, disetujui_oleh = ?,
+                   tanggal_approval = ?, updated_at = ? WHERE id = ?""",
+            (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, koreksi_id),
+        )
+    if status == "disetujui":
+        _terapkan_koreksi_ke_log(existing)
+    return get_koreksi(koreksi_id)

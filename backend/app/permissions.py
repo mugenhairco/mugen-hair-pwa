@@ -72,6 +72,11 @@ PERMISSION_DEFS = [
     # ini dari Owner (lihat require_permission("izin_absensi_pengaturan")
     # di routers/attendance.py).
     ("izin_absensi_pengaturan", "absensi", "Kelola Pengaturan Absensi", False),
+    # FITUR Koreksi Absensi: staff (Admin) SELALU boleh MELIHAT pengajuan
+    # koreksi (sama seperti dashboard/riwayat Absensi lainnya), tapi
+    # approve/reject wajib izin eksplisit ini -- pola sama persis
+    # izin_cuti_karyawan (approval Izin & Cuti).
+    ("izin_absensi_koreksi", "absensi", "Approve/Reject Koreksi Absensi", False),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}

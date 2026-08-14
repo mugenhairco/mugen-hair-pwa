@@ -1388,6 +1388,7 @@ const PagePengaturan = (() => {
         ]},
         { judul: "Absensi", keys: [
           ["izin_absensi_pengaturan", "Kelola Pengaturan Absensi (Jam Kerja, Radius, Lokasi Toko)"],
+          ["izin_absensi_koreksi", "Approve/Reject Koreksi Absensi"],
         ]},
         { judul: "Setting (akses tab)", keys: [
           ["izin_setting_branding", "Branding"],

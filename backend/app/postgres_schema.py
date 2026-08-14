@@ -961,6 +961,30 @@ CREATE INDEX IF NOT EXISTS idx_attendance_logs_tenant_tanggal ON attendance_logs
 CREATE INDEX IF NOT EXISTS idx_attendance_logs_barber_id ON attendance_logs(barber_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_tenant_id ON attendance_audit_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_audit_logs_barber_id ON attendance_audit_logs(barber_id);
+
+-- FITUR Koreksi Absensi -- barber lupa Check In/Check Out mengajukan
+-- koreksi, Owner/Admin approve/reject (lihat attendance_db.py, jalur
+-- SQLite yang SAMA PERSIS). barber_id SENGAJA TANPA FK, pola sama seperti
+-- attendance_logs.barber_id di atas (lihat catatan HOTFIX DEPLOY di atas).
+CREATE TABLE IF NOT EXISTS attendance_koreksi (
+    id                SERIAL PRIMARY KEY,
+    barber_id         INTEGER NOT NULL,
+    tanggal           TEXT NOT NULL,
+    jenis             TEXT NOT NULL,
+    waktu_diajukan    TEXT NOT NULL,
+    alasan            TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    catatan_approval  TEXT,
+    diajukan_oleh     TEXT,
+    disetujui_oleh    TEXT,
+    tanggal_approval  TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT,
+    tenant_id         INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_tenant_id ON attendance_koreksi(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_barber_id ON attendance_koreksi(barber_id);
 """
 
 
