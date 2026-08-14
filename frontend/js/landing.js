@@ -130,22 +130,43 @@
     revealObserve(document.querySelectorAll(".lp-reveal"));
   }
 
-  // ==================== Animasi konten mockup fitur unggulan =============
-  // FITUR (feedback Owner): kartu Dashboard Owner/Aplikasi Barber/
-  // Notifikasi WhatsApp/Absensi Karyawan di section "Kenapa Rivoir"
-  // sebelumnya statis -- angka & isi mockup di dalamnya sekarang "hidup"
-  // (angka berjalan, bar tumbuh, tangan melambai, chat mengetik, radius
-  // mengecil + pin jatuh) supaya terasa lebih menarik. Murni dekoratif,
-  // data dummy, TIDAK terhubung ke API apa pun. Dimatikan total untuk
-  // prefers-reduced-motion (angka/teks yang terus berubah tetap dianggap
-  // motion, bukan cuma transform/opacity CSS).
+  // ==================== Animasi konten mockup dashboard ==================
+  // FITUR (feedback Owner): mockup Dashboard di Hero DAN kartu Dashboard
+  // Owner/Aplikasi Barber/Notifikasi WhatsApp/Absensi Karyawan di section
+  // "Kenapa Rivoir" sebelumnya statis -- angka & isi mockup di dalamnya
+  // sekarang "hidup" (angka berjalan, grafik/bar tumbuh, tangan melambai,
+  // chat mengetik, radius mengecil + pin jatuh) supaya terasa lebih
+  // menarik. Murni dekoratif, data dummy, TIDAK terhubung ke API apa pun.
+  // Dimatikan total untuk prefers-reduced-motion (angka/teks yang terus
+  // berubah tetap dianggap motion, bukan cuma transform/opacity CSS).
   function _formatJt(nilaiJutaan) {
     return "Rp " + nilaiJutaan.toFixed(1).replace(".", ",") + "jt";
   }
 
+  // Loop generik dipakai bareng oleh beberapa animasi mockup di bawah:
+  // frameFn(t) dipanggil tiap frame dari t=0->1 (durationMs, easing
+  // _scrollEase), tahan sebentar di t=1 (holdMs), reset ke t=0, jeda
+  // (pauseMs), ulang terus -- satu sumber pola timing, tidak diduplikasi
+  // tiap fungsi.
+  function _growHoldResetLoop(frameFn, durationMs, holdMs, pauseMs) {
+    function cycle() {
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min(1, (now - start) / durationMs);
+        frameFn(_scrollEase(t));
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        setTimeout(() => { frameFn(0); setTimeout(cycle, pauseMs); }, holdMs);
+      }
+      requestAnimationFrame(tick);
+    }
+    cycle();
+  }
+
   // Booking Hari Ini: 18 -> 19 -> ... -> 50 -> balik 18, berulang terus.
-  function initBookingCounter() {
-    const el = document.getElementById("lp-diff-booking-count");
+  // Dipakai BERSAMA oleh mockup Dashboard di Hero & kartu Dashboard Owner
+  // (section fitur unggulan) -- dua elemen berbeda, dua interval terpisah.
+  function _initBookingCounter(elId) {
+    const el = document.getElementById(elId);
     if (!el) return;
     let count = 18;
     setInterval(() => {
@@ -154,69 +175,58 @@
     }, 180);
   }
 
-  // Bar Dimas & Yoga: lebar + nominal tumbuh dari kecil ke 3/4 (cepat),
-  // lalu reset ke kecil dan ulang -- keduanya jalan bareng (progress sama),
-  // nilai target beda supaya tidak kembar.
+  // Grafik batang mockup Dashboard di Hero: tinggi tiap batang tumbuh dari
+  // kecil ke tinggi aslinya (data-target, disimpan di HTML) lalu reset,
+  // berulang -- SEMUA batang jalan bareng (progress sama).
+  function initHeroChart() {
+    const chart = document.getElementById("lp-hero-chart");
+    if (!chart) return;
+    const bars = Array.from(chart.querySelectorAll("span"));
+    if (!bars.length) return;
+    const targets = bars.map((b) => parseFloat(b.dataset.target) || 0);
+    const MIN_PCT = 10;
+    _growHoldResetLoop((e) => {
+      bars.forEach((bar, i) => { bar.style.height = (MIN_PCT + (targets[i] - MIN_PCT) * e) + "%"; });
+    }, 1400, 500, 300);
+  }
+
+  // Bar Dimas & Yoga: lebar + nominal tumbuh dari kecil ke target (cepat),
+  // lalu reset ke kecil dan ulang -- keduanya jalan bareng (progress sama).
+  // REVISI (feedback Owner): Dimas pendapatannya lebih tinggi dari Yoga,
+  // jadi bar-nya harus konsisten lebih PENUH juga (maxPct beda, bukan
+  // sama-sama mentok 3/4) -- proporsional dengan rasio nominal keduanya
+  // (12,4jt : 9,1jt) supaya lebar bar selalu mencerminkan besar-kecil
+  // pendapatan sungguhan di setiap titik animasi, bukan cuma di akhir.
   function initDashboardBars() {
     const barDimas = document.getElementById("lp-diff-bar-dimas");
     const valDimas = document.getElementById("lp-diff-val-dimas");
     const barYoga = document.getElementById("lp-diff-bar-yoga");
     const valYoga = document.getElementById("lp-diff-val-yoga");
     if (!barDimas || !valDimas || !barYoga || !valYoga) return;
-    const DIMAS = { minPct: 20, maxPct: 75, minVal: 3.8, maxVal: 12.4 };
-    const YOGA = { minPct: 15, maxPct: 75, minVal: 2.2, maxVal: 9.1 };
-    const GROW_MS = 1400;
-    const HOLD_MS = 500;
-    const PAUSE_MS = 300;
-    function frame(t) {
-      const e = _scrollEase(t);
+    const DIMAS = { minPct: 24, maxPct: 80, minVal: 3.8, maxVal: 12.4 };
+    const YOGA = { minPct: 16, maxPct: 58, minVal: 2.2, maxVal: 9.1 };
+    _growHoldResetLoop((e) => {
       barDimas.style.width = (DIMAS.minPct + (DIMAS.maxPct - DIMAS.minPct) * e) + "%";
       valDimas.textContent = _formatJt(DIMAS.minVal + (DIMAS.maxVal - DIMAS.minVal) * e);
       barYoga.style.width = (YOGA.minPct + (YOGA.maxPct - YOGA.minPct) * e) + "%";
       valYoga.textContent = _formatJt(YOGA.minVal + (YOGA.maxVal - YOGA.minVal) * e);
-    }
-    function cycle() {
-      const start = performance.now();
-      function tick(now) {
-        const t = Math.min(1, (now - start) / GROW_MS);
-        frame(t);
-        if (t < 1) { requestAnimationFrame(tick); return; }
-        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
-      }
-      requestAnimationFrame(tick);
-    }
-    cycle();
+    }, 1400, 500, 300);
   }
 
-  // Aplikasi Barber: Pendapatan Bulan Ini & Komisi Saya turun terus dari
-  // nilai maksimum ke minimum, lalu reset ke maksimum dan ulang (arah
-  // KEBALIKAN dari bar Dashboard -- sengaja beda supaya kedua kartu tidak
-  // terasa seragam).
+  // Aplikasi Barber: Pendapatan Bulan Ini & Komisi Saya naik terus dari
+  // nilai minimum ke maksimum (REVISI feedback Owner -- SEBELUMNYA turun
+  // besar->kecil, sekarang dibalik kecil->besar), lalu reset ke minimum
+  // dan ulang.
   function initBarberCounters() {
     const pendapatanEl = document.getElementById("lp-diff-pendapatan-barber");
     const komisiEl = document.getElementById("lp-diff-komisi-barber");
     if (!pendapatanEl || !komisiEl) return;
-    const PENDAPATAN = { max: 12.4, min: 5.0 };
-    const KOMISI = { max: 4.9, min: 2.0 };
-    const DURATION_MS = 2200;
-    const HOLD_MS = 500;
-    const PAUSE_MS = 300;
-    function frame(t) {
-      const e = _scrollEase(t);
-      pendapatanEl.textContent = _formatJt(PENDAPATAN.max - (PENDAPATAN.max - PENDAPATAN.min) * e);
-      komisiEl.textContent = _formatJt(KOMISI.max - (KOMISI.max - KOMISI.min) * e);
-    }
-    function cycle() {
-      const start = performance.now();
-      function tick(now) {
-        const t = Math.min(1, (now - start) / DURATION_MS);
-        frame(t);
-        if (t < 1) { requestAnimationFrame(tick); return; }
-        setTimeout(() => { frame(0); setTimeout(cycle, PAUSE_MS); }, HOLD_MS);
-      }
-      requestAnimationFrame(tick);
-    }
-    cycle();
+    const PENDAPATAN = { min: 5.0, max: 12.4 };
+    const KOMISI = { min: 2.0, max: 4.9 };
+    _growHoldResetLoop((e) => {
+      pendapatanEl.textContent = _formatJt(PENDAPATAN.min + (PENDAPATAN.max - PENDAPATAN.min) * e);
+      komisiEl.textContent = _formatJt(KOMISI.min + (KOMISI.max - KOMISI.min) * e);
+    }, 2200, 500, 300);
   }
 
   // Notifikasi WhatsApp: 2 bubble chat diketik satu per satu (efek
@@ -326,7 +336,12 @@
 
   function initDiffMockupAnimations() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    initBookingCounter();
+    // Mockup Dashboard di Hero (BUKAN kartu fitur unggulan section "Kenapa
+    // Rivoir" -- dua mockup dashboard berbeda, dua elemen terpisah).
+    _initBookingCounter("lp-hero-booking-count");
+    initHeroChart();
+    // Kartu fitur unggulan (section "Kenapa Rivoir").
+    _initBookingCounter("lp-diff-booking-count");
     initDashboardBars();
     initBarberCounters();
     initWhatsAppTyping();
