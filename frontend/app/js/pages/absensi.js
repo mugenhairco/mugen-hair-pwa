@@ -209,7 +209,7 @@ const PageAbsensi = (() => {
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
-        limitSubtitle.textContent = `Limit Keterlambatan: ${r.batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${r.batas_menit_pulang_awal} menit/bulan. Diatur Owner/Admin di Setting > Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
+        limitSubtitle.textContent = `Limit Keterlambatan: ${r.batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${r.batas_menit_pulang_awal} menit/bulan. Diatur Owner/Admin di menu Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
         return MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;" }, [
           infoItem("Sisa Limit Terlambat", formatSisaLimit(r.sisa_limit_terlambat, r.ambang_peringatan_menit)),
           infoItem("Sisa Limit Pulang Lebih Awal", formatSisaLimit(r.sisa_limit_pulang_awal, r.ambang_peringatan_menit)),
@@ -302,12 +302,144 @@ const PageAbsensi = (() => {
     });
   }
 
+  // ---- Pengaturan Absensi (Jam Kerja, Radius, Limit, Lokasi Toko) --
+  // REVISI (feedback Owner): sebelumnya tab terpisah di Setting > Absensi,
+  // sekarang dipindahkan ke sini (menu utama Absensi) supaya semuanya jadi
+  // satu tempat. Gate izin SAMA seperti sebelumnya (izin_absensi_pengaturan,
+  // backend tetap menegakkan lewat require_permission() di PUT
+  // /api/attendance/settings -- pemanggil hanya menyembunyikan/menampilkan
+  // kartu ini, BUKAN satu-satunya lapis perlindungan).
+  async function renderPengaturanAbsensi(root) {
+    const card = MugenUI.el("div", { class: "card" });
+    root.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Pengaturan Absensi"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Atur jam kerja & radius geofencing untuk Check In/Check Out Barber."));
+
+    let settings;
+    try {
+      settings = await MugenApi.get("/api/attendance/settings");
+    } catch (e) {
+      card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+      return;
+    }
+
+    const inputJamMasuk = MugenUI.el("input", { type: "time", value: settings.jam_masuk || "09:00" });
+    const inputToleransi = MugenUI.el("input", { type: "number", min: "0", value: String(settings.toleransi_menit ?? 15) });
+    const inputJamPulang = MugenUI.el("input", { type: "time", value: settings.jam_pulang || "20:00" });
+    const selRadius = MugenUI.el("select", {}, [100, 250, 500, 750, 1000].map((r) =>
+      MugenUI.el("option", { value: String(r) }, `${r} meter`)));
+    selRadius.value = String(settings.radius_meter || 500);
+
+    card.appendChild(MugenUI.el("label", {}, "Jam Masuk"));
+    card.appendChild(inputJamMasuk);
+    card.appendChild(MugenUI.el("label", {}, "Toleransi Masuk (menit)"));
+    card.appendChild(inputToleransi);
+    card.appendChild(MugenUI.el("label", {}, "Jam Pulang"));
+    card.appendChild(inputJamPulang);
+    card.appendChild(MugenUI.el("label", {}, "Radius Absensi"));
+    card.appendChild(selRadius);
+
+    card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Limit Keterlambatan & Pulang Lebih Awal"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Setiap barber punya anggaran menit/bulan (otomatis reset tiap tanggal 1) untuk keterlambatan Check In dan untuk pulang lebih awal saat Check Out -- dua anggaran ini TERPISAH. Limit habis TIDAK memblokir Check In/Check Out, hanya dicatat di Keterangan (dengan tanda merah)."));
+    const inputBatasTerlambat = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_terlambat ?? 120) });
+    const inputBatasPulangAwal = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_pulang_awal ?? 120) });
+    card.appendChild(MugenUI.el("label", {}, "Limit Keterlambatan (menit/bulan)"));
+    card.appendChild(inputBatasTerlambat);
+    card.appendChild(MugenUI.el("label", {}, "Limit Pulang Lebih Awal (menit/bulan)"));
+    card.appendChild(inputBatasPulangAwal);
+
+    card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Lokasi Toko"));
+    const inputLokasiNama = MugenUI.el("input", { type: "text", value: settings.lokasi_nama || "", placeholder: "Contoh: Rivoir Barbershop Pusat" });
+    const inputLat = MugenUI.el("input", { type: "text", value: settings.lokasi_latitude != null ? String(settings.lokasi_latitude) : "", placeholder: "Latitude", readonly: "" });
+    const inputLng = MugenUI.el("input", { type: "text", value: settings.lokasi_longitude != null ? String(settings.lokasi_longitude) : "", placeholder: "Longitude", readonly: "" });
+    const btnLokasiSaatIni = MugenUI.el("button", {}, "Gunakan Lokasi Saat Ini");
+    const lokasiError = MugenUI.el("div", { class: "login-error" });
+
+    card.appendChild(MugenUI.el("label", {}, "Nama Lokasi"));
+    card.appendChild(inputLokasiNama);
+    card.appendChild(MugenUI.el("label", {}, "Latitude"));
+    card.appendChild(inputLat);
+    card.appendChild(MugenUI.el("label", {}, "Longitude"));
+    card.appendChild(inputLng);
+    card.appendChild(lokasiError);
+    card.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, btnLokasiSaatIni));
+
+    btnLokasiSaatIni.addEventListener("click", () => {
+      lokasiError.textContent = "";
+      if (!navigator.geolocation) {
+        lokasiError.textContent = "Perangkat/browser ini tidak mendukung Geolocation.";
+        return;
+      }
+      btnLokasiSaatIni.disabled = true;
+      btnLokasiSaatIni.textContent = "Mengambil lokasi…";
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          inputLat.value = String(pos.coords.latitude);
+          inputLng.value = String(pos.coords.longitude);
+          btnLokasiSaatIni.disabled = false;
+          btnLokasiSaatIni.textContent = "Gunakan Lokasi Saat Ini";
+        },
+        (err) => {
+          lokasiError.textContent = "Gagal mengambil lokasi: " + (err.message || "izin lokasi ditolak.");
+          btnLokasiSaatIni.disabled = false;
+          btnLokasiSaatIni.textContent = "Gunakan Lokasi Saat Ini";
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      );
+    });
+
+    const errorBox = MugenUI.el("div", { class: "login-error" });
+    const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Absensi");
+    card.appendChild(errorBox);
+    card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
+
+    btnSimpan.addEventListener("click", async () => {
+      errorBox.textContent = "";
+      const body2 = {
+        jam_masuk: inputJamMasuk.value, toleransi_menit: Number(inputToleransi.value),
+        jam_pulang: inputJamPulang.value, radius_meter: Number(selRadius.value),
+        lokasi_nama: inputLokasiNama.value.trim(),
+        batas_menit_terlambat: Number(inputBatasTerlambat.value),
+        batas_menit_pulang_awal: Number(inputBatasPulangAwal.value),
+      };
+      if (inputLat.value) body2.lokasi_latitude = Number(inputLat.value);
+      if (inputLng.value) body2.lokasi_longitude = Number(inputLng.value);
+      try {
+        await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/attendance/settings", body2));
+        MugenUI.toast("Pengaturan Absensi disimpan.", "success");
+      } catch (e) {
+        errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+  }
+
   // ================= OWNER/ADMIN: Dashboard + Daftar + Laporan + Audit =================
   async function renderAdminView(root) {
     let barbers = [];
     try {
       barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
     } catch (e) { /* opsional */ }
+
+    // ---- Pengaturan Absensi (lihat renderPengaturanAbsensi() di atas) ----
+    // Owner selalu boleh; staff HANYA kalau diberi izin_absensi_pengaturan
+    // lewat Setting > Hak Akses Admin (sama seperti sebelumnya saat ini
+    // masih jadi tab Setting > Absensi).
+    const userAktif = MugenState.getUser();
+    const isOwnerAktif = userAktif.role === "admin";
+    let bolehAturSettings = isOwnerAktif;
+    if (!isOwnerAktif) {
+      try {
+        const izinAdmin = await MugenApi.get("/api/pengaturan/hak-akses-admin");
+        bolehAturSettings = !!izinAdmin.izin_absensi_pengaturan;
+      } catch (e) {
+        bolehAturSettings = false;
+      }
+    }
+    if (bolehAturSettings) {
+      await renderPengaturanAbsensi(root);
+    }
 
     // ---- Dashboard ringkasan ----
     const dashCard = MugenUI.el("div", { class: "card" });
@@ -347,7 +479,7 @@ const PageAbsensi = (() => {
     root.appendChild(limitCard);
     limitCard.appendChild(MugenUI.el("h2", {}, "Sisa Limit Bulan Ini"));
     const limitSubtitle = MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit menit/bulan per barber (diatur di sini di Setting > Absensi), otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.");
+      "Keterlambatan & Pulang Lebih Awal masing-masing punya limit menit/bulan per barber (diatur Owner/Admin di kartu Pengaturan Absensi), otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.");
     limitCard.appendChild(limitSubtitle);
     const limitBody = MugenUI.el("div");
     limitCard.appendChild(limitBody);
@@ -360,7 +492,7 @@ const PageAbsensi = (() => {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
         if (rows.length) {
-          limitSubtitle.textContent = `Limit Keterlambatan: ${rows[0].batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${rows[0].batas_menit_pulang_awal} menit/bulan per barber. Diatur di Setting > Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
+          limitSubtitle.textContent = `Limit Keterlambatan: ${rows[0].batas_menit_terlambat} menit/bulan. Limit Pulang Lebih Awal: ${rows[0].batas_menit_pulang_awal} menit/bulan per barber. Diatur Owner/Admin di kartu Pengaturan Absensi, otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.`;
         }
         return MugenUI.buildTable([
           { key: "nama_barber", label: "Barber" },
