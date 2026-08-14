@@ -3407,10 +3407,10 @@ jangan salah salin.
 
 Ulangi langkah 2-4 dengan kredensial Production dari Faspay (Merchant ID/
 User ID/Password Production BERBEDA dari sandbox), environment diganti
-"Production" di kedua kartu. **Base URL Production Faspay belum
-dikonfirmasi resmi oleh tim Faspay** (`payment_gateway_client.py`/
-`billing_gateway_client.py` memakai `https://xpress.faspay.co.id/v4/post`
-sebagai dugaan berpola dari URL sandbox) -- konfirmasikan URL ini ke tim
-Faspay SEBELUM cutover Production. JANGAN skip langkah 4 -- tanpa
-verifikasi sandbox, kegagalan konfigurasi (kredensial tertukar, base URL
-salah) baru ketahuan saat customer/Owner sungguhan sudah membayar.
+"Production" di kedua kartu. Base URL Production Faspay Xpress V4
+(`https://xpress.faspay.co.id/v4/post`, dipakai `payment_gateway_client.py`/
+`billing_gateway_client.py`) **sudah resmi dikonfirmasi tim Faspay** (sama
+persis dengan dugaan sebelumnya berpola dari URL sandbox) -- aman dipakai
+untuk cutover Production. JANGAN skip langkah 4 -- tanpa verifikasi
+sandbox, kegagalan konfigurasi (kredensial tertukar, base URL salah) baru
+ketahuan saat customer/Owner sungguhan sudah membayar.
