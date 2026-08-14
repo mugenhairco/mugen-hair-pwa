@@ -136,7 +136,15 @@
 // efek shine/kilau bergerak kiri->kanan di logo Rivoir (navbar & footer,
 // landing.css .lp-brand-logo-shine, di-mask ke bentuk asli logo),
 // berulang, dimatikan untuk prefers-reduced-motion.
-const ASSET_VERSION = "24";
+// v24 -> v25: REVISI feedback Owner. Mockup Dashboard di Hero: "Pendapatan"
+// (Rp 4,85jt->20jt) & "Pelanggan Baru" (11->50) sekarang ikut berjalan
+// bareng "Booking Hari Ini" -- SEMUA counter di mockup ini pakai satu
+// konstanta interval yang sama (STEP_TICK_MS di landing.js) supaya
+// kecepatan pergerakan angkanya konsisten. Kartu Dashboard Owner (fitur
+// unggulan): "Pendapatan" (20,5jt->50jt, naik per 0,5jt: 20,5 / 21 /
+// 21,5 / ...) & "Barber Aktif" (5->15) ditambahkan, jalan di kecepatan
+// yang sama juga.
+const ASSET_VERSION = "25";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [

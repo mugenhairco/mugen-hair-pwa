@@ -142,6 +142,16 @@
   function _formatJt(nilaiJutaan) {
     return "Rp " + nilaiJutaan.toFixed(1).replace(".", ",") + "jt";
   }
+  // Format "pintar" untuk counter yang bergerak per kelipatan 0,5jt (lihat
+  // _initSteppedCounter di bawah) -- BEDA dari _formatJt (selalu 1 desimal)
+  // karena di sini nilai BOLAK-BALIK antara bulat & setengahan (mis. 20,5
+  // lalu 21 lalu 21,5), jadi angka bulat SENGAJA tidak dipaksa ",0" di
+  // belakangnya (feedback Owner: "20,5 21 21,5", bukan "21,0").
+  function _formatJtSmart(nilaiJutaan) {
+    const dibulatkan = Math.round(nilaiJutaan * 100) / 100;
+    let s = dibulatkan.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return "Rp " + s.replace(".", ",") + "jt";
+  }
 
   // Loop generik dipakai bareng oleh beberapa animasi mockup di bawah:
   // frameFn(t) dipanggil tiap frame dari t=0->1 (durationMs, easing
@@ -162,17 +172,24 @@
     cycle();
   }
 
-  // Booking Hari Ini: 18 -> 19 -> ... -> 50 -> balik 18, berulang terus.
-  // Dipakai BERSAMA oleh mockup Dashboard di Hero & kartu Dashboard Owner
-  // (section fitur unggulan) -- dua elemen berbeda, dua interval terpisah.
-  function _initBookingCounter(elId) {
+  // Counter "berjalan per step" generik (angka bulat ATAU kelipatan uang
+  // tetap, mis. 0,5jt) -- dipakai SEMUA counter bertipe ini di halaman
+  // (Booking Hari Ini x2, Pelanggan Baru, Pendapatan Dashboard Owner,
+  // Barber Aktif) lewat SATU konstanta interval yang sama (STEP_TICK_MS)
+  // supaya kecepatan pergerakan angkanya konsisten di semua tempat
+  // (feedback Owner: "kecepatan pergerakan angka harus sama semua").
+  // min ditampilkan dulu (cocok dengan nilai statis di HTML sebagai
+  // fallback sebelum JS jalan), lalu naik per `step` tiap tick sampai
+  // max, balik ke min, ulang terus.
+  const STEP_TICK_MS = 180;
+  function _initSteppedCounter(elId, min, max, step, formatFn) {
     const el = document.getElementById(elId);
     if (!el) return;
-    let count = 18;
+    let value = min;
     setInterval(() => {
-      count = count >= 50 ? 18 : count + 1;
-      el.textContent = String(count);
-    }, 180);
+      value = value >= max - 1e-9 ? min : Math.min(max, value + step);
+      el.textContent = formatFn(value);
+    }, STEP_TICK_MS);
   }
 
   // Grafik batang mockup Dashboard di Hero: tinggi tiap batang tumbuh dari
@@ -337,11 +354,17 @@
   function initDiffMockupAnimations() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     // Mockup Dashboard di Hero (BUKAN kartu fitur unggulan section "Kenapa
-    // Rivoir" -- dua mockup dashboard berbeda, dua elemen terpisah).
-    _initBookingCounter("lp-hero-booking-count");
+    // Rivoir" -- dua mockup dashboard berbeda, dua elemen terpisah). Semua
+    // counter di sini pakai _initSteppedCounter (STEP_TICK_MS yang sama)
+    // supaya kecepatan pergerakan angkanya konsisten satu sama lain.
+    _initSteppedCounter("lp-hero-booking-count", 18, 50, 1, (v) => String(v));
+    _initSteppedCounter("lp-hero-pendapatan", 4.85, 20, 0.5, _formatJtSmart);
+    _initSteppedCounter("lp-hero-pelanggan-baru", 11, 50, 1, (v) => String(v));
     initHeroChart();
     // Kartu fitur unggulan (section "Kenapa Rivoir").
-    _initBookingCounter("lp-diff-booking-count");
+    _initSteppedCounter("lp-diff-booking-count", 18, 50, 1, (v) => String(v));
+    _initSteppedCounter("lp-diff-pendapatan-owner", 20.5, 50, 0.5, _formatJtSmart);
+    _initSteppedCounter("lp-diff-barber-aktif", 5, 15, 1, (v) => String(v));
     initDashboardBars();
     initBarberCounters();
     initWhatsAppTyping();
