@@ -382,6 +382,39 @@ def test_bulan_campuran_absensi_dan_tanpa_absensi(single_tenant, monkeypatch):
     assert total == 48000 + 60000 + 0
 
 
+# Audit menyeluruh (feedback Owner): hitung_uang_harian_dinamis_rentang()
+# (dipakai Laporan PDF, BUKAN cuma _bulan yang dites di atas) HARUS ikut
+# fallback sistem lama untuk tanggal tanpa Absensi juga -- termasuk saat
+# rentangnya melintasi 2 bulan kalender (limit akumulasi reset per bulan).
+def test_rentang_fallback_sistem_lama_lintas_bulan(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id, batas_menit_terlambat=120)
+    sid = _service(tenant_id)
+    database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    # Bulan Juli: ADA Absensi, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
+    _checkin(monkeypatch, tenant_id, barber["id"], "2026-07-31", 9, 35)
+    # Bulan Agustus: TIDAK ADA Absensi, hanya service (fallback), target tercapai -> 60000
+    _isi_service(barber["id"], "2026-08-01", sid, 2)
+    # Bulan Agustus: TIDAK ADA Absensi, hanya service (fallback), target TIDAK tercapai -> 0
+    _isi_service(barber["id"], "2026-08-02", sid, 1)
+    total = uhd.hitung_uang_harian_dinamis_rentang(barber, "2026-07-31", "2026-08-02")
+    assert total == 48000 + 60000 + 0
+    # breakdown per-hari harus konsisten dengan kontribusi rentang di atas
+    assert uhd.breakdown_hari(barber, "2026-08-01")["sumber"] == "tanggal_tanpa_absensi"
+    assert uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"] == 60000
+
+
+# Audit menyeluruh (feedback Owner): GET /breakdown dengan `tanggal` format
+# salah HARUS 422 rapi (sebelumnya int(tanggal[:4]) di breakdown_hari() bisa
+# lolos tanpa validasi router lalu meledak ValueError -> 500 tak tertangani).
+def test_breakdown_endpoint_tanggal_invalid_dapat_422(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    r = client.get("/api/uang-harian-dinamis/breakdown", params={"tanggal": "bukan-tanggal"}, headers=headers)
+    assert r.status_code == 422
+
+
 # Validasi tambahan: potongan% di luar 0-100 ditolak (kualitas input, bukan
 # salah satu dari 23 skenario tapi wajar diverifikasi bersama modul ini).
 def test_set_config_menolak_potongan_invalid(single_tenant):

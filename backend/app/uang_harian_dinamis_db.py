@@ -444,7 +444,9 @@ def breakdown_hari(barber: dict, tanggal: str) -> dict:
     tenant_id = barber.get("tenant_id")
     config = get_config(tenant_id)
     if not config["aktif"]:
-        return _hasil_sistem_lama(barber, tanggal, tenant_id, sumber="tenant_belum_opt_in")
+        hasil = _hasil_sistem_lama(barber, tanggal, tenant_id, sumber="tenant_belum_opt_in")
+        hasil["aktif"] = False
+        return hasil
     tahun, bulan = int(tanggal[:4]), int(tanggal[5:7])
     akumulasi = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
     hasil = _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config, akumulasi)

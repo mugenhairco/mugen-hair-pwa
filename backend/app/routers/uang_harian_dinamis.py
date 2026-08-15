@@ -11,6 +11,8 @@ Hak akses:
   (barber_id diabaikan) -- pola akses SAMA PERSIS
   routers/attendance.py::ringkasan_bulan()."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -60,6 +62,10 @@ def ambil_breakdown(tanggal: str, barber_id: int = None, user: dict = Depends(ge
     """`tanggal` format YYYY-MM-DD, WAJIB diisi -- breakdown SATU hari
     (lihat uang_harian_dinamis_db.breakdown_hari(), section 17 permintaan
     Owner: transparansi penuh alasan potongan)."""
+    try:
+        datetime.strptime(tanggal, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Format tanggal tidak valid (harus YYYY-MM-DD).")
     if user["role"] == "barber":
         if user.get("barber_id") is None:
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
