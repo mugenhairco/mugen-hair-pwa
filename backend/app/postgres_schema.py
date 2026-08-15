@@ -904,6 +904,37 @@ CREATE TABLE IF NOT EXISTS attendance_settings (
 ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_terlambat INTEGER NOT NULL DEFAULT 120;
 ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_pulang_awal INTEGER NOT NULL DEFAULT 120;
 
+-- FITUR Uang Harian Dinamis: toleransi harian untuk pulang lebih awal TIDAK
+-- ADA sebelumnya (pulang_awal SELALU dihitung dari jam_pulang tanpa
+-- toleransi -- lihat attendance_db.py::_menit_pulang_awal_baris(), TIDAK
+-- diubah sama sekali oleh kolom ini). Kolom ini KHUSUS dipakai mesin
+-- kalkulasi Uang Harian Dinamis (lihat uang_harian_dinamis_db.py) sebagai
+-- pasangan simetris toleransi_menit (keterlambatan) di atas -- default 0
+-- supaya perilaku LAMA (tanpa toleransi pulang awal) tetap sama persis
+-- untuk tenant yang belum mengatur.
+ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0;
+
+-- FITUR Uang Harian Dinamis: konfigurasi PER TENANT (lihat docstring lengkap
+-- di uang_harian_dinamis_db.py) -- `aktif=FALSE` (default) berarti Uang
+-- Harian TETAP memakai sistem lama (database.py, murni jumlah service)
+-- TANPA PERUBAHAN, jadi tabel ini baru relevan untuk Tenant yang SENGAJA
+-- opt-in lewat menu Pengaturan.
+CREATE TABLE IF NOT EXISTS uang_harian_dinamis_settings (
+    tenant_id                       INTEGER PRIMARY KEY,
+    aktif                           INTEGER NOT NULL DEFAULT 0,
+    keterlambatan_gunakan_toleransi INTEGER NOT NULL DEFAULT 0,
+    keterlambatan_gunakan_limit     INTEGER NOT NULL DEFAULT 0,
+    keterlambatan_potongan_persen   INTEGER NOT NULL DEFAULT 0,
+    pulang_awal_gunakan_toleransi   INTEGER NOT NULL DEFAULT 0,
+    pulang_awal_gunakan_limit       INTEGER NOT NULL DEFAULT 0,
+    pulang_awal_potongan_persen     INTEGER NOT NULL DEFAULT 0,
+    kombinasi_metode                TEXT NOT NULL DEFAULT 'OR',
+    service_rule_mode                TEXT NOT NULL DEFAULT 'TIDAK_DIGUNAKAN',
+    service_rule_minimal            INTEGER NOT NULL DEFAULT 0,
+    service_rule_potongan_persen    INTEGER NOT NULL DEFAULT 0,
+    updated_at                       TEXT
+);
+
 -- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
 -- SAMA seperti user_id/tenant_id di tabel lain sepanjang file ini, lihat
 -- catatan panjang di email_verification_tokens di atas untuk kejadian

@@ -90,6 +90,13 @@ DEFAULT_SETTINGS = {
     "lokasi_longitude": None,
     "batas_menit_terlambat": BATAS_LIMIT_MENIT_DEFAULT,
     "batas_menit_pulang_awal": BATAS_LIMIT_MENIT_DEFAULT,
+    # FITUR Uang Harian Dinamis: KHUSUS dipakai mesin kalkulasi Uang Harian
+    # Dinamis (uang_harian_dinamis_db.py) sebagai pasangan simetris
+    # toleransi_menit (keterlambatan) di atas -- pulang_awal SEBELUMNYA
+    # (dan TETAP, untuk fitur Absensi sendiri) tidak punya toleransi harian
+    # sama sekali, lihat _menit_pulang_awal_baris() di bawah yang TIDAK
+    # membaca kolom ini. Default 0 = perilaku lama (tanpa toleransi).
+    "toleransi_pulang_awal_menit": 0,
 }
 
 
@@ -108,10 +115,11 @@ def init_attendance_db():
                 updated_at                TEXT,
                 tenant_id                 INTEGER,
                 batas_menit_terlambat     INTEGER NOT NULL DEFAULT 120,
-                batas_menit_pulang_awal   INTEGER NOT NULL DEFAULT 120
+                batas_menit_pulang_awal   INTEGER NOT NULL DEFAULT 120,
+                toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0
             )
         """)
-        # Instalasi SQLite yang SUDAH ADA sebelum dua kolom limit di atas
+        # Instalasi SQLite yang SUDAH ADA sebelum kolom-kolom di atas
         # ditambahkan ke CREATE TABLE (instalasi baru sudah dapat kolomnya
         # langsung) -- pola sama seperti billing_db.py::init_billing_db().
         kolom_settings = [r["name"] for r in conn.execute("PRAGMA table_info(attendance_settings)").fetchall()]
@@ -119,6 +127,8 @@ def init_attendance_db():
             conn.execute("ALTER TABLE attendance_settings ADD COLUMN batas_menit_terlambat INTEGER NOT NULL DEFAULT 120")
         if kolom_settings and "batas_menit_pulang_awal" not in kolom_settings:
             conn.execute("ALTER TABLE attendance_settings ADD COLUMN batas_menit_pulang_awal INTEGER NOT NULL DEFAULT 120")
+        if kolom_settings and "toleransi_pulang_awal_menit" not in kolom_settings:
+            conn.execute("ALTER TABLE attendance_settings ADD COLUMN toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance_logs (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,8 +247,8 @@ def _pastikan_baris_settings(conn, tenant_id: int):
     conn.execute(
         """INSERT INTO attendance_settings
                (id, jam_masuk, toleransi_menit, jam_pulang, radius_meter, tenant_id,
-                batas_menit_terlambat, batas_menit_pulang_awal)
-           VALUES (?, '09:00', 15, '20:00', 500, ?, ?, ?) ON CONFLICT DO NOTHING""",
+                batas_menit_terlambat, batas_menit_pulang_awal, toleransi_pulang_awal_menit)
+           VALUES (?, '09:00', 15, '20:00', 500, ?, ?, ?, 0) ON CONFLICT DO NOTHING""",
         (tenant_id, tenant_id, BATAS_LIMIT_MENIT_DEFAULT, BATAS_LIMIT_MENIT_DEFAULT),
     )
 
@@ -253,7 +263,8 @@ def get_settings(tenant_id: int) -> dict:
 def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = None,
                   jam_pulang: str = None, radius_meter: int = None, lokasi_nama: str = None,
                   lokasi_latitude: float = None, lokasi_longitude: float = None,
-                  batas_menit_terlambat: int = None, batas_menit_pulang_awal: int = None) -> dict:
+                  batas_menit_terlambat: int = None, batas_menit_pulang_awal: int = None,
+                  toleransi_pulang_awal_menit: int = None) -> dict:
     existing = get_settings(tenant_id)
     jam_masuk_baru = jam_masuk if jam_masuk is not None else existing["jam_masuk"]
     jam_pulang_baru = jam_pulang if jam_pulang is not None else existing["jam_pulang"]
@@ -278,13 +289,21 @@ def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = N
                                else existing["batas_menit_pulang_awal"])
     if batas_pulang_awal_baru is None or batas_pulang_awal_baru < 0:
         raise ValueError("Limit Pulang Lebih Awal tidak boleh negatif.")
+    # FITUR Uang Harian Dinamis: existing["toleransi_pulang_awal_menit"] bisa
+    # None untuk baris lama yang dibaca sebelum ALTER TABLE sempat jalan --
+    # fallback 0 (perilaku lama, tanpa toleransi) sama seperti DEFAULT_SETTINGS.
+    toleransi_pulang_awal_baru = (toleransi_pulang_awal_menit if toleransi_pulang_awal_menit is not None
+                                   else (existing.get("toleransi_pulang_awal_menit") or 0))
+    if toleransi_pulang_awal_baru is None or toleransi_pulang_awal_baru < 0:
+        raise ValueError("Toleransi Pulang Lebih Awal tidak boleh negatif.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         _pastikan_baris_settings(conn, tenant_id)
         fields, values = ["jam_masuk = ?", "toleransi_menit = ?", "jam_pulang = ?", "radius_meter = ?",
-                           "batas_menit_terlambat = ?", "batas_menit_pulang_awal = ?", "updated_at = ?"], [
+                           "batas_menit_terlambat = ?", "batas_menit_pulang_awal = ?",
+                           "toleransi_pulang_awal_menit = ?", "updated_at = ?"], [
             jam_masuk_baru, int(toleransi_baru), jam_pulang_baru, int(radius_baru),
-            int(batas_terlambat_baru), int(batas_pulang_awal_baru), now]
+            int(batas_terlambat_baru), int(batas_pulang_awal_baru), int(toleransi_pulang_awal_baru), now]
         if lokasi_nama is not None:
             fields.append("lokasi_nama = ?"); values.append(lokasi_nama.strip())
         if lokasi_latitude is not None:

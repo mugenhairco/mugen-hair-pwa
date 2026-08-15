@@ -518,6 +518,145 @@ const PagePengaturan = (() => {
           targetError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
+
+      await renderUangHarianDinamis();
+    }
+
+    // FITUR Uang Harian Dinamis Berdasarkan Absensi: KHUSUS opt-in (default
+    // "aktif" MATI -- Uang Harian tetap sistem lama di atas, "Target Jumlah
+    // Service Harian" TIDAK terpengaruh sama sekali). Begitu diaktifkan,
+    // aturan lama di atas berhenti dipakai, DIGANTIKAN penuh oleh mesin baru
+    // di sini (toleransi/limit Absensi -- keterlambatan & pulang lebih awal
+    // diatur TERPISAH -- + Service Rule, lihat uang_harian_dinamis_db.py
+    // backend untuk konsep lengkap). Toleransi Masuk & kedua Limit bulanan
+    // dipakai APA ADANYA dari kartu Pengaturan Absensi (menu Absensi) --
+    // SATU sumber kebenaran, TIDAK diduplikasi di sini, hanya ditampilkan
+    // read-only sebagai konteks.
+    async function renderUangHarianDinamis() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Uang Harian Dinamis Berdasarkan Absensi"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Opsional -- kalau diaktifkan, Uang Harian TIDAK LAGI memakai Acuan Service/Target di atas, digantikan " +
+        "penuh oleh aturan Absensi (toleransi harian dan/atau limit bulanan) di bawah ini, digabung dengan " +
+        "Service Rule (opsional) sebagai lapisan tambahan. Kalau dimatikan, Uang Harian kembali ke sistem lama " +
+        "(Acuan Service + Target di atas) tanpa perubahan apa pun."));
+
+      let cfg, attSettings;
+      try {
+        [cfg, attSettings] = await Promise.all([
+          MugenApi.get("/api/uang-harian-dinamis/config"),
+          MugenApi.get("/api/attendance/settings"),
+        ]);
+      } catch (e) {
+        card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+
+      function checkboxBaris(input, teks) {
+        input.setAttribute("style", "width:auto;");
+        return MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;margin:8px 0;" },
+          [input, document.createTextNode(teks)]);
+      }
+
+      const inAktif = MugenUI.el("input", { type: "checkbox" });
+      inAktif.checked = !!cfg.aktif;
+      card.appendChild(checkboxBaris(inAktif, "Aktifkan Uang Harian Dinamis"));
+
+      const isian = MugenUI.el("div", { style: "margin-top:16px;" });
+      card.appendChild(isian);
+
+      function baris(labelTeks, ...anak) {
+        isian.appendChild(MugenUI.el("label", {}, labelTeks));
+        anak.forEach((n) => isian.appendChild(n));
+      }
+
+      isian.appendChild(MugenUI.el("h3", {}, "Keterlambatan"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle" },
+        `Toleransi Masuk saat ini: ${attSettings.toleransi_menit} menit. Limit Keterlambatan: ` +
+        `${attSettings.batas_menit_terlambat} menit/bulan. Diatur di menu Absensi > Pengaturan Absensi.`));
+      const inKetGunakanToleransi = MugenUI.el("input", { type: "checkbox" });
+      inKetGunakanToleransi.checked = !!cfg.keterlambatan_gunakan_toleransi;
+      isian.appendChild(checkboxBaris(inKetGunakanToleransi, "Gunakan Toleransi Harian"));
+      const inKetGunakanLimit = MugenUI.el("input", { type: "checkbox" });
+      inKetGunakanLimit.checked = !!cfg.keterlambatan_gunakan_limit;
+      isian.appendChild(checkboxBaris(inKetGunakanLimit, "Gunakan Limit Bulanan"));
+      const inKetPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
+        value: String(cfg.keterlambatan_potongan_persen ?? 0) });
+      baris("Potongan Uang Harian kalau terpicu (%)", inKetPotongan);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Pulang Lebih Awal"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle" },
+        `Toleransi Pulang Awal saat ini: ${attSettings.toleransi_pulang_awal_menit ?? 0} menit. Limit Pulang ` +
+        `Lebih Awal: ${attSettings.batas_menit_pulang_awal} menit/bulan. Diatur di menu Absensi > Pengaturan Absensi.`));
+      const inPaGunakanToleransi = MugenUI.el("input", { type: "checkbox" });
+      inPaGunakanToleransi.checked = !!cfg.pulang_awal_gunakan_toleransi;
+      isian.appendChild(checkboxBaris(inPaGunakanToleransi, "Gunakan Toleransi Harian"));
+      const inPaGunakanLimit = MugenUI.el("input", { type: "checkbox" });
+      inPaGunakanLimit.checked = !!cfg.pulang_awal_gunakan_limit;
+      isian.appendChild(checkboxBaris(inPaGunakanLimit, "Gunakan Limit Bulanan"));
+      const inPaPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
+        value: String(cfg.pulang_awal_potongan_persen ?? 0) });
+      baris("Potongan Uang Harian kalau terpicu (%)", inPaPotongan);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kombinasi Toleransi + Limit"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Kalau Toleransi DAN Limit sama-sama dipakai untuk satu jenis (Keterlambatan/Pulang Awal) di atas: " +
+        "OR = salah satu dilanggar sudah cukup memicu potongan. AND = keduanya harus dilanggar bersamaan."));
+      const selKombinasi = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "OR" }, "OR (salah satu dilanggar)"),
+        MugenUI.el("option", { value: "AND" }, "AND (harus keduanya dilanggar)"),
+      ]);
+      selKombinasi.value = cfg.kombinasi_metode || "OR";
+      baris("Metode Kombinasi", selKombinasi);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Service Rule"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Opsional -- pakai jumlah service acuan (checklist Acuan Service di atas) sebagai lapisan tambahan. " +
+        "\"Sebagai Syarat\": tidak tercapai = Uang Harian Rp0 mutlak (potongan Absensi diabaikan). \"Sebagai " +
+        "Potongan\": tidak tercapai = potongan sendiri, digabung dengan potongan Absensi (dipakai yang TERBESAR, " +
+        "bukan dijumlahkan)."));
+      const selServiceMode = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "TIDAK_DIGUNAKAN" }, "Tidak Digunakan"),
+        MugenUI.el("option", { value: "SYARAT" }, "Sebagai Syarat"),
+        MugenUI.el("option", { value: "POTONGAN" }, "Sebagai Potongan"),
+      ]);
+      selServiceMode.value = cfg.service_rule_mode || "TIDAK_DIGUNAKAN";
+      baris("Mode", selServiceMode);
+      const inServiceMinimal = MugenUI.el("input", { type: "number", min: "0",
+        value: String(cfg.service_rule_minimal ?? 0) });
+      baris("Minimal Service/Hari", inServiceMinimal);
+      const inServicePotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
+        value: String(cfg.service_rule_potongan_persen ?? 0) });
+      baris("Potongan kalau Service Rule Mode = Sebagai Potongan (%)", inServicePotongan);
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Uang Harian Dinamis");
+      card.appendChild(errorBox);
+      card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const payload = {
+          aktif: inAktif.checked,
+          keterlambatan_gunakan_toleransi: inKetGunakanToleransi.checked,
+          keterlambatan_gunakan_limit: inKetGunakanLimit.checked,
+          keterlambatan_potongan_persen: Number(inKetPotongan.value),
+          pulang_awal_gunakan_toleransi: inPaGunakanToleransi.checked,
+          pulang_awal_gunakan_limit: inPaGunakanLimit.checked,
+          pulang_awal_potongan_persen: Number(inPaPotongan.value),
+          kombinasi_metode: selKombinasi.value,
+          service_rule_mode: selServiceMode.value,
+          service_rule_minimal: Number(inServiceMinimal.value),
+          service_rule_potongan_persen: Number(inServicePotongan.value),
+        };
+        try {
+          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/uang-harian-dinamis/config", payload));
+          MugenUI.toast("Uang Harian Dinamis disimpan.", "success", { force: true });
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
     }
 
     // ================= TAB: BARBER =================
