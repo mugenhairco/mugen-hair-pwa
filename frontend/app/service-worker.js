@@ -613,7 +613,29 @@
 // jadi tetap berfungsi offline persis seperti sebelumnya begitu Service
 // Worker pernah selesai terpasang sekali) -- yang berubah HANYA kapan
 // browser memintanya (lazy, bukan di awal), bukan APAKAH di-cache.
-const ASSET_VERSION = "106";
+// v106 -> v107: FITUR Uang Harian Dinamis Berdasarkan Absensi (opt-in per
+// Tenant, default MATI -- Uang Harian tetap sistem lama tanpa perubahan
+// sampai Tenant sengaja mengaktifkan) -- Tenant sekarang bisa memilih
+// toleransi harian dan/atau limit bulanan (keterlambatan & pulang lebih
+// awal diatur TERPISAH) sebagai dasar potongan Uang Harian, digabung
+// dengan Service Rule opsional. Field baru "Toleransi Pulang Lebih Awal"
+// di kartu Pengaturan Absensi (pages/absensi.js, KHUSUS dipakai fitur ini,
+// TIDAK mengubah logika Absensi itu sendiri) + kartu baru "Uang Harian
+// Dinamis Berdasarkan Absensi" di Setting > Uang Harian
+// (pages/pengaturan.js) + kartu "Rincian Uang Harian" (breakdown
+// transparan per tanggal) di halaman Absensi Barber saat fitur ini aktif
+// (pages/absensi.js). TIDAK ADA perubahan pada modul Absensi (attendance)
+// itu sendiri.
+// v107 -> v108: PERBAIKAN Uang Harian Dinamis (feedback Owner) -- tanggal
+// yang TIDAK punya data Absensi sama sekali (termasuk SELURUH riwayat dari
+// sebelum fitur Absensi ada) sebelumnya bisa salah dihitung (Rp0 di
+// agregat bulanan, TIDAK KONSISTEN dengan breakdown per-hari yang tampak
+// 100% cair) begitu Tenant mengaktifkan fitur ini -- sekarang tanggal
+// tanpa data Absensi otomatis fallback ke sistem LAMA (jumlah service vs
+// target) untuk tanggal itu SAJA, konsisten di breakdown maupun agregat
+// (pages/absensi.js: kartu Rincian menampilkan catatan penjelasan saat ini
+// terjadi).
+const ASSET_VERSION = "108";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

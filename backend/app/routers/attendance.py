@@ -86,6 +86,11 @@ class SettingsBody(BaseModel):
     lokasi_longitude: float | None = None
     batas_menit_terlambat: int | None = None
     batas_menit_pulang_awal: int | None = None
+    # FITUR Uang Harian Dinamis: lihat catatan lengkap di
+    # attendance_db.py::DEFAULT_SETTINGS -- disimpan di attendance_settings
+    # (pasangan simetris toleransi_menit) tapi TIDAK dipakai logika Absensi
+    # itu sendiri, hanya oleh uang_harian_dinamis_db.py.
+    toleransi_pulang_awal_menit: int | None = None
 
 
 @router.put("/settings")
@@ -96,6 +101,7 @@ def ubah_settings(body: SettingsBody, user: dict = Depends(require_permission("i
             jam_pulang=body.jam_pulang, radius_meter=body.radius_meter, lokasi_nama=body.lokasi_nama,
             lokasi_latitude=body.lokasi_latitude, lokasi_longitude=body.lokasi_longitude,
             batas_menit_terlambat=body.batas_menit_terlambat, batas_menit_pulang_awal=body.batas_menit_pulang_awal,
+            toleransi_pulang_awal_menit=body.toleransi_pulang_awal_menit,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

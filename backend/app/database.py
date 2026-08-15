@@ -931,10 +931,42 @@ def target_uang_harian_per_hari(tenant_id=None) -> int:
     return int(_setting_float("uang_harian_target_service_harian", tenant_id=tenant_id) or 3)
 
 
+def _uang_harian_dinamis_aktif(tenant_id) -> bool:
+    """FITUR Uang Harian Dinamis: import LOKAL (bukan di puncak file) supaya
+    tidak circular import -- uang_harian_dinamis_db.py sendiri mengimpor
+    beberapa fungsi DARI modul ini (get_conn, get_uang_harian_acuan_ids,
+    target_uang_harian_per_hari), pola sama seperti alasan kasbon_db.py/
+    reimburse_db.py TIDAK diimpor di puncak database.py (lihat komentar di
+    kasbon_db.py)."""
+    import uang_harian_dinamis_db
+    return uang_harian_dinamis_db.get_config(tenant_id)["aktif"]
+
+
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     """FONDASI Multi-Tenant Phase 1: tenant_id diambil dari `barber` yang
-    sudah diterima fungsi ini (bukan parameter baru) -- lihat get_barbers()."""
+    sudah diterima fungsi ini (bukan parameter baru) -- lihat get_barbers().
+
+    FITUR Uang Harian Dinamis: kalau Tenant SUDAH opt-in (lihat
+    uang_harian_dinamis_db.py), seluruh sisa fungsi ini TIDAK dipakai --
+    delegasi penuh ke mesin baru (berbasis Absensi, MENGGANTIKAN aturan
+    service lama di bawah ini, bukan bertumpuk). Tenant yang BELUM opt-in
+    (mayoritas -- default `aktif=False`) tetap memakai kode di bawah ini
+    APA ADANYA, byte-for-byte SAMA seperti sebelum fitur ini ada.
+
+    CATATAN PERFORMA (Tenant yang sudah opt-in SAJA): fungsi ini dipanggil
+    PER (barber, tanggal) tanpa cache lintas-panggilan (lihat pemanggilnya,
+    get_rekap_transaksi_list() di bawah, yang punya cache sendiri TAPI
+    hanya per (barber,tanggal) PERSIS -- tanggal berbeda di barber+bulan
+    yang sama tetap query attendance_logs bulan itu ulang). Untuk agregat
+    bulan/rentang penuh (Dashboard, Slip Gaji, Laporan PDF) SELALU pakai
+    hitung_uang_harian_bulan()/_rentang() di bawah (SATU query per bulan,
+    tidak berulang) -- fungsi INI (per_hari) hanya untuk lookup satu hari
+    tunggal, jumlah pemanggilan berulangnya dalam praktik dibatasi jumlah
+    hari kerja per bulan (puluhan), bukan skala yang perlu cache tambahan."""
     tenant_id = barber.get("tenant_id")
+    if _uang_harian_dinamis_aktif(tenant_id):
+        import uang_harian_dinamis_db
+        return uang_harian_dinamis_db.breakdown_hari(barber, tanggal)["uang_harian_final"]
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
@@ -957,8 +989,14 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     hanya jika total service acuan (Setting > Uang Harian) hari itu >= target
     (lihat target_uang_harian_per_hari()), nominalnya dari kolom uang_harian milik
     barber itu sendiri (REVISI: per-barber, lihat komentar di atas
-    hitung_uang_harian_per_hari)."""
+    hitung_uang_harian_per_hari).
+
+    FITUR Uang Harian Dinamis: percabangan SAMA seperti hitung_uang_harian_per_hari()
+    di atas -- Tenant yang belum opt-in tidak terpengaruh sama sekali."""
     tenant_id = barber.get("tenant_id")
+    if _uang_harian_dinamis_aktif(tenant_id):
+        import uang_harian_dinamis_db
+        return uang_harian_dinamis_db.hitung_uang_harian_dinamis_bulan(barber, tahun, bulan)
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
@@ -981,8 +1019,12 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
 def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> int:
     """Versi rentang tanggal bebas dari hitung_uang_harian_bulan() di atas --
     dipakai Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom,
-    BUKAN satu bulan kalender penuh). Aturan hitungnya SAMA PERSIS."""
+    BUKAN satu bulan kalender penuh). Aturan hitungnya SAMA PERSIS (termasuk
+    percabangan Uang Harian Dinamis, lihat hitung_uang_harian_per_hari())."""
     tenant_id = barber.get("tenant_id")
+    if _uang_harian_dinamis_aktif(tenant_id):
+        import uang_harian_dinamis_db
+        return uang_harian_dinamis_db.hitung_uang_harian_dinamis_rentang(barber, tanggal_mulai, tanggal_selesai)
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:

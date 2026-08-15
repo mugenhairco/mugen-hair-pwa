@@ -152,6 +152,64 @@ const PageAbsensi = (() => {
     ]);
   }
 
+  // FITUR Uang Harian Dinamis Berdasarkan Absensi: render breakdown transparan
+  // (respons GET /api/uang-harian-dinamis/breakdown) jadi daftar baris
+  // label-nilai, dipakai lewat MugenUI.infoModal() -- format mengikuti contoh
+  // "Uang Harian Dasar / Toleransi / Limit bulanan / Mode / Potongan / Uang
+  // Harian Final" yang diminta Owner.
+  function _barisBreakdown(label, value) {
+    return MugenUI.el("div", { style: "display:flex;justify-content:space-between;gap:16px;padding:4px 0;" }, [
+      MugenUI.el("span", { class: "subtitle" }, label),
+      MugenUI.el("span", { style: "font-weight:600;" }, value),
+    ]);
+  }
+
+  function tampilkanBreakdown(b) {
+    const baris = [_barisBreakdown("Uang Harian Dasar", MugenUI.formatRupiah(b.uang_harian_dasar))];
+
+    // PERBAIKAN (feedback Owner): tanggal yang TIDAK punya data Absensi sama
+    // sekali (termasuk seluruh riwayat sebelum fitur Absensi ada) otomatis
+    // jatuh ke sistem lama (backend: uang_harian_dinamis_db.py::
+    // _evaluasi_hari_dengan_fallback()) -- dikenali di sini dari TIDAK
+    // adanya `b.keterlambatan` (bukan cuma `b.aktif`, karena hari ini bisa
+    // saja jatuh ke sistem lama WALAU Tenant-nya sendiri sudah aktif).
+    const pakaiSistemLama = !b.keterlambatan;
+    if (pakaiSistemLama) {
+      if (b.sumber === "tanggal_tanpa_absensi") {
+        baris.push(MugenUI.el("div", { class: "subtitle", style: "padding:6px 0;" },
+          "Tanggal ini tidak punya data Absensi (mis. sebelum fitur Absensi ada) -- dihitung pakai sistem lama (jumlah service), TIDAK terpengaruh Uang Harian Dinamis."));
+      }
+      baris.push(_barisBreakdown("Service (sistem lama)", `${b.service.jumlah} / ${b.service.minimal}`));
+      baris.push(_barisBreakdown("Syarat Service", b.service.terpenuhi ? "✓ Terpenuhi" : "✕ Tidak Terpenuhi"));
+    } else {
+      const jenis = [["Keterlambatan", b.keterlambatan], ["Pulang Lebih Awal", b.pulang_awal]];
+      for (const [label, j] of jenis) {
+        if (!j.gunakan_toleransi && !j.gunakan_limit) continue;
+        baris.push(_barisBreakdown(label, `${j.menit} menit`));
+        if (j.gunakan_toleransi) {
+          baris.push(_barisBreakdown("Toleransi", `${j.toleransi_menit} menit`));
+          baris.push(_barisBreakdown("Toleransi", j.toleransi_dilanggar ? "✕ Dilanggar" : "✓ Tidak Dilanggar"));
+        }
+        if (j.gunakan_limit) {
+          baris.push(_barisBreakdown("Limit Bulanan", j.limit_lampaui ? "✕ Sudah Habis" : "✓ Masih Tersedia"));
+        }
+        baris.push(_barisBreakdown(`Potongan (${label})`, `${j.potongan_persen}%`));
+      }
+      if (b.service.mode !== "TIDAK_DIGUNAKAN") {
+        baris.push(_barisBreakdown("Service", `${b.service.jumlah} / ${b.service.minimal}`));
+        baris.push(_barisBreakdown("Service", b.service.terpenuhi ? "✓ Terpenuhi" : "✕ Tidak Terpenuhi"));
+        if (!b.service.terpenuhi) {
+          baris.push(_barisBreakdown("Mode Service", b.service.mode === "SYARAT" ? "Syarat (mutlak)" : "Potongan"));
+        }
+      }
+    }
+
+    baris.push(_barisBreakdown("Potongan Final", `${b.potongan_persen}%`));
+    baris.push(MugenUI.el("div", { style: "border-top:1px solid var(--border);margin:8px 0;" }));
+    baris.push(_barisBreakdown("Uang Harian Final", MugenUI.formatRupiah(b.uang_harian_final)));
+    return MugenUI.el("div", { style: "min-width:280px;" }, baris);
+  }
+
   // ================= BARBER: Check In/Out + Riwayat milik sendiri =================
   async function renderBarberView(root) {
     const card = MugenUI.el("div", { class: "card" });
@@ -281,6 +339,45 @@ const PageAbsensi = (() => {
       }, { skeleton: { kind: "card", lines: 1 } });
     }
     loadLimitSaya();
+
+    // FITUR Uang Harian Dinamis Berdasarkan Absensi: kartu HANYA tampil kalau
+    // Tenant sudah opt-in (aktif=True) -- tenant yang belum mengaktifkan
+    // (mayoritas) tidak melihat kartu ini sama sekali, supaya halaman
+    // Absensi tetap seperti sebelumnya untuk mereka.
+    (async () => {
+      let cfg;
+      try {
+        cfg = await MugenApi.get("/api/uang-harian-dinamis/config", { useCache: true });
+      } catch (e) {
+        return; // gagal diam-diam -- fitur opsional, tidak boleh mengganggu halaman Absensi utama
+      }
+      if (!cfg.aktif) return;
+
+      const rincianCard = MugenUI.el("div", { class: "card" });
+      root.appendChild(rincianCard);
+      rincianCard.appendChild(MugenUI.el("h2", {}, "Rincian Uang Harian"));
+      rincianCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Toko ini memakai Uang Harian Dinamis (mengikuti Absensi) -- cek rincian perhitungan Uang Harian " +
+        "untuk tanggal tertentu di sini."));
+      const inputTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+      const btnCek = MugenUI.el("button", {}, "Cek Rincian");
+      rincianCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
+      rincianCard.appendChild(inputTanggal);
+      rincianCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnCek));
+
+      btnCek.addEventListener("click", async () => {
+        if (!inputTanggal.value) return;
+        let b;
+        try {
+          b = await MugenUI.withButtonLoading(btnCek, () =>
+            MugenApi.get(`/api/uang-harian-dinamis/breakdown?tanggal=${inputTanggal.value}`));
+        } catch (e) {
+          MugenUI.infoModal({ title: "Gagal", body: MugenUI.el("p", {}, e.detail && e.detail.detail ? e.detail.detail : e.message) });
+          return;
+        }
+        MugenUI.infoModal({ title: `Rincian Uang Harian — ${inputTanggal.value}`, body: tampilkanBreakdown(b) });
+      });
+    })();
 
     // ---- Ajukan Koreksi (lupa Check In/Check Out) ----
     const koreksiCard = MugenUI.el("div", { class: "card" });
@@ -433,6 +530,19 @@ const PageAbsensi = (() => {
     card.appendChild(MugenUI.el("label", {}, "Limit Pulang Lebih Awal (menit/bulan)"));
     card.appendChild(inputBatasPulangAwal);
 
+    // FITUR Uang Harian Dinamis: field BARU, KHUSUS dipakai mesin kalkulasi
+    // Uang Harian Dinamis (menu Pengaturan > Uang Harian) -- TIDAK memengaruhi
+    // status/badge/keterangan Absensi di atas sama sekali (pulang lebih awal
+    // di Absensi tetap dihitung tanpa toleransi seperti sebelumnya).
+    card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Toleransi Pulang Lebih Awal"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "KHUSUS dipakai fitur Uang Harian Dinamis (menu Pengaturan > Uang Harian) sebagai pasangan Toleransi " +
+      "Masuk di atas -- TIDAK mengubah status/catatan Absensi di halaman ini sama sekali."));
+    const inputToleransiPulangAwal = MugenUI.el("input", { type: "number", min: "0",
+      value: String(settings.toleransi_pulang_awal_menit ?? 0) });
+    card.appendChild(MugenUI.el("label", {}, "Toleransi Pulang Awal (menit)"));
+    card.appendChild(inputToleransiPulangAwal);
+
     card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Lokasi Toko"));
     const inputLokasiNama = MugenUI.el("input", { type: "text", value: settings.lokasi_nama || "", placeholder: "Contoh: Rivoir Barbershop Pusat" });
     const inputLat = MugenUI.el("input", { type: "text", value: settings.lokasi_latitude != null ? String(settings.lokasi_latitude) : "", placeholder: "Latitude", readonly: "" });
@@ -486,6 +596,7 @@ const PageAbsensi = (() => {
         lokasi_nama: inputLokasiNama.value.trim(),
         batas_menit_terlambat: Number(inputBatasTerlambat.value),
         batas_menit_pulang_awal: Number(inputBatasPulangAwal.value),
+        toleransi_pulang_awal_menit: Number(inputToleransiPulangAwal.value),
       };
       if (inputLat.value) body2.lokasi_latitude = Number(inputLat.value);
       if (inputLng.value) body2.lokasi_longitude = Number(inputLng.value);
