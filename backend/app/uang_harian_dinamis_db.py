@@ -328,13 +328,84 @@ def evaluasi_hari(barber: dict, tanggal: str, config: dict, akumulasi_hari: dict
 # database.py bisa mengganti pemanggilan tanpa mengubah caller lain.
 # ---------------------------------------------------------------------------
 
+def _hasil_sistem_lama(barber: dict, tanggal: str, tenant_id, sumber: str) -> dict:
+    """Breakdown SATU hari pakai sistem LAMA (murni jumlah service acuan
+    hari itu >= target) -- SAMA PERSIS logika
+    database.hitung_uang_harian_per_hari() versi lama. Dipakai DUA jalur:
+    (1) Tenant belum opt-in sama sekali (sumber="tenant_belum_opt_in"), (2)
+    Tenant SUDAH opt-in tapi TANGGAL INI tidak punya data Absensi sama
+    sekali (sumber="tanggal_tanpa_absensi", lihat catatan panjang di
+    evaluasi_hari_dengan_fallback() -- termasuk SEMUA tanggal dari sebelum
+    fitur Absensi ada)."""
+    target = target_uang_harian_per_hari(tenant_id=tenant_id)
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    jumlah = _jumlah_service_acuan_hari(barber["id"], tanggal, acuan_ids)
+    nominal_dasar = int(barber["uang_harian"] or 0)
+    terpenuhi = jumlah >= target
+    return {
+        "tanggal": tanggal,
+        "sumber": sumber,
+        "uang_harian_dasar": nominal_dasar,
+        "service": {"mode": "SYARAT_LAMA", "jumlah": jumlah, "minimal": target, "terpenuhi": terpenuhi,
+                    "potongan_persen": 0 if terpenuhi else 100},
+        "potongan_persen": 0 if terpenuhi else 100,
+        "uang_harian_final": nominal_dasar if terpenuhi else 0,
+    }
+
+
+def _evaluasi_hari_dengan_fallback(barber: dict, tanggal: str, tenant_id, config: dict,
+                                    akumulasi_bulan_ini: dict) -> dict:
+    """PERBAIKAN (feedback Owner): SEBELUM ini, tanggal yang tidak punya
+    data Absensi sama sekali (termasuk SELURUH riwayat dari sebelum fitur
+    Absensi ada -- barber belum pernah Check In sama sekali di tanggal itu)
+    tetap "dipaksa" lewat mesin baru, yang secara diam-diam menganggap tidak
+    ada pelanggaran apa pun (karena tidak ada data untuk dievaluasi) --
+    hasilnya TIDAK KONSISTEN antara breakdown per-hari (tampak 100% cair,
+    karena tidak ada pelanggaran terdeteksi) dan agregat bulanan/rentang
+    (tampak Rp0, karena tanggal itu tidak pernah ikut masuk perulangan sama
+    sekali). Sekarang KEDUANYA konsisten: tanggal yang TIDAK punya baris
+    attendance_logs otomatis fallback ke sistem LAMA (jumlah service vs
+    target) untuk tanggal itu SAJA -- riwayat lama sebelum Absensi ada tidak
+    pernah berubah jadi Rp0 begitu saja hanya karena Tenant mengaktifkan
+    fitur ini. Tanggal yang PUNYA data Absensi tetap dievaluasi penuh lewat
+    mesin baru seperti biasa."""
+    if tanggal in akumulasi_bulan_ini:
+        hasil = evaluasi_hari(barber, tanggal, config, akumulasi_bulan_ini)
+        hasil["sumber"] = "absensi"
+        return hasil
+    return _hasil_sistem_lama(barber, tanggal, tenant_id, sumber="tanggal_tanpa_absensi")
+
+
+def _tanggal_dengan_service_bulan(barber_id: int, tenant_id, tahun: int, bulan: int) -> dict:
+    """{tanggal: jumlah_service_acuan} -- dipakai bersama _akumulasi_limit_bulan()
+    supaya hitung_uang_harian_dinamis_bulan()/_rentang() mencakup SEMUA
+    tanggal yang relevan (punya Absensi ATAU punya transaksi service, union
+    keduanya) -- bukan cuma tanggal yang punya Absensi (lihat catatan
+    _evaluasi_hari_dengan_fallback() di atas)."""
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
+               FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+               WHERE t.barber_id = ? AND t.tanggal LIKE ?""",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
+        ).fetchall()
+    hasil: dict[str, int] = {}
+    for r in rows:
+        if r["service_id"] in acuan_ids:
+            hasil[r["tanggal"]] = hasil.get(r["tanggal"], 0) + r["jumlah"]
+    return hasil
+
+
 def hitung_uang_harian_dinamis_bulan(barber: dict, tahun: int, bulan: int) -> int:
     tenant_id = barber.get("tenant_id")
     config = get_config(tenant_id)
     akumulasi = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
+    tanggal_service = _tanggal_dengan_service_bulan(barber["id"], tenant_id, tahun, bulan)
+    semua_tanggal = set(akumulasi) | set(tanggal_service)
     total = 0
-    for tanggal in akumulasi:
-        total += evaluasi_hari(barber, tanggal, config, akumulasi)["uang_harian_final"]
+    for tanggal in semua_tanggal:
+        total += _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config, akumulasi)["uang_harian_final"]
     return total
 
 
@@ -353,9 +424,12 @@ def hitung_uang_harian_dinamis_rentang(barber: dict, tanggal_mulai: str, tanggal
         if (tahun, bulan) not in akumulasi_cache:
             akumulasi_cache[(tahun, bulan)] = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
         akumulasi = akumulasi_cache[(tahun, bulan)]
-        for tanggal in akumulasi:
+        tanggal_service = _tanggal_dengan_service_bulan(barber["id"], tenant_id, tahun, bulan)
+        semua_tanggal = set(akumulasi) | set(tanggal_service)
+        for tanggal in semua_tanggal:
             if tanggal_mulai <= tanggal <= tanggal_selesai:
-                total += evaluasi_hari(barber, tanggal, config, akumulasi)["uang_harian_final"]
+                total += _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config,
+                                                          akumulasi)["uang_harian_final"]
         bulan += 1
         if bulan > 12:
             bulan = 1
@@ -370,22 +444,9 @@ def breakdown_hari(barber: dict, tanggal: str) -> dict:
     tenant_id = barber.get("tenant_id")
     config = get_config(tenant_id)
     if not config["aktif"]:
-        target = target_uang_harian_per_hari(tenant_id=tenant_id)
-        acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
-        jumlah = _jumlah_service_acuan_hari(barber["id"], tanggal, acuan_ids)
-        nominal_dasar = int(barber["uang_harian"] or 0)
-        terpenuhi = jumlah >= target
-        return {
-            "tanggal": tanggal,
-            "aktif": False,
-            "uang_harian_dasar": nominal_dasar,
-            "service": {"mode": "SYARAT_LAMA", "jumlah": jumlah, "minimal": target, "terpenuhi": terpenuhi,
-                        "potongan_persen": 0 if terpenuhi else 100},
-            "potongan_persen": 0 if terpenuhi else 100,
-            "uang_harian_final": nominal_dasar if terpenuhi else 0,
-        }
+        return _hasil_sistem_lama(barber, tanggal, tenant_id, sumber="tenant_belum_opt_in")
     tahun, bulan = int(tanggal[:4]), int(tanggal[5:7])
     akumulasi = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
-    hasil = evaluasi_hari(barber, tanggal, config, akumulasi)
+    hasil = _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config, akumulasi)
     hasil["aktif"] = True
     return hasil

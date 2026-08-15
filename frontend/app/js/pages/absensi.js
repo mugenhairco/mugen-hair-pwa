@@ -167,7 +167,18 @@ const PageAbsensi = (() => {
   function tampilkanBreakdown(b) {
     const baris = [_barisBreakdown("Uang Harian Dasar", MugenUI.formatRupiah(b.uang_harian_dasar))];
 
-    if (!b.aktif) {
+    // PERBAIKAN (feedback Owner): tanggal yang TIDAK punya data Absensi sama
+    // sekali (termasuk seluruh riwayat sebelum fitur Absensi ada) otomatis
+    // jatuh ke sistem lama (backend: uang_harian_dinamis_db.py::
+    // _evaluasi_hari_dengan_fallback()) -- dikenali di sini dari TIDAK
+    // adanya `b.keterlambatan` (bukan cuma `b.aktif`, karena hari ini bisa
+    // saja jatuh ke sistem lama WALAU Tenant-nya sendiri sudah aktif).
+    const pakaiSistemLama = !b.keterlambatan;
+    if (pakaiSistemLama) {
+      if (b.sumber === "tanggal_tanpa_absensi") {
+        baris.push(MugenUI.el("div", { class: "subtitle", style: "padding:6px 0;" },
+          "Tanggal ini tidak punya data Absensi (mis. sebelum fitur Absensi ada) -- dihitung pakai sistem lama (jumlah service), TIDAK terpengaruh Uang Harian Dinamis."));
+      }
       baris.push(_barisBreakdown("Service (sistem lama)", `${b.service.jumlah} / ${b.service.minimal}`));
       baris.push(_barisBreakdown("Syarat Service", b.service.terpenuhi ? "✓ Terpenuhi" : "✕ Tidak Terpenuhi"));
     } else {

@@ -626,7 +626,16 @@
 // transparan per tanggal) di halaman Absensi Barber saat fitur ini aktif
 // (pages/absensi.js). TIDAK ADA perubahan pada modul Absensi (attendance)
 // itu sendiri.
-const ASSET_VERSION = "107";
+// v107 -> v108: PERBAIKAN Uang Harian Dinamis (feedback Owner) -- tanggal
+// yang TIDAK punya data Absensi sama sekali (termasuk SELURUH riwayat dari
+// sebelum fitur Absensi ada) sebelumnya bisa salah dihitung (Rp0 di
+// agregat bulanan, TIDAK KONSISTEN dengan breakdown per-hari yang tampak
+// 100% cair) begitu Tenant mengaktifkan fitur ini -- sekarang tanggal
+// tanpa data Absensi otomatis fallback ke sistem LAMA (jumlah service vs
+// target) untuk tanggal itu SAJA, konsisten di breakdown maupun agregat
+// (pages/absensi.js: kartu Rincian menampilkan catatan penjelasan saat ini
+// terjadi).
+const ASSET_VERSION = "108";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

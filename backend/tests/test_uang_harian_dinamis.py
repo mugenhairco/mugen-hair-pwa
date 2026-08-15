@@ -214,8 +214,11 @@ def test_koreksi_pending_tidak_finalisasi(single_tenant, monkeypatch):
     attendance_db.buat_pengajuan_koreksi(barber["id"], "2026-08-03", "check_in", "09:35",
                                           "Lupa check-in", tenant_id=tenant_id)
     b = uhd.breakdown_hari(barber, "2026-08-03")
-    assert b["keterlambatan"]["menit"] == 0  # belum ada log resmi sama sekali
-    assert b["uang_harian_final"] == 60000
+    # Belum ada log Absensi RESMI sama sekali (koreksi masih pending) --
+    # fallback ke sistem lama (PERBAIKAN, lihat _evaluasi_hari_dengan_fallback()),
+    # tanpa service sama sekali di tanggal ini -> target tidak tercapai -> Rp0.
+    assert b["sumber"] == "tanggal_tanpa_absensi"
+    assert b["uang_harian_final"] == 0
 
 
 # 16. Koreksi Approved -- data koreksi jadi resmi, dihitung ulang.
@@ -242,8 +245,10 @@ def test_koreksi_ditolak_tidak_mengubah_data(single_tenant, monkeypatch):
                                                      "Lupa check-in", tenant_id=tenant_id)
     attendance_db.set_status_koreksi(koreksi["id"], "ditolak")
     b = uhd.breakdown_hari(barber, "2026-08-03")
-    assert b["keterlambatan"]["menit"] == 0
-    assert b["uang_harian_final"] == 60000
+    # Koreksi ditolak TIDAK PERNAH menyentuh attendance_logs -- tetap tidak
+    # ada log Absensi resmi, fallback sistem lama sama seperti kasus pending.
+    assert b["sumber"] == "tanggal_tanpa_absensi"
+    assert b["uang_harian_final"] == 0
 
 
 # 18+19. Service Rule -- terpenuhi vs tidak terpenuhi (mode SYARAT).
@@ -317,6 +322,64 @@ def test_payroll_bulan_konsisten_dengan_breakdown_harian(single_tenant, monkeypa
     total_manual = (uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"]
                      + uhd.breakdown_hari(barber, "2026-08-05")["uang_harian_final"])
     assert total_bulan == total_manual == 60000 + 48000
+
+
+# PERBAIKAN (feedback Owner): tanggal yang TIDAK punya data Absensi sama
+# sekali (termasuk seluruh riwayat sebelum fitur Absensi ada) harus fallback
+# ke sistem LAMA (jumlah service vs target), BUKAN otomatis Rp0.
+def test_tanggal_tanpa_absensi_fallback_sistem_lama(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id)
+    sid = _service(tenant_id)
+    database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    # TIDAK ADA check-in sama sekali untuk tanggal ini -- hanya transaksi service
+    # (meniru data lama dari sebelum fitur Absensi ada).
+    _isi_service(barber["id"], "2020-01-15", sid, 2)
+    b = uhd.breakdown_hari(barber, "2020-01-15")
+    assert b["sumber"] == "tanggal_tanpa_absensi"
+    assert b["uang_harian_final"] == 60000  # target tercapai -> cair penuh, BUKAN Rp0
+    # jumlah service TIDAK memenuhi target -> tetap Rp0 (perilaku sistem lama yang benar)
+    _isi_service(barber["id"], "2020-01-16", sid, 1)
+    b2 = uhd.breakdown_hari(barber, "2020-01-16")
+    assert b2["uang_harian_final"] == 0
+
+
+# Breakdown per-hari dan agregat bulanan HARUS konsisten untuk tanggal tanpa
+# Absensi (sebelumnya breakdown_hari() menampilkan 100% tapi
+# hitung_uang_harian_dinamis_bulan() menghitungnya Rp0 -- bug, sudah diperbaiki).
+def test_breakdown_dan_agregat_bulanan_konsisten_untuk_tanggal_tanpa_absensi(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id)
+    sid = _service(tenant_id)
+    database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    _isi_service(barber["id"], "2020-01-15", sid, 2)  # tanpa Absensi, target tercapai
+    breakdown_final = uhd.breakdown_hari(barber, "2020-01-15")["uang_harian_final"]
+    bulan_total = uhd.hitung_uang_harian_dinamis_bulan(barber, 2020, 1)
+    assert breakdown_final == bulan_total == 60000
+
+
+# Bulan CAMPURAN: sebagian tanggal punya Absensi (dievaluasi mesin baru),
+# sebagian lain hanya punya transaksi service tanpa Absensi (fallback sistem
+# lama) -- total bulan harus menjumlahkan HASIL BENAR dari keduanya.
+def test_bulan_campuran_absensi_dan_tanpa_absensi(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id, batas_menit_terlambat=120)
+    sid = _service(tenant_id)
+    database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    # Tanggal 1: ADA Absensi, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
+    _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-01", 9, 35)
+    # Tanggal 15: TIDAK ADA Absensi, hanya service (fallback), target tercapai -> 60000
+    _isi_service(barber["id"], "2026-08-15", sid, 2)
+    # Tanggal 20: TIDAK ADA Absensi, hanya service (fallback), target TIDAK tercapai -> 0
+    _isi_service(barber["id"], "2026-08-20", sid, 1)
+    total = uhd.hitung_uang_harian_dinamis_bulan(barber, 2026, 8)
+    assert total == 48000 + 60000 + 0
 
 
 # Validasi tambahan: potongan% di luar 0-100 ditolak (kualitas input, bukan
