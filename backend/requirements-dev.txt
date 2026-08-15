@@ -12,3 +12,17 @@ httpx>=0.27.0
 # barbershop/logo di header benar milik tenant yang mencetak, bukan
 # tenant lain -- lihat test_branding.py::test_pdf_header_ikut_tenant_yang_benar).
 pypdf>=4.0.0
+# BUGFIX (CI "Backend tests" merah sejak run #331/#335, semua tes PDF di
+# test_branding.py/test_maintenance_pdf_dan_urutan.py/test_produk_pdf.py):
+# pypdf>=4.0.0 di atas SELALU mengimpor `cryptography` saat di-import
+# (lihat pypdf/_crypt_providers/__init__.py), TIDAK PERNAH dibutuhkan
+# secara eksplisit di sini sebelumnya jadi hanya "kebetulan" terpasang
+# lewat paket sistem (bukan pip) di sebagian environment (mis. runner CI) --
+# begitu paket sistem itu butuh `cffi` (binding lama) tapi `cffi` sendiri
+# tidak terpasang, pypdf gagal diimpor dengan pyo3_runtime.PanicException
+# (BUKAN ImportError biasa, jadi TIDAK bisa ditangkap try/except pypdf
+# sendiri) -- meledakkan SEMUA tes yang membaca isi PDF balik lewat
+# `_teks_pdf()`. Pin eksplisit `cffi` di sini memastikan pip SELALU
+# menyediakan versi yang cocok dengan Python yang dipakai, menimpa
+# (shadow) paket sistem yang rusak/tidak lengkap di environment mana pun.
+cffi>=1.16.0

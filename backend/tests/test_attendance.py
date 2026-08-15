@@ -718,22 +718,24 @@ def test_hapus_riwayat_absensi_semua_barber(single_tenant, monkeypatch):
     assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_b) == []
 
 
-def test_hapus_riwayat_absensi_tidak_ikut_hapus_tenant_lain(two_tenants):
+def test_hapus_riwayat_absensi_tidak_ikut_hapus_tenant_lain(two_tenants, monkeypatch):
     tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
     barber_a = _barber(tenant_a, "Barber A")
     barber_b = _barber(tenant_b, "Barber B")
     _atur_lokasi_toko(tenant_a)
     _atur_lokasi_toko(tenant_b)
+    # BUGFIX (flaky -- gagal kalau dijalankan di luar jam toko buka default
+    # 09:00-18:00 WIB, mis. tengah malam): sebelumnya tidak dikunci lewat
+    # monkeypatch _sekarang_wib() seperti test_hapus_riwayat_absensi_semua_barber()
+    # tepat di atasnya, jadi check_in() memakai jam SUNGGUHAN saat tes
+    # dijalankan (bisa ditolak "Belum waktunya Check In" di luar jam kerja).
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
     attendance_db.check_in(tenant_a, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
     attendance_db.check_in(tenant_b, barber_b, TOKO_LAT, TOKO_LNG, accuracy=15)
 
     attendance_db.hapus_riwayat_absensi(tenant_a)
-    assert attendance_db.get_log_list(tenant_a, tanggal=_hari_ini())[0]["check_in_at"] is None
-    assert attendance_db.get_log_list(tenant_b, tanggal=_hari_ini())[0]["check_in_at"] is not None
-
-
-def _hari_ini():
-    return datetime.now(WIB).strftime("%Y-%m-%d")
+    assert attendance_db.get_log_list(tenant_a, tanggal="2026-08-13")[0]["check_in_at"] is None
+    assert attendance_db.get_log_list(tenant_b, tanggal="2026-08-13")[0]["check_in_at"] is not None
 
 
 def test_api_hapus_riwayat_owner_dan_staff_sama_sama_boleh(single_tenant, monkeypatch):
