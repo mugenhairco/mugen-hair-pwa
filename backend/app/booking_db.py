@@ -842,7 +842,8 @@ def get_booking(booking_id: int):
 
 
 def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None,
-                      tanggal: str = None, status_booking: str = None, tenant_id: int = None) -> list:
+                      tanggal: str = None, dari_tanggal: str = None,
+                      status_booking: str = None, tenant_id: int = None) -> list:
     q = """SELECT bk.*, b.nama AS nama_barber FROM bookings bk
            JOIN barbers b ON b.id = bk.barber_id WHERE 1=1"""
     params = []
@@ -856,6 +857,11 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         q += " AND bk.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND bk.tanggal = ?"; params.append(tanggal)
+    # FITUR Booking "Akan Datang" (tampilan kartu operasional Barber, lihat
+    # pages/booking.js): tanpa batas atas -- jumlah booking per barber wajar
+    # untuk query terbuka ke depan, TIDAK butuh paginasi di tahap ini.
+    if dari_tanggal is not None:
+        q += " AND bk.tanggal >= ?"; params.append(dari_tanggal)
     if status_booking is not None:
         q += " AND bk.status_booking = ?"; params.append(status_booking)
     q += " ORDER BY bk.tanggal DESC, bk.jam_mulai DESC"

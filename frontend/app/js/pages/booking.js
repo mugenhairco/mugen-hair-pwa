@@ -154,7 +154,7 @@ const PageBooking = (() => {
     root.appendChild(MugenUI.el("h1", {}, "Booking"));
 
     if (!isAdmin) {
-      await renderBarberList(root);
+      await renderBarberTabs(root);
       return;
     }
 
@@ -201,7 +201,133 @@ const PageBooking = (() => {
   }
 
   // ================= Barber: hanya milik sendiri =================
-  async function renderBarberList(root) {
+  // REVISI Tampilan Operasional Harian (feedback Owner): Barber sekarang
+  // punya 3 tab -- "Hari Ini" (kartu, HANYA booking hari ini, diurut jam
+  // paling awal->akhir, booking yang sudah lewat diredupkan + badge
+  // "Selesai", booking berikutnya ditandai badge "Berikutnya"), "Akan
+  // Datang" (kartu, dikelompokkan per tanggal, seluruh booking aktif
+  // SETELAH hari ini, tanpa batas atas), dan "Semua Booking" (TABEL LAMA,
+  // TIDAK diubah sama sekali -- filter bulan/tahun persis seperti
+  // sebelumnya, lihat renderBarberSemuaBooking()). Tab baru murni
+  // tampilan (read-only) -- backend /api/booking/mine SUDAH membatasi
+  // lewat barber_id dari akun login (bukan parameter apa pun yang
+  // dikirim), jadi Barber tetap TIDAK BISA melihat booking Barber lain.
+  const HARI_LENGKAP = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
+  function isoHariIni(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function tambahHari(iso, jumlah) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d + jumlah);
+    return isoHariIni(dt);
+  }
+
+  // Satu kartu booking (dipakai tab "Hari Ini" & "Akan Datang") -- `status`:
+  // null (normal), "lewat" (redup + badge "Selesai"), "berlangsung" (badge
+  // "Berlangsung", sedang dikerjakan SEKARANG), "berikutnya" (badge biru +
+  // ditonjolkan, booking PERTAMA yang belum mulai).
+  const STATUS_KARTU_BADGE = {
+    lewat: { label: "Selesai", kelas: "badge-libur" },
+    berlangsung: { label: "Berlangsung", kelas: "badge-warning" },
+    berikutnya: { label: "Berikutnya", kelas: "badge-success" },
+  };
+
+  function bookingCard(r, status) {
+    const kelas = "booking-card" + (status === "lewat" ? " booking-card-lewat" : "")
+      + (status === "berikutnya" ? " booking-card-berikutnya" : "");
+    const badge = STATUS_KARTU_BADGE[status];
+    const baris1 = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:10px;" }, [
+      MugenUI.el("span", { class: "booking-card-jam" }, `${r.jam_mulai}–${r.jam_selesai}`),
+      badge ? MugenUI.el("span", { class: "badge " + badge.kelas }, badge.label) : "",
+    ]);
+    const card = MugenUI.el("div", { class: kelas }, [
+      baris1,
+      MugenUI.el("div", { class: "booking-card-nama" }, r.customer_nama),
+      MugenUI.el("div", { class: "booking-card-service" }, r.daftar_service || "-"),
+      MugenUI.el("div", { class: "booking-card-wa" }, waLinkCell(r.customer_whatsapp)),
+    ]);
+    return card;
+  }
+
+  // ================= Tab "Hari Ini" =================
+  async function renderBarberHariIni(body) {
+    const card = MugenUI.el("div", { class: "card" });
+    body.appendChild(card);
+    card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+    const today = new Date();
+    const todayIso = isoHariIni(today);
+    try {
+      const data = await MugenApi.get(`/api/booking/mine?tanggal=${todayIso}`, { useCache: true });
+      card.innerHTML = "";
+      // AUDIT SINKRONISASI: lihat catatan __offline di renderBarberSemuaBooking().
+      if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      const rows = (Array.isArray(data) ? data : [])
+        .filter((r) => r.status_booking !== "dibatalkan")
+        .sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai));
+      card.appendChild(MugenUI.el("h2", {}, `${HARI_LENGKAP[today.getDay()]}, ${MugenUI.namaTanggalIndo(todayIso)}`));
+      card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" }, `${rows.length} Booking Hari Ini`));
+      if (!rows.length) {
+        card.appendChild(MugenUI.emptyState("Belum ada booking hari ini."));
+        return;
+      }
+      const jamSekarang = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
+      const idxBerikutnya = rows.findIndex((r) => r.jam_mulai > jamSekarang);
+      const list = MugenUI.el("div", { class: "booking-card-list" });
+      rows.forEach((r, i) => {
+        let status = null;
+        if (r.jam_selesai <= jamSekarang) status = "lewat";
+        else if (r.jam_mulai <= jamSekarang) status = "berlangsung";
+        else if (i === idxBerikutnya) status = "berikutnya";
+        list.appendChild(bookingCard(r, status));
+      });
+      card.appendChild(list);
+    } catch (e) {
+      card.innerHTML = "";
+      card.appendChild(MugenUI.errorState(e.message));
+    }
+  }
+
+  // ================= Tab "Akan Datang" =================
+  // Seluruh booking aktif MULAI BESOK, tanpa batas atas (dikelompokkan per
+  // tanggal) -- "Hari Ini" sudah punya tab sendiri, jadi tab ini SENGAJA
+  // tidak mengulang tanggal hari ini supaya tidak duplikat antar tab.
+  async function renderBarberAkanDatang(body) {
+    const card = MugenUI.el("div", { class: "card" });
+    body.appendChild(card);
+    card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+    const besokIso = tambahHari(isoHariIni(new Date()), 1);
+    try {
+      const data = await MugenApi.get(`/api/booking/mine?dari_tanggal=${besokIso}`, { useCache: true });
+      card.innerHTML = "";
+      if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      const rows = (Array.isArray(data) ? data : [])
+        .filter((r) => r.status_booking !== "dibatalkan")
+        .sort((a, b) => (a.tanggal + a.jam_mulai).localeCompare(b.tanggal + b.jam_mulai));
+      if (!rows.length) {
+        card.appendChild(MugenUI.el("h2", {}, "Akan Datang"));
+        card.appendChild(MugenUI.emptyState("Belum ada booking yang akan datang."));
+        return;
+      }
+      let tanggalTerakhir = null;
+      rows.forEach((r) => {
+        if (r.tanggal !== tanggalTerakhir) {
+          tanggalTerakhir = r.tanggal;
+          const d = new Date(r.tanggal + "T00:00:00");
+          card.appendChild(MugenUI.el("div", { class: "booking-day-header" },
+            `${HARI_LENGKAP[d.getDay()]}, ${MugenUI.namaTanggalIndo(r.tanggal)}`));
+        }
+        card.appendChild(bookingCard(r, null));
+      });
+    } catch (e) {
+      card.innerHTML = "";
+      card.appendChild(MugenUI.errorState(e.message));
+    }
+  }
+
+  // ================= Tab "Semua Booking" (TIDAK diubah) =================
+  async function renderBarberSemuaBooking(root) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     const today = new Date();
@@ -238,6 +364,29 @@ const PageBooking = (() => {
     selBulan.addEventListener("change", load);
     selTahun.addEventListener("change", load);
     load();
+  }
+
+  async function renderBarberTabs(root) {
+    const tabItems = [
+      { key: "Hari Ini", label: "Hari Ini" },
+      { key: "Akan Datang", label: "Akan Datang" },
+      { key: "Semua Booking", label: "Semua Booking" },
+    ];
+    const body = MugenUI.el("div");
+
+    async function renderBody(activeTab) {
+      body.innerHTML = "";
+      if (activeTab === "Hari Ini") await renderBarberHariIni(body);
+      else if (activeTab === "Akan Datang") await renderBarberAkanDatang(body);
+      else if (activeTab === "Semua Booking") await renderBarberSemuaBooking(body);
+    }
+
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    root.appendChild(tabsCtl.bar);
+    root.appendChild(body);
+    requestAnimationFrame(tabsCtl.moveIndicator);
+
+    renderBody(tabsCtl.active);
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================

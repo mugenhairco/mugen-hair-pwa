@@ -833,6 +833,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS blokir_sampai_verifikasi INTEGER NOT NULL DEFAULT 0;
 
+-- FITUR Izin Lokasi APK Android -- lihat lokasi_user_migrasi.py (jalur
+-- SQLite, SAMA PERSIS niatnya) + routers/auth_router.py::simpan_lokasi().
+-- "Lokasi TERAKHIR diketahui" per akun, best-effort, nullable, TIDAK ADA
+-- default wajib -- baris lama TIDAK ikut berubah sama sekali.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lat DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lng DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_updated_at TEXT;
+
 -- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
 -- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).
 -- BUGFIX DEPLOY: `user_id` SENGAJA TANPA "REFERENCES users(id)" (pola SAMA

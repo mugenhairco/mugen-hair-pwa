@@ -1191,6 +1191,31 @@ body.book-public-active {
 .book-calendar-cell.selected { background: var(--book-grad-primary); color: #fff; border-color: var(--accent); font-weight: 700; box-shadow: var(--book-shadow-glow); }
 .book-calendar-cell:hover:not(.disabled):not(.selected) { border-color: var(--accent); background: var(--bg-card); }
 
+/* FITUR Tampilan Operasional Harian Barber (tab "Hari Ini"/"Akan Datang",
+   lihat pages/booking.js::bookingCard()) -- kartu ringkas untuk dibaca
+   cepat di tablet, TIDAK menggantikan tabel "Semua Booking" yang sudah ada. */
+.booking-card-list { display: flex; flex-direction: column; gap: 12px; }
+.booking-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 12px;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.booking-card-list .booking-card { margin-bottom: 0; }
+.booking-card-lewat { opacity: 0.5; }
+.booking-card-berikutnya { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.booking-card-jam { font-size: 17px; font-weight: 700; }
+.booking-card-nama { font-size: 15px; font-weight: 600; }
+.booking-card-service { font-size: 13px; color: var(--text-dim); }
+.booking-card-wa { font-size: 13px; }
+.booking-day-header { font-size: 14px; font-weight: 700; margin: 22px 0 10px; color: var(--text-dim); }
+.booking-day-header:first-child { margin-top: 0; }
+
 .book-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 9px; }
 .book-slot-btn {
   min-height: auto; box-shadow: none;

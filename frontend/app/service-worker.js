@@ -671,7 +671,15 @@
 // opt-in lewat push_notif.js seperti sebelumnya). Kolom baru
 // users.lokasi_lat/lokasi_lng/lokasi_updated_at di backend (lihat
 // lokasi_user_migrasi.py) + endpoint PUT /api/auth/lokasi.
-const ASSET_VERSION = "112";
+// v112 -> v113: FITUR Tampilan Operasional Harian Booking khusus Barber
+// (pages/booking.js) -- 3 tab baru: "Hari Ini" (kartu, HANYA hari ini,
+// diurut jam, booking lewat diredupkan + badge "Selesai", booking
+// berikutnya ditonjolkan badge "Berikutnya"), "Akan Datang" (kartu
+// dikelompokkan per tanggal, tanpa batas atas), "Semua Booking" (TABEL
+// LAMA, TIDAK diubah). Backend: GET /api/booking/mine sekarang menerima
+// `tanggal`/`dari_tanggal` opsional (default None = perilaku lama sama
+// sekali tidak berubah).
+const ASSET_VERSION = "113";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

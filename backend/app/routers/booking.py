@@ -697,8 +697,15 @@ def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = D
 
 
 @router.get("/mine")
-def booking_saya(tahun: int = None, bulan: int = None, user: dict = Depends(require_barber)):
+def booking_saya(tahun: int = None, bulan: int = None, tanggal: str = None, dari_tanggal: str = None,
+                  user: dict = Depends(require_barber)):
+    # FITUR Booking "Hari Ini"/"Akan Datang" (tampilan kartu operasional,
+    # lihat pages/booking.js): `tanggal` (persis satu hari) & `dari_tanggal`
+    # (>= satu tanggal, tanpa batas atas) TIDAK mengubah perilaku lama sama
+    # sekali kalau tidak dikirim (default None) -- tab "Semua Booking" tetap
+    # memakai tahun/bulan seperti sebelumnya.
     barber_id = user.get("barber_id")
     if barber_id is None:
         raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber. Hubungi Owner.")
-    return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
+    return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
+                                        dari_tanggal=dari_tanggal, tenant_id=user["tenant_id"])
