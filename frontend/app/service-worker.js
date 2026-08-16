@@ -635,7 +635,14 @@
 // target) untuk tanggal itu SAJA, konsisten di breakdown maupun agregat
 // (pages/absensi.js: kartu Rincian menampilkan catatan penjelasan saat ini
 // terjadi).
-const ASSET_VERSION = "108";
+// v108 -> v109: FITUR Toleransi Absen Lebih Awal (feedback Owner) --
+// sebelumnya Check In SELALU ditolak keras sebelum Jam Masuk PERSIS (tidak
+// ada cara Barber Check In lebih awal walau cuma untuk bersiap-siap
+// sebelum toko buka). Kartu Pengaturan Absensi (pages/absensi.js) sekarang
+// punya field baru "Toleransi Absen Lebih Awal (menit)" -- opsional per
+// tenant, default 0 (perilaku lama, tanpa perubahan). TIDAK ADA perubahan
+// pada definisi Jam Masuk/status tepat waktu itu sendiri.
+const ASSET_VERSION = "109";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

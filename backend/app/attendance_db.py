@@ -97,6 +97,16 @@ DEFAULT_SETTINGS = {
     # sama sekali, lihat _menit_pulang_awal_baris() di bawah yang TIDAK
     # membaca kolom ini. Default 0 = perilaku lama (tanpa toleransi).
     "toleransi_pulang_awal_menit": 0,
+    # FITUR Toleransi Absen Lebih Awal (feedback Owner): SEBELUMNYA Check In
+    # SELALU ditolak keras sebelum jam_masuk PERSIS (lihat validasi_checkin()
+    # di bawah) -- tidak ada cara Barber check-in lebih awal walau cuma
+    # untuk bersiap-siap sebelum toko buka. Kolom ini (menit, opsional per
+    # tenant) menggeser BATAS AWAL yang diizinkan Check In jadi
+    # (jam_masuk - toleransi_absen_awal_menit), TIDAK mengubah jam_masuk itu
+    # sendiri (tetap acuan tunggal utk "tepat waktu"/keterlambatan, lihat
+    # status_ketepatan di validasi_checkin()). Default 0 = perilaku lama
+    # (harus tepat jam_masuk atau lebih, tanpa perubahan sama sekali).
+    "toleransi_absen_awal_menit": 0,
 }
 
 
@@ -116,7 +126,8 @@ def init_attendance_db():
                 tenant_id                 INTEGER,
                 batas_menit_terlambat     INTEGER NOT NULL DEFAULT 120,
                 batas_menit_pulang_awal   INTEGER NOT NULL DEFAULT 120,
-                toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0
+                toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0,
+                toleransi_absen_awal_menit INTEGER NOT NULL DEFAULT 0
             )
         """)
         # Instalasi SQLite yang SUDAH ADA sebelum kolom-kolom di atas
@@ -129,6 +140,8 @@ def init_attendance_db():
             conn.execute("ALTER TABLE attendance_settings ADD COLUMN batas_menit_pulang_awal INTEGER NOT NULL DEFAULT 120")
         if kolom_settings and "toleransi_pulang_awal_menit" not in kolom_settings:
             conn.execute("ALTER TABLE attendance_settings ADD COLUMN toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0")
+        if kolom_settings and "toleransi_absen_awal_menit" not in kolom_settings:
+            conn.execute("ALTER TABLE attendance_settings ADD COLUMN toleransi_absen_awal_menit INTEGER NOT NULL DEFAULT 0")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance_logs (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,8 +260,9 @@ def _pastikan_baris_settings(conn, tenant_id: int):
     conn.execute(
         """INSERT INTO attendance_settings
                (id, jam_masuk, toleransi_menit, jam_pulang, radius_meter, tenant_id,
-                batas_menit_terlambat, batas_menit_pulang_awal, toleransi_pulang_awal_menit)
-           VALUES (?, '09:00', 15, '20:00', 500, ?, ?, ?, 0) ON CONFLICT DO NOTHING""",
+                batas_menit_terlambat, batas_menit_pulang_awal, toleransi_pulang_awal_menit,
+                toleransi_absen_awal_menit)
+           VALUES (?, '09:00', 15, '20:00', 500, ?, ?, ?, 0, 0) ON CONFLICT DO NOTHING""",
         (tenant_id, tenant_id, BATAS_LIMIT_MENIT_DEFAULT, BATAS_LIMIT_MENIT_DEFAULT),
     )
 
@@ -264,7 +278,7 @@ def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = N
                   jam_pulang: str = None, radius_meter: int = None, lokasi_nama: str = None,
                   lokasi_latitude: float = None, lokasi_longitude: float = None,
                   batas_menit_terlambat: int = None, batas_menit_pulang_awal: int = None,
-                  toleransi_pulang_awal_menit: int = None) -> dict:
+                  toleransi_pulang_awal_menit: int = None, toleransi_absen_awal_menit: int = None) -> dict:
     existing = get_settings(tenant_id)
     jam_masuk_baru = jam_masuk if jam_masuk is not None else existing["jam_masuk"]
     jam_pulang_baru = jam_pulang if jam_pulang is not None else existing["jam_pulang"]
@@ -296,14 +310,24 @@ def set_settings(tenant_id: int, jam_masuk: str = None, toleransi_menit: int = N
                                    else (existing.get("toleransi_pulang_awal_menit") or 0))
     if toleransi_pulang_awal_baru is None or toleransi_pulang_awal_baru < 0:
         raise ValueError("Toleransi Pulang Lebih Awal tidak boleh negatif.")
+    # FITUR Toleransi Absen Lebih Awal: existing[...] bisa None untuk baris
+    # lama yang dibaca sebelum ALTER TABLE sempat jalan -- fallback 0
+    # (perilaku lama, harus tepat jam_masuk), pola sama seperti
+    # toleransi_pulang_awal_baru di atas.
+    toleransi_absen_awal_baru = (toleransi_absen_awal_menit if toleransi_absen_awal_menit is not None
+                                  else (existing.get("toleransi_absen_awal_menit") or 0))
+    if toleransi_absen_awal_baru is None or toleransi_absen_awal_baru < 0:
+        raise ValueError("Toleransi Absen Lebih Awal tidak boleh negatif.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         _pastikan_baris_settings(conn, tenant_id)
         fields, values = ["jam_masuk = ?", "toleransi_menit = ?", "jam_pulang = ?", "radius_meter = ?",
                            "batas_menit_terlambat = ?", "batas_menit_pulang_awal = ?",
-                           "toleransi_pulang_awal_menit = ?", "updated_at = ?"], [
+                           "toleransi_pulang_awal_menit = ?", "toleransi_absen_awal_menit = ?",
+                           "updated_at = ?"], [
             jam_masuk_baru, int(toleransi_baru), jam_pulang_baru, int(radius_baru),
-            int(batas_terlambat_baru), int(batas_pulang_awal_baru), int(toleransi_pulang_awal_baru), now]
+            int(batas_terlambat_baru), int(batas_pulang_awal_baru), int(toleransi_pulang_awal_baru),
+            int(toleransi_absen_awal_baru), now]
         if lokasi_nama is not None:
             fields.append("lokasi_nama = ?"); values.append(lokasi_nama.strip())
         if lokasi_latitude is not None:
@@ -714,8 +738,16 @@ def validasi_checkin(tenant_id: int, barber_id: int, latitude, longitude, accura
     sekarang = _sekarang_wib()
     tanggal = sekarang.strftime("%Y-%m-%d")
     jam_masuk_dt = _gabung_jam(tanggal, settings["jam_masuk"])
-    if sekarang < jam_masuk_dt:
-        raise ValueError(f"Belum waktunya Check In (toko buka jam {settings['jam_masuk']}).")
+    # FITUR Toleransi Absen Lebih Awal (feedback Owner): jam_masuk_dt TETAP
+    # acuan tunggal utk status_ketepatan (tepat_waktu/terlambat) di bawah --
+    # HANYA batas AWAL yang boleh Check In yang digeser mundur, supaya
+    # Barber bisa bersiap-siap sebelum toko buka tanpa mengubah definisi
+    # "tepat waktu" itu sendiri. toleransi_absen_awal_menit bisa None utk
+    # baris lama sebelum ALTER TABLE (fallback 0 = perilaku lama).
+    batas_awal_dt = jam_masuk_dt - timedelta(minutes=settings.get("toleransi_absen_awal_menit") or 0)
+    if sekarang < batas_awal_dt:
+        raise ValueError(f"Belum waktunya Check In (toko buka jam {settings['jam_masuk']}, "
+                          f"Check In bisa dimulai jam {batas_awal_dt.strftime('%H:%M')}).")
     jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
     if sekarang >= jam_pulang_dt:
         raise ValueError("Sudah melewati jam pulang. Tidak bisa Check In lagi hari ini.")

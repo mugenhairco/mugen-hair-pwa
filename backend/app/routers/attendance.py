@@ -91,6 +91,11 @@ class SettingsBody(BaseModel):
     # (pasangan simetris toleransi_menit) tapi TIDAK dipakai logika Absensi
     # itu sendiri, hanya oleh uang_harian_dinamis_db.py.
     toleransi_pulang_awal_menit: int | None = None
+    # FITUR Toleransi Absen Lebih Awal: lihat catatan lengkap di
+    # attendance_db.py::DEFAULT_SETTINGS/validasi_checkin() -- menggeser
+    # batas AWAL yang diizinkan Check In (jam_masuk - nilai ini), TIDAK
+    # mengubah jam_masuk/status tepat_waktu itu sendiri.
+    toleransi_absen_awal_menit: int | None = None
 
 
 @router.put("/settings")
@@ -102,6 +107,7 @@ def ubah_settings(body: SettingsBody, user: dict = Depends(require_permission("i
             lokasi_latitude=body.lokasi_latitude, lokasi_longitude=body.lokasi_longitude,
             batas_menit_terlambat=body.batas_menit_terlambat, batas_menit_pulang_awal=body.batas_menit_pulang_awal,
             toleransi_pulang_awal_menit=body.toleransi_pulang_awal_menit,
+            toleransi_absen_awal_menit=body.toleransi_absen_awal_menit,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

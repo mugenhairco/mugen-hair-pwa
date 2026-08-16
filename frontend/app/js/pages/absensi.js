@@ -520,6 +520,21 @@ const PageAbsensi = (() => {
     card.appendChild(MugenUI.el("label", {}, "Radius Absensi"));
     card.appendChild(selRadius);
 
+    // FITUR Toleransi Absen Lebih Awal (feedback Owner): SEBELUMNYA Check In
+    // SELALU ditolak keras sebelum Jam Masuk PERSIS -- field ini menggeser
+    // BATAS AWAL yang diizinkan Check In (Jam Masuk dikurangi nilai ini),
+    // TIDAK mengubah Jam Masuk/status tepat waktu itu sendiri. Default 0 =
+    // perilaku lama (harus tepat Jam Masuk atau lebih).
+    card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Toleransi Absen Lebih Awal"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Izinkan Barber Check In beberapa menit SEBELUM Jam Masuk (mis. untuk bersiap-siap sebelum toko buka) " +
+      "-- tidak mengubah Jam Masuk atau status tepat waktu/terlambat, hanya menggeser batas paling awal Check In " +
+      "diizinkan. Kosongkan/0 kalau tidak ingin mengizinkan Check In lebih awal sama sekali."));
+    const inputToleransiAbsenAwal = MugenUI.el("input", { type: "number", min: "0",
+      value: String(settings.toleransi_absen_awal_menit ?? 0) });
+    card.appendChild(MugenUI.el("label", {}, "Toleransi Absen Lebih Awal (menit)"));
+    card.appendChild(inputToleransiAbsenAwal);
+
     card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Limit Keterlambatan & Pulang Lebih Awal"));
     card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Setiap barber punya anggaran menit/bulan (otomatis reset tiap tanggal 1) untuk keterlambatan Check In dan untuk pulang lebih awal saat Check Out -- dua anggaran ini TERPISAH. Limit habis TIDAK memblokir Check In/Check Out, hanya dicatat di Keterangan (dengan tanda merah)."));
@@ -597,6 +612,7 @@ const PageAbsensi = (() => {
         batas_menit_terlambat: Number(inputBatasTerlambat.value),
         batas_menit_pulang_awal: Number(inputBatasPulangAwal.value),
         toleransi_pulang_awal_menit: Number(inputToleransiPulangAwal.value),
+        toleransi_absen_awal_menit: Number(inputToleransiAbsenAwal.value),
       };
       if (inputLat.value) body2.lokasi_latitude = Number(inputLat.value);
       if (inputLng.value) body2.lokasi_longitude = Number(inputLng.value);
