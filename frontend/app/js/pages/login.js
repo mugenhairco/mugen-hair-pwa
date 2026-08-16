@@ -189,6 +189,12 @@ const PageLogin = (() => {
         // SETELAH handle() supaya sidebar (elemen #booking-badge) sudah
         // pasti ada di DOM saat badge-nya di-update.
         if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
+        // FITUR Izin Lokasi & Notifikasi Push otomatis KHUSUS APK Android
+        // (native_app.js sendiri yang mengecek Capacitor.isNativePlatform()
+        // -- di browser biasa fungsi ini langsung return, tidak melakukan
+        // apa-apa). Tidak di-await, sama seperti MugenBrand.refresh() di
+        // atas -- tidak boleh menunda perpindahan ke Dashboard.
+        if (typeof MugenNativeApp !== "undefined") MugenNativeApp.izinPertamaKali();
       } catch (e) {
         // FONDASI Multi-Tenant Phase 2.0: 409 = ambigu, backend mengembalikan
         // {message, tenants: [...]} di e.detail.detail (BUKAN string biasa)

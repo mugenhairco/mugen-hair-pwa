@@ -163,6 +163,21 @@ def simpan_tema(body: TemaBody, user: dict = Depends(get_current_user)):
     return diperbarui
 
 
+# FITUR Izin Lokasi APK Android -- "lokasi terakhir" akun ybs, dikirim
+# SEKALI oleh android-app/ (native_app.js) begitu izin lokasi diberikan
+# saat login pertama di dalam APK. Best-effort murni (lihat native_app.js),
+# TIDAK berhubungan dengan Absensi GPS Geofencing (routers/attendance.py).
+class LokasiBody(BaseModel):
+    lat: float
+    lng: float
+
+
+@router.put("/lokasi")
+def simpan_lokasi(body: LokasiBody, user: dict = Depends(get_current_user)):
+    auth_db.set_lokasi_user(user["id"], body.lat, body.lng)
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # FITUR Verifikasi Email & Lupa Kata Sandi -- SEMUA endpoint di bawah ini
 # PUBLIK (tidak butuh login, sesuai sifatnya: pengguna yang memanggilnya

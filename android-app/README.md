@@ -9,11 +9,20 @@ kerja backend atau frontend yang diubah untuk proyek ini.
 
 `capacitor.config.json` diatur dengan `server.url` mengarah LANGSUNG ke
 ```
-https://rivoirsett.com
+https://mugen.rivoirsett.com/app/
 ```
-Artinya WebView aplikasi Android ini selalu menampilkan versi TERBARU dari
-frontend yang sudah live di produksi — persis seperti membuka URL itu di
-Chrome, hanya dibungkus jadi aplikasi native dengan ikon/splash sendiri.
+(bukan root domain `rivoirsett.com` — itu landing page marketing SaaS
+terpisah tanpa fitur login sama sekali, lihat `frontend/index.html`.
+Juga BUKAN `rivoirsett.com/app/` tanpa subdomain tenant — path itu
+sendiri langsung `location.replace()` ke `mugen.rivoirsett.com` lewat
+script hotfix migrasi subdomain di `frontend/app/index.html`, dan
+karena itu lintas-origin, Capacitor akan melempar navigasinya ke
+browser eksternal alih-alih menampilkannya di WebView. Arahkan
+langsung ke subdomain tenant final ini supaya tidak pernah terjadi
+navigasi lintas-origin sama sekali). Artinya WebView aplikasi Android
+ini selalu menampilkan versi TERBARU dari frontend yang sudah live di
+produksi — persis seperti membuka URL itu di Chrome, hanya dibungkus
+jadi aplikasi native dengan ikon/splash sendiri.
 **Konsekuensinya**: setiap kali frontend di-deploy ulang, APK
 yang sudah terinstal otomatis menampilkan versi terbaru TANPA perlu
 build ulang APK — sama seperti PWA pada umumnya. APK hanya perlu dibuild
