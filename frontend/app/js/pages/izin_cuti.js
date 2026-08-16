@@ -176,6 +176,14 @@ const PageIzinCuti = (() => {
 
     resetForm();
     loadList();
+
+    // FITUR Notifikasi Push: kartu terpisah, gagal diam-diam/tidak
+    // ditampilkan sama sekali kalau backend belum enabled (VAPID_* belum
+    // diisi Owner) atau browser tidak mendukung -- lihat
+    // push_notif.js::renderCard(). Barber ditawarkan di sini (bukan cuma
+    // di Pengaturan yang khusus admin/staff) supaya bisa dapat notifikasi
+    // status pengajuan Izin/Cuti-nya sendiri (disetujui/ditolak).
+    if (typeof MugenPushNotif !== "undefined") await MugenPushNotif.renderCard(root);
   }
 
   // ================= OWNER/ADMIN: kelola & approve semua pengajuan =================

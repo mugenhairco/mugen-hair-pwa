@@ -21,12 +21,17 @@ main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA
 dibuat di postgres_schema.py.
 """
 
+import logging
 from datetime import datetime
 
+import push_service
 from database import get_conn, get_barber
+
+logger = logging.getLogger("mugen.izin_cuti")
 
 JENIS_VALID = {"izin", "cuti"}
 STATUS_VALID = {"pending", "disetujui", "ditolak"}
+_JENIS_LABEL = {"izin": "Izin", "cuti": "Cuti"}
 
 
 def init_izin_cuti_db():
@@ -109,6 +114,38 @@ def get_jumlah_pending(tenant_id: int = None) -> int:
     return int(row["jumlah"] or 0)
 
 
+def _kirim_notifikasi_push_pengajuan_baru(pengajuan: dict):
+    """FITUR Notifikasi Push: "best effort" -- TIDAK PERNAH melempar
+    exception/menggagalkan pengajuan utamanya (pola sama persis
+    booking_db.py::_kirim_notifikasi_push_booking_baru()). Ke role
+    admin/staff (yang approve/reject) -- audiens SAMA seperti badge
+    get_jumlah_pending() (izin_notif.js)."""
+    try:
+        push_service.kirim_ke_role(
+            pengajuan.get("tenant_id"), ["admin", "staff"],
+            title=f"Pengajuan {_JENIS_LABEL.get(pengajuan['jenis'], pengajuan['jenis'])} Baru",
+            body=f"{pengajuan.get('nama_barber')} mengajukan {pengajuan['tanggal_mulai']} s/d {pengajuan['tanggal_selesai']}.",
+            url="/app/#/izin-cuti",
+        )
+    except Exception as e:
+        logger.error("Notifikasi push pengajuan #%s GAGAL disiapkan: %s: %s", pengajuan.get("id"), type(e).__name__, e)
+
+
+def _kirim_notifikasi_push_status_pengajuan(pengajuan: dict):
+    """Ke akun login barber ybs SAJA (bukan role admin/staff seperti
+    fungsi di atas) -- status pengajuannya sendiri yang berubah."""
+    try:
+        status_label = "Disetujui" if pengajuan["status"] == "disetujui" else "Ditolak"
+        push_service.kirim_ke_barber(
+            pengajuan["barber_id"],
+            title=f"Pengajuan {_JENIS_LABEL.get(pengajuan['jenis'], pengajuan['jenis'])} {status_label}",
+            body=f"Pengajuan {pengajuan['tanggal_mulai']} s/d {pengajuan['tanggal_selesai']} Anda {status_label.lower()}.",
+            url="/app/#/izin-cuti",
+        )
+    except Exception as e:
+        logger.error("Notifikasi push status pengajuan #%s GAGAL disiapkan: %s: %s", pengajuan.get("id"), type(e).__name__, e)
+
+
 def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_selesai: str,
                     alasan: str, diajukan_oleh: str = "", tenant_id: int = None) -> dict:
     barber = get_barber(barber_id)
@@ -132,7 +169,9 @@ def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_seles
             (barber_id, jenis, tanggal_mulai, tanggal_selesai, alasan, diajukan_oleh, now),
         )
         pengajuan_id = cur.lastrowid
-    return get_pengajuan(pengajuan_id)
+    pengajuan_baru = get_pengajuan(pengajuan_id)
+    _kirim_notifikasi_push_pengajuan_baru(pengajuan_baru)
+    return pengajuan_baru
 
 
 def edit_pengajuan(pengajuan_id: int, jenis: str = None, tanggal_mulai: str = None,
@@ -190,4 +229,6 @@ def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str =
                    tanggal_approval = ?, updated_at = ? WHERE id = ?""",
             (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, pengajuan_id),
         )
-    return get_pengajuan(pengajuan_id)
+    pengajuan_baru = get_pengajuan(pengajuan_id)
+    _kirim_notifikasi_push_status_pengajuan(pengajuan_baru)
+    return pengajuan_baru

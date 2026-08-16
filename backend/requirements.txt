@@ -50,3 +50,12 @@ requests>=2.31.0
 # pemakaian PERTAMA library ini di proyek.
 openpyxl>=3.1.0
 
+# FITUR Notifikasi Push (Web Push/VAPID, termasuk iPhone lewat PWA "Add to
+# Home Screen" sejak iOS 16.4) -- dipakai push_service.py HANYA kalau
+# environment variable VAPID_PRIVATE_KEY/VAPID_PUBLIC_KEY diisi (pola sama
+# seperti boto3/psycopg2-binary di atas: kalau kosong, library ini tetap
+# terpasang tapi tidak pernah dipanggil jaringan, endpoint /api/push/*
+# tetap berfungsi normal -- HANYA kirim_ke_user()/kirim_ke_role() yang jadi
+# no-op, TIDAK pernah crash saat boot).
+pywebpush>=2.0.0
+

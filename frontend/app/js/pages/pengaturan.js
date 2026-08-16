@@ -1751,6 +1751,12 @@ const PagePengaturan = (() => {
       });
 
       await muatUlang();
+
+      // FITUR Notifikasi Push: kartu terpisah, gagal diam-diam/tidak
+      // ditampilkan sama sekali kalau backend belum enabled (VAPID_*
+      // belum diisi Owner) atau browser tidak mendukung -- lihat
+      // push_notif.js::renderCard().
+      if (typeof MugenPushNotif !== "undefined") await MugenPushNotif.renderCard(body);
     }
 
     renderBody();
