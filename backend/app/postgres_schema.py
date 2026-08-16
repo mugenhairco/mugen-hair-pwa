@@ -422,6 +422,21 @@ CREATE TABLE IF NOT EXISTS izin_cuti (
     updated_at        TEXT
 );
 
+-- FITUR Kebijakan Cuti Dinamis (feedback Owner): SATU baris per tenant,
+-- default 0/off penuh -- tenant yang belum membuka kartu "Pengaturan Izin
+-- & Cuti" (menu Pengaturan > Karyawan) TIDAK terpengaruh sama sekali.
+-- HANYA berlaku jenis='cuti' (lihat izin_cuti_db.py::_validasi_kebijakan_cuti()),
+-- 'izin' tidak pernah divalidasi lewat mekanisme ini.
+CREATE TABLE IF NOT EXISTS izin_cuti_settings (
+    tenant_id              INTEGER PRIMARY KEY,
+    kuota_periode_bulan    INTEGER NOT NULL DEFAULT 0,
+    kuota_maksimal_hari    INTEGER NOT NULL DEFAULT 0,
+    kuota_boleh_dipecah    INTEGER NOT NULL DEFAULT 1,
+    h_min_pengajuan        INTEGER NOT NULL DEFAULT 0,
+    maksimal_bersamaan     INTEGER NOT NULL DEFAULT 0,
+    updated_at             TEXT
+);
+
 -- Modul Keuangan (Fase 1): Pemasukan. Cermin persis tabel `pengeluaran`
 -- yang sudah ada (lihat blok CREATE TABLE pengeluaran di atas), sengaja
 -- TIDAK di-ALTER TABLE-kan ke tabel itu -- pemasukan lain di luar
@@ -944,6 +959,28 @@ CREATE TABLE IF NOT EXISTS uang_harian_dinamis_settings (
     service_rule_potongan_persen    INTEGER NOT NULL DEFAULT 0,
     updated_at                       TEXT
 );
+
+-- FITUR Notifikasi Push (Web Push/VAPID, termasuk iPhone lewat PWA "Add to
+-- Home Screen" sejak iOS 16.4): SATU baris per Push Subscription (endpoint
+-- + kunci enkripsi p256dh/auth dari browser) -- SATU akun bisa punya
+-- BANYAK subscription sekaligus (HP + laptop, dst), UNIQUE di endpoint
+-- sendiri (bukan per-user) supaya subscribe ulang dari endpoint yang SAMA
+-- meng-update kunci tanpa duplikat (lihat push_db.py::simpan_subscription()).
+-- `user_id`/`tenant_id` SENGAJA TANPA "REFERENCES ..." (pola SAMA seperti
+-- seluruh tabel lain di file ini -- lihat catatan panjang HOTFIX DEPLOY
+-- tepat di bawah ini untuk kejadian PERSIS sama pada tabel lain).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id         SERIAL PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    tenant_id  INTEGER,
+    endpoint   TEXT NOT NULL,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(endpoint)
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_tenant_id ON push_subscriptions(tenant_id);
 
 -- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
 -- SAMA seperti user_id/tenant_id di tabel lain sepanjang file ini, lihat

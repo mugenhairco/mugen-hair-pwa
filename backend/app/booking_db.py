@@ -39,6 +39,7 @@ import booking_gateway_db
 import database as db
 import file_asset_db
 import pengaturan_identitas
+import push_service
 import r2_storage
 import whatsapp_service
 import whatsapp_templates
@@ -690,6 +691,25 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
         logger.error("Notifikasi WhatsApp booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
 
 
+def _kirim_notifikasi_push_booking_baru(booking: dict):
+    """FITUR Notifikasi Push: dipanggil dari buat_booking() di bawah --
+    "best effort" sama persis _kirim_notifikasi_wa_booking() di atas, TIDAK
+    PERNAH melempar exception maupun menggagalkan booking utamanya kalau
+    push gagal/belum dikonfigurasi Owner (lihat push_service.IS_ENABLED).
+    Dikirim ke role admin/staff (yang mengelola menu Booking) -- audiens
+    SAMA seperti badge/suara "Booking Baru" yang sudah ada (booking_notif.js)."""
+    try:
+        tenant_id = booking.get("tenant_id")
+        push_service.kirim_ke_role(
+            tenant_id, ["admin", "staff"],
+            title="Booking Baru",
+            body=f"{booking.get('customer_nama') or 'Customer'} booking {booking.get('tanggal')} {booking.get('jam_mulai')}.",
+            url="/app/#/booking",
+        )
+    except Exception as e:
+        logger.error("Notifikasi push booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
+
+
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
                   catatan: str = None, tenant_id: int = None) -> dict:
@@ -770,6 +790,7 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # verifikasi_pembayaran() begitu Faspay konfirmasi sukses).
     if metode_pembayaran == "qris":
         _kirim_notifikasi_wa_booking(booking_baru, "reminder_qris")
+    _kirim_notifikasi_push_booking_baru(booking_baru)
     return booking_baru
 
 

@@ -642,7 +642,29 @@
 // punya field baru "Toleransi Absen Lebih Awal (menit)" -- opsional per
 // tenant, default 0 (perilaku lama, tanpa perubahan). TIDAK ADA perubahan
 // pada definisi Jam Masuk/status tepat waktu itu sendiri.
-const ASSET_VERSION = "109";
+// v109 -> v110: FITUR Notifikasi Push (Web Push/VAPID, termasuk iPhone
+// lewat PWA "Add to Home Screen" sejak iOS 16.4) -- js/push_notif.js baru
+// (subscribe/unsubscribe, kartu UI dipakai pages/pengaturan.js tab Profil
+// utk admin/staff DAN pages/izin_cuti.js renderBarberView utk barber),
+// event listener push/notificationclick baru di bawah. Opt-in penuh:
+// TIDAK ditampilkan sama sekali kalau Owner belum mengisi VAPID_* di
+// hosting (GET /api/push/vapid-public-key enabled=false), TIDAK PERNAH
+// auto-prompt izin notifikasi. Dipicu backend saat Booking Baru (ke
+// admin/staff) dan Pengajuan Izin/Cuti baru (ke admin/staff) + status
+// disetujui/ditolak (ke barber ybs) -- semua "best effort", gagal kirim
+// TIDAK PERNAH menggagalkan operasi bisnis yang memicunya. Notifikasi
+// SELALU getar (opsi `vibrate`, terpisah dari nada dering -- tetap terasa
+// walau perangkat di-silent, KHUSUS Android/Chrome, iOS Safari mengabaikan
+// opsi ini dan selalu ikut pengaturan getar SISTEM).
+// v110 -> v111: FITUR Kebijakan Cuti Dinamis (feedback Owner) -- kartu
+// baru "Pengaturan Izin & Cuti" (pages/pengaturan.js tab Karyawan): Kuota
+// Cuti per periode (boleh dipecah beberapa kali), Minimal H- pengajuan,
+// Maksimal karyawan Cuti bersamaan. Opsional per tenant, default 0/off
+// penuh (perilaku lama, tanpa batasan apa pun). HANYA berlaku jenis Cuti
+// (Izin tidak tersentuh). Validasi dilakukan di BACKEND (izin_cuti_db.py),
+// bukan hanya frontend. Owner/Admin/Staff tetap bebas membuat pengajuan
+// atas nama karyawan kapan pun (melewati kebijakan ini).
+const ASSET_VERSION = "111";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -687,6 +709,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/nav.js",
   "/app/js/booking_notif.js",
   "/app/js/izin_notif.js",
+  "/app/js/push_notif.js",
   "/app/js/page_loader.js",
   "/app/js/router.js",
   "/app/js/app.js",
@@ -791,5 +814,55 @@ self.addEventListener("fetch", (event) => {
   // membuat bucket cache baru saat Service Worker versi baru aktif.
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
+  );
+});
+
+// FITUR Notifikasi Push (Web Push/VAPID, termasuk iPhone lewat PWA "Add to
+// Home Screen" sejak iOS 16.4): payload dikirim backend (push_service.py)
+// sebagai JSON {title, body, url} -- lihat push_notif.js utk alur
+// subscribe. Event ini HANYA menampilkan notifikasi sistem, TIDAK PERNAH
+// menyentuh cache/APP_SHELL di atas.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = {};
+  }
+  const title = data.title || "Rivoir";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      // Getar tetap terasa walau nada dering notifikasi perangkat
+      // dimatikan/silent (opsi `vibrate` DIPISAH total dari volume/nada
+      // dering sistem) -- pola pendek-jeda-panjang supaya terasa beda
+      // dari getar notifikasi app lain. HANYA berlaku Android/Chrome;
+      // iOS Safari mengabaikan opsi ini sepenuhnya dan selalu ikut
+      // pengaturan getar/silent SISTEM (di luar kendali Web Push API,
+      // tidak ada workaround dari sisi web).
+      vibrate: [200, 100, 200],
+      data: { url: data.url || "/app/" },
+    })
+  );
+});
+
+// Klik notifikasi -- fokuskan tab PWA yang sudah terbuka kalau ada
+// (hindari membuka tab baru berulang tiap kali notifikasi diklik), else
+// buka tab baru ke url dari payload push di atas.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/app/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
   );
 });

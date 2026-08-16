@@ -936,6 +936,100 @@ const PagePengaturan = (() => {
         }
       }
       loadList();
+
+      // FITUR Kebijakan Cuti Dinamis (feedback Owner): kartu terpisah di
+      // BAWAH daftar karyawan -- "Pengaturan > Karyawan > Izin & Cuti".
+      await renderPengaturanCuti();
+    }
+
+    // FITUR Kebijakan Cuti Dinamis: opsional per tenant -- default 0/off
+    // (kuota TIDAK dipakai, H-min TIDAK ada, bersamaan TIDAK dibatasi),
+    // HANYA berlaku jenis='cuti' (izin TIDAK PERNAH tersentuh). Owner/
+    // Admin/Staff (yang membuat pengajuan ATAS NAMA barber lewat menu
+    // Izin & Cuti) SELALU melewati kebijakan ini -- HANYA barber sendiri
+    // (self-service) yang tunduk penuh, lihat izin_cuti_db.py::
+    // _validasi_kebijakan_cuti().
+    async function renderPengaturanCuti() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Pengaturan Izin & Cuti"));
+      card.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Opsional -- kalau semua nilai di bawah 0/kosong, pengajuan Cuti tidak dibatasi sama sekali (perilaku " +
+        "lama). Kebijakan ini HANYA berlaku untuk jenis Cuti (bukan Izin), dan HANYA mengikat pengajuan dari " +
+        "akun karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama karyawan kapan pun."));
+
+      let settings;
+      try {
+        settings = await MugenApi.get("/api/izin-cuti/pengaturan");
+      } catch (e) {
+        card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+
+      function checkboxBaris(input, teks) {
+        input.setAttribute("style", "width:auto;");
+        return MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;margin:8px 0;" },
+          [input, document.createTextNode(teks)]);
+      }
+
+      const isian = MugenUI.el("div", { style: "margin-top:12px;" });
+      card.appendChild(isian);
+      function baris(labelTeks, ...anak) {
+        isian.appendChild(MugenUI.el("label", {}, labelTeks));
+        anak.forEach((n) => isian.appendChild(n));
+      }
+
+      isian.appendChild(MugenUI.el("h3", {}, "Kuota Cuti"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Jatah hari Cuti per periode (mis. 10 hari/3 bulan, atau 12 hari/tahun) -- boleh diambil dicicil " +
+        "(mis. Januari 3 hari, Februari 2 hari, Maret 5 hari = 10 hari) selama \"Boleh Dipecah\" aktif. " +
+        "Periode kuota mengikuti tahun kalender (Januari sebagai awal). Kosongkan/0 Periode Kuota untuk mematikan."));
+      const inputKuotaPeriode = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_periode_bulan ?? 0) });
+      baris("Periode Kuota (bulan, mis. 3 atau 12) -- 0 = mati", inputKuotaPeriode);
+      const inputKuotaMaksimal = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_maksimal_hari ?? 0) });
+      baris("Maksimal Cuti per Periode (hari)", inputKuotaMaksimal);
+      const inputKuotaDipecah = MugenUI.el("input", { type: "checkbox" });
+      inputKuotaDipecah.checked = settings.kuota_boleh_dipecah !== false;
+      isian.appendChild(checkboxBaris(inputKuotaDipecah, "Boleh Dipecah (dicicil beberapa kali dalam periode)"));
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Minimal H- Pengajuan Cuti"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Karyawan wajib mengajukan Cuti minimal sekian hari sebelum tanggal mulai. Kosongkan/0 = boleh " +
+        "mengajukan Cuti mendadak (tanpa batas hari sebelumnya)."));
+      const inputHMin = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.h_min_pengajuan ?? 0) });
+      baris("Minimal H- (hari) -- 0 = tidak ada batas", inputHMin);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Maksimal Cuti Bersamaan"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Jumlah maksimal karyawan yang boleh Cuti pada tanggal yang sama. Kosongkan/0 = tidak dibatasi."));
+      const inputMaksimalBersamaan = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.maksimal_bersamaan ?? 0) });
+      baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Izin & Cuti");
+      card.appendChild(errorBox);
+      card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const payload = {
+          kuota_periode_bulan: Number(inputKuotaPeriode.value) || 0,
+          kuota_maksimal_hari: Number(inputKuotaMaksimal.value) || 0,
+          kuota_boleh_dipecah: inputKuotaDipecah.checked,
+          h_min_pengajuan: Number(inputHMin.value) || 0,
+          maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
+        };
+        try {
+          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/izin-cuti/pengaturan", payload));
+          MugenUI.toast("Pengaturan Izin & Cuti disimpan.", "success", { force: true });
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
     }
 
     // ================= TAB: LAYANAN =================
@@ -1751,6 +1845,12 @@ const PagePengaturan = (() => {
       });
 
       await muatUlang();
+
+      // FITUR Notifikasi Push: kartu terpisah, gagal diam-diam/tidak
+      // ditampilkan sama sekali kalau backend belum enabled (VAPID_*
+      // belum diisi Owner) atau browser tidak mendukung -- lihat
+      // push_notif.js::renderCard().
+      if (typeof MugenPushNotif !== "undefined") await MugenPushNotif.renderCard(body);
     }
 
     renderBody();

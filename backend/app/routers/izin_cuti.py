@@ -89,6 +89,31 @@ def pending_count(user: dict = Depends(get_current_user)):
     return {"jumlah": 0}
 
 
+class CutiSettingsBody(BaseModel):
+    kuota_periode_bulan: int | None = None
+    kuota_maksimal_hari: int | None = None
+    kuota_boleh_dipecah: bool | None = None
+    h_min_pengajuan: int | None = None
+    maksimal_bersamaan: int | None = None
+
+
+@router.get("/pengaturan")
+def ambil_cuti_settings(user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'pengaturan'
+    tidak ditangkap sebagai path parameter pengajuan_id. Permission SAMA
+    persis approve/reject (izin_cuti_karyawan) -- pengaturan kebijakan
+    HANYA relevan bagi yang juga bisa memproses pengajuan."""
+    return izin_cuti_db.get_cuti_settings(user["tenant_id"])
+
+
+@router.put("/pengaturan")
+def ubah_cuti_settings(body: CutiSettingsBody, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    try:
+        return izin_cuti_db.set_cuti_settings(user["tenant_id"], **body.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.get("/{pengajuan_id}")
 def ambil_pengajuan(pengajuan_id: int, user: dict = Depends(get_current_user)):
     pengajuan = izin_cuti_db.get_pengajuan(pengajuan_id)
@@ -120,9 +145,13 @@ def buat_pengajuan(body: PengajuanBody, user: dict = Depends(get_current_user)):
     else:
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
     try:
+        # FITUR Kebijakan Cuti Dinamis: Owner/Admin/Staff SELALU boleh
+        # melewati kebijakan (H-min/kuota/maksimal bersamaan) saat membuat
+        # pengajuan ATAS NAMA barber -- HANYA barber sendiri (self-service)
+        # yang tunduk penuh (lihat izin_cuti_db.py::_validasi_kebijakan_cuti()).
         return izin_cuti_db.buat_pengajuan(barber_id, body.jenis, body.tanggal_mulai, body.tanggal_selesai,
                                             body.alasan, diajukan_oleh=user["username"],
-                                            tenant_id=user["tenant_id"])
+                                            tenant_id=user["tenant_id"], override=user["role"] != "barber")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -141,7 +170,8 @@ def edit_pengajuan(pengajuan_id: int, body: PengajuanEditBody, user: dict = Depe
     _pastikan_pemilik_atau_admin(user, pengajuan)
     try:
         return izin_cuti_db.edit_pengajuan(pengajuan_id, jenis=body.jenis, tanggal_mulai=body.tanggal_mulai,
-                                            tanggal_selesai=body.tanggal_selesai, alasan=body.alasan)
+                                            tanggal_selesai=body.tanggal_selesai, alasan=body.alasan,
+                                            override=user["role"] != "barber")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
