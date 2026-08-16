@@ -679,7 +679,13 @@
 // LAMA, TIDAK diubah). Backend: GET /api/booking/mine sekarang menerima
 // `tanggal`/`dari_tanggal` opsional (default None = perilaku lama sama
 // sekali tidak berubah).
-const ASSET_VERSION = "113";
+// v113 -> v114: FITUR Reset Riwayat Booking (mengantisipasi data menumpuk,
+// pola SAMA seperti Reset Riwayat Absensi) -- kartu baru di Booking >
+// Booking Settings, tombol "Hapus Riwayat Booking" (Owner ATAU Admin/
+// staff) dengan filter tanggal opsional. Backend: DELETE
+// /api/booking/riwayat (cascade booking_items + transaksi/log Payment
+// Gateway terkait, aman dari FK orphan).
+const ASSET_VERSION = "114";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

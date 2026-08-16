@@ -1230,6 +1230,34 @@ const PageBooking = (() => {
         MugenUI.toast("Pesan booking disimpan.", "success");
       } catch (e) { errorBoxPesan.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
+
+    // --- Reset Riwayat Booking (mengantisipasi data menumpuk) -- pola
+    // SAMA PERSIS seperti "Reset Riwayat Absensi Karyawan" di
+    // pages/absensi.js: Owner ATAU Admin (staff) SAMA-SAMA boleh (backend
+    // require_owner_or_staff, TANPA delegasi permission terpisah). ---
+    const resetCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(resetCard);
+    resetCard.appendChild(MugenUI.el("h2", {}, "Reset Riwayat Booking"));
+    resetCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Hapus PERMANEN riwayat Booking (termasuk riwayat transaksi Payment Gateway terkait) untuk mengantisipasi data yang menumpuk. Kosongkan tanggal untuk menghapus SEMUA booking, atau isi untuk hanya menghapus booking SEBELUM tanggal itu (booking hari ini/mendatang tetap aman). Tindakan ini TIDAK BISA dibatalkan."));
+    const inResetSebelum = MugenUI.el("input", { type: "date" });
+    const btnResetRiwayat = MugenUI.el("button", { class: "btn-danger" }, "Hapus Riwayat Booking");
+    resetCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:10px;" },
+      [inResetSebelum, btnResetRiwayat]));
+
+    btnResetRiwayat.addEventListener("click", async () => {
+      const cakupan = inResetSebelum.value
+        ? `SEBELUM ${MugenUI.namaTanggalIndo(inResetSebelum.value)}`
+        : "SEMUA (tanpa batas tanggal)";
+      if (!confirm(`Hapus PERMANEN riwayat Booking ${cakupan}? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database, termasuk riwayat transaksi Payment Gateway terkait).`)) return;
+      try {
+        const qs = inResetSebelum.value ? `?sebelum_tanggal=${inResetSebelum.value}` : "";
+        const hasil = await MugenUI.withButtonLoading(btnResetRiwayat, () => MugenApi.del(`/api/booking/riwayat${qs}`));
+        MugenUI.toast(`${hasil.jumlah_dihapus} booking dihapus.`, "success", { force: true });
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    });
   }
 
   // ================= TAB: WEBSITE CONTENT (Owner-only) =================
