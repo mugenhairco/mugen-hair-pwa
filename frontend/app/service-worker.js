@@ -656,7 +656,15 @@
 // SELALU getar (opsi `vibrate`, terpisah dari nada dering -- tetap terasa
 // walau perangkat di-silent, KHUSUS Android/Chrome, iOS Safari mengabaikan
 // opsi ini dan selalu ikut pengaturan getar SISTEM).
-const ASSET_VERSION = "110";
+// v110 -> v111: FITUR Kebijakan Cuti Dinamis (feedback Owner) -- kartu
+// baru "Pengaturan Izin & Cuti" (pages/pengaturan.js tab Karyawan): Kuota
+// Cuti per periode (boleh dipecah beberapa kali), Minimal H- pengajuan,
+// Maksimal karyawan Cuti bersamaan. Opsional per tenant, default 0/off
+// penuh (perilaku lama, tanpa batasan apa pun). HANYA berlaku jenis Cuti
+// (Izin tidak tersentuh). Validasi dilakukan di BACKEND (izin_cuti_db.py),
+// bukan hanya frontend. Owner/Admin/Staff tetap bebas membuat pengajuan
+// atas nama karyawan kapan pun (melewati kebijakan ini).
+const ASSET_VERSION = "111";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
