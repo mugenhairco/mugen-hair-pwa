@@ -914,6 +914,16 @@ ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS batas_menit_pulang_awal
 -- untuk tenant yang belum mengatur.
 ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS toleransi_pulang_awal_menit INTEGER NOT NULL DEFAULT 0;
 
+-- FITUR Toleransi Absen Lebih Awal (feedback Owner): SEBELUMNYA Check In
+-- SELALU ditolak keras sebelum jam_masuk PERSIS -- kolom ini (menit,
+-- opsional per tenant) menggeser BATAS AWAL yang diizinkan Check In jadi
+-- (jam_masuk - toleransi_absen_awal_menit), TIDAK mengubah jam_masuk itu
+-- sendiri (tetap acuan tunggal utk status tepat_waktu/terlambat, lihat
+-- attendance_db.py::validasi_checkin()). Default 0 = perilaku lama (harus
+-- tepat jam_masuk atau lebih) tetap sama persis untuk tenant yang belum
+-- mengatur.
+ALTER TABLE attendance_settings ADD COLUMN IF NOT EXISTS toleransi_absen_awal_menit INTEGER NOT NULL DEFAULT 0;
+
 -- FITUR Uang Harian Dinamis: konfigurasi PER TENANT (lihat docstring lengkap
 -- di uang_harian_dinamis_db.py) -- `aktif=FALSE` (default) berarti Uang
 -- Harian TETAP memakai sistem lama (database.py, murni jumlah service)

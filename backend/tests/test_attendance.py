@@ -337,6 +337,62 @@ def test_check_in_tepat_jam_masuk_diizinkan(single_tenant, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# FITUR: Toleransi Absen Lebih Awal (feedback Owner) -- default 0 = perilaku
+# lama (harus tepat Jam Masuk atau lebih), opsional per tenant menggeser
+# BATAS AWAL yang diizinkan Check In tanpa mengubah Jam Masuk/status tepat
+# waktu itu sendiri.
+# ---------------------------------------------------------------------------
+
+def test_check_in_lebih_awal_ditolak_tanpa_toleransi(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    attendance_db.set_settings(tenant_id, jam_masuk="10:00", toleransi_menit=15, jam_pulang="20:00",
+                                radius_meter=500, lokasi_nama="Toko Test",
+                                lokasi_latitude=TOKO_LAT, lokasi_longitude=TOKO_LNG)
+    barber_a = _barber(tenant_id)
+    # toleransi_absen_awal_menit default 0 -- 09:30 masih 30 menit sebelum
+    # Jam Masuk 10:00, HARUS tetap ditolak (perilaku lama, tanpa perubahan).
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 30, tzinfo=WIB))
+    with pytest.raises(ValueError, match="Belum waktunya Check In"):
+        attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+
+def test_check_in_lebih_awal_diizinkan_dalam_toleransi(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    attendance_db.set_settings(tenant_id, jam_masuk="10:00", toleransi_menit=15, jam_pulang="20:00",
+                                radius_meter=500, lokasi_nama="Toko Test",
+                                lokasi_latitude=TOKO_LAT, lokasi_longitude=TOKO_LNG,
+                                toleransi_absen_awal_menit=40)
+    barber_a = _barber(tenant_id)
+    # Jam Masuk 10:00, toleransi 40 menit -> boleh Check In mulai 09:20.
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 30, tzinfo=WIB))
+    hasil = attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+    # Check In lebih awal tetap dihitung "tepat_waktu" -- toleransi absen
+    # awal TIDAK mengubah definisi keterlambatan (acuan tetap Jam Masuk +
+    # toleransi_menit, lihat validasi_checkin()).
+    assert hasil["check_in_status"] == "tepat_waktu"
+
+
+def test_check_in_masih_ditolak_sebelum_batas_toleransi_awal(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    attendance_db.set_settings(tenant_id, jam_masuk="10:00", toleransi_menit=15, jam_pulang="20:00",
+                                radius_meter=500, lokasi_nama="Toko Test",
+                                lokasi_latitude=TOKO_LAT, lokasi_longitude=TOKO_LNG,
+                                toleransi_absen_awal_menit=40)
+    barber_a = _barber(tenant_id)
+    # Jam Masuk 10:00, toleransi 40 menit -> batas paling awal 09:20, jadi
+    # 09:15 (5 menit lebih awal dari itu) HARUS tetap ditolak.
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 15, tzinfo=WIB))
+    with pytest.raises(ValueError, match="Belum waktunya Check In"):
+        attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+
+def test_set_settings_menolak_toleransi_absen_awal_negatif(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    with pytest.raises(ValueError):
+        attendance_db.set_settings(tenant_id, toleransi_absen_awal_menit=-5)
+
+
+# ---------------------------------------------------------------------------
 # FITUR: Ringkasan limit Keterlambatan & Pulang Lebih Awal (bulanan)
 # ---------------------------------------------------------------------------
 
