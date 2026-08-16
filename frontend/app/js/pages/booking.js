@@ -214,14 +214,43 @@ const PageBooking = (() => {
   // dikirim), jadi Barber tetap TIDAK BISA melihat booking Barber lain.
   const HARI_LENGKAP = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 
-  function isoHariIni(d) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  // BUGFIX: "hari ini" tab Hari Ini/Akan Datang WAJIB dihitung pakai WIB
+  // (Asia/Jakarta), BUKAN zona waktu device/browser -- persis alasan yang
+  // sama dengan booking_db.py::WIB (backend SUDAH lebih dulu menghindari
+  // date.today()/datetime.now() polos karena diam-diam mengikuti TZ
+  // server/perangkat, lihat komentarnya). SEBELUMNYA fungsi ini memakai
+  // `new Date()` + getter lokal (getFullYear/getMonth/getDate) -- kalau
+  // device/browser diatur ke TZ selain WIB (APK di HP dengan TZ salah,
+  // atau server/CI yang defaultnya UTC), "hari ini" versi frontend bisa
+  // BEDA dari WIB, sehingga booking dari tanggal lain ikut tercampur atau
+  // sebaliknya booking hari ini tidak muncul -- ditemukan lewat suite E2E
+  // (frontend/e2e/booking-barber.spec.js, jalan di sandbox ber-TZ UTC).
+  const FORMAT_TANGGAL_WIB = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" });
+  const FORMAT_JAM_WIB = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+
+  function isoHariIniWib() {
+    return FORMAT_TANGGAL_WIB.format(new Date());
+  }
+
+  function jamSekarangWib() {
+    return FORMAT_JAM_WIB.format(new Date());
+  }
+
+  // Nama hari dari STRING tanggal yang SUDAH benar (WIB) -- di-parse
+  // sebagai tengah hari LOKAL (bukan UTC/new Date(iso) polos) supaya
+  // aman dari pergeseran tanggal lintas timezone; di titik ini kita HANYA
+  // butuh hari-dalam-seminggu dari kalender yang sudah benar, bukan
+  // menentukan "hari ini" lagi.
+  function namaHariDariIso(iso) {
+    return HARI_LENGKAP[new Date(iso + "T12:00:00").getDay()];
   }
 
   function tambahHari(iso, jumlah) {
     const [y, m, d] = iso.split("-").map(Number);
-    const dt = new Date(y, m - 1, d + jumlah);
-    return isoHariIni(dt);
+    const dt = new Date(y, m - 1, d + jumlah, 12);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
   }
 
   // Satu kartu booking (dipakai tab "Hari Ini" & "Akan Datang") -- `status`:
@@ -256,8 +285,7 @@ const PageBooking = (() => {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
-    const today = new Date();
-    const todayIso = isoHariIni(today);
+    const todayIso = isoHariIniWib();
     try {
       const data = await MugenApi.get(`/api/booking/mine?tanggal=${todayIso}`, { useCache: true });
       card.innerHTML = "";
@@ -273,13 +301,13 @@ const PageBooking = (() => {
       const rows = (Array.isArray(data) ? data : [])
         .filter((r) => r.tanggal === todayIso && r.status_booking !== "dibatalkan")
         .sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai));
-      card.appendChild(MugenUI.el("h2", {}, `${HARI_LENGKAP[today.getDay()]}, ${MugenUI.namaTanggalIndo(todayIso)}`));
+      card.appendChild(MugenUI.el("h2", {}, `${namaHariDariIso(todayIso)}, ${MugenUI.namaTanggalIndo(todayIso)}`));
       card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" }, `${rows.length} Booking Hari Ini`));
       if (!rows.length) {
         card.appendChild(MugenUI.emptyState("Belum ada booking hari ini."));
         return;
       }
-      const jamSekarang = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
+      const jamSekarang = jamSekarangWib();
       const idxBerikutnya = rows.findIndex((r) => r.jam_mulai > jamSekarang);
       const list = MugenUI.el("div", { class: "booking-card-list" });
       rows.forEach((r, i) => {
@@ -304,7 +332,7 @@ const PageBooking = (() => {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
-    const besokIso = tambahHari(isoHariIni(new Date()), 1);
+    const besokIso = tambahHari(isoHariIniWib(), 1);
     try {
       const data = await MugenApi.get(`/api/booking/mine?dari_tanggal=${besokIso}`, { useCache: true });
       card.innerHTML = "";
@@ -325,9 +353,8 @@ const PageBooking = (() => {
       rows.forEach((r) => {
         if (r.tanggal !== tanggalTerakhir) {
           tanggalTerakhir = r.tanggal;
-          const d = new Date(r.tanggal + "T00:00:00");
           card.appendChild(MugenUI.el("div", { class: "booking-day-header" },
-            `${HARI_LENGKAP[d.getDay()]}, ${MugenUI.namaTanggalIndo(r.tanggal)}`));
+            `${namaHariDariIso(r.tanggal)}, ${MugenUI.namaTanggalIndo(r.tanggal)}`));
         }
         card.appendChild(bookingCard(r, null));
       });
