@@ -263,8 +263,15 @@ const PageBooking = (() => {
       card.innerHTML = "";
       // AUDIT SINKRONISASI: lihat catatan __offline di renderBarberSemuaBooking().
       if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      // BUGFIX (laporan Owner): filter `tanggal` DIULANG di frontend juga --
+      // pertahanan lapis kedua kalau backend yang dipanggil ternyata versi
+      // LAMA (belum sempat deploy ulang, mengabaikan parameter `tanggal`
+      // yang tidak dikenalnya lalu balas SELURUH riwayat booking barber ini)
+      // -- tanpa filter ini, booking dari tanggal LAIN ikut tercampur (dan
+      // urutan .sort() di bawah cuma berdasarkan jam, bukan tanggal, jadi
+      // salah tanggal jadi tidak kelihatan sama sekali di UI).
       const rows = (Array.isArray(data) ? data : [])
-        .filter((r) => r.status_booking !== "dibatalkan")
+        .filter((r) => r.tanggal === todayIso && r.status_booking !== "dibatalkan")
         .sort((a, b) => a.jam_mulai.localeCompare(b.jam_mulai));
       card.appendChild(MugenUI.el("h2", {}, `${HARI_LENGKAP[today.getDay()]}, ${MugenUI.namaTanggalIndo(todayIso)}`));
       card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" }, `${rows.length} Booking Hari Ini`));
@@ -302,8 +309,12 @@ const PageBooking = (() => {
       const data = await MugenApi.get(`/api/booking/mine?dari_tanggal=${besokIso}`, { useCache: true });
       card.innerHTML = "";
       if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      // BUGFIX (laporan Owner): sama seperti renderBarberHariIni() di atas --
+      // filter `dari_tanggal` DIULANG di frontend supaya booking yang SUDAH
+      // LEWAT tidak pernah muncul di "Akan Datang" walau backend yang
+      // dipanggil kebetulan versi lama yang mengabaikan parameter ini.
       const rows = (Array.isArray(data) ? data : [])
-        .filter((r) => r.status_booking !== "dibatalkan")
+        .filter((r) => r.tanggal >= besokIso && r.status_booking !== "dibatalkan")
         .sort((a, b) => (a.tanggal + a.jam_mulai).localeCompare(b.tanggal + b.jam_mulai));
       if (!rows.length) {
         card.appendChild(MugenUI.el("h2", {}, "Akan Datang"));

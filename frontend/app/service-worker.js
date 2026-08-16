@@ -685,7 +685,14 @@
 // staff) dengan filter tanggal opsional. Backend: DELETE
 // /api/booking/riwayat (cascade booking_items + transaksi/log Payment
 // Gateway terkait, aman dari FK orphan).
-const ASSET_VERSION = "114";
+// v114 -> v115: BUGFIX tab "Hari Ini"/"Akan Datang" (pages/booking.js) --
+// booking dari tanggal LAIN ikut tercampur kalau backend yang dipanggil
+// kebetulan versi lama (mengabaikan parameter tanggal/dari_tanggal yang
+// belum dikenalnya). Filter tanggal sekarang DIULANG di frontend sebagai
+// pertahanan lapis kedua -- backend TETAP satu-satunya yang seharusnya
+// memfilter, ini murni jaring pengaman kalau deploy backend/frontend
+// sempat tidak sinkron.
+const ASSET_VERSION = "115";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
