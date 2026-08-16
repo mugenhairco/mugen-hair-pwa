@@ -949,6 +949,49 @@ def verifikasi_pembayaran(booking_id: int):
         _kirim_notifikasi_wa_booking(get_booking(booking_id), "konfirmasi_pembayaran")
 
 
+def hapus_riwayat_booking(tenant_id: int, sebelum_tanggal: str = None) -> int:
+    """FITUR Reset Riwayat Booking (mengantisipasi data menumpuk -- pola
+    SAMA PERSIS seperti attendance_db.py::hapus_riwayat_absensi(), lihat
+    routers/booking.py::hapus_riwayat()). HAPUS PERMANEN booking milik
+    tenant ini beserta seluruh data turunannya (booking_items, riwayat
+    transaksi Payment Gateway) -- TIDAK BISA dibatalkan.
+
+    `sebelum_tanggal` opsional (format "YYYY-MM-DD"): kalau diisi, HANYA
+    booking dengan tanggal < nilai itu yang dihapus (bersihkan riwayat
+    lama, booking hari ini/mendatang tetap aman) -- kosong (None) = hapus
+    SEMUA booking tenant ini tanpa terkecuali, sama seperti barber_id=None
+    di hapus_riwayat_absensi().
+
+    Urutan hapus WAJIB anak sebelum induk (booking_payment_status_log ->
+    booking_payment_transactions -> booking_items -> bookings) supaya
+    tidak ada baris yatim tersisa -- booking_payment_status_log TIDAK
+    punya booking_id langsung (lihat postgres_schema.py), jadi dihapus
+    lewat subquery transaction_id."""
+    with get_conn() as conn:
+        params = [tenant_id]
+        filter_tanggal = ""
+        if sebelum_tanggal is not None:
+            filter_tanggal = " AND tanggal < ?"
+            params.append(sebelum_tanggal)
+
+        ids = [r["id"] for r in conn.execute(
+            f"SELECT id FROM bookings WHERE tenant_id = ?{filter_tanggal}", params,
+        ).fetchall()]
+        if not ids:
+            return 0
+        placeholder = ", ".join("?" for _ in ids)
+
+        conn.execute(
+            f"DELETE FROM booking_payment_status_log WHERE transaction_id IN "
+            f"(SELECT id FROM booking_payment_transactions WHERE booking_id IN ({placeholder}))",
+            ids,
+        )
+        conn.execute(f"DELETE FROM booking_payment_transactions WHERE booking_id IN ({placeholder})", ids)
+        conn.execute(f"DELETE FROM booking_items WHERE booking_id IN ({placeholder})", ids)
+        conn.execute(f"DELETE FROM bookings WHERE id IN ({placeholder})", ids)
+        return len(ids)
+
+
 # ---------------------------------------------------------------------------
 # BARBER & SERVICE -- field TAMBAHAN khusus tampilan Booking (status
 # Active/On Vacation, foto, urutan). Kolom `nama`/`harga`/`aktif`/dst di

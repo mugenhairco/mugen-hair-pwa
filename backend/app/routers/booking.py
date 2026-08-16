@@ -483,6 +483,17 @@ def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(requ
     return booking_db.get_booking_settings(tenant_id=user["tenant_id"])
 
 
+# FITUR Reset Riwayat Booking (mengantisipasi data menumpuk) -- pola SAMA
+# PERSIS seperti DELETE /api/attendance/riwayat: Owner ATAU Admin (staff)
+# SAMA-SAMA boleh (require_owner_or_staff, TANPA delegasi permission
+# terpisah). `sebelum_tanggal` opsional -- kosong = hapus SEMUA booking
+# tenant ini, sama seperti barber_id kosong = "Semua Barber" di Absensi.
+@router.delete("/riwayat")
+def hapus_riwayat(sebelum_tanggal: str = None, user: dict = Depends(require_owner_or_staff)):
+    jumlah = booking_db.hapus_riwayat_booking(tenant_id=user["tenant_id"], sebelum_tanggal=sebelum_tanggal)
+    return {"ok": True, "jumlah_dihapus": jumlah}
+
+
 def _booking_slug_hasil(tenant_id: int) -> dict:
     t = tenant_db.get_tenant(tenant_id)
     return {"booking_slug": t.get("booking_slug") if t else None, "booking_url": tenant_db.get_booking_url(t or {})}
