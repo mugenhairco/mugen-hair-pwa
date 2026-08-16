@@ -3,7 +3,7 @@
   "appName": "MUGEN Hair Co.",
   "webDir": "www",
   "server": {
-    "url": "https://rivoirsett.com",
+    "url": "https://mugen.rivoirsett.com/app/",
     "androidScheme": "https",
     "cleartext": false
   },

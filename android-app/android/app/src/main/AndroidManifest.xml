@@ -32,4 +32,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- FITUR Notifikasi Push & Izin Lokasi (lihat frontend/app/js/native_app.js):
+         WebView modern (108+) otomatis memunculkan dialog izin native
+         Android saat halaman web memanggil Notification.requestPermission()
+         atau navigator.geolocation, TAPI HANYA kalau permission-nya
+         dideklarasikan di sini -- tidak perlu plugin Capacitor tambahan. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 </manifest>

@@ -664,7 +664,14 @@
 // (Izin tidak tersentuh). Validasi dilakukan di BACKEND (izin_cuti_db.py),
 // bukan hanya frontend. Owner/Admin/Staff tetap bebas membuat pengajuan
 // atas nama karyawan kapan pun (melewati kebijakan ini).
-const ASSET_VERSION = "111";
+// v111 -> v112: FITUR Izin Lokasi & Notifikasi Push otomatis KHUSUS APK
+// Android (android-app/, Capacitor) -- js/native_app.js baru, dipanggil
+// pages/login.js begitu login berhasil DAN Capacitor.isNativePlatform()
+// true (di browser biasa tidak melakukan apa-apa sama sekali, tetap murni
+// opt-in lewat push_notif.js seperti sebelumnya). Kolom baru
+// users.lokasi_lat/lokasi_lng/lokasi_updated_at di backend (lihat
+// lokasi_user_migrasi.py) + endpoint PUT /api/auth/lokasi.
+const ASSET_VERSION = "112";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -710,6 +717,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/booking_notif.js",
   "/app/js/izin_notif.js",
   "/app/js/push_notif.js",
+  "/app/js/native_app.js",
   "/app/js/page_loader.js",
   "/app/js/router.js",
   "/app/js/app.js",

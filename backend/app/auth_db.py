@@ -308,6 +308,20 @@ def set_tema_user(user_id: int, tema: str):
         conn.execute("UPDATE users SET tema = ? WHERE id = ?", (tema, user_id))
 
 
+# FITUR Izin Lokasi APK Android (lihat lokasi_user_migrasi.py) -- "lokasi
+# TERAKHIR diketahui" per akun, best-effort, dikirim SEKALI oleh
+# android-app/ (native_app.js) begitu izin lokasi diberikan.
+def set_lokasi_user(user_id: int, lat: float, lng: float):
+    from datetime import datetime
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET lokasi_lat = ?, lokasi_lng = ?, lokasi_updated_at = ? WHERE id = ?",
+            (lat, lng, now, user_id),
+        )
+
+
 def ganti_password(user_id: int, password_baru: str):
     if not password_baru or len(password_baru) < 4:
         raise ValueError("Password minimal 4 karakter.")
