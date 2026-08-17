@@ -142,6 +142,82 @@ def test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
     assert rb.status_code == 403
 
 
+# ============================= Export Excel (routers/attendance.py, AUDIT "fitur hardcode di Superadmin") =============================
+# export_excel BEDA dari export_pdf/qris/booking_online (bukan _FITUR_NYATA_
+# DEFAULT) -- fitur ini di-grandfather lewat billing_db.py::seed_grandfather_
+# fitur_baru_digerbang() (SEKALI, ke SEMUA paket, karena sebelum audit ini
+# selalu gratis untuk semua tenant), jadi tenant dengan subscription APA PUN
+# otomatis sudah punya fitur ini TANPA assign manual -- beda dari log_error
+# yang fail-CLOSED murni (lihat test_error_log.py).
+
+def test_excel_endpoint_403_upgrade_required_tanpa_fitur_export_excel(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free")  # cabut semua
+
+    r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
+    assert r.status_code == 403
+    detail = r.json()["detail"]
+    assert detail["upgrade_required"] is True
+    assert detail["feature"] == "export_excel"
+
+
+def test_excel_endpoint_sukses_dengan_fitur_grandfather_default(single_tenant):
+    """Fitur di-grandfather ke SEMUA paket sejak boot -- TIDAK perlu assign
+    manual apa pun untuk skenario "menyala" (lihat catatan modul di atas)."""
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+
+    r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+# ============================= Migrasi katalog fitur (billing_db.py, AUDIT "fitur hardcode di Superadmin") =============================
+
+def test_hapus_fitur_tanpa_fungsi_nyata_menghapus_8_kode_dekoratif(app_client):
+    """Sudah otomatis terhapus saat boot (fixture app_client memicu
+    on_startup()) -- migrasi ini idempotent/sekali-jalan, di sini murni
+    memverifikasi hasilnya (bukan memanggil ulang)."""
+    kode_sekarang = {f["kode"] for f in billing_db.list_features()}
+    assert not (set(billing_db._KODE_FITUR_TANPA_FUNGSI_NYATA) & kode_sekarang)
+    for kode in billing_db._KODE_FITUR_TANPA_FUNGSI_NYATA:
+        assert billing_db.get_feature_by_kode(kode) is None
+
+
+def test_hapus_fitur_tanpa_fungsi_nyata_tidak_menghapus_lagi_kalau_superadmin_tambah_ulang(app_client):
+    """Flag sekali-jalan -- kalau Super Admin (via akses DB langsung/masa
+    depan) menambah balik salah satu kode yang sudah dihapus, memanggil
+    migrasi ini lagi TIDAK BOLEH menghapusnya lagi (migrasi ini SUDAH
+    tercatat selesai)."""
+    now = billing_db._now()
+    with billing_db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
+            "VALUES ('multi_cabang', 'Multi Cabang', '', 1, 99, ?, ?)", (now, now),
+        )
+    billing_db.hapus_fitur_tanpa_fungsi_nyata()
+    assert billing_db.get_feature_by_kode("multi_cabang") is not None
+
+
+def test_seed_grandfather_fitur_baru_digerbang_assign_ke_semua_paket(app_client):
+    for kode in ("export_excel", "whatsapp_reminder"):
+        fitur = billing_db.get_feature_by_kode(kode)
+        for paket in billing_db.list_packages():
+            assert fitur["id"] in {f["id"] for f in billing_db.get_package_features(paket["id"])}
+
+
+def test_seed_grandfather_fitur_baru_digerbang_tidak_mengembalikan_yang_dicabut_manual(app_client):
+    """Pola SAMA PERSIS seed_default_package_features() -- flag sekali-jalan
+    supaya mencabut fitur ini manual lewat Superadmin TIDAK diam-diam
+    dikembalikan setiap kali migrasi ini dipanggil ulang (mis. restart)."""
+    free = billing_db.get_package_by_kode("free")
+    billing_db.set_package_features(free["id"], [])
+
+    billing_db.seed_grandfather_fitur_baru_digerbang()
+
+    assert billing_db.get_package_features(free["id"]) == []
+
+
 # ============================= Booking Online + QRIS (routers/booking.py) =============================
 
 def test_public_pengaturan_booking_online_false_tanpa_fitur(single_tenant):

@@ -680,9 +680,25 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     `jenis` = salah satu whatsapp_service.TEMPLATE_SETTING_KEYS -- teks
     pesan diambil dari template CUSTOM milik tenant kalau Owner sudah
     mengaturnya lewat Setting > WhatsApp, kalau belum fallback ke
-    whatsapp_templates.DEFAULT_TEMPLATES (lihat render())."""
+    whatsapp_templates.DEFAULT_TEMPLATES (lihat render()).
+
+    Feature Gating "whatsapp_reminder" (AUDIT "fitur hardcode di
+    Superadmin"): SATU pengecualian sengaja dari aturan "business logic
+    tidak tahu apa-apa soal billing" (feature_access.py/auth.py::
+    require_feature() biasanya dipasang di lapisan router) -- titik pemicu
+    notifikasi ini MURNI di dalam booking_db.py sendiri (dipanggil dari
+    tengah buat_booking()/verifikasi_pembayaran()/batalkan_booking(), bukan
+    endpoint router tunggal), tidak ada satu titik router yang bisa
+    menggerbang di granularitas yang sama tanpa mengubah alur booking utama.
+    Dicek di sini SEBELUM try/except best-effort di bawah (bukan di
+    dalamnya) supaya tenant tanpa fitur ini TIDAK tercatat sebagai
+    "percobaan gagal" di mana pun -- murni tidak pernah mencoba sama sekali,
+    sama seperti token Fonnte kosong."""
+    tenant_id = booking.get("tenant_id")
+    import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
+    if tenant_id is None or not feature_access.tenant_has_feature(tenant_id, "whatsapp_reminder"):
+        return
     try:
-        tenant_id = booking.get("tenant_id")
         nama_toko = pengaturan_identitas.get_identitas(tenant_id=tenant_id).get("nama_barbershop") or "Kami"
         template_text = whatsapp_service.get_templates(tenant_id=tenant_id).get(jenis)
         pesan = whatsapp_templates.render(jenis, booking, nama_toko, template_text)

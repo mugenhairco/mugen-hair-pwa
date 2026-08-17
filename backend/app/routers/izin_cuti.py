@@ -22,7 +22,7 @@ def _cek_akses_lihat(user: dict, pengajuan: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
+        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -36,7 +36,7 @@ def _pastikan_pemilik_atau_admin(user: dict, pengajuan: dict):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
+        if not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -84,7 +84,7 @@ def pending_count(user: dict = Depends(get_current_user)):
     """Badge notifikasi sidebar -- HANYA admin/staff (izin_cuti_karyawan)
     yang berkepentingan, barber selalu dapat 0 (tidak ditampilkan di UI)."""
     if user["role"] == "admin" or (user["role"] == "staff" and
-                                    permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"))):
+                                    permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id"))):
         return {"jumlah": izin_cuti_db.get_jumlah_pending(tenant_id=user["tenant_id"])}
     return {"jumlah": 0}
 
@@ -137,7 +137,7 @@ def buat_pengajuan(body: PengajuanBody, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
         barber_id = user["barber_id"]
     elif user["role"] in ("admin", "staff"):
-        if user["role"] == "staff" and not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id")):
+        if user["role"] == "staff" and not permissions.has("izin_cuti_karyawan", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Izin & Cuti. Hubungi Owner.")
         if body.barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")

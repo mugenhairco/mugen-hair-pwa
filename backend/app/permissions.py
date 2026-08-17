@@ -1,13 +1,27 @@
 """
-permissions.py — Hak Akses Admin (dinamis, disimpan di PostgreSQL)
+permissions.py — Hak Akses User (dinamis, disimpan di PostgreSQL)
 =============================================================================
-Role baru 'staff' (label UI: "Admin") duduk di antara 'admin' (label UI:
-"Owner", akses penuh TANPA batasan apa pun) dan 'barber'. Apa yang boleh
-dilakukan role 'staff' TIDAK di-hardcode di kode -- Owner mengatur lewat
-menu Setting > Hak Akses Admin (lihat routers/pengaturan.py endpoint
-/hak-akses-admin), disimpan sebagai baris di tabel `settings` yang sudah
-ada (key-value generik, sudah dialek-netral SQLite/PostgreSQL lewat
-db_compat.py -- TIDAK perlu tabel baru).
+Role 'staff' (label UI: "Admin") duduk di antara 'admin' (label UI: "Owner",
+akses penuh TANPA batasan apa pun) dan 'barber'. Apa yang boleh dilakukan
+role 'staff' TIDAK di-hardcode di kode -- Owner mengatur lewat menu
+Setting > Hak Akses User (lihat routers/pengaturan.py endpoint
+/hak-akses-admin -- URL path TIDAK diubah, murni label UI yang berganti
+nama, lihat catatan FITUR Role Custom di bawah), disimpan sebagai baris di
+tabel `settings` yang sudah ada (key-value generik, sudah dialek-netral
+SQLite/PostgreSQL lewat db_compat.py -- TIDAK perlu tabel baru) -- ini
+menjadi set izin DEFAULT tenant, dipakai SEMUA akun staff yang belum
+ditempelkan ke role custom mana pun.
+
+FITUR Role Custom (diminta Owner, revisi berikutnya): Owner sekarang BISA
+membuat role bernama sendiri (mis. "Kasir", "Supervisor" -- lihat
+user_roles_db.py) dengan checklist izin_* SENDIRI dari katalog yang SAMA
+persis di bawah ini (TIDAK ADA sistem izin baru, murni cara baru menyimpan
++ menempelkannya ke user tertentu), lalu menempelkan akun staff tertentu
+ke role itu lewat `users.custom_role_id`. Parameter `role_id` OPSIONAL di
+get_all()/has()/has_any()/set_bulk() di bawah -- diisi = baca/tulis
+checklist role custom itu, None (default, JUGA berlaku untuk staff yang
+belum ditempelkan ke role mana pun) = perilaku LAMA (set default tenant di
+atas), 100% kompatibel mundur.
 
 Owner ('admin') SELALU lolos setiap pengecekan izin di sini tanpa syarat
 (lihat auth.require_permission) -- daftar & default di bawah ini HANYA
@@ -77,22 +91,70 @@ PERMISSION_DEFS = [
     # approve/reject wajib izin eksplisit ini -- pola sama persis
     # izin_cuti_karyawan (approval Izin & Cuti).
     ("izin_absensi_koreksi", "absensi", "Approve/Reject Koreksi Absensi", False),
+    # ---- Perluasan Hak Akses Admin (diminta Owner): modul operasional
+    # harian di bawah ini SEBELUMNYA staff selalu akses PENUH tanpa syarat
+    # apa pun (require_owner_or_staff polos, tidak ada permission sama
+    # sekali) -- SEKARANG bisa diatur granular Owner, dipecah "Kelola"
+    # (tambah/edit, risiko rendah) vs "Hapus" (destruktif, risiko lebih
+    # tinggi) per modul, pola SAMA seperti izin_user_tambah vs izin_user_
+    # hapus. Default TRUE untuk SEMUA (bukan False seperti kebanyakan
+    # permission granular lain di atas) -- SENGAJA, supaya staff yang
+    # SUDAH memakai modul ini sehari-hari TIDAK tiba-tiba terkunci begitu
+    # perubahan ini deploy; Owner tetap bebas mematikan kapan pun lewat
+    # Setting > Hak Akses Admin. Endpoint GET (lihat data) TIDAK ikut
+    # digerbang -- staff SELALU boleh melihat, sama seperti pola karyawan
+    # (kasbon.py dkk) yang sudah ada.
+    # ---- Booking ----
+    ("izin_booking_kelola", "booking", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)", True),
+    ("izin_booking_batalkan", "booking", "Batalkan Booking", True),
+    ("izin_booking_pengaturan", "booking", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)", True),
+    # ---- Produk ----
+    ("izin_produk_kelola", "produk", "Kelola Produk (tambah/edit, restock/jual/tester)", True),
+    ("izin_produk_hapus", "produk", "Hapus Produk & Koreksi/Hapus Mutasi", True),
+    # ---- Pengeluaran ----
+    ("izin_pengeluaran_kelola", "pengeluaran", "Kelola Pengeluaran (catat/edit)", True),
+    ("izin_pengeluaran_hapus", "pengeluaran", "Hapus Pengeluaran", True),
+    # ---- Pemasukan ----
+    ("izin_pemasukan_kelola", "pemasukan", "Kelola Pemasukan (catat/edit)", True),
+    ("izin_pemasukan_hapus", "pemasukan", "Hapus Pemasukan", True),
+    # ---- Uang Kas ----
+    ("izin_uang_kas_kelola", "uang_kas", "Kelola Uang Kas (saldo awal, penyesuaian)", True),
+    ("izin_uang_kas_hapus", "uang_kas", "Hapus Penyesuaian Uang Kas", True),
+    # ---- Data Non-Barber ----
+    ("izin_data_non_barber_kelola", "data_non_barber", "Kelola Data Non-Barber (tambah/edit)", True),
+    ("izin_data_non_barber_hapus", "data_non_barber", "Hapus Data Non-Barber", True),
+    # ---- Input Data / Transaksi (termasuk hapus dari tombol Aksi di Rekap Transaksi) ----
+    ("izin_input_data_kelola", "input_data", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)", True),
+    ("izin_input_data_hapus", "input_data", "Hapus Transaksi Harian", True),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}
 
 
-def get_all(tenant_id=None) -> dict:
-    """{key: bool} untuk SELURUH permission, dengan default dari
-    PERMISSION_DEFS kalau Owner belum pernah mengaturnya sama sekali.
-    SATU query (get_all_settings(), sudah ada sejak Tahap 2) -- bukan satu
-    query per key -- karena fungsi ini dipanggil di SETIAP pengecekan
-    require_permission()/has(), termasuk untuk request yang datang beruntun.
+def get_all(tenant_id=None, role_id=None) -> dict:
+    """{key: bool} untuk SELURUH permission.
+
+    FITUR Role Custom (diminta Owner, lihat user_roles_db.py): `role_id`
+    OPSIONAL -- diisi (akun 'staff' yang sudah ditempelkan ke role custom
+    lewat users.custom_role_id) -> baca dari user_role_permissions (fail-
+    CLOSED, kode yang tidak ada di sana = False, TIDAK PERNAH pakai default
+    PERMISSION_DEFS -- role baru sengaja mulai kosong, lihat docstring
+    modul user_roles_db.py). `role_id=None` (default, JUGA berlaku untuk
+    SEMUA akun staff yang belum pernah ditempelkan ke role mana pun) ->
+    PERSIS perilaku lama, dengan default dari PERMISSION_DEFS kalau Owner
+    belum pernah mengaturnya sama sekali. SATU query (get_all_settings(),
+    sudah ada sejak Tahap 2) -- bukan satu query per key -- karena fungsi
+    ini dipanggil di SETIAP pengecekan require_permission()/has(), termasuk
+    untuk request yang datang beruntun.
 
     FONDASI Multi-Tenant Phase 1: `tenant_id` opsional (lihat catatan
-    db.get_setting()/_kunci_tenant()) -- Hak Akses Admin adalah pengaturan
+    db.get_setting()/_kunci_tenant()) -- Hak Akses User adalah pengaturan
     PER TOKO (Owner Tenant A tidak boleh mengatur Admin Tenant B), jadi
     endpoint ber-login WAJIB mengisi ini (lihat auth.require_permission)."""
+    if role_id is not None:
+        import user_roles_db  # import lokal: hindari import siklik (user_roles_db.py -> database.py)
+        aktif = user_roles_db.get_role_permission_keys(role_id)
+        return {key: (key in aktif) for key, *_ in PERMISSION_DEFS}
     semua = db.get_all_settings(tenant_id=tenant_id)
     hasil = {}
     for key, _grup, _label, default in PERMISSION_DEFS:
@@ -101,25 +163,35 @@ def get_all(tenant_id=None) -> dict:
     return hasil
 
 
-def set_bulk(data: dict, tenant_id=None) -> dict:
+def set_bulk(data: dict, tenant_id=None, role_id=None) -> dict:
     """Timpa permission yang DIKIRIM saja (key yang tidak dikirim tetap
     seperti sebelumnya) -- validasi key dulu supaya tidak ada key sembarang
-    ikut tersimpan ke tabel settings."""
+    ikut tersimpan. `role_id` opsional -- lihat get_all()."""
     tidak_dikenal = set(data.keys()) - PERMISSION_KEYS
     if tidak_dikenal:
         raise ValueError(f"Permission tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
+    if role_id is not None:
+        import user_roles_db  # import lokal: hindari import siklik
+        aktif = user_roles_db.get_role_permission_keys(role_id)
+        for key, nilai in data.items():
+            if nilai:
+                aktif.add(key)
+            else:
+                aktif.discard(key)
+        user_roles_db.set_role_permission_keys(role_id, aktif)
+        return get_all(role_id=role_id)
     bersih = {key: ("1" if bool(v) else "0") for key, v in data.items()}
     if bersih:
         db.set_settings_bulk(bersih, tenant_id=tenant_id)
     return get_all(tenant_id=tenant_id)
 
 
-def has(key: str, tenant_id=None) -> bool:
+def has(key: str, tenant_id=None, role_id=None) -> bool:
     if key not in PERMISSION_KEYS:
         raise ValueError(f"Permission tidak dikenal: {key}")
-    return get_all(tenant_id=tenant_id).get(key, False)
+    return get_all(tenant_id=tenant_id, role_id=role_id).get(key, False)
 
 
-def has_any(keys, tenant_id=None) -> bool:
-    izin = get_all(tenant_id=tenant_id)
+def has_any(keys, tenant_id=None, role_id=None) -> bool:
+    izin = get_all(tenant_id=tenant_id, role_id=role_id)
     return any(izin.get(k, False) for k in keys)

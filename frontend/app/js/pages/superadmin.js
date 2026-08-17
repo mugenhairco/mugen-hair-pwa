@@ -33,7 +33,6 @@ const PageSuperadmin = (() => {
     ubah_status_pembayaran_subscription: "Ubah Status Pembayaran Subscription",
     // FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway).
     ubah_paket_billing: "Ubah Paket Billing",
-    tambah_fitur_billing: "Tambah Fitur Billing",
     ubah_fitur_billing: "Ubah Fitur Billing",
     hapus_fitur_billing: "Hapus Fitur Billing",
     ubah_fitur_paket_billing: "Ubah Fitur Paket Billing",
@@ -807,12 +806,17 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 6. KATALOG FITUR (FONDASI Multi-Tenant Phase 4) -- murni katalog/
-    // toggle, TIDAK menggerbang fungsi kode apa pun (lihat billing_db.py).
+    // 6. KATALOG FITUR (FONDASI Multi-Tenant Phase 4) -- REVISI (audit
+    // "fitur hardcode di Superadmin"): daftar SEKARANG TETAP (hanya kode
+    // yang sungguhan menggerbang sesuatu, lihat billing_db.py), Super Admin
+    // hanya bisa mencentang/hapus-centang penugasan ke paket + aktifkan/
+    // nonaktifkan/hapus dari katalog -- TIDAK BISA lagi menambah fitur baru
+    // sembarang nama (tombol "Tambah Fitur Baru" & endpoint POST /features
+    // dihapus total).
     // ---------------------------------------------------------------
     billingFeaturesCard.appendChild(MugenUI.el("h2", {}, "Katalog Fitur"));
     billingFeaturesCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Tambah/ubah/nonaktifkan/hapus fitur bebas -- centang penugasannya ke paket lewat \"Edit\" paket di atas."));
+      "Fitur yang benar-benar punya fungsi nyata di aplikasi -- centang penugasannya ke paket lewat \"Edit\" paket di atas."));
     const billingFeaturesListBody = MugenUI.el("div");
     billingFeaturesCard.appendChild(billingFeaturesListBody);
 
@@ -863,31 +867,6 @@ const PageSuperadmin = (() => {
         billingFeaturesListBody.appendChild(MugenUI.errorState(e.message));
       }
     }
-
-    const inputFiturKode = MugenUI.el("input", { type: "text", placeholder: "kode_fitur (mis. whatsapp_reminder)" });
-    const inputFiturNama = MugenUI.el("input", { type: "text", placeholder: "Nama Fitur (mis. WhatsApp Reminder)" });
-    const inputFiturDeskripsi = MugenUI.el("input", { type: "text", placeholder: "Deskripsi (opsional)" });
-    const btnTambahFitur = MugenUI.el("button", { class: "btn-primary" }, "Tambah Fitur");
-    const errFitur = MugenUI.el("div", { class: "login-error" });
-    billingFeaturesCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Tambah Fitur Baru"));
-    billingFeaturesCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
-      inputFiturKode, inputFiturNama, inputFiturDeskripsi, btnTambahFitur,
-    ]));
-    billingFeaturesCard.appendChild(errFitur);
-
-    btnTambahFitur.addEventListener("click", async () => {
-      errFitur.textContent = "";
-      try {
-        await MugenUI.withButtonLoading(btnTambahFitur, () => MugenApi.post("/api/superadmin/billing/features", {
-          kode: inputFiturKode.value.trim(), nama: inputFiturNama.value.trim(), deskripsi: inputFiturDeskripsi.value.trim(),
-        }));
-        MugenUI.toast("Fitur ditambahkan.", "success");
-        inputFiturKode.value = ""; inputFiturNama.value = ""; inputFiturDeskripsi.value = "";
-        loadAuditLog(); loadBillingFeatures();
-      } catch (e) {
-        errFitur.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-      }
-    });
 
     // ---------------------------------------------------------------
     // 7. MONITORING PEMBAYARAN SEMUA TOKO (FONDASI Multi-Tenant Phase 4)

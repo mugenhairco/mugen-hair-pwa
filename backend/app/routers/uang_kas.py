@@ -1,8 +1,14 @@
 """routers/uang_kas.py — /api/uang-kas/* (Modul Keuangan, pengganti Transfer Kas/Bank)
 Router Saldo Kas Awal + penyesuaian manual (tambah/kurang) -- pola akses
 SAMA PERSIS routers/pemasukan.py: data operasional TOKO, Barber ditolak
-total DI BACKEND (require_owner_or_staff), staff ('Admin') akses PENUH
-sama persis Owner, TANPA sistem izin sama sekali."""
+total DI BACKEND (require_owner_or_staff).
+
+REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
+tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
+TULIS (ubah saldo awal, tambah/edit penyesuaian) sekarang
+`require_permission("izin_uang_kas_kelola")`, endpoint HAPUS
+`require_permission("izin_uang_kas_hapus")` (lihat permissions.py, default
+TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -10,7 +16,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import uang_kas_db as db_uang_kas
-from auth import require_feature, require_owner_or_staff
+from auth import require_feature, require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/uang-kas", tags=["uang-kas"])
 
@@ -40,7 +46,7 @@ def ambil_saldo_awal(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.put("/saldo-awal")
-def ubah_saldo_awal(body: SaldoAwalBody, user: dict = Depends(require_owner_or_staff)):
+def ubah_saldo_awal(body: SaldoAwalBody, user: dict = Depends(require_permission("izin_uang_kas_kelola"))):
     try:
         return db_uang_kas.set_saldo_awal(body.saldo, diubah_oleh=user["username"], tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -76,7 +82,7 @@ def detail_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_owner_o
 
 
 @router.post("")
-def tambah_penyesuaian(body: PenyesuaianBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_penyesuaian(body: PenyesuaianBody, user: dict = Depends(require_permission("izin_uang_kas_kelola"))):
     try:
         new_id = db_uang_kas.tambah_penyesuaian(
             tanggal=body.tanggal, jenis=body.jenis, jumlah=body.jumlah,
@@ -88,7 +94,7 @@ def tambah_penyesuaian(body: PenyesuaianBody, user: dict = Depends(require_owner
 
 
 @router.put("/{penyesuaian_id}")
-def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianBody, user: dict = Depends(require_owner_or_staff)):
+def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianBody, user: dict = Depends(require_permission("izin_uang_kas_kelola"))):
     _pastikan_penyesuaian_tenant_sama(user, db_uang_kas.get_penyesuaian(penyesuaian_id))
     try:
         db_uang_kas.edit_penyesuaian(
@@ -101,7 +107,7 @@ def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianBody, user: dict = De
 
 
 @router.delete("/{penyesuaian_id}")
-def hapus_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_permission("izin_uang_kas_hapus"))):
     _pastikan_penyesuaian_tenant_sama(user, db_uang_kas.get_penyesuaian(penyesuaian_id))
     db_uang_kas.hapus_penyesuaian(penyesuaian_id)
     return {"ok": True}

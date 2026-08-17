@@ -8,11 +8,18 @@ file terpisah, supaya mudah dilihat sekali baca):
    siapa saja (nama barber, nama+harga+durasi service, jam operasional,
    ketersediaan slot, info pembayaran/QRIS) -- TIDAK ADA data sensitif
    toko (omzet, komisi, dst) yang bocor lewat endpoint ini.
-2. `router` (prefix `/api/booking`) — dua tingkat akses lewat dependency
+2. `router` (prefix `/api/booking`) — tiga tingkat akses lewat dependency
    berbeda per endpoint:
-   - `Depends(require_owner_or_staff)`: Owner/Admin, full access (lihat semua
-     booking, kalender, tutup slot, jam operasional, payment settings,
-     QRIS).
+   - `Depends(require_owner_or_staff)`: LIHAT (GET) -- Owner/Admin, staff
+     SELALU boleh melihat tanpa syarat (booking, kalender, tutup slot, jam
+     operasional, payment settings, QRIS).
+   - `Depends(require_permission("izin_booking_kelola"/"izin_booking_batalkan"/
+     "izin_booking_pengaturan"))`: TULIS -- Owner selalu lolos, staff
+     tergantung Hak Akses Admin yang diatur Owner (lihat permissions.py;
+     REVISI Perluasan Hak Akses Admin -- SEBELUMNYA seluruh endpoint TULIS
+     di sini juga `require_owner_or_staff` polos/tanpa izin granular sama
+     sekali, default SEKARANG tetap True supaya staff yang sudah pakai
+     modul ini tidak tiba-tiba terkunci).
    - `Depends(require_barber)` (hanya endpoint `/mine`): Barber, HANYA
      booking miliknya sendiri (barber_id diambil dari akun login, sama
      persis pola seperti /api/dashboard/barber -- bukan dari parameter
@@ -38,7 +45,7 @@ import payment_gateway_db
 import r2_storage
 import subscription_db
 import tenant_db
-from auth import require_feature, require_owner_or_staff, require_barber, resolve_tenant_publik
+from auth import require_feature, require_owner_or_staff, require_barber, require_permission, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
@@ -366,7 +373,7 @@ def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_own
 
 
 @router.post("/transactions/{transaksi_id}/cek-ulang")
-def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
     """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
     perbaikan pasca-audit kesiapan): jalur RESMI untuk transaksi yang macet
     karena webhook TIDAK PERNAH sampai sama sekali (bukan telat/duplikat --
@@ -393,7 +400,7 @@ def jumlah_belum_dikonfirmasi(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.post("/{booking_id}/verifikasi")
-def verifikasi_booking(booking_id: int, user: dict = Depends(require_owner_or_staff)):
+def verifikasi_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
     booking = booking_db.get_booking(booking_id)
     _pastikan_booking_tenant_sama(user, booking)
     # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: booking
@@ -415,7 +422,7 @@ def verifikasi_booking(booking_id: int, user: dict = Depends(require_owner_or_st
 
 
 @router.post("/{booking_id}/batalkan")
-def batalkan_booking(booking_id: int, user: dict = Depends(require_owner_or_staff)):
+def batalkan_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_batalkan"))):
     _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
     try:
         booking_db.batalkan_booking(booking_id)
@@ -440,7 +447,7 @@ def list_closed_slot(barber_id: int = None, tahun: int = None, bulan: int = None
 
 
 @router.post("/closed-slot")
-def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
     try:
         new_id = booking_db.tambah_closed_slot(
             body.barber_id, body.tanggal, body.jam_mulai, body.jam_selesai, body.keterangan,
@@ -452,7 +459,7 @@ def tambah_closed_slot(body: ClosedSlotBody, user: dict = Depends(require_owner_
 
 
 @router.delete("/closed-slot/{closed_slot_id}")
-def hapus_closed_slot(closed_slot_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_closed_slot(closed_slot_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_closed_slot_tenant_sama(user, booking_db.get_closed_slot(closed_slot_id))
     booking_db.hapus_closed_slot(closed_slot_id)
     return {"ok": True}
@@ -475,7 +482,7 @@ def ambil_booking_settings(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.put("/pengaturan")
-def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(require_owner_or_staff)):
+def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     try:
         booking_db.update_booking_settings(**body.model_dump(), tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -483,13 +490,19 @@ def simpan_booking_settings(body: BookingSettingsBody, user: dict = Depends(requ
     return booking_db.get_booking_settings(tenant_id=user["tenant_id"])
 
 
-# FITUR Reset Riwayat Booking (mengantisipasi data menumpuk) -- pola SAMA
-# PERSIS seperti DELETE /api/attendance/riwayat: Owner ATAU Admin (staff)
-# SAMA-SAMA boleh (require_owner_or_staff, TANPA delegasi permission
-# terpisah). `sebelum_tanggal` opsional -- kosong = hapus SEMUA booking
-# tenant ini, sama seperti barber_id kosong = "Semua Barber" di Absensi.
+# FITUR Reset Riwayat Booking (mengantisipasi data menumpuk) -- awalnya pola
+# SAMA PERSIS seperti DELETE /api/attendance/riwayat (require_owner_or_staff
+# polos, TANPA delegasi permission terpisah). REVISI (Perluasan Hak Akses
+# Admin -- diminta Owner, cakupan Booking): aksi ini menghapus SELURUH
+# riwayat booking tenant TANPA undo (destruktif & ireversibel, mirip
+# batalkan_booking) -- sekarang digerbang izin_booking_batalkan yang sama,
+# BUKAN lagi dibiarkan selalu terbuka. Absensi TIDAK ikut diubah (di luar
+# cakupan permintaan ini), jadi kedua endpoint yang dulu simetris sekarang
+# beda perilaku -- SENGAJA, bukan lupa. `sebelum_tanggal` opsional -- kosong
+# = hapus SEMUA booking tenant ini, sama seperti barber_id kosong = "Semua
+# Barber" di Absensi.
 @router.delete("/riwayat")
-def hapus_riwayat(sebelum_tanggal: str = None, user: dict = Depends(require_owner_or_staff)):
+def hapus_riwayat(sebelum_tanggal: str = None, user: dict = Depends(require_permission("izin_booking_batalkan"))):
     jumlah = booking_db.hapus_riwayat_booking(tenant_id=user["tenant_id"], sebelum_tanggal=sebelum_tanggal)
     return {"ok": True, "jumlah_dihapus": jumlah}
 
@@ -514,7 +527,7 @@ class BookingSlugBody(BaseModel):
 
 
 @router.put("/booking-slug")
-def ubah_booking_slug(body: BookingSlugBody, user: dict = Depends(require_owner_or_staff)):
+def ubah_booking_slug(body: BookingSlugBody, user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     """FITUR URL Booking Publik per Tenant (item 7 spesifikasi): validasi
     format + keunikan ditegakkan DI tenant_db.py::set_booking_slug()
     (pool gabungan slug+booking_slug SELURUH tenant) -- pesan error di
@@ -544,7 +557,7 @@ def ambil_payment_settings(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.put("/payment-settings")
-def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(require_owner_or_staff)):
+def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     try:
         booking_db.update_payment_settings(**body.model_dump(), tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -553,7 +566,7 @@ def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(requ
 
 
 @router.post("/qris")
-async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff),
+async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_booking_pengaturan")),
                        _fitur: dict = Depends(require_feature("qris"))):
     konten = await file.read()
     try:
@@ -566,7 +579,7 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 
 
 @router.delete("/qris")
-def hapus_qris_endpoint(user: dict = Depends(require_owner_or_staff),
+def hapus_qris_endpoint(user: dict = Depends(require_permission("izin_booking_pengaturan")),
                          _fitur: dict = Depends(require_feature("qris"))):
     booking_db.hapus_qris(tenant_id=user["tenant_id"])
     return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
@@ -585,7 +598,7 @@ def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(r
 
 
 @router.post("/toko-libur")
-def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
     try:
         new_id = booking_db.tambah_toko_libur(body.tanggal, body.keterangan, tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -594,7 +607,7 @@ def tambah_toko_libur(body: TokoLiburBody, user: dict = Depends(require_owner_or
 
 
 @router.delete("/toko-libur/{toko_libur_id}")
-def hapus_toko_libur(toko_libur_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_toko_libur(toko_libur_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_toko_libur_tenant_sama(user, booking_db.get_toko_libur(toko_libur_id))
     booking_db.hapus_toko_libur(toko_libur_id)
     return {"ok": True}
@@ -641,7 +654,7 @@ def _pastikan_barber_tenant_sama(user: dict, barber_id: int):
 
 
 @router.put("/barber/{barber_id}/status")
-def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_owner_or_staff)):
+def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_barber_tenant_sama(user, barber_id)
     try:
         booking_db.set_status_booking_barber(barber_id, body.status_booking)
@@ -651,7 +664,7 @@ def ubah_status_barber(barber_id: int, body: BarberStatusBody, user: dict = Depe
 
 
 @router.put("/barber/{barber_id}/urutan")
-def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depends(require_owner_or_staff)):
+def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_barber_tenant_sama(user, barber_id)
     try:
         booking_db.set_urutan_barber(barber_id, body.urutan)
@@ -661,7 +674,7 @@ def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depe
 
 
 @router.post("/barber/{barber_id}/foto")
-async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
+async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_barber_tenant_sama(user, barber_id)
     konten = await file.read()
     try:
@@ -674,7 +687,7 @@ async def upload_foto_barber(barber_id: int, file: UploadFile = File(...), user:
 
 
 @router.delete("/barber/{barber_id}/foto")
-def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_foto_barber_endpoint(barber_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
     _pastikan_barber_tenant_sama(user, barber_id)
     try:
         booking_db.hapus_foto_barber(barber_id)
@@ -691,7 +704,7 @@ class ServiceUrutanBody(BaseModel):
 
 
 @router.put("/service/{service_id}/urutan")
-def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = Depends(require_owner_or_staff)):
+def ubah_urutan_service(service_id: int, body: ServiceUrutanBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
     service = db.get_service(service_id)
     if service is None or service.get("tenant_id") != user["tenant_id"]:
         raise HTTPException(status_code=404, detail="Layanan tidak ditemukan.")

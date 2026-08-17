@@ -4,10 +4,17 @@ dihubungkan ke main.py; Tahap 11 menghubungkannya (lihat README).
 
 Produk adalah data operasional TOKO (persediaan barang dagang), bukan milik
 barber manapun — seluruh endpoint di sini KHUSUS Owner ('admin') dan Admin
-('staff', akses PENUH sama persis seperti Owner -- lihat REVISI Hak Akses
-Admin, menu ini tidak memakai sistem izin sama sekali). Barber tetap bisa
-melihat/menjual produk lewat halaman Input Data di tahap lanjut kalau nanti
-diminta eksplisit; untuk saat ini, kelola stok sepenuhnya di tangan Owner/Admin.
+('staff'). Barber tetap bisa melihat/menjual produk lewat halaman Input
+Data di tahap lanjut kalau nanti diminta eksplisit; untuk saat ini, kelola
+stok sepenuhnya di tangan Owner/Admin.
+
+REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
+tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
+TULIS (tambah/edit produk, restock/jual/tester, koreksi mutasi) sekarang
+`require_permission("izin_produk_kelola")`, endpoint HAPUS (nonaktifkan
+produk, hapus mutasi) `require_permission("izin_produk_hapus")` (lihat
+permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
+tiba-tiba terkunci).
 
 Semua logika hitung stok (validasi saldo tidak boleh negatif, dsb) ada di
 database.py (TIDAK diubah di sini) — router ini hanya meneruskan request ke
@@ -19,7 +26,7 @@ from pydantic import BaseModel
 
 import database as db
 import laporan_pdf
-from auth import require_feature, require_owner_or_staff
+from auth import require_feature, require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
 
@@ -70,7 +77,7 @@ def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_owner_or_
 
 
 @router.post("")
-def tambah_produk(body: ProdukBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_produk(body: ProdukBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     try:
         produk_id = db.tambah_produk(body.nama, body.harga_modal, body.harga_jual, tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -79,7 +86,7 @@ def tambah_produk(body: ProdukBody, user: dict = Depends(require_owner_or_staff)
 
 
 @router.put("/{produk_id}")
-def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_owner_or_staff)):
+def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         db.update_produk(produk_id, nama=body.nama, harga_modal=body.harga_modal, harga_jual=body.harga_jual)
@@ -89,14 +96,14 @@ def update_produk(produk_id: int, body: ProdukUpdateBody, user: dict = Depends(r
 
 
 @router.delete("/{produk_id}")
-def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_owner_or_staff)):
+def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_permission("izin_produk_hapus"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     db.nonaktifkan_produk(produk_id)
     return {"ok": True}
 
 
 @router.post("/{produk_id}/restock")
-def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
+def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.restock_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
@@ -106,7 +113,7 @@ def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(requir
 
 
 @router.post("/{produk_id}/jual")
-def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
+def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.jual_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
@@ -116,7 +123,7 @@ def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_o
 
 
 @router.post("/{produk_id}/tester")
-def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_owner_or_staff)):
+def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     """REVISI: tipe transaksi baru 'Tester' -- mengurangi stok sama seperti
     Jual, TAPI TIDAK menambah omzet (lihat db.tester_produk/
     db.get_omzet_penjualan_produk), tetap tercatat penuh di riwayat mutasi."""
@@ -150,7 +157,7 @@ def list_mutasi_pdf(produk_id: int = None, tipe: str = None, tahun: int = None, 
 
 
 @router.put("/mutasi/{mutasi_id}")
-def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_owner_or_staff)):
+def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
     _pastikan_mutasi_tenant_sama(user, db.get_mutasi_produk(mutasi_id))
     try:
         db.koreksi_mutasi_produk(mutasi_id, body.tanggal, body.jumlah, body.catatan)
@@ -160,7 +167,7 @@ def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends
 
 
 @router.delete("/mutasi/{mutasi_id}")
-def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_mutasi(mutasi_id: int, user: dict = Depends(require_permission("izin_produk_hapus"))):
     _pastikan_mutasi_tenant_sama(user, db.get_mutasi_produk(mutasi_id))
     try:
         db.hapus_mutasi_produk(mutasi_id)

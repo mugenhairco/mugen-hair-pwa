@@ -33,7 +33,10 @@ AKSI_VALID = {
     # FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway) -- lihat
     # routers/billing.py, billing_db.py.
     "ubah_paket_billing",
-    "tambah_fitur_billing", "ubah_fitur_billing", "hapus_fitur_billing",
+    # REVISI (audit "fitur hardcode di Superadmin"): "tambah_fitur_billing"
+    # dihapus dari sini -- endpoint POST /features yang menghasilkannya
+    # sudah dihapus total (lihat routers/billing.py).
+    "ubah_fitur_billing", "hapus_fitur_billing",
     "ubah_fitur_paket_billing",
     # Payment Gateway (booking publik, platform-wide) -- lihat
     # routers/payment_gateway.py, payment_gateway_db.py.

@@ -16,15 +16,28 @@ import hashlib
 import itertools
 from datetime import timedelta
 
+import billing_db
 import booking_db
 import booking_gateway_db
 import booking_gateway_webhook
 import database as db
 import payment_gateway_db
+import subscription_db
 import tenant_db
 import whatsapp_service
 import whatsapp_templates
 from booking_db import _hari_ini_wib
+
+
+def _beri_fitur_whatsapp_reminder(tenant_id):
+    """Feature Gating "whatsapp_reminder" (AUDIT "fitur hardcode di
+    Superadmin", lihat billing_db.py::seed_grandfather_fitur_baru_
+    digerbang()): fitur ini SUDAH otomatis ter-grandfather ke SEMUA paket
+    default sejak boot (fitur ini sebelumnya selalu gratis untuk semua
+    tenant) -- baris ini HANYA perlu membuat baris tenant_subscriptions itu
+    sendiri (fail-CLOSED tanpa baris subscription sama sekali, lihat
+    feature_access.py), TIDAK perlu assign manual apa pun."""
+    subscription_db.create_default_subscription(tenant_id, package="free", status="active")
 
 _urutan_unik = itertools.count(1)
 
@@ -181,6 +194,7 @@ def _pasang_penangkap_wa(monkeypatch):
 
 def test_buat_booking_qris_mengirim_reminder(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
     panggilan = _pasang_penangkap_wa(monkeypatch)
     booking = _buat_booking(tenant_id, "qris")
     assert len(panggilan) == 1
@@ -196,8 +210,35 @@ def test_buat_booking_transfer_tidak_mengirim_reminder(single_tenant, monkeypatc
     assert len(panggilan) == 0
 
 
+def test_buat_booking_qris_tidak_mengirim_reminder_tanpa_fitur_whatsapp_reminder(single_tenant, monkeypatch):
+    """Feature Gating "whatsapp_reminder" (AUDIT "fitur hardcode di
+    Superadmin"): paket TANPA fitur ini (dicabut manual Super Admin, walau
+    di-grandfather otomatis sejak boot) -- notifikasi TIDAK PERNAH dicoba
+    dikirim sama sekali (bukan dicoba lalu gagal)."""
+    tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
+    free = billing_db.get_package_by_kode("free")
+    billing_db.set_package_features(free["id"], [])  # cabut semua fitur, termasuk whatsapp_reminder
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+
+    _buat_booking(tenant_id, "qris")
+
+    assert len(panggilan) == 0
+
+
+def test_kirim_notifikasi_wa_booking_tenant_id_none_tidak_mengirim(monkeypatch):
+    """tenant_id None (exception handler global/kasus tidak diketahui) --
+    diperlakukan sama seperti "tidak punya fitur" (fail-CLOSED), bukan
+    exception."""
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    booking_db._kirim_notifikasi_wa_booking(
+        {"tenant_id": None, "customer_whatsapp": "081234567890"}, "reminder_qris")
+    assert len(panggilan) == 0
+
+
 def test_verifikasi_pembayaran_mengirim_konfirmasi_dan_idempoten(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
     booking = _buat_booking(tenant_id, "transfer")  # metode selain qris -- tidak ada pesan reminder duluan
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
@@ -212,6 +253,7 @@ def test_verifikasi_pembayaran_mengirim_konfirmasi_dan_idempoten(single_tenant, 
 
 def test_batalkan_booking_mengirim_pembatalan_dan_idempoten(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
     booking = _buat_booking(tenant_id, "transfer")
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
@@ -229,6 +271,7 @@ def test_webhook_faspay_sukses_memicu_notifikasi_yang_sama(single_tenant, monkey
     verifikasi manual staff, jadi notifikasi WA otomatis ikut terpicu TANPA
     kode tambahan apa pun di jalur webhook."""
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
     payment_gateway_db.update_config(merchant_id="37070", server_key="bot-test", secret_key="pass-test")
     booking = _buat_booking(tenant_id, "gateway", nominal=100000)
     tenant = tenant_db.get_tenant(tenant_id)
@@ -283,6 +326,7 @@ def test_api_whatsapp_templates_simpan_tidak_menimpa_token(single_tenant):
 
 def test_booking_pakai_template_custom_kalau_sudah_diatur(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
     whatsapp_service.set_templates({"pembatalan": "Maaf {nama}, booking {layanan} dibatalkan ya."},
                                     tenant_id=tenant_id)
     booking = _buat_booking(tenant_id, "transfer")

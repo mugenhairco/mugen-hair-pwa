@@ -201,14 +201,15 @@ CREATE TABLE IF NOT EXISTS produk_mutasi (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id            SERIAL PRIMARY KEY,
-    username      TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role          TEXT NOT NULL,
-    barber_id     INTEGER REFERENCES barbers(id),
-    aktif         INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT NOT NULL,
-    tema          TEXT NOT NULL DEFAULT 'terang'
+    id              SERIAL PRIMARY KEY,
+    username        TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    role            TEXT NOT NULL,
+    barber_id       INTEGER REFERENCES barbers(id),
+    aktif           INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL,
+    tema            TEXT NOT NULL DEFAULT 'terang',
+    custom_role_id  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -746,6 +747,25 @@ CREATE TABLE IF NOT EXISTS subscription_package_features (
     UNIQUE(package_id, feature_id)
 );
 
+-- FITUR Role Custom (diminta Owner, lihat user_roles_db.py jalur SQLite
+-- untuk penjelasan lengkap): role_id PAKAI foreign key (tabel BARU, sama
+-- alasannya seperti subscription_package_features di atas).
+CREATE TABLE IF NOT EXISTS user_roles (
+    id           SERIAL PRIMARY KEY,
+    tenant_id    INTEGER,
+    nama         TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_role_permissions (
+    id           SERIAL PRIMARY KEY,
+    role_id      INTEGER NOT NULL REFERENCES user_roles(id) ON DELETE CASCADE,
+    izin_key     TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    UNIQUE(role_id, izin_key)
+);
+
 -- FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway langganan SaaS) --
 -- lihat billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap.
 -- tenant_id TANPA foreign key (pola sama seperti tabel lain di proyek ini).
@@ -840,6 +860,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS blokir_sampai_verifikasi INTEGER NOT 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lat DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lng DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_updated_at TEXT;
+-- FITUR Role Custom (diminta Owner): referensi opsional ke user_roles.id
+-- (lihat user_roles_db.py) -- NULL (default, TERMASUK semua akun staff
+-- yang sudah ada) berarti "pakai set izin default tenant", TIDAK BERUBAH
+-- sama sekali dari perilaku lama.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id INTEGER;
 
 -- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
 -- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).
@@ -1339,6 +1364,9 @@ def create_all():
                      time.monotonic() - _mulai)
         _migrasi_billing_packages(conn)
         _migrasi_billing_features(conn)
+        _migrasi_seed_fitur_paket(conn)
+        _migrasi_hapus_fitur_dekoratif(conn)
+        _migrasi_seed_fitur_baru_digerbang(conn)
         _migrasi_harga_pricing_v2(conn)
         _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs) -- commit transaksi.",
                      time.monotonic() - _mulai)
@@ -1415,23 +1443,42 @@ def _migrasi_billing_packages(conn):
         )
 
 
+_FITUR_DEFAULT_POSTGRES = (
+    ("booking_online", "Booking Online"),
+    ("export_pdf", "Export PDF"),
+    ("export_excel", "Export Excel"),
+    ("qris", "QRIS"),
+    ("whatsapp_reminder", "WhatsApp Reminder"),
+    ("log_error", "Log Error"),
+)
+_FITUR_NYATA_DEFAULT_POSTGRES = ("booking_online", "qris", "export_pdf")
+_KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES = (
+    "dashboard_owner", "dashboard_barber", "multi_barber", "multi_cabang",
+    "google_calendar", "virtual_account", "api", "priority_support",
+)
+_KODE_FITUR_BARU_DIGERBANG_POSTGRES = ("export_excel", "whatsapp_reminder")
+_KUNCI_SEED_FITUR_PAKET = "billing_seed_fitur_nyata_paket_selesai"
+_KUNCI_HAPUS_FITUR_DEKORATIF = "billing_hapus_fitur_tanpa_fungsi_nyata_selesai"
+_KUNCI_SEED_FITUR_BARU_DIGERBANG = "billing_seed_fitur_baru_digerbang_selesai"
+
+
 def _migrasi_billing_features(conn):
     """FONDASI Multi-Tenant Phase 4 -- versi PostgreSQL, SAMA PERSIS logikanya
     dengan billing_db.py::seed_default_features() (jalur SQLite) --
     diduplikasi di sini dengan alasan yang sama seperti
     _migrasi_billing_packages() di atas. Idempotent, tidak pernah menimpa
-    baris yang sudah ada."""
-    fitur_default = (
-        ("booking_online", "Booking Online"), ("dashboard_owner", "Dashboard Owner"),
-        ("dashboard_barber", "Dashboard Barber"), ("multi_barber", "Multi Barber"),
-        ("multi_cabang", "Multi Cabang"), ("google_calendar", "Google Calendar"),
-        ("whatsapp_reminder", "WhatsApp Reminder"), ("export_excel", "Export Excel"),
-        ("export_pdf", "Export PDF"), ("qris", "QRIS"), ("virtual_account", "Virtual Account"),
-        ("api", "API"), ("priority_support", "Priority Support"),
-    )
+    baris yang sudah ada.
+
+    REVISI (audit "fitur hardcode di Superadmin"): daftar dipangkas dari 14
+    ke 6 kode -- HANYA yang sungguhan ditegakkan di kode (lihat
+    billing_db.py::_FITUR_DEFAULT untuk audit lengkap kenapa 8 kode lain
+    dihapus & 2 kode -- export_excel/whatsapp_reminder -- baru digerbang).
+    "log_error" SEBELUMNYA TERLEWAT di jalur Postgres ini (hanya ada di
+    billing_db.py._FITUR_DEFAULT, tidak pernah disalin ke sini) -- audit
+    yang sama menemukan & memperbaiki gap ini sekalian."""
     now = datetime.now().isoformat(timespec="seconds")
     existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_features").fetchall()}
-    for urutan, (kode, nama) in enumerate(fitur_default):
+    for urutan, (kode, nama) in enumerate(_FITUR_DEFAULT_POSTGRES):
         if kode in existing:
             continue
         conn.execute(
@@ -1439,6 +1486,99 @@ def _migrasi_billing_features(conn):
             "VALUES (?, ?, '', 1, ?, ?, ?)",
             (kode, nama, urutan, now, now),
         )
+
+
+def _ambil_flag(conn, kunci: str) -> bool:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (kunci,)).fetchone()
+    return row is not None and row["value"] == "1"
+
+
+def _set_flag(conn, kunci: str):
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (kunci, "1"),
+    )
+
+
+def _assign_fitur_ke_semua_paket(conn, kode_list):
+    """Helper bersama _migrasi_seed_fitur_paket()/_migrasi_seed_fitur_baru_
+    digerbang() di bawah -- gabungkan (bukan ganti) `kode_list` ke daftar
+    fitur yang SUDAH dicentang tiap paket, pola SAMA PERSIS
+    billing_db.py::seed_default_package_features()."""
+    fitur_ids = [r["id"] for r in conn.execute(
+        f"SELECT id FROM subscription_features WHERE kode IN ({', '.join(['?'] * len(kode_list))})",
+        list(kode_list),
+    ).fetchall()]
+    if not fitur_ids:
+        return
+    paket_ids = [r["id"] for r in conn.execute("SELECT id FROM subscription_packages").fetchall()]
+    now = datetime.now().isoformat(timespec="seconds")
+    for package_id in paket_ids:
+        sudah_ada = {r["feature_id"] for r in conn.execute(
+            "SELECT feature_id FROM subscription_package_features WHERE package_id = ?", (package_id,)
+        ).fetchall()}
+        for feature_id in fitur_ids:
+            if feature_id in sudah_ada:
+                continue
+            conn.execute(
+                "INSERT INTO subscription_package_features (package_id, feature_id, created_at) VALUES (?, ?, ?)",
+                (package_id, feature_id, now),
+            )
+
+
+def _migrasi_seed_fitur_paket(conn):
+    """FONDASI Multi-Tenant Phase 4 lanjutan (Feature Gating) -- versi
+    PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::seed_default_
+    package_features() (jalur SQLite) -- diduplikasi di sini dengan alasan
+    yang sama seperti _migrasi_billing_packages() di atas.
+
+    CELAH YANG DIPERBAIKI (ditemukan saat audit "fitur hardcode di
+    Superadmin"): fungsi ini SEBELUMNYA TIDAK PERNAH ADA di jalur Postgres
+    -- jalur SQLite sudah punya assign otomatis booking_online/qris/
+    export_pdf ke semua paket sejak Feature Gating dibangun, tapi jalur
+    Postgres (dipakai deployment production sungguhan) TIDAK PERNAH
+    menjalankan langkah yang setara, hanya membuat baris katalog fitur
+    TANPA pernah mencentangnya ke paket mana pun. Kunci flag SAMA PERSIS
+    dengan jalur SQLite (`billing_seed_fitur_nyata_paket_selesai`) supaya
+    kalau baris `subscription_package_features` sudah sempat diisi manual
+    lewat Dashboard Super Admin sebelum perbaikan ini, migrasi ini TETAP
+    jalan sekali (flag belum pernah di-set jalur Postgres) tapi AMAN --
+    helper di atas hanya MENAMBAH yang belum ada, tidak pernah menghapus
+    centang yang sudah dibuat Super Admin secara manual."""
+    if _ambil_flag(conn, _KUNCI_SEED_FITUR_PAKET):
+        return
+    _assign_fitur_ke_semua_paket(conn, _FITUR_NYATA_DEFAULT_POSTGRES)
+    _set_flag(conn, _KUNCI_SEED_FITUR_PAKET)
+
+
+def _migrasi_hapus_fitur_dekoratif(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::hapus_
+    fitur_tanpa_fungsi_nyata() (jalur SQLite) -- lihat docstring itu untuk
+    audit lengkap. `ON DELETE CASCADE` di subscription_package_features
+    (lihat CREATE TABLE di atas) otomatis melepas kode ini dari paket mana
+    pun yang sudah mencentangnya."""
+    if _ambil_flag(conn, _KUNCI_HAPUS_FITUR_DEKORATIF):
+        return
+    placeholder = ", ".join("?" for _ in _KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES)
+    conn.execute(
+        f"DELETE FROM subscription_features WHERE kode IN ({placeholder})",
+        _KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES,
+    )
+    _set_flag(conn, _KUNCI_HAPUS_FITUR_DEKORATIF)
+
+
+def _migrasi_seed_fitur_baru_digerbang(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::seed_
+    grandfather_fitur_baru_digerbang() (jalur SQLite) -- export_excel/
+    whatsapp_reminder baru digerbang di audit yang sama, SEKALI assign ke
+    SEMUA paket yang sudah ada supaya tenant production yang sudah
+    memakainya (selalu gratis sebelum ini) tidak tiba-tiba kehilangan
+    akses begitu deploy ini jalan."""
+    if _ambil_flag(conn, _KUNCI_SEED_FITUR_BARU_DIGERBANG):
+        return
+    _assign_fitur_ke_semua_paket(conn, _KODE_FITUR_BARU_DIGERBANG_POSTGRES)
+    _set_flag(conn, _KUNCI_SEED_FITUR_BARU_DIGERBANG)
 
 
 _HARGA_PRICING_V2 = {

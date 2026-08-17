@@ -148,7 +148,8 @@ def verify_password(password: str, password_hash: str) -> bool:
         raise RuntimeError(_pesan_diagnosa_bcrypt(e)) from e
 
 
-def tambah_user(username: str, password: str, role: str, barber_id: int = None, tenant_id: int = None) -> int:
+def tambah_user(username: str, password: str, role: str, barber_id: int = None, tenant_id: int = None,
+                 custom_role_id: int = None) -> int:
     """FONDASI Multi-Tenant Phase 1: `tenant_id` menandai user ini milik
     tenant mana -- WAJIB diisi pemanggil KECUALI jalur bootstrap instalasi
     yang benar-benar baru (lihat main.py::_bootstrap_admin_pertama(), yang
@@ -162,7 +163,15 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None, 
     barbershop mana pun), jadi WAJIB `tenant_id=None` (get_current_user() di
     auth.py melewatkan pengecekan tenant aktif kalau tenant_id None, dan
     get_current_tenant_id() menolak akun ini dari endpoint ber-scope tenant
-    -- lihat auth.py). Lihat main.py::_bootstrap_superadmin_pertama()."""
+    -- lihat auth.py). Lihat main.py::_bootstrap_superadmin_pertama().
+
+    FITUR Role Custom: `custom_role_id` OPSIONAL, HANYA relevan untuk role
+    'staff' (lihat user_roles_db.py) -- None (default) berarti akun ini
+    memakai set izin default tenant, PERSIS perilaku lama. Validasi bahwa
+    role_id itu SUNGGUHAN ada & milik tenant yang sama adalah tanggung
+    jawab pemanggil (routers/pengaturan.py, sama seperti barber_id di
+    atas) -- modul ini (auth_db.py) TIDAK mengimpor user_roles_db.py sama
+    sekali supaya tidak ada import silang antar modul murni penyimpanan."""
     from datetime import datetime
     username = (username or "").strip()
     if not username:
@@ -180,12 +189,35 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None, 
     with get_conn() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (username, password_hash, role, barber_id, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (username, hash_password(password), role, barber_id, tenant_id, now),
+                "INSERT INTO users (username, password_hash, role, barber_id, tenant_id, custom_role_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (username, hash_password(password), role, barber_id, tenant_id, custom_role_id, now),
             )
         except IntegrityError:
             raise ValueError(f"Username '{username}' sudah dipakai.")
         return cur.lastrowid
+
+
+def set_custom_role(user_id: int, custom_role_id: int | None):
+    """FITUR Role Custom: tempel/lepas akun 'staff' ke/dari role custom
+    tertentu -- `custom_role_id=None` mengembalikannya ke set izin default
+    tenant (validasi role='staff'/kepemilikan role_id adalah tanggung
+    jawab pemanggil, lihat catatan tambah_user() di atas)."""
+    if get_user(user_id) is None:
+        raise ValueError("User tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET custom_role_id = ? WHERE id = ?", (custom_role_id, user_id))
+
+
+def lepas_custom_role_dari_semua_user(custom_role_id: int):
+    """FITUR Role Custom: dipanggil SEBELUM sebuah role dihapus
+    (user_roles_db.delete_role()) -- SEMUA akun staff yang masih
+    ditempelkan ke role itu otomatis balik ke set izin default tenant
+    (custom_role_id = NULL), TIDAK PERNAH macet/terkunci karena role-nya
+    tiba-tiba hilang (keputusan eksplisit Owner, lihat routers/
+    pengaturan.py::hapus_user_role())."""
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET custom_role_id = NULL WHERE custom_role_id = ?", (custom_role_id,))
 
 
 def get_user_by_username(username: str, tenant_id: int = None):

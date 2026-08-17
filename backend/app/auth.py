@@ -278,13 +278,20 @@ def require_permission(key: str):
     """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
     penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).
     'staff' hanya lolos kalau Owner sudah mengaktifkan permission `key` ini
-    lewat Setting > Hak Akses Admin. 'barber' selalu ditolak (permission
-    Admin tidak berlaku untuk akun Barber)."""
+    lewat Setting > Hak Akses User. 'barber' selalu ditolak (permission
+    Admin tidak berlaku untuk akun Barber).
+
+    FITUR Role Custom: `user.get("custom_role_id")` (kolom baru di tabel
+    `users`, lihat user_roles_db.py) diteruskan apa adanya ke
+    permissions.has() -- None (staff belum ditempelkan ke role custom
+    mana pun, termasuk SEMUA staff yang sudah ada sebelum fitur ini) tetap
+    memakai set izin default tenant PERSIS seperti sebelumnya, 100%
+    kompatibel mundur."""
     def _dep(user: dict = Depends(require_owner_or_staff)) -> dict:
         if user["role"] == "admin":
             return user
         import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
-        if not permissions.has(key, tenant_id=user.get("tenant_id")):
+        if not permissions.has(key, tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                  detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
         return user

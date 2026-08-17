@@ -213,9 +213,15 @@ def daftar_absensi_pdf(tanggal: str = None, tanggal_dari: str = None, tanggal_sa
 @router.get("/excel")
 def daftar_absensi_excel(tanggal: str = None, tanggal_dari: str = None, tanggal_sampai: str = None,
                           barber_id: int = None, status: str = None, user: dict = Depends(get_current_user),
-                          _fitur: dict = Depends(require_feature("export_pdf"))):
-    """Feature gate SAMA dengan export PDF (paket yang boleh export PDF
-    Laporan juga boleh export Excel -- tidak ada kode fitur terpisah)."""
+                          _fitur: dict = Depends(require_feature("export_excel"))):
+    """REVISI (audit "fitur hardcode di Superadmin"): SEBELUMNYA nebeng gate
+    "export_pdf" (lihat riwayat git) -- "Export Excel" sudah ada sebagai
+    kode fitur SENDIRI di katalog Superadmin sejak awal, jadi sekarang
+    benar-benar dipakai (require_feature("export_excel")) alih-alih diam-
+    diam ikut aturan Export PDF, supaya Super Admin bisa mengatur keduanya
+    independen per paket (lihat billing_db.py::seed_grandfather_fitur_baru_
+    digerbang() -- fitur ini sebelumnya selalu menyala gratis, di-grandfather
+    ke SEMUA paket yang sudah ada supaya tenant lama tidak kehilangan akses)."""
     _cek_akses_lihat(user)
     import attendance_excel
     konten = attendance_excel.buat_excel_absensi_list(tanggal, tanggal_dari, tanggal_sampai, barber_id, status,
