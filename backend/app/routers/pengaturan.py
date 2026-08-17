@@ -767,11 +767,12 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     return {"ok": True}
 
 
-# FITUR Role Custom: tempel/lepas akun 'staff' ke/dari role custom --
-# Owner-murni (require_admin, SAMA seperti PUT /hak-akses-admin di bawah --
-# staff tidak pernah boleh mengatur role/izinnya sendiri ataupun staff lain).
+# Ganti Role akun 'staff' -- None = balik ke Role "Admin" (bawaan/default),
+# diisi = pindah ke Role Custom itu. Owner-murni (require_admin, SAMA
+# seperti PUT /hak-akses-admin di bawah -- staff tidak pernah boleh
+# mengatur Role/izinnya sendiri ataupun staff lain).
 class UserRoleBody(BaseModel):
-    custom_role_id: int | None = None  # None = lepas, balik ke default tenant
+    custom_role_id: int | None = None  # None = Role "Admin" (bawaan/default)
 
 
 @router.put("/user/{user_id}/role")
@@ -793,13 +794,17 @@ def ubah_role_user(user_id: int, body: UserRoleBody, user: dict = Depends(requir
     return hasil
 
 
-# ================= HAK AKSES USER (REVISI, sebelumnya "Hak Akses Admin") =================
+# ================= HAK AKSES USER: ROLE "ADMIN" (bawaan/default) =================
 # Menu Setting > Hak Akses User, HANYA Owner (require_admin murni, bukan
 # require_owner_or_staff -- Admin TIDAK BOLEH mengatur hak aksesnya sendiri
 # ataupun Admin lain). Lihat permissions.py untuk daftar lengkap key &
-# default -- ini set izin DEFAULT tenant, dipakai staff yang belum
-# ditempelkan ke role custom mana pun (lihat MANAJEMEN ROLE CUSTOM di
-# bawah untuk role bernama sendiri yang bisa dibuat Owner).
+# default -- endpoint ini mengatur izin Role "Admin" (Role BAWAAN, dipakai
+# staff yang Role-nya BUKAN salah satu Role Custom -- lihat MANAJEMEN ROLE
+# CUSTOM di bawah untuk Role bernama sendiri yang bisa dibuat Owner). URL
+# path /hak-akses-admin TIDAK diubah (kompatibilitas), murni label UI-nya
+# yang sekarang "Role Admin" di tab Hak Akses User (frontend menyatukan
+# tampilan Role "Admin" ini dengan tabel Role Custom, lihat pages/
+# pengaturan.js::renderHakAksesAdmin()).
 
 class HakAksesAdminBody(BaseModel):
     izin: dict[str, bool]
@@ -808,11 +813,11 @@ class HakAksesAdminBody(BaseModel):
 # GET boleh dibaca 'staff' JUGA (bukan hanya Owner) -- staff perlu tahu hak
 # aksesnya sendiri supaya frontend-nya bisa menampilkan tab/aksi yang sesuai
 # (lihat pages/pengaturan.js). Mengubahnya (PUT di bawah) TETAP Owner-murni.
-# FITUR Role Custom: mengembalikan izin EFEKTIF akun yang login -- staff
-# yang ditempelkan ke role custom (users.custom_role_id) melihat checklist
-# role-nya sendiri, BUKAN selalu default tenant (lihat permissions.py).
-# Mengatur checklist SATU role tertentu (dipakai halaman kelola role,
-# BUKAN "punya saya sendiri") pakai endpoint terpisah, lihat
+# Mengembalikan izin EFEKTIF akun yang login sesuai Role-nya -- staff yang
+# Role-nya salah satu Role Custom (users.custom_role_id) melihat checklist
+# Role Custom itu, BUKAN selalu Role "Admin" (lihat permissions.py).
+# Mengatur checklist SATU Role tertentu (dipakai halaman kelola Role, BUKAN
+# "punya saya sendiri") pakai endpoint terpisah, lihat
 # GET/PUT /api/user-roles/{id}/permissions di bawah.
 @router.get("/hak-akses-admin")
 def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
@@ -828,12 +833,13 @@ def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require
 
 
 # ================= MANAJEMEN ROLE CUSTOM (FITUR Role User Custom, diminta Owner) =================
-# Owner bisa membuat role bernama sendiri (mis. "Kasir", "Supervisor"),
+# Owner bisa membuat Role bernama sendiri (mis. "Kasir", "Supervisor"),
 # masing-masing dengan checklist izin_* SENDIRI (katalog SAMA persis
-# dengan Hak Akses User default di atas -- lihat user_roles_db.py), lalu
-# menempelkan akun staff tertentu ke role itu (PUT /user/{id}/role di
-# atas). Seluruh endpoint di sini Owner-murni (require_admin), sama
-# seperti PUT /hak-akses-admin.
+# dengan Role "Admin" di atas -- lihat user_roles_db.py), lalu Role itu
+# dipilih LANGSUNG sebagai Role akun staff tertentu (PUT /user/{id}/role
+# di atas, atau saat POST /user) -- BUKAN "ditempelkan ke Admin", akun itu
+# memakai HANYA izin Role Custom-nya. Seluruh endpoint di sini Owner-murni
+# (require_admin), sama seperti PUT /hak-akses-admin.
 
 def _pastikan_role_tenant_sama(user: dict, role: dict | None):
     """Pola SAMA seperti _pastikan_target_tenant_sama() untuk user -- 404
@@ -843,8 +849,15 @@ def _pastikan_role_tenant_sama(user: dict, role: dict | None):
         raise HTTPException(status_code=404, detail="Role tidak ditemukan.")
 
 
+# GET boleh dibaca 'staff' JUGA (require_owner_or_staff, BUKAN require_admin
+# seperti endpoint mutasi POST/PUT/DELETE Role Custom di bawah) -- murni
+# daftar nama Role tenant (id + nama, TANPA detail izin), dipakai tab User
+# supaya kolom "Role" akun staff LAIN yang Role-nya salah satu Role Custom
+# tampil dengan nama sebenarnya (mis. "Kasir"), bukan fallback "Role #3"
+# (lihat pages/pengaturan.js::renderUser()). Staff TETAP tidak bisa
+# membuat/mengubah/menghapus Role apa pun lewat endpoint ini (read-only).
 @router.get("/user-roles")
-def list_user_roles(user: dict = Depends(require_admin)):
+def list_user_roles(user: dict = Depends(require_owner_or_staff)):
     return user_roles_db.list_roles(tenant_id=user["tenant_id"])
 
 

@@ -697,7 +697,7 @@
 // POST /api/log-error) ditambahkan ke APP_SHELL. Owner melihat hasilnya
 // lewat Setting > Log Error (pages/pengaturan.js, sudah dimuat dinamis,
 // tidak perlu masuk APP_SHELL_BER_VERSI terpisah).
-const ASSET_VERSION = "121";
+const ASSET_VERSION = "123";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
