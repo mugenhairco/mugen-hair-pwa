@@ -675,6 +675,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   padding: 22px;
   max-width: 360px;
   width: 100%;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
 }
 .modal-box h3 { margin: 0 0 10px; font-size: 17px; }
 .modal-box p { margin: 0 0 8px; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
