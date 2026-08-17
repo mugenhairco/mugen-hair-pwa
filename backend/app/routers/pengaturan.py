@@ -849,8 +849,15 @@ def _pastikan_role_tenant_sama(user: dict, role: dict | None):
         raise HTTPException(status_code=404, detail="Role tidak ditemukan.")
 
 
+# GET boleh dibaca 'staff' JUGA (require_owner_or_staff, BUKAN require_admin
+# seperti endpoint mutasi POST/PUT/DELETE Role Custom di bawah) -- murni
+# daftar nama Role tenant (id + nama, TANPA detail izin), dipakai tab User
+# supaya kolom "Role" akun staff LAIN yang Role-nya salah satu Role Custom
+# tampil dengan nama sebenarnya (mis. "Kasir"), bukan fallback "Role #3"
+# (lihat pages/pengaturan.js::renderUser()). Staff TETAP tidak bisa
+# membuat/mengubah/menghapus Role apa pun lewat endpoint ini (read-only).
 @router.get("/user-roles")
-def list_user_roles(user: dict = Depends(require_admin)):
+def list_user_roles(user: dict = Depends(require_owner_or_staff)):
     return user_roles_db.list_roles(tenant_id=user["tenant_id"])
 
 

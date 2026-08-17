@@ -1242,13 +1242,16 @@ const PagePengaturan = (() => {
       // REVISI Struktur Role: USER -> ROLE -> HAK AKSES. Role custom BUKAN
       // lagi "ditempelkan ke Admin" -- role custom adalah Role sungguhan,
       // dipilih LANGSUNG lewat dropdown Role yang sama dengan Owner/Admin/
-      // Barber (lihat opsiRole di bawah). Owner-murni (staff tidak pernah
-      // membuat akun ber-role Admin, jadi tidak pernah butuh daftar role
-      // custom ini sama sekali).
+      // Barber (lihat opsiRole di bawah). Diambil untuk SEMUA aktor
+      // (termasuk staff, backend GET-nya read-only require_owner_or_staff)
+      // -- staff perlu ini supaya kolom "Role" akun staff LAIN yang
+      // Role-nya salah satu Role Custom tampil dengan nama sebenarnya
+      // (mis. "Kasir"), bukan fallback "Role #3". Dropdown PEMBUATAN user
+      // di bawah TETAP Owner-murni (staff tidak pernah membuat akun
+      // ber-role Admin, lihat guard selRole) -- daftar ini di sini HANYA
+      // dipakai staff untuk lookup nama, bukan untuk memilih Role.
       let roles = [];
-      if (!isStaffActor) {
-        try { roles = await MugenApi.get("/api/pengaturan/user-roles"); } catch (e) { /* opsional */ }
-      }
+      try { roles = await MugenApi.get("/api/pengaturan/user-roles"); } catch (e) { /* opsional */ }
       const NAMA_ROLE = Object.fromEntries(roles.map((r) => [r.id, r.nama]));
 
       // Decode/encode nilai <option> tunggal <-> {role, custom_role_id} --
