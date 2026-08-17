@@ -296,20 +296,12 @@ def list_features(user: dict = Depends(require_superadmin)):
     return billing_db.list_features()
 
 
-class FeatureBody(BaseModel):
-    kode: str
-    nama: str
-    deskripsi: str = ""
-
-
-@superadmin_router.post("/features")
-def tambah_feature(body: FeatureBody, user: dict = Depends(require_superadmin)):
-    try:
-        hasil = billing_db.create_feature(body.kode, body.nama, body.deskripsi)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    superadmin_audit_db.catat(user["username"], "tambah_fitur_billing", detail=f"kode={hasil['kode']}")
-    return hasil
+# REVISI (audit "fitur hardcode di Superadmin", diminta Owner): endpoint
+# POST /features (bikin kode fitur baru bebas) DIHAPUS TOTAL -- Super Admin
+# sekarang HANYA bisa mencentang/hapus-centang dari daftar tetap
+# billing_db._FITUR_DEFAULT (lihat docstring lengkap di sana) lewat PUT
+# /packages/{id}/features di bawah, TIDAK BISA lagi mengarang nama fitur
+# sendiri yang tidak punya fungsi nyata apa pun di kode.
 
 
 class FeatureUpdateBody(BaseModel):

@@ -412,6 +412,8 @@ def on_startup():
         billing_db.seed_default_packages()  # seed 4 baris (free/basic/pro/enterprise) kalau belum ada (idempotent)
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, QRIS, dst) kalau belum ada (idempotent)
         billing_db.seed_default_package_features()  # Feature Gating: assign booking_online/qris/export_pdf ke SEMUA paket SEKALI SAJA, supaya tenant lama tidak kehilangan fitur yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
+        billing_db.hapus_fitur_tanpa_fungsi_nyata()  # AUDIT "fitur hardcode di Superadmin": hapus permanen 8 kode fitur yang TIDAK PERNAH menggerbang apa pun di kode, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
+        billing_db.seed_grandfather_fitur_baru_digerbang()  # AUDIT yang sama: export_excel/whatsapp_reminder baru digerbang sekarang -- assign ke SEMUA paket SEKALI SAJA supaya tenant lama tidak kehilangan akses yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_pricing_v2()  # FITUR Landing Page & Pricing (paket 6 bulan): set harga bulanan + 6 bulan basic/pro/enterprise ke daftar harga resmi terbaru, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
         billing_gateway_db.migrasi_billing_gateway()  # Payment Gateway Billing SaaS: bootstrap kredensial dari env var MIDTRANS_* lama ke database, HANYA kalau belum pernah diisi (idempotent)

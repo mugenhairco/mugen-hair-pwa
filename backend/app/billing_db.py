@@ -27,12 +27,35 @@ init_billing_db() dipanggil dari main.py on_startup() jalur SQLite. Jalur
 PostgreSQL: tabel yang SAMA dibuat di postgres_schema.py.
 
 Modul ini JUGA berisi katalog fitur (`subscription_features` +
-`subscription_package_features`, penugasan checkbox per paket) -- SESUAI
-KEPUTUSAN cakupan Phase 4: murni katalog/toggle data (Super Admin bebas
-tambah/hapus/aktifkan-nonaktifkan fitur & mencentang fitur mana milik
-paket mana), TANPA menggerbang fungsi kode apa pun -- kebanyakan contoh
-fitur di spesifikasi (Google Calendar, WhatsApp Reminder, Multi Cabang,
-API, dst) belum punya implementasi nyata di aplikasi ini sama sekali.
+`subscription_package_features`, penugasan checkbox per paket).
+
+REVISI (audit "fitur hardcode di Superadmin" -- diminta Owner): katalog ini
+SEBELUMNYA berisi 14 kode, HANYA 4 yang sungguhan menggerbang sesuatu di
+kode (booking_online/export_pdf/qris/log_error) -- 10 sisanya (Dashboard
+Owner/Barber, Multi Barber, Multi Cabang, Google Calendar, Export Excel,
+Virtual Account, API, Priority Support) murni LABEL yang bisa dicentang
+Superadmin tanpa efek teknis apa pun, berpotensi menjanjikan sesuatu yang
+tidak sungguhan ada ke paket berbayar. `_FITUR_DEFAULT` di bawah SEKARANG
+HANYA berisi kode yang benar-benar ditegakkan (lihat feature_access.py) --
+`hapus_fitur_tanpa_fungsi_nyata()` membersihkan baris lama yang sudah
+sempat ter-seed di database production, dan endpoint `POST /features`
+(bikin kode fitur baru bebas) DIHAPUS TOTAL dari routers/billing.py --
+Super Admin sekarang HANYA bisa mencentang/hapus-centang dari daftar tetap
+ini per paket, TIDAK BISA lagi mengarang nama fitur sendiri (lihat
+docstring `_FITUR_DEFAULT`/`hapus_fitur_tanpa_fungsi_nyata()` di bawah
+untuk audit lengkap per kode).
+
+Dua kode (`export_excel`, `whatsapp_reminder`) yang audit ini temukan
+SUNGGUHAN nyata (masing-masing laporan Excel Absensi & notifikasi WhatsApp
+Fonnte) TAPI belum pernah digerbang sebelumnya (selalu menyala gratis
+untuk SEMUA tenant) baru DIBERI gate SEKARANG (lihat routers/attendance.py
+& booking_db.py::_kirim_notifikasi_wa_booking()) --
+`seed_grandfather_fitur_baru_digerbang()` di bawah SEKALI memberikan
+keduanya ke SELURUH paket yang sudah ada supaya tenant yang sudah
+memakainya tidak tiba-tiba kehilangan akses begitu perubahan ini deploy,
+pola SAMA PERSIS `seed_default_package_features()`/`_FITUR_NYATA_DEFAULT`
+di bawah.
+
 Beda dengan LIMIT_FIELDS di bawah (barber/user/layanan/booking) yang
 BENAR-BENAR ditegakkan di kode karena entitasnya nyata ada."""
 
@@ -55,20 +78,20 @@ from subscription_db import PACKAGE_VALID
 # benar -- Super Admin yang memutuskan paket mana dapat fitur ini.
 _FITUR_NYATA_DEFAULT = ("booking_online", "qris", "export_pdf")
 
+# HANYA kode yang sungguhan menggerbang sesuatu di kode (lihat
+# feature_access.py) -- lihat docstring modul di atas untuk audit lengkap
+# 10 kode yang DIHAPUS dari sini (Dashboard Owner/Barber, Multi Barber,
+# Multi Cabang, Google Calendar, Virtual Account, API, Priority Support --
+# TIDAK PERNAH ada implementasinya sama sekali) dan 2 kode yang baru
+# ditambah gate-nya di audit yang sama (Export Excel, WhatsApp Reminder --
+# lihat seed_grandfather_fitur_baru_digerbang() supaya tenant yang sudah
+# pakai tidak kehilangan akses).
 _FITUR_DEFAULT = (
     ("booking_online", "Booking Online"),
-    ("dashboard_owner", "Dashboard Owner"),
-    ("dashboard_barber", "Dashboard Barber"),
-    ("multi_barber", "Multi Barber"),
-    ("multi_cabang", "Multi Cabang"),
-    ("google_calendar", "Google Calendar"),
-    ("whatsapp_reminder", "WhatsApp Reminder"),
-    ("export_excel", "Export Excel"),
     ("export_pdf", "Export PDF"),
+    ("export_excel", "Export Excel"),
     ("qris", "QRIS"),
-    ("virtual_account", "Virtual Account"),
-    ("api", "API"),
-    ("priority_support", "Priority Support"),
+    ("whatsapp_reminder", "WhatsApp Reminder"),
     ("log_error", "Log Error"),
 )
 
@@ -237,6 +260,71 @@ def seed_default_package_features():
     set_setting(_KUNCI_SEED_FITUR_PAKET, "1")
 
 
+# Kode fitur yang DIHAPUS permanen dari katalog (audit "fitur hardcode di
+# Superadmin" -- lihat docstring modul di atas): diaudit langsung ke seluruh
+# kode aplikasi, TIDAK PERNAH ada satu pun require_feature()/pemanggilan
+# fungsi nyata yang menggerbang kode ini -- murni label yang bisa dicentang
+# Superadmin tanpa efek teknis apa pun.
+_KODE_FITUR_TANPA_FUNGSI_NYATA = (
+    "dashboard_owner", "dashboard_barber", "multi_barber", "multi_cabang",
+    "google_calendar", "virtual_account", "api", "priority_support",
+)
+_KUNCI_HAPUS_FITUR_DEKORATIF = "billing_hapus_fitur_tanpa_fungsi_nyata_selesai"
+
+
+def hapus_fitur_tanpa_fungsi_nyata():
+    """SEKALI SAJA sepanjang umur database -- DELETE permanen (bukan
+    sekadar berhenti di-seed) `_KODE_FITUR_TANPA_FUNGSI_NYATA` dari
+    `subscription_features`, supaya baris yang SUDAH sempat ter-seed di
+    database production (dari _FITUR_DEFAULT versi lama, sebelum audit ini)
+    ikut terhapus, bukan cuma tidak ditambah lagi. `ON DELETE CASCADE` di
+    `subscription_package_features.feature_id` otomatis melepas kode ini
+    dari SEMUA paket yang sudah mencentangnya -- efeknya kartu harga/
+    Katalog Fitur Superadmin langsung berhenti menampilkan label yang
+    memang tidak ada fungsinya. Flag `settings` sekali-jalan (pola sama
+    seperti seed_default_package_features() di atas) supaya Super Admin
+    yang menambah kode LAIN dengan nama kebetulan sama persis di masa
+    depan (kalaupun endpoint pembuatannya belum dihapus) tidak ikut
+    kehapus diam-diam tiap boot."""
+    if get_setting(_KUNCI_HAPUS_FITUR_DEKORATIF, default=None) == "1":
+        return
+    placeholder = ", ".join("?" for _ in _KODE_FITUR_TANPA_FUNGSI_NYATA)
+    with get_conn() as conn:
+        conn.execute(
+            f"DELETE FROM subscription_features WHERE kode IN ({placeholder})",
+            _KODE_FITUR_TANPA_FUNGSI_NYATA,
+        )
+    set_setting(_KUNCI_HAPUS_FITUR_DEKORATIF, "1")
+
+
+_KODE_FITUR_BARU_DIGERBANG = ("export_excel", "whatsapp_reminder")
+_KUNCI_SEED_FITUR_BARU_DIGERBANG = "billing_seed_fitur_baru_digerbang_selesai"
+
+
+def seed_grandfather_fitur_baru_digerbang():
+    """SEKALI SAJA sepanjang umur database -- audit "fitur hardcode di
+    Superadmin" yang sama menemukan `export_excel` (laporan Excel Absensi,
+    routers/attendance.py) dan `whatsapp_reminder` (notifikasi Fonnte,
+    booking_db.py::_kirim_notifikasi_wa_booking()) SUNGGUHAN nyata TAPI
+    belum pernah digerbang paket sama sekali -- SELALU menyala gratis untuk
+    SEMUA tenant sebelum gate ditambahkan di audit ini. Pola SAMA PERSIS
+    seed_default_package_features()/_FITUR_NYATA_DEFAULT di atas: assign
+    KEDUANYA ke SELURUH paket yang sudah ada SEKALI saat migrasi ini
+    pertama jalan, supaya tenant yang sudah pakai tidak tiba-tiba
+    kehilangan akses begitu deploy ini jalan -- Super Admin bebas
+    mencabutnya lagi per paket kapan pun setelahnya lewat Dashboard."""
+    if get_setting(_KUNCI_SEED_FITUR_BARU_DIGERBANG, default=None) == "1":
+        return
+    fitur_ids = [f["id"] for f in list_features() if f["kode"] in _KODE_FITUR_BARU_DIGERBANG]
+    if fitur_ids:
+        for paket in list_packages():
+            sudah_ada = {f["id"] for f in get_package_features(paket["id"])}
+            gabungan = list(dict.fromkeys(list(sudah_ada) + fitur_ids))
+            if set(gabungan) != sudah_ada:
+                set_package_features(paket["id"], gabungan)
+    set_setting(_KUNCI_SEED_FITUR_BARU_DIGERBANG, "1")
+
+
 def list_packages(hanya_aktif: bool = False) -> list:
     with get_conn() as conn:
         q = "SELECT * FROM subscription_packages"
@@ -333,28 +421,6 @@ def get_feature_by_kode(kode: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM subscription_features WHERE kode = ?", (kode,)).fetchone()
         return dict(row) if row else None
-
-
-def create_feature(kode: str, nama: str, deskripsi: str = "") -> dict:
-    """`kode` dinormalisasi (lowercase, spasi -> underscore) supaya cocok
-    dipakai sebagai slug internal -- Super Admin tetap bebas memberi `nama`
-    tampilan apa pun terlepas dari kode ini."""
-    kode = (kode or "").strip().lower().replace(" ", "_")
-    if not kode:
-        raise ValueError("Kode fitur tidak boleh kosong.")
-    if not (nama or "").strip():
-        raise ValueError("Nama fitur tidak boleh kosong.")
-    if get_feature_by_kode(kode) is not None:
-        raise ValueError(f"Kode fitur '{kode}' sudah dipakai.")
-    now = _now()
-    with get_conn() as conn:
-        urutan = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM subscription_features").fetchone()["m"] + 1
-        conn.execute(
-            "INSERT INTO subscription_features (kode, nama, deskripsi, aktif, urutan, created_at, updated_at) "
-            "VALUES (?, ?, ?, 1, ?, ?, ?)",
-            (kode, nama.strip(), deskripsi or "", urutan, now, now),
-        )
-    return get_feature_by_kode(kode)
 
 
 def update_feature(feature_id: int, **fields) -> dict:

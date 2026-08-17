@@ -329,3 +329,29 @@ def test_tables_tidak_mengandung_karakter_pemicu_placeholder_psycopg2():
     tables = postgres_schema._TABLES
     assert "?" not in tables, "Tanda tanya literal di _TABLES akan diterjemahkan jadi placeholder Postgres."
     assert "%s" not in tables, "'%s' literal di _TABLES akan disalahartikan psycopg2 sebagai placeholder posisi."
+
+
+def test_katalog_fitur_postgres_sama_persis_dengan_sqlite():
+    """Regresi bug produksi (AUDIT "fitur hardcode di Superadmin"): jalur
+    Postgres (postgres_schema.py, dipakai deployment production sungguhan)
+    dan jalur SQLite (billing_db.py, dipakai dev lokal & test) DIDUPLIKASI
+    manual (modul ini TIDAK mengimpor billing_db.py, lihat catatan panjang
+    di postgres_schema.py) -- audit menemukan salah satu sudah DRIFT diam-
+    diam ("log_error" hilang total dari jalur Postgres, tidak pernah
+    ketahuan karena suite ini jalan di SQLite). Test statis ini (TIDAK
+    butuh Postgres sungguhan, selalu jalan) mengunci KEDUA daftar supaya
+    tetap identik -- kalau salah satu diubah tanpa yang lain, test ini
+    gagal duluan sebelum sempat deploy."""
+    import sys
+
+    sys.path.insert(0, APP_DIR)
+    import billing_db
+    import postgres_schema
+
+    assert postgres_schema._FITUR_DEFAULT_POSTGRES == billing_db._FITUR_DEFAULT
+    assert set(postgres_schema._FITUR_NYATA_DEFAULT_POSTGRES) == set(billing_db._FITUR_NYATA_DEFAULT)
+    assert set(postgres_schema._KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES) == set(billing_db._KODE_FITUR_TANPA_FUNGSI_NYATA)
+    assert set(postgres_schema._KODE_FITUR_BARU_DIGERBANG_POSTGRES) == set(billing_db._KODE_FITUR_BARU_DIGERBANG)
+    assert postgres_schema._KUNCI_SEED_FITUR_PAKET == billing_db._KUNCI_SEED_FITUR_PAKET
+    assert postgres_schema._KUNCI_HAPUS_FITUR_DEKORATIF == billing_db._KUNCI_HAPUS_FITUR_DEKORATIF
+    assert postgres_schema._KUNCI_SEED_FITUR_BARU_DIGERBANG == billing_db._KUNCI_SEED_FITUR_BARU_DIGERBANG
