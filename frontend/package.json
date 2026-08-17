@@ -1,0 +1,11 @@
+{
+  "name": "mugen-hair-frontend-e2e",
+  "private": true,
+  "description": "Suite E2E Playwright untuk frontend/app (PWA MUGEN Hair Co.) -- lihat frontend/e2e/. TIDAK terkait proses build produksi (render-build.sh) sama sekali, murni tooling tes.",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

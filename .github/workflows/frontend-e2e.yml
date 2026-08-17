@@ -1,0 +1,59 @@
+name: Frontend E2E (Playwright)
+
+# Suite E2E jalan sungguhan lewat browser (Playwright) untuk frontend/app --
+# BEDA dari backend-tests.yml (pytest, lewat FastAPI TestClient langsung,
+# tidak pernah menyentuh browser sungguhan). Sebelum workflow ini ada,
+# verifikasi tampilan/UI HANYA dilakukan manual (skenario ad-hoc, TIDAK
+# PERNAH tersimpan/dijalankan ulang otomatis) -- lihat frontend/e2e/ untuk
+# skenario yang sudah terdaftar.
+#
+# backend/e2e_server.py mem-boot backend FastAPI di atas database SQLite
+# throwaway berisi fixture awal (Owner, Barber, Booking, Pengaturan
+# Absensi), frontend/playwright.config.js menjalankan server itu +
+# server statis frontend/ sekaligus lewat `webServer` (array).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E suite
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload Playwright report (kalau ada tes gagal)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

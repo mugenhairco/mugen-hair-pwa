@@ -46,6 +46,11 @@ venv/
 # (lihat android-app/README.md), .gradle/build sudah di-cover android-app/android/.gitignore
 node_modules/
 
+# frontend/ suite E2E Playwright (lihat frontend/e2e/, frontend/playwright.config.js)
+# — output tes lokal, dibuat ulang tiap `npm run test:e2e`, TIDAK ikut git.
+frontend/playwright-report/
+frontend/test-results/
+
 # Editor
 .vscode/
 .idea/
