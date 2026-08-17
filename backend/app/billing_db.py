@@ -93,6 +93,18 @@ _FITUR_DEFAULT = (
     ("qris", "QRIS"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
     ("log_error", "Log Error"),
+    # FITUR Feature Gating lanjutan (diminta Owner): dua kode BARU, SUNGGUHAN
+    # digerbang sejak awal ditambahkan (BEDA dari export_excel/whatsapp_
+    # reminder di atas, yang sengaja di-grandfather karena sebelumnya SELALU
+    # menyala gratis) -- "barber_app" (login akun ber-role 'barber', lihat
+    # routers/auth_router.py::login()) dan "absensi" (SELURUH modul
+    # /api/attendance/*, lihat routers/attendance.py) TIDAK PERNAH ada
+    # sebelum ini, jadi TIDAK ADA seed_grandfather_*() untuk keduanya --
+    # SENGAJA (keputusan eksplisit Owner) fail-CLOSED langsung untuk paket
+    # mana pun yang belum dicentang Super Admin begitu deploy ini jalan,
+    # BUKAN menyala dulu lalu dicabut belakangan.
+    ("barber_app", "Aplikasi Barber (Login Barber)"),
+    ("absensi", "Absensi Karyawan"),
 )
 
 # Batas pemakaian (kolom nullable di subscription_packages, NULL = tidak

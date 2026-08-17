@@ -56,13 +56,18 @@ TENANT_ID = tenant["id"]
 # export_pdf lewat billing_db.seed_default_package_features() (dipanggil
 # main.on_startup() di atas) -- "log_error" ditambahkan manual di sini
 # (BUKAN bagian _FITUR_NYATA_DEFAULT, lihat catatan billing_db.py) supaya
-# tab Log Error tetap testable E2E.
+# tab Log Error tetap testable E2E. "barber_app"/"absensi" (FITUR Feature
+# Gating lanjutan, TIDAK ADA grandfather sama sekali, lihat billing_db.py)
+# ditambahkan dengan alasan SAMA PERSIS -- tanpa ini, login akun barber
+# E2E (absensi.spec.js/booking-barber.spec.js/login.spec.js) & seluruh
+# endpoint /api/attendance/* akan 403 duluan.
 subscription_db.create_default_subscription(TENANT_ID, package="free", status="active")
 _paket_free = billing_db.get_package_by_kode("free")
-_fitur_log_error = billing_db.get_feature_by_kode("log_error")
-if _paket_free is not None and _fitur_log_error is not None:
+_kode_fitur_e2e = ("log_error", "barber_app", "absensi")
+if _paket_free is not None:
+    _fitur_ids = {billing_db.get_feature_by_kode(k)["id"] for k in _kode_fitur_e2e if billing_db.get_feature_by_kode(k)}
     _fitur_sudah_ada = {f["id"] for f in billing_db.get_package_features(_paket_free["id"])}
-    billing_db.set_package_features(_paket_free["id"], list(_fitur_sudah_ada | {_fitur_log_error["id"]}))
+    billing_db.set_package_features(_paket_free["id"], list(_fitur_sudah_ada | _fitur_ids))
 
 BARBER_ID = database.add_barber("E2E Barber", tenant_id=TENANT_ID)
 SERVICE_ID = database.add_service("E2E Haircut", 50000, tenant_id=TENANT_ID)

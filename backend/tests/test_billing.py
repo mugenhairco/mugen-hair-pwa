@@ -236,7 +236,8 @@ def test_update_package_nama_kosong_ditolak():
 def test_boot_seed_katalog_fitur_default(app_client):
     fitur = billing_db.list_features()
     kode = {f["kode"] for f in fitur}
-    assert kode == {"booking_online", "export_pdf", "export_excel", "qris", "whatsapp_reminder", "log_error"}
+    assert kode == {"booking_online", "export_pdf", "export_excel", "qris", "whatsapp_reminder", "log_error",
+                     "barber_app", "absensi"}
 
 
 def test_seed_fitur_idempotent_tidak_menimpa_perubahan(app_client):
@@ -253,7 +254,7 @@ def test_superadmin_list_features(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/features", headers=headers)
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 6
+    assert len(r.json()) == 8
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_features(two_tenants):
@@ -270,7 +271,7 @@ def test_superadmin_tidak_bisa_lagi_tambah_fitur_baru(app_client):
         "kode": "sms_reminder", "nama": "SMS Reminder",
     })
     assert r.status_code in (404, 405)
-    assert len(billing_db.list_features()) == 6
+    assert len(billing_db.list_features()) == 8
 
 
 def test_superadmin_ubah_fitur(app_client):

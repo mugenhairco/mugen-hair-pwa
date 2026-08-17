@@ -1450,6 +1450,12 @@ _FITUR_DEFAULT_POSTGRES = (
     ("qris", "QRIS"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
     ("log_error", "Log Error"),
+    # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- lihat docstring di sana.
+    # TIDAK ADA grandfather untuk kedua kode ini (keputusan eksplisit
+    # Owner), jadi TIDAK ADA fungsi _migrasi_seed_fitur_baru_digerbang()
+    # kedua untuk keduanya -- cukup masuk katalog di sini.
+    ("barber_app", "Aplikasi Barber (Login Barber)"),
+    ("absensi", "Absensi Karyawan"),
 )
 _FITUR_NYATA_DEFAULT_POSTGRES = ("booking_online", "qris", "export_pdf")
 _KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES = (

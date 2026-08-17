@@ -24,6 +24,39 @@ const MugenApi = (() => {
     }
   }
 
+  // BUGFIX: `payload.detail` dari backend BIASANYA string biasa (ValueError
+  // dkk), TAPI auth.require_feature() (lihat routers/attendance.py,
+  // booking.py, error_log.py) sengaja membalas OBJEK terstruktur
+  // `{message, feature, upgrade_required}` di body JSON (kontrak backend
+  // TIDAK diubah, tetap diuji apa adanya lewat TestClient di
+  // backend/tests/) -- TAPI belum ada satu pun halaman yang membaca
+  // `.feature`/`.upgrade_required`, sedangkan HAMPIR SEMUA halaman
+  // menampilkan error lewat pola `e.detail.detail ? e.detail.detail :
+  // e.message` (baca .detail.detail sebagai STRING). Tanpa normalisasi
+  // ini, gate fitur baru (mis. "absensi" -- lihat routers/attendance.py)
+  // yang sebelumnya jarang tersentuh jadi sering muncul sebagai literal
+  // "[object Object]".
+  //
+  // PENTING: HANYA bentuk `upgrade_required` yang diratakan jadi string --
+  // bentuk objek TERSTRUKTUR LAIN (mis. 409 login ambigu-tenant
+  // `{message, tenants: [...]}` dan 403 `{code: "email_belum_
+  // terverifikasi", email}`, lihat pages/login.js) SENGAJA TIDAK disentuh
+  // sama sekali, karena field-field itu SUNGGUHAN dibaca frontend untuk
+  // alur pemilih-toko/verifikasi-email -- meratakannya jadi string akan
+  // MERUSAK kedua alur itu.
+  function _pesanDariDetail(detail) {
+    if (typeof detail === "string" && detail) return detail;
+    if (detail && detail.upgrade_required && typeof detail.message === "string") return detail.message;
+    return "Terjadi kesalahan pada server.";
+  }
+
+  function _normalisasiPayload(payload) {
+    if (!payload || !payload.detail || typeof payload.detail !== "object" || !payload.detail.upgrade_required) {
+      return payload; // string biasa ATAU bentuk terstruktur lain -- BIARKAN apa adanya
+    }
+    return { ...payload, detail: _pesanDariDetail(payload.detail) };
+  }
+
   async function request(method, path, body, { useCache = false } = {}) {
     const cacheKey = `${method}:${path}`;
     const headers = { "Content-Type": "application/json" };
@@ -84,8 +117,8 @@ const MugenApi = (() => {
     }
 
     if (!response.ok) {
-      const detail = payload && payload.detail ? payload.detail : "Terjadi kesalahan pada server.";
-      throw new ApiError(detail, response.status, payload);
+      const pesan = _pesanDariDetail(payload && payload.detail);
+      throw new ApiError(pesan, response.status, _normalisasiPayload(payload));
     }
 
     if (method === "GET" && useCache) {
@@ -115,8 +148,8 @@ const MugenApi = (() => {
     let payload = null;
     try { payload = await response.json(); } catch (e) { /* tanpa body */ }
     if (!response.ok) {
-      const detail = payload && payload.detail ? payload.detail : "Terjadi kesalahan pada server.";
-      throw new ApiError(detail, response.status, payload);
+      const pesan = _pesanDariDetail(payload && payload.detail);
+      throw new ApiError(pesan, response.status, _normalisasiPayload(payload));
     }
     return payload;
   }
@@ -142,9 +175,9 @@ const MugenApi = (() => {
       throw new ApiError("Sesi login berakhir, silakan login lagi.", 401, null);
     }
     if (!response.ok) {
-      let detail = "Terjadi kesalahan pada server.";
-      try { detail = (await response.json()).detail || detail; } catch (e) { /* body bukan JSON */ }
-      throw new ApiError(detail, response.status, null);
+      let rawDetail = null;
+      try { rawDetail = (await response.json()).detail; } catch (e) { /* body bukan JSON */ }
+      throw new ApiError(_pesanDariDetail(rawDetail), response.status, null);
     }
     return response.blob();
   }

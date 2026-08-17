@@ -24,9 +24,25 @@ yang ingin membuktikan skenario "paket TIDAK punya fitur ini" harus
 EKSPLISIT mencabutnya dulu lewat _set_fitur_paket_persis() (BUKAN
 mengasumsikan paket baru mulai kosong)."""
 
+import pytest
+
 import billing_db
 import feature_access
 import subscription_db
+
+
+@pytest.fixture(autouse=True)
+def _default_barber_app_dan_absensi_aktif():
+    """OVERRIDE fixture autouse SAMA PERSIS namanya di conftest.py (yang
+    memonkeypatch feature_access.tenant_has_feature() supaya kode
+    "barber_app"/"absensi" SELALU aktif secara default di seluruh test
+    suite lain, lihat docstring lengkapnya di sana) -- file INI justru
+    tempat perilaku ASLI (fail-CLOSED tanpa grandfather) kedua gate itu
+    sungguhan diuji (lihat bagian "Aplikasi Barber"/"Absensi Karyawan" di
+    bawah), jadi override ini SENGAJA no-op (TIDAK memonkeypatch apa pun)
+    supaya tenant_has_feature() yang SUNGGUHAN berlaku untuk test di file
+    ini."""
+    yield
 
 
 def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia123"):
@@ -149,11 +165,19 @@ def test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
 # selalu gratis untuk semua tenant), jadi tenant dengan subscription APA PUN
 # otomatis sudah punya fitur ini TANPA assign manual -- beda dari log_error
 # yang fail-CLOSED murni (lihat test_error_log.py).
+#
+# CATATAN (FITUR Feature Gating "Absensi Karyawan", ditambah belakangan):
+# /api/attendance/excel SEKARANG JUGA tergerbang "absensi" di level router
+# (lihat bagian "Absensi Karyawan" di bawah) SELAIN "export_excel" sendiri
+# -- kedua test di bawah eksplisit meng-grant "absensi" supaya HANYA
+# perilaku export_excel yang diuji di sini (isolasi), fixture autouse
+# global di conftest.py TIDAK berlaku di file ini (lihat override no-op
+# di atas).
 
 def test_excel_endpoint_403_upgrade_required_tanpa_fitur_export_excel(single_tenant):
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
     superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free")  # cabut semua
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "absensi")  # HANYA absensi, TANPA export_excel
 
     r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
     assert r.status_code == 403
@@ -163,9 +187,14 @@ def test_excel_endpoint_403_upgrade_required_tanpa_fitur_export_excel(single_ten
 
 
 def test_excel_endpoint_sukses_dengan_fitur_grandfather_default(single_tenant):
-    """Fitur di-grandfather ke SEMUA paket sejak boot -- TIDAK perlu assign
-    manual apa pun untuk skenario "menyala" (lihat catatan modul di atas)."""
+    """export_excel di-grandfather ke SEMUA paket sejak boot -- TIDAK perlu
+    assign manual apa pun untuk skenario "menyala" (lihat catatan modul di
+    atas). "absensi" TIDAK di-grandfather (fitur baru, lihat bagian
+    "Absensi Karyawan" di bawah) -- WAJIB di-assign eksplisit di sini
+    supaya gate router-level itu tidak ikut menolak."""
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "export_excel", "absensi")
 
     r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
     assert r.status_code == 200, r.text
@@ -285,3 +314,152 @@ def test_owner_hapus_qris_sukses_dengan_fitur_qris_real_default(single_tenant):
 
     r = single_tenant["client"].delete("/api/booking/qris", headers=single_tenant["headers"])
     assert r.status_code == 200, r.text
+
+
+# ============================= Aplikasi Barber (barber_app, routers/auth_router.py::login()) =============================
+# Diminta Owner: gate LOGIN akun ber-role 'barber' -- fail-CLOSED SEJAK
+# AWAL, TIDAK ADA grandfather (beda dari export_excel/whatsapp_reminder di
+# atas) -- lihat billing_db.py::_FITUR_DEFAULT. Fixture autouse global di
+# conftest.py yang menganggap kode ini SELALU aktif di-override no-op di
+# awal file ini (lihat fixture _default_barber_app_dan_absensi_aktif di
+# atas) supaya perilaku ASLI diuji di sini.
+
+def _buat_barber(tenant_id, username="barber1", password="passwordB123"):
+    import database
+    import auth_db
+
+    barber_id = database.add_barber("Barber Test", tenant_id=tenant_id)
+    auth_db.tambah_user(username, password, role="barber", barber_id=barber_id, tenant_id=tenant_id)
+    return barber_id
+
+
+def test_login_barber_403_tanpa_fitur_barber_app(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    _buat_barber(single_tenant["tenant_id"])
+
+    r = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
+    assert r.status_code == 403
+    assert "tidak tersedia" in r.json()["detail"].lower()
+
+
+def test_login_barber_403_tanpa_baris_subscription_sama_sekali(single_tenant):
+    """Fail-closed jaga-jaga -- tenant tanpa baris subscription apa pun
+    (lihat catatan fixture single_tenant/two_tenants di conftest.py) juga
+    tidak boleh meloloskan login barber."""
+    _buat_barber(single_tenant["tenant_id"])
+
+    r = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
+    assert r.status_code == 403
+
+
+def test_login_barber_sukses_dengan_fitur_barber_app(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "barber_app")
+    _buat_barber(single_tenant["tenant_id"])
+
+    r = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
+    assert r.status_code == 200, r.text
+    assert r.json()["token"]
+
+
+def test_login_owner_tidak_terpengaruh_gate_barber_app(single_tenant):
+    """Gate ini HANYA berlaku untuk role='barber' -- Owner (role='admin')
+    TIDAK PERNAH terkena, walau paketnya sama sekali tidak punya fitur
+    "barber_app" (bahkan TANPA baris subscription sekalipun, lihat fixture
+    single_tenant -- login Owner sudah berhasil sejak awal fixture ini)."""
+    r = single_tenant["client"].post("/api/auth/login", json={"username": "owner1", "password": "password123"})
+    assert r.status_code == 200, r.text
+
+
+def test_login_staff_tidak_terpengaruh_gate_barber_app(single_tenant):
+    """Gate ini HANYA berlaku untuk role='barber' -- akun 'staff' (Admin)
+    tidak pernah terkena walau paket tidak punya fitur "barber_app"."""
+    import auth_db
+
+    auth_db.tambah_user("staff1", "passwordS123", role="staff", tenant_id=single_tenant["tenant_id"])
+    r = single_tenant["client"].post("/api/auth/login", json={"username": "staff1", "password": "passwordS123"})
+    assert r.status_code == 200, r.text
+
+
+# ============================= Absensi Karyawan (absensi, routers/attendance.py, SELURUH modul) =============================
+# Diminta Owner: SATU gate `dependencies=[Depends(require_feature("absensi"))]`
+# di level router menggerbang SELURUH endpoint /api/attendance/* sekaligus
+# (Check In/Out, dashboard, riwayat, pengaturan, koreksi, export) -- fail-
+# CLOSED SEJAK AWAL, TIDAK ADA grandfather, independen dari gate
+# "barber_app" di atas (tenant bisa punya satu tanpa yang lain).
+
+def test_absensi_dashboard_403_tanpa_fitur_absensi(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+
+    r = single_tenant["client"].get("/api/attendance/dashboard", headers=single_tenant["headers"])
+    assert r.status_code == 403
+    detail = r.json()["detail"]
+    assert detail["upgrade_required"] is True
+    assert detail["feature"] == "absensi"
+
+
+def test_absensi_dashboard_sukses_dengan_fitur_absensi(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "absensi")
+
+    r = single_tenant["client"].get("/api/attendance/dashboard", headers=single_tenant["headers"])
+    assert r.status_code == 200, r.text
+
+
+def test_absensi_settings_403_tanpa_fitur_absensi(single_tenant):
+    """Endpoint LAIN di router yang sama (bukan cuma /dashboard) ikut
+    tergerbang -- membuktikan `dependencies=` di level router benar-benar
+    menggerbang SELURUH endpoint, bukan cuma satu titik."""
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+
+    r = single_tenant["client"].get("/api/attendance/settings", headers=single_tenant["headers"])
+    assert r.status_code == 403
+
+
+def test_absensi_checkin_barber_403_tanpa_fitur_absensi_walau_barber_app_aktif(single_tenant):
+    """Kedua gate INDEPENDEN -- tenant bisa punya "barber_app" (barber
+    boleh login) TANPA "absensi" (barber tetap tidak bisa Check In/Out
+    sama sekali)."""
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "barber_app")  # HANYA barber_app
+    _buat_barber(single_tenant["tenant_id"])
+
+    r_login = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
+    assert r_login.status_code == 200, r_login.text
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    r = single_tenant["client"].get("/api/attendance/today", headers=headers_barber)
+    assert r.status_code == 403
+    assert r.json()["detail"]["feature"] == "absensi"
+
+
+def test_absensi_checkin_barber_sukses_dengan_barber_app_dan_absensi_aktif(single_tenant):
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "barber_app", "absensi")
+    _buat_barber(single_tenant["tenant_id"])
+
+    r_login = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
+    assert r_login.status_code == 200, r_login.text
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    r = single_tenant["client"].get("/api/attendance/today", headers=headers_barber)
+    assert r.status_code == 200, r.text
+
+
+def test_absensi_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
+    """Pola sama seperti test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_
+    terpengaruh() di atas -- assign "absensi" HANYA ke paket tenant A."""
+    subscription_db.create_default_subscription(two_tenants["tenant_a"], package="free", status="active")
+    subscription_db.create_default_subscription(two_tenants["tenant_b"], package="basic", status="active")
+    superadmin_headers = _buat_superadmin_dan_login(two_tenants["client"])
+    _set_fitur_paket_persis(two_tenants["client"], superadmin_headers, "free", "absensi")
+
+    ra = two_tenants["client"].get("/api/attendance/dashboard", headers=two_tenants["headers_a"])
+    assert ra.status_code == 200, ra.text
+
+    rb = two_tenants["client"].get("/api/attendance/dashboard", headers=two_tenants["headers_b"])
+    assert rb.status_code == 403
