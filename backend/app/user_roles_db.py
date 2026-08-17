@@ -1,25 +1,28 @@
 """user_roles_db.py — Role Custom per Tenant (FITUR Role User Custom, diminta Owner)
 =============================================================================
-Lanjutan dari permissions.py (katalog izin_* yang sudah ada) -- SEBELUMNYA
-HANYA ada SATU set izin per tenant, berlaku untuk SEMUA akun ber-role
-'staff' sekaligus ("Hak Akses Admin"). Owner sekarang bisa membuat role
-BERNAMA sendiri (mis. "Kasir", "Supervisor"), masing-masing dengan
-kombinasi izin_* berbeda (checklist yang SAMA PERSIS, dari katalog
-permissions.PERMISSION_DEFS -- TIDAK ADA sistem izin baru), lalu
-menempelkan akun 'staff' tertentu ke role itu.
+Bagian dari struktur USER -> ROLE -> HAK AKSES (lihat permissions.py).
+Role Custom adalah Role SUNGGUHAN, sederajat dengan Role bawaan "Admin" --
+BUKAN permission tambahan yang "ditempelkan" ke akun ber-Role Admin. Owner
+bisa membuat Role bernama sendiri (mis. "Kasir", "Supervisor"), masing-
+masing dengan kombinasi izin_* sendiri (checklist yang SAMA PERSIS, dari
+katalog permissions.PERMISSION_DEFS -- TIDAK ADA sistem izin baru), lalu
+Role itu dipilih LANGSUNG sebagai Role akun 'staff' tertentu (tab User,
+Setting > Pengaturan) -- akun itu memakai HANYA izin Role tersebut, tidak
+pernah digabung dengan izin Role "Admin".
 
 KOMPATIBEL MUNDUR TOTAL: akun 'staff' yang `custom_role_id`-nya NULL
-(termasuk SEMUA akun staff yang sudah ada sebelum fitur ini) TETAP
-memakai satu set izin tenant-wide lama ("Hak Akses User" default, disimpan
-di tabel `settings` lewat permissions.py, TIDAK disentuh modul ini sama
-sekali) -- role custom murni OPSIONAL/TAMBAHAN, bukan migrasi paksa. Lihat
-permissions.py::get_all()/has() untuk titik gabungnya (parameter `role_id`
-opsional -- diisi = pakai role custom, None = perilaku lama).
+(termasuk SEMUA akun staff yang sudah ada sebelum fitur ini) berarti
+Role-nya adalah "Admin" (Role bawaan/default) -- izinnya TETAP dari satu
+set izin tenant-wide lama ("Hak Akses User" default, disimpan di tabel
+`settings` lewat permissions.py, TIDAK disentuh modul ini sama sekali).
+Lihat permissions.py::get_all()/has() untuk titik gabungnya (parameter
+`role_id` opsional -- diisi = pakai Role Custom itu, None = pakai Role
+"Admin").
 
-BEDA dari role custom TANPA centang apa pun: role BARU (belum pernah
+BEDA dari Role Custom TANPA centang apa pun: Role BARU (belum pernah
 diatur Owner) mulai KOSONG (fail-CLOSED, semua izin False) -- BEDA dari
-default tenant-wide (banyak yang True by design, lihat permissions.py) --
-karena tidak ada "staff yang sudah pakai" untuk digrandfather di role yang
+default Role "Admin" (banyak yang True by design, lihat permissions.py) --
+karena tidak ada "staff yang sudah pakai" untuk digrandfather di Role yang
 baru saja dibuat Owner sendiri."""
 
 from datetime import datetime

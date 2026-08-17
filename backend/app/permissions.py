@@ -1,27 +1,30 @@
 """
 permissions.py — Hak Akses User (dinamis, disimpan di PostgreSQL)
 =============================================================================
-Role 'staff' (label UI: "Admin") duduk di antara 'admin' (label UI: "Owner",
-akses penuh TANPA batasan apa pun) dan 'barber'. Apa yang boleh dilakukan
-role 'staff' TIDAK di-hardcode di kode -- Owner mengatur lewat menu
-Setting > Hak Akses User (lihat routers/pengaturan.py endpoint
-/hak-akses-admin -- URL path TIDAK diubah, murni label UI yang berganti
-nama, lihat catatan FITUR Role Custom di bawah), disimpan sebagai baris di
-tabel `settings` yang sudah ada (key-value generik, sudah dialek-netral
-SQLite/PostgreSQL lewat db_compat.py -- TIDAK perlu tabel baru) -- ini
-menjadi set izin DEFAULT tenant, dipakai SEMUA akun staff yang belum
-ditempelkan ke role custom mana pun.
+STRUKTUR: USER -> ROLE -> HAK AKSES. Role 'staff' (label UI: "Admin") duduk
+di antara 'admin' (label UI: "Owner", akses penuh TANPA batasan apa pun) dan
+'barber'. Apa yang boleh dilakukan role 'staff' TIDAK di-hardcode di kode --
+Owner mengatur lewat menu Setting > Hak Akses User (lihat
+routers/pengaturan.py), yang SEKARANG menampilkan SATU tabel Role berisi
+Role bawaan "Admin" + seluruh Role Custom (lihat user_roles_db.py) -- BUKAN
+lagi dua konsep terpisah. Role "Admin" adalah Role BAWAAN/default (tidak
+bisa diganti nama/dihapus), izinnya disimpan sebagai baris di tabel
+`settings` yang sudah ada (key-value generik, sudah dialek-netral
+SQLite/PostgreSQL lewat db_compat.py -- endpoint /hak-akses-admin, URL path
+TIDAK diubah, murni label UI) -- dipakai SEMUA akun staff yang Role-nya
+"Admin" (belum memilih Role Custom lain).
 
-FITUR Role Custom (diminta Owner, revisi berikutnya): Owner sekarang BISA
-membuat role bernama sendiri (mis. "Kasir", "Supervisor" -- lihat
-user_roles_db.py) dengan checklist izin_* SENDIRI dari katalog yang SAMA
-persis di bawah ini (TIDAK ADA sistem izin baru, murni cara baru menyimpan
-+ menempelkannya ke user tertentu), lalu menempelkan akun staff tertentu
-ke role itu lewat `users.custom_role_id`. Parameter `role_id` OPSIONAL di
-get_all()/has()/has_any()/set_bulk() di bawah -- diisi = baca/tulis
-checklist role custom itu, None (default, JUGA berlaku untuk staff yang
-belum ditempelkan ke role mana pun) = perilaku LAMA (set default tenant di
-atas), 100% kompatibel mundur.
+FITUR Role Custom (diminta Owner): Owner bisa membuat Role bernama sendiri
+(mis. "Kasir", "Supervisor" -- lihat user_roles_db.py) dengan checklist
+izin_* SENDIRI dari katalog yang SAMA persis di bawah ini (TIDAK ADA sistem
+izin baru, murni Role tambahan di luar "Admin"/"Owner"/"Barber"), dipilih
+LANGSUNG sebagai Role saat membuat/mengedit User (tab User) lewat
+`users.custom_role_id` -- BUKAN "ditempelkan ke Admin", akun ber-Role Kasir
+memakai HANYA izin Role Kasir, tidak pernah gabungan dengan Role "Admin".
+Parameter `role_id` OPSIONAL di get_all()/has()/has_any()/set_bulk() di
+bawah -- diisi = baca/tulis checklist Role Custom itu, None (default, JUGA
+berlaku untuk staff ber-Role "Admin") = pakai set izin Role "Admin" di atas,
+100% kompatibel mundur.
 
 Owner ('admin') SELALU lolos setiap pengecekan izin di sini tanpa syarat
 (lihat auth.require_permission) -- daftar & default di bawah ini HANYA
@@ -135,14 +138,14 @@ def get_all(tenant_id=None, role_id=None) -> dict:
     """{key: bool} untuk SELURUH permission.
 
     FITUR Role Custom (diminta Owner, lihat user_roles_db.py): `role_id`
-    OPSIONAL -- diisi (akun 'staff' yang sudah ditempelkan ke role custom
+    OPSIONAL -- diisi (akun 'staff' yang Role-nya salah satu Role Custom
     lewat users.custom_role_id) -> baca dari user_role_permissions (fail-
     CLOSED, kode yang tidak ada di sana = False, TIDAK PERNAH pakai default
     PERMISSION_DEFS -- role baru sengaja mulai kosong, lihat docstring
     modul user_roles_db.py). `role_id=None` (default, JUGA berlaku untuk
-    SEMUA akun staff yang belum pernah ditempelkan ke role mana pun) ->
-    PERSIS perilaku lama, dengan default dari PERMISSION_DEFS kalau Owner
-    belum pernah mengaturnya sama sekali. SATU query (get_all_settings(),
+    SEMUA akun staff ber-Role "Admin", Role bawaan) -> PERSIS perilaku
+    lama, dengan default dari PERMISSION_DEFS kalau Owner belum pernah
+    mengaturnya sama sekali. SATU query (get_all_settings(),
     sudah ada sejak Tahap 2) -- bukan satu query per key -- karena fungsi
     ini dipanggil di SETIAP pengecekan require_permission()/has(), termasuk
     untuk request yang datang beruntun.

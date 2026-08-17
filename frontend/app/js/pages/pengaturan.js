@@ -1239,14 +1239,26 @@ const PagePengaturan = (() => {
       let barbers = [];
       try { barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true }); } catch (e) { /* opsional */ }
 
-      // FITUR Role Custom: Owner-murni (staff tidak pernah membuat akun
-      // ber-role Admin, jadi tidak pernah butuh daftar role ini sama
-      // sekali -- lihat guard selRole di bawah).
+      // REVISI Struktur Role: USER -> ROLE -> HAK AKSES. Role custom BUKAN
+      // lagi "ditempelkan ke Admin" -- role custom adalah Role sungguhan,
+      // dipilih LANGSUNG lewat dropdown Role yang sama dengan Owner/Admin/
+      // Barber (lihat opsiRole di bawah). Owner-murni (staff tidak pernah
+      // membuat akun ber-role Admin, jadi tidak pernah butuh daftar role
+      // custom ini sama sekali).
       let roles = [];
       if (!isStaffActor) {
         try { roles = await MugenApi.get("/api/pengaturan/user-roles"); } catch (e) { /* opsional */ }
       }
       const NAMA_ROLE = Object.fromEntries(roles.map((r) => [r.id, r.nama]));
+
+      // Decode/encode nilai <option> tunggal <-> {role, custom_role_id} --
+      // "admin"/"barber" = role sistem apa adanya, "staff" = Admin (Role
+      // default, custom_role_id NULL), "staff:<id>" = Role Custom tertentu.
+      function decodeRoleOption(v) {
+        if (v.startsWith("staff:")) return { role: "staff", custom_role_id: Number(v.slice(6)) };
+        if (v === "staff") return { role: "staff", custom_role_id: null };
+        return { role: v, custom_role_id: null };
+      }
 
       formCard.appendChild(MugenUI.el("h2", {}, "Tambah User"));
       const inputUsername = MugenUI.el("input", { type: "text", placeholder: "Username" });
@@ -1258,28 +1270,22 @@ const PagePengaturan = (() => {
       // yang diketik di atas TETAP langsung berlaku, TIDAK menunggu
       // verifikasi apa pun.
       const inputEmail = MugenUI.el("input", { type: "email", placeholder: "Email (opsional -- kirim undangan verifikasi)" });
+      // SATU dropdown Role berisi Role sistem (Owner/Admin/Barber) DAN
+      // seluruh Role Custom yang sudah dibuat Owner (lihat tab Hak Akses
+      // User) -- TIDAK ADA lagi dropdown kedua "Role Custom" terpisah.
       const selRole = MugenUI.el("select");
       if (!isStaffActor) {
         selRole.appendChild(MugenUI.el("option", { value: "admin" }, "Owner"));
         selRole.appendChild(MugenUI.el("option", { value: "staff" }, "Admin"));
+        for (const r of roles) selRole.appendChild(MugenUI.el("option", { value: `staff:${r.id}` }, r.nama));
       }
       selRole.appendChild(MugenUI.el("option", { value: "barber" }, "Barber"));
       if (isStaffActor) selRole.value = "barber";
       const selBarberAkun = MugenUI.el("select", { style: isStaffActor ? "" : "display:none;" });
       selBarberAkun.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
       for (const b of barbers) selBarberAkun.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-      // FITUR Role Custom: HANYA tampil untuk role "Admin" (staff) --
-      // kosong ("-- Default --") berarti akun ini memakai set izin default
-      // tenant, PERSIS perilaku lama.
-      const selCustomRole = MugenUI.el("select", { style: "display:none;" });
-      selCustomRole.appendChild(MugenUI.el("option", { value: "" }, "-- Default (Hak Akses User) --"));
-      for (const r of roles) selCustomRole.appendChild(MugenUI.el("option", { value: String(r.id) }, r.nama));
-      const labelCustomRole = MugenUI.el("label", { style: "display:none;" }, "Role Custom (khusus role Admin, opsional)");
       selRole.addEventListener("change", () => {
         selBarberAkun.style.display = selRole.value === "barber" ? "" : "none";
-        const tampilRole = selRole.value === "staff";
-        selCustomRole.style.display = tampilRole ? "" : "none";
-        labelCustomRole.style.display = tampilRole ? "" : "none";
       });
 
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Tambah User");
@@ -1293,8 +1299,6 @@ const PagePengaturan = (() => {
       formCard.appendChild(inputEmail);
       formCard.appendChild(MugenUI.el("label", {}, "Role"));
       formCard.appendChild(selRole);
-      formCard.appendChild(labelCustomRole);
-      formCard.appendChild(selCustomRole);
       formCard.appendChild(MugenUI.el("label", {}, "Terhubung ke Barber (khusus role Barber)"));
       formCard.appendChild(selBarberAkun);
       formCard.appendChild(formError);
@@ -1304,19 +1308,20 @@ const PagePengaturan = (() => {
         formError.textContent = "";
         if (!inputUsername.value.trim()) { formError.textContent = "Username tidak boleh kosong."; return; }
         if (!inputPassword.value || inputPassword.value.length < 4) { formError.textContent = "Password minimal 4 karakter."; return; }
-        if (selRole.value === "barber" && !selBarberAkun.value) { formError.textContent = "Pilih barber untuk dikaitkan ke akun ini."; return; }
+        const dipilih = decodeRoleOption(selRole.value);
+        if (dipilih.role === "barber" && !selBarberAkun.value) { formError.textContent = "Pilih barber untuk dikaitkan ke akun ini."; return; }
         try {
           await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/pengaturan/user", {
             username: inputUsername.value.trim(),
             password: inputPassword.value,
-            role: selRole.value,
-            barber_id: selRole.value === "barber" ? Number(selBarberAkun.value) : null,
+            role: dipilih.role,
+            barber_id: dipilih.role === "barber" ? Number(selBarberAkun.value) : null,
             email: inputEmail.value.trim(),
-            custom_role_id: selRole.value === "staff" && selCustomRole.value ? Number(selCustomRole.value) : null,
+            custom_role_id: dipilih.custom_role_id,
           }));
           MugenUI.toast(inputEmail.value.trim() ? "User ditambahkan, email undangan terkirim." : "User ditambahkan.", "success");
-          inputUsername.value = ""; inputPassword.value = ""; inputEmail.value = ""; selCustomRole.value = "";
-          if (isStaffActor) { selBarberAkun.style.display = ""; } else { selRole.value = "admin"; selBarberAkun.style.display = "none"; selCustomRole.style.display = "none"; labelCustomRole.style.display = "none"; }
+          inputUsername.value = ""; inputPassword.value = ""; inputEmail.value = "";
+          if (isStaffActor) { selBarberAkun.style.display = ""; } else { selRole.value = "admin"; selBarberAkun.style.display = "none"; }
           loadList();
         } catch (e) {
           formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -1336,14 +1341,15 @@ const PagePengaturan = (() => {
           listBody.appendChild(MugenUI.buildTable(
             [
               { key: "username", label: "Username" },
-              { key: "role", label: "Role", format: (v) => LABEL_ROLE[v] || v },
               {
-                // FITUR Role Custom: HANYA relevan untuk role='staff' --
-                // baris lain (Owner/Barber/Super Admin) tidak pernah punya
-                // custom_role_id terisi sama sekali.
-                key: "custom_role_id", label: "Role Custom", format: (v, r) => {
-                  if (r.role !== "staff") return "-";
-                  return v ? (NAMA_ROLE[v] || `Role #${v}`) : "Default";
+                // Role EFEKTIF akun ini -- SATU kolom (bukan lagi "Role" +
+                // "Role Custom" terpisah): akun ber-role 'staff' yang belum
+                // dipilihkan Role Custom tampil sebagai "Admin" (Role
+                // sistem default), yang sudah dipilihkan tampil dengan
+                // nama Role Custom-nya langsung (mis. "Kasir").
+                key: "role", label: "Role", format: (v, r) => {
+                  if (v === "staff") return r.custom_role_id ? (NAMA_ROLE[r.custom_role_id] || `Role #${r.custom_role_id}`) : "Admin";
+                  return LABEL_ROLE[v] || v;
                 },
               },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
@@ -1387,15 +1393,14 @@ const PagePengaturan = (() => {
                     });
                     wrap.appendChild(btnUsername);
                   }
-                  // FITUR Role Custom: HANYA relevan untuk row ber-role
-                  // 'staff' -- Owner bisa menempelkan/melepas akun itu
-                  // ke/dari role custom kapan pun tanpa harus hapus-buat
-                  // ulang akun.
+                  // HANYA relevan untuk row ber-role 'staff' -- Owner bisa
+                  // mengganti Role akun ini (Admin atau Role Custom mana
+                  // pun) kapan pun tanpa harus hapus-buat ulang akun.
                   if (!isStaffActor && r.role === "staff") {
                     const btnGantiRole = MugenUI.el("button", {}, "Ganti Role");
                     btnGantiRole.addEventListener("click", () => {
                       const sel = MugenUI.el("select");
-                      sel.appendChild(MugenUI.el("option", { value: "" }, "-- Default (Hak Akses User) --"));
+                      sel.appendChild(MugenUI.el("option", { value: "" }, "Admin (Default)"));
                       for (const rr of roles) sel.appendChild(MugenUI.el("option", { value: String(rr.id) }, rr.nama));
                       sel.value = r.custom_role_id ? String(r.custom_role_id) : "";
                       const err = MugenUI.el("div", { class: "login-error" });
@@ -1743,67 +1748,40 @@ const PagePengaturan = (() => {
       return checkboxes;
     }
 
+    // REVISI Struktur Role: USER -> ROLE -> HAK AKSES. Tab ini SEKARANG
+    // SATU tempat untuk mengatur izin SEMUA Role ber-tingkat "Admin"
+    // (Role sistem "Admin" + seluruh Role Custom buatan Owner) -- BUKAN
+    // lagi dua kartu terpisah ("Hak Akses User" default + "Role Custom"
+    // tempelan) yang membuat kesan dua sistem berbeda. Owner (akses penuh
+    // tanpa syarat) dan Barber (model self-service sendiri, tidak memakai
+    // katalog izin_* ini sama sekali) SENGAJA tidak muncul di tabel Role
+    // ini -- tidak ada apa pun yang bisa/perlu dikonfigurasi untuk keduanya.
+    // "Admin" adalah Role BAWAAN (tidak bisa diganti nama/dihapus, disimpan
+    // di penyimpanan tenant-wide lama lewat /hak-akses-admin -- TIDAK ada
+    // migrasi data, murni disatukan tampilannya) -- Role BARU yang dibuat
+    // Owner (mis. "Kasir") disimpan lewat user_roles/user_role_permissions
+    // (lihat user_roles_db.py), SAMA PERSIS seperti sebelumnya.
     async function renderHakAksesAdmin() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Hak Akses User"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Set izin DEFAULT untuk akun ber-role Admin (role 'staff') yang belum ditempelkan ke Role Custom mana pun (lihat " +
-        "bagian Role Custom di bawah untuk role bernama sendiri dengan izin berbeda-beda). Owner selalu memiliki akses " +
-        "penuh tanpa batasan apa pun -- pengaturan di bawah ini TIDAK berlaku untuk Owner."));
-
-      let izin;
-      try {
-        izin = await MugenApi.get("/api/pengaturan/hak-akses-admin");
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.message));
-        return;
-      }
-
-      const checkboxes = buildIzinChecklistUI(card, izin);
-
-      const errorBox = MugenUI.el("div", { class: "login-error" });
-      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Hak Akses");
-      card.appendChild(errorBox);
-      card.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, btnSimpan));
-
-      btnSimpan.addEventListener("click", async () => {
-        errorBox.textContent = "";
-        const body2 = {};
-        for (const [key, cb] of Object.entries(checkboxes)) body2[key] = cb.checked;
-        try {
-          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/hak-akses-admin", { izin: body2 }));
-          MugenUI.toast("Hak akses User disimpan.", "success", { force: true });
-        } catch (e) {
-          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-
-      await renderRoleCustomManager();
-    }
-
-    // ================= ROLE CUSTOM (FITUR Role User Custom, diminta Owner) =================
-    // Owner bisa membuat role bernama sendiri (mis. "Kasir", "Supervisor"),
-    // masing-masing dengan checklist izin_* SENDIRI (katalog SAMA persis
-    // dengan Hak Akses User default di atas), lalu menempelkan akun staff
-    // tertentu ke role itu lewat dropdown "Role" di tab User (lihat
-    // renderUser() di atas). Role BARU mulai KOSONG (fail-closed, semua
-    // izin False) -- BEDA dari set default tenant yang banyak default True
-    // (grandfather) -- karena tidak ada staff yang perlu "dilindungi" dari
-    // kehilangan akses di role yang baru saja dibuat Owner sendiri.
-    async function renderRoleCustomManager() {
-      const card = MugenUI.el("div", { class: "card" });
-      body.appendChild(card);
-      card.appendChild(MugenUI.el("h2", {}, "Role Custom"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Buat role bernama sendiri dengan kombinasi izin berbeda-beda, lalu tempelkan akun Admin tertentu ke role itu lewat " +
-        "tab User. Role baru mulai TANPA izin apa pun -- centang sendiri lewat \"Kelola Izin\"."));
+        "Atur hak akses tiap Role di sini, lalu pilih Role itu LANGSUNG saat membuat/mengedit User di tab User -- tidak ada " +
+        "langkah tambahan apa pun. \"Admin\" adalah Role bawaan (dipakai akun Admin yang belum memakai Role Custom lain); " +
+        "buat Role Custom sendiri (mis. \"Kasir\", \"Manager\") lewat \"Tambah Role\" di bawah untuk kombinasi izin " +
+        "berbeda. Owner selalu memiliki akses penuh tanpa batasan apa pun -- tidak perlu diatur di sini."));
 
       const listBody = MugenUI.el("div");
       card.appendChild(listBody);
 
+      // `role` bertipe null = Role sistem "Admin" (izin tenant-wide lama,
+      // endpoint /hak-akses-admin) -- role object (dari user_roles_db) =
+      // Role Custom (endpoint /user-roles/{id}/permissions). SATU modal
+      // dipakai untuk keduanya, hanya endpoint GET/PUT-nya beda.
       function bukaModalIzinRole(role) {
-        MugenApi.get(`/api/pengaturan/user-roles/${role.id}/permissions`).then((izinRole) => {
+        const endpoint = role ? `/api/pengaturan/user-roles/${role.id}/permissions` : "/api/pengaturan/hak-akses-admin";
+        const nama = role ? role.nama : "Admin";
+        MugenApi.get(endpoint).then((izinRole) => {
           const container = MugenUI.el("div");
           const checkboxes = buildIzinChecklistUI(container, izinRole);
           const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -1813,15 +1791,14 @@ const PagePengaturan = (() => {
             const body2 = {};
             for (const [key, cb] of Object.entries(checkboxes)) body2[key] = cb.checked;
             try {
-              await MugenUI.withButtonLoading(btnSimpan,
-                () => MugenApi.put(`/api/pengaturan/user-roles/${role.id}/permissions`, { izin: body2 }));
-              MugenUI.toast(`Izin role "${role.nama}" disimpan.`, "success", { force: true });
+              await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(endpoint, { izin: body2 }));
+              MugenUI.toast(`Izin Role "${nama}" disimpan.`, "success", { force: true });
             } catch (e) {
               errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
             }
           });
           MugenUI.infoModal({
-            title: `Kelola Izin -- ${role.nama}`,
+            title: `Kelola Izin -- ${nama}`,
             body: [container, errorBox, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan)],
           });
         }).catch((e) => MugenUI.toast(e.message, "error"));
@@ -1838,16 +1815,24 @@ const PagePengaturan = (() => {
           listBody.appendChild(MugenUI.errorState(e.message));
           return;
         }
+        // Baris pertama SELALU Role sistem "Admin" (sistem: true -- Ganti
+        // Nama/Hapus tidak berlaku), diikuti seluruh Role Custom tenant.
+        const baris = [{ id: null, nama: "Admin", sistem: true }, ...roles.map((r) => ({ ...r, sistem: false }))];
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.buildTable(
           [
-            { key: "nama", label: "Nama Role" },
+            {
+              key: "nama", label: "Role", format: (v, r) => r.sistem
+                ? MugenUI.el("span", {}, [v, " ", MugenUI.el("span", { class: "badge" }, "Default")])
+                : v,
+            },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnIzin = MugenUI.el("button", {}, "Kelola Izin");
-                btnIzin.addEventListener("click", () => bukaModalIzinRole(r));
+                btnIzin.addEventListener("click", () => bukaModalIzinRole(r.sistem ? null : r));
                 wrap.appendChild(btnIzin);
+                if (r.sistem) return wrap;
                 const btnGanti = MugenUI.el("button", {}, "Ganti Nama");
                 btnGanti.addEventListener("click", async () => {
                   const baru = prompt(`Nama baru untuk role "${r.nama}":`, r.nama);
@@ -1862,7 +1847,7 @@ const PagePengaturan = (() => {
                 wrap.appendChild(btnGanti);
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus role "${r.nama}"? Akun Admin yang masih memakai role ini otomatis balik ke Hak Akses User default.`)) return;
+                  if (!confirm(`Hapus role "${r.nama}"? Akun Admin yang masih memakai role ini otomatis balik ke Role "Admin" (Default).`)) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/user-roles/${r.id}`));
                     MugenUI.toast("Role dihapus.", "success");
@@ -1874,8 +1859,7 @@ const PagePengaturan = (() => {
               },
             },
           ],
-          roles,
-          { emptyText: "Belum ada role custom -- semua Admin memakai Hak Akses User default." },
+          baris,
         ));
       }
 
