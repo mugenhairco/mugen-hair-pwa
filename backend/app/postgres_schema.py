@@ -1079,6 +1079,26 @@ CREATE TABLE IF NOT EXISTS attendance_koreksi (
 
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_tenant_id ON attendance_koreksi(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_barber_id ON attendance_koreksi(barber_id);
+
+-- DIY error monitoring (bukan Sentry, lihat error_log_db.py): SATU tabel
+-- menampung catatan error frontend (POST /api/log-error) maupun backend
+-- (auto-capture crash tak terduga, lihat main.py::_tangani_exception_global()).
+-- `tenant_id` SENGAJA TANPA "REFERENCES tenants(id)", pola sama seperti
+-- SELURUH tabel lain di file ini (lihat catatan HOTFIX DEPLOY di atas) --
+-- juga SENGAJA nullable (error sebelum tenant sempat diketahui, mis. di
+-- halaman Login, ATAU crash backend yang exception handler globalnya tidak
+-- tahu sesi tenant mana yang sedang aktif).
+CREATE TABLE IF NOT EXISTS error_logs (
+    id         SERIAL PRIMARY KEY,
+    tenant_id  INTEGER,
+    sumber     TEXT NOT NULL,
+    pesan      TEXT NOT NULL,
+    detail     TEXT,
+    url        TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_error_logs_tenant_id ON error_logs(tenant_id);
 """
 
 

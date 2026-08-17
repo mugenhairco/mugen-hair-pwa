@@ -692,7 +692,12 @@
 // pertahanan lapis kedua -- backend TETAP satu-satunya yang seharusnya
 // memfilter, ini murni jaring pengaman kalau deploy backend/frontend
 // sempat tidak sinkron.
-const ASSET_VERSION = "115";
+// v115 -> v116: FITUR DIY error monitoring (bukan Sentry) -- modul baru
+// js/error_report.js (listener global window.onerror/unhandledrejection,
+// POST /api/log-error) ditambahkan ke APP_SHELL. Owner melihat hasilnya
+// lewat Setting > Log Error (pages/pengaturan.js, sudah dimuat dinamis,
+// tidak perlu masuk APP_SHELL_BER_VERSI terpisah).
+const ASSET_VERSION = "116";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -729,6 +734,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/state.js",
   "/app/js/theme.js",
   "/app/js/api.js",
+  "/app/js/error_report.js",
   "/app/js/ui.js",
   "/app/js/pdf_preview.js",
   "/app/js/brand.js",
