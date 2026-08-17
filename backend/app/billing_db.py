@@ -47,6 +47,12 @@ from subscription_db import PACKAGE_VALID
 # tiba-tiba kehilangan Booking Online/QRIS/Export PDF begitu deploy ini
 # jalan (SEBELUM Feature Gating, ketiganya selalu menyala untuk SEMUA
 # tenant tanpa syarat apa pun -- default paket HARUS mencerminkan itu).
+# "log_error" SENGAJA TIDAK dimasukkan sini walau sekarang juga sungguhan
+# digerbang (lihat feature_access.py/routers/error_log.py) -- fitur itu
+# BARU dibangun SETELAH Feature Gating ini ada, jadi tidak pernah menyala
+# tanpa syarat untuk siapa pun sebelumnya; default fail-CLOSED yang sama
+# seperti fitur katalog lain yang belum ditegakkan (multi_cabang dkk) sudah
+# benar -- Super Admin yang memutuskan paket mana dapat fitur ini.
 _FITUR_NYATA_DEFAULT = ("booking_online", "qris", "export_pdf")
 
 _FITUR_DEFAULT = (
@@ -63,6 +69,7 @@ _FITUR_DEFAULT = (
     ("virtual_account", "Virtual Account"),
     ("api", "API"),
     ("priority_support", "Priority Support"),
+    ("log_error", "Log Error"),
 )
 
 # Batas pemakaian (kolom nullable di subscription_packages, NULL = tidak

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 import error_log_db
-from auth import require_admin, resolve_tenant_untuk_branding
+from auth import require_admin, require_feature, resolve_tenant_untuk_branding
 
 router = APIRouter(prefix="/api/log-error", tags=["log-error"])
 
@@ -47,5 +47,6 @@ def kirim_log_error(body: LogErrorBody, tenant_id: int | None = Depends(resolve_
 
 
 @router.get("")
-def daftar_log_error(sumber: str = None, user: dict = Depends(require_admin)):
+def daftar_log_error(sumber: str = None, user: dict = Depends(require_admin),
+                      _fitur: dict = Depends(require_feature("log_error"))):
     return error_log_db.get_error_log_list(tenant_id=user["tenant_id"], sumber=sumber)
