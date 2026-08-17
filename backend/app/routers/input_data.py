@@ -1,21 +1,26 @@
 """routers/input_data.py — /api/input-data/*
-Dipakai halaman Input Data. REVISI: seluruh endpoint di sini sekarang
-KHUSUS Owner ('admin') dan Admin ('staff', akses PENUH sama persis seperti
-Owner -- lihat REVISI Hak Akses Admin, menu ini tidak memakai sistem izin
-sama sekali) -- Barber TIDAK LAGI punya akses ke Input Data sama sekali
-(hak akses Barber sekarang hanya Dashboard + Rekap). Sebelumnya Barber
-boleh input/koreksi/hapus transaksi miliknya sendiri; logika
+Dipakai halaman Input Data. Seluruh endpoint di sini KHUSUS Owner ('admin')
+dan Admin ('staff') -- Barber TIDAK LAGI punya akses ke Input Data sama
+sekali (hak akses Barber sekarang hanya Dashboard + Rekap). Sebelumnya
+Barber boleh input/koreksi/hapus transaksi miliknya sendiri; logika
 `_resolve_barber_id`/`_pastikan_pemilik` di bawah masih punya cabang untuk
 role 'barber' (kode itu sengaja TIDAK dihapus supaya diff seminimal
 mungkin) tapi sudah tidak pernah tereksekusi lagi karena
-`require_owner_or_staff` menolak permintaan barber sebelum mencapai kode
-itu."""
+`require_owner_or_staff`/`require_permission()` menolak permintaan barber
+sebelum mencapai kode itu.
+
+REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
+tetap `require_owner_or_staff` (staff SELALU boleh melihat, tanpa syarat)
+-- endpoint TULIS (POST/PUT tambah/koreksi transaksi & libur) sekarang
+`require_permission("izin_input_data_kelola")`, endpoint HAPUS
+`require_permission("izin_input_data_hapus")` (lihat permissions.py, default
+TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import database as db
-from auth import require_owner_or_staff
+from auth import require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/input-data", tags=["input-data"])
 
@@ -145,7 +150,7 @@ def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
 
 
 @router.post("/transaksi")
-def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     try:
         transaksi_id = db.tambah_transaksi(
@@ -159,7 +164,7 @@ def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_owner_or_
 
 
 @router.put("/transaksi/{transaksi_id}")
-def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends(require_owner_or_staff)):
+def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     _pastikan_pemilik(user, transaksi_id)
     barber_id = body.barber_id
     if user["role"] == "barber":
@@ -176,7 +181,7 @@ def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends
 
 
 @router.delete("/transaksi/{transaksi_id}")
-def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_permission("izin_input_data_hapus"))):
     _pastikan_pemilik(user, transaksi_id)
     db.hapus_transaksi(transaksi_id)
     return {"ok": True}
@@ -189,14 +194,14 @@ def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(requir
 
 
 @router.post("/libur")
-def tandai_libur(body: LiburBody, user: dict = Depends(require_owner_or_staff)):
+def tandai_libur(body: LiburBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.tandai_libur(barber_id, body.tanggal)
     return {"ok": True}
 
 
 @router.delete("/libur")
-def batalkan_libur(body: LiburBody, user: dict = Depends(require_owner_or_staff)):
+def batalkan_libur(body: LiburBody, user: dict = Depends(require_permission("izin_input_data_hapus"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     db.batalkan_libur(barber_id, body.tanggal)
     return {"ok": True}

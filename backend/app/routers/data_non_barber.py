@@ -1,15 +1,21 @@
 """routers/data_non_barber.py — /api/data-non-barber/*
-Input Data Non-Barber (Kasir/OB/Kru/role lainnya) -- akses SAMA PERSIS
-seperti /api/input-data/* (Owner 'admin' dan Admin 'staff', tidak memakai
-sistem izin sama sekali, Barber tidak pernah akses) supaya konsisten dengan
+Input Data Non-Barber (Kasir/OB/Kru/role lainnya) -- akses Owner 'admin'
+dan Admin 'staff' (Barber tidak pernah akses) supaya konsisten dengan
 halaman Input Data yang menaunginya (lihat data_non_barber_db.py untuk
-kenapa modul ini berdiri sendiri dari sistem Barber)."""
+kenapa modul ini berdiri sendiri dari sistem Barber).
+
+REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
+tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
+TULIS (tambah/edit) sekarang `require_permission("izin_data_non_barber_kelola")`,
+endpoint HAPUS `require_permission("izin_data_non_barber_hapus")` (lihat
+permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
+tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import data_non_barber_db
-from auth import require_owner_or_staff
+from auth import require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/data-non-barber", tags=["data-non-barber"])
 
@@ -54,7 +60,7 @@ def list_data_non_barber(barber_id: int = None, tahun: int = None, bulan: int = 
 
 
 @router.post("")
-def tambah_data_non_barber(body: DataNonBarberBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_data_non_barber(body: DataNonBarberBody, user: dict = Depends(require_permission("izin_data_non_barber_kelola"))):
     try:
         return data_non_barber_db.tambah_data_non_barber(
             body.barber_id, body.tanggal_mulai, body.tanggal_selesai, body.gaji_per_hari, body.hari_masuk,
@@ -66,7 +72,7 @@ def tambah_data_non_barber(body: DataNonBarberBody, user: dict = Depends(require
 
 
 @router.put("/{entry_id}")
-def edit_data_non_barber(entry_id: int, body: DataNonBarberEditBody, user: dict = Depends(require_owner_or_staff)):
+def edit_data_non_barber(entry_id: int, body: DataNonBarberEditBody, user: dict = Depends(require_permission("izin_data_non_barber_kelola"))):
     _pastikan_entry_tenant_sama(user, data_non_barber_db.get_data_non_barber(entry_id))
     try:
         return data_non_barber_db.edit_data_non_barber(
@@ -80,7 +86,7 @@ def edit_data_non_barber(entry_id: int, body: DataNonBarberEditBody, user: dict 
 
 
 @router.delete("/{entry_id}")
-def hapus_data_non_barber(entry_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_data_non_barber(entry_id: int, user: dict = Depends(require_permission("izin_data_non_barber_hapus"))):
     _pastikan_entry_tenant_sama(user, data_non_barber_db.get_data_non_barber(entry_id))
     try:
         data_non_barber_db.hapus_data_non_barber(entry_id)

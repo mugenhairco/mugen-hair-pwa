@@ -77,6 +77,41 @@ PERMISSION_DEFS = [
     # approve/reject wajib izin eksplisit ini -- pola sama persis
     # izin_cuti_karyawan (approval Izin & Cuti).
     ("izin_absensi_koreksi", "absensi", "Approve/Reject Koreksi Absensi", False),
+    # ---- Perluasan Hak Akses Admin (diminta Owner): modul operasional
+    # harian di bawah ini SEBELUMNYA staff selalu akses PENUH tanpa syarat
+    # apa pun (require_owner_or_staff polos, tidak ada permission sama
+    # sekali) -- SEKARANG bisa diatur granular Owner, dipecah "Kelola"
+    # (tambah/edit, risiko rendah) vs "Hapus" (destruktif, risiko lebih
+    # tinggi) per modul, pola SAMA seperti izin_user_tambah vs izin_user_
+    # hapus. Default TRUE untuk SEMUA (bukan False seperti kebanyakan
+    # permission granular lain di atas) -- SENGAJA, supaya staff yang
+    # SUDAH memakai modul ini sehari-hari TIDAK tiba-tiba terkunci begitu
+    # perubahan ini deploy; Owner tetap bebas mematikan kapan pun lewat
+    # Setting > Hak Akses Admin. Endpoint GET (lihat data) TIDAK ikut
+    # digerbang -- staff SELALU boleh melihat, sama seperti pola karyawan
+    # (kasbon.py dkk) yang sudah ada.
+    # ---- Booking ----
+    ("izin_booking_kelola", "booking", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)", True),
+    ("izin_booking_batalkan", "booking", "Batalkan Booking", True),
+    ("izin_booking_pengaturan", "booking", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)", True),
+    # ---- Produk ----
+    ("izin_produk_kelola", "produk", "Kelola Produk (tambah/edit, restock/jual/tester)", True),
+    ("izin_produk_hapus", "produk", "Hapus Produk & Koreksi/Hapus Mutasi", True),
+    # ---- Pengeluaran ----
+    ("izin_pengeluaran_kelola", "pengeluaran", "Kelola Pengeluaran (catat/edit)", True),
+    ("izin_pengeluaran_hapus", "pengeluaran", "Hapus Pengeluaran", True),
+    # ---- Pemasukan ----
+    ("izin_pemasukan_kelola", "pemasukan", "Kelola Pemasukan (catat/edit)", True),
+    ("izin_pemasukan_hapus", "pemasukan", "Hapus Pemasukan", True),
+    # ---- Uang Kas ----
+    ("izin_uang_kas_kelola", "uang_kas", "Kelola Uang Kas (saldo awal, penyesuaian)", True),
+    ("izin_uang_kas_hapus", "uang_kas", "Hapus Penyesuaian Uang Kas", True),
+    # ---- Data Non-Barber ----
+    ("izin_data_non_barber_kelola", "data_non_barber", "Kelola Data Non-Barber (tambah/edit)", True),
+    ("izin_data_non_barber_hapus", "data_non_barber", "Hapus Data Non-Barber", True),
+    # ---- Input Data / Transaksi (termasuk hapus dari tombol Aksi di Rekap Transaksi) ----
+    ("izin_input_data_kelola", "input_data", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)", True),
+    ("izin_input_data_hapus", "input_data", "Hapus Transaksi Harian", True),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}

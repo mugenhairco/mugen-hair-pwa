@@ -1,8 +1,14 @@
 """routers/pemasukan.py — /api/pemasukan/* (Modul Keuangan, Fase 1)
 Router CRUD Pemasukan -- pola akses SAMA PERSIS routers/pengeluaran.py:
 data operasional TOKO (bukan milik barber manapun), Barber ditolak total
-DI BACKEND (require_owner_or_staff), staff ('Admin') akses PENUH sama
-persis Owner, TANPA sistem izin sama sekali."""
+DI BACKEND (require_owner_or_staff).
+
+REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
+tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
+TULIS (tambah/edit) sekarang `require_permission("izin_pemasukan_kelola")`,
+endpoint HAPUS `require_permission("izin_pemasukan_hapus")` (lihat
+permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
+tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -10,7 +16,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import pemasukan_db as db_pemasukan
-from auth import require_feature, require_owner_or_staff
+from auth import require_feature, require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/pemasukan", tags=["pemasukan"])
 
@@ -68,7 +74,7 @@ def detail_pemasukan(pemasukan_id: int, user: dict = Depends(require_owner_or_st
 
 
 @router.post("")
-def tambah_pemasukan(body: PemasukanBody, user: dict = Depends(require_owner_or_staff)):
+def tambah_pemasukan(body: PemasukanBody, user: dict = Depends(require_permission("izin_pemasukan_kelola"))):
     try:
         new_id = db_pemasukan.tambah_pemasukan(
             tanggal=body.tanggal, kategori=body.kategori, keterangan=body.keterangan,
@@ -81,7 +87,7 @@ def tambah_pemasukan(body: PemasukanBody, user: dict = Depends(require_owner_or_
 
 
 @router.put("/{pemasukan_id}")
-def koreksi_pemasukan(pemasukan_id: int, body: PemasukanBody, user: dict = Depends(require_owner_or_staff)):
+def koreksi_pemasukan(pemasukan_id: int, body: PemasukanBody, user: dict = Depends(require_permission("izin_pemasukan_kelola"))):
     _pastikan_pemasukan_tenant_sama(user, db_pemasukan.get_pemasukan(pemasukan_id))
     try:
         db_pemasukan.koreksi_pemasukan(
@@ -95,7 +101,7 @@ def koreksi_pemasukan(pemasukan_id: int, body: PemasukanBody, user: dict = Depen
 
 
 @router.delete("/{pemasukan_id}")
-def hapus_pemasukan(pemasukan_id: int, user: dict = Depends(require_owner_or_staff)):
+def hapus_pemasukan(pemasukan_id: int, user: dict = Depends(require_permission("izin_pemasukan_hapus"))):
     _pastikan_pemasukan_tenant_sama(user, db_pemasukan.get_pemasukan(pemasukan_id))
     db_pemasukan.hapus_pemasukan(pemasukan_id)
     return {"ok": True}

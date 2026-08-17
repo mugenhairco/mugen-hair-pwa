@@ -1610,9 +1610,41 @@ const PagePengaturan = (() => {
           ["izin_user_hapus", "Nonaktifkan/Aktifkan/Hapus Permanen User Barber"],
           ["izin_user_ganti_password", "Mengubah Password User Barber"],
         ]},
-        // REVISI (kedua): grup "Pengeluaran" dihapus dari sini -- menu
-        // Pengeluaran tidak lagi memakai sistem izin sama sekali, Admin
-        // selalu punya akses penuh sama persis seperti Owner.
+        // REVISI (Perluasan Hak Akses Admin, diminta Owner): grup di bawah
+        // ini SEBELUMNYA Admin selalu akses PENUH tanpa syarat apa pun
+        // (termasuk grup "Pengeluaran" yang REVISI kedua sempat dihapus
+        // total dari sini) -- SEKARANG bisa diatur granular lagi, dipecah
+        // "Kelola" (tambah/edit) vs "Hapus" per modul (lihat permissions.py).
+        // Endpoint LIHAT tetap selalu terbuka untuk Admin di semua modul ini.
+        { judul: "Booking", keys: [
+          ["izin_booking_kelola", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)"],
+          ["izin_booking_batalkan", "Batalkan Booking"],
+          ["izin_booking_pengaturan", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)"],
+        ]},
+        { judul: "Produk", keys: [
+          ["izin_produk_kelola", "Kelola Produk (tambah/edit, restock/jual/tester)"],
+          ["izin_produk_hapus", "Hapus Produk & Koreksi/Hapus Mutasi"],
+        ]},
+        { judul: "Input Data / Transaksi Harian", keys: [
+          ["izin_input_data_kelola", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)"],
+          ["izin_input_data_hapus", "Hapus Transaksi Harian (termasuk dari Rekap Transaksi)"],
+        ]},
+        { judul: "Pengeluaran", keys: [
+          ["izin_pengeluaran_kelola", "Kelola Pengeluaran (catat/edit)"],
+          ["izin_pengeluaran_hapus", "Hapus Pengeluaran"],
+        ]},
+        { judul: "Pemasukan", keys: [
+          ["izin_pemasukan_kelola", "Kelola Pemasukan (catat/edit)"],
+          ["izin_pemasukan_hapus", "Hapus Pemasukan"],
+        ]},
+        { judul: "Uang Kas", keys: [
+          ["izin_uang_kas_kelola", "Kelola Uang Kas (saldo awal, penyesuaian)"],
+          ["izin_uang_kas_hapus", "Hapus Penyesuaian Uang Kas"],
+        ]},
+        { judul: "Data Non-Barber", keys: [
+          ["izin_data_non_barber_kelola", "Kelola Data Non-Barber (tambah/edit)"],
+          ["izin_data_non_barber_hapus", "Hapus Data Non-Barber"],
+        ]},
         { judul: "Backup", keys: [
           ["izin_backup_export", "Export Database"],
           ["izin_backup_import", "Import Database"],
