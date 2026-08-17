@@ -32,7 +32,20 @@ import permissions
 from auth import (get_current_user, require_admin, require_barber, require_feature, require_owner_or_staff,
                    require_permission)
 
-router = APIRouter(prefix="/api/attendance", tags=["attendance"])
+# FITUR Feature Gating "Absensi Karyawan" (diminta Owner): SELURUH endpoint
+# di router ini (Check In/Out, riwayat, dashboard, pengaturan, koreksi,
+# audit, export PDF/Excel) digerbang SATU kode fitur "absensi" lewat
+# `dependencies=` di level router -- FastAPI menjalankannya untuk SETIAP
+# request ke prefix ini, TIDAK PERLU ditambahkan satu per satu ke tiap
+# endpoint. Fail-CLOSED SEJAK AWAL (TIDAK ada grandfather, lihat
+# billing_db.py::_FITUR_DEFAULT), keputusan eksplisit Owner -- berlaku
+# untuk SEMUA role (Owner/Admin/Barber) tanpa kecuali, independen dari
+# gate "barber_app" (login akun barber, lihat routers/auth_router.py) --
+# tenant bisa saja punya barber_app TANPA absensi (barber tetap bisa login
+# & booking, tapi menu Absensi tidak bisa dipakai sama sekali), atau
+# sebaliknya.
+router = APIRouter(prefix="/api/attendance", tags=["attendance"],
+                    dependencies=[Depends(require_feature("absensi"))])
 
 
 def _cek_akses_lihat(user: dict):

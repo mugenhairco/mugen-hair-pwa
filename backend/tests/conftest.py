@@ -115,6 +115,44 @@ def single_tenant(app_client):
     }
 
 
+@pytest.fixture(autouse=True)
+def _default_barber_app_dan_absensi_aktif(monkeypatch):
+    """FITUR Feature Gating "Aplikasi Barber (Login Barber)" & "Absensi
+    Karyawan" (routers/auth_router.py::login() / routers/attendance.py,
+    lewat `dependencies=[Depends(require_feature("absensi"))]` di level
+    router): KEDUA kode ini SENGAJA fail-CLOSED TANPA grandfather sama
+    sekali (keputusan eksplisit Owner, lihat billing_db.py::_FITUR_DEFAULT)
+    -- beda dari export_pdf/booking_online (real-default, otomatis
+    menyala lewat billing_db.seed_default_package_features()) maupun
+    export_excel/whatsapp_reminder (grandfather, lihat billing_db.seed_
+    grandfather_fitur_baru_digerbang()). Konsekuensinya: tenant TANPA baris
+    subscription sama sekali (SEMUA pemakai fixture single_tenant/
+    two_tenants, lihat catatan di keduanya) sekarang GAGAL login sebagai
+    barber & GAGAL memanggil endpoint /api/attendance/* apa pun -- padahal
+    RATUSAN test yang sudah ada (test_attendance.py + delapan file lain
+    yang login sebagai barber) ditulis SEBELUM gate ini ada & tidak
+    relevan dengan billing sama sekali. Menulis ulang semuanya satu per
+    satu hanya untuk menambah setup subscription+fitur yang tidak
+    berhubungan dengan yang sedang diuji TIDAK PRAKTIS.
+
+    Fixture autouse ini (berlaku OTOMATIS di SETIAP test suite ini, tanpa
+    perlu diminta eksplisit) monkeypatch feature_access.tenant_has_feature()
+    supaya KEDUA kode ini SELALU dianggap aktif secara default -- MURNI di
+    lapisan test, TIDAK mengubah data paket/migrasi produksi apa pun sama
+    sekali. test_feature_access.py (tempat perilaku ASLI fail-closed KEDUA
+    gate ini justru diuji) meng-OVERRIDE fixture ini lewat fixture nama
+    SAMA PERSIS yang no-op -- lihat fixture dengan nama sama di file itu."""
+    import feature_access
+    asli = feature_access.tenant_has_feature
+
+    def _selalu_aktif_untuk_dua_kode_ini(tenant_id, kode):
+        if kode in ("barber_app", "absensi"):
+            return True
+        return asli(tenant_id, kode)
+
+    monkeypatch.setattr(feature_access, "tenant_has_feature", _selalu_aktif_untuk_dua_kode_ini)
+
+
 def has_postgres() -> bool:
     """True kalau ada PostgreSQL yang bisa diajak konek di localhost:5432
     dengan kredensial default test (postgres/postgres, database

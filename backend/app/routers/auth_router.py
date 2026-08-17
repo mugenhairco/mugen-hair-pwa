@@ -135,6 +135,22 @@ def login(body: LoginBody, request: Request):
                                  detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
         tenant_info = _tenant_ringkas(t)
 
+    # FITUR Feature Gating "Aplikasi Barber" (diminta Owner): akun ber-role
+    # 'barber' HANYA boleh login kalau paket AKTIF tenant-nya menyertakan
+    # kode fitur "barber_app" -- fail-CLOSED SEJAK AWAL (TIDAK ada
+    # grandfather, lihat billing_db.py::_FITUR_DEFAULT), keputusan eksplisit
+    # Owner. Dicek di SINI (bukan Depends(require_feature(...)) seperti
+    # endpoint lain) karena tenant_id baru diketahui SETELAH autentikasi
+    # berhasil di atas, bukan sebelum request masuk. Owner/Admin/Super Admin
+    # TIDAK PERNAH terkena gate ini -- HANYA login 'barber'.
+    if user["role"] == "barber":
+        import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
+        if not feature_access.tenant_has_feature(user["tenant_id"], "barber_app"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Aplikasi Barber tidak tersedia di paket toko ini. Hubungi Owner untuk upgrade paket.",
+            )
+
     token = buat_token(user["id"])
     return {"token": token, "user": user, "tenant": tenant_info}
 

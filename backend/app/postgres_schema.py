@@ -1367,6 +1367,8 @@ def create_all():
         _migrasi_seed_fitur_paket(conn)
         _migrasi_hapus_fitur_dekoratif(conn)
         _migrasi_seed_fitur_baru_digerbang(conn)
+        _migrasi_hapus_gerbang_qris(conn)
+        _migrasi_seed_fitur_dekoratif_marketing(conn)
         _migrasi_harga_pricing_v2(conn)
         _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs) -- commit transaksi.",
                      time.monotonic() - _mulai)
@@ -1447,19 +1449,47 @@ _FITUR_DEFAULT_POSTGRES = (
     ("booking_online", "Booking Online"),
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
-    ("qris", "QRIS"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
     ("log_error", "Log Error"),
+    # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- lihat docstring di sana.
+    # TIDAK ADA grandfather untuk kedua kode ini (keputusan eksplisit
+    # Owner), jadi TIDAK ADA fungsi _migrasi_seed_fitur_baru_digerbang()
+    # kedua untuk keduanya -- cukup masuk katalog di sini.
+    ("barber_app", "Aplikasi Barber (Login Barber)"),
+    ("absensi", "Absensi Karyawan"),
+    # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- 5 kode marketing
+    # DEKORATIF (diminta Owner, "agar terlihat ramai"), TIDAK ADA satu pun
+    # require_feature()/tenant_has_feature() yang memanggil kode-kode ini
+    # di kode aplikasi mana pun -- lihat docstring lengkap di billing_db.py.
+    ("manajemen_bisnis", "Manajemen Bisnis & Dashboard"),
+    ("manajemen_barber", "Manajemen Barber & Karyawan"),
+    ("hak_akses_role", "Role & Hak Akses"),
+    ("manajemen_layanan", "Manajemen Layanan & Harga"),
+    ("pengaturan_komisi_gaji", "Pengaturan Komisi & Gaji"),
 )
-_FITUR_NYATA_DEFAULT_POSTGRES = ("booking_online", "qris", "export_pdf")
+# "qris" DIHAPUS dari sini (diminta Owner) -- lihat _migrasi_hapus_gerbang_
+# qris() di bawah & docstring billing_db.py::hapus_gerbang_qris().
+_FITUR_NYATA_DEFAULT_POSTGRES = ("booking_online", "export_pdf")
 _KODE_FITUR_TANPA_FUNGSI_NYATA_POSTGRES = (
     "dashboard_owner", "dashboard_barber", "multi_barber", "multi_cabang",
     "google_calendar", "virtual_account", "api", "priority_support",
 )
 _KODE_FITUR_BARU_DIGERBANG_POSTGRES = ("export_excel", "whatsapp_reminder")
+_KODE_FITUR_DEKORATIF_MARKETING_POSTGRES = (
+    "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
+    "manajemen_layanan", "pengaturan_komisi_gaji",
+)
+_SEBARAN_FITUR_DEKORATIF_PER_PAKET_POSTGRES = {
+    "free": ("manajemen_barber", "manajemen_layanan"),
+    "basic": ("manajemen_barber", "manajemen_layanan", "manajemen_bisnis", "pengaturan_komisi_gaji"),
+    "pro": _KODE_FITUR_DEKORATIF_MARKETING_POSTGRES,
+    "enterprise": _KODE_FITUR_DEKORATIF_MARKETING_POSTGRES,
+}
 _KUNCI_SEED_FITUR_PAKET = "billing_seed_fitur_nyata_paket_selesai"
 _KUNCI_HAPUS_FITUR_DEKORATIF = "billing_hapus_fitur_tanpa_fungsi_nyata_selesai"
 _KUNCI_SEED_FITUR_BARU_DIGERBANG = "billing_seed_fitur_baru_digerbang_selesai"
+_KUNCI_HAPUS_GERBANG_QRIS = "billing_hapus_gerbang_qris_selesai"
+_KUNCI_SEED_FITUR_DEKORATIF_MARKETING = "billing_seed_fitur_dekoratif_marketing_selesai"
 
 
 def _migrasi_billing_features(conn):
@@ -1579,6 +1609,49 @@ def _migrasi_seed_fitur_baru_digerbang(conn):
         return
     _assign_fitur_ke_semua_paket(conn, _KODE_FITUR_BARU_DIGERBANG_POSTGRES)
     _set_flag(conn, _KUNCI_SEED_FITUR_BARU_DIGERBANG)
+
+
+def _migrasi_hapus_gerbang_qris(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::hapus_
+    gerbang_qris() (jalur SQLite) -- lihat docstring itu untuk penjelasan
+    lengkap. `ON DELETE CASCADE` di subscription_package_features otomatis
+    melepas "qris" dari paket mana pun yang sudah mencentangnya."""
+    if _ambil_flag(conn, _KUNCI_HAPUS_GERBANG_QRIS):
+        return
+    conn.execute("DELETE FROM subscription_features WHERE kode = 'qris'")
+    _set_flag(conn, _KUNCI_HAPUS_GERBANG_QRIS)
+
+
+def _migrasi_seed_fitur_dekoratif_marketing(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::seed_
+    fitur_dekoratif_marketing() (jalur SQLite) -- lihat docstring itu untuk
+    penjelasan lengkap (kelima kode ini MURNI tampilan kartu harga, TIDAK
+    menggerbang apa pun)."""
+    if _ambil_flag(conn, _KUNCI_SEED_FITUR_DEKORATIF_MARKETING):
+        return
+    fitur_by_kode = {r["kode"]: r["id"] for r in conn.execute(
+        f"SELECT id, kode FROM subscription_features WHERE kode IN "
+        f"({', '.join(['?'] * len(_KODE_FITUR_DEKORATIF_MARKETING_POSTGRES))})",
+        list(_KODE_FITUR_DEKORATIF_MARKETING_POSTGRES),
+    ).fetchall()}
+    paket_rows = conn.execute("SELECT id, kode FROM subscription_packages").fetchall()
+    now = datetime.now().isoformat(timespec="seconds")
+    for paket in paket_rows:
+        kode_untuk_paket = _SEBARAN_FITUR_DEKORATIF_PER_PAKET_POSTGRES.get(paket["kode"], ())
+        fitur_ids = [fitur_by_kode[k] for k in kode_untuk_paket if k in fitur_by_kode]
+        if not fitur_ids:
+            continue
+        sudah_ada = {r["feature_id"] for r in conn.execute(
+            "SELECT feature_id FROM subscription_package_features WHERE package_id = ?", (paket["id"],)
+        ).fetchall()}
+        for feature_id in fitur_ids:
+            if feature_id in sudah_ada:
+                continue
+            conn.execute(
+                "INSERT INTO subscription_package_features (package_id, feature_id, created_at) VALUES (?, ?, ?)",
+                (paket["id"], feature_id, now),
+            )
+    _set_flag(conn, _KUNCI_SEED_FITUR_DEKORATIF_MARKETING)
 
 
 _HARGA_PRICING_V2 = {

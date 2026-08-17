@@ -28,9 +28,9 @@
   </script>
   <!-- HOTFIX Migrasi Subdomain: root domain (rivoirsett.com/www.rivoirsett.com,
        TANPA subdomain tenant apa pun) TIDAK BOLEH LAGI menampilkan Dashboard/
-       Login/Booking siapa pun -- backend (tenant_db.cari_tenant_publik())
-       sudah berhenti diam-diam jatuh ke tenant default untuk request tanpa
-       slug, jadi mengakses /app/ langsung di root domain sekarang hanya akan
+       Booking siapa pun -- backend (tenant_db.cari_tenant_publik()) sudah
+       berhenti diam-diam jatuh ke tenant default untuk request tanpa slug,
+       jadi mengakses /app/ langsung di root domain sekarang hanya akan
        menampilkan error "Tenant tidak ditemukan" di mana-mana, membingungkan
        untuk siapa pun yang masih punya link/bookmark LAMA (satu-satunya
        tenant yang PERNAH bisa diakses lewat root domain, sebelum migrasi
@@ -39,16 +39,33 @@
        pola SAMA seperti redirect onrender.com di atas. TIDAK memicu apa pun
        untuk subdomain tenant manapun (mis. mugen.rivoirsett.com sendiri,
        atau admin.rivoirsett.com) -- HANYA root/www bare.
-       PENGECUALIAN #/register: root domain sekarang juga jadi tempat
-       Landing Page SaaS mengarahkan tombol "Get Started" ke /app/#/register
-       (lihat router.js) -- rute ini SENGAJA berjalan TANPA sesi/tenant di
-       root domain, jadi TIDAK BOLEH ikut dilempar ke mugen.rivoirsett.com
-       seperti bookmark lama lainnya. -->
+
+       BUGFIX (rute pre-auth GLOBAL, lintas tenant, ikut kena redirect diam-
+       diam ke Mugen Hair Co): PENGECUALIAN sebelumnya HANYA "#/register",
+       padahal ROUTER.JS punya LIMA rute yang SENGAJA dirancang berjalan
+       TANPA sesi/tenant tertentu (lihat router.js) -- SEMUANYA harus
+       dikecualikan dari redirect legacy ini, bukan cuma satu:
+         - #/register   (tombol "Get Started" Landing Page)
+         - #/login      (tombol "Login" Landing Page -- SEBELUM bugfix ini,
+                          pengunjung yang BUKAN pelanggan Mugen Hair Co ikut
+                          terlempar ke login tenant itu, salah total)
+         - #/lupa-password, #/verify-email, #/reset-password (link di EMAIL
+           terkirim ke tenant MANA PUN -- FRONTEND_BASE_URL backend default
+           "https://rivoirsett.com" root domain, lihat email_service.py --
+           tanpa pengecualian ini, link verifikasi/reset password SEMUA
+           tenant selain Mugen Hair Co akan salah arah juga).
+       Dashboard/Booking/dst (butuh sesi/tenant yang SUDAH diketahui) TETAP
+       jatuh ke redirect Mugen Hair Co seperti sebelumnya -- HANYA lima rute
+       pre-auth generik di atas yang dikecualikan. -->
   <script>
-    if ((location.hostname === "rivoirsett.com" || location.hostname === "www.rivoirsett.com") &&
-        !location.hash.startsWith("#/register")) {
-      location.replace("https://mugen.rivoirsett.com" + location.pathname + location.search + location.hash);
-    }
+    (function () {
+      var RUTE_GLOBAL_TANPA_TENANT = ["#/register", "#/login", "#/lupa-password", "#/verify-email", "#/reset-password"];
+      var hash = location.hash;
+      var adaRuteGlobal = RUTE_GLOBAL_TANPA_TENANT.some(function (r) { return hash.startsWith(r); });
+      if ((location.hostname === "rivoirsett.com" || location.hostname === "www.rivoirsett.com") && !adaRuteGlobal) {
+        location.replace("https://mugen.rivoirsett.com" + location.pathname + location.search + location.hash);
+      }
+    })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>Rivoir</title>
@@ -80,7 +97,7 @@
   <meta name="apple-mobile-web-app-title" content="Rivoir" />
   <meta name="mobile-web-app-capable" content="yes" />
 
-  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=123" di
+  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=125" di
        SETIAP <link rel="stylesheet">/<script src> di bawah ini adalah
        cache-busting di lapisan URL, INDEPENDEN dari Service Worker --
        browser/CDN mana pun yang meng-cache berdasar URL persis tidak
@@ -90,7 +107,7 @@
        manapun yang dirujuk di sini (lihat komentar ASSET_VERSION di
        service-worker.js untuk alasan kenapa dua tempat ini tidak bisa
        disatukan lewat satu file "sumber kebenaran" tanpa proses build). -->
-  <link rel="stylesheet" href="css/style.css?v=123" />
+  <link rel="stylesheet" href="css/style.css?v=125" />
 </head>
 <body>
   <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
@@ -109,7 +126,7 @@
        <script>window.MUGEN_API_BASE = "https://api.rivoirsett.com";</script>
        Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
        saat development, dan bisa dioverride lewat env saat build/deploy. -->
-  <script src="config.js?v=123"></script>
+  <script src="config.js?v=125"></script>
   <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
        (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
        bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
@@ -132,14 +149,14 @@
        dinamis file lokal vendor/pdfjs/ -- lihat pdfjs_boot.js untuk kenapa
        dipakai lewat window.pdfjsLib + event 'pdfjs-ready', bukan import
        langsung di pdf_preview.js. -->
-  <script type="module" src="js/pdfjs_boot.js?v=123"></script>
-  <script src="js/state.js?v=123"></script>
+  <script type="module" src="js/pdfjs_boot.js?v=125"></script>
+  <script src="js/state.js?v=125"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
        state.js) dan langsung menerapkan atribut data-theme begitu file
        ini selesai dieksekusi (lihat applyStored() di baris terakhir
        theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
        #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
-  <script src="js/theme.js?v=123"></script>
+  <script src="js/theme.js?v=125"></script>
   <!-- PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali dibuka):
        sempat dicoba menambah atribut "defer" di ke-35 script di bawah ini
        supaya browser mengunduhnya paralel, bukan satu-satu berurutan.
@@ -151,33 +168,33 @@
        jadi dipakai di sini (lihat vendor/pdfjs/pdf.min.js di atas untuk
        bottleneck SUNGGUHAN yang ditemukan & diperbaiki). Dicatat di sini
        supaya tidak ada yang mencoba "defer" lagi tanpa mengukur ulang. -->
-  <script src="js/api.js?v=123"></script>
+  <script src="js/api.js?v=125"></script>
   <!-- DIY error monitoring (bukan Sentry, lihat js/error_report.js) --
        SEDINI mungkin setelah api.js (perlu MUGEN_API_BASE), SEBELUM
        router/halaman mana pun sempat jalan supaya error saat boot pun
        ikut tertangkap. -->
-  <script src="js/error_report.js?v=123"></script>
-  <script src="js/ui.js?v=123"></script>
-  <script src="js/pdf_preview.js?v=123"></script>
-  <script src="js/brand.js?v=123"></script>
-  <script src="js/subscription.js?v=123"></script>
-  <script src="js/feature_access.js?v=123"></script>
-  <script src="js/pwa_update.js?v=123"></script>
-  <script src="js/nav.js?v=123"></script>
-  <script src="js/booking_notif.js?v=123"></script>
-  <script src="js/izin_notif.js?v=123"></script>
-  <script src="js/push_notif.js?v=123"></script>
+  <script src="js/error_report.js?v=125"></script>
+  <script src="js/ui.js?v=125"></script>
+  <script src="js/pdf_preview.js?v=125"></script>
+  <script src="js/brand.js?v=125"></script>
+  <script src="js/subscription.js?v=125"></script>
+  <script src="js/feature_access.js?v=125"></script>
+  <script src="js/pwa_update.js?v=125"></script>
+  <script src="js/nav.js?v=125"></script>
+  <script src="js/booking_notif.js?v=125"></script>
+  <script src="js/izin_notif.js?v=125"></script>
+  <script src="js/push_notif.js?v=125"></script>
   <!-- FITUR Izin Lokasi & Notifikasi Push OTOMATIS khusus APK Android (lihat
        native_app.js) -- HARUS setelah push_notif.js (dipakai di dalamnya),
        SEBELUM login.js (dipanggil dari sana begitu login berhasil). -->
-  <script src="js/native_app.js?v=123"></script>
-  <script src="js/pages/login.js?v=123"></script>
-  <script src="js/pages/register.js?v=123"></script>
-  <script src="js/pages/lupa_password.js?v=123"></script>
-  <script src="js/pages/reset_password.js?v=123"></script>
-  <script src="js/pages/verify_email.js?v=123"></script>
-  <script src="js/pages/subscription_blocked.js?v=123"></script>
-  <script src="js/pages/tenant_not_found.js?v=123"></script>
+  <script src="js/native_app.js?v=125"></script>
+  <script src="js/pages/login.js?v=125"></script>
+  <script src="js/pages/register.js?v=125"></script>
+  <script src="js/pages/lupa_password.js?v=125"></script>
+  <script src="js/pages/reset_password.js?v=125"></script>
+  <script src="js/pages/verify_email.js?v=125"></script>
+  <script src="js/pages/subscription_blocked.js?v=125"></script>
+  <script src="js/pages/tenant_not_found.js?v=125"></script>
   <!-- PERBAIKAN PERFORMA (loading awal lambat): 20 modul js/pages/*.js yang
        DULU ada di sini (dashboard_owner.js, dashboard_barber.js,
        input_data.js, rekap.js, pengeluaran.js, pemasukan.js, uang_kas.js,
@@ -189,9 +206,9 @@
        dibuka. Halaman kecil/boot-critical di atas (login, register, lupa/
        reset password, verify email, subscription blocked, tenant not
        found) TETAP di sini seperti sebelumnya. -->
-  <script src="js/page_loader.js?v=123"></script>
-  <script src="js/tenant_guard.js?v=123"></script>
-  <script src="js/router.js?v=123"></script>
-  <script src="js/app.js?v=123"></script>
+  <script src="js/page_loader.js?v=125"></script>
+  <script src="js/tenant_guard.js?v=125"></script>
+  <script src="js/router.js?v=125"></script>
+  <script src="js/app.js?v=125"></script>
 </body>
 </html>
