@@ -1823,7 +1823,7 @@ const PagePengaturan = (() => {
           [
             {
               key: "nama", label: "Role", format: (v, r) => r.sistem
-                ? MugenUI.el("span", {}, [v, " ", MugenUI.el("span", { class: "badge" }, "Default")])
+                ? MugenUI.el("span", {}, [v, " ", MugenUI.el("span", { class: "badge badge-libur" }, "Default")])
                 : v,
             },
             {
