@@ -38,13 +38,17 @@ def _tanpa_kolom_biner_ringkasan(ringkasan: dict) -> dict:
     return ringkasan
 
 
-def _filter_dashboard_untuk_staff(hasil: dict, tenant_id: int) -> dict:
+def _filter_dashboard_untuk_staff(hasil: dict, user: dict) -> dict:
     """'staff' (Admin) HANYA melihat kartu ringkasan toko yang diizinkan
-    Owner lewat Setting > Hak Akses Admin (lihat permissions.py) -- rincian
+    Owner lewat Setting > Hak Akses User (lihat permissions.py) -- rincian
     per-barber (komisi/tips/dst masing-masing orang) dan grafik pendapatan
     TIDAK PERNAH ikut dikirim untuk role ini sama sekali, sesuai spesifikasi
-    Dashboard Admin (hanya 4 kartu ringkasan toko, bukan rincian per orang)."""
-    izin = permissions.get_all(tenant_id=tenant_id)
+    Dashboard Admin (hanya 4 kartu ringkasan toko, bukan rincian per orang).
+
+    FITUR Role Custom: `user.get("custom_role_id")` diteruskan ke
+    permissions.get_all() -- staff yang ditempelkan ke role custom melihat
+    kartu sesuai checklist role-nya sendiri, bukan default tenant."""
+    izin = permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
     if not izin.get("izin_dashboard_nilai_service"):
         hasil["total_toko"]["nilai_service"] = None
     if not izin.get("izin_dashboard_total_komisi"):
@@ -123,7 +127,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
         - total_toko["bonus_customer"] - total_pengeluaran,
     }
     if user["role"] == "staff":
-        hasil = _filter_dashboard_untuk_staff(hasil, user["tenant_id"])
+        hasil = _filter_dashboard_untuk_staff(hasil, user)
     return hasil
 
 

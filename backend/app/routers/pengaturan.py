@@ -34,6 +34,7 @@ import pengaturan_user
 import permissions
 import r2_storage
 import tenant_db
+import user_roles_db
 import whatsapp_service
 import whatsapp_templates
 from auth import require_admin, require_feature, require_owner_or_staff, require_permission, resolve_tenant_hibrid
@@ -556,6 +557,11 @@ class UserBody(BaseModel):
     # TIDAK PERNAH menandai blokir_sampai_verifikasi (login TETAP langsung
     # bisa dengan password yang diatur Owner, sesuai desain yang sudah ada).
     email: str = ""
+    # FITUR Role Custom: OPSIONAL, HANYA relevan untuk role='staff' -- None
+    # (default) = akun ini memakai set izin default tenant (Hak Akses User),
+    # PERSIS perilaku lama. Diisi (Owner-murni, lihat validasi di bawah) =
+    # akun ini ditempelkan ke role custom itu sejak dibuat.
+    custom_role_id: int | None = None
 
 
 _LABEL_ROLE = {"admin": "Owner", "staff": "Admin", "barber": "Barber"}
@@ -598,7 +604,7 @@ def _pastikan_bukan_akun_dilindungi(target: dict):
 
 @router.get("/user")
 def list_user(user: dict = Depends(require_owner_or_staff)):
-    if user["role"] == "staff" and not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]):
+    if user["role"] == "staff" and not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id")):
         raise HTTPException(status_code=403, detail="Admin tidak punya akses ke tab User.")
     daftar = auth_db.get_user_list(tenant_id=user["tenant_id"])
     for u in daftar:
@@ -609,7 +615,8 @@ def list_user(user: dict = Depends(require_owner_or_staff)):
 @router.post("/user")
 def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_tambah", tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has("izin_user_tambah", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk membuat user.")
         if body.role != "barber":
             raise HTTPException(status_code=403, detail="Admin hanya boleh membuat user ber-role Barber.")
@@ -617,6 +624,16 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
         barber_target = db.get_barber(body.barber_id)
         if barber_target is None or barber_target.get("tenant_id") != user["tenant_id"]:
             raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
+    # FITUR Role Custom: hanya masuk akal untuk role='staff' -- staff yang
+    # membuat user ('body.role' sudah dipaksa "barber" di atas) tidak
+    # pernah sampai sini dengan custom_role_id terisi dalam praktik, guard
+    # ini murni lapis kedua eksplisit (defense in depth).
+    if body.custom_role_id is not None:
+        if body.role != "staff":
+            raise HTTPException(status_code=422, detail="Role custom hanya berlaku untuk akun ber-role Admin.")
+        role_target = user_roles_db.get_role(body.custom_role_id)
+        if role_target is None or role_target.get("tenant_id") != user["tenant_id"]:
+            raise HTTPException(status_code=422, detail="Role tidak ditemukan.")
     email = (body.email or "").strip().lower()
     if email:
         if "@" not in email:
@@ -626,7 +643,7 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
     try:
         billing_limits.pastikan_boleh_tambah_user(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = auth_db.tambah_user(body.username, body.password, body.role, body.barber_id,
-                                      tenant_id=user["tenant_id"])
+                                      tenant_id=user["tenant_id"], custom_role_id=body.custom_role_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -678,7 +695,8 @@ def ganti_password(user_id: int, body: PasswordBody, user: dict = Depends(requir
     _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_ganti_password", tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has("izin_user_ganti_password", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengubah password user.")
         _cek_target_barber_untuk_staff(user, target, "mengubah password")
     try:
@@ -696,7 +714,8 @@ def nonaktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff))
     _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menonaktifkan user.")
         _cek_target_barber_untuk_staff(user, target, "menonaktifkan")
     _cek_bukan_owner_terakhir(target)
@@ -712,7 +731,8 @@ def aktifkan_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     _pastikan_bukan_akun_dilindungi(target)
     _pastikan_target_tenant_sama(user, target)
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengaktifkan user.")
         _cek_target_barber_untuk_staff(user, target, "mengaktifkan")
     try:
@@ -736,7 +756,8 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     if target["id"] == user["id"]:
         raise HTTPException(status_code=403, detail="Tidak bisa menghapus akun sendiri.")
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_user", tenant_id=user["tenant_id"]) or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_user", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has("izin_user_hapus", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menghapus user.")
         _cek_target_barber_untuk_staff(user, target, "menghapus")
     if target["role"] == "admin" and auth_db.hitung_owner_aktif(user["tenant_id"]) <= 1:
@@ -746,10 +767,39 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     return {"ok": True}
 
 
-# ================= HAK AKSES ADMIN (REVISI) =================
-# Menu Setting > Hak Akses Admin, HANYA Owner (require_admin murni, bukan
+# FITUR Role Custom: tempel/lepas akun 'staff' ke/dari role custom --
+# Owner-murni (require_admin, SAMA seperti PUT /hak-akses-admin di bawah --
+# staff tidak pernah boleh mengatur role/izinnya sendiri ataupun staff lain).
+class UserRoleBody(BaseModel):
+    custom_role_id: int | None = None  # None = lepas, balik ke default tenant
+
+
+@router.put("/user/{user_id}/role")
+def ubah_role_user(user_id: int, body: UserRoleBody, user: dict = Depends(require_admin)):
+    target = auth_db.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    _pastikan_bukan_akun_dilindungi(target)
+    _pastikan_target_tenant_sama(user, target)
+    if target["role"] != "staff":
+        raise HTTPException(status_code=422, detail="Role custom hanya berlaku untuk akun ber-role Admin.")
+    if body.custom_role_id is not None:
+        role_target = user_roles_db.get_role(body.custom_role_id)
+        if role_target is None or role_target.get("tenant_id") != user["tenant_id"]:
+            raise HTTPException(status_code=422, detail="Role tidak ditemukan.")
+    auth_db.set_custom_role(user_id, body.custom_role_id)
+    hasil = auth_db.get_user(user_id)
+    hasil.pop("password_hash", None)
+    return hasil
+
+
+# ================= HAK AKSES USER (REVISI, sebelumnya "Hak Akses Admin") =================
+# Menu Setting > Hak Akses User, HANYA Owner (require_admin murni, bukan
 # require_owner_or_staff -- Admin TIDAK BOLEH mengatur hak aksesnya sendiri
-# ataupun Admin lain). Lihat permissions.py untuk daftar lengkap key & default.
+# ataupun Admin lain). Lihat permissions.py untuk daftar lengkap key &
+# default -- ini set izin DEFAULT tenant, dipakai staff yang belum
+# ditempelkan ke role custom mana pun (lihat MANAJEMEN ROLE CUSTOM di
+# bawah untuk role bernama sendiri yang bisa dibuat Owner).
 
 class HakAksesAdminBody(BaseModel):
     izin: dict[str, bool]
@@ -758,9 +808,15 @@ class HakAksesAdminBody(BaseModel):
 # GET boleh dibaca 'staff' JUGA (bukan hanya Owner) -- staff perlu tahu hak
 # aksesnya sendiri supaya frontend-nya bisa menampilkan tab/aksi yang sesuai
 # (lihat pages/pengaturan.js). Mengubahnya (PUT di bawah) TETAP Owner-murni.
+# FITUR Role Custom: mengembalikan izin EFEKTIF akun yang login -- staff
+# yang ditempelkan ke role custom (users.custom_role_id) melihat checklist
+# role-nya sendiri, BUKAN selalu default tenant (lihat permissions.py).
+# Mengatur checklist SATU role tertentu (dipakai halaman kelola role,
+# BUKAN "punya saya sendiri") pakai endpoint terpisah, lihat
+# GET/PUT /api/user-roles/{id}/permissions di bawah.
 @router.get("/hak-akses-admin")
 def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
-    return permissions.get_all(tenant_id=user["tenant_id"])
+    return permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
 
 
 @router.put("/hak-akses-admin")
@@ -771,11 +827,84 @@ def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require
         raise HTTPException(status_code=422, detail=str(e))
 
 
+# ================= MANAJEMEN ROLE CUSTOM (FITUR Role User Custom, diminta Owner) =================
+# Owner bisa membuat role bernama sendiri (mis. "Kasir", "Supervisor"),
+# masing-masing dengan checklist izin_* SENDIRI (katalog SAMA persis
+# dengan Hak Akses User default di atas -- lihat user_roles_db.py), lalu
+# menempelkan akun staff tertentu ke role itu (PUT /user/{id}/role di
+# atas). Seluruh endpoint di sini Owner-murni (require_admin), sama
+# seperti PUT /hak-akses-admin.
+
+def _pastikan_role_tenant_sama(user: dict, role: dict | None):
+    """Pola SAMA seperti _pastikan_target_tenant_sama() untuk user -- 404
+    (bukan 403) supaya tidak membocorkan bahwa role_id itu sebenarnya ada,
+    milik tenant lain."""
+    if role is None or role.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Role tidak ditemukan.")
+
+
+@router.get("/user-roles")
+def list_user_roles(user: dict = Depends(require_admin)):
+    return user_roles_db.list_roles(tenant_id=user["tenant_id"])
+
+
+class UserRoleNamaBody(BaseModel):
+    nama: str
+
+
+@router.post("/user-roles")
+def buat_user_role(body: UserRoleNamaBody, user: dict = Depends(require_admin)):
+    try:
+        return user_roles_db.create_role(user["tenant_id"], body.nama)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.put("/user-roles/{role_id}")
+def ubah_user_role(role_id: int, body: UserRoleNamaBody, user: dict = Depends(require_admin)):
+    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
+    try:
+        return user_roles_db.rename_role(role_id, body.nama)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.delete("/user-roles/{role_id}")
+def hapus_user_role(role_id: int, user: dict = Depends(require_admin)):
+    """Staff yang masih ditempelkan ke role ini OTOMATIS balik ke set izin
+    default tenant (auth_db.lepas_custom_role_dari_semua_user(), dipanggil
+    SEBELUM baris role-nya sendiri dihapus) -- TIDAK PERNAH diblokir/macet
+    karena role-nya hilang, keputusan eksplisit Owner."""
+    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
+    auth_db.lepas_custom_role_dari_semua_user(role_id)
+    try:
+        user_roles_db.delete_role(role_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
+@router.get("/user-roles/{role_id}/permissions")
+def ambil_user_role_permissions(role_id: int, user: dict = Depends(require_admin)):
+    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
+    return permissions.get_all(role_id=role_id)
+
+
+@router.put("/user-roles/{role_id}/permissions")
+def simpan_user_role_permissions(role_id: int, body: HakAksesAdminBody, user: dict = Depends(require_admin)):
+    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
+    try:
+        return permissions.set_bulk(body.izin, role_id=role_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ================= BACKUP DATABASE =================
 
 def _cek_izin_backup(user: dict, key: str, aksi: str):
     if user["role"] == "staff":
-        if not permissions.has("izin_setting_backup", tenant_id=user["tenant_id"]) or not permissions.has(key, tenant_id=user["tenant_id"]):
+        if (not permissions.has("izin_setting_backup", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+                or not permissions.has(key, tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))):
             raise HTTPException(status_code=403, detail=f"Admin tidak punya izin untuk {aksi} database.")
 
 
@@ -832,7 +961,7 @@ def download_laporan_pdf(jenis: str, barber_id: int | None = None,
                           tahun: int | None = None, bulan: int | None = None,
                           user: dict = Depends(require_owner_or_staff),
                           _fitur: dict = Depends(require_feature("export_pdf"))):
-    if user["role"] == "staff" and not permissions.has("izin_laporan_pdf", tenant_id=user["tenant_id"]):
+    if user["role"] == "staff" and not permissions.has("izin_laporan_pdf", tenant_id=user["tenant_id"], role_id=user.get("custom_role_id")):
         raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk mengunduh laporan PDF.")
     try:
         konten, filename = laporan_pdf.buat_laporan(

@@ -80,7 +80,7 @@
   <meta name="apple-mobile-web-app-title" content="Rivoir" />
   <meta name="mobile-web-app-capable" content="yes" />
 
-  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=119" di
+  <!-- PERBAIKAN MEKANISME CACHE & UPDATE PWA (v57): query "?v=120" di
        SETIAP <link rel="stylesheet">/<script src> di bawah ini adalah
        cache-busting di lapisan URL, INDEPENDEN dari Service Worker --
        browser/CDN mana pun yang meng-cache berdasar URL persis tidak
@@ -90,7 +90,7 @@
        manapun yang dirujuk di sini (lihat komentar ASSET_VERSION di
        service-worker.js untuk alasan kenapa dua tempat ini tidak bisa
        disatukan lewat satu file "sumber kebenaran" tanpa proses build). -->
-  <link rel="stylesheet" href="css/style.css?v=119" />
+  <link rel="stylesheet" href="css/style.css?v=120" />
 </head>
 <body>
   <!-- REVISI UI/UX: watermark developer -- di LUAR #app dengan sengaja,
@@ -109,7 +109,7 @@
        <script>window.MUGEN_API_BASE = "https://api.rivoirsett.com";</script>
        Dibiarkan kosong di sini supaya api.js otomatis pakai localhost:8000
        saat development, dan bisa dioverride lewat env saat build/deploy. -->
-  <script src="config.js?v=119"></script>
+  <script src="config.js?v=120"></script>
   <!-- REVISI: preconnect sedini mungkin ke backend Render -- logo & banner
        (dan semua data lain) dimuat dari origin ini, jadi DNS/TLS handshake-nya
        bisa mulai lebih awal sebelum brand.js sempat meminta gambar apa pun,
@@ -132,14 +132,14 @@
        dinamis file lokal vendor/pdfjs/ -- lihat pdfjs_boot.js untuk kenapa
        dipakai lewat window.pdfjsLib + event 'pdfjs-ready', bukan import
        langsung di pdf_preview.js. -->
-  <script type="module" src="js/pdfjs_boot.js?v=119"></script>
-  <script src="js/state.js?v=119"></script>
+  <script type="module" src="js/pdfjs_boot.js?v=120"></script>
+  <script src="js/state.js?v=120"></script>
   <!-- REVISI UI/UX: theme.js dimuat SEDINI mungkin (segera setelah
        state.js) dan langsung menerapkan atribut data-theme begitu file
        ini selesai dieksekusi (lihat applyStored() di baris terakhir
        theme.js) -- supaya tema Dark/Light yang benar sudah aktif SEBELUM
        #app sempat digambar sama sekali, menghindari "flash" tema salah. -->
-  <script src="js/theme.js?v=119"></script>
+  <script src="js/theme.js?v=120"></script>
   <!-- PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali dibuka):
        sempat dicoba menambah atribut "defer" di ke-35 script di bawah ini
        supaya browser mengunduhnya paralel, bukan satu-satu berurutan.
@@ -151,33 +151,33 @@
        jadi dipakai di sini (lihat vendor/pdfjs/pdf.min.js di atas untuk
        bottleneck SUNGGUHAN yang ditemukan & diperbaiki). Dicatat di sini
        supaya tidak ada yang mencoba "defer" lagi tanpa mengukur ulang. -->
-  <script src="js/api.js?v=119"></script>
+  <script src="js/api.js?v=120"></script>
   <!-- DIY error monitoring (bukan Sentry, lihat js/error_report.js) --
        SEDINI mungkin setelah api.js (perlu MUGEN_API_BASE), SEBELUM
        router/halaman mana pun sempat jalan supaya error saat boot pun
        ikut tertangkap. -->
-  <script src="js/error_report.js?v=119"></script>
-  <script src="js/ui.js?v=119"></script>
-  <script src="js/pdf_preview.js?v=119"></script>
-  <script src="js/brand.js?v=119"></script>
-  <script src="js/subscription.js?v=119"></script>
-  <script src="js/feature_access.js?v=119"></script>
-  <script src="js/pwa_update.js?v=119"></script>
-  <script src="js/nav.js?v=119"></script>
-  <script src="js/booking_notif.js?v=119"></script>
-  <script src="js/izin_notif.js?v=119"></script>
-  <script src="js/push_notif.js?v=119"></script>
+  <script src="js/error_report.js?v=120"></script>
+  <script src="js/ui.js?v=120"></script>
+  <script src="js/pdf_preview.js?v=120"></script>
+  <script src="js/brand.js?v=120"></script>
+  <script src="js/subscription.js?v=120"></script>
+  <script src="js/feature_access.js?v=120"></script>
+  <script src="js/pwa_update.js?v=120"></script>
+  <script src="js/nav.js?v=120"></script>
+  <script src="js/booking_notif.js?v=120"></script>
+  <script src="js/izin_notif.js?v=120"></script>
+  <script src="js/push_notif.js?v=120"></script>
   <!-- FITUR Izin Lokasi & Notifikasi Push OTOMATIS khusus APK Android (lihat
        native_app.js) -- HARUS setelah push_notif.js (dipakai di dalamnya),
        SEBELUM login.js (dipanggil dari sana begitu login berhasil). -->
-  <script src="js/native_app.js?v=119"></script>
-  <script src="js/pages/login.js?v=119"></script>
-  <script src="js/pages/register.js?v=119"></script>
-  <script src="js/pages/lupa_password.js?v=119"></script>
-  <script src="js/pages/reset_password.js?v=119"></script>
-  <script src="js/pages/verify_email.js?v=119"></script>
-  <script src="js/pages/subscription_blocked.js?v=119"></script>
-  <script src="js/pages/tenant_not_found.js?v=119"></script>
+  <script src="js/native_app.js?v=120"></script>
+  <script src="js/pages/login.js?v=120"></script>
+  <script src="js/pages/register.js?v=120"></script>
+  <script src="js/pages/lupa_password.js?v=120"></script>
+  <script src="js/pages/reset_password.js?v=120"></script>
+  <script src="js/pages/verify_email.js?v=120"></script>
+  <script src="js/pages/subscription_blocked.js?v=120"></script>
+  <script src="js/pages/tenant_not_found.js?v=120"></script>
   <!-- PERBAIKAN PERFORMA (loading awal lambat): 20 modul js/pages/*.js yang
        DULU ada di sini (dashboard_owner.js, dashboard_barber.js,
        input_data.js, rekap.js, pengeluaran.js, pemasukan.js, uang_kas.js,
@@ -189,9 +189,9 @@
        dibuka. Halaman kecil/boot-critical di atas (login, register, lupa/
        reset password, verify email, subscription blocked, tenant not
        found) TETAP di sini seperti sebelumnya. -->
-  <script src="js/page_loader.js?v=119"></script>
-  <script src="js/tenant_guard.js?v=119"></script>
-  <script src="js/router.js?v=119"></script>
-  <script src="js/app.js?v=119"></script>
+  <script src="js/page_loader.js?v=120"></script>
+  <script src="js/tenant_guard.js?v=120"></script>
+  <script src="js/router.js?v=120"></script>
+  <script src="js/app.js?v=120"></script>
 </body>
 </html>

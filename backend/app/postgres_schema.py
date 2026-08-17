@@ -201,14 +201,15 @@ CREATE TABLE IF NOT EXISTS produk_mutasi (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id            SERIAL PRIMARY KEY,
-    username      TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role          TEXT NOT NULL,
-    barber_id     INTEGER REFERENCES barbers(id),
-    aktif         INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT NOT NULL,
-    tema          TEXT NOT NULL DEFAULT 'terang'
+    id              SERIAL PRIMARY KEY,
+    username        TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    role            TEXT NOT NULL,
+    barber_id       INTEGER REFERENCES barbers(id),
+    aktif           INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL,
+    tema            TEXT NOT NULL DEFAULT 'terang',
+    custom_role_id  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -746,6 +747,25 @@ CREATE TABLE IF NOT EXISTS subscription_package_features (
     UNIQUE(package_id, feature_id)
 );
 
+-- FITUR Role Custom (diminta Owner, lihat user_roles_db.py jalur SQLite
+-- untuk penjelasan lengkap): role_id PAKAI foreign key (tabel BARU, sama
+-- alasannya seperti subscription_package_features di atas).
+CREATE TABLE IF NOT EXISTS user_roles (
+    id           SERIAL PRIMARY KEY,
+    tenant_id    INTEGER,
+    nama         TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_role_permissions (
+    id           SERIAL PRIMARY KEY,
+    role_id      INTEGER NOT NULL REFERENCES user_roles(id) ON DELETE CASCADE,
+    izin_key     TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    UNIQUE(role_id, izin_key)
+);
+
 -- FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway langganan SaaS) --
 -- lihat billing_invoice_db.py (jalur SQLite) untuk penjelasan lengkap.
 -- tenant_id TANPA foreign key (pola sama seperti tabel lain di proyek ini).
@@ -840,6 +860,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS blokir_sampai_verifikasi INTEGER NOT 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lat DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_lng DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_updated_at TEXT;
+-- FITUR Role Custom (diminta Owner): referensi opsional ke user_roles.id
+-- (lihat user_roles_db.py) -- NULL (default, TERMASUK semua akun staff
+-- yang sudah ada) berarti "pakai set izin default tenant", TIDAK BERUBAH
+-- sama sekali dari perilaku lama.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id INTEGER;
 
 -- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
 -- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).

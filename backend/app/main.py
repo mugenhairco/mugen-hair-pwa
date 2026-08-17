@@ -84,6 +84,8 @@ import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel 
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
 import error_log_db  # DIY error monitoring (bukan Sentry): tabel error_logs (idempotent, berdiri sendiri)
+import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent, berdiri sendiri)
+from user_roles_migrasi import migrasi_user_roles  # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
 from subscription_migrasi import migrasi_subscription
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
 import billing_gateway_db  # Payment Gateway Billing SaaS (platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
@@ -402,6 +404,8 @@ def on_startup():
         migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
         migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)
+        user_roles_db.init_user_roles_db()  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent)
+        migrasi_user_roles()    # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)

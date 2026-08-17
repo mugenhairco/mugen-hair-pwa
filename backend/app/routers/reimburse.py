@@ -37,7 +37,7 @@ def _cek_akses_lihat(user: dict, klaim: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id")):
+        if not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Reimburse. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -54,7 +54,7 @@ def _pastikan_pemilik_atau_admin(user: dict, klaim: dict):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id")):
+        if not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Reimburse. Hubungi Owner.")
         return
     if user["role"] == "barber":
@@ -155,7 +155,7 @@ def buat_reimburse(body: ReimburseBody, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
         barber_id = user["barber_id"]
     elif user["role"] in ("admin", "staff"):
-        if user["role"] == "staff" and not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id")):
+        if user["role"] == "staff" and not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Reimburse. Hubungi Owner.")
         if body.barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
