@@ -1872,6 +1872,15 @@ const PagePengaturan = (() => {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Log Error"));
+
+      // Feature Gating "log_error": diatur Super Admin per paket lewat
+      // Katalog Fitur (pola sama seperti export_pdf/qris di file lain) --
+      // tab tetap tampil (Owner tahu fiturnya ada) tapi isinya diganti blok
+      // upgrade kalau paket tenant ini belum menyertakannya.
+      if (typeof MugenFeature !== "undefined" && !MugenFeature.has("log_error")) {
+        card.appendChild(MugenFeature.upgradeBlock("Log Error"));
+        return;
+      }
       card.appendChild(MugenUI.el("p", { class: "subtitle" },
         "Catatan error yang terjadi di aplikasi ini (frontend maupun backend), murni supaya bisa " +
         "diketahui tanpa menunggu ada yang melapor duluan. Maksimal 200 baris terbaru ditampilkan " +

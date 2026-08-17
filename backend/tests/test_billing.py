@@ -229,7 +229,7 @@ def test_boot_seed_katalog_fitur_default(app_client):
     kode = {f["kode"] for f in fitur}
     assert "booking_online" in kode
     assert "qris" in kode
-    assert len(fitur) == 13
+    assert len(fitur) == 14
 
 
 def test_seed_fitur_idempotent_tidak_menimpa_perubahan(app_client):
@@ -246,7 +246,7 @@ def test_superadmin_list_features(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/features", headers=headers)
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 13
+    assert len(r.json()) == 14
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_features(two_tenants):
@@ -265,7 +265,7 @@ def test_superadmin_tambah_fitur_baru(app_client):
     assert data["aktif"] == 1
 
     r2 = app_client.get("/api/superadmin/billing/features", headers=headers)
-    assert len(r2.json()) == 14
+    assert len(r2.json()) == 15
 
 
 def test_superadmin_tambah_fitur_kode_duplikat_ditolak(app_client):

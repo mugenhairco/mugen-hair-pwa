@@ -8,7 +8,9 @@ produksi)."""
 
 import asyncio
 
+import billing_db
 import error_log_db
+import subscription_db
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +76,17 @@ def test_baris_terlama_dipangkas_lewat_batas(single_tenant, monkeypatch):
 # routers/error_log.py -- POST publik (tanpa login), GET khusus Owner
 # ---------------------------------------------------------------------------
 
+def _beri_fitur_log_error(tenant_id):
+    """Feature Gating "log_error" (lihat feature_access.py/billing_db.py):
+    GET /api/log-error butuh paket yang menyertakan kode fitur ini -- helper
+    ini memberi tenant paket "free" yang HANYA berisi log_error (replace
+    total, bukan tambah -- cukup untuk test di file ini, tidak perlu fitur
+    real-default lain seperti export_pdf ikut menyala)."""
+    subscription_db.create_default_subscription(tenant_id, package="free", status="active")
+    free = billing_db.get_package_by_kode("free")
+    fitur = billing_db.get_feature_by_kode("log_error")
+    billing_db.set_package_features(free["id"], [fitur["id"]])
+
 def test_post_log_error_tanpa_login_pakai_slug_query(single_tenant):
     client = single_tenant["client"]
     tenant_slug = "test-toko"
@@ -121,12 +134,30 @@ def test_post_log_error_sumber_tidak_valid_jatuh_ke_frontend(single_tenant):
 def test_get_log_error_khusus_owner(single_tenant):
     client = single_tenant["client"]
     headers = single_tenant["headers"]
+    _beri_fitur_log_error(single_tenant["tenant_id"])
     error_log_db.catat_error(sumber="frontend", pesan="Error lama", tenant_id=single_tenant["tenant_id"])
 
     r = client.get("/api/log-error", headers=headers)
     assert r.status_code == 200, r.text
     assert len(r.json()) == 1
     assert r.json()[0]["pesan"] == "Error lama"
+
+
+def test_get_log_error_403_upgrade_required_tanpa_fitur(single_tenant):
+    """Feature Gating "log_error": paket TANPA fitur ini (mis. free polos
+    tanpa di-assign Super Admin) ditolak 403 dengan detail upgrade_required,
+    pola sama seperti export_pdf/qris di test_feature_access.py."""
+    client = single_tenant["client"]
+    headers = single_tenant["headers"]
+    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
+    free = billing_db.get_package_by_kode("free")
+    billing_db.set_package_features(free["id"], [])  # paket ini tidak punya fitur apa pun
+
+    r = client.get("/api/log-error", headers=headers)
+    assert r.status_code == 403
+    detail = r.json()["detail"]
+    assert detail["upgrade_required"] is True
+    assert detail["feature"] == "log_error"
 
 
 def test_get_log_error_barber_ditolak(single_tenant):
