@@ -39,11 +39,30 @@ import tenant_db  # noqa: E402
 import booking_db  # noqa: E402
 import attendance_db  # noqa: E402
 import error_log_db  # noqa: E402
+import billing_db  # noqa: E402
+import subscription_db  # noqa: E402
 
 main.on_startup()  # jalankan migrasi + bootstrap Owner SEBELUM seeding di bawah
 
 tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
 TENANT_ID = tenant["id"]
+
+# Feature Gating per Paket (feature_access.py): tenant E2E TIDAK PERNAH punya
+# baris tenant_subscriptions kalau tidak dibuat eksplisit di sini -- fail-
+# CLOSED berarti setiap endpoint yang digerbang require_feature() (termasuk
+# GET /api/log-error, lihat routers/error_log.py) akan 403 tanpa ini, membuat
+# frontend/e2e/log_error.spec.js gagal (tab-nya jadi blok upgrade, bukan
+# tabel log). Paket "free" sudah otomatis dapat booking_online/qris/
+# export_pdf lewat billing_db.seed_default_package_features() (dipanggil
+# main.on_startup() di atas) -- "log_error" ditambahkan manual di sini
+# (BUKAN bagian _FITUR_NYATA_DEFAULT, lihat catatan billing_db.py) supaya
+# tab Log Error tetap testable E2E.
+subscription_db.create_default_subscription(TENANT_ID, package="free", status="active")
+_paket_free = billing_db.get_package_by_kode("free")
+_fitur_log_error = billing_db.get_feature_by_kode("log_error")
+if _paket_free is not None and _fitur_log_error is not None:
+    _fitur_sudah_ada = {f["id"] for f in billing_db.get_package_features(_paket_free["id"])}
+    billing_db.set_package_features(_paket_free["id"], list(_fitur_sudah_ada | {_fitur_log_error["id"]}))
 
 BARBER_ID = database.add_barber("E2E Barber", tenant_id=TENANT_ID)
 SERVICE_ID = database.add_service("E2E Haircut", 50000, tenant_id=TENANT_ID)
