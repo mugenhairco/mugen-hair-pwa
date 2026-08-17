@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 
@@ -43,7 +44,7 @@ if _APP_DIR not in sys.path:
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 import database as db
 import auth_db
@@ -82,6 +83,7 @@ import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
+import error_log_db  # DIY error monitoring (bukan Sentry): tabel error_logs (idempotent, berdiri sendiri)
 from subscription_migrasi import migrasi_subscription
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
 import billing_gateway_db  # Payment Gateway Billing SaaS (platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
@@ -89,7 +91,7 @@ import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_in
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq, drop landing_testimonials (idempotent)
 from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, error_log
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -247,6 +249,41 @@ async def _log_dan_no_store(request: Request, call_next):
     return response
 
 
+@app.exception_handler(Exception)
+async def _tangani_exception_global(request: Request, exc: Exception):
+    """DIY error monitoring (bukan Sentry, lihat error_log_db.py untuk latar
+    belakang). SEBELUM handler ini ada, exception tak tertangani HANYA
+    tercatat ke stdout (logger.critical di bawah, TETAP dipertahankan) --
+    Owner/dev harus buka log Render manual untuk tahu ada masalah. Sekarang
+    JUGA tersimpan ke tabel error_logs supaya kelihatan lewat Setting > Log
+    Error tanpa akses Render sama sekali. HANYA menangkap exception yang
+    BENAR-BENAR tak terduga (bug) -- HTTPException/RequestValidationError
+    yang sengaja dilempar endpoint (404/422/dst di seluruh routers/*.py)
+    TETAP ditangani handler bawaan FastAPI seperti biasa (lebih spesifik,
+    tidak lewat sini sama sekali), respons API normal untuk itu TIDAK
+    berubah.
+
+    tenant_id SELALU None di sini -- exception handler global tidak
+    dijalankan lewat dependency injection endpoint (mis. get_current_user),
+    jadi tidak tahu request ini punya sesi tenant yang mana tanpa
+    mendekode header Authorization manual. Pencatatan ke error_logs
+    best-effort MURNI (try/except telan diam-diam) -- exception SEKUNDER di
+    sini TIDAK BOLEH menggagalkan respons 500 yang harus tetap terkirim ke
+    client."""
+    logger.critical(
+        "[%s] Unhandled exception %s %s: %s",
+        _INSTANCE_ID, request.method, request.url.path, exc, exc_info=True,
+    )
+    try:
+        error_log_db.catat_error(
+            sumber="backend", pesan=f"{exc.__class__.__name__}: {exc}",
+            detail=traceback.format_exc(), url=str(request.url),
+        )
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": "Terjadi kesalahan pada server."})
+
+
 app.include_router(auth_router.router)
 app.include_router(dashboard.router)
 app.include_router(input_data.router)
@@ -282,6 +319,7 @@ app.include_router(gateway_notification.public_router)
 app.include_router(attendance.router)
 app.include_router(uang_harian_dinamis.router)
 app.include_router(push.router)
+app.include_router(error_log.router)
 
 
 @app.on_event("startup")
@@ -351,6 +389,7 @@ def on_startup():
         attendance_db.init_attendance_db()  # Modul BARU Absensi: tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
         uang_harian_dinamis_db.init_uang_harian_dinamis_db()  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent, membaca Absensi read-only)
         push_db.init_push_db()  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
+        error_log_db.init_error_log_db()  # DIY error monitoring: tabel error_logs (idempotent, berdiri sendiri)
         pemasukan_db.init_pemasukan_db()  # Modul Keuangan Fase 1: tabel pemasukan (idempotent)
         uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)

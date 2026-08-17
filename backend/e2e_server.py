@@ -38,6 +38,7 @@ import main  # noqa: E402  -- membuat objek app (belum memicu startup)
 import tenant_db  # noqa: E402
 import booking_db  # noqa: E402
 import attendance_db  # noqa: E402
+import error_log_db  # noqa: E402
 
 main.on_startup()  # jalankan migrasi + bootstrap Owner SEBELUM seeding di bawah
 
@@ -85,6 +86,16 @@ with database.get_conn() as conn:
         "UPDATE bookings SET tanggal = ? WHERE customer_nama = 'E2E Customer Sudah Lewat'",
         (_kemarin_iso,),
     )
+
+# DIY error monitoring (bukan Sentry) -- satu baris seed supaya
+# frontend/e2e/log_error.spec.js punya sesuatu untuk diverifikasi tampil di
+# Setting > Log Error TANPA harus benar-benar memicu error sungguhan lewat
+# browser.
+error_log_db.catat_error(
+    sumber="backend", pesan="Contoh error seed E2E: ValueError contoh",
+    detail="Traceback (most recent call last):\n  File \"contoh.py\", line 1, in <module>\nValueError: contoh error seed E2E",
+    url="/api/contoh-endpoint", tenant_id=TENANT_ID,
+)
 
 print(f"[e2e_server] Seed selesai -- tenant_id={TENANT_ID} barber_id={BARBER_ID} "
       f"service_id={SERVICE_ID} db={TEST_DB}", flush=True)

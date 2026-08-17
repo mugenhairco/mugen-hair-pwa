@@ -43,8 +43,14 @@ const PagePengaturan = (() => {
     // require_owner_or_staff -- staff TIDAK mengatur email Owner) --
     // TIDAK masuk TAB_KE_IZIN_SETTING sama sekali, jadi otomatis TIDAK
     // PERNAH muncul untuk staff apa pun izin yang diberikan Owner-nya.
+    // DIY error monitoring (bukan Sentry, lihat backend/app/error_log_db.py):
+    // tab "Log Error" KHUSUS Owner, pola SAMA PERSIS seperti "Profil" di
+    // atas (backend require_admin, BUKAN require_owner_or_staff -- staff
+    // TIDAK PERNAH melihat log error) -- TIDAK masuk TAB_KE_IZIN_SETTING,
+    // jadi otomatis TIDAK PERNAH muncul untuk staff apa pun izin yang
+    // diberikan Owner-nya.
     const tabs = isOwner
-      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "WhatsApp", "User", "Backup", "Hak Akses Admin", "Profil"]
+      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "WhatsApp", "User", "Backup", "Hak Akses Admin", "Profil", "Log Error"]
       : Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]);
 
     if (tabs.length === 0) {
@@ -77,6 +83,7 @@ const PagePengaturan = (() => {
       else if (activeTab === "User") await renderUser();
       else if (activeTab === "Backup") await renderBackup();
       else if (activeTab === "Profil") await renderProfil();
+      else if (activeTab === "Log Error") await renderLogError();
       else await renderHakAksesAdmin();
     }
 
@@ -1851,6 +1858,94 @@ const PagePengaturan = (() => {
       // belum diisi Owner) atau browser tidak mendukung -- lihat
       // push_notif.js::renderCard().
       if (typeof MugenPushNotif !== "undefined") await MugenPushNotif.renderCard(body);
+    }
+
+    // ================= LOG ERROR (DIY error monitoring, bukan Sentry) =================
+    // Lihat backend/app/error_log_db.py untuk latar belakang lengkap: dibahas
+    // dengan Owner sebagai alternatif $0/bulan dari Sentry -- tidak ada
+    // grouping/alert otomatis, murni "tercatat & bisa dilihat" di sini.
+    // frontend/js/error_report.js yang mengirim baris "frontend" (listener
+    // global window.onerror/unhandledrejection), main.py::
+    // _tangani_exception_global() yang mengirim baris "backend" (auto-capture
+    // crash tak terduga).
+    async function renderLogError() {
+      const card = MugenUI.el("div", { class: "card" });
+      body.appendChild(card);
+      card.appendChild(MugenUI.el("h2", {}, "Log Error"));
+      card.appendChild(MugenUI.el("p", { class: "subtitle" },
+        "Catatan error yang terjadi di aplikasi ini (frontend maupun backend), murni supaya bisa " +
+        "diketahui tanpa menunggu ada yang melapor duluan. Maksimal 200 baris terbaru ditampilkan " +
+        "di sini -- baris tertua otomatis dihapus begitu total tersimpan menumpuk banyak."));
+
+      const filterWrap = MugenUI.el("div", { style: "margin-bottom:12px;" });
+      const selSumber = MugenUI.el("select", { style: "width:auto;" }, [
+        MugenUI.el("option", { value: "" }, "Semua Sumber"),
+        MugenUI.el("option", { value: "frontend" }, "Frontend"),
+        MugenUI.el("option", { value: "backend" }, "Backend"),
+      ]);
+      filterWrap.appendChild(selSumber);
+      card.appendChild(filterWrap);
+
+      const listBody = MugenUI.el("div");
+      card.appendChild(listBody);
+
+      function labelSumber(v) {
+        return v === "backend" ? "Backend" : "Frontend";
+      }
+
+      function bukaDetail(r) {
+        MugenUI.infoModal({
+          title: "Detail Error",
+          body: [
+            MugenUI.el("p", {}, [MugenUI.el("strong", {}, "Waktu: "), r.created_at ? new Date(r.created_at).toLocaleString("id-ID") : "-"]),
+            MugenUI.el("p", {}, [MugenUI.el("strong", {}, "Sumber: "), labelSumber(r.sumber)]),
+            MugenUI.el("p", {}, [MugenUI.el("strong", {}, "Pesan: "), r.pesan]),
+            MugenUI.el("p", {}, [MugenUI.el("strong", {}, "Halaman/Endpoint: "), r.url || "-"]),
+            MugenUI.el("p", {}, [MugenUI.el("strong", {}, "User Agent: "), r.user_agent || "-"]),
+            MugenUI.el("pre", {
+              style: "white-space:pre-wrap;word-break:break-word;background:var(--card-bg-alt,rgba(128,128,128,0.1));"
+                + "padding:8px;border-radius:6px;max-height:300px;overflow:auto;font-size:12px;",
+            }, r.detail || "(tidak ada detail/stack trace)"),
+          ],
+        });
+      }
+
+      async function muat() {
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 4 }));
+        let rows;
+        try {
+          const qs = selSumber.value ? `?sumber=${selSumber.value}` : "";
+          rows = await MugenApi.get(`/api/log-error${qs}`);
+        } catch (e) {
+          listBody.innerHTML = "";
+          listBody.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.buildTable(
+          [
+            {
+              key: "created_at", label: "Waktu",
+              format: (v) => v ? new Date(v).toLocaleString("id-ID") : "-",
+            },
+            { key: "sumber", label: "Sumber", format: labelSumber },
+            { key: "pesan", label: "Pesan" },
+            { key: "url", label: "Halaman/Endpoint", format: (v) => v || "-" },
+            {
+              key: "aksi", label: "Aksi", format: (_, r) => {
+                const btn = MugenUI.el("button", { type: "button" }, "Detail");
+                btn.addEventListener("click", () => bukaDetail(r));
+                return btn;
+              },
+            },
+          ],
+          rows, { emptyText: "Belum ada error tercatat. Bagus!" },
+        ));
+      }
+
+      selSumber.addEventListener("change", muat);
+      await muat();
     }
 
     renderBody();
