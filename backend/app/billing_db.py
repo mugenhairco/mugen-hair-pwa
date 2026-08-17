@@ -67,16 +67,22 @@ from subscription_db import PACKAGE_VALID
 # Kode fitur yang SUNGGUHAN ditegakkan sistem (lihat feature_access.py) --
 # dipakai HANYA oleh seed_default_package_features() di bawah, supaya
 # instalasi/tenant yang SUDAH ADA sebelum Feature Gating ini dibangun tidak
-# tiba-tiba kehilangan Booking Online/QRIS/Export PDF begitu deploy ini
-# jalan (SEBELUM Feature Gating, ketiganya selalu menyala untuk SEMUA
-# tenant tanpa syarat apa pun -- default paket HARUS mencerminkan itu).
+# tiba-tiba kehilangan Booking Online/Export PDF begitu deploy ini jalan
+# (SEBELUM Feature Gating, keduanya selalu menyala untuk SEMUA tenant
+# tanpa syarat apa pun -- default paket HARUS mencerminkan itu).
 # "log_error" SENGAJA TIDAK dimasukkan sini walau sekarang juga sungguhan
 # digerbang (lihat feature_access.py/routers/error_log.py) -- fitur itu
 # BARU dibangun SETELAH Feature Gating ini ada, jadi tidak pernah menyala
 # tanpa syarat untuk siapa pun sebelumnya; default fail-CLOSED yang sama
 # seperti fitur katalog lain yang belum ditegakkan (multi_cabang dkk) sudah
 # benar -- Super Admin yang memutuskan paket mana dapat fitur ini.
-_FITUR_NYATA_DEFAULT = ("booking_online", "qris", "export_pdf")
+# "qris" SEBELUMNYA ada di sini juga -- DIHAPUS (diminta Owner, lihat
+# hapus_gerbang_qris() di bawah): QRIS adalah metode pembayaran INTI yang
+# HARUS tersedia untuk SEMUA paket tanpa kecuali, jadi tidak masuk akal
+# jadi checkbox opsional per paket -- routers/booking.py TIDAK LAGI
+# memanggil require_feature("qris")/tenant_has_feature(..., "qris") sama
+# sekali di mana pun.
+_FITUR_NYATA_DEFAULT = ("booking_online", "export_pdf")
 
 # HANYA kode yang sungguhan menggerbang sesuatu di kode (lihat
 # feature_access.py) -- lihat docstring modul di atas untuk audit lengkap
@@ -90,7 +96,6 @@ _FITUR_DEFAULT = (
     ("booking_online", "Booking Online"),
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
-    ("qris", "QRIS"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
     ("log_error", "Log Error"),
     # FITUR Feature Gating lanjutan (diminta Owner): dua kode BARU, SUNGGUHAN
@@ -105,6 +110,27 @@ _FITUR_DEFAULT = (
     # BUKAN menyala dulu lalu dicabut belakangan.
     ("barber_app", "Aplikasi Barber (Login Barber)"),
     ("absensi", "Absensi Karyawan"),
+    # FITUR marketing DEKORATIF (diminta Owner secara EKSPLISIT & SADAR --
+    # BEDA dari 10 kode dekoratif lama yang DIHAPUS di audit "fitur hardcode
+    # di Superadmin" karena menjanjikan fungsi yang TIDAK PERNAH ada sama
+    # sekali): KELIMA kode di bawah ini menggambarkan kemampuan yang
+    # SUNGGUHAN ADA & JALAN di aplikasi untuk SEMUA tenant (Manajemen
+    # Barber/Karyawan, Role & Hak Akses -- termasuk Role Custom, lihat
+    # user_roles_db.py --, Manajemen Layanan, Komisi & Slip Gaji, Dashboard
+    # bisnis) -- HANYA saja TIDAK per-tenant digerbang teknis (SEMUA tenant
+    # sudah bisa memakainya apa pun paketnya). Murni ditampilkan sebagai
+    # daftar centang di kartu harga Landing Page supaya perbandingan paket
+    # terlihat lebih lengkap -- TIDAK ADA satu pun require_feature()/
+    # tenant_has_feature() yang memanggil kode-kode ini di mana pun di
+    # kode aplikasi (CEK sebelum menambah penegakan apa pun di sini -- kalau
+    # suatu saat SUNGGUHAN mau digerbang teknis, pindahkan ke atas
+    # bersama kode-kode nyata, JANGAN diam-diam menggerbang kode yang
+    # sudah terlanjur tampil sebagai "termasuk" di paket murah).
+    ("manajemen_bisnis", "Manajemen Bisnis & Dashboard"),
+    ("manajemen_barber", "Manajemen Barber & Karyawan"),
+    ("hak_akses_role", "Role & Hak Akses"),
+    ("manajemen_layanan", "Manajemen Layanan & Harga"),
+    ("pengaturan_komisi_gaji", "Pengaturan Komisi & Gaji"),
 )
 
 # Batas pemakaian (kolom nullable di subscription_packages, NULL = tidak
@@ -335,6 +361,79 @@ def seed_grandfather_fitur_baru_digerbang():
             if set(gabungan) != sudah_ada:
                 set_package_features(paket["id"], gabungan)
     set_setting(_KUNCI_SEED_FITUR_BARU_DIGERBANG, "1")
+
+
+_KUNCI_HAPUS_GERBANG_QRIS = "billing_hapus_gerbang_qris_selesai"
+
+
+def hapus_gerbang_qris():
+    """SEKALI SAJA sepanjang umur database (diminta Owner) -- "qris" DULU
+    ada di _FITUR_NYATA_DEFAULT/_FITUR_DEFAULT (fitur SUNGGUHAN digerbang,
+    lihat feature_access.py), TAPI Owner memutuskan QRIS adalah metode
+    pembayaran INTI yang HARUS tersedia untuk SEMUA paket tanpa kecuali --
+    tidak masuk akal ditawarkan sebagai checkbox opsional per paket.
+    routers/booking.py SUDAH TIDAK memanggil require_feature("qris")/
+    tenant_has_feature(..., "qris") di mana pun lagi (QRIS sekarang selalu
+    aktif untuk siapa saja yang mengunggahnya) -- fungsi ini menghapus
+    PERMANEN baris "qris" dari `subscription_features` supaya baris yang
+    SUDAH sempat ter-seed di database production (dari versi _FITUR_DEFAULT
+    lama) ikut terhapus, bukan cuma tidak ditambah lagi -- `ON DELETE
+    CASCADE` di subscription_package_features otomatis melepasnya dari
+    paket mana pun yang sudah mencentangnya, supaya Katalog Fitur Superadmin
+    berhenti menampilkan checkbox "QRIS" yang sudah tidak berarti apa-apa
+    lagi. Flag `settings` sekali-jalan (pola sama seperti hapus_fitur_
+    tanpa_fungsi_nyata() di atas) supaya kalau Super Admin menambah kode
+    LAIN dengan nama kebetulan sama persis "qris" di masa depan, itu TIDAK
+    ikut terhapus diam-diam tiap boot."""
+    if get_setting(_KUNCI_HAPUS_GERBANG_QRIS, default=None) == "1":
+        return
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subscription_features WHERE kode = 'qris'")
+    set_setting(_KUNCI_HAPUS_GERBANG_QRIS, "1")
+
+
+_KODE_FITUR_DEKORATIF_MARKETING = (
+    "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
+    "manajemen_layanan", "pengaturan_komisi_gaji",
+)
+_KUNCI_SEED_FITUR_DEKORATIF_MARKETING = "billing_seed_fitur_dekoratif_marketing_selesai"
+
+# Sebaran BERTAHAP (diminta Owner: "agar terlihat ramai") -- paket lebih
+# mahal menampilkan lebih banyak centang di kartu harga Landing Page,
+# walau SEMUA kode ini SUNGGUHAN tersedia untuk SEMUA tenant apa pun
+# paketnya (murni tampilan, lihat catatan _FITUR_DEFAULT di atas). "free"
+# & "basic" SENGAJA TIDAK dapat "hak_akses_role" (Role Custom, fitur yang
+# SUNGGUHAN baru/lanjutan, cocok jadi pembeda visual paket atas) maupun
+# "manajemen_bisnis" (dashboard) di "free" -- kombinasi ini murni pilihan
+# presentasi, BUKAN batasan teknis apa pun.
+_SEBARAN_FITUR_DEKORATIF_PER_PAKET = {
+    "free": ("manajemen_barber", "manajemen_layanan"),
+    "basic": ("manajemen_barber", "manajemen_layanan", "manajemen_bisnis", "pengaturan_komisi_gaji"),
+    "pro": _KODE_FITUR_DEKORATIF_MARKETING,
+    "enterprise": _KODE_FITUR_DEKORATIF_MARKETING,
+}
+
+
+def seed_fitur_dekoratif_marketing():
+    """SEKALI SAJA sepanjang umur database (diminta Owner) -- assign kelima
+    kode `_KODE_FITUR_DEKORATIF_MARKETING` (lihat catatan _FITUR_DEFAULT)
+    ke paket sesuai `_SEBARAN_FITUR_DEKORATIF_PER_PAKET`, SEKALI saat
+    migrasi ini pertama jalan. Pola flag `settings` SAMA PERSIS seed_*
+    lain di atas -- Super Admin bebas mengubah centang per paket kapan pun
+    setelahnya lewat Dashboard, migrasi ini TIDAK PERNAH menimpanya lagi."""
+    if get_setting(_KUNCI_SEED_FITUR_DEKORATIF_MARKETING, default=None) == "1":
+        return
+    fitur_by_kode = {f["kode"]: f["id"] for f in list_features() if f["kode"] in _KODE_FITUR_DEKORATIF_MARKETING}
+    for paket in list_packages():
+        kode_untuk_paket = _SEBARAN_FITUR_DEKORATIF_PER_PAKET.get(paket["kode"], ())
+        fitur_ids = [fitur_by_kode[k] for k in kode_untuk_paket if k in fitur_by_kode]
+        if not fitur_ids:
+            continue
+        sudah_ada = {f["id"] for f in get_package_features(paket["id"])}
+        gabungan = list(dict.fromkeys(list(sudah_ada) + fitur_ids))
+        if set(gabungan) != sudah_ada:
+            set_package_features(paket["id"], gabungan)
+    set_setting(_KUNCI_SEED_FITUR_DEKORATIF_MARKETING, "1")
 
 
 def list_packages(hanya_aktif: bool = False) -> list:

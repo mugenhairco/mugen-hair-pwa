@@ -65,13 +65,13 @@ def _owner_login(app_client):
 def test_daftar_paket_aktif_membawa_fitur(app_client):
     tenant, headers = _owner_login(app_client)
     pro = billing_db.get_package_by_kode("pro")
-    qris = billing_db.get_feature_by_kode("qris")
-    billing_db.set_package_features(pro["id"], [qris["id"]])
+    export_pdf = billing_db.get_feature_by_kode("export_pdf")
+    billing_db.set_package_features(pro["id"], [export_pdf["id"]])
 
     r = app_client.get("/api/billing/packages", headers=headers)
     assert r.status_code == 200, r.text
     paket_pro = next(p for p in r.json() if p["kode"] == "pro")
-    assert {f["kode"] for f in paket_pro["fitur"]} == {"qris"}
+    assert {f["kode"] for f in paket_pro["fitur"]} == {"export_pdf"}
 
 
 def test_daftar_paket_aktif_tidak_membawa_paket_nonaktif(app_client):

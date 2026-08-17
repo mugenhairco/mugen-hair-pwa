@@ -122,7 +122,7 @@ def _default_barber_app_dan_absensi_aktif(monkeypatch):
     lewat `dependencies=[Depends(require_feature("absensi"))]` di level
     router): KEDUA kode ini SENGAJA fail-CLOSED TANPA grandfather sama
     sekali (keputusan eksplisit Owner, lihat billing_db.py::_FITUR_DEFAULT)
-    -- beda dari export_pdf/qris/booking_online (real-default, otomatis
+    -- beda dari export_pdf/booking_online (real-default, otomatis
     menyala lewat billing_db.seed_default_package_features()) maupun
     export_excel/whatsapp_reminder (grandfather, lihat billing_db.seed_
     grandfather_fitur_baru_digerbang()). Konsekuensinya: tenant TANPA baris

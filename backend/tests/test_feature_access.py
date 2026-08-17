@@ -6,7 +6,7 @@ tanpa syarat (unit langsung memanggil dependency-nya, tidak lewat HTTP --
 tidak ada endpoint yang mengizinkan role superadmin DAN digerbang
 require_feature sekaligus untuk diuji end-to-end), penegakan endpoint
 (export_pdf lewat /api/uang-kas/pdf, salah satu dari 14 endpoint PDF yang
-digerbang -- polanya identik untuk 13 lainnya; booking_online + qris lewat
+digerbang -- polanya identik untuk 13 lainnya; booking_online lewat
 routers/booking.py), dan yang PALING PENTING: propagasi langsung (live
 propagation) -- mengubah penugasan fitur lewat endpoint superadmin yang
 SUDAH ADA (PUT /api/superadmin/billing/packages/{id}/features, pola sama
@@ -17,12 +17,14 @@ apa pun di lapisan server.
 CATATAN PENTING soal fixture app_client di sini: billing_db.seed_default_
 package_features() (dipanggil main.py on_startup(), lihat docstring
 lengkapnya di billing_db.py) SUDAH otomatis meng-assign booking_online/
-qris/export_pdf ke KEEMPAT paket default sejak boot pertama -- supaya
+export_pdf ke KEEMPAT paket default sejak boot pertama -- supaya
 instalasi lama (sebelum Feature Gating ini ada) tidak tiba-tiba kehilangan
 fitur yang sebelumnya selalu menyala. Konsekuensinya: setiap test di bawah
 yang ingin membuktikan skenario "paket TIDAK punya fitur ini" harus
 EKSPLISIT mencabutnya dulu lewat _set_fitur_paket_persis() (BUKAN
-mengasumsikan paket baru mulai kosong)."""
+mengasumsikan paket baru mulai kosong). "qris" TIDAK LAGI ada di katalog
+sama sekali (diminta Owner -- QRIS adalah metode pembayaran inti untuk
+SEMUA paket, bukan checkbox opsional)."""
 
 import pytest
 
@@ -159,7 +161,7 @@ def test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
 
 
 # ============================= Export Excel (routers/attendance.py, AUDIT "fitur hardcode di Superadmin") =============================
-# export_excel BEDA dari export_pdf/qris/booking_online (bukan _FITUR_NYATA_
+# export_excel BEDA dari export_pdf/booking_online (bukan _FITUR_NYATA_
 # DEFAULT) -- fitur ini di-grandfather lewat billing_db.py::seed_grandfather_
 # fitur_baru_digerbang() (SEKALI, ke SEMUA paket, karena sebelum audit ini
 # selalu gratis untuk semua tenant), jadi tenant dengan subscription APA PUN
@@ -288,32 +290,28 @@ def test_public_buat_booking_403_tanpa_fitur_booking_online(single_tenant):
     assert r.status_code == 403
 
 
-def test_public_qris_404_tanpa_fitur_qris(single_tenant):
-    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
-    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free")  # cabut semua
+def test_qris_endpoints_bekerja_tanpa_subscription_atau_fitur_apa_pun(single_tenant):
+    """REVISI (diminta Owner): "qris" DIHAPUS dari katalog Feature Gating --
+    QRIS adalah metode pembayaran INTI yang harus tersedia untuk SEMUA
+    paket tanpa kecuali, bukan checkbox opsional. Endpoint QRIS (publik
+    maupun Owner) sekarang HARUS tetap bekerja normal walau tenant TIDAK
+    PUNYA baris subscription sama sekali (fail-closed feature lain, mis.
+    booking_online, TIDAK berlaku untuk qris lagi)."""
+    r_hapus = single_tenant["client"].delete("/api/booking/qris", headers=single_tenant["headers"])
+    assert r_hapus.status_code == 200, r_hapus.text
 
-    r = single_tenant["client"].get("/api/public/booking/qris", params={"tenant": "test-toko"})
-    assert r.status_code == 404
+    r_publik = single_tenant["client"].get("/api/public/booking/qris", params={"tenant": "test-toko"})
+    # 404 di sini murni "QRIS belum diunggah" (data kosong) -- BUKAN gate
+    # fitur (lihat routers/booking.py::public_qris(), tidak ada lagi
+    # pengecekan tenant_has_feature untuk "qris").
+    assert r_publik.status_code == 404
+    assert r_publik.json()["detail"] == "QRIS belum diatur."
 
 
-def test_owner_upload_qris_403_tanpa_fitur_qris(single_tenant):
-    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
-    superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free")  # cabut semua
-
-    r = single_tenant["client"].delete("/api/booking/qris", headers=single_tenant["headers"])
-    assert r.status_code == 403
-    assert r.json()["detail"]["feature"] == "qris"
-
-
-def test_owner_hapus_qris_sukses_dengan_fitur_qris_real_default(single_tenant):
-    """Fitur real-default sudah otomatis menyala sejak boot -- TIDAK perlu
-    assign manual apa pun untuk skenario "menyala"."""
-    subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
-
-    r = single_tenant["client"].delete("/api/booking/qris", headers=single_tenant["headers"])
-    assert r.status_code == 200, r.text
+def test_qris_tidak_lagi_ada_di_katalog_fitur(app_client):
+    """Kode "qris" DIHAPUS TOTAL dari katalog -- bukan lagi sesuatu yang
+    bisa dicentang/dihapus-centang Super Admin per paket sama sekali."""
+    assert billing_db.get_feature_by_kode("qris") is None
 
 
 # ============================= Aplikasi Barber (barber_app, routers/auth_router.py::login()) =============================

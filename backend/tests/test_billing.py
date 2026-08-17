@@ -236,25 +236,26 @@ def test_update_package_nama_kosong_ditolak():
 def test_boot_seed_katalog_fitur_default(app_client):
     fitur = billing_db.list_features()
     kode = {f["kode"] for f in fitur}
-    assert kode == {"booking_online", "export_pdf", "export_excel", "qris", "whatsapp_reminder", "log_error",
-                     "barber_app", "absensi"}
+    assert kode == {"booking_online", "export_pdf", "export_excel", "whatsapp_reminder", "log_error",
+                     "barber_app", "absensi", "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
+                     "manajemen_layanan", "pengaturan_komisi_gaji"}
 
 
 def test_seed_fitur_idempotent_tidak_menimpa_perubahan(app_client):
-    qris = billing_db.get_feature_by_kode("qris")
-    billing_db.update_feature(qris["id"], nama="QRIS Custom")
+    export_pdf = billing_db.get_feature_by_kode("export_pdf")
+    billing_db.update_feature(export_pdf["id"], nama="Export PDF Custom")
 
     billing_db.seed_default_features()
 
-    qris2 = billing_db.get_feature_by_kode("qris")
-    assert qris2["nama"] == "QRIS Custom"
+    export_pdf2 = billing_db.get_feature_by_kode("export_pdf")
+    assert export_pdf2["nama"] == "Export PDF Custom"
 
 
 def test_superadmin_list_features(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/features", headers=headers)
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 8
+    assert len(r.json()) == 12
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_features(two_tenants):
@@ -271,7 +272,7 @@ def test_superadmin_tidak_bisa_lagi_tambah_fitur_baru(app_client):
         "kode": "sms_reminder", "nama": "SMS Reminder",
     })
     assert r.status_code in (404, 405)
-    assert len(billing_db.list_features()) == 8
+    assert len(billing_db.list_features()) == 12
 
 
 def test_superadmin_ubah_fitur(app_client):
@@ -335,25 +336,25 @@ def test_superadmin_centang_fitur_untuk_paket(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     pro = billing_db.get_package_by_kode("pro")
     booking = billing_db.get_feature_by_kode("booking_online")
-    qris = billing_db.get_feature_by_kode("qris")
+    export_pdf = billing_db.get_feature_by_kode("export_pdf")
 
     r = app_client.put(f"/api/superadmin/billing/packages/{pro['id']}/features", headers=headers,
-                        json={"feature_ids": [booking["id"], qris["id"]]})
+                        json={"feature_ids": [booking["id"], export_pdf["id"]]})
     assert r.status_code == 200, r.text
     kode = {f["kode"] for f in r.json()}
-    assert kode == {"booking_online", "qris"}
+    assert kode == {"booking_online", "export_pdf"}
 
     r2 = app_client.get(f"/api/superadmin/billing/packages/{pro['id']}/features", headers=headers)
-    assert {f["kode"] for f in r2.json()} == {"booking_online", "qris"}
+    assert {f["kode"] for f in r2.json()} == {"booking_online", "export_pdf"}
 
 
 def test_ubah_penugasan_fitur_mengganti_seluruh_daftar_lama(app_client):
     pro = billing_db.get_package_by_kode("pro")
     booking = billing_db.get_feature_by_kode("booking_online")
-    qris = billing_db.get_feature_by_kode("qris")
+    export_pdf = billing_db.get_feature_by_kode("export_pdf")
     log_error = billing_db.get_feature_by_kode("log_error")
 
-    billing_db.set_package_features(pro["id"], [booking["id"], qris["id"]])
+    billing_db.set_package_features(pro["id"], [booking["id"], export_pdf["id"]])
     hasil = billing_db.set_package_features(pro["id"], [log_error["id"]])
 
     assert {f["kode"] for f in hasil} == {"log_error"}
@@ -391,12 +392,12 @@ def test_dua_paket_beda_bisa_punya_fitur_berbeda(app_client):
 def test_audit_log_mencatat_perubahan_fitur(app_client):
     headers = _buat_superadmin_dan_login(app_client, username="auditor2")
     pro = billing_db.get_package_by_kode("pro")
-    qris = billing_db.get_feature_by_kode("qris")
+    export_pdf = billing_db.get_feature_by_kode("export_pdf")
 
-    app_client.put(f"/api/superadmin/billing/features/{qris['id']}", headers=headers,
-                    json={"deskripsi": "Pembayaran QRIS"})
+    app_client.put(f"/api/superadmin/billing/features/{export_pdf['id']}", headers=headers,
+                    json={"deskripsi": "Export laporan PDF"})
     app_client.put(f"/api/superadmin/billing/packages/{pro['id']}/features", headers=headers,
-                    json={"feature_ids": [qris["id"]]})
+                    json={"feature_ids": [export_pdf["id"]]})
 
     r = app_client.get("/api/superadmin/audit-log", headers=headers)
     aksi = [e["aksi"] for e in r.json()]

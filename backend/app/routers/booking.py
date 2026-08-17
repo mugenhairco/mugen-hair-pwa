@@ -45,7 +45,7 @@ import payment_gateway_db
 import r2_storage
 import subscription_db
 import tenant_db
-from auth import require_feature, require_owner_or_staff, require_barber, require_permission, resolve_tenant_publik
+from auth import require_owner_or_staff, require_barber, require_permission, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
@@ -156,10 +156,14 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     "booking_online", balas payload PENDEK `{"booking_online": False}`
     (BUKAN HTTPException) -- ini panggilan BOOTSTRAP halaman /book, frontend
     (book_public.js) perlu bisa membedakan "fitur tidak tersedia" (tampilkan
-    pesan ramah) dari error jaringan biasa. Kalau tenant TIDAK punya fitur
-    "qris", "qris" dihapus dari daftar metode_aktif SEBELUM dikirim -- data
-    QRIS yang sudah diupload (kalau ada) TETAP TERSIMPAN di database, cuma
-    tidak ditawarkan ke customer selama fitur ini tidak aktif di paketnya."""
+    pesan ramah) dari error jaringan biasa.
+
+    REVISI (diminta Owner): "qris" BUKAN LAGI fitur yang di-gerbang per
+    paket -- QRIS adalah metode pembayaran INTI yang harus tersedia untuk
+    SEMUA paket tanpa kecuali, jadi tidak masuk akal ditawarkan sebagai
+    checkbox opsional per paket (beda dari WhatsApp Reminder/Export Excel
+    dkk yang MEMANG opsional). Lihat billing_db.py::_FITUR_DEFAULT untuk
+    audit lengkapnya -- kode "qris" DIHAPUS TOTAL dari katalog fitur."""
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         return {"booking_online": False}
     booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id)
@@ -170,8 +174,6 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         if hari_ini.isoformat() <= tl["tanggal"] <= batas.isoformat()
     ]
     payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id)
-    if not feature_access.tenant_has_feature(tenant_id, "qris"):
-        payment_settings["metode_aktif"] = [m for m in payment_settings["metode_aktif"] if m != "qris"]
     return {
         "booking_online": True,
         **booking_settings,
@@ -205,11 +207,8 @@ def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
 
 @public_router.get("/qris")
 def public_qris(v: str | None = None, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
-    # Feature Gating "qris": balas 404 SAMA PERSIS seperti "belum diatur" --
-    # sengaja tidak dibedakan supaya tidak membocorkan status paket/billing
-    # tenant ke pengunjung publik lewat pesan error yang berbeda.
-    if not feature_access.tenant_has_feature(tenant_id, "qris"):
-        raise HTTPException(status_code=404, detail="QRIS belum diatur.")
+    # REVISI (diminta Owner): "qris" bukan lagi fitur ber-gerbang paket --
+    # lihat catatan lengkap di public_pengaturan() di atas.
     data, content_type = booking_db.get_qris_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="QRIS belum diatur.")
@@ -566,8 +565,7 @@ def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(requ
 
 
 @router.post("/qris")
-async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_booking_pengaturan")),
-                       _fitur: dict = Depends(require_feature("qris"))):
+async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     konten = await file.read()
     try:
         booking_db.simpan_qris(file.filename, konten, tenant_id=user["tenant_id"])
@@ -579,8 +577,7 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 
 
 @router.delete("/qris")
-def hapus_qris_endpoint(user: dict = Depends(require_permission("izin_booking_pengaturan")),
-                         _fitur: dict = Depends(require_feature("qris"))):
+def hapus_qris_endpoint(user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     booking_db.hapus_qris(tenant_id=user["tenant_id"])
     return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
 

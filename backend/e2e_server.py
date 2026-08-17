@@ -52,8 +52,8 @@ TENANT_ID = tenant["id"]
 # CLOSED berarti setiap endpoint yang digerbang require_feature() (termasuk
 # GET /api/log-error, lihat routers/error_log.py) akan 403 tanpa ini, membuat
 # frontend/e2e/log_error.spec.js gagal (tab-nya jadi blok upgrade, bukan
-# tabel log). Paket "free" sudah otomatis dapat booking_online/qris/
-# export_pdf lewat billing_db.seed_default_package_features() (dipanggil
+# tabel log). Paket "free" sudah otomatis dapat booking_online/export_pdf
+# lewat billing_db.seed_default_package_features() (dipanggil
 # main.on_startup() di atas) -- "log_error" ditambahkan manual di sini
 # (BUKAN bagian _FITUR_NYATA_DEFAULT, lihat catatan billing_db.py) supaya
 # tab Log Error tetap testable E2E. "barber_app"/"absensi" (FITUR Feature
