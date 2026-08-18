@@ -135,12 +135,24 @@ def list_invoices(tenant_id: int = None) -> list:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 
-def update_invoice(invoice_id: int, **fields) -> dict:
+def update_invoice(invoice_id: int, expected_status_lama: str = None, **fields) -> dict | bool:
     """Dipanggil billing_webhook.py::proses_notifikasi() SETELAH signature/
     order_id/amount lolos validasi -- `order_id`/`nomor_invoice`/`tenant_id`/
     `package_kode`/`package_nama`/`jumlah`/`durasi_hari` (snapshot checkout)
     SENGAJA TIDAK BISA diubah lewat sini, hanya kolom yang memang berubah
-    seiring status pembayaran."""
+    seiring status pembayaran.
+
+    `expected_status_lama` (BUGFIX audit, opsional): kalau diisi, UPDATE
+    ditambah `AND status = ?` -- dipakai billing_webhook.py sebagai
+    compare-and-swap ATOMIK di level SQL (bukan check-then-act di Python)
+    supaya dua notifikasi webhook untuk invoice YANG SAMA yang datang
+    nyaris bersamaan tidak bisa keduanya lolos pengecekan "status masih X"
+    lalu keduanya menulis. Return jadi bool (True = baris benar-benar
+    berubah, False = status invoice SUDAH BUKAN `expected_status_lama`
+    lagi saat UPDATE ini jalan -- caller WAJIB mengambil ulang data
+    terbaru & menilai ulang, BUKAN menganggap perubahan ini berhasil)
+    HANYA kalau parameter ini diisi; kalau tidak diisi, perilaku & return
+    value (dict invoice terbaru) SAMA PERSIS seperti sebelumnya."""
     if get_invoice(invoice_id) is None:
         raise ValueError("Invoice tidak ditemukan.")
     kolom_diizinkan = {
@@ -149,13 +161,19 @@ def update_invoice(invoice_id: int, **fields) -> dict:
     }
     aman = {k: v for k, v in fields.items() if k in kolom_diizinkan}
     if not aman:
-        return get_invoice(invoice_id)
+        return True if expected_status_lama is not None else get_invoice(invoice_id)
     if "status" in aman and aman["status"] not in STATUS_VALID:
         raise ValueError(f"Status invoice tidak dikenal: {aman['status']}")
     set_clause = ", ".join(f"{k} = ?" for k in aman)
     params = list(aman.values()) + [_now(), invoice_id]
+    where_clause = "id = ?"
+    if expected_status_lama is not None:
+        where_clause += " AND status = ?"
+        params.append(expected_status_lama)
     with get_conn() as conn:
-        conn.execute(f"UPDATE subscription_invoices SET {set_clause}, updated_at = ? WHERE id = ?", params)
+        cur = conn.execute(f"UPDATE subscription_invoices SET {set_clause}, updated_at = ? WHERE {where_clause}", params)
+        if expected_status_lama is not None:
+            return cur.rowcount > 0
     return get_invoice(invoice_id)
 
 

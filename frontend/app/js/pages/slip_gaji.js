@@ -186,7 +186,9 @@ const PageSlipGaji = (() => {
     const inputTanggalMulai = MugenUI.el("input", { type: "date" });
     const inputTanggalSelesai = MugenUI.el("input", { type: "date" });
     inputTanggalMulai.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
-    inputTanggalSelesai.value = today.toISOString().slice(0, 10);
+    // BUGFIX (audit): today.toISOString() mengonversi ke UTC dulu -- ganti
+    // MugenUI.isoHariIniWib() (lihat catatan lengkap di sana).
+    inputTanggalSelesai.value = MugenUI.isoHariIniWib();
     wrapTanggalRentang.appendChild(MugenUI.el("label", {}, "Tanggal Mulai"));
     wrapTanggalRentang.appendChild(inputTanggalMulai);
     wrapTanggalRentang.appendChild(MugenUI.el("label", {}, "Tanggal Selesai"));

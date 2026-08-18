@@ -7,7 +7,8 @@
 
 const PagePengeluaran = (() => {
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
+    return MugenUI.isoHariIniWib();
   }
 
   async function render(root) {
@@ -211,7 +212,20 @@ const PagePengeluaran = (() => {
       debounceTimer = setTimeout(loadList, 300);
     }
 
+    // BUGFIX (audit, race condition): dulu tidak ada penjagaan urutan
+    // request sama sekali -- kalau pengguna mengetik cepat di pencarian
+    // atau klik ganda filter, dua fetch yang tumpang tindih bisa selesai
+    // TIDAK berurutan; respons dari query yang LEBIH LAMA bisa mendarat
+    // SETELAH query yang lebih baru dan diam-diam menimpa tabel dengan
+    // data basi. `urutanTerkini` menandai loadList() PALING BARU yang
+    // dipanggil -- respons dari panggilan manapun yang bukan lagi yang
+    // terbaru dibuang (lihat `_RESPON_BASI` di bawah), tabel tetap
+    // menampilkan hasil dari panggilan yang benar-benar terakhir.
+    let urutanTerkini = 0;
+    const _RESPON_BASI = Symbol("respon-basi");
+
     async function loadList() {
+      const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton tabel + crossfade lewat refreshInto(),
       // menggantikan teks "Memuat..." dan penggantian innerHTML manual.
       try {
@@ -220,6 +234,7 @@ const PagePengeluaran = (() => {
           if (selKategori.value) qs.set("kategori", selKategori.value);
           if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
           const data = await MugenApi.get(`/api/pengeluaran?${qs}`, { useCache: true });
+          if (urutanSaya !== urutanTerkini) throw _RESPON_BASI;
           const rows = Array.isArray(data) ? data : [];
           const box = MugenUI.el("div");
           if (data.__offline) box.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -268,6 +283,7 @@ const PagePengeluaran = (() => {
           return box;
         }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
       } catch (e) {
+        if (e === _RESPON_BASI) return;
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.errorState(e.message));
       }

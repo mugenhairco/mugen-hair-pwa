@@ -133,7 +133,15 @@ const PageDashboardOwner = (() => {
       return MugenUI.el("div", { class: "card" }, [titleRow, listBox]);
     }
 
+    // BUGFIX (audit, race condition): dulu tidak ada penjagaan urutan
+    // request -- membalik bulan/tahun dengan cepat bisa membuat dua
+    // fetch tumpang tindih selesai TIDAK berurutan, data bulan yang
+    // LEBIH LAMA bisa mendarat setelah bulan yang lebih baru dan diam-diam
+    // menimpa dashboard dengan angka bulan yang salah.
+    let urutanTerkini = 0;
+
     async function load() {
+      const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton (bentuk kartu) menggantikan teks
       // "Memuat..." -- kartu asli otomatis beranimasi masuk begitu
       // ditambahkan (lihat .card { animation: mugen-fade-slide-in }),
@@ -145,6 +153,7 @@ const PageDashboardOwner = (() => {
       ]));
       try {
         const data = await MugenApi.get(`/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`, { useCache: true });
+        if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
         body.innerHTML = "";
         if (data.__offline) body.appendChild(MugenUI.offlineBanner(data.__cachedAt));
 
@@ -299,6 +308,7 @@ const PageDashboardOwner = (() => {
         selBarberGrafik.addEventListener("change", renderGrafik);
         renderGrafik();
       } catch (e) {
+        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
         body.innerHTML = "";
         body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
       }

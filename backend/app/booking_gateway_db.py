@@ -196,28 +196,45 @@ def update_status(transaksi_id: int, status_baru: str, sumber: str = "webhook", 
             )
         return transaksi
 
+    kolom_diizinkan = {"channel_pembayaran", "transaction_id_provider", "reference_id_provider",
+                        "raw_notification", "paid_at"}
+    # `v is not None`: pemanggil (booking_gateway_webhook.py::_terapkan_status())
+    # SELALU meneruskan seluruh field ini apa adanya (termasuk None kalau
+    # notifikasi/respons provider tidak menyertakannya) -- None WAJIB berarti
+    # "jangan sentuh kolom ini", BUKAN "timpa jadi NULL", supaya paid_at/
+    # transaction_id_provider/dst yang sudah tercatat tidak pernah terhapus
+    # oleh transisi status lanjutan yang responsnya lebih minim (mis.
+    # "berhasil" -> "refund" TIDAK boleh menghapus paid_at yang sudah ada).
+    aman = {k: v for k, v in extra_fields.items() if k in kolom_diizinkan and v is not None}
+    aman["status_pembayaran"] = status_baru
+    set_clause = ", ".join(f"{k} = ?" for k in aman)
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO booking_payment_status_log (transaction_id, status_lama, status_baru, sumber, waktu) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (transaksi_id, transaksi["status_pembayaran"], status_baru, sumber, _now()),
+        # BUGFIX (audit, race condition): dulu pengecekan status_lama di atas
+        # dan UPDATE ini dua langkah terpisah (check-then-act) -- dua
+        # notifikasi webhook nyaris bersamaan untuk transaksi yang SAMA bisa
+        # SAMA-SAMA lolos pengecekan lalu SAMA-SAMA menulis (Faspay
+        # mendokumentasikan retry). UPDATE sekarang bersyarat
+        # `AND status_pembayaran = ?` (compare-and-swap atomik di level SQL)
+        # -- kalau GAGAL (rowcount 0, status sudah berubah oleh proses lain
+        # di antara baca & tulis kita), fungsi ini dipanggil ULANG dari awal
+        # terhadap state TERBARU supaya seluruh pengecekan idempoten/final
+        # dinilai ulang, bukan diam-diam menimpa/dobel mencatat log.
+        cur = conn.execute(
+            f"UPDATE booking_payment_transactions SET {set_clause}, updated_at = ? "
+            f"WHERE id = ? AND status_pembayaran = ?",
+            list(aman.values()) + [_now(), transaksi_id, status_lama],
         )
-        kolom_diizinkan = {"channel_pembayaran", "transaction_id_provider", "reference_id_provider",
-                            "raw_notification", "paid_at"}
-        # `v is not None`: pemanggil (booking_gateway_webhook.py::_terapkan_status())
-        # SELALU meneruskan seluruh field ini apa adanya (termasuk None kalau
-        # notifikasi/respons provider tidak menyertakannya) -- None WAJIB berarti
-        # "jangan sentuh kolom ini", BUKAN "timpa jadi NULL", supaya paid_at/
-        # transaction_id_provider/dst yang sudah tercatat tidak pernah terhapus
-        # oleh transisi status lanjutan yang responsnya lebih minim (mis.
-        # "berhasil" -> "refund" TIDAK boleh menghapus paid_at yang sudah ada).
-        aman = {k: v for k, v in extra_fields.items() if k in kolom_diizinkan and v is not None}
-        aman["status_pembayaran"] = status_baru
-        set_clause = ", ".join(f"{k} = ?" for k in aman)
-        conn.execute(
-            f"UPDATE booking_payment_transactions SET {set_clause}, updated_at = ? WHERE id = ?",
-            list(aman.values()) + [_now(), transaksi_id],
-        )
+        if cur.rowcount == 0:
+            gagal_race = True
+        else:
+            conn.execute(
+                "INSERT INTO booking_payment_status_log (transaction_id, status_lama, status_baru, sumber, waktu) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (transaksi_id, status_lama, status_baru, sumber, _now()),
+            )
+            gagal_race = False
+    if gagal_race:
+        return update_status(transaksi_id, status_baru, sumber=sumber, **extra_fields)
     return get_transaksi(transaksi_id)
 
 

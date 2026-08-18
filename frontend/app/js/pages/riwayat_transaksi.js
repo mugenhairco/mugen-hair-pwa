@@ -134,7 +134,14 @@ const PageRiwayatTransaksi = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    // BUGFIX (audit, race condition): dulu tidak ada penjagaan urutan
+    // request -- klik ganda "Terapkan Filter" bisa membuat dua fetch
+    // tumpang tindih selesai TIDAK berurutan, hasil filter yang LEBIH
+    // LAMA bisa menimpa hasil filter yang lebih baru.
+    let urutanTerkini = 0;
+
     async function muatDaftar() {
+      const urutanSaya = ++urutanTerkini;
       listBody.innerHTML = "";
       listBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
       try {
@@ -143,6 +150,7 @@ const PageRiwayatTransaksi = (() => {
         if (inputSelesai.value) params.set("tanggal_selesai", inputSelesai.value + "T23:59:59");
         if (selStatus.value) params.set("status_pembayaran", selStatus.value);
         const data = await MugenApi.get(`/api/booking/transactions?${params.toString()}`);
+        if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.buildTable(
           [
@@ -173,6 +181,7 @@ const PageRiwayatTransaksi = (() => {
           { emptyText: "Belum ada transaksi Payment Gateway." },
         ));
       } catch (e) {
+        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.errorState(e.message));
       }

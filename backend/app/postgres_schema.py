@@ -1370,7 +1370,10 @@ def create_all():
         _migrasi_hapus_gerbang_qris(conn)
         _migrasi_seed_fitur_dekoratif_marketing(conn)
         _migrasi_harga_pricing_v2(conn)
-        _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs) -- commit transaksi.",
+        _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs).",
+                     time.monotonic() - _mulai)
+        _migrasi_unique_index_email(conn)
+        _logger.info("[postgres_schema] create_all(): unique index users.email diverifikasi (%.2fs) -- commit transaksi.",
                      time.monotonic() - _mulai)
 
     _logger.info("[postgres_schema] create_all(): transaksi utama COMMIT (%.2fs) -- mulai _backfill_booking_slug().",
@@ -1431,7 +1434,16 @@ def _migrasi_billing_packages(conn):
     Dashboard) TIDAK PERNAH ditimpa."""
     urutan_default = {"free": 1, "basic": 2, "pro": 3, "enterprise": 4}
     nama_default = {"free": "Free", "basic": "Basic", "pro": "Pro", "enterprise": "Enterprise"}
-    harga_default = {"free": 0, "basic": 99000, "pro": 249000, "enterprise": 599000}
+    # BUGFIX (audit): dulu dict ini (99rb/249rb/599rb) BEDA dari
+    # billing_db.py::_HARGA_DEFAULT (jalur SQLite, 188rb/250rb/350rb) --
+    # secara PRAKTIK kedua jalur berujung sama karena _migrasi_harga_pricing_v2()
+    # (lihat _HARGA_PRICING_V2 di bawah, SAMA PERSIS 188rb/250rb/350rb) selalu
+    # menimpa nilai ini di urutan startup yang sama persis -- tapi ini "bom
+    # waktu senyap": kalau urutan migrasi itu pernah diubah/dihapus, instalasi
+    # Postgres baru akan permanen memakai harga yang beda dari SQLite tanpa
+    # test yang menangkapnya. Disamakan di sini supaya TIDAK ADA lagi
+    # sumber kebenaran harga awal yang berbeda antara dua jalur DB.
+    harga_default = {"free": 0, "basic": 188000, "pro": 250000, "enterprise": 350000}
     now = datetime.now().isoformat(timespec="seconds")
     existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_packages").fetchall()}
     for kode in sorted(urutan_default, key=lambda k: urutan_default[k]):
@@ -1687,6 +1699,45 @@ def _migrasi_harga_pricing_v2(conn):
         "INSERT INTO settings (key, value) VALUES (?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (_KUNCI_MIGRASI_HARGA_PRICING_2, "1"),
+    )
+
+
+def _migrasi_unique_index_email(conn):
+    """BUGFIX (audit) -- versi PostgreSQL, SAMA PERSIS logikanya dengan
+    email_auth_migrasi.py::_migrasi_unique_index_email() (jalur SQLite,
+    lihat docstring itu untuk penjelasan lengkap akar masalahnya: dulu
+    keunikan `users.email` HANYA dijaga check-then-act di level Python,
+    rawan TOCTOU).
+
+    PENTING (beda dari jalur SQLite): fungsi ini dipanggil DI DALAM
+    transaksi TUNGGAL create_all() (lihat docstring panjang create_all()
+    soal riwayat insiden "out of shared memory"/"no open ports detected"
+    -- SELURUH DDL+migrasi startup SENGAJA satu transaksi). Kalau
+    `CREATE UNIQUE INDEX` di sini gagal karena data duplikat, PostgreSQL
+    akan meracuni SELURUH transaksi itu (setiap statement setelahnya ikut
+    gagal sampai eksplisit ROLLBACK) -- bisa menggagalkan TOTAL boot
+    produksi hanya gara-gara data email duplikat lama, jauh lebih parah
+    dari yang seharusnya. Karena itu dicek dulu proaktif lewat SELECT
+    biasa (aman, tidak mengubah state transaksi) SEBELUM mencoba membuat
+    index -- index HANYA dicoba dibuat kalau sudah pasti tidak akan
+    gagal. Dijalankan idempoten setiap startup (bukan sekali lewat flag
+    settings) -- `IF NOT EXISTS` membuatnya no-op kalau sudah ada."""
+    duplikat = conn.execute(
+        "SELECT LOWER(email) AS e, COUNT(*) AS c FROM users WHERE email IS NOT NULL "
+        "GROUP BY LOWER(email) HAVING COUNT(*) > 1"
+    ).fetchall()
+    if duplikat:
+        contoh = ", ".join(sorted({r["e"] for r in duplikat})[:5])
+        _logger.critical(
+            "[postgres_schema] MIGRASI email_auth: %d email duplikat (case-insensitive) ditemukan "
+            "di data lama (contoh: %s) -- unique index users.email TIDAK dibuat sampai data ini "
+            "dibereskan manual. Keunikan email SEMENTARA hanya dijaga di level aplikasi.",
+            len(duplikat), contoh,
+        )
+        return
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unik ON users (LOWER(email)) "
+        "WHERE email IS NOT NULL"
     )
 
 

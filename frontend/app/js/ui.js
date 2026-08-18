@@ -52,6 +52,39 @@ const MugenUI = (() => {
     return new URLSearchParams(idx === -1 ? "" : location.hash.slice(idx + 1));
   }
 
+  // BUGFIX (audit): banyak halaman dulu memakai
+  // `new Date().toISOString().slice(0, 10)` untuk tanggal default -- itu
+  // mengonversi ke UTC DULU sebelum dipotong, jadi antara jam 00:00-06:59
+  // WIB (dan kapan pun untuk pengguna zona waktu lain yang harinya sudah
+  // beda dari UTC) tanggal yang ter-prefill di form adalah KEMARIN, bukan
+  // hari ini. Pola yang benar ini sudah pernah dipakai khusus di
+  // pages/booking.js (FORMAT_TANGGAL_WIB/isoHariIniWib) setelah insiden
+  // serupa -- disatukan di sini supaya halaman lain ikut benar tanpa
+  // duplikasi, dan supaya tidak ada lagi tempat baru yang mengulangi pola
+  // toISOString() yang sama.
+  const _FORMAT_TANGGAL_WIB = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" });
+
+  function isoHariIniWib() {
+    return _FORMAT_TANGGAL_WIB.format(new Date());
+  }
+
+  // Tambah/kurang `jumlah` hari dari tanggal ISO (YYYY-MM-DD) -- murni
+  // aritmatika kalender lewat konstruksi Date LOKAL jam 12 siang (aman
+  // dari pergeseran tanggal akibat DST/zona waktu apa pun) setelah
+  // tanggal awalnya sendiri sudah benar (dari isoHariIniWib()).
+  function tambahHariWib(iso, jumlah) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d + jumlah, 12);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  }
+
+  // Tanggal 1 di bulan yang sama dengan `iso` (YYYY-MM-DD) -- dipakai
+  // filter "Bulan Ini" (mis. pages/absensi.js).
+  function awalBulanWib(iso) {
+    const [y, m] = iso.split("-").map(Number);
+    return `${y}-${String(m).padStart(2, "0")}-01`;
+  }
+
   // BOOKING UI/UX #1: Nomor Transaksi -- [SERVICE_INITIAL][DD][MM][HHMM]
   // [TENANT_INITIAL], SATU-SATUNYA implementasi (dipakai layar Appointment
   // Confirmed di book_public.js DAN menu Booking > List/Calendar di
@@ -626,5 +659,6 @@ const MugenUI = (() => {
     serviceCell, keteranganCell, offlineBanner, barChart, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
+    isoHariIniWib, tambahHariWib, awalBulanWib,
   };
 })();

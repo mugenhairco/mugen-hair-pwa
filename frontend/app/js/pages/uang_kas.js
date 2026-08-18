@@ -12,7 +12,8 @@
 
 const PageUangKas = (() => {
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
+    return MugenUI.isoHariIniWib();
   }
 
   async function render(root) {

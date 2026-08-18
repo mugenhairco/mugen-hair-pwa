@@ -29,9 +29,28 @@ gabung_ke_rekap_transaksi()/get_total_dibayar_periode() di bawah,
 dipanggil dari routers/rekap.py -- pola sama seperti reimburse_db.py,
 sengaja di sini bukan di database.py supaya tidak circular import)."""
 
+import threading
+from collections import defaultdict
 from datetime import datetime
 
 from database import get_conn, get_barber
+
+# BUGFIX (audit, race condition): bayar_kasbon() membaca "sisa" lalu
+# menulis INSERT+UPDATE di transaksi yang sama, tapi SELECT tidak
+# mengunci apa pun sampai statement tulis pertama -- dua pembayaran
+# bersamaan terhadap kasbon YANG SAMA (mis. pembayaran manual beradu
+# dengan potongan otomatis FIFO dari terapkan_potongan_slip_gaji()) bisa
+# SAMA-SAMA membaca "sisa" lama, keduanya lolos validasi, dan yang kedua
+# menimpa perhitungan yang pertama (lost update) -- berpotensi mendorong
+# sisa jadi negatif atau meng-under-charge kasbon. Lock per kasbon_id
+# menyerialkan baca-validasi-tulis untuk SATU kasbon yang sama -- cukup
+# untuk topologi deployment aplikasi ini (satu proses uvicorn tanpa
+# --workers, lihat render.yaml).
+_kunci_per_kasbon: dict[int, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_kasbon(kasbon_id: int) -> threading.Lock:
+    return _kunci_per_kasbon[kasbon_id]
 
 STATUS_VALID = {"belum_lunas", "lunas"}
 SUMBER_VALID = {"manual", "potong_gaji"}
@@ -229,7 +248,7 @@ def bayar_kasbon(kasbon_id: int, tanggal: str, jumlah: int, keterangan: str = ""
         raise ValueError("Jumlah pembayaran harus lebih dari 0.")
     datetime.strptime(tanggal, "%Y-%m-%d")
     now = datetime.now().isoformat(timespec="seconds")
-    with get_conn() as conn:
+    with _kunci_kasbon(kasbon_id), get_conn() as conn:
         kasbon = conn.execute("SELECT * FROM kasbon WHERE id = ?", (kasbon_id,)).fetchone()
         if kasbon is None:
             raise ValueError("Kasbon tidak ditemukan.")

@@ -166,7 +166,17 @@ def register(body: RegisterBody):
 
     # FITUR Verifikasi Email: akun BARU (lihat docstring modul ini di atas
     # untuk penjelasan lengkap kenapa register() TIDAK LAGI auto-login).
-    email_auth_db.set_email_user(user_id, email)
+    # BUGFIX (audit): get_user_by_email() di baris 133 sudah mengecek email
+    # ini belum dipakai, TAPI itu check-then-act -- kalau dua pendaftaran
+    # dengan email PERSIS sama menyelip di antara pengecekan itu dan baris
+    # ini (jendela race yang sangat sempit), unique index case-insensitive
+    # di users.email (email_auth_migrasi.py) jadi penentu akhir & akan
+    # menolak salah satunya di sini alih-alih diam-diam membuat dua akun
+    # dengan email yang sama.
+    try:
+        email_auth_db.set_email_user(user_id, email)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Toko dibuat, tapi email gagal disimpan: {e}")
     email_auth_db.tandai_blokir_sampai_verifikasi(user_id)
     _kirim_email_verifikasi(user_id, email, body.owner_name.strip())
 

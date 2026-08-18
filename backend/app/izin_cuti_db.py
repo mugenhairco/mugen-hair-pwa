@@ -458,6 +458,8 @@ def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str =
     existing = get_pengajuan(pengajuan_id)
     if existing is None:
         raise ValueError("Pengajuan tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Pengajuan ini sudah diproses sebelumnya.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         conn.execute(

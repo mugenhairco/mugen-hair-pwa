@@ -13,6 +13,8 @@ ATURAN PENTING (jangan dilanggar saat maintenance):
 import json
 import sqlite3
 import os
+import threading
+from collections import defaultdict
 from datetime import datetime, date
 from contextlib import contextmanager
 
@@ -1850,6 +1852,26 @@ def get_total_pengeluaran(tahun: int = None, bulan: int = None, tenant_id: int =
 # penjualan sesudahnya.
 # ---------------------------------------------------------------------------
 
+# BUGFIX (audit, race condition): _saldo_valid() mensimulasikan SELURUH
+# riwayat mutasi produk secara Python (bukan satu UPDATE ... WHERE atomik),
+# jadi tidak bisa diamankan lewat compare-and-swap SQL sederhana seperti
+# fungsi lain -- pola "baca semua mutasi -> validasi di Python -> INSERT/
+# UPDATE/DELETE" ini rawan TOCTOU: dua request nyaris bersamaan bisa
+# sama-sama membaca stok SEBELUM salah satu commit, sama-sama lolos
+# validasi, dan sama-sama menulis -- mendorong stok jadi negatif walau
+# fungsi ini sendiri mengklaim "DITOLAK ... bukan cuma dicek di akhir".
+# Lock per produk_id di sini menyerialkan seluruh baca-validasi-tulis untuk
+# SATU produk yang sama -- cukup untuk topologi deployment aplikasi ini
+# (satu proses uvicorn tanpa --workers, lihat render.yaml; endpoint sync
+# FastAPI berjalan di thread pool DALAM proses yang sama, jadi
+# threading.Lock menyerialkan lintas thread itu dengan benar).
+_kunci_per_produk: dict[int, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_produk(produk_id: int) -> threading.Lock:
+    return _kunci_per_produk[produk_id]
+
+
 def _ambil_semua_mutasi(conn, produk_id: int) -> list:
     rows = conn.execute(
         "SELECT id, tanggal, tipe, jumlah FROM produk_mutasi WHERE produk_id = ?",
@@ -2006,7 +2028,7 @@ def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")
     produk = get_produk(produk_id)
-    with get_conn() as conn:
+    with _kunci_produk(produk_id), get_conn() as conn:
         mutasi = _ambil_semua_mutasi(conn, produk_id)
         mutasi.append({"id": None, "tanggal": tanggal, "tipe": tipe, "jumlah": int(jumlah)})
         if not _saldo_valid(mutasi):
@@ -2050,11 +2072,12 @@ def koreksi_mutasi_produk(mutasi_id: int, tanggal: str, jumlah: int, catatan: st
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")
     with get_conn() as conn:
-        existing = conn.execute("SELECT * FROM produk_mutasi WHERE id = ?", (mutasi_id,)).fetchone()
+        existing = conn.execute("SELECT produk_id FROM produk_mutasi WHERE id = ?", (mutasi_id,)).fetchone()
         if existing is None:
             raise ValueError("Data mutasi tidak ditemukan.")
         produk_id = existing["produk_id"]
 
+    with _kunci_produk(produk_id), get_conn() as conn:
         mutasi = _ambil_semua_mutasi(conn, produk_id)
         for m in mutasi:
             if m["id"] == mutasi_id:
@@ -2077,11 +2100,12 @@ def hapus_mutasi_produk(mutasi_id: int):
     """DITOLAK kalau menghapus mutasi ini membuat saldo stok jadi negatif pada
     suatu tanggal (mis. menghapus restock lama padahal stoknya sudah kepakai)."""
     with get_conn() as conn:
-        existing = conn.execute("SELECT * FROM produk_mutasi WHERE id = ?", (mutasi_id,)).fetchone()
+        existing = conn.execute("SELECT produk_id FROM produk_mutasi WHERE id = ?", (mutasi_id,)).fetchone()
         if existing is None:
             return
         produk_id = existing["produk_id"]
 
+    with _kunci_produk(produk_id), get_conn() as conn:
         mutasi = [m for m in _ambil_semua_mutasi(conn, produk_id) if m["id"] != mutasi_id]
         if not _saldo_valid(mutasi):
             raise ValueError(

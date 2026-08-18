@@ -19,6 +19,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from auth_db import get_conn, hash_password
+from db_compat import IntegrityError
 
 MASA_BERLAKU_VERIFIKASI_JAM = 24
 MASA_BERLAKU_RESET_JAM = 1
@@ -61,10 +62,17 @@ def set_email_user(user_id: int, email: str):
     email = (email or "").strip()
     if not email:
         raise ValueError("Email tidak boleh kosong.")
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE users SET email = ?, email_verified = 0 WHERE id = ?", (email, user_id)
-        )
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE users SET email = ?, email_verified = 0 WHERE id = ?", (email, user_id)
+            )
+    except IntegrityError:
+        # BUGFIX (audit): unique index case-insensitive di users.email
+        # (email_auth_migrasi.py::_migrasi_unique_index_email()) -- pesan
+        # ramah untuk pemanggil (routers/pengaturan.py::tambah_user()/
+        # tenant_registration.py::register()) alih-alih 500 mentah.
+        raise ValueError(f"Email '{email}' sudah dipakai akun lain.")
 
 
 def tandai_blokir_sampai_verifikasi(user_id: int):

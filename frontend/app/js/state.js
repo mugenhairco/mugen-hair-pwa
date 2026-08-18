@@ -37,6 +37,24 @@ const MugenState = (() => {
   function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    // BUGFIX (audit, kebocoran data lintas tenant): dulu cache offline
+    // (mugen_cache:*, lihat cacheSet/cacheGet di bawah) TIDAK PERNAH
+    // dibersihkan di sini. Kunci cache-nya cuma method+path (BUKAN per
+    // tenant/user) -- di perangkat bersama/kiosk, Tenant A login lalu
+    // logout, lalu Tenant B login di perangkat yang sama: kalau koneksi
+    // Tenant B sempat terputus sebelum fetch pertama berhasil, api.js
+    // diam-diam jatuh ke cache lama dan menampilkan data finansial milik
+    // Tenant A di dalam sesi Tenant B. Satu-satunya perbaikan aman adalah
+    // menghapus SEMUA entri cache saat logout (localStorage tidak punya
+    // API hapus-berdasarkan-prefix, jadi kumpulkan dulu kuncinya baru
+    // hapus satu per satu -- menghapus sambil iterasi indeks localStorage
+    // akan melompati entri karena indeksnya bergeser).
+    const kunciCache = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CACHE_PREFIX)) kunciCache.push(k);
+    }
+    kunciCache.forEach((k) => localStorage.removeItem(k));
   }
 
   function isLoggedIn() {

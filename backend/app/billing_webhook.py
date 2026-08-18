@@ -34,11 +34,34 @@ idempoten) dicatat ke `subscription_invoice_status_log`
 Admin, TIDAK memengaruhi logika aktivasi di atas sama sekali."""
 
 import json
+import threading
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 import billing_gateway_client
 import billing_invoice_db
 import subscription_db
+
+# BUGFIX (audit, race condition #20): _hitung_periode_mulai() membaca invoice
+# PAID LAIN milik tenant yang SAMA untuk memutuskan penyambungan periode --
+# ini query LINTAS BARIS, jadi compare-and-swap per-baris (lihat
+# billing_invoice_db.update_invoice()) TIDAK cukup melindunginya: dua
+# notifikasi webhook untuk DUA invoice BERBEDA milik tenant yang sama, kalau
+# diproses benar-benar bersamaan, bisa sama-sama membaca state "sebelum"
+# sebelum salah satu commit, dan sama-sama menghitung periode_mulai=sekarang
+# alih-alih salah satu menyambung setelah yang lain. Lock per-tenant di sini
+# menyerialkan SELURUH proses_notifikasi()/rekonsiliasi_manual() untuk
+# tenant yang sama -- cukup untuk topologi deployment aplikasi ini (SATU
+# proses uvicorn, lihat render.yaml, TANPA --workers), karena FastAPI
+# menjalankan endpoint sync ini di thread pool DALAM proses yang sama;
+# threading.Lock menyerialkan lintas thread itu dengan benar. (Kalau suatu
+# saat deployment berubah ke multi-proses/multi-mesin, lock in-process ini
+# tidak lagi cukup -- perlu advisory lock di level database.)
+_kunci_per_tenant: dict[int, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_tenant(tenant_id: int) -> threading.Lock:
+    return _kunci_per_tenant[tenant_id]
 
 STATUS_PAID = "paid"
 STATUS_PENDING = "pending"
@@ -138,8 +161,6 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
         billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber_diabaikan)
         return invoice
 
-    billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber)
-
     fields = {"status": status_baru}
     if payment_type is not None:
         fields["payment_type"] = payment_type
@@ -154,7 +175,25 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
         fields["periode_selesai"] = periode_selesai.isoformat(timespec="seconds")
         fields["paid_at"] = sekarang.isoformat(timespec="seconds")
 
-    billing_invoice_db.update_invoice(invoice["id"], **fields)
+    # BUGFIX (audit, race condition): dulu catat_status_log() + update_invoice()
+    # dipanggil begitu saja setelah pengecekan status di atas -- pengecekan
+    # ITU dan penulisan INI dua langkah terpisah (check-then-act di Python,
+    # bukan atomik di SQL), jadi dua notifikasi webhook nyaris bersamaan
+    # untuk invoice yang SAMA (Faspay mendokumentasikan retry sampai 3x)
+    # bisa SAMA-SAMA lolos pengecekan "belum final/belum status ini" lalu
+    # SAMA-SAMA menulis -- baris status_log ganda & aktivasi subscription
+    # dipanggil dua kali. UPDATE sekarang bersyarat `WHERE status = ?`
+    # (compare-and-swap atomik di level SQL, lihat billing_invoice_db.
+    # update_invoice()) -- kalau GAGAL (status sudah berubah oleh proses
+    # lain di antara baca & tulis kita), invoice diambil ulang & fungsi ini
+    # dipanggil ULANG dari awal supaya SELURUH pengecekan (duplikat/final)
+    # dinilai ulang terhadap state TERBARU, bukan diam-diam menimpa.
+    berhasil = billing_invoice_db.update_invoice(invoice["id"], expected_status_lama=invoice["status"], **fields)
+    if not berhasil:
+        invoice_terbaru = billing_invoice_db.get_invoice(invoice["id"])
+        return _terapkan_status_invoice(invoice_terbaru, status_baru, sumber, payment_type, raw_notification)
+
+    billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber)
 
     if status_baru == STATUS_PAID:
         _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"])
@@ -173,7 +212,14 @@ def proses_notifikasi(payload: dict) -> dict:
     lihat billing_gateway_client.py::verifikasi_signature() untuk formula
     signature."""
     bill_no = str(payload.get("bill_no") or "")
-    payment_status_code = str(payload.get("payment_status_code") or "")
+    # BUGFIX (audit): "0" (Unprocessed) adalah kode status VALID dari
+    # Faspay, bukan "kosong" -- `x or ""` salah menganggap int 0 sebagai
+    # falsy dan menjatuhkannya ke string kosong (_map_status("") lalu
+    # gagal dengan ValueError "tidak dikenal" alih-alih terpetakan ke
+    # menunggu_pembayaran). Hanya jatuh ke "" kalau field-nya benar-benar
+    # TIDAK ADA (None), bukan kalau nilainya falsy-tapi-hadir.
+    _kode = payload.get("payment_status_code")
+    payment_status_code = str(_kode) if _kode is not None else ""
     bill_total = str(payload.get("bill_total") or "")
     signature_key = str(payload.get("signature") or "")
     payment_channel = payload.get("payment_channel")
@@ -196,8 +242,9 @@ def proses_notifikasi(payload: dict) -> dict:
         )
 
     status_baru = _map_status(payment_status_code)
-    return _terapkan_status_invoice(invoice, status_baru, sumber="webhook", payment_type=payment_channel,
-                                     raw_notification=json.dumps(payload))
+    with _kunci_tenant(invoice["tenant_id"]):
+        return _terapkan_status_invoice(invoice, status_baru, sumber="webhook", payment_type=payment_channel,
+                                         raw_notification=json.dumps(payload))
 
 
 def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
@@ -220,7 +267,9 @@ def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
         raise ValueError("Invoice tidak ditemukan.")
 
     hasil_provider = billing_gateway_client.cek_status_transaksi(invoice["order_id"])
-    payment_status_code = str(hasil_provider.get("payment_status_code") or "")
+    # BUGFIX (audit): lihat catatan sama persis di verifikasi_notifikasi() di atas.
+    _kode = hasil_provider.get("payment_status_code")
+    payment_status_code = str(_kode) if _kode is not None else ""
     bill_total = str(hasil_provider.get("bill_total") or "")
 
     try:
@@ -234,6 +283,7 @@ def rekonsiliasi_manual(invoice_id: int, tenant_id: int) -> dict:
         )
 
     status_baru = _map_status(payment_status_code)
-    return _terapkan_status_invoice(invoice, status_baru, sumber="rekonsiliasi_manual",
-                                     payment_type=hasil_provider.get("payment_channel"),
-                                     raw_notification=json.dumps(hasil_provider))
+    with _kunci_tenant(invoice["tenant_id"]):
+        return _terapkan_status_invoice(invoice, status_baru, sumber="rekonsiliasi_manual",
+                                         payment_type=hasil_provider.get("payment_channel"),
+                                         raw_notification=json.dumps(hasil_provider))

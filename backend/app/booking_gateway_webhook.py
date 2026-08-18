@@ -126,7 +126,14 @@ def proses_notifikasi(payload: dict) -> dict:
     lihat payment_gateway_client.py::verifikasi_signature() untuk formula
     signature (BEDA dari formula checkout)."""
     bill_no = str(payload.get("bill_no") or "")
-    payment_status_code = str(payload.get("payment_status_code") or "")
+    # BUGFIX (audit): "0" (Unprocessed) adalah kode status VALID dari
+    # Faspay, bukan "kosong" -- `x or ""` salah menganggap int 0 sebagai
+    # falsy dan menjatuhkannya ke string kosong (_map_status("") lalu
+    # gagal dengan ValueError "tidak dikenal" alih-alih terpetakan ke
+    # menunggu_pembayaran). Hanya jatuh ke "" kalau field-nya benar-benar
+    # TIDAK ADA (None), bukan kalau nilainya falsy-tapi-hadir.
+    _kode = payload.get("payment_status_code")
+    payment_status_code = str(_kode) if _kode is not None else ""
     bill_total = str(payload.get("bill_total") or "")
     signature_key = str(payload.get("signature") or "")
     payment_channel = payload.get("payment_channel")
@@ -182,7 +189,9 @@ def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
         raise ValueError("Transaksi tidak ditemukan.")
 
     hasil_provider = payment_gateway_client.cek_status_transaksi(transaksi["order_id"])
-    payment_status_code = str(hasil_provider.get("payment_status_code") or "")
+    # BUGFIX (audit): lihat catatan sama persis di verifikasi_notifikasi() di atas.
+    _kode = hasil_provider.get("payment_status_code")
+    payment_status_code = str(_kode) if _kode is not None else ""
     bill_total = str(hasil_provider.get("bill_total") or "")
 
     try:

@@ -55,6 +55,12 @@ def test_alur_lengkap_satu_tenant(single_tenant):
     assert client.get("/api/dashboard/owner?tahun=2026&bulan=7", headers=headers).status_code == 200
 
     # --- Pengeluaran ---
+    # BUGFIX (audit) uang_kas_db.tambah_penyesuaian() sekarang menolak
+    # penyesuaian "kurang" yang membuat saldo kas jadi negatif -- saldo
+    # awal tenant baru = 0, jadi Saldo Kas Awal diisi dulu supaya
+    # pengeluaran sumber_dana="kas" (default) di bawah ini berhasil.
+    r = client.put("/api/uang-kas/saldo-awal", json={"saldo": 1_000_000}, headers=headers)
+    assert r.status_code == 200, r.text
     r = client.post("/api/pengeluaran", json={
         "tanggal": "2026-07-15", "kategori": "Operasional", "keterangan": "Beli sabun", "jumlah": 20000,
     }, headers=headers)

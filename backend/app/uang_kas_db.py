@@ -125,6 +125,12 @@ def _validasi_input(tanggal: str, jenis: str, jumlah: int, keterangan: str):
 def tambah_penyesuaian(tanggal: str, jenis: str, jumlah: int, keterangan: str = "",
                         dibuat_oleh: str = None, tenant_id: int = None) -> int:
     keterangan = _validasi_input(tanggal, jenis, jumlah, keterangan)
+    # BUGFIX (audit): dulu penyesuaian "kurang" TIDAK PERNAH dibandingkan
+    # dengan saldo kas sekarang -- beda dari modul stok produk yang eksplisit
+    # memblokir saldo negatif di setiap titik, kas sama sekali tidak punya
+    # penjagaan setara. Sekarang ditolak kalau membuat saldo jadi minus.
+    if jenis == "kurang" and jumlah > get_saldo_kas(tenant_id):
+        raise ValueError("Jumlah melebihi saldo kas yang tersedia saat ini.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         cur = conn.execute(
@@ -146,6 +152,15 @@ def edit_penyesuaian(penyesuaian_id: int, tanggal: str = None, jenis: str = None
         jenis_final = jenis if jenis is not None else existing["jenis"]
         jumlah_final = jumlah if jumlah is not None else existing["jumlah"]
         _validasi_input(tanggal_final, jenis_final, jumlah_final, keterangan or "")
+        # BUGFIX (audit): sama seperti tambah_penyesuaian() -- kalau hasil
+        # edit ini "kurang", pastikan tidak membuat saldo jadi minus.
+        # Kontribusi baris LAMA ke saldo sekarang harus dikeluarkan dulu
+        # dari perhitungan (baris ini sedang diedit, bukan ditambah baru).
+        if jenis_final == "kurang":
+            kontribusi_lama = existing["jumlah"] if existing["jenis"] == "tambah" else -existing["jumlah"]
+            saldo_tanpa_baris_ini = get_saldo_kas(existing["tenant_id"]) - kontribusi_lama
+            if jumlah_final > saldo_tanpa_baris_ini:
+                raise ValueError("Jumlah melebihi saldo kas yang tersedia saat ini.")
         now = datetime.now().isoformat(timespec="seconds")
         fields, values = ["updated_at = ?"], [now]
         if tanggal is not None:
