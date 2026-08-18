@@ -79,6 +79,7 @@ import izin_cuti_db
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
+import manual_customer_db  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service, berdiri sendiri dari transaksi Barber (idempotent)
 import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
@@ -93,7 +94,7 @@ import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_in
 from landing_migrasi import migrasi_landing  # FONDASI Multi-Tenant Phase 5: kolom tenants + tabel landing_faq, drop landing_testimonials (idempotent)
 from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, error_log
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, error_log
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -304,6 +305,7 @@ app.include_router(izin_cuti.router)
 app.include_router(pemasukan.router)
 app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
+app.include_router(manual_customer.router)
 app.include_router(superadmin.router)
 app.include_router(branding.router)
 app.include_router(subscription.router)
@@ -395,6 +397,7 @@ def on_startup():
         pemasukan_db.init_pemasukan_db()  # Modul Keuangan Fase 1: tabel pemasukan (idempotent)
         uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)
+        manual_customer_db.init_manual_customer_db()  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service (idempotent)
         superadmin_audit_db.init_superadmin_audit_db()  # FONDASI Multi-Tenant Phase 2.1: tabel superadmin_audit_log (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)

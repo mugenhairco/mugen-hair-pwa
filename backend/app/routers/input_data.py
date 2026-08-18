@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import database as db
+import manual_customer_db
 from auth import require_owner_or_staff, require_permission
 
 router = APIRouter(prefix="/api/input-data", tags=["input-data"])
@@ -153,6 +154,16 @@ def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
 def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     try:
+        # FITUR Manual Customer (aturan "satu tanggal satu mode"): SATU-
+        # SATUNYA perubahan yang disentuh di alur Input Barber lama --
+        # menandai/mengonfirmasi tanggal ini memakai mode "barber" sebelum
+        # transaksi dibuat. Tidak berefek apa pun (no-op transparan) kalau
+        # tanggal ini memang belum pernah dipakai atau sudah memakai mode
+        # "barber" -- HANYA menolak (ValueError -> HTTP 422, ditangkap try/
+        # except yang sama seperti di bawah) kalau tanggal ini SUDAH dipakai
+        # lewat Manual Customer, mencegah pencampuran dua metode input yang
+        # bisa membuat service/tips/pendapatan terhitung dua kali di Rekap.
+        manual_customer_db.pastikan_mode(user["tenant_id"], body.tanggal, "barber")
         transaksi_id = db.tambah_transaksi(
             tanggal=body.tanggal, barber_id=barber_id,
             items=[it.model_dump() for it in body.items],

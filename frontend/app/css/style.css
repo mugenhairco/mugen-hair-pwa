@@ -550,6 +550,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 :root[data-theme="dark"] .badge-danger { background: rgba(248,113,113,0.16); }
 :root[data-theme="dark"] .badge-tester { background: rgba(96,165,250,0.16); }
 
+/* FITUR BARU Manual Customer (Input Data): highlight/stabilo kuning KHUSUS
+   nama customer berstatus Booking (BUKAN Waiting List, BUKAN seluruh baris
+   -- hanya teks nama) -- warna SENGAJA sama persis di tema terang & gelap
+   (bukan var tema) karena stabilo kertas sungguhan juga tidak berubah
+   warna mengikuti pencahayaan ruangan; kontras terhadap teks gelap dijaga
+   tetap baik di kedua tema karena warnanya sendiri tidak pernah berubah. */
+.mc-nama-booking {
+  background: #FDE047;
+  color: #1a1a1a;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
 /* REVISI: checklist service (Setting > Bonus Service / Uang Harian) */
 .checklist-service {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
