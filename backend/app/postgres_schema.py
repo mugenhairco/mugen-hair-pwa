@@ -530,6 +530,56 @@ CREATE TABLE IF NOT EXISTS data_non_barber (
     updated_at       TEXT
 );
 
+-- FITUR BARU Manual Customer (Waiting List/Booking) -- lihat penjelasan
+-- lengkap di manual_customer_db.py (jalur SQLite, SAMA PERSIS niatnya).
+-- `input_data_hari` mengunci satu tenant+tanggal ke SATU mode input
+-- ("barber" atau "manual_customer") supaya tidak ada percampuran dua
+-- metode yang bisa membuat service/tips/pendapatan terhitung dua kali.
+CREATE TABLE IF NOT EXISTS input_data_hari (
+    id           SERIAL PRIMARY KEY,
+    tenant_id    INTEGER NOT NULL,
+    tanggal      TEXT NOT NULL,
+    mode         TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'open',
+    ditutup_oleh TEXT,
+    ditutup_at   TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT,
+    UNIQUE(tenant_id, tanggal)
+);
+
+-- barber_id NULLABLE (Waiting List boleh belum tahu barber saat baris
+-- dibuat) -- jam & jenis TIDAK PERNAH diubah setelah baris ini dibuat
+-- (lihat manual_customer_db.py, tidak ada fungsi update_jam sama sekali).
+-- transaksi_id diisi SEKALI saat Closing (Tutup & Simpan Hari Ini)
+-- mengonversi baris ini jadi baris `transaksi` sungguhan lewat
+-- database.tambah_transaksi() -- Rekap TIDAK PERNAH tahu/butuh tahu baris
+-- ini berasal dari Manual Customer, nama customer/jam HANYA ada di sini.
+CREATE TABLE IF NOT EXISTS manual_customer_transaksi (
+    id             SERIAL PRIMARY KEY,
+    tenant_id      INTEGER NOT NULL,
+    tanggal        TEXT NOT NULL,
+    nama_customer  TEXT NOT NULL,
+    jenis          TEXT NOT NULL,
+    jam            TEXT NOT NULL,
+    barber_id      INTEGER REFERENCES barbers(id),
+    tips           INTEGER NOT NULL DEFAULT 0,
+    catatan        TEXT,
+    transaksi_id   INTEGER,
+    dibuat_oleh    TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT
+);
+
+-- Layanan yang dipilih customer (many-to-many, SATU customer bisa ambil
+-- lebih dari satu service TANPA field "Jumlah Service" -- setiap baris di
+-- sini = qty 1, lihat manual_customer_db.py rule #5).
+CREATE TABLE IF NOT EXISTS manual_customer_transaksi_service (
+    id                            SERIAL PRIMARY KEY,
+    manual_customer_transaksi_id INTEGER NOT NULL REFERENCES manual_customer_transaksi(id) ON DELETE CASCADE,
+    service_id                   INTEGER NOT NULL REFERENCES services(id)
+);
+
 -- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK
 -- menyentuh data lama) yang menyimpan OBJECT KEY R2 -- lihat r2_storage.py
 -- untuk arsitektur lengkap & r2_storage_migrasi.py untuk pasangan jalur

@@ -25,21 +25,27 @@ const PageInputData = (() => {
     // pernah disentuh -- seksi Non-Barber murni TAMBAHAN yang disembunyikan
     // sampai Owner secara eksplisit memilihnya.
     const barberSection = MugenUI.el("div");
+    // FITUR BARU Manual Customer: pilihan KETIGA sejajar dengan Barber/
+    // Non-Barber (keputusan eksplisit Owner: "tiga pilihan sejajar",
+    // BUKAN sub-mode di dalam Input Barber) -- lihat manual_customer_db.py.
+    const manualCustomerSection = MugenUI.el("div", { style: "display:none;" });
     const nonBarberSection = MugenUI.el("div", { style: "display:none;" });
     if (isAdmin) {
       const selMode = MugenUI.el("select", { style: "max-width:280px;margin-bottom:16px;" }, [
         MugenUI.el("option", { value: "barber" }, "Input Data Barber"),
+        MugenUI.el("option", { value: "manual_customer" }, "Manual Customer"),
         MugenUI.el("option", { value: "non_barber" }, "Input Data Non-Barber"),
       ]);
       selMode.value = "barber";
       selMode.addEventListener("change", () => {
-        const nonBarber = selMode.value === "non_barber";
-        barberSection.style.display = nonBarber ? "none" : "";
-        nonBarberSection.style.display = nonBarber ? "" : "none";
+        barberSection.style.display = selMode.value === "barber" ? "" : "none";
+        manualCustomerSection.style.display = selMode.value === "manual_customer" ? "" : "none";
+        nonBarberSection.style.display = selMode.value === "non_barber" ? "" : "none";
       });
       root.appendChild(selMode);
     }
     root.appendChild(barberSection);
+    root.appendChild(manualCustomerSection);
     root.appendChild(nonBarberSection);
 
     let services = [];
@@ -296,7 +302,286 @@ const PageInputData = (() => {
     // sama sekali (lihat data_non_barber_db.py) -- murni tambahan, bagian
     // ini di-skip total untuk Barber (dropdown mode di atas juga tidak
     // pernah muncul untuknya).
+    if (isAdmin) await renderManualCustomer();
     if (isAdmin) await renderNonBarber();
+
+    // --- INPUT DATA MANUAL CUSTOMER (Waiting List / Booking) ---
+    // Metode input KEDUA untuk Input Barber, sejajar (bukan sub-mode) --
+    // lihat manual_customer_db.py untuk aturan lengkap ("satu tanggal satu
+    // mode", jam immutable, Closing tidak mengunci Rekap, dst). Tabel &
+    // endpoint baru, TIDAK PERNAH menyentuh `transaksi`/Rekap langsung --
+    // hanya lewat database.tambah_transaksi() yang SAMA PERSIS dipakai
+    // Input Barber, saat tombol "Tutup & Simpan Hari Ini" ditekan.
+    async function renderManualCustomer() {
+      const mcStatusCard = MugenUI.el("div", { class: "card" });
+      const mcFormCard = MugenUI.el("div", { class: "card" });
+      const mcListCard = MugenUI.el("div", { class: "card" });
+      manualCustomerSection.appendChild(mcStatusCard);
+      manualCustomerSection.appendChild(mcFormCard);
+      manualCustomerSection.appendChild(mcListCard);
+
+      const mcTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
+      mcStatusCard.appendChild(MugenUI.el("h2", {}, "Manual Customer"));
+      mcStatusCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
+      mcStatusCard.appendChild(mcTanggal);
+      const mcStatusBadge = MugenUI.el("div", { class: "card", style: "background:var(--bg-input);margin-top:8px;" }, "Memuat status...");
+      mcStatusCard.appendChild(mcStatusBadge);
+      const btnTutupHari = MugenUI.el("button", { class: "btn-primary" }, "🔒 Tutup & Simpan Hari Ini");
+      const btnResetHari = MugenUI.el("button", { class: "btn-danger" }, "Reset Semua Transaksi Hari Ini");
+      mcStatusCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;flex-wrap:wrap;gap:8px;" }, [btnTutupHari, btnResetHari]));
+
+      let mcStatus = { mode: null, status: null };
+      let mcEditingId = null;
+
+      // --- FORM TAMBAH ---
+      const mcFormTitle = MugenUI.el("h2", {}, "Tambah Customer");
+      const inputNamaCustomer = MugenUI.el("input", { type: "text", placeholder: "Nama Customer" });
+      const selJenis = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "waiting_list" }, "Waiting List"),
+        MugenUI.el("option", { value: "booking" }, "Booking"),
+      ]);
+      const bookingFields = MugenUI.el("div", { style: "display:none;" });
+      const inputJamBooking = MugenUI.el("input", { type: "time" });
+      const selBarberMc = MugenUI.el("select");
+      selBarberMc.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
+      for (const b of barbers) selBarberMc.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+      const mcServiceChecks = {}; // service_id -> checkbox
+      const mcServiceList = MugenUI.el("div", { class: "checklist-service" });
+      for (const s of services) {
+        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        mcServiceChecks[s.id] = cb;
+        mcServiceList.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" },
+          [cb, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`]));
+      }
+      const inputTipsMc = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      bookingFields.appendChild(MugenUI.el("label", {}, "Jam Booking"));
+      bookingFields.appendChild(inputJamBooking);
+      bookingFields.appendChild(MugenUI.el("label", {}, "Barber"));
+      bookingFields.appendChild(selBarberMc);
+      bookingFields.appendChild(MugenUI.el("label", {}, "Service"));
+      bookingFields.appendChild(mcServiceList);
+      bookingFields.appendChild(MugenUI.el("label", {}, "Tips (Rp, Opsional)"));
+      bookingFields.appendChild(inputTipsMc);
+
+      // Field khusus mode Koreksi (jam/jenis TIDAK PERNAH bisa diedit -- lihat
+      // manual_customer_db.py -- Koreksi selalu tampilkan Barber/Service/Tips
+      // terlepas jenisnya, supaya Waiting List juga bisa dilengkapi belakangan).
+      const mcJamJenisInfo = MugenUI.el("div", { class: "subtitle", style: "display:none;" });
+
+      selJenis.addEventListener("change", () => {
+        if (mcEditingId) return; // terkunci saat koreksi
+        bookingFields.style.display = selJenis.value === "booking" ? "" : "none";
+      });
+
+      const mcFormError = MugenUI.el("div", { class: "login-error" });
+      const btnMcSubmit = MugenUI.el("button", { class: "btn-primary" }, "Tambah");
+      const btnMcBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Koreksi");
+
+      mcFormCard.appendChild(mcFormTitle);
+      mcFormCard.appendChild(MugenUI.el("label", {}, "Nama Customer"));
+      mcFormCard.appendChild(inputNamaCustomer);
+      mcFormCard.appendChild(MugenUI.el("label", {}, "Jenis"));
+      mcFormCard.appendChild(selJenis);
+      mcFormCard.appendChild(mcJamJenisInfo);
+      mcFormCard.appendChild(bookingFields);
+      mcFormCard.appendChild(mcFormError);
+      mcFormCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnMcSubmit, btnMcBatal]));
+
+      function mcCurrentServiceIds() {
+        return Object.entries(mcServiceChecks).filter(([, cb]) => cb.checked).map(([id]) => Number(id));
+      }
+
+      function resetMcForm() {
+        mcEditingId = null;
+        mcFormTitle.textContent = "Tambah Customer";
+        btnMcSubmit.textContent = "Tambah";
+        btnMcBatal.style.display = "none";
+        selJenis.disabled = false;
+        mcJamJenisInfo.style.display = "none";
+        inputNamaCustomer.value = "";
+        selJenis.value = "waiting_list";
+        bookingFields.style.display = "none";
+        inputJamBooking.value = "";
+        selBarberMc.value = "";
+        for (const cb of Object.values(mcServiceChecks)) cb.checked = false;
+        inputTipsMc.value = "0";
+        mcFormError.textContent = "";
+      }
+
+      function isiMcFormUntukKoreksi(e) {
+        mcEditingId = e.id;
+        mcFormTitle.textContent = `Koreksi Customer #${e.id}`;
+        btnMcSubmit.textContent = "Simpan Koreksi";
+        btnMcBatal.style.display = "";
+        selJenis.disabled = true; // jenis immutable
+        selJenis.value = e.jenis;
+        const labelJenis = e.jenis === "booking" ? "Booking" : "Waiting List";
+        mcJamJenisInfo.style.display = "";
+        mcJamJenisInfo.textContent = `Jenis: ${labelJenis} — Jam: ${e.jam} (tidak bisa diubah; hapus & buat ulang jika salah).`;
+        inputNamaCustomer.value = e.nama_customer;
+        bookingFields.style.display = ""; // selalu tampilkan Barber/Service/Tips saat koreksi
+        inputJamBooking.value = e.jam || "";
+        selBarberMc.value = e.barber_id != null ? String(e.barber_id) : "";
+        for (const [id, cb] of Object.entries(mcServiceChecks)) cb.checked = (e.service_ids || []).includes(Number(id));
+        inputTipsMc.value = String(e.tips || 0);
+        mcFormError.textContent = "";
+        mcFormCard.scrollIntoView({ behavior: "smooth" });
+      }
+
+      btnMcBatal.addEventListener("click", resetMcForm);
+
+      btnMcSubmit.addEventListener("click", async () => {
+        mcFormError.textContent = "";
+        const nama = inputNamaCustomer.value.trim();
+        if (!nama) { mcFormError.textContent = "Nama Customer wajib diisi."; return; }
+        try {
+          await MugenUI.withButtonLoading(btnMcSubmit, async () => {
+            if (mcEditingId) {
+              await MugenApi.put(`/api/manual-customer/transaksi/${mcEditingId}`, {
+                nama_customer: nama,
+                barber_id: selBarberMc.value ? Number(selBarberMc.value) : null,
+                service_ids: mcCurrentServiceIds(),
+                tips: Number(inputTipsMc.value) || 0,
+              });
+              MugenUI.toast("Customer dikoreksi.", "success");
+            } else {
+              const jenis = selJenis.value;
+              if (jenis === "booking") {
+                if (!inputJamBooking.value) { throw { message: "Jam Booking wajib diisi." }; }
+                if (!selBarberMc.value) { throw { message: "Pilih barber terlebih dahulu untuk Booking." }; }
+                if (mcCurrentServiceIds().length === 0) { throw { message: "Pilih minimal satu Service untuk Booking." }; }
+              }
+              await MugenApi.post("/api/manual-customer/transaksi", {
+                tanggal: mcTanggal.value,
+                nama_customer: nama,
+                jenis,
+                jam_booking: jenis === "booking" ? inputJamBooking.value : null,
+                barber_id: jenis === "booking" ? Number(selBarberMc.value) : (selBarberMc.value ? Number(selBarberMc.value) : null),
+                service_ids: mcCurrentServiceIds(),
+                tips: Number(inputTipsMc.value) || 0,
+              });
+              MugenUI.toast(jenis === "booking" ? "Booking ditambahkan." : "Waiting List ditambahkan.", "success");
+            }
+          });
+          resetMcForm();
+          await loadMcStatus();
+          await loadMcList();
+        } catch (e) {
+          mcFormError.textContent = (e.detail && e.detail.detail) ? e.detail.detail : e.message;
+        }
+      });
+
+      // --- STATUS HARI (mode/OPEN/CLOSED) ---
+      async function loadMcStatus() {
+        try {
+          mcStatus = await MugenApi.get(`/api/manual-customer/status?tanggal=${mcTanggal.value}`);
+        } catch (e) {
+          mcStatus = { mode: null, status: null };
+        }
+        if (mcStatus.mode === null) {
+          mcStatusBadge.textContent = "Tanggal ini belum dipakai -- mode bebas dipilih.";
+        } else if (mcStatus.mode === "barber") {
+          mcStatusBadge.textContent = "Tanggal ini sudah memakai metode Input Barber -- Manual Customer tidak bisa dipakai (Reset dulu untuk berganti metode).";
+        } else {
+          mcStatusBadge.textContent = mcStatus.status === "closed"
+            ? "Mode Manual Customer -- sudah DITUTUP (Closing). Data tetap bisa dikoreksi/dihapus lewat Rekap seperti biasa."
+            : "Mode Manual Customer -- masih OPEN.";
+        }
+        const bolehInput = mcStatus.mode === null || (mcStatus.mode === "manual_customer" && mcStatus.status !== "closed");
+        inputNamaCustomer.disabled = !bolehInput && !mcEditingId;
+        btnMcSubmit.disabled = !bolehInput && !mcEditingId;
+        btnTutupHari.style.display = mcStatus.mode === "manual_customer" && mcStatus.status !== "closed" ? "" : "none";
+        btnResetHari.style.display = mcStatus.mode !== null ? "" : "none";
+      }
+
+      btnTutupHari.addEventListener("click", async () => {
+        if (!confirm(`Tutup & simpan transaksi Manual Customer tanggal ${mcTanggal.value}? Baris yang sudah punya Barber+Service akan masuk ke Rekap.`)) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnTutupHari, () => MugenApi.post(`/api/manual-customer/close?tanggal=${mcTanggal.value}`, {}));
+          MugenUI.toast(`Hari ditutup: ${hasil.diproses} masuk Rekap, ${hasil.dilewati} tetap histori (belum lengkap).`, "success", { force: true });
+          await loadMcStatus();
+          await loadMcList();
+        } catch (e) {
+          MugenUI.toast((e.detail && e.detail.detail) ? e.detail.detail : e.message, "error");
+        }
+      });
+
+      btnResetHari.addEventListener("click", async () => {
+        if (!confirm(`Hapus SELURUH transaksi tanggal ${mcTanggal.value} (Input Barber maupun Manual Customer) supaya metode bisa dipilih ulang? Tindakan ini tidak bisa dibatalkan.`)) return;
+        try {
+          await MugenUI.withButtonLoading(btnResetHari, () => MugenApi.post(`/api/manual-customer/reset?tanggal=${mcTanggal.value}`, {}));
+          MugenUI.toast("Seluruh transaksi tanggal ini direset.", "success", { force: true });
+          resetMcForm();
+          await loadMcStatus();
+          await loadMcList();
+        } catch (e) {
+          MugenUI.toast(e.message, "error");
+        }
+      });
+
+      mcTanggal.addEventListener("change", async () => {
+        resetMcForm();
+        await loadMcStatus();
+        await loadMcList();
+      });
+
+      // --- DAFTAR TRANSAKSI HARI ITU ---
+      mcListCard.appendChild(MugenUI.el("h2", {}, "Transaksi Hari Ini"));
+      const mcListBody = MugenUI.el("div");
+      mcListCard.appendChild(mcListBody);
+
+      async function loadMcList() {
+        try {
+          await MugenUI.refreshInto(mcListBody, async () => {
+            const rows = await MugenApi.get(`/api/manual-customer/transaksi?tanggal=${mcTanggal.value}`);
+            return MugenUI.buildTable(
+              [
+                { key: "jam", label: "Jam" },
+                {
+                  key: "nama_customer", label: "Nama Customer", format: (v, r) => (
+                    r.jenis === "booking" ? MugenUI.el("span", { class: "mc-nama-booking" }, v) : v
+                  ),
+                },
+                { key: "jenis", label: "Jenis", format: (v) => (v === "booking" ? "Booking" : "Waiting List") },
+                { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
+                { key: "daftar_service", label: "Service", format: (v) => (v && v.length ? v.map((s) => s.nama).join(", ") : "-") },
+                { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+                {
+                  key: "aksi", label: "Aksi", format: (_, r) => {
+                    const wrap = MugenUI.el("div", { class: "actions-cell" });
+                    const btnEdit = MugenUI.el("button", {}, "Koreksi");
+                    btnEdit.addEventListener("click", () => isiMcFormUntukKoreksi(r));
+                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                    btnHapus.addEventListener("click", async () => {
+                      if (!confirm(`Hapus data customer "${r.nama_customer}"?`)) return;
+                      try {
+                        await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/manual-customer/transaksi/${r.id}`));
+                        MugenUI.toast("Data customer dihapus.", "success");
+                        await loadMcStatus();
+                        loadMcList();
+                      } catch (e) {
+                        MugenUI.toast((e.detail && e.detail.detail) ? e.detail.detail : e.message, "error");
+                      }
+                    });
+                    wrap.appendChild(btnEdit);
+                    wrap.appendChild(btnHapus);
+                    return wrap;
+                  },
+                },
+              ],
+              rows,
+            );
+          }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
+        } catch (e) {
+          mcListBody.innerHTML = "";
+          mcListBody.appendChild(MugenUI.errorState(e.message));
+        }
+      }
+
+      resetMcForm();
+      await loadMcStatus();
+      await loadMcList();
+    }
 
     async function renderNonBarber() {
       const LABEL_JABATAN = { barber: "Barber", kasir: "Kasir", ob: "OB", kru: "Kru" };
