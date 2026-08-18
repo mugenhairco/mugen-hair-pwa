@@ -302,28 +302,31 @@ const PageBilling = (() => {
 
     const current = packages.find((p) => p.kode === sub.package) || null;
 
-    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): paket (+ SEKARANG
-    // siklus, FITUR Landing Page & Pricing paket 6 bulan) yang diklik Owner
-    // di Landing Page (sessionStorage, lihat landing.js) disorot/dipilih di
-    // sini supaya pilihannya tidak hilang begitu saja setelah harus
-    // Register dulu. BUGFIX: SENGAJA TIDAK dihapus di sini begitu dibaca --
-    // register.js (sama seperti login.js) memanggil location.hash= DAN
-    // MugenRouter.handle() eksplisit berurutan, yang berarti halaman ini
-    // ter-render DUA KALI (sekali lewat pemanggilan eksplisit, sekali lagi
-    // async lewat event "hashchange" yang otomatis terpicu) -- kalau value
-    // ini dihapus pada render PERTAMA, render KEDUA (yang akhirnya terlihat
-    // user) tidak akan menemukan apa pun lagi dan badge "Pilihan Anda" tidak
-    // pernah tampak. Dibersihkan sebagai gantinya begitu Owner benar-benar
-    // menekan salah satu tombol paket (lihat mulaiCheckout()/mulaiDowngrade()
-    // di bawah), bukan di titik render.
-    let pendingKode = null, pendingSiklus = "bulanan";
+    // FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): `pendingKode` (paket
+    // yang diklik Owner di Landing Page, sessionStorage, lihat landing.js)
+    // disorot/dipilih di sini supaya pilihannya tidak hilang begitu saja
+    // setelah harus Register dulu. BUGFIX: SENGAJA TIDAK dihapus di sini
+    // begitu dibaca -- register.js (sama seperti login.js) memanggil
+    // location.hash= DAN MugenRouter.handle() eksplisit berurutan, yang
+    // berarti halaman ini ter-render DUA KALI (sekali lewat pemanggilan
+    // eksplisit, sekali lagi async lewat event "hashchange" yang otomatis
+    // terpicu) -- kalau value ini dihapus pada render PERTAMA, render KEDUA
+    // (yang akhirnya terlihat user) tidak akan menemukan apa pun lagi dan
+    // badge "Pilihan Anda" tidak pernah tampak. Dibersihkan sebagai
+    // gantinya begitu Owner benar-benar menekan salah satu tombol paket
+    // (lihat mulaiCheckout()/mulaiDowngrade() di bawah), bukan di titik
+    // render.
+    let pendingKode = null;
     try {
       pendingKode = sessionStorage.getItem("mugen_pending_package_kode");
-      const s = sessionStorage.getItem("mugen_pending_package_siklus");
-      if (s === "bulanan" || s === "6bulan" || s === "tahunan") pendingSiklus = s;
     } catch (e) { /* abaikan (mis. private mode) */ }
 
-    let siklusAktif = pendingSiklus;
+    // REVISI (diminta Owner): halaman Billing SELALU terbuka di tab Tahunan
+    // sebagai tampilan awal -- TIDAK LAGI mengikuti siklus yang dibawa dari
+    // Landing Page (`mugen_pending_package_siklus`, kode lama dihapus di
+    // sini) apa pun asal Owner datang. Owner tetap bebas pindah ke Bulanan/
+    // 6 Bulan manual kapan saja lewat toggle di bawah.
+    let siklusAktif = "tahunan";
     const toggleWrap = MugenUI.el("div", {});
     const grid = MugenUI.el("div", { class: "grid-cards" });
     card.appendChild(toggleWrap);
