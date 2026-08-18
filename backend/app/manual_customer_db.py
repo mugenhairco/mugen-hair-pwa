@@ -98,6 +98,16 @@ def init_manual_customer_db():
         # `jam` (HH:MM) dan `jenis` immutable setelah dibuat (lihat
         # docstring) -- TIDAK ADA fungsi update_jam di modul ini sama
         # sekali, sengaja tidak disediakan.
+        #
+        # HOTFIX DEPLOY: `barber_id`/`service_id` SENGAJA TANPA "FOREIGN KEY
+        # ... REFERENCES barbers(id)/services(id)" (pola sama seperti
+        # email_verification_tokens.user_id, lihat postgres_schema.py untuk
+        # penjelasan lengkap) -- jalur SQLite sendiri TIDAK bermasalah (id
+        # di sini selalu INTEGER PRIMARY KEY AUTOINCREMENT yang valid), tapi
+        # FK ini tetap dihapus di jalur SQLite juga supaya definisi tabel
+        # SIMETRIS dengan jalur PostgreSQL (yang WAJIB menghapusnya karena
+        # tabel `barbers`/`services` produksi PostgreSQL ternyata tidak lagi
+        # punya constraint UNIQUE/PRIMARY KEY murni pada `id`).
         conn.execute("""
             CREATE TABLE IF NOT EXISTS manual_customer_transaksi (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,8 +122,7 @@ def init_manual_customer_db():
                 transaksi_id   INTEGER,
                 dibuat_oleh    TEXT,
                 created_at     TEXT NOT NULL,
-                updated_at     TEXT,
-                FOREIGN KEY (barber_id) REFERENCES barbers(id)
+                updated_at     TEXT
             )
         """)
         conn.execute("""
@@ -121,8 +130,7 @@ def init_manual_customer_db():
                 id                          INTEGER PRIMARY KEY AUTOINCREMENT,
                 manual_customer_transaksi_id INTEGER NOT NULL,
                 service_id                  INTEGER NOT NULL,
-                FOREIGN KEY (manual_customer_transaksi_id) REFERENCES manual_customer_transaksi(id) ON DELETE CASCADE,
-                FOREIGN KEY (service_id) REFERENCES services(id)
+                FOREIGN KEY (manual_customer_transaksi_id) REFERENCES manual_customer_transaksi(id) ON DELETE CASCADE
             )
         """)
 
