@@ -131,6 +131,64 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
     return hasil
 
 
+@router.get("/owner/periode")
+def dashboard_owner_periode(tanggal_mulai: str, tanggal_selesai: str, user: dict = Depends(require_owner_or_staff)):
+    """FITUR Dashboard Owner mode "Periode" (rentang tanggal bebas, diminta
+    Owner -- BEDA dari /owner di atas yang selalu satu bulan kalender
+    penuh). Bentuk respons SENGAJA dibuat semirip mungkin dengan /owner
+    (field yang sama, `per_barber`/`rincian_service_semua_barber`/dst)
+    supaya frontend bisa memakai ulang render kartu/tabel yang sama --
+    HANYA field terkait Bonus Customer yang berbeda (selalu None di sini,
+    lihat get_ringkasan_semua_barber_periode()). "tahun"/"bulan" diganti
+    "tanggal_mulai"/"tanggal_selesai" di root respons.
+
+    Bonus Customer TIDAK dihitung sama sekali untuk periode custom
+    (keputusan eksplisit Owner: nominalnya berdasar tier target jumlah
+    service SATU BULAN KALENDER PENUH, tidak ada cara membaginya secara
+    berarti untuk rentang tanggal bebas) -- `laba_kotor` mengikuti: HANYA
+    Nilai Service - Komisi - Uang Harian - Pengeluaran Toko (TANPA suku
+    Bonus Customer, karena memang tidak dihitung, bukan 0 yang menyesatkan
+    seolah-olah barber tidak dapat bonus)."""
+    barbers = db.get_barbers(tenant_id=user["tenant_id"])
+    ringkasan_per_barber = [_tanpa_kolom_biner_ringkasan(r) for r in db.get_ringkasan_semua_barber_periode(
+        barbers, tanggal_mulai, tanggal_selesai, tenant_id=user["tenant_id"],
+    )]
+    total_toko = {
+        "nilai_service": sum(r["nilai_service"] for r in ringkasan_per_barber),
+        "komisi": sum(r["komisi"] for r in ringkasan_per_barber),
+        "tips": sum(r["tips"] for r in ringkasan_per_barber),
+        "uang_harian": sum(r["uang_harian"] for r in ringkasan_per_barber),
+        "bonus_customer": None,
+        "total_pendapatan": sum(r["total_pendapatan"] for r in ringkasan_per_barber),
+        "jumlah_customer": sum(r["jumlah_customer"] for r in ringkasan_per_barber),
+    }
+    total_pengeluaran = db.get_total_pengeluaran(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=user["tenant_id"])
+    penjualan_produk = db.get_omzet_penjualan_produk(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=user["tenant_id"])
+
+    rincian_gabungan = {}
+    for r in ringkasan_per_barber:
+        for item in r["rincian_service"]:
+            rincian_gabungan[item["nama_service"]] = rincian_gabungan.get(item["nama_service"], 0) + item["jumlah"]
+    rincian_service_semua_barber = sorted(
+        [{"nama_service": k, "jumlah": v} for k, v in rincian_gabungan.items() if v > 0],
+        key=lambda x: (-x["jumlah"], x["nama_service"]),
+    )
+
+    hasil = {
+        "tanggal_mulai": tanggal_mulai,
+        "tanggal_selesai": tanggal_selesai,
+        "per_barber": ringkasan_per_barber,
+        "total_toko": total_toko,
+        "total_pengeluaran": total_pengeluaran,
+        "penjualan_produk": penjualan_produk,
+        "rincian_service_semua_barber": rincian_service_semua_barber,
+        "laba_kotor": total_toko["nilai_service"] - total_toko["komisi"] - total_toko["uang_harian"] - total_pengeluaran,
+    }
+    if user["role"] == "staff":
+        hasil = _filter_dashboard_untuk_staff(hasil, user)
+    return hasil
+
+
 @router.get("/barber")
 def dashboard_barber(tahun: int = None, bulan: int = None, user: dict = Depends(require_barber)):
     if tahun is None or bulan is None:
