@@ -773,6 +773,7 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     nama         TEXT NOT NULL,
     harga        INTEGER NOT NULL DEFAULT 0,
     harga_6bulan INTEGER,
+    harga_tahunan INTEGER,
     durasi_hari  INTEGER NOT NULL DEFAULT 30,
     aktif        INTEGER NOT NULL DEFAULT 1,
     urutan       INTEGER NOT NULL DEFAULT 0,
@@ -786,12 +787,13 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     updated_at   TEXT NOT NULL
 );
 
--- FITUR Landing Page & Pricing (paket 6 bulan): instalasi Postgres yang
--- SUDAH ADA sebelum kolom ini ditambahkan ke CREATE TABLE di atas
--- (instalasi baru sudah dapat kolomnya langsung) -- lihat billing_db.py
--- untuk penjelasan lengkap kenapa NULL = paket ini tidak menawarkan
--- siklus 6 bulan.
+-- FITUR Landing Page & Pricing (paket 6 bulan, DAN paket Tahunan): instalasi
+-- Postgres yang SUDAH ADA sebelum kolom ini ditambahkan ke CREATE TABLE di
+-- atas (instalasi baru sudah dapat kolomnya langsung) -- lihat billing_db.py
+-- untuk penjelasan lengkap kenapa NULL = paket ini tidak menawarkan siklus
+-- itu.
 ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_6bulan INTEGER;
+ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_tahunan INTEGER;
 
 CREATE TABLE IF NOT EXISTS subscription_features (
     id           SERIAL PRIMARY KEY,
@@ -1439,6 +1441,7 @@ def create_all():
         _migrasi_hapus_gerbang_qris(conn)
         _migrasi_seed_fitur_dekoratif_marketing(conn)
         _migrasi_harga_pricing_v2(conn)
+        _migrasi_harga_tahunan_v1(conn)
         _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs).",
                      time.monotonic() - _mulai)
         _migrasi_unique_index_email(conn)
@@ -1768,6 +1771,34 @@ def _migrasi_harga_pricing_v2(conn):
         "INSERT INTO settings (key, value) VALUES (?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (_KUNCI_MIGRASI_HARGA_PRICING_2, "1"),
+    )
+
+
+_HARGA_TAHUNAN_V1 = {"basic": 1560000, "pro": 2160000, "enterprise": 3360000}
+_KUNCI_MIGRASI_HARGA_TAHUNAN_1 = "billing_migrasi_harga_tahunan_1_selesai"
+
+
+def _migrasi_harga_tahunan_v1(conn):
+    """FITUR Landing Page & Pricing (paket Tahunan) -- versi PostgreSQL,
+    SAMA PERSIS logikanya dengan billing_db.py::migrasi_harga_tahunan_v1()
+    (jalur SQLite) -- diduplikasi di sini dengan alasan yang sama seperti
+    _migrasi_harga_pricing_v2() di atas. SEKALI SAJA sepanjang umur database
+    (flag `settings` TERPISAH dari migrasi harga_6bulan) menetapkan
+    harga_tahunan basic/pro/enterprise -- `harga`/`harga_6bulan` SAMA
+    SEKALI TIDAK disentuh di sini."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (_KUNCI_MIGRASI_HARGA_TAHUNAN_1,)).fetchone()
+    if row is not None and row["value"] == "1":
+        return
+    now = datetime.now().isoformat(timespec="seconds")
+    for kode, harga_tahunan in _HARGA_TAHUNAN_V1.items():
+        conn.execute(
+            "UPDATE subscription_packages SET harga_tahunan = ?, updated_at = ? WHERE kode = ?",
+            (harga_tahunan, now, kode),
+        )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (_KUNCI_MIGRASI_HARGA_TAHUNAN_1, "1"),
     )
 
 

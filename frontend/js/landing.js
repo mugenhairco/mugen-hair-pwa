@@ -766,9 +766,18 @@
   // Package" sendiri di dalam modal supaya bisa langsung lanjut dari sana.
   function openPricingDetail(p, siklus) {
     const pakai6 = siklus === "6bulan" && p.harga > 0 && p.harga_6bulan;
-    const hargaTampil = pakai6 ? p.harga_6bulan : p.harga;
-    const labelDurasi = p.harga > 0 ? (pakai6 ? " / 6 bulan" : ` / ${p.durasi_hari} hari`) : "";
+    // FITUR Landing Page & Pricing (paket Tahunan, diminta Owner): pola SAMA
+    // PERSIS pakai6 di atas -- HANYA aktif kalau toggle "tahunan" DAN paket
+    // ini punya harga_tahunan (paket Free/harga 0, atau belum diisi Super
+    // Admin, tetap menampilkan harga bulanan apa adanya).
+    const pakaiTahunan = siklus === "tahunan" && p.harga > 0 && p.harga_tahunan;
+    const hargaTampil = pakai6 ? p.harga_6bulan : pakaiTahunan ? p.harga_tahunan : p.harga;
+    const labelDurasi = p.harga > 0 ? (pakai6 ? " / 6 bulan" : pakaiTahunan ? " / tahun" : ` / ${p.durasi_hari} hari`) : "";
     const hematRupiah = pakai6 ? (p.harga * 6 - p.harga_6bulan) : 0;
+    // "Setara Rp X/bulan" -- dihitung langsung dari harga_tahunan/12 (TIDAK
+    // ADA kolom terpisah untuk ini, konsisten dengan pola hematRupiah di
+    // atas yang juga dihitung, bukan disimpan).
+    const efektifBulananTahunan = pakaiTahunan ? Math.round(p.harga_tahunan / 12) : 0;
     const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
 
     const body = [
@@ -779,6 +788,10 @@
     ];
     if (pakai6 && hematRupiah > 0) {
       body.push(el("div", { class: "lp-pricing-save-note" }, `Hemat ${formatRupiah(hematRupiah)} dibanding bulanan`));
+    }
+    if (pakaiTahunan) {
+      body.push(el("div", { class: "lp-pricing-save-note" }, `Setara ${formatRupiah(efektifBulananTahunan)}/bulan`));
+      body.push(el("div", { class: "lp-pricing-save-note" }, "Hemat dengan pembayaran tahunan"));
     }
     body.push(el("p", { class: "lp-modal-desc" }, p.deskripsi || ""));
     if (p.kode === "enterprise") body.push(benefitEnterprise());
@@ -799,14 +812,29 @@
       // (paket Free/harga 0, atau paket yang belum diisi Super Admin, tetap
       // menampilkan harga bulanan apa adanya, TIDAK ada tampilan kosong/rusak).
       const pakai6 = siklus === "6bulan" && p.harga > 0 && p.harga_6bulan;
-      const hargaTampil = pakai6 ? p.harga_6bulan : p.harga;
-      const labelDurasi = p.harga > 0 ? (pakai6 ? " / 6 bulan" : ` / ${p.durasi_hari} hari`) : "";
+      // FITUR Landing Page & Pricing (paket Tahunan, diminta Owner): pola
+      // SAMA PERSIS pakai6 di atas. pakai6/pakaiTahunan SALING EKSKLUSIF
+      // (siklus toggle hanya satu nilai aktif), jadi urutan pengecekan di
+      // bawah tidak masalah.
+      const pakaiTahunan = siklus === "tahunan" && p.harga > 0 && p.harga_tahunan;
+      const hargaTampil = pakai6 ? p.harga_6bulan : pakaiTahunan ? p.harga_tahunan : p.harga;
+      const labelDurasi = p.harga > 0 ? (pakai6 ? " / 6 bulan" : pakaiTahunan ? " / tahun" : ` / ${p.durasi_hari} hari`) : "";
       const hematRupiah = pakai6 ? (p.harga * 6 - p.harga_6bulan) : 0;
+      // "Setara Rp X/bulan" -- dihitung langsung dari harga_tahunan/12
+      // (TIDAK ADA kolom terpisah untuk ini di database, angkanya PERSIS
+      // hasil bagi harga_tahunan yang sama dipakai checkout).
+      const efektifBulananTahunan = pakaiTahunan ? Math.round(p.harga_tahunan / 12) : 0;
 
       const card = el("div", {
         class: "lp-pricing-card" + (p.kode === "enterprise" ? " lp-pricing-card-featured" : ""),
       });
-      if (pakai6 && hematRupiah > 0) {
+      // Badge ribbon kartu: "⭐ Paling Hemat" KHUSUS mode Tahunan (TIDAK
+      // PERNAH memakai teks "Hemat Lebih Banyak", itu badge toggle tab --
+      // lihat index.html), mode 6 Bulan TETAP "Paling Hemat" seperti
+      // sebelumnya (TIDAK diubah sama sekali).
+      if (pakaiTahunan) {
+        card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "⭐ Paling Hemat"));
+      } else if (pakai6 && hematRupiah > 0) {
         card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-save" }, "Paling Hemat"));
       } else if (p.kode === "enterprise") {
         card.appendChild(el("span", { class: "lp-pricing-badge lp-pricing-badge-popular lp-pulse" }, "★ Paling Populer"));
@@ -818,6 +846,10 @@
       ]));
       if (pakai6 && hematRupiah > 0) {
         card.appendChild(el("div", { class: "lp-pricing-save-note" }, `Hemat ${formatRupiah(hematRupiah)} dibanding bulanan`));
+      }
+      if (pakaiTahunan) {
+        card.appendChild(el("div", { class: "lp-pricing-save-note" }, `Setara ${formatRupiah(efektifBulananTahunan)}/bulan`));
+        card.appendChild(el("div", { class: "lp-pricing-save-note" }, "Hemat dengan pembayaran tahunan"));
       }
       card.appendChild(el("p", { class: "lp-pricing-desc" }, p.deskripsi || ""));
       if (p.kode === "enterprise") card.appendChild(benefitEnterprise());

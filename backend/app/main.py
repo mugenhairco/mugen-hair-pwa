@@ -424,6 +424,7 @@ def on_startup():
         billing_db.hapus_gerbang_qris()  # diminta Owner: QRIS bukan lagi fitur ber-gerbang paket (metode pembayaran inti untuk semua) -- hapus permanen kode "qris" dari katalog fitur, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.seed_fitur_dekoratif_marketing()  # diminta Owner: 5 kode dekoratif (Manajemen Bisnis/Barber/Layanan, Role & Hak Akses, Komisi & Gaji) -- MURNI tampilan kartu harga, TIDAK menggerbang apa pun -- assign bertahap per paket SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_pricing_v2()  # FITUR Landing Page & Pricing (paket 6 bulan): set harga bulanan + 6 bulan basic/pro/enterprise ke daftar harga resmi terbaru, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
+        billing_db.migrasi_harga_tahunan_v1()  # FITUR Landing Page & Pricing (paket Tahunan): set harga_tahunan basic/pro/enterprise, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
         billing_gateway_db.migrasi_billing_gateway()  # Payment Gateway Billing SaaS: bootstrap kredensial dari env var MIDTRANS_* lama ke database, HANYA kalau belum pernah diisi (idempotent)
         migrasi_booking_gateway()  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions + booking_payment_status_log (idempotent)

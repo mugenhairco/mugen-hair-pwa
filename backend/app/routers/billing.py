@@ -76,12 +76,13 @@ def config_billing_gateway(user: dict = Depends(require_admin)):
 
 class CheckoutBody(BaseModel):
     package_id: int
-    # FITUR Landing Page & Pricing (paket 6 bulan): "bulanan" (default, TIDAK
-    # mengubah perilaku lama sama sekali) atau "6bulan" -- lihat blok siklus
-    # di bawah untuk cara efektif harga/durasi-nya dihitung. TIDAK ADA nilai
-    # lain yang diterima (divalidasi manual, BUKAN Literal[...] Pydantic,
-    # supaya pesan errornya tetap format {"detail": "..."} polos yang sudah
-    # konsisten dipakai endpoint lain di proyek ini).
+    # FITUR Landing Page & Pricing (paket 6 bulan, DAN paket Tahunan): "bulanan"
+    # (default, TIDAK mengubah perilaku lama sama sekali), "6bulan", atau
+    # "tahunan" -- lihat blok siklus di bawah untuk cara efektif harga/
+    # durasi-nya dihitung. TIDAK ADA nilai lain yang diterima (divalidasi
+    # manual, BUKAN Literal[...] Pydantic, supaya pesan errornya tetap
+    # format {"detail": "..."} polos yang sudah konsisten dipakai endpoint
+    # lain di proyek ini).
     siklus: str = "bulanan"
 
 
@@ -90,7 +91,7 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     if not billing_gateway_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
-    if body.siklus not in ("bulanan", "6bulan"):
+    if body.siklus not in ("bulanan", "6bulan", "tahunan"):
         raise HTTPException(status_code=422, detail="Siklus langganan tidak dikenal.")
     paket = billing_db.get_package(body.package_id)
     if paket is None or not paket["aktif"]:
@@ -98,20 +99,25 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     if paket["harga"] <= 0:
         raise HTTPException(status_code=422, detail="Paket ini tidak memerlukan pembayaran.")
 
-    # FITUR Landing Page & Pricing (paket 6 bulan): siklus "6bulan" mengganti
-    # harga/durasi EFEKTIF yang dipakai checkout ini (harga_6bulan, durasi
-    # SELALU durasi_hari*6 -- lihat billing_db.py kenapa tidak ada kolom
-    # durasi terpisah) SEBELUM diteruskan ke Payment Gateway & buat_invoice()
-    # di bawah -- KEDUANYA murni menyalin apa pun yang ada di dict `paket`
-    # ini sebagai snapshot (lihat billing_invoice_db.buat_invoice()), jadi
-    # TIDAK ADA perubahan kode di billing_gateway_client.py/billing_invoice_db.py/
-    # billing_webhook.py sama sekali untuk mendukung siklus 6 bulan --
+    # FITUR Landing Page & Pricing (paket 6 bulan, DAN paket Tahunan): siklus
+    # "6bulan"/"tahunan" mengganti harga/durasi EFEKTIF yang dipakai checkout
+    # ini (harga_6bulan/harga_tahunan, durasi SELALU durasi_hari*6 atau *12 --
+    # lihat billing_db.py kenapa tidak ada kolom durasi terpisah) SEBELUM
+    # diteruskan ke Payment Gateway & buat_invoice() di bawah -- KEDUANYA
+    # murni menyalin apa pun yang ada di dict `paket` ini sebagai snapshot
+    # (lihat billing_invoice_db.buat_invoice()), jadi TIDAK ADA perubahan
+    # kode di billing_gateway_client.py/billing_invoice_db.py/
+    # billing_webhook.py sama sekali untuk mendukung siklus baru ini --
     # masa aktif subscription (periode_selesai = periode_mulai + durasi_hari
     # invoice, lihat billing_webhook.py) otomatis ikut durasi efektif ini.
     if body.siklus == "6bulan":
         if not paket.get("harga_6bulan"):
             raise HTTPException(status_code=422, detail="Paket ini tidak menawarkan siklus 6 bulan.")
         paket = {**paket, "harga": paket["harga_6bulan"], "durasi_hari": paket["durasi_hari"] * 6}
+    elif body.siklus == "tahunan":
+        if not paket.get("harga_tahunan"):
+            raise HTTPException(status_code=422, detail="Paket ini tidak menawarkan siklus tahunan.")
+        paket = {**paket, "harga": paket["harga_tahunan"], "durasi_hari": paket["durasi_hari"] * 12}
 
     tenant = tenant_db.get_tenant(user["tenant_id"])
     order_id = billing_invoice_db.buat_order_id(user["tenant_id"])
@@ -264,6 +270,7 @@ class PackageUpdateBody(BaseModel):
     nama: str | None = None
     harga: int | None = None
     harga_6bulan: int | None = None
+    harga_tahunan: int | None = None
     durasi_hari: int | None = None
     aktif: bool | None = None
     urutan: int | None = None
