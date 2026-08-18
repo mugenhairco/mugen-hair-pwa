@@ -161,13 +161,71 @@ def test_checkout_6bulan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkey
     assert "tidak menawarkan siklus 6 bulan" in r.json()["detail"]
 
 
+# FITUR Landing Page & Pricing (paket Tahunan): checkout dengan siklus
+# "tahunan" HARUS memakai harga_tahunan (bukan harga bulanan) + durasi
+# efektif durasi_hari*12 -- lihat routers/billing.py::checkout(). Pola SAMA
+# PERSIS test_checkout_6bulan_sukses_pakai_harga_dan_durasi_6bulan() di
+# atas -- angka jumlah HARUS PERSIS Rp2.160.000 (spesifikasi Owner untuk
+# Pro + Tahunan), membuktikan harga yang ditampilkan frontend TIDAK
+# berbeda dengan yang dikirim ke checkout/invoice sungguhan.
+def test_checkout_tahunan_sukses_pakai_harga_dan_durasi_tahunan(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_billing_gateway_mock(monkeypatch)
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga=250000, harga_tahunan=2160000, durasi_hari=30)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": pro["id"], "siklus": "tahunan"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["jumlah"] == 2160000
+    assert data["durasi_hari"] == 360
+    assert data["package_kode"] == "pro"
+
+
+def test_checkout_tahunan_basic_dan_enterprise_sesuai_spesifikasi(app_client, monkeypatch):
+    """Basic + Tahunan -> Rp1.560.000, Enterprise + Tahunan -> Rp3.360.000
+    (langsung dari nilai default migrasi_harga_tahunan_v1(), TANPA
+    override manual) -- bukti checkout menerima angka PERSIS sama dengan
+    yang ditampilkan di kartu Pricing, tidak ada penyimpangan."""
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_billing_gateway_mock(monkeypatch)
+    basic = billing_db.get_package_by_kode("basic")
+    enterprise = billing_db.get_package_by_kode("enterprise")
+
+    r_basic = app_client.post("/api/billing/checkout", headers=headers,
+                               json={"package_id": basic["id"], "siklus": "tahunan"})
+    assert r_basic.status_code == 200, r_basic.text
+    assert r_basic.json()["jumlah"] == 1560000
+
+    r_enterprise = app_client.post("/api/billing/checkout", headers=headers,
+                                    json={"package_id": enterprise["id"], "siklus": "tahunan"})
+    assert r_enterprise.status_code == 200, r_enterprise.text
+    assert r_enterprise.json()["jumlah"] == 3360000
+
+
+def test_checkout_tahunan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    _aktifkan_billing_gateway_mock(monkeypatch)
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga_tahunan=None)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": pro["id"], "siklus": "tahunan"})
+    assert r.status_code == 422
+    assert "tidak menawarkan siklus tahunan" in r.json()["detail"]
+
+
 def test_checkout_siklus_tidak_dikenal_422(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     _aktifkan_billing_gateway_mock(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
 
+    # "mingguan" (BUKAN "tahunan" -- FITUR Landing Page & Pricing paket
+    # Tahunan sekarang menjadikan "tahunan" siklus VALID, lihat test khusus
+    # di bawah, jadi tidak lagi contoh yang tepat untuk "siklus tidak dikenal").
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "tahunan"})
+                         json={"package_id": pro["id"], "siklus": "mingguan"})
     assert r.status_code == 422
 
 

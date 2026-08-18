@@ -80,6 +80,55 @@ def test_migrasi_harga_pricing_v2_idempotent_tidak_menimpa_perubahan(app_client)
     assert pro2["harga_6bulan"] is None
 
 
+# FITUR Landing Page & Pricing (paket Tahunan): app_client fixture SUDAH
+# memicu on_startup() (termasuk migrasi_harga_tahunan_v1()) SEKALI sebelum
+# test ini jalan -- test di bawah memverifikasi HASIL migrasi itu, BUKAN
+# memanggilnya lagi secara manual. Nilai harus PERSIS sesuai spesifikasi
+# Owner: Basic Rp1.560.000, Pro Rp2.160.000, Enterprise Rp3.360.000 -- dan
+# harga/harga_6bulan basic/pro/enterprise (dari migrasi_harga_pricing_v2 di
+# atas) TIDAK IKUT BERUBAH sama sekali oleh migrasi harga_tahunan ini.
+def test_migrasi_harga_tahunan_v1_set_harga_resmi(app_client):
+    basic = billing_db.get_package_by_kode("basic")
+    pro = billing_db.get_package_by_kode("pro")
+    enterprise = billing_db.get_package_by_kode("enterprise")
+    free = billing_db.get_package_by_kode("free")
+
+    assert basic["harga_tahunan"] == 1560000
+    assert pro["harga_tahunan"] == 2160000
+    assert enterprise["harga_tahunan"] == 3360000
+    assert free["harga_tahunan"] is None
+    # Harga Bulanan/6 Bulan yang sudah ada TIDAK berubah oleh migrasi ini.
+    assert basic["harga"] == 188000
+    assert basic["harga_6bulan"] == 950000
+    assert pro["harga"] == 250000
+    assert pro["harga_6bulan"] == 1200000
+    assert enterprise["harga"] == 350000
+    assert enterprise["harga_6bulan"] == 1800000
+
+
+def test_migrasi_harga_tahunan_v1_idempotent_tidak_menimpa_perubahan(app_client):
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga_tahunan=None)
+
+    billing_db.migrasi_harga_tahunan_v1()
+
+    pro2 = billing_db.get_package_by_kode("pro")
+    assert pro2["harga_tahunan"] is None
+
+
+def test_harga_tahunan_efektif_per_bulan_sesuai_spesifikasi(app_client):
+    """Bukti langsung angka "Setara Rp X/bulan" yang ditampilkan frontend
+    (landing.js/billing.js, dihitung harga_tahunan/12, TIDAK ada kolom
+    terpisah untuk itu) sama persis dengan spesifikasi Owner: Basic
+    Rp130.000/bulan, Pro Rp180.000/bulan, Enterprise Rp280.000/bulan."""
+    basic = billing_db.get_package_by_kode("basic")
+    pro = billing_db.get_package_by_kode("pro")
+    enterprise = billing_db.get_package_by_kode("enterprise")
+    assert basic["harga_tahunan"] // 12 == 130000
+    assert pro["harga_tahunan"] // 12 == 180000
+    assert enterprise["harga_tahunan"] // 12 == 280000
+
+
 # ============================= CRUD Super Admin =============================
 
 def test_superadmin_list_packages(app_client):
@@ -136,6 +185,31 @@ def test_superadmin_harga_6bulan_negatif_ditolak(app_client):
 
     r = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
                         json={"harga_6bulan": -1000})
+    assert r.status_code == 422
+
+
+def test_superadmin_ubah_harga_tahunan(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    basic = billing_db.get_package_by_kode("basic")
+
+    r = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                        json={"harga_tahunan": 1560000})
+    assert r.status_code == 200, r.text
+    assert r.json()["harga_tahunan"] == 1560000
+
+    # None eksplisit -- paket ini tidak lagi menawarkan siklus tahunan.
+    r2 = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                         json={"harga_tahunan": None})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["harga_tahunan"] is None
+
+
+def test_superadmin_harga_tahunan_negatif_ditolak(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    basic = billing_db.get_package_by_kode("basic")
+
+    r = app_client.put(f"/api/superadmin/billing/packages/{basic['id']}", headers=headers,
+                        json={"harga_tahunan": -1000})
     assert r.status_code == 422
 
 

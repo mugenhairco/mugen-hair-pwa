@@ -280,7 +280,7 @@ const PageBilling = (() => {
     const wrap = MugenUI.el("div", {
       style: "display:inline-flex;gap:4px;background:var(--bg-input);border:1px solid var(--border);border-radius:999px;padding:4px;margin-bottom:16px;",
     });
-    [["bulanan", "Bulanan"], ["6bulan", "6 Bulan · Hemat Lebih Banyak"]].forEach(([nilai, label]) => {
+    [["bulanan", "Bulanan"], ["6bulan", "6 Bulan · Hemat Lebih Banyak"], ["tahunan", "Tahunan · ⭐ Paling Hemat"]].forEach(([nilai, label]) => {
       const aktif = nilai === siklusAktif;
       const btn = MugenUI.el("button", {
         type: "button",
@@ -320,7 +320,7 @@ const PageBilling = (() => {
     try {
       pendingKode = sessionStorage.getItem("mugen_pending_package_kode");
       const s = sessionStorage.getItem("mugen_pending_package_siklus");
-      if (s === "bulanan" || s === "6bulan") pendingSiklus = s;
+      if (s === "bulanan" || s === "6bulan" || s === "tahunan") pendingSiklus = s;
     } catch (e) { /* abaikan (mis. private mode) */ }
 
     let siklusAktif = pendingSiklus;
@@ -355,18 +355,39 @@ const PageBilling = (() => {
         // (paket Free/harga 0, atau belum diisi Super Admin, tetap
         // menampilkan harga bulanan apa adanya).
         const pakai6 = siklusAktif === "6bulan" && paket.harga > 0 && paket.harga_6bulan;
-        const hargaTampil = pakai6 ? paket.harga_6bulan : paket.harga;
+        // FITUR Landing Page & Pricing (paket Tahunan, diminta Owner): pola
+        // SAMA PERSIS pakai6 di atas -- pakai6/pakaiTahunan SALING
+        // EKSKLUSIF (siklusAktif hanya satu nilai), urutan cek tidak masalah.
+        const pakaiTahunan = siklusAktif === "tahunan" && paket.harga > 0 && paket.harga_tahunan;
+        const hargaTampil = pakai6 ? paket.harga_6bulan : pakaiTahunan ? paket.harga_tahunan : paket.harga;
         const hematRupiah = pakai6 ? (paket.harga * 6 - paket.harga_6bulan) : 0;
-        if (pakai6 && hematRupiah > 0) {
+        // "Setara Rp X/bulan" -- dihitung langsung dari harga_tahunan/12,
+        // ANGKA YANG SAMA PERSIS dikirim ke checkout (routers/billing.py),
+        // tidak ada penyimpangan antara tampilan & harga yang dibayar.
+        const efektifBulananTahunan = pakaiTahunan ? Math.round(paket.harga_tahunan / 12) : 0;
+        // Badge: "⭐ Paling Hemat" KHUSUS mode Tahunan (BUKAN "Hemat Lebih
+        // Banyak", itu badge toggle tab), mode 6 Bulan TETAP "Paling Hemat"
+        // seperti sebelumnya (TIDAK diubah sama sekali).
+        if (pakaiTahunan) {
+          box.appendChild(MugenUI.el("span", {
+            style: "background:var(--success);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;margin-bottom:8px;display:inline-block;margin-left:8px;",
+          }, "⭐ Paling Hemat"));
+        } else if (pakai6 && hematRupiah > 0) {
           box.appendChild(MugenUI.el("span", {
             style: "background:var(--success);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;margin-bottom:8px;display:inline-block;margin-left:8px;",
           }, "Paling Hemat"));
         }
         box.appendChild(MugenUI.el("div", { style: "font-size:20px;font-weight:700;" }, MugenUI.formatRupiah(hargaTampil)));
-        box.appendChild(MugenUI.el("div", { class: "subtitle" }, pakai6 ? "per 6 bulan" : `per ${paket.durasi_hari} hari`));
+        box.appendChild(MugenUI.el("div", { class: "subtitle" }, pakai6 ? "per 6 bulan" : pakaiTahunan ? "per tahun" : `per ${paket.durasi_hari} hari`));
         if (pakai6 && hematRupiah > 0) {
           box.appendChild(MugenUI.el("div", { style: "color:var(--success);font-size:12px;font-weight:600;margin-top:2px;" },
             `Hemat ${MugenUI.formatRupiah(hematRupiah)} dibanding bulanan`));
+        }
+        if (pakaiTahunan) {
+          box.appendChild(MugenUI.el("div", { style: "color:var(--success);font-size:12px;font-weight:600;margin-top:2px;" },
+            `Setara ${MugenUI.formatRupiah(efektifBulananTahunan)}/bulan`));
+          box.appendChild(MugenUI.el("div", { style: "color:var(--success);font-size:12px;font-weight:600;" },
+            "Hemat dengan pembayaran tahunan"));
         }
         if (paket.deskripsi) box.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, paket.deskripsi));
         if (paket.kode === "enterprise") box.appendChild(benefitEnterprise());
