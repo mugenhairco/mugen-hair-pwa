@@ -46,6 +46,20 @@ const PageDashboardOwner = (() => {
     const collapseState = _loadCollapseState();
     const cardKeys = []; // diisi ulang tiap render() body -- dipakai tombol Collapse/Expand All
 
+    // FITUR BARU (diminta Owner): mode "Periode" -- rentang tanggal bebas
+    // (mis. 1-10 Agustus), berdampingan dengan mode "Bulanan" yang sudah
+    // ada (satu bulan kalender penuh, TIDAK diubah sama sekali). Bonus
+    // Customer SENGAJA tidak pernah muncul di mode Periode (backend selalu
+    // mengembalikan null untuk field itu, lihat routers/dashboard.py::
+    // dashboard_owner_periode()) -- nominalnya berdasar tier target jumlah
+    // service SATU BULAN KALENDER PENUH, tidak berarti untuk rentang bebas.
+    // card()/cardJumlahService() di bawah SUDAH otomatis melewatkan kartu
+    // dengan value null (lihat "staff tanpa izin" di komentarnya), jadi
+    // Bonus Customer otomatis hilang dari grid tanpa kode tambahan apa pun.
+    let mode = "bulanan"; // "bulanan" | "periode"
+    let tanggalMulai = MugenUI.awalBulanWib(MugenUI.isoHariIniWib());
+    let tanggalSelesai = MugenUI.isoHariIniWib();
+
     root.innerHTML = "";
     const header = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
     header.appendChild(MugenUI.el("h1", {}, isOwner ? "Dashboard Owner" : "Dashboard Admin"));
@@ -56,9 +70,35 @@ const PageDashboardOwner = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(tahun);
-    const picker = MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]);
+    const pickerBulanan = MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]);
+
+    const inputTanggalMulai = MugenUI.el("input", { type: "date", value: tanggalMulai, style: "max-width:150px;" });
+    const inputTanggalSelesai = MugenUI.el("input", { type: "date", value: tanggalSelesai, style: "max-width:150px;" });
+    const pickerPeriode = MugenUI.el("div", { class: "row", style: "flex:none;display:none;align-items:center;gap:6px;" }, [
+      inputTanggalMulai,
+      MugenUI.el("span", {}, "s/d"),
+      inputTanggalSelesai,
+    ]);
+
+    const modeTabs = MugenUI.tabs(
+      [{ key: "bulanan", label: "Bulanan" }, { key: "periode", label: "Periode" }],
+      {
+        initial: mode,
+        onChange: (key) => {
+          mode = key;
+          pickerBulanan.style.display = mode === "bulanan" ? "" : "none";
+          pickerPeriode.style.display = mode === "periode" ? "" : "none";
+          load();
+        },
+      },
+    );
+
+    const picker = MugenUI.el("div", { class: "row", style: "flex:none;align-items:center;gap:10px;flex-wrap:wrap;" }, [
+      modeTabs.bar, pickerBulanan, pickerPeriode,
+    ]);
     header.appendChild(picker);
     root.appendChild(header);
+    modeTabs.moveIndicator();
 
     const toolbar = MugenUI.el("div", { class: "row", style: "flex:none;margin:10px 0;gap:8px;" });
     const btnCollapseAll = MugenUI.el("button", {}, "Collapse All");
@@ -152,7 +192,10 @@ const PageDashboardOwner = (() => {
         MugenUI.skeleton("card", { lines: 2 }),
       ]));
       try {
-        const data = await MugenApi.get(`/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`, { useCache: true });
+        const url = mode === "periode"
+          ? `/api/dashboard/owner/periode?tanggal_mulai=${tanggalMulai}&tanggal_selesai=${tanggalSelesai}`
+          : `/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`;
+        const data = await MugenApi.get(url, { useCache: true });
         if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
         body.innerHTML = "";
         if (data.__offline) body.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -185,10 +228,10 @@ const PageDashboardOwner = (() => {
         // diizinkan Owner), jadi tidak pernah dirender untuk role 'staff'.
         if (!isOwner) return;
 
-        // ================= SERVICE BULAN INI =================
+        // ================= SERVICE BULAN INI / PERIODE INI =================
         const serviceCard = MugenUI.el("div", { class: "card" });
         const serviceHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
-        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "SERVICE BULAN INI"));
+        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, mode === "periode" ? "SERVICE PERIODE INI" : "SERVICE BULAN INI"));
         const selBarberFilter = MugenUI.el("select", { style: "max-width:220px;" });
         selBarberFilter.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
         for (const r of data.per_barber) {
@@ -210,7 +253,7 @@ const PageDashboardOwner = (() => {
                 { key: "jumlah", label: "Jumlah" },
               ],
               data.rincian_service_semua_barber,
-              { emptyText: "Belum ada service bulan ini." },
+              { emptyText: "Belum ada service pada periode ini." },
             ));
           } else {
             const r = data.per_barber.find((x) => String(x.barber.id) === selBarberFilter.value);
@@ -221,7 +264,7 @@ const PageDashboardOwner = (() => {
                 { key: "jumlah", label: "Jumlah" },
               ],
               r.rincian_service,
-              { emptyText: "Belum ada service bulan ini." },
+              { emptyText: "Belum ada service pada periode ini." },
             ));
           }
         }
@@ -236,13 +279,23 @@ const PageDashboardOwner = (() => {
             { key: "komisi", label: "Komisi", format: MugenUI.formatRupiah },
             { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
             { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-            { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
+            // Bonus Customer null di mode Periode (lihat komentar mode di
+            // atas) -- "-" (BUKAN "Rp 0", MugenUI.formatRupiah(null) akan
+            // salah menampilkan "Rp 0" seolah barber tidak dapat bonus).
+            { key: "bonus_customer", label: "Bonus Customer", format: (v) => (v === null ? "-" : MugenUI.formatRupiah(v)) },
             { key: "total_pendapatan", label: "Total", format: MugenUI.formatRupiah },
           ],
           data.per_barber,
         ));
 
-        // ================= GRAFIK PENDAPATAN (khusus Dashboard Owner) =================
+        // ================= GRAFIK PENDAPATAN (khusus Dashboard Owner, khusus mode Bulanan) =================
+        // Grafik Harian (per tanggal dalam SATU bulan) dan Grafik Bulanan
+        // (per bulan dalam SATU tahun) keduanya secara desain terikat ke
+        // kalender bulan/tahun, TIDAK ke rentang tanggal bebas -- mode
+        // Periode sengaja tidak menampilkan bagian ini sama sekali
+        // (endpoint /owner/grafik-harian & /owner/grafik-bulanan TIDAK
+        // diubah/dipanggil di mode Periode).
+        if (mode === "periode") return;
         const grafikCard = MugenUI.el("div", { class: "card" });
         const grafikHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
         grafikHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "Grafik Pendapatan"));
@@ -328,6 +381,8 @@ const PageDashboardOwner = (() => {
     // feedback yang cukup, ganti bulan/tahun terasa instan.
     selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
     selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
+    inputTanggalMulai.addEventListener("change", () => { tanggalMulai = inputTanggalMulai.value; load(); });
+    inputTanggalSelesai.addEventListener("change", () => { tanggalSelesai = inputTanggalSelesai.value; load(); });
     load();
   }
 

@@ -1482,6 +1482,92 @@ def get_ringkasan_semua_barber_bulan(barbers: list, tahun: int, bulan: int, tena
     return hasil
 
 
+def get_ringkasan_semua_barber_periode(barbers: list, tanggal_mulai: str, tanggal_selesai: str, tenant_id=None) -> list:
+    """FITUR Dashboard Owner mode "Periode" (rentang tanggal bebas, BEDA dari
+    mode "Bulanan" satu bulan kalender penuh di get_ringkasan_semua_barber_bulan()
+    di atas -- pola batch/rumus SAMA PERSIS untuk komponen yang memang bisa
+    dijumlah per rentang tanggal bebas (nilai_service/komisi/tips/uang_harian/
+    rincian_service/jumlah_service), hanya sumber datanya diganti
+    tanggal_mulai/tanggal_selesai alih-alih tahun/bulan.
+
+    Bonus Customer SENGAJA TIDAK dihitung sama sekali di sini (bonus_customer/
+    bonus_customer_detail/target_bonus_customer/progress_target semuanya None,
+    BUKAN 0) -- keputusan eksplisit Owner: nominalnya berasal dari tier target
+    JUMLAH SERVICE SATU BULAN KALENDER PENUH (lihat _hitung_bonus_customer_inti()
+    & docstring "BONUS CUSTOMER / TARGET BONUS SERVICE (bulanan)" di atas),
+    jadi tidak ada cara membaginya secara berarti untuk rentang tanggal bebas
+    (mis. 10 hari dari 30 hari sebulan dibandingkan ke target yang dirancang
+    untuk sebulan penuh akan menyesatkan). total_pendapatan mengikuti --
+    HANYA Komisi + Tips + Uang Harian (TANPA suku Bonus Customer)."""
+    if not barbers:
+        return []
+
+    transaksi_semua = get_transaksi_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+
+    # target/acuan Uang Harian BOLEH beda per tenant_id barber (pola sama
+    # persis get_ringkasan_semua_barber_bulan() di atas).
+    acuan_uh_cache = {}
+
+    def _acuan_uh(tid):
+        if tid not in acuan_uh_cache:
+            acuan_uh_cache[tid] = (set(get_uang_harian_acuan_ids(tenant_id=tid)), target_uang_harian_per_hari(tenant_id=tid))
+        return acuan_uh_cache[tid]
+
+    per_barber_transaksi = {}
+    for t in transaksi_semua:
+        per_barber_transaksi.setdefault(t["barber_id"], []).append(t)
+
+    hasil = []
+    for barber in barbers:
+        barber_id = barber["id"]
+        transaksi_periode = per_barber_transaksi.get(barber_id, [])
+
+        nilai_service = sum(t["total_harga"] for t in transaksi_periode)
+        tips = sum(t["tips"] for t in transaksi_periode)
+        komisi = sum(t["total_komisi"] for t in transaksi_periode)
+
+        acuan_uh_ids, target_uh = _acuan_uh(barber.get("tenant_id"))
+        jumlah_per_hari_uh = {}
+        rincian_map = {}
+        jumlah_service_periode = 0
+        for t in transaksi_periode:
+            for it in t["items"]:
+                jml = it["jumlah"]
+                jumlah_service_periode += jml
+                rincian_map[it["nama_service"]] = rincian_map.get(it["nama_service"], 0) + jml
+                if it["service_id"] in acuan_uh_ids:
+                    jumlah_per_hari_uh[t["tanggal"]] = jumlah_per_hari_uh.get(t["tanggal"], 0) + jml
+
+        nominal_uh = int(barber["uang_harian"] or 0)
+        uang_harian = sum(nominal_uh for jumlah in jumlah_per_hari_uh.values() if jumlah >= target_uh)
+
+        rincian_service = sorted(
+            [{"nama_service": k, "jumlah": v} for k, v in rincian_map.items()],
+            key=lambda x: (-x["jumlah"], x["nama_service"]),
+        )
+
+        total_pendapatan = komisi + tips + uang_harian
+
+        hasil.append({
+            "barber": barber,
+            "tanggal_mulai": tanggal_mulai,
+            "tanggal_selesai": tanggal_selesai,
+            "jumlah_customer": len(transaksi_periode),
+            "jumlah_service_bulan": jumlah_service_periode,
+            "rincian_service": rincian_service,
+            "nilai_service": nilai_service,
+            "komisi": komisi,
+            "tips": tips,
+            "uang_harian": uang_harian,
+            "bonus_customer": None,
+            "bonus_customer_detail": None,
+            "total_pendapatan": total_pendapatan,
+            "target_bonus_customer": None,
+            "progress_target": None,
+        })
+    return hasil
+
+
 def get_pendapatan_harian_semua_barber(barbers: list, tahun: int, bulan: int, jumlah_hari: int, tenant_id=None) -> dict:
     """AUDIT KONEKSI: versi BATCH dari pola di routers/dashboard.py::grafik_harian()
     -- endpoint itu SEBELUMNYA memanggil db.get_transaksi_list() per barber
@@ -1816,8 +1902,12 @@ def get_pengeluaran(pengeluaran_id: int):
 
 
 def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = None,
+                          tanggal_mulai: str = None, tanggal_selesai: str = None,
                           tenant_id: int = None) -> list:
-    """Urutan: tanggal terbaru dulu."""
+    """Urutan: tanggal terbaru dulu. tanggal_mulai/tanggal_selesai (inklusif
+    di kedua ujung) -- rentang tanggal bebas, dipakai kartu "Pengeluaran
+    Toko" Dashboard Owner mode Periode (lihat get_total_pengeluaran() &
+    routers/dashboard.py::dashboard_owner_periode())."""
     q = "SELECT * FROM pengeluaran WHERE 1=1"
     params = []
     if tahun is not None:
@@ -1826,6 +1916,10 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
+    if tanggal_mulai is not None:
+        q += " AND tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND tanggal <= ?"; params.append(tanggal_selesai)
     if tenant_id is not None:
         q += " AND tenant_id = ?"; params.append(tenant_id)
     q += " ORDER BY tanggal DESC, id DESC"
@@ -1834,8 +1928,11 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
         return [dict(r) for r in rows]
 
 
-def get_total_pengeluaran(tahun: int = None, bulan: int = None, tenant_id: int = None) -> int:
-    return sum(p["jumlah"] for p in get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id))
+def get_total_pengeluaran(tahun: int = None, bulan: int = None, tanggal_mulai: str = None,
+                           tanggal_selesai: str = None, tenant_id: int = None) -> int:
+    return sum(p["jumlah"] for p in get_pengeluaran_list(
+        tahun=tahun, bulan=bulan, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=tenant_id,
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -2166,7 +2263,8 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
     return rows
 
 
-def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tenant_id: int = None) -> int:
+def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tanggal_mulai: str = None,
+                                tanggal_selesai: str = None, tenant_id: int = None) -> int:
     """Total omzet (nilai penjualan) SELURUH produk dari transaksi bertipe
     'jual' SAJA -- Restock tidak relevan (bukan penjualan), Tester SENGAJA
     tidak dihitung (tidak menambah nilai penjualan, lihat tester_produk())
@@ -2174,7 +2272,9 @@ def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tenant_id: 
     harga_jual_saat_itu (snapshot per transaksi, lihat _catat_keluar_produk),
     BUKAN harga_jual produk saat ini, supaya angka bulan lalu tidak berubah
     kalau harga produk diedit belakangan. Dipakai kartu 'Penjualan Produk'
-    di Dashboard Owner.
+    di Dashboard Owner. tanggal_mulai/tanggal_selesai (inklusif di kedua
+    ujung) -- rentang tanggal bebas, dipakai mode Periode (lihat
+    routers/dashboard.py::dashboard_owner_periode()).
 
     FONDASI Multi-Tenant Phase 1: `produk_mutasi` TIDAK punya kolom
     tenant_id sendiri (tenant-scoped TRANSITIF lewat JOIN ke produk, lihat
@@ -2191,6 +2291,10 @@ def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tenant_id: 
         q += " AND pm.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
     if bulan is not None:
         q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if tanggal_mulai is not None:
+        q += " AND pm.tanggal >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND pm.tanggal <= ?"; params.append(tanggal_selesai)
     with get_conn() as conn:
         return conn.execute(q, params).fetchone()["omzet"]
 
