@@ -555,6 +555,17 @@ CREATE TABLE IF NOT EXISTS input_data_hari (
 -- mengonversi baris ini jadi baris `transaksi` sungguhan lewat
 -- database.tambah_transaksi() -- Rekap TIDAK PERNAH tahu/butuh tahu baris
 -- ini berasal dari Manual Customer, nama customer/jam HANYA ada di sini.
+--
+-- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
+-- SAMA persis seperti user_id di email_verification_tokens di atas) --
+-- versi awal tabel ini SEMPAT memakainya, dan langsung meng-crash boot
+-- produksi dengan "psycopg2.errors.InvalidForeignKey: there is no unique
+-- constraint matching given keys for referenced table 'barbers'" -- tabel
+-- `barbers` di database produksi yang sudah lama berjalan ternyata (sama
+-- seperti `users`, lihat catatan panjang di email_verification_tokens)
+-- TIDAK (lagi) punya constraint UNIQUE/PRIMARY KEY murni pada `id` yang
+-- bisa dirujuk FK baru. Menghapus FK ini membuat migrasi ini idempotent &
+-- aman dijalankan pada schema produksi apa adanya.
 CREATE TABLE IF NOT EXISTS manual_customer_transaksi (
     id             SERIAL PRIMARY KEY,
     tenant_id      INTEGER NOT NULL,
@@ -562,7 +573,7 @@ CREATE TABLE IF NOT EXISTS manual_customer_transaksi (
     nama_customer  TEXT NOT NULL,
     jenis          TEXT NOT NULL,
     jam            TEXT NOT NULL,
-    barber_id      INTEGER REFERENCES barbers(id),
+    barber_id      INTEGER,
     tips           INTEGER NOT NULL DEFAULT 0,
     catatan        TEXT,
     transaksi_id   INTEGER,
@@ -574,10 +585,18 @@ CREATE TABLE IF NOT EXISTS manual_customer_transaksi (
 -- Layanan yang dipilih customer (many-to-many, SATU customer bisa ambil
 -- lebih dari satu service TANPA field "Jumlah Service" -- setiap baris di
 -- sini = qty 1, lihat manual_customer_db.py rule #5).
+--
+-- HOTFIX DEPLOY (sama seperti barber_id di atas): `service_id` SENGAJA
+-- TANPA "REFERENCES services(id)" -- tabel `services` produksi punya
+-- riwayat korupsi identik dengan `barbers`/`users` (lihat catatan panjang
+-- di email_verification_tokens). `manual_customer_transaksi_id` TETAP
+-- memakai REFERENCES + CASCADE karena merujuk tabel BARU di migrasi ini
+-- sendiri (baru saja benar-benar dibuat lewat CREATE TABLE di atas, bukan
+-- tabel lama yang mungkin sudah korup).
 CREATE TABLE IF NOT EXISTS manual_customer_transaksi_service (
     id                            SERIAL PRIMARY KEY,
     manual_customer_transaksi_id INTEGER NOT NULL REFERENCES manual_customer_transaksi(id) ON DELETE CASCADE,
-    service_id                   INTEGER NOT NULL REFERENCES services(id)
+    service_id                   INTEGER NOT NULL
 );
 
 -- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK
