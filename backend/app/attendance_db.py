@@ -394,10 +394,19 @@ def _menit_pulang_awal_baris(row: dict, settings: dict) -> int | None:
     return max(0, round((jam_pulang_dt - check_out_dt).total_seconds() / 60))
 
 
-def hitung_status_hari_ini(log: dict | None, settings: dict, sekarang: datetime = None) -> str:
+def hitung_status_hari_ini(log: dict | None, settings: dict, sekarang: datetime = None, tanggal: str = None) -> str:
+    """`tanggal` dipakai untuk menyusun jam_pulang PADA HARI BARIS ITU SENDIRI,
+    bukan hari ini -- kalau log punya kolom "tanggal" (baris attendance_logs
+    sungguhan) itu yang dipakai lebih dulu. Ini penting untuk baris HISTORIS:
+    dihitung ulang pakai tanggal hari ini akan salah membuat baris lama yang
+    belum check-out tampil selamanya sebagai "sedang_bekerja" alih-alih
+    "tidak_check_out" begitu tanggal itu sudah lewat. Kalau log None (baris
+    semu "belum ada log" dari get_log_list()) dan `tanggal` tidak diisi,
+    fallback ke tanggal `sekarang` (perilaku lama, dipakai endpoint self-
+    service /today yang memang selalu tentang hari ini)."""
     sekarang = sekarang or _sekarang_wib()
-    tanggal = sekarang.strftime("%Y-%m-%d")
-    jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
+    tanggal_acuan = (log or {}).get("tanggal") or tanggal or sekarang.strftime("%Y-%m-%d")
+    jam_pulang_dt = _gabung_jam(tanggal_acuan, settings["jam_pulang"])
     if log is None or not log.get("check_in_at"):
         return "belum_check_in" if sekarang < jam_pulang_dt else "tidak_check_in"
     if log.get("check_out_at"):
@@ -516,7 +525,7 @@ def get_log_list(tenant_id: int, tanggal: str = None, tanggal_dari: str = None, 
                 "check_in_at": None, "check_out_at": None, "check_in_status": None,
                 "durasi_kerja_menit": None, "tenant_id": tenant_id,
             }
-            semu["status"] = hitung_status_hari_ini(None, settings)
+            semu["status"] = hitung_status_hari_ini(None, settings, tanggal=tanggal_tunggal)
             hasil.append(semu)
 
     if status is not None:
@@ -528,7 +537,7 @@ def get_ringkasan_dashboard(tenant_id: int) -> dict:
     """Kartu ringkasan Dashboard Owner/Admin -- Total Barber, Hadir, Belum
     Hadir, Terlambat, Sedang Bekerja, Sudah Check Out, Tidak Check In,
     Tidak Check Out."""
-    daftar = get_log_list(tenant_id)
+    daftar = get_log_list(tenant_id, tanggal=_hari_ini_wib())
     total = len(daftar)
     hadir = sum(1 for r in daftar if r.get("check_in_at"))
     return {
@@ -796,22 +805,37 @@ def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None,
     sekarang = _sekarang_wib()
     now_iso = sekarang.isoformat(timespec="seconds")
     with get_conn() as conn:
-        conn.execute(
+        # REVISI (audit race condition): dulu ON CONFLICT DO UPDATE -- dua
+        # check-in nyaris bersamaan (tap ganda, atau device kedua) bisa
+        # SAMA-SAMA lolos validasi_checkin() (yang membaca "existing" di
+        # transaksi terpisah sebelum INSERT ini), dan yang datang belakangan
+        # diam-diam MENIMPA data lokasi/akurasi/browser/audit milik check-in
+        # pertama -- merusak tujuan modul ini sendiri sebagai jejak audit
+        # anti-fake-GPS. Sekarang DO NOTHING: constraint UNIQUE(barber_id,
+        # tanggal) di level DB yang jadi penentu akhir, bukan validasi
+        # Python yang bisa balapan -- request kedua yang kalah dideteksi
+        # lewat rowcount == 0 dan ditolak, BUKAN menimpa.
+        cur = conn.execute(
             """INSERT INTO attendance_logs
                    (barber_id, tanggal, check_in_at, check_in_latitude, check_in_longitude, check_in_accuracy,
                     check_in_speed, check_in_heading, check_in_jarak_meter, check_in_status, check_in_browser,
                     check_in_device, check_in_ip, created_at, tenant_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(barber_id, tanggal) DO UPDATE SET
-                   check_in_at = excluded.check_in_at, check_in_latitude = excluded.check_in_latitude,
-                   check_in_longitude = excluded.check_in_longitude, check_in_accuracy = excluded.check_in_accuracy,
-                   check_in_speed = excluded.check_in_speed, check_in_heading = excluded.check_in_heading,
-                   check_in_jarak_meter = excluded.check_in_jarak_meter, check_in_status = excluded.check_in_status,
-                   check_in_browser = excluded.check_in_browser, check_in_device = excluded.check_in_device,
-                   check_in_ip = excluded.check_in_ip""",
+               ON CONFLICT(barber_id, tanggal) DO NOTHING""",
             (barber_id, sekarang.strftime("%Y-%m-%d"), now_iso, latitude, longitude, accuracy, speed, heading,
              jarak, status_ketepatan, browser, device, ip_address, now_iso, tenant_id),
         )
+        gagal_race = cur.rowcount == 0
+    # catat_audit() dipanggil SETELAH blok `with` di atas selesai (commit +
+    # koneksi ditutup) -- catat_audit() membuka koneksi get_conn() SENDIRI,
+    # dan memanggilnya SELAGI transaksi INSERT di atas masih terbuka akan
+    # membuat dua koneksi penulis SQLite saling menunggu (deadlock), karena
+    # SQLite hanya mengizinkan satu penulis aktif dalam satu waktu.
+    if gagal_race:
+        catat_audit(barber_id, "check_in", False, alasan_gagal="Race: sudah Check In (konflik DB)",
+                    latitude=latitude, longitude=longitude, accuracy=accuracy,
+                    browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
+        raise ValueError("Anda sudah Check In hari ini.")
     catat_audit(barber_id, "check_in", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
     return _lengkapi(get_log_hari_ini(barber_id, tenant_id), settings)

@@ -359,7 +359,7 @@ const PageAbsensi = (() => {
       rincianCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Toko ini memakai Uang Harian Dinamis (mengikuti Absensi) -- cek rincian perhitungan Uang Harian " +
         "untuk tanggal tertentu di sini."));
-      const inputTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+      const inputTanggal = MugenUI.el("input", { type: "date", value: MugenUI.isoHariIniWib() });
       const btnCek = MugenUI.el("button", {}, "Cek Rincian");
       rincianCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
       rincianCard.appendChild(inputTanggal);
@@ -385,7 +385,7 @@ const PageAbsensi = (() => {
     koreksiCard.appendChild(MugenUI.el("h2", {}, "Ajukan Koreksi Absensi"));
     koreksiCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Lupa Check In atau Check Out? Ajukan koreksi jam yang seharusnya di sini -- akan diproses (disetujui/ditolak) oleh Admin/Owner."));
-    const kTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+    const kTanggal = MugenUI.el("input", { type: "date", value: MugenUI.isoHariIniWib() });
     const kJenis = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "check_in" }, "Check In"),
       MugenUI.el("option", { value: "check_out" }, "Check Out"),
@@ -737,22 +737,24 @@ const PageAbsensi = (() => {
       MugenUI.el("option", { value: "bulan" }, "Bulan Ini"),
       MugenUI.el("option", { value: "rentang" }, "Rentang Tanggal"),
     ]);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = MugenUI.isoHariIniWib();
     const inputDari = MugenUI.el("input", { type: "date", value: today, style: "display:none;" });
     const inputSampai = MugenUI.el("input", { type: "date", value: today, style: "display:none;" });
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:10px;" },
       [filBarber, filStatus, filPeriode, inputDari, inputSampai]));
 
     function rentangPeriode() {
-      const d = new Date();
+      // BUGFIX (audit): dulu `new Date()` (waktu lokal BROWSER, belum tentu
+      // WIB) dipakai untuk aritmatika tanggal lalu dikonversi balik lewat
+      // toISOString() (UTC) -- dua sumber pergeseran zona waktu sekaligus.
+      // MugenUI.tambahHariWib()/awalBulanWib() murni aritmatika kalender
+      // dari `today` yang SUDAH benar (WIB), tanpa konversi UTC sama sekali.
       if (filPeriode.value === "hari") return { tanggal: today };
       if (filPeriode.value === "minggu") {
-        const mulai = new Date(d); mulai.setDate(d.getDate() - 6);
-        return { tanggal_dari: mulai.toISOString().slice(0, 10), tanggal_sampai: today };
+        return { tanggal_dari: MugenUI.tambahHariWib(today, -6), tanggal_sampai: today };
       }
       if (filPeriode.value === "bulan") {
-        const mulai = new Date(d.getFullYear(), d.getMonth(), 1);
-        return { tanggal_dari: mulai.toISOString().slice(0, 10), tanggal_sampai: today };
+        return { tanggal_dari: MugenUI.awalBulanWib(today), tanggal_sampai: today };
       }
       return { tanggal_dari: inputDari.value, tanggal_sampai: inputSampai.value };
     }

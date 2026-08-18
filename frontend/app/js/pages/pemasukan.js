@@ -8,7 +8,8 @@
 
 const PagePemasukan = (() => {
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
+    return MugenUI.isoHariIniWib();
   }
 
   async function render(root) {
@@ -189,7 +190,15 @@ const PagePemasukan = (() => {
       debounceTimer = setTimeout(loadList, 300);
     }
 
+    // BUGFIX (audit, race condition): lihat catatan lengkap di
+    // pages/pengeluaran.js (pola sama persis) -- dua fetch tumpang tindih
+    // (mengetik cepat di pencarian, klik ganda filter) bisa selesai TIDAK
+    // berurutan, respons basi bisa menimpa hasil yang lebih baru.
+    let urutanTerkini = 0;
+    const _RESPON_BASI = Symbol("respon-basi");
+
     async function loadList() {
+      const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton tabel + crossfade lewat refreshInto(),
       // menggantikan teks "Memuat..." dan penggantian innerHTML manual.
       try {
@@ -198,6 +207,7 @@ const PagePemasukan = (() => {
           if (selKategori.value) qs.set("kategori", selKategori.value);
           if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
           const data = await MugenApi.get(`/api/pemasukan?${qs}`, { useCache: true });
+          if (urutanSaya !== urutanTerkini) throw _RESPON_BASI;
           const rows = Array.isArray(data) ? data : [];
           const box = MugenUI.el("div");
           if (data.__offline) box.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -240,6 +250,7 @@ const PagePemasukan = (() => {
           return box;
         }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
       } catch (e) {
+        if (e === _RESPON_BASI) return;
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.errorState(e.message));
       }

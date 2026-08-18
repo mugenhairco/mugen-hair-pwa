@@ -76,13 +76,18 @@ const PageBookPublic = (() => {
     "August", "September", "October", "November", "December"];
 
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
+    return MugenUI.isoHariIniWib();
   }
 
   function tambahHari(iso, n) {
-    const d = new Date(iso + "T00:00:00");
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
+    // BUGFIX (audit): pola lama (new Date(iso+"T00:00:00") lalu
+    // toISOString()) mengonversi balik ke UTC -- untuk browser di zona
+    // waktu POSITIF (termasuk WIB, UTC+7, audiens utama halaman booking
+    // publik ini), tengah malam lokal jatuh ke SORE HARI SEBELUMNYA dalam
+    // UTC, jadi tanggal hasilnya mundur satu hari. MugenUI.tambahHariWib()
+    // murni aritmatika kalender lokal, tidak konversi UTC sama sekali.
+    return MugenUI.tambahHariWib(iso, n);
   }
 
   function fieldRow(label, value, tebal) {

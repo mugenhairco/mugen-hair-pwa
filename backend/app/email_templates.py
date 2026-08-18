@@ -14,9 +14,25 @@ tema Terang) supaya konsisten dengan tampilan web -- HTML email TIDAK bisa
 membaca CSS custom property, jadi nilainya disalin manual di sini (satu
 tempat, dipakai SEMUA template lewat _KERANGKA())."""
 
+import html as _html
+
 _AKSEN = "#334155"
 _TEKS_DIM = "#64748b"
 _BATAS = "#e2e8f0"
+
+
+def _esc(teks: str) -> str:
+    """BUGFIX (audit): nama_penerima/nama_tenant/nama_role/username berasal
+    dari INPUT PENDAFTAR (nama owner, nama barbershop saat register, atau
+    Owner mengisi nama karyawan) -- dulu disisipkan langsung ke HTML lewat
+    f-string TANPA escaping sama sekali. Pendaftar bisa memasukkan
+    markup/link ke kolom "Nama Barbershop"/"Owner Name" dan itu akan
+    tampil apa adanya di email verifikasi/undangan yang BENAR-BENAR
+    terkirim dari noreply@rivoirsett.com -- celah phishing dari alamat
+    pengirim yang terlihat tepercaya. Dipakai untuk SEMUA teks yang
+    berasal dari input pengguna; TIDAK dipakai untuk link_verifikasi/
+    link_reset (URL yang server sendiri yang menyusun, bukan input bebas)."""
+    return _html.escape(str(teks), quote=False)
 
 
 def _kerangka(judul: str, isi_html: str) -> str:
@@ -58,6 +74,7 @@ def _tombol(teks: str, url: str) -> str:
 
 
 def template_verifikasi_email(nama_penerima: str, link_verifikasi: str, masa_berlaku_jam: int) -> str:
+    nama_penerima = _esc(nama_penerima)
     isi = f"""
       <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">
         Halo {nama_penerima},<br><br>
@@ -85,6 +102,8 @@ def template_undangan_user(nama_penerima: str, nama_tenant: str, nama_role: str,
     konteks (karyawan yang SUDAH ditambahkan Owner ke toko yang SUDAH
     berjalan) -- mekanisme link/token/masa berlakunya SAMA PERSIS (satu
     fungsi backend yang sama, email_auth_db.buat_token_verifikasi())."""
+    nama_penerima, nama_tenant, nama_role, username = (
+        _esc(nama_penerima), _esc(nama_tenant), _esc(nama_role), _esc(username))
     isi = f"""
       <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">
         Halo {nama_penerima},<br><br>
@@ -107,6 +126,7 @@ def template_undangan_user(nama_penerima: str, nama_tenant: str, nama_role: str,
 
 
 def template_reset_password(nama_penerima: str, link_reset: str, masa_berlaku_jam: int) -> str:
+    nama_penerima = _esc(nama_penerima)
     isi = f"""
       <p style="margin:0 0 16px;font-size:14px;color:#334155;line-height:1.6;">
         Halo {nama_penerima},<br><br>

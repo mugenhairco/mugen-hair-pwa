@@ -55,12 +55,33 @@ def simpan_subscription(user_id: int, tenant_id, endpoint: str, p256dh: str, aut
 
 
 def hapus_subscription(endpoint: str) -> None:
-    """Dipanggil DUA jalur: (1) pengguna sendiri menekan "Nonaktifkan
-    Notifikasi", (2) push_service.py otomatis begitu provider push balas
-    410 Gone/404 (subscription kedaluwarsa/dicabut browser -- endpoint lama
-    percuma disimpan terus, akan gagal setiap kali dipakai)."""
+    """Dipanggil TANPA konteks user login -- SATU-SATUNYA pemanggil sekarang
+    push_service.py otomatis begitu provider push balas 410 Gone/404
+    (subscription kedaluwarsa/dicabut browser, dipicu server sendiri saat
+    mengirim notifikasi, BUKAN dari request pengguna manapun -- endpoint
+    lama percuma disimpan terus, akan gagal setiap kali dipakai).
+
+    JANGAN dipanggil langsung dari endpoint yang menerima `endpoint` dari
+    body request pengguna -- pakai hapus_subscription_milik_user() di bawah
+    supaya tidak bisa menghapus subscription push MILIK ORANG LAIN (lihat
+    riwayat: dulu routers/push.py::unsubscribe() memanggil fungsi ini
+    langsung tanpa cek kepemilikan sama sekali)."""
     with get_conn() as conn:
         conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+
+def hapus_subscription_milik_user(user_id: int, endpoint: str) -> bool:
+    """Dipakai routers/push.py::unsubscribe() -- HANYA menghapus kalau baris
+    `endpoint` itu benar milik `user_id` yang sedang login. Return True kalau
+    ada baris yang terhapus, False kalau endpoint tidak ditemukan ATAU
+    ternyata milik user lain (caller tidak perlu tahu bedanya -- keduanya
+    sama-sama berarti "tidak ada subscription milik Anda dengan endpoint
+    ini", tidak membocorkan keberadaan subscription milik user lain)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", (endpoint, user_id)
+        )
+        return cur.rowcount > 0
 
 
 def get_subscriptions_untuk_user(user_id: int) -> list:

@@ -45,5 +45,11 @@ class UnsubscribeBody(BaseModel):
 
 @router.post("/unsubscribe")
 def unsubscribe(body: UnsubscribeBody, user: dict = Depends(get_current_user)):
-    push_db.hapus_subscription(body.endpoint)
+    # BUGFIX (audit, IDOR): dulu memanggil push_db.hapus_subscription()
+    # langsung -- fungsi itu menghapus HANYA berdasarkan endpoint, tanpa
+    # cek kepemilikan sama sekali, jadi siapa pun yang login (dari tenant
+    # mana pun) dan mengetahui string endpoint subscription push milik
+    # ORANG LAIN bisa menghapusnya secara permanen. Sekarang di-scope ke
+    # user["id"] yang sedang login.
+    push_db.hapus_subscription_milik_user(user["id"], body.endpoint)
     return {"ok": True}

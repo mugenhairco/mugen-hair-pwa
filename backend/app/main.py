@@ -506,6 +506,13 @@ def _reset_admin_darurat():
     otomatis/diam-diam mengubah akun siapa pun:
     - ADMIN_RESET_USERNAME
     - ADMIN_RESET_PASSWORD
+    - ADMIN_RESET_TENANT_ID (BUGFIX audit, OPSIONAL) -- isi id tenant kalau
+      deployment ini punya lebih dari satu barbershop, supaya pencarian/
+      pembuatan akun di-scope ketat ke tenant itu (lihat docstring
+      auth_db.reset_atau_buat_admin_darurat() untuk alasan lengkap: tanpa
+      ini, username yang kebetulan ada di lebih dari satu tenant akan
+      ditolak eksplisit, dan MEMBUAT admin baru yang belum pernah ada sama
+      sekali WAJIB mengisi variable ini).
 
     Kalau username itu sudah ada, password-nya di-reset (+ dipaksa jadi role
     admin & diaktifkan lagi kalau sempat nonaktif). Kalau belum ada, dibuat
@@ -513,14 +520,25 @@ def _reset_admin_darurat():
     disentuh sama sekali (lihat auth_db.reset_atau_buat_admin_darurat()).
 
     PENTING (dicetak juga saat startup): setelah berhasil login, SEGERA
-    hapus kedua environment variable ini dari server lalu ganti password
-    lewat menu Setting > User -- kalau dibiarkan, TIAP KALI server restart
-    akan mereset ulang ke password yang sama."""
+    hapus kedua/ketiga environment variable ini dari server lalu ganti
+    password lewat menu Setting > User -- kalau dibiarkan, TIAP KALI server
+    restart akan mereset ulang ke password yang sama."""
     username = os.environ.get("ADMIN_RESET_USERNAME", "").strip()
     password = os.environ.get("ADMIN_RESET_PASSWORD", "")
     if not username or not password:
         return
-    hasil = auth_db.reset_atau_buat_admin_darurat(username, password)
+    tenant_id_raw = os.environ.get("ADMIN_RESET_TENANT_ID", "").strip()
+    tenant_id = int(tenant_id_raw) if tenant_id_raw else None
+    try:
+        hasil = auth_db.reset_atau_buat_admin_darurat(username, password, tenant_id=tenant_id)
+    except ValueError as e:
+        # Ambigu (username ada di >1 tenant) atau butuh ADMIN_RESET_TENANT_ID
+        # untuk membuat admin baru -- JANGAN sampai menggagalkan boot server
+        # keseluruhan hanya karena env var break-glass ini salah isi.
+        logger.critical(
+            "[%s] ADMIN_RESET: GAGAL -- %s", _INSTANCE_ID, e,
+        )
+        return
     # AUDIT DATA HILANG SETELAH RESTART: dinaikkan ke logger.critical() (dari
     # sebelumnya print() biasa) -- kalau kedua environment variable ini
     # TIDAK SENGAJA dibiarkan terisi di server (lihat peringatan di

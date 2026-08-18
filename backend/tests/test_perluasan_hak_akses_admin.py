@@ -130,6 +130,13 @@ def test_pengeluaran_hapus_off_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import pengeluaran_db
+    import uang_kas_db
+    # BUGFIX (audit) uang_kas_db.tambah_penyesuaian() sekarang menolak
+    # penyesuaian "kurang" yang membuat saldo kas jadi negatif -- saldo
+    # awal tenant baru = 0, jadi Saldo Kas Awal diisi dulu supaya
+    # pengeluaran sumber_dana="kas" di bawah ini (bukan fokus test ini,
+    # murni butuh SATU baris pengeluaran untuk diuji hapus-nya) berhasil.
+    uang_kas_db.set_saldo_awal(1_000_000, "owner1", tenant_id)
     pengeluaran_id = pengeluaran_db.tambah_pengeluaran(
         tanggal="2026-09-01", kategori="Lainnya", keterangan="Tes", jumlah=10000,
         barber_id=None, aktif=True, sumber_dana="kas", dibuat_oleh="owner1", tenant_id=tenant_id,

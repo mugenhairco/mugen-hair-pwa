@@ -36,7 +36,7 @@ const PageIzinCuti = (() => {
 
   // ================= BARBER: pengajuan milik sendiri =================
   async function renderBarberView(root) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = MugenUI.isoHariIniWib(); // BUGFIX (audit): lihat MugenUI.isoHariIniWib()
     const formCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(formCard);

@@ -117,7 +117,14 @@ const PageDashboardBarber = (() => {
       );
     }
 
+    // BUGFIX (audit, race condition): lihat catatan lengkap di
+    // pages/dashboard_owner.js (pola sama persis) -- membalik bulan/tahun
+    // dengan cepat bisa membuat dua fetch tumpang tindih selesai TIDAK
+    // berurutan, data bulan yang lebih lama bisa menimpa bulan yang lebih baru.
+    let urutanTerkini = 0;
+
     async function load() {
+      const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat..." --
       // kartu asli otomatis beranimasi masuk begitu ditambahkan (lihat
       // .card { animation: mugen-fade-slide-in }).
@@ -131,6 +138,7 @@ const PageDashboardBarber = (() => {
           MugenApi.get(`/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
           MugenApi.get(`/api/rekap/transaksi?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
         ]);
+        if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
         body.innerHTML = "";
         if (r.__offline) body.appendChild(MugenUI.offlineBanner(r.__cachedAt));
 
@@ -201,6 +209,7 @@ const PageDashboardBarber = (() => {
           body.appendChild(reimburseTable);
         }
       } catch (e) {
+        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
         body.innerHTML = "";
         body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
       }

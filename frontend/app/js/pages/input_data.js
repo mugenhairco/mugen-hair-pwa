@@ -4,8 +4,10 @@
 
 const PageInputData = (() => {
   function todayIso() {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
+    // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib()
+    // (dulu toISOString().slice(0,10) di sini salah satu hari antara jam
+    // 00:00-06:59 WIB karena mengonversi ke UTC dulu).
+    return MugenUI.isoHariIniWib();
   }
 
   async function render(root) {

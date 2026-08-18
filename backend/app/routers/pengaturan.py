@@ -652,7 +652,15 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
         # blokir_sampai_verifikasi (lihat catatan UserBody.email di atas) --
         # kegagalan kirim (email_service.kirim_email() best-effort, TIDAK
         # PERNAH raise) TIDAK PERNAH menggagalkan pembuatan user itu sendiri.
-        email_auth_db.set_email_user(new_id, email)
+        # BUGFIX (audit): get_user_by_email() di atas sudah mengecek, TAPI
+        # itu check-then-act -- unique index case-insensitive di
+        # users.email (email_auth_migrasi.py) jadi penentu akhir untuk
+        # jendela race yang sangat sempit (dua request nyaris bersamaan
+        # dengan email sama persis).
+        try:
+            email_auth_db.set_email_user(new_id, email)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"User dibuat, tapi email gagal disimpan: {e}")
         token = email_auth_db.buat_token_verifikasi(new_id)
         link = email_service.link_verifikasi_email(token)
         tenant = tenant_db.get_tenant(user["tenant_id"])

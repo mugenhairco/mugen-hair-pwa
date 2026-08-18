@@ -32,6 +32,8 @@ selalu dipakai dan tidak boleh dibalik):
 import json
 import logging
 import re
+import threading
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -44,6 +46,20 @@ import r2_storage
 import whatsapp_service
 import whatsapp_templates
 from database import get_conn
+
+# BUGFIX (audit, race condition): _validasi_slot_tersedia() (SELECT overlap)
+# dan INSERT booking baru di buat_booking() dua langkah terpisah (check-
+# then-act) -- dua customer submit form booking publik untuk barber/slot
+# yang sama nyaris bersamaan bisa SAMA-SAMA lolos validasi sebelum salah
+# satu INSERT commit, menghasilkan dua booking aktif yang tumpang tindih.
+# Lock per (barber_id, tanggal) menyerialkan validasi+insert untuk
+# kombinasi itu -- cukup untuk topologi deployment aplikasi ini (satu
+# proses uvicorn tanpa --workers, lihat render.yaml).
+_kunci_per_slot_booking: dict[tuple, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_slot_booking(barber_id: int, tanggal: str) -> threading.Lock:
+    return _kunci_per_slot_booking[(barber_id, tanggal)]
 
 # PENYEMPURNAAN: "hari ini"/"jam sekarang" untuk keperluan slot booking HARUS
 # selalu dihitung memakai zona waktu Asia/Jakarta (WIB) -- BUKAN zona waktu
@@ -766,8 +782,6 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
         total_harga += int(s["harga"])
         total_durasi += int(s.get("durasi_menit") or 60)
 
-    _validasi_slot_tersedia(barber_id, tanggal, jam_mulai, total_durasi, tenant_id=tenant_id)
-
     jam_selesai = _ke_hhmm(_ke_menit(jam_mulai) + total_durasi)
     now = datetime.now().isoformat(timespec="seconds")
     # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: SEMUA
@@ -781,23 +795,31 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # untuk alur checkout gateway (buat transaksi provider SETELAH baris
     # ini dibuat).
     status_pembayaran_awal = "menunggu_verifikasi"
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
-            "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
-            "status_pembayaran, status_booking, catatan, created_at, tenant_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?)",
-            (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
-             customer_whatsapp.strip(), total_harga, total_durasi, metode_pembayaran,
-             status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id),
-        )
-        booking_id = cur.lastrowid
-        for s in items:
-            conn.execute(
-                "INSERT INTO booking_items (booking_id, service_id, nama_service, harga, durasi_menit) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
+
+    # BUGFIX (audit, race condition): validasi ketersediaan slot + INSERT
+    # booking dikunci BERSAMA per (barber_id, tanggal) -- lihat catatan
+    # _kunci_slot_booking() di atas. Sebelumnya dua langkah terpisah tanpa
+    # penguncian apa pun, membuka celah dua customer booking slot yang sama
+    # nyaris bersamaan lolos validasi berdua-duanya.
+    with _kunci_slot_booking(barber_id, tanggal):
+        _validasi_slot_tersedia(barber_id, tanggal, jam_mulai, total_durasi, tenant_id=tenant_id)
+        with get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
+                "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
+                "status_pembayaran, status_booking, catatan, created_at, tenant_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?)",
+                (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
+                 customer_whatsapp.strip(), total_harga, total_durasi, metode_pembayaran,
+                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id),
             )
+            booking_id = cur.lastrowid
+            for s in items:
+                conn.execute(
+                    "INSERT INTO booking_items (booking_id, service_id, nama_service, harga, durasi_menit) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
+                )
     booking_baru = get_booking(booking_id)
     # FITUR Notifikasi WhatsApp Otomatis Booking: HANYA metode "qris" (QRIS
     # offline yang di-upload Owner, customer scan sendiri) yang butuh

@@ -110,9 +110,26 @@ def list_transactions(tenant_id: int = None, tanggal_mulai: str = None, tanggal_
     if tenant_id is not None:
         data = [d for d in data if d["tenant_id"] == tenant_id]
     if tanggal_mulai is not None:
-        data = [d for d in data if d["tanggal"] >= tanggal_mulai]
+        # BUGFIX (audit): `tanggal` di baris hasil selalu datetime ISO
+        # LENGKAP (mis. "2026-08-17T14:32:00"), sedangkan `tanggal_mulai`
+        # bisa dikirim sebagai tanggal polos ("2026-08-17") -- pemanggil
+        # yang lupa memberi jam (bukan cuma frontend Super Admin yang
+        # kebetulan SUDAH menambahkan "T00:00:00"/"T23:59:59" secara
+        # defensif) tetap harus dapat hasil yang benar. Kalau formatnya
+        # tanggal polos, normalisasi ke AWAL hari itu supaya perbandingan
+        # string tetap benar apa pun panjang `tanggal` di baris data.
+        batas_mulai = tanggal_mulai if "T" in tanggal_mulai else f"{tanggal_mulai}T00:00:00"
+        data = [d for d in data if d["tanggal"] >= batas_mulai]
     if tanggal_selesai is not None:
-        data = [d for d in data if d["tanggal"] <= tanggal_selesai]
+        # BUGFIX (audit): tanpa normalisasi ini, `tanggal_selesai` tanggal
+        # polos ("2026-08-17") secara perbandingan STRING lebih KECIL dari
+        # SEMUA datetime lengkap di hari yang sama ("2026-08-17T00:00:01"
+        # dst, karena "2026-08-17" adalah PREFIX yang jadi string "lebih
+        # pendek" = "lebih kecil") -- hampir seluruh transaksi hari
+        # terakhir rentang jadi ter-exclude diam-diam, baik di tampilan
+        # layar maupun file export CSV (keduanya lewat fungsi yang sama).
+        batas_selesai = tanggal_selesai if "T" in tanggal_selesai else f"{tanggal_selesai}T23:59:59"
+        data = [d for d in data if d["tanggal"] <= batas_selesai]
     if status is not None:
         data = [d for d in data if d["status_unified"] == status]
     if metode_pembayaran is not None:

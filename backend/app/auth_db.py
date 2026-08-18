@@ -31,6 +31,7 @@ yang sudah tersimpan di database dari versi sebelumnya (dibuat lewat
 passlib) tetap valid diverifikasi lewat kode ini tanpa perlu migrasi data
 apa pun."""
 
+import secrets
 import sqlite3
 from contextlib import contextmanager
 
@@ -146,6 +147,12 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(pw_bytes, password_hash.encode("utf-8"))
     except Exception as e:
         raise RuntimeError(_pesan_diagnosa_bcrypt(e)) from e
+
+
+# Hash dummy untuk mitigasi timing side-channel di autentikasi() -- dibuat
+# SEKALI per proses dari string acak yang TIDAK PERNAH jadi password
+# siapa pun, jadi verify_password(apapun, hash ini) SELALU False.
+_HASH_DUMMY_ANTI_TIMING = hash_password(secrets.token_hex(32))
 
 
 def tambah_user(username: str, password: str, role: str, barber_id: int = None, tenant_id: int = None,
@@ -362,7 +369,7 @@ def ganti_password(user_id: int, password_baru: str):
                      (hash_password(password_baru), user_id))
 
 
-def reset_atau_buat_admin_darurat(username: str, password: str) -> str:
+def reset_atau_buat_admin_darurat(username: str, password: str, tenant_id: int = None) -> str:
     """'Break-glass' pemulihan akses admin -- dipanggil HANYA lewat
     main.py._reset_admin_darurat(), yang sendiri hanya berjalan kalau dua
     environment variable (ADMIN_RESET_USERNAME/ADMIN_RESET_PASSWORD) diisi
@@ -375,6 +382,23 @@ def reset_atau_buat_admin_darurat(username: str, password: str) -> str:
       password-nya di-reset, dipaksa role='admin' & aktif=1 (jadi juga
       memulihkan akun yang kebetulan sempat dinonaktifkan).
     - Kalau `username` itu BELUM ada: dibuat baru sebagai admin.
+
+    `tenant_id` (BUGFIX audit, opsional lewat env var ADMIN_RESET_TENANT_ID
+    di main.py) -- SEBELUMNYA pencarian username SAMA SEKALI tidak
+    di-scope per tenant: (1) kalau username itu KEBETULAN ada di lebih
+    dari satu tenant, fungsi lama diam-diam memilih salah satu tanpa
+    operator sadar tenant mana yang sebenarnya ter-promosikan; (2) saat
+    MEMBUAT admin darurat baru, baris yang di-INSERT tidak pernah mengisi
+    tenant_id, menghasilkan admin dengan tenant_id=NULL -- melanggar
+    invarian tambah_user() (hanya role='superadmin' yang boleh tenant_id
+    NULL) dan admin itu langsung terkunci dari SEMUA endpoint tenant-scoped
+    lewat get_current_tenant_id(). Sekarang: kalau `tenant_id` diisi,
+    pencarian & pembuatan di-scope ketat ke tenant itu. Kalau TIDAK diisi
+    (kompatibel mundur untuk deployment lama/single-tenant): username yang
+    cocok di LEBIH DARI SATU tenant menolak dengan error eksplisit (minta
+    operator mengisi ADMIN_RESET_TENANT_ID), dan MEMBUAT admin baru (belum
+    ada baris sama sekali) WAJIB tenant_id eksplisit -- tidak lagi diam-diam
+    membuat admin tanpa tenant.
 
     Baris user LAIN, dan seluruh tabel bisnis lain (barbers/transaksi/
     produk/pengeluaran/settings/dst di database.py), TIDAK disentuh sama
@@ -390,13 +414,29 @@ def reset_atau_buat_admin_darurat(username: str, password: str) -> str:
 
     pw_hash = hash_password(password)
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+        if tenant_id is not None:
+            row = conn.execute(
+                "SELECT id FROM users WHERE username = ? AND tenant_id = ?", (username, tenant_id)
+            ).fetchone()
+        else:
+            kandidat = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchall()
+            if len(kandidat) > 1:
+                raise ValueError(
+                    f"Username '{username}' ditemukan di lebih dari satu barbershop -- isi juga env var "
+                    "ADMIN_RESET_TENANT_ID supaya jelas akun tenant mana yang dituju."
+                )
+            row = kandidat[0] if kandidat else None
         if row is None:
+            if tenant_id is None:
+                raise ValueError(
+                    f"Username '{username}' belum ada di tenant manapun. Untuk MEMBUAT admin darurat baru, "
+                    "isi juga env var ADMIN_RESET_TENANT_ID (admin baru wajib terkait ke satu barbershop)."
+                )
             now = datetime.now().isoformat(timespec="seconds")
             conn.execute(
-                "INSERT INTO users (username, password_hash, role, barber_id, aktif, created_at) "
-                "VALUES (?, ?, 'admin', NULL, 1, ?)",
-                (username, pw_hash, now),
+                "INSERT INTO users (username, password_hash, role, barber_id, aktif, tenant_id, created_at) "
+                "VALUES (?, ?, 'admin', NULL, 1, ?, ?)",
+                (username, pw_hash, tenant_id, now),
             )
             return "dibuat"
         conn.execute(
@@ -436,7 +476,20 @@ def autentikasi(username: str, password: str, tenant_id: int = None):
         user.pop("password_hash")
         return user
 
-    cocok = [u for u in cari_kandidat_login(username) if verify_password(password, u["password_hash"])]
+    kandidat = cari_kandidat_login(username)
+    cocok = [u for u in kandidat if verify_password(password, u["password_hash"])]
+    # BUGFIX (audit, timing side-channel): dulu latensi total di sini
+    # berbanding lurus dengan JUMLAH kandidat (tenant berbeda yang
+    # kebetulan pakai username sama) -- secara teori bisa dipakai menebak
+    # lewat pengukuran waktu apakah suatu username eksis di lebih dari
+    # satu tenant. Kalau TEPAT SATU kandidat, tambahkan SATU verifikasi
+    # dummy (terhadap hash yang TIDAK PERNAH bisa cocok dengan password
+    # apa pun, dibuat sekali per proses) supaya waktunya tidak lagi mudah
+    # dibedakan dari kasus dua kandidat -- dijaga sesempit ini (bukan
+    # padding ke angka besar) supaya TIDAK menambah latensi login normal
+    # (kasus 0 kandidat = username salah, sudah cepat & tetap begitu).
+    if len(kandidat) == 1:
+        verify_password(password, _HASH_DUMMY_ANTI_TIMING)
     if not cocok:
         return None
     if len(cocok) > 1:

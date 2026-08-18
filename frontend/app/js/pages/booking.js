@@ -734,7 +734,7 @@ const PageBooking = (() => {
     liburFormCard.appendChild(MugenUI.el("h2", {}, "Hari Libur Toko"));
     liburFormCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Berbeda dengan Barber Holiday (per-barber): tanggal di sini menutup SELURUH barber sekaligus, mis. hari libur nasional."));
-    const inLiburTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+    const inLiburTanggal = MugenUI.el("input", { type: "date", value: isoHariIniWib() });
     const inLiburKeterangan = MugenUI.el("input", { type: "text", placeholder: "mis. Libur Lebaran, Tahun Baru" });
     const btnTambahLibur = MugenUI.el("button", { class: "btn-primary" }, "Tambah Libur Toko");
     const liburError = MugenUI.el("div", { class: "login-error" });
@@ -815,7 +815,7 @@ const PageBooking = (() => {
       "Barber yang libur otomatis tidak bisa dibooking pada tanggal itu (tetap tampil di halaman booking, abu-abu, status \"On Vacation\")."));
     const selBarber = MugenUI.el("select");
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    const inputTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+    const inputTanggal = MugenUI.el("input", { type: "date", value: isoHariIniWib() });
     const btnTandai = MugenUI.el("button", { class: "btn-primary" }, "Tandai Libur");
     const btnBatalkan = MugenUI.el("button", {}, "Batalkan Libur");
     const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -889,7 +889,7 @@ const PageBooking = (() => {
       "Untuk meeting, training, reservasi offline, istirahat, atau keperluan pribadi lain -- jam ini tidak bisa dibooking walau barber sedang masuk kerja."));
     const selBarber = MugenUI.el("select");
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    const inputTanggal = MugenUI.el("input", { type: "date", value: new Date().toISOString().slice(0, 10) });
+    const inputTanggal = MugenUI.el("input", { type: "date", value: isoHariIniWib() });
     const inputJamMulai = MugenUI.el("input", { type: "time" });
     const inputJamSelesai = MugenUI.el("input", { type: "time" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "mis. Meeting, Training, Istirahat" });

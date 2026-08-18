@@ -362,6 +362,8 @@ def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str =
     existing = get_reimburse(reimburse_id)
     if existing is None:
         raise ValueError("Reimburse tidak ditemukan.")
+    if existing["status"] != "pending":
+        raise ValueError("Klaim ini sudah diproses sebelumnya.")
     if existing["terkunci"]:
         raise ValueError(
             "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "

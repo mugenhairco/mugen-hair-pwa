@@ -43,7 +43,11 @@ Idempotent (aman dipanggil berulang kali), TIDAK PERNAH menghapus/
 menimpa data yang sudah ada.
 """
 
+import logging
+
 from database import get_conn
+
+logger = logging.getLogger("mugen")
 
 
 def migrasi_email_auth():
@@ -52,6 +56,7 @@ def migrasi_email_auth():
         _migrasi_tabel_verifikasi(conn)
         _migrasi_kolom_verifikasi_used_at(conn)
         _migrasi_tabel_reset_password(conn)
+        _migrasi_unique_index_email(conn)
 
 
 def _migrasi_kolom_users(conn):
@@ -106,3 +111,45 @@ def _migrasi_tabel_reset_password(conn):
             used_at     TEXT
         )
     """)
+
+
+def _migrasi_unique_index_email(conn):
+    """BUGFIX (audit): dulu keunikan `users.email` HANYA dijaga lewat SELECT
+    sebelum INSERT/UPDATE di level Python (email_auth_db.get_user_by_email(),
+    dipanggil tenant_registration.py::register()/pengaturan.py::tambah_user())
+    -- TOCTOU klasik, dua pendaftaran bersamaan dengan email yang sama bisa
+    sama-sama lolos, lalu get_user_by_email() (dipakai alur Lupa Password)
+    mengambil salah satu secara tidak menentu. Index UNIQUE case-insensitive
+    (LOWER(email), konsisten dengan pencarian di get_user_by_email() yang
+    SUDAH case-insensitive) di level database jadi penentu akhir yang atomik.
+
+    Dijalankan idempoten SETIAP KALI startup (bukan sekali lewat flag
+    settings seperti migrasi lain) -- kalau SUDAH ada, `CREATE UNIQUE INDEX
+    IF NOT EXISTS` no-op. SEBELUM mencoba membuat index, dicek dulu lewat
+    query biasa apakah sudah ada duplikat email di data lama (kemungkinan
+    kecil, dari sebelum fitur email ini ada) -- KALAU dicoba langsung dan
+    ternyata ada duplikat, `CREATE UNIQUE INDEX` akan gagal DI TENGAH
+    transaksi startup yang sama; di PostgreSQL itu meracuni SELURUH
+    transaksi (setiap statement setelahnya ikut gagal sampai eksplisit
+    ROLLBACK), bisa menggagalkan seluruh migrasi startup lain yang tidak
+    ada hubungannya. Dengan pengecekan proaktif ini, index HANYA dicoba
+    dibuat kalau sudah pasti aman. Kalau ada duplikat, dicatat CRITICAL
+    supaya operator sadar & bisa membereskan manual -- TIDAK menggagalkan
+    boot, retry otomatis tiap startup berikutnya sampai data dibereskan."""
+    duplikat = conn.execute(
+        "SELECT LOWER(email) AS e, COUNT(*) AS c FROM users WHERE email IS NOT NULL "
+        "GROUP BY LOWER(email) HAVING COUNT(*) > 1"
+    ).fetchall()
+    if duplikat:
+        contoh = ", ".join(sorted({r["e"] for r in duplikat})[:5])
+        logger.critical(
+            "MIGRASI email_auth: %d email duplikat (case-insensitive) ditemukan di data lama "
+            "(contoh: %s) -- unique index users.email TIDAK dibuat sampai data ini dibereskan "
+            "manual. Keunikan email SEMENTARA hanya dijaga di level aplikasi (bisa race dalam "
+            "kondisi sangat jarang).", len(duplikat), contoh,
+        )
+        return
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unik ON users (email COLLATE NOCASE) "
+        "WHERE email IS NOT NULL"
+    )

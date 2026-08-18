@@ -21,10 +21,35 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 import auth_db
+import db_compat
+
+_SECRET_KEY_DEFAULT_DEV = "dev-secret-jangan-dipakai-di-produksi"
 
 # SECRET_KEY WAJIB diisi lewat environment variable saat deploy (lihat render.yaml).
 # Default di bawah ini HANYA untuk development lokal.
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-jangan-dipakai-di-produksi")
+SECRET_KEY = os.environ.get("SECRET_KEY", _SECRET_KEY_DEFAULT_DEV)
+
+# BUGFIX (audit): dulu tidak ada penjagaan APA PUN kalau env var SECRET_KEY
+# lupa diset saat deploy -- aplikasi tetap jalan diam-diam memakai nilai
+# default di atas, dan siapa pun yang tahu string default itu (source code
+# ini publik) bisa memalsukan token login untuk USER MANAPUN termasuk admin
+# bootstrap (itsdangerous cuma menandatangani {"user_id": N}, tidak ada
+# lapisan keamanan lain). render.yaml sudah generateValue:true untuk
+# deployment lewat Render, tapi README mendokumentasikan jalur hosting
+# manual lain juga -- fail-fast di sini (gagal boot, bukan gagal diam-diam
+# saat runtime) untuk jalur mana pun. db_compat.IS_POSTGRES dipakai sebagai
+# penanda "ini kemungkinan besar deployment sungguhan" (dev lokal & seluruh
+# test suite selalu memakai SQLite tanpa DATABASE_URL) -- dev lokal Postgres
+# manual TETAP wajib mengisi SECRET_KEY sendiri, itu memang praktik yang benar.
+if SECRET_KEY == _SECRET_KEY_DEFAULT_DEV and db_compat.IS_POSTGRES:
+    raise RuntimeError(
+        "SECRET_KEY belum diisi (env var kosong, jatuh ke nilai default development) "
+        "padahal DATABASE_URL (Postgres) sudah diisi -- ini terdeteksi sebagai deployment "
+        "sungguhan, bukan dev lokal. Aplikasi MENOLAK jalan dengan konfigurasi ini karena "
+        "nilai default ada di source code publik dan bisa dipakai memalsukan token login "
+        "siapa pun. Isi SECRET_KEY lewat environment variable sebelum deploy."
+    )
+
 TOKEN_MAX_AGE_DETIK = 60 * 60 * 24 * 14  # 14 hari
 
 _serializer = URLSafeTimedSerializer(SECRET_KEY, salt="mugen-hair-auth")
@@ -79,6 +104,23 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer
         if tenant is None or tenant["status"] != "aktif":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                  detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
+    # BUGFIX (audit): gerbang fitur "Aplikasi Barber" (barber_app) SEBELUMNYA
+    # hanya dicek SEKALI saat login (routers/auth_router.py) -- token barber
+    # berlaku sampai 14 hari (TOKEN_MAX_AGE_DETIK), jadi kalau Superadmin
+    # mencabut fitur ini dari paket tenant SETELAH barber login, sesi lama
+    # tetap bisa dipakai penuh sampai token itu sendiri kedaluwarsa,
+    # bertentangan dengan desain fail-closed TANPA grandfather yang memang
+    # diminta untuk fitur ini. Dicek ulang di SINI (satu-satunya titik yang
+    # dilewati SETIAP request ber-token, sama seperti pengecekan status
+    # tenant di atas) supaya pencabutan fitur langsung berlaku, bukan
+    # menunggu token expired.
+    if user["role"] == "barber" and user.get("tenant_id") is not None:
+        import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
+        if not feature_access.tenant_has_feature(user["tenant_id"], "barber_app"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Aplikasi Barber tidak tersedia di paket toko ini. Hubungi Owner untuk upgrade paket.",
+            )
     user.pop("password_hash", None)
     return user
 
@@ -155,7 +197,20 @@ def resolve_tenant_hibrid(request: Request, credentials: HTTPAuthorizationCreden
             user_id = _decode_token(credentials.credentials)
             user = auth_db.get_user(user_id)
             if user is not None and user.get("aktif") and user.get("tenant_id") is not None:
-                return user["tenant_id"]
+                # BUGFIX (audit): dulu tidak mengecek status tenant di sini
+                # sama sekali -- beda dari get_current_user() yang secara
+                # eksplisit mengecek ulang status tenant di SETIAP request
+                # dan menjamin tenant nonaktif "diblokir di mana pun,
+                # langsung" (lihat docstring-nya). Endpoint hybrid ini
+                # (identitas/logo/website content) dulu jadi celah: staff
+                # yang tokennya masih hidup tetap dapat data tenant yang
+                # sudah dinonaktifkan Superadmin. Kalau tenant sudah tidak
+                # aktif, JANGAN pakai sesi ini -- fallback ke jalur publik
+                # di bawah (yang SUDAH menolak tenant nonaktif dengan 404).
+                import tenant_db  # import lokal: hindari import siklik
+                tenant = tenant_db.get_tenant(user["tenant_id"])
+                if tenant is not None and tenant["status"] == "aktif":
+                    return user["tenant_id"]
         except HTTPException:
             pass
     return resolve_tenant_publik(request, tenant)
@@ -227,7 +282,21 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
             if user is not None and user.get("aktif"):
                 if user.get("role") == "superadmin":
                     return None
-                return user.get("tenant_id")
+                # BUGFIX (audit): sama seperti resolve_tenant_hibrid() di
+                # atas -- dulu tidak mengecek status tenant, jadi staff
+                # dengan token yang masih hidup tetap mendapat branding
+                # tenant yang sudah dinonaktifkan Superadmin. Kalau tenant
+                # session ini sudah nonaktif, JANGAN pakai -- lanjut ke
+                # fallback slug publik di bawah (yang sudah return None =
+                # branding platform kalau tidak ada slug lain).
+                tid = user.get("tenant_id")
+                if tid is not None:
+                    import tenant_db  # import lokal: hindari import siklik
+                    tenant = tenant_db.get_tenant(tid)
+                    if tenant is not None and tenant["status"] == "aktif":
+                        return tid
+                else:
+                    return tid
         except HTTPException:
             pass
     import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
