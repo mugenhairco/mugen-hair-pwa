@@ -59,3 +59,10 @@ openpyxl>=3.1.0
 # no-op, TIDAK pernah crash saat boot).
 pywebpush>=2.0.0
 
+# Migrasi Faspay SNAP Advance: signature standar SNAP (Bank Indonesia/ASPI)
+# memakai RSA-SHA256 (PKCS#1 v1.5) -- lihat gateway_client_base.py::
+# sign_sha256_rsa()/verify_sha256_rsa(). Sebelumnya hanya terpasang transitif
+# lewat pywebpush (VAPID) tanpa dijamin -- sekarang dicantumkan eksplisit
+# karena SNAP Advance mengimpornya langsung.
+cryptography>=41.0.0
+

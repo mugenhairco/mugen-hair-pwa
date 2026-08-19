@@ -103,6 +103,12 @@ const PageSuperadmin = (() => {
     // kartu Billing SaaS (subsConfigCard/billing*Card) di atas sama sekali,
     // integrasi terpisah total (lihat payment_gateway_db.py).
     const paymentGatewayCard = MugenUI.el("div", { class: "card" });
+    // Migrasi Faspay SNAP Advance: provider BARU, TERPISAH TOTAL dari kartu
+    // "Payment Gateway" (Xpress v4) di atas -- lihat snap_advance_db.py.
+    // Xpress v4 TETAP berjalan penuh selama masa transisi (kartu di atas
+    // TIDAK disentuh), kartu ini murni TAMBAHAN untuk mengisi kredensial
+    // SNAP Advance begitu tersedia dari Faspay.
+    const snapAdvanceCard = MugenUI.el("div", { class: "card" });
     const auditCard = MugenUI.el("div", { class: "card" });
     // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tab
     // baru "Riwayat Transaksi" -- pusat monitoring SELURUH transaksi
@@ -153,6 +159,7 @@ const PageSuperadmin = (() => {
     tabLanding.appendChild(landingFooterCard);
     tabPgw.appendChild(billingGatewayCard);
     tabPgw.appendChild(paymentGatewayCard);
+    tabPgw.appendChild(snapAdvanceCard);
     tabTransaksi.appendChild(transaksiSummaryCard);
     tabTransaksi.appendChild(transaksiCard);
 
@@ -1297,6 +1304,126 @@ const PageSuperadmin = (() => {
     });
 
     // ---------------------------------------------------------------
+    // Migrasi Faspay SNAP Advance -- kartu konfigurasi TERPISAH dari kartu
+    // "Payment Gateway" (Xpress v4) di atas, lihat snap_advance_db.py.
+    // Xpress v4 TETAP jadi provider aktif untuk booking/billing sampai SNAP
+    // Advance tervalidasi produksi -- mengisi kredensial di sini TIDAK
+    // memindahkan lalu lintas pembayaran apa pun secara otomatis.
+    // ---------------------------------------------------------------
+    snapAdvanceCard.appendChild(MugenUI.el("h2", {}, "Faspay SNAP Advance (Migrasi)"));
+    snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Provider BARU yang akan MENGGANTIKAN Payment Gateway (Xpress v4) di atas -- dipakai bersama untuk Booking Payment Tenant & SaaS Billing (Merchant ID Faspay yang sama). Endpoint create-transaction/webhook MASIH PENDING FASPAY (menunggu dokumentasi/kredensial resmi) -- mengisi form ini menyiapkan kredensial, BELUM mengaktifkan pembayaran sungguhan."));
+
+    const inSnapEnv = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "sandbox" }, "Sandbox"),
+      MugenUI.el("option", { value: "production" }, "Production"),
+    ]);
+    const inSnapSandboxUrl = MugenUI.el("input", { type: "text", placeholder: "PENDING FASPAY -- belum dikonfirmasi" });
+    const inSnapProductionUrl = MugenUI.el("input", { type: "text", placeholder: "PENDING FASPAY -- belum dikonfirmasi" });
+    const inSnapMerchantId = MugenUI.el("input", { type: "text" });
+    const inSnapPartnerId = MugenUI.el("input", { type: "text" });
+    const inSnapClientId = MugenUI.el("input", { type: "text" });
+    const inSnapClientSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapPrivateKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PRIVATE KEY-----" });
+    const inSnapPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay, untuk verifikasi webhook)" });
+    const inSnapWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapTimeout = MugenUI.el("input", { type: "number", min: "1" });
+    const inSnapRetryMax = MugenUI.el("input", { type: "number", min: "0" });
+
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Environment"));
+    snapAdvanceCard.appendChild(inSnapEnv);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Sandbox Base URL"));
+    snapAdvanceCard.appendChild(inSnapSandboxUrl);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Production Base URL"));
+    snapAdvanceCard.appendChild(inSnapProductionUrl);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Merchant ID"));
+    snapAdvanceCard.appendChild(inSnapMerchantId);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Partner ID"));
+    snapAdvanceCard.appendChild(inSnapPartnerId);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client ID"));
+    snapAdvanceCard.appendChild(inSnapClientId);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client Secret"));
+    snapAdvanceCard.appendChild(inSnapClientSecret);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Private Key (RSA, milik merchant -- untuk menandatangani permintaan)"));
+    snapAdvanceCard.appendChild(inSnapPrivateKey);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Public Key Faspay (untuk memverifikasi webhook masuk)"));
+    snapAdvanceCard.appendChild(inSnapPublicKey);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Webhook Secret (kalau ada)"));
+    snapAdvanceCard.appendChild(inSnapWebhookSecret);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Timeout (detik)"));
+    snapAdvanceCard.appendChild(inSnapTimeout);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Retry Max"));
+    snapAdvanceCard.appendChild(inSnapRetryMax);
+    snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
+      `URL webhook SNAP Advance (SATU endpoint untuk Booking + SaaS Billing): ${MUGEN_API_BASE}/api/public/gateway/snap-notification`));
+
+    snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Aktif"));
+    snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },
+      "Dynamic E-Wallet BELUM tersedia di sini -- jalur teknisnya (SNAP QRIS atau API terpisah) masih PENDING FASPAY (lihat laporan analisis \"Faspay SNAP Migration\")."));
+    const snapChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
+    snapAdvanceCard.appendChild(snapChannelList);
+
+    const errorSnap = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanSnap = MugenUI.el("button", { class: "btn-primary" }, "Simpan SNAP Advance");
+    snapAdvanceCard.appendChild(errorSnap);
+    snapAdvanceCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSnap));
+
+    let snapChannelLabel = {};
+    const snapChannelCheckbox = {};
+
+    function renderSnapChannelList() {
+      snapChannelList.innerHTML = "";
+      for (const key of Object.keys(snapChannelLabel)) {
+        const sudahAda = snapChannelCheckbox[key];
+        const cb = MugenUI.el("input", { type: "checkbox" });
+        cb.checked = sudahAda ? sudahAda.checked : false;
+        snapChannelCheckbox[key] = cb;
+        snapChannelList.appendChild(MugenUI.el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
+          cb, MugenUI.el("span", {}, snapChannelLabel[key] || key),
+        ]));
+      }
+    }
+
+    async function loadSnapAdvanceConfig() {
+      try {
+        const cfg = await MugenApi.get("/api/superadmin/snap-advance/config");
+        inSnapEnv.value = cfg.snap_environment || "sandbox";
+        inSnapSandboxUrl.value = cfg.snap_sandbox_base_url || "";
+        inSnapProductionUrl.value = cfg.snap_production_base_url || "";
+        inSnapMerchantId.value = cfg.snap_merchant_id || "";
+        inSnapPartnerId.value = cfg.snap_partner_id || "";
+        inSnapClientId.value = cfg.snap_client_id || "";
+        inSnapClientSecret.value = cfg.snap_client_secret || "";
+        inSnapPrivateKey.value = cfg.snap_private_key || "";
+        inSnapPublicKey.value = cfg.snap_faspay_public_key || "";
+        inSnapWebhookSecret.value = cfg.snap_webhook_secret || "";
+        inSnapTimeout.value = cfg.snap_timeout_detik || 30;
+        inSnapRetryMax.value = cfg.snap_retry_max || 3;
+        snapChannelLabel = cfg.channel_label || {};
+        renderSnapChannelList();
+        for (const key of (cfg.snap_channel_aktif || [])) if (snapChannelCheckbox[key]) snapChannelCheckbox[key].checked = true;
+      } catch (e) { errorSnap.textContent = e.message; }
+    }
+    btnSimpanSnap.addEventListener("click", async () => {
+      errorSnap.textContent = "";
+      const channel_aktif = Object.keys(snapChannelCheckbox).filter((key) => snapChannelCheckbox[key].checked);
+      try {
+        await MugenUI.withButtonLoading(btnSimpanSnap, () => MugenApi.put("/api/superadmin/snap-advance/config", {
+          environment: inSnapEnv.value, sandbox_base_url: inSnapSandboxUrl.value,
+          production_base_url: inSnapProductionUrl.value, merchant_id: inSnapMerchantId.value,
+          partner_id: inSnapPartnerId.value, client_id: inSnapClientId.value, client_secret: inSnapClientSecret.value,
+          private_key: inSnapPrivateKey.value, faspay_public_key: inSnapPublicKey.value,
+          webhook_secret: inSnapWebhookSecret.value, timeout_detik: Number(inSnapTimeout.value) || 30,
+          retry_max: Number(inSnapRetryMax.value) || 0, channel_aktif,
+        }));
+        MugenUI.toast("Konfigurasi SNAP Advance disimpan.", "success");
+        loadAuditLog();
+      } catch (e) {
+        errorSnap.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---------------------------------------------------------------
     // 13. RIWAYAT TRANSAKSI (Implementasi Payment Gateway & Riwayat
     // Transaksi Multi-Tenant) -- pusat monitoring SELURUH transaksi
     // pembayaran platform (booking customer + langganan SaaS Owner), murni
@@ -1569,6 +1696,7 @@ const PageSuperadmin = (() => {
     await loadLandingContact();
     await loadLandingFooter();
     await loadPaymentGatewayConfig();
+    await loadSnapAdvanceConfig();
     await loadTransaksi();
     await loadAuditLog();
   }

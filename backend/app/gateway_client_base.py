@@ -18,6 +18,7 @@ sini, TIDAK PERNAH memanggil `requests` langsung sendiri-sendiri -- supaya
 perilaku timeout/error SELALU konsisten di seluruh integrasi Payment
 Gateway, tidak peduli jenis transaksinya."""
 
+import base64
 import hashlib
 import hmac
 import logging
@@ -26,6 +27,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
 _TIMEOUT_DETIK_DEFAULT = 15
 
@@ -168,3 +173,76 @@ def verify_sha512(parts: list, key: str, signature: str) -> bool:
     # cocok (celah timing attack teoretis, risiko nyata rendah lewat HTTPS
     # tapi ini hardening standar untuk perbandingan signature/token).
     return hmac.compare_digest(hitung, signature)
+
+
+# =============================================================================
+# Migrasi Faspay SNAP Advance -- signature standar SNAP (Standar Nasional Open
+# API Pembayaran, Bank Indonesia/ASPI)
+# =============================================================================
+# CATATAN SUMBER & BATASAN (WAJIB dibaca sebelum memakai fungsi di bawah):
+# Algoritma "RSA-SHA256 (PKCS#1 v1.5), hasil di-base64-encode, dikirim lewat
+# header X-SIGNATURE" adalah bagian dari standar SNAP yang DIWAJIBKAN Bank
+# Indonesia/ASPI untuk SELURUH penyelenggara berlisensi (Faspay, Xendit,
+# Espay, Duitku, dst) -- BUKAN pilihan bebas satu provider, jadi aman
+# diimplementasikan sebagai primitif generik di sini (lihat laporan analisis
+# "Faspay SNAP Migration", Tahap 2.4 -- dikonfirmasi dari dokumentasi publik
+# SNAP lintas-provider, BUKAN tebakan).
+#
+# YANG TIDAK diketahui dari sini (PENDING FASPAY, TIDAK diimplementasikan di
+# mana pun di proyek ini sampai dikonfirmasi tertulis oleh Faspay):
+# - String-to-sign PERSIS per endpoint SNAP Faspay (urutan/isi field yang
+#   digabung sebelum ditandatangani beda per jenis layanan -- get-token vs
+#   create-VA vs create-QRIS vs webhook -- dan Faspay belum pernah
+#   mengonfirmasi formula persisnya ke tim ini).
+# - Endpoint get-token B2B Faspay yang sesungguhnya (path, header lengkap).
+# - Header SNAP lain di luar X-SIGNATURE (X-TIMESTAMP/X-PARTNER-ID/
+#   X-EXTERNAL-ID) -- FORMAT nilainya per Faspay belum terverifikasi.
+#
+# snap_advance_client.py-lah yang merangkai string-to-sign & memanggil fungsi
+# di bawah ini -- MURNI stub PENDING FASPAY sampai formula itu terkonfirmasi.
+# Fungsi DI SINI hanya primitif kriptografi generik (sign/verify), TIDAK tahu
+# apa pun soal format SNAP Faspay spesifik -- sama seperti sign_sha1_of_md5()/
+# verify_sha512() di atas yang juga tidak tahu soal Xpress/Midtrans spesifik.
+
+def sign_sha256_rsa(string_to_sign: str, private_key_pem: str) -> str:
+    """RSA-SHA256 (PKCS#1 v1.5) atas `string_to_sign`, hasil di-base64-encode
+    -- primitif signature standar SNAP (lihat catatan modul di atas).
+    `private_key_pem` = private key merchant format PEM (PKCS#1/PKCS#8,
+    TANPA passphrase -- pemanggil bertanggung jawab men-decrypt dulu kalau
+    key tersimpan terenkripsi).
+
+    Melempar ValueError kalau `private_key_pem` kosong/tidak valid --
+    pemanggil (snap_advance_client.py) WAJIB menerjemahkannya jadi
+    GatewayNotConfiguredError, SAMA seperti pola kredensial kosong di
+    fungsi signature lain modul ini."""
+    if not private_key_pem:
+        raise ValueError("Private key SNAP Advance belum diisi.")
+    try:
+        key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    except ValueError as e:
+        raise ValueError(f"Private key SNAP Advance tidak valid: {e}") from e
+    if not isinstance(key, RSAPrivateKey):
+        raise ValueError("Private key SNAP Advance harus RSA (SNAP mewajibkan RSA-SHA256).")
+    tanda_tangan = key.sign(string_to_sign.encode(), padding.PKCS1v15(), hashes.SHA256())
+    return base64.b64encode(tanda_tangan).decode()
+
+
+def verify_sha256_rsa(string_to_sign: str, signature_b64: str, public_key_pem: str) -> bool:
+    """Verifikasi signature RSA-SHA256 (PKCS#1 v1.5) -- pasangan
+    sign_sha256_rsa() di atas, dipakai untuk memvalidasi notifikasi/webhook
+    yang DATANG dari Faspay (ditandatangani dengan private key Faspay,
+    diverifikasi dengan public key Faspay yang dibagikan ke merchant).
+    Return False (BUKAN exception) kalau `public_key_pem`/`signature_b64`
+    kosong atau signature tidak valid -- pemanggil (webhook handler) WAJIB
+    menolak notifikasi tanpa signature yang valid, sama seperti
+    verify_sha1_of_md5()/verify_sha512() di atas."""
+    if not (public_key_pem and signature_b64):
+        return False
+    try:
+        key = serialization.load_pem_public_key(public_key_pem.encode())
+        if not isinstance(key, RSAPublicKey):
+            return False
+        key.verify(base64.b64decode(signature_b64), string_to_sign.encode(), padding.PKCS1v15(), hashes.SHA256())
+        return True
+    except (InvalidSignature, ValueError, TypeError):
+        return False
