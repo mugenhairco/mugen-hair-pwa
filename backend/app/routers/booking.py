@@ -414,7 +414,29 @@ def verifikasi_booking(booking_id: int, user: dict = Depends(require_permission(
             detail="Booking Payment Gateway tidak bisa diverifikasi manual -- status hanya berubah otomatis begitu pembayaran terkonfirmasi dari provider.",
         )
     try:
-        booking_db.verifikasi_pembayaran(booking_id)
+        booking_db.verifikasi_pembayaran(booking_id, oleh=user.get("username"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return booking_db.get_booking(booking_id)
+
+
+@router.post("/{booking_id}/terima")
+def terima_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
+    """FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp: "Verifikasi
+    Booking" -- INDEPENDEN dari endpoint verifikasi_booking() di atas
+    ("Payment Diterima"), lihat booking_db.terima_booking() untuk penjelasan
+    lengkap. Metode "gateway" TIDAK relevan untuk aksi manual ini (checkout
+    & pembayaran 100% otomatis lewat Faspay, admin tidak pernah perlu
+    "menerima" booking metode ini) -- guard SAMA seperti endpoint di atas."""
+    booking = booking_db.get_booking(booking_id)
+    _pastikan_booking_tenant_sama(user, booking)
+    if booking["metode_pembayaran"] == "gateway":
+        raise HTTPException(
+            status_code=422,
+            detail="Booking Payment Gateway tidak perlu diverifikasi manual -- checkout & pembayaran berjalan otomatis lewat Faspay.",
+        )
+    try:
+        booking_db.terima_booking(booking_id, oleh=user.get("username"))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return booking_db.get_booking(booking_id)

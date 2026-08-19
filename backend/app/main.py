@@ -55,6 +55,7 @@ from pengaturan_migrasi import migrasi_pengaturan
 from revisi_bonus_migrasi import migrasi_revisi_bonus
 from booking_migrasi import migrasi_booking
 from booking_form_migrasi import migrasi_booking_form
+from booking_verifikasi_migrasi import migrasi_booking_verifikasi
 from produk_migrasi import migrasi_produk
 from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
@@ -404,6 +405,7 @@ def on_startup():
         migrasi_revisi_bonus() # REVISI: kolom uang_harian per-barber + seed tier bonus (idempotent)
         migrasi_booking()      # BOOKING: kolom durasi_menit di services + seed setting booking (idempotent)
         migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
+        migrasi_booking_verifikasi()  # Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp: kolom verifikasi_booking_at/oleh + pembayaran_diterima_at/oleh di bookings (idempotent)
         migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
         migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)

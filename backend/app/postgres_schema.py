@@ -226,7 +226,11 @@ CREATE TABLE IF NOT EXISTS bookings (
     status_pembayaran   TEXT NOT NULL DEFAULT 'menunggu_verifikasi',
     status_booking      TEXT NOT NULL DEFAULT 'aktif',
     catatan             TEXT,
-    created_at          TEXT NOT NULL
+    created_at          TEXT NOT NULL,
+    verifikasi_booking_at    TEXT,
+    verifikasi_booking_oleh  TEXT,
+    pembayaran_diterima_at   TEXT,
+    pembayaran_diterima_oleh TEXT
 );
 
 CREATE TABLE IF NOT EXISTS booking_items (
@@ -642,6 +646,17 @@ ALTER TABLE website_gallery ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE closed_slot ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE toko_libur ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
+
+-- FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp ("Verifikasi
+-- Booking"/"Payment Diterima" independen, lihat booking_db.py jalur SQLite
+-- untuk penjelasan lengkap): instalasi Postgres yang SUDAH ADA sebelum
+-- kolom ini ditambahkan ke CREATE TABLE bookings di atas. SEMUA nullable,
+-- TANPA backfill -- NULL memang berarti "belum pernah", bukan nilai yang
+-- harus diisi untuk booking lama.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS verifikasi_booking_at TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS verifikasi_booking_oleh TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_at TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_oleh TEXT;
 
 -- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): kolom identitas Owner
 -- yang dikumpulkan lewat form Register publik -- lihat landing_migrasi.py

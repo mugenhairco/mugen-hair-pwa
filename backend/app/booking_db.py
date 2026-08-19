@@ -121,6 +121,10 @@ def init_booking_db():
                 status_booking      TEXT NOT NULL DEFAULT 'aktif',
                 catatan             TEXT,
                 created_at          TEXT NOT NULL,
+                verifikasi_booking_at    TEXT,
+                verifikasi_booking_oleh  TEXT,
+                pembayaran_diterima_at   TEXT,
+                pembayaran_diterima_oleh TEXT,
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
@@ -968,23 +972,79 @@ def batalkan_booking(booking_id: int):
         _kirim_notifikasi_wa_booking(get_booking(booking_id), "pembatalan")
 
 
-def verifikasi_pembayaran(booking_id: int):
+def verifikasi_pembayaran(booking_id: int, oleh: str = None):
+    """"Payment Diterima" -- SATU-SATUNYA titik status_pembayaran boleh
+    berubah jadi 'terverifikasi', dipicu DUA jalur (SAMA PERSIS seperti
+    sebelumnya): Admin/Owner klik manual (transfer/QRIS milik tenant) MAUPUN
+    webhook Faspay otomatis (metode "gateway", lihat booking_gateway_webhook.
+    py::_terapkan_status() -- dipanggil TANPA `oleh`, tidak ada admin manusia
+    di jalur itu, kolom pembayaran_diterima_oleh tetap NULL). INDEPENDEN dari
+    terima_booking() ("Verifikasi Booking") di bawah -- booking BOLEH
+    langsung dibayar tanpa pernah "diterima" admin dulu (lihat docstring
+    terima_booking()).
+
+    FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp: `oleh`
+    (username admin yang menekan tombol, None untuk webhook) DAN
+    waktu-sekarang HANYA dicatat SEKALI, pada transisi PERTAMA ke
+    'terverifikasi' -- klik dobel/retry webhook tidak menimpa catatan
+    pertama ini.
+
+    Guard idempoten (sama seperti batalkan_booking() di bawah)."""
     booking = get_booking(booking_id)
     if booking is None:
         raise ValueError("Booking tidak ditemukan.")
     if booking["status_booking"] != "aktif":
         raise ValueError("Booking ini sudah dibatalkan.")
-    # FITUR Notifikasi WhatsApp Otomatis Booking: pesan konfirmasi ini
-    # SATU-SATUNYA yang mewakili DUA pemicu sekaligus -- Admin/Owner klik
-    # "Verifikasi" manual (QRIS offline) MAUPUN webhook Faspay otomatis
-    # (metode "gateway", lihat booking_gateway_webhook.py::_terapkan_status())
-    # -- keduanya memanggil fungsi yang SAMA PERSIS ini. Guard idempoten
-    # sama seperti batalkan_booking() di atas.
     sudah_terverifikasi = booking["status_pembayaran"] == "terverifikasi"
     with get_conn() as conn:
-        conn.execute("UPDATE bookings SET status_pembayaran = 'terverifikasi' WHERE id = ?", (booking_id,))
+        if sudah_terverifikasi:
+            conn.execute("UPDATE bookings SET status_pembayaran = 'terverifikasi' WHERE id = ?", (booking_id,))
+        else:
+            now = datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                "UPDATE bookings SET status_pembayaran = 'terverifikasi', pembayaran_diterima_at = ?, "
+                "pembayaran_diterima_oleh = ? WHERE id = ?",
+                (now, (oleh or "").strip() or None, booking_id),
+            )
     if not sudah_terverifikasi:
         _kirim_notifikasi_wa_booking(get_booking(booking_id), "konfirmasi_pembayaran")
+
+
+def terima_booking(booking_id: int, oleh: str = None):
+    """"Verifikasi Booking" -- FITUR Pembayaran Manual QRIS Tenant +
+    Notifikasi WhatsApp: aksi admin "menerima" booking, INDEPENDEN dari
+    status pembayaran (BUKAN prasyarat verifikasi_pembayaran() di atas --
+    kalau customer ternyata SUDAH bayar duluan, Admin tetap langsung bisa
+    klik "Payment Diterima" tanpa pernah menekan ini).
+
+    Mengirim WA "silakan bayar" (jenis `reminder_qris`, SAMA PERSIS template
+    yang dipakai buat_booking() untuk metode qris) HANYA kalau:
+    1. metode_pembayaran == "qris" -- metode lain (transfer) TIDAK punya
+       template "cara bayar" yang relevan (teks default reminder_qris
+       eksplisit menyebut "QRIS yang tertera", akan salah/membingungkan
+       kalau dikirim untuk instruksi transfer bank), DAN
+    2. belum dibayar (status_pembayaran != 'terverifikasi') -- kalau
+       customer sudah bayar duluan, pesan "silakan bayar" sudah tidak
+       relevan lagi (SESUAI SPEK).
+
+    Idempoten (guard SAMA seperti verifikasi_pembayaran()/batalkan_booking()
+    di atas/bawah): klik dobel/berulang TIDAK menimpa verifikasi_booking_at/
+    oleh yang sudah tercatat, TIDAK kirim WA lagi."""
+    booking = get_booking(booking_id)
+    if booking is None:
+        raise ValueError("Booking tidak ditemukan.")
+    if booking["status_booking"] != "aktif":
+        raise ValueError("Booking ini sudah dibatalkan.")
+    sudah_diverifikasi = booking.get("verifikasi_booking_at") is not None
+    if not sudah_diverifikasi:
+        now = datetime.now().isoformat(timespec="seconds")
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE bookings SET verifikasi_booking_at = ?, verifikasi_booking_oleh = ? WHERE id = ?",
+                (now, (oleh or "").strip() or None, booking_id),
+            )
+        if booking["metode_pembayaran"] == "qris" and booking["status_pembayaran"] != "terverifikasi":
+            _kirim_notifikasi_wa_booking(get_booking(booking_id), "reminder_qris")
 
 
 def hapus_riwayat_booking(tenant_id: int, sebelum_tanggal: str = None) -> int:

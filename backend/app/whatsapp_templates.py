@@ -24,7 +24,8 @@ from datetime import datetime
 # (jenis, label, deskripsi) -- dipakai frontend (Setting > WhatsApp) untuk
 # menyusun textarea per jenis pesan + label placeholder yang bisa dipakai.
 JENIS_PESAN = [
-    ("reminder_qris", "Reminder Bayar QRIS", "Dikirim saat customer memilih metode pembayaran QRIS."),
+    ("reminder_qris", "Reminder Bayar QRIS",
+     "Dikirim saat customer booking metode QRIS, atau saat Admin menekan \"Verifikasi Booking\" untuk booking QRIS yang belum dibayar."),
     ("konfirmasi_pembayaran", "Konfirmasi Pembayaran",
      "Dikirim saat pembayaran diverifikasi (manual oleh Admin/Owner, atau otomatis lewat Payment Gateway)."),
     ("pembatalan", "Pembatalan Booking", "Dikirim saat booking dibatalkan karena belum dibayar."),

@@ -428,7 +428,7 @@ const PageBooking = (() => {
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
-  function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null } = {}) {
+  function bookingTable(rows, { withBarber = true, onTerimaBooking = null, onVerifikasi = null, onBatalkan = null } = {}) {
     // BOOKING UI/UX #1: No. Transaksi -- SATU-SATUNYA implementasi ada di
     // MugenUI.buatNomorTransaksi() (ui.js), dipakai di sini DAN di layar
     // Appointment Confirmed (book_public.js) supaya angkanya selalu sama
@@ -464,15 +464,35 @@ const PageBooking = (() => {
         format: (v) => MugenUI.el("span", { class: "badge" + (v === "aktif" ? "" : " badge-danger") }, STATUS_BOOKING_LABEL[v] || v),
       },
     ];
-    if (onVerifikasi || onBatalkan) {
+    if (onTerimaBooking || onVerifikasi || onBatalkan) {
       columns.push({
         key: "aksi", label: "Aksi", format: (_, r) => {
           const wrap = MugenUI.el("div", { class: "actions-cell" });
+          // FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp:
+          // "Verifikasi Booking" (admin menerima booking + WA "silakan
+          // bayar" kalau memang belum dibayar) -- INDEPENDEN dari "Payment
+          // Diterima" di bawah, disembunyikan begitu sudah ditekan SEKALI
+          // (verifikasi_booking_at terisi) ATAU begitu sudah dibayar
+          // (tidak relevan lagi klik "terima" kalau sudah lunas). Booking
+          // gateway TIDAK PERNAH punya tombol ini (checkout & pembayaran
+          // 100% otomatis lewat Faspay, lihat routers/booking.py::terima_booking()).
+          if (onTerimaBooking && r.metode_pembayaran !== "gateway" && !r.verifikasi_booking_at
+              && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
+            const btn = MugenUI.el("button", {}, "Verifikasi Booking");
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try { await onTerimaBooking(r); } finally { btn.disabled = false; }
+            });
+            wrap.appendChild(btn);
+          }
           // Booking gateway TIDAK PERNAH bisa diverifikasi manual (backend
           // menolak 422 -- lihat routers/booking.py::verifikasi_booking()),
-          // jadi tombol "Verifikasi" disembunyikan untuk metode ini.
+          // jadi tombol "Payment Diterima" disembunyikan untuk metode ini.
+          // TIDAK mensyaratkan "Verifikasi Booking" di atas ditekan lebih
+          // dulu -- customer yang sudah bayar duluan bisa langsung
+          // dikonfirmasi (SESUAI SPEK, dua aksi independen).
           if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
-            const btn = MugenUI.el("button", {}, "Verifikasi");
+            const btn = MugenUI.el("button", {}, "Payment Diterima");
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               try { await onVerifikasi(r); } finally { btn.disabled = false; }
@@ -553,6 +573,14 @@ const PageBooking = (() => {
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         const rows = Array.isArray(data) ? data : [];
         tableWrap.appendChild(bookingTable(rows, {
+          onTerimaBooking: async (r) => {
+            try {
+              await MugenApi.post(`/api/booking/${r.id}/terima`);
+              MugenUI.toast("Booking diverifikasi.", "success", { force: true });
+              load();
+              MugenBookingNotif.refreshNow();
+            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+          },
           onVerifikasi: async (r) => {
             try {
               await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
@@ -560,10 +588,10 @@ const PageBooking = (() => {
               // pembayaran booking) SENGAJA memakai force:true -- satu dari
               // sedikit titik toast sukses yang tetap ditampilkan di seluruh
               // aplikasi (lihat daftar whitelist di ui.js::toast()).
-              MugenUI.toast("Pembayaran diverifikasi.", "success", { force: true });
+              MugenUI.toast("Pembayaran diterima, booking dikonfirmasi.", "success", { force: true });
               load();
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
-            } catch (e) { MugenUI.toast(e.message, "error"); }
+            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
           onBatalkan: async (r) => {
             if (!confirm(`Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`)) return;
