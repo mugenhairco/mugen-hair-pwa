@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=26" />
+<link rel="stylesheet" href="css/landing.css?v=29" />
 </head>
 <body>
 
@@ -341,6 +341,375 @@
           </ul>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- 3.5 Booking Tutorial: simulasi visual customer booking journey (Choose
+       Barber -> ... -> Confirmation), BUKAN dokumentasi teknis payment
+       gateway. Tenant contoh SENGAJA generik ("Barber Shop Indonesia"),
+       bukan tenant nyata mana pun -- lihat catatan CSS di landing.css.
+       Metode pembayaran (Virtual Account/QRIS/E-Wallet/Debit) ditampilkan
+       sebagai CONTOH ilustratif saja, TIDAK mengklaim salah satu sudah
+       aktif/production untuk tenant mana pun. -->
+  <section class="lp-section" id="booking-tutorial">
+    <div class="lp-container">
+      <span class="lp-section-eyebrow lp-reveal">Booking Pelanggan</span>
+      <h2 class="lp-section-title lp-reveal">Booking Semudah Ini untuk Pelanggan Anda</h2>
+      <p class="lp-section-sub lp-reveal">Dari memilih barber sampai booking terkonfirmasi — semuanya selesai dalam beberapa langkah sederhana, langsung dari HP pelanggan.</p>
+      <span class="lp-tut-demo-tag lp-reveal">Simulasi tampilan booking — <b>Barber Shop Indonesia</b> (data demo)</span>
+
+      <div class="lp-carousel lp-reveal" id="lp-booking-tutorial">
+        <div class="lp-carousel-track">
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">01</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Choose Barber</div>
+                  <div class="lp-tut-grid2">
+                    <div class="lp-tut-barber lp-tut-sel"><div class="lp-mockup-avatar">DI</div><div class="lp-tut-barber-name">Dimas</div></div>
+                    <div class="lp-tut-barber"><div class="lp-mockup-avatar">YO</div><div class="lp-tut-barber-name">Yoga</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Choose Barber</h3>
+            <p class="lp-tut-desc">Pilih barber yang tersedia untuk jadwal Anda.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">02</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Choose Service</div>
+                  <div class="lp-tut-rows">
+                    <div class="lp-tut-row lp-tut-sel"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Haircut</div><div class="lp-tut-row-sub">Rp 50.000</div></div></div>
+                    <div class="lp-tut-row lp-tut-sel"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Hair Wash</div><div class="lp-tut-row-sub">Rp 20.000</div></div></div>
+                    <div class="lp-tut-row"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Hair Coloring</div><div class="lp-tut-row-sub">Rp 150.000</div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Choose Service</h3>
+            <p class="lp-tut-desc">Pilih layanan, lengkap dengan harga.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">03</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Select Date</div>
+                  <div class="lp-tut-daygrid">
+                    <span class="lp-tut-day">8</span><span class="lp-tut-day">9</span><span class="lp-tut-day">10</span><span class="lp-tut-day">11</span><span class="lp-tut-day lp-tut-sel">12</span><span class="lp-tut-day">13</span><span class="lp-tut-day">14</span>
+                    <span class="lp-tut-day">15</span><span class="lp-tut-day">16</span><span class="lp-tut-day">17</span><span class="lp-tut-day">18</span><span class="lp-tut-day">19</span><span class="lp-tut-day">20</span><span class="lp-tut-day">21</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Select Date</h3>
+            <p class="lp-tut-desc">Pilih tanggal booking dari kalender yang tersedia.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">04</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Select Time</div>
+                  <div class="lp-tut-slots">
+                    <span class="lp-tut-slot">10:00</span><span class="lp-tut-slot lp-tut-sel">10:30</span>
+                    <span class="lp-tut-slot lp-tut-full">11:00</span><span class="lp-tut-slot">13:00</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Select Time</h3>
+            <p class="lp-tut-desc">Pilih slot waktu yang masih kosong.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">05</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Your Details</div>
+                  <div class="lp-tut-field-label">Name</div>
+                  <div class="lp-tut-field">Budi Hartono</div>
+                  <div class="lp-tut-field-label">WhatsApp Number</div>
+                  <div class="lp-tut-field">+62 812-3456-7890</div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Your Details</h3>
+            <p class="lp-tut-desc">Isi nama dan nomor WhatsApp.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">06</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Booking Summary</div>
+                  <div class="lp-tut-rows">
+                    <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Barber</div><div class="lp-tut-row-title">Dimas</div></div></div>
+                    <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Tanggal &amp; Jam</div><div class="lp-tut-row-title">12 Sep, 10:30</div></div></div>
+                    <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Total</div><div class="lp-tut-row-title">Rp 70.000</div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Booking Summary</h3>
+            <p class="lp-tut-desc">Periksa kembali detail booking sebelum lanjut.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">07</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Payment</div>
+                  <div class="lp-tut-pay-grid">
+                    <div class="lp-tut-pay-chip"><span>💳</span>Virtual Account</div>
+                    <div class="lp-tut-pay-chip"><span>▦</span>QRIS</div>
+                    <div class="lp-tut-pay-chip"><span>👛</span>E-Wallet</div>
+                    <div class="lp-tut-pay-chip"><span>🏦</span>Debit</div>
+                  </div>
+                  <div class="lp-tut-pay-note">Opsi pembayaran fleksibel</div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Payment</h3>
+            <p class="lp-tut-desc">Pilih metode pembayaran yang tersedia.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">08</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body" style="align-items:center;justify-content:center;">
+                  <div class="lp-tut-confirm">
+                    <div class="lp-tut-confirm-icon">✓</div>
+                    <div class="lp-tut-confirm-title">Booking Confirmed</div>
+                  </div>
+                  <div class="lp-wa-phone"><div class="lp-phone-notch"></div>
+                    <div class="lp-wa-screen">
+                      <div class="lp-wa-chat-header"><span class="lp-wa-chat-avatar">✂️</span><span class="lp-wa-chat-name">Barber Shop Indonesia</span></div>
+                      <div class="lp-wa-chat-body">
+                        <div class="lp-wa-bubble">Booking Anda di Barber Shop Indonesia sudah dikonfirmasi ✅ Sampai jumpa!</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Confirmation</h3>
+            <p class="lp-tut-desc">Booking berhasil, konfirmasi otomatis terkirim ke WhatsApp.</p>
+          </div>
+
+        </div>
+      </div>
+      <p class="lp-carousel-hint">Geser untuk melihat langkah berikutnya →</p>
+    </div>
+  </section>
+
+  <!-- 3.6 Attendance Tutorial: simulasi visual Absensi Karyawan (GPS
+       Geofencing) -- BERBEDA dari Booking Tutorial di atas, fitur ini
+       SUDAH AKTIF di produksi (bukan prototype), jadi boleh diklaim penuh.
+       Frame telepon "dynamic island" (.lp-mock-phone/.lp-mock-notch) SENGAJA
+       berbeda dari .lp-phone-frame yang dipakai section lain -- meniru
+       gaya mockup PDF "Absensi GPS Geofencing" yang sudah disetujui Owner
+       ("Hp nya benar gambar hp/iphone"). Tenant contoh tetap generik
+       ("Barber Shop Indonesia", barber Dimas/Yoga) mengikuti pola section
+       lain -- data DEMO, bukan data tenant nyata. -->
+  <section class="lp-section lp-section-alt" id="attendance-tutorial">
+    <div class="lp-container">
+      <span class="lp-section-eyebrow lp-reveal">Absensi Karyawan</span>
+      <h2 class="lp-section-title lp-reveal">Check In yang Tidak Bisa Dibohongi GPS Palsu</h2>
+      <p class="lp-section-sub lp-reveal">Barber Check In &amp; Check Out langsung dari HP — lokasi diverifikasi otomatis secara real-time, bukan sekadar tap tombol.</p>
+      <span class="lp-tut-demo-tag lp-reveal">Simulasi tampilan Absensi — <b>Barber Shop Indonesia</b> (data demo)</span>
+
+      <div class="lp-carousel lp-reveal" id="lp-absensi-tutorial">
+        <div class="lp-carousel-track">
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">01</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Absensi Hari Ini</div>
+                  <div class="lp-att-card"><div class="lp-att-status-row">
+                    <div class="lp-att-status-icon idle">&#9679;</div>
+                    <div class="lp-att-status-info"><div class="lbl">Status</div><div class="val">Belum Check In</div></div>
+                  </div></div>
+                  <div class="lp-att-btn-row"><div class="lp-att-btn">Check In</div><div class="lp-att-btn lp-att-btn-ghost">Check Out</div></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Absensi Hari Ini</h3>
+            <p class="lp-tut-desc">Barber melihat status Check In/Out hari ini dalam satu tampilan.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">02</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-att-modal"><div class="lp-att-modal-box">
+                  <h4>Konfirmasi Check In</h4>
+                  <p>Anda akan Check In sekarang menggunakan lokasi perangkat ini. Lanjutkan?</p>
+                  <div class="lp-att-btn-row"><div class="lp-att-btn lp-att-btn-ghost">Batal</div><div class="lp-att-btn">Check In</div></div>
+                </div></div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Tekan Check In</h3>
+            <p class="lp-tut-desc">Konfirmasi dulu sebelum lokasi perangkat diambil.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">03</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Memvalidasi…</div>
+                  <div class="lp-att-map"><div class="lp-att-map-radius"></div><span class="lp-att-map-pin">📍</span><span class="lp-att-map-badge">Dalam radius</span></div>
+                  <div class="lp-att-row"><span class="lbl">Jarak ke toko</span><span class="val">180 m</span></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Verifikasi Lokasi</h3>
+            <p class="lp-tut-desc">Jarak ke toko dihitung ulang oleh sistem, real-time.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">04</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body" style="align-items:center;text-align:center;">
+                  <div class="lp-att-status-icon work" style="margin:4px auto 2px;">&#10003;</div>
+                  <div class="lp-att-badge lp-att-badge-work">Tepat Waktu</div>
+                  <div class="lp-att-row" style="width:100%;"><span class="lbl">Jam Masuk</span><span class="val">09:00</span></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Tepat Waktu / Terlambat</h3>
+            <p class="lp-tut-desc">Status ketepatan waktu tercatat otomatis sejak Check In.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">05</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Absensi Hari Ini</div>
+                  <div class="lp-att-card"><div class="lp-att-status-row">
+                    <div class="lp-att-status-icon work" style="position:relative;">&#9679;<div class="lp-att-pulse"></div></div>
+                    <div class="lp-att-status-info"><div class="lbl">Status</div><div class="val">Sedang Bekerja</div></div>
+                  </div></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Sedang Bekerja</h3>
+            <p class="lp-tut-desc">Status berjalan real-time sepanjang shift.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">06</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body" style="align-items:center;text-align:center;">
+                  <div class="lp-att-status-icon done" style="margin:4px auto 2px;">&#10003;</div>
+                  <div class="lp-att-badge lp-att-badge-idle">Sudah Check Out</div>
+                  <div class="lp-att-row" style="width:100%;"><span class="lbl">Durasi Kerja</span><span class="val">10j 43m</span></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Check Out</h3>
+            <p class="lp-tut-desc">Selesai shift, Check Out sekali tap.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">07</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Sisa Limit Bulan Ini</div>
+                  <div class="lp-att-ring-row">
+                    <div class="lp-att-ring"><div style="width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--success) 0 70%, var(--bg-alt) 70% 100%);display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:800;">84m</div></div><div class="lp-att-ring-lbl">Terlambat</div></div>
+                    <div class="lp-att-ring"><div style="width:38px;height:38px;border-radius:50%;background:conic-gradient(var(--success) 0 90%, var(--bg-alt) 90% 100%);display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:800;">108m</div></div><div class="lp-att-ring-lbl">Pulang Awal</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Riwayat &amp; Sisa Limit</h3>
+            <p class="lp-tut-desc">Barber melihat riwayat &amp; anggaran bulanan sendiri.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">08</span>
+            <div class="lp-mock-phone"><div class="lp-mock-notch"></div>
+              <div class="lp-mock-screen">
+                <div class="lp-mock-header"><div class="lp-mock-logo">R</div><div class="lp-mock-brand">Barber Shop Indonesia</div></div>
+                <div class="lp-mock-body">
+                  <div class="lp-mock-h2">Dashboard Absensi</div>
+                  <table class="lp-att-table"><tr><th>Barber</th><th>Status</th></tr>
+                    <tr><td><span class="lp-att-avatar">DI</span> Dimas</td><td><span class="lp-att-badge lp-att-badge-work">Bekerja</span></td></tr>
+                    <tr><td><span class="lp-att-avatar">YO</span> Yoga</td><td><span class="lp-att-badge lp-att-badge-warn">Terlambat</span></td></tr>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Dashboard Owner</h3>
+            <p class="lp-tut-desc">Owner memantau semua barber dalam satu layar.</p>
+          </div>
+
+        </div>
+      </div>
+      <p class="lp-carousel-hint">Geser untuk melihat langkah berikutnya →</p>
     </div>
   </section>
 
@@ -589,7 +958,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=26"></script>
-<script src="js/landing.js?v=26"></script>
+<script src="js/lp-slider.js?v=29"></script>
+<script src="js/landing.js?v=29"></script>
 </body>
 </html>
