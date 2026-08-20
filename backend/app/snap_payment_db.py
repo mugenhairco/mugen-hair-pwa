@@ -53,7 +53,7 @@ STATUS_VALID = {STATUS_CREATED, STATUS_PENDING, STATUS_PAID, STATUS_FAILED, STAT
 # tidak boleh terjadi hanya karena webhook terlambat."
 STATUS_FINAL = {STATUS_PAID, STATUS_FAILED, STATUS_EXPIRED, STATUS_CANCELLED}
 
-CHANNEL_VALID = {"va", "qris", "ewallet"}
+CHANNEL_VALID = {"va", "qris", "ewallet", "direct_debit"}
 
 
 def _now() -> str:
@@ -89,7 +89,7 @@ def tentukan_tipe_transaksi(payment_reference: str) -> str:
 
 def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
                     booking_id: int = None, subscription_invoice_id: int = None,
-                    channel: str = None, ewallet_provider: str = None) -> dict:
+                    channel: str = None, ewallet_provider: str = None, binding_id: int = None) -> dict:
     """Buat baris transaksi baru berstatus CREATED -- MURNI pencatatan
     lokal, TIDAK memanggil Faspay sama sekali (pemanggil di lapisan atas
     yang memanggil snap_advance_client.buat_transaksi_*() SETELAH baris ini
@@ -98,7 +98,13 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
     routers/booking.py::public_buat_booking() untuk urutan yang sudah
     proven). `booking_id` WAJIB diisi (subscription_invoice_id KOSONG) untuk
     BOOKING, sebaliknya untuk SAAS_BILLING -- validasi silang di bawah
-    mencegah baris "amfibi" yang datanya ambigu."""
+    mencegah baris "amfibi" yang datanya ambigu.
+
+    `binding_id` HANYA relevan untuk channel="direct_debit" (rujukan ke
+    snap_account_bindings -- lihat snap_account_binding_db.py) -- channel
+    lain (va/qris/ewallet) TIDAK butuh binding sama sekali, jadi TIDAK
+    divalidasi wajib di sini (pemanggil yang tahu channel mana yang
+    butuh binding)."""
     if transaction_type == TRANSACTION_TYPE_BOOKING:
         if not booking_id or subscription_invoice_id is not None:
             raise ValueError("Transaksi BOOKING wajib mengisi booking_id, TIDAK boleh mengisi subscription_invoice_id.")
@@ -119,11 +125,11 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
         conn.execute(
             "INSERT INTO snap_payment_transactions "
             "(internal_transaction_id, provider, payment_reference, transaction_type, tenant_id, "
-            "booking_id, subscription_invoice_id, channel, ewallet_provider, amount, status, "
+            "booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, status, "
             "created_at, updated_at) "
-            "VALUES (?, 'snap_advance', ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
+            "VALUES (?, 'snap_advance', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
             (internal_transaction_id, payment_reference, transaction_type, tenant_id,
-             booking_id, subscription_invoice_id, channel, ewallet_provider, amount, now, now),
+             booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, now, now),
         )
     return get_transaksi_by_reference(payment_reference)
 

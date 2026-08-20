@@ -31,6 +31,14 @@ ini, lihat laporan analisis):
     PENDING FASPAY, bukan ditebak sebagian).
   - Jalur teknis Dynamic E-Wallet SAMA SEKALI (lihat laporan Tahap 2.3 --
     bahkan produk SNAP mana yang melayaninya belum jelas).
+  - Direct Debit -- endpoint create-payment TERKONFIRMASI (`/v1.0/debit/
+    payment-host-to-host`, LEBIH pasti dari QRIS), sebagian field DIDUGA
+    (bankCardToken/partnerReferenceNo/amount, response webRedirectUrl/
+    referenceNo) -- TAPI PRASYARATNYA (Registrasi/Account Binding: OTP/
+    OAuth2 untuk memperoleh bankCardToken) SAMA SEKALI belum terkonfirmasi
+    untuk Faspay spesifik (hanya referensi generik standar SNAP dari
+    provider/portal LAIN) -- tanpa binding yang jalan, payment-nya sendiri
+    tidak pernah bisa dicoba, jadi TETAP PENDING FASPAY total.
   - String-to-sign PERSIS untuk signature RSA-SHA256 di tiap endpoint.
   - Skema JSON webhook/payment notification SNAP Faspay yang sesungguhnya.
 
@@ -154,6 +162,45 @@ def buat_transaksi_ewallet(payment_reference: str, amount: int, ewallet_provider
     )
 
 
+def daftarkan_binding_akun(transaction_type: str, customer_details: dict = None) -> dict:
+    """Registrasi/Account Binding -- PRASYARAT channel Direct Debit (BEDA
+    dari VA/QRIS/E-Wallet yang tidak butuh binding sama sekali): customer/
+    tenant menautkan rekening/kartu mereka (OTP/OAuth2 di sisi provider)
+    SEBELUM satu pun pembayaran direct debit bisa diminta -- dikonfirmasi
+    dari dokumentasi publik standar SNAP (lihat laporan analisis, bagian
+    Direct Debit). PENDING FASPAY TOTAL -- endpoint registrasi/binding
+    PERSIS milik Faspay (path, alur redirect/OTP, cara menukar authorization
+    code jadi bankCardToken) tidak ditemukan di sumber yang bisa diakses
+    sesi ini, HANYA referensi generik standar SNAP (bukan dokumentasi
+    Faspay spesifik) yang ditemukan."""
+    raise pending_faspay(
+        "Direct Debit -- Registrasi/Account Binding (daftarkan_binding_akun())",
+        "Endpoint registrasi/binding akun Faspay (path, alur OTP/OAuth2, cara memperoleh bankCardToken) belum terkonfirmasi -- hanya referensi generik standar SNAP (bukan dokumentasi Faspay spesifik) yang ditemukan.",
+    )
+
+
+def buat_transaksi_direct_debit(payment_reference: str, amount: int, bank_card_token: str,
+                                 customer_details: dict = None) -> dict:
+    """Create Direct Debit Payment (Host-to-Host) -- LEBIH TERKONFIRMASI
+    dari QRIS/E-Wallet: endpoint TERKONFIRMASI dari dokumentasi resmi
+    Faspay (`/v1.0/debit/payment-host-to-host`), sebagian field request
+    DIDUGA (`partnerReferenceNo`/`bankCardToken`/`merchantId`/`amount`) dan
+    response DIDUGA (`responseCode`/`responseMessage`/`referenceNo`/
+    `webRedirectUrl`) dari cuplikan dokumentasi publik. TETAP PENDING FASPAY
+    -- field request LENGKAP, tabel kode error, dan (PENTING) alur
+    `webRedirectUrl` di response (mengindikasikan mungkin masih perlu
+    redirect verifikasi OTP/PIN per transaksi, BUKAN murni host-to-host
+    transparan seperti diklaim namanya) belum cukup dipastikan untuk
+    diimplementasikan aman. `bank_card_token` WAJIB berasal dari binding
+    yang SUDAH ACTIVE (lihat snap_account_binding_db.py) -- fungsi ini
+    TIDAK memvalidasi validitas token itu sendiri, murni meneruskan ke
+    Faspay (yang PENDING)."""
+    raise pending_faspay(
+        "Direct Debit -- buat_transaksi_direct_debit()",
+        "Endpoint /v1.0/debit/payment-host-to-host terkonfirmasi, TAPI field request lengkap, tabel kode error, dan alur webRedirectUrl (OTP/PIN per transaksi?) belum terkonfirmasi penuh.",
+    )
+
+
 def cek_status_transaksi(payment_reference: str) -> dict:
     """Inquiry/Cek Status manual -- untuk fitur "Cek Ulang ke Provider"
     (rekonsiliasi transaksi yang macet karena webhook tidak pernah sampai,
@@ -161,7 +208,7 @@ def cek_status_transaksi(payment_reference: str) -> dict:
     PENDING FASPAY -- endpoint inquiry per channel belum terkonfirmasi."""
     raise pending_faspay(
         "Inquiry/Cek Status -- cek_status_transaksi()",
-        "Endpoint inquiry status SNAP Advance per channel (VA/QRIS/E-Wallet) belum terkonfirmasi.",
+        "Endpoint inquiry status SNAP Advance per channel (VA/QRIS/E-Wallet/Direct Debit) belum terkonfirmasi.",
     )
 
 

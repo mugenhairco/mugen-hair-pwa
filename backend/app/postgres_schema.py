@@ -946,6 +946,7 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
     subscription_invoice_id   INTEGER,
     channel                   TEXT,
     ewallet_provider          TEXT,
+    binding_id                INTEGER,
     amount                    INTEGER NOT NULL,
     status                    TEXT NOT NULL DEFAULT 'CREATED',
     va_number                 TEXT,
@@ -962,6 +963,12 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
     paid_at                   TEXT
 );
 
+-- Instalasi Postgres yang sempat menjalankan create_all() SEBELUM kolom
+-- binding_id ditambahkan ke CREATE TABLE di atas (channel Direct Debit) --
+-- ADD COLUMN IF NOT EXISTS supaya tetap idempotent untuk instalasi lama
+-- maupun baru, pola sama seperti ALTER TABLE lain di file ini.
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS binding_id INTEGER;
+
 CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     id              SERIAL PRIMARY KEY,
     transaction_id  INTEGER NOT NULL,
@@ -969,6 +976,25 @@ CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     status_baru     TEXT NOT NULL,
     sumber          TEXT NOT NULL,
     waktu           TEXT NOT NULL
+);
+
+-- Migrasi Faspay SNAP Advance (channel Direct Debit): SNAP Direct Debit
+-- mewajibkan Registrasi/Account Binding TERPISAH lebih dulu (OTP/OAuth2,
+-- lihat snap_payment_migrasi.py untuk penjelasan lengkap) SEBELUM satu pun
+-- pembayaran bisa diminta -- tabel ini MURNI mencatat token hasil binding,
+-- proses binding sendiri masih PENDING FASPAY total (snap_advance_client.py).
+CREATE TABLE IF NOT EXISTS snap_account_bindings (
+    id                    SERIAL PRIMARY KEY,
+    internal_binding_id   TEXT NOT NULL UNIQUE,
+    provider              TEXT NOT NULL DEFAULT 'snap_advance',
+    transaction_type      TEXT NOT NULL,
+    tenant_id             INTEGER NOT NULL,
+    customer_identifier   TEXT,
+    bank_card_token       TEXT,
+    binding_status        TEXT NOT NULL DEFAULT 'PENDING',
+    provider_response     TEXT,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
 );
 
 -- FITUR Email, Verifikasi Email, Lupa Kata Sandi -- lihat penjelasan

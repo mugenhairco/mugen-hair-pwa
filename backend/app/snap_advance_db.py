@@ -49,14 +49,26 @@ _KUNCI_CHANNEL_AKTIF = "snap_channel_aktif"
 ENVIRONMENT_VALID = {"sandbox", "production"}
 
 # CATATAN (Tahap 2.3 laporan analisis): "ewallet" SENGAJA TIDAK dimasukkan ke
-# CHANNEL_VALID -- jalur teknisnya (lewat SNAP QRIS atau API terpisah)
-# PENDING FASPAY, belum bisa dinyatakan sebagai channel yang "tersedia" untuk
-# dipilih Super Admin sampai dikonfirmasi. "va"/"qris" dimasukkan sebagai
-# STRUKTUR yang siap dipakai (bentuk umumnya terkonfirmasi dokumentasi
-# publik SNAP), TAPI create-transaction sungguhan tetap melempar PENDING
-# FASPAY sampai skema request/response persis Faspay terkonfirmasi (lihat
-# snap_advance_client.py) -- kolom ini murni penyimpanan preferensi Super
-# Admin, TIDAK berarti channel-nya sudah berfungsi.
+# CHANNEL_LABEL/CHANNEL_VALID di sini -- jalur teknisnya (lewat SNAP QRIS
+# atau API terpisah) PENDING FASPAY, belum bisa dinyatakan sebagai channel
+# yang "tersedia" untuk dipilih Super Admin sampai dikonfirmasi. "va"/"qris"
+# dimasukkan sebagai STRUKTUR yang siap dipakai (bentuk umumnya terkonfirmasi
+# dokumentasi publik SNAP), TAPI create-transaction sungguhan tetap melempar
+# PENDING FASPAY sampai skema request/response persis Faspay terkonfirmasi
+# (lihat snap_advance_client.py) -- kolom ini murni penyimpanan preferensi
+# Super Admin, TIDAK berarti channel-nya sudah berfungsi.
+#
+# "direct_debit" JUGA SENGAJA TIDAK dimasukkan, TAPI dengan alasan BEDA dari
+# ewallet: endpoint payment-nya sendiri sudah lebih terkonfirmasi daripada
+# QRIS (lihat snap_advance_client.py::buat_transaksi_direct_debit()), TAPI
+# Direct Debit punya PRASYARAT (Registrasi/Account Binding, OTP/OAuth2) yang
+# SAMA SEKALI belum terkonfirmasi (snap_advance_client.py::daftarkan_binding_akun())
+# -- mengaktifkan channel yang payment-nya "cukup siap" tapi binding-nya
+# tidak pernah bisa jalan akan menyesatkan Super Admin (channel muncul aktif
+# padahal customer/tenant tidak pernah bisa menautkan rekening mereka sama
+# sekali). Skema DB (snap_account_bindings, kolom binding_id) tetap dibangun
+# di muka (lihat snap_payment_migrasi.py) supaya begitu binding terkonfirmasi,
+# TIDAK perlu migrasi tambahan -- hanya CHANNEL_LABEL di sini yang perlu diisi.
 CHANNEL_LABEL = {"va": "Dynamic Virtual Account", "qris": "Dynamic QRIS"}
 CHANNEL_VALID = set(CHANNEL_LABEL.keys())
 _DEFAULT_CHANNEL_AKTIF = json.dumps([])

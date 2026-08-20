@@ -22,7 +22,18 @@ SISI FASPAY persis PENDING FASPAY, lihat snap_advance_client.py) DAN dipakai
 webhook untuk menentukan BOOKING vs SAAS_BILLING lewat prefix -- lihat
 snap_payment_db.py::PREFIX_BOOKING/PREFIX_SAAS_BILLING. `internal_transaction_id`
 TERPISAH (UUID murni internal, tidak pernah dikirim ke Faspay) -- dipakai
-korelasi log/troubleshooting tanpa membocorkan pola/urutan row id database."""
+korelasi log/troubleshooting tanpa membocorkan pola/urutan row id database.
+
+TAMBAHAN (channel Direct Debit): `snap_account_bindings` -- BEDA dari VA/
+QRIS/E-Wallet (create-transaction satu langkah), SNAP Direct Debit
+mewajibkan Registrasi/Account Binding TERPISAH lebih dulu (customer
+menautkan rekening/kartu, verifikasi OTP/OAuth2 di sisi provider) SEBELUM
+satu pun pembayaran bisa diminta -- dikonfirmasi dari dokumentasi publik
+SNAP (lihat laporan analisis, bagian Direct Debit). Tabel ini MURNI
+mencatat token hasil binding tsb (`bank_card_token`) supaya
+`snap_payment_transactions.channel='direct_debit'` bisa merujuknya lewat
+`binding_id` -- proses binding SENDIRI (endpoint, OTP, redirect) masih
+PENDING FASPAY total (lihat snap_advance_client.py::daftarkan_binding_akun())."""
 
 from database import get_conn
 
@@ -42,6 +53,7 @@ def migrasi_snap_payment():
                 subscription_invoice_id   INTEGER,
                 channel                   TEXT,
                 ewallet_provider          TEXT,
+                binding_id                INTEGER,
                 amount                    INTEGER NOT NULL,
                 status                    TEXT NOT NULL DEFAULT 'CREATED',
                 va_number                 TEXT,
@@ -66,5 +78,20 @@ def migrasi_snap_payment():
                 status_baru     TEXT NOT NULL,
                 sumber          TEXT NOT NULL,
                 waktu           TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS snap_account_bindings (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                internal_binding_id   TEXT NOT NULL UNIQUE,
+                provider              TEXT NOT NULL DEFAULT 'snap_advance',
+                transaction_type      TEXT NOT NULL,
+                tenant_id             INTEGER NOT NULL,
+                customer_identifier   TEXT,
+                bank_card_token       TEXT,
+                binding_status        TEXT NOT NULL DEFAULT 'PENDING',
+                provider_response     TEXT,
+                created_at            TEXT NOT NULL,
+                updated_at            TEXT NOT NULL
             )
         """)

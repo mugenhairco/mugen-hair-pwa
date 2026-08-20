@@ -19,6 +19,7 @@ import billing_invoice_db
 import booking_db
 import gateway_client_base as core
 import pytest
+import snap_account_binding_db
 import snap_advance_client
 import snap_advance_db
 import snap_payment_db
@@ -481,3 +482,102 @@ def test_endpoint_webhook_pending_faspay_balas_503_bukan_crash(app_client):
     r = app_client.post("/api/public/gateway/snap-notification", json={"apa": "saja"})
     assert r.status_code == 503
     assert "PENDING FASPAY" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Channel Direct Debit -- Registrasi/Account Binding (snap_account_binding_db.py)
+# ---------------------------------------------------------------------------
+
+def test_channel_valid_menyertakan_direct_debit():
+    assert "direct_debit" in snap_payment_db.CHANNEL_VALID
+
+
+def test_direct_debit_belum_selectable_super_admin():
+    """SESUAI keputusan arsitektur: berbeda dari "ewallet", endpoint payment
+    Direct Debit LEBIH terkonfirmasi -- TAPI prasyarat binding-nya belum,
+    jadi TETAP tidak boleh dipilih Super Admin sebagai channel aktif."""
+    assert "direct_debit" not in snap_advance_db.CHANNEL_LABEL
+    with pytest.raises(ValueError):
+        snap_advance_db.update_config(channel_aktif=["direct_debit"])
+
+
+def test_buat_binding_booking_wajib_customer_identifier(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    with pytest.raises(ValueError):
+        snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier=None)
+
+    binding = snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier="081234567890")
+    assert binding["transaction_type"] == "BOOKING"
+    assert binding["customer_identifier"] == "081234567890"
+    assert binding["binding_status"] == "PENDING"
+    assert binding["bank_card_token"] is None
+
+
+def test_buat_binding_saas_billing_tolak_customer_identifier(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    with pytest.raises(ValueError):
+        snap_account_binding_db.buat_binding("SAAS_BILLING", tenant_id, customer_identifier="081234567890")
+
+    binding = snap_account_binding_db.buat_binding("SAAS_BILLING", tenant_id)
+    assert binding["transaction_type"] == "SAAS_BILLING"
+    assert binding["customer_identifier"] is None
+
+
+def test_catat_hasil_binding_tidak_menimpa_field_kosong(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    binding = snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier="081234567890")
+    hasil1 = snap_account_binding_db.catat_hasil_binding(binding["id"], bank_card_token="tok-abc")
+    assert hasil1["bank_card_token"] == "tok-abc"
+    hasil2 = snap_account_binding_db.catat_hasil_binding(binding["id"], status="ACTIVE")
+    assert hasil2["bank_card_token"] == "tok-abc"  # TIDAK ditimpa NULL oleh panggilan kedua
+    assert hasil2["binding_status"] == "ACTIVE"
+
+
+def test_catat_hasil_binding_status_tidak_dikenal_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    binding = snap_account_binding_db.buat_binding("SAAS_BILLING", tenant_id)
+    with pytest.raises(ValueError):
+        snap_account_binding_db.catat_hasil_binding(binding["id"], status="STATUS_NGAWUR")
+
+
+def test_list_binding_aktif_hanya_status_active(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    b1 = snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier="081111111111")
+    b2 = snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier="081111111111")
+    snap_account_binding_db.catat_hasil_binding(b1["id"], status="ACTIVE")  # b2 tetap PENDING
+
+    aktif = snap_account_binding_db.list_binding_aktif("BOOKING", tenant_id, customer_identifier="081111111111")
+    assert [b["id"] for b in aktif] == [b1["id"]]
+
+
+def test_cabut_binding_idempoten(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    binding = snap_account_binding_db.buat_binding("SAAS_BILLING", tenant_id)
+    snap_account_binding_db.catat_hasil_binding(binding["id"], status="ACTIVE")
+
+    hasil1 = snap_account_binding_db.cabut_binding(binding["id"])
+    assert hasil1["binding_status"] == "REVOKED"
+    hasil2 = snap_account_binding_db.cabut_binding(binding["id"])  # panggilan kedua, tetap aman
+    assert hasil2["binding_status"] == "REVOKED"
+
+
+def test_buat_transaksi_dengan_binding_id(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    booking = _siapkan_booking(tenant_id)
+    binding = snap_account_binding_db.buat_binding("BOOKING", tenant_id, customer_identifier="081234567890")
+    snap_account_binding_db.catat_hasil_binding(binding["id"], status="ACTIVE", bank_card_token="tok-abc")
+
+    transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, 100000, booking_id=booking["id"],
+                                                channel="direct_debit", binding_id=binding["id"])
+    assert transaksi["channel"] == "direct_debit"
+    assert transaksi["binding_id"] == binding["id"]
+
+
+def test_daftarkan_binding_akun_melempar_pending_faspay():
+    with pytest.raises(snap_advance_client.SnapAdvancePendingError):
+        snap_advance_client.daftarkan_binding_akun("BOOKING", customer_details={"phone": "081234567890"})
+
+
+def test_buat_transaksi_direct_debit_melempar_pending_faspay():
+    with pytest.raises(snap_advance_client.SnapAdvancePendingError):
+        snap_advance_client.buat_transaksi_direct_debit("BOOKING-1-1-abc", 100000, "tok-abc")

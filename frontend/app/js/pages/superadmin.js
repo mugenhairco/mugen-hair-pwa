@@ -1359,7 +1359,7 @@ const PageSuperadmin = (() => {
 
     snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Aktif"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },
-      "Dynamic E-Wallet BELUM tersedia di sini -- jalur teknisnya (SNAP QRIS atau API terpisah) masih PENDING FASPAY (lihat laporan analisis \"Faspay SNAP Migration\")."));
+      "Dynamic E-Wallet dan Direct Debit BELUM tersedia di sini -- jalur teknis E-Wallet (SNAP QRIS atau API terpisah) dan prasyarat Registrasi/Account Binding Direct Debit masih PENDING FASPAY (lihat laporan analisis \"Faspay SNAP Migration\")."));
     const snapChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
     snapAdvanceCard.appendChild(snapChannelList);
 
