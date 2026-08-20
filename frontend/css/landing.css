@@ -516,14 +516,47 @@ a { color: inherit; text-decoration: none; }
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem;
   box-shadow: var(--shadow-sm); margin-bottom: 12px; flex-shrink: 0;
 }
-.lp-tut-step .lp-phone-frame { max-width: 190px; margin-bottom: 14px; }
-.lp-tut-step .lp-phone-screen { min-height: 168px; }
+/* Frame telepon "dynamic island" -- KOMPONEN BERSAMA dipakai section
+   Booking Tutorial (di sini) MAUPUN Absensi Tutorial di bawah, SENGAJA
+   beda dari .lp-phone-frame lama (notch pil terpisah, dipakai section
+   Kenapa Rivoir/Differentiator) -- meniru proporsi mockup PDF "Booking
+   Journey"/"Absensi GPS Geofencing" yang sudah disetujui, supaya benar
+   terasa seperti foto HP/iPhone sungguhan (permintaan eksplisit).
+   SKALA: 190x412px = rasio ~9:19.5, SAMA PERSIS rasio layar iPhone 14/15
+   (390x844pt) -- lebar & tinggi TETAP (bukan menyesuaikan konten) supaya
+   semua kartu carousel konsisten seperti device sungguhan, bukan kotak
+   yang menyusut/melar. Radius sudut & notch juga proporsional terhadap
+   lebar asli mockup PDF (336px): 46/336=13.7% -> 26px @190px lebar;
+   notch 110/336=32.7% -> 62px. */
+.lp-mock-phone {
+  position: relative; width: 190px; height: 412px; border-radius: 26px; background: #0F172A;
+  padding: 8px; box-shadow: var(--shadow-lg), 0 0 0 1px rgba(15,23,42,0.06); margin-bottom: 14px; flex-shrink: 0;
+}
+.lp-mock-notch {
+  position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
+  width: 62px; height: 13px; border-radius: 8px; background: #0F172A; z-index: 2;
+}
+.lp-mock-screen {
+  width: 100%; height: 100%; background: var(--bg-card); border-radius: 19px; overflow: hidden; position: relative;
+  display: flex; flex-direction: column;
+}
+.lp-mock-header {
+  padding: 20px 10px 8px; text-align: center; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+}
+.lp-mock-logo {
+  width: 16px; height: 16px; border-radius: 5px; background: var(--accent); color: #fff;
+  font-weight: 800; font-size: 8px; display: flex; align-items: center; justify-content: center;
+}
+.lp-mock-brand { font-weight: 700; font-size: 9.5px; }
+.lp-mock-body { flex: 1; overflow: hidden; padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 7px; }
+.lp-mock-h2 { font-size: 10.5px; font-weight: 800; margin: 0 0 1px; text-align: left; }
 /* .lp-carousel-track default (align-items:stretch, dipakai section
    Screenshots) akan menyamakan tinggi SEMUA kartu carousel ke kartu
-   tertinggi (step Confirmation, paling banyak konten) -- override HANYA
-   di carousel tutorial ini supaya kartu dengan konten sedikit (Choose
-   Barber/Select Date/Select Time) tidak punya ruang kosong berlebih di
-   dalam phone-screen-nya. */
+   tertinggi -- override di kedua carousel tutorial supaya title/desc di
+   bawah phone-nya tidak ikut ditarik turun oleh kartu lain (frame telepon
+   sendiri sudah fixed height, tidak lagi butuh ini untuk phone-nya, tapi
+   tetap dijaga untuk kolom step secara keseluruhan). */
 #lp-booking-tutorial .lp-carousel-track { align-items: flex-start; }
 .lp-tut-title { margin: 0 0 4px; font-size: 0.92rem; font-weight: 700; }
 .lp-tut-desc { margin: 0; color: var(--text-dim); font-size: 0.8rem; line-height: 1.45; }
@@ -596,40 +629,16 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Attendance Tutorial ("Absensi Karyawan") ----------
    Reuse .lp-tut-step/.lp-tut-num/.lp-tut-arrow/.lp-tut-title/.lp-tut-desc
-   (layout wrapper, sudah generik) dari section Booking Tutorial di atas --
-   HANYA frame telepon & konten mini di dalamnya yang baru, dengan gaya
-   "dynamic island" mengambang (notch OVERLAP di atas layar, bukan pil
-   terpisah di atasnya seperti .lp-phone-frame lama) supaya terasa persis
-   seperti foto HP/iPhone sungguhan, sesuai permintaan Owner ("Hp nya
-   benar gambar hp/iphone") -- meniru proporsi PDF "Absensi GPS
-   Geofencing — Cara Kerja" yang sudah disetujui. Fitur Absensi di
-   section ini SUDAH AKTIF di produksi (bukan prototype seperti SNAP
-   Advance) -- boleh diklaim penuh, data contoh (Barber Shop Indonesia,
-   Dimas/Yoga) tetap generik mengikuti pola section lain. */
+   DAN .lp-mock-phone/.lp-mock-notch/.lp-mock-screen/.lp-mock-header/
+   .lp-mock-body/.lp-mock-h2 (frame telepon "dynamic island", didefinisikan
+   sekali di section Booking Tutorial di atas, dipakai bersama kedua
+   section) -- HANYA konten mini absensi-spesifik di bawah ini yang baru
+   (kartu status, modal konfirmasi, peta radius, ring limit, tabel
+   dashboard). Fitur Absensi di section ini SUDAH AKTIF di produksi (bukan
+   prototype seperti SNAP Advance) -- boleh diklaim penuh, data contoh
+   (Barber Shop Indonesia, Dimas/Yoga) tetap generik mengikuti pola
+   section lain. */
 #lp-absensi-tutorial .lp-carousel-track { align-items: flex-start; }
-.lp-att-phone {
-  position: relative; width: 190px; border-radius: 26px; background: #0F172A;
-  padding: 8px; box-shadow: var(--shadow-lg), 0 0 0 1px rgba(15,23,42,0.06); margin-bottom: 14px;
-}
-.lp-att-notch {
-  position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
-  width: 62px; height: 13px; border-radius: 8px; background: #0F172A; z-index: 2;
-}
-.lp-att-screen {
-  background: var(--bg-card); border-radius: 19px; overflow: hidden; position: relative;
-  display: flex; flex-direction: column; min-height: 168px;
-}
-.lp-att-header {
-  padding: 20px 10px 8px; text-align: center; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center; gap: 6px; flex: none;
-}
-.lp-att-logo {
-  width: 16px; height: 16px; border-radius: 5px; background: var(--accent); color: #fff;
-  font-weight: 800; font-size: 8px; display: flex; align-items: center; justify-content: center;
-}
-.lp-att-brand { font-weight: 700; font-size: 9.5px; }
-.lp-att-body { flex: 1; padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 7px; }
-.lp-att-h2 { font-size: 10.5px; font-weight: 800; margin: 0 0 1px; text-align: left; }
 
 .lp-att-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 8px; box-shadow: var(--shadow-sm); }
 .lp-att-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 8px; }

@@ -144,7 +144,7 @@
 // unggulan): "Pendapatan" (20,5jt->50jt, naik per 0,5jt: 20,5 / 21 /
 // 21,5 / ...) & "Barber Aktif" (5->15) ditambahkan, jalan di kecepatan
 // yang sama juga.
-const ASSET_VERSION = "28";
+const ASSET_VERSION = "29";
 const CACHE_NAME = "rivoir-landing-shell-v" + ASSET_VERSION;
 
 const APP_SHELL = [
