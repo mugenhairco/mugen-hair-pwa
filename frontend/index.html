@@ -101,7 +101,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="css/landing.css?v=26" />
+<link rel="stylesheet" href="css/landing.css?v=27" />
 </head>
 <body>
 
@@ -341,6 +341,175 @@
           </ul>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- 3.5 Booking Tutorial: simulasi visual customer booking journey (Choose
+       Barber -> ... -> Confirmation), BUKAN dokumentasi teknis payment
+       gateway. Tenant contoh SENGAJA generik ("Barber Shop Indonesia"),
+       bukan tenant nyata mana pun -- lihat catatan CSS di landing.css.
+       Metode pembayaran (Virtual Account/QRIS/E-Wallet/Debit) ditampilkan
+       sebagai CONTOH ilustratif saja, TIDAK mengklaim salah satu sudah
+       aktif/production untuk tenant mana pun. -->
+  <section class="lp-section" id="booking-tutorial">
+    <div class="lp-container">
+      <span class="lp-section-eyebrow lp-reveal">Booking Pelanggan</span>
+      <h2 class="lp-section-title lp-reveal">Booking Semudah Ini untuk Pelanggan Anda</h2>
+      <p class="lp-section-sub lp-reveal">Dari memilih barber sampai booking terkonfirmasi — semuanya selesai dalam beberapa langkah sederhana, langsung dari HP pelanggan.</p>
+      <span class="lp-tut-demo-tag lp-reveal">Simulasi tampilan booking — <b>Barber Shop Indonesia</b> (data demo)</span>
+
+      <div class="lp-carousel lp-reveal" id="lp-booking-tutorial">
+        <div class="lp-carousel-track">
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">01</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Choose Barber</div>
+                <div class="lp-tut-grid2">
+                  <div class="lp-tut-barber lp-tut-sel"><div class="lp-mockup-avatar">DI</div><div class="lp-tut-barber-name">Dimas</div></div>
+                  <div class="lp-tut-barber"><div class="lp-mockup-avatar">YO</div><div class="lp-tut-barber-name">Yoga</div></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Choose Barber</h3>
+            <p class="lp-tut-desc">Pilih barber yang tersedia untuk jadwal Anda.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">02</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Choose Service</div>
+                <div class="lp-tut-rows">
+                  <div class="lp-tut-row lp-tut-sel"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Haircut</div><div class="lp-tut-row-sub">Rp 50.000</div></div></div>
+                  <div class="lp-tut-row lp-tut-sel"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Hair Wash</div><div class="lp-tut-row-sub">Rp 20.000</div></div></div>
+                  <div class="lp-tut-row"><span class="lp-tut-row-check"></span><div class="lp-tut-row-text"><div class="lp-tut-row-title">Hair Coloring</div><div class="lp-tut-row-sub">Rp 150.000</div></div></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Choose Service</h3>
+            <p class="lp-tut-desc">Pilih layanan, lengkap dengan harga.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">03</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Select Date</div>
+                <div class="lp-tut-daygrid">
+                  <span class="lp-tut-day">8</span><span class="lp-tut-day">9</span><span class="lp-tut-day">10</span><span class="lp-tut-day">11</span><span class="lp-tut-day lp-tut-sel">12</span><span class="lp-tut-day">13</span><span class="lp-tut-day">14</span>
+                  <span class="lp-tut-day">15</span><span class="lp-tut-day">16</span><span class="lp-tut-day">17</span><span class="lp-tut-day">18</span><span class="lp-tut-day">19</span><span class="lp-tut-day">20</span><span class="lp-tut-day">21</span>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Select Date</h3>
+            <p class="lp-tut-desc">Pilih tanggal booking dari kalender yang tersedia.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">04</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Select Time</div>
+                <div class="lp-tut-slots">
+                  <span class="lp-tut-slot">10:00</span><span class="lp-tut-slot lp-tut-sel">10:30</span>
+                  <span class="lp-tut-slot lp-tut-full">11:00</span><span class="lp-tut-slot">13:00</span>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Select Time</h3>
+            <p class="lp-tut-desc">Pilih slot waktu yang masih kosong.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">05</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Your Details</div>
+                <div class="lp-tut-field-label">Name</div>
+                <div class="lp-tut-field">Budi Hartono</div>
+                <div class="lp-tut-field-label">WhatsApp Number</div>
+                <div class="lp-tut-field">+62 812-3456-7890</div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Your Details</h3>
+            <p class="lp-tut-desc">Isi nama dan nomor WhatsApp.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">06</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Booking Summary</div>
+                <div class="lp-tut-rows">
+                  <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Barber</div><div class="lp-tut-row-title">Dimas</div></div></div>
+                  <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Tanggal &amp; Jam</div><div class="lp-tut-row-title">12 Sep, 10:30</div></div></div>
+                  <div class="lp-tut-row"><div class="lp-tut-row-text"><div class="lp-tut-row-sub">Total</div><div class="lp-tut-row-title">Rp 70.000</div></div></div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Booking Summary</h3>
+            <p class="lp-tut-desc">Periksa kembali detail booking sebelum lanjut.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">07</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-phone-header">Payment</div>
+                <div class="lp-tut-pay-grid">
+                  <div class="lp-tut-pay-chip"><span>💳</span>Virtual Account</div>
+                  <div class="lp-tut-pay-chip"><span>▦</span>QRIS</div>
+                  <div class="lp-tut-pay-chip"><span>👛</span>E-Wallet</div>
+                  <div class="lp-tut-pay-chip"><span>🏦</span>Debit</div>
+                </div>
+                <div class="lp-tut-pay-note">Opsi pembayaran fleksibel</div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Payment</h3>
+            <p class="lp-tut-desc">Pilih metode pembayaran yang tersedia.</p>
+          </div>
+
+          <span class="lp-tut-arrow" aria-hidden="true">→</span>
+
+          <div class="lp-tut-step">
+            <span class="lp-tut-num">08</span>
+            <div class="lp-phone-frame"><div class="lp-phone-notch"></div>
+              <div class="lp-phone-screen">
+                <div class="lp-tut-confirm">
+                  <div class="lp-tut-confirm-icon">✓</div>
+                  <div class="lp-tut-confirm-title">Booking Confirmed</div>
+                </div>
+                <div class="lp-wa-phone"><div class="lp-phone-notch"></div>
+                  <div class="lp-wa-screen">
+                    <div class="lp-wa-chat-header"><span class="lp-wa-chat-avatar">✂️</span><span class="lp-wa-chat-name">Barber Shop Indonesia</span></div>
+                    <div class="lp-wa-chat-body">
+                      <div class="lp-wa-bubble">Booking Anda di Barber Shop Indonesia sudah dikonfirmasi ✅ Sampai jumpa!</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3 class="lp-tut-title">Confirmation</h3>
+            <p class="lp-tut-desc">Booking berhasil, konfirmasi otomatis terkirim ke WhatsApp.</p>
+          </div>
+
+        </div>
+      </div>
+      <p class="lp-carousel-hint">Geser untuk melihat langkah berikutnya →</p>
     </div>
   </section>
 
@@ -589,7 +758,7 @@
 </footer>
 
 <script src="config.js"></script>
-<script src="js/lp-slider.js?v=26"></script>
-<script src="js/landing.js?v=26"></script>
+<script src="js/lp-slider.js?v=27"></script>
+<script src="js/landing.js?v=27"></script>
 </body>
 </html>
