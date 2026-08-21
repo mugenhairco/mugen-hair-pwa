@@ -1824,3 +1824,52 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 @media (prefers-reduced-motion: reduce) {
   .mugen-keterangan-alert { animation: none !important; }
 }
+
+/* FITUR Running Text Info Cuti (Absensi > User Barber) -- lihat
+   absensi.js::renderCutiMarquee(). Kosong = elemen ini TIDAK PERNAH
+   dirender sama sekali (bukan disembunyikan lewat CSS), jadi tidak perlu
+   guard "kosong" di sini. Animasi CSS murni (translateX loop, kecepatan
+   piksel/detik konstan diatur JS lewat --mugen-marquee-duration inline)
+   -- TIDAK ADA timer JS yang menggeser teks, supaya tidak pernah
+   berkedip/lompat. Konten digandakan dua kali di dalam track (lihat JS)
+   supaya translateX(-50%) persis menyambung ke salinan kedua yang
+   identik -- loop terasa mulus tanpa jeda/reset kasar. */
+.mugen-cuti-marquee {
+  position: relative; overflow: hidden;
+  background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--danger);
+  border-radius: var(--radius-card); padding: 10px 0; margin-bottom: 20px;
+}
+.mugen-cuti-marquee-track {
+  display: flex; width: max-content;
+  animation: mugen-cuti-marquee-scroll var(--mugen-marquee-duration, 22s) linear infinite;
+}
+/* Track berisi PERSIS dua ".mugen-cuti-marquee-copy" (konten yang sama
+   digandakan, salinan kedua aria-hidden) -- translateX(-50%) berhenti
+   TEPAT di batas salinan pertama/kedua yang identik, jadi lompatannya
+   tidak terlihat sama sekali. */
+.mugen-cuti-marquee-copy { display: flex; flex: none; }
+.mugen-cuti-marquee-seg {
+  display: flex; align-items: center; flex: none; white-space: nowrap;
+  padding-right: 40px; color: var(--danger); font-weight: 600; font-size: 14px;
+}
+/* Separator adalah SIBLING dari .mugen-cuti-marquee-seg (bukan nested di
+   dalamnya, lihat absensi.js::_buatSalinanMarquee()) -- selector datar,
+   BUKAN descendant selector. */
+.mugen-cuti-marquee-sep { margin: 0 16px; opacity: 0.45; color: var(--danger); }
+@keyframes mugen-cuti-marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Teks tetap terbaca (info cuti tetap penting), murni tidak bergerak --
+     salinan kedua (duplikat murni untuk animasi) disembunyikan supaya
+     tidak tampil dua kali, overflow-x:auto memberi jalan geser manual
+     kalau konten kepanjangan untuk layar sempit. */
+  .mugen-cuti-marquee { overflow-x: auto; }
+  .mugen-cuti-marquee-track { animation: none !important; width: auto; }
+  .mugen-cuti-marquee-copy[aria-hidden="true"] { display: none; }
+}
+@media (max-width: 640px) {
+  .mugen-cuti-marquee-seg { font-size: 13px; padding-right: 28px; }
+  .mugen-cuti-marquee-sep { margin: 0 12px; }
+}

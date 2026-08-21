@@ -89,6 +89,18 @@ def pending_count(user: dict = Depends(get_current_user)):
     return {"jumlah": 0}
 
 
+@router.get("/marquee")
+def info_cuti_marquee(user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'marquee' tidak
+    ditangkap sebagai path parameter pengajuan_id. Info ringkas cuti
+    aktif/akan datang (nama barber + tanggal, TANPA alasan) untuk running
+    text Absensi Barber -- lihat izin_cuti_db.py::get_info_cuti_marquee().
+    Dibuka untuk SEMUA role tenant (bukan cuma barber) karena datanya
+    sendiri sudah minimal & tidak sensitif -- role mana yang MENAMPILKANNYA
+    di UI murni keputusan frontend (absensi.js), bukan di sini."""
+    return izin_cuti_db.get_info_cuti_marquee(user["tenant_id"])
+
+
 class CutiSettingsBody(BaseModel):
     kuota_periode_bulan: int | None = None
     kuota_maksimal_hari: int | None = None
