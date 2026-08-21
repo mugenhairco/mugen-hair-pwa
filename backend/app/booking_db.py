@@ -983,6 +983,13 @@ def verifikasi_pembayaran(booking_id: int, oleh: str = None):
     langsung dibayar tanpa pernah "diterima" admin dulu (lihat docstring
     terima_booking()).
 
+    Migrasi Faspay SNAP Advance: SEKARANG punya PEMANGGIL KETIGA --
+    snap_webhook.py::_cascade_booking() (webhook SNAP Advance yang baru,
+    TERPADU dengan SaaS Billing lewat satu endpoint) memanggil fungsi ini
+    LANGSUNG (`oleh=None`, sama seperti webhook Xpress) begitu status
+    transaksi SNAP mencapai PAID -- TIDAK ada logika booking baru ditulis
+    di sana, fungsi INI tetap satu-satunya titik kebenaran.
+
     FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp: `oleh`
     (username admin yang menekan tombol, None untuk webhook) DAN
     waktu-sekarang HANYA dicatat SEKALI, pada transisi PERTAMA ke

@@ -928,6 +928,75 @@ CREATE TABLE IF NOT EXISTS booking_payment_status_log (
     waktu           TEXT NOT NULL
 );
 
+-- Migrasi Faspay SNAP Advance: tabel transaksi pembayaran TERPADU (Booking
+-- Payment Tenant + SaaS Billing) -- versi PostgreSQL, SAMA PERSIS skemanya
+-- dengan snap_payment_migrasi.py (jalur SQLite), lihat modul itu untuk
+-- penjelasan lengkap keputusan arsitektur "satu tabel, dua use case".
+-- TERPISAH TOTAL dari booking_payment_transactions/subscription_invoices
+-- (Xpress v4 lama) di atas -- tabel BARU murni, TIDAK mengubah keduanya.
+CREATE TABLE IF NOT EXISTS snap_payment_transactions (
+    id                        SERIAL PRIMARY KEY,
+    internal_transaction_id   TEXT NOT NULL UNIQUE,
+    provider                  TEXT NOT NULL DEFAULT 'snap_advance',
+    provider_transaction_id   TEXT,
+    payment_reference         TEXT NOT NULL UNIQUE,
+    transaction_type          TEXT NOT NULL,
+    tenant_id                 INTEGER NOT NULL,
+    booking_id                INTEGER,
+    subscription_invoice_id   INTEGER,
+    channel                   TEXT,
+    ewallet_provider          TEXT,
+    binding_id                INTEGER,
+    amount                    INTEGER NOT NULL,
+    status                    TEXT NOT NULL DEFAULT 'CREATED',
+    va_number                 TEXT,
+    qr_content                TEXT,
+    qr_url                    TEXT,
+    ewallet_deeplink_url      TEXT,
+    expired_at                TEXT,
+    provider_response         TEXT,
+    webhook_raw_payload       TEXT,
+    webhook_processing_status TEXT NOT NULL DEFAULT 'belum_diterima',
+    idempotency_key           TEXT,
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL,
+    paid_at                   TEXT
+);
+
+-- Instalasi Postgres yang sempat menjalankan create_all() SEBELUM kolom
+-- binding_id ditambahkan ke CREATE TABLE di atas (channel Direct Debit) --
+-- ADD COLUMN IF NOT EXISTS supaya tetap idempotent untuk instalasi lama
+-- maupun baru, pola sama seperti ALTER TABLE lain di file ini.
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS binding_id INTEGER;
+
+CREATE TABLE IF NOT EXISTS snap_payment_status_log (
+    id              SERIAL PRIMARY KEY,
+    transaction_id  INTEGER NOT NULL,
+    status_lama     TEXT,
+    status_baru     TEXT NOT NULL,
+    sumber          TEXT NOT NULL,
+    waktu           TEXT NOT NULL
+);
+
+-- Migrasi Faspay SNAP Advance (channel Direct Debit): SNAP Direct Debit
+-- mewajibkan Registrasi/Account Binding TERPISAH lebih dulu (OTP/OAuth2,
+-- lihat snap_payment_migrasi.py untuk penjelasan lengkap) SEBELUM satu pun
+-- pembayaran bisa diminta -- tabel ini MURNI mencatat token hasil binding,
+-- proses binding sendiri masih PENDING FASPAY total (snap_advance_client.py).
+CREATE TABLE IF NOT EXISTS snap_account_bindings (
+    id                    SERIAL PRIMARY KEY,
+    internal_binding_id   TEXT NOT NULL UNIQUE,
+    provider              TEXT NOT NULL DEFAULT 'snap_advance',
+    transaction_type      TEXT NOT NULL,
+    tenant_id             INTEGER NOT NULL,
+    customer_identifier   TEXT,
+    bank_card_token       TEXT,
+    binding_status        TEXT NOT NULL DEFAULT 'PENDING',
+    provider_response     TEXT,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
+);
+
 -- FITUR Email, Verifikasi Email, Lupa Kata Sandi -- lihat penjelasan
 -- lengkap di email_auth_migrasi.py (jalur SQLite, SAMA PERSIS niatnya).
 -- `email`/`email_verified`/`blokir_sampai_verifikasi` TIDAK mengubah

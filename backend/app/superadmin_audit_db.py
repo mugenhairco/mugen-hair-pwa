@@ -45,6 +45,10 @@ AKSI_VALID = {
     # dari Payment Gateway booking di atas) -- lihat routers/billing.py,
     # billing_gateway_db.py.
     "ubah_config_billing_gateway",
+    # Migrasi Faspay SNAP Advance: provider BARU (TERPISAH dari Xpress v4 di
+    # atas, lihat routers/snap_advance.py, snap_advance_db.py) -- SATU
+    # konfigurasi dipakai untuk Booking Payment Tenant & SaaS Billing.
+    "ubah_config_snap_advance",
 }
 
 

@@ -61,6 +61,12 @@ _kunci_per_tenant: dict[int, threading.Lock] = defaultdict(threading.Lock)
 
 
 def _kunci_tenant(tenant_id: int) -> threading.Lock:
+    """Migrasi Faspay SNAP Advance: SEKARANG juga dipakai LANGSUNG oleh
+    snap_webhook.py::_cascade_saas_billing() (lihat catatan pemanggil ketiga
+    di _terapkan_status_invoice() di atas) -- lock per-tenant yang SAMA
+    dipakai KEDUA webhook (Xpress lama & SNAP baru) supaya notifikasi dari
+    KEDUANYA untuk tenant yang sama tetap terserialisasi dengan benar
+    selama masa transisi dua provider berjalan berdampingan."""
     return _kunci_per_tenant[tenant_id]
 
 STATUS_PAID = "paid"
@@ -139,6 +145,14 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
     DAN rekonsiliasi_manual() (Owner cek ulang manual ke provider, untuk
     invoice yang macet karena webhook TIDAK PERNAH sampai sama sekali),
     supaya KEDUA jalur PERSIS sama aturannya.
+
+    Migrasi Faspay SNAP Advance: SEKARANG punya PEMANGGIL KETIGA --
+    snap_webhook.py::_cascade_saas_billing() (webhook SNAP Advance yang
+    baru, TERPADU dengan Booking lewat satu endpoint -- lihat modul itu)
+    memanggil fungsi INI LANGSUNG (dengan `invoice` hasil query sendiri dan
+    lock `_kunci_tenant()` yang SAMA di bawah), BUKAN lewat proses_notifikasi()
+    (payload SNAP beda total format dari Xpress). Kalau fungsi ini di-rename/
+    diubah tanda tangannya, snap_webhook.py WAJIB ikut disesuaikan.
 
     AUDIT (perbaikan pasca-audit kesiapan): webhook TIDAK MENJAMIN urutan
     pengiriman -- notifikasi basi yang datang SETELAH invoice sudah "paid"/

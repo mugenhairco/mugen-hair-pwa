@@ -34,6 +34,23 @@
 // Data toko yang sensitif (Rating Google, Review pelanggan, Profil barber)
 // SENGAJA tidak ditampilkan di landing page, sesuai instruksi -- barber baru
 // muncul di dalam wizard booking.
+//
+// FASPAY SNAP -- Return/Landing Page UNIVERSAL "/book/return" (audit
+// lanjutan #5): SATU URL yang sama untuk SELURUH tenant (https://<domain
+// frontend>/book/return, TANPA tenant/parameter apa pun) yang didaftarkan
+// ke Faspay sebagai Return/Landing Page SNAP Direct Debit/E-Wallet --
+// customer diarahkan balik ke sini oleh Faspay/PJP (OVO/DANA/dst) SETELAH
+// pembayaran selesai. SENGAJA murni tampilan statis, TIDAK memanggil API
+// apa pun (aman dibuka tanpa parameter transaksi/tenant sama sekali,
+// TIDAK bergantung bill_no/partnerReferenceNo/query string apa pun) --
+// status pembayaran SUNGGUHAN TETAP HANYA ditentukan oleh Payment
+// Notification Faspay (https://api.rivoirsett.com, lihat
+// routers/snap_advance.py), BUKAN oleh kunjungan ke halaman ini. Route-nya
+// SENDIRI sudah tercakup gratis oleh rewrite `/book/*` yang ada di
+// render.yaml (destinasi app/index.html) + pathAdalahHalamanBook() di
+// router.js (sudah mencocokkan path apa pun di bawah "/book/") -- TIDAK
+// ada perubahan render.yaml/router.js yang diperlukan, murni cabang baru
+// di dalam render() di bawah. Lihat renderPembayaranKembali().
 
 const PageBookPublic = (() => {
   // Payment Gateway booking (Implementasi Payment Gateway & Riwayat Transaksi
@@ -309,8 +326,49 @@ const PageBookPublic = (() => {
     return img;
   }
 
+  // FASPAY SNAP -- deteksi Return/Landing Page universal "/book/return"
+  // (lihat catatan modul di atas). Cocok path ASLI ("/book/return",
+  // "/app/book/return", boleh diikuti "/" atau query string apa pun) MAUPUN
+  // varian hash ("#/book/return") -- SENGAJA startsWith, BUKAN exact match,
+  // supaya trailing slash atau parameter apa pun yang mungkin ditambahkan
+  // Faspay/PJP saat redirect TIDAK PERNAH membuat halaman ini gagal cocok
+  // (instruksi eksplisit: halaman ini WAJIB aman dibuka tanpa parameter
+  // transaksi apa pun, TIDAK boleh bergantung satu pun dari parameter itu).
+  function isHalamanReturnPembayaran() {
+    const p = location.pathname;
+    if (p === "/book/return" || p.startsWith("/book/return/") || p.startsWith("/book/return?") ||
+        p === "/app/book/return" || p.startsWith("/app/book/return/") || p.startsWith("/app/book/return?")) {
+      return true;
+    }
+    const h = location.hash || "";
+    return h === "#/book/return" || h.startsWith("#/book/return/") || h.startsWith("#/book/return?");
+  }
+
+  // FASPAY SNAP -- Return/Landing Page universal (lihat catatan modul).
+  // MURNI statis, TIDAK ADA panggilan API sama sekali -- SENGAJA, supaya
+  // halaman ini 100% aman dibuka tanpa identifier transaksi/tenant apa pun
+  // (instruksi eksplisit #8), dan supaya visitnya sendiri TIDAK PERNAH bisa
+  // disalahartikan sebagai penentu status pembayaran (yang TETAP HANYA
+  // datang dari Payment Notification Faspay -- lihat snap_webhook.py).
+  // TIDAK menyentuh flow subscription SaaS (scope KHUSUS booking tenant,
+  // instruksi eksplisit #11) -- billing.js tidak diubah/disentuh di sini.
+  function renderPembayaranKembali(root) {
+    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    document.body.classList.add("book-public-active");
+    const page = MugenUI.el("div", { class: "book-public book-landing" });
+    root.appendChild(page);
+    const hero = MugenUI.el("section", { class: "book-hero" });
+    const heroContent = MugenUI.el("div", { class: "book-hero-content" });
+    heroContent.appendChild(MugenUI.el("h1", {}, "Pembayaran Sedang Diproses"));
+    heroContent.appendChild(MugenUI.el("div", { class: "book-hero-tagline" },
+      "Kami sedang memverifikasi pembayaran Anda. Status booking akan diperbarui secara otomatis begitu pembayaran dikonfirmasi -- Anda tidak perlu melakukan apa pun lagi di halaman ini."));
+    hero.appendChild(heroContent);
+    page.appendChild(hero);
+  }
+
   async function render(root) {
     root.innerHTML = "";
+    if (isHalamanReturnPembayaran()) { renderPembayaranKembali(root); return; }
     // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
     // sudah memanggil MugenTheme.forceLight() sebelum PageBookPublic.render()
     // dipanggil, tapi dipanggil ulang di sini juga supaya halaman ini tetap
