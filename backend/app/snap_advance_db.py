@@ -41,7 +41,30 @@ _KEYS_KREDENSIAL = [
     "snap_environment", "snap_sandbox_base_url", "snap_production_base_url",
     "snap_merchant_id", "snap_partner_id", "snap_client_id", "snap_client_secret",
     "snap_private_key", "snap_faspay_public_key", "snap_webhook_secret",
+    # CHANNEL-ID (header wajib SEMUA request SNAP -- identifier layanan API
+    # Faspay sendiri, mis. "77001", KONSTAN per merchant, BEDA dari
+    # `channelCode` per-bank di bawah maupun `snap_channel_aktif` --
+    # dikonfirmasi dari dokumen resmi Faspay yang diberikan Owner).
+    "snap_channel_id",
+    # channelCode default untuk Create VA (BEDA dari CHANNEL-ID di atas --
+    # ini kode BANK VA per dokumen SNAP VA resmi Faspay, mis. "702"=BCA,
+    # "801"=BNI. Faspay mewajibkan SATU channelCode spesifik di tiap
+    # panggilan Create VA -- kolom ini murni default platform-wide, BUKAN
+    # per-tenant, sampai ada kebutuhan nyata memilih per tenant/booking).
+    "snap_va_channel_code",
 ]
+
+# Daftar channelCode VA resmi (dokumen SNAP VA Faspay -- lihat tabel
+# "channel code" Create VA) -- dipakai memvalidasi snap_va_channel_code,
+# BUKAN daftar bebas/tebakan.
+VA_CHANNEL_CODE_LABEL = {
+    "402": "Permata VA (Dynamic)", "408": "Maybank VA (Dynamic)", "702": "BCA VA (Dynamic)",
+    "706": "Indomaret Payment Point (Dynamic)", "707": "Alfagroup (Dynamic)", "708": "Danamon VA (Dynamic)",
+    "718": "BNC VA (Static & Dynamic)", "800": "BRI VA (Dynamic)", "801": "BNI VA (Static & Dynamic)",
+    "802": "Mandiri VA (Dynamic)", "818": "Sinarmas VA (Dynamic)", "825": "CIMB VA (Dynamic)",
+    "837": "BTN VA (Static & Dynamic)",
+}
+VA_CHANNEL_CODE_VALID = set(VA_CHANNEL_CODE_LABEL.keys())
 _KUNCI_TIMEOUT = "snap_timeout_detik"
 _KUNCI_RETRY_MAX = "snap_retry_max"
 _KUNCI_CHANNEL_AKTIF = "snap_channel_aktif"
@@ -77,11 +100,37 @@ _DEFAULT_TIMEOUT_DETIK = 30
 _DEFAULT_RETRY_MAX = 3
 
 
+# Field RAHASIA yang TIDAK PERNAH boleh keluar apa adanya lewat get_config()
+# (instruksi eksplisit Owner: private key tidak boleh "ditampilkan atau
+# dikirim kembali dalam response API GET konfigurasi" -- private key RSA
+# menandatangani SELURUH transaksi, beda kelas risiko dari sekadar API key
+# yang gampang di-rotate). client_secret/webhook_secret ikut kelompok yang
+# sama (rahasia simetris). snap_faspay_public_key SENGAJA TIDAK masuk sini
+# -- itu public key MILIK Faspay yang justru harus terlihat Super Admin
+# untuk verifikasi kecocokan, bukan sesuatu yang perlu disembunyikan.
+_FIELD_RAHASIA = ("snap_private_key", "snap_client_secret", "snap_webhook_secret")
+
+
 def get_config() -> dict:
-    """Config LENGKAP termasuk kredensial -- HANYA dipanggil dari endpoint
+    """Config termasuk kredensial -- HANYA dipanggil dari endpoint
     require_superadmin (routers/snap_advance.py), tidak pernah diekspos ke
-    tenant/publik (pola sama persis payment_gateway_db.py::get_config())."""
+    tenant/publik (pola sama persis payment_gateway_db.py::get_config()).
+
+    BUGFIX keamanan (audit SNAP Advance): field di _FIELD_RAHASIA TIDAK
+    PERNAH dikembalikan apa adanya di sini -- diganti string kosong "",
+    DITEMANI penanda boolean `<field>_terisi` supaya frontend tetap bisa
+    menampilkan "sudah diisi" tanpa perlu tahu isinya. Sebelum revisi ini,
+    private key RSA ikut terkirim mentah ke browser Super Admin setiap kali
+    halaman config dibuka (lihat superadmin.js yang langsung mem-prefill
+    <input> dari respons ini) -- risiko nyata untuk key yang menandatangani
+    SELURUH transaksi. update_config() di bawah SENGAJA memperlakukan string
+    kosong dari field ini sebagai "tidak diubah" (BUKAN "kosongkan"), supaya
+    Super Admin bisa menyimpan perubahan field LAIN (mis. centang channel)
+    tanpa harus mengetik ulang secret yang sudah tersimpan."""
     data = {k: db.get_setting(k, "", tenant_id=None) for k in _KEYS_KREDENSIAL}
+    for field in _FIELD_RAHASIA:
+        data[f"{field}_terisi"] = bool(data[field])
+        data[field] = ""
     if data["snap_environment"] not in ENVIRONMENT_VALID:
         data["snap_environment"] = "sandbox"
     try:
@@ -98,6 +147,7 @@ def get_config() -> dict:
         channel_aktif = []
     data["snap_channel_aktif"] = channel_aktif
     data["channel_label"] = CHANNEL_LABEL
+    data["va_channel_code_label"] = VA_CHANNEL_CODE_LABEL
     # "enabled": SENGAJA konservatif -- field kredensial minimal yang
     # DIPERKIRAKAN dibutuhkan skema token B2B SNAP (merchant_id/client_id/
     # client_secret/private_key), TAPI ini BUKAN jaminan kredensial ini
@@ -105,6 +155,38 @@ def get_config() -> dict:
     # murni penanda "sudah diisi sesuatu", bukan "sudah terverifikasi
     # berfungsi". Endpoint create-transaction TETAP melempar PENDING FASPAY
     # terlepas dari nilai enabled ini (lihat snap_advance_client.py).
+    # BUGFIX: dihitung dari `_terisi` (bukan `data["snap_client_secret"]`/
+    # `data["snap_private_key"]` langsung) -- kedua field itu SUDAH dikosongkan
+    # oleh masking di atas, memakainya lagi di sini akan membuat `enabled`
+    # SELALU False walau kredensial sebenarnya sudah lengkap.
+    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_client_id"]
+                            and data["snap_client_secret_terisi"] and data["snap_private_key_terisi"])
+    return data
+
+
+def get_config_internal() -> dict:
+    """SAMA seperti get_config(), TAPI TANPA masking -- field rahasia
+    (_FIELD_RAHASIA) dikembalikan APA ADANYA. HANYA boleh dipanggil dari
+    snap_advance_client.py (untuk benar-benar menandatangani/memanggil
+    Faspay) -- TIDAK PERNAH dari router/endpoint HTTP mana pun (itulah
+    gunanya get_config() yang sudah di-mask, dipakai routers/snap_advance.py).
+    Kalau butuh field rahasia di tempat baru, pertimbangkan dulu apakah
+    tempat itu genuinely internal (bukan sekadar malas manggil field lain)."""
+    data = {k: db.get_setting(k, "", tenant_id=None) for k in _KEYS_KREDENSIAL}
+    if data["snap_environment"] not in ENVIRONMENT_VALID:
+        data["snap_environment"] = "sandbox"
+    try:
+        data["snap_timeout_detik"] = int(db.get_setting(_KUNCI_TIMEOUT, str(_DEFAULT_TIMEOUT_DETIK), tenant_id=None))
+    except (TypeError, ValueError):
+        data["snap_timeout_detik"] = _DEFAULT_TIMEOUT_DETIK
+    try:
+        data["snap_retry_max"] = int(db.get_setting(_KUNCI_RETRY_MAX, str(_DEFAULT_RETRY_MAX), tenant_id=None))
+    except (TypeError, ValueError):
+        data["snap_retry_max"] = _DEFAULT_RETRY_MAX
+    try:
+        data["snap_channel_aktif"] = json.loads(db.get_setting(_KUNCI_CHANNEL_AKTIF, _DEFAULT_CHANNEL_AKTIF, tenant_id=None))
+    except (TypeError, ValueError):
+        data["snap_channel_aktif"] = []
     data["enabled"] = bool(data["snap_merchant_id"] and data["snap_client_id"]
                             and data["snap_client_secret"] and data["snap_private_key"])
     return data
@@ -114,7 +196,7 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
                    merchant_id: str = None, partner_id: str = None, client_id: str = None,
                    client_secret: str = None, private_key: str = None, faspay_public_key: str = None,
                    webhook_secret: str = None, timeout_detik: int = None, retry_max: int = None,
-                   channel_aktif: list = None) -> dict:
+                   channel_aktif: list = None, channel_id: str = None, va_channel_code: str = None) -> dict:
     data = {}
     if environment is not None:
         if environment not in ENVIRONMENT_VALID:
@@ -130,13 +212,19 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
         data["snap_partner_id"] = partner_id.strip()
     if client_id is not None:
         data["snap_client_id"] = client_id.strip()
-    if client_secret is not None:
+    # BUGFIX keamanan (lihat docstring get_config()): string kosong untuk
+    # field RAHASIA berarti "field ini tidak disentuh Super Admin di form
+    # ini" (karena get_config() TIDAK PERNAH mengirim nilai asli untuk
+    # diprefill) -- HANYA nilai non-kosong yang dianggap perubahan sungguhan.
+    # Field BUKAN rahasia (mis. merchant_id di atas) TETAP boleh dikosongkan
+    # dengan sengaja seperti sebelumnya, perilakunya tidak berubah.
+    if client_secret:
         data["snap_client_secret"] = client_secret.strip()
-    if private_key is not None:
+    if private_key:
         data["snap_private_key"] = private_key.strip()
     if faspay_public_key is not None:
         data["snap_faspay_public_key"] = faspay_public_key.strip()
-    if webhook_secret is not None:
+    if webhook_secret:
         data["snap_webhook_secret"] = webhook_secret.strip()
     if timeout_detik is not None:
         if timeout_detik <= 0:
@@ -151,6 +239,13 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
         if tidak_valid:
             raise ValueError(f"Channel SNAP Advance tidak dikenal/belum didukung: {', '.join(tidak_valid)}.")
         data[_KUNCI_CHANNEL_AKTIF] = json.dumps(channel_aktif)
+    if channel_id is not None:
+        data["snap_channel_id"] = channel_id.strip()
+    if va_channel_code is not None:
+        if va_channel_code and va_channel_code not in VA_CHANNEL_CODE_VALID:
+            raise ValueError(f"channelCode VA tidak dikenal: {va_channel_code}. "
+                              f"Lihat daftar resmi di VA_CHANNEL_CODE_LABEL.")
+        data["snap_va_channel_code"] = va_channel_code.strip()
     if data:
         db.set_settings_bulk(data, tenant_id=None)
     return get_config()

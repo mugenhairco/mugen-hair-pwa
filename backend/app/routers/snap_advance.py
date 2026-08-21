@@ -49,6 +49,8 @@ class ConfigBody(BaseModel):
     timeout_detik: int | None = None
     retry_max: int | None = None
     channel_aktif: list[str] | None = None
+    channel_id: str | None = None
+    va_channel_code: str | None = None
 
 
 @router.put("/config")
@@ -61,6 +63,7 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
             private_key=body.private_key, faspay_public_key=body.faspay_public_key,
             webhook_secret=body.webhook_secret, timeout_detik=body.timeout_detik,
             retry_max=body.retry_max, channel_aktif=body.channel_aktif,
+            channel_id=body.channel_id, va_channel_code=body.va_channel_code,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -71,11 +74,13 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
 
 @public_router.post("/snap-notification")
 async def snap_notification(request: Request):
-    """URL Payment Notification SNAP Advance -- lihat catatan modul soal
-    KENAPA path ini terpisah dari /faspay-notification (Xpress lama).
-    PENDING FASPAY total (lihat snap_webhook.proses_notifikasi()) -- balas
-    503 (BUKAN 400/500) selama masih PENDING, supaya jelas ini "belum siap
-    diimplementasikan", bukan kegagalan validasi permintaan yang masuk."""
+    """URL Payment Notification SNAP Advance -- SATU-SATUNYA URL notifikasi
+    yang didaftarkan Faspay untuk Merchant ID 37070 (Owner memutuskan Xpress
+    v4 tidak lagi dipakai, lihat catatan modul). VA & Direct Debit sudah
+    diimplementasikan sungguhan (snap_webhook.proses_notifikasi()) -- balas
+    400 untuk signature tidak valid/referensi tidak dikenal/status tidak
+    didukung, 503 HANYA kalau proses_notifikasi() melempar GatewayError
+    (mis. channel QRIS/E-Wallet yang masih PENDING FASPAY total)."""
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     signature_header = request.headers.get("X-SIGNATURE", "")
     timestamp_header = request.headers.get("X-TIMESTAMP")

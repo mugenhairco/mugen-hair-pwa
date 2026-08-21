@@ -1327,6 +1327,8 @@ const PageSuperadmin = (() => {
     const inSnapPrivateKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PRIVATE KEY-----" });
     const inSnapPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay, untuk verifikasi webhook)" });
     const inSnapWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapChannelId = MugenUI.el("input", { type: "text", placeholder: "mis. 77001" });
+    const inSnapVaChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih bank VA --")]);
     const inSnapTimeout = MugenUI.el("input", { type: "number", min: "1" });
     const inSnapRetryMax = MugenUI.el("input", { type: "number", min: "0" });
 
@@ -1350,6 +1352,10 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(inSnapPublicKey);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Webhook Secret (kalau ada)"));
     snapAdvanceCard.appendChild(inSnapWebhookSecret);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "CHANNEL-ID (identifier layanan API Faspay, BUKAN kode bank -- diberikan Faspay, mis. 77001)"));
+    snapAdvanceCard.appendChild(inSnapChannelId);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Bank VA Default (channelCode Create VA)"));
+    snapAdvanceCard.appendChild(inSnapVaChannelCode);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Timeout (detik)"));
     snapAdvanceCard.appendChild(inSnapTimeout);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Retry Max"));
@@ -1393,14 +1399,34 @@ const PageSuperadmin = (() => {
         inSnapMerchantId.value = cfg.snap_merchant_id || "";
         inSnapPartnerId.value = cfg.snap_partner_id || "";
         inSnapClientId.value = cfg.snap_client_id || "";
-        inSnapClientSecret.value = cfg.snap_client_secret || "";
-        inSnapPrivateKey.value = cfg.snap_private_key || "";
+        // BUGFIX keamanan: get_config() TIDAK PERNAH lagi mengirim nilai asli
+        // untuk field rahasia (private key/client secret/webhook secret) --
+        // lihat snap_advance_db.py::get_config(). Input dikosongkan (BUKAN
+        // diisi ulang) dan diberi placeholder dari penanda `_terisi`, supaya
+        // private key RSA tidak lagi ikut mendarat di browser tiap halaman
+        // dibuka. Mengirim field ini KOSONG saat Simpan berarti "tidak
+        // diubah" (lihat snap_advance_db.py::update_config()) -- isi ulang
+        // HANYA kalau memang mau mengganti nilainya.
+        inSnapClientSecret.value = "";
+        inSnapClientSecret.placeholder = cfg.snap_client_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapPrivateKey.value = "";
+        inSnapPrivateKey.placeholder = cfg.snap_private_key_terisi
+          ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "-----BEGIN PRIVATE KEY-----";
         inSnapPublicKey.value = cfg.snap_faspay_public_key || "";
-        inSnapWebhookSecret.value = cfg.snap_webhook_secret || "";
+        inSnapWebhookSecret.value = "";
+        inSnapWebhookSecret.placeholder = cfg.snap_webhook_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapChannelId.value = cfg.snap_channel_id || "";
         inSnapTimeout.value = cfg.snap_timeout_detik || 30;
         inSnapRetryMax.value = cfg.snap_retry_max || 3;
         snapChannelLabel = cfg.channel_label || {};
         renderSnapChannelList();
+        const vaChannelLabel = cfg.va_channel_code_label || {};
+        inSnapVaChannelCode.innerHTML = "";
+        inSnapVaChannelCode.appendChild(MugenUI.el("option", { value: "" }, "-- pilih bank VA --"));
+        for (const [kode, label] of Object.entries(vaChannelLabel)) {
+          inSnapVaChannelCode.appendChild(MugenUI.el("option", { value: kode }, `${kode} -- ${label}`));
+        }
+        inSnapVaChannelCode.value = cfg.snap_va_channel_code || "";
         for (const key of (cfg.snap_channel_aktif || [])) if (snapChannelCheckbox[key]) snapChannelCheckbox[key].checked = true;
       } catch (e) { errorSnap.textContent = e.message; }
     }
@@ -1415,6 +1441,7 @@ const PageSuperadmin = (() => {
           private_key: inSnapPrivateKey.value, faspay_public_key: inSnapPublicKey.value,
           webhook_secret: inSnapWebhookSecret.value, timeout_detik: Number(inSnapTimeout.value) || 30,
           retry_max: Number(inSnapRetryMax.value) || 0, channel_aktif,
+          channel_id: inSnapChannelId.value, va_channel_code: inSnapVaChannelCode.value,
         }));
         MugenUI.toast("Konfigurasi SNAP Advance disimpan.", "success");
         loadAuditLog();

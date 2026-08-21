@@ -119,6 +119,30 @@ def post_json(url: str, payload: dict, headers: dict, timeout: int = _TIMEOUT_DE
     return resp.json()
 
 
+def post_json_raw(url: str, raw_body: str, headers: dict, timeout: int = _TIMEOUT_DETIK_DEFAULT) -> dict:
+    """POST dengan body PERSIS `raw_body` (bytes UTF-8 apa adanya, TIDAK
+    diserialisasi ulang oleh `requests`) -- WAJIB dipakai untuk provider yang
+    menandatangani hash body (mis. SNAP: X-SIGNATURE mencakup SHA-256 dari
+    body request) supaya bytes yang di-hash untuk signature SAMA PERSIS
+    dengan bytes yang benar-benar terkirim di jaringan. `post_json()` di
+    atas TIDAK aman untuk kasus ini -- `requests.post(..., json=payload)`
+    men-serialize ULANG payload dengan opsi spasi berbeda dari serialisasi
+    manapun yang dipakai pemanggil untuk menghitung signature-nya, sehingga
+    hash yang dikirim bisa tidak cocok dengan body yang benar-benar sampai
+    ke provider. Pemanggil BERTANGGUNG JAWAB memastikan `raw_body` adalah
+    string PERSIS yang di-hash untuk X-SIGNATURE. Penanganan error SAMA
+    PERSIS post_json()."""
+    try:
+        resp = requests.post(url, data=raw_body.encode(), headers=headers, timeout=timeout)
+    except requests.exceptions.RequestException as e:
+        logging.getLogger("mugen.gateway").error("POST %s gagal (jaringan/timeout): %s", url, e)
+        raise GatewayTimeoutError(f"Tidak dapat menghubungi Payment Gateway: {e}") from e
+    if resp.status_code >= 400:
+        logging.getLogger("mugen.gateway").error("POST %s ditolak provider: HTTP %s %s", url, resp.status_code, resp.text)
+        raise GatewayRequestError(f"Payment Gateway menolak permintaan (HTTP {resp.status_code}).")
+    return resp.json()
+
+
 def get_json(url: str, headers: dict, timeout: int = _TIMEOUT_DETIK_DEFAULT) -> dict:
     """GET JSON dari provider -- pola penanganan error SAMA PERSIS dengan
     post_json() di atas (lihat docstring-nya)."""
@@ -246,3 +270,64 @@ def verify_sha256_rsa(string_to_sign: str, signature_b64: str, public_key_pem: s
         return True
     except (InvalidSignature, ValueError, TypeError):
         return False
+
+
+# =============================================================================
+# SNAP Advance -- header X-TIMESTAMP/X-EXTERNAL-ID & signature simetris
+# (HMAC-SHA512) untuk pemanggilan service SETELAH token B2B didapat
+# =============================================================================
+# CATATAN SUMBER & BATASAN (WAJIB dibaca): fungsi di bawah ini mengimplementasikan
+# format string-to-sign standar SNAP BI/ASPI yang berlaku WAJIB lintas
+# seluruh penyelenggara berlisensi -- BUKAN tebakan bebas, ini spesifikasi
+# teknis SNAP yang dipublikasikan Bank Indonesia/ASPI (identik dipakai
+# seluruh PJP: signature asymmetric RSA-SHA256 untuk /access-token/b2b,
+# signature symmetric HMAC-SHA512 untuk service call setelahnya). TAPI:
+# halaman "Signature details" resmi Faspay (docs.faspay.co.id/merchant-
+# integration/api-reference-1/snap/signature-snap, dirujuk di dokumen VA/DD
+# yang diberikan Owner) TIDAK BISA diakses dari lingkungan kerja ini (domain
+# diblokir oleh proxy jaringan) -- formula di bawah BELUM dicocokkan 1:1 ke
+# halaman itu. WAJIB diverifikasi ulang (baca halaman resmi ATAU uji lewat
+# Faspay Simulator) SEBELUM dipakai terhadap sandbox/production sungguhan.
+
+def snap_timestamp_wib() -> str:
+    """X-TIMESTAMP -- format wajib SNAP `yyyy-MM-ddTHH:mm:ssTZD` (mis.
+    "2026-08-21T12:34:56+07:00", TZD berupa offset dengan titik dua, bukan
+    "Z" ataupun "+0700" tanpa titik dua), WIB (lihat now_wib() di atas untuk
+    alasan kenapa harus WIB, bukan UTC polos). Dipanggil SEKALI (bukan dua
+    kali terpisah) supaya bagian tanggal/jam & offset selalu dari instant
+    yang sama persis."""
+    now = now_wib()
+    offset = now.strftime("%z")  # "+0700" (tanpa titik dua)
+    return now.strftime("%Y-%m-%dT%H:%M:%S") + offset[:3] + ":" + offset[3:]
+
+
+def buat_external_id() -> str:
+    """X-EXTERNAL-ID -- SNAP mewajibkan string numerik yang unik DALAM HARI
+    YANG SAMA (bukan unik selamanya) per header SNAP standar. Digabung dari
+    timestamp milidetik (WIB) + 6 digit acak supaya aman dari dua request
+    yang start di milidetik yang sama persis."""
+    import random
+    now = now_wib()
+    return f"{int(now.timestamp() * 1000)}{random.randint(100000, 999999)}"
+
+
+def sha256_lowercase_hex(text: str) -> str:
+    """SHA-256 atas `text` (body request yang SUDAH di-minify jadi JSON
+    compact tanpa spasi -- tanggung jawab pemanggil), hex lowercase --
+    komponen string-to-sign symmetric SNAP standar (lihat sign_hmac_sha512())."""
+    return hashlib.sha256(text.encode()).hexdigest().lower()
+
+
+def sign_hmac_sha512(string_to_sign: str, client_secret: str) -> str:
+    """HMAC-SHA512(string_to_sign, key=client_secret), base64-encoded --
+    signature SIMETRIS standar SNAP untuk service call SETELAH token B2B
+    didapat (BEDA dari sign_sha256_rsa() yang asymmetric, HANYA dipakai untuk
+    /access-token/b2b). `string_to_sign` standar SNAP:
+    `{HTTP_METHOD}:{EndpointUrl}:{AccessToken}:{sha256_lowercase_hex(minified_body)}:{X-TIMESTAMP}`
+    -- perangkaian persis ini TANGGUNG JAWAB pemanggil (snap_advance_client.py),
+    fungsi ini murni primitif HMAC generik. Melempar ValueError kalau
+    `client_secret` kosong -- pola sama seperti sign_sha256_rsa()."""
+    if not client_secret:
+        raise ValueError("Client Secret SNAP Advance belum diisi.")
+    mac = hmac.new(client_secret.encode(), string_to_sign.encode(), hashlib.sha512)
+    return base64.b64encode(mac.digest()).decode()

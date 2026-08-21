@@ -116,34 +116,82 @@ def _cascade_saas_billing(subscription_invoice_id: int, status_baru: str, sumber
         billing_webhook._terapkan_status_invoice(invoice, status_billing, sumber=sumber)
 
 
+# Pemetaan `latestTransactionStatus` (dokumen resmi VA & Direct Debit yang
+# diberikan Owner, KEDUANYA memakai daftar kode yang sama) -> vocabulary
+# status internal snap_payment_db.py. "04" (Refunded) SENGAJA TIDAK
+# dipetakan -- snap_payment_db.STATUS_VALID tidak punya representasi refund
+# (keputusan arsitektur sebelumnya: scope migrasi tidak menyebutkan refund
+# sama sekali, TIDAK ditambahkan supaya tidak mengarang state yang tidak
+# diminta) -- notifikasi berkode "04" akan DITOLAK dengan pesan jelas (lihat
+# _map_latest_transaction_status()) supaya kelihatan perlu penanganan
+# manual, BUKAN diam-diam disalahartikan jadi status lain yang keliru.
+_STATUS_CODE_KE_INTERNAL = {
+    "00": snap_payment_db.STATUS_PAID,       # Success
+    "01": snap_payment_db.STATUS_PENDING,    # Initiated
+    "02": snap_payment_db.STATUS_PENDING,    # Paying
+    "03": snap_payment_db.STATUS_PENDING,    # Pending
+    "05": snap_payment_db.STATUS_CANCELLED,  # Canceled
+    "06": snap_payment_db.STATUS_FAILED,     # Failed
+    "07": snap_payment_db.STATUS_EXPIRED,    # Not Found / Expired (dokumen Faspay memakai kode "07" dobel untuk 2 arti -- perlu klarifikasi Faspay, "Expired" dipakai di sini karena lebih actionable utk notifikasi push)
+}
+
+
+def _map_latest_transaction_status(status_code: str) -> str:
+    if status_code not in _STATUS_CODE_KE_INTERNAL:
+        raise ValueError(
+            f"latestTransactionStatus SNAP Advance tidak didukung: {status_code!r}. "
+            f"Kalau ini kode \"04\" (Refunded), sistem ini belum punya representasi status refund -- "
+            f"perlu penanganan manual, lihat catatan snap_payment_db.STATUS_VALID."
+        )
+    return _STATUS_CODE_KE_INTERNAL[status_code]
+
+
+def _ekstrak_notifikasi(payload: dict) -> tuple:
+    """Payload VA Dynamic vs Direct Debit BEDA BENTUK (dikonfirmasi dari
+    dokumen resmi Faspay yang diberikan Owner):
+    - VA Dynamic: transaksi diidentifikasi lewat `trxId` (BUKAN
+      partnerReferenceNo), `latestTransactionStatus` bersarang di
+      `additionalInfo`.
+    - Direct Debit: transaksi diidentifikasi lewat `originalPartnerReferenceNo`,
+      `latestTransactionStatus` field TOP-LEVEL (BUKAN di dalam
+      `additionalInfo` seperti VA -- beda dari VA, gampang salah kalau
+      disamakan).
+    Return (payment_reference, provider_transaction_id, status_code, paid_at)."""
+    info = payload.get("additionalInfo") or {}
+    if "trxId" in payload:  # VA Dynamic
+        return (payload.get("trxId"), payload.get("paymentRequestId"),
+                info.get("latestTransactionStatus"), info.get("paymentDate"))
+    if "originalPartnerReferenceNo" in payload:  # Direct Debit
+        return (payload.get("originalPartnerReferenceNo"), payload.get("originalReferenceNo"),
+                payload.get("latestTransactionStatus"), info.get("paymentDate"))
+    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA Dynamic maupun Direct Debit).")
+
+
 def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: str = None) -> dict:
-    """Envelope luar webhook -- PENDING FASPAY (lihat docstring modul &
-    snap_advance_client.verifikasi_signature_webhook()). Melempar
-    SnapAdvancePendingError sampai skema payload/signature Faspay
-    terkonfirmasi -- routers/snap_advance.py menerjemahkannya jadi HTTP 503
-    (BUKAN 400/500 -- ini bukan kegagalan validasi ataupun bug, murni
-    "belum siap", supaya Faspay/monitoring bisa membedakan)."""
+    """Envelope luar webhook -- memverifikasi signature, mem-parsing payload
+    VA/Direct Debit (lihat _ekstrak_notifikasi()), lalu memanggil
+    terapkan_status_transaksi() (CORE, sudah diuji penuh sejak awal).
+    QRIS/E-Wallet BELUM dikenali di sini (skema payloadnya PENDING FASPAY,
+    lihat snap_advance_client.py) -- notifikasi bentuk itu akan jatuh ke
+    ValueError "tidak dikenali" di _ekstrak_notifikasi()."""
     # BUGFIX-guard SENGAJA di posisi ini (SEBELUM parsing payload apa pun):
     # signature WAJIB divalidasi dulu sebelum satu field pun dari body
     # dipercaya -- pola SAMA PERSIS booking_gateway_webhook.py::
     # proses_notifikasi() (verifikasi_signature() dipanggil SEBELUM
-    # get_transaksi_by_order_id()).
-    snap_advance_client.verifikasi_signature_webhook(raw_body, signature_header, timestamp_header)
-    # Baris di bawah TIDAK PERNAH tercapai hari ini (baris di atas SELALU
-    # melempar PENDING FASPAY) -- disiapkan sebagai KERANGKA supaya begitu
-    # Faspay mengonfirmasi skema payload, hanya bagian PARSING (ekstrak
-    # payment_reference/status/dst dari `payload`) yang perlu diisi --
-    # panggilan ke terapkan_status_transaksi() di bawah TIDAK berubah.
-    payload = json.loads(raw_body)  # pragma: no cover -- lihat catatan di atas
-    payment_reference = payload.get("partnerReferenceNo") or payload.get("originalPartnerReferenceNo")
+    # get_transaksi_by_order_id()). verifikasi_signature_webhook() return
+    # False (BUKAN exception) baik untuk "belum dikonfigurasi" MAUPUN
+    # "signature tidak valid" -- KEDUANYA ditolak sama (pola sama persis
+    # gateway_client_base.py::verify_sha512() dkk).
+    if not snap_advance_client.verifikasi_signature_webhook(raw_body, signature_header, timestamp_header):
+        raise ValueError("Signature Payment Notification SNAP Advance tidak valid atau belum dikonfigurasi.")
+    payload = json.loads(raw_body)
+    payment_reference, provider_transaction_id, status_code, paid_at = _ekstrak_notifikasi(payload)
+    if not payment_reference:
+        raise ValueError("Payload notifikasi SNAP Advance tidak berisi referensi transaksi.")
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None:
         raise ValueError(f"payment_reference tidak dikenal: {payment_reference}")
     snap_payment_db.catat_webhook_diterima(transaksi["id"], raw_body, berhasil=True)
-    # PENDING FASPAY: pemetaan status code SNAP Advance -> vocabulary
-    # internal (CREATED/PENDING/PAID/FAILED/EXPIRED/CANCELLED) belum bisa
-    # ditulis -- field & nilai kode status SNAP Faspay belum terkonfirmasi.
-    raise snap_advance_client.pending_faspay(
-        "Parsing payload webhook -- proses_notifikasi()",
-        "Field status code & nilai resminya di payload Payment Notification SNAP Faspay belum terkonfirmasi.",
-    )
+    status_baru = _map_latest_transaction_status(status_code)
+    return terapkan_status_transaksi(transaksi, status_baru, sumber="webhook",
+                                      provider_transaction_id=provider_transaction_id, paid_at=paid_at)
