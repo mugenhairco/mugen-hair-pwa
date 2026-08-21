@@ -35,25 +35,33 @@ dokumen resmi SNAP VA & SNAP Direct Debit)
 - **E-Wallet**: TETAP PENDING FASPAY TOTAL -- di luar cakupan yang diminta.
 
 =============================================================================
-CATATAN SIGNATURE -- BELUM 100% terverifikasi ke halaman resmi Faspay
+CATATAN SIGNATURE -- SUDAH dikonfirmasi 1:1 ke halaman resmi Faspay
 =============================================================================
-Fungsi di bawah memakai primitif signature SNAP standar BI/ASPI
-(gateway_client_base.py::sign_sha256_rsa() untuk B2B token, sign_hmac_sha512()
-untuk service call) -- formula INI SENDIRI adalah spesifikasi SNAP yang
-DIWAJIBKAN lintas seluruh PJP berlisensi, bukan tebakan bebas. TAPI halaman
-"Signature details" resmi Faspay (dirujuk dari dokumen VA/DD yang diberikan
-Owner: docs.faspay.co.id/merchant-integration/api-reference-1/snap/
-signature-snap) TIDAK BISA diakses dari lingkungan kerja ini (domain
-diblokir proxy jaringan) -- BELUM dicocokkan 1:1 ke halaman itu. **WAJIB**
-diverifikasi ulang (baca halaman resmi tsb, atau uji langsung lewat Faspay
-Simulator) SEBELUM dipakai terhadap sandbox/production sungguhan.
+Owner memberikan isi halaman resmi "Signature SNAP" Faspay
+(docs.faspay.co.id/merchant-integration/api-reference-1/snap/signature-snap).
+Formula DIVERIFIKASI MANUAL byte-demi-byte terhadap DUA contoh angka resmi
+di halaman itu (hash body SHA-256 & signature RSA-SHA256 Create VA, DAN
+hash body contoh Verifying Signature VA Inquiry) -- KEDUANYA cocok persis.
+Kesimpulan PENTING yang mengoreksi asumsi audit sebelumnya:
 
-Path endpoint get-token B2B (`PATH_ACCESS_TOKEN_B2B` di bawah) JUGA belum
-ada di dokumen yang diberikan Owner (hanya VA & Direct Debit yang diberikan)
--- dipakai konvensi path SNAP standar (`/v1.0/access-token/b2b`), SAMA gaya
-penulisan path dengan endpoint VA/DD yang SUDAH terkonfirmasi di base domain
-yang sama, TAPI belum dikonfirmasi tertulis oleh Faspay. Tandai sebagai gap
-untuk dikonfirmasi sebelum uji sandbox sungguhan."""
+1. **Signature SEMUA request SNAP (bukan cuma /access-token/b2b) memakai
+   ASYMMETRIC RSA-SHA256** dengan private key merchant -- BUKAN symmetric
+   HMAC seperti dugaan awal (dugaan awal itu KELIRU, sudah diperbaiki).
+2. **stringToSign TIDAK menyertakan access token sama sekali**:
+   `HTTPMethod + ":" + EndpointUrl + ":" + Lowercase(HexEncode(SHA256(minify(RequestBody)))) + ":" + TimeStamp`
+   -- lihat gateway_client_base.py::sign_sha256_rsa()/sha256_lowercase_hex().
+3. **Sample Request Header resmi Create VA TIDAK menyertakan header
+   Authorization/Bearer token sama sekali** (hanya X-TIMESTAMP/X-SIGNATURE/
+   X-PARTNER-ID/X-EXTERNAL-ID/CHANNEL-ID) -- karena itu `ambil_token_b2b()`
+   di bawah TIDAK dipanggil dari jalur VA/Direct Debit manapun. Fungsi itu
+   TETAP disimpan (endpoint `/access-token/b2b` genuinely bagian standar
+   SNAP, disebut di tabel EndpointURL halaman Signature SNAP untuk produk
+   lain seperti SNAP Disbursement) TAPI statusnya UNCONFIRMED-UNUSED untuk
+   VA/Direct Debit -- kalau Faspay mengonfirmasi token TETAP dibutuhkan,
+   tinggal disambungkan kembali di _headers_service().
+
+`minify(RequestBody)` = JSON compact TANPA spasi (json.dumps separators=
+(",", ":")) -- dikonfirmasi PERSIS lewat kedua contoh di atas."""
 
 import json
 import re
@@ -122,41 +130,46 @@ def _minify(body: dict) -> str:
 
 
 def ambil_token_b2b() -> str:
-    """Token akses B2B SNAP -- signature ASYMMETRIC (RSA-SHA256) atas
-    `client_id + "|" + X-TIMESTAMP`, ditandatangani private key merchant.
-    Lihat catatan modul soal path endpoint yang belum terkonfirmasi
-    dokumen resmi Faspay."""
+    """Token akses B2B SNAP -- endpoint `/access-token/b2b` disebut di
+    tabel EndpointURL halaman resmi "Signature SNAP" (Faspay, untuk produk
+    lain seperti SNAP Disbursement), TAPI TIDAK terbukti dibutuhkan untuk
+    VA/Direct Debit (sample Request Header resmi Create VA TIDAK
+    menyertakan Authorization/Bearer sama sekali -- lihat catatan modul).
+    Fungsi ini TIDAK dipanggil dari jalur VA/Direct Debit manapun saat ini
+    -- disimpan sebagai utilitas standalone kalau-kalau dibutuhkan produk
+    lain/dikonfirmasi Faspay di kemudian hari. Signature memakai formula
+    YANG SAMA dengan seluruh service call SNAP (lihat _headers_service()),
+    KONSISTEN dengan halaman resmi yang tidak menunjukkan formula berbeda
+    untuk endpoint token -- request body ("grantType": "client_credentials")
+    sendiri MASIH KONVENSI (belum ada contoh persis dari Faspay)."""
     cfg = snap_advance_db.get_config_internal()
-    _cfg_wajib(cfg, "snap_client_id", "snap_private_key")
-    ts = core.snap_timestamp_wib()
-    string_to_sign = f"{cfg['snap_client_id']}|{ts}"
-    signature = core.sign_sha256_rsa(string_to_sign, cfg["snap_private_key"])
-    headers = {
-        "Content-Type": "application/json",
-        "X-TIMESTAMP": ts,
-        "X-SIGNATURE": signature,
-        "X-CLIENT-KEY": cfg["snap_client_id"],
-    }
+    _cfg_wajib(cfg, "snap_private_key")
+    raw_body = _minify({"grantType": "client_credentials"})
+    headers = _headers_service("POST", PATH_ACCESS_TOKEN_B2B, raw_body, cfg)
     url = _base_url(is_production()) + PATH_ACCESS_TOKEN_B2B
-    resp = core.post_json_raw(url, _minify({"grantType": "client_credentials"}), headers, timeout=cfg["snap_timeout_detik"])
+    resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
     token = resp.get("accessToken") or resp.get("access_token")
     if not token:
         raise core.GatewayRequestError(f"Respons token B2B SNAP Advance tidak berisi accessToken: {resp}")
     return token
 
 
-def _headers_service(access_token: str, method: str, path: str, raw_body: str, cfg: dict) -> dict:
-    """Header lengkap untuk service call SETELAH token B2B didapat --
-    signature SYMMETRIC (HMAC-SHA512), lihat gateway_client_base.py::
-    sign_hmac_sha512() untuk formula string-to-sign persisnya. `raw_body`
-    HARUS string PERSIS yang nanti dikirim lewat core.post_json_raw() --
-    lihat catatan post_json_raw() soal kenapa hash body harus dihitung dari
-    bytes yang SAMA PERSIS dengan yang benar-benar terkirim."""
-    _cfg_wajib(cfg, "snap_partner_id", "snap_channel_id", "snap_client_secret")
+def _headers_service(method: str, path: str, raw_body: str, cfg: dict) -> dict:
+    """Header lengkap untuk SELURUH service call SNAP -- signature
+    ASYMMETRIC (RSA-SHA256, private key merchant), DIKONFIRMASI 1:1 ke
+    halaman resmi Faspay "Signature SNAP" (lihat catatan modul: dua contoh
+    resmi diverifikasi manual byte-demi-byte, keduanya cocok). Formula:
+    `{method}:{path}:{sha256_lowercase_hex(raw_body)}:{X-TIMESTAMP}`, TANPA
+    komponen access token. `raw_body` HARUS string PERSIS yang nanti
+    dikirim lewat core.post_json_raw() -- lihat catatan post_json_raw()
+    soal kenapa hash body harus dihitung dari bytes yang SAMA PERSIS dengan
+    yang benar-benar terkirim. TIDAK ADA header Authorization/Bearer di
+    sini -- sample resmi Faspay untuk Create VA tidak menyertakannya."""
+    _cfg_wajib(cfg, "snap_partner_id", "snap_channel_id", "snap_private_key")
     ts = core.snap_timestamp_wib()
     body_hash = core.sha256_lowercase_hex(raw_body)
-    string_to_sign = f"{method}:{path}:{access_token}:{body_hash}:{ts}"
-    signature = core.sign_hmac_sha512(string_to_sign, cfg["snap_client_secret"])
+    string_to_sign = f"{method}:{path}:{body_hash}:{ts}"
+    signature = core.sign_sha256_rsa(string_to_sign, cfg["snap_private_key"])
     return {
         "Content-Type": "application/json",
         "X-TIMESTAMP": ts,
@@ -164,7 +177,6 @@ def _headers_service(access_token: str, method: str, path: str, raw_body: str, c
         "X-PARTNER-ID": cfg["snap_partner_id"],
         "X-EXTERNAL-ID": core.buat_external_id(),
         "CHANNEL-ID": cfg["snap_channel_id"],
-        "Authorization": f"Bearer {access_token}",
     }
 
 
@@ -198,7 +210,6 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
             f"channelCode VA default belum/tidak valid: {cfg['snap_va_channel_code']!r}."
         )
     customer_details = customer_details or {}
-    token = ambil_token_b2b()
     now = core.now_wib()
     ts_now = core.snap_timestamp_wib()
     expired = now.replace(hour=23, minute=59, second=59)
@@ -218,7 +229,7 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
     if customer_details.get("whatsapp"):
         body["virtualAccountPhone"] = _format_msisdn_62(customer_details["whatsapp"])[:30]
     raw_body = _minify(body)
-    headers = _headers_service(token, "POST", PATH_VA_CREATE, raw_body, cfg)
+    headers = _headers_service("POST", PATH_VA_CREATE, raw_body, cfg)
     url = _base_url(is_production()) + PATH_VA_CREATE
     resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
     if resp.get("responseCode") != "2002500":
@@ -238,7 +249,6 @@ def inquiry_status_va(payment_reference: str, virtual_account_no: str) -> dict:
     buat_transaksi_va() (snap_payment_transactions.va_number)."""
     cfg = snap_advance_db.get_config_internal()
     _cfg_wajib(cfg, "snap_va_channel_code")
-    token = ambil_token_b2b()
     partner_service_id = virtual_account_no[:8]
     customer_no = virtual_account_no[8:]
     body = {
@@ -248,7 +258,7 @@ def inquiry_status_va(payment_reference: str, virtual_account_no: str) -> dict:
         "additionalInfo": {"channelCode": cfg["snap_va_channel_code"], "trxId": payment_reference[:32]},
     }
     raw_body = _minify(body)
-    headers = _headers_service(token, "POST", PATH_VA_INQUIRY_STATUS, raw_body, cfg)
+    headers = _headers_service("POST", PATH_VA_INQUIRY_STATUS, raw_body, cfg)
     url = _base_url(is_production()) + PATH_VA_INQUIRY_STATUS
     resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
     if resp.get("responseCode") != "2002600":
@@ -309,7 +319,6 @@ def buat_transaksi_direct_debit(payment_reference: str, amount: int, channel_cod
     cfg = snap_advance_db.get_config_internal()
     _cfg_wajib(cfg, "snap_merchant_id")
     customer_details = customer_details or {}
-    token = ambil_token_b2b()
     now = core.now_wib()
     ts_now = core.snap_timestamp_wib()
     valid_up_to = now.replace(second=0, microsecond=0)
@@ -335,7 +344,7 @@ def buat_transaksi_direct_debit(payment_reference: str, amount: int, channel_cod
     if customer_details.get("email"):
         body["additionalInfo"]["email"] = customer_details["email"][:128]
     raw_body = _minify(body)
-    headers = _headers_service(token, "POST", PATH_DD_PAYMENT, raw_body, cfg)
+    headers = _headers_service("POST", PATH_DD_PAYMENT, raw_body, cfg)
     url = _base_url(is_production()) + PATH_DD_PAYMENT
     resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
     if resp.get("responseCode") != "2005400":
@@ -354,7 +363,6 @@ def status_direct_debit(original_partner_reference_no: str, original_reference_n
     cfg = snap_advance_db.get_config_internal()
     merchant_id = merchant_id or cfg["snap_merchant_id"]
     _cfg_wajib({"merchant_id": merchant_id}, "merchant_id")
-    token = ambil_token_b2b()
     body = {
         "originalPartnerReferenceNo": original_partner_reference_no[:32],
         "originalReferenceNo": original_reference_no[:16],
@@ -363,7 +371,7 @@ def status_direct_debit(original_partner_reference_no: str, original_reference_n
         "additionalInfo": {"channelCode": channel_code},
     }
     raw_body = _minify(body)
-    headers = _headers_service(token, "POST", PATH_DD_STATUS, raw_body, cfg)
+    headers = _headers_service("POST", PATH_DD_STATUS, raw_body, cfg)
     url = _base_url(is_production()) + PATH_DD_STATUS
     resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
     if resp.get("responseCode") != "2005500":

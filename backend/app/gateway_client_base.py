@@ -203,27 +203,16 @@ def verify_sha512(parts: list, key: str, signature: str) -> bool:
 # Migrasi Faspay SNAP Advance -- signature standar SNAP (Standar Nasional Open
 # API Pembayaran, Bank Indonesia/ASPI)
 # =============================================================================
-# CATATAN SUMBER & BATASAN (WAJIB dibaca sebelum memakai fungsi di bawah):
-# Algoritma "RSA-SHA256 (PKCS#1 v1.5), hasil di-base64-encode, dikirim lewat
-# header X-SIGNATURE" adalah bagian dari standar SNAP yang DIWAJIBKAN Bank
-# Indonesia/ASPI untuk SELURUH penyelenggara berlisensi (Faspay, Xendit,
-# Espay, Duitku, dst) -- BUKAN pilihan bebas satu provider, jadi aman
-# diimplementasikan sebagai primitif generik di sini (lihat laporan analisis
-# "Faspay SNAP Migration", Tahap 2.4 -- dikonfirmasi dari dokumentasi publik
-# SNAP lintas-provider, BUKAN tebakan).
+# CATATAN SUMBER (audit lanjutan -- SUDAH dikonfirmasi 1:1, bukan lagi PENDING):
+# Owner memberikan isi halaman resmi "Signature SNAP" Faspay. Formula
+# `SHA256withRSA(Private_Key, stringToSign)`, stringToSign =
+# `HTTPMethod+":"+EndpointUrl+":"+Lowercase(HexEncode(SHA256(minify(RequestBody))))+":"+TimeStamp`
+# SUDAH diverifikasi manual byte-demi-byte terhadap DUA contoh angka resmi
+# Faspay (hash body & signature RSA-SHA256 Create VA, DAN hash body contoh
+# Verifying Signature VA Inquiry) -- KEDUANYA cocok persis. Dipakai untuk
+# SEMUA request SNAP (bukan cuma get-token B2B) -- lihat
+# snap_advance_client.py::_headers_service() untuk perangkaiannya.
 #
-# YANG TIDAK diketahui dari sini (PENDING FASPAY, TIDAK diimplementasikan di
-# mana pun di proyek ini sampai dikonfirmasi tertulis oleh Faspay):
-# - String-to-sign PERSIS per endpoint SNAP Faspay (urutan/isi field yang
-#   digabung sebelum ditandatangani beda per jenis layanan -- get-token vs
-#   create-VA vs create-QRIS vs webhook -- dan Faspay belum pernah
-#   mengonfirmasi formula persisnya ke tim ini).
-# - Endpoint get-token B2B Faspay yang sesungguhnya (path, header lengkap).
-# - Header SNAP lain di luar X-SIGNATURE (X-TIMESTAMP/X-PARTNER-ID/
-#   X-EXTERNAL-ID) -- FORMAT nilainya per Faspay belum terverifikasi.
-#
-# snap_advance_client.py-lah yang merangkai string-to-sign & memanggil fungsi
-# di bawah ini -- MURNI stub PENDING FASPAY sampai formula itu terkonfirmasi.
 # Fungsi DI SINI hanya primitif kriptografi generik (sign/verify), TIDAK tahu
 # apa pun soal format SNAP Faspay spesifik -- sama seperti sign_sha1_of_md5()/
 # verify_sha512() di atas yang juga tidak tahu soal Xpress/Midtrans spesifik.
@@ -273,21 +262,14 @@ def verify_sha256_rsa(string_to_sign: str, signature_b64: str, public_key_pem: s
 
 
 # =============================================================================
-# SNAP Advance -- header X-TIMESTAMP/X-EXTERNAL-ID & signature simetris
-# (HMAC-SHA512) untuk pemanggilan service SETELAH token B2B didapat
+# SNAP Advance -- helper header X-TIMESTAMP/X-EXTERNAL-ID & hash body SHA-256
 # =============================================================================
-# CATATAN SUMBER & BATASAN (WAJIB dibaca): fungsi di bawah ini mengimplementasikan
-# format string-to-sign standar SNAP BI/ASPI yang berlaku WAJIB lintas
-# seluruh penyelenggara berlisensi -- BUKAN tebakan bebas, ini spesifikasi
-# teknis SNAP yang dipublikasikan Bank Indonesia/ASPI (identik dipakai
-# seluruh PJP: signature asymmetric RSA-SHA256 untuk /access-token/b2b,
-# signature symmetric HMAC-SHA512 untuk service call setelahnya). TAPI:
-# halaman "Signature details" resmi Faspay (docs.faspay.co.id/merchant-
-# integration/api-reference-1/snap/signature-snap, dirujuk di dokumen VA/DD
-# yang diberikan Owner) TIDAK BISA diakses dari lingkungan kerja ini (domain
-# diblokir oleh proxy jaringan) -- formula di bawah BELUM dicocokkan 1:1 ke
-# halaman itu. WAJIB diverifikasi ulang (baca halaman resmi ATAU uji lewat
-# Faspay Simulator) SEBELUM dipakai terhadap sandbox/production sungguhan.
+# Formula signature LENGKAP (asymmetric RSA-SHA256, TANPA komponen access
+# token, dipakai untuk SEMUA request SNAP) sudah dikonfirmasi 1:1 ke halaman
+# resmi Faspay -- lihat catatan di atas sign_sha256_rsa()/verify_sha256_rsa().
+# Helper di bawah murni komponen pendukung (format timestamp, ID unik header,
+# hash body) yang dipakai snap_advance_client.py::_headers_service() untuk
+# merangkai stringToSign-nya.
 
 def snap_timestamp_wib() -> str:
     """X-TIMESTAMP -- format wajib SNAP `yyyy-MM-ddTHH:mm:ssTZD` (mis.
@@ -314,20 +296,7 @@ def buat_external_id() -> str:
 def sha256_lowercase_hex(text: str) -> str:
     """SHA-256 atas `text` (body request yang SUDAH di-minify jadi JSON
     compact tanpa spasi -- tanggung jawab pemanggil), hex lowercase --
-    komponen string-to-sign symmetric SNAP standar (lihat sign_hmac_sha512())."""
+    komponen `Lowercase(HexEncode(SHA256(minify(RequestBody))))` di formula
+    stringToSign SNAP resmi Faspay (lihat snap_advance_client.py::
+    _headers_service())."""
     return hashlib.sha256(text.encode()).hexdigest().lower()
-
-
-def sign_hmac_sha512(string_to_sign: str, client_secret: str) -> str:
-    """HMAC-SHA512(string_to_sign, key=client_secret), base64-encoded --
-    signature SIMETRIS standar SNAP untuk service call SETELAH token B2B
-    didapat (BEDA dari sign_sha256_rsa() yang asymmetric, HANYA dipakai untuk
-    /access-token/b2b). `string_to_sign` standar SNAP:
-    `{HTTP_METHOD}:{EndpointUrl}:{AccessToken}:{sha256_lowercase_hex(minified_body)}:{X-TIMESTAMP}`
-    -- perangkaian persis ini TANGGUNG JAWAB pemanggil (snap_advance_client.py),
-    fungsi ini murni primitif HMAC generik. Melempar ValueError kalau
-    `client_secret` kosong -- pola sama seperti sign_sha256_rsa()."""
-    if not client_secret:
-        raise ValueError("Client Secret SNAP Advance belum diisi.")
-    mac = hmac.new(client_secret.encode(), string_to_sign.encode(), hashlib.sha512)
-    return base64.b64encode(mac.digest()).decode()

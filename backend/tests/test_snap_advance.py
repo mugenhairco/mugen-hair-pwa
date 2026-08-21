@@ -666,7 +666,11 @@ class _RekamPanggilan:
 
 
 def test_buat_transaksi_va_sukses_header_dan_payload_lengkap(single_tenant, monkeypatch):
-    _pasang_kredensial_snap()
+    """SATU panggilan HTTP saja (BUKAN token B2B + create VA) -- audit
+    lanjutan (halaman resmi "Signature SNAP" Faspay) membuktikan Create VA
+    TIDAK butuh Authorization/Bearer, signature langsung dari private key
+    merchant, jadi ambil_token_b2b() TIDAK dipanggil dari jalur ini."""
+    private_pem, _ = _pasang_kredensial_snap()
     rekam = _RekamPanggilan()
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
@@ -674,38 +678,35 @@ def test_buat_transaksi_va_sukses_header_dan_payload_lengkap(single_tenant, monk
         "BOOKING-1-42-abc123456789", 100000, {"nama": "Budi Santoso", "whatsapp": "081234567890"})
 
     assert hasil["va_number"] == "7020000000000000000012345"
-    assert len(rekam.panggilan) == 2  # token B2B + create VA
-    header_token, header_va = rekam.panggilan[0]["headers"], rekam.panggilan[1]["headers"]
-    assert "X-CLIENT-KEY" in header_token and "X-SIGNATURE" in header_token
-    for h in ("X-TIMESTAMP", "X-SIGNATURE", "X-PARTNER-ID", "X-EXTERNAL-ID", "CHANNEL-ID", "Authorization"):
+    assert len(rekam.panggilan) == 1
+    header_va = rekam.panggilan[0]["headers"]
+    for h in ("X-TIMESTAMP", "X-SIGNATURE", "X-PARTNER-ID", "X-EXTERNAL-ID", "CHANNEL-ID"):
         assert h in header_va, f"Header {h} wajib ada di service call SNAP"
+    assert "Authorization" not in header_va
     assert header_va["CHANNEL-ID"] == "77001"
     assert header_va["X-PARTNER-ID"] == "37070"
-    assert header_va["Authorization"] == "Bearer token-uji-123"
-    body = json.loads(rekam.panggilan[1]["raw_body"])
+    body = json.loads(rekam.panggilan[0]["raw_body"])
     assert body["trxId"] == "BOOKING-1-42-abc123456789"
     assert body["additionalInfo"]["channelCode"] == "702"
     assert body["virtualAccountPhone"] == "6281234567890"
     assert body["totalAmount"] == {"value": "100000.00", "currency": "IDR"}
 
 
-def test_buat_transaksi_va_signature_service_call_bisa_diverifikasi_ulang(single_tenant, monkeypatch):
-    """Buktikan X-SIGNATURE service call BENAR-BENAR HMAC-SHA512 atas
-    string-to-sign standar SNAP (bukan nilai sembarangan) -- dihitung ulang
-    persis formula gateway_client_base.py::sign_hmac_sha512() dan
-    dibandingkan ke header yang benar-benar terkirim."""
-    _pasang_kredensial_snap()
+def test_buat_transaksi_va_signature_cocok_formula_resmi_faspay(single_tenant, monkeypatch):
+    """Buktikan X-SIGNATURE BENAR-BENAR RSA-SHA256 atas stringToSign formula
+    resmi Faspay (Method:EndpointUrl:bodyHash:Timestamp, TANPA access
+    token) -- dihitung ulang dengan public key pasangan private key yang
+    dipakai, bukan sekadar nilai sembarangan."""
+    private_pem, public_pem = _pasang_kredensial_snap()
     rekam = _RekamPanggilan()
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
     snap_advance_client.buat_transaksi_va("BOOKING-1-42-abc123456789", 100000)
 
-    panggilan_va = rekam.panggilan[1]
-    headers, raw_body = panggilan_va["headers"], panggilan_va["raw_body"]
+    headers, raw_body = rekam.panggilan[0]["headers"], rekam.panggilan[0]["raw_body"]
     body_hash = core.sha256_lowercase_hex(raw_body)
-    string_to_sign = f"POST:{snap_advance_client.PATH_VA_CREATE}:token-uji-123:{body_hash}:{headers['X-TIMESTAMP']}"
-    signature_seharusnya = core.sign_hmac_sha512(string_to_sign, "SECRET-TEST")
-    assert headers["X-SIGNATURE"] == signature_seharusnya
+    string_to_sign = f"POST:{snap_advance_client.PATH_VA_CREATE}:{body_hash}:{headers['X-TIMESTAMP']}"
+    assert core.verify_sha256_rsa(string_to_sign, headers["X-SIGNATURE"], public_pem) is True
 
 
 def test_inquiry_status_va_sukses(single_tenant, monkeypatch):
@@ -1002,3 +1003,95 @@ def test_get_config_internal_mengembalikan_nilai_asli(single_tenant):
 
     assert cfg["snap_client_secret"] == "rahasia-banget"
     assert cfg["snap_private_key"] == private_pem.strip()
+
+
+# ---------------------------------------------------------------------------
+# Audit lanjutan -- signature dicocokkan PERSIS ke contoh resmi halaman
+# "Signature SNAP" Faspay (bukan cuma konsistensi internal)
+# ---------------------------------------------------------------------------
+
+def test_signature_snap_cocok_persis_contoh_resmi_faspay_create_va():
+    """Regression guard PERMANEN: hash body & signature RSA-SHA256 dihitung
+    ulang PERSIS terhadap contoh angka resmi di halaman "Signature SNAP"
+    Faspay (Create VA) -- private key & X-SIGNATURE hasil generate Faspay
+    sendiri, dicocokkan byte-demi-byte. Kalau test ini pernah gagal,
+    implementasi signature SUDAH MENYIMPANG dari dokumen resmi."""
+    private_key_pem = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "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\n"
+        "-----END RSA PRIVATE KEY-----\n"
+    )
+    string_to_sign = ("POST:/v1.0/transfer-va/create-va:"
+                       "f7e939e8227670a065e4a6f99b42346bfa20724a8e3c775be93b57c95c954dfd:"
+                       "2022-12-12T16:00:00+07:00")
+    expected_signature = (
+        "nDbaEgmkto+t9zyADVFwTmnKICKENHg/+dtGAUyoxoZr0pHBZ3KC4JrLCrXtqRqf2FbsTK2kUBlCfRjTkJ0rZ+KCPdJ/J4GszU71"
+        "vf3G7Iip6nPUhG/Cxsj2dXbEojhHvBSp+gYGugTGiMbEZ4VhVLUFGMKFoi87mGRruuJdX/FXdWMd0b5+yPfthmdOTbULNzhjVNZM"
+        "DCGmhQ722ua8pS5IVSZE92h0qPA352vLef/4Sbmaljxs/QyIZG7S264xnMhQ+GN4M1Gn/x32ZAqQsRA+6CoK0F1sQlwl4S1eskj"
+        "oksvxbDnTWViVVWIhPylb+7bMsYT3NYxhVLnbWIQ8Y7HV4VHScyG6IOILKtvoOqY5z1w5rSSTJub3ZolJz/7jpe+/BjozkEYiiG"
+        "7jn6bD/T5HWMKuub56HGP5/mbKXSVtgfA8QzlCH7574mD+xK/bteT1LPBRsQXUpiuCNCmCx4Et6ln0lJPb52PyOMP0op96OJT66"
+        "36gqZci/N+j2XpovR4HAIdw5chjBY28MmYg4CBjcoXLcYcA6YSVIRQ3/iIS+uG/dfHsrxIjWxtFuDrOyPrdvhQg0BL+vF5CfKbD"
+        "Ks/o/3fanPGlyEyjV3Ca9/goK4SCZ3KDTmSEhPLZ9F3fMAuL6ufGQL1ZinlWuynqegDacfr1GZRcUVBSLaZI0dg="
+    )
+    request_body = json.dumps({
+        "virtualAccountName": "Jokul Doe", "virtualAccountEmail": "jokul@email.com",
+        "virtualAccountPhone": "6281828384858", "trxId": "abcdefgh1234",
+        "totalAmount": {"value": "12345678.00", "currency": "IDR"},
+        "expiredDate": "2020-12-31T23:59:59-07:00",
+        "additionalInfo": {"billDate": "2020-12-31T23:59:59-07:00", "channelCode": "402",
+                            "billDescription": "Maintenance"},
+    }, separators=(",", ":"))
+
+    body_hash = core.sha256_lowercase_hex(request_body)
+    assert body_hash == "f7e939e8227670a065e4a6f99b42346bfa20724a8e3c775be93b57c95c954dfd"
+
+    signature = core.sign_sha256_rsa(string_to_sign, private_key_pem)
+    assert signature == expected_signature
