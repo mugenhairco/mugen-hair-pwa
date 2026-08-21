@@ -210,6 +210,77 @@ const PageAbsensi = (() => {
     return MugenUI.el("div", { style: "min-width:280px;" }, baris);
   }
 
+  // ================= FITUR Running Text Info Cuti (User Barber) =================
+  // Diambil dari data izin_cuti SUNGGUHAN (GET /api/izin-cuti/marquee, lihat
+  // izin_cuti_db.py::get_info_cuti_marquee() -- endpoint & logika BARU,
+  // TIDAK mengubah endpoint/logika izin_cuti yang sudah ada) -- BUKAN
+  // dummy/hardcode. Kosong = elemen ini TIDAK PERNAH ditambahkan ke DOM
+  // sama sekali (bukan disembunyikan lewat CSS). Auto-refresh: fetch ulang
+  // SETIAP kali halaman Absensi dirender (navigasi SPA) -- SENGAJA TIDAK
+  // pakai setInterval polling (lihat izin_notif.js: Owner sudah eksplisit
+  // menolak polling periodik untuk domain izin_cuti demi hemat request
+  // backend), konsisten dengan trade-off yang sama yang sudah diterima
+  // Owner di seluruh fitur Izin & Cuti.
+  function _formatRentangCuti(mulaiIso, selesaiIso) {
+    const [ym, mm, dm] = mulaiIso.split("-").map(Number);
+    const [ys, ms, ds] = selesaiIso.split("-").map(Number);
+    if (mulaiIso === selesaiIso) return MugenUI.namaTanggalIndo(mulaiIso);
+    if (ym === ys && mm === ms) return `${dm}–${ds} ${MugenUI.namaBulan(mm)} ${ym}`;
+    if (ym === ys) return `${dm} ${MugenUI.namaBulan(mm)} – ${ds} ${MugenUI.namaBulan(ms)} ${ym}`;
+    return `${MugenUI.namaTanggalIndo(mulaiIso)} – ${MugenUI.namaTanggalIndo(selesaiIso)}`;
+  }
+
+  function _teksInfoCuti(item) {
+    const rentang = _formatRentangCuti(item.tanggal_mulai, item.tanggal_selesai);
+    if (item.status === "sedang_cuti") return `Sedang Cuti: ${item.nama_barber} sedang cuti ${rentang}`;
+    return `Pengajuan Cuti: ${item.nama_barber} mengajukan cuti ${rentang}`;
+  }
+
+  function _buatSalinanMarquee(items, ariaHidden) {
+    const copy = MugenUI.el("div", { class: "mugen-cuti-marquee-copy" });
+    if (ariaHidden) copy.setAttribute("aria-hidden", "true");
+    items.forEach((item, i) => {
+      const seg = MugenUI.el("span", { class: "mugen-cuti-marquee-seg" }, _teksInfoCuti(item));
+      copy.appendChild(seg);
+      if (i < items.length - 1) copy.appendChild(MugenUI.el("span", { class: "mugen-cuti-marquee-sep" }, "•"));
+    });
+    return copy;
+  }
+
+  async function renderCutiMarquee(root) {
+    let items;
+    try {
+      items = await MugenApi.get("/api/izin-cuti/marquee");
+    } catch (e) {
+      return; // gagal diam-diam -- info tambahan, tidak boleh menghalangi halaman Absensi utama
+    }
+    if (!items || !items.length) return; // tidak ada cuti/pengajuan -- komponen TIDAK dirender sama sekali
+
+    const wrap = MugenUI.el("div", { class: "mugen-cuti-marquee", role: "status", "aria-label": "Info cuti barber" });
+    // Separator antar-item DI DALAM satu salinan (bukan di antara dua
+    // salinan) -- kalau tidak, dua salinan berdempetan tanpa jarak visual
+    // tepat di titik sambungan loop.
+    const sepAkhir = MugenUI.el("span", { class: "mugen-cuti-marquee-sep" }, "•");
+    const salinan1 = _buatSalinanMarquee(items, false);
+    salinan1.appendChild(sepAkhir);
+    const salinan2 = _buatSalinanMarquee(items, true);
+    const track = MugenUI.el("div", { class: "mugen-cuti-marquee-track" }, [salinan1, salinan2]);
+    wrap.appendChild(track);
+    root.appendChild(wrap);
+
+    // Kecepatan konstan (~55px/detik) berapa pun jumlah/panjang teksnya --
+    // durasi dihitung dari lebar SATU salinan (scrollWidth track / 2)
+    // supaya animasi tidak terasa "buru-buru" saat teks sedikit atau
+    // "lambat sekali" saat teks banyak. Diukur SETELAH elemen benar-benar
+    // ada di DOM (perlu layout nyata untuk scrollWidth yang akurat).
+    requestAnimationFrame(() => {
+      const lebarSatuSalinan = track.scrollWidth / 2;
+      const px_per_detik = 55;
+      const durasi = Math.max(8, lebarSatuSalinan / px_per_detik);
+      track.style.setProperty("--mugen-marquee-duration", `${durasi}s`);
+    });
+  }
+
   // ================= BARBER: Check In/Out + Riwayat milik sendiri =================
   async function renderBarberView(root) {
     const card = MugenUI.el("div", { class: "card" });
@@ -1021,6 +1092,13 @@ const PageAbsensi = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     root.innerHTML = "";
+
+    if (user.role === "barber") {
+      // Running text info cuti -- PALING ATAS halaman, di atas judul "Absensi"
+      // sekalipun (ketentuan eksplisit), HANYA role barber (ketentuan #9 --
+      // tampilan role lain, renderAdminView(), sama sekali tidak disentuh).
+      await renderCutiMarquee(root);
+    }
     root.appendChild(MugenUI.el("h1", {}, "Absensi"));
 
     if (user.role === "barber") {

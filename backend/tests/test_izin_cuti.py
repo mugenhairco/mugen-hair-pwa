@@ -466,3 +466,158 @@ def test_router_admin_override_boleh_walau_h_min(single_tenant, monkeypatch):
                                              "tanggal_mulai": "2026-08-16", "tanggal_selesai": "2026-08-16",
                                              "alasan": "Dibuatkan Owner"}, headers=headers)
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# FITUR Running Text Info Cuti (Absensi Barber) -- get_info_cuti_marquee()
+# ---------------------------------------------------------------------------
+
+def test_marquee_sedang_cuti_disetujui_dalam_rentang(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id, "Rafik")
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-21", "2026-08-23", "Liburan", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+
+    hasil = izin_cuti_db.get_info_cuti_marquee(tenant_id)
+    assert len(hasil) == 1
+    assert hasil[0] == {"nama_barber": "Rafik", "status": "sedang_cuti",
+                         "tanggal_mulai": "2026-08-21", "tanggal_selesai": "2026-08-23"}
+
+
+def test_marquee_pengajuan_pending_belum_mulai(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id, "Jaka")
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-25", "2026-08-27", "Acara keluarga", tenant_id=tenant_id)
+
+    hasil = izin_cuti_db.get_info_cuti_marquee(tenant_id)
+    assert len(hasil) == 1
+    assert hasil[0]["status"] == "pengajuan"
+    assert hasil[0]["nama_barber"] == "Jaka"
+
+
+def test_marquee_pengajuan_disetujui_belum_mulai_tetap_muncul(single_tenant, monkeypatch):
+    """Cuti yang SUDAH disetujui tapi belum mulai tetap masuk kategori
+    'pengajuan' -- relevan diinformasikan ke barber lain, bukan cuma yang
+    masih menunggu keputusan."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id, "Yoga")
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-25", "2026-08-26", "Nikahan", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+
+    hasil = izin_cuti_db.get_info_cuti_marquee(tenant_id)
+    assert len(hasil) == 1
+    assert hasil[0]["status"] == "pengajuan"
+
+
+def test_marquee_ditolak_tidak_muncul(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-25", "2026-08-26", "Ditolak nanti", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "ditolak")
+
+    assert izin_cuti_db.get_info_cuti_marquee(tenant_id) == []
+
+
+def test_marquee_pending_tanggal_mulai_sudah_lewat_tidak_muncul(single_tenant, monkeypatch):
+    """Pending yang tanggal_mulai-nya sudah lewat (belum diputuskan padahal
+    harusnya sudah mulai) sengaja tidak masuk kategori manapun -- bukan
+    'sedang cuti' (belum disetujui), bukan 'pengajuan belum mulai'
+    (tanggalnya sudah lewat)."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-15")
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-20", "2026-08-22", "Telat diproses", tenant_id=tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-25")
+
+    assert izin_cuti_db.get_info_cuti_marquee(tenant_id) == []
+
+
+def test_marquee_izin_tidak_muncul(single_tenant, monkeypatch):
+    """jenis='izin' (bukan 'cuti') TIDAK PERNAH ikut running text ini --
+    ad-hoc/mendadak, bukan cuti terjadwal."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-08-22", "2026-08-22", "Sakit", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+
+    assert izin_cuti_db.get_info_cuti_marquee(tenant_id) == []
+
+
+def test_marquee_sudah_selesai_tidak_muncul(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-10")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-10", "2026-08-12", "Sudah lewat", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-22")
+
+    assert izin_cuti_db.get_info_cuti_marquee(tenant_id) == []
+
+
+def test_marquee_kosong_tanpa_data(single_tenant):
+    assert izin_cuti_db.get_info_cuti_marquee(single_tenant["tenant_id"]) == []
+
+
+def test_marquee_multiple_urut_tanggal_mulai(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Z")
+    barber_b = _barber(tenant_id, "Barber A")
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-20")
+    p1 = izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-08-20", "2026-08-21", "Cuti 1", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p1["id"], "disetujui")
+    izin_cuti_db.buat_pengajuan(barber_b, "cuti", "2026-08-25", "2026-08-26", "Cuti 2", tenant_id=tenant_id)
+
+    hasil = izin_cuti_db.get_info_cuti_marquee(tenant_id)
+    assert len(hasil) == 2
+    assert hasil[0]["nama_barber"] == "Barber Z" and hasil[0]["status"] == "sedang_cuti"
+    assert hasil[1]["nama_barber"] == "Barber A" and hasil[1]["status"] == "pengajuan"
+
+
+def test_marquee_isolasi_tenant(two_tenants, monkeypatch):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = _barber(tenant_a)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-20")
+    p = izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-08-20", "2026-08-21", "Cuti A", tenant_id=tenant_a)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+
+    assert len(izin_cuti_db.get_info_cuti_marquee(tenant_a)) == 1
+    assert izin_cuti_db.get_info_cuti_marquee(tenant_b) == []
+
+
+def test_router_marquee_barber_bisa_lihat_punya_barber_lain(single_tenant, monkeypatch):
+    """BEDA dari GET /api/izin-cuti biasa (barber cuma lihat miliknya
+    sendiri) -- endpoint /marquee SENGAJA tenant-wide, data minimal (nama +
+    tanggal + status, tanpa alasan) supaya barber lain bisa melihat
+    informasi cuti rekan kerjanya."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    import auth_db
+    barber_lain_id = db.add_barber("Barber Lain Marquee", tenant_id=tenant_id)
+    barber_login_id = db.add_barber("Barber Login Marquee", tenant_id=tenant_id)
+    auth_db.tambah_user("barbermarquee", "passwordB123", role="barber", barber_id=barber_login_id,
+                         tenant_id=tenant_id)
+
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-20")
+    p = izin_cuti_db.buat_pengajuan(barber_lain_id, "cuti", "2026-08-20", "2026-08-21", "Cuti",
+                                     tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui")
+
+    r_login = client.post("/api/auth/login", json={"username": "barbermarquee", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+    r = client.get("/api/izin-cuti/marquee", headers=headers_barber)
+    assert r.status_code == 200
+    hasil = r.json()
+    assert len(hasil) == 1
+    assert hasil[0]["nama_barber"] == "Barber Lain Marquee"
+    assert "alasan" not in hasil[0]
+
+
+def test_router_marquee_butuh_login(single_tenant):
+    client = single_tenant["client"]
+    r = client.get("/api/izin-cuti/marquee")
+    assert r.status_code == 401
