@@ -1312,14 +1312,14 @@ const PageSuperadmin = (() => {
     // ---------------------------------------------------------------
     snapAdvanceCard.appendChild(MugenUI.el("h2", {}, "Faspay SNAP Advance (Migrasi)"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Provider BARU yang akan MENGGANTIKAN Payment Gateway (Xpress v4) di atas -- dipakai bersama untuk Booking Payment Tenant & SaaS Billing (Merchant ID Faspay yang sama). Endpoint create-transaction/webhook MASIH PENDING FASPAY (menunggu dokumentasi/kredensial resmi) -- mengisi form ini menyiapkan kredensial, BELUM mengaktifkan pembayaran sungguhan."));
+      "Provider BARU yang MENGGANTIKAN Payment Gateway (Xpress v4) di atas -- Owner sudah memutuskan Xpress v4 tidak lagi dipakai, satu-satunya Payment Notification URL Merchant ID Faspay sekarang mengarah ke SNAP. VA & Direct Debit sudah diimplementasikan sesuai dokumen resmi Faspay -- QRIS & Registrasi/Account Binding Direct Debit MASIH PENDING FASPAY. Mengisi form ini menyiapkan kredensial -- SNAP BELUM di-wire ke flow checkout booking/billing production, menunggu uji Faspay Simulator & verifikasi ASPI/BI lebih dulu."));
 
     const inSnapEnv = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "sandbox" }, "Sandbox"),
       MugenUI.el("option", { value: "production" }, "Production"),
     ]);
-    const inSnapSandboxUrl = MugenUI.el("input", { type: "text", placeholder: "PENDING FASPAY -- belum dikonfirmasi" });
-    const inSnapProductionUrl = MugenUI.el("input", { type: "text", placeholder: "PENDING FASPAY -- belum dikonfirmasi" });
+    const inSnapSandboxUrl = MugenUI.el("input", { type: "text", placeholder: "mis. https://debit-sandbox.faspay.co.id" });
+    const inSnapProductionUrl = MugenUI.el("input", { type: "text", placeholder: "PENDING FASPAY -- domain production belum dikonfirmasi" });
     const inSnapMerchantId = MugenUI.el("input", { type: "text" });
     const inSnapPartnerId = MugenUI.el("input", { type: "text" });
     const inSnapClientId = MugenUI.el("input", { type: "text" });
@@ -1365,7 +1365,7 @@ const PageSuperadmin = (() => {
 
     snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Aktif"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },
-      "Dynamic E-Wallet dan Direct Debit BELUM tersedia di sini -- jalur teknis E-Wallet (SNAP QRIS atau API terpisah) dan prasyarat Registrasi/Account Binding Direct Debit masih PENDING FASPAY (lihat laporan analisis \"Faspay SNAP Migration\")."));
+      "Dynamic E-Wallet & QRIS BELUM tersedia di sini -- dokumen resmi Faspay belum diberikan, sengaja tidak ditebak. Direct Debit BELUM bisa diaktifkan lewat checkbox ini -- prasyarat Registrasi/Account Binding-nya masih PENDING FASPAY (dokumen Payment menunjukkan token binding hanya wajib untuk channel BRI Direct Debit, channel lain belum terkonfirmasi caranya)."));
     const snapChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
     snapAdvanceCard.appendChild(snapChannelList);
 
