@@ -8,14 +8,16 @@ Dua router dalam SATU file (pola sama seperti routers/booking.py):
 2. `public_router` (prefix `/api/public/gateway`) -- SATU webhook endpoint
    `POST /snap-notification` untuk KEDUA jenis transaksi (Booking + SaaS
    Billing), SESUAI instruksi migrasi #3 "Jangan membuat dua webhook Faspay
-   yang berbeda untuk Merchant ID yang sama" -- TERPISAH dari
-   `/faspay-notification` (Xpress v4 lama, routers/gateway_notification.py,
-   TIDAK disentuh) karena skema payload/signature SNAP beda total, endpoint
-   BEDA path memang wajar (satu Merchant ID tetap boleh punya lebih dari
-   satu URL webhook KALAU keduanya produk API yang berbeda -- batasan resmi
-   Faspay "satu Payment Notification URL" yang dikonfirmasi sebelumnya
-   berlaku untuk Xpress v4, BELUM dikonfirmasi berlaku sama untuk SNAP;
-   PENDING FASPAY -- lihat laporan analisis)."""
+   yang berbeda untuk Merchant ID yang sama". Faspay SUDAH mengonfirmasi
+   eksplisit (audit lanjutan): satu Merchant ID (37070) hanya boleh punya
+   SATU Payment Notification URL -- Owner memutuskan Xpress v4 TIDAK LAGI
+   dipakai, URL ini ("/snap-notification") jadi SATU-SATUNYA yang
+   didaftarkan ke Faspay (menggantikan `/faspay-notification` Xpress lama,
+   routers/gateway_notification.py -- modul itu TIDAK dihapus, lihat audit
+   dependency, tapi tidak lagi menerima trafik nyata begitu Faspay
+   mengalihkan registrasinya)."""
+
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -51,6 +53,7 @@ class ConfigBody(BaseModel):
     channel_aktif: list[str] | None = None
     channel_id: str | None = None
     va_channel_code: str | None = None
+    qris_channel_code: str | None = None
 
 
 @router.put("/config")
@@ -64,6 +67,7 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
             webhook_secret=body.webhook_secret, timeout_detik=body.timeout_detik,
             retry_max=body.retry_max, channel_aktif=body.channel_aktif,
             channel_id=body.channel_id, va_channel_code=body.va_channel_code,
+            qris_channel_code=body.qris_channel_code,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -76,16 +80,23 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
 async def snap_notification(request: Request):
     """URL Payment Notification SNAP Advance -- SATU-SATUNYA URL notifikasi
     yang didaftarkan Faspay untuk Merchant ID 37070 (Owner memutuskan Xpress
-    v4 tidak lagi dipakai, lihat catatan modul). VA & Direct Debit sudah
-    diimplementasikan sungguhan (snap_webhook.proses_notifikasi()) -- balas
-    400 untuk signature tidak valid/referensi tidak dikenal/status tidak
-    didukung, 503 HANYA kalau proses_notifikasi() melempar GatewayError
-    (mis. channel QRIS/E-Wallet yang masih PENDING FASPAY total)."""
+    v4 tidak lagi dipakai, lihat catatan modul). VA, Direct Debit, & QRIS
+    sudah diimplementasikan sungguhan (snap_webhook.proses_notifikasi()) --
+    balas 400 untuk signature tidak valid/referensi tidak dikenal/status
+    tidak didukung, 503 HANYA kalau proses_notifikasi() melempar GatewayError
+    (mis. channel E-Wallet di luar QRIS yang masih PENDING FASPAY total).
+
+    BUGFIX (audit lanjutan): balas HTTP dengan body acknowledgment SESUAI
+    dokumen resmi Faspay (snap_webhook.balas_notifikasi(), bentuknya BEDA
+    per jenis servis), BUKAN echo objek transaksi internal kita -- respons
+    yang tidak sesuai format berisiko Faspay mengira notifikasi gagal
+    diproses & mengirim ulang terus-menerus."""
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     signature_header = request.headers.get("X-SIGNATURE", "")
     timestamp_header = request.headers.get("X-TIMESTAMP")
     try:
-        return snap_webhook.proses_notifikasi(raw_body, signature_header, timestamp_header)
+        snap_webhook.proses_notifikasi(raw_body, signature_header, timestamp_header)
+        return snap_webhook.balas_notifikasi(json.loads(raw_body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except GatewayError as e:

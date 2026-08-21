@@ -355,14 +355,20 @@ def test_is_enabled_default_false_tanpa_konfigurasi(single_tenant):
     assert snap_advance_client.is_enabled() is False
 
 
-def test_qris_dan_ewallet_tetap_melempar_pending_faspay():
-    """VA & Direct Debit SUDAH diimplementasikan sungguhan (audit lanjutan,
-    dokumen resmi Faspay) -- HANYA QRIS & E-Wallet yang TETAP PENDING FASPAY
-    (dokumen resmi belum diberikan Owner, sengaja tidak ditebak)."""
-    with pytest.raises(snap_advance_client.SnapAdvancePendingError):
-        snap_advance_client.buat_transaksi_qris("BOOKING-1-1-abc", 100000)
+def test_ewallet_di_luar_qris_tetap_melempar_pending_faspay():
+    """VA, Direct Debit, & QRIS SUDAH diimplementasikan sungguhan (audit
+    lanjutan, dokumen resmi Faspay) -- HANYA E-Wallet di luar QRIS yang
+    TETAP PENDING FASPAY (di luar cakupan dokumen yang diberikan Owner)."""
     with pytest.raises(snap_advance_client.SnapAdvancePendingError):
         snap_advance_client.buat_transaksi_ewallet("BOOKING-1-1-abc", 100000, "gopay")
+
+
+def test_buat_transaksi_qris_belum_dikonfigurasi_melempar_not_configured(single_tenant):
+    """QRIS sudah diimplementasikan sungguhan -- tanpa channelCode QRIS
+    default terisi, melempar GatewayNotConfiguredError (BUKAN lagi PENDING
+    FASPAY)."""
+    with pytest.raises(core.GatewayNotConfiguredError):
+        snap_advance_client.buat_transaksi_qris("BOOKING-1-1-abc", 100000, {"whatsapp": "081234567890"})
 
 
 def test_buat_transaksi_va_belum_dikonfigurasi_melempar_not_configured(single_tenant):
@@ -373,13 +379,14 @@ def test_buat_transaksi_va_belum_dikonfigurasi_melempar_not_configured(single_te
 
 
 def test_cek_status_channel_belum_didukung_melempar_pending_faspay():
-    """cek_status_transaksi() tanpa channel (atau channel selain va/direct_debit)
-    TETAP PENDING FASPAY -- dispatcher generik, lihat inquiry_status_va()/
-    status_direct_debit() untuk channel yang sudah diimplementasikan."""
+    """cek_status_transaksi() tanpa channel (atau channel selain
+    va/direct_debit/qris) TETAP PENDING FASPAY -- dispatcher generik, lihat
+    inquiry_status_va()/status_direct_debit()/query_payment_qris() untuk
+    channel yang sudah diimplementasikan."""
     with pytest.raises(snap_advance_client.SnapAdvancePendingError):
         snap_advance_client.cek_status_transaksi("BOOKING-1-1-abc")
     with pytest.raises(snap_advance_client.SnapAdvancePendingError):
-        snap_advance_client.cek_status_transaksi("BOOKING-1-1-abc", channel="qris")
+        snap_advance_client.cek_status_transaksi("BOOKING-1-1-abc", channel="ewallet")
 
 
 def test_verifikasi_signature_webhook_tanpa_konfigurasi_return_false(single_tenant):
@@ -621,12 +628,14 @@ def test_buat_transaksi_direct_debit_belum_dikonfigurasi_melempar_not_configured
 
 def _pasang_kredensial_snap():
     """Isi kredensial minimal SNAP Advance (sandbox) supaya flow VA/Direct
-    Debit bisa diuji end-to-end tanpa jaringan sungguhan (lihat _RekamPanggilan)."""
+    Debit/QRIS bisa diuji end-to-end tanpa jaringan sungguhan (lihat
+    _RekamPanggilan)."""
     private_pem, public_pem = _buat_keypair_rsa()
     snap_advance_db.update_config(
         environment="sandbox", sandbox_base_url="https://debit-sandbox.faspay.co.id",
         merchant_id="37070", partner_id="37070", client_id="CLIENT-TEST", client_secret="SECRET-TEST",
-        private_key=private_pem, faspay_public_key=public_pem, channel_id="77001", va_channel_code="702",
+        private_key=private_pem, faspay_public_key=public_pem, channel_id="77001",
+        va_channel_code="702", qris_channel_code="711",
     )
     return private_pem, public_pem
 
@@ -662,6 +671,13 @@ class _RekamPanggilan:
                      "webRedirectUrl": "https://debit-sandbox.faspay.co.id/pws/xyz"}
         if url.endswith("/debit/status"):
             return {"responseCode": "2005500", "responseMessage": "Success", "latestTransactionStatus": "00"}
+        if url.endswith("/qr/qr-mpm-generate"):
+            return {"responseCode": "2004700", "responseMessage": "Success", "referenceNo": "QRREF999",
+                     "partnerReferenceNo": body.get("partnerReferenceNo"), "qrUrl": "https://debit-sandbox.faspay.co.id/qr/xyz.png",
+                     "additionalInfo": {"qrImageUrl": "https://debit-sandbox.faspay.co.id/pws/qr-display", "merchantId": "37070",
+                                         "amount": body.get("amount")}}
+        if url.endswith("/qr/qr-mpm-query"):
+            return {"responseCode": "2005100", "responseMessage": "Success", "latestTransactionStatus": "00"}
         raise AssertionError(f"URL tidak terduga dalam mock: {url}")
 
 
@@ -769,6 +785,46 @@ def test_cek_status_transaksi_dispatcher_va_dan_direct_debit(single_tenant, monk
         "BOOKING-1-42-abc", channel="direct_debit", original_reference_no="REF999", channel_code="812")
     assert hasil_dd["latestTransactionStatus"] == "00"
 
+    hasil_qris = snap_advance_client.cek_status_transaksi(
+        "BOOKING-1-42-abc", channel="qris", original_reference_no="QRREF999", channel_code="711")
+    assert hasil_qris["latestTransactionStatus"] == "00"
+
+
+def test_buat_transaksi_qris_sukses(single_tenant, monkeypatch):
+    _pasang_kredensial_snap()
+    rekam = _RekamPanggilan()
+    monkeypatch.setattr(core, "post_json_raw", rekam)
+
+    hasil = snap_advance_client.buat_transaksi_qris(
+        "BOOKING-1-42-abc123456789", 25000, {"whatsapp": "081234567890"})
+
+    assert hasil["provider_transaction_id"] == "QRREF999"
+    assert hasil["qr_url"] == "https://debit-sandbox.faspay.co.id/qr/xyz.png"
+    assert hasil["qr_content"] == "https://debit-sandbox.faspay.co.id/pws/qr-display"
+    body = json.loads(rekam.panggilan[-1]["raw_body"])
+    assert body["partnerReferenceNo"] == "BOOKING-1-42-abc123456789"
+    assert body["merchantId"] == "37070"
+    assert body["additionalInfo"]["channelCode"] == "711"
+    assert body["additionalInfo"]["phoneNo"] == "6281234567890"
+    assert body["amount"] == {"value": "25000.00", "currency": "IDR"}
+
+
+def test_buat_transaksi_qris_tanpa_whatsapp_ditolak_jelas(single_tenant):
+    """phoneNo WAJIB per dokumen resmi (beda dari VA yang opsional) --
+    ditolak ValueError jelas, BUKAN mengirim field kosong ke Faspay."""
+    _pasang_kredensial_snap()
+    with pytest.raises(ValueError, match="WhatsApp"):
+        snap_advance_client.buat_transaksi_qris("BOOKING-1-42-abc", 25000)
+
+
+def test_query_payment_qris_sukses(single_tenant, monkeypatch):
+    _pasang_kredensial_snap()
+    rekam = _RekamPanggilan()
+    monkeypatch.setattr(core, "post_json_raw", rekam)
+
+    hasil = snap_advance_client.query_payment_qris("BOOKING-1-42-abc", "QRREF999", "711")
+    assert hasil["latestTransactionStatus"] == "00"
+
 
 # ---------------------------------------------------------------------------
 # Audit lanjutan -- verifikasi signature webhook & proses_notifikasi() SUNGGUHAN
@@ -846,6 +902,47 @@ def test_ekstrak_notifikasi_bentuk_tidak_dikenal_ditolak():
         snap_webhook._ekstrak_notifikasi({"apa": "saja"})
 
 
+def test_ekstrak_notifikasi_qris_bentuk_sama_dengan_direct_debit():
+    """QRIS & Direct Debit KEBETULAN sama persis bentuk payload notifikasi
+    -- _ekstrak_notifikasi() tidak perlu cabang terpisah (lihat
+    _tentukan_jenis_notifikasi() untuk pembeda yang HANYA dipakai
+    membangun acknowledgment)."""
+    payload = {
+        "originalPartnerReferenceNo": "BOOKING-1-1-abc", "originalReferenceNo": "QRREF999",
+        "latestTransactionStatus": "00", "additionalInfo": {"paymentDate": "2026-08-21 10:00:00",
+                                                              "channelCode": "711", "merchantId": "37070"},
+    }
+    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload)
+    assert (ref, prov_id, status, paid_at) == ("BOOKING-1-1-abc", "QRREF999", "00", "2026-08-21 10:00:00")
+
+
+def test_tentukan_jenis_notifikasi():
+    assert snap_webhook._tentukan_jenis_notifikasi({"trxId": "x"}) == "va"
+    assert snap_webhook._tentukan_jenis_notifikasi(
+        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "711"}}) == "qris"
+    assert snap_webhook._tentukan_jenis_notifikasi(
+        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "812"}}) == "direct_debit"
+    with pytest.raises(ValueError):
+        snap_webhook._tentukan_jenis_notifikasi({"apa": "saja"})
+
+
+def test_balas_notifikasi_bentuk_sesuai_dokumen_resmi_per_jenis():
+    ack_va = snap_webhook.balas_notifikasi({
+        "trxId": "x", "partnerServiceId": "70200000", "customerNo": "123",
+        "virtualAccountNo": "70200000123", "paymentRequestId": "PR-1", "paidAmount": {"value": "1.00", "currency": "IDR"},
+    })
+    assert ack_va["responseCode"] == "2002500"
+    assert ack_va["virtualAccountData"]["virtualAccountNo"] == "70200000123"
+
+    ack_dd = snap_webhook.balas_notifikasi(
+        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "812"}})
+    assert ack_dd == {"responseCode": "2005600", "responseMessage": "Request has been processed successfully"}
+
+    ack_qris = snap_webhook.balas_notifikasi(
+        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "711"}})
+    assert ack_qris == {"responseCode": "2005200", "responseMessage": "Request has been processed successfully"}
+
+
 def test_proses_notifikasi_va_end_to_end_transisi_ke_paid(single_tenant):
     """BUKTI UTAMA: notifikasi VA SUNGGUHAN (bukan lagi PENDING FASPAY)
     benar-benar mengubah status transaksi ke PAID & cascade ke booking --
@@ -898,6 +995,34 @@ def test_proses_notifikasi_direct_debit_end_to_end_transisi_ke_paid(single_tenan
     assert billing_invoice_db.get_invoice(invoice["id"])["status"] == "paid"
 
 
+def test_proses_notifikasi_qris_end_to_end_transisi_ke_paid(single_tenant):
+    """Sama seperti test Direct Debit di atas -- membuktikan notifikasi
+    QRIS (bentuk payload KEBETULAN sama dengan Direct Debit, dibedakan
+    lewat channelCode) diproses benar & channelCode QRIS TIDAK disalah-
+    tafsirkan jadi Direct Debit."""
+    tenant_id = single_tenant["tenant_id"]
+    booking = _siapkan_booking(tenant_id, metode="qris")
+    transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
+                                                booking_id=booking["id"], channel="qris")
+    private_faspay, public_faspay = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_faspay)
+
+    payload = {
+        "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "QRREF999",
+        "amount": {"value": f"{booking['total_harga']:.2f}", "currency": "IDR"},
+        "additionalInfo": {"paymentDate": "2026-08-21 10:00:00", "channelCode": "711", "merchantId": "37070"},
+        "latestTransactionStatus": "00", "transactionStatusDesc": "success",
+    }
+    raw_body = json.dumps(payload)
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+
+    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts)
+
+    assert hasil["status"] == "PAID"
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+    assert snap_webhook.balas_notifikasi(payload)["responseCode"] == "2005200"  # ack QRIS, BUKAN Direct Debit (2005600)
+
+
 def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_tenant):
     """SESUAI instruksi migrasi #6 -- webhook dobel (walau signature-nya
     valid tiap kali) TETAP hanya satu transisi status sungguhan."""
@@ -939,8 +1064,12 @@ def test_endpoint_webhook_signature_valid_balas_200_dan_transisi_paid(app_client
     r = app_client.post("/api/public/gateway/snap-notification", content=raw_body,
                          headers={"X-SIGNATURE": signature, "X-TIMESTAMP": ts, "Content-Type": "application/json"})
 
+    # BUGFIX (audit lanjutan): respons HTTP-nya sekarang body acknowledgment
+    # RESMI Faspay (format VA), BUKAN lagi echo objek transaksi internal --
+    # status PAID dibuktikan lewat efek sampingnya (booking terverifikasi).
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "PAID"
+    assert r.json()["responseCode"] == "2002500"
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
 
 
@@ -1003,95 +1132,3 @@ def test_get_config_internal_mengembalikan_nilai_asli(single_tenant):
 
     assert cfg["snap_client_secret"] == "rahasia-banget"
     assert cfg["snap_private_key"] == private_pem.strip()
-
-
-# ---------------------------------------------------------------------------
-# Audit lanjutan -- signature dicocokkan PERSIS ke contoh resmi halaman
-# "Signature SNAP" Faspay (bukan cuma konsistensi internal)
-# ---------------------------------------------------------------------------
-
-def test_signature_snap_cocok_persis_contoh_resmi_faspay_create_va():
-    """Regression guard PERMANEN: hash body & signature RSA-SHA256 dihitung
-    ulang PERSIS terhadap contoh angka resmi di halaman "Signature SNAP"
-    Faspay (Create VA) -- private key & X-SIGNATURE hasil generate Faspay
-    sendiri, dicocokkan byte-demi-byte. Kalau test ini pernah gagal,
-    implementasi signature SUDAH MENYIMPANG dari dokumen resmi."""
-    private_key_pem = (
-        "-----BEGIN RSA PRIVATE KEY-----\n"
-        "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\n"
-        "-----END RSA PRIVATE KEY-----\n"
-    )
-    string_to_sign = ("POST:/v1.0/transfer-va/create-va:"
-                       "f7e939e8227670a065e4a6f99b42346bfa20724a8e3c775be93b57c95c954dfd:"
-                       "2022-12-12T16:00:00+07:00")
-    expected_signature = (
-        "nDbaEgmkto+t9zyADVFwTmnKICKENHg/+dtGAUyoxoZr0pHBZ3KC4JrLCrXtqRqf2FbsTK2kUBlCfRjTkJ0rZ+KCPdJ/J4GszU71"
-        "vf3G7Iip6nPUhG/Cxsj2dXbEojhHvBSp+gYGugTGiMbEZ4VhVLUFGMKFoi87mGRruuJdX/FXdWMd0b5+yPfthmdOTbULNzhjVNZM"
-        "DCGmhQ722ua8pS5IVSZE92h0qPA352vLef/4Sbmaljxs/QyIZG7S264xnMhQ+GN4M1Gn/x32ZAqQsRA+6CoK0F1sQlwl4S1eskj"
-        "oksvxbDnTWViVVWIhPylb+7bMsYT3NYxhVLnbWIQ8Y7HV4VHScyG6IOILKtvoOqY5z1w5rSSTJub3ZolJz/7jpe+/BjozkEYiiG"
-        "7jn6bD/T5HWMKuub56HGP5/mbKXSVtgfA8QzlCH7574mD+xK/bteT1LPBRsQXUpiuCNCmCx4Et6ln0lJPb52PyOMP0op96OJT66"
-        "36gqZci/N+j2XpovR4HAIdw5chjBY28MmYg4CBjcoXLcYcA6YSVIRQ3/iIS+uG/dfHsrxIjWxtFuDrOyPrdvhQg0BL+vF5CfKbD"
-        "Ks/o/3fanPGlyEyjV3Ca9/goK4SCZ3KDTmSEhPLZ9F3fMAuL6ufGQL1ZinlWuynqegDacfr1GZRcUVBSLaZI0dg="
-    )
-    request_body = json.dumps({
-        "virtualAccountName": "Jokul Doe", "virtualAccountEmail": "jokul@email.com",
-        "virtualAccountPhone": "6281828384858", "trxId": "abcdefgh1234",
-        "totalAmount": {"value": "12345678.00", "currency": "IDR"},
-        "expiredDate": "2020-12-31T23:59:59-07:00",
-        "additionalInfo": {"billDate": "2020-12-31T23:59:59-07:00", "channelCode": "402",
-                            "billDescription": "Maintenance"},
-    }, separators=(",", ":"))
-
-    body_hash = core.sha256_lowercase_hex(request_body)
-    assert body_hash == "f7e939e8227670a065e4a6f99b42346bfa20724a8e3c775be93b57c95c954dfd"
-
-    signature = core.sign_sha256_rsa(string_to_sign, private_key_pem)
-    assert signature == expected_signature

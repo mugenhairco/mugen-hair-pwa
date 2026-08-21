@@ -39,6 +39,7 @@ import billing_invoice_db
 import billing_webhook
 import booking_db
 import snap_advance_client
+import snap_advance_db
 import snap_payment_db
 
 # Pemetaan vocabulary SNAP Advance (CREATED/PENDING/PAID/FAILED/EXPIRED/
@@ -147,33 +148,79 @@ def _map_latest_transaction_status(status_code: str) -> str:
 
 
 def _ekstrak_notifikasi(payload: dict) -> tuple:
-    """Payload VA Dynamic vs Direct Debit BEDA BENTUK (dikonfirmasi dari
-    dokumen resmi Faspay yang diberikan Owner):
+    """Payload VA Dynamic vs Direct Debit/QRIS BEDA BENTUK (dikonfirmasi
+    dari dokumen resmi Faspay yang diberikan Owner):
     - VA Dynamic: transaksi diidentifikasi lewat `trxId` (BUKAN
       partnerReferenceNo), `latestTransactionStatus` bersarang di
       `additionalInfo`.
-    - Direct Debit: transaksi diidentifikasi lewat `originalPartnerReferenceNo`,
+    - Direct Debit & QRIS: KEBETULAN SAMA PERSIS bentuk payload notifikasinya
+      -- transaksi diidentifikasi lewat `originalPartnerReferenceNo`,
       `latestTransactionStatus` field TOP-LEVEL (BUKAN di dalam
       `additionalInfo` seperti VA -- beda dari VA, gampang salah kalau
-      disamakan).
+      disamakan). Karena bentuknya identik, TIDAK PERLU cabang terpisah di
+      sini untuk QRIS -- field yang diekstrak sama persis (lihat
+      _tentukan_jenis_notifikasi() untuk pembeda yang HANYA dipakai
+      membangun acknowledgment, bukan di sini).
     Return (payment_reference, provider_transaction_id, status_code, paid_at)."""
     info = payload.get("additionalInfo") or {}
     if "trxId" in payload:  # VA Dynamic
         return (payload.get("trxId"), payload.get("paymentRequestId"),
                 info.get("latestTransactionStatus"), info.get("paymentDate"))
-    if "originalPartnerReferenceNo" in payload:  # Direct Debit
+    if "originalPartnerReferenceNo" in payload:  # Direct Debit ATAU QRIS
         return (payload.get("originalPartnerReferenceNo"), payload.get("originalReferenceNo"),
                 payload.get("latestTransactionStatus"), info.get("paymentDate"))
-    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA Dynamic maupun Direct Debit).")
+    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA Dynamic maupun Direct Debit/QRIS).")
+
+
+def _tentukan_jenis_notifikasi(payload: dict) -> str:
+    """"va"/"direct_debit"/"qris" -- HANYA dipakai balas_notifikasi() untuk
+    memilih bentuk acknowledgment yang benar (Faspay mewajibkan bentuk
+    respons BEDA per jenis servis, lihat dokumen resmi masing-masing), TIDAK
+    dipakai _ekstrak_notifikasi()/proses_notifikasi() karena keduanya sudah
+    cukup dengan bentuk payload generik di atas. Direct Debit & QRIS
+    dibedakan lewat `additionalInfo.channelCode` -- daftar channelCode QRIS
+    (715/711/842, snap_advance_db.QRIS_CHANNEL_CODE_VALID) TIDAK bertumpang
+    tindih dengan channelCode Direct Debit manapun (dokumen resmi Faspay)."""
+    if "trxId" in payload:
+        return "va"
+    channel_code = (payload.get("additionalInfo") or {}).get("channelCode")
+    if channel_code in snap_advance_db.QRIS_CHANNEL_CODE_VALID:
+        return "qris"
+    if "originalPartnerReferenceNo" in payload:
+        return "direct_debit"
+    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA/Direct Debit/QRIS).")
+
+
+def balas_notifikasi(payload: dict) -> dict:
+    """Body acknowledgment SESUAI dokumen resmi Faspay per jenis notifikasi
+    -- WAJIB dipakai sebagai respons HTTP endpoint webhook (routers/
+    snap_advance.py) SETELAH proses_notifikasi() sukses, BUKAN echo
+    transaksi internal kita (bentuknya tidak dijamin cocok ekspektasi
+    Faspay, berisiko Faspay mengira gagal & retry terus-menerus)."""
+    jenis = _tentukan_jenis_notifikasi(payload)
+    if jenis == "va":
+        return {
+            "responseCode": "2002500", "responseMessage": "Successful",
+            "virtualAccountData": {
+                "partnerServiceId": payload.get("partnerServiceId"),
+                "customerNo": payload.get("customerNo"),
+                "virtualAccountNo": payload.get("virtualAccountNo"),
+                "paymentRequestId": payload.get("paymentRequestId"),
+                "paidAmount": payload.get("paidAmount"),
+            },
+        }
+    if jenis == "qris":
+        return {"responseCode": "2005200", "responseMessage": "Request has been processed successfully"}
+    return {"responseCode": "2005600", "responseMessage": "Request has been processed successfully"}
 
 
 def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: str = None) -> dict:
     """Envelope luar webhook -- memverifikasi signature, mem-parsing payload
-    VA/Direct Debit (lihat _ekstrak_notifikasi()), lalu memanggil
+    VA/Direct Debit/QRIS (lihat _ekstrak_notifikasi()), lalu memanggil
     terapkan_status_transaksi() (CORE, sudah diuji penuh sejak awal).
-    QRIS/E-Wallet BELUM dikenali di sini (skema payloadnya PENDING FASPAY,
-    lihat snap_advance_client.py) -- notifikasi bentuk itu akan jatuh ke
-    ValueError "tidak dikenali" di _ekstrak_notifikasi()."""
+    E-Wallet (di luar QRIS) BELUM dikenali di sini (skema payloadnya PENDING
+    FASPAY, lihat snap_advance_client.py) -- notifikasi bentuk itu akan
+    jatuh ke ValueError "tidak dikenali" di _ekstrak_notifikasi()."""
     # BUGFIX-guard SENGAJA di posisi ini (SEBELUM parsing payload apa pun):
     # signature WAJIB divalidasi dulu sebelum satu field pun dari body
     # dipercaya -- pola SAMA PERSIS booking_gateway_webhook.py::

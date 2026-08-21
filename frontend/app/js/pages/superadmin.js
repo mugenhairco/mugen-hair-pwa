@@ -1329,6 +1329,7 @@ const PageSuperadmin = (() => {
     const inSnapWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
     const inSnapChannelId = MugenUI.el("input", { type: "text", placeholder: "mis. 77001" });
     const inSnapVaChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih bank VA --")]);
+    const inSnapQrisChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih e-wallet QRIS --")]);
     const inSnapTimeout = MugenUI.el("input", { type: "number", min: "1" });
     const inSnapRetryMax = MugenUI.el("input", { type: "number", min: "0" });
 
@@ -1356,6 +1357,8 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(inSnapChannelId);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Bank VA Default (channelCode Create VA)"));
     snapAdvanceCard.appendChild(inSnapVaChannelCode);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "E-Wallet QRIS Default (channelCode Generate QRIS)"));
+    snapAdvanceCard.appendChild(inSnapQrisChannelCode);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Timeout (detik)"));
     snapAdvanceCard.appendChild(inSnapTimeout);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Retry Max"));
@@ -1365,7 +1368,7 @@ const PageSuperadmin = (() => {
 
     snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Aktif"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },
-      "Dynamic E-Wallet & QRIS BELUM tersedia di sini -- dokumen resmi Faspay belum diberikan, sengaja tidak ditebak. Direct Debit BELUM bisa diaktifkan lewat checkbox ini -- prasyarat Registrasi/Account Binding-nya masih PENDING FASPAY (dokumen Payment menunjukkan token binding hanya wajib untuk channel BRI Direct Debit, channel lain belum terkonfirmasi caranya)."));
+      "QRIS sekarang sudah diimplementasikan sesuai dokumen resmi Faspay -- centang untuk mengaktifkan (jangan lupa isi \"E-Wallet QRIS Default\" di atas). Dynamic E-Wallet (di luar QRIS) BELUM tersedia -- dokumen resmi belum diberikan, sengaja tidak ditebak. Direct Debit BELUM bisa diaktifkan lewat checkbox ini -- prasyarat Registrasi/Account Binding-nya masih PENDING FASPAY (dokumen Payment menunjukkan token binding hanya wajib untuk channel BRI Direct Debit, channel lain belum terkonfirmasi caranya)."));
     const snapChannelList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
     snapAdvanceCard.appendChild(snapChannelList);
 
@@ -1427,6 +1430,13 @@ const PageSuperadmin = (() => {
           inSnapVaChannelCode.appendChild(MugenUI.el("option", { value: kode }, `${kode} -- ${label}`));
         }
         inSnapVaChannelCode.value = cfg.snap_va_channel_code || "";
+        const qrisChannelLabel = cfg.qris_channel_code_label || {};
+        inSnapQrisChannelCode.innerHTML = "";
+        inSnapQrisChannelCode.appendChild(MugenUI.el("option", { value: "" }, "-- pilih e-wallet QRIS --"));
+        for (const [kode, label] of Object.entries(qrisChannelLabel)) {
+          inSnapQrisChannelCode.appendChild(MugenUI.el("option", { value: kode }, `${kode} -- ${label}`));
+        }
+        inSnapQrisChannelCode.value = cfg.snap_qris_channel_code || "";
         for (const key of (cfg.snap_channel_aktif || [])) if (snapChannelCheckbox[key]) snapChannelCheckbox[key].checked = true;
       } catch (e) { errorSnap.textContent = e.message; }
     }
@@ -1442,6 +1452,7 @@ const PageSuperadmin = (() => {
           webhook_secret: inSnapWebhookSecret.value, timeout_detik: Number(inSnapTimeout.value) || 30,
           retry_max: Number(inSnapRetryMax.value) || 0, channel_aktif,
           channel_id: inSnapChannelId.value, va_channel_code: inSnapVaChannelCode.value,
+          qris_channel_code: inSnapQrisChannelCode.value,
         }));
         MugenUI.toast("Konfigurasi SNAP Advance disimpan.", "success");
         loadAuditLog();

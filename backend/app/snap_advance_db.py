@@ -52,6 +52,10 @@ _KEYS_KREDENSIAL = [
     # panggilan Create VA -- kolom ini murni default platform-wide, BUKAN
     # per-tenant, sampai ada kebutuhan nyata memilih per tenant/booking).
     "snap_va_channel_code",
+    # channelCode default untuk Generate QRIS (dokumen SNAP QRIS resmi
+    # Faspay -- BEDA lagi dari channelCode VA di atas, daftar kode/artinya
+    # provider e-wallet, bukan bank). Pola SAMA seperti snap_va_channel_code.
+    "snap_qris_channel_code",
 ]
 
 # Daftar channelCode VA resmi (dokumen SNAP VA Faspay -- lihat tabel
@@ -65,6 +69,15 @@ VA_CHANNEL_CODE_LABEL = {
     "837": "BTN VA (Static & Dynamic)",
 }
 VA_CHANNEL_CODE_VALID = set(VA_CHANNEL_CODE_LABEL.keys())
+
+# Daftar channelCode QRIS resmi (dokumen SNAP QRIS Faspay -- lihat tabel
+# "channel code" Generate QRIS/Query Payment) -- dipakai memvalidasi
+# snap_qris_channel_code, BUKAN daftar bebas/tebakan. TIDAK BERTUMPANG
+# TINDIH dengan kode VA_CHANNEL_CODE_VALID/DD di atas -- juga dipakai
+# snap_webhook.py::_tentukan_jenis_notifikasi() untuk membedakan notifikasi
+# QRIS dari Direct Debit (dua-duanya sama bentuk payload-nya).
+QRIS_CHANNEL_CODE_LABEL = {"715": "LinkAja QRIS", "711": "ShopeePay QRIS", "842": "CIMB QRIS"}
+QRIS_CHANNEL_CODE_VALID = set(QRIS_CHANNEL_CODE_LABEL.keys())
 _KUNCI_TIMEOUT = "snap_timeout_detik"
 _KUNCI_RETRY_MAX = "snap_retry_max"
 _KUNCI_CHANNEL_AKTIF = "snap_channel_aktif"
@@ -148,6 +161,7 @@ def get_config() -> dict:
     data["snap_channel_aktif"] = channel_aktif
     data["channel_label"] = CHANNEL_LABEL
     data["va_channel_code_label"] = VA_CHANNEL_CODE_LABEL
+    data["qris_channel_code_label"] = QRIS_CHANNEL_CODE_LABEL
     # "enabled": SENGAJA konservatif -- field kredensial minimal yang
     # DIPERKIRAKAN dibutuhkan skema token B2B SNAP (merchant_id/client_id/
     # client_secret/private_key), TAPI ini BUKAN jaminan kredensial ini
@@ -196,7 +210,8 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
                    merchant_id: str = None, partner_id: str = None, client_id: str = None,
                    client_secret: str = None, private_key: str = None, faspay_public_key: str = None,
                    webhook_secret: str = None, timeout_detik: int = None, retry_max: int = None,
-                   channel_aktif: list = None, channel_id: str = None, va_channel_code: str = None) -> dict:
+                   channel_aktif: list = None, channel_id: str = None, va_channel_code: str = None,
+                   qris_channel_code: str = None) -> dict:
     data = {}
     if environment is not None:
         if environment not in ENVIRONMENT_VALID:
@@ -246,6 +261,11 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
             raise ValueError(f"channelCode VA tidak dikenal: {va_channel_code}. "
                               f"Lihat daftar resmi di VA_CHANNEL_CODE_LABEL.")
         data["snap_va_channel_code"] = va_channel_code.strip()
+    if qris_channel_code is not None:
+        if qris_channel_code and qris_channel_code not in QRIS_CHANNEL_CODE_VALID:
+            raise ValueError(f"channelCode QRIS tidak dikenal: {qris_channel_code}. "
+                              f"Lihat daftar resmi di QRIS_CHANNEL_CODE_LABEL.")
+        data["snap_qris_channel_code"] = qris_channel_code.strip()
     if data:
         db.set_settings_bulk(data, tenant_id=None)
     return get_config()

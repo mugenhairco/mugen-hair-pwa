@@ -17,7 +17,7 @@ lapisan atas TIDAK PERNAH perlu tahu detail wire-protocol provider.
 
 =============================================================================
 STATUS IMPLEMENTASI per channel (audit lanjutan, setelah Faspay memberikan
-dokumen resmi SNAP VA & SNAP Direct Debit)
+dokumen resmi SNAP VA, SNAP Direct Debit, DAN SNAP QRIS)
 =============================================================================
 - **VA (Virtual Account)**: Create VA, Inquiry Status VA, parsing Payment
   Notification SUDAH diimplementasikan sungguhan dari dokumen resmi Faspay
@@ -29,10 +29,12 @@ dokumen resmi SNAP VA & SNAP Direct Debit)
   sekali, dan TIDAK ADA asumsi dibuat soal channel mana yang butuh binding
   (per instruksi eksplisit Owner "jangan membuat asumsi mengenai Account
   Binding untuk semua channel Direct Debit").
-- **QRIS**: TETAP PENDING FASPAY TOTAL -- dokumen resmi SNAP QRIS belum
-  diberikan Owner (per instruksi eksplisit "jangan menebak endpoint/payload,
-  kalau dokumentasi belum cukup jangan implementasikan").
-- **E-Wallet**: TETAP PENDING FASPAY TOTAL -- di luar cakupan yang diminta.
+- **QRIS**: Generate QRIS, Query Payment, parsing Payment Notification SUDAH
+  diimplementasikan sungguhan dari dokumen resmi Faspay yang diberikan
+  Owner (buat_transaksi_qris()/query_payment_qris()). `phoneNo` WAJIB
+  (beda dari VA yang opsional) -- melempar ValueError kalau tidak diisi.
+- **E-Wallet** (di luar QRIS): TETAP PENDING FASPAY TOTAL -- di luar
+  cakupan yang diminta/dikonfirmasi.
 
 =============================================================================
 CATATAN SIGNATURE -- SUDAH dikonfirmasi 1:1 ke halaman resmi Faspay
@@ -80,6 +82,8 @@ PATH_VA_CREATE = "/v1.0/transfer-va/create-va"  # terkonfirmasi dokumen resmi Fa
 PATH_VA_INQUIRY_STATUS = "/v1.0/transfer-va/status"  # terkonfirmasi dokumen resmi Faspay ("Inquiry Status", servis 26)
 PATH_DD_PAYMENT = "/v1.0/debit/payment-host-to-host"  # terkonfirmasi dokumen resmi Faspay
 PATH_DD_STATUS = "/v1.0/debit/status"  # terkonfirmasi dokumen resmi Faspay
+PATH_QRIS_GENERATE = "/v1.0/qr/qr-mpm-generate"  # terkonfirmasi dokumen resmi Faspay (servis 47)
+PATH_QRIS_QUERY = "/v1.0/qr/qr-mpm-query"  # terkonfirmasi dokumen resmi Faspay (servis 51)
 
 
 class SnapAdvancePendingError(core.GatewayError):
@@ -267,13 +271,79 @@ def inquiry_status_va(payment_reference: str, virtual_account_no: str) -> dict:
 
 
 def buat_transaksi_qris(payment_reference: str, amount: int, customer_details: dict = None) -> dict:
-    """Create Dynamic QRIS -- TETAP PENDING FASPAY TOTAL. Dokumen resmi SNAP
-    QRIS BELUM diberikan Owner (per instruksi eksplisit: jangan menebak
-    endpoint/payload kalau dokumentasi belum cukup)."""
-    raise pending_faspay(
-        "Dynamic QRIS -- buat_transaksi_qris()",
-        "Dokumen resmi SNAP QRIS Faspay belum diberikan -- endpoint/payload TIDAK ditebak, menunggu dokumen resmi.",
-    )
+    """Generate QRIS -- POST {base}/v1.0/qr/qr-mpm-generate (servis 47,
+    dokumen resmi Faspay). `phoneNo` WAJIB per dokumen (beda dari VA yang
+    opsional) -- melempar ValueError jelas kalau `customer_details` tidak
+    berisi nomor WhatsApp, BUKAN mengirim field kosong ke Faspay.
+    `channelCode` (715=LinkAja QRIS/711=ShopeePay QRIS/842=CIMB QRIS) diambil
+    dari config `snap_qris_channel_code` -- pola SAMA seperti
+    `snap_va_channel_code` pada buat_transaksi_va()."""
+    cfg = snap_advance_db.get_config_internal()
+    _cfg_wajib(cfg, "snap_qris_channel_code", "snap_merchant_id")
+    if cfg["snap_qris_channel_code"] not in snap_advance_db.QRIS_CHANNEL_CODE_VALID:
+        raise core.GatewayNotConfiguredError(
+            f"channelCode QRIS default belum/tidak valid: {cfg['snap_qris_channel_code']!r}."
+        )
+    customer_details = customer_details or {}
+    if not customer_details.get("whatsapp"):
+        raise ValueError(
+            "Generate QRIS SNAP Advance wajib menyertakan nomor WhatsApp customer "
+            "(field phoneNo, Mandatory per dokumen resmi Faspay)."
+        )
+    ts_now = core.snap_timestamp_wib()
+    valid_until = core.now_wib().replace(hour=23, minute=59, second=59)
+    body = {
+        "partnerReferenceNo": payment_reference[:32],
+        "amount": {"value": f"{amount:.2f}", "currency": "IDR"},
+        "merchantId": cfg["snap_merchant_id"][:5],
+        "validityPeriod": valid_until.strftime("%Y-%m-%dT%H:%M:%S") + ts_now[-6:],
+        "additionalInfo": {
+            "billDate": ts_now,
+            "billDescription": "Pembayaran"[:128],
+            "channelCode": cfg["snap_qris_channel_code"],
+            "phoneNo": _format_msisdn_62(customer_details["whatsapp"])[:30],
+        },
+    }
+    raw_body = _minify(body)
+    headers = _headers_service("POST", PATH_QRIS_GENERATE, raw_body, cfg)
+    url = _base_url(is_production()) + PATH_QRIS_GENERATE
+    resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
+    if resp.get("responseCode") != "2004700":
+        raise core.GatewayRequestError(f"Generate QRIS SNAP Advance ditolak Faspay: {resp}")
+    info = resp.get("additionalInfo", {})
+    return {
+        "provider_transaction_id": resp.get("referenceNo"),
+        # `qr_url` = qrUrl (URL gambar QR langsung, conditional -- "hanya
+        # untuk direct merchant" per dokumen). `qr_content` dipakai untuk
+        # qrImageUrl (redirect ke halaman Faspay yang menampilkan QR) --
+        # keduanya kolom yang SUDAH ADA di snap_payment_transactions
+        # (snap_payment_migrasi.py), TIDAK perlu migrasi tambahan.
+        "qr_url": resp.get("qrUrl"),
+        "qr_content": info.get("qrImageUrl"),
+        "provider_response": json.dumps(resp),
+    }
+
+
+def query_payment_qris(payment_reference: str, provider_reference_no: str, channel_code: str) -> dict:
+    """Query Payment QRIS -- POST {base}/v1.0/qr/qr-mpm-query (servis 51,
+    dokumen resmi Faspay). `provider_reference_no` = referenceNo hasil
+    buat_transaksi_qris() (snap_payment_transactions.provider_transaction_id)."""
+    cfg = snap_advance_db.get_config_internal()
+    _cfg_wajib(cfg, "snap_merchant_id")
+    body = {
+        "originalReferenceNo": provider_reference_no[:16],
+        "originalPartnerReferenceNo": payment_reference[:32],
+        "serviceCode": "47",
+        "merchantId": cfg["snap_merchant_id"][:5],
+        "additionalInfo": {"channelCode": channel_code},
+    }
+    raw_body = _minify(body)
+    headers = _headers_service("POST", PATH_QRIS_QUERY, raw_body, cfg)
+    url = _base_url(is_production()) + PATH_QRIS_QUERY
+    resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
+    if resp.get("responseCode") != "2005100":
+        raise core.GatewayRequestError(f"Query Payment QRIS SNAP Advance ditolak Faspay: {resp}")
+    return resp
 
 
 def buat_transaksi_ewallet(payment_reference: str, amount: int, ewallet_provider: str,
@@ -381,20 +451,23 @@ def status_direct_debit(original_partner_reference_no: str, original_reference_n
 
 def cek_status_transaksi(payment_reference: str, channel: str = None, **kwargs) -> dict:
     """Inquiry/Cek Status manual -- dispatcher tipis ke inquiry_status_va()/
-    status_direct_debit() (fitur "Cek Ulang ke Provider", rekonsiliasi
-    transaksi yang macet karena webhook tidak pernah sampai). `channel`
-    WAJIB diisi pemanggil (va/direct_debit) beserta kwargs yang relevan
-    (virtual_account_no untuk VA; original_reference_no/channel_code untuk
-    Direct Debit) -- lihat inquiry_status_va()/status_direct_debit() untuk
-    parameter lengkapnya. QRIS/E-Wallet TETAP PENDING FASPAY."""
+    status_direct_debit()/query_payment_qris() (fitur "Cek Ulang ke
+    Provider", rekonsiliasi transaksi yang macet karena webhook tidak
+    pernah sampai). `channel` WAJIB diisi pemanggil (va/direct_debit/qris)
+    beserta kwargs yang relevan (virtual_account_no untuk VA;
+    original_reference_no/channel_code untuk Direct Debit & QRIS) -- lihat
+    fungsi masing-masing untuk parameter lengkapnya. E-Wallet TETAP PENDING
+    FASPAY."""
     if channel == "va":
         return inquiry_status_va(payment_reference, kwargs["virtual_account_no"])
     if channel == "direct_debit":
         return status_direct_debit(payment_reference, kwargs["original_reference_no"],
                                     kwargs["channel_code"], kwargs.get("merchant_id"))
+    if channel == "qris":
+        return query_payment_qris(payment_reference, kwargs["original_reference_no"], kwargs["channel_code"])
     raise pending_faspay(
         "Inquiry/Cek Status -- cek_status_transaksi()",
-        f"Channel {channel!r} belum diimplementasikan (hanya va/direct_debit yang sudah didokumentasikan resmi).",
+        f"Channel {channel!r} belum diimplementasikan (hanya va/direct_debit/qris yang sudah didokumentasikan resmi).",
     )
 
 
