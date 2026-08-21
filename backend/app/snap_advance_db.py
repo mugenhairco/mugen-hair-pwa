@@ -73,9 +73,10 @@ VA_CHANNEL_CODE_VALID = set(VA_CHANNEL_CODE_LABEL.keys())
 # Daftar channelCode QRIS resmi (dokumen SNAP QRIS Faspay -- lihat tabel
 # "channel code" Generate QRIS/Query Payment) -- dipakai memvalidasi
 # snap_qris_channel_code, BUKAN daftar bebas/tebakan. TIDAK BERTUMPANG
-# TINDIH dengan kode VA_CHANNEL_CODE_VALID/DD di atas -- juga dipakai
-# snap_webhook.py::_tentukan_jenis_notifikasi() untuk membedakan notifikasi
-# QRIS dari Direct Debit (dua-duanya sama bentuk payload-nya).
+# TINDIH dengan kode VA_CHANNEL_CODE_VALID/DD di atas. QRIS vs Direct Debit
+# (dua-duanya sama bentuk payload notifikasinya) sekarang dibedakan lewat
+# endpoint mana yang dipukul (routers/snap_advance.py -- path resmi
+# per-produk Faspay), BUKAN lagi lewat channelCode ini.
 QRIS_CHANNEL_CODE_LABEL = {"715": "LinkAja QRIS", "711": "ShopeePay QRIS", "842": "CIMB QRIS"}
 QRIS_CHANNEL_CODE_VALID = set(QRIS_CHANNEL_CODE_LABEL.keys())
 _KUNCI_TIMEOUT = "snap_timeout_detik"

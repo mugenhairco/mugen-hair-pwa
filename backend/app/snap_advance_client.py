@@ -472,10 +472,18 @@ def cek_status_transaksi(payment_reference: str, channel: str = None, **kwargs) 
 
 
 def verifikasi_signature_webhook(raw_body: str, signature_header: str, timestamp_header: str = None,
-                                  method: str = "POST", path: str = "/api/public/gateway/snap-notification") -> bool:
+                                  method: str = "POST", *, path: str) -> bool:
     """Verifikasi X-SIGNATURE Payment Notification -- ASYMMETRIC (RSA-SHA256),
     diverifikasi pakai public key Faspay (snap_faspay_public_key). String-
     to-sign standar SNAP notifikasi: `{method}:{path}:{sha256_lowercase_hex(raw_body)}:{X-TIMESTAMP}`.
+
+    `path` WAJIB diisi eksplisit oleh pemanggil (routers/snap_advance.py lewat
+    snap_webhook.py::proses_notifikasi()) -- salah satu dari tiga path resmi
+    Faspay (/v1.0/transfer-va/payment, /v1.0/qr/qr-mpm-notify,
+    /v1.0/debit/notify). TIDAK ADA default lagi (dulu default-nya endpoint
+    gabungan lama yang sudah dihapus, lihat catatan modul routers/snap_advance.py)
+    -- kalau sampai lupa dioper, ini SENGAJA meledak (TypeError) daripada
+    diam-diam salah verifikasi pakai path basi.
 
     CATATAN: formula ini BELUM dicocokkan 1:1 ke halaman resmi Faspay (lihat
     catatan modul) -- kalau uji Simulator menunjukkan formula ini SALAH,

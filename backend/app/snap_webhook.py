@@ -1,9 +1,20 @@
-"""snap_webhook.py — Webhook Faspay SNAP Advance: SATU endpoint untuk DUA
-domain (Booking Payment Tenant + SaaS Billing)
+"""snap_webhook.py — Webhook Faspay SNAP Advance: TIGA endpoint per produk
+(VA/QRIS/Direct Debit), DUA domain (Booking Payment Tenant + SaaS Billing)
 =============================================================================
-SESUAI instruksi migrasi #3: "Implementasikan SATU webhook endpoint untuk
-Merchant ID Faspay... Jangan membuat dua webhook Faspay yang berbeda untuk
-Merchant ID yang sama." Flow:
+KOREKSI (audit lanjutan #3, klarifikasi resmi Faspay): instruksi migrasi #3
+awalnya diartikan "satu URL notifikasi gabungan untuk semua produk" --
+TERNYATA KELIRU. Faspay mengonfirmasi tertulis: mereka mengatur SATU
+domain/url_merchant per Merchant ID, TAPI tiap PRODUK SNAP (VA/QRIS/Direct
+Debit) punya PATH notification sendiri di bawah domain itu (lihat
+routers/snap_advance.py untuk ketiga path resmi & alasan lengkapnya). "Satu
+webhook Faspay per Merchant ID" tetap benar levelnya -- SATU Merchant ID
+TETAP hanya berurusan dengan SATU domain/url_merchant, cuma path di bawahnya
+BUKAN satu, melainkan tiga (satu per produk). Modul INI (business logic:
+verifikasi signature, parsing payload, state machine, cascade) TIDAK
+berubah sama sekali akibat koreksi ini -- HANYA jenis notifikasi yang
+tadinya ditebak dari isi payload (workaround endpoint gabungan) sekarang
+EKSPLISIT dari parameter `jenis` yang dioper pemanggil (routers/snap_advance.py,
+tahu persis endpoint mana yang dipukul). Flow:
 
     Faspay Webhook
     -> Payment Transaction (snap_payment_db.get_transaksi_by_reference())
@@ -147,7 +158,10 @@ def _map_latest_transaction_status(status_code: str) -> str:
     return _STATUS_CODE_KE_INTERNAL[status_code]
 
 
-def _ekstrak_notifikasi(payload: dict) -> tuple:
+JENIS_VALID = {"va", "qris", "direct_debit"}
+
+
+def _ekstrak_notifikasi(payload: dict, jenis: str) -> tuple:
     """Payload VA Dynamic vs Direct Debit/QRIS BEDA BENTUK (dikonfirmasi
     dari dokumen resmi Faspay yang diberikan Owner):
     - VA Dynamic: transaksi diidentifikasi lewat `trxId` (BUKAN
@@ -157,47 +171,31 @@ def _ekstrak_notifikasi(payload: dict) -> tuple:
       -- transaksi diidentifikasi lewat `originalPartnerReferenceNo`,
       `latestTransactionStatus` field TOP-LEVEL (BUKAN di dalam
       `additionalInfo` seperti VA -- beda dari VA, gampang salah kalau
-      disamakan). Karena bentuknya identik, TIDAK PERLU cabang terpisah di
-      sini untuk QRIS -- field yang diekstrak sama persis (lihat
-      _tentukan_jenis_notifikasi() untuk pembeda yang HANYA dipakai
-      membangun acknowledgment, bukan di sini).
+      disamakan).
+    `jenis` EKSPLISIT dari pemanggil (routers/snap_advance.py tahu persis
+    endpoint mana yang dipukul, lihat catatan modul) -- TIDAK LAGI ditebak
+    dari isi payload seperti sebelum path notification per-produk
+    dikonfirmasi Faspay.
     Return (payment_reference, provider_transaction_id, status_code, paid_at)."""
+    if jenis not in JENIS_VALID:
+        raise ValueError(f"Jenis notifikasi SNAP Advance tidak dikenal: {jenis!r}.")
     info = payload.get("additionalInfo") or {}
-    if "trxId" in payload:  # VA Dynamic
+    if jenis == "va":
         return (payload.get("trxId"), payload.get("paymentRequestId"),
                 info.get("latestTransactionStatus"), info.get("paymentDate"))
-    if "originalPartnerReferenceNo" in payload:  # Direct Debit ATAU QRIS
-        return (payload.get("originalPartnerReferenceNo"), payload.get("originalReferenceNo"),
-                payload.get("latestTransactionStatus"), info.get("paymentDate"))
-    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA Dynamic maupun Direct Debit/QRIS).")
+    return (payload.get("originalPartnerReferenceNo"), payload.get("originalReferenceNo"),
+            payload.get("latestTransactionStatus"), info.get("paymentDate"))
 
 
-def _tentukan_jenis_notifikasi(payload: dict) -> str:
-    """"va"/"direct_debit"/"qris" -- HANYA dipakai balas_notifikasi() untuk
-    memilih bentuk acknowledgment yang benar (Faspay mewajibkan bentuk
-    respons BEDA per jenis servis, lihat dokumen resmi masing-masing), TIDAK
-    dipakai _ekstrak_notifikasi()/proses_notifikasi() karena keduanya sudah
-    cukup dengan bentuk payload generik di atas. Direct Debit & QRIS
-    dibedakan lewat `additionalInfo.channelCode` -- daftar channelCode QRIS
-    (715/711/842, snap_advance_db.QRIS_CHANNEL_CODE_VALID) TIDAK bertumpang
-    tindih dengan channelCode Direct Debit manapun (dokumen resmi Faspay)."""
-    if "trxId" in payload:
-        return "va"
-    channel_code = (payload.get("additionalInfo") or {}).get("channelCode")
-    if channel_code in snap_advance_db.QRIS_CHANNEL_CODE_VALID:
-        return "qris"
-    if "originalPartnerReferenceNo" in payload:
-        return "direct_debit"
-    raise ValueError("Payload notifikasi SNAP Advance tidak dikenali (bukan format VA/Direct Debit/QRIS).")
-
-
-def balas_notifikasi(payload: dict) -> dict:
+def balas_notifikasi(jenis: str, payload: dict) -> dict:
     """Body acknowledgment SESUAI dokumen resmi Faspay per jenis notifikasi
     -- WAJIB dipakai sebagai respons HTTP endpoint webhook (routers/
     snap_advance.py) SETELAH proses_notifikasi() sukses, BUKAN echo
     transaksi internal kita (bentuknya tidak dijamin cocok ekspektasi
-    Faspay, berisiko Faspay mengira gagal & retry terus-menerus)."""
-    jenis = _tentukan_jenis_notifikasi(payload)
+    Faspay, berisiko Faspay mengira gagal & retry terus-menerus). `jenis`
+    EKSPLISIT dari pemanggil (lihat _ekstrak_notifikasi())."""
+    if jenis not in JENIS_VALID:
+        raise ValueError(f"Jenis notifikasi SNAP Advance tidak dikenal: {jenis!r}.")
     if jenis == "va":
         return {
             "responseCode": "2002500", "responseMessage": "Successful",
@@ -214,13 +212,16 @@ def balas_notifikasi(payload: dict) -> dict:
     return {"responseCode": "2005600", "responseMessage": "Request has been processed successfully"}
 
 
-def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: str = None) -> dict:
-    """Envelope luar webhook -- memverifikasi signature, mem-parsing payload
-    VA/Direct Debit/QRIS (lihat _ekstrak_notifikasi()), lalu memanggil
-    terapkan_status_transaksi() (CORE, sudah diuji penuh sejak awal).
-    E-Wallet (di luar QRIS) BELUM dikenali di sini (skema payloadnya PENDING
-    FASPAY, lihat snap_advance_client.py) -- notifikasi bentuk itu akan
-    jatuh ke ValueError "tidak dikenali" di _ekstrak_notifikasi()."""
+def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: str, jenis: str, path: str) -> dict:
+    """Envelope luar webhook -- memverifikasi signature (mencakup `path`
+    endpoint resmi yang dipukul, WAJIB untuk formula stringToSign SNAP,
+    lihat gateway_client_base.py::sign_sha256_rsa()), mem-parsing payload
+    VA/Direct Debit/QRIS SESUAI `jenis` (lihat _ekstrak_notifikasi()), lalu
+    memanggil terapkan_status_transaksi() (CORE, sudah diuji penuh sejak
+    awal). `jenis`/`path` dioper EKSPLISIT oleh routers/snap_advance.py
+    (satu endpoint per produk, lihat catatan modul) -- E-Wallet di luar
+    QRIS BELUM punya endpoint/handler sama sekali (skema payloadnya PENDING
+    FASPAY)."""
     # BUGFIX-guard SENGAJA di posisi ini (SEBELUM parsing payload apa pun):
     # signature WAJIB divalidasi dulu sebelum satu field pun dari body
     # dipercaya -- pola SAMA PERSIS booking_gateway_webhook.py::
@@ -229,10 +230,10 @@ def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: st
     # False (BUKAN exception) baik untuk "belum dikonfigurasi" MAUPUN
     # "signature tidak valid" -- KEDUANYA ditolak sama (pola sama persis
     # gateway_client_base.py::verify_sha512() dkk).
-    if not snap_advance_client.verifikasi_signature_webhook(raw_body, signature_header, timestamp_header):
+    if not snap_advance_client.verifikasi_signature_webhook(raw_body, signature_header, timestamp_header, path=path):
         raise ValueError("Signature Payment Notification SNAP Advance tidak valid atau belum dikonfigurasi.")
     payload = json.loads(raw_body)
-    payment_reference, provider_transaction_id, status_code, paid_at = _ekstrak_notifikasi(payload)
+    payment_reference, provider_transaction_id, status_code, paid_at = _ekstrak_notifikasi(payload, jenis)
     if not payment_reference:
         raise ValueError("Payload notifikasi SNAP Advance tidak berisi referensi transaksi.")
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)

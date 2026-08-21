@@ -394,7 +394,8 @@ def test_verifikasi_signature_webhook_tanpa_konfigurasi_return_false(single_tena
     Faspay Public Key terisi, return False (BUKAN exception), pola sama
     persis gateway_client_base.py::verify_sha256_rsa() dkk (pemanggil WAJIB
     menolak notifikasi selama kredensial belum dikonfigurasi)."""
-    assert snap_advance_client.verifikasi_signature_webhook("{}", "signature-apa-saja", "2026-08-21T10:00:00+07:00") is False
+    assert snap_advance_client.verifikasi_signature_webhook(
+        "{}", "signature-apa-saja", "2026-08-21T10:00:00+07:00", path="/v1.0/transfer-va/payment") is False
 
 
 def test_ambil_token_b2b_belum_dikonfigurasi_melempar_not_configured():
@@ -408,7 +409,8 @@ def test_proses_notifikasi_webhook_signature_tidak_valid_ditolak(single_tenant):
     lewat ValueError (endpoint HTTP membungkusnya jadi 400, BUKAN lagi 503
     "PENDING FASPAY" -- lihat test router di bawah)."""
     with pytest.raises(ValueError, match="[Ss]ignature"):
-        snap_webhook.proses_notifikasi("{}", "signature-apa-saja", "2026-08-21T10:00:00+07:00")
+        snap_webhook.proses_notifikasi("{}", "signature-apa-saja", "2026-08-21T10:00:00+07:00",
+                                        "va", "/v1.0/transfer-va/payment")
 
 
 # ---------------------------------------------------------------------------
@@ -513,8 +515,9 @@ def test_endpoint_config_akun_biasa_ditolak(two_tenants):
 def test_endpoint_webhook_tanpa_signature_balas_400_bukan_crash(app_client):
     """Signature verification SUDAH sungguhan -- payload tanpa signature
     valid (atau Faspay Public Key belum dikonfigurasi Super Admin) ditolak
-    400 (validasi gagal), BUKAN lagi 503 "PENDING FASPAY"."""
-    r = app_client.post("/api/public/gateway/snap-notification", json={"apa": "saja"})
+    400 (validasi gagal), BUKAN lagi 503 "PENDING FASPAY". Path RESMI VA
+    (audit lanjutan #3, klarifikasi Faspay) -- lihat routers/snap_advance.py."""
+    r = app_client.post("/v1.0/transfer-va/payment", json={"apa": "saja"})
     assert r.status_code == 400
     assert "ignature" in r.json()["detail"]
 
@@ -846,19 +849,21 @@ def test_verifikasi_signature_webhook_round_trip_sukses(single_tenant):
     private_faspay, public_faspay = _buat_keypair_rsa()
     snap_advance_db.update_config(faspay_public_key=public_faspay)
     raw_body = json.dumps({"trxId": "BOOKING-1-1-abc"})
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
-    assert snap_advance_client.verifikasi_signature_webhook(raw_body, signature, ts) is True
+    assert snap_advance_client.verifikasi_signature_webhook(
+        raw_body, signature, ts, path="/v1.0/transfer-va/payment") is True
 
 
 def test_verifikasi_signature_webhook_gagal_kalau_body_diubah(single_tenant):
     private_faspay, public_faspay = _buat_keypair_rsa()
     snap_advance_db.update_config(faspay_public_key=public_faspay)
     raw_body = json.dumps({"trxId": "BOOKING-1-1-abc"})
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
     raw_body_diubah = json.dumps({"trxId": "BOOKING-1-1-LAIN"})
-    assert snap_advance_client.verifikasi_signature_webhook(raw_body_diubah, signature, ts) is False
+    assert snap_advance_client.verifikasi_signature_webhook(
+        raw_body_diubah, signature, ts, path="/v1.0/transfer-va/payment") is False
 
 
 def test_map_latest_transaction_status_kode_dikenal():
@@ -882,7 +887,7 @@ def test_ekstrak_notifikasi_va_dynamic():
         "trxId": "BOOKING-1-1-abc", "paymentRequestId": "PR-123",
         "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"},
     }
-    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload)
+    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload, "va")
     assert (ref, prov_id, status, paid_at) == ("BOOKING-1-1-abc", "PR-123", "00", "2026-08-21 10:00:00")
 
 
@@ -893,41 +898,36 @@ def test_ekstrak_notifikasi_direct_debit_status_top_level_bukan_di_additional_in
         "originalPartnerReferenceNo": "BOOKING-1-1-abc", "originalReferenceNo": "REF999",
         "latestTransactionStatus": "00", "additionalInfo": {"paymentDate": "2026-08-21 10:00:00", "channelCode": "812"},
     }
-    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload)
+    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload, "direct_debit")
     assert (ref, prov_id, status, paid_at) == ("BOOKING-1-1-abc", "REF999", "00", "2026-08-21 10:00:00")
 
 
-def test_ekstrak_notifikasi_bentuk_tidak_dikenal_ditolak():
+def test_ekstrak_notifikasi_jenis_tidak_dikenal_ditolak():
+    """`jenis` sekarang EKSPLISIT dari endpoint yang dipukul (routers/
+    snap_advance.py) -- jenis di luar va/qris/direct_debit ditolak jelas,
+    BUKAN ditebak dari isi payload seperti sebelum path per-produk
+    dikonfirmasi Faspay (lihat catatan modul snap_webhook.py)."""
     with pytest.raises(ValueError):
-        snap_webhook._ekstrak_notifikasi({"apa": "saja"})
+        snap_webhook._ekstrak_notifikasi({"apa": "saja"}, "jenis_ngawur")
 
 
 def test_ekstrak_notifikasi_qris_bentuk_sama_dengan_direct_debit():
     """QRIS & Direct Debit KEBETULAN sama persis bentuk payload notifikasi
-    -- _ekstrak_notifikasi() tidak perlu cabang terpisah (lihat
-    _tentukan_jenis_notifikasi() untuk pembeda yang HANYA dipakai
-    membangun acknowledgment)."""
+    -- _ekstrak_notifikasi() tidak perlu cabang terpisah untuk parsing-nya,
+    tapi tetap dibedakan lewat `jenis` eksplisit (endpoint mana yang
+    dipukul, lihat routers/snap_advance.py) supaya balas_notifikasi() bisa
+    membangun acknowledgment yang benar per produk."""
     payload = {
         "originalPartnerReferenceNo": "BOOKING-1-1-abc", "originalReferenceNo": "QRREF999",
         "latestTransactionStatus": "00", "additionalInfo": {"paymentDate": "2026-08-21 10:00:00",
                                                               "channelCode": "711", "merchantId": "37070"},
     }
-    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload)
+    ref, prov_id, status, paid_at = snap_webhook._ekstrak_notifikasi(payload, "qris")
     assert (ref, prov_id, status, paid_at) == ("BOOKING-1-1-abc", "QRREF999", "00", "2026-08-21 10:00:00")
 
 
-def test_tentukan_jenis_notifikasi():
-    assert snap_webhook._tentukan_jenis_notifikasi({"trxId": "x"}) == "va"
-    assert snap_webhook._tentukan_jenis_notifikasi(
-        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "711"}}) == "qris"
-    assert snap_webhook._tentukan_jenis_notifikasi(
-        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "812"}}) == "direct_debit"
-    with pytest.raises(ValueError):
-        snap_webhook._tentukan_jenis_notifikasi({"apa": "saja"})
-
-
 def test_balas_notifikasi_bentuk_sesuai_dokumen_resmi_per_jenis():
-    ack_va = snap_webhook.balas_notifikasi({
+    ack_va = snap_webhook.balas_notifikasi("va", {
         "trxId": "x", "partnerServiceId": "70200000", "customerNo": "123",
         "virtualAccountNo": "70200000123", "paymentRequestId": "PR-1", "paidAmount": {"value": "1.00", "currency": "IDR"},
     })
@@ -935,11 +935,11 @@ def test_balas_notifikasi_bentuk_sesuai_dokumen_resmi_per_jenis():
     assert ack_va["virtualAccountData"]["virtualAccountNo"] == "70200000123"
 
     ack_dd = snap_webhook.balas_notifikasi(
-        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "812"}})
+        "direct_debit", {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "812"}})
     assert ack_dd == {"responseCode": "2005600", "responseMessage": "Request has been processed successfully"}
 
     ack_qris = snap_webhook.balas_notifikasi(
-        {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "711"}})
+        "qris", {"originalPartnerReferenceNo": "x", "additionalInfo": {"channelCode": "711"}})
     assert ack_qris == {"responseCode": "2005200", "responseMessage": "Request has been processed successfully"}
 
 
@@ -964,9 +964,9 @@ def test_proses_notifikasi_va_end_to_end_transisi_ke_paid(single_tenant):
                             "transactionStatusDesc": "success"},
     }
     raw_body = json.dumps(payload)
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
-    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts)
+    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts, "va", "/v1.0/transfer-va/payment")
 
     assert hasil["status"] == "PAID"
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
@@ -987,9 +987,9 @@ def test_proses_notifikasi_direct_debit_end_to_end_transisi_ke_paid(single_tenan
         "merchantId": "37070", "latestTransactionStatus": "00", "transactionStatusDesc": "success",
     }
     raw_body = json.dumps(payload)
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/debit/notify")
 
-    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts)
+    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts, "direct_debit", "/v1.0/debit/notify")
 
     assert hasil["status"] == "PAID"
     assert billing_invoice_db.get_invoice(invoice["id"])["status"] == "paid"
@@ -1014,13 +1014,13 @@ def test_proses_notifikasi_qris_end_to_end_transisi_ke_paid(single_tenant):
         "latestTransactionStatus": "00", "transactionStatusDesc": "success",
     }
     raw_body = json.dumps(payload)
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/qr/qr-mpm-notify")
 
-    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts)
+    hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts, "qris", "/v1.0/qr/qr-mpm-notify")
 
     assert hasil["status"] == "PAID"
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
-    assert snap_webhook.balas_notifikasi(payload)["responseCode"] == "2005200"  # ack QRIS, BUKAN Direct Debit (2005600)
+    assert snap_webhook.balas_notifikasi("qris", payload)["responseCode"] == "2005200"  # ack QRIS, BUKAN Direct Debit (2005600)
 
 
 def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_tenant):
@@ -1037,8 +1037,8 @@ def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_ten
     raw_body = json.dumps(payload)
 
     for _ in range(3):
-        signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
-        hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts)
+        signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
+        hasil = snap_webhook.proses_notifikasi(raw_body, signature, ts, "va", "/v1.0/transfer-va/payment")
         assert hasil["status"] == "PAID"
 
     log = snap_payment_db.list_status_log(transaksi["id"])
@@ -1048,8 +1048,9 @@ def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_ten
 
 def test_endpoint_webhook_signature_valid_balas_200_dan_transisi_paid(app_client, single_tenant):
     """Bukti end-to-end LEWAT HTTP (bukan panggil fungsi Python langsung) --
-    endpoint /api/public/gateway/snap-notification benar-benar memproses
-    notifikasi VA yang signature-nya valid, BUKAN lagi 503 PENDING FASPAY."""
+    endpoint resmi VA /v1.0/transfer-va/payment (audit lanjutan #3,
+    klarifikasi Faspay) benar-benar memproses notifikasi VA yang
+    signature-nya valid, BUKAN lagi 503 PENDING FASPAY."""
     tenant_id = single_tenant["tenant_id"]
     booking = _siapkan_booking(tenant_id, metode="qris")
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
@@ -1059,9 +1060,9 @@ def test_endpoint_webhook_signature_valid_balas_200_dan_transisi_paid(app_client
     payload = {"trxId": transaksi["payment_reference"],
                "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"}}
     raw_body = json.dumps(payload)
-    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/api/public/gateway/snap-notification")
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
-    r = app_client.post("/api/public/gateway/snap-notification", content=raw_body,
+    r = app_client.post("/v1.0/transfer-va/payment", content=raw_body,
                          headers={"X-SIGNATURE": signature, "X-TIMESTAMP": ts, "Content-Type": "application/json"})
 
     # BUGFIX (audit lanjutan): respons HTTP-nya sekarang body acknowledgment
@@ -1070,7 +1071,85 @@ def test_endpoint_webhook_signature_valid_balas_200_dan_transisi_paid(app_client
     assert r.status_code == 200, r.text
     assert r.json()["responseCode"] == "2002500"
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+
+
+def test_endpoint_webhook_qris_path_resmi_balas_200_dan_transisi_paid(app_client, single_tenant):
+    """Bukti end-to-end LEWAT HTTP untuk path resmi QRIS
+    /v1.0/qr/qr-mpm-notify (audit lanjutan #3, klarifikasi Faspay) --
+    payload BENTUKNYA sama dengan Direct Debit, TAPI diproses sebagai QRIS
+    (ack 2005200, BUKAN 2005600) karena endpoint yang dipukul sudah
+    menyatakan jenisnya, TIDAK PERLU channelCode ditebak lagi."""
+    tenant_id = single_tenant["tenant_id"]
+    booking = _siapkan_booking(tenant_id, metode="qris")
+    transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
+                                                booking_id=booking["id"], channel="qris")
+    private_faspay, public_faspay = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    payload = {
+        "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "QRREF999",
+        "amount": {"value": f"{booking['total_harga']:.2f}", "currency": "IDR"},
+        "additionalInfo": {"paymentDate": "2026-08-21 10:00:00", "channelCode": "711", "merchantId": "37070"},
+        "latestTransactionStatus": "00", "transactionStatusDesc": "success",
+    }
+    raw_body = json.dumps(payload)
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/qr/qr-mpm-notify")
+
+    r = app_client.post("/v1.0/qr/qr-mpm-notify", content=raw_body,
+                         headers={"X-SIGNATURE": signature, "X-TIMESTAMP": ts, "Content-Type": "application/json"})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"responseCode": "2005200", "responseMessage": "Request has been processed successfully"}
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "terverifikasi"
+
+
+def test_endpoint_webhook_direct_debit_path_resmi_balas_200_dan_transisi_paid(app_client, single_tenant):
+    """Bukti end-to-end LEWAT HTTP untuk path resmi Direct Debit
+    /v1.0/debit/notify (audit lanjutan #3, klarifikasi Faspay)."""
+    tenant_id = single_tenant["tenant_id"]
+    invoice = _siapkan_invoice(tenant_id, nominal=75000)
+    transaksi = snap_payment_db.buat_transaksi("SAAS_BILLING", tenant_id, 75000,
+                                                subscription_invoice_id=invoice["id"], channel="direct_debit")
+    private_faspay, public_faspay = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    payload = {
+        "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "REF999",
+        "amount": {"value": "75000.00", "currency": "IDR"},
+        "additionalInfo": {"paymentDate": "2026-08-21 10:00:00", "channelCode": "812"},
+        "merchantId": "37070", "latestTransactionStatus": "00", "transactionStatusDesc": "success",
+    }
+    raw_body = json.dumps(payload)
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/debit/notify")
+
+    r = app_client.post("/v1.0/debit/notify", content=raw_body,
+                         headers={"X-SIGNATURE": signature, "X-TIMESTAMP": ts, "Content-Type": "application/json"})
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"responseCode": "2005600", "responseMessage": "Request has been processed successfully"}
+    assert billing_invoice_db.get_invoice(invoice["id"])["status"] == "paid"
+
+
+def test_endpoint_webhook_signature_dari_endpoint_lain_ditolak(app_client, single_tenant):
+    """`path` ikut dihitung dalam formula signature (EndpointUrl di
+    stringToSign) -- signature yang ditandatangani untuk path VA HARUS
+    ditolak kalau dikirim ke path QRIS/Direct Debit, walau body-nya sama
+    persis. Membuktikan ketiga endpoint benar-benar terisolasi satu sama
+    lain, bukan cuma alias yang sama."""
+    tenant_id = single_tenant["tenant_id"]
+    booking = _siapkan_booking(tenant_id, metode="qris")
+    transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
+                                                booking_id=booking["id"], channel="va")
+    private_faspay, public_faspay = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    payload = {"trxId": transaksi["payment_reference"],
+               "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"}}
+    raw_body = json.dumps(payload)
+    signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
+
+    r = app_client.post("/v1.0/qr/qr-mpm-notify", content=raw_body,
+                         headers={"X-SIGNATURE": signature, "X-TIMESTAMP": ts, "Content-Type": "application/json"})
+
+    assert r.status_code == 400, r.text
+    assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "menunggu_verifikasi"  # TIDAK berubah
 
 
 # ---------------------------------------------------------------------------
