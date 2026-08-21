@@ -83,7 +83,7 @@ _TIMEOUT_DEFAULT = 30
 # Path endpoint -- lihat catatan modul soal mana yang terkonfirmasi dokumen
 # resmi Faspay (VA & Direct Debit) vs mana yang masih konvensi SNAP standar.
 # ---------------------------------------------------------------------------
-PATH_ACCESS_TOKEN_B2B = "/v1.0/access-token/b2b"  # BELUM ada di dokumen resmi yang diberikan -- konvensi SNAP standar, WAJIB dicek ulang
+PATH_ACCESS_TOKEN_B2B = "/v1.0/access-token/b2b"  # disebut di tabel EndpointURL halaman resmi "Signature SNAP", TAPI UNCONFIRMED-UNUSED untuk VA/Direct Debit/QRIS (lihat catatan modul)
 PATH_VA_CREATE = "/v1.0/transfer-va/create-va"  # terkonfirmasi dokumen resmi Faspay
 PATH_VA_INQUIRY_STATUS = "/v1.0/transfer-va/status"  # terkonfirmasi dokumen resmi Faspay ("Inquiry Status", servis 26)
 PATH_DD_PAYMENT = "/v1.0/debit/payment-host-to-host"  # terkonfirmasi dokumen resmi Faspay
@@ -427,9 +427,13 @@ def buat_transaksi_direct_debit(payment_reference: str, amount: int, channel_cod
         # TIGA field redirect (appRedirectUrl/webRedirectUrl/webUrl) di
         # response Payment -- sebelumnya HANYA 2 dari 3 dibaca (webUrl diam-
         # diam hilang). Ketiganya sekarang ditangkap TERPISAH & apa adanya
-        # (TIDAK menebak mana yang "benar" dipakai -- perbedaan semantiknya
-        # BELUM dikonfirmasi dari teks dokumen, lihat catatan modul soal
-        # mekanisme Callback/Return URL yang masih PENDING FASPAY).
+        # (TIDAK menebak mana yang "benar" dipakai -- perbedaan semantik
+        # PERSIS kapan tiap field muncul/dipakai BELUM dikonfirmasi dari teks
+        # dokumen). CATATAN: ini BEDA dari Return/Landing Page URL (audit
+        # lanjutan #5) yang SUDAH selesai & diimplementasikan (Faspay
+        # mengonfirmasi bebas ditentukan merchant, lihat frontend/app/js/
+        # pages/book_public.js::renderPembayaranKembali()) -- yang belum
+        # jelas HANYA cara tiga field response DI SINI dipakai/dipilih.
         # `ewallet_deeplink_url` dipertahankan sebagai field kompatibilitas
         # (dipakai kode lama) -- prioritas fallback MURNI supaya field lawas
         # ini tidak pernah kosong kalau salah satu dari ketiganya terisi,

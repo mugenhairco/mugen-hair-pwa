@@ -36,13 +36,14 @@ _terapkan_status() vs proses_notifikasi()):
 1. `terapkan_status_transaksi()` -- CORE, NYATA, DIUJI PENUH. Menerima
    payment_reference + status_baru yang SUDAH divalidasi/dipetakan --
    TIDAK menyentuh HTTP/signature/parsing payload mentah Faspay sama
-   sekali, jadi bisa diuji end-to-end SEKARANG tanpa menunggu Faspay
-   (idempotency, dispatch tipe, cross-domain isolation -- SEMUA nyata).
+   sekali (idempotency, dispatch tipe, cross-domain isolation -- SEMUA
+   nyata & diuji).
 2. `proses_notifikasi()` -- ENVELOPE luar yang menerima payload mentah
-   Faspay, PENDING FASPAY (memanggil snap_advance_client.verifikasi_signature_webhook()
-   yang masih stub) -- begitu Faspay mengonfirmasi skema webhook, HANYA
-   fungsi ini yang perlu diisi sungguhan (parsing field mentah -> panggil
-   terapkan_status_transaksi()), CORE di atas TIDAK PERNAH perlu disentuh."""
+   Faspay: memverifikasi signature SUNGGUHAN (bukan lagi stub, lihat
+   snap_advance_client.py::verifikasi_signature_webhook()), mem-parsing
+   payload VA/QRIS/Direct Debit, lalu memanggil terapkan_status_transaksi()
+   (CORE di atas). Dipisah murni supaya CORE tetap teruji tanpa bergantung
+   HTTP/signature -- BUKAN lagi karena salah satunya masih PENDING FASPAY."""
 
 import json
 
@@ -219,9 +220,10 @@ def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: st
     VA/Direct Debit/QRIS SESUAI `jenis` (lihat _ekstrak_notifikasi()), lalu
     memanggil terapkan_status_transaksi() (CORE, sudah diuji penuh sejak
     awal). `jenis`/`path` dioper EKSPLISIT oleh routers/snap_advance.py
-    (satu endpoint per produk, lihat catatan modul) -- E-Wallet di luar
-    QRIS BELUM punya endpoint/handler sama sekali (skema payloadnya PENDING
-    FASPAY)."""
+    (satu endpoint per produk, lihat catatan modul) -- E-Wallet (audit
+    lanjutan #4, kategori channel di dalam Direct Debit, BUKAN produk
+    terpisah) TERCAKUP lewat jenis "direct_debit" yang sama, tidak ada
+    handler tersendiri."""
     # BUGFIX-guard SENGAJA di posisi ini (SEBELUM parsing payload apa pun):
     # signature WAJIB divalidasi dulu sebelum satu field pun dari body
     # dipercaya -- pola SAMA PERSIS booking_gateway_webhook.py::
