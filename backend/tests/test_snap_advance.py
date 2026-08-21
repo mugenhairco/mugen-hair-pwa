@@ -2,13 +2,17 @@
 =============================================================================
 Cakupan: arsitektur, unified payment reference, state machine, webhook
 dispatch BOOKING vs SAAS_BILLING, idempotency, cross-domain isolation,
-konfigurasi -- DITAMBAH (audit lanjutan, dokumen resmi SNAP VA & Direct
-Debit dari Faspay) flow VA/Direct Debit SUNGGUHAN: header/signature
-lengkap, Create VA, Inquiry Status VA, Direct Debit Payment/Status,
+konfigurasi -- DITAMBAH (audit lanjutan, dokumen resmi SNAP VA/Direct
+Debit/QRIS dari Faspay) flow VA/Direct Debit/QRIS SUNGGUHAN: header/
+signature lengkap, Create/Inquiry/Status/Notification per produk,
 verifikasi signature webhook, dan proses_notifikasi() end-to-end (BUKAN
-lagi PENDING FASPAY untuk kedua channel ini). QRIS/E-Wallet/Registrasi
-Account Binding TETAP diuji sebagai PENDING FASPAY (dokumen resmi belum
-diberikan Owner, sengaja tidak ditebak).
+lagi PENDING FASPAY). E-Wallet (audit lanjutan #4, konfirmasi tertulis
+Faspay) BUKAN produk terpisah -- kategori channel DI DALAM Direct Debit,
+diuji lewat buat_transaksi_direct_debit() yang sama dengan channel code
+E-Wallet resmi (snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_LABEL).
+Registrasi/Account Binding Direct Debit TETAP diuji sebagai PENDING
+FASPAY (dokumen resmi belum menyertakan bagian itu, sengaja tidak
+ditebak).
 
 TIDAK ADA test yang memanggil Faspay SUNGGUHAN lewat jaringan -- panggilan
 HTTP ke Faspay di-mock lewat monkeypatch atas gateway_client_base.post_json_raw()
@@ -355,14 +359,6 @@ def test_is_enabled_default_false_tanpa_konfigurasi(single_tenant):
     assert snap_advance_client.is_enabled() is False
 
 
-def test_ewallet_di_luar_qris_tetap_melempar_pending_faspay():
-    """VA, Direct Debit, & QRIS SUDAH diimplementasikan sungguhan (audit
-    lanjutan, dokumen resmi Faspay) -- HANYA E-Wallet di luar QRIS yang
-    TETAP PENDING FASPAY (di luar cakupan dokumen yang diberikan Owner)."""
-    with pytest.raises(snap_advance_client.SnapAdvancePendingError):
-        snap_advance_client.buat_transaksi_ewallet("BOOKING-1-1-abc", 100000, "gopay")
-
-
 def test_buat_transaksi_qris_belum_dikonfigurasi_melempar_not_configured(single_tenant):
     """QRIS sudah diimplementasikan sungguhan -- tanpa channelCode QRIS
     default terisi, melempar GatewayNotConfiguredError (BUKAN lagi PENDING
@@ -671,7 +667,9 @@ class _RekamPanggilan:
         if url.endswith("/debit/payment-host-to-host"):
             return {"responseCode": "2005400", "responseMessage": "Success", "referenceNo": "REF999",
                      "partnerReferenceNo": body.get("partnerReferenceNo"),
-                     "webRedirectUrl": "https://debit-sandbox.faspay.co.id/pws/xyz"}
+                     "appRedirectUrl": "ovo://push/xyz",
+                     "webRedirectUrl": "https://debit-sandbox.faspay.co.id/pws/xyz",
+                     "webUrl": "https://debit-sandbox.faspay.co.id/pws/xyz-web"}
         if url.endswith("/debit/status"):
             return {"responseCode": "2005500", "responseMessage": "Success", "latestTransactionStatus": "00"}
         if url.endswith("/qr/qr-mpm-generate"):
@@ -746,12 +744,44 @@ def test_buat_transaksi_direct_debit_sukses(single_tenant, monkeypatch):
         "BOOKING-1-42-abc123456789", 50000, "812", customer_details={"nama": "Budi", "whatsapp": "081234567890"})
 
     assert hasil["provider_transaction_id"] == "REF999"
+    # BUGFIX (audit lanjutan #4): ketiga field redirect resmi Faspay
+    # (appRedirectUrl/webRedirectUrl/webUrl) HARUS ditangkap terpisah --
+    # sebelumnya webUrl diam-diam hilang.
+    assert hasil["app_redirect_url"] == "ovo://push/xyz"
+    assert hasil["web_redirect_url"] == "https://debit-sandbox.faspay.co.id/pws/xyz"
+    assert hasil["web_url"] == "https://debit-sandbox.faspay.co.id/pws/xyz-web"
     assert hasil["ewallet_deeplink_url"] == "https://debit-sandbox.faspay.co.id/pws/xyz"
     body = json.loads(rekam.panggilan[-1]["raw_body"])
     assert body["partnerReferenceNo"] == "BOOKING-1-42-abc123456789"
     assert body["merchantId"] == "37070"
     assert body["additionalInfo"]["channelCode"] == "812"
     assert "bankCardToken" not in body  # channel non-BRI TIDAK wajib bankCardToken (lihat dokumen resmi)
+
+
+def test_buat_transaksi_direct_debit_channel_code_tidak_dikenal_ditolak(single_tenant):
+    """channel_code Direct Debit sekarang divalidasi terhadap 14 kode resmi
+    Faspay (snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_VALID, audit lanjutan
+    #4) -- kode di luar daftar itu ditolak jelas, BUKAN dikirim mentah ke
+    Faspay tanpa validasi."""
+    _pasang_kredensial_snap()
+    with pytest.raises(ValueError, match="channelCode"):
+        snap_advance_client.buat_transaksi_direct_debit("BOOKING-1-42-abc", 50000, "999")
+
+
+def test_buat_transaksi_direct_debit_ewallet_channel_code_diterima(single_tenant, monkeypatch):
+    """E-Wallet (audit lanjutan #4, konfirmasi tertulis Faspay) BUKAN produk
+    terpisah -- channel code berkategori E-Wallet (mis. ShopeePay App 713,
+    LinkAja App 716, OVO 812, DANA 819, LinkAja 302, DANA Subs 722, OVO
+    OpenAPI 720) lewat buat_transaksi_direct_debit() yang SAMA, TIDAK ada
+    fungsi/endpoint terpisah lagi (buat_transaksi_ewallet() sudah dihapus)."""
+    _pasang_kredensial_snap()
+    rekam = _RekamPanggilan()
+    monkeypatch.setattr(core, "post_json_raw", rekam)
+
+    for kode in ("713", "716", "812", "819", "302", "722", "720"):
+        assert snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_KATEGORI[kode].startswith("E-Wallet")
+        hasil = snap_advance_client.buat_transaksi_direct_debit("BOOKING-1-42-abc", 50000, kode)
+        assert hasil["provider_transaction_id"] == "REF999"
 
 
 def test_buat_transaksi_direct_debit_bri_menyertakan_bank_card_token(single_tenant, monkeypatch):

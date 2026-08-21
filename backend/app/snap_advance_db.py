@@ -79,6 +79,35 @@ VA_CHANNEL_CODE_VALID = set(VA_CHANNEL_CODE_LABEL.keys())
 # per-produk Faspay), BUKAN lagi lewat channelCode ini.
 QRIS_CHANNEL_CODE_LABEL = {"715": "LinkAja QRIS", "711": "ShopeePay QRIS", "842": "CIMB QRIS"}
 QRIS_CHANNEL_CODE_VALID = set(QRIS_CHANNEL_CODE_LABEL.keys())
+
+# Daftar channelCode Direct Debit resmi (dokumen SNAP Direct Debit Faspay,
+# 14 kode -- dikonfirmasi Owner byte-demi-byte dari tabel resmi, BUKAN
+# tebakan) -- dipakai memvalidasi `channel_code` di
+# snap_advance_client.py::buat_transaksi_direct_debit(). Faspay mengonfirmasi
+# tertulis: E-Wallet BUKAN produk SNAP terpisah, melainkan kategori channel
+# DI DALAM Direct Debit (lihat kolom kategori) -- karena itu
+# buat_transaksi_ewallet() (fungsi PENDING FASPAY terpisah) DIHAPUS,
+# transaksi E-Wallet sekarang lewat buat_transaksi_direct_debit() dengan
+# salah satu channel code berkategori "E-Wallet" di sini. Kategori
+# Bank/E-Wallet/Lainnya MURNI label informatif dari dokumen (mis. untuk
+# ditampilkan Super Admin nanti), TIDAK memengaruhi validasi -- HANYA
+# channel "714" (BRI Direct Debit) yang dokumen resmi sebutkan wajib
+# `bankCardToken` (lihat catatan daftarkan_binding_akun() di
+# snap_advance_client.py -- gap Registrasi/Account Binding-nya TETAP
+# terpisah & TETAP pending, klarifikasi E-Wallet ini TIDAK menyelesaikannya).
+DIRECT_DEBIT_CHANNEL_CODE_LABEL = {
+    "814": "Maybank2U", "704": "SAKUKU", "714": "BRI Direct Debit",
+    "713": "ShopeePay App", "716": "LinkAja App", "812": "OVO", "819": "DANA",
+    "700": "CIMB Clicks", "701": "D-Bank Pro", "401": "BRI E-PAY", "405": "BCA KlikPay",
+    "302": "LinkAja", "722": "DANA Subs", "720": "OVO OpenAPI",
+}
+DIRECT_DEBIT_CHANNEL_CODE_KATEGORI = {
+    "814": "Bank", "704": "Lainnya", "714": "Bank", "713": "E-Wallet", "716": "E-Wallet",
+    "812": "E-Wallet", "819": "E-Wallet", "700": "Bank", "701": "Bank", "401": "Bank",
+    "405": "Bank", "302": "E-Wallet", "722": "E-Wallet/subscription", "720": "E-Wallet",
+}
+DIRECT_DEBIT_CHANNEL_CODE_VALID = set(DIRECT_DEBIT_CHANNEL_CODE_LABEL.keys())
+
 _KUNCI_TIMEOUT = "snap_timeout_detik"
 _KUNCI_RETRY_MAX = "snap_retry_max"
 _KUNCI_CHANNEL_AKTIF = "snap_channel_aktif"

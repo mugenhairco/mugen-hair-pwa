@@ -33,8 +33,14 @@ dokumen resmi SNAP VA, SNAP Direct Debit, DAN SNAP QRIS)
   diimplementasikan sungguhan dari dokumen resmi Faspay yang diberikan
   Owner (buat_transaksi_qris()/query_payment_qris()). `phoneNo` WAJIB
   (beda dari VA yang opsional) -- melempar ValueError kalau tidak diisi.
-- **E-Wallet** (di luar QRIS): TETAP PENDING FASPAY TOTAL -- di luar
-  cakupan yang diminta/dikonfirmasi.
+- **E-Wallet**: audit lanjutan #4 -- Faspay mengonfirmasi tertulis E-Wallet
+  BUKAN produk SNAP terpisah, melainkan KATEGORI channel di dalam Direct
+  Debit (14 channelCode resmi, lihat snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_LABEL).
+  Fungsi `buat_transaksi_ewallet()` yang tadinya PENDING FASPAY terpisah
+  DIHAPUS -- transaksi E-Wallet (OVO/DANA/ShopeePay/LinkAja/dst) sekarang
+  lewat buat_transaksi_direct_debit() dengan channel code berkategori
+  "E-Wallet". Registrasi/Account Binding (daftarkan_binding_akun()) TETAP
+  PENDING FASPAY -- klarifikasi ini TIDAK menyelesaikan gap itu.
 
 =============================================================================
 CATATAN SIGNATURE -- SUDAH dikonfirmasi 1:1 ke halaman resmi Faspay
@@ -346,16 +352,6 @@ def query_payment_qris(payment_reference: str, provider_reference_no: str, chann
     return resp
 
 
-def buat_transaksi_ewallet(payment_reference: str, amount: int, ewallet_provider: str,
-                            customer_details: dict = None) -> dict:
-    """Create Dynamic E-Wallet -- PENDING FASPAY TOTAL, di luar cakupan
-    dokumen yang diberikan sejauh ini."""
-    raise pending_faspay(
-        "Dynamic E-Wallet -- buat_transaksi_ewallet()",
-        "Jalur teknis E-Wallet belum terkonfirmasi Faspay -- di luar cakupan dokumen VA/Direct Debit yang diberikan.",
-    )
-
-
 def daftarkan_binding_akun(transaction_type: str, customer_details: dict = None) -> dict:
     """Registrasi/Account Binding Direct Debit -- TETAP PENDING FASPAY
     TOTAL. Dokumen Direct Debit resmi yang diberikan Owner TIDAK menyertakan
@@ -379,13 +375,19 @@ def buat_transaksi_direct_debit(payment_reference: str, amount: int, channel_cod
                                  bank_card_token: str = None, customer_details: dict = None,
                                  valid_menit: int = 60) -> dict:
     """Direct Debit Payment (host-to-host) -- POST {base}/v1.0/debit/
-    payment-host-to-host (dokumen resmi Faspay). `channel_code` = kode
-    channel Direct Debit (mis. "812"=OVO, "819"=DANA, "714"=BRI Direct
-    Debit -- lihat tabel lengkap di dokumen resmi). `bank_card_token` HANYA
+    payment-host-to-host (dokumen resmi Faspay). `channel_code` = salah
+    satu dari 14 channelCode resmi di snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_LABEL
+    (kategori Bank & E-Wallet, lihat catatan modul soal E-Wallet BUKAN
+    produk terpisah -- audit lanjutan #4). `bank_card_token` HANYA
     diperlukan untuk channel BRI Direct Debit (714) per dokumen resmi --
     TIDAK divalidasi wajib di sini untuk channel lain (lihat catatan
     daftarkan_binding_akun() soal kenapa asumsi "semua channel butuh
     binding" TIDAK dibuat)."""
+    if channel_code not in snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_VALID:
+        raise ValueError(
+            f"channelCode Direct Debit tidak dikenal: {channel_code!r}. Lihat "
+            f"snap_advance_db.DIRECT_DEBIT_CHANNEL_CODE_LABEL untuk daftar 14 channel resmi Faspay."
+        )
     cfg = snap_advance_db.get_config_internal()
     _cfg_wajib(cfg, "snap_merchant_id")
     customer_details = customer_details or {}
@@ -421,7 +423,21 @@ def buat_transaksi_direct_debit(payment_reference: str, amount: int, channel_cod
         raise core.GatewayRequestError(f"Direct Debit Payment SNAP Advance ditolak Faspay: {resp}")
     return {
         "provider_transaction_id": resp.get("referenceNo"),
-        "ewallet_deeplink_url": resp.get("webRedirectUrl") or resp.get("appRedirectUrl"),
+        # BUGFIX (audit lanjutan #4): dokumen resmi Direct Debit menyebutkan
+        # TIGA field redirect (appRedirectUrl/webRedirectUrl/webUrl) di
+        # response Payment -- sebelumnya HANYA 2 dari 3 dibaca (webUrl diam-
+        # diam hilang). Ketiganya sekarang ditangkap TERPISAH & apa adanya
+        # (TIDAK menebak mana yang "benar" dipakai -- perbedaan semantiknya
+        # BELUM dikonfirmasi dari teks dokumen, lihat catatan modul soal
+        # mekanisme Callback/Return URL yang masih PENDING FASPAY).
+        # `ewallet_deeplink_url` dipertahankan sebagai field kompatibilitas
+        # (dipakai kode lama) -- prioritas fallback MURNI supaya field lawas
+        # ini tidak pernah kosong kalau salah satu dari ketiganya terisi,
+        # BUKAN klaim urutan mana yang paling "benar" dipakai.
+        "app_redirect_url": resp.get("appRedirectUrl"),
+        "web_redirect_url": resp.get("webRedirectUrl"),
+        "web_url": resp.get("webUrl"),
+        "ewallet_deeplink_url": resp.get("webRedirectUrl") or resp.get("webUrl") or resp.get("appRedirectUrl"),
         "provider_response": json.dumps(resp),
     }
 
@@ -456,8 +472,10 @@ def cek_status_transaksi(payment_reference: str, channel: str = None, **kwargs) 
     pernah sampai). `channel` WAJIB diisi pemanggil (va/direct_debit/qris)
     beserta kwargs yang relevan (virtual_account_no untuk VA;
     original_reference_no/channel_code untuk Direct Debit & QRIS) -- lihat
-    fungsi masing-masing untuk parameter lengkapnya. E-Wallet TETAP PENDING
-    FASPAY."""
+    fungsi masing-masing untuk parameter lengkapnya. E-Wallet (kategori
+    channel di dalam Direct Debit, lihat catatan modul) TERCAKUP lewat
+    `channel="direct_debit"` -- TIDAK ada channel dispatch "ewallet"
+    terpisah."""
     if channel == "va":
         return inquiry_status_va(payment_reference, kwargs["virtual_account_no"])
     if channel == "direct_debit":
