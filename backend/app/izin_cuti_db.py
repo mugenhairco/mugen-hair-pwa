@@ -321,6 +321,48 @@ def get_pengajuan_list(barber_id: int = None, status: str = None, jenis: str = N
     return [_lengkapi(r) for r in rows]
 
 
+def get_info_cuti_marquee(tenant_id: int) -> list:
+    """FITUR Running Text Info Cuti (Absensi Barber, lihat absensi.js::
+    renderCutiMarquee()) -- fungsi BACA baru, TIDAK mengubah query/logika
+    apa pun di atas. Hanya jenis='cuti' (izin ad-hoc tidak relevan untuk
+    pengumuman terjadwal ini), field MINIMAL (nama_barber/status/tanggal
+    SAJA -- TIDAK menyertakan alasan/catatan_approval, privasi antar-barber
+    tidak semestinya bocor lewat running text tenant-wide).
+
+    Dua kelompok, ditentukan dari status & tanggal_mulai relatif hari ini:
+      - 'sedang_cuti': status='disetujui' DAN hari ini ada di dalam rentang
+        tanggal_mulai..tanggal_selesai.
+      - 'pengajuan': belum dimulai (tanggal_mulai > hari ini), status
+        'pending' ATAU 'disetujui' -- cuti yang sudah disetujui tapi
+        belum mulai TETAP relevan diinformasikan ke barber lain, bukan
+        cuma yang masih menunggu keputusan.
+    'ditolak' TIDAK PERNAH ikut. Pengajuan 'pending' yang tanggal_mulai-nya
+    sudah lewat (belum diputuskan padahal harusnya sudah mulai) SENGAJA
+    dilewati -- tidak cocok masuk kategori manapun (bukan 'sedang cuti'
+    karena belum disetujui, bukan 'pengajuan belum mulai' karena tanggalnya
+    sudah lewat)."""
+    hari_ini = _hari_ini_wib()
+    q = ("SELECT i.tanggal_mulai, i.tanggal_selesai, i.status, b.nama AS nama_barber "
+         "FROM izin_cuti i JOIN barbers b ON b.id = i.barber_id "
+         "WHERE b.tenant_id = ? AND i.jenis = 'cuti' AND i.status != 'ditolak' AND i.tanggal_selesai >= ? "
+         "ORDER BY i.tanggal_mulai ASC")
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(q, (tenant_id, hari_ini)).fetchall()]
+    hasil = []
+    for r in rows:
+        if r["status"] == "disetujui" and r["tanggal_mulai"] <= hari_ini <= r["tanggal_selesai"]:
+            info_status = "sedang_cuti"
+        elif r["tanggal_mulai"] > hari_ini:
+            info_status = "pengajuan"
+        else:
+            continue
+        hasil.append({
+            "nama_barber": r["nama_barber"], "status": info_status,
+            "tanggal_mulai": r["tanggal_mulai"], "tanggal_selesai": r["tanggal_selesai"],
+        })
+    return hasil
+
+
 def get_jumlah_pending(tenant_id: int = None) -> int:
     """Dipakai badge notifikasi sidebar (Owner/Admin) -- lihat izin_notif.js."""
     q = "SELECT COUNT(*) AS jumlah FROM izin_cuti i"
