@@ -31,7 +31,13 @@ def _cek_akses_lihat(user: dict, kasbon: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        if not permissions.has("izin_kasbon", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
+        # Hak Akses Menu (permintaan Owner): level "Baca" (izin_kasbon_lihat)
+        # SEKARANG cukup untuk MELIHAT -- sebelumnya hanya izin_kasbon (yang
+        # juga menyalakan tulis) yang dicek di sini, jadi staff "Baca"-saja
+        # tidak bisa lihat sama sekali. izin_kasbon (write) TETAP otomatis
+        # meloloskan lihat juga (masuk akal: bisa edit berarti bisa lihat).
+        if not permissions.has_any(["izin_kasbon_lihat", "izin_kasbon"],
+                                    tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Kasbon. Hubungi Owner.")
         return
     if user["role"] == "barber":

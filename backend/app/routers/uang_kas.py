@@ -4,11 +4,12 @@ SAMA PERSIS routers/pemasukan.py: data operasional TOKO, Barber ditolak
 total DI BACKEND (require_owner_or_staff).
 
 REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
-tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
-TULIS (ubah saldo awal, tambah/edit penyesuaian) sekarang
-`require_permission("izin_uang_kas_kelola")`, endpoint HAPUS
-`require_permission("izin_uang_kas_hapus")` (lihat permissions.py, default
-TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
+sekarang `require_menu_read("uang_kas")` (level menu "Uang Kas", lihat
+permissions.py::MENU_DEFS) -- endpoint TULIS (ubah saldo awal, tambah/edit
+penyesuaian) tetap `require_permission("izin_uang_kas_kelola")`, endpoint
+HAPUS tetap `require_permission("izin_uang_kas_hapus")` (lihat
+permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
+tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import uang_kas_db as db_uang_kas
-from auth import require_feature, require_owner_or_staff, require_permission
+from auth import require_feature, require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/uang-kas", tags=["uang-kas"])
 
@@ -41,7 +42,7 @@ class PenyesuaianBody(BaseModel):
 
 
 @router.get("/saldo-awal")
-def ambil_saldo_awal(user: dict = Depends(require_owner_or_staff)):
+def ambil_saldo_awal(user: dict = Depends(require_menu_read("uang_kas"))):
     return db_uang_kas.get_saldo_awal(tenant_id=user["tenant_id"])
 
 
@@ -54,12 +55,12 @@ def ubah_saldo_awal(body: SaldoAwalBody, user: dict = Depends(require_permission
 
 
 @router.get("/saldo")
-def ambil_saldo_kas(user: dict = Depends(require_owner_or_staff)):
+def ambil_saldo_kas(user: dict = Depends(require_menu_read("uang_kas"))):
     return {"saldo": db_uang_kas.get_saldo_kas(tenant_id=user["tenant_id"])}
 
 
 @router.get("/pdf")
-def list_penyesuaian_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff),
+def list_penyesuaian_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("uang_kas")),
                           _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{penyesuaian_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter penyesuaian_id."""
@@ -70,12 +71,12 @@ def list_penyesuaian_pdf(tahun: int = None, bulan: int = None, user: dict = Depe
 
 
 @router.get("")
-def list_penyesuaian(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def list_penyesuaian(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("uang_kas"))):
     return db_uang_kas.get_penyesuaian_list(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 
 
 @router.get("/{penyesuaian_id}")
-def detail_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_owner_or_staff)):
+def detail_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_menu_read("uang_kas"))):
     row = db_uang_kas.get_penyesuaian(penyesuaian_id)
     _pastikan_penyesuaian_tenant_sama(user, row)
     return row

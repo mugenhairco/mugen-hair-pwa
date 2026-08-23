@@ -9,7 +9,7 @@
   ini otomatis ikut kategori & nama barber, bukan lagi hanya baca kolom
   dasar dari database.py."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 import database as db
@@ -18,7 +18,7 @@ import pengeluaran_db
 import reimburse_db
 import data_non_barber_db
 import laporan_pdf
-from auth import get_current_user, require_feature, require_owner_or_staff
+from auth import get_current_user, require_feature, require_menu_read
 
 router = APIRouter(prefix="/api/rekap", tags=["rekap"])
 
@@ -29,9 +29,24 @@ def _pdf_response(konten: bytes, prefix: str) -> Response:
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+def _cek_akses_rekap(user: dict):
+    """Hak Akses Menu (permintaan Owner): Owner & Barber SELALU lolos
+    (Rekap sudah otomatis dibatasi ke data Barber sendiri, lihat docstring
+    modul) -- HANYA 'staff' yang digerbang level menu "rekap" (require_menu_read
+    tidak dipakai langsung di sini karena dependency itu menolak Barber
+    lewat require_owner_or_staff, padahal Barber justru harus tetap lolos)."""
+    if user["role"] in ("admin", "barber"):
+        return
+    import permissions  # import lokal: hindari import siklik
+    level = permissions.get_menu_level("rekap", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id"))
+    if level == permissions.LEVEL_NONE:
+        raise HTTPException(status_code=403, detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
+
+
 @router.get("/transaksi")
 def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
                      tanggal: str = None, user: dict = Depends(get_current_user)):
+    _cek_akses_rekap(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
@@ -63,6 +78,7 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
     hari, TIDAK berubah) atau 'ringkasan' ("Rekap Periode (Ringkasan)" BARU
     -- satu baris per karyawan untuk seluruh periode, lihat
     laporan_pdf.buat_pdf_rekap_transaksi_ringkasan())."""
+    _cek_akses_rekap(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     if jenis == "ringkasan":
@@ -82,6 +98,7 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
 
 @router.get("/bulanan")
 def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
+    _cek_akses_rekap(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=user["tenant_id"])
@@ -102,6 +119,7 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
 @router.get("/bulanan/pdf")
 def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user),
                        _fitur: dict = Depends(require_feature("export_pdf"))):
+    _cek_akses_rekap(user)
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     konten = laporan_pdf.buat_pdf_rekap_bulanan(tahun, bulan, barber_id, user["username"],
@@ -110,14 +128,14 @@ def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict 
 
 
 @router.get("/pengeluaran")
-def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("rekap"))):
     daftar = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     total = sum(p["jumlah"] for p in daftar)
     return {"daftar": daftar, "total": total}
 
 
 @router.get("/pengeluaran/pdf")
-def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff),
+def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("rekap")),
                            _fitur: dict = Depends(require_feature("export_pdf"))):
     konten = laporan_pdf.buat_pdf_rekap_pengeluaran(tahun, bulan, user["username"], tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_pengeluaran")

@@ -10,16 +10,19 @@ file terpisah, supaya mudah dilihat sekali baca):
    toko (omzet, komisi, dst) yang bocor lewat endpoint ini.
 2. `router` (prefix `/api/booking`) — tiga tingkat akses lewat dependency
    berbeda per endpoint:
-   - `Depends(require_owner_or_staff)`: LIHAT (GET) -- Owner/Admin, staff
-     SELALU boleh melihat tanpa syarat (booking, kalender, tutup slot, jam
-     operasional, payment settings, QRIS).
+   - `Depends(require_menu_read("booking"))` (booking, kalender, tutup slot,
+     jam operasional, payment settings, QRIS) / `Depends(require_menu_read(
+     "riwayat_transaksi"))` (dua endpoint /transactions*): LIHAT (GET) --
+     Owner selalu lolos, staff tergantung level menu "Booking"/"Riwayat
+     Transaksi" (Hak Akses Menu, lihat permissions.py::MENU_DEFS -- REVISI
+     dari `require_owner_or_staff` polos, yang SEBELUMNYA selalu meloloskan
+     staff tanpa syarat apa pun).
    - `Depends(require_permission("izin_booking_kelola"/"izin_booking_batalkan"/
-     "izin_booking_pengaturan"))`: TULIS -- Owner selalu lolos, staff
-     tergantung Hak Akses Admin yang diatur Owner (lihat permissions.py;
-     REVISI Perluasan Hak Akses Admin -- SEBELUMNYA seluruh endpoint TULIS
-     di sini juga `require_owner_or_staff` polos/tanpa izin granular sama
-     sekali, default SEKARANG tetap True supaya staff yang sudah pakai
-     modul ini tidak tiba-tiba terkunci).
+     "izin_booking_pengaturan"/"izin_riwayat_transaksi"))`: TULIS -- Owner
+     selalu lolos, staff tergantung Hak Akses Menu (level "Baca & Edit"
+     menyalakan key-key ini sekaligus, lihat permissions.py::MENU_DEFS;
+     default SEKARANG tetap True supaya staff yang sudah pakai modul ini
+     tidak tiba-tiba terkunci).
    - `Depends(require_barber)` (hanya endpoint `/mine`): Barber, HANYA
      booking miliknya sendiri (barber_id diambil dari akun login, sama
      persis pola seperti /api/dashboard/barber -- bukan dari parameter
@@ -45,7 +48,7 @@ import payment_gateway_db
 import r2_storage
 import subscription_db
 import tenant_db
-from auth import require_owner_or_staff, require_barber, require_permission, resolve_tenant_publik
+from auth import require_barber, require_permission, require_menu_read, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
@@ -338,7 +341,7 @@ def _pastikan_toko_libur_tenant_sama(user: dict, toko_libur: dict | None):
 
 @router.get("")
 def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
-                  status_booking: str = None, user: dict = Depends(require_owner_or_staff)):
+                  status_booking: str = None, user: dict = Depends(require_menu_read("booking"))):
     """Dipakai Booking List & Calendar (Calendar cukup mengelompokkan hasil
     yang sama per tanggal di frontend, tidak perlu endpoint terpisah)."""
     return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
@@ -349,7 +352,7 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
 def list_transaksi_gateway(
     tanggal_mulai: str = None, tanggal_selesai: str = None,
     status_pembayaran: str = None, metode_pembayaran: str = None,
-    user: dict = Depends(require_owner_or_staff),
+    user: dict = Depends(require_menu_read("riwayat_transaksi")),
 ):
     """Riwayat Transaksi Tenant (Implementasi Payment Gateway & Riwayat
     Transaksi Multi-Tenant) -- SELALU di-scope tenant_id dari akun login,
@@ -363,7 +366,7 @@ def list_transaksi_gateway(
 
 
 @router.get("/transactions/{transaksi_id}")
-def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_owner_or_staff)):
+def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_menu_read("riwayat_transaksi"))):
     transaksi = booking_gateway_db.get_transaksi(transaksi_id, tenant_id=user["tenant_id"])
     if transaksi is None:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
@@ -372,7 +375,7 @@ def detail_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_own
 
 
 @router.post("/transactions/{transaksi_id}/cek-ulang")
-def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_permission("izin_booking_kelola"))):
+def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_permission("izin_riwayat_transaksi"))):
     """AUDIT (Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant --
     perbaikan pasca-audit kesiapan): jalur RESMI untuk transaksi yang macet
     karena webhook TIDAK PERNAH sampai sama sekali (bukan telat/duplikat --
@@ -390,7 +393,7 @@ def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_
 
 
 @router.get("/belum-dikonfirmasi")
-def jumlah_belum_dikonfirmasi(user: dict = Depends(require_owner_or_staff)):
+def jumlah_belum_dikonfirmasi(user: dict = Depends(require_menu_read("booking"))):
     """REVISI: Notifikasi Booking Baru -- di-poll berkala oleh frontend
     (nav.js) untuk badge menu Booking + pemicu notifikasi suara. Ringan
     (SATU angka COUNT(*), bukan daftar booking) supaya aman dipanggil
@@ -492,7 +495,7 @@ class ClosedSlotBody(BaseModel):
 
 @router.get("/closed-slot")
 def list_closed_slot(barber_id: int = None, tahun: int = None, bulan: int = None,
-                      user: dict = Depends(require_owner_or_staff)):
+                      user: dict = Depends(require_menu_read("booking"))):
     return booking_db.get_closed_slot_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
                                             tenant_id=user["tenant_id"])
 
@@ -528,7 +531,7 @@ class BookingSettingsBody(BaseModel):
 
 
 @router.get("/pengaturan")
-def ambil_booking_settings(user: dict = Depends(require_owner_or_staff)):
+def ambil_booking_settings(user: dict = Depends(require_menu_read("booking"))):
     return booking_db.get_booking_settings(tenant_id=user["tenant_id"])
 
 
@@ -564,7 +567,7 @@ def _booking_slug_hasil(tenant_id: int) -> dict:
 
 
 @router.get("/booking-slug")
-def ambil_booking_slug(user: dict = Depends(require_owner_or_staff)):
+def ambil_booking_slug(user: dict = Depends(require_menu_read("booking"))):
     """FITUR URL Booking Publik per Tenant: dipakai Setting > Booking
     (kartu "Link Booking" yang SUDAH ADA, TIDAK ada menu baru) untuk
     menampilkan booking_slug TERKINI + URL lengkapnya (subdomain
@@ -603,7 +606,7 @@ class PaymentSettingsBody(BaseModel):
 
 
 @router.get("/payment-settings")
-def ambil_payment_settings(user: dict = Depends(require_owner_or_staff)):
+def ambil_payment_settings(user: dict = Depends(require_menu_read("booking"))):
     return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
 
 
@@ -642,7 +645,7 @@ class TokoLiburBody(BaseModel):
 
 
 @router.get("/toko-libur")
-def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def list_toko_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("booking"))):
     return booking_db.get_toko_libur_list(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 
 

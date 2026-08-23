@@ -829,13 +829,38 @@ class HakAksesAdminBody(BaseModel):
 # GET/PUT /api/user-roles/{id}/permissions di bawah.
 @router.get("/hak-akses-admin")
 def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
-    return permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+    hasil = permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+    # FITUR Hak Akses Menu (permintaan Owner): "menu" -- {menu_key: level}
+    # ("none"/"read"/"write") EFEKTIF akun yang login, dihitung dari checklist
+    # izin_* di atas (lihat permissions.py::MENU_DEFS/get_all_menu_levels()).
+    # Dipakai frontend (js/menu_access.js) SEMUA halaman untuk gerbang
+    # tampil-kosong/nonaktifkan tombol edit -- bukan hanya Setting/Absensi
+    # seperti sebelumnya.
+    hasil["menu"] = permissions.get_all_menu_levels(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
+    return hasil
 
 
 @router.put("/hak-akses-admin")
 def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require_admin)):
     try:
         return permissions.set_bulk(body.izin, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+class HakAksesMenuBody(BaseModel):
+    menu: dict[str, str]
+
+
+@router.put("/hak-akses-admin-menu")
+def simpan_hak_akses_admin_menu(body: HakAksesMenuBody, user: dict = Depends(require_admin)):
+    """Hak Akses Menu (permintaan Owner) -- versi BARU form "Kelola Izin":
+    satu dropdown Tidak Ada Akses/Baca/Baca & Edit per menu, bukan checklist
+    izin_* mentah (PUT /hak-akses-admin di atas TETAP ada, tidak dihapus,
+    murni tidak lagi dipanggil dari UI baru -- lihat permissions.py::
+    set_all_menu_levels())."""
+    try:
+        return permissions.set_all_menu_levels(body.menu, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -908,7 +933,9 @@ def hapus_user_role(role_id: int, user: dict = Depends(require_admin)):
 @router.get("/user-roles/{role_id}/permissions")
 def ambil_user_role_permissions(role_id: int, user: dict = Depends(require_admin)):
     _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
-    return permissions.get_all(role_id=role_id)
+    hasil = permissions.get_all(role_id=role_id)
+    hasil["menu"] = permissions.get_all_menu_levels(role_id=role_id)
+    return hasil
 
 
 @router.put("/user-roles/{role_id}/permissions")
@@ -916,6 +943,17 @@ def simpan_user_role_permissions(role_id: int, body: HakAksesAdminBody, user: di
     _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
     try:
         return permissions.set_bulk(body.izin, role_id=role_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.put("/user-roles/{role_id}/menu-permissions")
+def simpan_user_role_menu_permissions(role_id: int, body: HakAksesMenuBody, user: dict = Depends(require_admin)):
+    """Versi BARU form "Kelola Izin" untuk Role Custom -- lihat
+    simpan_hak_akses_admin_menu() di atas untuk penjelasan lengkap."""
+    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
+    try:
+        return permissions.set_all_menu_levels(body.menu, role_id=role_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

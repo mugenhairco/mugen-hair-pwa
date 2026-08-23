@@ -37,6 +37,15 @@ const PageProduk = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Produk"));
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun.
+    const levelProduk = await MugenMenuAccess.get("produk");
+    if (levelProduk === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelProduk === "write";
+
     let produkList = [];
     let editingProdukId = null; // null = tambah baru, angka = ubah nama
 
@@ -44,9 +53,11 @@ const PageProduk = (() => {
     const produkListCard = MugenUI.el("div", { class: "card" });
     const mutasiFormCard = MugenUI.el("div", { class: "card", style: "display:none;" });
     const riwayatCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(produkFormCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Ubah Produk &
+    // form Mutasi (restock/jual/tester); daftar produk & riwayat tetap tampil.
+    if (bolehEdit) root.appendChild(produkFormCard);
     root.appendChild(produkListCard);
-    root.appendChild(mutasiFormCard);
+    if (bolehEdit) root.appendChild(mutasiFormCard);
     root.appendChild(riwayatCard);
 
     // ---------------------------------------------------------------
@@ -159,6 +170,7 @@ const PageProduk = (() => {
             { key: "stok", label: "Sisa Stok" },
             {
               key: "aksi", label: "Aksi", format: (_, p) => {
+                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnRestock = MugenUI.el("button", {}, "Restock");
                 btnRestock.addEventListener("click", () => bukaFormMutasi(p, "restock"));
@@ -371,6 +383,7 @@ const PageProduk = (() => {
             { key: "catatan", label: "Catatan" },
             {
               key: "aksi", label: "Aksi", format: (_, m) => {
+                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnKoreksi = MugenUI.el("button", {}, "Koreksi");
                 btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(btnKoreksi, m));

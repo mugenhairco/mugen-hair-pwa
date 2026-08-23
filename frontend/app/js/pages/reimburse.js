@@ -214,6 +214,15 @@ const PageReimburse = (() => {
 
   // ================= OWNER/ADMIN: kelola & approve semua klaim =================
   async function renderAdminView(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun.
+    const levelReimburse = await MugenMenuAccess.get("reimburse");
+    if (levelReimburse === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelReimburse === "write";
+
     const today = new Date();
     let editingId = null;
     let barbers = [];
@@ -228,7 +237,8 @@ const PageReimburse = (() => {
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(formCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Edit Klaim.
+    if (bolehEdit) root.appendChild(formCard);
     root.appendChild(filterCard);
     root.appendChild(listCard);
 
@@ -400,6 +410,9 @@ const PageReimburse = (() => {
             { key: "bukti", label: "Bukti", format: (_, r) => kolomBukti(r) },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
+                // Hak Akses Menu: level "Baca" -- sembunyikan Setujui/Tolak/
+                // Edit/Hapus (data tetap tampil).
+                if (!bolehEdit) return MugenUI.el("span", {}, "-");
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 if (r.status === "pending") {
                   const btnSetujui = MugenUI.el("button", {}, "Setujui");

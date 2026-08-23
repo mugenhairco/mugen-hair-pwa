@@ -46,7 +46,7 @@ const PageRiwayatTransaksi = (() => {
   // memanggil ulang provider, bukan menerima input status dari sini).
   const STATUS_BOLEH_CEK_ULANG = new Set(["menunggu_pembayaran", "diproses"]);
 
-  function bukaDetail(transaksi, { onSelesai } = {}) {
+  function bukaDetail(transaksi, { onSelesai, bolehEdit = true } = {}) {
     const body = [
       MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"), statusBadge(transaksi.status_pembayaran)]),
@@ -84,7 +84,8 @@ const PageRiwayatTransaksi = (() => {
     ];
 
     let modal;
-    if (STATUS_BOLEH_CEK_ULANG.has(transaksi.status_pembayaran)) {
+    // Hak Akses Menu: level "Baca" -- sembunyikan tombol Cek Ulang.
+    if (bolehEdit && STATUS_BOLEH_CEK_ULANG.has(transaksi.status_pembayaran)) {
       const btnCekUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" },
         "Cek Ulang ke Provider");
       btnCekUlang.addEventListener("click", async () => {
@@ -94,7 +95,7 @@ const PageRiwayatTransaksi = (() => {
           modal.close();
           MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
           if (onSelesai) onSelesai();
-          bukaDetail(updated, { onSelesai });
+          bukaDetail(updated, { onSelesai, bolehEdit });
         } catch (e) {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }
@@ -111,6 +112,15 @@ const PageRiwayatTransaksi = (() => {
     root.appendChild(MugenUI.el("h1", {}, "Riwayat Transaksi"));
     root.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Riwayat transaksi Payment Gateway booking customer. Status pembayaran HANYA diperbarui otomatis begitu dikonfirmasi resmi oleh provider (webhook), tidak bisa diubah manual."));
+
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa filter/data apa pun.
+    const levelRiwayat = await MugenMenuAccess.get("riwayat_transaksi");
+    if (levelRiwayat === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelRiwayat === "write";
 
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
@@ -168,7 +178,7 @@ const PageRiwayatTransaksi = (() => {
                 btn.addEventListener("click", async () => {
                   try {
                     const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(`/api/booking/transactions/${t.id}`));
-                    bukaDetail(detail, { onSelesai: muatDaftar });
+                    bukaDetail(detail, { onSelesai: muatDaftar, bolehEdit });
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }

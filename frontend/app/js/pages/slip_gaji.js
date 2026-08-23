@@ -144,6 +144,15 @@ const PageSlipGaji = (() => {
 
   // ================= OWNER/ADMIN: generate + kelola semua barber =================
   async function renderAdminView(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun.
+    const levelSlipGaji = await MugenMenuAccess.get("slip_gaji");
+    if (levelSlipGaji === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelSlipGaji === "write";
+
     const today = new Date();
     let barbers = [];
     try {
@@ -153,7 +162,8 @@ const PageSlipGaji = (() => {
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(formCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Generate Slip Gaji.
+    if (bolehEdit) root.appendChild(formCard);
     root.appendChild(filterCard);
     root.appendChild(listCard);
 

@@ -49,10 +49,20 @@ router = APIRouter(prefix="/api/attendance", tags=["attendance"],
 
 
 def _cek_akses_lihat(user: dict):
-    """Owner/Admin boleh MELIHAT tanpa syarat permission apa pun (view-only,
-    sama seperti pengeluaran.py) -- HANYA barber & superadmin yang ditolak."""
-    if user["role"] not in ("admin", "staff"):
+    """Owner boleh MELIHAT tanpa syarat -- 'staff' sekarang digerbang level
+    menu "Absensi" (Hak Akses Menu, izin_absensi_lihat, REVISI dari
+    sebelumnya yang tanpa gerbang permission sama sekali) -- barber &
+    superadmin tetap ditolak total (self-service barber lewat endpoint lain,
+    lihat require_barber)."""
+    if user["role"] == "admin":
+        return
+    if user["role"] != "staff":
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+    if not permissions.has_any(
+        ["izin_absensi_lihat", "izin_absensi_pengaturan", "izin_absensi_koreksi"],
+        tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id"),
+    ):
+        raise HTTPException(status_code=403, detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
 
 
 _UA_BROWSER_PATTERNS = [
@@ -306,7 +316,14 @@ def _cek_akses_koreksi(user: dict, koreksi: dict = None):
     if user["role"] == "admin":
         return
     if user["role"] == "staff":
-        return  # melihat/mengajukan TIDAK digerbang permission (sama seperti view Absensi lain)
+        # Hak Akses Menu: level "Baca" (izin_absensi_lihat) atau tulis
+        # (izin_absensi_pengaturan/izin_absensi_koreksi) cukup untuk melihat.
+        if not permissions.has_any(
+            ["izin_absensi_lihat", "izin_absensi_pengaturan", "izin_absensi_koreksi"],
+            tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id"),
+        ):
+            raise HTTPException(status_code=403, detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
+        return
     if user["role"] == "barber":
         if koreksi is not None and koreksi["barber_id"] != user.get("barber_id"):
             raise HTTPException(status_code=403, detail="Tidak bisa melihat pengajuan koreksi milik barber lain.")

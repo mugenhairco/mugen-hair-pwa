@@ -138,6 +138,15 @@ const PageKasbon = (() => {
 
   // ================= OWNER/ADMIN: kelola semua kasbon =================
   async function renderAdminView(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun.
+    const levelKasbon = await MugenMenuAccess.get("kasbon");
+    if (levelKasbon === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelKasbon === "write";
+
     const today = new Date();
     let editingId = null;
     let barbers = [];
@@ -150,8 +159,10 @@ const PageKasbon = (() => {
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
     const riwayatCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(formCard);
-    root.appendChild(bayarCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Edit Kasbon &
+    // Simpan Pembayaran (data tetap tampil di listCard/riwayatCard di bawah).
+    if (bolehEdit) root.appendChild(formCard);
+    if (bolehEdit) root.appendChild(bayarCard);
     root.appendChild(filterCard);
     root.appendChild(listCard);
     root.appendChild(riwayatCard);
@@ -369,6 +380,10 @@ const PageKasbon = (() => {
                   const btnRiwayat = MugenUI.el("button", {}, "Riwayat");
                   btnRiwayat.addEventListener("click", () => tampilkanRiwayat(riwayatCard, riwayatBody, r));
                   wrap.appendChild(btnRiwayat);
+
+                  // Hak Akses Menu: level "Baca" -- sembunyikan Bayar/Edit/
+                  // Hapus (aksi yang mengubah data), Riwayat (baca) tetap ada.
+                  if (!bolehEdit) return wrap;
 
                   if (r.status !== "lunas") {
                     const btnBayarRow = MugenUI.el("button", {}, "Bayar");

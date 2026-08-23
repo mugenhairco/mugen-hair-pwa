@@ -4,11 +4,11 @@ data operasional TOKO (bukan milik barber manapun), Barber ditolak total
 DI BACKEND (require_owner_or_staff).
 
 REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
-tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
-TULIS (tambah/edit) sekarang `require_permission("izin_pemasukan_kelola")`,
-endpoint HAPUS `require_permission("izin_pemasukan_hapus")` (lihat
-permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
-tiba-tiba terkunci)."""
+sekarang `require_menu_read("pemasukan")` (level menu "Pemasukan", lihat
+permissions.py::MENU_DEFS) -- endpoint TULIS (tambah/edit) tetap
+`require_permission("izin_pemasukan_kelola")`, endpoint HAPUS tetap
+`require_permission("izin_pemasukan_hapus")` (lihat permissions.py, default
+TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import pemasukan_db as db_pemasukan
-from auth import require_feature, require_owner_or_staff, require_permission
+from auth import require_feature, require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/pemasukan", tags=["pemasukan"])
 
@@ -39,14 +39,14 @@ def _pastikan_pemasukan_tenant_sama(user: dict, row: dict | None):
 
 
 @router.get("/kategori")
-def daftar_kategori(user: dict = Depends(require_owner_or_staff)):
+def daftar_kategori(user: dict = Depends(require_menu_read("pemasukan"))):
     return db_pemasukan.get_kategori_list(tenant_id=user["tenant_id"])
 
 
 @router.get("")
 def list_pemasukan(tahun: int = None, bulan: int = None, tanggal: str = None,
                     kategori: str = None, cari: str = None, hanya_aktif: bool = None,
-                    user: dict = Depends(require_owner_or_staff)):
+                    user: dict = Depends(require_menu_read("pemasukan"))):
     return db_pemasukan.get_pemasukan_list(
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
@@ -56,7 +56,7 @@ def list_pemasukan(tahun: int = None, bulan: int = None, tanggal: str = None,
 
 @router.get("/pdf")
 def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
-                        user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
+                        user: dict = Depends(require_menu_read("pemasukan")), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{pemasukan_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pemasukan_id."""
     konten = laporan_pdf.buat_pdf_pemasukan_list(tahun, bulan, kategori, cari, user["username"],
@@ -67,7 +67,7 @@ def list_pemasukan_pdf(tahun: int, bulan: int, kategori: str = None, cari: str =
 
 
 @router.get("/{pemasukan_id}")
-def detail_pemasukan(pemasukan_id: int, user: dict = Depends(require_owner_or_staff)):
+def detail_pemasukan(pemasukan_id: int, user: dict = Depends(require_menu_read("pemasukan"))):
     row = db_pemasukan.get_pemasukan(pemasukan_id)
     _pastikan_pemasukan_tenant_sama(user, row)
     return row

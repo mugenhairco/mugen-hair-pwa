@@ -698,6 +698,14 @@ const PageAbsensi = (() => {
 
   // ================= OWNER/ADMIN: Dashboard + Daftar + Laporan + Audit =================
   async function renderAdminView(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa dashboard/riwayat/pengaturan apa pun.
+    const levelAbsensi = await MugenMenuAccess.get("absensi");
+    if (levelAbsensi === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+
     let barbers = [];
     try {
       barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });

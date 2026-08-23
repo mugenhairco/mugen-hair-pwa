@@ -17,6 +17,14 @@ const PageInputData = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Input Data"));
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun (mencakup ketiga mode: Barber/
+    // Manual Customer/Non-Barber, satu menu yang sama).
+    if (isAdmin && (await MugenMenuAccess.get("input_data")) === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+
     // Dukungan Barber + Non-Barber: dropdown pemilih mode -- KHUSUS Owner/
     // Admin (Non-Barber murni fitur pengelolaan data, sama seperti seluruh
     // Input Data yang memang sudah Owner/Admin-only). Default "Input Data
@@ -48,12 +56,18 @@ const PageInputData = (() => {
     root.appendChild(manualCustomerSection);
     root.appendChild(nonBarberSection);
 
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Koreksi
+    // Transaksi (ketiga mode: Barber/Manual Customer/Non-Barber), daftar
+    // tetap tampil. Dihitung sekali di sini, dipakai lagi di
+    // renderManualCustomer()/renderNonBarber() di bawah lewat closure.
+    const bolehEditInputData = !isAdmin || (await MugenMenuAccess.get("input_data")) === "write";
+
     let services = [];
     let barbers = [];
     let editingId = null; // null = mode SIMPAN baru, angka = mode KOREKSI
 
     const formCard = MugenUI.el("div", { class: "card" });
-    barberSection.appendChild(formCard);
+    if (bolehEditInputData) barberSection.appendChild(formCard);
     const listCard = MugenUI.el("div", { class: "card" });
     barberSection.appendChild(listCard);
     const liburCard = MugenUI.el("div", { class: "card" });
@@ -317,7 +331,8 @@ const PageInputData = (() => {
       const mcFormCard = MugenUI.el("div", { class: "card" });
       const mcListCard = MugenUI.el("div", { class: "card" });
       manualCustomerSection.appendChild(mcStatusCard);
-      manualCustomerSection.appendChild(mcFormCard);
+      // Hak Akses Menu: level "Baca" -- sembunyikan form Manual Customer.
+      if (bolehEditInputData) manualCustomerSection.appendChild(mcFormCard);
       manualCustomerSection.appendChild(mcListCard);
 
       const mcTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
@@ -595,7 +610,8 @@ const PageInputData = (() => {
 
       const nbFormCard = MugenUI.el("div", { class: "card" });
       const nbListCard = MugenUI.el("div", { class: "card" });
-      nonBarberSection.appendChild(nbFormCard);
+      // Hak Akses Menu: level "Baca" -- sembunyikan form Non-Barber.
+      if (bolehEditInputData) nonBarberSection.appendChild(nbFormCard);
       nonBarberSection.appendChild(nbListCard);
 
       let nbEditingId = null;

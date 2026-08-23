@@ -129,9 +129,157 @@ PERMISSION_DEFS = [
     # ---- Input Data / Transaksi (termasuk hapus dari tombol Aksi di Rekap Transaksi) ----
     ("izin_input_data_kelola", "input_data", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)", True),
     ("izin_input_data_hapus", "input_data", "Hapus Transaksi Harian", True),
+    # ---- Riwayat Transaksi (menu Keuangan > Riwayat Transaksi -- SEBELUMNYA
+    # aksi "Cek Ulang"-nya menumpang izin_booking_kelola walau ini menu
+    # terpisah di sidebar; sekarang key sendiri supaya Hak Akses Menu bisa
+    # mengatur Booking dan Riwayat Transaksi independen, lihat MENU_DEFS) ----
+    ("izin_riwayat_transaksi", "riwayat_transaksi", "Cek Ulang Status Transaksi Payment Gateway", True),
+    # ---- Katalog KHUSUS "Hak Akses Menu" (permintaan Owner: setiap menu di
+    # sidebar punya SATU level -- Tidak Ada Akses/Baca/Baca & Edit -- bukan
+    # checklist per-aksi). Key "_lihat" di bawah ini MURNI gerbang MELIHAT
+    # (dulu sebagian besar modul operasional -- Booking/Input Data/Produk/
+    # Pengeluaran/Pemasukan/Uang Kas/Dashboard/Rekap/Absensi/Riwayat
+    # Transaksi -- GET-nya SAMA SEKALI TIDAK digerbang izin apa pun, staff
+    # SELALU bisa lihat; modul Karyawan -- Kasbon/Komisi/Slip Gaji/
+    # Reimburse/Izin Cuti -- justru SEBALIKNYA, satu key yang sama menggerbang
+    # baca DAN tulis sekaligus). Level "Baca" = key "_lihat" ini True, key
+    # tulis (existing di atas) False. Level "Baca & Edit" = key "_lihat" DAN
+    # SEMUA key tulis True. Level "Tidak Ada Akses" = semuanya False. Lihat
+    # MENU_DEFS/get_menu_level()/set_menu_level() di bawah untuk pemetaan
+    # lengkap tiap menu -> (key baca, [key tulis]) dan cara level dihitung/
+    # disimpan. Default True untuk modul yang SEBELUMNYA selalu terbuka
+    # (supaya tidak ada staff yang tiba-tiba terkunci begitu revisi ini
+    # deploy), default False untuk modul Karyawan (SAMA seperti default key
+    # tulisnya, konsisten dengan perilaku lama).
+    ("izin_dashboard_lihat", "menu", "Lihat menu Dashboard", True),
+    ("izin_input_data_lihat", "menu", "Lihat menu Input Data", True),
+    ("izin_rekap_lihat", "menu", "Lihat menu Rekap", True),
+    ("izin_slip_gaji_lihat", "menu", "Lihat menu Slip Gaji", False),
+    ("izin_kasbon_lihat", "menu", "Lihat menu Kasbon", False),
+    ("izin_komisi_lihat", "menu", "Lihat menu Komisi", False),
+    ("izin_reimburse_lihat", "menu", "Lihat menu Reimburse", False),
+    ("izin_cuti_karyawan_lihat", "menu", "Lihat menu Izin & Cuti", False),
+    ("izin_absensi_lihat", "menu", "Lihat menu Absensi", True),
+    ("izin_booking_lihat", "menu", "Lihat menu Booking", True),
+    ("izin_riwayat_transaksi_lihat", "menu", "Lihat menu Riwayat Transaksi", True),
+    ("izin_pemasukan_lihat", "menu", "Lihat menu Pemasukan", True),
+    ("izin_pengeluaran_lihat", "menu", "Lihat menu Pengeluaran", True),
+    ("izin_uang_kas_lihat", "menu", "Lihat menu Uang Kas", True),
+    ("izin_produk_lihat", "menu", "Lihat menu Produk", True),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}
+
+# ---------------------------------------------------------------------------
+# Hak Akses Menu (permintaan Owner): SATU level per menu sidebar --
+# "Tidak Ada Akses" / "Baca" / "Baca & Edit" -- dibangun DI ATAS katalog
+# izin_* yang sudah ada di atas (TIDAK ADA sistem penyimpanan baru, tetap
+# lewat get_all()/set_bulk() yang sama, jadi Role Custom & Role "Admin"
+# bawaan otomatis ikut kompatibel tanpa kode terpisah). Setting & Billing
+# SENGAJA TIDAK masuk sini -- Setting sudah punya delegasi tab sendiri
+# (izin_setting_*, lebih granular dari 3 level ini) dan Billing selalu
+# khusus Owner (require_admin) -- di luar cakupan permintaan ini.
+MENU_DEFS = {
+    "dashboard": {"label": "Dashboard", "read_key": "izin_dashboard_lihat", "write_keys": []},
+    "input_data": {"label": "Input Data", "read_key": "izin_input_data_lihat",
+                    "write_keys": ["izin_input_data_kelola", "izin_input_data_hapus",
+                                    "izin_data_non_barber_kelola", "izin_data_non_barber_hapus"]},
+    "rekap": {"label": "Rekap", "read_key": "izin_rekap_lihat", "write_keys": []},
+    "slip_gaji": {"label": "Slip Gaji", "read_key": "izin_slip_gaji_lihat", "write_keys": ["izin_slip_gaji"]},
+    "kasbon": {"label": "Kasbon", "read_key": "izin_kasbon_lihat", "write_keys": ["izin_kasbon"]},
+    "komisi": {"label": "Komisi", "read_key": "izin_komisi_lihat", "write_keys": ["izin_komisi"]},
+    "reimburse": {"label": "Reimburse", "read_key": "izin_reimburse_lihat", "write_keys": ["izin_reimburse"]},
+    "izin_cuti": {"label": "Izin & Cuti", "read_key": "izin_cuti_karyawan_lihat", "write_keys": ["izin_cuti_karyawan"]},
+    "absensi": {"label": "Absensi", "read_key": "izin_absensi_lihat",
+                "write_keys": ["izin_absensi_pengaturan", "izin_absensi_koreksi"]},
+    "booking": {"label": "Booking", "read_key": "izin_booking_lihat",
+                "write_keys": ["izin_booking_kelola", "izin_booking_batalkan", "izin_booking_pengaturan"]},
+    "riwayat_transaksi": {"label": "Riwayat Transaksi", "read_key": "izin_riwayat_transaksi_lihat",
+                           "write_keys": ["izin_riwayat_transaksi"]},
+    "pemasukan": {"label": "Pemasukan", "read_key": "izin_pemasukan_lihat",
+                  "write_keys": ["izin_pemasukan_kelola", "izin_pemasukan_hapus"]},
+    "pengeluaran": {"label": "Pengeluaran", "read_key": "izin_pengeluaran_lihat",
+                     "write_keys": ["izin_pengeluaran_kelola", "izin_pengeluaran_hapus"]},
+    "uang_kas": {"label": "Uang Kas", "read_key": "izin_uang_kas_lihat",
+                 "write_keys": ["izin_uang_kas_kelola", "izin_uang_kas_hapus"]},
+    "produk": {"label": "Produk", "read_key": "izin_produk_lihat",
+               "write_keys": ["izin_produk_kelola", "izin_produk_hapus"]},
+}
+
+LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT = "none", "read", "write"
+
+
+def get_menu_level(menu_key: str, tenant_id=None, role_id=None) -> str:
+    """Level EFEKTIF ("none"/"read"/"write") satu menu, dihitung dari key
+    baca+tulisnya (lihat MENU_DEFS). Kalau ANY key tulis sudah True (mis.
+    data lama sebelum revisi ini, atau kombinasi tidak biasa) tapi key baca
+    lupa ikut True, tetap dianggap minimal "read" -- tulis TANPA bisa baca
+    tidak masuk akal buat pengguna."""
+    if menu_key not in MENU_DEFS:
+        raise ValueError(f"Menu tidak dikenal: {menu_key}")
+    definisi = MENU_DEFS[menu_key]
+    izin = get_all(tenant_id=tenant_id, role_id=role_id)
+    baca = izin.get(definisi["read_key"], False)
+    write_keys = definisi["write_keys"]
+    semua_tulis = bool(write_keys) and all(izin.get(k, False) for k in write_keys)
+    if semua_tulis:
+        return LEVEL_EDIT
+    if baca or any(izin.get(k, False) for k in write_keys):
+        return LEVEL_BACA
+    return LEVEL_NONE
+
+
+def get_all_menu_levels(tenant_id=None, role_id=None) -> dict:
+    """{menu_key: level} untuk SELURUH menu di MENU_DEFS -- satu query
+    get_all() dipakai ulang untuk semua menu (bukan panggil get_menu_level()
+    N kali, masing-masing query database sendiri)."""
+    izin = get_all(tenant_id=tenant_id, role_id=role_id)
+    hasil = {}
+    for menu_key, definisi in MENU_DEFS.items():
+        baca = izin.get(definisi["read_key"], False)
+        write_keys = definisi["write_keys"]
+        semua_tulis = bool(write_keys) and all(izin.get(k, False) for k in write_keys)
+        if semua_tulis:
+            hasil[menu_key] = LEVEL_EDIT
+        elif baca or any(izin.get(k, False) for k in write_keys):
+            hasil[menu_key] = LEVEL_BACA
+        else:
+            hasil[menu_key] = LEVEL_NONE
+    return hasil
+
+
+def set_menu_level(menu_key: str, level: str, tenant_id=None, role_id=None) -> dict:
+    """Simpan satu level menu -- diterjemahkan ke key baca+tulis lama lewat
+    set_bulk() yang sudah ada (lihat MENU_DEFS)."""
+    if menu_key not in MENU_DEFS:
+        raise ValueError(f"Menu tidak dikenal: {menu_key}")
+    if level not in (LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT):
+        raise ValueError(f"Level tidak dikenal: {level}")
+    definisi = MENU_DEFS[menu_key]
+    data = {definisi["read_key"]: level in (LEVEL_BACA, LEVEL_EDIT)}
+    for k in definisi["write_keys"]:
+        data[k] = (level == LEVEL_EDIT)
+    return set_bulk(data, tenant_id=tenant_id, role_id=role_id)
+
+
+def set_all_menu_levels(levels: dict, tenant_id=None, role_id=None) -> dict:
+    """Simpan BANYAK level menu sekaligus (dipakai form "Kelola Izin" yang
+    baru -- satu PUT menyimpan seluruh dropdown menu untuk satu Role) --
+    satu set_bulk() gabungan (bukan N kali panggil set_menu_level(), N kali
+    query terpisah)."""
+    tidak_dikenal = set(levels.keys()) - set(MENU_DEFS.keys())
+    if tidak_dikenal:
+        raise ValueError(f"Menu tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
+    data = {}
+    for menu_key, level in levels.items():
+        if level not in (LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT):
+            raise ValueError(f"Level tidak dikenal untuk menu {menu_key}: {level}")
+        definisi = MENU_DEFS[menu_key]
+        data[definisi["read_key"]] = level in (LEVEL_BACA, LEVEL_EDIT)
+        for k in definisi["write_keys"]:
+            data[k] = (level == LEVEL_EDIT)
+    set_bulk(data, tenant_id=tenant_id, role_id=role_id)
+    return get_all_menu_levels(tenant_id=tenant_id, role_id=role_id)
 
 
 def get_all(tenant_id=None, role_id=None) -> dict:

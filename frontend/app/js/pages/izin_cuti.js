@@ -188,6 +188,15 @@ const PageIzinCuti = (() => {
 
   // ================= OWNER/ADMIN: kelola & approve semua pengajuan =================
   async function renderAdminView(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa data apa pun.
+    const levelIzinCuti = await MugenMenuAccess.get("izin_cuti");
+    if (levelIzinCuti === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelIzinCuti === "write";
+
     let barbers = [];
     try {
       barbers = await MugenApi.get("/api/input-data/karyawan", { useCache: true });
@@ -275,6 +284,7 @@ const PageIzinCuti = (() => {
                 if (r.status !== "pending") {
                   return MugenUI.el("span", { class: "subtitle" }, r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-");
                 }
+                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnSetujui = MugenUI.el("button", {}, "Setujui");
                 btnSetujui.addEventListener("click", () => ubahStatus(btnSetujui, r.id, "disetujui"));

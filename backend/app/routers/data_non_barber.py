@@ -5,17 +5,18 @@ halaman Input Data yang menaunginya (lihat data_non_barber_db.py untuk
 kenapa modul ini berdiri sendiri dari sistem Barber).
 
 REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
-tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
-TULIS (tambah/edit) sekarang `require_permission("izin_data_non_barber_kelola")`,
-endpoint HAPUS `require_permission("izin_data_non_barber_hapus")` (lihat
-permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
-tiba-tiba terkunci)."""
+sekarang `require_menu_read("input_data")` (level menu "Input Data", modul
+ini menaunginya -- lihat permissions.py::MENU_DEFS) -- endpoint TULIS
+(tambah/edit) tetap `require_permission("izin_data_non_barber_kelola")`,
+endpoint HAPUS tetap `require_permission("izin_data_non_barber_hapus")`
+(lihat permissions.py, default TRUE supaya staff yang sudah pakai modul ini
+tidak tiba-tiba terkunci)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import data_non_barber_db
-from auth import require_owner_or_staff, require_permission
+from auth import require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/data-non-barber", tags=["data-non-barber"])
 
@@ -54,7 +55,7 @@ class DataNonBarberEditBody(BaseModel):
 
 @router.get("")
 def list_data_non_barber(barber_id: int = None, tahun: int = None, bulan: int = None,
-                          user: dict = Depends(require_owner_or_staff)):
+                          user: dict = Depends(require_menu_read("input_data"))):
     return data_non_barber_db.get_data_non_barber_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
                                                          tenant_id=user["tenant_id"])
 
