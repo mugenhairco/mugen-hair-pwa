@@ -997,6 +997,51 @@ CREATE TABLE IF NOT EXISTS snap_account_bindings (
     updated_at            TEXT NOT NULL
 );
 
+-- Settlement Faspay per Terminal (Tenant) -- versi PostgreSQL, SAMA PERSIS
+-- skemanya dengan faspay_settlement_migrasi.py (jalur SQLite), lihat modul
+-- itu untuk penjelasan lengkap keputusan arsitektur ("terminal" = tenant,
+-- fokus HANYA transaksi snap_payment_transactions).
+CREATE TABLE IF NOT EXISTS faspay_settlements (
+    id                    SERIAL PRIMARY KEY,
+    tenant_id             INTEGER NOT NULL,
+    tenant_nama           TEXT NOT NULL,
+    tanggal               TEXT NOT NULL,
+    dibuat_oleh_user_id   INTEGER NOT NULL,
+    dibuat_oleh_nama      TEXT NOT NULL,
+    jumlah_transaksi      INTEGER NOT NULL,
+    total_nominal         INTEGER NOT NULL,
+    jumlah_match          INTEGER NOT NULL,
+    jumlah_warning        INTEGER NOT NULL,
+    jumlah_final_mismatch INTEGER,
+    status_rekonsiliasi   TEXT NOT NULL,
+    submitted_at          TEXT NOT NULL,
+    h1_dijalankan_at      TEXT,
+    h1_dijalankan_oleh    TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faspay_settlements_tenant_tanggal
+    ON faspay_settlements (tenant_id, tanggal);
+
+CREATE TABLE IF NOT EXISTS faspay_settlement_items (
+    id                      SERIAL PRIMARY KEY,
+    settlement_id           INTEGER NOT NULL,
+    snap_transaction_id     INTEGER NOT NULL,
+    order_id                TEXT NOT NULL,
+    reference_id_provider   TEXT,
+    payment_method          TEXT,
+    nominal                 INTEGER NOT NULL,
+    status_pembayaran       TEXT NOT NULL,
+    timestamp_transaksi     TEXT NOT NULL,
+    match_status            TEXT NOT NULL,
+    match_detail            TEXT,
+    h1_match_status         TEXT,
+    h1_match_detail         TEXT,
+    h1_checked_at           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_faspay_settlement_items_settlement
+    ON faspay_settlement_items (settlement_id);
+
 -- FITUR Email, Verifikasi Email, Lupa Kata Sandi -- lihat penjelasan
 -- lengkap di email_auth_migrasi.py (jalur SQLite, SAMA PERSIS niatnya).
 -- `email`/`email_verified`/`blokir_sampai_verifikasi` TIDAK mengubah

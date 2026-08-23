@@ -130,6 +130,13 @@ const PageSuperadmin = (() => {
     const langgananCard = MugenUI.el("div", { class: "card" });
     const bookingSummaryCard = MugenUI.el("div", { class: "card" });
     const bookingCard = MugenUI.el("div", { class: "card" });
+    // Settlement Faspay per Terminal (Tenant): monitoring closing SELURUH
+    // tenant ("terminal" = tenant, keputusan eksplisit Owner) -- murni
+    // MEMBACA lewat faspay_settlement_db.py (require_superadmin, lihat
+    // routers/faspay_settlement_superadmin.py). SATU-SATUNYA aksi TULIS
+    // Super Admin di sini: memicu rekonsiliasi H+1 (TIDAK PERNAH mengubah
+    // data pengajuan awal terminal).
+    const settlementCard = MugenUI.el("div", { class: "card" });
 
     const tabDashboard = MugenUI.el("div");
     const tabTenant = MugenUI.el("div", { style: "display:none;" });
@@ -137,7 +144,8 @@ const PageSuperadmin = (() => {
     const tabLanding = MugenUI.el("div", { style: "display:none;" });
     const tabPgw = MugenUI.el("div", { style: "display:none;" });
     const tabTransaksi = MugenUI.el("div", { style: "display:none;" });
-    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi };
+    const tabSettlement = MugenUI.el("div", { style: "display:none;" });
+    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi, settlement: tabSettlement };
     const tabsCtl = MugenUI.tabs(
       [
         { key: "dashboard", label: "Dashboard" },
@@ -146,6 +154,7 @@ const PageSuperadmin = (() => {
         { key: "landing", label: "Landing Page" },
         { key: "pgw", label: "Payment Gateway" },
         { key: "transaksi", label: "Riwayat Transaksi" },
+        { key: "settlement", label: "Settlement Faspay" },
       ],
       {
         onChange: (key) => {
@@ -165,6 +174,7 @@ const PageSuperadmin = (() => {
     root.appendChild(tabLanding);
     root.appendChild(tabPgw);
     root.appendChild(tabTransaksi);
+    root.appendChild(tabSettlement);
     requestAnimationFrame(tabsCtl.moveIndicator);
 
     tabDashboard.appendChild(dashboardSummaryCard);
@@ -202,6 +212,8 @@ const PageSuperadmin = (() => {
     trxSubLangganan.appendChild(langgananCard);
     trxSubBooking.appendChild(bookingSummaryCard);
     trxSubBooking.appendChild(bookingCard);
+
+    tabSettlement.appendChild(settlementCard);
 
     // ---------------------------------------------------------------
     // 0. DASHBOARD -- Ringkasan Sistem (murni dihitung dari data yang SUDAH
@@ -1779,6 +1791,180 @@ const PageSuperadmin = (() => {
     }
 
     // ---------------------------------------------------------------
+    // 13b. SETTLEMENT FASPAY per Terminal (Tenant) -- "terminal" = tenant
+    // (keputusan eksplisit Owner), fokus HANYA transaksi Faspay SNAP
+    // Advance. Murni MEMBACA (routers/faspay_settlement_superadmin.py) +
+    // SATU aksi tulis: memicu rekonsiliasi H+1 (TIDAK PERNAH mengubah data
+    // pengajuan awal terminal, lihat faspay_settlement_db.py).
+    // ---------------------------------------------------------------
+    const STL_STATUS_LABEL = { RECONCILED: "Reconciled", WARNING: "Warning", FINAL_MISMATCH: "Final Mismatch" };
+    const STL_STATUS_BADGE = { RECONCILED: "badge-success", WARNING: "badge-warning", FINAL_MISMATCH: "badge-danger" };
+    const STL_STATUS_ICON = { RECONCILED: "🟢", WARNING: "🟡", FINAL_MISMATCH: "🔴" };
+    const STL_MATCH_LABEL = {
+      match: "Match", pending_faspay: "Pending Faspay", final_match: "Match (Final)",
+      missing_di_faspay: "Missing in Faspay", amount_mismatch: "Amount Mismatch",
+      status_mismatch: "Status Mismatch", reference_mismatch: "Reference Mismatch",
+      tidak_bisa_dicek: "Tidak Bisa Dicek",
+    };
+
+    function stlStatusBadge(status) {
+      return MugenUI.el("span", { class: "badge" + (STL_STATUS_BADGE[status] ? " " + STL_STATUS_BADGE[status] : "") },
+        `${STL_STATUS_ICON[status] || ""} ${STL_STATUS_LABEL[status] || status}`.trim());
+    }
+
+    settlementCard.appendChild(MugenUI.el("h2", {}, "Settlement Faspay"));
+    settlementCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Closing harian transaksi Faspay SNAP Advance SELURUH tenant (\"terminal\" = tenant). Status real-time dihitung terminal sendiri saat submit -- rekonsiliasi H+1 (final, terhadap Inquiry API Faspay sungguhan) dipicu manual Super Admin di sini begitu data hari berikutnya tersedia."));
+
+    const stlSelTenant = MugenUI.el("select");
+    stlSelTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
+    const stlSelStatus = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "" }, "Semua Status"),
+      ...Object.entries(STL_STATUS_LABEL).map(([k, label]) => MugenUI.el("option", { value: k }, label)),
+    ]);
+    const stlInputMulai = MugenUI.el("input", { type: "date" });
+    const stlInputSelesai = MugenUI.el("input", { type: "date" });
+    const stlBtnFilter = MugenUI.el("button", { class: "btn-primary" }, "Terapkan Filter");
+    settlementCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), stlSelTenant]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), stlSelStatus]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), stlInputMulai]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), stlInputSelesai]),
+      stlBtnFilter,
+    ]));
+
+    const stlListBody = MugenUI.el("div", { style: "margin-top:12px;" });
+    settlementCard.appendChild(stlListBody);
+
+    async function stlBukaDetail(ringkas) {
+      try {
+        const s = await MugenApi.get(`/api/superadmin/settlement-faspay/${ringkas.id}`);
+        renderStlDetailModal(s);
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    }
+
+    function renderStlDetailModal(s) {
+      const body = [
+        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"), stlStatusBadge(s.status_rekonsiliasi)]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Toko (Terminal)"), MugenUI.el("div", {}, s.tenant_nama)]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Tanggal"), MugenUI.el("div", {}, MugenUI.formatTanggal(s.tanggal))]),
+        ]),
+        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Diajukan Oleh"), MugenUI.el("div", {}, s.dibuat_oleh_nama)]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Jumlah Transaksi"), MugenUI.el("div", {}, String(s.jumlah_transaksi))]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Total Nominal"), MugenUI.el("div", {}, MugenUI.formatRupiah(s.total_nominal))]),
+        ]),
+        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Match (real-time)"), MugenUI.el("div", {}, String(s.jumlah_match))]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Warning (real-time)"), MugenUI.el("div", {}, String(s.jumlah_warning))]),
+          MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Final Mismatch (H+1)"),
+            MugenUI.el("div", {}, s.jumlah_final_mismatch == null ? "Belum dijalankan" : String(s.jumlah_final_mismatch))]),
+        ]),
+      ];
+
+      // WAJIB samakan PERSIS dengan guard backend (faspay_settlement_db.py::
+      // _bisa_h1(): date.today() > tanggal SUBMITTED_AT, BUKAN tanggal
+      // closing yang diajukan -- keduanya bisa beda kalau closing diajukan
+      // belakangan untuk tanggal lampau). MugenUI.isoHariIniWib() dipakai
+      // (bukan Date() browser) supaya patokan "hari ini" SAMA dengan
+      // server (WIB), terlepas zona waktu perangkat Super Admin.
+      const bisaH1 = MugenUI.isoHariIniWib() > s.submitted_at.split("T")[0];
+      if (!s.h1_dijalankan_at) {
+        const btnH1 = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin:8px 0 16px;" },
+          "Jalankan Rekonsiliasi H+1");
+        if (!bisaH1) {
+          btnH1.disabled = true;
+          body.push(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
+            "Rekonsiliasi H+1 baru bisa dijalankan mulai hari setelah closing ini diajukan -- Settlement Report Faspay tidak dianggap tersedia secara real-time."));
+        }
+        btnH1.addEventListener("click", async () => {
+          try {
+            const updated = await MugenUI.withButtonLoading(btnH1,
+              () => MugenApi.post(`/api/superadmin/settlement-faspay/${s.id}/rekonsiliasi-h1`));
+            MugenUI.toast("Rekonsiliasi H+1 selesai.", "success", { force: true });
+            modal.close();
+            await muatSettlement();
+            renderStlDetailModal(updated);
+          } catch (e) {
+            MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+          }
+        });
+        body.push(btnH1);
+      } else {
+        body.push(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:16px;" },
+          `Rekonsiliasi H+1 sudah dijalankan ${trxWaktuLengkap(s.h1_dijalankan_at)} oleh ${s.h1_dijalankan_oleh}.`));
+      }
+
+      body.push(MugenUI.el("h3", {}, "Detail Transaksi"));
+      body.push(MugenUI.buildTable(
+        [
+          { key: "order_id", label: "Order ID" },
+          { key: "reference_id_provider", label: "Reference Faspay", format: (v) => v || "-" },
+          { key: "payment_method", label: "Metode", format: (v) => (v || "-").toUpperCase() },
+          { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
+          { key: "status_pembayaran", label: "Status" },
+          { key: "match_status", label: "Real-time", format: (v) => STL_MATCH_LABEL[v] || v },
+          {
+            key: "h1_match_status", label: "Final (H+1)",
+            format: (v, r) => (v ? `${STL_MATCH_LABEL[v] || v}${r.h1_match_detail ? ` -- ${r.h1_match_detail}` : ""}` : "-"),
+          },
+        ],
+        s.items || [],
+        { emptyText: "Tidak ada transaksi." },
+      ));
+
+      const modal = MugenUI.infoModal({ title: `Settlement Faspay -- ${s.tenant_nama} (${MugenUI.formatTanggal(s.tanggal)})`, body });
+    }
+
+    async function muatSettlement() {
+      stlSelTenant.innerHTML = "";
+      stlSelTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
+      for (const t of tenantList) stlSelTenant.appendChild(MugenUI.el("option", { value: String(t.id) }, t.nama_barbershop));
+
+      stlListBody.innerHTML = "";
+      stlListBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
+      try {
+        const params = new URLSearchParams();
+        if (stlSelTenant.value) params.set("tenant_id", stlSelTenant.value);
+        if (stlSelStatus.value) params.set("status", stlSelStatus.value);
+        if (stlInputMulai.value) params.set("tanggal_mulai", stlInputMulai.value);
+        if (stlInputSelesai.value) params.set("tanggal_selesai", stlInputSelesai.value);
+        const data = await MugenApi.get(`/api/superadmin/settlement-faspay?${params.toString()}`);
+        stlListBody.innerHTML = "";
+        stlListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "tenant_nama", label: "Tenant (Terminal)" },
+            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+            { key: "submitted_at", label: "Waktu Closing", format: trxWaktuLengkap },
+            { key: "dibuat_oleh_nama", label: "User" },
+            { key: "jumlah_transaksi", label: "Jumlah Transaksi" },
+            { key: "total_nominal", label: "Total Nominal", format: MugenUI.formatRupiah },
+            { key: "jumlah_match", label: "Match" },
+            { key: "jumlah_warning", label: "Warning" },
+            { key: "jumlah_final_mismatch", label: "Mismatch", format: (v) => (v == null ? "-" : String(v)) },
+            { key: "status_rekonsiliasi", label: "Status", format: stlStatusBadge },
+            {
+              key: "aksi", label: "Aksi", format: (_, r) => {
+                const btn = MugenUI.el("button", {}, "Detail");
+                btn.addEventListener("click", () => stlBukaDetail(r));
+                return btn;
+              },
+            },
+          ],
+          data,
+          { emptyText: "Belum ada settlement diajukan tenant mana pun." },
+        ));
+      } catch (e) {
+        stlListBody.innerHTML = "";
+        stlListBody.appendChild(MugenUI.errorState(e.message));
+      }
+    }
+    stlBtnFilter.addEventListener("click", muatSettlement);
+
+    // ---------------------------------------------------------------
     // 14. RIWAYAT AKSI (Audit Log)
     // ---------------------------------------------------------------
     auditCard.appendChild(MugenUI.el("h2", {}, "Riwayat Aksi"));
@@ -1820,6 +2006,7 @@ const PageSuperadmin = (() => {
     await loadPaymentGatewayConfig();
     await loadSnapAdvanceConfig();
     await loadTransaksi();
+    await muatSettlement();
     await loadAuditLog();
   }
 

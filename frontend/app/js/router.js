@@ -418,6 +418,18 @@ const MugenRouter = (() => {
         return;
       }
       renderResult = _renderLazy(content, "PageRiwayatTransaksi", "js/pages/riwayat_transaksi.js");
+    } else if (hash.startsWith("#/settlement-faspay")) {
+      // Settlement Faspay per Terminal (Tenant): closing harian transaksi
+      // Faspay SNAP Advance toko INI SENDIRI (lihat pages/settlement_faspay.js)
+      // -- pola akses SAMA PERSIS Riwayat Transaksi di atas. Perlindungan
+      // sebenarnya tetap di backend (require_menu_read("settlement_faspay")/
+      // require_permission("izin_settlement_faspay") di routers/
+      // faspay_settlement.py, SELALU di-scope tenant_id dari akun login).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = _renderLazy(content, "PageSettlementFaspay", "js/pages/settlement_faspay.js");
     } else if (hash.startsWith("#/pengeluaran")) {
       // Tahap 9 + REVISI Hak Akses Admin (kedua): Owner dan 'staff' (Admin)
       // sekarang akses PENUH sama persis (tanpa sistem izin), Barber tidak.

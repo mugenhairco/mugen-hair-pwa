@@ -1679,6 +1679,7 @@ const PagePengaturan = (() => {
       ["pengeluaran", "Pengeluaran"],
       ["uang_kas", "Uang Kas"],
       ["produk", "Produk"],
+      ["settlement_faspay", "Settlement Faspay"],
     ];
     const LEVEL_LABEL = { none: "Tidak Ada Akses", read: "Baca", write: "Baca & Edit" };
 
