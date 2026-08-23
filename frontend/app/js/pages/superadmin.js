@@ -111,12 +111,25 @@ const PageSuperadmin = (() => {
     const snapAdvanceCard = MugenUI.el("div", { class: "card" });
     const auditCard = MugenUI.el("div", { class: "card" });
     // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tab
-    // baru "Riwayat Transaksi" -- pusat monitoring SELURUH transaksi
-    // platform (booking customer + langganan SaaS), murni MEMBACA lewat
+    // "Riwayat Transaksi" -- pusat monitoring SELURUH transaksi platform
+    // (booking customer + langganan SaaS), murni MEMBACA lewat
     // transaction_report_db.py (lihat modul itu), TIDAK menambah business
     // logic baru sama sekali.
-    const transaksiSummaryCard = MugenUI.el("div", { class: "card" });
-    const transaksiCard = MugenUI.el("div", { class: "card" });
+    //
+    // RESTRUKTURISASI (ledger audit trail, Agustus 2026): "Riwayat
+    // Transaksi" jadi PARENT dengan 2 sub-tab yang TIDAK PERNAH tercampur
+    // -- "Riwayat Langganan Tenant" (pembayaran tenant KE Rivoir, jenis=
+    // langganan) dan "Riwayat Booking Tenant" (pembayaran customer KE
+    // tenant, jenis=booking). Masing-masing MEMANGGIL endpoint yang sama
+    // (/api/superadmin/transactions, sudah mendukung filter `jenis` sejak
+    // awal, lihat transaction_report_db.py) tapi dengan `jenis` DIKUNCI
+    // per sub-tab (bukan dropdown yang bisa diubah pengguna) -- supaya
+    // dua daftar ini SECARA STRUKTUR tidak mungkin tercampur sama sekali,
+    // bukan cuma kebetulan tidak dicampur di UI.
+    const langgananSummaryCard = MugenUI.el("div", { class: "card" });
+    const langgananCard = MugenUI.el("div", { class: "card" });
+    const bookingSummaryCard = MugenUI.el("div", { class: "card" });
+    const bookingCard = MugenUI.el("div", { class: "card" });
 
     const tabDashboard = MugenUI.el("div");
     const tabTenant = MugenUI.el("div", { style: "display:none;" });
@@ -134,7 +147,16 @@ const PageSuperadmin = (() => {
         { key: "pgw", label: "Payment Gateway" },
         { key: "transaksi", label: "Riwayat Transaksi" },
       ],
-      { onChange: (key) => { for (const k in panelByKey) panelByKey[k].style.display = k === key ? "" : "none"; } },
+      {
+        onChange: (key) => {
+          for (const k in panelByKey) panelByKey[k].style.display = k === key ? "" : "none";
+          // Indikator sub-tab "Riwayat Transaksi" dihitung dari
+          // offsetWidth/offsetLeft -- 0 kalau parent-nya masih
+          // display:none saat pertama dirender (lihat MugenUI.tabs()),
+          // jadi WAJIB dihitung ulang tepat saat panel ini baru terlihat.
+          if (key === "transaksi") requestAnimationFrame(trxSubTabsCtl.moveIndicator);
+        },
+      },
     );
     root.appendChild(tabsCtl.bar);
     root.appendChild(tabDashboard);
@@ -160,8 +182,26 @@ const PageSuperadmin = (() => {
     tabPgw.appendChild(billingGatewayCard);
     tabPgw.appendChild(paymentGatewayCard);
     tabPgw.appendChild(snapAdvanceCard);
-    tabTransaksi.appendChild(transaksiSummaryCard);
-    tabTransaksi.appendChild(transaksiCard);
+
+    const trxSubLangganan = MugenUI.el("div");
+    const trxSubBooking = MugenUI.el("div", { style: "display:none;" });
+    const trxSubPanelByKey = { langganan: trxSubLangganan, booking: trxSubBooking };
+    const trxSubTabsCtl = MugenUI.tabs(
+      [
+        { key: "langganan", label: "Riwayat Langganan Tenant" },
+        { key: "booking", label: "Riwayat Booking Tenant" },
+      ],
+      { onChange: (key) => { for (const k in trxSubPanelByKey) trxSubPanelByKey[k].style.display = k === key ? "" : "none"; } },
+    );
+    tabTransaksi.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
+      "Dua ledger terpisah -- langganan SaaS tenant KE Rivoir, dan booking customer KE tenant. Keduanya TIDAK PERNAH digabung jadi satu daftar."));
+    tabTransaksi.appendChild(trxSubTabsCtl.bar);
+    tabTransaksi.appendChild(trxSubLangganan);
+    tabTransaksi.appendChild(trxSubBooking);
+    trxSubLangganan.appendChild(langgananSummaryCard);
+    trxSubLangganan.appendChild(langgananCard);
+    trxSubBooking.appendChild(bookingSummaryCard);
+    trxSubBooking.appendChild(bookingCard);
 
     // ---------------------------------------------------------------
     // 0. DASHBOARD -- Ringkasan Sistem (murni dihitung dari data yang SUDAH
@@ -1463,12 +1503,18 @@ const PageSuperadmin = (() => {
 
     // ---------------------------------------------------------------
     // 13. RIWAYAT TRANSAKSI (Implementasi Payment Gateway & Riwayat
-    // Transaksi Multi-Tenant) -- pusat monitoring SELURUH transaksi
-    // pembayaran platform (booking customer + langganan SaaS Owner), murni
-    // MEMBACA lewat transaction_report_db.py (require_superadmin, lihat
-    // routers/transaction_report.py). Status pembayaran yang tampil di sini
-    // TIDAK PERNAH bisa diubah dari layar ini -- HANYA berubah lewat
-    // webhook resmi provider (billing_webhook.py/booking_gateway_webhook.py).
+    // Transaksi Multi-Tenant, restrukturisasi ledger Agustus 2026) -- pusat
+    // monitoring transaksi pembayaran platform, murni MEMBACA lewat
+    // transaction_report_db.py (require_superadmin, lihat routers/
+    // transaction_report.py). Status pembayaran yang tampil di sini TIDAK
+    // PERNAH bisa diubah dari layar ini -- HANYA berubah lewat webhook
+    // resmi provider (billing_webhook.py/booking_gateway_webhook.py).
+    //
+    // DUA LEDGER TERPISAH, `jenis` DIKUNCI per bagian (bukan dropdown) --
+    // bikinBagianRiwayat() di bawah dipanggil DUA KALI dengan jenisTetap
+    // berbeda, masing-masing punya filter/summary/tabel/export SENDIRI,
+    // TIDAK PERNAH memanggil endpoint tanpa `jenis` (yang akan
+    // menggabungkan keduanya).
     // ---------------------------------------------------------------
     const TRX_STATUS_LABEL = {
       menunggu_pembayaran: "Menunggu Pembayaran",
@@ -1488,56 +1534,11 @@ const PageSuperadmin = (() => {
       dibatalkan: "badge-danger",
       refund: "badge-warning",
     };
-    const TRX_JENIS_LABEL = { booking: "Booking", langganan: "Langganan SaaS" };
 
     function trxStatusBadge(status) {
       return MugenUI.el("span", { class: "badge" + (TRX_STATUS_BADGE[status] ? " " + TRX_STATUS_BADGE[status] : "") },
         TRX_STATUS_LABEL[status] || status);
     }
-
-    transaksiSummaryCard.appendChild(MugenUI.el("h2", {}, "Riwayat Transaksi -- Ringkasan"));
-    const transaksiSummaryBody = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-top:12px;" });
-    transaksiSummaryCard.appendChild(transaksiSummaryBody);
-    const transaksiPerTenantBody = MugenUI.el("div", { style: "margin-top:16px;" });
-    transaksiSummaryCard.appendChild(transaksiPerTenantBody);
-
-    transaksiCard.appendChild(MugenUI.el("h2", {}, "Riwayat Transaksi"));
-    transaksiCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Seluruh transaksi pembayaran platform (booking customer + langganan SaaS Owner). Status HANYA berubah otomatis lewat notifikasi resmi provider (webhook), tidak pernah dari layar ini."));
-
-    const trxSelTenant = MugenUI.el("select");
-    trxSelTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
-    const trxInputMulai = MugenUI.el("input", { type: "date" });
-    const trxInputSelesai = MugenUI.el("input", { type: "date" });
-    const trxSelJenis = MugenUI.el("select", {}, [
-      MugenUI.el("option", { value: "" }, "Semua Jenis"),
-      MugenUI.el("option", { value: "booking" }, "Booking"),
-      MugenUI.el("option", { value: "langganan" }, "Langganan SaaS"),
-    ]);
-    const trxSelStatus = MugenUI.el("select");
-    trxSelStatus.appendChild(MugenUI.el("option", { value: "" }, "Semua Status"));
-    for (const [k, label] of Object.entries(TRX_STATUS_LABEL)) trxSelStatus.appendChild(MugenUI.el("option", { value: k }, label));
-    const trxInputMetode = MugenUI.el("input", { type: "text", placeholder: "mis. gateway, transfer, qris" });
-    const trxInputChannel = MugenUI.el("input", { type: "text", placeholder: "mis. qris, bank_transfer" });
-    const trxInputCari = MugenUI.el("input", { type: "text", placeholder: "No. transaksi/toko/customer/Booking ID/Transaction ID/Reference ID" });
-    const trxBtnFilter = MugenUI.el("button", { class: "btn-primary" }, "Terapkan Filter");
-    const trxBtnExport = MugenUI.el("button", {}, "Export CSV");
-
-    transaksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), trxSelTenant]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), trxInputMulai]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), trxInputSelesai]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Jenis"), trxSelJenis]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), trxSelStatus]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode"), trxInputMetode]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Channel"), trxInputChannel]),
-      MugenUI.el("div", { style: "flex:1;min-width:240px;" }, [MugenUI.el("label", {}, "Cari"), trxInputCari]),
-      trxBtnFilter,
-      trxBtnExport,
-    ]));
-
-    const trxListBody = MugenUI.el("div", { style: "margin-top:12px;" });
-    transaksiCard.appendChild(trxListBody);
 
     function trxWaktuLengkap(iso) {
       if (!iso) return "-";
@@ -1545,17 +1546,14 @@ const PageSuperadmin = (() => {
       return `${MugenUI.formatTanggal(tanggal)} ${(jam || "").slice(0, 8)}`.trim();
     }
 
-    function trxQueryString() {
-      const params = new URLSearchParams();
-      if (trxSelTenant.value) params.set("tenant_id", trxSelTenant.value);
-      if (trxInputMulai.value) params.set("tanggal_mulai", trxInputMulai.value);
-      if (trxInputSelesai.value) params.set("tanggal_selesai", trxInputSelesai.value + "T23:59:59");
-      if (trxSelJenis.value) params.set("jenis", trxSelJenis.value);
-      if (trxSelStatus.value) params.set("status", trxSelStatus.value);
-      if (trxInputMetode.value.trim()) params.set("metode_pembayaran", trxInputMetode.value.trim());
-      if (trxInputChannel.value.trim()) params.set("channel_pembayaran", trxInputChannel.value.trim());
-      if (trxInputCari.value.trim()) params.set("cari", trxInputCari.value.trim());
-      return params.toString();
+    function trxPeriodeLengkap(mulai, selesai) {
+      // periode_mulai/periode_selesai tersimpan sebagai ISO datetime PENUH
+      // (lihat billing_webhook.py) -- MugenUI.formatTanggal() cuma pecah
+      // "-" (untuk "YYYY-MM-DD" polos), jadi WAJIB buang bagian jam dulu
+      // (pola sama seperti formatWaktu() di atas), atau hasilnya kacau.
+      if (!mulai && !selesai) return "-";
+      const tglSaja = (iso) => (iso ? MugenUI.formatTanggal(iso.split("T")[0]) : "-");
+      return `${tglSaja(mulai)} s/d ${tglSaja(selesai)}`;
     }
 
     async function trxLihatDetail(ringkas) {
@@ -1564,7 +1562,7 @@ const PageSuperadmin = (() => {
         const body = [
           MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
             MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"), trxStatusBadge(detail.status_unified)]),
-            MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Jenis"), MugenUI.el("div", {}, TRX_JENIS_LABEL[detail.jenis] || detail.jenis)]),
+            MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Jenis Transaksi"), MugenUI.el("div", {}, detail.jenis_transaksi || "-")]),
             MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Nominal"), MugenUI.el("div", {}, MugenUI.formatRupiah(detail.nominal))]),
           ]),
           MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
@@ -1575,6 +1573,7 @@ const PageSuperadmin = (() => {
           MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
             MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Barber"), MugenUI.el("div", {}, detail.barber_nama || "-")]),
             MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Layanan/Paket"), MugenUI.el("div", {}, detail.layanan || "-")]),
+            MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Periode"), MugenUI.el("div", {}, trxPeriodeLengkap(detail.periode_mulai, detail.periode_selesai))]),
           ]),
           MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
             MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Metode"), MugenUI.el("div", {}, detail.metode_pembayaran || "-")]),
@@ -1615,84 +1614,169 @@ const PageSuperadmin = (() => {
       }
     }
 
-    async function loadTransaksi() {
-      trxSelTenant.innerHTML = "";
-      trxSelTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
-      for (const t of tenantList) trxSelTenant.appendChild(MugenUI.el("option", { value: String(t.id) }, t.nama_barbershop));
+    // Factory dipanggil dua kali (langganan & booking) di bawah -- SATU
+    // ledger per panggilan, `jenisTetap` SELALU dikirim ke endpoint,
+    // TIDAK PERNAH lewat form/dropdown yang bisa diganti pengguna.
+    function bikinBagianRiwayat({ jenisTetap, judul, deskripsi, summaryCard, listCard, kolomTabel, namaFileCsv, idKolomLabel }) {
+      const summaryBody = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-top:12px;" });
+      summaryCard.appendChild(MugenUI.el("h2", {}, `${judul} -- Ringkasan`));
+      summaryCard.appendChild(summaryBody);
+      const perTenantBody = MugenUI.el("div", { style: "margin-top:16px;" });
+      summaryCard.appendChild(perTenantBody);
 
-      transaksiSummaryBody.innerHTML = "";
-      transaksiSummaryBody.appendChild(MugenUI.skeleton("card", { lines: 2 }));
-      trxListBody.innerHTML = "";
-      trxListBody.appendChild(MugenUI.skeleton("table", { cols: 8, rows: 4 }));
-      try {
-        const hasil = await MugenApi.get(`/api/superadmin/transactions?${trxQueryString()}`);
-        const { transactions, summary } = hasil;
+      listCard.appendChild(MugenUI.el("h2", {}, judul));
+      listCard.appendChild(MugenUI.el("div", { class: "subtitle" }, deskripsi));
 
-        transaksiSummaryBody.innerHTML = "";
-        transaksiSummaryBody.appendChild(statTile("Total Transaksi", summary.total_transaksi));
-        transaksiSummaryBody.appendChild(statTile("Booking", summary.total_booking));
-        transaksiSummaryBody.appendChild(statTile("Langganan SaaS", summary.total_langganan));
-        transaksiSummaryBody.appendChild(statTile("Berhasil", summary.total_berhasil));
-        transaksiSummaryBody.appendChild(statTile("Pending", summary.total_pending));
-        transaksiSummaryBody.appendChild(statTile("Gagal", summary.total_gagal));
-        transaksiSummaryBody.appendChild(statTile("Dibatalkan", summary.total_dibatalkan));
-        transaksiSummaryBody.appendChild(statTile("Total Nilai (Berhasil)", MugenUI.formatRupiah(summary.total_nilai)));
+      const selTenant = MugenUI.el("select");
+      selTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
+      const inputMulai = MugenUI.el("input", { type: "date" });
+      const inputSelesai = MugenUI.el("input", { type: "date" });
+      const selStatus = MugenUI.el("select");
+      selStatus.appendChild(MugenUI.el("option", { value: "" }, "Semua Status"));
+      for (const [k, label] of Object.entries(TRX_STATUS_LABEL)) selStatus.appendChild(MugenUI.el("option", { value: k }, label));
+      const inputMetode = MugenUI.el("input", { type: "text", placeholder: "mis. gateway, transfer, qris" });
+      const inputCari = MugenUI.el("input", { type: "text", placeholder: `Cari ${idKolomLabel}/toko/nomor transaksi` });
+      const btnFilter = MugenUI.el("button", { class: "btn-primary" }, "Terapkan Filter");
+      const btnExport = MugenUI.el("button", {}, "Export CSV");
 
-        transaksiPerTenantBody.innerHTML = "";
-        transaksiPerTenantBody.appendChild(MugenUI.el("h3", {}, "Per Toko (sesuai filter)"));
-        transaksiPerTenantBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "tenant_nama", label: "Toko" },
-            { key: "jumlah_transaksi", label: "Jumlah Transaksi" },
-            { key: "omzet", label: "Omzet (Berhasil)", format: MugenUI.formatRupiah },
-          ],
-          summary.per_tenant || [],
-          { emptyText: "Belum ada transaksi sesuai filter." },
-        ));
+      listCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), selTenant]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), inputMulai]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), inputSelesai]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Pembayaran"), inputMetode]),
+        MugenUI.el("div", { style: "flex:1;min-width:240px;" }, [MugenUI.el("label", {}, "Cari"), inputCari]),
+        btnFilter,
+        btnExport,
+      ]));
 
-        trxListBody.innerHTML = "";
-        trxListBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "nomor_transaksi", label: "No. Transaksi" },
-            { key: "tanggal", label: "Tanggal", format: trxWaktuLengkap },
-            { key: "jenis", label: "Jenis", format: (v) => TRX_JENIS_LABEL[v] || v },
-            { key: "tenant_nama", label: "Toko" },
-            { key: "customer_nama", label: "Customer", format: (v) => v || "-" },
-            { key: "booking_id", label: "Booking ID", format: (v) => (v != null ? String(v) : "-") },
-            { key: "barber_nama", label: "Barber", format: (v) => v || "-" },
-            { key: "layanan", label: "Layanan/Paket" },
-            { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
-            { key: "metode_pembayaran", label: "Metode" },
-            { key: "channel_pembayaran", label: "Channel", format: (v) => v || "-" },
-            { key: "status_unified", label: "Status", format: trxStatusBadge },
-            { key: "transaction_id_provider", label: "Transaction ID", format: (v) => v || "-" },
-            { key: "reference_id_provider", label: "Reference ID", format: (v) => v || "-" },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                const btn = MugenUI.el("button", {}, "Detail");
-                btn.addEventListener("click", () => trxLihatDetail(r));
-                return btn;
-              },
-            },
-          ],
-          transactions,
-          { emptyText: "Belum ada transaksi sesuai filter." },
-        ));
-      } catch (e) {
-        transaksiSummaryBody.innerHTML = "";
-        transaksiSummaryBody.appendChild(MugenUI.errorState(e.message));
-        trxListBody.innerHTML = "";
-        trxListBody.appendChild(MugenUI.errorState(e.message));
+      const listBody = MugenUI.el("div", { style: "margin-top:12px;" });
+      listCard.appendChild(listBody);
+
+      function queryString() {
+        const params = new URLSearchParams();
+        params.set("jenis", jenisTetap);
+        if (selTenant.value) params.set("tenant_id", selTenant.value);
+        if (inputMulai.value) params.set("tanggal_mulai", inputMulai.value);
+        if (inputSelesai.value) params.set("tanggal_selesai", inputSelesai.value + "T23:59:59");
+        if (selStatus.value) params.set("status", selStatus.value);
+        if (inputMetode.value.trim()) params.set("metode_pembayaran", inputMetode.value.trim());
+        if (inputCari.value.trim()) params.set("cari", inputCari.value.trim());
+        return params.toString();
       }
+
+      async function load() {
+        selTenant.innerHTML = "";
+        selTenant.appendChild(MugenUI.el("option", { value: "" }, "Semua Toko"));
+        for (const t of tenantList) selTenant.appendChild(MugenUI.el("option", { value: String(t.id) }, t.nama_barbershop));
+
+        summaryBody.innerHTML = "";
+        summaryBody.appendChild(MugenUI.skeleton("card", { lines: 2 }));
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 8, rows: 4 }));
+        try {
+          const hasil = await MugenApi.get(`/api/superadmin/transactions?${queryString()}`);
+          const { transactions, summary } = hasil;
+
+          summaryBody.innerHTML = "";
+          summaryBody.appendChild(statTile("Total Transaksi", summary.total_transaksi));
+          summaryBody.appendChild(statTile("Berhasil", summary.total_berhasil));
+          summaryBody.appendChild(statTile("Pending", summary.total_pending));
+          summaryBody.appendChild(statTile("Gagal", summary.total_gagal));
+          summaryBody.appendChild(statTile("Dibatalkan", summary.total_dibatalkan));
+          summaryBody.appendChild(statTile("Total Nominal (Berhasil)", MugenUI.formatRupiah(summary.total_nilai)));
+
+          perTenantBody.innerHTML = "";
+          perTenantBody.appendChild(MugenUI.el("h3", {}, "Per Toko (sesuai filter)"));
+          perTenantBody.appendChild(MugenUI.buildTable(
+            [
+              { key: "tenant_nama", label: "Toko" },
+              { key: "jumlah_transaksi", label: "Jumlah Transaksi" },
+              { key: "omzet", label: "Total Nominal (Berhasil)", format: MugenUI.formatRupiah },
+            ],
+            summary.per_tenant || [],
+            { emptyText: "Belum ada transaksi sesuai filter." },
+          ));
+
+          listBody.innerHTML = "";
+          listBody.appendChild(MugenUI.buildTable(kolomTabel(trxLihatDetail), transactions,
+            { emptyText: "Belum ada transaksi sesuai filter." }));
+        } catch (e) {
+          summaryBody.innerHTML = "";
+          summaryBody.appendChild(MugenUI.errorState(e.message));
+          listBody.innerHTML = "";
+          listBody.appendChild(MugenUI.errorState(e.message));
+        }
+      }
+      btnFilter.addEventListener("click", load);
+      btnExport.addEventListener("click", async () => {
+        try {
+          await MugenUI.withButtonLoading(btnExport, () => MugenApi.downloadFile(`/api/superadmin/transactions/export?${queryString()}`, namaFileCsv));
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      return { load };
     }
-    trxBtnFilter.addEventListener("click", loadTransaksi);
-    trxBtnExport.addEventListener("click", async () => {
-      try {
-        await MugenUI.withButtonLoading(trxBtnExport, () => MugenApi.downloadFile(`/api/superadmin/transactions/export?${trxQueryString()}`, "riwayat-transaksi.csv"));
-      } catch (e) {
-        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-      }
+
+    function kolomAksiDetail(lihatDetail) {
+      return {
+        key: "aksi", label: "Aksi", format: (_, r) => {
+          const btn = MugenUI.el("button", {}, "Detail");
+          btn.addEventListener("click", () => lihatDetail(r));
+          return btn;
+        },
+      };
+    }
+
+    const bagianLangganan = bikinBagianRiwayat({
+      jenisTetap: "langganan",
+      judul: "Riwayat Langganan Tenant",
+      deskripsi: "Pembayaran langganan SaaS tenant KE Rivoir (Langganan Baru/Perpanjangan/Upgrade Paket). TIDAK berisi transaksi booking customer sama sekali.",
+      summaryCard: langgananSummaryCard,
+      listCard: langgananCard,
+      namaFileCsv: "riwayat-langganan-tenant.csv",
+      idKolomLabel: "ID transaksi",
+      kolomTabel: (lihatDetail) => [
+        { key: "tanggal", label: "Tanggal & Waktu", format: trxWaktuLengkap },
+        { key: "tenant_nama", label: "Tenant" },
+        { key: "jenis_transaksi", label: "Jenis Transaksi", format: (v) => v || "-" },
+        { key: "layanan", label: "Paket", format: (v) => (v || "").replace(/^Paket /, "") || "-" },
+        { key: "periode_mulai", label: "Periode", format: (_, r) => trxPeriodeLengkap(r.periode_mulai, r.periode_selesai) },
+        { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
+        { key: "metode_pembayaran", label: "Metode Pembayaran", format: (v) => v || "-" },
+        { key: "status_unified", label: "Status", format: trxStatusBadge },
+        { key: "nomor_transaksi", label: "ID Transaksi" },
+        kolomAksiDetail(lihatDetail),
+      ],
     });
+
+    const bagianBooking = bikinBagianRiwayat({
+      jenisTetap: "booking",
+      judul: "Riwayat Booking Tenant",
+      deskripsi: "Pembayaran booking customer KE tenant lewat Payment Gateway (Payment Booking/Refund Booking/Pembayaran Gagal/Expired). TIDAK berisi transaksi langganan SaaS sama sekali.",
+      summaryCard: bookingSummaryCard,
+      listCard: bookingCard,
+      namaFileCsv: "riwayat-booking-tenant.csv",
+      idKolomLabel: "Booking ID/Payment ID",
+      kolomTabel: (lihatDetail) => [
+        { key: "tanggal", label: "Tanggal & Waktu", format: trxWaktuLengkap },
+        { key: "tenant_nama", label: "Tenant" },
+        { key: "booking_id", label: "Booking ID", format: (v) => (v != null ? String(v) : "-") },
+        { key: "customer_nama", label: "Customer", format: (v) => v || "-" },
+        { key: "layanan", label: "Layanan", format: (v) => v || "-" },
+        { key: "jenis_transaksi", label: "Jenis Transaksi", format: (v) => v || "-" },
+        { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
+        { key: "metode_pembayaran", label: "Metode Pembayaran", format: (v) => v || "-" },
+        { key: "status_unified", label: "Status", format: trxStatusBadge },
+        { key: "transaction_id_provider", label: "Payment ID", format: (v) => v || "-" },
+        kolomAksiDetail(lihatDetail),
+      ],
+    });
+
+    async function loadTransaksi() {
+      await Promise.all([bagianLangganan.load(), bagianBooking.load()]);
+    }
 
     // ---------------------------------------------------------------
     // 14. RIWAYAT AKSI (Audit Log)

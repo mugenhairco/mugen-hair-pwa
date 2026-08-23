@@ -56,9 +56,9 @@ def detail_transaction(jenis: str, transaction_id: int, user: dict = Depends(req
 
 
 _KOLOM_EXPORT = [
-    "nomor_transaksi", "tanggal", "jenis", "tenant_nama", "customer_nama", "booking_id",
-    "barber_nama", "layanan", "nominal", "metode_pembayaran", "channel_pembayaran",
-    "status_unified", "transaction_id_provider", "reference_id_provider", "paid_at",
+    "nomor_transaksi", "tanggal", "jenis", "jenis_transaksi", "tenant_nama", "customer_nama", "booking_id",
+    "barber_nama", "layanan", "periode_mulai", "periode_selesai", "nominal", "metode_pembayaran",
+    "channel_pembayaran", "status_unified", "transaction_id_provider", "reference_id_provider", "paid_at",
 ]
 
 
