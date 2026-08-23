@@ -1118,7 +1118,7 @@ def reschedule_booking(booking_id: int, tenant_id: int = None, barber_id: int = 
     if booking["status_booking"] != "aktif":
         raise ValueError("Booking ini sudah dibatalkan.")
     if booking["metode_pembayaran"] == "gateway":
-        raise ValueError("Booking Payment Gateway tidak bisa di-reschedule manual.")
+        raise ValueError("Booking Payment Gateway tidak bisa dijadwal ulang manual.")
 
     barber_baru = barber_id if barber_id is not None else booking["barber_id"]
     tanggal_baru = tanggal if tanggal is not None else booking["tanggal"]

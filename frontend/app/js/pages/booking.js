@@ -524,7 +524,7 @@ const PageBooking = (() => {
           // (cabang else di bawah, tidak diubah sama sekali).
           if (r.status_booking === "aktif" && r.status_pembayaran === "terverifikasi"
               && r.metode_pembayaran !== "gateway" && onReschedule) {
-            const btn = MugenUI.el("button", {}, "Reschedule");
+            const btn = MugenUI.el("button", {}, "Jadwal Ulang");
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               try { await onReschedule(r); } finally { btn.disabled = false; }
@@ -594,7 +594,7 @@ const PageBooking = (() => {
       }
 
       const errorBox = MugenUI.el("div", { class: "login-error" });
-      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Reschedule");
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Jadwal Ulang");
 
       const form = MugenUI.el("div", {}, [
         MugenUI.el("label", {}, "Barber"), selBarber,
@@ -605,7 +605,7 @@ const PageBooking = (() => {
         MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan),
       ]);
 
-      const modal = MugenUI.infoModal({ title: `Reschedule -- ${booking.customer_nama}`, body: form });
+      const modal = MugenUI.infoModal({ title: `Jadwal Ulang -- ${booking.customer_nama}`, body: form });
       let selesai = false;
       // infoModal() sendiri sudah punya tombol "Tutup" + klik-di-luar-kotak
       // untuk menutup overlay-nya (lihat ui.js) -- di sini HANYA menitipkan
@@ -651,7 +651,7 @@ const PageBooking = (() => {
     // yang SUDAH ADA lagi -- setiap panggilan MugenApi.get() SELALU ke
     // server dulu (useCache di sini cuma fallback offline, lihat api.js),
     // jadi tidak perlu bypass cache apa pun.
-    const btnRefresh = MugenUI.el("button", { type: "button", title: "Refresh Booking" }, "↻ Refresh");
+    const btnRefresh = MugenUI.el("button", { type: "button", title: "Muat Ulang Booking" }, "↻ Muat Ulang");
     row.appendChild(btnRefresh);
     const tableWrap = MugenUI.el("div");
     body.appendChild(row);
@@ -699,7 +699,7 @@ const PageBooking = (() => {
           onReschedule: async (r) => {
             const berhasil = await bukaRescheduleModal(r, barbers, services || []);
             if (berhasil) {
-              MugenUI.toast("Booking berhasil di-reschedule.", "success", { force: true });
+              MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
               load();
             }
           },

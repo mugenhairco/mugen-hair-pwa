@@ -461,7 +461,7 @@ def reschedule_booking(booking_id: int, body: RescheduleBody, user: dict = Depen
     if booking["metode_pembayaran"] == "gateway":
         raise HTTPException(
             status_code=422,
-            detail="Booking Payment Gateway tidak bisa di-reschedule -- payment gateway tidak boleh diubah manual.",
+            detail="Booking Payment Gateway tidak bisa dijadwal ulang -- payment gateway tidak boleh diubah manual.",
         )
     try:
         return booking_db.reschedule_booking(
