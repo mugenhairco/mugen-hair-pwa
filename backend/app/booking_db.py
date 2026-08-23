@@ -80,6 +80,60 @@ def _sekarang_wib() -> datetime:
 def _hari_ini_wib() -> date:
     return _sekarang_wib().date()
 
+
+def _inisial_tenant(nama: str) -> str:
+    """2 huruf inisial nama tenant untuk nomor transaksi booking (format
+    baru) -- huruf pertama dari DUA kata pertama nama tenant ("Mugen Hair
+    Co Barber Shop" -> "MH", "King Barber Shop" -> "KB"), TIDAK PERNAH dari
+    nama service (lihat _buat_nomor_transaksi_booking())."""
+    kata = [k for k in (nama or "").split() if k]
+    if len(kata) >= 2:
+        return (kata[0][0] + kata[1][0]).upper()
+    if kata:
+        return kata[0][:2].upper().ljust(2, "X")
+    return "XX"
+
+
+def _buat_nomor_transaksi_booking(sekarang_wib: datetime, tanggal_booking: str, jam_mulai: str, nama_tenant: str) -> str:
+    """Format BARU nomor transaksi booking (permintaan Owner, MENGGANTIKAN
+    rumus lama berbasis inisial nama service -- lihat ui.js::
+    buatNomorTransaksi(), yang sekarang HANYA jadi fallback tampilan untuk
+    booking LAMA yang kolom `bookings.nomor_transaksi`-nya NULL):
+
+    [JAM KONFIRMASI][MENIT KONFIRMASI][TANGGAL BOOKING][BULAN BOOKING]
+    [JAM BOOKING][INISIAL TENANT]
+
+    - Jam+menit konfirmasi: waktu AKTUAL saat baris booking ini dibuat
+      (`sekarang_wib` -- SELALU _sekarang_wib(), lihat pemanggil), BUKAN
+      jam appointment.
+    - Tanggal+bulan: tanggal booking yang dipilih customer (bukan hari ini
+      kalender).
+    - Jam booking: HANYA jam (2 digit) dari jam_mulai appointment, menitnya
+      SENGAJA dibuang (beda dari rumus lama yang menyertakan menit booking).
+    - Inisial tenant: lihat _inisial_tenant().
+
+    Contoh: konfirmasi 17:05, booking 07 Agustus jam 13:00, tenant "Mugen
+    Hair Co Barber Shop" -> "1705071313MH"."""
+    d = datetime.strptime(tanggal_booking, "%Y-%m-%d")
+    jam_booking_saja = (jam_mulai or "00:00").split(":")[0].zfill(2)[:2]
+    return (
+        f"{sekarang_wib.hour:02d}{sekarang_wib.minute:02d}"
+        f"{d.day:02d}{d.month:02d}"
+        f"{jam_booking_saja}"
+        f"{_inisial_tenant(nama_tenant)}"
+    )
+
+
+def _di_luar_jam_operasional(sekarang_wib: datetime, jam_buka: str, jam_tutup: str) -> bool:
+    """Bandingkan jam SAAT INI (WIB, wajib _sekarang_wib() -- lihat catatan
+    panjang soal Render server default UTC di atas) terhadap jam operasional
+    tenant. Batas jam_tutup EKSKLUSIF (tepat di jam_tutup dianggap SUDAH
+    tutup, konsisten dengan validasi slot booking di atas yang menolak slot
+    berakhir SETELAH jam_tutup) -- jam_buka INKLUSIF (tepat di jam_buka
+    dianggap SUDAH buka)."""
+    menit_sekarang = sekarang_wib.hour * 60 + sekarang_wib.minute
+    return not (_ke_menit(jam_buka) <= menit_sekarang < _ke_menit(jam_tutup))
+
 BOOKING_SETTINGS_KEYS = [
     "booking_jam_buka", "booking_jam_tutup", "booking_interval_menit",
     "booking_maksimal_hari_kedepan",
@@ -815,6 +869,32 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
 
     jam_selesai = _ke_hhmm(_ke_menit(jam_mulai) + total_durasi)
     now = datetime.now().isoformat(timespec="seconds")
+
+    # Format Baru Nomor Transaksi Booking + Pesan Otomatis Berdasarkan Jam
+    # Operasional Tenant (permintaan Owner): KEDUANYA harus dihitung dari
+    # waktu AKTUAL saat customer menekan/menjalankan proses booking (momen
+    # baris ini dibuat), BUKAN jam appointment yang dipilih -- WAJIB
+    # _sekarang_wib() (BUKAN `now`/datetime.now() polos di atas, yang
+    # mengikuti zona waktu server/Render, defaultnya UTC, lihat catatan
+    # panjang WIB di atas modul ini) supaya perbandingan terhadap
+    # jam_buka/jam_tutup (selalu jam dinding WIB) benar apa pun zona waktu
+    # host server-nya.
+    sekarang_wib = _sekarang_wib()
+    nama_tenant = None
+    if tenant_id is not None:
+        import tenant_db  # import lokal: hindari import siklik
+        t = tenant_db.get_tenant(tenant_id)
+        nama_tenant = t["nama_barbershop"] if t else None
+    # `nomor_transaksi` TETAP None kalau nama_tenant tidak diketahui (mis.
+    # tenant_id=None, jalur non-multi-tenant lama) -- kolom NULL berarti
+    # frontend jatuh ke rumus lama (MugenUI.buatNomorTransaksi()), SAMA
+    # PERSIS perlakuan untuk booking yang benar-benar dibuat sebelum
+    # migrasi ini (lihat nomor_transaksi_booking_migrasi.py).
+    nomor_transaksi = (
+        _buat_nomor_transaksi_booking(sekarang_wib, tanggal, jam_mulai, nama_tenant)
+        if nama_tenant else None
+    )
+    dibuat_di_luar_jam_operasional = _di_luar_jam_operasional(sekarang_wib, pesan["jam_buka"], pesan["jam_tutup"])
     # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: SEMUA
     # metode (termasuk "gateway") SEKARANG mulai 'menunggu_verifikasi' --
     # SEBELUMNYA "gateway" langsung dianggap 'terverifikasi' begitu wizard
@@ -838,11 +918,11 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
             cur = conn.execute(
                 "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
                 "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
-                "status_pembayaran, status_booking, catatan, created_at, tenant_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?)",
+                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?)",
                 (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
                  customer_whatsapp.strip(), total_harga, total_durasi, metode_pembayaran,
-                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id),
+                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi),
             )
             booking_id = cur.lastrowid
             for s in items:
@@ -852,6 +932,12 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
                     (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
                 )
     booking_baru = get_booking(booking_id)
+    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: field TRANSIEN,
+    # HANYA dipakai layar konfirmasi wizard booking publik tepat setelah
+    # booking ini dibuat (book_public.js::renderConfirmed()) -- SENGAJA
+    # TIDAK disimpan ke kolom apa pun (tidak perlu dibaca ulang di lain
+    # waktu, beda dari nomor_transaksi yang memang harus persisten).
+    booking_baru["dibuat_di_luar_jam_operasional"] = dibuat_di_luar_jam_operasional
     # FITUR Notifikasi WhatsApp Otomatis Booking: HANYA metode "qris" (QRIS
     # offline yang di-upload Owner, customer scan sendiri) yang butuh
     # reminder segera bayar -- metode lain (cash/transfer dibayar langsung

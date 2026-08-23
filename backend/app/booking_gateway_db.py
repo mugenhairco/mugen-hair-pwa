@@ -20,6 +20,7 @@ import json
 import uuid
 from datetime import datetime
 
+import db_compat
 from database import get_conn
 
 STATUS_VALID = {"menunggu_pembayaran", "diproses", "berhasil", "gagal", "kedaluwarsa", "dibatalkan", "refund"}
@@ -39,24 +40,55 @@ def buat_order_id(tenant_id: int, booking_id: int) -> str:
 
 
 def _buat_nomor_transaksi() -> str:
+    """Fallback LAMA (TRX-YYYYMMDD-HEX8) -- HANYA dipakai kalau pemanggil
+    tidak mengoper `nomor_transaksi` (lihat buat_transaksi()), mis. booking
+    lama yang belum punya bookings.nomor_transaksi (kolom NULL, dibuat
+    sebelum Format Baru Nomor Transaksi Booking ada). Booking BARU normal
+    SELALU mengoper nomor_transaksi milik booking-nya sendiri (dibuat
+    booking_db.buat_booking(), format [JAM KONFIRMASI][MENIT KONFIRMASI]
+    [TANGGAL BOOKING][BULAN BOOKING][JAM BOOKING][INISIAL TENANT]) supaya
+    SATU nomor yang sama tampil konsisten di layar pembayaran customer,
+    Riwayat Transaksi, dan Super Admin -- BUKAN dua nomor berbeda untuk
+    booking yang sama."""
     return f"TRX-{datetime.now():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}"
 
 
 def buat_transaksi(order_id: str, tenant_id: int, tenant_nama: str, booking_id: int,
                     customer_nama: str, barber_nama: str, layanan: str, nominal: int,
-                    checkout_token: str = None, checkout_redirect_url: str = None) -> dict:
-    nomor_transaksi = _buat_nomor_transaksi()
+                    checkout_token: str = None, checkout_redirect_url: str = None,
+                    nomor_transaksi: str = None) -> dict:
+    nomor_dasar = nomor_transaksi or _buat_nomor_transaksi()
     now = _now()
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO booking_payment_transactions "
-            "(tenant_id, tenant_nama, booking_id, order_id, nomor_transaksi, customer_nama, barber_nama, "
-            "layanan, nominal, metode_pembayaran, status_pembayaran, checkout_token, checkout_redirect_url, "
-            "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'gateway', 'menunggu_pembayaran', ?, ?, ?, ?)",
-            (tenant_id, tenant_nama, booking_id, order_id, nomor_transaksi, customer_nama, barber_nama,
-             layanan, nominal, checkout_token, checkout_redirect_url, now, now),
-        )
+    # Format Baru Nomor Transaksi Booking TIDAK menyertakan bagian acak
+    # apa pun (permintaan Owner, lihat booking_db.py::
+    # _buat_nomor_transaksi_booking()) -- beda dari _buat_nomor_transaksi()
+    # lama yang selalu bersufiks UUID (praktis tidak pernah tabrakan).
+    # `nomor_transaksi` di tabel ini TETAP UNIQUE (kolom lama, TIDAK
+    # diubah) -- SECARA TEORI bisa tabrakan (dua tenant berinisial sama +
+    # konfirmasi di menit sama + tanggal&jam booking sama, kebetulan yang
+    # jarang tapi bukan mustahil). Pengaman JAGA-JAGA murni di sini (BUKAN
+    # mengubah format nomor untuk kasus normal): kalau tabrakan, tambahkan
+    # sufiks "-2"/"-3"/dst dan coba lagi -- booking yang baru dibuat TIDAK
+    # PERNAH gagal checkout hanya karena nomor tampilannya kebetulan sama.
+    percobaan = 0
+    while True:
+        percobaan += 1
+        nomor_coba = nomor_dasar if percobaan == 1 else f"{nomor_dasar}-{percobaan}"
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO booking_payment_transactions "
+                    "(tenant_id, tenant_nama, booking_id, order_id, nomor_transaksi, customer_nama, barber_nama, "
+                    "layanan, nominal, metode_pembayaran, status_pembayaran, checkout_token, checkout_redirect_url, "
+                    "created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'gateway', 'menunggu_pembayaran', ?, ?, ?, ?)",
+                    (tenant_id, tenant_nama, booking_id, order_id, nomor_coba, customer_nama, barber_nama,
+                     layanan, nominal, checkout_token, checkout_redirect_url, now, now),
+                )
+            break
+        except db_compat.IntegrityError:
+            if percobaan >= 5:
+                raise
     return get_transaksi_by_order_id(order_id)
 
 
