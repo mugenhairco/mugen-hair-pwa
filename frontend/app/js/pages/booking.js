@@ -177,10 +177,15 @@ const PageBooking = (() => {
 
     let barbers = [];
     try { barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true }); } catch (e) { /* opsional */ }
+    // Item #3 spek Booking (Reschedule): daftar service untuk form-nya --
+    // dimuat sekali di sini (pola SAMA seperti `barbers` di atas), HANYA
+    // dipakai renderBookingList().
+    let services = [];
+    try { services = await MugenApi.get("/api/input-data/services", { useCache: true }); } catch (e) { /* opsional */ }
 
     async function renderBody(activeTab) {
       body.innerHTML = "";
-      if (activeTab === "Booking List") await renderBookingList(body, barbers);
+      if (activeTab === "Booking List") await renderBookingList(body, barbers, services);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
       else if (activeTab === "Operating Hours") await renderOperatingHours(body);
       else if (activeTab === "Barber Holiday") await renderBarberHoliday(body, barbers);
@@ -428,14 +433,28 @@ const PageBooking = (() => {
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
-  function bookingTable(rows, { withBarber = true, onTerimaBooking = null, onVerifikasi = null, onBatalkan = null } = {}) {
+  function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null, onReschedule = null } = {}) {
     // BOOKING UI/UX #1: No. Transaksi -- SATU-SATUNYA implementasi ada di
     // MugenUI.buatNomorTransaksi() (ui.js), dipakai di sini DAN di layar
     // Appointment Confirmed (book_public.js) supaya angkanya selalu sama
     // persis untuk booking yang sama.
     const namaBarbershop = MugenBrand.get().nama_barbershop;
     const columns = [
-      { key: "no_transaksi", label: "No. Transaksi", format: (_, r) => MugenUI.buatNomorTransaksi(r, namaBarbershop) },
+      {
+        // Item #4 spek Booking: highlight kuning kalau booking dibuat lebih
+        // awal dari tanggal appointment-nya (booking_db.py::_is_advance_booking()
+        // yang menghitung, sudah memperhitungkan konversi WIB -- frontend
+        // TINGGAL baca flag-nya, tidak menghitung ulang tanggal sendiri).
+        key: "no_transaksi", label: "No. Transaksi",
+        format: (_, r) => {
+          const nomor = MugenUI.buatNomorTransaksi(r, namaBarbershop);
+          if (!r.is_advance_booking) return nomor;
+          return MugenUI.el("span", {
+            style: "background:#fff3b0;color:#7a5b00;padding:2px 6px;border-radius:4px;font-weight:600;",
+            title: "Booking dibuat lebih awal dari tanggal appointment (booking advance)",
+          }, nomor);
+        },
+      },
       { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
       { key: "jam_mulai", label: "Jam", format: (_, r) => `${r.jam_mulai}-${r.jam_selesai}` },
       ...(withBarber ? [{ key: "nama_barber", label: "Barber" }] : []),
@@ -464,35 +483,22 @@ const PageBooking = (() => {
         format: (v) => MugenUI.el("span", { class: "badge" + (v === "aktif" ? "" : " badge-danger") }, STATUS_BOOKING_LABEL[v] || v),
       },
     ];
-    if (onTerimaBooking || onVerifikasi || onBatalkan) {
+    if (onVerifikasi || onBatalkan || onReschedule) {
       columns.push({
         key: "aksi", label: "Aksi", format: (_, r) => {
           const wrap = MugenUI.el("div", { class: "actions-cell" });
-          // FITUR Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp:
-          // "Verifikasi Booking" (admin menerima booking + WA "silakan
-          // bayar" kalau memang belum dibayar) -- INDEPENDEN dari "Payment
-          // Diterima" di bawah, disembunyikan begitu sudah ditekan SEKALI
-          // (verifikasi_booking_at terisi) ATAU begitu sudah dibayar
-          // (tidak relevan lagi klik "terima" kalau sudah lunas). Booking
-          // gateway TIDAK PERNAH punya tombol ini (checkout & pembayaran
-          // 100% otomatis lewat Faspay, lihat routers/booking.py::terima_booking()).
-          if (onTerimaBooking && r.metode_pembayaran !== "gateway" && !r.verifikasi_booking_at
-              && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
-            const btn = MugenUI.el("button", {}, "Verifikasi Booking");
-            btn.addEventListener("click", async () => {
-              btn.disabled = true;
-              try { await onTerimaBooking(r); } finally { btn.disabled = false; }
-            });
-            wrap.appendChild(btn);
-          }
-          // Booking gateway TIDAK PERNAH bisa diverifikasi manual (backend
-          // menolak 422 -- lihat routers/booking.py::verifikasi_booking()),
-          // jadi tombol "Payment Diterima" disembunyikan untuk metode ini.
-          // TIDAK mensyaratkan "Verifikasi Booking" di atas ditekan lebih
-          // dulu -- customer yang sudah bayar duluan bisa langsung
-          // dikonfirmasi (SESUAI SPEK, dua aksi independen).
+          // AUDIT tombol Verifikasi (permintaan Owner): tombol "Verifikasi
+          // Booking" (kirim ulang WA "silakan bayar" -- Fonnte SUDAH
+          // mengirimnya sekali otomatis saat booking dibuat, lihat
+          // buat_booking()) DIHAPUS dari sini. "Payment Diterima" di-relabel
+          // "Verifikasi" -- HANYA mengubah status_pembayaran jadi
+          // terverifikasi + kirim WA konfirmasi (beda pesan, BUKAN resend),
+          // TIDAK PERNAH membuat invoice/booking baru. Booking gateway TIDAK
+          // PERNAH bisa diverifikasi manual (backend menolak 422 -- lihat
+          // routers/booking.py::verifikasi_booking()), jadi tombol ini
+          // disembunyikan untuk metode itu.
           if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
-            const btn = MugenUI.el("button", {}, "Payment Diterima");
+            const btn = MugenUI.el("button", {}, "Verifikasi");
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               try { await onVerifikasi(r); } finally { btn.disabled = false; }
@@ -511,7 +517,20 @@ const PageBooking = (() => {
             });
             wrap.appendChild(btn);
           }
-          if (onBatalkan && r.status_booking === "aktif") {
+          // Item #2 spek Booking: begitu pembayaran terverifikasi (dan
+          // metode BUKAN gateway -- payment gateway tidak boleh disentuh),
+          // "Batalkan" diganti "Reschedule". Flow Batalkan Booking untuk
+          // booking yang BELUM terverifikasi TETAP PERSIS seperti semula
+          // (cabang else di bawah, tidak diubah sama sekali).
+          if (r.status_booking === "aktif" && r.status_pembayaran === "terverifikasi"
+              && r.metode_pembayaran !== "gateway" && onReschedule) {
+            const btn = MugenUI.el("button", {}, "Jadwal Ulang");
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try { await onReschedule(r); } finally { btn.disabled = false; }
+            });
+            wrap.appendChild(btn);
+          } else if (onBatalkan && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
             btn.addEventListener("click", async () => {
               btn.disabled = true;
@@ -547,10 +566,93 @@ const PageBooking = (() => {
     return { row, selBulan, selTahun, selBarber, selStatus };
   }
 
+  // Item #3 spek Booking: form Reschedule (ubah tanggal/jam/barber/service
+  // booking yang sudah terverifikasi) -- dipakai HANYA dari tombol
+  // "Reschedule" di renderBookingList() di bawah. Return Promise<bool>
+  // (true = berhasil disimpan, false = dibatalkan/ditutup) supaya
+  // pemanggil tahu kapan perlu refresh tabel.
+  function bukaRescheduleModal(booking, barbers, services) {
+    return new Promise((resolve) => {
+      const selBarber = MugenUI.el("select");
+      for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+      selBarber.value = String(booking.barber_id);
+
+      const inpTanggal = MugenUI.el("input", { type: "date", value: booking.tanggal });
+      const inpJam = MugenUI.el("input", { type: "time", value: booking.jam_mulai });
+
+      const serviceIdAktif = new Set((booking.items || []).map((it) => it.service_id));
+      const checkboxes = [];
+      const serviceBox = MugenUI.el("div", {
+        style: "display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;border:1px solid var(--border,#ddd);padding:8px;border-radius:6px;",
+      });
+      for (const s of services.filter((s) => s.aktif)) {
+        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        cb.checked = serviceIdAktif.has(s.id);
+        checkboxes.push({ cb, id: s.id });
+        serviceBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;width:auto;" },
+          [cb, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`]));
+      }
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Jadwal Ulang");
+
+      const form = MugenUI.el("div", {}, [
+        MugenUI.el("label", {}, "Barber"), selBarber,
+        MugenUI.el("label", {}, "Tanggal"), inpTanggal,
+        MugenUI.el("label", {}, "Jam Mulai"), inpJam,
+        MugenUI.el("label", {}, "Service"), serviceBox,
+        errorBox,
+        MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan),
+      ]);
+
+      const modal = MugenUI.infoModal({ title: `Jadwal Ulang -- ${booking.customer_nama}`, body: form });
+      let selesai = false;
+      // infoModal() sendiri sudah punya tombol "Tutup" + klik-di-luar-kotak
+      // untuk menutup overlay-nya (lihat ui.js) -- di sini HANYA menitipkan
+      // resolve(false) supaya Promise ini tidak menggantung kalau modal
+      // ditutup TANPA lewat btnSimpan (klik Tutup/klik luar/dst).
+      const overlay = btnSimpan.closest(".modal-overlay");
+      if (overlay) {
+        overlay.addEventListener("click", (e) => { if (e.target === overlay && !selesai) resolve(false); });
+        const btnTutup = overlay.querySelector(".modal-actions button");
+        if (btnTutup) btnTutup.addEventListener("click", () => { if (!selesai) resolve(false); });
+      }
+
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const serviceIdsBaru = checkboxes.filter((c) => c.cb.checked).map((c) => c.id);
+        if (!serviceIdsBaru.length) { errorBox.textContent = "Pilih minimal satu service."; return; }
+        if (!inpTanggal.value || !inpJam.value) { errorBox.textContent = "Tanggal dan Jam Mulai wajib diisi."; return; }
+        try {
+          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.post(`/api/booking/${booking.id}/reschedule`, {
+            barber_id: Number(selBarber.value), tanggal: inpTanggal.value, jam_mulai: inpJam.value,
+            service_ids: serviceIdsBaru,
+          }));
+          selesai = true;
+          modal.close();
+          resolve(true);
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+    });
+  }
+
   // ================= TAB: BOOKING LIST =================
-  async function renderBookingList(body, barbers) {
+  async function renderBookingList(body, barbers, services) {
     const today = new Date();
     const { row, selBulan, selTahun, selBarber, selStatus } = barberFilterRow(barbers, today);
+    // Item #5 spek Booking: tombol Refresh -- booking baru yang masuk lewat
+    // customer/webhook TIDAK PERNAH muncul di tabel ini sampai admin
+    // reload browser manual (load() di bawah HANYA terpanggil sekali saat
+    // tab dibuka + saat filter berubah, TIDAK ADA polling/auto-refresh
+    // tabelnya -- beda dari badge notifikasi MugenBookingNotif yang
+    // memang sudah polling sendiri). Tombol ini murni memanggil load()
+    // yang SUDAH ADA lagi -- setiap panggilan MugenApi.get() SELALU ke
+    // server dulu (useCache di sini cuma fallback offline, lihat api.js),
+    // jadi tidak perlu bypass cache apa pun.
+    const btnRefresh = MugenUI.el("button", { type: "button", title: "Muat Ulang Booking" }, "↻ Muat Ulang");
+    row.appendChild(btnRefresh);
     const tableWrap = MugenUI.el("div");
     body.appendChild(row);
     body.appendChild(tableWrap);
@@ -573,14 +675,6 @@ const PageBooking = (() => {
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         const rows = Array.isArray(data) ? data : [];
         tableWrap.appendChild(bookingTable(rows, {
-          onTerimaBooking: async (r) => {
-            try {
-              await MugenApi.post(`/api/booking/${r.id}/terima`);
-              MugenUI.toast("Booking diverifikasi.", "success", { force: true });
-              load();
-              MugenBookingNotif.refreshNow();
-            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-          },
           onVerifikasi: async (r) => {
             try {
               await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
@@ -602,6 +696,13 @@ const PageBooking = (() => {
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
+          onReschedule: async (r) => {
+            const berhasil = await bukaRescheduleModal(r, barbers, services || []);
+            if (berhasil) {
+              MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
+              load();
+            }
+          },
         }));
       } catch (e) {
         tableWrap.innerHTML = "";
@@ -612,6 +713,7 @@ const PageBooking = (() => {
     selTahun.addEventListener("change", load);
     selBarber.addEventListener("change", load);
     selStatus.addEventListener("change", load);
+    btnRefresh.addEventListener("click", () => MugenUI.withButtonLoading(btnRefresh, load));
     load();
   }
 

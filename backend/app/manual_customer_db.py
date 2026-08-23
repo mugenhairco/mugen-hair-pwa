@@ -16,14 +16,18 @@ mencatat customer SATU PER SATU (1 customer = 1 baris), dengan dua jenis:
 PENTING -- INTEGRASI KE REKAP: modul ini TIDAK PERNAH membuat formula
 pendapatan/komisi/Uang Harian baru, dan TIDAK PERNAH menyentuh rekap.py/
 get_rekap_transaksi_list() sama sekali. Begitu tenant menekan "Tutup &
-Simpan Hari Ini" (tutup_hari() di bawah), setiap baris yang SUDAH punya
-barber_id+minimal satu service diubah jadi baris `transaksi`/
-`transaksi_detail` SUNGGUHAN lewat database.tambah_transaksi() -- fungsi
-yang SAMA PERSIS dipakai Input Barber. Setelah itu Rekap melihatnya sebagai
-transaksi biasa, TIDAK TAHU dan TIDAK PERLU TAHU baris itu berasal dari
-Manual Customer -- nama customer/jam HANYA pernah ada di tabel-tabel modul
-ini, TIDAK PERNAH masuk ke `transaksi`/Rekap sama sekali (sesuai permintaan
-eksplisit "jangan tambahkan Nama Customer/Jam ke Rekap").
+Simpan Hari Ini" (tutup_hari() di bawah), seluruh baris yang SUDAH punya
+barber_id+minimal satu service DIGABUNG PER BARBER (lihat
+_buat_transaksi_gabungan()) jadi SATU baris `transaksi`/`transaksi_detail`
+per barber per hari lewat database.tambah_transaksi() -- fungsi yang SAMA
+PERSIS dipakai Input Barber, dipanggil SEKALI per barber (bukan sekali per
+customer) supaya hasilnya di Rekap identik dengan Input Barber: 1 baris per
+barber per hari berisi SEMUA service hari itu, bukan 1 baris per customer.
+Setelah itu Rekap melihatnya sebagai transaksi biasa, TIDAK TAHU dan TIDAK
+PERLU TAHU baris itu berasal dari Manual Customer -- nama customer/jam
+HANYA pernah ada di tabel-tabel modul ini, TIDAK PERNAH masuk ke
+`transaksi`/Rekap sama sekali (sesuai permintaan eksplisit "jangan
+tambahkan Nama Customer/Jam ke Rekap").
 
 ATURAN "SATU TANGGAL SATU MODE" (mencegah double counting): tabel
 `input_data_hari` menyimpan MODE ('barber' atau 'manual_customer') yang
@@ -208,9 +212,10 @@ def reset_hari(tenant_id: int, tanggal: str) -> None:
             hapus_transaksi(r["id"])
     else:
         entri = get_manual_customer_list(tenant_id, tanggal)
-        for e in entri:
-            if e.get("transaksi_id") is not None:
-                hapus_transaksi(e["transaksi_id"])
+        # dedup: sejak REVISI penggabungan (_buat_transaksi_gabungan), beberapa
+        # entri bisa berbagi transaksi_id yang SAMA -- hapus tiap id sekali saja.
+        for tid in {e["transaksi_id"] for e in entri if e.get("transaksi_id") is not None}:
+            hapus_transaksi(tid)
         with get_conn() as conn:
             conn.execute(
                 "DELETE FROM manual_customer_transaksi WHERE tenant_id = ? AND tanggal = ?",
@@ -340,13 +345,13 @@ def edit_manual_customer(entry_id: int, tenant_id: int, nama_customer: str = Non
     TIDAK PERNAH: jam, jenis, tanggal -- tidak ada parameter untuk itu sama
     sekali di sini (rule #14/#18: jam salah -> hapus, buat ulang).
 
-    Kalau entri ini SUDAH diproses (transaksi_id terisi, lihat tutup_hari()),
-    perubahan di sini ikut di-cascade ke baris `transaksi`/`transaksi_detail`
-    terkait lewat database.koreksi_transaksi() supaya Rekap tetap sinkron
-    (Closing tidak mengunci data, lihat docstring modul -- edit sesudah
-    Closing tetap diizinkan Owner)."""
-    from database import koreksi_transaksi  # import lokal: hindari siklik di modul level
-
+    Kalau tanggal ini SUDAH di-Closing, perubahan di sini ikut disinkronkan
+    ke baris `transaksi` gabungan terkait lewat _sinkronkan_transaksi_hari()
+    (bangun ulang dari nol, lihat docstring fungsi itu -- perlu begini
+    karena satu baris transaksi gabungan sekarang bisa dipakai bareng oleh
+    beberapa customer sekaligus, lihat _buat_transaksi_gabungan()) supaya
+    Rekap tetap sinkron (Closing tidak mengunci data, lihat docstring modul
+    -- edit sesudah Closing tetap diizinkan Owner)."""
     existing = get_manual_customer(entry_id)
     if existing is None or existing["tenant_id"] != tenant_id:
         raise ValueError("Data Manual Customer tidak ditemukan.")
@@ -386,12 +391,7 @@ def edit_manual_customer(entry_id: int, tenant_id: int, nama_customer: str = Non
                     (entry_id, sid),
                 )
 
-    if existing.get("transaksi_id") is not None and barber_baru is not None and service_ids_baru:
-        koreksi_transaksi(
-            existing["transaksi_id"], barber_id=barber_baru,
-            items=[{"service_id": sid, "jumlah": 1} for sid in service_ids_baru],
-            tips=tips_baru,
-        )
+    _sinkronkan_transaksi_hari(tenant_id, existing["tanggal"])
     return get_manual_customer(entry_id)
 
 
@@ -399,28 +399,110 @@ def hapus_manual_customer(entry_id: int, tenant_id: int) -> None:
     existing = get_manual_customer(entry_id)
     if existing is None or existing["tenant_id"] != tenant_id:
         raise ValueError("Data Manual Customer tidak ditemukan.")
-    if existing.get("transaksi_id") is not None:
-        hapus_transaksi(existing["transaksi_id"])
     with get_conn() as conn:
         conn.execute("DELETE FROM manual_customer_transaksi WHERE id = ?", (entry_id,))
+    _sinkronkan_transaksi_hari(tenant_id, existing["tanggal"], transaksi_id_tambahan=existing.get("transaksi_id"))
 
 
 # ---------------------------------------------------------------------------
 # CLOSING ("Tutup & Simpan Hari Ini")
 # ---------------------------------------------------------------------------
 
+def _buat_transaksi_gabungan(tanggal: str, entri: list) -> int:
+    """REVISI (permintaan Owner: hasil Rekap Manual Customer harus SAMA
+    seperti Input Barber -- 1 baris per barber per hari dengan SEMUA
+    transaksi hari itu, bukan 1 baris per customer): kelompokkan `entri`
+    (semua milik tanggal yang sama) yang sudah punya barber_id + minimal
+    satu service PER barber_id, lalu gabung jadi SATU baris `transaksi`
+    per barber -- qty per service DIJUMLAHKAN lintas customer (jadi "Cut
+    x3" kalau 3 customer barber itu sama-sama Cut, bukan 3 baris "Cut x1"
+    terpisah), tips DIJUMLAHKAN juga. Ini PERSIS meniru Input Barber (1
+    form submission = 1 baris transaksi per barber per hari).
+
+    transaksi_id hasilnya ditulis balik ke SETIAP baris manual_customer_
+    transaksi dalam kelompok itu (jadi banyak-ke-satu, BUKAN lagi satu-ke-
+    satu seperti sebelumnya) -- lihat _sinkronkan_transaksi_hari() untuk
+    cara baris gabungan ini dibangun ULANG dari nol setiap kali ada
+    edit/hapus SETELAH Closing (supaya tidak perlu logika tambal-sulam
+    "koreksi sebagian" yang rawan salah kalau beberapa customer berbagi
+    satu baris transaksi yang sama).
+
+    Return: jumlah entri yang berhasil diproses (masuk ke transaksi)."""
+    kelompok = {}
+    for e in entri:
+        if e.get("barber_id") is None or not e.get("service_ids"):
+            continue
+        kelompok.setdefault(e["barber_id"], []).append(e)
+
+    diproses = 0
+    for barber_id, grup in kelompok.items():
+        agregat = {}
+        for e in grup:
+            for sid in e["service_ids"]:
+                agregat[sid] = agregat.get(sid, 0) + 1
+        items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
+        tips_total = sum(e.get("tips") or 0 for e in grup)
+        transaksi_id = tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips_total)
+        with get_conn() as conn:
+            for e in grup:
+                conn.execute(
+                    "UPDATE manual_customer_transaksi SET transaksi_id = ? WHERE id = ?",
+                    (transaksi_id, e["id"]),
+                )
+        diproses += len(grup)
+    return diproses
+
+
+def _sinkronkan_transaksi_hari(tenant_id: int, tanggal: str, transaksi_id_tambahan: int = None) -> None:
+    """Dipanggil setiap kali manual_customer_transaksi berubah (edit/hapus)
+    SETELAH tanggal itu sudah di-Closing -- karena sekarang beberapa
+    customer bisa berbagi SATU baris `transaksi` gabungan (lihat
+    _buat_transaksi_gabungan), perubahan pada satu customer tidak bisa lagi
+    ditambal langsung ke transaksi lama itu (bisa menghapus/salah mengubah
+    kontribusi customer lain yang berbagi baris sama). Jalan paling aman:
+    hapus SELURUH baris `transaksi` hasil Closing tanggal ini, lalu bangun
+    ulang dari nol berdasarkan data manual_customer_transaksi yang SEKARANG
+    -- hasilnya otomatis benar untuk kasus apa pun (barber diganti, service
+    dikosongkan, entri dihapus, dst). Tidak melakukan apa pun kalau tanggal
+    ini belum pernah di-Closing (transaksi_id semua entri pasti masih
+    kosong, tidak ada yang perlu disinkronkan).
+
+    `transaksi_id_tambahan`: dipakai HANYA oleh hapus_manual_customer() --
+    baris manual_customer_transaksi yang barusan dihapus tidak lagi
+    kebaca lewat get_manual_customer_list() di bawah, jadi transaksi_id
+    lamanya (kalau ada) dititipkan lewat sini supaya tetap ikut dibongkar."""
+    status = get_status_hari(tenant_id, tanggal)
+    if status["status"] != "closed":
+        return
+    entri = get_manual_customer_list(tenant_id, tanggal)
+    transaksi_lama = {e["transaksi_id"] for e in entri if e.get("transaksi_id") is not None}
+    if transaksi_id_tambahan is not None:
+        # Entri yang BARU SAJA dihapus (hapus_manual_customer) sudah tidak ada
+        # lagi di get_manual_customer_list() di atas -- transaksi_id lamanya
+        # tidak ikut kebaca lewat query itu, jadi harus dititipkan eksplisit
+        # dari pemanggil supaya baris transaksi lama itu tetap ikut dibongkar.
+        transaksi_lama.add(transaksi_id_tambahan)
+    for tid in transaksi_lama:
+        hapus_transaksi(tid)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE manual_customer_transaksi SET transaksi_id = NULL WHERE tenant_id = ? AND tanggal = ?",
+            (tenant_id, tanggal),
+        )
+    entri = get_manual_customer_list(tenant_id, tanggal)  # refresh: transaksi_id sudah NULL semua
+    _buat_transaksi_gabungan(tanggal, entri)
+
+
 def tutup_hari(tenant_id: int, tanggal: str, ditutup_oleh: str = None) -> dict:
     """Rule #21/#22/#26: (1) HANYA baris yang SUDAH punya barber_id +
-    minimal satu service yang diproses jadi transaksi Rekap SUNGGUHAN lewat
-    database.tambah_transaksi() -- Waiting List yang belum dilengkapi tetap
-    tersimpan sebagai histori TANPA menghasilkan pendapatan/service barber
-    apa pun. (2) Idempoten TERHADAP DOUBLE CLOSING -- ValueError kalau
-    tanggal ini sudah 'closed' (satu tenant+tanggal cuma boleh satu kali
-    Closing, unique constraint tenant_id+tanggal di input_data_hari plus
-    pengecekan status di sini). (3) Baris yang SUDAH diproses sebelumnya
-    (transaksi_id sudah terisi -- mis. Closing dipanggil ulang setelah
-    entri baru ditambah manual lewat jalur lain) TIDAK diproses ulang,
-    mencegah baris `transaksi` duplikat."""
+    minimal satu service yang diproses jadi transaksi Rekap SUNGGUHAN --
+    digabung PER BARBER lewat _buat_transaksi_gabungan() (lihat
+    docstring-nya), Waiting List yang belum dilengkapi tetap tersimpan
+    sebagai histori TANPA menghasilkan pendapatan/service barber apa pun.
+    (2) Idempoten TERHADAP DOUBLE CLOSING -- ValueError kalau tanggal ini
+    sudah 'closed' (satu tenant+tanggal cuma boleh satu kali Closing,
+    unique constraint tenant_id+tanggal di input_data_hari plus pengecekan
+    status di sini)."""
     status = get_status_hari(tenant_id, tanggal)
     if status["mode"] != "manual_customer":
         raise ValueError(f"Tanggal {tanggal} tidak memakai metode Manual Customer -- tidak ada yang perlu ditutup.")
@@ -428,24 +510,8 @@ def tutup_hari(tenant_id: int, tanggal: str, ditutup_oleh: str = None) -> dict:
         raise ValueError(f"Tanggal {tanggal} sudah ditutup sebelumnya (Closing tidak bisa dilakukan dua kali).")
 
     entri = get_manual_customer_list(tenant_id, tanggal)
-    diproses, dilewati = 0, 0
-    for e in entri:
-        if e.get("transaksi_id") is not None:
-            continue  # sudah diproses Closing sebelumnya (seharusnya tidak terjadi, jaga-jaga)
-        if e.get("barber_id") is None or not e.get("service_ids"):
-            dilewati += 1  # Waiting List belum lengkap -- tetap histori, TIDAK masuk Rekap
-            continue
-        transaksi_id = tambah_transaksi(
-            tanggal=tanggal, barber_id=e["barber_id"],
-            items=[{"service_id": sid, "jumlah": 1} for sid in e["service_ids"]],
-            tips=e.get("tips") or 0,
-        )
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE manual_customer_transaksi SET transaksi_id = ? WHERE id = ?",
-                (transaksi_id, e["id"]),
-            )
-        diproses += 1
+    diproses = _buat_transaksi_gabungan(tanggal, entri)
+    dilewati = sum(1 for e in entri if e.get("barber_id") is None or not e.get("service_ids"))
 
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:

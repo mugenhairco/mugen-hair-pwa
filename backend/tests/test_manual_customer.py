@@ -213,6 +213,69 @@ def test_closing_tidak_mengunci_data_tetap_bisa_edit_hapus(single_tenant):
     assert not any(t["tanggal"] == tanggal for t in daftar)
 
 
+def test_closing_gabung_per_barber_seperti_input_barber(single_tenant):
+    """REVISI (permintaan Owner): hasil Closing Manual Customer harus SAMA
+    seperti Input Barber -- 1 baris transaksi per barber per hari berisi
+    SEMUA customer hari itu, BUKAN 1 baris per customer."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id, barber_id, service_id = _setup(single_tenant)
+    service_id_2 = db.add_service("Cukur MC", 20000, tenant_id=tenant_id)
+    tanggal = "2026-09-09"
+
+    # 3 customer BEDA, barber SAMA, hari SAMA -- 2 di antaranya ambil service_id,
+    # 1 ambil service_id_2 (jumlah harus tergabung, bukan 3 baris terpisah).
+    for nama, jam in (("Andi", "09:00"), ("Budi", "10:00")):
+        r = client.post("/api/manual-customer/transaksi", json={
+            "tanggal": tanggal, "nama_customer": nama, "jenis": "booking",
+            "jam_booking": jam, "barber_id": barber_id, "service_ids": [service_id],
+            "tips": 3000,
+        }, headers=headers)
+        assert r.status_code == 200, r.text
+    r3 = client.post("/api/manual-customer/transaksi", json={
+        "tanggal": tanggal, "nama_customer": "Citra", "jenis": "booking",
+        "jam_booking": "11:00", "barber_id": barber_id, "service_ids": [service_id_2],
+        "tips": 2000,
+    }, headers=headers)
+    assert r3.status_code == 200, r3.text
+
+    r = client.post(f"/api/manual-customer/close?tanggal={tanggal}", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["diproses"] == 3
+    assert r.json()["dilewati"] == 0
+
+    # SATU baris transaksi untuk barber ini di tanggal ini (bukan 3).
+    daftar = db.get_transaksi_list(tahun=2026, bulan=9, tenant_id=tenant_id)
+    baris_hari_ini = [t for t in daftar if t["tanggal"] == tanggal]
+    assert len(baris_hari_ini) == 1
+    transaksi = baris_hari_ini[0]
+    assert transaksi["barber_id"] == barber_id
+    assert transaksi["tips"] == 8000  # 3000 + 3000 + 2000
+
+    items_by_service = {it["service_id"]: it["jumlah"] for it in transaksi["items"]}
+    assert items_by_service[service_id] == 2   # Andi + Budi
+    assert items_by_service[service_id_2] == 1  # Citra
+
+    # SEMUA 3 entri manual customer menunjuk ke transaksi gabungan yang SAMA.
+    entri = client.get(f"/api/manual-customer/transaksi?tanggal={tanggal}", headers=headers).json()
+    transaksi_ids = {e["transaksi_id"] for e in entri}
+    assert transaksi_ids == {transaksi["id"]}
+
+    # Hapus SATU entri (Andi) setelah Closing -- baris gabungan harus dibangun
+    # ulang (bukan hilang total), sisa 2 customer lain tetap kehitung.
+    andi_id = next(e["id"] for e in entri if e["nama_customer"] == "Andi")
+    r_del = client.delete(f"/api/manual-customer/transaksi/{andi_id}", headers=headers)
+    assert r_del.status_code == 200, r_del.text
+
+    daftar2 = db.get_transaksi_list(tahun=2026, bulan=9, tenant_id=tenant_id)
+    baris2 = [t for t in daftar2 if t["tanggal"] == tanggal]
+    assert len(baris2) == 1  # tetap SATU baris, bukan hilang/ganda
+    transaksi2 = baris2[0]
+    assert transaksi2["tips"] == 5000  # 3000 (Budi) + 2000 (Citra), Andi sudah hilang
+    items2 = {it["service_id"]: it["jumlah"] for it in transaksi2["items"]}
+    assert items2[service_id] == 1  # tinggal Budi
+    assert items2[service_id_2] == 1  # Citra
+
+
 def test_closing_tanpa_mode_manual_customer_ditolak(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     r = client.post("/api/manual-customer/close?tanggal=2026-09-07", headers=headers)

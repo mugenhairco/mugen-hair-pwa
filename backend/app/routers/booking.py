@@ -442,6 +442,36 @@ def terima_booking(booking_id: int, user: dict = Depends(require_permission("izi
     return booking_db.get_booking(booking_id)
 
 
+class RescheduleBody(BaseModel):
+    barber_id: int | None = None
+    tanggal: str | None = None
+    jam_mulai: str | None = None
+    service_ids: list[int] | None = None
+
+
+@router.post("/{booking_id}/reschedule")
+def reschedule_booking(booking_id: int, body: RescheduleBody, user: dict = Depends(require_permission("izin_booking_kelola"))):
+    """Item #3 spek Booking: admin ubah tanggal/jam/barber/service booking
+    yang sudah terverifikasi -- lihat booking_db.reschedule_booking().
+    Metode "gateway" ditolak di sini juga (lapis pertama, SAMA seperti
+    verifikasi_booking()/terima_booking() di atas) -- payment gateway TIDAK
+    BOLEH disentuh."""
+    booking = booking_db.get_booking(booking_id)
+    _pastikan_booking_tenant_sama(user, booking)
+    if booking["metode_pembayaran"] == "gateway":
+        raise HTTPException(
+            status_code=422,
+            detail="Booking Payment Gateway tidak bisa dijadwal ulang -- payment gateway tidak boleh diubah manual.",
+        )
+    try:
+        return booking_db.reschedule_booking(
+            booking_id, tenant_id=user["tenant_id"], barber_id=body.barber_id, tanggal=body.tanggal,
+            jam_mulai=body.jam_mulai, service_ids=body.service_ids,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.post("/{booking_id}/batalkan")
 def batalkan_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_batalkan"))):
     _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
