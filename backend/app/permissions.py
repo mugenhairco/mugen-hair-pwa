@@ -134,6 +134,9 @@ PERMISSION_DEFS = [
     # terpisah di sidebar; sekarang key sendiri supaya Hak Akses Menu bisa
     # mengatur Booking dan Riwayat Transaksi independen, lihat MENU_DEFS) ----
     ("izin_riwayat_transaksi", "riwayat_transaksi", "Cek Ulang Status Transaksi Payment Gateway", True),
+    # ---- Settlement Faspay (closing harian transaksi SNAP Advance per
+    # tenant/"terminal") -- pola SAMA PERSIS Riwayat Transaksi di atas ----
+    ("izin_settlement_faspay", "settlement_faspay", "Submit Settlement Faspay", False),
     # ---- Katalog KHUSUS "Hak Akses Menu" (permintaan Owner: setiap menu di
     # sidebar punya SATU level -- Tidak Ada Akses/Baca/Baca & Edit -- bukan
     # checklist per-aksi). Key "_lihat" di bawah ini MURNI gerbang MELIHAT
@@ -166,6 +169,7 @@ PERMISSION_DEFS = [
     ("izin_pengeluaran_lihat", "menu", "Lihat menu Pengeluaran", True),
     ("izin_uang_kas_lihat", "menu", "Lihat menu Uang Kas", True),
     ("izin_produk_lihat", "menu", "Lihat menu Produk", True),
+    ("izin_settlement_faspay_lihat", "menu", "Lihat menu Settlement Faspay", False),
 ]
 
 PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}
@@ -204,6 +208,8 @@ MENU_DEFS = {
                  "write_keys": ["izin_uang_kas_kelola", "izin_uang_kas_hapus"]},
     "produk": {"label": "Produk", "read_key": "izin_produk_lihat",
                "write_keys": ["izin_produk_kelola", "izin_produk_hapus"]},
+    "settlement_faspay": {"label": "Settlement Faspay", "read_key": "izin_settlement_faspay_lihat",
+                           "write_keys": ["izin_settlement_faspay"]},
 }
 
 LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT = "none", "read", "write"

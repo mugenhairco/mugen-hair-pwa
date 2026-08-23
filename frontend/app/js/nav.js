@@ -86,6 +86,11 @@ const MugenNav = (() => {
       // (lihat pages/riwayat_transaksi.js) -- roles SAMA dengan Pemasukan/
       // Pengeluaran/Uang Kas (data finansial toko, staff akses penuh).
       { hash: "#/keuangan/riwayat-transaksi", label: "Riwayat Transaksi", roles: ["admin", "staff"] },
+      // Settlement Faspay per Terminal (Tenant): closing harian transaksi
+      // Faspay SNAP Advance toko ini sendiri (lihat pages/settlement_faspay.js)
+      // -- roles SAMA dengan menu Keuangan lain, akses SEBENARNYA diatur
+      // per-menu lewat Hak Akses (default OFF untuk staff, fitur baru).
+      { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"] },
     ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di

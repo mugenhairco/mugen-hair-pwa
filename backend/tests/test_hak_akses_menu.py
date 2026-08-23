@@ -49,8 +49,10 @@ def _buat_barber_dan_login(client, tenant_id, barber_id, username="barbermenu", 
 # permissions.py -- fungsi murni MENU_DEFS/get_menu_level/set_menu_level
 # ---------------------------------------------------------------------------
 
-def test_menu_defs_lengkap_15_menu():
-    assert len(permissions.MENU_DEFS) == 15
+def test_menu_defs_lengkap_16_menu():
+    # 15 menu asli + "settlement_faspay" (fitur Settlement Faspay per
+    # Terminal/Tenant, ditambah belakangan lewat pola MENU_DEFS yang sama).
+    assert len(permissions.MENU_DEFS) == 16
     assert "setting" not in permissions.MENU_DEFS  # di luar cakupan (delegasi tab sendiri)
     assert "billing" not in permissions.MENU_DEFS  # selalu Owner-murni
 
