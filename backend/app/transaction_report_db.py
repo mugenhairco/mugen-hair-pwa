@@ -21,6 +21,7 @@ laporan ini -- TIDAK PERNAH menulis balik ke subscription_invoices/
 booking_payment_transactions, kolom `status` asli kedua tabel itu TETAP
 apa adanya."""
 
+import billing_db
 import billing_invoice_db
 import booking_gateway_db
 import tenant_db
@@ -35,6 +36,74 @@ _STATUS_LANGGANAN_KE_UNIFIED = {
     "cancelled": "dibatalkan",
     "expired": "kedaluwarsa",
 }
+
+# Riwayat Langganan Tenant / Riwayat Booking Tenant (restrukturisasi Super
+# Admin, dua daftar terpisah): label "Jenis Transaksi" yang eksplisit untuk
+# tiap baris -- MURNI turunan tampilan dari status_unified/perbandingan
+# `urutan` paket, TIDAK ADA kolom baru di subscription_invoices/
+# booking_payment_transactions, TIDAK menyentuh billing.py::checkout()/
+# downgrade() sama sekali. "Downgrade" & "Refund" SENGAJA TIDAK ADA di sini
+# -- downgrade() tidak pernah lewat Payment Gateway (gratis, tidak ada
+# invoice sama sekali) dan subscription_invoices belum punya status
+# "refund" (belum ada fitur refund langganan), jadi keduanya bukan
+# peristiwa pembayaran nyata yang bisa dilaporkan di ledger ini.
+_STATUS_LANGGANAN_NON_PAID_KE_JENIS = {
+    "pending": "Menunggu Pembayaran",
+    "denied": "Pembayaran Gagal",
+    "cancelled": "Dibatalkan",
+    "expired": "Kedaluwarsa",
+}
+
+_STATUS_BOOKING_KE_JENIS = {
+    "berhasil": "Payment Booking",
+    "refund": "Refund Booking",
+    "gagal": "Pembayaran Gagal",
+    "kedaluwarsa": "Expired",
+    "dibatalkan": "Dibatalkan",
+    "menunggu_pembayaran": "Menunggu Pembayaran",
+    "diproses": "Diproses",
+}
+
+
+def _urutan_paket_map() -> dict:
+    return {p["kode"]: p["urutan"] for p in billing_db.list_packages(hanya_aktif=False)}
+
+
+def _isi_jenis_transaksi_langganan(baris_langganan: list) -> None:
+    """Mengisi field `jenis_transaksi` (Langganan Baru/Perpanjangan
+    Langganan/Upgrade Paket/dst) di tempat (in-place) -- HARUS dipanggil
+    dengan SELURUH invoice tenant terkait (bukan hasil yang sudah
+    difilter), supaya "invoice paid pertama tenant ini" & "paket
+    sebelumnya" dihitung dari riwayat lengkap, bukan dari potongan hasil
+    filter tanggal/status yang kebetulan dipakai Super Admin saat itu."""
+    urutan_paket = _urutan_paket_map()
+    per_tenant: dict[int, list] = {}
+    for b in baris_langganan:
+        per_tenant.setdefault(b["tenant_id"], []).append(b)
+
+    for daftar in per_tenant.values():
+        # Tiebreak dengan `id` (bukan cuma `created_at`) -- dua invoice
+        # bisa lahir di detik yang sama (mis. dua checkout beruntun cepat),
+        # `created_at` (timespec detik) saja bisa seri lalu jatuh balik ke
+        # urutan asal daftar (ORDER BY id DESC dari billing_invoice_db.
+        # list_invoices()), yang KEBALIK dari urutan kronologis sungguhan.
+        daftar_urut = sorted(daftar, key=lambda b: (b["created_at"], b["id"]))
+        urutan_sebelumnya = None
+        for b in daftar_urut:
+            if b["status_asli"] != "paid":
+                b["jenis_transaksi"] = _STATUS_LANGGANAN_NON_PAID_KE_JENIS.get(b["status_asli"], b["status_asli"])
+                continue
+            urutan_sekarang = urutan_paket.get(b["package_kode"])
+            if urutan_sebelumnya is None:
+                b["jenis_transaksi"] = "Langganan Baru"
+            elif urutan_sekarang is not None and urutan_sekarang > urutan_sebelumnya:
+                b["jenis_transaksi"] = "Upgrade Paket"
+            else:
+                # Sama, atau lebih rendah (downgrade lewat checkout bukan
+                # kategori yang dilaporkan -- lihat catatan di atas modul):
+                # tetap dicatat sebagai Perpanjangan Langganan.
+                b["jenis_transaksi"] = "Perpanjangan Langganan"
+            urutan_sebelumnya = urutan_sekarang if urutan_sekarang is not None else urutan_sebelumnya
 
 
 def _tenant_nama_map() -> dict:
@@ -58,6 +127,7 @@ def _dari_booking(row: dict) -> dict:
         "channel_pembayaran": row["channel_pembayaran"],
         "status_unified": row["status_pembayaran"],
         "status_asli": row["status_pembayaran"],
+        "jenis_transaksi": _STATUS_BOOKING_KE_JENIS.get(row["status_pembayaran"], row["status_pembayaran"]),
         "transaction_id_provider": row["transaction_id_provider"],
         "reference_id_provider": row["reference_id_provider"],
         "created_at": row["created_at"],
@@ -78,11 +148,15 @@ def _dari_langganan(row: dict, nama_tenant: dict) -> dict:
         "booking_id": None,
         "barber_nama": None,
         "layanan": f"Paket {row['package_nama']}",
+        "package_kode": row["package_kode"],
+        "periode_mulai": row["periode_mulai"],
+        "periode_selesai": row["periode_selesai"],
         "nominal": row["jumlah"],
         "metode_pembayaran": row["metode_pembayaran"] or "gateway",
         "channel_pembayaran": row["payment_type"],
         "status_unified": _STATUS_LANGGANAN_KE_UNIFIED.get(row["status"], row["status"]),
         "status_asli": row["status"],
+        "jenis_transaksi": None,  # diisi _isi_jenis_transaksi_langganan() -- butuh riwayat lengkap tenant
         "transaction_id_provider": row["order_id"],
         "reference_id_provider": None,
         "created_at": row["created_at"],
@@ -93,9 +167,10 @@ def _dari_langganan(row: dict, nama_tenant: dict) -> dict:
 
 def _kumpulkan_semua() -> list:
     nama_tenant = _tenant_nama_map()
-    hasil = [_dari_booking(r) for r in booking_gateway_db.list_semua_transaksi()]
-    hasil += [_dari_langganan(r, nama_tenant) for r in billing_invoice_db.list_invoices(tenant_id=None)]
-    return hasil
+    hasil_booking = [_dari_booking(r) for r in booking_gateway_db.list_semua_transaksi()]
+    hasil_langganan = [_dari_langganan(r, nama_tenant) for r in billing_invoice_db.list_invoices(tenant_id=None)]
+    _isi_jenis_transaksi_langganan(hasil_langganan)
+    return hasil_booking + hasil_langganan
 
 
 def list_transactions(tenant_id: int = None, tanggal_mulai: str = None, tanggal_selesai: str = None,
@@ -192,9 +267,13 @@ def get_transaction_detail(jenis: str, transaction_id: int) -> dict | None:
     row = billing_invoice_db.get_invoice(transaction_id)
     if row is None:
         return None
-    hasil = _dari_langganan(row, _tenant_nama_map())
+    nama_tenant = _tenant_nama_map()
+    # jenis_transaksi (Langganan Baru/Perpanjangan/Upgrade) butuh SELURUH
+    # riwayat invoice tenant ini, bukan cuma baris ini sendiri -- lihat
+    # docstring _isi_jenis_transaksi_langganan().
+    riwayat_tenant = [_dari_langganan(r, nama_tenant) for r in billing_invoice_db.list_invoices(tenant_id=row["tenant_id"])]
+    _isi_jenis_transaksi_langganan(riwayat_tenant)
+    hasil = next(d for d in riwayat_tenant if d["id"] == row["id"])
     hasil["raw_notification"] = row["raw_notification"]
     hasil["status_log"] = billing_invoice_db.list_status_log(transaction_id)
-    hasil["periode_mulai"] = row["periode_mulai"]
-    hasil["periode_selesai"] = row["periode_selesai"]
     return hasil

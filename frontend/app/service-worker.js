@@ -726,7 +726,7 @@
 // MugenUI.emptyState("Anda tidak memiliki akses ke menu ini.") kalau
 // levelnya "none" (tanpa fetch data sama sekali), dan menyembunyikan/
 // menonaktifkan tombol tambah/edit/hapus/approve kalau levelnya "read".
-const ASSET_VERSION = "137";
+const ASSET_VERSION = "138";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
