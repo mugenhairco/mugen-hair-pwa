@@ -556,12 +556,16 @@ def get_toko_libur_list(tahun: int = None, bulan: int = None, tenant_id: int = N
 # BOOKING -- daftar terpakai (untuk cek tumpang tindih) & CRUD
 # ---------------------------------------------------------------------------
 
-def _get_booking_aktif_tanggal(conn, barber_id: int, tanggal: str) -> list:
-    rows = conn.execute(
-        "SELECT jam_mulai, jam_selesai FROM bookings "
-        "WHERE barber_id = ? AND tanggal = ? AND status_booking = 'aktif'",
-        (barber_id, tanggal),
-    ).fetchall()
+def _get_booking_aktif_tanggal(conn, barber_id: int, tanggal: str, exclude_booking_id: int = None) -> list:
+    """`exclude_booking_id`: dipakai reschedule_booking() -- booking yang
+    SEDANG di-reschedule tidak boleh dianggap tumpang tindih dengan slot
+    barunya sendiri (kalau barber/tanggal tidak berubah, slot lama booking
+    ini sendiri akan selalu "bentrok" dengan dirinya sendiri tanpa ini)."""
+    q = "SELECT jam_mulai, jam_selesai FROM bookings WHERE barber_id = ? AND tanggal = ? AND status_booking = 'aktif'"
+    params = [barber_id, tanggal]
+    if exclude_booking_id is not None:
+        q += " AND id != ?"; params.append(exclude_booking_id)
+    rows = conn.execute(q, params).fetchall()
     return [(_ke_menit(r["jam_mulai"]), _ke_menit(r["jam_selesai"])) for r in rows]
 
 
@@ -648,12 +652,16 @@ def _hitung_total_durasi(service_ids: list) -> int:
 
 
 def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi_menit: int,
-                             tenant_id: int = None):
+                             tenant_id: int = None, exclude_booking_id: int = None):
     """Validasi FINAL (dipanggil sekali lagi tepat sebelum booking benar-benar
     disimpan, terlepas dari apa pun yang sudah dicek di frontend) -- jaga-jaga
     dua customer booking slot yang sama nyaris bersamaan. Urutan pengecekan
     mengikuti prioritas: Toko Libur/Hari Operasional -> Barber Holiday/Cuti
-    -> Closed Slot -> Sudah dibooking -> Available."""
+    -> Closed Slot -> Sudah dibooking -> Available.
+
+    `exclude_booking_id`: diteruskan ke _get_booking_aktif_tanggal() --
+    lihat docstring-nya (dipakai reschedule_booking(), None untuk buat_booking()
+    biasa)."""
     if is_toko_libur(tanggal, tenant_id=tenant_id):
         raise ValueError("Toko sedang libur pada tanggal ini.")
     if not is_hari_operasional(tanggal, tenant_id=tenant_id):
@@ -685,9 +693,28 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
         closed = _get_closed_slots_tanggal(conn, barber_id, tanggal)
         if any(_tumpang_tindih(mulai, akhir, b_mulai, b_akhir) for b_mulai, b_akhir in closed):
             raise ValueError("Jam yang dipilih sudah ditutup untuk booking.")
-        booked = _get_booking_aktif_tanggal(conn, barber_id, tanggal)
+        booked = _get_booking_aktif_tanggal(conn, barber_id, tanggal, exclude_booking_id=exclude_booking_id)
         if any(_tumpang_tindih(mulai, akhir, b_mulai, b_akhir) for b_mulai, b_akhir in booked):
             raise ValueError("Jam yang dipilih sudah dibooking, silakan pilih jam lain.")
+
+
+def _is_advance_booking(created_at: str, tanggal: str) -> bool:
+    """Item #4 spek Booking (permintaan Owner): tandai booking yang DIBUAT
+    pada tanggal LEBIH AWAL dari tanggal appointment yang dipilih customer
+    (mis. booking dibuat 23 Agustus untuk jadwal 27 Agustus) -- dipakai
+    frontend untuk highlight kuning No. Transaksi. Booking dibuat & jadwal
+    di HARI YANG SAMA TIDAK dianggap "advance" (SESUAI SPEK).
+
+    `created_at` disimpan lewat datetime.now() POLOS (waktu SERVER, default
+    UTC di Render -- lihat catatan WIB di _kunci_slot_booking()/WIB di atas,
+    BUKAN WIB) -- WAJIB dikonversi eksplisit ke WIB dulu sebelum dibandingkan
+    tanggalnya, supaya booking yang dibuat larut malam WIB (masih dini hari
+    UTC) tidak salah dianggap beda tanggal, atau sebaliknya."""
+    try:
+        dibuat_utc = datetime.fromisoformat(created_at).replace(tzinfo=ZoneInfo("UTC"))
+    except (TypeError, ValueError):
+        return False
+    return dibuat_utc.astimezone(WIB).date().isoformat() < tanggal
 
 
 def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
@@ -879,6 +906,7 @@ def get_booking(booking_id: int):
         ).fetchall()
         booking["items"] = [dict(i) for i in items]
         booking["daftar_service"] = ", ".join(i["nama_service"] for i in items)
+        booking["is_advance_booking"] = _is_advance_booking(booking["created_at"], booking["tanggal"])
         _perkaya_status_gateway(booking)
         return booking
 
@@ -923,6 +951,7 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         transaksi_per_booking = booking_gateway_db.get_transaksi_terkini_untuk_booking_batch(ids)
         for h in headers:
             h["daftar_service"] = ", ".join(per_booking.get(h["id"], []))
+            h["is_advance_booking"] = _is_advance_booking(h["created_at"], h["tanggal"])
             h["gateway_transaksi_id"] = None
             h["gateway_status"] = None
             h["gateway_channel"] = None
@@ -1024,6 +1053,17 @@ def terima_booking(booking_id: int, oleh: str = None):
     kalau customer ternyata SUDAH bayar duluan, Admin tetap langsung bisa
     klik "Payment Diterima" tanpa pernah menekan ini).
 
+    REVISI (audit tombol Verifikasi, permintaan Owner): tombol "Verifikasi
+    Booking" yang memanggil fungsi ini SUDAH DIHAPUS dari UI (pages/booking.js)
+    karena mengirim ulang WA "silakan bayar" begitu diklik -- padahal Fonnte
+    SUDAH otomatis mengirim pesan itu sekali saat booking dibuat (lihat
+    buat_booking()), jadi klik admin bikin customer terima pesan yang sama
+    dua kali. Endpoint routers/booking.py::terima_booking() dan fungsi ini
+    SENGAJA TIDAK dihapus (murni tidak lagi dipanggil dari mana pun di UI)
+    supaya tidak ada perubahan API/database yang tidak perlu -- HANYA
+    verifikasi_pembayaran() ("Payment Diterima", di-relabel "Verifikasi" di
+    UI) yang sekarang jadi satu-satunya aksi verifikasi booking manual.
+
     Mengirim WA "silakan bayar" (jenis `reminder_qris`, SAMA PERSIS template
     yang dipakai buat_booking() untuk metode qris) HANYA kalau:
     1. metode_pembayaran == "qris" -- metode lain (transfer) TIDAK punya
@@ -1052,6 +1092,76 @@ def terima_booking(booking_id: int, oleh: str = None):
             )
         if booking["metode_pembayaran"] == "qris" and booking["status_pembayaran"] != "terverifikasi":
             _kirim_notifikasi_wa_booking(get_booking(booking_id), "reminder_qris")
+
+
+def reschedule_booking(booking_id: int, tenant_id: int = None, barber_id: int = None, tanggal: str = None,
+                        jam_mulai: str = None, service_ids: list = None) -> dict:
+    """Item #3 spek Booking (permintaan Owner): admin bisa mengubah
+    tanggal/jam/barber/service booking yang SUDAH terverifikasi. Parameter
+    yang TIDAK diisi (None) dipertahankan apa adanya dari booking sekarang
+    -- admin boleh ganti sebagian saja (mis. cuma jam, barber/service
+    tetap). status_pembayaran SENGAJA TIDAK PERNAH disentuh fungsi ini
+    (tidak ada di klausa UPDATE sama sekali) -- tetap 'terverifikasi'
+    apa adanya meskipun harga berubah gara-gara service baru (SESUAI SPEK:
+    "Selisih harga dapat diselesaikan offline").
+
+    Pengecekan ketersediaan slot TETAP wajib (_validasi_slot_tersedia(),
+    exclude_booking_id=booking_id supaya slot LAMA booking ini sendiri
+    tidak dianggap bentrok dengan slot barunya) -- mencegah double booking
+    persis seperti buat_booking(). Booking metode 'gateway' TIDAK BOLEH
+    di-reschedule lewat sini -- payment gateway TIDAK BOLEH disentuh sama
+    sekali (guard di routers/booking.py, DITEGAKKAN LAGI di sini sebagai
+    lapis kedua kalau endpoint ini suatu saat dipanggil dari jalur lain)."""
+    booking = get_booking(booking_id)
+    if booking is None:
+        raise ValueError("Booking tidak ditemukan.")
+    if booking["status_booking"] != "aktif":
+        raise ValueError("Booking ini sudah dibatalkan.")
+    if booking["metode_pembayaran"] == "gateway":
+        raise ValueError("Booking Payment Gateway tidak bisa di-reschedule manual.")
+
+    barber_baru = barber_id if barber_id is not None else booking["barber_id"]
+    tanggal_baru = tanggal if tanggal is not None else booking["tanggal"]
+    jam_baru = jam_mulai if jam_mulai is not None else booking["jam_mulai"]
+    service_ids_baru = service_ids if service_ids is not None else [it["service_id"] for it in booking["items"]]
+    if not service_ids_baru:
+        raise ValueError("Pilih minimal satu service.")
+    _validasi_tanggal(tanggal_baru)
+    _validasi_jam(jam_baru)
+
+    barber = db.get_barber(barber_baru)
+    if barber is None or not barber.get("aktif") or (tenant_id is not None and barber.get("tenant_id") != tenant_id):
+        raise ValueError("Barber tidak ditemukan atau tidak aktif.")
+
+    items = []
+    total_harga = 0
+    total_durasi = 0
+    for sid in service_ids_baru:
+        s = db.get_service(sid)
+        if s is None or not s.get("aktif") or (tenant_id is not None and s.get("tenant_id") != tenant_id):
+            raise ValueError(f"Service #{sid} tidak ditemukan atau tidak aktif.")
+        items.append(s)
+        total_harga += int(s["harga"])
+        total_durasi += int(s.get("durasi_menit") or 60)
+    jam_selesai_baru = _ke_hhmm(_ke_menit(jam_baru) + total_durasi)
+
+    with _kunci_slot_booking(barber_baru, tanggal_baru):
+        _validasi_slot_tersedia(barber_baru, tanggal_baru, jam_baru, total_durasi,
+                                 tenant_id=tenant_id, exclude_booking_id=booking_id)
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE bookings SET barber_id = ?, tanggal = ?, jam_mulai = ?, jam_selesai = ?, "
+                "total_harga = ?, total_durasi_menit = ? WHERE id = ?",
+                (barber_baru, tanggal_baru, jam_baru, jam_selesai_baru, total_harga, total_durasi, booking_id),
+            )
+            conn.execute("DELETE FROM booking_items WHERE booking_id = ?", (booking_id,))
+            for s in items:
+                conn.execute(
+                    "INSERT INTO booking_items (booking_id, service_id, nama_service, harga, durasi_menit) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
+                )
+    return get_booking(booking_id)
 
 
 def hapus_riwayat_booking(tenant_id: int, sebelum_tanggal: str = None) -> int:

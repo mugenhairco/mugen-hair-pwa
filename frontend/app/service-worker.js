@@ -703,7 +703,19 @@
 // Merge dari master (PR #158, Pembayaran Manual QRIS Tenant + Notifikasi
 // WhatsApp) juga tercakup di v135 ini -- angka ini sudah lebih tinggi dari
 // v131 milik master, jadi tetap cukup untuk cache-bust kedua lineage.
-const ASSET_VERSION = "135";
+// v135 -> v136: AUDIT menu Booking (permintaan Owner) -- pages/booking.js:
+// (1) tombol "Verifikasi Booking" (kirim ulang WA "silakan bayar" walau
+// Fonnte sudah otomatis mengirim sekali saat booking dibuat) DIHAPUS,
+// "Payment Diterima" di-relabel "Verifikasi" (HANYA ubah status, tidak
+// pernah kirim ulang WA); (2) begitu terverifikasi, "Batalkan" diganti
+// "Reschedule" (flow Batalkan Booking untuk booking belum terverifikasi
+// TIDAK berubah); (3) form Reschedule baru (ubah tanggal/jam/barber/service,
+// tetap cek ketersediaan slot, harga boleh berubah tapi status pembayaran
+// tetap Terverifikasi) lewat endpoint baru POST /api/booking/{id}/reschedule;
+// (4) highlight kuning No. Transaksi untuk booking "advance" (dibuat lebih
+// awal dari tanggal appointment-nya); (5) tombol Refresh Booking List
+// (manggil ulang load() yang sudah ada, TIDAK ADA endpoint/polling baru).
+const ASSET_VERSION = "136";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
