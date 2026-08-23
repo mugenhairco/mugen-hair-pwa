@@ -70,6 +70,15 @@ const PageRekap = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Rekap"));
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa tab/data apa pun (MugenMenuAccess.get() selalu
+    // balas "write" untuk Owner & Barber, jadi gate ini efektifnya HANYA
+    // berlaku untuk 'staff').
+    if ((await MugenMenuAccess.get("rekap")) === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+
     // REVISI UI/UX Premium: MugenUI.tabs() (indikator geser halus otomatis)
     // menggantikan tabBar/renderTabs manual.
     const tabItems = [

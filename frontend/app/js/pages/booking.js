@@ -158,6 +158,19 @@ const PageBooking = (() => {
       return;
     }
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa tab/data apa pun. "Baca" (bolehEdit=false, dipakai
+    // di renderBookingList() di bawah) menyembunyikan tombol Verifikasi/
+    // Batalkan/Reschedule di tab Booking List; tab lain (Closed Slot/
+    // Payment Settings/dst) tetap terbuka tampilannya, aksinya ditolak
+    // backend (403) kalau diklik.
+    const levelBooking = await MugenMenuAccess.get("booking");
+    if (levelBooking === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEditBooking = levelBooking === "write";
+
     // REVISI Website Content (PR 1): tab "Website Content" HANYA untuk Owner
     // ('admin'), TIDAK PERNAH untuk staff ('Admin') -- sama seperti pola tab
     // Owner-murni di pengaturan.js (Komisi/Bonus Service/Hak Akses Admin),
@@ -185,7 +198,7 @@ const PageBooking = (() => {
 
     async function renderBody(activeTab) {
       body.innerHTML = "";
-      if (activeTab === "Booking List") await renderBookingList(body, barbers, services);
+      if (activeTab === "Booking List") await renderBookingList(body, barbers, services, bolehEditBooking);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
       else if (activeTab === "Operating Hours") await renderOperatingHours(body);
       else if (activeTab === "Barber Holiday") await renderBarberHoliday(body, barbers);
@@ -639,7 +652,7 @@ const PageBooking = (() => {
   }
 
   // ================= TAB: BOOKING LIST =================
-  async function renderBookingList(body, barbers, services) {
+  async function renderBookingList(body, barbers, services, bolehEdit = true) {
     const today = new Date();
     const { row, selBulan, selTahun, selBarber, selStatus } = barberFilterRow(barbers, today);
     // Item #5 spek Booking: tombol Refresh -- booking baru yang masuk lewat
@@ -674,8 +687,12 @@ const PageBooking = (() => {
         // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         const rows = Array.isArray(data) ? data : [];
+        // Hak Akses Menu: level "Baca" (bolehEdit=false) -- tombol
+        // Verifikasi/Batalkan/Reschedule TIDAK dikirim ke bookingTable()
+        // sama sekali (null = disembunyikan, lihat bookingTable() di atas),
+        // data booking TETAP tampil apa adanya.
         tableWrap.appendChild(bookingTable(rows, {
-          onVerifikasi: async (r) => {
+          onVerifikasi: !bolehEdit ? null : async (r) => {
             try {
               await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
               // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
@@ -687,7 +704,7 @@ const PageBooking = (() => {
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
-          onBatalkan: async (r) => {
+          onBatalkan: !bolehEdit ? null : async (r) => {
             if (!confirm(`Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`)) return;
             try {
               await MugenApi.post(`/api/booking/${r.id}/batalkan`);
@@ -696,7 +713,7 @@ const PageBooking = (() => {
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
-          onReschedule: async (r) => {
+          onReschedule: !bolehEdit ? null : async (r) => {
             const berhasil = await bukaRescheduleModal(r, barbers, services || []);
             if (berhasil) {
               MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });

@@ -1652,8 +1652,38 @@ const PagePengaturan = (() => {
     // baik untuk set izin DEFAULT tenant (Hak Akses User) maupun checklist
     // tiap role custom -- SATU sumber kebenaran, dipindah ke luar
     // renderHakAksesAdmin() supaya bisa dipakai ulang tanpa duplikasi.
+    // AUDIT Hak Akses Menu (permintaan Owner): 15 menu di sidebar di bawah
+    // ini SEKARANG diatur lewat SATU dropdown per menu (Tidak Ada Akses/
+    // Baca/Baca & Edit -- lihat buildMenuLevelUI() + permissions.py::
+    // MENU_DEFS, key+urutan HARUS sama persis dengan MENU_DEFS di backend)
+    // -- BUKAN lagi checklist izin_* mentah per aksi. Grup di GRUP_IZIN di
+    // bawah ini karenanya DIPANGKAS -- HANYA menyisakan hal yang TIDAK
+    // masuk model 3-level ini sama sekali: kartu Dashboard PER FIELD
+    // (bukan akses menu Dashboard itu sendiri, itu sudah di dropdown),
+    // kelola akun User ber-role Barber, Backup, Laporan PDF, dan akses
+    // TAB Setting (granularitasnya lebih halus dari 3 level, tetap dengan
+    // checklist lama).
+    const MENU_LIST = [
+      ["dashboard", "Dashboard"],
+      ["input_data", "Input Data"],
+      ["rekap", "Rekap"],
+      ["slip_gaji", "Slip Gaji"],
+      ["kasbon", "Kasbon"],
+      ["komisi", "Komisi"],
+      ["reimburse", "Reimburse"],
+      ["izin_cuti", "Izin & Cuti"],
+      ["absensi", "Absensi"],
+      ["booking", "Booking"],
+      ["riwayat_transaksi", "Riwayat Transaksi"],
+      ["pemasukan", "Pemasukan"],
+      ["pengeluaran", "Pengeluaran"],
+      ["uang_kas", "Uang Kas"],
+      ["produk", "Produk"],
+    ];
+    const LEVEL_LABEL = { none: "Tidak Ada Akses", read: "Baca", write: "Baca & Edit" };
+
     const GRUP_IZIN = [
-        { judul: "Dashboard", keys: [
+        { judul: "Dashboard (kartu per item)", keys: [
           ["izin_dashboard_nilai_service", "Nilai Service"],
           ["izin_dashboard_jumlah_service", "Jumlah Service"],
           ["izin_dashboard_pengeluaran_toko", "Pengeluaran Toko"],
@@ -1669,58 +1699,12 @@ const PagePengaturan = (() => {
           ["izin_user_hapus", "Nonaktifkan/Aktifkan/Hapus Permanen User Barber"],
           ["izin_user_ganti_password", "Mengubah Password User Barber"],
         ]},
-        // REVISI (Perluasan Hak Akses Admin, diminta Owner): grup di bawah
-        // ini SEBELUMNYA Admin selalu akses PENUH tanpa syarat apa pun
-        // (termasuk grup "Pengeluaran" yang REVISI kedua sempat dihapus
-        // total dari sini) -- SEKARANG bisa diatur granular lagi, dipecah
-        // "Kelola" (tambah/edit) vs "Hapus" per modul (lihat permissions.py).
-        // Endpoint LIHAT tetap selalu terbuka untuk Admin di semua modul ini.
-        { judul: "Booking", keys: [
-          ["izin_booking_kelola", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)"],
-          ["izin_booking_batalkan", "Batalkan Booking"],
-          ["izin_booking_pengaturan", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)"],
-        ]},
-        { judul: "Produk", keys: [
-          ["izin_produk_kelola", "Kelola Produk (tambah/edit, restock/jual/tester)"],
-          ["izin_produk_hapus", "Hapus Produk & Koreksi/Hapus Mutasi"],
-        ]},
-        { judul: "Input Data / Transaksi Harian", keys: [
-          ["izin_input_data_kelola", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)"],
-          ["izin_input_data_hapus", "Hapus Transaksi Harian (termasuk dari Rekap Transaksi)"],
-        ]},
-        { judul: "Pengeluaran", keys: [
-          ["izin_pengeluaran_kelola", "Kelola Pengeluaran (catat/edit)"],
-          ["izin_pengeluaran_hapus", "Hapus Pengeluaran"],
-        ]},
-        { judul: "Pemasukan", keys: [
-          ["izin_pemasukan_kelola", "Kelola Pemasukan (catat/edit)"],
-          ["izin_pemasukan_hapus", "Hapus Pemasukan"],
-        ]},
-        { judul: "Uang Kas", keys: [
-          ["izin_uang_kas_kelola", "Kelola Uang Kas (saldo awal, penyesuaian)"],
-          ["izin_uang_kas_hapus", "Hapus Penyesuaian Uang Kas"],
-        ]},
-        { judul: "Data Non-Barber", keys: [
-          ["izin_data_non_barber_kelola", "Kelola Data Non-Barber (tambah/edit)"],
-          ["izin_data_non_barber_hapus", "Hapus Data Non-Barber"],
-        ]},
         { judul: "Backup", keys: [
           ["izin_backup_export", "Export Database"],
           ["izin_backup_import", "Import Database"],
         ]},
         { judul: "Laporan", keys: [
           ["izin_laporan_pdf", "Download PDF"],
-        ]},
-        { judul: "Karyawan", keys: [
-          ["izin_slip_gaji", "Kelola Slip Gaji"],
-          ["izin_kasbon", "Kelola Kasbon Karyawan"],
-          ["izin_komisi", "Kelola Penyesuaian Komisi"],
-          ["izin_reimburse", "Kelola Reimburse"],
-          ["izin_cuti_karyawan", "Kelola Izin & Cuti"],
-        ]},
-        { judul: "Absensi", keys: [
-          ["izin_absensi_pengaturan", "Kelola Pengaturan Absensi (Jam Kerja, Radius, Lokasi Toko)"],
-          ["izin_absensi_koreksi", "Approve/Reject Koreksi Absensi"],
         ]},
         { judul: "Setting (akses tab)", keys: [
           ["izin_setting_branding", "Branding"],
@@ -1729,6 +1713,27 @@ const PagePengaturan = (() => {
           ["izin_setting_backup", "Backup"],
         ]},
     ];
+
+    // Bangun SATU dropdown level (Tidak Ada Akses/Baca/Baca & Edit) per menu
+    // ke dalam `container` -- pasangan buildIzinChecklistUI() di bawah,
+    // TAPI untuk katalog Hak Akses Menu (MENU_LIST), bukan izin_* mentah.
+    // Return {menu_key: <select>}.
+    function buildMenuLevelUI(container, menuData) {
+      const selects = {};
+      const listBox = MugenUI.el("div", { class: "checklist-service" });
+      for (const [key, label] of MENU_LIST) {
+        const sel = MugenUI.el("select", { style: "width:auto;" });
+        for (const [level, levelLabel] of Object.entries(LEVEL_LABEL)) {
+          sel.appendChild(MugenUI.el("option", { value: level }, levelLabel));
+        }
+        sel.value = menuData[key] || "none";
+        selects[key] = sel;
+        listBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;" },
+          [label, sel]));
+      }
+      container.appendChild(listBox);
+      return selects;
+    }
 
     // Bangun grid checkbox (h3 per grup + list) ke dalam `container` yang
     // mana pun -- dipakai renderHakAksesAdmin() (set default tenant) DAN
@@ -1783,18 +1788,26 @@ const PagePengaturan = (() => {
       // dipakai untuk keduanya, hanya endpoint GET/PUT-nya beda.
       function bukaModalIzinRole(role) {
         const endpoint = role ? `/api/pengaturan/user-roles/${role.id}/permissions` : "/api/pengaturan/hak-akses-admin";
+        const endpointMenu = role ? `/api/pengaturan/user-roles/${role.id}/menu-permissions` : "/api/pengaturan/hak-akses-admin-menu";
         const nama = role ? role.nama : "Admin";
         MugenApi.get(endpoint).then((izinRole) => {
+          const menuBox = MugenUI.el("div");
+          const menuSelects = buildMenuLevelUI(menuBox, izinRole.menu || {});
           const container = MugenUI.el("div");
           const checkboxes = buildIzinChecklistUI(container, izinRole);
           const errorBox = MugenUI.el("div", { class: "login-error" });
           const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Izin");
           btnSimpan.addEventListener("click", async () => {
             errorBox.textContent = "";
-            const body2 = {};
-            for (const [key, cb] of Object.entries(checkboxes)) body2[key] = cb.checked;
+            const bodyMenu = {};
+            for (const [key, sel] of Object.entries(menuSelects)) bodyMenu[key] = sel.value;
+            const bodyIzin = {};
+            for (const [key, cb] of Object.entries(checkboxes)) bodyIzin[key] = cb.checked;
             try {
-              await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(endpoint, { izin: body2 }));
+              await MugenUI.withButtonLoading(btnSimpan, () => Promise.all([
+                MugenApi.put(endpointMenu, { menu: bodyMenu }),
+                MugenApi.put(endpoint, { izin: bodyIzin }),
+              ]));
               MugenUI.toast(`Izin Role "${nama}" disimpan.`, "success", { force: true });
             } catch (e) {
               errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -1802,7 +1815,13 @@ const PagePengaturan = (() => {
           });
           MugenUI.infoModal({
             title: `Kelola Izin -- ${nama}`,
-            body: [container, errorBox, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan)],
+            body: [
+              MugenUI.el("h3", { style: "margin-top:0;" }, "Akses Menu"),
+              menuBox,
+              container,
+              errorBox,
+              MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan),
+            ],
           });
         }).catch((e) => MugenUI.toast(e.message, "error"));
       }

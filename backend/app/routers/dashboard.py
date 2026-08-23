@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 import database as db
 import permissions
-from auth import require_admin, require_barber, require_owner_or_staff
+from auth import require_admin, require_barber, require_owner_or_staff, require_menu_read
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -72,7 +72,7 @@ def _filter_dashboard_untuk_staff(hasil: dict, user: dict) -> dict:
 
 
 @router.get("/owner")
-def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("dashboard"))):
     """Ringkasan SEMUA barber aktif untuk satu bulan, plus total keseluruhan toko.
     REVISI: Bonus Kehadiran dihapus total (lihat database.get_ringkasan_barber_bulan).
     `rincian_service_semua_barber` ditambahkan (gabungan rincian_service seluruh
@@ -132,7 +132,7 @@ def dashboard_owner(tahun: int = None, bulan: int = None, user: dict = Depends(r
 
 
 @router.get("/owner/periode")
-def dashboard_owner_periode(tanggal_mulai: str, tanggal_selesai: str, user: dict = Depends(require_owner_or_staff)):
+def dashboard_owner_periode(tanggal_mulai: str, tanggal_selesai: str, user: dict = Depends(require_menu_read("dashboard"))):
     """FITUR Dashboard Owner mode "Periode" (rentang tanggal bebas, diminta
     Owner -- BEDA dari /owner di atas yang selalu satu bulan kalender
     penuh). Bentuk respons SENGAJA dibuat semirip mungkin dengan /owner

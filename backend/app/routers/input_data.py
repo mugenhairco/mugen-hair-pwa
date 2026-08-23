@@ -10,9 +10,12 @@ mungkin) tapi sudah tidak pernah tereksekusi lagi karena
 sebelum mencapai kode itu.
 
 REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
-tetap `require_owner_or_staff` (staff SELALU boleh melihat, tanpa syarat)
--- endpoint TULIS (POST/PUT tambah/koreksi transaksi & libur) sekarang
-`require_permission("izin_input_data_kelola")`, endpoint HAPUS
+sekarang `require_menu_read("input_data")` (level menu "Input Data" --
+"Tidak Ada Akses" menolak staff, "Baca"/"Baca & Edit" meloloskan, lihat
+permissions.py::MENU_DEFS -- REVISI dari `require_owner_or_staff` polos
+yang SEBELUMNYA selalu meloloskan staff tanpa syarat apa pun) -- endpoint
+TULIS (POST/PUT tambah/koreksi transaksi & libur) tetap
+`require_permission("izin_input_data_kelola")`, endpoint HAPUS tetap
 `require_permission("izin_input_data_hapus")` (lihat permissions.py, default
 TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
 
@@ -21,7 +24,7 @@ from pydantic import BaseModel
 
 import database as db
 import manual_customer_db
-from auth import require_owner_or_staff, require_permission
+from auth import require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/input-data", tags=["input-data"])
 
@@ -115,12 +118,12 @@ def _pastikan_pemilik(user: dict, transaksi_id: int) -> dict:
 
 
 @router.get("/services")
-def services(user: dict = Depends(require_owner_or_staff)):
+def services(user: dict = Depends(require_menu_read("input_data"))):
     return db.get_services(tenant_id=user["tenant_id"])
 
 
 @router.get("/barbers")
-def barbers(user: dict = Depends(require_owner_or_staff)):
+def barbers(user: dict = Depends(require_menu_read("input_data"))):
     """Untuk dropdown pilih barber di form Input Data (Owner). Barber tidak
     butuh ini (barber_id-nya sudah otomatis dari akun), tapi tidak dilarang
     memanggilnya juga (hanya daftar nama, bukan data sensitif). HANYA
@@ -130,7 +133,7 @@ def barbers(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.get("/karyawan")
-def karyawan(user: dict = Depends(require_owner_or_staff)):
+def karyawan(user: dict = Depends(require_menu_read("input_data"))):
     """Untuk dropdown yang harus menampilkan SEMUA karyawan (Barber +
     Kasir/OB/Kru) -- Slip Gaji, Kasbon, Reimburse, Izin & Cuti, filter
     Rekap Transaksi. BEDA dari /barbers di atas yang khusus jabatan='barber'."""
@@ -138,13 +141,13 @@ def karyawan(user: dict = Depends(require_owner_or_staff)):
 
 
 @router.post("/preview")
-def preview(body: PreviewBody, user: dict = Depends(require_owner_or_staff)):
+def preview(body: PreviewBody, user: dict = Depends(require_menu_read("input_data"))):
     return db.hitung_preview_items([it.model_dump() for it in body.items], tenant_id=user["tenant_id"])
 
 
 @router.get("/transaksi")
 def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
-                    user: dict = Depends(require_owner_or_staff)):
+                    user: dict = Depends(require_menu_read("input_data"))):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
     return db.get_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
                                   tenant_id=user["tenant_id"])
@@ -199,7 +202,7 @@ def hapus_transaksi(transaksi_id: int, user: dict = Depends(require_permission("
 
 
 @router.get("/libur")
-def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("input_data"))):
     barber_id = user.get("barber_id") if user["role"] == "barber" else None
     return db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
 

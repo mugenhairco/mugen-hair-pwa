@@ -9,10 +9,11 @@ Data di tahap lanjut kalau nanti diminta eksplisit; untuk saat ini, kelola
 stok sepenuhnya di tangan Owner/Admin.
 
 REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
-tetap `require_owner_or_staff` (staff SELALU boleh melihat) -- endpoint
-TULIS (tambah/edit produk, restock/jual/tester, koreksi mutasi) sekarang
+sekarang `require_menu_read("produk")` (level menu "Produk", lihat
+permissions.py::MENU_DEFS) -- endpoint TULIS (tambah/edit produk,
+restock/jual/tester, koreksi mutasi) tetap
 `require_permission("izin_produk_kelola")`, endpoint HAPUS (nonaktifkan
-produk, hapus mutasi) `require_permission("izin_produk_hapus")` (lihat
+produk, hapus mutasi) tetap `require_permission("izin_produk_hapus")` (lihat
 permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
 tiba-tiba terkunci).
 
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 
 import database as db
 import laporan_pdf
-from auth import require_feature, require_owner_or_staff, require_permission
+from auth import require_feature, require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/produk", tags=["produk"])
 
@@ -72,7 +73,7 @@ def _pastikan_mutasi_tenant_sama(user: dict, mutasi: dict | None):
 
 
 @router.get("")
-def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_owner_or_staff)):
+def list_produk(hanya_aktif: bool = True, user: dict = Depends(require_menu_read("produk"))):
     return db.get_produk_list(hanya_aktif=hanya_aktif, tenant_id=user["tenant_id"])
 
 
@@ -137,14 +138,14 @@ def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require
 
 @router.get("/mutasi")
 def list_mutasi(produk_id: int = None, tipe: str = None, tahun: int = None,
-                bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+                bulan: int = None, user: dict = Depends(require_menu_read("produk"))):
     return db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan,
                                       tenant_id=user["tenant_id"])
 
 
 @router.get("/mutasi/pdf")
 def list_mutasi_pdf(produk_id: int = None, tipe: str = None, tahun: int = None, bulan: int = None,
-                     user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
+                     user: dict = Depends(require_menu_read("produk")), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Cetak Riwayat Mutasi Produk -- filter SAMA PERSIS dengan GET /mutasi
     di atas (dipanggil tombol Cetak PDF di produk.js dengan filter aktif
     yang sedang tampil di layar), sumber data SAMA (db.get_mutasi_produk_list())

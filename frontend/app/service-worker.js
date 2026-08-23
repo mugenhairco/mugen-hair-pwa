@@ -715,7 +715,18 @@
 // (4) highlight kuning No. Transaksi untuk booking "advance" (dibuat lebih
 // awal dari tanggal appointment-nya); (5) tombol Refresh Booking List
 // (manggil ulang load() yang sudah ada, TIDAK ADA endpoint/polling baru).
-const ASSET_VERSION = "136";
+// v136 -> v137: AUDIT Hak Akses User / Kelola Izin (permintaan Owner) --
+// tiap menu sidebar sekarang punya SATU level (Tidak Ada Akses/Baca/Baca &
+// Edit) alih-alih checklist izin_* mentah per aksi (lihat permissions.py::
+// MENU_DEFS). File BARU js/menu_access.js ditambahkan ke APP_SHELL (helper
+// bersama fetch+cache level menu, dipakai halaman-halaman Input Data/Rekap/
+// Booking/Karyawan/Absensi/Keuangan/Produk). pages/pengaturan.js: form
+// "Kelola Izin" (tab Hak Akses User) sekarang punya dropdown per menu.
+// Setiap halaman menu operasional menampilkan HANYA
+// MugenUI.emptyState("Anda tidak memiliki akses ke menu ini.") kalau
+// levelnya "none" (tanpa fetch data sama sekali), dan menyembunyikan/
+// menonaktifkan tombol tambah/edit/hapus/approve kalau levelnya "read".
+const ASSET_VERSION = "137";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -757,6 +768,7 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pdf_preview.js",
   "/app/js/brand.js",
   "/app/js/subscription.js",
+  "/app/js/menu_access.js",
   "/app/js/pwa_update.js",
   "/app/js/nav.js",
   "/app/js/booking_notif.js",

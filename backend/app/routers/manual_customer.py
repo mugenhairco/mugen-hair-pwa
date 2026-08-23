@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import manual_customer_db
-from auth import require_owner_or_staff, require_permission
+from auth import require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/manual-customer", tags=["manual-customer"])
 
@@ -47,12 +47,12 @@ class ManualCustomerEditBody(BaseModel):
 
 
 @router.get("/status")
-def status_hari(tanggal: str, user: dict = Depends(require_owner_or_staff)):
+def status_hari(tanggal: str, user: dict = Depends(require_menu_read("input_data"))):
     return manual_customer_db.get_status_hari(user["tenant_id"], tanggal)
 
 
 @router.get("/transaksi")
-def list_transaksi(tanggal: str, user: dict = Depends(require_owner_or_staff)):
+def list_transaksi(tanggal: str, user: dict = Depends(require_menu_read("input_data"))):
     return manual_customer_db.get_manual_customer_list(user["tenant_id"], tanggal)
 
 

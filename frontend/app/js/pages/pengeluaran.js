@@ -20,10 +20,20 @@ const PagePengeluaran = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Pengeluaran"));
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa form/data apa pun.
+    const levelPengeluaran = await MugenMenuAccess.get("pengeluaran");
+    if (levelPengeluaran === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelPengeluaran === "write";
+
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(formCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Edit Pengeluaran.
+    if (bolehEdit) root.appendChild(formCard);
     root.appendChild(filterCard);
     root.appendChild(listCard);
 
@@ -257,6 +267,7 @@ const PagePengeluaran = (() => {
                   if (r.terkunci) {
                     return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
                   }
+                  if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
                   const btnEdit = MugenUI.el("button", {}, "Edit");
                   btnEdit.addEventListener("click", () => isiFormUntukEdit(r));

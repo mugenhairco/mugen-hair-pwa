@@ -365,3 +365,33 @@ def require_permission(key: str):
                                  detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
         return user
     return _dep
+
+
+def require_menu_read(menu_key: str):
+    """Dependency factory Hak Akses Menu (permintaan Owner, lihat
+    permissions.py::MENU_DEFS): gerbang MELIHAT satu menu sidebar -- Owner
+    ('admin') SELALU lolos tanpa syarat, 'staff' lolos kalau level menu ini
+    ("Baca" ATAU "Baca & Edit") bukan "Tidak Ada Akses". Dipasang di
+    endpoint GET modul yang SEBELUMNYA selalu terbuka untuk staff tanpa
+    permission apa pun (Booking/Input Data/Produk/Pengeluaran/Pemasukan/
+    Uang Kas/Dashboard/Rekap/Absensi/Riwayat Transaksi) -- PENTING dicek di
+    backend, BUKAN cuma menyembunyikan konten di frontend, supaya user
+    tanpa akses tetap ditolak walau memanggil endpoint-nya langsung.
+
+    TIDAK dipakai untuk modul Karyawan (Kasbon/Komisi/Slip Gaji/Reimburse/
+    Izin Cuti) -- router-router itu sudah punya pengecekan sendiri
+    (_cek_akses_lihat dkk, kini memakai key "_lihat" yang sama lewat
+    permissions.has(), lihat masing-masing router) karena juga perlu
+    menangani akses Barber (self-service) yang di luar cakupan Hak Akses
+    Menu ini sama sekali."""
+    def _dep(user: dict = Depends(require_owner_or_staff)) -> dict:
+        if user["role"] == "admin":
+            return user
+        import permissions  # import lokal: hindari import siklik
+        level = permissions.get_menu_level(menu_key, tenant_id=user.get("tenant_id"),
+                                            role_id=user.get("custom_role_id"))
+        if level == permissions.LEVEL_NONE:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                 detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
+        return user
+    return _dep

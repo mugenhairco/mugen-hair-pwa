@@ -23,12 +23,22 @@ const PageUangKas = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Uang Kas"));
 
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
+    // pesan kosong, tanpa saldo/form/data apa pun.
+    const levelUangKas = await MugenMenuAccess.get("uang_kas");
+    if (levelUangKas === "none") {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const bolehEdit = levelUangKas === "write";
+
     const saldoCard = MugenUI.el("div", { class: "card" });
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(saldoCard);
-    root.appendChild(formCard);
+    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah Penyesuaian.
+    if (bolehEdit) root.appendChild(formCard);
     root.appendChild(filterCard);
     root.appendChild(listCard);
 
@@ -43,11 +53,15 @@ const PageUangKas = (() => {
     const btnSimpanSaldoAwal = MugenUI.el("button", {}, "Simpan Saldo Kas Awal");
     const saldoAwalError = MugenUI.el("div", { class: "login-error" });
     const saldoAwalInfo = MugenUI.el("div", { class: "subtitle" }, "");
-    saldoCard.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Saldo Kas Awal (Rp)"));
-    saldoCard.appendChild(inputSaldoAwal);
-    saldoCard.appendChild(saldoAwalError);
-    saldoCard.appendChild(saldoAwalInfo);
-    saldoCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSaldoAwal));
+    // Hak Akses Menu: level "Baca" -- sembunyikan kontrol ubah Saldo Kas Awal
+    // (Saldo Saat Ini di atas tetap tampil, murni tampilan).
+    if (bolehEdit) {
+      saldoCard.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Saldo Kas Awal (Rp)"));
+      saldoCard.appendChild(inputSaldoAwal);
+      saldoCard.appendChild(saldoAwalError);
+      saldoCard.appendChild(saldoAwalInfo);
+      saldoCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSaldoAwal));
+    }
 
     async function muatSaldo() {
       try {
@@ -199,6 +213,7 @@ const PageUangKas = (() => {
               { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
               {
                 key: "aksi", label: "Aksi", format: (_, r) => {
+                  if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
                   const wrap = MugenUI.el("div", { class: "actions-cell" });
                   const btnEdit = MugenUI.el("button", {}, "Edit");
                   btnEdit.addEventListener("click", () => {

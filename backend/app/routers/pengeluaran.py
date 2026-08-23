@@ -11,11 +11,12 @@ izin_pengeluaran_* SEMPAT dihapus total di REVISI kedua (Admin/'staff'
 akses PENUH tanpa syarat apa pun) -- SEKARANG DIHIDUPKAN KEMBALI dengan
 nama kode BARU (izin_pengeluaran_kelola/izin_pengeluaran_hapus, lihat
 permissions.py) supaya Owner bisa membatasi lagi kalau mau. Endpoint LIHAT
-(GET) tetap `require_owner_or_staff` (staff SELALU boleh melihat) --
-endpoint TULIS (tambah/edit) sekarang `require_permission("izin_pengeluaran_kelola")`,
-endpoint HAPUS `require_permission("izin_pengeluaran_hapus")`. Default
-KEDUANYA True -- staff yang sudah pakai modul ini tidak tiba-tiba
-terkunci begitu perubahan ini deploy."""
+(GET) sekarang `require_menu_read("pengeluaran")` (level menu "Pengeluaran",
+lihat permissions.py::MENU_DEFS) -- endpoint TULIS (tambah/edit) tetap
+`require_permission("izin_pengeluaran_kelola")`, endpoint HAPUS tetap
+`require_permission("izin_pengeluaran_hapus")`. Default KEDUANYA True --
+staff yang sudah pakai modul ini tidak tiba-tiba terkunci begitu perubahan
+ini deploy."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 
 import laporan_pdf
 import pengeluaran_db as db_pengeluaran
-from auth import require_feature, require_owner_or_staff, require_permission
+from auth import require_feature, require_permission, require_menu_read
 
 router = APIRouter(prefix="/api/pengeluaran", tags=["pengeluaran"])
 
@@ -39,7 +40,7 @@ class PengeluaranBody(BaseModel):
 
 
 @router.get("/kategori")
-def daftar_kategori(user: dict = Depends(require_owner_or_staff)):
+def daftar_kategori(user: dict = Depends(require_menu_read("pengeluaran"))):
     """Daftar kategori (default + yang sudah pernah dipakai) untuk dropdown
     filter & form di frontend."""
     return db_pengeluaran.get_kategori_list(tenant_id=user["tenant_id"])
@@ -48,7 +49,7 @@ def daftar_kategori(user: dict = Depends(require_owner_or_staff)):
 @router.get("")
 def list_pengeluaran(tahun: int = None, bulan: int = None, tanggal: str = None,
                       kategori: str = None, cari: str = None, hanya_aktif: bool = None,
-                      user: dict = Depends(require_owner_or_staff)):
+                      user: dict = Depends(require_menu_read("pengeluaran"))):
     return db_pengeluaran.get_pengeluaran_list(
         tahun=tahun, bulan=bulan, tanggal=tanggal,
         kategori=kategori, cari=cari, hanya_aktif=hanya_aktif,
@@ -66,7 +67,7 @@ def _pastikan_pengeluaran_tenant_sama(user: dict, row: dict | None):
 
 @router.get("/pdf")
 def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str = None,
-                          user: dict = Depends(require_owner_or_staff), _fitur: dict = Depends(require_feature("export_pdf"))):
+                          user: dict = Depends(require_menu_read("pengeluaran")), _fitur: dict = Depends(require_feature("export_pdf"))):
     """Route ini didaftarkan SEBELUM /{pengeluaran_id} supaya 'pdf' tidak
     ditangkap sebagai path parameter pengeluaran_id."""
     konten = laporan_pdf.buat_pdf_pengeluaran_list(tahun, bulan, kategori, cari, user["username"],
@@ -77,7 +78,7 @@ def list_pengeluaran_pdf(tahun: int, bulan: int, kategori: str = None, cari: str
 
 
 @router.get("/{pengeluaran_id}")
-def detail_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_owner_or_staff)):
+def detail_pengeluaran(pengeluaran_id: int, user: dict = Depends(require_menu_read("pengeluaran"))):
     row = db_pengeluaran.get_pengeluaran(pengeluaran_id)
     _pastikan_pengeluaran_tenant_sama(user, row)
     return row

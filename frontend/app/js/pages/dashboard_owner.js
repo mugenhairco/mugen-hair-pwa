@@ -38,7 +38,19 @@ const PageDashboardOwner = (() => {
     }
   }
 
-  function render(root) {
+  async function render(root) {
+    // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" ke menu
+    // Dashboard -- tampilkan HANYA pesan kosong, tidak fetch/tampilkan
+    // kartu apa pun. Kartu PER-FIELD (izin_dashboard_*) tetap jalan seperti
+    // sebelumnya begitu level di atas "none" -- dua sistem izin berbeda,
+    // level menu ini menggerbang SELURUH halaman, izin_dashboard_* di
+    // bawahnya menggerbang kartu MANA yang tampil.
+    if ((await MugenMenuAccess.get("dashboard")) === "none") {
+      root.innerHTML = "";
+      root.appendChild(MugenUI.el("h1", {}, "Dashboard"));
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
     const today = new Date();
     let tahun = today.getFullYear();
     let bulan = today.getMonth() + 1;
