@@ -192,19 +192,27 @@ def get_config() -> dict:
     data["channel_label"] = CHANNEL_LABEL
     data["va_channel_code_label"] = VA_CHANNEL_CODE_LABEL
     data["qris_channel_code_label"] = QRIS_CHANNEL_CODE_LABEL
-    # "enabled": SENGAJA konservatif -- field kredensial minimal yang
-    # DIPERKIRAKAN dibutuhkan skema token B2B SNAP (merchant_id/client_id/
-    # client_secret/private_key), TAPI ini BUKAN jaminan kredensial ini
-    # benar-benar valid/cocok dengan yang diminta Faspay (PENDING FASPAY) --
-    # murni penanda "sudah diisi sesuatu", bukan "sudah terverifikasi
-    # berfungsi". Endpoint create-transaction TETAP melempar PENDING FASPAY
-    # terlepas dari nilai enabled ini (lihat snap_advance_client.py).
-    # BUGFIX: dihitung dari `_terisi` (bukan `data["snap_client_secret"]`/
-    # `data["snap_private_key"]` langsung) -- kedua field itu SUDAH dikosongkan
-    # oleh masking di atas, memakainya lagi di sini akan membuat `enabled`
-    # SELALU False walau kredensial sebenarnya sudah lengkap.
-    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_client_id"]
-                            and data["snap_client_secret_terisi"] and data["snap_private_key_terisi"])
+    # "enabled": KOREKSI (klarifikasi resmi Faspay, dikonfirmasi juga lewat
+    # halaman dokumen "Signature SNAP" -- lihat catatan modul
+    # snap_advance_client.py::_headers_service()) -- asumsi AWAL bahwa skema
+    # token B2B SNAP butuh client_id/client_secret TERNYATA KELIRU: signature
+    # request SELURUH service call (Create VA/QRIS/Direct Debit) memakai
+    # header X-TIMESTAMP/X-SIGNATURE/X-PARTNER-ID/X-EXTERNAL-ID/CHANNEL-ID
+    # SAJA, TIDAK PERNAH Client ID/Client Secret -- field itu TETAP disimpan
+    # (kalau-kalau dibutuhkan produk SNAP lain, mis. B2B access token untuk
+    # Disbursement) TAPI SENGAJA TIDAK dijadikan syarat "enabled" lagi.
+    # Field yang genuinely dipakai SELURUH request (lihat _cfg_wajib() di
+    # _headers_service() + buat_transaksi_qris()/buat_transaksi_direct_debit())
+    # : merchant_id, partner_id, channel_id, private_key.
+    # BUKAN jaminan kredensial ini benar-benar valid/cocok dengan yang
+    # terdaftar di Faspay -- murni penanda "sudah diisi sesuatu", bukan
+    # "sudah terverifikasi berfungsi".
+    # BUGFIX: dihitung dari `_terisi` (bukan `data["snap_private_key"]`
+    # langsung) -- field itu SUDAH dikosongkan oleh masking di atas, memakainya
+    # lagi di sini akan membuat `enabled` SELALU False walau kredensial
+    # sebenarnya sudah lengkap.
+    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"]
+                            and data["snap_channel_id"] and data["snap_private_key_terisi"])
     return data
 
 
@@ -231,8 +239,8 @@ def get_config_internal() -> dict:
         data["snap_channel_aktif"] = json.loads(db.get_setting(_KUNCI_CHANNEL_AKTIF, _DEFAULT_CHANNEL_AKTIF, tenant_id=None))
     except (TypeError, ValueError):
         data["snap_channel_aktif"] = []
-    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_client_id"]
-                            and data["snap_client_secret"] and data["snap_private_key"])
+    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"]
+                            and data["snap_channel_id"] and data["snap_private_key"])
     return data
 
 
