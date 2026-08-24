@@ -647,37 +647,66 @@ const MugenUI = (() => {
     }
   }
 
-  // Fitur multi-bank VA (SNAP Advance): "logo" bank di pemilihan channel VA
-  // (book_public.js/billing.js/superadmin.js) -- KITA TIDAK PUNYA berkas
-  // aset logo resmi tiap bank (butuh persetujuan/lisensi terpisah per bank
-  // untuk memakai logo asli mereka), jadi dipakai monogram singkatan di
-  // atas kotak warna sebagai penanda visual yang jelas dan profesional,
-  // BUKAN klaim sebagai logo resmi. Satu peta terpusat di sini supaya
-  // ketiga halaman itu konsisten (bukan tiga peta terpisah yang bisa
-  // berbeda-beda) -- kalau nanti berkas logo resmi tersedia, cukup ganti
-  // isi bankLogoBadge() di satu tempat ini.
+  // Fitur multi-bank VA (SNAP Advance): "logo" + nama lengkap bank di
+  // pemilihan channel VA (book_public.js/billing.js/superadmin.js). Satu
+  // peta terpusat di sini supaya ketiga halaman itu konsisten (bukan tiga
+  // peta terpisah yang bisa berbeda-beda).
+  //
+  // `logo` (path ke berkas PNG asli, lihat img/banks/) HANYA diisi untuk
+  // bank yang berkasnya sudah tersedia (BCA/BNI/BRI/Mandiri, diberikan
+  // Owner) -- bank lain fallback ke monogram singkatan di atas kotak warna
+  // (BUKAN klaim sebagai logo resmi, murni penanda visual) sampai berkas
+  // logo aslinya tersedia juga.
+  //
+  // `nama` = nama bank LENGKAP untuk customer (REVISI diminta Owner:
+  // sebelumnya label mentah dari backend berisi istilah teknis provider
+  // seperti "BCA VA (Dynamic)" -- TIDAK BOLEH tampil ke customer). Backend
+  // TETAP mengirim channelCode + label teknisnya sendiri (snap_advance_db.py
+  // VA_CHANNEL_CODE_LABEL, dipakai Super Admin/internal) -- peta di sini
+  // MURNI lapisan tampilan frontend, tidak menyentuh apa pun yang dikirim
+  // ke Faspay (channelCode yang dikirim tetap `kode`, bukan `nama`).
   const _BANK_BRAND = {
-    "402": { singkatan: "PRM", warna: "#0891B2" },   // Permata
-    "408": { singkatan: "MAY", warna: "#D97706" },   // Maybank
-    "702": { singkatan: "BCA", warna: "#2563EB" },   // BCA
-    "706": { singkatan: "IDM", warna: "#DC2626" },   // Indomaret Payment Point
-    "707": { singkatan: "ALF", warna: "#DB2777" },   // Alfagroup
-    "708": { singkatan: "DAN", warna: "#EA580C" },   // Danamon
-    "718": { singkatan: "BNC", warna: "#7C3AED" },   // BNC
-    "800": { singkatan: "BRI", warna: "#0369A1" },   // BRI
-    "801": { singkatan: "BNI", warna: "#EA580C" },   // BNI
-    "802": { singkatan: "MDR", warna: "#1D4ED8" },   // Mandiri
-    "818": { singkatan: "SNM", warna: "#16A34A" },   // Sinarmas
-    "825": { singkatan: "CIMB", warna: "#DC2626" },  // CIMB Niaga
-    "837": { singkatan: "BTN", warna: "#EA580C" },   // BTN
+    "402": { singkatan: "PRM", warna: "#0891B2", nama: "Bank Permata" },
+    "408": { singkatan: "MAY", warna: "#D97706", nama: "Maybank Indonesia" },
+    "702": { singkatan: "BCA", warna: "#2563EB", nama: "Bank Central Asia", logo: "img/banks/bca.png" },
+    "706": { singkatan: "IDM", warna: "#DC2626", nama: "Indomaret" },
+    "707": { singkatan: "ALF", warna: "#DB2777", nama: "Alfamart" },
+    "708": { singkatan: "DAN", warna: "#EA580C", nama: "Bank Danamon" },
+    "718": { singkatan: "BNC", warna: "#7C3AED", nama: "Bank Neo Commerce" },
+    "800": { singkatan: "BRI", warna: "#0369A1", nama: "Bank Rakyat Indonesia", logo: "img/banks/bri.png" },
+    "801": { singkatan: "BNI", warna: "#EA580C", nama: "Bank Negara Indonesia", logo: "img/banks/bni.png" },
+    "802": { singkatan: "MDR", warna: "#1D4ED8", nama: "Bank Mandiri", logo: "img/banks/mandiri.png" },
+    "818": { singkatan: "SNM", warna: "#16A34A", nama: "Bank Sinarmas" },
+    "825": { singkatan: "CIMB", warna: "#DC2626", nama: "CIMB Niaga" },
+    "837": { singkatan: "BTN", warna: "#EA580C", nama: "Bank Tabungan Negara" },
   };
 
   function bankLogoBadge(kode, ukuran) {
-    const brand = _BANK_BRAND[kode] || { singkatan: String(kode).slice(0, 4).toUpperCase(), warna: "#475569" };
+    const brand = _BANK_BRAND[kode];
+    if (brand && brand.logo) {
+      return el("img", {
+        src: brand.logo, alt: brand.nama,
+        class: "bank-logo-img" + (ukuran === "sm" ? " bank-logo-img-sm" : ""),
+      });
+    }
+    const singkatan = brand ? brand.singkatan : String(kode).slice(0, 4).toUpperCase();
+    const warna = brand ? brand.warna : "#475569";
     return el("div", {
       class: "bank-logo-badge" + (ukuran === "sm" ? " bank-logo-badge-sm" : ""),
-      style: `background:${brand.warna};`,
-    }, brand.singkatan);
+      style: `background:${warna};`,
+    }, singkatan);
+  }
+
+  // Nama bank LENGKAP untuk customer (lihat catatan _BANK_BRAND di atas) --
+  // `fallbackLabel` (label mentah dari backend) dipakai HANYA kalau kode
+  // banknya belum ada di peta (bank baru yang Super Admin aktifkan sebelum
+  // peta di sini sempat diperbarui) -- tetap dirapikan (buang "(Dynamic)"/
+  // "(Static & Dynamic)") supaya istilah teknis provider tidak pernah
+  // lolos ke customer sekalipun lewat jalur fallback ini.
+  function bankNamaLengkap(kode, fallbackLabel) {
+    const brand = _BANK_BRAND[kode];
+    if (brand) return brand.nama;
+    return String(fallbackLabel || kode).replace(/\s*\((Dynamic|Static\s*&\s*Dynamic)\)\s*/gi, "").trim();
   }
 
   // REVISI UI/UX: switch Dark Mode dipakai di DUA tempat (Setting >
@@ -703,6 +732,6 @@ const MugenUI = (() => {
     serviceCell, keteranganCell, offlineBanner, barChart, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
-    isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge,
+    isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
   };
 })();

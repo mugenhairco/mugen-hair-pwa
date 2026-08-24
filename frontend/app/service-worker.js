@@ -764,7 +764,15 @@
 // billing.js: grid kartu ber-"logo" -- monogram warna, BUKAN aset logo
 // resmi bank, lihat ui.js::bankLogoBadge()). superadmin.js: dropdown Bank
 // VA Default diganti daftar checkbox Bank VA Aktif.
-const ASSET_VERSION = "144";
+// v144 -> v145: REVISI tampilan (diminta Owner) -- logo ASLI (BCA/BNI/BRI/
+// Mandiri, berkas img/banks/*.png) menggantikan monogram warna untuk
+// keempat bank itu (bank lain tetap monogram, belum ada berkas logo).
+// Nama bank sekarang lengkap (mis. "Bank Central Asia", BUKAN "BCA VA
+// (Dynamic)") lewat ui.js::bankNamaLengkap(). book_public.js: "Payment
+// Gateway" TIDAK LAGI tampil sebagai satu pilihan pembungkus -- Virtual
+// Account & QRIS langsung sejajar dengan metode lain di satu daftar
+// pilihan (backend/API TIDAK berubah, murni tampilan).
+const ASSET_VERSION = "145";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -845,6 +853,12 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/subscription_blocked.js",
   "/app/js/pages/tenant_not_found.js",
   "/app/js/tenant_guard.js",
+  // Fitur multi-bank VA: logo bank resmi (BCA/BNI/BRI/Mandiri) untuk grid
+  // pilihan bank booking/billing -- lihat ui.js::bankLogoBadge().
+  "/app/img/banks/bca.png",
+  "/app/img/banks/bni.png",
+  "/app/img/banks/bri.png",
+  "/app/img/banks/mandiri.png",
 ];
 const APP_SHELL = [
   ..._APP_SHELL_TANPA_VERSI,

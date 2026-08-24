@@ -1342,6 +1342,15 @@ body.book-public-active {
 /* Versi kecil -- daftar checkbox Super Admin (satu baris per bank, badge
    besar akan mendominasi baris teks yang ringkas). */
 .bank-logo-badge-sm { width: 28px; height: 28px; border-radius: 7px; font-size: 10px; }
+/* Fitur multi-bank VA: logo ASLI (berkas img/banks/*.png, wordmark
+   landscape -- BEDA proporsi dari monogram kotak .bank-logo-badge di atas)
+   -- kotak putih supaya logo tetap kontras & konsisten baik di tema
+   terang maupun gelap (logo bank umumnya dirancang untuk latar terang). */
+.bank-logo-img {
+  height: 32px; max-width: 100px; object-fit: contain; flex-shrink: 0;
+  background: #fff; border-radius: 6px; padding: 6px 10px; box-sizing: content-box;
+}
+.bank-logo-img-sm { height: 20px; max-width: 72px; padding: 3px 6px; }
 /* Halaman Pembayaran QRIS: gambar tetap tajam (tidak diperbesar melebihi
    ukuran aslinya lewat CSS, hanya dibatasi lebar maksimum) di semua ukuran
    layar, plus hint rendering tajam untuk browser yang mendukungnya. */

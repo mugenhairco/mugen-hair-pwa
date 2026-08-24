@@ -195,6 +195,10 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     return {
         **invoice, "channel": body.channel, "payment_reference": row["payment_reference"],
         "va_number": hasil.get("va_number"),
+        # REVISI tampilan: channel_code apa adanya (frontend memetakan nama
+        # lengkap sendiri, ui.js::bankNamaLengkap()) -- va_bank_label TETAP
+        # dikirim untuk kompatibilitas mundur.
+        "channel_code": hasil.get("channel_code"),
         "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(hasil.get("channel_code")),
         "qr_url": hasil.get("qr_url"),
         "qr_content": hasil.get("qr_content"), "expired_at": hasil.get("expired_at"),
@@ -264,6 +268,7 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
         invoice = {
             **invoice, "channel": transaksi_snap["channel"], "payment_reference": transaksi_snap["payment_reference"],
             "va_number": transaksi_snap["va_number"],
+            "channel_code": transaksi_snap["channel_code"],
             "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi_snap["channel_code"]),
             "qr_url": transaksi_snap["qr_url"],
             "qr_content": transaksi_snap["qr_content"], "expired_at": transaksi_snap["expired_at"],

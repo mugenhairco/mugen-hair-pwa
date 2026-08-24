@@ -117,7 +117,7 @@ const PageBilling = (() => {
         const grid = MugenUI.el("div", { class: "bank-grid" });
         for (const kode of kodeBankList) {
           const card = MugenUI.el("button", { type: "button", class: "bank-card" },
-            [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, vaBankAktif[kode])]);
+            [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(kode, vaBankAktif[kode]))]);
           card.addEventListener("click", () => tutup({ channel: "va", bankCode: kode }));
           grid.appendChild(card);
         }
@@ -252,7 +252,8 @@ const PageBilling = (() => {
     // SAMA seperti isiKontenSnapWaiting() di pages/book_public.js).
     const kontenModal = [];
     if (invoice.channel === "va") {
-      kontenModal.push(MugenUI.el("div", { class: "subtitle" }, invoice.va_bank_label ? `Virtual Account ${invoice.va_bank_label}` : "Virtual Account"));
+      kontenModal.push(MugenUI.el("div", { class: "subtitle" },
+        invoice.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(invoice.channel_code, invoice.va_bank_label)}` : "Virtual Account"));
       kontenModal.push(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;margin-top:4px;" }, invoice.va_number || "-"));
       kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
         "Transfer PERSIS sejumlah tagihan ini ke nomor Virtual Account di atas lewat m-banking/ATM."));
