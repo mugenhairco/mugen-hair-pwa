@@ -736,7 +736,17 @@
 // aktif di notification_router (root, TANPA prefix `/api`) -- supaya Super
 // Admin tidak salah mendaftarkan URL basi ke tim Faspay. TIDAK ADA perubahan
 // logika/endpoint apa pun, MURNI perbaikan teks yang ditampilkan.
-const ASSET_VERSION = "141";
+// v141 -> v142: BUGFIX flag "enabled" konfigurasi Faspay SNAP Advance --
+// sebelumnya mensyaratkan Client ID/Client Secret terisi (asumsi awal skema
+// token B2B), TERNYATA KELIRU per klarifikasi tertulis Faspay: signature
+// SELURUH request SNAP (Create VA/QRIS/Direct Debit) HANYA memakai header
+// X-TIMESTAMP/X-SIGNATURE/X-PARTNER-ID/X-EXTERNAL-ID/CHANNEL-ID, Client
+// ID/Secret TIDAK PERNAH dipakai (lihat snap_advance_db.py::get_config()).
+// Field sekarang disyaratkan: merchant_id, partner_id, channel_id,
+// private_key -- Super Admin BOLEH mengosongkan Client ID/Client Secret
+// sepenuhnya. Label kedua field itu di form ini juga diberi keterangan
+// "opsional". TIDAK ADA perubahan endpoint/format request ke Faspay.
+const ASSET_VERSION = "142";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

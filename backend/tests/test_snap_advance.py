@@ -462,11 +462,28 @@ def test_config_default_kosong_dan_disabled():
 
 
 def test_update_config_dan_enabled_true_setelah_lengkap():
-    snap_advance_db.update_config(merchant_id="TEST-MID", client_id="TEST-CID",
-                                   client_secret="TEST-SECRET", private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----")
+    """"enabled" TIDAK LAGI mensyaratkan Client ID/Client Secret (KOREKSI --
+    klarifikasi resmi Faspay: signature SELURUH request SNAP hanya memakai
+    X-TIMESTAMP/X-SIGNATURE/X-PARTNER-ID/X-EXTERNAL-ID/CHANNEL-ID, Client
+    ID/Secret TIDAK PERNAH dipakai) -- field yang genuinely disyaratkan:
+    merchant_id, partner_id, channel_id, private_key."""
+    snap_advance_db.update_config(merchant_id="TEST-MID", partner_id="TEST-PID", channel_id="77001",
+                                   private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----")
     cfg = snap_advance_db.get_config()
     assert cfg["enabled"] is True
     assert cfg["snap_merchant_id"] == "TEST-MID"
+
+
+def test_update_config_enabled_tetap_false_tanpa_client_id_secret():
+    """Client ID/Client Secret SENGAJA tidak jadi syarat "enabled" -- boleh
+    dikosongkan sepenuhnya (sesuai instruksi tertulis Faspay), asalkan
+    merchant_id/partner_id/channel_id/private_key sudah lengkap."""
+    snap_advance_db.update_config(merchant_id="TEST-MID", partner_id="TEST-PID", channel_id="77001",
+                                   private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+                                   client_id="", client_secret="")
+    cfg = snap_advance_db.get_config()
+    assert cfg["enabled"] is True
+    assert cfg["snap_client_id"] == ""
 
 
 def test_update_config_channel_ewallet_ditolak():

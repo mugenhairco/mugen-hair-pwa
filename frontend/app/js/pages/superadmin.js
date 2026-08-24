@@ -1395,9 +1395,9 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(inSnapMerchantId);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Partner ID"));
     snapAdvanceCard.appendChild(inSnapPartnerId);
-    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client ID"));
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client ID (opsional -- TIDAK dipakai signature Create VA/QRIS/Direct Debit, klarifikasi resmi Faspay)"));
     snapAdvanceCard.appendChild(inSnapClientId);
-    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client Secret"));
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client Secret (opsional -- TIDAK dipakai signature Create VA/QRIS/Direct Debit, klarifikasi resmi Faspay)"));
     snapAdvanceCard.appendChild(inSnapClientSecret);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Private Key (RSA, milik merchant -- untuk menandatangani permintaan)"));
     snapAdvanceCard.appendChild(inSnapPrivateKey);
