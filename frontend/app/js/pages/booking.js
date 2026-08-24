@@ -1252,19 +1252,17 @@ const PageBooking = (() => {
     qrisCard.appendChild(errorBox3);
     qrisCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnUploadQris, btnHapusQris]));
 
-    // Feature Gating "qris": Owner yang paketnya tidak menyertakan fitur
-    // ini TIDAK BISA upload/ganti/hapus QRIS baru (backend menggerbang
-    // POST/DELETE /api/booking/qris sama persis, lihat routers/booking.py)
-    // -- tapi gambar QRIS yang SUDAH terupload (qrisPreview di atas) TETAP
-    // tampil apa adanya, read-only, TIDAK ikut disembunyikan/dihapus, cuma
-    // kemampuan MENGUBAHNYA yang dikunci.
-    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("qris")) {
-      inMerchant.disabled = true;
-      inQrisFile.disabled = true;
-      btnUploadQris.disabled = true;
-      btnHapusQris.disabled = true;
-      qrisCard.appendChild(MugenFeature.upgradeBlock("QRIS"));
-    }
+    // AUDIT (enforcement paket/subscription): kode fitur "qris" SUDAH
+    // DIHAPUS TOTAL dari katalog fitur (billing_db.py::hapus_gerbang_qris()
+    // -- QRIS sekarang metode INTI, bukan lagi opsional per paket, lihat
+    // catatan lengkap di sana) -- backend TIDAK PERNAH lagi menggerbang
+    // POST/DELETE /api/booking/qris dengan fitur apa pun. Gerbang
+    // MugenFeature.has("qris") di sini SEBELUMNYA ikut basi (kode "qris"
+    // tidak pernah bisa muncul lagi di features[] tenant manapun) --
+    // akibatnya SEMUA tenant, di paket manapun, permanen melihat form QRIS
+    // terkunci + kartu "Upgrade Paket" palsu. DIHAPUS TOTAL, bukan
+    // diperbaiki jadi kode lain -- tidak ada pengganti karena memang tidak
+    // ada gerbang paket untuk QRIS lagi.
 
     // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
     // untuk kedua tombol QRIS (upload/ganti butuh progress upload file yang

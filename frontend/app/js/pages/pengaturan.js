@@ -1924,6 +1924,16 @@ const PagePengaturan = (() => {
         "saat customer memilih pembayaran QRIS (reminder segera bayar), saat pembayaran diverifikasi (manual maupun " +
         "otomatis lewat Payment Gateway), dan saat booking dibatalkan karena belum dibayar."));
 
+      // AUDIT (enforcement paket/subscription): sebelumnya tab ini TIDAK
+      // ada pengecekan fitur sama sekali (backend juga belum menggerbang
+      // GET/PUT /api/pengaturan/whatsapp + POST .../tes) -- pola SAMA
+      // PERSIS renderLogError() di bawah, tab tetap tampil tapi isinya
+      // diganti blok upgrade.
+      if (typeof MugenFeature !== "undefined" && !MugenFeature.has("whatsapp_reminder")) {
+        card.appendChild(MugenFeature.upgradeBlock("Notifikasi WhatsApp"));
+        return;
+      }
+
       let s;
       try {
         s = await MugenApi.get("/api/pengaturan/whatsapp");

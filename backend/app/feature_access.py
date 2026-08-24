@@ -19,16 +19,29 @@ PUNYA fitur apa pun (fail-CLOSED) -- "tidak ada data paket" tidak boleh
 diam-diam disamakan dengan "paket ter-lengkap", beda konteks dari limit
 angka yang memang punya makna "unlimited" bawaan.
 
-Cakupan fitur yang SUNGGUHAN ditegakkan (lihat README/plan implementasi):
-hanya `booking_online`, `qris`, `export_pdf` -- SATU-SATUNYA kode fitur di
-katalog (`billing_db._FITUR_DEFAULT`) yang punya padanan fungsi nyata di
-aplikasi ini. Kode fitur lain (google_calendar/api/priority_support/
-multi_cabang/whatsapp_reminder/export_excel) TETAP bisa dibuat/di-toggle
-Superadmin lewat Katalog Fitur (tidak dihapus/disembunyikan), tapi memang
-belum ada titik penegakan untuk itu SAMPAI fungsinya sungguhan dibangun --
-`tenant_has_feature()` di bawah generik untuk kode APA PUN, jadi menambah
-penegakan fitur baru nanti cukup satu baris `Depends(require_feature("kode_baru"))`
-di endpoint terkait, tanpa mengubah file ini."""
+Cakupan fitur yang SUNGGUHAN ditegakkan (audit lanjutan -- diperbarui,
+DAFTAR LAMA di sini SEBELUMNYA SUDAH BASI, lihat catatan "KOREKSI" di
+bawah): `booking_online`, `export_pdf`, `export_excel`, `whatsapp_reminder`
+(sebagian -- lihat booking_db.py::_kirim_notifikasi_wa_booking() +
+routers/pengaturan.py endpoint WhatsApp), `log_error`, `barber_app`,
+`absensi`. Kode fitur dekoratif-marketing (manajemen_bisnis/manajemen_barber/
+hak_akses_role/manajemen_layanan/pengaturan_komisi_gaji, lihat
+billing_db.py::_KODE_FITUR_DEKORATIF_MARKETING) SENGAJA TIDAK ditegakkan --
+keputusan produk eksplisit, BUKAN celah, lihat catatan lengkap di
+billing_db.py. `tenant_has_feature()` di bawah generik untuk kode APA PUN,
+jadi menambah penegakan fitur baru cukup satu baris
+`Depends(require_feature("kode_baru"))` di endpoint terkait, tanpa mengubah
+file ini.
+
+KOREKSI (audit lanjutan -- enforcement paket/subscription): kode `qris`
+SUDAH DIHAPUS TOTAL dari katalog (billing_db.py::hapus_gerbang_qris(), QRIS
+sekarang metode INTI bukan opsional per paket) -- TIDAK PERNAH lagi
+digerbang di mana pun, catatan lama yang menyebutnya sudah basi & dihapus
+dari sini. Status subscription (expired/suspended/cancelled) TIDAK dicek
+di modul ini -- itu ditegakkan TERPISAH di auth.py::get_current_user()
+(satu titik untuk SELURUH endpoint ber-login, lihat
+_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION di sana), bukan tanggung jawab
+tenant_has_feature() yang murni soal keanggotaan paket."""
 
 import billing_db
 import subscription_db

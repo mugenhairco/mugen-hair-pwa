@@ -56,6 +56,23 @@ _serializer = URLSafeTimedSerializer(SECRET_KEY, salt="mugen-hair-auth")
 
 _bearer = HTTPBearer(auto_error=False)
 
+# AUDIT (enforcement paket/subscription): sebelumnya status subscription
+# (expired/suspended/cancelled -- lihat subscription_db.STATUS_AKSES_DIBLOKIR)
+# HANYA ditegakkan di frontend (router.js, dari cache localStorage) DAN di
+# endpoint booking publik -- SELURUH API dashboard ber-login TETAP bisa
+# diakses penuh walau subscription tenant sudah diblokir, asal tahu
+# endpoint-nya (curl/Postman/token lama), sama sekali tidak melewati SPA.
+# Gerbang di bawah menegakkannya di get_current_user() -- SATU-SATUNYA titik
+# yang dilewati SETIAP request ber-token, pola SAMA PERSIS dengan
+# pengecekan status tenant di bawah -- supaya berlaku otomatis untuk SELURUH
+# endpoint, bukan didaftar manual satu-satu.
+#
+# Prefix di bawah TETAP boleh diakses walau diblokir -- tenant yang
+# diblokir HARUS tetap bisa melihat status/tagihannya & membayar untuk
+# memulihkan akses (sama seperti pengecualian "#/billing" di router.js
+# frontend), dan logout/ganti kata sandi tidak boleh ikut terkunci.
+_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = ("/api/billing", "/api/subscription", "/api/auth")
+
 
 def buat_token(user_id: int) -> str:
     return _serializer.dumps({"user_id": user_id})
@@ -71,7 +88,7 @@ def _decode_token(token: str) -> int:
     return data["user_id"]
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
     """Dependency dasar: wajib login (role apa saja). Selalu ambil data user
     TERBARU dari database (bukan dari isi token) supaya kalau user dinonaktifkan
     atau role-nya diubah, efeknya langsung terlihat tanpa harus tunggu token expired.
@@ -104,6 +121,17 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer
         if tenant is None or tenant["status"] != "aktif":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                                  detail="Akun barbershop ini sedang tidak aktif. Hubungi penyedia layanan.")
+        # AUDIT (enforcement paket/subscription): lihat catatan
+        # _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION di atas -- status subscription
+        # (expired/suspended/cancelled) sekarang ditegakkan DI SINI untuk
+        # SELURUH endpoint ber-login, bukan cuma booking publik/frontend.
+        if not request.url.path.startswith(_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION):
+            import subscription_db  # import lokal: hindari import siklik
+            if subscription_db.akses_diblokir(user["tenant_id"]):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Langganan toko ini sedang tidak aktif. Selesaikan pembayaran di menu Langganan untuk memulihkan akses.",
+                )
     # BUGFIX (audit): gerbang fitur "Aplikasi Barber" (barber_app) SEBELUMNYA
     # hanya dicek SEKALI saat login (routers/auth_router.py) -- token barber
     # berlaku sampai 14 hari (TOKEN_MAX_AGE_DETIK), jadi kalau Superadmin

@@ -103,6 +103,19 @@ def public_subscription_status(tenant_id: int = Depends(resolve_tenant_publik)):
     return {"tersedia": not subscription_db.akses_diblokir(tenant_id)}
 
 
+def _pastikan_booking_online_aktif(tenant_id: int) -> None:
+    """AUDIT (enforcement paket/subscription): SEBELUMNYA hanya
+    public_pengaturan()/public_buat_booking() (di bawah) yang menegakkan
+    fitur "booking_online" -- barbers/barber-foto/services/slot/qris di
+    bawah TIDAK, jadi tenant TANPA fitur ini tetap membocorkan daftar
+    barber+foto, daftar layanan+harga, slot ketersediaan, dan gambar QRIS
+    ke siapa pun yang tahu tenant slug-nya (endpoint publik, tanpa login).
+    Dipanggil di awal SETIAP endpoint publik lain di bawah supaya
+    konsisten, satu fungsi bukan diulang manual di tiap endpoint."""
+    if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
+        raise HTTPException(status_code=403, detail="Booking online tidak tersedia untuk toko ini.")
+
+
 @public_router.get("/barbers")
 def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """Semua barber AKTIF ditampilkan (barber non-aktif/dihapus Owner tidak
@@ -110,6 +123,7 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     Owner. Status 'libur hari ini' / 'cuti' disertakan untuk tampilan awal
     (abu-abu/On Vacation) sebelum tanggal dipilih -- validasi yang
     SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
+    _pastikan_booking_online_aktif(tenant_id)
     hari_ini = date.today().isoformat()
     barbers = sorted(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id), key=lambda b: (b.get("urutan") or 0, b["nama"]))
     # AUDIT 404 file media: <img src> yang memuat foto_url di bawah tidak
@@ -132,6 +146,7 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
 
 @public_router.get("/barber-foto/{barber_id}")
 def public_barber_foto(barber_id: int, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    _pastikan_booking_online_aktif(tenant_id)
     barber = db.get_barber(barber_id)
     if barber is None or barber.get("tenant_id") != tenant_id:
         raise HTTPException(status_code=404, detail="Foto belum diatur.")
@@ -143,6 +158,7 @@ def public_barber_foto(barber_id: int, tenant_id: int = Depends(resolve_tenant_p
 
 @public_router.get("/services")
 def public_services(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    _pastikan_booking_online_aktif(tenant_id)
     services = sorted(db.get_services(hanya_aktif=True, tenant_id=tenant_id), key=lambda s: (s.get("urutan") or 0, s["nama"]))
     return [
         {"id": s["id"], "nama": s["nama"], "harga": s["harga"], "durasi_menit": s.get("durasi_menit") or 60}
@@ -219,6 +235,7 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
 @public_router.get("/slot")
 def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
                  tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    _pastikan_booking_online_aktif(tenant_id)
     try:
         return booking_db.hitung_slot(barber_id, tanggal, _parse_service_ids(service_ids), tenant_id=tenant_id)
     except ValueError as e:
@@ -228,7 +245,12 @@ def public_slot(barber_id: int, tanggal: str, service_ids: str = None,
 @public_router.get("/qris")
 def public_qris(v: str | None = None, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     # REVISI (diminta Owner): "qris" bukan lagi fitur ber-gerbang paket --
-    # lihat catatan lengkap di public_pengaturan() di atas.
+    # lihat catatan lengkap di public_pengaturan() di atas. SENGAJA TIDAK
+    # ikut digerbang "booking_online" seperti barbers/services/slot di atas
+    # (dicoba saat audit lanjutan, TAPI ada test eksplisit yang mendokumentasikan
+    # keputusan produk: QRIS metode inti, harus tetap bekerja walau tenant
+    # TIDAK punya subscription/fitur apa pun sama sekali -- lihat
+    # test_feature_access.py::test_qris_endpoints_bekerja_tanpa_subscription_atau_fitur_apa_pun).
     data, content_type = booking_db.get_qris_data(tenant_id=tenant_id)
     if data is None:
         raise HTTPException(status_code=404, detail="QRIS belum diatur.")

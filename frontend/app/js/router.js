@@ -385,7 +385,16 @@ const MugenRouter = (() => {
       // role boleh lihat halamannya sendiri-sendiri, dibedakan DI DALAM
       // absensi.js lewat user.role). Perlindungan sebenarnya tetap di
       // backend (routers/attendance.py).
-      renderResult = _renderLazy(content, "PageAbsensi", "js/pages/absensi.js");
+      // AUDIT (enforcement paket/subscription): kalau tenant ini tidak
+      // punya fitur "absensi" (mis. buka URL langsung tanpa lewat sidebar,
+      // sidebar SUDAH menyembunyikan menunya lewat nav.js), tampilkan blok
+      // upgrade di sini SEBELUM memuat halamannya sama sekali -- daripada
+      // menunggu 403 mentah dari backend.
+      if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
+        content.appendChild(MugenFeature.upgradeBlock("Absensi"));
+      } else {
+        renderResult = _renderLazy(content, "PageAbsensi", "js/pages/absensi.js");
+      }
     } else if (hash.startsWith("#/keuangan/pemasukan")) {
       // Modul Keuangan (Fase 1): data operasional TOKO, Owner/'staff' akses
       // PENUH tanpa sistem izin, Barber tidak ada akses -- pola sama

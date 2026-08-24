@@ -16,6 +16,7 @@ dites di sini, lihat laporan akhir untuk verifikasi manual/Playwright):
 
 import database as db
 import auth_db
+import subscription_db
 
 
 def test_add_barber_urutan_berurutan_otomatis(single_tenant):
@@ -67,6 +68,12 @@ def test_booking_publik_barbers_ikut_urutan_settings_karyawan(single_tenant):
     """Halaman Booking publik (/api/public/booking/barbers) HARUS mengikuti
     urutan yang sama seperti Settings > Karyawan, bukan alfabet/created_at."""
     client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    # AUDIT (enforcement paket/subscription): /api/public/booking/barbers
+    # sekarang digerbang fitur "booking_online" (lihat routers/booking.py::
+    # _pastikan_booking_online_aktif()) -- single_tenant TIDAK punya baris
+    # subscription secara default (fail-CLOSED), isi eksplisit di sini
+    # supaya test ini tetap menguji URUTAN barber, bukan malah 403 duluan.
+    subscription_db.create_default_subscription(tenant_id)
     id_a = db.add_barber("MT Zzz Barber", tenant_id=tenant_id)
     id_b = db.add_barber("MT Aaa Barber", tenant_id=tenant_id)
     # Tukar urutan lewat tombol (persis seperti Owner memakai Settings > Karyawan).

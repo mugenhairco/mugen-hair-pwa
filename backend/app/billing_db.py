@@ -307,8 +307,9 @@ def seed_default_package_features():
     """SEKALI SAJA sepanjang umur database (ditandai lewat `settings`, BUKAN
     dicek ulang dari isi subscription_package_features seperti
     seed_default_packages/seed_default_features) -- assign
-    `_FITUR_NYATA_DEFAULT` (booking_online/qris/export_pdf, satu-satunya
-    fitur yang SUNGGUHAN digerbang, lihat feature_access.py) ke KEEMPAT
+    `_FITUR_NYATA_DEFAULT` (booking_online/export_pdf -- KOREKSI audit
+    lanjutan: "qris" DIHAPUS TOTAL dari katalog, lihat hapus_gerbang_qris()
+    di bawah, bukan lagi bagian tuple ini) ke KEEMPAT
     paket sekaligus, HANYA kalau migrasi ini belum pernah jalan sebelumnya.
 
     KENAPA bukan cek "paket ini sudah punya baris fitur atau belum" (pola

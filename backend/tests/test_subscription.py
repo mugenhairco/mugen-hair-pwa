@@ -325,7 +325,17 @@ def test_login_owner_tetap_berhasil_walau_subscription_diblokir(app_client):
     """SESUAI KEPUTUSAN: dua mekanisme independen -- subscription
     Expired/Suspended/Cancelled TIDAK membuat login 401 (beda dari
     tenants.status='nonaktif'). Owner tetap bisa login & memanggil
-    /api/subscription/me (read-only) untuk melihat kenapa diblokir."""
+    /api/subscription/me (read-only) untuk melihat kenapa diblokir.
+
+    KOREKSI (audit lanjutan -- enforcement paket/subscription): SEBELUMNYA
+    test ini mendokumentasikan bahwa "endpoint bisnis biasa tetap bisa
+    diakses" saat diblokir (penegakan HANYA di frontend router.js) --
+    itu justru CELAH yang diperbaiki (auth.py::get_current_user(), lihat
+    _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION). SEKARANG hanya /api/auth, /api/billing,
+    /api/subscription yang tetap bisa diakses saat diblokir (supaya Owner
+    tetap bisa login, lihat status, dan BAYAR untuk memulihkan akses) --
+    endpoint bisnis LAIN (dicontohkan lewat /api/pengaturan/whatsapp di
+    bawah) sekarang WAJIB 403."""
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
     auth_db.tambah_user("owner1", "password123", role="admin", tenant_id=tenant["id"])
     subscription_db.update_status(tenant["id"], "expired")
@@ -338,11 +348,16 @@ def test_login_owner_tetap_berhasil_walau_subscription_diblokir(app_client):
     assert r2.status_code == 200
     assert r2.json()["akses_diblokir"] is True
 
-    # Endpoint bisnis biasa (di luar cakupan Phase 3, TIDAK diubah) tetap
-    # bisa diakses -- penegakan blokir dashboard adalah tanggung jawab
-    # frontend (router.js), bukan setiap endpoint bisnis satu per satu.
+    # /api/auth TETAP bebas blokir SENGAJA (Owner harus tetap bisa login
+    # kapan pun, termasuk saat diblokir -- supaya bisa lanjut ke /api/billing
+    # untuk membayar).
     r3 = app_client.get("/api/auth/me", headers=headers)
     assert r3.status_code == 200
+
+    # Endpoint bisnis di luar prefix bebas blokir SEKARANG 403 -- pola SAMA
+    # untuk SELURUH endpoint ber-login lain, satu titik di get_current_user().
+    r4 = app_client.get("/api/pengaturan/whatsapp", headers=headers)
+    assert r4.status_code == 403
 
 
 def test_tenants_status_nonaktif_tidak_terpengaruh_subscription_aktif(app_client):
@@ -401,12 +416,32 @@ def test_book_publik_buat_booking_diblokir_saat_suspended(app_client):
     assert r.status_code == 403
 
 
-def test_book_publik_tenant_tanpa_subscription_tidak_diblokir(two_tenants):
+def test_book_publik_tenant_tanpa_subscription_tidak_diblokir_status(two_tenants):
     """Fail-open juga berlaku untuk halaman publik -- tenant hasil fixture
-    two_tenants (tanpa baris subscription) TIDAK diblokir."""
+    two_tenants (tanpa baris subscription) TIDAK diblokir OLEH STATUS
+    (resolve_tenant_publik_aktif). Dites lewat /subscription-status (BUKAN
+    /barbers seperti sebelumnya) -- endpoint itu SENGAJA satu-satunya yang
+    TIDAK ikut digerbang fitur "booking_online" (lihat docstring
+    public_subscription_status() di routers/booking.py), jadi proxy yang
+    bersih untuk fail-open status TANPA tercampur gerbang fitur terpisah
+    (AUDIT enforcement paket/subscription -- lihat test di bawah untuk
+    gerbang fitur "booking_online" itu sendiri)."""
+    client = two_tenants["client"]
+    r = client.get(f"/api/public/booking/subscription-status?tenant=test-toko-a")
+    assert r.status_code == 200
+    assert r.json() == {"tersedia": True}
+
+
+def test_book_publik_tenant_tanpa_subscription_diblokir_fitur_booking_online(two_tenants):
+    """AUDIT (enforcement paket/subscription): BEDA dari fail-open status di
+    atas -- tenant tanpa baris subscription juga TIDAK PUNYA fitur
+    "booking_online" sama sekali (fail-CLOSED, lihat feature_access.py),
+    jadi /barbers (dan /services/slot lainnya, pola sama) tetap 403 walau
+    statusnya sendiri tidak diblokir. Dua gate independen, keduanya harus
+    dilewati."""
     client = two_tenants["client"]
     r = client.get(f"/api/public/booking/barbers?tenant=test-toko-a")
-    assert r.status_code == 200
+    assert r.status_code == 403
 
 
 def test_book_publik_tenant_lain_tidak_ikut_terblokir(two_tenants):
