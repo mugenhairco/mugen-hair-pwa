@@ -29,11 +29,19 @@ JENIS_PESAN = [
     ("konfirmasi_pembayaran", "Konfirmasi Pembayaran",
      "Dikirim saat pembayaran diverifikasi (manual oleh Admin/Owner, atau otomatis lewat Payment Gateway)."),
     ("pembatalan", "Pembatalan Booking", "Dikirim saat booking dibatalkan karena belum dibayar."),
+    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: dikirim TAMBAHAN
+    # (bukan pengganti) apa pun notifikasi lain yang sudah terkirim untuk
+    # metode pembayarannya (mis. tetap dapat "Reminder Bayar QRIS" juga
+    # kalau metodenya QRIS) -- pesan ini KHUSUS memberi tahu toko sedang
+    # tutup, terlepas metode pembayaran apa pun.
+    ("booking_luar_jam_operasional", "Booking di Luar Jam Operasional",
+     "Dikirim otomatis begitu booking dibuat SAAT toko sedang di luar jam operasional (untuk SEMUA metode pembayaran)."),
 ]
 
 PLACEHOLDER_INFO = [
     ("{nama}", "Nama customer"), ("{toko}", "Nama barbershop"), ("{nominal}", "Total harga (format Rupiah)"),
     ("{layanan}", "Daftar layanan yang dibooking"), ("{tanggal}", "Tanggal booking"), ("{jam}", "Jam booking"),
+    ("{jam_buka}", "Jam buka toko berikutnya (khusus pesan Booking di Luar Jam Operasional)"),
 ]
 
 DEFAULT_TEMPLATES = {
@@ -57,6 +65,10 @@ DEFAULT_TEMPLATES = {
         "- Layanan: {layanan}\n"
         "- Tanggal: {tanggal}, {jam}\n\n"
         "Silakan booking ulang jika masih berminat."
+    ),
+    "booking_luar_jam_operasional": (
+        "Booking Anda telah diterima. Saat ini *{toko}* sudah di luar jam operasional. Tim kami akan "
+        "menghubungi Anda untuk konfirmasi pada jam operasional berikutnya, mulai pukul {jam_buka}."
     ),
 }
 
@@ -86,6 +98,13 @@ def render(jenis: str, booking: dict, nama_toko: str, template_text: str = None)
         "layanan": booking["daftar_service"],
         "tanggal": _tanggal_indo(booking["tanggal"]),
         "jam": booking["jam_mulai"],
+        # Pesan Otomatis Berdasarkan Jam Operasional Tenant: HANYA terisi
+        # untuk jenis "booking_luar_jam_operasional" (booking_db.py yang
+        # menyisipkan field transien ini ke dict `booking` SEBELUM
+        # memanggil render() -- lihat _kirim_notifikasi_wa_booking()) --
+        # `.get()` supaya jenis lain yang tidak menyertakan placeholder ini
+        # di templatenya tetap aman walau field-nya kosong.
+        "jam_buka": booking.get("jam_buka", ""),
     }
     for key, val in nilai.items():
         teks = teks.replace("{" + key + "}", str(val))

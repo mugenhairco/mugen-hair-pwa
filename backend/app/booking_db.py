@@ -932,12 +932,16 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
                     (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
                 )
     booking_baru = get_booking(booking_id)
-    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: field TRANSIEN,
-    # HANYA dipakai layar konfirmasi wizard booking publik tepat setelah
-    # booking ini dibuat (book_public.js::renderConfirmed()) -- SENGAJA
-    # TIDAK disimpan ke kolom apa pun (tidak perlu dibaca ulang di lain
-    # waktu, beda dari nomor_transaksi yang memang harus persisten).
+    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: `dibuat_di_luar_jam_operasional`
+    # field TRANSIEN, HANYA dipakai layar konfirmasi wizard booking publik
+    # tepat setelah booking ini dibuat (book_public.js::renderConfirmed())
+    # -- SENGAJA TIDAK disimpan ke kolom apa pun (tidak perlu dibaca ulang
+    # di lain waktu, beda dari nomor_transaksi yang memang harus
+    # persisten). `jam_buka` JUGA transien -- HANYA dipakai mengisi
+    # placeholder {jam_buka} template WhatsApp "Booking di Luar Jam
+    # Operasional" di bawah (whatsapp_templates.py::render()).
     booking_baru["dibuat_di_luar_jam_operasional"] = dibuat_di_luar_jam_operasional
+    booking_baru["jam_buka"] = pesan["jam_buka"]
     # FITUR Notifikasi WhatsApp Otomatis Booking: HANYA metode "qris" (QRIS
     # offline yang di-upload Owner, customer scan sendiri) yang butuh
     # reminder segera bayar -- metode lain (cash/transfer dibayar langsung
@@ -945,6 +949,13 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # verifikasi_pembayaran() begitu Faspay konfirmasi sukses).
     if metode_pembayaran == "qris":
         _kirim_notifikasi_wa_booking(booking_baru, "reminder_qris")
+    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: TAMBAHAN (bukan
+    # pengganti) notifikasi di atas -- dikirim untuk SEMUA metode
+    # pembayaran begitu booking dibuat SAAT toko sedang di luar jam
+    # operasional (permintaan Owner: "juga ingin ada pesan WhatsApp" untuk
+    # kasus ini, bisa diedit lewat Setting > WhatsApp seperti template lain).
+    if dibuat_di_luar_jam_operasional:
+        _kirim_notifikasi_wa_booking(booking_baru, "booking_luar_jam_operasional")
     _kirim_notifikasi_push_booking_baru(booking_baru)
     return booking_baru
 

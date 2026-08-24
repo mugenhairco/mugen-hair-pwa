@@ -38,6 +38,7 @@ TEMPLATE_SETTING_KEYS = {
     "reminder_qris": "whatsapp_template_reminder_qris",
     "konfirmasi_pembayaran": "whatsapp_template_konfirmasi_pembayaran",
     "pembatalan": "whatsapp_template_pembatalan",
+    "booking_luar_jam_operasional": "whatsapp_template_booking_luar_jam_operasional",
 }
 
 
