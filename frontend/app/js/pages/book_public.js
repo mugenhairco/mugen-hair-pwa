@@ -1293,7 +1293,12 @@ const PageBookPublic = (() => {
 
       // ---- fase "waiting": Menunggu konfirmasi Payment Gateway (poll) ----
       function renderFaseWaiting() {
-        const invoiceRef = MugenUI.buatNomorTransaksi(
+        // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
+        // nomor_transaksi dari server (booking_db.buat_booking()) --
+        // fallback ke rumus lama HANYA untuk booking lama (seharusnya
+        // tidak terjadi di fase ini, booking baru saja dibuat, tapi tetap
+        // dijaga konsisten dengan pemanggil lain).
+        const invoiceRef = state.bookingResult.nomor_transaksi || MugenUI.buatNomorTransaksi(
           { daftar_service: dipilih.map((s) => s.nama).join(", "), tanggal: state.tanggal, jam_mulai: state.jam },
           identitas.nama_barbershop,
         );
@@ -1412,11 +1417,30 @@ const PageBookPublic = (() => {
       gantiFase();
     }
 
+    // Pesan Otomatis Berdasarkan Jam Operasional Tenant (permintaan Owner):
+    // `r.dibuat_di_luar_jam_operasional` dihitung SERVER-SIDE saat booking
+    // ini dibuat (booking_db.buat_booking(), pakai waktu WIB AKTUAL saat
+    // customer menekan Confirm -- BUKAN jam appointment yang dipilih,
+    // BUKAN jam browser customer) -- field TRANSIEN, hanya ada di respons
+    // booking BARU SAJA dibuat (state.bookingResult), TIDAK pernah
+    // ditanyakan ulang setelah layar ini. Di dalam jam operasional: teks
+    // pesan_penutup Owner TETAP APA ADANYA (tidak diubah sama sekali) --
+    // di luar jam operasional: SELALU ganti dengan pesan yang menjelaskan
+    // toko sedang tutup + jam buka berikutnya (dari pengaturan.jam_buka
+    // ASLI milik tenant, TIDAK PERNAH hardcode 10:00/20:00).
+    function pesanPenutupFinal(r) {
+      if (r.dibuat_di_luar_jam_operasional) {
+        return `Booking Anda telah diterima. Saat ini ${identitas.nama_barbershop} sudah di luar jam operasional. `
+          + `Tim kami akan menghubungi Anda untuk konfirmasi pada jam operasional berikutnya, mulai pukul ${pengaturan.jam_buka}.`;
+      }
+      return pengaturan.pesan_penutup || "Thank you! We'll reach out to you on WhatsApp shortly to confirm.";
+    }
+
     // ================= STEP 7: APPOINTMENT CONFIRMED =================
     function renderConfirmed() {
       const r = state.bookingResult;
       const detail = MugenUI.el("div", { class: "book-selesai-detail" }, [
-        fieldRow("Transaction Number", MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop)),
+        fieldRow("Transaction Number", r.nomor_transaksi || MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop)),
         fieldRow("Barber", r.nama_barber),
         fieldRow("Date", MugenUI.formatTanggal(r.tanggal)),
         fieldRow("Time", r.jam_mulai),
@@ -1428,8 +1452,7 @@ const PageBookPublic = (() => {
         MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
         MugenUI.el("h2", {}, "Appointment Confirmed!"),
         detail,
-        MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" },
-          pengaturan.pesan_penutup || "Thank you! We'll reach out to you on WhatsApp shortly to confirm."),
+        MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" }, pesanPenutupFinal(r)),
       ]));
 
       const actions = MugenUI.el("div", { class: "book-selesai-actions" });

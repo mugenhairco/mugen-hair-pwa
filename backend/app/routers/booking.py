@@ -290,6 +290,11 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
         order_id, tenant_id, tenant["nama_barbershop"] if tenant else "-", booking["id"],
         booking["customer_nama"], booking["nama_barber"], booking["daftar_service"], booking["total_harga"],
         checkout_token=hasil_gateway["token"], checkout_redirect_url=hasil_gateway["redirect_url"],
+        # Format Baru Nomor Transaksi Booking: reuse nomor booking ini
+        # sendiri (booking_db.buat_booking(), None untuk booking lama)
+        # supaya SATU nomor yang sama tampil konsisten di layar pembayaran
+        # customer, Riwayat Transaksi, dan Super Admin.
+        nomor_transaksi=booking.get("nomor_transaksi"),
     )
     booking["gateway_order_id"] = order_id
     booking["checkout_token"] = transaksi["checkout_token"]

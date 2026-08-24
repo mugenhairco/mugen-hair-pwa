@@ -109,6 +109,17 @@ const MugenUI = (() => {
     if (kata.length >= 2) return kata.slice(0, 2).map((k) => k.charAt(0).toUpperCase()).join("");
     return (kata[0] || "").slice(0, 2).toUpperCase();
   }
+  // Format Baru Nomor Transaksi Booking (permintaan Owner): booking BARU
+  // sekarang punya `nomor_transaksi` tersimpan dari server (booking_db.py::
+  // _buat_nomor_transaksi_booking(), format [JAM KONFIRMASI][MENIT
+  // KONFIRMASI][TANGGAL BOOKING][BULAN BOOKING][JAM BOOKING][INISIAL
+  // TENANT], TIDAK LAGI dari nama service) -- SELALU dipakai kalau ada.
+  // Fungsi di bawah ini (berbasis nama service, dihitung ulang di klien)
+  // SEKARANG HANYA fallback tampilan untuk booking LAMA yang kolom itu
+  // NULL (dibuat sebelum perubahan ini) -- SENGAJA TIDAK dihapus/diubah
+  // supaya nomor yang sudah pernah ditampilkan ke transaksi lama tidak
+  // pernah berubah. Lihat pemanggil (booking.js/book_public.js): SELALU
+  // `booking.nomor_transaksi || buatNomorTransaksi(booking, namaTenant)`.
   function buatNomorTransaksi(booking, namaTenant) {
     const daftarService = String(booking.daftar_service || "").split(",")[0].trim();
     const tgl = new Date(booking.tanggal + "T00:00:00");

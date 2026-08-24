@@ -447,10 +447,14 @@ const PageBooking = (() => {
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
   function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null, onReschedule = null } = {}) {
-    // BOOKING UI/UX #1: No. Transaksi -- SATU-SATUNYA implementasi ada di
-    // MugenUI.buatNomorTransaksi() (ui.js), dipakai di sini DAN di layar
-    // Appointment Confirmed (book_public.js) supaya angkanya selalu sama
-    // persis untuk booking yang sama.
+    // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
+    // r.nomor_transaksi tersimpan dari server (booking_db.py::
+    // _buat_nomor_transaksi_booking(), format [JAM KONFIRMASI][MENIT
+    // KONFIRMASI][TANGGAL BOOKING][BULAN BOOKING][JAM BOOKING][INISIAL
+    // TENANT]) -- dipakai APA ADANYA di sini DAN di layar Appointment
+    // Confirmed (book_public.js) supaya angkanya selalu sama persis untuk
+    // booking yang sama. MugenUI.buatNomorTransaksi() (ui.js, berbasis
+    // nama service) HANYA fallback untuk booking LAMA yang kolom itu NULL.
     const namaBarbershop = MugenBrand.get().nama_barbershop;
     const columns = [
       {
@@ -460,7 +464,7 @@ const PageBooking = (() => {
         // TINGGAL baca flag-nya, tidak menghitung ulang tanggal sendiri).
         key: "no_transaksi", label: "No. Transaksi",
         format: (_, r) => {
-          const nomor = MugenUI.buatNomorTransaksi(r, namaBarbershop);
+          const nomor = r.nomor_transaksi || MugenUI.buatNomorTransaksi(r, namaBarbershop);
           if (!r.is_advance_booking) return nomor;
           return MugenUI.el("span", {
             style: "background:#fff3b0;color:#7a5b00;padding:2px 6px;border-radius:4px;font-weight:600;",

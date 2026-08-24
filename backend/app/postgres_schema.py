@@ -658,6 +658,13 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS verifikasi_booking_oleh TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_at TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_oleh TEXT;
 
+-- Format Baru Nomor Transaksi Booking (lihat nomor_transaksi_booking_migrasi.py
+-- jalur SQLite untuk penjelasan lengkap) -- nullable, TANPA backfill, NULL
+-- berarti booking LAMA (frontend jatuh ke rumus lama berbasis nama service
+-- HANYA untuk baris ini, supaya nomor yang sudah pernah ditampilkan tidak
+-- pernah berubah).
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS nomor_transaksi TEXT;
+
 -- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): kolom identitas Owner
 -- yang dikumpulkan lewat form Register publik -- lihat landing_migrasi.py
 -- (jalur SQLite) untuk penjelasan lengkap kenapa kolom ini baru ditambahkan
