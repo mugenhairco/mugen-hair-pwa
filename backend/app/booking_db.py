@@ -43,9 +43,22 @@ import file_asset_db
 import pengaturan_identitas
 import push_service
 import r2_storage
+import snap_payment_db
 import whatsapp_service
 import whatsapp_templates
 from database import get_conn
+
+# Migrasi Faspay SNAP Advance: jembatan status SNAP_payment_transactions
+# (CREATED/PENDING/PAID/FAILED/EXPIRED/CANCELLED, Inggris besar) ->
+# kosakata booking_gateway_db yang SUDAH ditampilkan Daftar/Detail Booking
+# (menunggu_pembayaran/diproses/berhasil/gagal/kedaluwarsa/dibatalkan) --
+# pola SAMA seperti snap_webhook.py::_STATUS_KE_VOCAB_BILLING, supaya
+# frontend yang SUDAH ADA (booking.js/riwayat_transaksi.js) tidak perlu
+# mengenal dua kosakata status sekaligus.
+_SNAP_STATUS_KE_VOCAB_GATEWAY = {
+    "CREATED": "menunggu_pembayaran", "PENDING": "diproses", "PAID": "berhasil",
+    "FAILED": "gagal", "EXPIRED": "kedaluwarsa", "CANCELLED": "dibatalkan",
+}
 
 # BUGFIX (audit, race condition): _validasi_slot_tersedia() (SELECT overlap)
 # dan INSERT booking baru di buat_booking() dua langkah terpisah (check-
@@ -974,17 +987,36 @@ def _perkaya_status_gateway(booking: dict):
     booking["gateway_transaction_id"] = None
     booking["gateway_reference_id"] = None
     booking["gateway_paid_at"] = None
+    # Migrasi Faspay SNAP Advance: id tabel SNAP beda dari
+    # booking_payment_transactions, discriminator eksplisit supaya
+    # pemanggil (mis. endpoint detail/cek-ulang) tahu tabel mana yang
+    # dirujuk gateway_transaksi_id -- lihat routers/booking.py.
+    booking["gateway_provider"] = None
     if booking.get("metode_pembayaran") != "gateway":
         return
     transaksi = booking_gateway_db.get_transaksi_terkini_untuk_booking(booking["id"])
-    if transaksi is None:
+    if transaksi is not None:
+        booking["gateway_provider"] = "xpress"
+        booking["gateway_transaksi_id"] = transaksi["id"]
+        booking["gateway_status"] = transaksi["status_pembayaran"]
+        booking["gateway_channel"] = transaksi["channel_pembayaran"]
+        booking["gateway_transaction_id"] = transaksi["transaction_id_provider"]
+        booking["gateway_reference_id"] = transaksi["reference_id_provider"]
+        booking["gateway_paid_at"] = transaksi["paid_at"]
         return
-    booking["gateway_transaksi_id"] = transaksi["id"]
-    booking["gateway_status"] = transaksi["status_pembayaran"]
-    booking["gateway_channel"] = transaksi["channel_pembayaran"]
-    booking["gateway_transaction_id"] = transaksi["transaction_id_provider"]
-    booking["gateway_reference_id"] = transaksi["reference_id_provider"]
-    booking["gateway_paid_at"] = transaksi["paid_at"]
+    # Xpress v4 tidak menemukan apa pun -- coba SNAP Advance (booking baru
+    # pasca migrasi checkout gateway ke SNAP, lihat routers/booking.py::
+    # public_buat_booking()).
+    transaksi_snap = snap_payment_db.get_transaksi_terkini_untuk_booking(booking["id"])
+    if transaksi_snap is None:
+        return
+    booking["gateway_provider"] = "snap_advance"
+    booking["gateway_transaksi_id"] = transaksi_snap["id"]
+    booking["gateway_status"] = _SNAP_STATUS_KE_VOCAB_GATEWAY.get(transaksi_snap["status"], transaksi_snap["status"])
+    booking["gateway_channel"] = transaksi_snap["channel"]
+    booking["gateway_transaction_id"] = transaksi_snap["provider_transaction_id"]
+    booking["gateway_reference_id"] = transaksi_snap["payment_reference"]
+    booking["gateway_paid_at"] = transaksi_snap["paid_at"]
 
 
 def get_booking(booking_id: int):
@@ -1046,6 +1078,9 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         for r in rows:
             per_booking.setdefault(r["booking_id"], []).append(r["nama_service"])
         transaksi_per_booking = booking_gateway_db.get_transaksi_terkini_untuk_booking_batch(ids)
+        # Migrasi Faspay SNAP Advance: fallback batch, pola SAMA seperti
+        # _perkaya_status_gateway() -- lihat catatan di sana.
+        transaksi_snap_per_booking = snap_payment_db.get_transaksi_terkini_untuk_booking_batch(ids)
         for h in headers:
             h["daftar_service"] = ", ".join(per_booking.get(h["id"], []))
             h["is_advance_booking"] = _is_advance_booking(h["created_at"], h["tanggal"])
@@ -1055,15 +1090,28 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
             h["gateway_transaction_id"] = None
             h["gateway_reference_id"] = None
             h["gateway_paid_at"] = None
+            h["gateway_provider"] = None
             if h.get("metode_pembayaran") == "gateway":
                 transaksi = transaksi_per_booking.get(h["id"])
                 if transaksi is not None:
+                    h["gateway_provider"] = "xpress"
                     h["gateway_transaksi_id"] = transaksi["id"]
                     h["gateway_status"] = transaksi["status_pembayaran"]
                     h["gateway_channel"] = transaksi["channel_pembayaran"]
                     h["gateway_transaction_id"] = transaksi["transaction_id_provider"]
                     h["gateway_reference_id"] = transaksi["reference_id_provider"]
                     h["gateway_paid_at"] = transaksi["paid_at"]
+                else:
+                    transaksi_snap = transaksi_snap_per_booking.get(h["id"])
+                    if transaksi_snap is not None:
+                        h["gateway_provider"] = "snap_advance"
+                        h["gateway_transaksi_id"] = transaksi_snap["id"]
+                        h["gateway_status"] = _SNAP_STATUS_KE_VOCAB_GATEWAY.get(
+                            transaksi_snap["status"], transaksi_snap["status"])
+                        h["gateway_channel"] = transaksi_snap["channel"]
+                        h["gateway_transaction_id"] = transaksi_snap["provider_transaction_id"]
+                        h["gateway_reference_id"] = transaksi_snap["payment_reference"]
+                        h["gateway_paid_at"] = transaksi_snap["paid_at"]
         return headers
 
 

@@ -59,6 +59,27 @@ def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/c
     monkeypatch.setattr(gateway_client_base.requests, "post", fake_post)
 
 
+# Migrasi Faspay SNAP Advance: POST /api/billing/checkout SEKARANG lewat
+# payment_provider_client.py (SNAP), BUKAN lagi Xpress v4 -- lihat catatan
+# sama persis di test_billing_checkout.py::_aktifkan_snap_billing(). Fungsi
+# ini KHUSUS membuat checkout-nya berhasil (invoice tercipta); webhook di
+# bawah (_webhook_payload()/billing_webhook.proses_notifikasi()) TETAP
+# format Xpress lawas -- SENGAJA TIDAK diubah, kode webhook Xpress itu
+# sendiri TIDAK dihapus/disentuh migrasi ini, dan proses_notifikasi()
+# bekerja terlepas dari provider mana yang membuat invoice-nya (dicari
+# lewat order_id, bukan lewat kolom yang tahu asal providernya).
+def _aktifkan_snap_billing_mock(monkeypatch):
+    import payment_provider_client
+    import snap_advance_db
+    snap_advance_db.update_config(
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        channel_aktif=["va", "qris"],
+    )
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi",
+                         lambda *a, **kw: {"va_number": "70212345678901", "provider_transaction_id": "trx-1"})
+
+
 def _hitung_signature(bill_no, payment_status_code, user_id=_FASPAY_USER_ID_TEST, password=_FASPAY_PASSWORD_TEST):
     return gateway_client_base.sign_sha1_of_md5([user_id, password, bill_no, payment_status_code])
 
@@ -413,6 +434,13 @@ def test_register_tercatat_di_audit_log(app_client):
 def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, monkeypatch):
     import email_auth_db
 
+    # Checkout (SNAP) dan verifikasi signature webhook (Xpress, TIDAK
+    # diubah) MEMANG dua kredensial TERPISAH TOTAL di sistem ini (lihat
+    # catatan _aktifkan_snap_billing_mock() di atas) -- KEDUANYA perlu
+    # aktif di sini karena test ini sengaja menguji jalur checkout BARU
+    # (SNAP) diikuti jalur webhook LAWAS (Xpress) yang sama sekali tidak
+    # disentuh migrasi ini.
+    _aktifkan_snap_billing_mock(monkeypatch)
     _aktifkan_billing_gateway_mock(monkeypatch)
 
     r = app_client.post("/api/public/registration/register", json=_payload_register())
@@ -444,7 +472,7 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
     assert r.json()["akses_diblokir"] is False
 
     pro = billing_db.get_package_by_kode("pro")
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"]})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
     assert r.status_code == 200, r.text
     invoice = r.json()
 

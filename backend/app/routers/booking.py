@@ -45,7 +45,10 @@ import feature_access
 import gateway_client_base
 import payment_gateway_client
 import payment_gateway_db
+import payment_provider_client
 import r2_storage
+import snap_payment_db
+import snap_webhook
 import subscription_db
 import tenant_db
 from auth import require_barber, require_permission, require_menu_read, resolve_tenant_publik
@@ -195,6 +198,16 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         # pilih metode Payment Gateway (pola sama seperti billing.js muat Snap.js).
         "pgw_client_key": payment_gateway_client.client_key() if payment_gateway_client.is_enabled() else None,
         "pgw_checkout_script_url": payment_gateway_client.client_script_url() if payment_gateway_client.is_enabled() else None,
+        # Migrasi Faspay SNAP Advance: metode "gateway" sekarang lewat SNAP
+        # (VA/QRIS), bukan lagi Xpress v4 -- customer memilih channel di
+        # sini (TIDAK ADA halaman checkout hosted seperti Xpress dulu).
+        # `snap_gateway_enabled` dicek TERPISAH dari pgw_* di atas supaya
+        # frontend tahu metode "gateway" masih tersedia sekalipun Xpress
+        # sendiri sudah tidak aktif lagi.
+        "snap_gateway_enabled": payment_provider_client.is_enabled(),
+        "snap_channel_aktif": payment_provider_client.channel_aktif() if payment_provider_client.is_enabled() else [],
+        "snap_va_label": payment_provider_client.channel_label("va"),
+        "snap_qris_label": payment_provider_client.channel_label("qris"),
         "toko_libur_tanggal": toko_libur_tanggal,
     }
 
@@ -226,6 +239,7 @@ class BookingCreateBody(BaseModel):
     customer_nama: str
     customer_whatsapp: str
     metode_pembayaran: str
+    channel: str | None = None
     catatan: str | None = None
 
 
@@ -237,12 +251,23 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     # lewat UI, jadi ditegakkan juga di sini).
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         raise HTTPException(status_code=403, detail="Booking online tidak tersedia untuk toko ini.")
-    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: kalau
-    # metode "gateway" TAPI Super Admin belum mengisi kredensial Payment
-    # Gateway booking platform-wide, TOLAK SEBELUM booking dibuat sama
-    # sekali -- BUKAN membuat booking yang tidak akan pernah bisa dibayar.
-    if body.metode_pembayaran == "gateway" and not payment_gateway_client.is_enabled():
-        raise HTTPException(status_code=503, detail="Payment Gateway belum aktif -- silakan pilih metode pembayaran lain.")
+    # Migrasi Faspay SNAP Advance: metode "gateway" sekarang lewat
+    # payment_provider_client.py (SNAP VA/QRIS), BUKAN lagi Xpress v4 --
+    # kalau belum dikonfigurasi/channel-nya belum aktif, TOLAK SEBELUM
+    # booking dibuat sama sekali (pola sama seperti sebelumnya, BUKAN
+    # membuat booking yang tidak akan pernah bisa dibayar).
+    if body.metode_pembayaran == "gateway":
+        if not payment_provider_client.is_enabled():
+            raise HTTPException(status_code=503, detail="Payment Gateway belum aktif -- silakan pilih metode pembayaran lain.")
+        if body.channel not in payment_provider_client.channel_aktif():
+            raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
+        # QRIS SNAP mewajibkan nomor WhatsApp customer (lihat
+        # snap_advance_client.py::buat_transaksi_qris() -- melempar ValueError
+        # bare kalau kosong, BUKAN GatewayError, jadi TIDAK akan tertangkap
+        # except di bawah) -- ditolak rapi di sini SEBELUM booking dibuat,
+        # bukan menunggu error mentah dari lapisan provider.
+        if body.channel == "qris" and not body.customer_whatsapp:
+            raise HTTPException(status_code=422, detail="Nomor WhatsApp wajib diisi untuk pembayaran QRIS.")
     try:
         billing_limits.pastikan_boleh_tambah_booking(tenant_id)  # FONDASI Multi-Tenant Phase 4
         booking = booking_db.buat_booking(
@@ -257,48 +282,41 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     if body.metode_pembayaran != "gateway":
         return booking
 
-    # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: booking
-    # SUDAH tersimpan (status_pembayaran='menunggu_verifikasi', slot
-    # TERISI) -- sekarang buat transaksi checkout SUNGGUHAN ke provider.
-    # Gagal (provider tidak bisa dihubungi/menolak) -> booking DIBATALKAN
-    # OTOMATIS (membebaskan slot lagi, TIDAK ADA booking menggantung yang
-    # tidak bisa dibayar) -- BUKAN dibiarkan tersimpan tanpa jalan bayar.
-    tenant = tenant_db.get_tenant(tenant_id)
-    order_id = booking_gateway_db.buat_order_id(tenant_id, booking["id"])
-    item_details = [
-        {"id": str(it["service_id"]), "price": it["harga"], "quantity": 1, "name": it["nama_service"][:50]}
-        for it in booking["items"]
-    ]
-    # AUDIT (perbaikan pasca-audit kesiapan): "phone" ditambahkan (SEBELUMNYA
-    # hanya "first_name") -- Faspay Xpress v4 mewajibkan msisdn di request
-    # checkout (lihat payment_gateway_client.py). Form booking publik
-    # SENGAJA TIDAK punya field email (keputusan eksplisit) -- "email"
-    # SENGAJA TIDAK diisi di sini, client-nya sendiri yang pakai fallback
-    # support@rivoirsett.com HANYA untuk memenuhi syarat API Faspay.
-    customer_details = {"first_name": booking["customer_nama"][:50], "phone": booking["customer_whatsapp"]}
-    channels = payment_gateway_db.get_config()["metode_aktif"]
+    # Migrasi Faspay SNAP Advance: booking SUDAH tersimpan
+    # (status_pembayaran='menunggu_verifikasi', slot TERISI) -- sekarang
+    # buat transaksi SNAP SUNGGUHAN (VA/QRIS) ke Faspay lewat seam
+    # payment_provider_client.py (BUKAN memanggil snap_advance_client.py
+    # langsung -- lihat catatan modul payment_provider_client.py soal kenapa).
+    # Urutan 3 langkah (catat lokal CREATED -> panggil provider -> catat
+    # hasilnya) pola SAMA seperti dulu Xpress v4 (booking_gateway_db.buat_transaksi()
+    # dipanggil SETELAH payment_gateway_client.buat_transaksi() sukses),
+    # hanya tabelnya sekarang snap_payment_transactions (SATU tabel yang
+    # sudah dipakai webhook cascade -- lihat snap_webhook.py).
+    row = snap_payment_db.buat_transaksi(
+        snap_payment_db.TRANSACTION_TYPE_BOOKING, tenant_id, booking["total_harga"],
+        booking_id=booking["id"], channel=body.channel,
+    )
+    customer_details = {"nama": booking["customer_nama"][:128], "whatsapp": booking["customer_whatsapp"]}
     try:
-        hasil_gateway = payment_gateway_client.buat_transaksi(
-            order_id, booking["total_harga"], item_details,
-            customer_details=customer_details, enabled_channels=channels,
+        hasil = payment_provider_client.buat_transaksi(
+            body.channel, row["payment_reference"], booking["total_harga"], customer_details,
         )
     except gateway_client_base.GatewayError as e:
+        snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
         booking_db.batalkan_booking(booking["id"])
         raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
-    transaksi = booking_gateway_db.buat_transaksi(
-        order_id, tenant_id, tenant["nama_barbershop"] if tenant else "-", booking["id"],
-        booking["customer_nama"], booking["nama_barber"], booking["daftar_service"], booking["total_harga"],
-        checkout_token=hasil_gateway["token"], checkout_redirect_url=hasil_gateway["redirect_url"],
-        # Format Baru Nomor Transaksi Booking: reuse nomor booking ini
-        # sendiri (booking_db.buat_booking(), None untuk booking lama)
-        # supaya SATU nomor yang sama tampil konsisten di layar pembayaran
-        # customer, Riwayat Transaksi, dan Super Admin.
-        nomor_transaksi=booking.get("nomor_transaksi"),
+    snap_payment_db.catat_hasil_create_transaction(
+        row["id"], provider_transaction_id=hasil.get("provider_transaction_id"),
+        va_number=hasil.get("va_number"), qr_content=hasil.get("qr_content"), qr_url=hasil.get("qr_url"),
+        expired_at=hasil.get("expired_at"), provider_response=hasil.get("provider_response"), status="PENDING",
     )
-    booking["gateway_order_id"] = order_id
-    booking["checkout_token"] = transaksi["checkout_token"]
-    booking["checkout_redirect_url"] = transaksi["checkout_redirect_url"]
+    booking["payment_reference"] = row["payment_reference"]
+    booking["channel"] = body.channel
+    booking["va_number"] = hasil.get("va_number")
+    booking["qr_url"] = hasil.get("qr_url")
+    booking["qr_content"] = hasil.get("qr_content")
+    booking["expired_at"] = hasil.get("expired_at")
     return booking
 
 
@@ -321,9 +339,54 @@ def public_gateway_status(order_id: str, tenant_id: int = Depends(resolve_tenant
     }
 
 
+@public_router.get("/snap-status/{payment_reference}")
+def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    """Endpoint READ-ONLY setara public_gateway_status() di atas, TAPI
+    untuk checkout Faspay SNAP Advance (booking_gateway_db tidak pernah
+    tahu transaksi ini -- SNAP tersimpan di snap_payment_transactions,
+    lihat catatan public_buat_booking()). Status HANYA berubah lewat
+    snap_webhook.py (notifikasi resmi Faspay tervalidasi signature), TIDAK
+    PERNAH dari endpoint ini."""
+    transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
+    if transaksi is None or transaksi["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    return {
+        "status": transaksi["status"],
+        "channel": transaksi["channel"],
+        "amount": transaksi["amount"],
+        "va_number": transaksi["va_number"],
+        "qr_url": transaksi["qr_url"],
+        "qr_content": transaksi["qr_content"],
+        "expired_at": transaksi["expired_at"],
+    }
+
+
 # =====================================================================
 # ADMIN/OWNER
 # =====================================================================
+
+
+def _terjemahkan_transaksi_snap_ke_gateway(t: dict) -> dict:
+    """Migrasi Faspay SNAP Advance: terjemahkan SATU baris
+    snap_payment_transactions ke bentuk baris booking_payment_transactions
+    (Xpress v4) yang SUDAH dikenal frontend (riwayat_transaksi.js/
+    booking.js TIDAK PERLU tahu ada dua tabel berbeda) -- dipakai list
+    (list_transaksi_gateway()) MAUPUN detail (detail_transaksi_snap())
+    supaya keduanya konsisten satu tempat."""
+    booking = booking_db.get_booking(t["booking_id"]) if t["booking_id"] else None
+    status_terjemahan = booking_db._SNAP_STATUS_KE_VOCAB_GATEWAY.get(t["status"], t["status"])
+    return {
+        "id": t["id"], "tenant_id": t["tenant_id"], "booking_id": t["booking_id"],
+        "order_id": t["payment_reference"], "nomor_transaksi": booking.get("nomor_transaksi") if booking else None,
+        "customer_nama": booking.get("customer_nama") if booking else None,
+        "barber_nama": booking.get("nama_barber") if booking else None,
+        "layanan": booking.get("daftar_service") if booking else None,
+        "nominal": t["amount"], "metode_pembayaran": "gateway", "channel_pembayaran": t["channel"],
+        "status_pembayaran": status_terjemahan, "transaction_id_provider": t["provider_transaction_id"],
+        "reference_id_provider": t["payment_reference"], "checkout_token": None, "checkout_redirect_url": None,
+        "created_at": t["created_at"], "updated_at": t["updated_at"], "paid_at": t["paid_at"],
+        "provider": "snap_advance",
+    }
 
 
 def _pastikan_booking_tenant_sama(user: dict, booking: dict | None):
@@ -364,10 +427,31 @@ def list_transaksi_gateway(
     TIDAK PERNAH menerima tenant_id dari parameter request (lihat
     booking_gateway_db.py::list_transaksi() untuk alasan lengkap isolasi
     multi-tenant)."""
-    return booking_gateway_db.list_transaksi(
+    hasil_xpress = booking_gateway_db.list_transaksi(
         tenant_id=user["tenant_id"], tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
         status_pembayaran=status_pembayaran, metode_pembayaran=metode_pembayaran,
     )
+    for t in hasil_xpress:
+        t["provider"] = "xpress"
+    # Migrasi Faspay SNAP Advance: gabung dengan transaksi SNAP (tabel
+    # TERPISAH, snap_payment_transactions) supaya Riwayat Transaksi tetap
+    # menampilkan SATU daftar utuh pasca migrasi checkout gateway ke SNAP --
+    # diterjemahkan ke bentuk baris booking_payment_transactions yang SUDAH
+    # dikenal frontend (riwayat_transaksi.js TIDAK PERLU berubah untuk
+    # list ini, lihat catatan modul). metode_pembayaran/status_pembayaran
+    # difilter di sini (bukan di query) karena datang dari sumber berbeda.
+    if metode_pembayaran is None or metode_pembayaran == "gateway":
+        for t in snap_payment_db.list_transaksi(user["tenant_id"], transaction_type=snap_payment_db.TRANSACTION_TYPE_BOOKING):
+            baris = _terjemahkan_transaksi_snap_ke_gateway(t)
+            if status_pembayaran is not None and baris["status_pembayaran"] != status_pembayaran:
+                continue
+            if tanggal_mulai is not None and baris["created_at"] < tanggal_mulai:
+                continue
+            if tanggal_selesai is not None and baris["created_at"] > tanggal_selesai:
+                continue
+            hasil_xpress.append(baris)
+    hasil_xpress.sort(key=lambda t: t["created_at"], reverse=True)
+    return hasil_xpress
 
 
 @router.get("/transactions/{transaksi_id}")
@@ -391,6 +475,41 @@ def cek_ulang_transaksi_gateway(transaksi_id: int, user: dict = Depends(require_
     rekonsiliasi_manual()), TERMASUK guard urutan status yang sama."""
     try:
         return booking_gateway_webhook.rekonsiliasi_manual(transaksi_id, tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
+
+
+@router.get("/transactions/snap/{transaksi_id}")
+def detail_transaksi_snap(transaksi_id: int, user: dict = Depends(require_menu_read("riwayat_transaksi"))):
+    """Padanan detail_transaksi_gateway() di atas TAPI untuk transaksi
+    Faspay SNAP Advance (tabel TERPISAH snap_payment_transactions) --
+    lihat catatan modul soal migrasi checkout gateway ke SNAP."""
+    transaksi = snap_payment_db.get_transaksi(transaksi_id, tenant_id=user["tenant_id"])
+    if transaksi is None:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    baris = _terjemahkan_transaksi_snap_ke_gateway(transaksi)
+    baris["status_log"] = [
+        {**log, "status_lama": booking_db._SNAP_STATUS_KE_VOCAB_GATEWAY.get(log["status_lama"], log["status_lama"]),
+         "status_baru": booking_db._SNAP_STATUS_KE_VOCAB_GATEWAY.get(log["status_baru"], log["status_baru"])}
+        for log in snap_payment_db.list_status_log(transaksi_id)
+    ]
+    return baris
+
+
+@router.post("/transactions/snap/{transaksi_id}/cek-ulang")
+def cek_ulang_transaksi_snap(transaksi_id: int, user: dict = Depends(require_permission("izin_riwayat_transaksi"))):
+    """Padanan cek_ulang_transaksi_gateway() di atas TAPI untuk transaksi
+    Faspay SNAP Advance -- lihat snap_webhook.py::rekonsiliasi_manual().
+    Hasilnya diterjemahkan SAMA seperti detail_transaksi_snap() di atas
+    supaya modal detail di frontend (dibuka ulang dengan hasil ini
+    langsung, lihat riwayat_transaksi.js/booking.js) tetap konsisten
+    bentuknya -- status_log TIDAK ikut disertakan di sini, pola SAMA
+    PERSIS booking_gateway_webhook.rekonsiliasi_manual() (perilaku lawas,
+    bukan regresi baru)."""
+    try:
+        return _terjemahkan_transaksi_snap_ke_gateway(snap_webhook.rekonsiliasi_manual(transaksi_id, tenant_id=user["tenant_id"]))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except gateway_client_base.GatewayError as e:

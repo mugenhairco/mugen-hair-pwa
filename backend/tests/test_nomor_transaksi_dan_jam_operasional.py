@@ -22,6 +22,8 @@ import booking_gateway_db
 import database as db
 import payment_gateway_client
 import payment_gateway_db
+import payment_provider_client
+import snap_advance_db
 import tenant_db
 from booking_db import WIB, _hari_ini_wib
 
@@ -128,30 +130,44 @@ def test_nomor_transaksi_dua_booking_berbeda_menit_beda_nomor(single_tenant, mon
 # ============================= Reuse di booking_gateway_db (Riwayat Transaksi) =============================
 
 def test_gateway_transaksi_reuse_nomor_booking(app_client, monkeypatch):
+    """Migrasi Faspay SNAP Advance: checkout "gateway" sekarang lewat SNAP
+    (booking_gateway_db/Xpress v4 TIDAK LAGI dipakai jalur ini, lihat
+    routers/booking.py). snap_payment_transactions SENGAJA TIDAK punya
+    kolom nomor_transaksi sendiri -- SATU-SATUNYA sumber kebenaran TETAP
+    bookings.nomor_transaksi, dibaca ulang APA ADANYA saat memperkaya
+    tampilan (lihat booking_db.py::_perkaya_status_gateway() &
+    routers/booking.py::list_transaksi_gateway()) -- secara struktural
+    TIDAK MUNGKIN ada dua angka berbeda untuk booking yang sama karena
+    tidak pernah disalin ke tempat kedua."""
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
-    payment_gateway_db.update_config(merchant_id="37070", server_key="u", secret_key="p")
+    snap_advance_db.update_config(
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        channel_aktif=["va", "qris"],
+    )
     booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
     barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
-    monkeypatch.setattr(payment_gateway_client, "buat_transaksi",
-                         lambda *a, **kw: {"token": "tok-x", "redirect_url": "https://example.test/pay"})
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi",
+                         lambda *a, **kw: {"va_number": "70212345678901", "provider_transaction_id": "trx-x"})
     _patch_sekarang(monkeypatch, 14, 22)
 
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "16:00",
         "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
-        "metode_pembayaran": "gateway",
+        "metode_pembayaran": "gateway", "channel": "va",
     }
     r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r.status_code == 200, r.text
     booking = r.json()
     assert booking["nomor_transaksi"] is not None
 
-    transaksi = booking_gateway_db.get_transaksi_by_order_id(booking["gateway_order_id"])
-    # SATU nomor yang SAMA persis -- Riwayat Transaksi/Super Admin dan layar
-    # checkout customer TIDAK PERNAH menampilkan dua angka berbeda untuk
-    # booking yang sama.
-    assert transaksi["nomor_transaksi"] == booking["nomor_transaksi"]
+    # get_booking() (dipakai _perkaya_status_gateway() untuk tampilan Daftar/
+    # Detail Booking) tetap mengembalikan nomor yang SAMA -- tidak ada baris
+    # kedua di snap_payment_transactions yang bisa menyimpan angka berbeda.
+    booking_tersimpan = booking_db.get_booking(booking["id"])
+    assert booking_tersimpan["nomor_transaksi"] == booking["nomor_transaksi"]
+    assert booking_tersimpan["gateway_provider"] == "snap_advance"
 
 
 def test_gateway_transaksi_tabrakan_nomor_dapat_sufiks_bukan_gagal(single_tenant):

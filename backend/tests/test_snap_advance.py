@@ -34,6 +34,7 @@ import snap_advance_db
 import snap_payment_db
 import snap_webhook
 import subscription_db
+import tenant_db
 from booking_db import _hari_ini_wib
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -1258,3 +1259,163 @@ def test_get_config_internal_mengembalikan_nilai_asli(single_tenant):
 
     assert cfg["snap_client_secret"] == "rahasia-banget"
     assert cfg["snap_private_key"] == private_pem.strip()
+
+
+# ---------------------------------------------------------------------------
+# Migrasi Faspay SNAP Advance -- orkestrasi checkout booking/billing lewat
+# payment_provider_client.py (seam dinamis). Skenario sukses/gagal dasar
+# (VA/QRIS, rollback booking dibatalkan/invoice ditandai denied) sudah
+# diuji lengkap di test_booking_gateway.py/test_billing_checkout.py --
+# DI SINI khusus mengisi celah yang belum tercakup di sana: guard sebelum
+# memanggil provider, rekonsiliasi manual SNAP, dan penggabungan Riwayat
+# Transaksi Xpress+SNAP.
+# ---------------------------------------------------------------------------
+
+def _aktifkan_snap_orkestrasi(channel_aktif=None):
+    private_pem, _ = _buat_keypair_rsa()
+    snap_advance_db.update_config(
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        private_key=private_pem, channel_aktif=channel_aktif if channel_aktif is not None else ["va", "qris"],
+    )
+
+
+def _tenant_default_snap():
+    """"mugen-hair-co" (dibuat lewat bootstrap main.py, lihat pola SAMA
+    persis test_booking_gateway.py) -- SUDAH punya fitur "booking_online"
+    aktif secara default, beda dari tenant fixture single_tenant/two_tenants
+    yang dibuat MINIMAL TANPA subscription/fitur apa pun. Endpoint publik
+    checkout (POST /api/public/booking) menegakkan gate ini SEBELUM apa
+    pun lain -- perlu tenant yang sungguhan siap pakai."""
+    return tenant_db.get_tenant_by_slug("mugen-hair-co")
+
+
+def test_orkestrasi_booking_qris_tanpa_whatsapp_ditolak_422_sebelum_panggil_provider(app_client, monkeypatch):
+    """buat_transaksi_qris() SNAP mewajibkan nomor WhatsApp (melempar
+    ValueError bare, bukan GatewayError) -- routers/booking.py WAJIB
+    menolak SEBELUM memanggil provider sama sekali, bukan membiarkan error
+    mentah lolos jadi 500."""
+    import payment_provider_client
+    tenant = _tenant_default_snap()
+    _aktifkan_snap_orkestrasi()
+    barber_id = db.add_barber("Barber QRIS Guard", tenant_id=tenant["id"])
+    service_id = db.add_service("Service QRIS Guard", 100000, tenant_id=tenant["id"])
+    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
+    dipanggil = {"n": 0}
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi", lambda *a, **kw: dipanggil.__setitem__("n", dipanggil["n"] + 1))
+
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00", "service_ids": [service_id],
+        "customer_nama": "Budi", "customer_whatsapp": "", "metode_pembayaran": "gateway", "channel": "qris",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 422, r.text
+    assert dipanggil["n"] == 0  # provider TIDAK PERNAH dipanggil
+
+
+def test_orkestrasi_booking_channel_tidak_aktif_ditolak_422(app_client):
+    """Channel yang belum dicentang aktif Super Admin (mis. "qris" belum
+    diaktifkan, hanya "va") TIDAK BOLEH bisa dipakai checkout walau
+    formatnya valid."""
+    tenant = _tenant_default_snap()
+    _aktifkan_snap_orkestrasi(channel_aktif=["va"])  # qris SENGAJA tidak diaktifkan
+    barber_id = db.add_barber("Barber Channel Guard", tenant_id=tenant["id"])
+    service_id = db.add_service("Service Channel Guard", 100000, tenant_id=tenant["id"])
+    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
+
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00", "service_ids": [service_id],
+        "customer_nama": "Budi", "customer_whatsapp": "081234567890", "metode_pembayaran": "gateway", "channel": "qris",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 422, r.text
+
+
+def test_rekonsiliasi_manual_booking_snap_va_menerapkan_status(single_tenant, monkeypatch):
+    """snap_webhook.rekonsiliasi_manual() untuk channel "va" -- memanggil
+    snap_advance_client.cek_status_transaksi(channel="va", virtual_account_no=...)
+    lalu menerapkan status hasilnya lewat jalur SAMA PERSIS webhook resmi."""
+    booking = _siapkan_booking(single_tenant["tenant_id"], metode="gateway")
+    row = snap_payment_db.buat_transaksi(
+        "BOOKING", single_tenant["tenant_id"], booking["total_harga"],
+        booking_id=booking["id"], channel="va",
+    )
+    snap_payment_db.catat_hasil_create_transaction(row["id"], va_number="70212345678901", status="PENDING")
+
+    monkeypatch.setattr(snap_advance_client, "cek_status_transaksi",
+                         lambda ref, channel=None, **kw: {"additionalInfo": {"latestTransactionStatus": "00"}})
+
+    hasil = snap_webhook.rekonsiliasi_manual(row["id"], tenant_id=single_tenant["tenant_id"])
+    assert hasil["status"] == "PAID"
+    booking_terbaru = booking_db.get_booking(booking["id"])
+    assert booking_terbaru["status_pembayaran"] == "terverifikasi"
+
+
+def test_rekonsiliasi_manual_channel_tidak_didukung_ditolak(single_tenant):
+    """Direct Debit TIDAK PERNAH bisa dicek ulang manual (channel ini tidak
+    pernah bisa dipakai checkout sama sekali sejak awal, lihat
+    payment_provider_client.py) -- baris dibuat langsung lewat
+    snap_payment_db (bukan lewat endpoint checkout, yang sudah menolaknya)
+    murni untuk membuktikan guard di rekonsiliasi_manual() sendiri."""
+    booking = _siapkan_booking(single_tenant["tenant_id"], metode="gateway")
+    row = snap_payment_db.buat_transaksi(
+        "BOOKING", single_tenant["tenant_id"], booking["total_harga"],
+        booking_id=booking["id"], channel="direct_debit",
+    )
+    with pytest.raises(ValueError):
+        snap_webhook.rekonsiliasi_manual(row["id"], tenant_id=single_tenant["tenant_id"])
+
+
+def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypatch):
+    """GET /api/booking/transactions (Riwayat Transaksi Tenant) SEKARANG
+    menggabung baris Xpress v4 (booking_payment_transactions) DAN SNAP
+    Advance (snap_payment_transactions, diterjemahkan bentuknya) dalam SATU
+    daftar -- masing-masing ditandai field "provider" yang benar."""
+    import auth_db
+    import booking_gateway_db
+    import payment_provider_client
+    tenant = _tenant_default_snap()
+    tenant_id = tenant["id"]
+    auth_db.tambah_user("ownermerge", "password123", role="admin", tenant_id=tenant_id)
+    r_login = app_client.post("/api/auth/login", json={"username": "ownermerge", "password": "password123"})
+    assert r_login.status_code == 200, r_login.text
+    headers = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    # Baris Xpress v4 (lawas) -- dibuat langsung lewat booking_gateway_db,
+    # TIDAK lewat checkout (tidak relevan, hanya perlu ADA barisnya).
+    booking_xpress = _siapkan_booking(tenant_id, metode="gateway")
+    order_id = booking_gateway_db.buat_order_id(tenant_id, booking_xpress["id"])
+    booking_gateway_db.buat_transaksi(
+        order_id, tenant_id, tenant["nama_barbershop"], booking_xpress["id"], booking_xpress["customer_nama"],
+        booking_xpress["nama_barber"], booking_xpress["daftar_service"], booking_xpress["total_harga"],
+        checkout_token=None, checkout_redirect_url="https://example.test/pay",
+    )
+
+    # Baris SNAP -- lewat checkout sungguhan (endpoint publik).
+    _aktifkan_snap_orkestrasi()
+    barber_id = db.add_barber("Barber Merge", tenant_id=tenant_id)
+    service_id = db.add_service("Service Merge", 100000, tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi",
+                         lambda *a, **kw: {"va_number": "70212345678901"})
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "11:00", "service_ids": [service_id],
+        "customer_nama": "Citra", "customer_whatsapp": "081234567891", "metode_pembayaran": "gateway", "channel": "va",
+    }
+    r_checkout = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r_checkout.status_code == 200, r_checkout.text
+
+    r = app_client.get("/api/booking/transactions", headers=headers)
+    assert r.status_code == 200, r.text
+    hasil = r.json()
+    providers = {row["provider"] for row in hasil}
+    assert providers == {"xpress", "snap_advance"}
+    baris_snap = next(row for row in hasil if row["provider"] == "snap_advance")
+    assert baris_snap["channel_pembayaran"] == "va"
+    # Status baru sukses dibuat -> "PENDING" (bukan "CREATED", orkestrasi
+    # checkout langsung menandainya begitu VA/QR berhasil diterbitkan) ->
+    # diterjemahkan "diproses" di kosakata gateway lawas.
+    assert baris_snap["status_pembayaran"] == "diproses"
+    assert baris_snap["nomor_transaksi"] == r_checkout.json()["nomor_transaksi"]
