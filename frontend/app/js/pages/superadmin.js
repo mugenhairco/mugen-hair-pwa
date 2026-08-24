@@ -1416,7 +1416,7 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Retry Max"));
     snapAdvanceCard.appendChild(inSnapRetryMax);
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
-      `URL webhook SNAP Advance (SATU endpoint untuk Booking + SaaS Billing): ${MUGEN_API_BASE}/api/public/gateway/snap-notification`));
+      `URL Payment Notification SNAP Advance (TIGA path terpisah, satu per produk -- sesuai klarifikasi resmi Faspay, BUKAN lagi satu URL gabungan): VA ${MUGEN_API_BASE}/v1.0/transfer-va/payment -- QRIS ${MUGEN_API_BASE}/v1.0/qr/qr-mpm-notify -- Direct Debit ${MUGEN_API_BASE}/v1.0/debit/notify`));
 
     snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Channel Aktif"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:2px;margin-bottom:6px;" },

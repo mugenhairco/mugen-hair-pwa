@@ -726,7 +726,17 @@
 // MugenUI.emptyState("Anda tidak memiliki akses ke menu ini.") kalau
 // levelnya "none" (tanpa fetch data sama sekali), dan menyembunyikan/
 // menonaktifkan tombol tambah/edit/hapus/approve kalau levelnya "read".
-const ASSET_VERSION = "140";
+// v140 -> v141: BUGFIX teks Pengaturan Super Admin > Faspay SNAP Advance --
+// keterangan URL webhook masih menunjuk endpoint gabungan LAMA
+// (`/api/public/gateway/snap-notification`) yang sudah DIHAPUS TOTAL sejak
+// audit lanjutan #3 (lihat routers/snap_advance.py) begitu Faspay
+// mengonfirmasi tertulis: satu Merchant ID = SATU domain, TAPI tiap produk
+// SNAP (VA/QRIS/Direct Debit) punya path Payment Notification sendiri.
+// pages/superadmin.js sekarang menampilkan ketiga path resmi yang benar-benar
+// aktif di notification_router (root, TANPA prefix `/api`) -- supaya Super
+// Admin tidak salah mendaftarkan URL basi ke tim Faspay. TIDAK ADA perubahan
+// logika/endpoint apa pun, MURNI perbaikan teks yang ditampilkan.
+const ASSET_VERSION = "141";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
