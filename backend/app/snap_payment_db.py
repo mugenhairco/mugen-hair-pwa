@@ -89,7 +89,8 @@ def tentukan_tipe_transaksi(payment_reference: str) -> str:
 
 def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
                     booking_id: int = None, subscription_invoice_id: int = None,
-                    channel: str = None, ewallet_provider: str = None, binding_id: int = None) -> dict:
+                    channel: str = None, ewallet_provider: str = None, binding_id: int = None,
+                    provider: str = "snap_advance") -> dict:
     """Buat baris transaksi baru berstatus CREATED -- MURNI pencatatan
     lokal, TIDAK memanggil Faspay sama sekali (pemanggil di lapisan atas
     yang memanggil snap_advance_client.buat_transaksi_*() SETELAH baris ini
@@ -104,7 +105,14 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
     snap_account_bindings -- lihat snap_account_binding_db.py) -- channel
     lain (va/qris/ewallet) TIDAK butuh binding sama sekali, jadi TIDAK
     divalidasi wajib di sini (pemanggil yang tahu channel mana yang
-    butuh binding)."""
+    butuh binding).
+
+    `provider` SENGAJA parameter (default "snap_advance", BUKAN literal
+    hardcoded di SQL) -- kolom `provider` di tabel ini adalah seam resmi
+    untuk penyedia pembayaran lain di masa depan (lihat
+    payment_provider_client.py, dipanggil SATU-SATUNYA lewat sana oleh
+    routers/booking.py & routers/billing.py) TANPA perlu mengubah modul ini
+    lagi kalau providernya berganti."""
     if transaction_type == TRANSACTION_TYPE_BOOKING:
         if not booking_id or subscription_invoice_id is not None:
             raise ValueError("Transaksi BOOKING wajib mengisi booking_id, TIDAK boleh mengisi subscription_invoice_id.")
@@ -127,8 +135,8 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
             "(internal_transaction_id, provider, payment_reference, transaction_type, tenant_id, "
             "booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, status, "
             "created_at, updated_at) "
-            "VALUES (?, 'snap_advance', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
-            (internal_transaction_id, payment_reference, transaction_type, tenant_id,
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
+            (internal_transaction_id, provider, payment_reference, transaction_type, tenant_id,
              booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, now, now),
         )
     return get_transaksi_by_reference(payment_reference)
@@ -169,6 +177,56 @@ def list_transaksi(tenant_id: int, transaction_type: str = None, status: str = N
     q += " ORDER BY id DESC"
     with get_conn() as conn:
         return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+
+def get_transaksi_terkini_untuk_booking(booking_id: int) -> dict | None:
+    """Baris SNAP Advance TERBARU untuk satu booking (bisa lebih dari satu
+    percobaan checkout kalau yang sebelumnya expired/gagal) -- dipakai
+    booking_db.py::_perkaya_status_gateway() sebagai fallback begitu
+    booking_gateway_db (Xpress v4) tidak menemukan apa pun untuk booking
+    ini, supaya booking hasil checkout SNAP juga tampil status gateway-nya
+    di halaman Booking/Riwayat Transaksi."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM snap_payment_transactions WHERE booking_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (booking_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_transaksi_terkini_untuk_booking_batch(booking_ids: list) -> dict:
+    """Versi BATCH get_transaksi_terkini_untuk_booking() -- dipakai
+    booking_db.get_booking_list() supaya memperkaya SATU HALAMAN booking
+    tidak memicu satu query terpisah per baris, pola SAMA PERSIS
+    booking_gateway_db.get_transaksi_terkini_untuk_booking_batch(). Return
+    {booking_id: baris transaksi TERBARU}, booking_id tanpa transaksi SNAP
+    sama sekali TIDAK muncul sebagai key."""
+    if not booking_ids:
+        return {}
+    placeholder = ", ".join("?" for _ in booking_ids)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM snap_payment_transactions WHERE booking_id IN ({placeholder}) ORDER BY id ASC",
+            booking_ids,
+        ).fetchall()
+    hasil = {}
+    for r in rows:
+        hasil[r["booking_id"]] = dict(r)  # baris TERAKHIR per booking_id menang (ORDER BY id ASC)
+    return hasil
+
+
+def get_transaksi_terkini_untuk_subscription_invoice(subscription_invoice_id: int) -> dict | None:
+    """Sama seperti get_transaksi_terkini_untuk_booking() tapi untuk sisi
+    SAAS_BILLING -- dipakai routers/billing.py untuk melengkapi detail
+    invoice (nomor VA/QR) kalau Owner reload halaman di tengah pembayaran."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM snap_payment_transactions WHERE subscription_invoice_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (subscription_invoice_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def catat_hasil_create_transaction(transaksi_id: int, *, provider_transaction_id: str = None,

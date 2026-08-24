@@ -6,14 +6,16 @@
 // sekali di sini): paket aktif + periode + status, katalog paket untuk upgrade/
 // downgrade/perpanjang, checkout Payment Gateway hosted, riwayat invoice/pembayaran.
 //
-// PROVIDER RESMI: Faspay Xpress v4 (billing_gateway_client.py) -- checkout
-// hosted murni redirect_url (config.checkout_script_url/client_key SELALU
-// null, Faspay tidak punya JS SDK), lihat cabang window.open() di
-// mulaiCheckout() di bawah. Cabang window.snap.pay() DIPERTAHANKAN sebagai
-// jalur adapter generik (script dimuat DINAMIS, bukan <script> tetap di
-// index.html -- proyek ini sengaja tanpa bundler/CDN tetap apa pun, lihat
-// README) kalau kelak provider lain yang punya script checkout dipasang --
-// TIDAK PERNAH dipakai untuk Faspay.
+// PROVIDER RESMI: Faspay SNAP Advance (payment_provider_client.py, seam
+// dinamis -- lihat catatan modul itu) -- checkout SEKARANG minta Owner
+// memilih channel (VA/QRIS, lihat pilihChannelModal()) lalu menampilkan
+// nomor VA/kode QR LANGSUNG di modal (infoModal()), TIDAK ADA halaman
+// hosted sama sekali (config.checkout_script_url/client_key SELALU null,
+// SNAP tidak punya JS SDK, sama seperti Xpress v4 sebelumnya). Cabang
+// window.snap.pay() DIPERTAHANKAN sebagai jalur adapter generik (script
+// dimuat DINAMIS, bukan <script> tetap di index.html -- proyek ini sengaja
+// tanpa bundler/CDN tetap apa pun, lihat README) kalau kelak provider lain
+// yang punya script checkout dipasang -- TIDAK PERNAH dipakai untuk SNAP.
 
 const PageBilling = (() => {
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
@@ -73,6 +75,40 @@ const PageBilling = (() => {
     return (e && e.detail && e.detail.detail) ? e.detail.detail : (e.message || "Terjadi kesalahan.");
   }
 
+  // Migrasi Faspay SNAP Advance: billing SEBELUMNYA tidak pernah butuh
+  // pilihan metode (Xpress v4 = satu jalur checkout hosted tunggal) --
+  // SNAP butuh channel (VA/QRIS) dipilih di muka, TIDAK ADA modal generik
+  // multi-pilihan di ui.js (hanya confirmModal ya/tidak) jadi dibangun
+  // lokal di sini, pola overlay/box SAMA PERSIS MugenUI.confirmModal()
+  // supaya tetap konsisten secara visual. Return Promise<string|null> --
+  // null kalau Owner batal/klik di luar kotak. Auto-resolve TANPA
+  // menampilkan modal kalau cuma satu channel aktif.
+  function pilihChannelModal(channelAktif, vaLabel) {
+    if (channelAktif.length === 1) return Promise.resolve(channelAktif[0]);
+    const label = { va: vaLabel ? `Virtual Account (${vaLabel})` : "Virtual Account", qris: "QRIS" };
+    return new Promise((resolve) => {
+      const overlay = MugenUI.el("div", { class: "modal-overlay" });
+      const box = MugenUI.el("div", { class: "modal-box" });
+      box.appendChild(MugenUI.el("h3", {}, "Pilih Metode Pembayaran"));
+      overlay.appendChild(box);
+      function tutup(hasil) {
+        overlay.classList.add("closing");
+        setTimeout(() => { overlay.remove(); resolve(hasil); }, 120);
+      }
+      const tombolTombol = channelAktif.map((c) => {
+        const btn = MugenUI.el("button", { type: "button", class: "btn-primary", style: "width:100%;margin-bottom:8px;" }, label[c] || c);
+        btn.addEventListener("click", () => tutup(c));
+        return btn;
+      });
+      box.appendChild(MugenUI.el("div", { style: "display:flex;flex-direction:column;margin-top:8px;" }, tombolTombol));
+      const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
+      btnBatal.addEventListener("click", () => tutup(null));
+      box.appendChild(MugenUI.el("div", { class: "modal-actions" }, [btnBatal]));
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(null); });
+    });
+  }
+
   function renderStatusCard(root, sub, invoices, packages, config) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
@@ -120,10 +156,15 @@ const PageBilling = (() => {
   // efektifnya (lihat komentar di sana), di sini murni meneruskan pilihan.
   async function mulaiCheckout(packageId, siklus, config, onSelesai, btnPemicu) {
     _bersihkanPendingKode();
+    // Migrasi Faspay SNAP Advance: channel (VA/QRIS) WAJIB dipilih SEBELUM
+    // memanggil checkout (SNAP tidak punya halaman hosted yang menawarkan
+    // semua channel sekaligus seperti Xpress v4 dulu) -- lihat pilihChannelModal().
+    const channel = await pilihChannelModal(config.channel_aktif || [], config.va_label);
+    if (!channel) return;
     let invoice;
     try {
       invoice = await MugenUI.withLoading(
-        () => MugenApi.post("/api/billing/checkout", { package_id: packageId, siklus: siklus || "bulanan" }),
+        () => MugenApi.post("/api/billing/checkout", { package_id: packageId, siklus: siklus || "bulanan", channel }),
         { message: "Menyiapkan pembayaran…" },
       );
     } catch (e) {
@@ -174,16 +215,23 @@ const PageBilling = (() => {
       return;
     }
 
-    // Halaman checkout Faspay dibuka di TAB BARU (AUDIT: window.open() bisa
-    // diblokir browser kalau dipanggil di luar gesture klik langsung --
-    // POST /api/billing/checkout di atas SUDAH selesai duluan, jadi deteksi
-    // & beri tahu Owner kalau itu terjadi, sama seperti book_public.js).
-    const jendela = window.open(invoice.snap_redirect_url, "_blank", "noopener,noreferrer");
-    if (!jendela || jendela.closed) {
-      MugenUI.toast("Halaman pembayaran diblokir browser -- izinkan pop-up untuk situs ini lalu coba lagi.", "error");
-    } else {
-      MugenUI.toast("Selesaikan pembayaran di tab baru -- status akan diperbarui otomatis di sini setelah dikonfirmasi.", "info", { force: true });
+    // Migrasi Faspay SNAP Advance: VA/QRIS TIDAK PUNYA halaman hosted
+    // seperti Xpress v4 dulu (window.open(snap_redirect_url)) -- nomor VA/
+    // kode QR ditampilkan LANGSUNG lewat modal (MugenUI.infoModal(), pola
+    // SAMA seperti isiKontenSnapWaiting() di pages/book_public.js).
+    const kontenModal = [];
+    if (invoice.channel === "va") {
+      kontenModal.push(MugenUI.el("div", { class: "subtitle" }, config.va_label ? `Virtual Account (${config.va_label})` : "Virtual Account"));
+      kontenModal.push(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;margin-top:4px;" }, invoice.va_number || "-"));
+      kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+        "Transfer PERSIS sejumlah tagihan ini ke nomor Virtual Account di atas lewat m-banking/ATM."));
+    } else if (invoice.channel === "qris" && invoice.qr_url) {
+      kontenModal.push(MugenUI.el("img", { src: invoice.qr_url, alt: "QRIS", style: "max-width:240px;width:100%;" }));
+      kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+        "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
     }
+    MugenUI.infoModal({ title: "Selesaikan Pembayaran", body: MugenUI.el("div", { style: "text-align:center;" }, kontenModal) });
+    MugenUI.toast("Status langganan akan diperbarui otomatis di sini setelah pembayaran dikonfirmasi.", "info", { force: true });
 
     // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
     // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah

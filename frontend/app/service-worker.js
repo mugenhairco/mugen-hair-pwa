@@ -746,7 +746,19 @@
 // private_key -- Super Admin BOLEH mengosongkan Client ID/Client Secret
 // sepenuhnya. Label kedua field itu di form ini juga diberi keterangan
 // "opsional". TIDAK ADA perubahan endpoint/format request ke Faspay.
-const ASSET_VERSION = "142";
+// v142 -> v143: Migrasi Faspay SNAP Advance -- checkout booking (metode
+// "gateway") & billing SaaS SEKARANG SUNGGUHAN lewat SNAP (VA/QRIS,
+// payment_provider_client.py seam dinamis), MENGGANTIKAN Xpress v4.
+// book_public.js: renderFaseMetode() dapat sub-pilihan channel VA/QRIS,
+// renderFaseWaiting() menampilkan nomor VA/kode QR langsung (TIDAK ADA
+// lagi window.open()/hosted checkout), polling arah baru
+// /api/public/booking/snap-status/{payment_reference}. billing.js:
+// pilihChannelModal() baru sebelum checkout, modal VA/QR (infoModal())
+// menggantikan window.open(snap_redirect_url). riwayat_transaksi.js/
+// booking.js/superadmin.js: branching provider Xpress vs SNAP untuk
+// Detail/Cek Ulang + copy diperbarui. Direct Debit TETAP TIDAK ada UI
+// customer (backend masih PENDING FASPAY).
+const ASSET_VERSION = "143";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

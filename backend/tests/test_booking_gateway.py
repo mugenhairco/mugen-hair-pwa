@@ -27,6 +27,9 @@ import database as db
 import gateway_client_base
 import payment_gateway_client
 import payment_gateway_db
+import payment_provider_client
+import snap_advance_db
+import snap_payment_db
 import tenant_db
 from booking_db import _hari_ini_wib
 
@@ -67,6 +70,18 @@ def _payload(order_id, payment_status_code, nominal, payment_channel="QRIS",
 
 def _aktifkan_pgw():
     payment_gateway_db.update_config(merchant_id="37070", server_key=USER_ID, secret_key=PASSWORD)
+
+
+def _aktifkan_snap():
+    """Migrasi Faspay SNAP Advance: checkout "gateway" sekarang lewat SNAP
+    (bukan lagi Xpress v4, lihat routers/booking.py) -- helper setara
+    _aktifkan_pgw() di atas TAPI mengisi kredensial minimal yang membuat
+    payment_provider_client.is_enabled() True dan channel "va" aktif."""
+    snap_advance_db.update_config(
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        channel_aktif=["va", "qris"],
+    )
 
 
 def _tenant_default():
@@ -132,49 +147,52 @@ def test_checkout_gateway_503_belum_dikonfigurasi(app_client):
 
 
 def test_checkout_gateway_sukses(app_client, monkeypatch):
-    _aktifkan_pgw()
+    """Migrasi Faspay SNAP Advance: checkout "gateway" sekarang lewat
+    payment_provider_client.py (SNAP VA/QRIS), lihat _aktifkan_snap()."""
+    _aktifkan_snap()
     tenant = _tenant_default()
     barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
-    monkeypatch.setattr(payment_gateway_client, "buat_transaksi",
-                         lambda *a, **kw: {"token": "tok-checkout", "redirect_url": "https://example.test/pay"})
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi",
+                         lambda *a, **kw: {"va_number": "70212345678901", "provider_transaction_id": "trx-1",
+                                            "expired_at": "2026-01-01T23:59:59+07:00", "provider_response": "{}"})
 
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
         "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
-        "metode_pembayaran": "gateway",
+        "metode_pembayaran": "gateway", "channel": "va",
     }
     r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r.status_code == 200, r.text
     hasil = r.json()
     assert hasil["status_pembayaran"] == "menunggu_verifikasi"
-    assert hasil["checkout_token"] == "tok-checkout"
-    assert hasil["checkout_redirect_url"] == "https://example.test/pay"
-    assert hasil["gateway_order_id"]
+    assert hasil["va_number"] == "70212345678901"
+    assert hasil["payment_reference"]
 
-    transaksi = booking_gateway_db.get_transaksi_by_order_id(hasil["gateway_order_id"])
+    transaksi = snap_payment_db.get_transaksi_by_reference(hasil["payment_reference"])
     assert transaksi is not None
     assert transaksi["tenant_id"] == tenant["id"]
-    assert transaksi["status_pembayaran"] == "menunggu_pembayaran"
-    assert transaksi["nominal"] == hasil["total_harga"]
+    assert transaksi["status"] == "PENDING"
+    assert transaksi["amount"] == hasil["total_harga"]
 
 
 def test_checkout_gateway_gagal_membatalkan_booking_otomatis(app_client, monkeypatch):
     """Provider gagal dihubungi/menolak -> booking yang SUDAH tersimpan
-    (mengisi slot) dibatalkan otomatis, TIDAK menggantung tanpa jalan bayar."""
-    _aktifkan_pgw()
+    (mengisi slot) dibatalkan otomatis, TIDAK menggantung tanpa jalan bayar.
+    Migrasi Faspay SNAP Advance: lihat _aktifkan_snap()."""
+    _aktifkan_snap()
     tenant = _tenant_default()
     barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
 
     def _gagal(*a, **kw):
         raise gateway_client_base.GatewayTimeoutError("Provider timeout.")
-    monkeypatch.setattr(payment_gateway_client, "buat_transaksi", _gagal)
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi", _gagal)
 
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
         "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
-        "metode_pembayaran": "gateway",
+        "metode_pembayaran": "gateway", "channel": "va",
     }
     r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r.status_code == 502

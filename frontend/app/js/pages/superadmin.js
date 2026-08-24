@@ -1358,13 +1358,18 @@ const PageSuperadmin = (() => {
     // ---------------------------------------------------------------
     // Migrasi Faspay SNAP Advance -- kartu konfigurasi TERPISAH dari kartu
     // "Payment Gateway" (Xpress v4) di atas, lihat snap_advance_db.py.
-    // Xpress v4 TETAP jadi provider aktif untuk booking/billing sampai SNAP
-    // Advance tervalidasi produksi -- mengisi kredensial di sini TIDAK
-    // memindahkan lalu lintas pembayaran apa pun secara otomatis.
+    // SNAP SEKARANG SUDAH di-wire lewat payment_provider_client.py (seam
+    // dinamis) ke checkout booking (metode "gateway", channel VA/QRIS) DAN
+    // billing SaaS -- mengisi/mengubah kredensial di sini LANGSUNG
+    // memengaruhi checkout yang sedang berjalan (bukan lagi sekadar
+    // persiapan), lihat routers/booking.py::public_buat_booking()/
+    // routers/billing.py::checkout(). Xpress v4 TETAP ada, tidak dipanggil
+    // lagi dari checkout mana pun, hanya untuk transaksi lama yang masih
+    // berjalan lewatnya.
     // ---------------------------------------------------------------
-    snapAdvanceCard.appendChild(MugenUI.el("h2", {}, "Faspay SNAP Advance (Migrasi)"));
+    snapAdvanceCard.appendChild(MugenUI.el("h2", {}, "Faspay SNAP Advance"));
     snapAdvanceCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Provider BARU yang MENGGANTIKAN Payment Gateway (Xpress v4) di atas -- Owner sudah memutuskan Xpress v4 tidak lagi dipakai, satu-satunya Payment Notification URL Merchant ID Faspay sekarang mengarah ke SNAP. VA & Direct Debit sudah diimplementasikan sesuai dokumen resmi Faspay -- QRIS & Registrasi/Account Binding Direct Debit MASIH PENDING FASPAY. Mengisi form ini menyiapkan kredensial -- SNAP BELUM di-wire ke flow checkout booking/billing production, menunggu uji Faspay Simulator & verifikasi ASPI/BI lebih dulu."));
+      "Provider AKTIF untuk checkout booking (metode Payment Gateway) & billing SaaS -- MENGGANTIKAN Payment Gateway (Xpress v4) di atas. VA & QRIS sudah diimplementasikan sesuai dokumen resmi Faspay & LANGSUNG dipakai customer/Owner begitu channel-nya dicentang aktif di bawah. Direct Debit & Registrasi/Account Binding-nya MASIH PENDING FASPAY -- belum bisa dipilih customer sama sekali sampai dikonfirmasi."));
 
     const inSnapEnv = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "sandbox" }, "Sandbox"),

@@ -32,6 +32,9 @@ import billing_invoice_db
 import billing_limits
 import billing_webhook
 import gateway_client_base
+import payment_provider_client
+import snap_payment_db
+import snap_webhook
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -67,10 +70,22 @@ def config_billing_gateway(user: dict = Depends(require_admin)):
     mengisi kredensial (lihat GET/PUT /api/superadmin/billing/gateway-config
     di bawah)."""
     return {
-        "enabled": billing_gateway_client.is_enabled(),
-        "client_key": billing_gateway_client.client_key(),
-        "is_production": billing_gateway_client.is_production(),
-        "checkout_script_url": billing_gateway_client.client_script_url(),
+        # Migrasi Faspay SNAP Advance: checkout langganan SaaS sekarang
+        # lewat SNAP (VA/QRIS), BUKAN lagi Xpress v4 -- `enabled` HARUS
+        # dibaca dari payment_provider_client.py (seam dinamis), bukan
+        # billing_gateway_client.py (Xpress) lagi, supaya Owner tidak
+        # melihat "Billing belum aktif" selamanya pasca migrasi ini.
+        "enabled": payment_provider_client.is_enabled(),
+        "channel_aktif": payment_provider_client.channel_aktif() if payment_provider_client.is_enabled() else [],
+        "va_label": payment_provider_client.channel_label("va"),
+        "qris_label": payment_provider_client.channel_label("qris"),
+        # Field lama (SNAP tidak punya script/hosted widget, sama seperti
+        # Xpress dulu) -- TETAP dikirim None supaya cabang window.snap.pay()
+        # lawas di billing.js tetap tidak pernah terpicu, TIDAK PERLU
+        # diubah di frontend.
+        "client_key": None,
+        "is_production": payment_provider_client.is_production(),
+        "checkout_script_url": None,
     }
 
 
@@ -84,13 +99,21 @@ class CheckoutBody(BaseModel):
     # format {"detail": "..."} polos yang sudah konsisten dipakai endpoint
     # lain di proyek ini).
     siklus: str = "bulanan"
+    # Migrasi Faspay SNAP Advance: billing SEBELUMNYA tidak punya pilihan
+    # metode sama sekali (Xpress v4 = satu jalur checkout tunggal) --
+    # SEKARANG WAJIB diisi ("va"/"qris") karena SNAP butuh tahu channel di
+    # muka (tidak ada halaman hosted seperti Xpress dulu yang menawarkan
+    # semua channel sekaligus).
+    channel: str
 
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
-    if not billing_gateway_client.is_enabled():
+    if not payment_provider_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
+    if body.channel not in payment_provider_client.channel_aktif():
+        raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
     if body.siklus not in ("bulanan", "6bulan", "tahunan"):
         raise HTTPException(status_code=422, detail="Siklus langganan tidak dikenal.")
     paket = billing_db.get_package(body.package_id)
@@ -120,34 +143,49 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
         paket = {**paket, "harga": paket["harga_tahunan"], "durasi_hari": paket["durasi_hari"] * 12}
 
     tenant = tenant_db.get_tenant(user["tenant_id"])
+    # tenant["whatsapp"] diisi Owner saat registrasi
+    # (tenant_db.set_registrant_info()) -- boleh kosong untuk tenant lama.
+    # QRIS SNAP mewajibkan nomor WhatsApp (lihat snap_advance_client.py::
+    # buat_transaksi_qris() -- melempar ValueError bare kalau kosong, BUKAN
+    # GatewayError, jadi TIDAK tertangkap except di bawah) -- ditolak rapi
+    # di sini SEBELUM invoice dibuat sama sekali.
+    if body.channel == "qris" and not (tenant and tenant.get("whatsapp")):
+        raise HTTPException(status_code=422, detail="Nomor WhatsApp toko wajib diisi untuk pembayaran QRIS -- lengkapi di Pengaturan.")
+
+    # Migrasi Faspay SNAP Advance: invoice dibuat LEBIH DULU (BUKAN setelah
+    # panggilan provider sukses seperti Xpress dulu) -- snap_payment_db.buat_transaksi()
+    # butuh subscription_invoice_id yang sudah ada. snap_token/snap_redirect_url
+    # (kolom lawas Xpress) SENGAJA dibiarkan kosong -- SNAP tidak punya
+    # padanannya, detail VA/QR tersimpan di snap_payment_transactions.
     order_id = billing_invoice_db.buat_order_id(user["tenant_id"])
-    item_details = [{
-        "id": paket["kode"], "price": paket["harga"], "quantity": 1,
-        "name": f"Paket {paket['nama']} ({paket['durasi_hari']} hari)"[:50],
-    }]
-    # AUDIT (perbaikan pasca-audit kesiapan): "phone"/"email" ditambahkan
-    # (SEBELUMNYA hanya "first_name") -- Faspay Xpress v4 mewajibkan
-    # msisdn+email di request checkout (lihat billing_gateway_client.py).
-    # tenant["whatsapp"]/tenant["email"] diisi Owner saat registrasi
-    # (tenant_db.set_registrant_info()) -- boleh kosong untuk tenant lama,
-    # client-nya sendiri sudah punya fallback aman kalau kosong.
+    invoice = billing_invoice_db.buat_invoice(order_id, user["tenant_id"], paket)
+    row = snap_payment_db.buat_transaksi(
+        snap_payment_db.TRANSACTION_TYPE_SAAS_BILLING, user["tenant_id"], paket["harga"],
+        subscription_invoice_id=invoice["id"], channel=body.channel,
+    )
     customer_details = {
-        "first_name": (tenant["nama_barbershop"] if tenant else "Owner")[:50],
-        "phone": tenant.get("whatsapp") if tenant else None,
-        "email": tenant.get("email") if tenant else None,
+        "nama": (tenant["nama_barbershop"] if tenant else "Owner")[:128],
+        "whatsapp": tenant.get("whatsapp") if tenant else None,
     }
     try:
-        hasil_gateway = billing_gateway_client.buat_transaksi(
-            order_id, paket["harga"], item_details, customer_details=customer_details,
+        hasil = payment_provider_client.buat_transaksi(
+            body.channel, row["payment_reference"], paket["harga"], customer_details,
         )
     except gateway_client_base.GatewayError as e:
+        snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
+        billing_invoice_db.update_invoice(invoice["id"], status="denied")
         raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
-    invoice = billing_invoice_db.buat_invoice(
-        order_id, user["tenant_id"], paket,
-        snap_token=hasil_gateway["token"], snap_redirect_url=hasil_gateway["redirect_url"],
+    snap_payment_db.catat_hasil_create_transaction(
+        row["id"], provider_transaction_id=hasil.get("provider_transaction_id"),
+        va_number=hasil.get("va_number"), qr_content=hasil.get("qr_content"), qr_url=hasil.get("qr_url"),
+        expired_at=hasil.get("expired_at"), provider_response=hasil.get("provider_response"), status="PENDING",
     )
-    return invoice
+    return {
+        **invoice, "channel": body.channel, "payment_reference": row["payment_reference"],
+        "va_number": hasil.get("va_number"), "qr_url": hasil.get("qr_url"),
+        "qr_content": hasil.get("qr_content"), "expired_at": hasil.get("expired_at"),
+    }
 
 
 class DowngradeBody(BaseModel):
@@ -201,6 +239,20 @@ def daftar_invoice_saya(user: dict = Depends(require_admin)):
 def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
     invoice = billing_invoice_db.get_invoice(invoice_id)
     _pastikan_invoice_tenant_sama(user, invoice)
+    # Migrasi Faspay SNAP Advance: lengkapi nomor VA/QR kalau invoice ini
+    # dibayar lewat SNAP (None untuk invoice lawas Xpress, atau invoice
+    # SNAP yang belum sempat buat transaksi) -- supaya Owner yang reload
+    # halaman di tengah pembayaran tetap melihat nomor VA/QR-nya, BUKAN
+    # hanya di respons checkout awal. SENGAJA TIDAK dilakukan di
+    # daftar_invoice_saya() (list) -- list tidak butuh VA/QR, hanya status,
+    # menghindari N+1 query per baris.
+    transaksi_snap = snap_payment_db.get_transaksi_terkini_untuk_subscription_invoice(invoice_id)
+    if transaksi_snap is not None:
+        invoice = {
+            **invoice, "channel": transaksi_snap["channel"], "payment_reference": transaksi_snap["payment_reference"],
+            "va_number": transaksi_snap["va_number"], "qr_url": transaksi_snap["qr_url"],
+            "qr_content": transaksi_snap["qr_content"], "expired_at": transaksi_snap["expired_at"],
+        }
     return invoice
 
 
@@ -212,8 +264,15 @@ def cek_ulang_invoice(invoice_id: int, user: dict = Depends(require_admin)):
     klaim status dari Owner -- endpoint ini murni memicu server memanggil
     ULANG API provider (Server Key sendiri) lalu menerapkan hasilnya lewat
     jalur SAMA PERSIS dengan webhook resmi (lihat billing_webhook.py::
-    rekonsiliasi_manual())."""
+    rekonsiliasi_manual()). Migrasi Faspay SNAP Advance: invoice yang
+    dibayar lewat SNAP dicek ulang lewat snap_webhook.rekonsiliasi_manual()
+    (transaksi_id, BUKAN invoice_id -- ditemukan lewat
+    snap_payment_db.get_transaksi_terkini_untuk_subscription_invoice()),
+    invoice Xpress lawas tetap lewat jalur billing_webhook lama."""
+    transaksi_snap = snap_payment_db.get_transaksi_terkini_untuk_subscription_invoice(invoice_id)
     try:
+        if transaksi_snap is not None:
+            return snap_webhook.rekonsiliasi_manual(transaksi_snap["id"], tenant_id=user["tenant_id"])
         return billing_webhook.rekonsiliasi_manual(invoice_id, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

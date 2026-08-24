@@ -245,3 +245,43 @@ def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: st
     status_baru = _map_latest_transaction_status(status_code)
     return terapkan_status_transaksi(transaksi, status_baru, sumber="webhook",
                                       provider_transaction_id=provider_transaction_id, paid_at=paid_at)
+
+
+def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
+    """AUDIT: jalur RESMI untuk transaksi SNAP yang macet karena webhook
+    TIDAK PERNAH sampai sama sekali -- dipakai tombol "Cek Ulang ke
+    Provider" (routers/booking.py & routers/billing.py, KEDUANYA lewat
+    fungsi generik ini karena satu baris snap_payment_transactions sudah
+    cukup mengenali domainnya sendiri lewat transaction_type). Pola SAMA
+    PERSIS billing_webhook.rekonsiliasi_manual()/booking_gateway_webhook.
+    rekonsiliasi_manual() -- TIDAK memerlukan verifikasi signature
+    (panggilan KELUAR ke provider memakai private key server sendiri,
+    BUKAN data masuk dari luar), tetap lewat terapkan_status_transaksi()
+    yang SAMA PERSIS dipakai webhook resmi.
+
+    Direct Debit SENGAJA tidak didukung di sini (channel itu belum bisa
+    dipakai checkout sama sekali -- lihat payment_provider_client.py --
+    jadi tidak akan pernah ada baris snap_payment_transactions
+    channel="direct_debit" yang perlu direkonsiliasi)."""
+    transaksi = snap_payment_db.get_transaksi(transaksi_id, tenant_id=tenant_id)
+    if transaksi is None:
+        raise ValueError("Transaksi tidak ditemukan.")
+
+    if transaksi["channel"] == "va":
+        hasil_provider = snap_advance_client.cek_status_transaksi(
+            transaksi["payment_reference"], channel="va", virtual_account_no=transaksi["va_number"],
+        )
+        status_code = (hasil_provider.get("additionalInfo") or {}).get("latestTransactionStatus")
+    elif transaksi["channel"] == "qris":
+        cfg = snap_advance_db.get_config_internal()
+        hasil_provider = snap_advance_client.cek_status_transaksi(
+            transaksi["payment_reference"], channel="qris",
+            original_reference_no=transaksi["provider_transaction_id"],
+            channel_code=cfg["snap_qris_channel_code"],
+        )
+        status_code = hasil_provider.get("latestTransactionStatus")
+    else:
+        raise ValueError(f"Rekonsiliasi manual belum didukung untuk channel {transaksi['channel']!r}.")
+
+    status_baru = _map_latest_transaction_status(status_code)
+    return terapkan_status_transaksi(transaksi, status_baru, sumber="rekonsiliasi_manual")

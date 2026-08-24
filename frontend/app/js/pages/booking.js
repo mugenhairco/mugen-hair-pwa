@@ -65,7 +65,7 @@ const PageBooking = (() => {
   // cek_ulang_transaksi_gateway()).
   const STATUS_GATEWAY_BOLEH_CEK_ULANG = new Set(["menunggu_pembayaran", "diproses"]);
 
-  function bukaDetailGateway(transaksi) {
+  function bukaDetailGateway(transaksi, provider = "xpress") {
     const body = [
       MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-bottom:10px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("div", { class: "subtitle" }, "Status"),
@@ -102,16 +102,20 @@ const PageBooking = (() => {
     ];
 
     let modal;
+    // Migrasi Faspay SNAP Advance: dua tabel/endpoint TERPISAH -- `provider`
+    // dioper eksplisit dari pemanggil (lihat komentar kolom "aksi" di bawah).
+    const urlCekUlang = provider === "snap_advance"
+      ? `/api/booking/transactions/snap/${transaksi.id}/cek-ulang`
+      : `/api/booking/transactions/${transaksi.id}/cek-ulang`;
     if (STATUS_GATEWAY_BOLEH_CEK_ULANG.has(transaksi.status_pembayaran)) {
       const btnCekUlang = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" },
         "Cek Ulang ke Provider");
       btnCekUlang.addEventListener("click", async () => {
         try {
-          const updated = await MugenUI.withButtonLoading(btnCekUlang,
-            () => MugenApi.post(`/api/booking/transactions/${transaksi.id}/cek-ulang`));
+          const updated = await MugenUI.withButtonLoading(btnCekUlang, () => MugenApi.post(urlCekUlang));
           modal.close();
           MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
-          bukaDetailGateway(updated);
+          bukaDetailGateway(updated, provider);
         } catch (e) {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }
@@ -120,7 +124,11 @@ const PageBooking = (() => {
       body.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:6px;" },
         "Pakai ini HANYA kalau status di sini tidak kunjung berubah walau customer sudah membayar -- server akan menanyakan ulang status LANGSUNG ke provider."));
     }
-    modal = MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi}`, body });
+    // snap_payment_transactions TIDAK punya kolom nomor_transaksi (SATU-
+    // SATUNYA sumber kebenaran TETAP bookings.nomor_transaksi, lihat
+    // booking_db.py::_perkaya_status_gateway()) -- reference_id_provider
+    // (payment_reference) dipakai sebagai fallback judul modal.
+    modal = MugenUI.infoModal({ title: `Detail Transaksi — ${transaksi.nomor_transaksi || transaksi.reference_id_provider || transaksi.payment_reference}`, body });
   }
 
   // REVISI: nomor WhatsApp customer di Menu Booking ditampilkan sebagai link
@@ -526,8 +534,13 @@ const PageBooking = (() => {
             const btn = MugenUI.el("button", {}, "Detail");
             btn.addEventListener("click", async () => {
               try {
-                const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(`/api/booking/transactions/${r.gateway_transaksi_id}`));
-                bukaDetailGateway(detail);
+                // Migrasi Faspay SNAP Advance: dua tabel/endpoint TERPISAH
+                // -- `r.gateway_provider` sudah diperkaya backend (lihat
+                // booking_db.py::_perkaya_status_gateway()).
+                const url = r.gateway_provider === "snap_advance"
+                  ? `/api/booking/transactions/snap/${r.gateway_transaksi_id}` : `/api/booking/transactions/${r.gateway_transaksi_id}`;
+                const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(url));
+                bukaDetailGateway(detail, r.gateway_provider);
               } catch (e) {
                 MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
               }
