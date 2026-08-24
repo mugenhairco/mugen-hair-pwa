@@ -196,11 +196,94 @@ def test_buat_booking_qris_mengirim_reminder(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
     panggilan = _pasang_penangkap_wa(monkeypatch)
+    # Pesan Otomatis Berdasarkan Jam Operasional Tenant: WAJIB dikunci ke
+    # dalam jam operasional default (10:00-20:00) -- kalau tidak, jumlah
+    # panggilan di sini bisa jadi 2 (reminder QRIS + pesan luar jam
+    # operasional) tergantung jam sungguhan saat test dijalankan, membuat
+    # assert di bawah flaky.
+    from datetime import datetime
+    monkeypatch.setattr(booking_db, "_sekarang_wib", lambda: datetime.now(booking_db.WIB).replace(hour=12, minute=0))
     booking = _buat_booking(tenant_id, "qris")
     assert len(panggilan) == 1
     assert panggilan[0]["nomor"] == booking["customer_whatsapp"]
     assert panggilan[0]["tenant_id"] == tenant_id
     assert "segera" in panggilan[0]["pesan"].lower() or "silakan selesaikan pembayaran" in panggilan[0]["pesan"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Pesan Otomatis Berdasarkan Jam Operasional Tenant: pesan WhatsApp
+# "booking_luar_jam_operasional" (permintaan Owner -- "juga ingin ada pesan
+# WhatsApp, tapi bisa diedit Owner", TAMBAHAN dari pesan layar konfirmasi
+# yang sudah ada, lewat titik pemicu WA yang SAMA seperti reminder_qris dkk)
+# ---------------------------------------------------------------------------
+
+def _patch_sekarang(monkeypatch, jam, menit=0):
+    from datetime import datetime
+    monkeypatch.setattr(booking_db, "_sekarang_wib", lambda: datetime.now(booking_db.WIB).replace(hour=jam, minute=menit))
+
+
+def test_buat_booking_luar_jam_operasional_mengirim_pesan_wa(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
+    _patch_sekarang(monkeypatch, 21, 0)  # default jam operasional 10:00-20:00 -- 21:00 sudah tutup
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    booking = _buat_booking(tenant_id, "transfer")
+    assert len(panggilan) == 1
+    assert panggilan[0]["nomor"] == booking["customer_whatsapp"]
+    assert "di luar jam operasional" in panggilan[0]["pesan"].lower()
+    assert "10:00" in panggilan[0]["pesan"]  # jam buka ASLI tenant, bukan hardcode lain
+
+
+def test_buat_booking_dalam_jam_operasional_tidak_mengirim_pesan_luar_jam(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
+    _patch_sekarang(monkeypatch, 12, 0)  # dalam jam operasional default
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    _buat_booking(tenant_id, "transfer")  # metode "transfer" TIDAK punya pesan otomatis apa pun kalau dalam jam
+    assert len(panggilan) == 0
+
+
+def test_buat_booking_qris_luar_jam_operasional_mengirim_dua_pesan(single_tenant, monkeypatch):
+    """Reminder QRIS dan pesan luar jam operasional TIDAK saling
+    menggantikan -- keduanya relevan (satu soal pembayaran, satu soal toko
+    tutup), jadi customer menerima DUA pesan WhatsApp."""
+    tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
+    _patch_sekarang(monkeypatch, 21, 0)
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    _buat_booking(tenant_id, "qris")
+    assert len(panggilan) == 2
+    isi = [p["pesan"].lower() for p in panggilan]
+    assert any("silakan selesaikan pembayaran" in p for p in isi)
+    assert any("di luar jam operasional" in p for p in isi)
+
+
+def test_buat_booking_luar_jam_operasional_tanpa_fitur_whatsapp_reminder_tidak_mengirim(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _patch_sekarang(monkeypatch, 21, 0)
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    _buat_booking(tenant_id, "transfer")
+    assert len(panggilan) == 0
+
+
+def test_template_booking_luar_jam_operasional_bisa_diedit_owner(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)
+    whatsapp_service.set_templates(
+        {"booking_luar_jam_operasional": "Toko tutup ya {nama}, nanti dihubungi mulai {jam_buka}."},
+        tenant_id=tenant_id,
+    )
+    _patch_sekarang(monkeypatch, 21, 0)
+    panggilan = _pasang_penangkap_wa(monkeypatch)
+    _buat_booking(tenant_id, "transfer")
+    assert panggilan[0]["pesan"] == "Toko tutup ya Budi, nanti dihubungi mulai 10:00."
+
+
+def test_jenis_pesan_booking_luar_jam_operasional_terdaftar_di_katalog():
+    kunci = {j for j, _, _ in whatsapp_templates.JENIS_PESAN}
+    assert "booking_luar_jam_operasional" in kunci
+    assert "booking_luar_jam_operasional" in whatsapp_templates.DEFAULT_TEMPLATES
+    assert "{jam_buka}" in whatsapp_templates.DEFAULT_TEMPLATES["booking_luar_jam_operasional"]
 
 
 def test_buat_booking_transfer_tidak_mengirim_reminder(single_tenant, monkeypatch):
@@ -311,7 +394,9 @@ def test_api_whatsapp_settings_owner_bisa_simpan_dan_lihat(single_tenant):
     assert r2.json()["fonnte_token"] == "token-abc"
     assert r2.json()["templates"]["reminder_qris"] == ""
     assert "reminder_qris" in r2.json()["defaults"]
-    assert len(r2.json()["jenis_pesan"]) == 3
+    # 3 jenis asli + "booking_luar_jam_operasional" (Pesan Otomatis
+    # Berdasarkan Jam Operasional Tenant, ditambah belakangan).
+    assert len(r2.json()["jenis_pesan"]) == 4
 
 
 def test_api_whatsapp_templates_simpan_tidak_menimpa_token(single_tenant):
