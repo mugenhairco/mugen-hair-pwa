@@ -78,7 +78,7 @@ def _aktifkan_snap():
     _aktifkan_pgw() di atas TAPI mengisi kredensial minimal yang membuat
     payment_provider_client.is_enabled() True dan channel "va" aktif."""
     snap_advance_db.update_config(
-        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
         private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
@@ -160,7 +160,7 @@ def test_checkout_gateway_sukses(app_client, monkeypatch):
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
         "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
-        "metode_pembayaran": "gateway", "channel": "va",
+        "metode_pembayaran": "gateway", "channel": "va", "bank_code": "702",
     }
     r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r.status_code == 200, r.text
@@ -192,7 +192,7 @@ def test_checkout_gateway_gagal_membatalkan_booking_otomatis(app_client, monkeyp
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "10:00",
         "service_ids": [service_id], "customer_nama": "Budi", "customer_whatsapp": "081234567890",
-        "metode_pembayaran": "gateway", "channel": "va",
+        "metode_pembayaran": "gateway", "channel": "va", "bank_code": "702",
     }
     r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r.status_code == 502

@@ -72,7 +72,7 @@ def _aktifkan_snap_billing_mock(monkeypatch):
     import payment_provider_client
     import snap_advance_db
     snap_advance_db.update_config(
-        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
         private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
@@ -472,7 +472,7 @@ def test_register_checkout_webhook_end_to_end_mengaktifkan_tenant(app_client, mo
     assert r.json()["akses_diblokir"] is False
 
     pro = billing_db.get_package_by_kode("pro")
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 200, r.text
     invoice = r.json()
 

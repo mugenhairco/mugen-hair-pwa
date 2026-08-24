@@ -33,6 +33,7 @@ import billing_limits
 import billing_webhook
 import gateway_client_base
 import payment_provider_client
+import snap_advance_db
 import snap_payment_db
 import snap_webhook
 import subscription_db
@@ -77,7 +78,10 @@ def config_billing_gateway(user: dict = Depends(require_admin)):
         # melihat "Billing belum aktif" selamanya pasca migrasi ini.
         "enabled": payment_provider_client.is_enabled(),
         "channel_aktif": payment_provider_client.channel_aktif() if payment_provider_client.is_enabled() else [],
-        "va_label": payment_provider_client.channel_label("va"),
+        # Migrasi multi-bank VA: bukan lagi satu label tunggal -- daftar
+        # {channelCode: label} bank yang Super Admin aktifkan, Owner memilih
+        # salah satu (lihat CheckoutBody.bank_code di bawah).
+        "va_bank_aktif": payment_provider_client.va_bank_aktif(),
         "qris_label": payment_provider_client.channel_label("qris"),
         # Field lama (SNAP tidak punya script/hosted widget, sama seperti
         # Xpress dulu) -- TETAP dikirim None supaya cabang window.snap.pay()
@@ -105,6 +109,9 @@ class CheckoutBody(BaseModel):
     # muka (tidak ada halaman hosted seperti Xpress dulu yang menawarkan
     # semua channel sekaligus).
     channel: str
+    # Fitur multi-bank VA: WAJIB diisi kalau channel="va" (bank yang dipilih
+    # Owner), divalidasi terhadap payment_provider_client.va_bank_aktif().
+    bank_code: str | None = None
 
 
 @router.post("/checkout")
@@ -114,6 +121,8 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
     if body.channel not in payment_provider_client.channel_aktif():
         raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
+    if body.channel == "va" and body.bank_code not in payment_provider_client.va_bank_aktif():
+        raise HTTPException(status_code=422, detail="Bank VA tidak tersedia -- silakan pilih bank lain.")
     if body.siklus not in ("bulanan", "6bulan", "tahunan"):
         raise HTTPException(status_code=422, detail="Siklus langganan tidak dikenal.")
     paket = billing_db.get_package(body.package_id)
@@ -162,6 +171,7 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     row = snap_payment_db.buat_transaksi(
         snap_payment_db.TRANSACTION_TYPE_SAAS_BILLING, user["tenant_id"], paket["harga"],
         subscription_invoice_id=invoice["id"], channel=body.channel,
+        channel_code=body.bank_code if body.channel == "va" else None,
     )
     customer_details = {
         "nama": (tenant["nama_barbershop"] if tenant else "Owner")[:128],
@@ -170,6 +180,7 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     try:
         hasil = payment_provider_client.buat_transaksi(
             body.channel, row["payment_reference"], paket["harga"], customer_details,
+            channel_code=body.bank_code if body.channel == "va" else None,
         )
     except gateway_client_base.GatewayError as e:
         snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
@@ -183,7 +194,9 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     )
     return {
         **invoice, "channel": body.channel, "payment_reference": row["payment_reference"],
-        "va_number": hasil.get("va_number"), "qr_url": hasil.get("qr_url"),
+        "va_number": hasil.get("va_number"),
+        "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(hasil.get("channel_code")),
+        "qr_url": hasil.get("qr_url"),
         "qr_content": hasil.get("qr_content"), "expired_at": hasil.get("expired_at"),
     }
 
@@ -250,7 +263,9 @@ def detail_invoice_saya(invoice_id: int, user: dict = Depends(require_admin)):
     if transaksi_snap is not None:
         invoice = {
             **invoice, "channel": transaksi_snap["channel"], "payment_reference": transaksi_snap["payment_reference"],
-            "va_number": transaksi_snap["va_number"], "qr_url": transaksi_snap["qr_url"],
+            "va_number": transaksi_snap["va_number"],
+            "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi_snap["channel_code"]),
+            "qr_url": transaksi_snap["qr_url"],
             "qr_content": transaksi_snap["qr_content"], "expired_at": transaksi_snap["expired_at"],
         }
     return invoice

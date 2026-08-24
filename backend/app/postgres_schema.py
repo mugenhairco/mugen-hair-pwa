@@ -952,6 +952,7 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
     booking_id                INTEGER,
     subscription_invoice_id   INTEGER,
     channel                   TEXT,
+    channel_code              TEXT,
     ewallet_provider          TEXT,
     binding_id                INTEGER,
     amount                    INTEGER NOT NULL,
@@ -975,6 +976,13 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
 -- ADD COLUMN IF NOT EXISTS supaya tetap idempotent untuk instalasi lama
 -- maupun baru, pola sama seperti ALTER TABLE lain di file ini.
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS binding_id INTEGER;
+
+-- Fitur multi-bank VA (Super Admin bisa aktifkan lebih dari satu bank VA
+-- sekaligus) -- kode bank yang BENAR-BENAR dipakai per transaksi harus
+-- tersimpan supaya rekonsiliasi/cek-status nanti tidak salah pakai config
+-- default yang mungkin sudah berubah, lihat snap_payment_migrasi.py (jalur
+-- SQLite) untuk penjelasan lengkap.
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS channel_code TEXT;
 
 CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     id              SERIAL PRIMARY KEY,

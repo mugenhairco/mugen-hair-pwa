@@ -27,6 +27,7 @@ def _buat_transaksi_snap(tenant_id, *, status="PAID", channel="va", amount=10000
                           booking_id=1, tanggal_created=None):
     trx = snap_payment_db.buat_transaksi(
         snap_payment_db.TRANSACTION_TYPE_BOOKING, tenant_id, amount, booking_id=booking_id, channel=channel,
+        channel_code="702" if channel == "va" else None,
     )
     snap_payment_db.catat_hasil_create_transaction(
         trx["id"], provider_transaction_id=f"PROV-{trx['id']}",
@@ -211,7 +212,7 @@ def test_h1_final_match_semua_cocok(single_tenant, monkeypatch):
     headers_super = _buat_superadmin_dan_login(client)
 
     import snap_advance_client
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "00", "paidAmount": {"value": "100000.00"}, "trxId": f"PROV-1",
     })
 
@@ -233,7 +234,7 @@ def test_h1_amount_mismatch(single_tenant, monkeypatch):
     headers_super = _buat_superadmin_dan_login(client)
 
     import snap_advance_client
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "00", "paidAmount": {"value": "95000.00"}, "trxId": "PROV-1",
     })
 
@@ -255,7 +256,7 @@ def test_h1_status_mismatch(single_tenant, monkeypatch):
     headers_super = _buat_superadmin_dan_login(client)
 
     import snap_advance_client
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "06", "paidAmount": {"value": "100000.00"}, "trxId": "PROV-1",
     })
 
@@ -275,7 +276,7 @@ def test_h1_reference_mismatch(single_tenant, monkeypatch):
     headers_super = _buat_superadmin_dan_login(client)
 
     import snap_advance_client
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "00", "paidAmount": {"value": "100000.00"}, "trxId": "PROV-BEDA-SEKALI",
     })
 
@@ -312,13 +313,13 @@ def test_h1_bisa_diulang_hasil_tertimpa_bukan_menumpuk(single_tenant, monkeypatc
     headers_super = _buat_superadmin_dan_login(client)
 
     import snap_advance_client
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "06", "paidAmount": {"value": "100000.00"}, "trxId": "PROV-1",
     })
     r1 = client.post(f"/api/superadmin/settlement-faspay/{settlement['id']}/rekonsiliasi-h1", headers=headers_super)
     assert r1.json()["status_rekonsiliasi"] == "FINAL_MISMATCH"
 
-    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va: {
+    monkeypatch.setattr(snap_advance_client, "inquiry_status_va", lambda ref, va, kode: {
         "latestTransactionStatus": "00", "paidAmount": {"value": "100000.00"}, "trxId": "PROV-1",
     })
     r2 = client.post(f"/api/superadmin/settlement-faspay/{settlement['id']}/rekonsiliasi-h1", headers=headers_super)

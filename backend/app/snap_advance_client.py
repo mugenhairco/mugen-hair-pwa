@@ -203,7 +203,8 @@ def _format_msisdn_62(nomor: str) -> str:
     return digit
 
 
-def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dict = None) -> dict:
+def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dict = None,
+                       *, channel_code: str) -> dict:
     """Create Dynamic VA -- POST {base}/v1.0/transfer-va/create-va (dokumen
     resmi Faspay). `customer_details` opsional: {"nama", "email", "whatsapp"}.
     `payment_reference` dipakai sebagai `trxId` (WAJIB, maks 32 karakter per
@@ -212,13 +213,16 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
     id tenant/entity yang tidak terlalu besar; DIPOTONG kalau kebetulan
     melebihi, TIDAK melempar error, supaya create VA tidak gagal hanya
     karena panjang string -- risiko tabrakan trxId dianggap dapat diterima
-    mengingat sufiks UUID 12-hex di akhir referensi)."""
+    mengingat sufiks UUID 12-hex di akhir referensi).
+
+    `channel_code` (kode bank VA, mis. "702"=BCA) WAJIB diisi PEMANGGIL
+    (fitur multi-bank VA -- customer memilih bank di halaman booking/billing,
+    lihat payment_provider_client.py) -- TIDAK LAGI dibaca dari config
+    (snap_va_channel_code DIHAPUS, digantikan snap_va_bank_aktif yang cuma
+    daftar bank yang BOLEH dipilih, bukan satu default)."""
     cfg = snap_advance_db.get_config_internal()
-    _cfg_wajib(cfg, "snap_va_channel_code")
-    if cfg["snap_va_channel_code"] not in snap_advance_db.VA_CHANNEL_CODE_VALID:
-        raise core.GatewayNotConfiguredError(
-            f"channelCode VA default belum/tidak valid: {cfg['snap_va_channel_code']!r}."
-        )
+    if channel_code not in snap_advance_db.VA_CHANNEL_CODE_VALID:
+        raise core.GatewayNotConfiguredError(f"channelCode VA tidak dikenal: {channel_code!r}.")
     customer_details = customer_details or {}
     now = core.now_wib()
     ts_now = core.snap_timestamp_wib()
@@ -230,7 +234,7 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
         "expiredDate": expired.strftime("%Y-%m-%dT%H:%M:%S") + ts_now[-6:],
         "additionalInfo": {
             "billDate": ts_now,
-            "channelCode": cfg["snap_va_channel_code"],
+            "channelCode": channel_code,
             "billDescription": "Pembayaran"[:18],
         },
     }
@@ -249,23 +253,28 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
         "va_number": va["virtualAccountNo"],
         "provider_transaction_id": va.get("trxId"),
         "expired_at": va.get("expiredDate"),
+        "channel_code": channel_code,
         "provider_response": json.dumps(resp),
     }
 
 
-def inquiry_status_va(payment_reference: str, virtual_account_no: str) -> dict:
+def inquiry_status_va(payment_reference: str, virtual_account_no: str, channel_code: str) -> dict:
     """Inquiry Status VA -- POST {base}/v1.0/transfer-va/status (servis 26,
     dokumen resmi Faspay). `virtual_account_no` = va_number hasil
-    buat_transaksi_va() (snap_payment_transactions.va_number)."""
+    buat_transaksi_va() (snap_payment_transactions.va_number). `channel_code`
+    WAJIB = kode bank yang BENAR-BENAR dipakai saat transaksi ini dibuat
+    (snap_payment_transactions.channel_code) -- fitur multi-bank VA berarti
+    TIDAK ADA lagi satu default config yang bisa dipakai di sini (bisa beda
+    dari bank yang sedang aktif SEKARANG kalau Super Admin sudah ubah
+    pilihan sejak transaksi ini dibuat)."""
     cfg = snap_advance_db.get_config_internal()
-    _cfg_wajib(cfg, "snap_va_channel_code")
     partner_service_id = virtual_account_no[:8]
     customer_no = virtual_account_no[8:]
     body = {
         "partnerServiceId": partner_service_id,
         "customerNo": customer_no,
         "virtualAccountNo": virtual_account_no,
-        "additionalInfo": {"channelCode": cfg["snap_va_channel_code"], "trxId": payment_reference[:32]},
+        "additionalInfo": {"channelCode": channel_code, "trxId": payment_reference[:32]},
     }
     raw_body = _minify(body)
     headers = _headers_service("POST", PATH_VA_INQUIRY_STATUS, raw_body, cfg)
@@ -282,8 +291,9 @@ def buat_transaksi_qris(payment_reference: str, amount: int, customer_details: d
     opsional) -- melempar ValueError jelas kalau `customer_details` tidak
     berisi nomor WhatsApp, BUKAN mengirim field kosong ke Faspay.
     `channelCode` (715=LinkAja QRIS/711=ShopeePay QRIS/842=CIMB QRIS) diambil
-    dari config `snap_qris_channel_code` -- pola SAMA seperti
-    `snap_va_channel_code` pada buat_transaksi_va()."""
+    dari config `snap_qris_channel_code` -- MASIH satu default tunggal (beda
+    dari buat_transaksi_va() yang sekarang multi-bank, channel_code dikirim
+    pemanggil, bukan dibaca dari config)."""
     cfg = snap_advance_db.get_config_internal()
     _cfg_wajib(cfg, "snap_qris_channel_code", "snap_merchant_id")
     if cfg["snap_qris_channel_code"] not in snap_advance_db.QRIS_CHANNEL_CODE_VALID:
@@ -474,14 +484,14 @@ def cek_status_transaksi(payment_reference: str, channel: str = None, **kwargs) 
     status_direct_debit()/query_payment_qris() (fitur "Cek Ulang ke
     Provider", rekonsiliasi transaksi yang macet karena webhook tidak
     pernah sampai). `channel` WAJIB diisi pemanggil (va/direct_debit/qris)
-    beserta kwargs yang relevan (virtual_account_no untuk VA;
+    beserta kwargs yang relevan (virtual_account_no + channel_code untuk VA;
     original_reference_no/channel_code untuk Direct Debit & QRIS) -- lihat
     fungsi masing-masing untuk parameter lengkapnya. E-Wallet (kategori
     channel di dalam Direct Debit, lihat catatan modul) TERCAKUP lewat
     `channel="direct_debit"` -- TIDAK ada channel dispatch "ewallet"
     terpisah."""
     if channel == "va":
-        return inquiry_status_va(payment_reference, kwargs["virtual_account_no"])
+        return inquiry_status_va(payment_reference, kwargs["virtual_account_no"], kwargs["channel_code"])
     if channel == "direct_debit":
         return status_direct_debit(payment_reference, kwargs["original_reference_no"],
                                     kwargs["channel_code"], kwargs.get("merchant_id"))

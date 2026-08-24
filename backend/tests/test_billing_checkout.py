@@ -65,7 +65,7 @@ def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/c
 # melempar GatewayError (padanan status_code>=400 di atas).
 def _aktifkan_snap_billing(monkeypatch, va_number="70212345678901", gagal=False):
     snap_advance_db.update_config(
-        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
         private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
@@ -142,7 +142,7 @@ def test_checkout_sukses_membuat_invoice(app_client, monkeypatch):
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], harga=249000)
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["status"] == "pending"
@@ -175,7 +175,7 @@ def test_checkout_6bulan_sukses_pakai_harga_dan_durasi_6bulan(app_client, monkey
     billing_db.update_package(pro["id"], harga=250000, harga_6bulan=1200000, durasi_hari=30)
 
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "6bulan", "channel": "va"})
+                         json={"package_id": pro["id"], "siklus": "6bulan", "channel": "va", "bank_code": "702"})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["jumlah"] == 1200000
@@ -190,7 +190,7 @@ def test_checkout_6bulan_ditolak_kalau_paket_tidak_menawarkan(app_client, monkey
     billing_db.update_package(pro["id"], harga_6bulan=None)
 
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "6bulan", "channel": "va"})
+                         json={"package_id": pro["id"], "siklus": "6bulan", "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
     assert "tidak menawarkan siklus 6 bulan" in r.json()["detail"]
 
@@ -209,7 +209,7 @@ def test_checkout_tahunan_sukses_pakai_harga_dan_durasi_tahunan(app_client, monk
     billing_db.update_package(pro["id"], harga=250000, harga_tahunan=2160000, durasi_hari=30)
 
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "tahunan", "channel": "va"})
+                         json={"package_id": pro["id"], "siklus": "tahunan", "channel": "va", "bank_code": "702"})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["jumlah"] == 2160000
@@ -228,12 +228,12 @@ def test_checkout_tahunan_basic_dan_enterprise_sesuai_spesifikasi(app_client, mo
     enterprise = billing_db.get_package_by_kode("enterprise")
 
     r_basic = app_client.post("/api/billing/checkout", headers=headers,
-                               json={"package_id": basic["id"], "siklus": "tahunan", "channel": "va"})
+                               json={"package_id": basic["id"], "siklus": "tahunan", "channel": "va", "bank_code": "702"})
     assert r_basic.status_code == 200, r_basic.text
     assert r_basic.json()["jumlah"] == 1560000
 
     r_enterprise = app_client.post("/api/billing/checkout", headers=headers,
-                                    json={"package_id": enterprise["id"], "siklus": "tahunan", "channel": "va"})
+                                    json={"package_id": enterprise["id"], "siklus": "tahunan", "channel": "va", "bank_code": "702"})
     assert r_enterprise.status_code == 200, r_enterprise.text
     assert r_enterprise.json()["jumlah"] == 3360000
 
@@ -245,7 +245,7 @@ def test_checkout_tahunan_ditolak_kalau_paket_tidak_menawarkan(app_client, monke
     billing_db.update_package(pro["id"], harga_tahunan=None)
 
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "tahunan", "channel": "va"})
+                         json={"package_id": pro["id"], "siklus": "tahunan", "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
     assert "tidak menawarkan siklus tahunan" in r.json()["detail"]
 
@@ -259,7 +259,7 @@ def test_checkout_siklus_tidak_dikenal_422(app_client, monkeypatch):
     # Tahunan sekarang menjadikan "tahunan" siklus VALID, lihat test khusus
     # di bawah, jadi tidak lagi contoh yang tepat untuk "siklus tidak dikenal").
     r = app_client.post("/api/billing/checkout", headers=headers,
-                         json={"package_id": pro["id"], "siklus": "mingguan", "channel": "va"})
+                         json={"package_id": pro["id"], "siklus": "mingguan", "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
 
 
@@ -269,7 +269,7 @@ def test_checkout_tanpa_gateway_dikonfigurasi_503(app_client, monkeypatch):
     # Admin) -- tidak perlu monkeypatch apa pun untuk memastikan itu.
     pro = billing_db.get_package_by_kode("pro")
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 503
 
 
@@ -277,7 +277,7 @@ def test_checkout_paket_tidak_ada_422(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     _aktifkan_snap_billing(monkeypatch)
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": 999999, "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": 999999, "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
 
 
@@ -287,7 +287,7 @@ def test_checkout_paket_nonaktif_422(app_client, monkeypatch):
     pro = billing_db.get_package_by_kode("pro")
     billing_db.update_package(pro["id"], aktif=False)
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
 
 
@@ -296,7 +296,7 @@ def test_checkout_paket_gratis_ditolak(app_client, monkeypatch):
     _aktifkan_snap_billing(monkeypatch)
     free = billing_db.get_package_by_kode("free")
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": free["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": free["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 422
     assert "tidak memerlukan pembayaran" in r.json()["detail"]
 
@@ -312,7 +312,7 @@ def test_checkout_gateway_gagal_502_invoice_ditandai_denied(app_client, monkeypa
     _aktifkan_snap_billing(monkeypatch, gagal=True)
     pro = billing_db.get_package_by_kode("pro")
 
-    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    r = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
     assert r.status_code == 502
     invoices = billing_invoice_db.list_invoices(tenant_id=tenant["id"])
     assert len(invoices) == 1
@@ -326,7 +326,7 @@ def test_daftar_invoice_saya(app_client, monkeypatch):
     _aktifkan_snap_billing(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
 
-    app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
 
     r = app_client.get("/api/billing/invoices", headers=headers)
     assert r.status_code == 200, r.text
@@ -338,7 +338,7 @@ def test_detail_invoice_saya(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     _aktifkan_snap_billing(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
-    invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"}).json()
+    invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"}).json()
 
     r = app_client.get(f"/api/billing/invoices/{invoice['id']}", headers=headers)
     assert r.status_code == 200, r.text
@@ -353,7 +353,7 @@ def test_invoice_tenant_lain_404(two_tenants, monkeypatch):
     pro = billing_db.get_package_by_kode("pro")
 
     invoice = two_tenants["client"].post("/api/billing/checkout", headers=headers_a,
-                                          json={"package_id": pro["id"], "channel": "va"}).json()
+                                          json={"package_id": pro["id"], "channel": "va", "bank_code": "702"}).json()
 
     r = two_tenants["client"].get(f"/api/billing/invoices/{invoice['id']}", headers=two_tenants["headers_b"])
     assert r.status_code == 404
@@ -365,7 +365,7 @@ def test_superadmin_list_invoices_semua_tenant(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     _aktifkan_snap_billing(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
-    app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"})
+    app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"})
 
     headers_sa = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/invoices", headers=headers_sa)
@@ -384,7 +384,7 @@ def test_superadmin_detail_invoice_tenant_manapun(app_client, monkeypatch):
     tenant, headers = _owner_login(app_client)
     _aktifkan_snap_billing(monkeypatch)
     pro = billing_db.get_package_by_kode("pro")
-    invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va"}).json()
+    invoice = app_client.post("/api/billing/checkout", headers=headers, json={"package_id": pro["id"], "channel": "va", "bank_code": "702"}).json()
 
     headers_sa = _buat_superadmin_dan_login(app_client)
     r = app_client.get(f"/api/superadmin/billing/invoices/{invoice['id']}", headers=headers_sa)

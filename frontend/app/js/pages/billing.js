@@ -80,12 +80,26 @@ const PageBilling = (() => {
   // SNAP butuh channel (VA/QRIS) dipilih di muka, TIDAK ADA modal generik
   // multi-pilihan di ui.js (hanya confirmModal ya/tidak) jadi dibangun
   // lokal di sini, pola overlay/box SAMA PERSIS MugenUI.confirmModal()
-  // supaya tetap konsisten secara visual. Return Promise<string|null> --
-  // null kalau Owner batal/klik di luar kotak. Auto-resolve TANPA
-  // menampilkan modal kalau cuma satu channel aktif.
-  function pilihChannelModal(channelAktif, vaLabel) {
-    if (channelAktif.length === 1) return Promise.resolve(channelAktif[0]);
-    const label = { va: vaLabel ? `Virtual Account (${vaLabel})` : "Virtual Account", qris: "QRIS" };
+  // supaya tetap konsisten secara visual. Return Promise<{channel,bankCode}|null>
+  // -- null kalau Owner batal/klik di luar kotak. Auto-resolve TANPA
+  // menampilkan modal kalau opsinya cuma satu.
+  //
+  // Fitur multi-bank VA: `vaBankAktif` ({channelCode: label}) DIRATAKAN
+  // jadi satu opsi PER BANK (bukan satu opsi "Virtual Account" generik) --
+  // Owner langsung memilih bank tujuan di modal yang sama, tidak ada langkah
+  // terpisah sesudahnya (beda dari book_public.js yang dua langkah karena
+  // ruang tampilan wizard-nya sudah sempit).
+  function pilihChannelModal(channelAktif, vaBankAktif) {
+    const kodeBankList = Object.keys(vaBankAktif || {});
+    const adaQris = channelAktif.includes("qris");
+    // Auto-resolve TANPA modal kalau opsinya cuma satu total (satu bank VA
+    // saja tanpa QRIS, atau QRIS saja tanpa VA).
+    if (channelAktif.includes("va") && kodeBankList.length === 1 && !adaQris) {
+      return Promise.resolve({ channel: "va", bankCode: kodeBankList[0] });
+    }
+    if (adaQris && !channelAktif.includes("va") && channelAktif.length === 1) {
+      return Promise.resolve({ channel: "qris", bankCode: null });
+    }
     return new Promise((resolve) => {
       const overlay = MugenUI.el("div", { class: "modal-overlay" });
       const box = MugenUI.el("div", { class: "modal-box" });
@@ -95,15 +109,29 @@ const PageBilling = (() => {
         overlay.classList.add("closing");
         setTimeout(() => { overlay.remove(); resolve(hasil); }, 120);
       }
-      const tombolTombol = channelAktif.map((c) => {
-        const btn = MugenUI.el("button", { type: "button", class: "btn-primary", style: "width:100%;margin-bottom:8px;" }, label[c] || c);
-        btn.addEventListener("click", () => tutup(c));
-        return btn;
-      });
-      box.appendChild(MugenUI.el("div", { style: "display:flex;flex-direction:column;margin-top:8px;" }, tombolTombol));
+      // Fitur multi-bank VA: grid kartu ber-logo (SAMA seperti book_public.js)
+      // -- BUKAN lagi satu tombol memanjang per bank, lebih rapi & profesional
+      // walau bank aktifnya banyak.
+      if (channelAktif.includes("va") && kodeBankList.length) {
+        box.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, "Virtual Account"));
+        const grid = MugenUI.el("div", { class: "bank-grid" });
+        for (const kode of kodeBankList) {
+          const card = MugenUI.el("button", { type: "button", class: "bank-card" },
+            [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, vaBankAktif[kode])]);
+          card.addEventListener("click", () => tutup({ channel: "va", bankCode: kode }));
+          grid.appendChild(card);
+        }
+        box.appendChild(grid);
+      }
+      if (adaQris) {
+        box.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:14px;" }, "E-Wallet"));
+        const btnQris = MugenUI.el("button", { type: "button", class: "book-metode-btn", style: "margin-top:6px;" }, "QRIS");
+        btnQris.addEventListener("click", () => tutup({ channel: "qris", bankCode: null }));
+        box.appendChild(btnQris);
+      }
       const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
       btnBatal.addEventListener("click", () => tutup(null));
-      box.appendChild(MugenUI.el("div", { class: "modal-actions" }, [btnBatal]));
+      box.appendChild(MugenUI.el("div", { class: "modal-actions", style: "margin-top:14px;" }, [btnBatal]));
       document.body.appendChild(overlay);
       overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(null); });
     });
@@ -159,12 +187,15 @@ const PageBilling = (() => {
     // Migrasi Faspay SNAP Advance: channel (VA/QRIS) WAJIB dipilih SEBELUM
     // memanggil checkout (SNAP tidak punya halaman hosted yang menawarkan
     // semua channel sekaligus seperti Xpress v4 dulu) -- lihat pilihChannelModal().
-    const channel = await pilihChannelModal(config.channel_aktif || [], config.va_label);
-    if (!channel) return;
+    const pilihan = await pilihChannelModal(config.channel_aktif || [], config.va_bank_aktif || {});
+    if (!pilihan) return;
+    const { channel, bankCode } = pilihan;
     let invoice;
     try {
       invoice = await MugenUI.withLoading(
-        () => MugenApi.post("/api/billing/checkout", { package_id: packageId, siklus: siklus || "bulanan", channel }),
+        () => MugenApi.post("/api/billing/checkout", {
+          package_id: packageId, siklus: siklus || "bulanan", channel, bank_code: bankCode,
+        }),
         { message: "Menyiapkan pembayaran…" },
       );
     } catch (e) {
@@ -221,7 +252,7 @@ const PageBilling = (() => {
     // SAMA seperti isiKontenSnapWaiting() di pages/book_public.js).
     const kontenModal = [];
     if (invoice.channel === "va") {
-      kontenModal.push(MugenUI.el("div", { class: "subtitle" }, config.va_label ? `Virtual Account (${config.va_label})` : "Virtual Account"));
+      kontenModal.push(MugenUI.el("div", { class: "subtitle" }, invoice.va_bank_label ? `Virtual Account ${invoice.va_bank_label}` : "Virtual Account"));
       kontenModal.push(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;margin-top:4px;" }, invoice.va_number || "-"));
       kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
         "Transfer PERSIS sejumlah tagihan ini ke nomor Virtual Account di atas lewat m-banking/ATM."));

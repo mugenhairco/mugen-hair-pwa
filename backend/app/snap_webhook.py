@@ -268,8 +268,13 @@ def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
         raise ValueError("Transaksi tidak ditemukan.")
 
     if transaksi["channel"] == "va":
+        # Fitur multi-bank VA: channel_code WAJIB dari baris transaksi ini
+        # SENDIRI (bank yang benar-benar dipakai saat dibuat), BUKAN config
+        # Super Admin saat ini -- Super Admin bisa saja sudah menonaktifkan/
+        # ganti daftar bank aktif sejak transaksi ini dibuat.
         hasil_provider = snap_advance_client.cek_status_transaksi(
             transaksi["payment_reference"], channel="va", virtual_account_no=transaksi["va_number"],
+            channel_code=transaksi["channel_code"],
         )
         status_code = (hasil_provider.get("additionalInfo") or {}).get("latestTransactionStatus")
     elif transaksi["channel"] == "qris":
