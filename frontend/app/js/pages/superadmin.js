@@ -1466,7 +1466,7 @@ const PageSuperadmin = (() => {
         cb.checked = sudahAda ? sudahAda.checked : false;
         snapVaBankCheckbox[key] = cb;
         snapVaBankList.appendChild(MugenUI.el("div", { style: "display:flex;align-items:center;gap:10px;" }, [
-          cb, MugenUI.bankLogoBadge(key, "sm"), MugenUI.el("span", {}, `${key} -- ${snapVaBankLabel[key]}`),
+          cb, MugenUI.bankLogoBadge(key, "sm"), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(key, snapVaBankLabel[key])),
         ]));
       }
     }

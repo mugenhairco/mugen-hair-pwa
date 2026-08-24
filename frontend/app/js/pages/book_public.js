@@ -1174,20 +1174,40 @@ const PageBookPublic = (() => {
       }
 
       // ---- fase "metode": daftar metode pembayaran aktif ----
+      // REVISI (diminta Owner): "Payment Gateway" TIDAK LAGI tampil sebagai
+      // satu pilihan pembungkus yang butuh diklik dulu sebelum memilih VA/
+      // QRIS -- customer langsung melihat "Virtual Account"/"QRIS" sejajar
+      // dengan metode lain (transfer/qris manual) di SATU daftar pilihan.
+      // Di baliknya tetap metode_pembayaran="gateway" + channel="va"/"qris"
+      // (TIDAK ADA perubahan backend/API sama sekali) -- opsiMetode() di
+      // bawah HANYA meratakan tampilan, satu klik langsung set state.metode
+      // DAN state.channel sekaligus (dulu dua langkah terpisah lewat
+      // channelBox).
+      function opsiMetode() {
+        const snapChannelLabel = { va: "Virtual Account", qris: "QRIS" };
+        const opsi = [];
+        for (const m of metodeAktif) {
+          if (m === "gateway") {
+            for (const c of (pengaturan.snap_channel_aktif || [])) {
+              opsi.push({ metode: "gateway", channel: c, label: snapChannelLabel[c] || c });
+            }
+          } else {
+            opsi.push({ metode: m, channel: null, label: metodeNama[m] || m });
+          }
+        }
+        return opsi;
+      }
+
       function renderFaseMetode() {
         body.appendChild(MugenUI.el("h2", {}, "Payment Method"));
         const metodeBox = MugenUI.el("div", { class: "book-metode-list" });
         body.appendChild(metodeBox);
-        // Migrasi Faspay SNAP Advance: metode "gateway" sekarang butuh
-        // sub-pilihan channel (VA/QRIS) -- ditampilkan HANYA kalau
-        // "gateway" sedang terpilih, sumbernya pengaturan.snap_channel_aktif
-        // (dikonfigurasi Super Admin, lihat routers/booking.py::public_pengaturan()).
-        const channelBox = MugenUI.el("div", { class: "book-metode-list", style: "margin-top:8px;" });
-        const snapChannelLabel = { va: "Virtual Account", qris: "QRIS" };
         // Fitur multi-bank VA: kotak pilihan bank TERPISAH, muncul HANYA
         // kalau channel="va" sedang dipilih -- daftar bank dari
         // pengaturan.snap_va_bank_aktif ({channelCode: label}, lihat
-        // routers/booking.py::public_pengaturan()).
+        // routers/booking.py::public_pengaturan()). Nama bank ditampilkan
+        // versi lengkap (bankNamaLengkap()), BUKAN label mentah dari
+        // backend yang masih mengandung istilah teknis "(Dynamic)".
         const bankBox = MugenUI.el("div", { class: "bank-grid" });
         function renderBankBox() {
           bankBox.innerHTML = "";
@@ -1198,7 +1218,7 @@ const PageBookPublic = (() => {
             const card = MugenUI.el("button", {
               type: "button",
               class: "bank-card" + (state.bankCode === kode ? " selected" : ""),
-            }, [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, bankAktif[kode])]);
+            }, [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(kode, bankAktif[kode]))]);
             card.addEventListener("click", () => {
               state.bankCode = kode;
               for (const el of bankBox.children) el.classList.remove("selected");
@@ -1208,58 +1228,38 @@ const PageBookPublic = (() => {
           }
           if (kodeList.length === 1) state.bankCode = kodeList[0];
         }
-        function renderChannelBox() {
-          channelBox.innerHTML = "";
-          if (state.metode !== "gateway") return;
-          const channelAktif = pengaturan.snap_channel_aktif || [];
-          for (const c of channelAktif) {
-            const btn = MugenUI.el("button", {
-              type: "button",
-              class: "book-metode-btn" + (state.channel === c ? " selected" : ""),
-            }, snapChannelLabel[c] || c);
-            btn.addEventListener("click", () => {
-              state.channel = c;
-              state.bankCode = null;
-              for (const el of channelBox.children) el.classList.remove("selected");
-              btn.classList.add("selected");
-              renderBankBox();
-            });
-            channelBox.appendChild(btn);
-          }
-          if (channelAktif.length === 1) state.channel = channelAktif[0];
-          renderBankBox();
-        }
         const errorBox = MugenUI.el("div", { class: "login-error" });
 
-        if (!metodeAktif.length) {
+        const opsi = opsiMetode();
+        if (!opsi.length) {
           metodeBox.appendChild(kosongState("💳", "No payment method is active yet. Please contact the barbershop."));
-        } else if (metodeAktif.length === 1) {
-          state.metode = metodeAktif[0];
+        } else if (opsi.length === 1) {
+          state.metode = opsi[0].metode;
+          state.channel = opsi[0].channel;
           metodeBox.appendChild(MugenUI.el("button", {
             type: "button",
             class: "book-metode-btn selected",
             disabled: "disabled",
-          }, metodeNama[state.metode] || state.metode));
-          renderChannelBox();
+          }, opsi[0].label));
+          renderBankBox();
         } else {
-          for (const m of metodeAktif) {
+          for (const o of opsi) {
+            const dipilih = state.metode === o.metode && state.channel === o.channel;
             const btn = MugenUI.el("button", {
               type: "button",
-              class: "book-metode-btn" + (state.metode === m ? " selected" : ""),
-            }, metodeNama[m] || m);
+              class: "book-metode-btn" + (dipilih ? " selected" : ""),
+            }, o.label);
             btn.addEventListener("click", () => {
-              state.metode = m;
-              state.channel = null;
+              state.metode = o.metode;
+              state.channel = o.channel;
               state.bankCode = null;
               for (const el of metodeBox.children) el.classList.remove("selected");
               btn.classList.add("selected");
-              renderChannelBox();
+              renderBankBox();
             });
             metodeBox.appendChild(btn);
           }
-          renderChannelBox();
         }
-        body.appendChild(channelBox);
         body.appendChild(bankBox);
         body.appendChild(errorBox);
 
@@ -1339,7 +1339,8 @@ const PageBookPublic = (() => {
         const r = state.bookingResult;
         const items = [];
         if (r.channel === "va") {
-          items.push(MugenUI.el("div", { class: "subtitle" }, r.va_bank_label ? `Virtual Account ${r.va_bank_label}` : "Virtual Account"));
+          items.push(MugenUI.el("div", { class: "subtitle" },
+            r.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(r.channel_code, r.va_bank_label)}` : "Virtual Account"));
           const nomorRow = MugenUI.el("div", { style: "display:flex;align-items:center;gap:8px;justify-content:center;margin-top:4px;" }, [
             MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;" }, r.va_number || "-"),
           ]);

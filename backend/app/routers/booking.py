@@ -326,6 +326,13 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     booking["payment_reference"] = row["payment_reference"]
     booking["channel"] = body.channel
     booking["va_number"] = hasil.get("va_number")
+    # REVISI tampilan (diminta Owner): channel_code disertakan APA ADANYA
+    # supaya frontend bisa memetakan ke nama bank lengkap sendiri (bukan
+    # label teknis "va_bank_label" di bawah yang masih mengandung
+    # "(Dynamic)" -- TETAP dikirim untuk kompatibilitas mundur, tapi
+    # book_public.js/billing.js SEKARANG memakai channel_code + peta
+    # lokalnya sendiri, lihat ui.js::bankNamaLengkap()).
+    booking["channel_code"] = hasil.get("channel_code")
     booking["va_bank_label"] = snap_advance_db.VA_CHANNEL_CODE_LABEL.get(hasil.get("channel_code"))
     booking["qr_url"] = hasil.get("qr_url")
     booking["qr_content"] = hasil.get("qr_content")
@@ -368,10 +375,13 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
         "channel": transaksi["channel"],
         "amount": transaksi["amount"],
         "va_number": transaksi["va_number"],
-        # Fitur multi-bank VA: sertakan label bank yang BENAR-BENAR dipakai
-        # transaksi ini (dari channel_code tersimpan, BUKAN dibaca ulang dari
-        # config Super Admin yang bisa saja sudah berubah) supaya frontend
-        # bisa menampilkan "Transfer ke Virtual Account BCA" dsb.
+        # Fitur multi-bank VA: channel_code = bank yang BENAR-BENAR dipakai
+        # transaksi ini (tersimpan, BUKAN dibaca ulang dari config Super
+        # Admin yang bisa saja sudah berubah) -- REVISI tampilan: frontend
+        # sekarang memetakan sendiri ke nama lengkap (ui.js::bankNamaLengkap()),
+        # va_bank_label (masih mengandung "(Dynamic)") TETAP dikirim untuk
+        # kompatibilitas mundur saja.
+        "channel_code": transaksi["channel_code"],
         "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]),
         "qr_url": transaksi["qr_url"],
         "qr_content": transaksi["qr_content"],
