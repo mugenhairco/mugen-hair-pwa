@@ -40,24 +40,42 @@ def channel_aktif() -> list:
 
 
 def channel_label(channel: str) -> str | None:
-    """Label tampilan untuk customer (mis. "BCA Virtual Account") -- None
-    kalau channel belum dikonfigurasi Super Admin sama sekali."""
+    """Label tampilan untuk customer -- None kalau channel belum dikonfigurasi
+    Super Admin sama sekali. VA TIDAK PUNYA satu label tunggal lagi (fitur
+    multi-bank -- lihat va_bank_aktif() di bawah untuk daftar bank aktif)."""
     cfg = snap_advance_db.get_config()
-    if channel == "va":
-        return snap_advance_db.VA_CHANNEL_CODE_LABEL.get(cfg["snap_va_channel_code"])
     if channel == "qris":
         return snap_advance_db.QRIS_CHANNEL_CODE_LABEL.get(cfg["snap_qris_channel_code"])
     return None
 
 
-def buat_transaksi(channel: str, payment_reference: str, amount: int, customer_details: dict) -> dict:
+def va_bank_aktif() -> dict:
+    """Daftar bank VA yang Super Admin centang aktif -- {channelCode: label}
+    (mis. {"702": "BCA VA (Dynamic)"}), dipakai frontend menampilkan pilihan
+    bank ke customer DAN backend (routers/booking.py & routers/billing.py)
+    memvalidasi bank_code yang dikirim customer benar-benar salah satu yang
+    aktif. Difilter ke VA_CHANNEL_CODE_LABEL supaya kode basi/tidak dikenal
+    (kalau ada) tidak ikut tampil."""
+    cfg = snap_advance_db.get_config()
+    return {kode: snap_advance_db.VA_CHANNEL_CODE_LABEL[kode]
+            for kode in cfg["snap_va_bank_aktif"] if kode in snap_advance_db.VA_CHANNEL_CODE_LABEL}
+
+
+def buat_transaksi(channel: str, payment_reference: str, amount: int, customer_details: dict,
+                    channel_code: str | None = None) -> dict:
     """Dispatch MURNI berdasarkan channel -- mengembalikan bentuk generik
     {va_number, qr_content, qr_url, provider_transaction_id, expired_at,
     provider_response} (subset field terisi tergantung channel), SUDAH
     dalam bentuk yang siap dioper langsung ke
-    snap_payment_db.catat_hasil_create_transaction()."""
+    snap_payment_db.catat_hasil_create_transaction(). `channel_code` WAJIB
+    diisi kalau channel="va" (bank yang dipilih customer, fitur multi-bank
+    VA) -- pemanggil (routers/booking.py & routers/billing.py) WAJIB
+    memvalidasi dulu ke va_bank_aktif() SEBELUM sampai ke sini."""
     if channel == "va":
-        return snap_advance_client.buat_transaksi_va(payment_reference, amount, customer_details)
+        if not channel_code:
+            raise ValueError("channel_code (bank VA) wajib diisi untuk channel='va'.")
+        return snap_advance_client.buat_transaksi_va(payment_reference, amount, customer_details,
+                                                       channel_code=channel_code)
     if channel == "qris":
         return snap_advance_client.buat_transaksi_qris(payment_reference, amount, customer_details)
     if channel == "direct_debit":

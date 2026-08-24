@@ -17,14 +17,24 @@ import snap_advance_client
 def test_dispatch_va_memanggil_snap_advance_client_buat_transaksi_va(monkeypatch):
     dipanggil = {}
 
-    def _fake(payment_reference, amount, customer_details):
-        dipanggil["args"] = (payment_reference, amount, customer_details)
+    def _fake(payment_reference, amount, customer_details, *, channel_code):
+        dipanggil["args"] = (payment_reference, amount, customer_details, channel_code)
         return {"va_number": "70212345678901"}
     monkeypatch.setattr(snap_advance_client, "buat_transaksi_va", _fake)
 
-    hasil = payment_provider_client.buat_transaksi("va", "BOOKING-1-1-abc", 100000, {"nama": "Budi"})
+    hasil = payment_provider_client.buat_transaksi("va", "BOOKING-1-1-abc", 100000, {"nama": "Budi"},
+                                                     channel_code="702")
     assert hasil == {"va_number": "70212345678901"}
-    assert dipanggil["args"] == ("BOOKING-1-1-abc", 100000, {"nama": "Budi"})
+    assert dipanggil["args"] == ("BOOKING-1-1-abc", 100000, {"nama": "Budi"}, "702")
+
+
+def test_dispatch_va_tanpa_channel_code_raise_valueerror():
+    """Fitur multi-bank VA: channel_code WAJIB diisi pemanggil (routers/
+    booking.py & routers/billing.py sudah wajib memvalidasi dulu ke
+    va_bank_aktif()) -- kalau sampai lolos ke sini kosong, tolak jelas
+    daripada mengirim channelCode kosong ke Faspay."""
+    with pytest.raises(ValueError):
+        payment_provider_client.buat_transaksi("va", "BOOKING-1-1-abc", 100000, {"nama": "Budi"})
 
 
 def test_dispatch_qris_memanggil_snap_advance_client_buat_transaksi_qris(monkeypatch):
@@ -53,9 +63,19 @@ def test_dispatch_channel_tidak_dikenal_raise_valueerror():
         payment_provider_client.buat_transaksi("ewallet", "BOOKING-1-1-abc", 100000, {})
 
 
-def test_channel_label_va_dan_qris(app_client):
+def test_channel_label_qris(app_client):
     import snap_advance_db
-    snap_advance_db.update_config(va_channel_code="702", qris_channel_code="715")
-    assert payment_provider_client.channel_label("va") == "BCA VA (Dynamic)"
+    snap_advance_db.update_config(qris_channel_code="715")
     assert payment_provider_client.channel_label("qris") == "LinkAja QRIS"
     assert payment_provider_client.channel_label("direct_debit") is None
+    # VA TIDAK PUNYA satu label tunggal lagi (fitur multi-bank) --
+    # channel_label("va") sengaja selalu None, lihat va_bank_aktif() di bawah.
+    assert payment_provider_client.channel_label("va") is None
+
+
+def test_va_bank_aktif_mengembalikan_dict_kode_ke_label(app_client):
+    import snap_advance_db
+    snap_advance_db.update_config(va_bank_aktif=["702", "801"])
+    assert payment_provider_client.va_bank_aktif() == {
+        "702": "BCA VA (Dynamic)", "801": "BNI VA (Static & Dynamic)",
+    }

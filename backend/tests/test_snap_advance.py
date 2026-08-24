@@ -368,11 +368,12 @@ def test_buat_transaksi_qris_belum_dikonfigurasi_melempar_not_configured(single_
         snap_advance_client.buat_transaksi_qris("BOOKING-1-1-abc", 100000, {"whatsapp": "081234567890"})
 
 
-def test_buat_transaksi_va_belum_dikonfigurasi_melempar_not_configured(single_tenant):
-    """VA sudah diimplementasikan sungguhan -- tanpa channelCode default
-    terisi, melempar GatewayNotConfiguredError (BUKAN lagi PENDING FASPAY)."""
+def test_buat_transaksi_va_channel_code_tidak_dikenal_melempar_not_configured(single_tenant):
+    """Fitur multi-bank VA: channel_code sekarang parameter WAJIB dari
+    pemanggil (bukan lagi dibaca dari config) -- kode bank yang tidak
+    dikenal/valid tetap melempar GatewayNotConfiguredError."""
     with pytest.raises(core.GatewayNotConfiguredError):
-        snap_advance_client.buat_transaksi_va("BOOKING-1-1-abc", 100000)
+        snap_advance_client.buat_transaksi_va("BOOKING-1-1-abc", 100000, channel_code="999")
 
 
 def test_cek_status_channel_belum_didukung_melempar_pending_faspay():
@@ -652,7 +653,7 @@ def _pasang_kredensial_snap():
         environment="sandbox", sandbox_base_url="https://debit-sandbox.faspay.co.id",
         merchant_id="37070", partner_id="37070", client_id="CLIENT-TEST", client_secret="SECRET-TEST",
         private_key=private_pem, faspay_public_key=public_pem, channel_id="77001",
-        va_channel_code="702", qris_channel_code="711",
+        va_bank_aktif=["702"], qris_channel_code="711",
     )
     return private_pem, public_pem
 
@@ -710,7 +711,8 @@ def test_buat_transaksi_va_sukses_header_dan_payload_lengkap(single_tenant, monk
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
     hasil = snap_advance_client.buat_transaksi_va(
-        "BOOKING-1-42-abc123456789", 100000, {"nama": "Budi Santoso", "whatsapp": "081234567890"})
+        "BOOKING-1-42-abc123456789", 100000, {"nama": "Budi Santoso", "whatsapp": "081234567890"},
+        channel_code="702")
 
     assert hasil["va_number"] == "7020000000000000000012345"
     assert len(rekam.panggilan) == 1
@@ -736,7 +738,7 @@ def test_buat_transaksi_va_signature_cocok_formula_resmi_faspay(single_tenant, m
     rekam = _RekamPanggilan()
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
-    snap_advance_client.buat_transaksi_va("BOOKING-1-42-abc123456789", 100000)
+    snap_advance_client.buat_transaksi_va("BOOKING-1-42-abc123456789", 100000, channel_code="702")
 
     headers, raw_body = rekam.panggilan[0]["headers"], rekam.panggilan[0]["raw_body"]
     body_hash = core.sha256_lowercase_hex(raw_body)
@@ -749,7 +751,7 @@ def test_inquiry_status_va_sukses(single_tenant, monkeypatch):
     rekam = _RekamPanggilan()
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
-    hasil = snap_advance_client.inquiry_status_va("BOOKING-1-42-abc", "7020000000000000000012345")
+    hasil = snap_advance_client.inquiry_status_va("BOOKING-1-42-abc", "7020000000000000000012345", "702")
     assert hasil["paymentFlagStatus"] == "00"
 
 
@@ -829,7 +831,7 @@ def test_cek_status_transaksi_dispatcher_va_dan_direct_debit(single_tenant, monk
     monkeypatch.setattr(core, "post_json_raw", rekam)
 
     hasil_va = snap_advance_client.cek_status_transaksi(
-        "BOOKING-1-42-abc", channel="va", virtual_account_no="7020000000000000000012345")
+        "BOOKING-1-42-abc", channel="va", virtual_account_no="7020000000000000000012345", channel_code="702")
     assert hasil_va["paymentFlagStatus"] == "00"
 
     hasil_dd = snap_advance_client.cek_status_transaksi(
@@ -1204,15 +1206,15 @@ def test_endpoint_webhook_signature_dari_endpoint_lain_ditolak(app_client, singl
 # Audit lanjutan -- config CHANNEL-ID / channelCode VA & masking secret
 # ---------------------------------------------------------------------------
 
-def test_update_config_channel_id_dan_va_channel_code(single_tenant):
-    hasil = snap_advance_db.update_config(channel_id="77001", va_channel_code="702")
+def test_update_config_channel_id_dan_va_bank_aktif(single_tenant):
+    hasil = snap_advance_db.update_config(channel_id="77001", va_bank_aktif=["702", "801"])
     assert hasil["snap_channel_id"] == "77001"
-    assert hasil["snap_va_channel_code"] == "702"
+    assert hasil["snap_va_bank_aktif"] == ["702", "801"]
 
 
-def test_update_config_va_channel_code_tidak_dikenal_ditolak(single_tenant):
+def test_update_config_va_bank_aktif_kode_tidak_dikenal_ditolak(single_tenant):
     with pytest.raises(ValueError):
-        snap_advance_db.update_config(va_channel_code="999")
+        snap_advance_db.update_config(va_bank_aktif=["999"])
 
 
 def test_get_config_tidak_pernah_membocorkan_field_rahasia(single_tenant):
@@ -1274,7 +1276,7 @@ def test_get_config_internal_mengembalikan_nilai_asli(single_tenant):
 def _aktifkan_snap_orkestrasi(channel_aktif=None):
     private_pem, _ = _buat_keypair_rsa()
     snap_advance_db.update_config(
-        merchant_id="37070", partner_id="37070", channel_id="77001", va_channel_code="702",
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
         private_key=private_pem, channel_aktif=channel_aktif if channel_aktif is not None else ["va", "qris"],
     )
 
@@ -1402,7 +1404,8 @@ def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypat
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     body = {
         "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "11:00", "service_ids": [service_id],
-        "customer_nama": "Citra", "customer_whatsapp": "081234567891", "metode_pembayaran": "gateway", "channel": "va",
+        "customer_nama": "Citra", "customer_whatsapp": "081234567891", "metode_pembayaran": "gateway",
+        "channel": "va", "bank_code": "702",
     }
     r_checkout = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
     assert r_checkout.status_code == 200, r_checkout.text

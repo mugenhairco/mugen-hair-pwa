@@ -78,7 +78,7 @@ class ConfigBody(BaseModel):
     retry_max: int | None = None
     channel_aktif: list[str] | None = None
     channel_id: str | None = None
-    va_channel_code: str | None = None
+    va_bank_aktif: list[str] | None = None
     qris_channel_code: str | None = None
 
 
@@ -92,7 +92,7 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
             private_key=body.private_key, faspay_public_key=body.faspay_public_key,
             webhook_secret=body.webhook_secret, timeout_detik=body.timeout_detik,
             retry_max=body.retry_max, channel_aktif=body.channel_aktif,
-            channel_id=body.channel_id, va_channel_code=body.va_channel_code,
+            channel_id=body.channel_id, va_bank_aktif=body.va_bank_aktif,
             qris_channel_code=body.qris_channel_code,
         )
     except ValueError as e:

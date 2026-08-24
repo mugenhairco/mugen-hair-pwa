@@ -647,6 +647,39 @@ const MugenUI = (() => {
     }
   }
 
+  // Fitur multi-bank VA (SNAP Advance): "logo" bank di pemilihan channel VA
+  // (book_public.js/billing.js/superadmin.js) -- KITA TIDAK PUNYA berkas
+  // aset logo resmi tiap bank (butuh persetujuan/lisensi terpisah per bank
+  // untuk memakai logo asli mereka), jadi dipakai monogram singkatan di
+  // atas kotak warna sebagai penanda visual yang jelas dan profesional,
+  // BUKAN klaim sebagai logo resmi. Satu peta terpusat di sini supaya
+  // ketiga halaman itu konsisten (bukan tiga peta terpisah yang bisa
+  // berbeda-beda) -- kalau nanti berkas logo resmi tersedia, cukup ganti
+  // isi bankLogoBadge() di satu tempat ini.
+  const _BANK_BRAND = {
+    "402": { singkatan: "PRM", warna: "#0891B2" },   // Permata
+    "408": { singkatan: "MAY", warna: "#D97706" },   // Maybank
+    "702": { singkatan: "BCA", warna: "#2563EB" },   // BCA
+    "706": { singkatan: "IDM", warna: "#DC2626" },   // Indomaret Payment Point
+    "707": { singkatan: "ALF", warna: "#DB2777" },   // Alfagroup
+    "708": { singkatan: "DAN", warna: "#EA580C" },   // Danamon
+    "718": { singkatan: "BNC", warna: "#7C3AED" },   // BNC
+    "800": { singkatan: "BRI", warna: "#0369A1" },   // BRI
+    "801": { singkatan: "BNI", warna: "#EA580C" },   // BNI
+    "802": { singkatan: "MDR", warna: "#1D4ED8" },   // Mandiri
+    "818": { singkatan: "SNM", warna: "#16A34A" },   // Sinarmas
+    "825": { singkatan: "CIMB", warna: "#DC2626" },  // CIMB Niaga
+    "837": { singkatan: "BTN", warna: "#EA580C" },   // BTN
+  };
+
+  function bankLogoBadge(kode, ukuran) {
+    const brand = _BANK_BRAND[kode] || { singkatan: String(kode).slice(0, 4).toUpperCase(), warna: "#475569" };
+    return el("div", {
+      class: "bank-logo-badge" + (ukuran === "sm" ? " bank-logo-badge-sm" : ""),
+      style: `background:${brand.warna};`,
+    }, brand.singkatan);
+  }
+
   // REVISI UI/UX: switch Dark Mode dipakai di DUA tempat (Setting >
   // Tampilan untuk Owner/Admin, dan di atas tombol Keluar untuk user
   // lain -- lihat nav.js/pengaturan.js), satu builder di sini supaya
@@ -670,6 +703,6 @@ const MugenUI = (() => {
     serviceCell, keteranganCell, offlineBanner, barChart, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
-    isoHariIniWib, tambahHariWib, awalBulanWib,
+    isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge,
   };
 })();

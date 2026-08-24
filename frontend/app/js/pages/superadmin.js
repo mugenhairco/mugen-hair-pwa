@@ -1385,7 +1385,6 @@ const PageSuperadmin = (() => {
     const inSnapPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay, untuk verifikasi webhook)" });
     const inSnapWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
     const inSnapChannelId = MugenUI.el("input", { type: "text", placeholder: "mis. 77001" });
-    const inSnapVaChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih bank VA --")]);
     const inSnapQrisChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih e-wallet QRIS --")]);
     const inSnapTimeout = MugenUI.el("input", { type: "number", min: "1" });
     const inSnapRetryMax = MugenUI.el("input", { type: "number", min: "0" });
@@ -1412,8 +1411,9 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(inSnapWebhookSecret);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "CHANNEL-ID (identifier layanan API Faspay, BUKAN kode bank -- diberikan Faspay, mis. 77001)"));
     snapAdvanceCard.appendChild(inSnapChannelId);
-    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Bank VA Default (channelCode Create VA)"));
-    snapAdvanceCard.appendChild(inSnapVaChannelCode);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Bank VA Aktif (customer memilih salah satu saat checkout)"));
+    const snapVaBankList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
+    snapAdvanceCard.appendChild(snapVaBankList);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "E-Wallet QRIS Default (channelCode Generate QRIS)"));
     snapAdvanceCard.appendChild(inSnapQrisChannelCode);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Timeout (detik)"));
@@ -1450,6 +1450,27 @@ const PageSuperadmin = (() => {
       }
     }
 
+    // Fitur multi-bank VA: GANTI dropdown single-select "Bank VA Default"
+    // lama -- customer sekarang bisa pilih bank APA PUN yang dicentang aktif
+    // di sini (lihat payment_provider_client.py::va_bank_aktif()), bukan
+    // cuma satu default platform-wide. Pola render SAMA PERSIS
+    // renderSnapChannelList() di atas.
+    let snapVaBankLabel = {};
+    const snapVaBankCheckbox = {};
+
+    function renderSnapVaBankList() {
+      snapVaBankList.innerHTML = "";
+      for (const key of Object.keys(snapVaBankLabel)) {
+        const sudahAda = snapVaBankCheckbox[key];
+        const cb = MugenUI.el("input", { type: "checkbox" });
+        cb.checked = sudahAda ? sudahAda.checked : false;
+        snapVaBankCheckbox[key] = cb;
+        snapVaBankList.appendChild(MugenUI.el("div", { style: "display:flex;align-items:center;gap:10px;" }, [
+          cb, MugenUI.bankLogoBadge(key, "sm"), MugenUI.el("span", {}, `${key} -- ${snapVaBankLabel[key]}`),
+        ]));
+      }
+    }
+
     async function loadSnapAdvanceConfig() {
       try {
         const cfg = await MugenApi.get("/api/superadmin/snap-advance/config");
@@ -1480,13 +1501,9 @@ const PageSuperadmin = (() => {
         inSnapRetryMax.value = cfg.snap_retry_max || 3;
         snapChannelLabel = cfg.channel_label || {};
         renderSnapChannelList();
-        const vaChannelLabel = cfg.va_channel_code_label || {};
-        inSnapVaChannelCode.innerHTML = "";
-        inSnapVaChannelCode.appendChild(MugenUI.el("option", { value: "" }, "-- pilih bank VA --"));
-        for (const [kode, label] of Object.entries(vaChannelLabel)) {
-          inSnapVaChannelCode.appendChild(MugenUI.el("option", { value: kode }, `${kode} -- ${label}`));
-        }
-        inSnapVaChannelCode.value = cfg.snap_va_channel_code || "";
+        snapVaBankLabel = cfg.va_channel_code_label || {};
+        renderSnapVaBankList();
+        for (const key of (cfg.snap_va_bank_aktif || [])) if (snapVaBankCheckbox[key]) snapVaBankCheckbox[key].checked = true;
         const qrisChannelLabel = cfg.qris_channel_code_label || {};
         inSnapQrisChannelCode.innerHTML = "";
         inSnapQrisChannelCode.appendChild(MugenUI.el("option", { value: "" }, "-- pilih e-wallet QRIS --"));
@@ -1500,6 +1517,7 @@ const PageSuperadmin = (() => {
     btnSimpanSnap.addEventListener("click", async () => {
       errorSnap.textContent = "";
       const channel_aktif = Object.keys(snapChannelCheckbox).filter((key) => snapChannelCheckbox[key].checked);
+      const va_bank_aktif = Object.keys(snapVaBankCheckbox).filter((key) => snapVaBankCheckbox[key].checked);
       try {
         await MugenUI.withButtonLoading(btnSimpanSnap, () => MugenApi.put("/api/superadmin/snap-advance/config", {
           environment: inSnapEnv.value, sandbox_base_url: inSnapSandboxUrl.value,
@@ -1508,7 +1526,7 @@ const PageSuperadmin = (() => {
           private_key: inSnapPrivateKey.value, faspay_public_key: inSnapPublicKey.value,
           webhook_secret: inSnapWebhookSecret.value, timeout_detik: Number(inSnapTimeout.value) || 30,
           retry_max: Number(inSnapRetryMax.value) || 0, channel_aktif,
-          channel_id: inSnapChannelId.value, va_channel_code: inSnapVaChannelCode.value,
+          channel_id: inSnapChannelId.value, va_bank_aktif,
           qris_channel_code: inSnapQrisChannelCode.value,
         }));
         MugenUI.toast("Konfigurasi SNAP Advance disimpan.", "success");

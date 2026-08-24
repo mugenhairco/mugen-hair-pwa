@@ -47,6 +47,7 @@ import payment_gateway_client
 import payment_gateway_db
 import payment_provider_client
 import r2_storage
+import snap_advance_db
 import snap_payment_db
 import snap_webhook
 import subscription_db
@@ -206,7 +207,10 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
         # sendiri sudah tidak aktif lagi.
         "snap_gateway_enabled": payment_provider_client.is_enabled(),
         "snap_channel_aktif": payment_provider_client.channel_aktif() if payment_provider_client.is_enabled() else [],
-        "snap_va_label": payment_provider_client.channel_label("va"),
+        # Migrasi multi-bank VA: bukan lagi satu label tunggal -- daftar
+        # {channelCode: label} bank yang Super Admin aktifkan, customer
+        # memilih salah satu (lihat BookingCreateBody.bank_code di bawah).
+        "snap_va_bank_aktif": payment_provider_client.va_bank_aktif(),
         "snap_qris_label": payment_provider_client.channel_label("qris"),
         "toko_libur_tanggal": toko_libur_tanggal,
     }
@@ -240,6 +244,7 @@ class BookingCreateBody(BaseModel):
     customer_whatsapp: str
     metode_pembayaran: str
     channel: str | None = None
+    bank_code: str | None = None
     catatan: str | None = None
 
 
@@ -261,6 +266,11 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
             raise HTTPException(status_code=503, detail="Payment Gateway belum aktif -- silakan pilih metode pembayaran lain.")
         if body.channel not in payment_provider_client.channel_aktif():
             raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
+        # Fitur multi-bank VA: bank_code WAJIB salah satu yang Super Admin
+        # aktifkan (payment_provider_client.va_bank_aktif()) -- ditolak SEBELUM
+        # booking dibuat, bukan menunggu error mentah dari lapisan provider.
+        if body.channel == "va" and body.bank_code not in payment_provider_client.va_bank_aktif():
+            raise HTTPException(status_code=422, detail="Bank VA tidak tersedia -- silakan pilih bank lain.")
         # QRIS SNAP mewajibkan nomor WhatsApp customer (lihat
         # snap_advance_client.py::buat_transaksi_qris() -- melempar ValueError
         # bare kalau kosong, BUKAN GatewayError, jadi TIDAK akan tertangkap
@@ -295,11 +305,13 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     row = snap_payment_db.buat_transaksi(
         snap_payment_db.TRANSACTION_TYPE_BOOKING, tenant_id, booking["total_harga"],
         booking_id=booking["id"], channel=body.channel,
+        channel_code=body.bank_code if body.channel == "va" else None,
     )
     customer_details = {"nama": booking["customer_nama"][:128], "whatsapp": booking["customer_whatsapp"]}
     try:
         hasil = payment_provider_client.buat_transaksi(
             body.channel, row["payment_reference"], booking["total_harga"], customer_details,
+            channel_code=body.bank_code if body.channel == "va" else None,
         )
     except gateway_client_base.GatewayError as e:
         snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
@@ -314,6 +326,7 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     booking["payment_reference"] = row["payment_reference"]
     booking["channel"] = body.channel
     booking["va_number"] = hasil.get("va_number")
+    booking["va_bank_label"] = snap_advance_db.VA_CHANNEL_CODE_LABEL.get(hasil.get("channel_code"))
     booking["qr_url"] = hasil.get("qr_url")
     booking["qr_content"] = hasil.get("qr_content")
     booking["expired_at"] = hasil.get("expired_at")
@@ -355,6 +368,11 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
         "channel": transaksi["channel"],
         "amount": transaksi["amount"],
         "va_number": transaksi["va_number"],
+        # Fitur multi-bank VA: sertakan label bank yang BENAR-BENAR dipakai
+        # transaksi ini (dari channel_code tersimpan, BUKAN dibaca ulang dari
+        # config Super Admin yang bisa saja sudah berubah) supaya frontend
+        # bisa menampilkan "Transfer ke Virtual Account BCA" dsb.
+        "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]),
         "qr_url": transaksi["qr_url"],
         "qr_content": transaksi["qr_content"],
         "expired_at": transaksi["expired_at"],

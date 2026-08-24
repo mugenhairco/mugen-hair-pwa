@@ -758,7 +758,13 @@
 // booking.js/superadmin.js: branching provider Xpress vs SNAP untuk
 // Detail/Cek Ulang + copy diperbarui. Direct Debit TETAP TIDAK ada UI
 // customer (backend masih PENDING FASPAY).
-const ASSET_VERSION = "143";
+// v143 -> v144: Fitur multi-bank VA -- Super Admin bisa aktifkan LEBIH DARI
+// SATU bank VA sekaligus (dulu satu default tunggal snap_va_channel_code),
+// customer memilih bank tujuan sendiri saat checkout (book_public.js/
+// billing.js: grid kartu ber-"logo" -- monogram warna, BUKAN aset logo
+// resmi bank, lihat ui.js::bankLogoBadge()). superadmin.js: dropdown Bank
+// VA Default diganti daftar checkbox Bank VA Aktif.
+const ASSET_VERSION = "144";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

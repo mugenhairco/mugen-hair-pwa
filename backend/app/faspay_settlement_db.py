@@ -246,7 +246,14 @@ def _cek_transaksi_ke_faspay(transaksi: dict) -> tuple:
         if channel == "va":
             if not transaksi.get("va_number"):
                 return None, None, None, "va_number tidak tersedia secara lokal -- tidak bisa memanggil Inquiry Status VA."
-            data = snap_advance_client.inquiry_status_va(transaksi["payment_reference"], transaksi["va_number"])
+            # Fitur multi-bank VA: channel_code WAJIB dari baris transaksi ini
+            # SENDIRI (bank yang dipakai saat dibuat), BUKAN config Super
+            # Admin saat ini -- lihat snap_webhook.py::rekonsiliasi_manual()
+            # untuk alasan lengkapnya (pola SAMA PERSIS di sini).
+            if not transaksi.get("channel_code"):
+                return None, None, None, "channel_code (bank VA) tidak tersedia secara lokal -- tidak bisa memanggil Inquiry Status VA."
+            data = snap_advance_client.inquiry_status_va(
+                transaksi["payment_reference"], transaksi["va_number"], transaksi["channel_code"])
             return (data.get("latestTransactionStatus"), data.get("paidAmount", {}).get("value")
                     if isinstance(data.get("paidAmount"), dict) else data.get("paidAmount"),
                     data.get("trxId"), None)

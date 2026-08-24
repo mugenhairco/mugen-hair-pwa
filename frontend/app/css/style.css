@@ -1315,6 +1315,33 @@ body.book-public-active {
 .book-metode-btn:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--book-shadow-soft); }
 .book-metode-btn.selected { border-color: var(--accent); background: rgba(51,65,85,0.06); box-shadow: var(--book-shadow-glow); }
 .book-metode-btn:disabled { cursor: default; opacity: 1; }
+
+/* Fitur multi-bank VA (SNAP Advance): grid kartu bank -- terpisah dari
+   .book-metode-btn (baris penuh, dipakai untuk pilihan metode/channel
+   yang jumlahnya sedikit) karena daftar bank aktif bisa sampai belasan,
+   baris penuh akan terlalu panjang & tidak profesional -- grid kolom
+   membuatnya rapi & rata terlepas berapa pun jumlah bank aktif. Dipakai
+   book_public.js (fase Payment Method), billing.js (modal pilih channel),
+   dan superadmin.js (daftar Bank VA Aktif, versi read-only tanpa .selected). */
+.bank-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 8px;
+}
+.bank-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--book-radius-sm);
+  padding: 14px 10px; cursor: pointer; text-align: center; color: var(--text); font-weight: 600; font-size: 13px;
+  transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.bank-card:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--book-shadow-soft); }
+.bank-card.selected { border-color: var(--accent); background: rgba(51,65,85,0.06); box-shadow: var(--book-shadow-glow); }
+.bank-logo-badge {
+  width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 12px; letter-spacing: 0.3px; flex-shrink: 0;
+}
+/* Versi kecil -- daftar checkbox Super Admin (satu baris per bank, badge
+   besar akan mendominasi baris teks yang ringkas). */
+.bank-logo-badge-sm { width: 28px; height: 28px; border-radius: 7px; font-size: 10px; }
 /* Halaman Pembayaran QRIS: gambar tetap tajam (tidak diperbesar melebihi
    ukuran aslinya lewat CSS, hanya dibatasi lebar maksimum) di semua ukuran
    layar, plus hint rendering tajam untuk browser yang mendukungnya. */

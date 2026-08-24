@@ -46,21 +46,18 @@ _KEYS_KREDENSIAL = [
     # `channelCode` per-bank di bawah maupun `snap_channel_aktif` --
     # dikonfirmasi dari dokumen resmi Faspay yang diberikan Owner).
     "snap_channel_id",
-    # channelCode default untuk Create VA (BEDA dari CHANNEL-ID di atas --
-    # ini kode BANK VA per dokumen SNAP VA resmi Faspay, mis. "702"=BCA,
-    # "801"=BNI. Faspay mewajibkan SATU channelCode spesifik di tiap
-    # panggilan Create VA -- kolom ini murni default platform-wide, BUKAN
-    # per-tenant, sampai ada kebutuhan nyata memilih per tenant/booking).
-    "snap_va_channel_code",
     # channelCode default untuk Generate QRIS (dokumen SNAP QRIS resmi
-    # Faspay -- BEDA lagi dari channelCode VA di atas, daftar kode/artinya
-    # provider e-wallet, bukan bank). Pola SAMA seperti snap_va_channel_code.
+    # Faspay -- BEDA lagi dari channelCode VA di bawah, daftar kode/artinya
+    # provider e-wallet, bukan bank). MASIH satu default tunggal (beda dari
+    # VA di bawah yang sudah multi-bank) -- belum ada permintaan multi
+    # e-wallet untuk QRIS.
     "snap_qris_channel_code",
 ]
 
 # Daftar channelCode VA resmi (dokumen SNAP VA Faspay -- lihat tabel
-# "channel code" Create VA) -- dipakai memvalidasi snap_va_channel_code,
-# BUKAN daftar bebas/tebakan.
+# "channel code" Create VA) -- dipakai memvalidasi snap_va_bank_aktif (lihat
+# _KUNCI_VA_BANK_AKTIF di bawah) DAN channel_code yang dikirim customer per
+# transaksi, BUKAN daftar bebas/tebakan.
 VA_CHANNEL_CODE_LABEL = {
     "402": "Permata VA (Dynamic)", "408": "Maybank VA (Dynamic)", "702": "BCA VA (Dynamic)",
     "706": "Indomaret Payment Point (Dynamic)", "707": "Alfagroup (Dynamic)", "708": "Danamon VA (Dynamic)",
@@ -111,6 +108,16 @@ DIRECT_DEBIT_CHANNEL_CODE_VALID = set(DIRECT_DEBIT_CHANNEL_CODE_LABEL.keys())
 _KUNCI_TIMEOUT = "snap_timeout_detik"
 _KUNCI_RETRY_MAX = "snap_retry_max"
 _KUNCI_CHANNEL_AKTIF = "snap_channel_aktif"
+# Fitur multi-bank VA (diminta Owner: customer bisa pilih bank VA APA PUN
+# yang diaktifkan, bukan cuma satu default platform-wide) -- GANTIKAN
+# snap_va_channel_code (field tunggal, DIHAPUS) dengan daftar kode bank
+# yang Super Admin centang aktif. Kode bank yang BENAR-BENAR dipakai per
+# transaksi dikirim FRONTEND (customer memilih) dan divalidasi terhadap
+# daftar ini di routers/booking.py & routers/billing.py -- lihat
+# snap_advance_client.py::buat_transaksi_va() untuk sisi client-nya
+# (channel_code sekarang parameter wajib, bukan lagi dibaca dari config).
+_KUNCI_VA_BANK_AKTIF = "snap_va_bank_aktif"
+_DEFAULT_VA_BANK_AKTIF = json.dumps([])
 
 ENVIRONMENT_VALID = {"sandbox", "production"}
 
@@ -189,6 +196,11 @@ def get_config() -> dict:
     except (TypeError, ValueError):
         channel_aktif = []
     data["snap_channel_aktif"] = channel_aktif
+    try:
+        va_bank_aktif = json.loads(db.get_setting(_KUNCI_VA_BANK_AKTIF, _DEFAULT_VA_BANK_AKTIF, tenant_id=None))
+    except (TypeError, ValueError):
+        va_bank_aktif = []
+    data["snap_va_bank_aktif"] = va_bank_aktif
     data["channel_label"] = CHANNEL_LABEL
     data["va_channel_code_label"] = VA_CHANNEL_CODE_LABEL
     data["qris_channel_code_label"] = QRIS_CHANNEL_CODE_LABEL
@@ -239,6 +251,10 @@ def get_config_internal() -> dict:
         data["snap_channel_aktif"] = json.loads(db.get_setting(_KUNCI_CHANNEL_AKTIF, _DEFAULT_CHANNEL_AKTIF, tenant_id=None))
     except (TypeError, ValueError):
         data["snap_channel_aktif"] = []
+    try:
+        data["snap_va_bank_aktif"] = json.loads(db.get_setting(_KUNCI_VA_BANK_AKTIF, _DEFAULT_VA_BANK_AKTIF, tenant_id=None))
+    except (TypeError, ValueError):
+        data["snap_va_bank_aktif"] = []
     data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"]
                             and data["snap_channel_id"] and data["snap_private_key"])
     return data
@@ -248,7 +264,7 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
                    merchant_id: str = None, partner_id: str = None, client_id: str = None,
                    client_secret: str = None, private_key: str = None, faspay_public_key: str = None,
                    webhook_secret: str = None, timeout_detik: int = None, retry_max: int = None,
-                   channel_aktif: list = None, channel_id: str = None, va_channel_code: str = None,
+                   channel_aktif: list = None, channel_id: str = None, va_bank_aktif: list = None,
                    qris_channel_code: str = None) -> dict:
     data = {}
     if environment is not None:
@@ -294,11 +310,12 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
         data[_KUNCI_CHANNEL_AKTIF] = json.dumps(channel_aktif)
     if channel_id is not None:
         data["snap_channel_id"] = channel_id.strip()
-    if va_channel_code is not None:
-        if va_channel_code and va_channel_code not in VA_CHANNEL_CODE_VALID:
-            raise ValueError(f"channelCode VA tidak dikenal: {va_channel_code}. "
+    if va_bank_aktif is not None:
+        tidak_valid = [c for c in va_bank_aktif if c not in VA_CHANNEL_CODE_VALID]
+        if tidak_valid:
+            raise ValueError(f"channelCode VA tidak dikenal: {', '.join(tidak_valid)}. "
                               f"Lihat daftar resmi di VA_CHANNEL_CODE_LABEL.")
-        data["snap_va_channel_code"] = va_channel_code.strip()
+        data[_KUNCI_VA_BANK_AKTIF] = json.dumps(va_bank_aktif)
     if qris_channel_code is not None:
         if qris_channel_code and qris_channel_code not in QRIS_CHANNEL_CODE_VALID:
             raise ValueError(f"channelCode QRIS tidak dikenal: {qris_channel_code}. "

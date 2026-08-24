@@ -89,8 +89,8 @@ def tentukan_tipe_transaksi(payment_reference: str) -> str:
 
 def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
                     booking_id: int = None, subscription_invoice_id: int = None,
-                    channel: str = None, ewallet_provider: str = None, binding_id: int = None,
-                    provider: str = "snap_advance") -> dict:
+                    channel: str = None, channel_code: str = None, ewallet_provider: str = None,
+                    binding_id: int = None, provider: str = "snap_advance") -> dict:
     """Buat baris transaksi baru berstatus CREATED -- MURNI pencatatan
     lokal, TIDAK memanggil Faspay sama sekali (pemanggil di lapisan atas
     yang memanggil snap_advance_client.buat_transaksi_*() SETELAH baris ini
@@ -100,6 +100,13 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
     proven). `booking_id` WAJIB diisi (subscription_invoice_id KOSONG) untuk
     BOOKING, sebaliknya untuk SAAS_BILLING -- validasi silang di bawah
     mencegah baris "amfibi" yang datanya ambigu.
+
+    `channel_code` = kode bank VA yang BENAR-BENAR dipilih customer (fitur
+    multi-bank VA -- Super Admin bisa aktifkan lebih dari satu bank
+    sekaligus, kode yang dipakai transaksi ini HARUS tersimpan supaya
+    rekonsiliasi/cek-status nanti tidak salah pakai config yang mungkin
+    sudah berubah, lihat snap_webhook.py::rekonsiliasi_manual()). Hanya
+    relevan untuk channel="va" -- NULL untuk channel lain.
 
     `binding_id` HANYA relevan untuk channel="direct_debit" (rujukan ke
     snap_account_bindings -- lihat snap_account_binding_db.py) -- channel
@@ -133,11 +140,12 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
         conn.execute(
             "INSERT INTO snap_payment_transactions "
             "(internal_transaction_id, provider, payment_reference, transaction_type, tenant_id, "
-            "booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, status, "
-            "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
+            "booking_id, subscription_invoice_id, channel, channel_code, ewallet_provider, binding_id, "
+            "amount, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
             (internal_transaction_id, provider, payment_reference, transaction_type, tenant_id,
-             booking_id, subscription_invoice_id, channel, ewallet_provider, binding_id, amount, now, now),
+             booking_id, subscription_invoice_id, channel, channel_code, ewallet_provider, binding_id,
+             amount, now, now),
         )
     return get_transaksi_by_reference(payment_reference)
 
