@@ -159,18 +159,20 @@ def _sudah_ada_attendance_log(barber_id: int, tanggal: str) -> bool:
     return row is not None
 
 
-def _libur_auto_terpakai_bulan_ini(barber_id: int, tahun: int, bulan: int) -> int:
-    """Jumlah baris absensi_libur bulan ini yang SUMBER-nya Auto-Libur
-    (SUMBER_AUTO_LIBUR/SUMBER_AUTO_LIBUR_KELEBIHAN) -- SENGAJA TIDAK ikut
-    menghitung Barber Holiday manual (sumber NULL, di luar kendali Auto-
-    Libur ini), supaya "Kuota Libur/bulan" murni jatah untuk hari tidak
-    check-in, bukan tercampur jatah cuti manual yang Owner sendiri
-    berikan."""
+def _libur_terpakai_bulan_ini(barber_id: int, tahun: int, bulan: int) -> int:
+    """PERMINTAAN OWNER (revisi): Kuota Libur/bulan SEKARANG dikurangi
+    SEMUA baris absensi_libur bulan itu -- Barber Holiday MANUAL (sumber
+    NULL) MAUPUN yang dibuat Auto-Libur (SUMBER_AUTO_LIBUR/
+    SUMBER_AUTO_LIBUR_KELEBIHAN) -- BUKAN LAGI hanya yang dibuat Auto-
+    Libur sendiri (perilaku SEBELUMNYA). Owner menandai Libur manual untuk
+    tanggal apa pun (mis. menyusulkan tanggal lama sebelum Auto-Libur
+    real-time ada) TETAP dianggap memakai jatah Libur bulan itu, sama
+    seperti kalau Auto-Libur sendiri yang mencatatnya -- SATU jatah
+    "Libur/bulan" untuk KEDUA sumber, bukan dua hitungan terpisah."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS jumlah FROM absensi_libur WHERE barber_id = ? AND tanggal LIKE ? "
-            "AND sumber IN (?, ?)",
-            (barber_id, f"{tahun:04d}-{bulan:02d}-%", SUMBER_AUTO_LIBUR, SUMBER_AUTO_LIBUR_KELEBIHAN),
+            "SELECT COUNT(*) AS jumlah FROM absensi_libur WHERE barber_id = ? AND tanggal LIKE ?",
+            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
         ).fetchone()
     return row["jumlah"]
 
@@ -199,7 +201,7 @@ def batalkan_auto_libur_untuk_tanggal(barber_id: int, tanggal: str) -> dict:
     yang sama (sudah masuk kerja TAPI juga tercatat Libur/Cuti).
 
     Kuota yang sempat terpakai OTOMATIS kembali begitu baris ini dihapus --
-    baik Kuota Libur (auto_libur_db._libur_auto_terpakai_bulan_ini()) maupun
+    baik Kuota Libur (auto_libur_db._libur_terpakai_bulan_ini()) maupun
     kuota gabungan Izin&Cuti (izin_cuti_db._kuota_terpakai_hari()) SELALU
     dihitung LIVE dari baris yang ADA, tidak pernah dari counter tersimpan
     -- TIDAK PERLU logika "refund" terpisah sama sekali.
@@ -251,9 +253,11 @@ def get_sisa_kuota_libur_bulan_ini(barber_id: int, tenant_id: int) -> dict:
     """PERMINTAAN OWNER: kartu "Sisa Kuota Libur" (Absensi barber & Owner)
     -- BEDA dari kuota gabungan Izin&Cuti (izin_cuti_db.get_sisa_kuota(),
     yang anchor ke periode Owner-editable) -- Kuota Libur SELALU reset per
-    BULAN KALENDER (WIB), TIDAK ikut periode Izin&Cuti sama sekali. Return
-    {"aktif": bool, "kuota": int|None, "terpakai": int|None, "sisa": int|None}
-    -- `aktif`=False (semua field lain None) kalau Owner belum mengisi
+    BULAN KALENDER (WIB), TIDAK ikut periode Izin&Cuti sama sekali.
+    `terpakai` menghitung SEMUA baris Libur bulan itu (manual MAUPUN
+    Auto-Libur, lihat _libur_terpakai_bulan_ini()). Return {"aktif": bool,
+    "kuota": int|None, "terpakai": int|None, "sisa": int|None} --
+    `aktif`=False (semua field lain None) kalau Owner belum mengisi
     kuota_libur_bulanan (0/default)."""
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     kuota = settings.get("kuota_libur_bulanan", 0)
@@ -261,7 +265,7 @@ def get_sisa_kuota_libur_bulan_ini(barber_id: int, tenant_id: int) -> dict:
         return {"aktif": False, "kuota": None, "terpakai": None, "sisa": None}
     hari_ini = _hari_ini_wib()
     tahun, bulan = int(hari_ini[:4]), int(hari_ini[5:7])
-    terpakai = _libur_auto_terpakai_bulan_ini(barber_id, tahun, bulan)
+    terpakai = _libur_terpakai_bulan_ini(barber_id, tahun, bulan)
     return {"aktif": True, "kuota": kuota, "terpakai": terpakai, "sisa": max(0, kuota - terpakai)}
 
 
@@ -350,7 +354,7 @@ def proses_auto_libur(tenant_id: int, tahun: int, bulan: int) -> dict:
     detail_per_barber = {}
     for barber in barbers:
         barber_id = barber["id"]
-        libur_terpakai = _libur_auto_terpakai_bulan_ini(barber_id, tahun, bulan)
+        libur_terpakai = _libur_terpakai_bulan_ini(barber_id, tahun, bulan)
         for tanggal in tanggal_list:
             if not _syarat_hari_kerja_diharapkan(barber_id, tenant_id, tanggal):
                 continue
@@ -401,7 +405,7 @@ def _proses_satu_tanggal_semua_barber(tenant_id: int, tanggal: str, settings: di
         barber_id = barber["id"]
         if not _syarat_hari_kerja_diharapkan(barber_id, tenant_id, tanggal):
             continue
-        libur_terpakai = _libur_auto_terpakai_bulan_ini(barber_id, tahun, bulan)
+        libur_terpakai = _libur_terpakai_bulan_ini(barber_id, tahun, bulan)
         _terapkan_cascade(barber_id, tenant_id, tanggal, kuota_libur_bulanan, libur_terpakai)
         jumlah += 1
     return jumlah
