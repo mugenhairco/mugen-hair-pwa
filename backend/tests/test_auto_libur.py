@@ -254,21 +254,24 @@ def test_tidak_ada_kelebihan_kuota_kalau_kuota_cukup(single_tenant, monkeypatch)
     assert auto_libur_db.ada_kelebihan_kuota_bulan_ini(barber_id, 2026, 7) is False
 
 
-def test_barber_holiday_manual_tidak_ikut_kuota_libur_bulanan(single_tenant, monkeypatch):
-    """Barber Holiday manual (sumber NULL, di luar Auto-Libur) TIDAK ikut
-    mengurangi Kuota Libur/bulan -- hanya baris yang dibuat Auto-Libur
-    sendiri yang dihitung."""
+def test_libur_manual_ikut_mengurangi_kuota_libur_bulanan(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER (revisi): Barber Holiday manual (sumber NULL) SEKARANG
+    ikut mengurangi Kuota Libur/bulan, SAMA seperti baris yang dibuat
+    Auto-Libur sendiri -- SATU jatah Libur/bulan untuk kedua sumber, BUKAN
+    LAGI dua hitungan terpisah (perilaku SEBELUMNYA)."""
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
     _aktifkan(tenant_id, kuota_libur_bulanan=1)
-    db.tandai_libur(barber_id, "2026-07-01")  # manual, sumber NULL
+    db.tandai_libur(barber_id, "2026-07-01")  # manual, sumber NULL -- MEMAKAI kuota Libur bulan ini
     monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-03")
 
     hasil = auto_libur_db.proses_auto_libur(tenant_id, 2026, 7)
-    # 1 Juli dilewati (sudah Barber Holiday manual) -- 2 Juli TETAP masuk
-    # Kuota Libur (belum terpakai sama sekali dari sisi Auto-Libur).
-    assert hasil["detail"][0]["tanggal_libur"] == ["2026-07-02"]
-    assert db.get_hari_libur(barber_id, 2026, 7) == 2  # 1 manual + 1 auto
+    # 1 Juli dilewati (sudah Barber Holiday manual, DAN kuota Libur=1 sudah
+    # habis karenanya) -- 2 Juli jatuh ke kuota gabungan Izin&Cuti (Cuti),
+    # BUKAN lagi ke Kuota Libur (yang sudah habis dipakai baris manual).
+    assert hasil["detail"][0]["tanggal_libur"] == []
+    assert hasil["detail"][0]["tanggal_cuti"] == ["2026-07-02"]
+    assert db.get_hari_libur(barber_id, 2026, 7) == 1  # hanya yang manual
 
 
 def test_kuota_libur_off_default_semua_jadi_cuti_seperti_sebelumnya(single_tenant, monkeypatch):
@@ -338,6 +341,20 @@ def test_get_sisa_kuota_libur_bulan_ini_terpakai_setelah_proses(single_tenant, m
     # (kuota gabungan izin&cuti tidak dipakai/unlimited).
     hasil = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber_id, tenant_id)
     assert hasil == {"aktif": True, "kuota": 3, "terpakai": 3, "sisa": 0}
+
+
+def test_get_sisa_kuota_libur_bulan_ini_ikut_menghitung_libur_manual(single_tenant):
+    """PERMINTAAN OWNER (revisi): Libur manual (Barber Holiday, sumber
+    NULL) -- mis. Owner menyusulkan tanggal lama sebelum Auto-Libur
+    real-time ada -- SEKARANG ikut menambah `terpakai` di kartu Kuota
+    Libur, sama seperti baris yang dibuat Auto-Libur sendiri."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id, kuota_libur_bulanan=5)
+    bulan_ini = datetime.now(WIB).strftime("%Y-%m")
+    db.tandai_libur(barber_id, f"{bulan_ini}-01")  # manual, sumber NULL
+    hasil = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber_id, tenant_id)
+    assert hasil == {"aktif": True, "kuota": 5, "terpakai": 1, "sisa": 4}
 
 
 def test_router_saldo_semua_barber(single_tenant, monkeypatch):
