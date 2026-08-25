@@ -155,7 +155,7 @@ def test_mengurangi_kuota_cuti_otomatis(single_tenant, monkeypatch):
     TIDAK PERLU logika kuota baru, cukup lewat izin_cuti biasa."""
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
-    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_gabungan_hari=10,
                                     periode_mulai_dasar="2026-07-01", auto_libur_tidak_absen_aktif=True)
     monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-06")
     monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-07-06")
@@ -165,7 +165,7 @@ def test_mengurangi_kuota_cuti_otomatis(single_tenant, monkeypatch):
 
     saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
     assert saldo["aktif"] is True
-    assert saldo["sisa_cuti"] == 5  # 10 - 5 hari auto-libur
+    assert saldo["sisa_gabungan"] == 5  # 10 - 5 hari auto-libur
 
 
 def test_tenant_lain_tidak_ikut_terpengaruh(two_tenants, monkeypatch):

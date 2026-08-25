@@ -441,12 +441,16 @@ CREATE TABLE IF NOT EXISTS izin_cuti_settings (
 );
 
 -- REVISI Sistem Dinamis Cuti & Izin (permintaan Owner, Agustus 2026, lihat
--- izin_cuti_migrasi.py): kuota izin & cuti sekarang bisa TERPISAH (saldo
--- masing-masing) atau GABUNGAN (satu saldo bersama, mode_kuota), H-min
--- pengajuan izin sekarang PUNYA field sendiri (h_min_pengajuan_izin,
--- terpisah total dari h_min_pengajuan milik cuti), dan periode kuota
--- diangkar ke tanggal bebas (periode_mulai_dasar) -- BUKAN lagi selalu
--- Januari/tahun kalender (lihat izin_cuti_db.py::_periode_kuota()).
+-- izin_cuti_migrasi.py) + PERBAIKAN Sistem Kuota IZIN & CUTI (revisi
+-- berikutnya): periode kuota diangkar ke tanggal bebas (periode_mulai_dasar)
+-- -- BUKAN lagi selalu Januari/tahun kalender (lihat izin_cuti_db.py::
+-- _periode_kuota()). Kolom mode_kuota/kuota_izin_hari/h_min_pengajuan_izin
+-- di bawah adalah SISA HISTORIS model kuota 'terpisah' yang SUDAH DIHAPUS
+-- (SEKARANG HANYA satu model kuota BERSAMA, kuota_gabungan_hari) --
+-- kolomnya dipertahankan (bukan di-DROP) supaya migrasi tetap idempotent,
+-- tapi TIDAK dibaca lagi oleh mesin kebijakan (lihat izin_cuti_db.py::
+-- DEFAULT_CUTI_SETTINGS dan izin_cuti_migrasi.py::migrasi_konsolidasi_
+-- kuota_gabungan() untuk migrasi data tenant lama).
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS mode_kuota TEXT NOT NULL DEFAULT 'terpisah';
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_izin_hari INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_gabungan_hari INTEGER NOT NULL DEFAULT 0;

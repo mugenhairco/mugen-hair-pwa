@@ -52,27 +52,15 @@ const PageIzinCuti = (() => {
     card.appendChild(MugenUI.el("div", { class: "subtitle" },
       `Periode aktif: ${saldo.periode_awal} s/d ${saldo.periode_akhir}. Sisa kuota TIDAK pernah terbawa ` +
       `ke periode berikutnya.`));
+    // PERBAIKAN Sistem Kuota IZIN & CUTI: SATU saldo bersama Izin+Cuti --
+    // model kuota terpisah per jenis sudah dihapus (backend SELALU
+    // mengembalikan mode_kuota="gabungan", lihat izin_cuti_db.py::get_sisa_kuota()).
     const grid = MugenUI.el("div", { class: "grid-cards" });
-    if (saldo.mode_kuota === "gabungan") {
-      if (saldo.kuota_gabungan != null) {
-        grid.appendChild(MugenUI.el("div", { class: "card" }, [
-          MugenUI.el("h2", {}, "Izin + Cuti (Gabungan)"),
-          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
-        ]));
-      }
-    } else {
-      if (saldo.kuota_izin != null) {
-        grid.appendChild(MugenUI.el("div", { class: "card" }, [
-          MugenUI.el("h2", {}, "Izin"),
-          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_izin} / ${saldo.kuota_izin} hari`),
-        ]));
-      }
-      if (saldo.kuota_cuti != null) {
-        grid.appendChild(MugenUI.el("div", { class: "card" }, [
-          MugenUI.el("h2", {}, "Cuti"),
-          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_cuti} / ${saldo.kuota_cuti} hari`),
-        ]));
-      }
+    if (saldo.kuota_gabungan != null) {
+      grid.appendChild(MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("h2", {}, "Izin + Cuti"),
+        MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
+      ]));
     }
     if (grid.children.length > 0) card.appendChild(grid);
     root.appendChild(card);

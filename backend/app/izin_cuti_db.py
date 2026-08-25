@@ -37,21 +37,35 @@ STATUS_VALID = {"pending", "disetujui", "ditolak"}
 _JENIS_LABEL = {"izin": "Izin", "cuti": "Cuti"}
 
 # FITUR Kebijakan Cuti Dinamis (feedback Owner) + REVISI Sistem Dinamis
-# Cuti & Izin (permintaan Owner, Agustus 2026, lihat izin_cuti_migrasi.py):
-# SEMUA nilai di sini 0/off/'terpisah' secara default -- tenant yang belum
-# pernah membuka kartu "Pengaturan Izin & Cuti" (menu Pengaturan >
+# Cuti & Izin (permintaan Owner, Agustus 2026, lihat izin_cuti_migrasi.py)
+# + PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner, revisi
+# berikutnya): SEMUA nilai di sini 0/off secara default -- tenant yang
+# belum pernah membuka kartu "Pengaturan Izin & Cuti" (menu Pengaturan >
 # Karyawan) TIDAK terpengaruh sama sekali, byte-for-byte sama seperti
 # sebelum fitur ini ada.
 #
-# ATURAN IZIN & CUTI SENGAJA DIPISAH TOTAL (permintaan Owner eksplisit --
-# mengubah salah satu TIDAK BOLEH memengaruhi yang lain): H-min pakai
-# field terpisah (h_min_pengajuan = cuti, h_min_pengajuan_izin = izin).
-# Kuota juga py field terpisah per jenis (kuota_maksimal_hari = cuti,
-# kuota_izin_hari = izin) KECUALI mode_kuota='gabungan', di mana keduanya
-# memakai SATU saldo bersama (kuota_gabungan_hari) -- lihat
-# _validasi_kebijakan_pengajuan() di bawah. `maksimal_bersamaan` (batas
-# jumlah karyawan cuti bersamaan) TETAP HANYA berlaku utk jenis='cuti'
-# (tidak diminta Owner untuk izin, cakupan sengaja tidak diperluas).
+# PERBAIKAN MODEL KUOTA (permintaan Owner eksplisit, menggantikan
+# "mode_kuota" lama yang bisa dipilih 'terpisah'/'gabungan'): SEKARANG
+# HANYA SATU model yang didukung -- SATU saldo kuota BERSAMA untuk Izin +
+# Cuti (kuota_gabungan_hari), TIDAK ADA LAGI kuota_izin/kuota_cuti
+# terpisah. `kuota_maksimal_hari`/`kuota_izin_hari`/`h_min_pengajuan_izin`
+# TETAP ada sebagai kolom DB (supaya tidak perlu migrasi DROP COLUMN yang
+# berisiko) tapi SUDAH TIDAK DIBACA sama sekali oleh mesin kebijakan di
+# bawah -- murni sisa historis, lihat izin_cuti_migrasi.py::
+# migrasi_konsolidasi_kuota_gabungan() untuk migrasi data tenant yang
+# SUDAH TERLANJUR memakai mode 'terpisah'.
+#
+# ATURAN PENGAJUAN tetap dibedakan per jenis (BUKAN saldo-nya):
+#   - IZIN: boleh diajukan mendadak (TIDAK ada H-min sama sekali, TIDAK
+#     mengikuti h_min_pengajuan milik Cuti) TAPI maksimal
+#     MAKS_IZIN_HARI_BERTURUT (2) hari berturut-turut per pengajuan --
+#     lebih dari itu WAJIB pakai jenis Cuti.
+#   - CUTI: H-min pengajuan dinamis (h_min_pengajuan, Owner-editable,
+#     TIDAK di-hardcode ke angka tertentu) + `maksimal_bersamaan` (batas
+#     jumlah karyawan cuti bersamaan pada tanggal yang sama, HANYA
+#     berlaku cuti, dinamis Owner-editable).
+# Saldo kuota (kuota_gabungan_hari) berlaku SAMA untuk kedua jenis --
+# lihat _validasi_kebijakan_pengajuan() di bawah.
 #
 # Periode kuota TIDAK LAGI selalu diangkar ke Januari (tahun kalender) --
 # `periode_mulai_dasar` (tanggal, Owner-editable) jadi titik angkar bebas,
@@ -63,19 +77,23 @@ _JENIS_LABEL = {"izin": "Izin", "cuti": "Cuti"}
 # `izin_cuti_saldo_awal`, murni catatan/tampilan, di izin_cuti_migrasi.py).
 DEFAULT_CUTI_SETTINGS = {
     "kuota_periode_bulan": 0,      # 0 = kuota TIDAK digunakan
-    "kuota_maksimal_hari": 0,      # kuota CUTI (mode 'terpisah')
+    "kuota_maksimal_hari": 0,      # SISA HISTORIS (mode 'terpisah' lama) -- TIDAK dibaca lagi
     "kuota_boleh_dipecah": True,
     "h_min_pengajuan": 0,          # H-min CUTI -- 0 = tidak ada minimal H- sama sekali
     "maksimal_bersamaan": 0,       # 0 = tidak dibatasi -- HANYA cuti
-    "mode_kuota": "terpisah",      # 'terpisah' | 'gabungan'
-    "kuota_izin_hari": 0,          # kuota IZIN (mode 'terpisah')
-    "kuota_gabungan_hari": 0,      # kuota BERSAMA izin+cuti (mode 'gabungan')
+    "mode_kuota": "gabungan",      # SATU-SATUNYA model yang didukung sekarang (dipaksa di set_cuti_settings())
+    "kuota_izin_hari": 0,          # SISA HISTORIS (mode 'terpisah' lama) -- TIDAK dibaca lagi
+    "kuota_gabungan_hari": 0,      # SATU-SATUNYA kuota aktif: saldo bersama izin+cuti
     "periode_mulai_dasar": None,   # tanggal YYYY-MM-DD, angkar periode -- None = kuota periode nonaktif
-    "h_min_pengajuan_izin": 0,     # H-min IZIN -- terpisah total dari h_min_pengajuan (cuti)
+    "h_min_pengajuan_izin": 0,     # SISA HISTORIS -- Izin TIDAK PERNAH punya H-min lagi, TIDAK dibaca lagi
     "auto_libur_tidak_absen_aktif": False,  # lihat auto_libur_db.py -- default OFF
 }
 
-MODE_KUOTA_VALID = {"terpisah", "gabungan"}
+# PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner): satu pengajuan
+# Izin maksimal sekian hari BERTURUT-TURUT -- lebih dari itu WAJIB pakai
+# Cuti. Ini aturan bisnis tetap (bukan konfigurasi periode/kuota/H-min
+# yang diminta Owner dinamis), beda dengan angka-angka lain di modul ini.
+MAKS_IZIN_HARI_BERTURUT = 2
 
 
 def _hari_ini_wib() -> str:
@@ -157,7 +175,7 @@ def _pastikan_baris_settings(conn, tenant_id: int):
                                             mode_kuota, kuota_izin_hari, kuota_gabungan_hari,
                                             periode_mulai_dasar, h_min_pengajuan_izin,
                                             auto_libur_tidak_absen_aktif)
-           VALUES (?, 0, 0, 1, 0, 0, 'terpisah', 0, 0, NULL, 0, 0) ON CONFLICT DO NOTHING""",
+           VALUES (?, 0, 0, 1, 0, 0, 'gabungan', 0, 0, NULL, 0, 0) ON CONFLICT DO NOTHING""",
         (tenant_id,),
     )
 
@@ -177,37 +195,29 @@ def get_cuti_settings(tenant_id: int) -> dict:
 def set_cuti_settings(tenant_id: int, **fields) -> dict:
     """`fields` boleh sebagian saja (None = pertahankan nilai lama) -- pola
     sama seperti attendance_db.set_settings()/uang_harian_dinamis_db.set_config().
-    REVISI Sistem Dinamis Cuti & Izin: `mode_kuota` menentukan kuota mana
-    yang wajib diisi kalau kuota periode diaktifkan -- 'terpisah' butuh
-    MINIMAL SALAH SATU dari kuota_maksimal_hari (cuti) atau kuota_izin_hari
-    (izin), 'gabungan' butuh kuota_gabungan_hari. `periode_mulai_dasar`
-    (tanggal angkar periode) WAJIB diisi begitu kuota periode diaktifkan --
-    lihat izin_cuti_db.py modul docstring/_periode_kuota() kenapa ini
-    menggantikan angkar Januari yang lama."""
+    PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner): `mode_kuota`
+    DIPAKSA selalu 'gabungan' di sini -- model 'terpisah' (saldo izin/cuti
+    sendiri-sendiri) DIHAPUS, TIDAK BISA diaktifkan lagi lewat parameter
+    apa pun (lihat DEFAULT_CUTI_SETTINGS untuk penjelasan lengkap).
+    `periode_mulai_dasar` (tanggal angkar periode) WAJIB diisi begitu
+    kuota periode diaktifkan -- lihat izin_cuti_db.py modul docstring/
+    _periode_kuota() kenapa ini menggantikan angkar Januari yang lama."""
     existing = get_cuti_settings(tenant_id)
     baru = dict(existing)
     for key in DEFAULT_CUTI_SETTINGS:
         if key in fields and fields[key] is not None:
             baru[key] = fields[key]
+    baru["mode_kuota"] = "gabungan"
 
-    for key in ("kuota_periode_bulan", "kuota_maksimal_hari", "h_min_pengajuan", "maksimal_bersamaan",
-                "kuota_izin_hari", "kuota_gabungan_hari", "h_min_pengajuan_izin"):
+    for key in ("kuota_periode_bulan", "h_min_pengajuan", "maksimal_bersamaan", "kuota_gabungan_hari"):
         if int(baru[key]) < 0:
             raise ValueError(f"{key} tidak boleh negatif.")
-    if baru["mode_kuota"] not in MODE_KUOTA_VALID:
-        raise ValueError(f"mode_kuota tidak dikenal: {baru['mode_kuota']!r} (harus 'terpisah' atau 'gabungan').")
 
     if int(baru["kuota_periode_bulan"]) > 0:
         if not baru.get("periode_mulai_dasar"):
             raise ValueError("Tanggal Mulai Periode wajib diisi kalau Periode Kuota diaktifkan.")
-        if baru["mode_kuota"] == "gabungan":
-            if int(baru["kuota_gabungan_hari"]) <= 0:
-                raise ValueError("Kuota Gabungan (hari) wajib diisi lebih dari 0 kalau Periode Kuota "
-                                  "diaktifkan (Mode Gabungan).")
-        else:
-            if int(baru["kuota_maksimal_hari"]) <= 0 and int(baru["kuota_izin_hari"]) <= 0:
-                raise ValueError("Minimal salah satu dari Kuota Cuti atau Kuota Izin (hari) wajib diisi "
-                                  "lebih dari 0 kalau Periode Kuota diaktifkan.")
+        if int(baru["kuota_gabungan_hari"]) <= 0:
+            raise ValueError("Kuota Izin & Cuti (hari) wajib diisi lebih dari 0 kalau Periode Kuota diaktifkan.")
 
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -331,18 +341,6 @@ def _jumlah_bersamaan_maksimal(tenant_id: int, tanggal_mulai: str, tanggal_seles
     return maksimal_per_hari
 
 
-def _kuota_field_untuk(jenis: str, mode_kuota: str) -> tuple:
-    """Return (nama_field_kuota_di_settings, jenis_filter_untuk_hitung_terpakai,
-    label_untuk_pesan_error). mode 'gabungan': izin & cuti berbagi SATU
-    saldo (kuota_gabungan_hari, jenis_filter=None = keduanya dijumlahkan).
-    mode 'terpisah' (default): masing-masing jenis punya saldo sendiri."""
-    if mode_kuota == "gabungan":
-        return "kuota_gabungan_hari", None, "izin & cuti (gabungan)"
-    if jenis == "cuti":
-        return "kuota_maksimal_hari", "cuti", "cuti"
-    return "kuota_izin_hari", "izin", "izin"
-
-
 def _validasi_kebijakan_pengajuan(barber_id: int, tenant_id: int, jenis: str, tanggal_mulai: str,
                                    tanggal_selesai: str, kecuali_pengajuan_id: int = None) -> None:
     """Raise ValueError (pesan siap tampil) kalau melanggar kebijakan --
@@ -350,63 +348,68 @@ def _validasi_kebijakan_pengajuan(barber_id: int, tenant_id: int, jenis: str, ta
     `override` di buat_pengajuan()/edit_pengajuan() di bawah -- Owner/
     Admin/Staff SELALU boleh melewati kebijakan ini).
 
-    REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): dulu fungsi ini
-    HANYA berlaku jenis='cuti' (izin 100% terkecuali) -- sekarang izin
-    JUGA divalidasi, tapi lewat field pengaturan SENDIRI yang terpisah
-    total dari cuti (h_min_pengajuan_izin/kuota_izin_hari, BUKAN
-    h_min_pengajuan/kuota_maksimal_hari milik cuti) -- default-nya tetap
-    0/off, jadi tenant yang belum pernah mengatur apa pun TIDAK
-    terpengaruh (izin tetap bisa diajukan kapan saja seperti sebelumnya).
-    `maksimal_bersamaan` TETAP HANYA berlaku cuti (tidak diperluas ke
-    izin -- tidak diminta Owner)."""
+    PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner): saldo kuota
+    SATU (kuota_gabungan_hari, berlaku sama untuk kedua jenis) TAPI aturan
+    PENGAJUAN tetap dibedakan per jenis:
+      - IZIN: TIDAK ADA H-min sama sekali (boleh mendadak) TAPI maksimal
+        MAKS_IZIN_HARI_BERTURUT hari berturut-turut per pengajuan -- lebih
+        dari itu WAJIB pakai Cuti.
+      - CUTI: H-min dinamis (h_min_pengajuan, Owner-editable) +
+        `maksimal_bersamaan` (batas jumlah karyawan cuti bersamaan pada
+        tanggal yang sama, dinamis Owner-editable)."""
     if tenant_id is None:
         return
     settings = get_cuti_settings(tenant_id)
+    durasi_baru = _hitung_durasi_hari(tanggal_mulai, tanggal_selesai)
 
-    h_min_key = "h_min_pengajuan" if jenis == "cuti" else "h_min_pengajuan_izin"
-    h_min = settings[h_min_key]
-    if h_min > 0:
-        selisih_hari = (datetime.strptime(tanggal_mulai, "%Y-%m-%d").date()
-                         - datetime.strptime(_hari_ini_wib(), "%Y-%m-%d").date()).days
-        if selisih_hari < h_min:
-            label_jenis = _JENIS_LABEL.get(jenis, jenis).lower()
+    if jenis == "izin":
+        if durasi_baru > MAKS_IZIN_HARI_BERTURUT:
             raise ValueError(
-                f"Pengajuan {label_jenis} harus dilakukan minimal H-{h_min} sebelum tanggal {label_jenis}."
+                f"Pengajuan Izin maksimal {MAKS_IZIN_HARI_BERTURUT} hari berturut-turut. "
+                f"Gunakan Cuti untuk durasi lebih dari itu."
             )
+    else:  # cuti
+        h_min = settings["h_min_pengajuan"]
+        if h_min > 0:
+            selisih_hari = (datetime.strptime(tanggal_mulai, "%Y-%m-%d").date()
+                             - datetime.strptime(_hari_ini_wib(), "%Y-%m-%d").date()).days
+            if selisih_hari < h_min:
+                raise ValueError(f"Pengajuan Cuti harus dilakukan minimal H-{h_min} sebelum tanggal cuti.")
 
-    if jenis == "cuti" and settings["maksimal_bersamaan"] > 0:
-        jumlah = _jumlah_bersamaan_maksimal(tenant_id, tanggal_mulai, tanggal_selesai,
-                                             kecuali_barber_id=barber_id,
-                                             kecuali_pengajuan_id=kecuali_pengajuan_id)
-        if jumlah + 1 > settings["maksimal_bersamaan"]:
-            raise ValueError(
-                f"Sudah ada {jumlah} karyawan lain yang cuti pada salah satu tanggal di rentang ini "
-                f"(maksimal {settings['maksimal_bersamaan']} orang bersamaan)."
-            )
+        if settings["maksimal_bersamaan"] > 0:
+            jumlah = _jumlah_bersamaan_maksimal(tenant_id, tanggal_mulai, tanggal_selesai,
+                                                 kecuali_barber_id=barber_id,
+                                                 kecuali_pengajuan_id=kecuali_pengajuan_id)
+            if jumlah + 1 > settings["maksimal_bersamaan"]:
+                raise ValueError(
+                    f"Kuota jumlah karyawan Cuti pada tanggal tersebut sudah penuh "
+                    f"(maksimal {settings['maksimal_bersamaan']} orang bersamaan)."
+                )
 
-    # REVISI Sistem Dinamis: kuota periode HANYA berlaku untuk tanggal_mulai
-    # >= periode_mulai_dasar -- tanggal SEBELUM itu (data lama, sebelum
-    # sistem kuota dinamis diaktifkan) tidak pernah divalidasi lewat mesin
-    # ini (lihat izin_cuti_saldo_awal, tabel riwayat/catatan terpisah).
+    # PERBAIKAN Sistem Kuota IZIN & CUTI: SATU saldo bersama (kuota_gabungan_hari)
+    # berlaku untuk KEDUA jenis -- Izin maupun Cuti mengurangi saldo yang
+    # sama (jenis_filter=None di _kuota_terpakai_hari() menjumlahkan
+    # keduanya). Kuota periode HANYA berlaku untuk tanggal_mulai >=
+    # periode_mulai_dasar -- tanggal SEBELUM itu (data lama, sebelum sistem
+    # kuota dinamis diaktifkan) tidak pernah divalidasi lewat mesin ini
+    # (lihat izin_cuti_saldo_awal, tabel riwayat/catatan terpisah).
     if (settings["kuota_periode_bulan"] > 0 and settings["periode_mulai_dasar"]
             and tanggal_mulai >= settings["periode_mulai_dasar"]):
-        kuota_field, jenis_filter, label = _kuota_field_untuk(jenis, settings["mode_kuota"])
-        kuota = settings[kuota_field]
+        kuota = settings["kuota_gabungan_hari"]
         if kuota > 0:
             periode_awal, periode_akhir = _periode_kuota(tanggal_mulai, settings["kuota_periode_bulan"],
                                                            settings["periode_mulai_dasar"])
-            terpakai = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, jenis_filter,
+            terpakai = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, None,
                                              kecuali_pengajuan_id=kecuali_pengajuan_id)
             if not settings["kuota_boleh_dipecah"] and terpakai > 0:
                 raise ValueError(
-                    f"Kuota {label} periode ini tidak boleh dipecah, dan sudah ada pengajuan lain "
-                    f"di periode yang sama."
+                    "Kuota Izin & Cuti periode ini tidak boleh dipecah, dan sudah ada pengajuan lain "
+                    "di periode yang sama."
                 )
-            durasi_baru = _hitung_durasi_hari(tanggal_mulai, tanggal_selesai)
             if terpakai + durasi_baru > kuota:
                 sisa = max(0, kuota - terpakai)
                 raise ValueError(
-                    f"Kuota {label} periode ini ({periode_awal} s/d {periode_akhir}) tersisa {sisa} hari, "
+                    f"Kuota Izin & Cuti periode ini ({periode_awal} s/d {periode_akhir}) tersisa {sisa} hari, "
                     f"pengajuan ini {durasi_baru} hari."
                 )
 
@@ -430,22 +433,23 @@ def get_saldo_awal(tenant_id: int, barber_id: int = None) -> list:
 
 
 def get_sisa_kuota(barber_id: int, tenant_id: int) -> dict:
-    """REVISI Sistem Dinamis Cuti & Izin: hitung sisa kuota SAAT INI
-    (periode aktif yang mencakup hari ini) untuk ditampilkan ke barber/
-    Owner -- TIDAK PERNAH menyimpan angka saldo yang bisa "basi"/tidak
-    sinkron (dihitung ULANG live dari riwayat pengajuan tiap dipanggil,
-    pola sama seperti _validasi_kebijakan_pengajuan()). Kalau kuota
-    periode belum diaktifkan (kuota_periode_bulan=0 atau
-    periode_mulai_dasar kosong) ATAU hari ini masih sebelum
-    periode_mulai_dasar, `aktif`=False dan seluruh field sisa/kuota None
-    (lihat get_saldo_awal() untuk catatan historis sebelum periode aktif)."""
+    """REVISI Sistem Dinamis Cuti & Izin + PERBAIKAN Sistem Kuota IZIN &
+    CUTI: hitung sisa kuota SAAT INI (periode aktif yang mencakup hari
+    ini) untuk ditampilkan ke barber/Owner -- TIDAK PERNAH menyimpan
+    angka saldo yang bisa "basi"/tidak sinkron (dihitung ULANG live dari
+    riwayat pengajuan tiap dipanggil, pola sama seperti
+    _validasi_kebijakan_pengajuan()). Kalau kuota periode belum diaktifkan
+    (kuota_periode_bulan=0 atau periode_mulai_dasar kosong) ATAU hari ini
+    masih sebelum periode_mulai_dasar, `aktif`=False dan seluruh field
+    sisa/kuota None (lihat get_saldo_awal() untuk catatan historis sebelum
+    periode aktif). `mode_kuota` di response SELALU "gabungan" (SATU-
+    SATUNYA model yang didukung sekarang) -- dipertahankan di response
+    murni supaya frontend lama (izin_cuti.js) tidak perlu berubah."""
     settings = get_cuti_settings(tenant_id)
     hari_ini = _hari_ini_wib()
     hasil = {
-        "aktif": False, "mode_kuota": settings["mode_kuota"],
+        "aktif": False, "mode_kuota": "gabungan",
         "periode_awal": None, "periode_akhir": None,
-        "sisa_izin": None, "kuota_izin": None,
-        "sisa_cuti": None, "kuota_cuti": None,
         "sisa_gabungan": None, "kuota_gabungan": None,
     }
     if not (settings["kuota_periode_bulan"] > 0 and settings["periode_mulai_dasar"]
@@ -456,21 +460,11 @@ def get_sisa_kuota(barber_id: int, tenant_id: int) -> dict:
     hasil["aktif"] = True
     hasil["periode_awal"] = periode_awal
     hasil["periode_akhir"] = periode_akhir
-    if settings["mode_kuota"] == "gabungan":
-        kuota = settings["kuota_gabungan_hari"]
-        if kuota > 0:
-            terpakai = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, None)
-            hasil["kuota_gabungan"] = kuota
-            hasil["sisa_gabungan"] = max(0, kuota - terpakai)
-    else:
-        if settings["kuota_izin_hari"] > 0:
-            terpakai_izin = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, "izin")
-            hasil["kuota_izin"] = settings["kuota_izin_hari"]
-            hasil["sisa_izin"] = max(0, settings["kuota_izin_hari"] - terpakai_izin)
-        if settings["kuota_maksimal_hari"] > 0:
-            terpakai_cuti = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, "cuti")
-            hasil["kuota_cuti"] = settings["kuota_maksimal_hari"]
-            hasil["sisa_cuti"] = max(0, settings["kuota_maksimal_hari"] - terpakai_cuti)
+    kuota = settings["kuota_gabungan_hari"]
+    if kuota > 0:
+        terpakai = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, None)
+        hasil["kuota_gabungan"] = kuota
+        hasil["sisa_gabungan"] = max(0, kuota - terpakai)
     return hasil
 
 

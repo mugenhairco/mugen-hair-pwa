@@ -78,7 +78,7 @@ import kasbon_db
 import komisi_penyesuaian_db
 import reimburse_db
 import izin_cuti_db
-from izin_cuti_migrasi import migrasi_izin_cuti, seed_konfigurasi_awal_agustus_2026  # REVISI Sistem Dinamis Cuti & Izin: kolom kuota/periode dinamis (idempotent, jalur SQLite) + seed saldo awal Agustus 2026 (portable, kedua jalur DB)
+from izin_cuti_migrasi import migrasi_izin_cuti, seed_konfigurasi_awal_agustus_2026, migrasi_konsolidasi_kuota_gabungan  # REVISI Sistem Dinamis Cuti & Izin: kolom kuota/periode dinamis (idempotent, jalur SQLite) + seed saldo awal Agustus 2026 (portable, kedua jalur DB) + PERBAIKAN Sistem Kuota IZIN & CUTI: lipat mode 'terpisah' lama jadi 'gabungan' (portable, kedua jalur DB)
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
@@ -450,6 +450,7 @@ def on_startup():
     _reset_admin_darurat()
     _bootstrap_superadmin_pertama()
     seed_konfigurasi_awal_agustus_2026()  # REVISI Sistem Dinamis Cuti & Izin: seed saldo cuti akhir Agustus 2026 (5 karyawan) + konfigurasi periode dinamis pertama -- SEKALI SAJA, HANYA tenant yang cocok (idempotent, portable KEDUA jalur DB, lihat izin_cuti_migrasi.py)
+    migrasi_konsolidasi_kuota_gabungan()  # PERBAIKAN Sistem Kuota IZIN & CUTI: lipat tenant yang masih mode_kuota='terpisah' jadi 'gabungan' (idempotent, portable KEDUA jalur DB, lihat izin_cuti_migrasi.py)
 
     # Migrasi Cloudflare R2 (Storage File): dicatat sekali saat boot supaya
     # langsung kelihatan di log Render kalau env var R2_* belum lengkap

@@ -831,7 +831,17 @@
 // direkap jadi Cuti & mengurangi kuota Cuti -- default OFF, diaktifkan +
 // dipicu manual per bulan lewat Pengaturan Izin & Cuti (TIDAK ADA
 // scheduler di proyek ini, lihat auto_libur_db.py).
-const ASSET_VERSION = "153";
+// v153 -> v154: PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner) --
+// model kuota "Terpisah" (saldo Izin & Cuti sendiri-sendiri) DIHAPUS,
+// SEKARANG HANYA SATU saldo kuota BERSAMA Izin+Cuti (kuota_gabungan_hari)
+// yang didukung. Aturan pengajuan tetap beda per jenis: Izin boleh
+// mendadak (tanpa H-min) tapi maksimal 2 hari berturut-turut per
+// pengajuan (lebih dari itu wajib pakai Cuti); Cuti tetap pakai Minimal
+// H- dinamis + Maksimal Cuti Bersamaan dinamis (keduanya Owner-editable,
+// tidak berubah). Data tenant yang sudah terlanjur memakai mode
+// "Terpisah" otomatis dilipat jadi kuota gabungan saat boot (idempotent,
+// lihat izin_cuti_migrasi.py::migrasi_konsolidasi_kuota_gabungan()).
+const ASSET_VERSION = "154";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
