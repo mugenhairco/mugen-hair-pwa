@@ -794,7 +794,10 @@
 // seperti WhatsApp/Log Error). WhatsApp dipindah dari tab Setting jadi
 // menu utama sidebar sendiri (pages/whatsapp.js baru). Hamburger mobile
 // disembunyikan selama sidebar terbuka supaya tidak menutupi logo toko.
-const ASSET_VERSION = "148";
+// v148 -> v149: REVISI feedback Owner -- halaman WhatsApp (pages/whatsapp.js):
+// hapus 2 paragraf keterangan (deskripsi fitur & cara hubungkan ke Fonnte),
+// label "Token API Fonnte" jadi "Token API" saja.
+const ASSET_VERSION = "149";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

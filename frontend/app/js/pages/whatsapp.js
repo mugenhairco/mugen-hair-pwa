@@ -15,10 +15,6 @@ const PageWhatsapp = (() => {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Notifikasi WhatsApp Booking"));
-    card.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Kirim pesan WhatsApp otomatis ke customer dari nomor WhatsApp toko ini sendiri, lewat Fonnte (fonnte.com): " +
-      "saat customer memilih pembayaran QRIS (reminder segera bayar), saat pembayaran diverifikasi (manual maupun " +
-      "otomatis lewat Payment Gateway), dan saat booking dibatalkan karena belum dibayar."));
 
     // AUDIT (enforcement paket/subscription): tab ini digerbang fitur
     // "whatsapp_reminder" (backend juga menggerbang GET/PUT
@@ -41,12 +37,10 @@ const PageWhatsapp = (() => {
     card.appendChild(MugenUI.el("div", { class: "badge " + (s.aktif ? "badge-success" : "badge-libur"),
       style: "margin-bottom:12px;" }, s.aktif ? "Aktif" : "Belum Diaktifkan"));
 
-    card.appendChild(MugenUI.el("label", {}, "Token API Fonnte"));
+    card.appendChild(MugenUI.el("label", {}, "Token API"));
     const inputToken = MugenUI.el("input", { type: "text", value: s.fonnte_token || "",
       placeholder: "Tempel token dari dashboard Fonnte Anda" });
     card.appendChild(inputToken);
-    card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" },
-      "Hubungkan nomor WhatsApp toko Anda ke Fonnte (scan QR di dashboard Fonnte), lalu tempel token API-nya di sini."));
 
     const errorBox = MugenUI.el("div", { class: "login-error" });
     const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Token");
