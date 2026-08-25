@@ -417,9 +417,52 @@ const PageAbsensi = (() => {
           MugenUI.infoModal({ title: "Gagal", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
         }
       }
-      btnCheckIn.addEventListener("click", () => lakukanAksi(btnCheckIn, "/api/attendance/check-in", "Check In berhasil.", {
-        title: "Konfirmasi Check In", message: "Anda akan Check In sekarang menggunakan lokasi perangkat ini. Lanjutkan?", confirmText: "Check In",
-      }));
+      // PERMINTAAN OWNER: Check In yang ternyata jatuh di tengah rentang
+      // Cuti/Izin yang sudah disetujui butuh alur KHUSUS (konfirmasi
+      // TAMBAHAN + kirim ulang dengan flag konfirmasi_cuti_izin) -- tidak
+      // bisa dipakaikan lakukanAksi() generik di atas (dipakai Check Out
+      // apa adanya). Backend membalas 409 dengan detail.sedang_cuti_izin
+      // (lihat routers/attendance.py::check_in()) SEBELUM check-in benar-
+      // benar diproses kalau flag itu belum dikirim.
+      async function checkIn() {
+        const ok = await MugenUI.confirmModal({
+          title: "Konfirmasi Check In",
+          message: "Anda akan Check In sekarang menggunakan lokasi perangkat ini. Lanjutkan?",
+          confirmText: "Check In",
+        });
+        if (!ok) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnCheckIn, async () => {
+            const coords = await ambilLokasi();
+            const payloadDasar = {
+              latitude: coords.latitude, longitude: coords.longitude,
+              accuracy: coords.accuracy, speed: coords.speed, heading: coords.heading,
+            };
+            try {
+              return await MugenApi.post("/api/attendance/check-in", payloadDasar);
+            } catch (e) {
+              const info = e.status === 409 && e.detail && e.detail.detail && e.detail.detail.sedang_cuti_izin;
+              if (!info) throw e;
+              const jenisLabel = info.jenis === "izin" ? "Izin" : "Cuti";
+              const lanjut = await MugenUI.confirmModal({
+                title: `Sedang Tercatat ${jenisLabel}`,
+                message: `Anda tercatat sedang ${jenisLabel} hari ini (${info.tanggal_mulai} s/d ${info.tanggal_selesai}). ` +
+                  "Lanjutkan Check In? Sisa hari yang belum dijalani akan disesuaikan dan kuotanya dikembalikan.",
+                confirmText: "Ya, Check In",
+              });
+              if (!lanjut) return null;
+              return await MugenApi.post("/api/attendance/check-in", { ...payloadDasar, konfirmasi_cuti_izin: true });
+            }
+          });
+          if (hasil === null) return; // membatalkan konfirmasi Cuti/Izin
+          const disesuaikan = hasil && hasil.cuti_izin_disesuaikan;
+          MugenUI.toast("Check In berhasil." + (disesuaikan ? " Cuti/Izin hari ini disesuaikan, kuota dikembalikan." : ""), "success");
+          load();
+        } catch (e) {
+          MugenUI.infoModal({ title: "Gagal", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
+        }
+      }
+      btnCheckIn.addEventListener("click", checkIn);
       btnCheckOut.addEventListener("click", () => lakukanAksi(btnCheckOut, "/api/attendance/check-out", "Check Out berhasil.", {
         title: "Konfirmasi Check Out", message: "Anda akan Check Out sekarang menggunakan lokasi perangkat ini. Lanjutkan?", confirmText: "Check Out",
       }));

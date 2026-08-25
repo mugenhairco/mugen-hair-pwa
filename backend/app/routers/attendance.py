@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 import attendance_db
 import auto_libur_db
+import izin_cuti_db
 import laporan_pdf
 import permissions
 from auth import (get_current_user, require_admin, require_barber, require_feature, require_owner_or_staff,
@@ -157,6 +158,11 @@ class GpsBody(BaseModel):
     accuracy: float | None = None
     speed: float | None = None
     heading: float | None = None
+    # PERMINTAAN OWNER: barber Check In padahal tercatat sedang Cuti/Izin
+    # (disetujui) harus dikonfirmasi dulu -- False (default) di percobaan
+    # PERTAMA memicu 409 (lihat di bawah), frontend menampilkan dialog
+    # konfirmasi lalu mengirim ULANG dengan field ini True.
+    konfirmasi_cuti_izin: bool = False
 
 
 @router.post("/check-in")
@@ -164,8 +170,26 @@ def check_in(body: GpsBody, request: Request, user: dict = Depends(require_barbe
     if user.get("barber_id") is None:
         raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
     browser, device, ip = _ekstrak_metadata(request)
+    # PERMINTAAN OWNER: kalau barber ternyata masuk kerja (Check In)
+    # padahal tercatat sedang Cuti/Izin (disetujui) hari ini, konfirmasi
+    # dulu -- lihat izin_cuti_db.py::get_pengajuan_aktif_pada_tanggal()/
+    # potong_karena_checkin().
+    tanggal_hari_ini = attendance_db.tanggal_hari_ini()
+    pengajuan_aktif = izin_cuti_db.get_pengajuan_aktif_pada_tanggal(user["barber_id"], tanggal_hari_ini)
+    if pengajuan_aktif is not None and not body.konfirmasi_cuti_izin:
+        jenis_label = "Izin" if pengajuan_aktif["jenis"] == "izin" else "Cuti"
+        raise HTTPException(status_code=409, detail={
+            "message": f"Anda tercatat sedang {jenis_label} hari ini "
+                       f"({pengajuan_aktif['tanggal_mulai']} s/d {pengajuan_aktif['tanggal_selesai']}). "
+                       "Lanjutkan Check In? Sisa hari yang belum dijalani akan disesuaikan dan kuotanya kembali.",
+            "sedang_cuti_izin": {
+                "jenis": pengajuan_aktif["jenis"],
+                "tanggal_mulai": pengajuan_aktif["tanggal_mulai"],
+                "tanggal_selesai": pengajuan_aktif["tanggal_selesai"],
+            },
+        })
     try:
-        return attendance_db.check_in(
+        hasil = attendance_db.check_in(
             user["tenant_id"], user["barber_id"], body.latitude, body.longitude, accuracy=body.accuracy,
             speed=body.speed, heading=body.heading, browser=browser, device=device, ip_address=ip,
         )
@@ -174,6 +198,9 @@ def check_in(body: GpsBody, request: Request, user: dict = Depends(require_barbe
                                    latitude=body.latitude, longitude=body.longitude, accuracy=body.accuracy,
                                    browser=browser, device=device, ip_address=ip, tenant_id=user["tenant_id"])
         raise HTTPException(status_code=422, detail=str(e))
+    if pengajuan_aktif is not None:
+        hasil["cuti_izin_disesuaikan"] = izin_cuti_db.potong_karena_checkin(pengajuan_aktif["id"], tanggal_hari_ini)
+    return hasil
 
 
 @router.post("/check-out")

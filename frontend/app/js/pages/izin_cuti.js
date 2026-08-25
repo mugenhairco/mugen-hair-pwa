@@ -319,6 +319,25 @@ const PageIzinCuti = (() => {
       }
     }
 
+    // PERMINTAAN OWNER: batalkan pengajuan yang SUDAH disetujui (mis.
+    // barber ternyata tetap masuk kerja padahal tercatat Cuti/Izin) --
+    // kuota kembali otomatis, lihat routers/izin_cuti.py::batalkan_pengajuan().
+    async function batalkanPengajuan(btn, id) {
+      const ok = await MugenUI.confirmModal({
+        title: "Batalkan Pengajuan",
+        message: "Pengajuan yang sudah Disetujui ini akan DIHAPUS dan kuotanya dikembalikan. Lanjutkan?",
+        confirmText: "Batalkan Pengajuan",
+      });
+      if (!ok) return;
+      try {
+        await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/izin-cuti/${id}/batalkan`, {}));
+        MugenUI.toast("Pengajuan dibatalkan, kuota dikembalikan.", "success");
+        loadList();
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    }
+
     // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
     // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
     async function loadList() {
@@ -344,6 +363,20 @@ const PageIzinCuti = (() => {
             { key: "status", label: "Status", format: badgeStatus },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
+                if (r.status === "disetujui") {
+                  const wrapDisetujui = MugenUI.el("div", { class: "actions-cell" });
+                  if (r.catatan_approval) {
+                    wrapDisetujui.appendChild(MugenUI.el("span", { class: "subtitle" }, `Catatan: ${r.catatan_approval}`));
+                  }
+                  if (bolehEdit) {
+                    // PERMINTAAN OWNER: tombol Batalkan untuk pengajuan yang
+                    // sudah disetujui (mis. barber ternyata tetap masuk kerja).
+                    const btnBatalkan = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
+                    btnBatalkan.addEventListener("click", () => batalkanPengajuan(btnBatalkan, r.id));
+                    wrapDisetujui.appendChild(btnBatalkan);
+                  }
+                  return wrapDisetujui;
+                }
                 if (r.status !== "pending") {
                   return MugenUI.el("span", { class: "subtitle" }, r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-");
                 }

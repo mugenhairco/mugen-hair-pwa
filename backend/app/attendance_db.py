@@ -233,6 +233,22 @@ def _hari_ini_wib() -> str:
     return _sekarang_wib().strftime("%Y-%m-%d")
 
 
+def tanggal_hari_ini() -> str:
+    """Wrapper PUBLIK dari _hari_ini_wib() -- dipakai routers/attendance.py
+    (dan modul lain, mis. auto_libur_db.py) supaya tidak memanggil fungsi
+    ber-underscore lintas modul."""
+    return _hari_ini_wib()
+
+
+def sekarang_wib() -> datetime:
+    """Wrapper PUBLIK dari _sekarang_wib() -- dipakai auto_libur_db.py
+    (Auto-Libur real-time, cek jam_pulang) supaya tidak memanggil fungsi
+    ber-underscore lintas modul, dan supaya test bisa monkeypatch SATU
+    sumber waktu WIB yang sama (attendance_db._sekarang_wib) untuk kedua
+    modul sekaligus."""
+    return _sekarang_wib()
+
+
 def _gabung_jam(tanggal: str, jam_hhmm: str) -> datetime:
     """Gabungkan tanggal (YYYY-MM-DD) + jam (HH:MM) jadi datetime ber-zona WIB."""
     jam, menit = (int(x) for x in jam_hhmm.split(":"))

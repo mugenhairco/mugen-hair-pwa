@@ -2,9 +2,13 @@
 
 Mengikuti pola test suite yang sudah ada (conftest.py::single_tenant/
 two_tenants) -- lihat test_tenant_isolation_karyawan.py untuk pola
-isolasi tenant yang sama. Absensi SENGAJA TIDAK terhubung ke izin_cuti/
-absensi_libur (keputusan eksplisit Owner), jadi test di sini murni
-berdiri sendiri, tidak menyentuh modul lain."""
+isolasi tenant yang sama. attendance_db.py SENDIRI tetap SENGAJA TIDAK
+terhubung ke izin_cuti/absensi_libur (keputusan eksplisit Owner), jadi
+test DB-layer di sini murni berdiri sendiri. PERBAIKAN Owner (Check In
+vs Cuti/Izin aktif): jembatan lintas modul itu SEKARANG ada di ROUTER
+(routers/attendance.py::check_in()), BUKAN di attendance_db.py -- test
+untuk alur itu ada di test_izin_cuti.py (lebih relevan di sana, lihat
+test_router_checkin_saat_sedang_cuti_*), bukan di file ini."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo

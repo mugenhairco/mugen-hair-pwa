@@ -10,11 +10,16 @@ izin_cuti lain), idempotent, dan hasilnya otomatis ikut dihitung kuota
 cuti lewat mesin kuota yang sudah ada (izin_cuti_db._kuota_terpakai_hari())."""
 
 import itertools
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+import attendance_db
 import auto_libur_db
 import booking_db
 import database as db
 import izin_cuti_db
+
+WIB = ZoneInfo("Asia/Jakarta")
 
 _urutan_unik = itertools.count(1)
 
@@ -186,21 +191,13 @@ def test_tenant_lain_tidak_ikut_terpengaruh(two_tenants, monkeypatch):
         pass
 
 
-def test_router_auto_libur_butuh_permission(single_tenant):
-    client, headers = single_tenant["client"], single_tenant["headers"]
-    tenant_id = single_tenant["tenant_id"]
-    _barber(tenant_id)
-    client.put("/api/izin-cuti/pengaturan", json={"auto_libur_tidak_absen_aktif": True}, headers=headers)
-
-    r = client.post("/api/izin-cuti/auto-libur/proses", json={"tahun": 2020, "bulan": 1}, headers=headers)
-    assert r.status_code == 200
-    assert r.json()["jumlah_dibuat"] >= 0  # bulan sudah lampau jauh, boleh 0 atau lebih
-
-
-def test_router_auto_libur_gagal_kalau_belum_aktif(single_tenant):
+def test_router_auto_libur_manual_dihapus_total(single_tenant):
+    """PERMINTAAN OWNER: tombol/endpoint manual "Proses Auto-Libur" DIHAPUS
+    TOTAL -- digantikan proses otomatis real-time (lihat blok tes di bawah:
+    sweep_otomatis_tenant()/_jam_pulang_sudah_lewat())."""
     client, headers = single_tenant["client"], single_tenant["headers"]
     r = client.post("/api/izin-cuti/auto-libur/proses", json={"tahun": 2020, "bulan": 1}, headers=headers)
-    assert r.status_code == 422
+    assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -469,3 +466,80 @@ def test_router_koreksi_disetujui_membatalkan_auto_libur(single_tenant, monkeypa
     assert r_approve.status_code == 200, r_approve.text
     assert r_approve.json()["auto_libur_dibatalkan"] == {"dibatalkan_libur": True, "dibatalkan_cuti": False}
     assert db.get_hari_libur(barber_id, 2026, 7) == 1  # 07-01 dibatalkan, 07-02 tetap ada
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Auto-Libur SEKARANG real-time (tombol manual DIHAPUS
+# TOTAL) -- begitu jam_pulang tenant lewat, HARI INI SENDIRI langsung
+# diproses (sweep_otomatis_tenant()/_jam_pulang_sudah_lewat()), TANPA
+# menunggu bulan berikutnya atau klik apa pun.
+# ---------------------------------------------------------------------------
+
+def test_jam_pulang_belum_lewat_realtime_tidak_memproses_hari_ini(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id)
+    attendance_db.set_settings(tenant_id, jam_pulang="20:00")
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-05")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 5, 15, 0, tzinfo=WIB))
+
+    hasil = auto_libur_db.sweep_otomatis_tenant(tenant_id)
+    # 1-4 Juli (lampau) tetap disapu sebagai jaring pengaman, TAPI 5 Juli
+    # (hari ini) BELUM -- jam_pulang belum lewat.
+    assert hasil["jumlah_dibuat"] == 4
+    assert len(izin_cuti_db.get_pengajuan_list(barber_id=barber_id, jenis="cuti")) == 4
+
+
+def test_jam_pulang_sudah_lewat_realtime_memproses_hari_ini(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id)
+    attendance_db.set_settings(tenant_id, jam_pulang="20:00")
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-05")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 5, 20, 1, tzinfo=WIB))
+
+    hasil = auto_libur_db.sweep_otomatis_tenant(tenant_id)
+    # 1-4 Juli (lampau) + 5 Juli (hari ini, jam_pulang sudah lewat) = 5.
+    assert hasil["jumlah_dibuat"] == 5
+    assert len(izin_cuti_db.get_pengajuan_list(barber_id=barber_id, jenis="cuti")) == 5
+
+
+def test_realtime_tidak_memproses_kalau_sudah_checkin_hari_ini(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id)
+    attendance_db.set_settings(tenant_id, jam_pulang="20:00")
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO attendance_logs (barber_id, tanggal, created_at, tenant_id) VALUES (?, ?, ?, ?)",
+            (barber_id, "2026-07-05", "2026-07-05T09:00:00", tenant_id),
+        )
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-05")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 5, 20, 1, tzinfo=WIB))
+
+    hasil = auto_libur_db.sweep_otomatis_tenant(tenant_id)
+    assert hasil["jumlah_dibuat"] == 4  # 1-4 Juli saja, 5 Juli sudah check-in
+    tanggal_cuti = [p["tanggal_mulai"] for p in izin_cuti_db.get_pengajuan_list(barber_id=barber_id, jenis="cuti")]
+    assert "2026-07-05" not in tanggal_cuti
+
+
+def test_sweep_otomatis_tenant_off_default_tidak_memproses_apa_apa(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _barber(tenant_id)
+    attendance_db.set_settings(tenant_id, jam_pulang="20:00")
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-05")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 5, 20, 1, tzinfo=WIB))
+
+    hasil = auto_libur_db.sweep_otomatis_tenant(tenant_id)
+    assert hasil == {"jumlah_dibuat": 0}
+
+
+def test_router_auto_libur_manual_dihapus_total_juga_pengaturan_tetap_ada(single_tenant):
+    """Pengaturan (aktifkan + kuota_libur_bulanan) TETAP bisa diatur --
+    HANYA tombol pemicu manual yang dihapus, bukan pengaturannya."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    r = client.put("/api/izin-cuti/pengaturan",
+                    json={"auto_libur_tidak_absen_aktif": True, "kuota_libur_bulanan": 5}, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["auto_libur_tidak_absen_aktif"] is True
+    assert r.json()["kuota_libur_bulanan"] == 5

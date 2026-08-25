@@ -856,7 +856,15 @@
 // yang sama -- kuota otomatis kembali (dihitung live, bukan counter), dan
 // Owner melihat toast + tabel "Sisa Kuota" ter-refresh saat approve Koreksi
 // (absensi.js) -- lihat auto_libur_db.py::batalkan_auto_libur_untuk_tanggal().
-const ASSET_VERSION = "156";
+// v156 -> v157: PERBAIKAN Owner (3 celah logika Cuti/Izin/Libur): (1) Izin/
+// Cuti baru ditolak kalau tanggalnya sudah tercatat Libur; (2) Check In yang
+// ternyata jatuh di tengah/awal rentang Cuti/Izin yang disetujui SEKARANG
+// minta konfirmasi dulu (absensi.js), lalu memotong/membatalkan rentang itu
+// otomatis + kuota kembali; Kelola Izin (izin_cuti.js) dapat tombol
+// "Batalkan" untuk pengajuan yang sudah Disetujui; (3) Auto-Libur SEKARANG
+// otomatis real-time (begitu jam Pulang lewat) -- tombol manual "Proses
+// Auto-Libur" di Pengaturan DIHAPUS TOTAL (pengaturan.js).
+const ASSET_VERSION = "157";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

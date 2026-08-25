@@ -215,24 +215,6 @@ def ambil_saldo_awal(barber_id: int = None, user: dict = Depends(get_current_use
     return izin_cuti_db.get_saldo_awal(user["tenant_id"], barber_id=barber_id)
 
 
-class AutoLiburBody(BaseModel):
-    tahun: int
-    bulan: int
-
-
-@router.post("/auto-libur/proses")
-def proses_auto_libur(body: AutoLiburBody, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
-    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'auto-libur'
-    tidak ditangkap sebagai path parameter pengajuan_id. Pemicu MANUAL
-    (TIDAK ADA scheduler di proyek ini, lihat auto_libur_db.py) -- Owner/
-    staff (izin_cuti_karyawan) memproses satu bulan tertentu, dipanggil
-    kapan saja/berkali-kali dengan aman (idempotent)."""
-    try:
-        return auto_libur_db.proses_auto_libur(user["tenant_id"], body.tahun, body.bulan)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
 @router.get("/{pengajuan_id}")
 def ambil_pengajuan(pengajuan_id: int, user: dict = Depends(get_current_user)):
     pengajuan = izin_cuti_db.get_pengajuan(pengajuan_id)
@@ -320,5 +302,18 @@ def ubah_status_pengajuan(pengajuan_id: int, body: StatusBody,
         return izin_cuti_db.set_status_pengajuan(pengajuan_id, body.status,
                                                   catatan_approval=body.catatan_approval,
                                                   disetujui_oleh=user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{pengajuan_id}/batalkan")
+def batalkan_pengajuan(pengajuan_id: int, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    """PERMINTAAN OWNER: batalkan pengajuan yang SUDAH disetujui (mis.
+    barber ternyata tetap masuk kerja padahal tercatat Cuti/Izin) --
+    kuota kembali otomatis (live-computed), lihat izin_cuti_db.py::
+    batalkan_pengajuan_disetujui()."""
+    _pastikan_pengajuan_tenant_sama(user, izin_cuti_db.get_pengajuan(pengajuan_id))
+    try:
+        return izin_cuti_db.batalkan_pengajuan_disetujui(pengajuan_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

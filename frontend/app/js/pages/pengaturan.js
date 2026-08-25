@@ -1037,7 +1037,9 @@ const PagePengaturan = (() => {
       // PERMINTAAN OWNER (KOREKSI): barber yang tidak check-in pada hari
       // kerja otomatis dicatat LIBUR (bukan langsung Cuti) & mengurangi
       // Kuota Libur/bulan -- lihat auto_libur_db.py. Default OFF, murni
-      // opsional.
+      // opsional. PERMINTAAN OWNER (revisi berikutnya): diproses OTOMATIS
+      // real-time begitu jam operasional (jam Pulang, Pengaturan Absensi)
+      // lewat -- TIDAK LAGI tombol manual (dihapus total).
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Auto-Libur Tidak Absen"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Kalau aktif: karyawan yang TIDAK check-in Absensi pada hari kerja (toko buka, bukan hari libur " +
@@ -1045,7 +1047,8 @@ const PagePengaturan = (() => {
         "Libur, mengurangi Kuota Libur/bulan di bawah. Kalau Kuota Libur bulan itu sudah habis, tanggal " +
         "berikutnya diambilkan dari Kuota Izin & Cuti (Gabungan) di atas. Kalau KEDUA kuota itu sama-sama " +
         "habis, tanggal tetap dicatat Libur tapi baris Hari Libur bulan itu di Rekap Bulanan distabilo " +
-        "merah. Hanya memproses tanggal yang SUDAH LEWAT."));
+        "merah. Diproses OTOMATIS begitu jam Pulang (Pengaturan Absensi) hari itu sudah lewat -- tidak " +
+        "perlu tombol/aksi manual apa pun."));
       const inputAutoLibur = MugenUI.el("input", { type: "checkbox" });
       inputAutoLibur.checked = settings.auto_libur_tidak_absen_aktif === true;
       isian.appendChild(checkboxBaris(inputAutoLibur, "Aktifkan Auto-Libur Tidak Absen"));
@@ -1075,39 +1078,6 @@ const PagePengaturan = (() => {
           MugenUI.toast("Pengaturan Izin & Cuti disimpan.", "success", { force: true });
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-
-      // ---- Kartu terpisah: pemicu proses Auto-Libur (TIDAK ADA scheduler
-      // di proyek ini -- lihat auto_libur_db.py -- Owner memproses SATU
-      // bulan tertentu secara manual, aman dijalankan berkali-kali). ----
-      const cardProses = MugenUI.el("div", { class: "card" });
-      body.appendChild(cardProses);
-      cardProses.appendChild(MugenUI.el("h2", {}, "Proses Auto-Libur"));
-      cardProses.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Jalankan pengecekan Auto-Libur Tidak Absen untuk SATU bulan tertentu (aktifkan dulu di atas). " +
-        "Aman dijalankan berkali-kali -- tidak akan membuat catatan ganda untuk tanggal yang sama."));
-      const today = new Date();
-      const selBulanProses = MugenUI.el("select");
-      for (let b = 1; b <= 12; b++) selBulanProses.appendChild(MugenUI.el("option", { value: String(b) }, MugenUI.namaBulan(b)));
-      selBulanProses.value = String(today.getMonth() + 1);
-      const selTahunProses = MugenUI.el("select");
-      for (let y = today.getFullYear() - 1; y <= today.getFullYear(); y++) selTahunProses.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
-      selTahunProses.value = String(today.getFullYear());
-      cardProses.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulanProses, selTahunProses]));
-      const errorProses = MugenUI.el("div", { class: "login-error" });
-      const btnProses = MugenUI.el("button", { class: "btn-primary", style: "margin-top:12px;" }, "Proses Auto-Libur");
-      cardProses.appendChild(errorProses);
-      cardProses.appendChild(btnProses);
-      btnProses.addEventListener("click", async () => {
-        errorProses.textContent = "";
-        try {
-          const hasil = await MugenUI.withButtonLoading(btnProses, () => MugenApi.post("/api/izin-cuti/auto-libur/proses", {
-            tahun: Number(selTahunProses.value), bulan: Number(selBulanProses.value),
-          }));
-          MugenUI.toast(`Auto-Libur selesai diproses: ${hasil.jumlah_dibuat} catatan baru dibuat.`, "success", { force: true });
-        } catch (e) {
-          errorProses.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
     }

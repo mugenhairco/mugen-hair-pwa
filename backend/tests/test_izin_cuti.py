@@ -871,3 +871,247 @@ def test_router_marquee_butuh_login(single_tenant):
     client = single_tenant["client"]
     r = client.get("/api/izin-cuti/marquee")
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Owner: Izin/Cuti baru TIDAK BOLEH diajukan untuk tanggal yang
+# sudah tercatat Libur (manual ATAU Auto-Libur) -- dua catatan bertentangan
+# untuk hari yang sama.
+# ---------------------------------------------------------------------------
+
+def test_buat_pengajuan_ditolak_kalau_tanggal_sudah_libur_manual(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    db.tandai_libur(barber_id, "2026-09-02")
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-02",
+                                     "Coba", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (tanggal sudah Libur)"
+    except ValueError as e:
+        assert "2026-09-02" in str(e)
+        assert "Libur" in str(e)
+
+
+def test_buat_pengajuan_ditolak_kalau_tanggal_sudah_libur_meski_override(single_tenant):
+    """PERBAIKAN Owner: ini soal integritas DATA (bukan kebijakan kuota/
+    H-min) -- SELALU dicek, TERMASUK saat Owner/Admin/Staff mengajukan
+    ATAS NAMA barber (override=True)."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    db.tandai_libur(barber_id, "2026-09-01")
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-01",
+                                     "Coba override", tenant_id=tenant_id, override=True)
+        assert False, "Seharusnya ValueError meski override=True"
+    except ValueError as e:
+        assert "Libur" in str(e)
+
+
+def test_buat_pengajuan_boleh_kalau_tidak_ada_konflik_libur(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    db.tandai_libur(barber_id, "2026-09-10")  # tanggal LAIN, tidak beririsan
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-02",
+                                         "Aman", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+
+
+def test_edit_pengajuan_ditolak_kalau_tanggal_baru_sudah_libur(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Awal", tenant_id=tenant_id)
+    db.tandai_libur(barber_id, "2026-09-05")
+    try:
+        izin_cuti_db.edit_pengajuan(p["id"], tanggal_mulai="2026-09-05", tanggal_selesai="2026-09-05")
+        assert False, "Seharusnya ValueError"
+    except ValueError as e:
+        assert "Libur" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Check In barber vs Cuti/Izin yang sedang berjalan --
+# get_pengajuan_aktif_pada_tanggal()/potong_karena_checkin() (dipakai
+# routers/attendance.py -- lihat test_router_checkin_saat_sedang_cuti_*
+# di bawah untuk alur router lengkapnya).
+# ---------------------------------------------------------------------------
+
+def test_get_pengajuan_aktif_pada_tanggal_ditemukan(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-07",
+                                     "Cuti panjang", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+    hasil = izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, "2026-09-05")
+    assert hasil is not None
+    assert hasil["id"] == p["id"]
+
+
+def test_get_pengajuan_aktif_pada_tanggal_tidak_ditemukan_kalau_pending(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-07",
+                                 "Belum disetujui", tenant_id=tenant_id, override=True)
+    assert izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, "2026-09-05") is None
+
+
+def test_potong_karena_checkin_contoh_owner_1_sampai_7_checkin_hari_ke_5(single_tenant, monkeypatch):
+    """CONTOH PERSIS Owner: Cuti/Izin tanggal 1-7, Check In di hari ke-5 ->
+    yang dihitung/dianggap Cuti hanya tanggal 1-4, sisa 5-7 kembali ke
+    kuota."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-07",
+                                     "Cuti seminggu", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+
+    hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-05")
+    assert hasil == {"aksi": "dipotong", "tanggal_selesai_baru": "2026-09-04"}
+    pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru["tanggal_mulai"] == "2026-09-01"
+    assert pengajuan_baru["tanggal_selesai"] == "2026-09-04"
+    assert pengajuan_baru["status"] == "disetujui"
+
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo["sisa_gabungan"] == 6  # 10 - 4 hari (1-4) terpakai, 5-7 kembali
+
+
+def test_potong_karena_checkin_hari_pertama_menghapus_seluruh_pengajuan(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER (kasus Romen): Check In di hari PERTAMA rentang --
+    belum ada satu hari pun yang benar-benar dijalani -> SELURUH pengajuan
+    dihapus, kuota kembali penuh."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Izin ternyata masuk", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+
+    hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-01")
+    assert hasil == {"aksi": "dihapus", "tanggal_selesai_baru": None}
+    assert izin_cuti_db.get_pengajuan(p["id"]) is None
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo["sisa_gabungan"] == 10
+
+
+def test_potong_karena_checkin_pengajuan_pending_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Masih pending", tenant_id=tenant_id)
+    try:
+        izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-01")
+        assert False, "Seharusnya ValueError"
+    except ValueError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Owner/Admin batalkan pengajuan yang SUDAH disetujui
+# (mis. barber ternyata tetap masuk kerja) -- batalkan_pengajuan_disetujui()
+# + POST /api/izin-cuti/{id}/batalkan.
+# ---------------------------------------------------------------------------
+
+def test_batalkan_pengajuan_disetujui_menghapus_dan_kembalikan_kuota(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-03",
+                                     "Cuti", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+    saldo_sebelum = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo_sebelum["sisa_gabungan"] == 7
+
+    hasil = izin_cuti_db.batalkan_pengajuan_disetujui(p["id"])
+    assert hasil["id"] == p["id"]
+    assert izin_cuti_db.get_pengajuan(p["id"]) is None
+    saldo_sesudah = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo_sesudah["sisa_gabungan"] == 10
+
+
+def test_batalkan_pengajuan_pending_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Masih pending", tenant_id=tenant_id)
+    try:
+        izin_cuti_db.batalkan_pengajuan_disetujui(p["id"])
+        assert False, "Seharusnya ValueError"
+    except ValueError:
+        pass
+
+
+def test_router_batalkan_pengajuan_disetujui(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Coba", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+
+    r = client.post(f"/api/izin-cuti/{p['id']}/batalkan", headers=headers)
+    assert r.status_code == 200
+    assert izin_cuti_db.get_pengajuan(p["id"]) is None
+
+
+def test_router_batalkan_pengajuan_pending_ditolak_422(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-01", "2026-09-01",
+                                     "Masih pending", tenant_id=tenant_id)
+    r = client.post(f"/api/izin-cuti/{p['id']}/batalkan", headers=headers)
+    assert r.status_code == 422
+
+
+def test_router_checkin_saat_sedang_cuti_minta_konfirmasi_lalu_memotong_rentang(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER: barber Check In padahal tercatat sedang Cuti hari
+    ini -- backend membalas 409 dulu (BELUM check-in, belum ada baris
+    attendance_logs), lalu berhasil Check In + rentang Cuti dipotong begitu
+    dikirim ulang dengan konfirmasi_cuti_izin=True."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    client.put("/api/attendance/settings",
+               json={"lokasi_latitude": -6.175392, "lokasi_longitude": 106.827153, "radius_meter": 500,
+                     "jam_masuk": "09:00", "jam_pulang": "20:00"},
+               headers=headers)
+    import auth_db
+    barber_id = _barber(tenant_id, "Barber Checkin Cuti")
+    auth_db.tambah_user("barbercheckincuti", "passwordB123", role="barber", barber_id=barber_id,
+                         tenant_id=tenant_id)
+    r_login = client.post("/api/auth/login", json={"username": "barbercheckincuti", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-07",
+                                     "Cuti seminggu", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+
+    import attendance_db
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    wib = ZoneInfo("Asia/Jakarta")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 9, 5, 10, 0, tzinfo=wib))
+
+    payload = {"latitude": -6.175392, "longitude": 106.827153}
+    r1 = client.post("/api/attendance/check-in", json=payload, headers=headers_barber)
+    assert r1.status_code == 409
+    assert r1.json()["detail"]["sedang_cuti_izin"] == {
+        "jenis": "cuti", "tanggal_mulai": "2026-09-01", "tanggal_selesai": "2026-09-07",
+    }
+    r_today = client.get("/api/attendance/today", headers=headers_barber)
+    assert r_today.json()["log"] is None  # belum benar-benar Check In
+
+    r2 = client.post("/api/attendance/check-in", json={**payload, "konfirmasi_cuti_izin": True},
+                      headers=headers_barber)
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["cuti_izin_disesuaikan"] == {"aksi": "dipotong", "tanggal_selesai_baru": "2026-09-04"}
+
+    pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru["tanggal_selesai"] == "2026-09-04"

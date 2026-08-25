@@ -30,6 +30,7 @@ mewarisi state se-transparan 'fork' di Linux/Mac) -- aman dipanggil
 berkali-kali (idempotent, lihat `if ... not in sys.path`), dan TIDAK
 mengubah satu pun logika bisnis/import module lain."""
 
+import asyncio
 import logging
 import os
 import sys
@@ -80,6 +81,7 @@ import reimburse_db
 import izin_cuti_db
 from izin_cuti_migrasi import migrasi_izin_cuti, seed_konfigurasi_awal_agustus_2026, migrasi_konsolidasi_kuota_gabungan  # REVISI Sistem Dinamis Cuti & Izin: kolom kuota/periode dinamis (idempotent, jalur SQLite) + seed saldo awal Agustus 2026 (portable, kedua jalur DB) + PERBAIKAN Sistem Kuota IZIN & CUTI: lipat mode 'terpisah' lama jadi 'gabungan' (portable, kedua jalur DB)
 from auto_libur_db import migrasi_absensi_libur_sumber  # KOREKSI Owner: kolom absensi_libur.sumber (idempotent, jalur SQLite) -- bedakan baris Barber Holiday manual dari yang dibuat Auto-Libur
+from auto_libur_db import loop_realtime_semua_tenant  # PERMINTAAN OWNER: Auto-Libur real-time (gantikan tombol manual, lihat auto_libur_db.py)
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
@@ -337,7 +339,7 @@ app.include_router(error_log.router)
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     # TAHAP migrasi Postgres: kalau DATABASE_URL diisi, seluruh proses "buat
     # tabel kalau belum ada" di bawah ini digantikan SATU LANGKAH oleh
     # postgres_schema.create_all() -- skema PostgreSQL dibuat LENGKAP sekali
@@ -480,6 +482,22 @@ def on_startup():
             "bookings": conn.execute("SELECT COUNT(*) AS n FROM bookings").fetchone()["n"],
         }
     logger.info("[%s] BOOT selesai: jumlah_baris=%s", _INSTANCE_ID, jumlah)
+
+    # PERMINTAAN OWNER: Auto-Libur Tidak Absen SEKARANG real-time (gantikan
+    # tombol manual "Proses Auto-Libur" yang dihapus) -- loop background di
+    # DALAM proses ini sendiri (proyek ini tetap tidak punya scheduler/cron
+    # eksternal, lihat auto_libur_db.py), dipicu SEKALI di sini, hidup
+    # selama proses ini berjalan. DIKECUALIKAN saat proses ini di-boot oleh
+    # pytest (backend/tests/conftest.py membuat TestClient(main.app) BARU
+    # per test, ~1000+ kali sepanjang suite) -- loop TIDAK PERNAH berhenti
+    # sendiri (while True), dan kalau dibiarkan menyala tiap test, jadwal
+    # sweep-nya bisa nyelonong di TENGAH test lain yang me-monkeypatch
+    # tanggal "hari ini" (mengubah hasil proses_auto_libur() versi manual
+    # yang DIPANGGIL LANGSUNG oleh test itu jadi tidak pasti/flaky).
+    # PYTEST_CURRENT_TEST diisi OTOMATIS oleh pytest sendiri di setiap
+    # proses test (dan HANYA di situ) -- tidak butuh dependency tambahan.
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        asyncio.create_task(loop_realtime_semua_tenant())
 
 
 def _bootstrap_admin_pertama():

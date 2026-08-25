@@ -370,6 +370,26 @@ def get_sisa_kuota_gabungan_pada_tanggal(barber_id: int, tenant_id: int, tanggal
     return max(0, kuota - terpakai)
 
 
+def _tanggal_sudah_libur_dalam_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> str | None:
+    """PERBAIKAN Owner (celah yang ditemukan setelah fitur Auto-Libur
+    bertingkat ada): Izin/Cuti BARU tidak boleh diajukan untuk tanggal
+    yang SUDAH tercatat Libur (Barber Holiday manual ATAU Auto-Libur,
+    lihat auto_libur_db.py) -- dua catatan yang saling bertentangan untuk
+    hari yang sama. SATU pengecualian sengaja terhadap docstring modul
+    ini ("berdiri sendiri dari modul lain") KHUSUS untuk tabel
+    `absensi_libur` -- itu murni tabel DATA milik database.py (bukan
+    LOGIKA modul independen lain), modul ini sudah bergantung pada
+    database.py lewat get_conn() yang sama. Return tanggal PALING AWAL
+    dalam rentang yang sudah tercatat Libur, atau None kalau tidak ada."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT tanggal FROM absensi_libur WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ? "
+            "ORDER BY tanggal ASC LIMIT 1",
+            (barber_id, tanggal_mulai, tanggal_selesai),
+        ).fetchone()
+    return row["tanggal"] if row else None
+
+
 def _validasi_kebijakan_pengajuan(barber_id: int, tenant_id: int, jenis: str, tanggal_mulai: str,
                                    tanggal_selesai: str, kecuali_pengajuan_id: int = None) -> None:
     """Raise ValueError (pesan siap tampil) kalau melanggar kebijakan --
@@ -647,6 +667,15 @@ def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_seles
     alasan = (alasan or "").strip()
     if not alasan:
         raise ValueError("Alasan wajib diisi.")
+    # PERBAIKAN Owner: tanggal yang sudah tercatat Libur TIDAK BOLEH
+    # diajukan Izin/Cuti lagi -- ini soal integritas DATA (dua catatan
+    # bertentangan di hari yang sama), BUKAN "kebijakan" seperti kuota/
+    # H-min -- jadi SELALU dicek, TERMASUK saat override=True (Owner/
+    # Admin/Staff membuat pengajuan atas nama barber).
+    tanggal_libur = _tanggal_sudah_libur_dalam_rentang(barber_id, tanggal_mulai, tanggal_selesai)
+    if tanggal_libur is not None:
+        raise ValueError(f"Tanggal {tanggal_libur} sudah tercatat sebagai Libur. Batalkan/hapus catatan "
+                          f"Libur itu dulu kalau ingin mengajukan Izin/Cuti pada tanggal tersebut.")
     if not override:
         _validasi_kebijakan_pengajuan(barber_id, tenant_id if tenant_id is not None else barber["tenant_id"],
                                        jenis, tanggal_mulai, tanggal_selesai)
@@ -685,6 +714,12 @@ def edit_pengajuan(pengajuan_id: int, jenis: str = None, tanggal_mulai: str = No
     alasan_baru = alasan.strip() if alasan is not None else existing["alasan"]
     if alasan is not None and not alasan_baru:
         raise ValueError("Alasan wajib diisi.")
+    # PERBAIKAN Owner: sama seperti buat_pengajuan() -- integritas data,
+    # SELALU dicek terlepas dari override.
+    tanggal_libur = _tanggal_sudah_libur_dalam_rentang(existing["barber_id"], mulai_baru, selesai_baru)
+    if tanggal_libur is not None:
+        raise ValueError(f"Tanggal {tanggal_libur} sudah tercatat sebagai Libur. Batalkan/hapus catatan "
+                          f"Libur itu dulu kalau ingin mengajukan Izin/Cuti pada tanggal tersebut.")
     # FITUR Kebijakan Cuti Dinamis: divalidasi ULANG di sini (bukan cuma
     # buat_pengajuan()) supaya barber tidak bisa melewati kebijakan dengan
     # mengajukan tanggal yang valid lalu langsung mengedit ke tanggal yang
@@ -732,3 +767,68 @@ def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str =
     pengajuan_baru = get_pengajuan(pengajuan_id)
     _kirim_notifikasi_push_status_pengajuan(pengajuan_baru)
     return pengajuan_baru
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Owner: Check In barber vs Cuti/Izin yang sedang berjalan --
+# lihat routers/attendance.py::check_in(). Kalau barber ternyata masuk
+# kerja padahal tercatat Cuti/Izin (status 'disetujui') untuk tanggal itu,
+# barber dikonfirmasi dulu, lalu sisa rentang yang BELUM dijalani otomatis
+# dipotong/dibatalkan dan kuotanya dikembalikan (live-computed).
+# ---------------------------------------------------------------------------
+
+def get_pengajuan_aktif_pada_tanggal(barber_id: int, tanggal: str) -> dict | None:
+    """Pengajuan Izin/Cuti berstatus 'disetujui' milik barber ini yang
+    mencakup `tanggal` -- dipakai routers/attendance.py saat Check In."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM izin_cuti WHERE barber_id = ? AND status = 'disetujui' "
+            "AND tanggal_mulai <= ? AND tanggal_selesai >= ? LIMIT 1",
+            (barber_id, tanggal, tanggal),
+        ).fetchone()
+    return _lengkapi(dict(row)) if row else None
+
+
+def potong_karena_checkin(pengajuan_id: int, tanggal_checkin: str) -> dict:
+    """PERMINTAAN OWNER: barber Check In padahal tanggal ini masih dalam
+    rentang Cuti/Izin yang disetujui -- rentang dipotong supaya HANYA
+    mencakup hari-hari SEBELUM tanggal_checkin (contoh Owner: Cuti tanggal
+    1-7, Check In di hari ke-5 -> tanggal_selesai dipotong jadi hari ke-4,
+    hari 5-7 kembali ke kuota). Kalau tanggal_checkin == tanggal_mulai
+    (belum ada satu hari pun yang benar-benar dijalani), SELURUH pengajuan
+    dihapus. Kuota kembali OTOMATIS (dihitung live dari baris yang ADA,
+    lihat _kuota_terpakai_hari() -- TIDAK PERLU logika "refund" terpisah).
+    Return {"aksi": "dihapus"|"dipotong", "tanggal_selesai_baru": str|None}."""
+    existing = get_pengajuan(pengajuan_id)
+    if existing is None or existing["status"] != "disetujui":
+        raise ValueError("Pengajuan tidak ditemukan atau bukan berstatus Disetujui.")
+    if tanggal_checkin == existing["tanggal_mulai"]:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM izin_cuti WHERE id = ?", (pengajuan_id,))
+        return {"aksi": "dihapus", "tanggal_selesai_baru": None}
+    tanggal_selesai_baru = (datetime.strptime(tanggal_checkin, "%Y-%m-%d")
+                             - timedelta(days=1)).strftime("%Y-%m-%d")
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE izin_cuti SET tanggal_selesai = ?, updated_at = ? WHERE id = ?",
+            (tanggal_selesai_baru, now, pengajuan_id),
+        )
+    return {"aksi": "dipotong", "tanggal_selesai_baru": tanggal_selesai_baru}
+
+
+def batalkan_pengajuan_disetujui(pengajuan_id: int) -> dict:
+    """PERMINTAAN OWNER: Owner/Admin membatalkan (hapus) pengajuan Izin/
+    Cuti yang SUDAH disetujui -- mis. barber ternyata tetap masuk kerja
+    padahal tercatat Cuti/Izin (kasus historis SEBELUM fitur konfirmasi
+    Check In di atas ada). Kuota kembali otomatis (live-computed). HANYA
+    menerima status 'disetujui' -- 'pending' pakai hapus_pengajuan() biasa
+    (barber sendiri boleh hapus), 'ditolak' sudah tidak relevan dihapus."""
+    existing = get_pengajuan(pengajuan_id)
+    if existing is None:
+        raise ValueError("Pengajuan tidak ditemukan.")
+    if existing["status"] != "disetujui":
+        raise ValueError("Hanya pengajuan berstatus Disetujui yang bisa dibatalkan lewat sini.")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM izin_cuti WHERE id = ?", (pengajuan_id,))
+    return existing
