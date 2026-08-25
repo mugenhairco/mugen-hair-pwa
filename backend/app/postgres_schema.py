@@ -176,8 +176,15 @@ CREATE TABLE IF NOT EXISTS absensi_libur (
     id        SERIAL PRIMARY KEY,
     barber_id INTEGER NOT NULL REFERENCES barbers(id),
     tanggal   TEXT NOT NULL,
+    sumber    TEXT,
     UNIQUE(barber_id, tanggal)
 );
+-- PERBAIKAN Sistem Kuota IZIN & CUTI (koreksi Owner): kolom `sumber`
+-- membedakan baris Barber Holiday manual (NULL, perilaku lama) dari yang
+-- dibuat otomatis oleh auto_libur_db.py -- ADD COLUMN biasa (BUKAN FK),
+-- aman untuk instalasi Postgres yang SUDAH ADA (lihat catatan HOTFIX
+-- DEPLOY di file ini soal FK ke barbers(id) yang kehilangan constraint).
+ALTER TABLE absensi_libur ADD COLUMN IF NOT EXISTS sumber TEXT;
 
 CREATE TABLE IF NOT EXISTS produk (
     id           SERIAL PRIMARY KEY,
@@ -460,6 +467,11 @@ ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS h_min_pengajuan_izin INT
 -- kerja otomatis direkap jadi cuti & mengurangi kuota -- default OFF,
 -- lihat auto_libur_db.py.
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0;
+-- KOREKSI Owner: Auto-Libur sekarang punya jatah "Kuota Libur/bulan"
+-- SENDIRI (dicatat ke absensi_libur, BUKAN izin_cuti) yang dipakai LEBIH
+-- DULU sebelum ambil kuota gabungan Izin&Cuti di atas -- 0 = tidak
+-- dipakai, langsung ke kuota gabungan (perilaku Auto-Libur versi awal).
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_libur_bulanan INTEGER NOT NULL DEFAULT 0;
 
 -- REVISI Sistem Dinamis Cuti & Izin: snapshot HISTORIS saldo cuti per
 -- titik cut-off (mis. migrasi Agustus 2026) -- murni catatan/tampilan,

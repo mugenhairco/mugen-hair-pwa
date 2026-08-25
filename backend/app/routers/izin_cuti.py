@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import auto_libur_db
+import database as db
 import izin_cuti_db
 import laporan_pdf
 import permissions
@@ -122,6 +123,9 @@ class CutiSettingsBody(BaseModel):
     # PERMINTAAN OWNER: barber yang tidak check-in pada hari kerja otomatis
     # direkap jadi cuti & mengurangi kuota -- default OFF, lihat auto_libur_db.py.
     auto_libur_tidak_absen_aktif: bool | None = None
+    # KOREKSI Owner: jatah "Kuota Libur/bulan" utk Auto-Libur, dipakai LEBIH
+    # DULU sebelum kuota_gabungan_hari di atas -- 0 = tidak dipakai.
+    kuota_libur_bulanan: int | None = None
 
 
 @router.get("/pengaturan")
@@ -145,9 +149,11 @@ def ubah_cuti_settings(body: CutiSettingsBody, user: dict = Depends(require_perm
 def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_user)):
     """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo' tidak
     ditangkap sebagai path parameter pengajuan_id. Sisa kuota periode AKTIF
-    saat ini (SATU saldo bersama Izin+Cuti) -- barber HANYA boleh lihat
-    miliknya sendiri, admin/staff (_cek_akses_lihat) boleh lihat siapa pun
-    lewat `barber_id`."""
+    saat ini (SATU saldo bersama Izin+Cuti) + Sisa Kuota Libur bulan
+    berjalan (field `libur`, KOREKSI Owner -- lihat auto_libur_db.py::
+    get_sisa_kuota_libur_bulan_ini(), reset per bulan kalender, TIDAK ikut
+    periode Izin&Cuti) -- barber HANYA boleh lihat miliknya sendiri,
+    admin/staff (_cek_akses_lihat) boleh lihat siapa pun lewat `barber_id`."""
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
         if barber_id is None:
@@ -156,7 +162,39 @@ def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_use
         _cek_akses_lihat(user)
         if barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
-    return izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil = izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil["libur"] = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber_id, user["tenant_id"])
+    return hasil
+
+
+@router.get("/saldo-semua-barber")
+def ambil_sisa_kuota_semua_barber(user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo-semua-
+    barber' tidak ditangkap sebagai path parameter pengajuan_id. KOREKSI
+    Owner: tabel ringkasan Sisa Kuota (Izin&Cuti + Libur) SEMUA barber
+    sekaligus untuk Absensi > Owner -- pola SAMA seperti /marquee (dipakai
+    lintas-halaman oleh absensi.js), HANYA admin/staff (_cek_akses_lihat),
+    barber tidak perlu endpoint ini (sudah pakai /saldo miliknya sendiri).
+    `kuota_habis`=True kalau ADA tanggal bulan ini yang Kuota Libur DAN
+    kuota gabungan Izin&Cuti SAMA-SAMA sudah habis (lihat auto_libur_db.py::
+    ada_kelebihan_kuota_bulan_ini(), sama seperti Rekap Bulanan)."""
+    if user["role"] == "barber":
+        # Endpoint ini mengembalikan data SEMUA barber -- BEDA dari
+        # _cek_akses_lihat() biasa (yang meloloskan barber tanpa syarat
+        # kalau tidak ada `pengajuan` spesifik yang dicek). Barber TIDAK
+        # boleh lihat kuota siapa pun selain dirinya sendiri (sudah pakai
+        # /saldo tanpa barber_id untuk itu).
+        raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+    _cek_akses_lihat(user)
+    hasil = []
+    for barber in db.get_barbers(tenant_id=user["tenant_id"]):
+        saldo = izin_cuti_db.get_sisa_kuota(barber["id"], user["tenant_id"])
+        saldo["libur"] = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber["id"], user["tenant_id"])
+        saldo["barber_id"] = barber["id"]
+        saldo["nama_barber"] = barber["nama"]
+        saldo["kuota_habis"] = auto_libur_db.ada_kelebihan_kuota_bulan_ini_sekarang(barber["id"])
+        hasil.append(saldo)
+    return hasil
 
 
 @router.get("/saldo-awal")

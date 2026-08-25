@@ -187,6 +187,7 @@ def init_db():
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 barber_id INTEGER NOT NULL,
                 tanggal   TEXT NOT NULL,  -- format YYYY-MM-DD
+                sumber    TEXT,           -- NULL=manual (Owner/Barber Holiday), lihat auto_libur_db.py
                 UNIQUE(barber_id, tanggal),
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
@@ -821,12 +822,17 @@ def hitung_preview_items(items: list, tenant_id=None) -> dict:
 # ABSENSI / HARI LIBUR (dipakai untuk Bonus Kehadiran)
 # ---------------------------------------------------------------------------
 
-def tandai_libur(barber_id: int, tanggal: str):
+def tandai_libur(barber_id: int, tanggal: str, sumber: str = None):
+    """`sumber`: None (default, dipakai UI Barber Holiday manual Owner) atau
+    ditandai eksplisit oleh auto_libur_db.py (lihat SUMBER_AUTO_LIBUR/
+    SUMBER_AUTO_LIBUR_KELEBIHAN di sana) -- membedakan baris yang dibuat
+    manual vs otomatis TANPA mengubah perilaku baca lama (is_barber_libur()/
+    get_hari_libur() TIDAK peduli sumber, tetap menghitung SEMUA baris)."""
     _validasi_tanggal(tanggal)
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO absensi_libur (barber_id, tanggal) VALUES (?, ?) ON CONFLICT DO NOTHING",
-            (barber_id, tanggal),
+            "INSERT INTO absensi_libur (barber_id, tanggal, sumber) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+            (barber_id, tanggal, sumber),
         )
 
 

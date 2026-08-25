@@ -281,8 +281,75 @@ const PageAbsensi = (() => {
     });
   }
 
+  // KOREKSI Owner: kartu "Sisa Kuota" DIPINDAH dari halaman Izin & Cuti ke
+  // sini (Absensi, khusus barber sendiri) -- sekarang DUA kartu: Izin+Cuti
+  // (gabungan, izin_cuti_db.py, periode Owner-editable) dan Libur (reset
+  // per BULAN KALENDER, auto_libur_db.py, TIDAK ikut periode Izin&Cuti).
+  // Kartu berubah merah (class "card-danger") begitu kuotanya sendiri
+  // habis -- kalau KEDUA kuota itu sama-sama habis, KEDUA kartu otomatis
+  // merah bersamaan (masing-masing dicek independen, tidak perlu logika
+  // gabungan tambahan). Kartu Libur menampilkan keterangan tambahan saat
+  // habis (kekurangan otomatis diambil dari kuota Izin & Cuti berikutnya).
+  async function renderSaldoKuota(root) {
+    let saldo;
+    try {
+      saldo = await MugenApi.get("/api/izin-cuti/saldo");
+    } catch (e) {
+      return; // gagal diam-diam -- kartu ini murni informasi tambahan, bukan penghalang
+    }
+    if (!saldo) return;
+    const gabunganAktif = saldo.aktif && saldo.kuota_gabungan != null;
+    const liburAktif = saldo.libur && saldo.libur.aktif;
+    if (!gabunganAktif && !liburAktif) return;
+
+    const card = MugenUI.el("div", { class: "card" });
+    card.appendChild(MugenUI.el("h2", {}, "Sisa Kuota"));
+    const grid = MugenUI.el("div", { class: "grid-cards" });
+
+    if (gabunganAktif) {
+      const habis = saldo.sisa_gabungan <= 0;
+      const anak = [
+        MugenUI.el("h2", {}, "Izin + Cuti"),
+        MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
+        MugenUI.el("div", { class: "subtitle" }, `Periode: ${saldo.periode_awal} s/d ${saldo.periode_akhir}.`),
+      ];
+      grid.appendChild(MugenUI.el("div", { class: "card" + (habis ? " card-danger" : "") }, anak));
+    }
+    if (liburAktif) {
+      const habis = saldo.libur.sisa <= 0;
+      const anak = [
+        MugenUI.el("h2", {}, "Libur"),
+        MugenUI.el("div", { class: "big-number" }, `${saldo.libur.terpakai} / ${saldo.libur.kuota} hari`),
+      ];
+      if (habis) {
+        anak.push(MugenUI.el("div", { class: "subtitle" },
+          "Kuota Libur bulan ini sudah habis -- tidak absen berikutnya akan diambil dari kuota Izin & Cuti."));
+      }
+      grid.appendChild(MugenUI.el("div", { class: "card" + (habis ? " card-danger" : "") }, anak));
+    }
+    card.appendChild(grid);
+    root.appendChild(card);
+
+    // Snapshot HISTORIS (mis. migrasi Agustus 2026) -- murni catatan, HANYA
+    // tampil kalau ada baris (kebanyakan tenant TIDAK akan punya apa pun
+    // di sini, lihat izin_cuti_migrasi.py).
+    try {
+      const saldoAwal = await MugenApi.get("/api/izin-cuti/saldo-awal");
+      if (saldoAwal && saldoAwal.length > 0) {
+        const cardAwal = MugenUI.el("div", { class: "card" });
+        cardAwal.appendChild(MugenUI.el("h2", {}, "Riwayat Saldo Sebelumnya"));
+        for (const s of saldoAwal) {
+          cardAwal.appendChild(MugenUI.el("div", { class: "subtitle" },
+            `${s.jenis === "cuti" ? "Cuti" : "Izin"}: ${s.saldo_hari} hari (per ${s.berlaku_sampai}, sebelum sistem kuota periode aktif)`));
+        }
+        root.appendChild(cardAwal);
+      }
+    } catch (e) { /* murni informasi tambahan -- gagal diam-diam */ }
+  }
+
   // ================= BARBER: Check In/Out + Riwayat milik sendiri =================
   async function renderBarberView(root) {
+    await renderSaldoKuota(root);
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Absensi Hari Ini"));
@@ -791,6 +858,38 @@ const PageAbsensi = (() => {
       }, { skeleton: { kind: "table", cols: 3, rows: 3 } });
     }
     loadLimit();
+
+    // ---- KOREKSI Owner: ringkasan Sisa Kuota Izin, Cuti & Libur semua
+    // barber sekaligus -- pola SAMA seperti "Sisa Limit Bulan Ini" di
+    // atas. Baris distabilo merah (rowClass "row-danger") kalau bulan ini
+    // ADA tanggal yang Kuota Libur DAN kuota gabungan Izin&Cuti SAMA-SAMA
+    // sudah habis (field `kuota_habis`, lihat routers/izin_cuti.py::
+    // ambil_sisa_kuota_semua_barber()). ----
+    const kuotaCard = MugenUI.el("div", { class: "card" });
+    root.appendChild(kuotaCard);
+    kuotaCard.appendChild(MugenUI.el("h2", {}, "Sisa Kuota Izin, Cuti & Libur"));
+    kuotaCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+      "Izin & Cuti berbagi SATU saldo (periode diatur Owner di Pengaturan Izin & Cuti). Kuota Libur reset " +
+      "tiap bulan kalender, dipakai lebih dulu oleh Auto-Libur sebelum mengambil kuota Izin & Cuti. Baris " +
+      "merah = Kuota Libur dan Izin & Cuti bulan ini sama-sama sudah habis."));
+    const kuotaBody = MugenUI.el("div");
+    kuotaCard.appendChild(kuotaBody);
+    async function loadRingkasanKuota() {
+      await MugenUI.refreshInto(kuotaBody, async () => {
+        let rows;
+        try {
+          rows = await MugenApi.get("/api/izin-cuti/saldo-semua-barber");
+        } catch (e) {
+          return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+        }
+        return MugenUI.buildTable([
+          { key: "nama_barber", label: "Barber" },
+          { key: "sisa_gabungan", label: "Sisa Izin & Cuti", format: (v, r) => r.aktif ? `${v} / ${r.kuota_gabungan} hari` : "-" },
+          { key: "libur", label: "Sisa Libur (bulan ini)", format: (v) => v && v.aktif ? `${v.sisa} / ${v.kuota} hari` : "-" },
+        ], rows, { emptyText: "Belum ada barber aktif.", rowClass: (r) => r.kuota_habis ? "row-danger" : "" });
+      }, { skeleton: { kind: "table", cols: 3, rows: 3 } });
+    }
+    loadRingkasanKuota();
 
     // ---- Filter & Daftar Absensi ----
     const filterCard = MugenUI.el("div", { class: "card" });

@@ -373,6 +373,17 @@ a:hover { color: var(--accent-secondary); }
 .card h2 { margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
 .card .big-number { font-size: 28px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em; }
 
+/* KOREKSI Owner (Kuota Libur/Cuti&Izin habis): kartu/baris tabel berubah
+   merah kalau kuota sudah habis -- dipakai pages/absensi.js (kartu Sisa
+   Kuota barber + tabel ringkasan kuota Owner) & pages/rekap.js (baris
+   Rekap Bulanan). --danger sudah theme-aware (redefinisi dark mode di
+   atas), jadi warna otomatis menyesuaikan. */
+.card-danger { border-color: var(--danger); background: rgba(220,38,38,0.06); }
+.card-danger .big-number { color: var(--danger); }
+tr.row-danger td { background: rgba(220,38,38,0.06); }
+:root[data-theme="dark"] .card-danger { background: rgba(248,113,113,0.10); }
+:root[data-theme="dark"] tr.row-danger td { background: rgba(248,113,113,0.10); }
+
 /* Dashboard: kartu collapse/expand -- lihat pages/dashboard_owner.js */
 .card-collapse-title {
   margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em;

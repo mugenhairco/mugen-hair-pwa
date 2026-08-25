@@ -85,7 +85,11 @@ const PageIzinCuti = (() => {
   // ================= BARBER: pengajuan milik sendiri =================
   async function renderBarberView(root) {
     const today = MugenUI.isoHariIniWib(); // BUGFIX (audit): lihat MugenUI.isoHariIniWib()
-    await renderSaldoKuota(root);
+    // KOREKSI Owner: kartu Sisa Kuota (Izin&Cuti + Libur) DIPINDAH ke
+    // menu Absensi (lihat pages/absensi.js::renderSaldoKuota()) -- TIDAK
+    // lagi ditampilkan di sini untuk barber sendiri. Tetap dipakai admin
+    // (lihat renderAdminView() di bawah, saat Owner/Admin memfilter satu
+    // karyawan tertentu di halaman ini).
     const formCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(formCard);

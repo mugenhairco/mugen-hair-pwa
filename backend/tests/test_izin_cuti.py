@@ -479,6 +479,38 @@ def test_set_cuti_settings_mode_kuota_selalu_dipaksa_gabungan(single_tenant):
     assert settings["mode_kuota"] == "gabungan"
 
 
+def test_set_cuti_settings_menolak_kuota_libur_bulanan_negatif(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    try:
+        izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=-1)
+        assert False, "Seharusnya ValueError utk kuota_libur_bulanan=-1"
+    except ValueError:
+        pass
+
+
+def test_get_sisa_kuota_gabungan_pada_tanggal_periode_berbeda(single_tenant):
+    """KOREKSI Owner (Auto-Libur): dipakai untuk tanggal MASA LALU tertentu
+    -- periode kuotanya HARUS mengikuti tanggal itu sendiri, bukan "hari
+    ini"."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=5,
+                                    periode_mulai_dasar="2026-01-01")
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-05", "2026-01-07", "Cuti 3 hari",
+                                 tenant_id=tenant_id, override=True)
+    sisa_jan = izin_cuti_db.get_sisa_kuota_gabungan_pada_tanggal(barber_id, tenant_id, "2026-01-20")
+    assert sisa_jan == 2
+    # Periode Februari -- bucket BEDA, belum terpakai sama sekali.
+    sisa_feb = izin_cuti_db.get_sisa_kuota_gabungan_pada_tanggal(barber_id, tenant_id, "2026-02-10")
+    assert sisa_feb == 5
+
+
+def test_get_sisa_kuota_gabungan_pada_tanggal_none_kalau_kuota_off(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    assert izin_cuti_db.get_sisa_kuota_gabungan_pada_tanggal(barber_id, tenant_id, "2026-01-01") is None
+
+
 # ---------------------------------------------------------------------------
 # Router /api/izin-cuti/pengaturan
 # ---------------------------------------------------------------------------
@@ -821,6 +853,18 @@ def test_router_saldo_barber_lihat_milik_sendiri_saja(single_tenant):
 
     r_admin = client.get(f"/api/izin-cuti/saldo?barber_id={barber_id}", headers=headers)
     assert r_admin.status_code == 200
+
+
+def test_router_saldo_menyertakan_libur_nonaktif_default(single_tenant):
+    """KOREKSI Owner: /saldo SEKARANG juga menyertakan field `libur`
+    (Kuota Libur bulan berjalan, auto_libur_db.py) -- default OFF (aktif
+    False) selama Owner belum mengisi kuota_libur_bulanan."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    r = client.get(f"/api/izin-cuti/saldo?barber_id={barber_id}", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["libur"] == {"aktif": False, "kuota": None, "terpakai": None, "sisa": None}
 
 
 def test_router_marquee_butuh_login(single_tenant):

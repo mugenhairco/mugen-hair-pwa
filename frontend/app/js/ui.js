@@ -237,7 +237,12 @@ const MugenUI = (() => {
 
   // Bangun <table class="data-table"> dari daftar kolom + baris data.
   // columns: [{ key, label, format?: fn }]
-  function buildTable(columns, rows, { emptyText = "Belum ada data." } = {}) {
+  // `rowClass(row) => string`: opsional, dipakai KOREKSI Owner (Kuota
+  // Libur/Cuti&Izin habis) untuk menstabilo SATU baris penuh merah --
+  // lihat pages/absensi.js (tabel ringkasan kuota Owner). Default
+  // undefined (tidak ada perubahan) supaya SELURUH pemanggil buildTable()
+  // yang sudah ada tidak terpengaruh sama sekali.
+  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass } = {}) {
     const wrap = el("div", { class: "table-wrap" });
     const table = el("table", { class: "data-table" });
     const thead = el("thead", {}, el("tr", {}, columns.map((c) => el("th", {}, c.label))));
@@ -246,7 +251,8 @@ const MugenUI = (() => {
       tbody.appendChild(el("tr", {}, el("td", { colspan: String(columns.length) }, emptyText)));
     } else {
       for (const row of rows) {
-        const tr = el("tr");
+        const kelas = rowClass ? rowClass(row) : "";
+        const tr = el("tr", kelas ? { class: kelas } : {});
         for (const c of columns) {
           const raw = row[c.key];
           const val = c.format ? c.format(raw, row) : (raw ?? "-");

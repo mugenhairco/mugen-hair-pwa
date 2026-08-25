@@ -87,6 +87,9 @@ DEFAULT_CUTI_SETTINGS = {
     "periode_mulai_dasar": None,   # tanggal YYYY-MM-DD, angkar periode -- None = kuota periode nonaktif
     "h_min_pengajuan_izin": 0,     # SISA HISTORIS -- Izin TIDAK PERNAH punya H-min lagi, TIDAK dibaca lagi
     "auto_libur_tidak_absen_aktif": False,  # lihat auto_libur_db.py -- default OFF
+    "kuota_libur_bulanan": 0,      # KOREKSI Owner: jatah Libur/bulan utk Auto-Libur SEBELUM ambil kuota
+                                    # gabungan izin&cuti -- 0 = tidak dipakai, langsung ke kuota gabungan
+                                    # (perilaku Auto-Libur versi awal), lihat auto_libur_db.py.
 }
 
 # PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner): satu pengajuan
@@ -141,6 +144,7 @@ def init_izin_cuti_db():
                 periode_mulai_dasar    TEXT,
                 h_min_pengajuan_izin   INTEGER NOT NULL DEFAULT 0,
                 auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0,
+                kuota_libur_bulanan    INTEGER NOT NULL DEFAULT 0,
                 updated_at             TEXT
             )
         """)
@@ -174,8 +178,8 @@ def _pastikan_baris_settings(conn, tenant_id: int):
                                             kuota_boleh_dipecah, h_min_pengajuan, maksimal_bersamaan,
                                             mode_kuota, kuota_izin_hari, kuota_gabungan_hari,
                                             periode_mulai_dasar, h_min_pengajuan_izin,
-                                            auto_libur_tidak_absen_aktif)
-           VALUES (?, 0, 0, 1, 0, 0, 'gabungan', 0, 0, NULL, 0, 0) ON CONFLICT DO NOTHING""",
+                                            auto_libur_tidak_absen_aktif, kuota_libur_bulanan)
+           VALUES (?, 0, 0, 1, 0, 0, 'gabungan', 0, 0, NULL, 0, 0, 0) ON CONFLICT DO NOTHING""",
         (tenant_id,),
     )
 
@@ -209,7 +213,8 @@ def set_cuti_settings(tenant_id: int, **fields) -> dict:
             baru[key] = fields[key]
     baru["mode_kuota"] = "gabungan"
 
-    for key in ("kuota_periode_bulan", "h_min_pengajuan", "maksimal_bersamaan", "kuota_gabungan_hari"):
+    for key in ("kuota_periode_bulan", "h_min_pengajuan", "maksimal_bersamaan", "kuota_gabungan_hari",
+                "kuota_libur_bulanan"):
         if int(baru[key]) < 0:
             raise ValueError(f"{key} tidak boleh negatif.")
 
@@ -226,8 +231,8 @@ def set_cuti_settings(tenant_id: int, **fields) -> dict:
                    (tenant_id, kuota_periode_bulan, kuota_maksimal_hari, kuota_boleh_dipecah,
                     h_min_pengajuan, maksimal_bersamaan, mode_kuota, kuota_izin_hari,
                     kuota_gabungan_hari, periode_mulai_dasar, h_min_pengajuan_izin,
-                    auto_libur_tidak_absen_aktif, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    auto_libur_tidak_absen_aktif, kuota_libur_bulanan, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (tenant_id) DO UPDATE SET
                     kuota_periode_bulan = excluded.kuota_periode_bulan,
                     kuota_maksimal_hari = excluded.kuota_maksimal_hari,
@@ -240,12 +245,13 @@ def set_cuti_settings(tenant_id: int, **fields) -> dict:
                     periode_mulai_dasar = excluded.periode_mulai_dasar,
                     h_min_pengajuan_izin = excluded.h_min_pengajuan_izin,
                     auto_libur_tidak_absen_aktif = excluded.auto_libur_tidak_absen_aktif,
+                    kuota_libur_bulanan = excluded.kuota_libur_bulanan,
                     updated_at = excluded.updated_at""",
             (tenant_id, int(baru["kuota_periode_bulan"]), int(baru["kuota_maksimal_hari"]),
              int(bool(baru["kuota_boleh_dipecah"])), int(baru["h_min_pengajuan"]), int(baru["maksimal_bersamaan"]),
              baru["mode_kuota"], int(baru["kuota_izin_hari"]), int(baru["kuota_gabungan_hari"]),
              baru["periode_mulai_dasar"], int(baru["h_min_pengajuan_izin"]),
-             int(bool(baru["auto_libur_tidak_absen_aktif"])), now),
+             int(bool(baru["auto_libur_tidak_absen_aktif"])), int(baru["kuota_libur_bulanan"]), now),
         )
     return get_cuti_settings(tenant_id)
 
@@ -339,6 +345,29 @@ def _jumlah_bersamaan_maksimal(tenant_id: int, tanggal_mulai: str, tanggal_seles
         maksimal_per_hari = max(maksimal_per_hari, jumlah)
         hari += timedelta(days=1)
     return maksimal_per_hari
+
+
+def get_sisa_kuota_gabungan_pada_tanggal(barber_id: int, tenant_id: int, tanggal: str,
+                                       kecuali_pengajuan_id: int = None) -> int | None:
+    """Sisa kuota gabungan (Izin+Cuti) untuk PERIODE yang MENCAKUP `tanggal`
+    tertentu -- BEDA dari get_sisa_kuota() yang selalu anchor ke "hari ini"
+    (dipakai auto_libur_db.py untuk memutuskan tanggal MASA LALU tertentu,
+    yang periode kuotanya belum tentu sama dengan periode "hari ini").
+    Return None kalau kuota periode belum aktif/dikonfigurasi untuk tanggal
+    itu (TIDAK membatasi -- boleh dipakai bebas, sama seperti
+    _validasi_kebijakan_pengajuan())."""
+    settings = get_cuti_settings(tenant_id)
+    if not (settings["kuota_periode_bulan"] > 0 and settings["periode_mulai_dasar"]
+            and tanggal >= settings["periode_mulai_dasar"]):
+        return None
+    kuota = settings["kuota_gabungan_hari"]
+    if kuota <= 0:
+        return None
+    periode_awal, periode_akhir = _periode_kuota(tanggal, settings["kuota_periode_bulan"],
+                                                   settings["periode_mulai_dasar"])
+    terpakai = _kuota_terpakai_hari(barber_id, periode_awal, periode_akhir, None,
+                                     kecuali_pengajuan_id=kecuali_pengajuan_id)
+    return max(0, kuota - terpakai)
 
 
 def _validasi_kebijakan_pengajuan(barber_id: int, tenant_id: int, jenis: str, tanggal_mulai: str,

@@ -96,6 +96,8 @@ def _migrasi_kolom_settings_dinamis(conn):
         conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN h_min_pengajuan_izin INTEGER NOT NULL DEFAULT 0")
     if "auto_libur_tidak_absen_aktif" not in kolom:
         conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0")
+    if "kuota_libur_bulanan" not in kolom:
+        conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN kuota_libur_bulanan INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrasi_tabel_saldo_awal(conn):

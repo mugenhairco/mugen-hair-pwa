@@ -841,7 +841,17 @@
 // tidak berubah). Data tenant yang sudah terlanjur memakai mode
 // "Terpisah" otomatis dilipat jadi kuota gabungan saat boot (idempotent,
 // lihat izin_cuti_migrasi.py::migrasi_konsolidasi_kuota_gabungan()).
-const ASSET_VERSION = "154";
+// v154 -> v155: KOREKSI Owner -- Auto-Libur SEKARANG bertingkat: tidak
+// check-in dicatat Libur dulu (mengurangi "Kuota Libur/bulan" baru,
+// Owner-editable, direset tiap bulan kalender), baru jatuh ke kuota
+// gabungan Izin&Cuti kalau Kuota Libur sudah habis, dan tetap dicatat
+// Libur (distabilo merah di Rekap Bulanan) kalau KEDUA kuota itu sama-
+// sama habis. Kartu "Sisa Kuota" (Izin+Cuti & Libur baru) DIPINDAH dari
+// halaman Izin & Cuti ke halaman Absensi (barber), lengkap dengan status
+// merah + keterangan saat kuota habis. Absensi > Owner juga dapat tabel
+// baru "Sisa Kuota Izin, Cuti & Libur" (semua barber sekaligus, baris
+// merah kalau kuota habis) -- lihat auto_libur_db.py/routers/izin_cuti.py.
+const ASSET_VERSION = "155";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
