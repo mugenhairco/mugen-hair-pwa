@@ -831,7 +831,40 @@
 // direkap jadi Cuti & mengurangi kuota Cuti -- default OFF, diaktifkan +
 // dipicu manual per bulan lewat Pengaturan Izin & Cuti (TIDAK ADA
 // scheduler di proyek ini, lihat auto_libur_db.py).
-const ASSET_VERSION = "153";
+// v153 -> v154: PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner) --
+// model kuota "Terpisah" (saldo Izin & Cuti sendiri-sendiri) DIHAPUS,
+// SEKARANG HANYA SATU saldo kuota BERSAMA Izin+Cuti (kuota_gabungan_hari)
+// yang didukung. Aturan pengajuan tetap beda per jenis: Izin boleh
+// mendadak (tanpa H-min) tapi maksimal 2 hari berturut-turut per
+// pengajuan (lebih dari itu wajib pakai Cuti); Cuti tetap pakai Minimal
+// H- dinamis + Maksimal Cuti Bersamaan dinamis (keduanya Owner-editable,
+// tidak berubah). Data tenant yang sudah terlanjur memakai mode
+// "Terpisah" otomatis dilipat jadi kuota gabungan saat boot (idempotent,
+// lihat izin_cuti_migrasi.py::migrasi_konsolidasi_kuota_gabungan()).
+// v154 -> v155: KOREKSI Owner -- Auto-Libur SEKARANG bertingkat: tidak
+// check-in dicatat Libur dulu (mengurangi "Kuota Libur/bulan" baru,
+// Owner-editable, direset tiap bulan kalender), baru jatuh ke kuota
+// gabungan Izin&Cuti kalau Kuota Libur sudah habis, dan tetap dicatat
+// Libur (distabilo merah di Rekap Bulanan) kalau KEDUA kuota itu sama-
+// sama habis. Kartu "Sisa Kuota" (Izin+Cuti & Libur baru) DIPINDAH dari
+// halaman Izin & Cuti ke halaman Absensi (barber), lengkap dengan status
+// merah + keterangan saat kuota habis. Absensi > Owner juga dapat tabel
+// baru "Sisa Kuota Izin, Cuti & Libur" (semua barber sekaligus, baris
+// merah kalau kuota habis) -- lihat auto_libur_db.py/routers/izin_cuti.py.
+// v155 -> v156: Koreksi Absensi yang disetujui SEKARANG membatalkan catatan
+// Auto-Libur (Libur/Cuti otomatis) yang sudah terlanjur dibuat untuk tanggal
+// yang sama -- kuota otomatis kembali (dihitung live, bukan counter), dan
+// Owner melihat toast + tabel "Sisa Kuota" ter-refresh saat approve Koreksi
+// (absensi.js) -- lihat auto_libur_db.py::batalkan_auto_libur_untuk_tanggal().
+// v156 -> v157: PERBAIKAN Owner (3 celah logika Cuti/Izin/Libur): (1) Izin/
+// Cuti baru ditolak kalau tanggalnya sudah tercatat Libur; (2) Check In yang
+// ternyata jatuh di tengah/awal rentang Cuti/Izin yang disetujui SEKARANG
+// minta konfirmasi dulu (absensi.js), lalu memotong/membatalkan rentang itu
+// otomatis + kuota kembali; Kelola Izin (izin_cuti.js) dapat tombol
+// "Batalkan" untuk pengajuan yang sudah Disetujui; (3) Auto-Libur SEKARANG
+// otomatis real-time (begitu jam Pulang lewat) -- tombol manual "Proses
+// Auto-Libur" di Pengaturan DIHAPUS TOTAL (pengaturan.js).
+const ASSET_VERSION = "157";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

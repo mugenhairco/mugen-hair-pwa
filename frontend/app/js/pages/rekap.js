@@ -423,7 +423,13 @@ const PageRekap = (() => {
               { key: "total_komisi", label: "Komisi", format: MugenUI.formatRupiah },
               { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
               { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-              { key: "hari_libur", label: "Hari Libur" },
+              // KOREKSI Owner (Auto-Libur): stabilo merah kalau bulan ini ADA
+              // tanggal yang Kuota Libur DAN kuota Izin&Cuti-nya sama-sama
+              // sudah habis -- lihat routers/rekap.py (field `kuota_habis`).
+              { key: "hari_libur", label: "Hari Libur", format: (v, row) => row.kuota_habis
+                ? MugenUI.el("span", { class: "badge badge-danger",
+                    title: "Kuota Libur & Izin/Cuti bulan ini sudah habis" }, String(v ?? "-"))
+                : String(v ?? "-") },
               { key: "target_tercapai", label: "Target Bonus", format: (v) => v ? "Tercapai" : "Belum" },
               { key: "bonus_customer", label: "Bonus Cust.", format: MugenUI.formatRupiah },
               { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },

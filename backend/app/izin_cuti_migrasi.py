@@ -33,6 +33,14 @@ untuk jenis='izin'. Migrasi ini:
    0/off/'terpisah', byte-for-byte backward compatible) yang berlaku
    universal, sama seperti seluruh migrasi kebijakan dinamis sebelumnya
    di modul ini.
+4. PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner, revisi
+   berikutnya): model kuota 'terpisah' (langkah #1 di atas) DIHAPUS --
+   HANYA satu model kuota BERSAMA (kuota_gabungan_hari, izin+cuti berbagi
+   SATU saldo) yang didukung sekarang, lihat izin_cuti_db.py::
+   DEFAULT_CUTI_SETTINGS/set_cuti_settings(). migrasi_konsolidasi_kuota_
+   gabungan() (portable, dipanggil terpisah dari main.py) melipat tenant
+   yang SUDAH TERLANJUR memakai mode 'terpisah' jadi 'gabungan' secara
+   otomatis, idempotent, tanpa menimpa pengaturan yang sudah diisi Owner.
 """
 
 import logging
@@ -88,6 +96,8 @@ def _migrasi_kolom_settings_dinamis(conn):
         conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN h_min_pengajuan_izin INTEGER NOT NULL DEFAULT 0")
     if "auto_libur_tidak_absen_aktif" not in kolom:
         conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0")
+    if "kuota_libur_bulanan" not in kolom:
+        conn.execute("ALTER TABLE izin_cuti_settings ADD COLUMN kuota_libur_bulanan INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrasi_tabel_saldo_awal(conn):
@@ -193,8 +203,41 @@ def seed_konfigurasi_awal_agustus_2026():
         izin_cuti_db.set_cuti_settings(
             tenant_id,
             kuota_periode_bulan=_PERIODE_BULAN_AWAL,
-            kuota_maksimal_hari=_KUOTA_CUTI_AWAL,
+            kuota_gabungan_hari=_KUOTA_CUTI_AWAL,
             periode_mulai_dasar=_PERIODE_MULAI_DASAR_AWAL,
         )
         logger.info("Seed konfigurasi periode Izin & Cuti awal: tenant_id=%s, %d hari/%d bulan mulai %s.",
                      tenant_id, _KUOTA_CUTI_AWAL, _PERIODE_BULAN_AWAL, _PERIODE_MULAI_DASAR_AWAL)
+
+
+# PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner, revisi berikutnya):
+# model "mode_kuota='terpisah'" (saldo Izin & Cuti sendiri-sendiri) DIHAPUS
+# -- SEKARANG HANYA satu model kuota BERSAMA (kuota_gabungan_hari) yang
+# didukung, lihat izin_cuti_db.py::DEFAULT_CUTI_SETTINGS/set_cuti_settings().
+def migrasi_konsolidasi_kuota_gabungan():
+    """PORTABLE (SQL biasa lewat get_conn(), TANPA PRAGMA) -- dipanggil dari
+    main.py::on_startup() di bagian bersama (pola sama seperti
+    seed_konfigurasi_awal_agustus_2026()), berjalan untuk KEDUA jalur DB.
+
+    Melipat konfigurasi tenant yang SUDAH TERLANJUR memakai mode_kuota=
+    'terpisah' (mis. tenant seed Agustus 2026: kuota_maksimal_hari=10,
+    kuota_izin_hari=0) menjadi mode_kuota='gabungan' dengan
+    kuota_gabungan_hari = MAX(kuota_maksimal_hari, kuota_izin_hari) --
+    Owner TIDAK PERLU mengatur ulang dari nol. Idempotent: HANYA menyentuh
+    baris yang MASIH mode_kuota='terpisah' DAN kuota_gabungan_hari MASIH 0
+    (kalau Owner sudah pernah mengisi kuota_gabungan_hari sendiri lewat UI
+    sebelum migrasi ini sempat jalan, TIDAK PERNAH ditimpa)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT tenant_id, kuota_maksimal_hari, kuota_izin_hari FROM izin_cuti_settings "
+            "WHERE mode_kuota = 'terpisah' AND kuota_gabungan_hari = 0"
+        ).fetchall()
+        for r in rows:
+            kuota_baru = max(r["kuota_maksimal_hari"] or 0, r["kuota_izin_hari"] or 0)
+            conn.execute(
+                "UPDATE izin_cuti_settings SET mode_kuota = 'gabungan', kuota_gabungan_hari = ? "
+                "WHERE tenant_id = ?",
+                (kuota_baru, r["tenant_id"]),
+            )
+            logger.info("Migrasi kuota gabungan Izin & Cuti: tenant_id=%s, mode 'terpisah' -> 'gabungan' "
+                        "(kuota_gabungan_hari=%d).", r["tenant_id"], kuota_baru)

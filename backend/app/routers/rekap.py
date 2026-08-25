@@ -12,6 +12,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
+import auto_libur_db
 import database as db
 import kasbon_db
 import pengeluaran_db
@@ -113,6 +114,11 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
         r["reimburse"] = reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan)
         r["kasbon_dibayar"] = kasbon_db.get_total_dibayar_periode(r["barber_id"], tahun, bulan)
         r["total_pendapatan"] = r["total_pendapatan"] + r["reimburse"] - r["kasbon_dibayar"]
+        # KOREKSI Owner (Auto-Libur): stabilo merah baris "Hari Libur" kalau
+        # bulan ini ADA tanggal yang Kuota Libur DAN kuota Izin&Cuti-nya
+        # sama-sama sudah habis -- lihat auto_libur_db.py::
+        # ada_kelebihan_kuota_bulan_ini().
+        r["kuota_habis"] = auto_libur_db.ada_kelebihan_kuota_bulan_ini(r["barber_id"], tahun, bulan)
     return data
 
 

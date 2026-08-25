@@ -48,7 +48,8 @@ def test_seed_berjalan_dengan_kelima_nama_karyawan_persis(app_client):
 
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     assert settings["kuota_periode_bulan"] == 3
-    assert settings["kuota_maksimal_hari"] == 10
+    assert settings["kuota_gabungan_hari"] == 10
+    assert settings["mode_kuota"] == "gabungan"
     assert settings["periode_mulai_dasar"] == "2026-09-01"
 
 
@@ -99,12 +100,12 @@ def test_seed_tidak_menimpa_pengaturan_yang_sudah_diubah_owner(app_client):
     jalan (mis. server pernah restart di antara deploy) -- seed TIDAK
     BOLEH menimpa pengaturan Owner ini."""
     tenant_id = _buat_tenant_dengan_lima_karyawan("test-sudah-diatur", "Toko Sudah Diatur")
-    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=6, kuota_maksimal_hari=12,
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=6, kuota_gabungan_hari=12,
                                     periode_mulai_dasar="2026-01-01")
     izin_cuti_migrasi.seed_konfigurasi_awal_agustus_2026()
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     assert settings["kuota_periode_bulan"] == 6
-    assert settings["kuota_maksimal_hari"] == 12
+    assert settings["kuota_gabungan_hari"] == 12
     assert settings["periode_mulai_dasar"] == "2026-01-01"
     # Saldo awal (bagian TERPISAH dari konfigurasi periode) tetap dicatat.
     assert len(izin_cuti_db.get_saldo_awal(tenant_id)) == 5
@@ -120,6 +121,60 @@ def test_seed_tidak_menyentuh_tenant_lain_yang_tidak_cocok(app_client):
     assert izin_cuti_db.get_saldo_awal(tenant_lain) == []
     settings_lain = izin_cuti_db.get_cuti_settings(tenant_lain)
     assert settings_lain["kuota_periode_bulan"] == 0
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Sistem Kuota IZIN & CUTI: migrasi data tenant yang SUDAH
+# TERLANJUR memakai mode_kuota='terpisah' (model yang sudah dihapus) --
+# lihat izin_cuti_migrasi.py::migrasi_konsolidasi_kuota_gabungan().
+# ---------------------------------------------------------------------------
+
+def test_migrasi_konsolidasi_melipat_mode_terpisah_ke_gabungan(app_client):
+    tenant_id = tenant_db.buat_tenant("test-konsolidasi", "Toko Konsolidasi")
+    # Baris settings belum tentu ada (baru dibuat lazy) -- pastikan dulu via
+    # get_cuti_settings(), baru set ke mode 'terpisah' langsung lewat SQL
+    # (mode ini sudah tidak bisa dibuat lagi lewat set_cuti_settings() publik).
+    izin_cuti_db.get_cuti_settings(tenant_id)
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE izin_cuti_settings SET mode_kuota='terpisah', kuota_maksimal_hari=10, "
+            "kuota_izin_hari=0 WHERE tenant_id=?",
+            (tenant_id,),
+        )
+    izin_cuti_migrasi.migrasi_konsolidasi_kuota_gabungan()
+    settings = izin_cuti_db.get_cuti_settings(tenant_id)
+    assert settings["mode_kuota"] == "gabungan"
+    assert settings["kuota_gabungan_hari"] == 10
+
+
+def test_migrasi_konsolidasi_tidak_menimpa_kuota_gabungan_yang_sudah_diisi(app_client):
+    """Owner sudah mengatur kuota_gabungan_hari sendiri (mis. lewat UI baru)
+    SEBELUM migrasi ini sempat jalan -- TIDAK BOLEH ditimpa."""
+    tenant_id = tenant_db.buat_tenant("test-konsolidasi-sudah-diisi", "Toko Konsolidasi Sudah Diisi")
+    izin_cuti_db.get_cuti_settings(tenant_id)
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE izin_cuti_settings SET mode_kuota='terpisah', kuota_maksimal_hari=10, "
+            "kuota_gabungan_hari=99 WHERE tenant_id=?",
+            (tenant_id,),
+        )
+    izin_cuti_migrasi.migrasi_konsolidasi_kuota_gabungan()
+    settings = izin_cuti_db.get_cuti_settings(tenant_id)
+    assert settings["kuota_gabungan_hari"] == 99
+
+
+def test_migrasi_konsolidasi_idempotent(app_client):
+    tenant_id = tenant_db.buat_tenant("test-konsolidasi-idem", "Toko Konsolidasi Idem")
+    izin_cuti_db.get_cuti_settings(tenant_id)
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE izin_cuti_settings SET mode_kuota='terpisah', kuota_maksimal_hari=7 WHERE tenant_id=?",
+            (tenant_id,),
+        )
+    izin_cuti_migrasi.migrasi_konsolidasi_kuota_gabungan()
+    izin_cuti_migrasi.migrasi_konsolidasi_kuota_gabungan()
+    settings = izin_cuti_db.get_cuti_settings(tenant_id)
+    assert settings["kuota_gabungan_hari"] == 7
 
 
 def test_router_saldo_awal_barber_hanya_lihat_miliknya(app_client):

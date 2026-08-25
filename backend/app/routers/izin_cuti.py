@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import auto_libur_db
+import database as db
 import izin_cuti_db
 import laporan_pdf
 import permissions
@@ -108,21 +109,23 @@ def info_cuti_marquee(user: dict = Depends(get_current_user)):
 
 class CutiSettingsBody(BaseModel):
     kuota_periode_bulan: int | None = None
-    kuota_maksimal_hari: int | None = None
     kuota_boleh_dipecah: bool | None = None
     h_min_pengajuan: int | None = None
     maksimal_bersamaan: int | None = None
-    # REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): mode kuota
-    # terpisah/gabungan + kuota izin/gabungan sendiri + tanggal angkar
-    # periode bebas + H-min izin terpisah total dari H-min cuti di atas.
-    mode_kuota: str | None = None
-    kuota_izin_hari: int | None = None
-    kuota_gabungan_hari: int | None = None
     periode_mulai_dasar: str | None = None
-    h_min_pengajuan_izin: int | None = None
+    # PERBAIKAN Sistem Kuota IZIN & CUTI (permintaan Owner): SATU saldo
+    # kuota bersama Izin+Cuti (bukan kuota terpisah per jenis) -- lihat
+    # izin_cuti_db.py::DEFAULT_CUTI_SETTINGS/_validasi_kebijakan_pengajuan().
+    # `mode_kuota`/`kuota_maksimal_hari`/`kuota_izin_hari`/
+    # `h_min_pengajuan_izin` SENGAJA TIDAK diterima lagi dari sini (model
+    # 'terpisah' dihapus, mode_kuota dipaksa 'gabungan' di set_cuti_settings()).
+    kuota_gabungan_hari: int | None = None
     # PERMINTAAN OWNER: barber yang tidak check-in pada hari kerja otomatis
     # direkap jadi cuti & mengurangi kuota -- default OFF, lihat auto_libur_db.py.
     auto_libur_tidak_absen_aktif: bool | None = None
+    # KOREKSI Owner: jatah "Kuota Libur/bulan" utk Auto-Libur, dipakai LEBIH
+    # DULU sebelum kuota_gabungan_hari di atas -- 0 = tidak dipakai.
+    kuota_libur_bulanan: int | None = None
 
 
 @router.get("/pengaturan")
@@ -146,9 +149,11 @@ def ubah_cuti_settings(body: CutiSettingsBody, user: dict = Depends(require_perm
 def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_user)):
     """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo' tidak
     ditangkap sebagai path parameter pengajuan_id. Sisa kuota periode AKTIF
-    saat ini (izin/cuti/gabungan tergantung mode_kuota tenant) -- barber
-    HANYA boleh lihat miliknya sendiri, admin/staff (_cek_akses_lihat) boleh
-    lihat siapa pun lewat `barber_id`."""
+    saat ini (SATU saldo bersama Izin+Cuti) + Sisa Kuota Libur bulan
+    berjalan (field `libur`, KOREKSI Owner -- lihat auto_libur_db.py::
+    get_sisa_kuota_libur_bulan_ini(), reset per bulan kalender, TIDAK ikut
+    periode Izin&Cuti) -- barber HANYA boleh lihat miliknya sendiri,
+    admin/staff (_cek_akses_lihat) boleh lihat siapa pun lewat `barber_id`."""
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
         if barber_id is None:
@@ -157,7 +162,39 @@ def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_use
         _cek_akses_lihat(user)
         if barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
-    return izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil = izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil["libur"] = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber_id, user["tenant_id"])
+    return hasil
+
+
+@router.get("/saldo-semua-barber")
+def ambil_sisa_kuota_semua_barber(user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo-semua-
+    barber' tidak ditangkap sebagai path parameter pengajuan_id. KOREKSI
+    Owner: tabel ringkasan Sisa Kuota (Izin&Cuti + Libur) SEMUA barber
+    sekaligus untuk Absensi > Owner -- pola SAMA seperti /marquee (dipakai
+    lintas-halaman oleh absensi.js), HANYA admin/staff (_cek_akses_lihat),
+    barber tidak perlu endpoint ini (sudah pakai /saldo miliknya sendiri).
+    `kuota_habis`=True kalau ADA tanggal bulan ini yang Kuota Libur DAN
+    kuota gabungan Izin&Cuti SAMA-SAMA sudah habis (lihat auto_libur_db.py::
+    ada_kelebihan_kuota_bulan_ini(), sama seperti Rekap Bulanan)."""
+    if user["role"] == "barber":
+        # Endpoint ini mengembalikan data SEMUA barber -- BEDA dari
+        # _cek_akses_lihat() biasa (yang meloloskan barber tanpa syarat
+        # kalau tidak ada `pengajuan` spesifik yang dicek). Barber TIDAK
+        # boleh lihat kuota siapa pun selain dirinya sendiri (sudah pakai
+        # /saldo tanpa barber_id untuk itu).
+        raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+    _cek_akses_lihat(user)
+    hasil = []
+    for barber in db.get_barbers(tenant_id=user["tenant_id"]):
+        saldo = izin_cuti_db.get_sisa_kuota(barber["id"], user["tenant_id"])
+        saldo["libur"] = auto_libur_db.get_sisa_kuota_libur_bulan_ini(barber["id"], user["tenant_id"])
+        saldo["barber_id"] = barber["id"]
+        saldo["nama_barber"] = barber["nama"]
+        saldo["kuota_habis"] = auto_libur_db.ada_kelebihan_kuota_bulan_ini_sekarang(barber["id"])
+        hasil.append(saldo)
+    return hasil
 
 
 @router.get("/saldo-awal")
@@ -176,24 +213,6 @@ def ambil_saldo_awal(barber_id: int = None, user: dict = Depends(get_current_use
     else:
         _cek_akses_lihat(user)
     return izin_cuti_db.get_saldo_awal(user["tenant_id"], barber_id=barber_id)
-
-
-class AutoLiburBody(BaseModel):
-    tahun: int
-    bulan: int
-
-
-@router.post("/auto-libur/proses")
-def proses_auto_libur(body: AutoLiburBody, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
-    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'auto-libur'
-    tidak ditangkap sebagai path parameter pengajuan_id. Pemicu MANUAL
-    (TIDAK ADA scheduler di proyek ini, lihat auto_libur_db.py) -- Owner/
-    staff (izin_cuti_karyawan) memproses satu bulan tertentu, dipanggil
-    kapan saja/berkali-kali dengan aman (idempotent)."""
-    try:
-        return auto_libur_db.proses_auto_libur(user["tenant_id"], body.tahun, body.bulan)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/{pengajuan_id}")
@@ -283,5 +302,18 @@ def ubah_status_pengajuan(pengajuan_id: int, body: StatusBody,
         return izin_cuti_db.set_status_pengajuan(pengajuan_id, body.status,
                                                   catatan_approval=body.catatan_approval,
                                                   disetujui_oleh=user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{pengajuan_id}/batalkan")
+def batalkan_pengajuan(pengajuan_id: int, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    """PERMINTAAN OWNER: batalkan pengajuan yang SUDAH disetujui (mis.
+    barber ternyata tetap masuk kerja padahal tercatat Cuti/Izin) --
+    kuota kembali otomatis (live-computed), lihat izin_cuti_db.py::
+    batalkan_pengajuan_disetujui()."""
+    _pastikan_pengajuan_tenant_sama(user, izin_cuti_db.get_pengajuan(pengajuan_id))
+    try:
+        return izin_cuti_db.batalkan_pengajuan_disetujui(pengajuan_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -176,8 +176,15 @@ CREATE TABLE IF NOT EXISTS absensi_libur (
     id        SERIAL PRIMARY KEY,
     barber_id INTEGER NOT NULL REFERENCES barbers(id),
     tanggal   TEXT NOT NULL,
+    sumber    TEXT,
     UNIQUE(barber_id, tanggal)
 );
+-- PERBAIKAN Sistem Kuota IZIN & CUTI (koreksi Owner): kolom `sumber`
+-- membedakan baris Barber Holiday manual (NULL, perilaku lama) dari yang
+-- dibuat otomatis oleh auto_libur_db.py -- ADD COLUMN biasa (BUKAN FK),
+-- aman untuk instalasi Postgres yang SUDAH ADA (lihat catatan HOTFIX
+-- DEPLOY di file ini soal FK ke barbers(id) yang kehilangan constraint).
+ALTER TABLE absensi_libur ADD COLUMN IF NOT EXISTS sumber TEXT;
 
 CREATE TABLE IF NOT EXISTS produk (
     id           SERIAL PRIMARY KEY,
@@ -441,12 +448,16 @@ CREATE TABLE IF NOT EXISTS izin_cuti_settings (
 );
 
 -- REVISI Sistem Dinamis Cuti & Izin (permintaan Owner, Agustus 2026, lihat
--- izin_cuti_migrasi.py): kuota izin & cuti sekarang bisa TERPISAH (saldo
--- masing-masing) atau GABUNGAN (satu saldo bersama, mode_kuota), H-min
--- pengajuan izin sekarang PUNYA field sendiri (h_min_pengajuan_izin,
--- terpisah total dari h_min_pengajuan milik cuti), dan periode kuota
--- diangkar ke tanggal bebas (periode_mulai_dasar) -- BUKAN lagi selalu
--- Januari/tahun kalender (lihat izin_cuti_db.py::_periode_kuota()).
+-- izin_cuti_migrasi.py) + PERBAIKAN Sistem Kuota IZIN & CUTI (revisi
+-- berikutnya): periode kuota diangkar ke tanggal bebas (periode_mulai_dasar)
+-- -- BUKAN lagi selalu Januari/tahun kalender (lihat izin_cuti_db.py::
+-- _periode_kuota()). Kolom mode_kuota/kuota_izin_hari/h_min_pengajuan_izin
+-- di bawah adalah SISA HISTORIS model kuota 'terpisah' yang SUDAH DIHAPUS
+-- (SEKARANG HANYA satu model kuota BERSAMA, kuota_gabungan_hari) --
+-- kolomnya dipertahankan (bukan di-DROP) supaya migrasi tetap idempotent,
+-- tapi TIDAK dibaca lagi oleh mesin kebijakan (lihat izin_cuti_db.py::
+-- DEFAULT_CUTI_SETTINGS dan izin_cuti_migrasi.py::migrasi_konsolidasi_
+-- kuota_gabungan() untuk migrasi data tenant lama).
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS mode_kuota TEXT NOT NULL DEFAULT 'terpisah';
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_izin_hari INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_gabungan_hari INTEGER NOT NULL DEFAULT 0;
@@ -456,6 +467,11 @@ ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS h_min_pengajuan_izin INT
 -- kerja otomatis direkap jadi cuti & mengurangi kuota -- default OFF,
 -- lihat auto_libur_db.py.
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0;
+-- KOREKSI Owner: Auto-Libur sekarang punya jatah "Kuota Libur/bulan"
+-- SENDIRI (dicatat ke absensi_libur, BUKAN izin_cuti) yang dipakai LEBIH
+-- DULU sebelum ambil kuota gabungan Izin&Cuti di atas -- 0 = tidak
+-- dipakai, langsung ke kuota gabungan (perilaku Auto-Libur versi awal).
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_libur_bulanan INTEGER NOT NULL DEFAULT 0;
 
 -- REVISI Sistem Dinamis Cuti & Izin: snapshot HISTORIS saldo cuti per
 -- titik cut-off (mis. migrasi Agustus 2026) -- murni catatan/tampilan,

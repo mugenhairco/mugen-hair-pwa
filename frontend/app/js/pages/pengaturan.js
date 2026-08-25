@@ -961,10 +961,11 @@ const PagePengaturan = (() => {
       card.appendChild(MugenUI.el("h2", {}, "Pengaturan Izin & Cuti"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" },
         "Opsional -- kalau Periode Kuota dikosongkan/0, pengajuan Izin & Cuti tidak dibatasi kuota sama " +
-        "sekali (perilaku lama). Aturan Izin & Cuti SEPENUHNYA TERPISAH (mengubah salah satu TIDAK memengaruhi " +
-        "yang lain) KECUALI kuota bisa dipilih Gabungan lewat Mode Kuota di bawah. Kebijakan ini HANYA mengikat " +
-        "pengajuan dari akun karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama " +
-        "karyawan kapan pun."));
+        "sekali (perilaku lama). Izin dan Cuti berbagi SATU saldo kuota bersama (bukan jatah terpisah) -- " +
+        "pengajuan Izin maupun Cuti sama-sama mengurangi saldo yang sama. Aturan PENGAJUAN tetap berbeda: " +
+        "Izin boleh diajukan mendadak (maksimal 2 hari berturut-turut per pengajuan, lebih dari itu wajib " +
+        "pakai Cuti), Cuti mengikuti Minimal H- di bawah. Kebijakan ini HANYA mengikat pengajuan dari akun " +
+        "karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama karyawan kapan pun."));
 
       let settings;
       try {
@@ -987,21 +988,7 @@ const PagePengaturan = (() => {
         anak.forEach((n) => isian.appendChild(n));
       }
 
-      // REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): Mode Kuota
-      // menentukan apakah Izin & Cuti punya saldo SENDIRI-SENDIRI
-      // ("terpisah", default) atau berbagi SATU saldo bersama ("gabungan").
-      isian.appendChild(MugenUI.el("h3", {}, "Mode Kuota"));
-      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Terpisah: Izin dan Cuti masing-masing punya jatah hari sendiri (pakai Izin TIDAK mengurangi jatah " +
-        "Cuti, begitu juga sebaliknya). Gabungan: Izin dan Cuti berbagi SATU jatah hari bersama."));
-      const selModeKuota = MugenUI.el("select", {}, [
-        MugenUI.el("option", { value: "terpisah" }, "Terpisah (saldo Izin & Cuti sendiri-sendiri)"),
-        MugenUI.el("option", { value: "gabungan" }, "Gabungan (satu saldo bersama Izin + Cuti)"),
-      ]);
-      selModeKuota.value = settings.mode_kuota || "terpisah";
-      baris("Mode Kuota", selModeKuota);
-
-      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Periode Kuota"));
+      isian.appendChild(MugenUI.el("h3", {}, "Periode Kuota"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Durasi satu periode (mis. 3 bulan atau 12 bulan) dan tanggal mulai periode PERTAMA -- periode " +
         "berikutnya otomatis lanjut dari situ (mis. mulai 1 September, 3 bulan -> Sep-Nov, lalu Des-Feb, " +
@@ -1017,51 +1004,27 @@ const PagePengaturan = (() => {
       inputKuotaDipecah.checked = settings.kuota_boleh_dipecah !== false;
       isian.appendChild(checkboxBaris(inputKuotaDipecah, "Boleh Dipecah (dicicil beberapa kali dalam periode)"));
 
-      const blokKuotaTerpisah = MugenUI.el("div");
-      blokKuotaTerpisah.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Cuti"));
-      const inputKuotaMaksimal = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_maksimal_hari ?? 0) });
-      blokKuotaTerpisah.appendChild(MugenUI.el("label", {}, "Maksimal Cuti per Periode (hari)"));
-      blokKuotaTerpisah.appendChild(inputKuotaMaksimal);
-      blokKuotaTerpisah.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Izin"));
-      const inputKuotaIzin = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_izin_hari ?? 0) });
-      blokKuotaTerpisah.appendChild(MugenUI.el("label", {}, "Maksimal Izin per Periode (hari)"));
-      blokKuotaTerpisah.appendChild(inputKuotaIzin);
-      isian.appendChild(blokKuotaTerpisah);
-
-      const blokKuotaGabungan = MugenUI.el("div");
-      blokKuotaGabungan.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Gabungan (Izin + Cuti)"));
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Izin & Cuti (Gabungan)"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "SATU saldo bersama untuk Izin + Cuti -- pengajuan Izin maupun Cuti sama-sama mengurangi saldo " +
+        "yang sama (bukan jatah terpisah per jenis)."));
       const inputKuotaGabungan = MugenUI.el("input", { type: "number", min: "0",
         value: String(settings.kuota_gabungan_hari ?? 0) });
-      blokKuotaGabungan.appendChild(MugenUI.el("label", {}, "Maksimal Izin + Cuti per Periode (hari)"));
-      blokKuotaGabungan.appendChild(inputKuotaGabungan);
-      isian.appendChild(blokKuotaGabungan);
+      baris("Maksimal Izin + Cuti per Periode (hari)", inputKuotaGabungan);
 
-      function terapkanTampilanMode() {
-        const gabungan = selModeKuota.value === "gabungan";
-        blokKuotaTerpisah.style.display = gabungan ? "none" : "";
-        blokKuotaGabungan.style.display = gabungan ? "" : "none";
-      }
-      terapkanTampilanMode();
-      selModeKuota.addEventListener("change", terapkanTampilanMode);
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Aturan Pengajuan Izin"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Izin boleh diajukan kapan saja/mendadak (tidak ada batas H-minimal) TAPI maksimal 2 hari " +
+        "berturut-turut per pengajuan -- lebih dari itu karyawan wajib mengajukan Cuti. Aturan ini tetap, " +
+        "tidak diatur di sini."));
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Minimal H- Pengajuan Cuti"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Karyawan wajib mengajukan Cuti minimal sekian hari sebelum tanggal mulai. Kosongkan/0 = boleh " +
-        "mengajukan Cuti mendadak (tanpa batas hari sebelumnya). TIDAK memengaruhi aturan Izin di bawah."));
+        "mengajukan Cuti mendadak (tanpa batas hari sebelumnya). TIDAK berlaku untuk Izin (lihat di atas)."));
       const inputHMin = MugenUI.el("input", { type: "number", min: "0",
         value: String(settings.h_min_pengajuan ?? 0) });
       baris("Minimal H- Cuti (hari) -- 0 = tidak ada batas", inputHMin);
-
-      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Minimal H- Pengajuan Izin"));
-      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Karyawan wajib mengajukan Izin minimal sekian hari sebelum tanggal mulai. Kosongkan/0 (default) = " +
-        "Izin boleh diajukan kapan saja/mendadak, sesuai sifat Izin yang biasanya tidak terjadwal. TIDAK " +
-        "memengaruhi aturan Cuti di atas."));
-      const inputHMinIzin = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.h_min_pengajuan_izin ?? 0) });
-      baris("Minimal H- Izin (hari) -- 0 = boleh mendadak", inputHMinIzin);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Maksimal Cuti Bersamaan"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
@@ -1071,17 +1034,27 @@ const PagePengaturan = (() => {
         value: String(settings.maksimal_bersamaan ?? 0) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
 
-      // PERMINTAAN OWNER: barber yang tidak check-in pada hari kerja
-      // otomatis direkap jadi Cuti & mengurangi kuota -- lihat
-      // auto_libur_db.py. Default OFF, murni opsional.
+      // PERMINTAAN OWNER (KOREKSI): barber yang tidak check-in pada hari
+      // kerja otomatis dicatat LIBUR (bukan langsung Cuti) & mengurangi
+      // Kuota Libur/bulan -- lihat auto_libur_db.py. Default OFF, murni
+      // opsional. PERMINTAAN OWNER (revisi berikutnya): diproses OTOMATIS
+      // real-time begitu jam operasional (jam Pulang, Pengaturan Absensi)
+      // lewat -- TIDAK LAGI tombol manual (dihapus total).
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Auto-Libur Tidak Absen"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Kalau aktif: karyawan yang TIDAK check-in Absensi pada hari kerja (toko buka, bukan hari libur " +
         "toko/Barber Holiday, dan belum ada pengajuan Izin/Cuti lain di tanggal itu) otomatis dicatat " +
-        "Cuti & mengurangi kuota Cuti-nya. Hanya memproses tanggal yang SUDAH LEWAT."));
+        "Libur, mengurangi Kuota Libur/bulan di bawah. Kalau Kuota Libur bulan itu sudah habis, tanggal " +
+        "berikutnya diambilkan dari Kuota Izin & Cuti (Gabungan) di atas. Kalau KEDUA kuota itu sama-sama " +
+        "habis, tanggal tetap dicatat Libur tapi baris Hari Libur bulan itu di Rekap Bulanan distabilo " +
+        "merah. Diproses OTOMATIS begitu jam Pulang (Pengaturan Absensi) hari itu sudah lewat -- tidak " +
+        "perlu tombol/aksi manual apa pun."));
       const inputAutoLibur = MugenUI.el("input", { type: "checkbox" });
       inputAutoLibur.checked = settings.auto_libur_tidak_absen_aktif === true;
       isian.appendChild(checkboxBaris(inputAutoLibur, "Aktifkan Auto-Libur Tidak Absen"));
+      const inputKuotaLibur = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_libur_bulanan ?? 0) });
+      baris("Kuota Libur per Bulan (hari) -- 0 = tidak dipakai, langsung ke Kuota Izin & Cuti", inputKuotaLibur);
 
       const errorBox = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Izin & Cuti");
@@ -1091,56 +1064,20 @@ const PagePengaturan = (() => {
       btnSimpan.addEventListener("click", async () => {
         errorBox.textContent = "";
         const payload = {
-          mode_kuota: selModeKuota.value,
           kuota_periode_bulan: Number(inputKuotaPeriode.value) || 0,
           periode_mulai_dasar: inputPeriodeMulaiDasar.value || null,
-          kuota_maksimal_hari: Number(inputKuotaMaksimal.value) || 0,
-          kuota_izin_hari: Number(inputKuotaIzin.value) || 0,
           kuota_gabungan_hari: Number(inputKuotaGabungan.value) || 0,
           kuota_boleh_dipecah: inputKuotaDipecah.checked,
           h_min_pengajuan: Number(inputHMin.value) || 0,
-          h_min_pengajuan_izin: Number(inputHMinIzin.value) || 0,
           maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
           auto_libur_tidak_absen_aktif: inputAutoLibur.checked,
+          kuota_libur_bulanan: Number(inputKuotaLibur.value) || 0,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/izin-cuti/pengaturan", payload));
           MugenUI.toast("Pengaturan Izin & Cuti disimpan.", "success", { force: true });
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-
-      // ---- Kartu terpisah: pemicu proses Auto-Libur (TIDAK ADA scheduler
-      // di proyek ini -- lihat auto_libur_db.py -- Owner memproses SATU
-      // bulan tertentu secara manual, aman dijalankan berkali-kali). ----
-      const cardProses = MugenUI.el("div", { class: "card" });
-      body.appendChild(cardProses);
-      cardProses.appendChild(MugenUI.el("h2", {}, "Proses Auto-Libur"));
-      cardProses.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Jalankan pengecekan Auto-Libur Tidak Absen untuk SATU bulan tertentu (aktifkan dulu di atas). " +
-        "Aman dijalankan berkali-kali -- tidak akan membuat catatan ganda untuk tanggal yang sama."));
-      const today = new Date();
-      const selBulanProses = MugenUI.el("select");
-      for (let b = 1; b <= 12; b++) selBulanProses.appendChild(MugenUI.el("option", { value: String(b) }, MugenUI.namaBulan(b)));
-      selBulanProses.value = String(today.getMonth() + 1);
-      const selTahunProses = MugenUI.el("select");
-      for (let y = today.getFullYear() - 1; y <= today.getFullYear(); y++) selTahunProses.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
-      selTahunProses.value = String(today.getFullYear());
-      cardProses.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulanProses, selTahunProses]));
-      const errorProses = MugenUI.el("div", { class: "login-error" });
-      const btnProses = MugenUI.el("button", { class: "btn-primary", style: "margin-top:12px;" }, "Proses Auto-Libur");
-      cardProses.appendChild(errorProses);
-      cardProses.appendChild(btnProses);
-      btnProses.addEventListener("click", async () => {
-        errorProses.textContent = "";
-        try {
-          const hasil = await MugenUI.withButtonLoading(btnProses, () => MugenApi.post("/api/izin-cuti/auto-libur/proses", {
-            tahun: Number(selTahunProses.value), bulan: Number(selBulanProses.value),
-          }));
-          MugenUI.toast(`Auto-Libur selesai diproses: ${hasil.jumlah_dibuat} catatan baru dibuat.`, "success", { force: true });
-        } catch (e) {
-          errorProses.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
     }
