@@ -237,15 +237,10 @@ const MugenRouter = (() => {
       return;
     }
 
-    // REVISI STRUKTUR WEBSITE CONTENT: watermark developer BESAR (dev-
-    // watermark-bg, di luar #app) disembunyikan KHUSUS selama di /book --
-    // "Website hanya menggunakan background yang dipilih oleh Owner" tapi
-    // kredit developer tetap wajib ada lewat watermark KECIL footer
-    // (dev-watermark-footer), yang TIDAK disentuh sama sekali di sini.
-    // Dipulihkan di sini juga (lapis pertahanan pertama, sebelum
-    // MugenTheme.applyStored() di bawah) supaya benar dari titik navigasi
-    // manapun -- book_public.js sendiri sudah menambah class ini lagi
-    // sebagai lapis pertahanan KEDUA (sama seperti pola forceLight()).
+    // Dipulihkan di sini (lapis pertahanan pertama, sebelum
+    // MugenTheme.applyStored() di bawah) supaya tema kembali benar dari
+    // titik navigasi manapun -- book_public.js sendiri sudah menambah
+    // class ini lagi sebagai lapis pertahanan KEDUA (pola forceLight()).
     document.body.classList.remove("book-public-active");
 
     // REVISI UI/UX: terapkan ulang tema tersimpan setiap kali masuk ke

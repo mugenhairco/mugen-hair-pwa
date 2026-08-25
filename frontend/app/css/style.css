@@ -93,51 +93,6 @@ body {
 }
 
 /* ---------------------------------------------------------------------
-   Watermark developer -- di luar #app SENGAJA (lihat index.html), supaya
-   tidak pernah ikut terhapus/tertimpa oleh render ulang SPA (setiap
-   halaman melakukan root.innerHTML = "" pada #app, bukan pada <body>) dan
-   tidak ada jalan untuk menonaktifkannya lewat menu Setting mana pun.
-   --------------------------------------------------------------------- */
-.dev-watermark-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  user-select: none;
-  overflow: hidden;
-  font-size: 13vw;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text);
-  opacity: 0.03;
-  white-space: nowrap;
-}
-.dev-watermark-footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 2px;
-  z-index: 5;
-  text-align: center;
-  font-size: 11px;
-  color: #94A3B8;
-  pointer-events: none;
-  user-select: none;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-/* REVISI Branding Rivoir: watermark BESAR sekarang tampil KONSISTEN di
-   SELURUH halaman aplikasi TERMASUK Web Booking (/book) -- sebelumnya
-   disembunyikan khusus di /book supaya tidak bentrok dengan fitur
-   Background Website (custom image/opacity per tenant, SUDAH DIHAPUS
-   TOTAL, lihat book_public.js) -- alasan itu sudah tidak berlaku lagi
-   karena Web Booking sekarang selalu memakai satu background default yang
-   sama seperti halaman lain. */
-
-/* ---------------------------------------------------------------------
    Layout app (sidebar + konten), dipakai setelah login.
    --------------------------------------------------------------------- */
 a { color: var(--accent); }
@@ -892,7 +847,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     transition: opacity 0.2s ease;
   }
   .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
-  .dev-watermark-bg { font-size: 22vw; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {

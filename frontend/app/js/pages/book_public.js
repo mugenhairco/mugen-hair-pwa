@@ -4,8 +4,7 @@
 //
 // REVISI STRUKTUR WEBSITE CONTENT: halaman ini SEKARANG mengikuti urutan
 // section tetap Hero / About / Gallery / Visit Us / Opening Hours / Book
-// Appointment / Connect With Us / Footer (watermark developer saja -- lihat
-// index.html), dikonsumsi dari /api/website/content (SATU-SATUNYA sumber
+// Appointment / Connect With Us / Footer, dikonsumsi dari /api/website/content (SATU-SATUNYA sumber
 // tampilan, lihat website_content.py) + /api/pengaturan/identitas (lewat
 // brand.js, HANYA nama/email/logo -- identitas inti) + /api/public/booking/
 // pengaturan (Opening Hours -- REUSE data yang sama dipakai slot booking,
@@ -374,11 +373,8 @@ const PageBookPublic = (() => {
     // dipanggil, tapi dipanggil ulang di sini juga supaya halaman ini tetap
     // benar walau suatu saat dipanggil dari jalur lain.
     if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
-    // REVISI STRUKTUR WEBSITE CONTENT: watermark developer BESAR (dev-
-    // watermark-bg) disembunyikan KHUSUS selama di /book -- lapis
-    // pertahanan KEDUA yang sama seperti forceLight() di atas (router.js
-    // sudah menandai body.book-public-active lebih dulu). Watermark KECIL
-    // footer (dev-watermark-footer) TIDAK disentuh sama sekali di mana pun.
+    // Lapis pertahanan KEDUA yang sama seperti forceLight() di atas
+    // (router.js sudah menandai body.book-public-active lebih dulu).
     document.body.classList.add("book-public-active");
 
     // FONDASI Multi-Tenant Phase 3: dicek PALING AWAL, SEBELUM endpoint
@@ -608,10 +604,8 @@ const PageBookPublic = (() => {
     }
 
     // ---- Footer -- TIDAK ada lagi konten CMS (copyright/pesan/Privacy
-    // Policy/Terms, semua sudah dihapus total sesuai instruksi). Kredit
-    // developer sudah ditangani GLOBAL lewat .dev-watermark-footer
-    // (index.html, tampil di semua halaman termasuk ini) -- tidak perlu
-    // elemen footer tambahan apa pun di sini.
+    // Policy/Terms, semua sudah dihapus total sesuai instruksi) -- tidak
+    // ada elemen footer apa pun di sini.
 
     // REVISI UI/UX Premium: reveal-on-scroll untuk section landing di atas
     // (About/Gallery/Visit/Hours/Book Appointment/Connect) -- dipanggil

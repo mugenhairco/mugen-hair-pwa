@@ -797,7 +797,11 @@
 // v148 -> v149: REVISI feedback Owner -- halaman WhatsApp (pages/whatsapp.js):
 // hapus 2 paragraf keterangan (deskripsi fitur & cara hubungkan ke Fonnte),
 // label "Token API Fonnte" jadi "Token API" saja.
-const ASSET_VERSION = "149";
+// v149 -> v150: REVISI feedback Owner -- watermark developer BESAR ("Rivoir"
+// di background, dev-watermark-bg) dan footer "Powered by Rivoir"
+// (dev-watermark-footer) DIHAPUS TOTAL dari index.html/style.css, jadi
+// tidak tampil lagi di halaman manapun.
+const ASSET_VERSION = "150";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
