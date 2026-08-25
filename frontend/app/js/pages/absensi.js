@@ -1074,11 +1074,24 @@ const PageAbsensi = (() => {
     async function ubahStatusKoreksi(btn, id, status) {
       const catatan = prompt(status === "ditolak" ? "Alasan penolakan (opsional):" : "Catatan approval (opsional):") || "";
       try {
-        await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan }));
+        const hasil = await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan }));
         MugenUI.toast(`Koreksi ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
+        // PERMINTAAN OWNER: kalau Auto-Libur sudah terlanjur memproses
+        // tanggal yang baru saja dikoreksi, backend otomatis membatalkan
+        // catatan Libur/Cuti-nya (lihat routers/attendance.py) -- beri
+        // tahu Owner/Admin secara eksplisit supaya tidak bingung kenapa
+        // Sisa Kuota tiba-tiba berubah.
+        const dibatalkan = hasil && hasil.auto_libur_dibatalkan;
+        if (dibatalkan && (dibatalkan.dibatalkan_libur || dibatalkan.dibatalkan_cuti)) {
+          const jenis = dibatalkan.dibatalkan_libur && dibatalkan.dibatalkan_cuti
+            ? "Libur & Cuti otomatis" : dibatalkan.dibatalkan_libur ? "Libur otomatis" : "Cuti otomatis";
+          MugenUI.toast(`Catatan ${jenis} untuk tanggal ini (dari Auto-Libur) dibatalkan, kuota dikembalikan.`,
+            "success", { force: true });
+        }
         loadKoreksi();
         loadList();
         loadLimit();
+        loadRingkasanKuota();
       } catch (e) {
         MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
       }

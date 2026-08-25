@@ -851,7 +851,12 @@
 // merah + keterangan saat kuota habis. Absensi > Owner juga dapat tabel
 // baru "Sisa Kuota Izin, Cuti & Libur" (semua barber sekaligus, baris
 // merah kalau kuota habis) -- lihat auto_libur_db.py/routers/izin_cuti.py.
-const ASSET_VERSION = "155";
+// v155 -> v156: Koreksi Absensi yang disetujui SEKARANG membatalkan catatan
+// Auto-Libur (Libur/Cuti otomatis) yang sudah terlanjur dibuat untuk tanggal
+// yang sama -- kuota otomatis kembali (dihitung live, bukan counter), dan
+// Owner melihat toast + tabel "Sisa Kuota" ter-refresh saat approve Koreksi
+// (absensi.js) -- lihat auto_libur_db.py::batalkan_auto_libur_untuk_tanggal().
+const ASSET_VERSION = "156";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

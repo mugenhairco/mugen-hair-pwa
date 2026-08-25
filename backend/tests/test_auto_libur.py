@@ -374,3 +374,98 @@ def test_router_saldo_semua_barber_barber_ditolak(single_tenant):
     headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
     r = client.get("/api/izin-cuti/saldo-semua-barber", headers=headers_barber)
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Koreksi Absensi (barber lupa check-in) disetujui UNTUK
+# tanggal yang SUDAH TERLANJUR diproses Auto-Libur -- catatan Libur/Cuti
+# otomatis itu harus dibatalkan (auto_libur_db.batalkan_auto_libur_untuk_tanggal()).
+# ---------------------------------------------------------------------------
+
+def test_batalkan_auto_libur_membatalkan_libur(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id, kuota_libur_bulanan=5)
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-03")
+    auto_libur_db.proses_auto_libur(tenant_id, 2026, 7)
+    assert db.get_hari_libur(barber_id, 2026, 7) == 2  # 2026-07-01 & 07-02
+
+    hasil = auto_libur_db.batalkan_auto_libur_untuk_tanggal(barber_id, "2026-07-01")
+    assert hasil == {"dibatalkan_libur": True, "dibatalkan_cuti": False}
+    assert db.get_hari_libur(barber_id, 2026, 7) == 1  # tinggal 07-02
+
+
+def test_batalkan_auto_libur_membatalkan_cuti(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    _aktifkan(tenant_id)  # kuota_libur_bulanan=0 -> semua langsung jadi Cuti
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-03")
+    auto_libur_db.proses_auto_libur(tenant_id, 2026, 7)
+    assert len(izin_cuti_db.get_pengajuan_list(barber_id=barber_id, jenis="cuti")) == 2
+
+    hasil = auto_libur_db.batalkan_auto_libur_untuk_tanggal(barber_id, "2026-07-01")
+    assert hasil == {"dibatalkan_libur": False, "dibatalkan_cuti": True}
+    daftar = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, jenis="cuti")
+    assert len(daftar) == 1
+    assert daftar[0]["tanggal_mulai"] == "2026-07-02"
+
+
+def test_batalkan_auto_libur_tidak_ada_apa_apa_kasus_normal(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    hasil = auto_libur_db.batalkan_auto_libur_untuk_tanggal(barber_id, "2026-07-01")
+    assert hasil == {"dibatalkan_libur": False, "dibatalkan_cuti": False}
+
+
+def test_batalkan_auto_libur_tidak_menyentuh_barber_holiday_manual(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    db.tandai_libur(barber_id, "2026-07-01")  # manual, sumber NULL
+    hasil = auto_libur_db.batalkan_auto_libur_untuk_tanggal(barber_id, "2026-07-01")
+    assert hasil == {"dibatalkan_libur": False, "dibatalkan_cuti": False}
+    assert db.get_hari_libur(barber_id, 2026, 7) == 1  # tetap ada, tidak ikut terhapus
+
+
+def test_batalkan_auto_libur_tidak_menyentuh_cuti_asli_barber(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-07-01", "2026-07-01", "Cuti asli",
+                                 tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(
+        izin_cuti_db.get_pengajuan_list(barber_id=barber_id)[0]["id"], "disetujui", disetujui_oleh="Owner")
+    hasil = auto_libur_db.batalkan_auto_libur_untuk_tanggal(barber_id, "2026-07-01")
+    assert hasil == {"dibatalkan_libur": False, "dibatalkan_cuti": False}
+    assert len(izin_cuti_db.get_pengajuan_list(barber_id=barber_id)) == 1
+
+
+def test_router_koreksi_disetujui_membatalkan_auto_libur(single_tenant, monkeypatch):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    client.put("/api/attendance/settings",
+               json={"lokasi_latitude": -6.2, "lokasi_longitude": 106.8, "radius_meter": 500,
+                     "jam_masuk": "09:00", "jam_pulang": "20:00"},
+               headers=headers)
+    import auth_db
+    barber_id = _barber(tenant_id, "Barber Koreksi AutoLibur")
+    auth_db.tambah_user("barberkoreksiautolibur", "passwordB123", role="barber", barber_id=barber_id,
+                         tenant_id=tenant_id)
+    r_login = client.post("/api/auth/login", json={"username": "barberkoreksiautolibur", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    _aktifkan(tenant_id, kuota_libur_bulanan=5)
+    monkeypatch.setattr(auto_libur_db, "_hari_ini_wib", lambda: "2026-07-03")
+    auto_libur_db.proses_auto_libur(tenant_id, 2026, 7)
+    assert db.get_hari_libur(barber_id, 2026, 7) == 2
+
+    r_koreksi = client.post("/api/attendance/koreksi",
+                             json={"tanggal": "2026-07-01", "jenis": "check_in", "waktu_diajukan": "09:05",
+                                   "alasan": "Lupa check-in"},
+                             headers=headers_barber)
+    assert r_koreksi.status_code == 200, r_koreksi.text
+    koreksi_id = r_koreksi.json()["id"]
+
+    r_approve = client.put(f"/api/attendance/koreksi/{koreksi_id}/status",
+                            json={"status": "disetujui"}, headers=headers)
+    assert r_approve.status_code == 200, r_approve.text
+    assert r_approve.json()["auto_libur_dibatalkan"] == {"dibatalkan_libur": True, "dibatalkan_cuti": False}
+    assert db.get_hari_libur(barber_id, 2026, 7) == 1  # 07-01 dibatalkan, 07-02 tetap ada

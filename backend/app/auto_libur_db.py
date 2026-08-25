@@ -167,6 +167,56 @@ def ada_kelebihan_kuota_bulan_ini(barber_id: int, tahun: int, bulan: int) -> boo
     return row["jumlah"] > 0
 
 
+def batalkan_auto_libur_untuk_tanggal(barber_id: int, tanggal: str) -> dict:
+    """PERMINTAAN OWNER: dipanggil routers/attendance.py SETELAH Koreksi
+    Absensi disetujui (barber lupa check-in, lalu diajukan susulan) --
+    attendance_logs untuk barber+tanggal ini SEKARANG sudah terisi, jadi
+    kalau Auto-Libur SEBELUMNYA sudah terlanjur memproses tanggal itu
+    (mencatat Libur di absensi_libur ATAU Cuti di izin_cuti, keduanya
+    ditandai "Sistem (Auto-Libur)"), catatan itu BASI dan harus dibatalkan
+    di sini -- kalau tidak, akan ada dua catatan bertabrakan untuk tanggal
+    yang sama (sudah masuk kerja TAPI juga tercatat Libur/Cuti).
+
+    Kuota yang sempat terpakai OTOMATIS kembali begitu baris ini dihapus --
+    baik Kuota Libur (auto_libur_db._libur_auto_terpakai_bulan_ini()) maupun
+    kuota gabungan Izin&Cuti (izin_cuti_db._kuota_terpakai_hari()) SELALU
+    dihitung LIVE dari baris yang ADA, tidak pernah dari counter tersimpan
+    -- TIDAK PERLU logika "refund" terpisah sama sekali.
+
+    HANYA menyentuh baris yang jelas-jelas dibuat Auto-Libur sendiri
+    (sumber/diajukan_oleh "Sistem (Auto-Libur)") -- Barber Holiday manual
+    atau pengajuan Izin/Cuti asli milik barber TIDAK PERNAH ikut terhapus
+    oleh fungsi ini, apa pun isinya.
+
+    Return {"dibatalkan_libur": bool, "dibatalkan_cuti": bool} -- keduanya
+    False di kasus normal (mayoritas -- tanggal itu memang belum pernah
+    diproses Auto-Libur sama sekali)."""
+    dibatalkan_libur = False
+    dibatalkan_cuti = False
+    with get_conn() as conn:
+        row_libur = conn.execute(
+            "SELECT id FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber IN (?, ?)",
+            (barber_id, tanggal, SUMBER_AUTO_LIBUR, SUMBER_AUTO_LIBUR_KELEBIHAN),
+        ).fetchone()
+        if row_libur:
+            conn.execute("DELETE FROM absensi_libur WHERE id = ?", (row_libur["id"],))
+            dibatalkan_libur = True
+        row_cuti = conn.execute(
+            "SELECT id FROM izin_cuti WHERE barber_id = ? AND tanggal_mulai = ? AND tanggal_selesai = ? "
+            "AND diajukan_oleh = ? AND status = 'disetujui'",
+            (barber_id, tanggal, tanggal, DIAJUKAN_OLEH_AUTO_LIBUR),
+        ).fetchone()
+        if row_cuti:
+            conn.execute("DELETE FROM izin_cuti WHERE id = ?", (row_cuti["id"],))
+            dibatalkan_cuti = True
+    if dibatalkan_libur or dibatalkan_cuti:
+        logger.info(
+            "Auto-Libur dibatalkan (Koreksi Absensi disetujui): barber_id=%s tanggal=%s libur=%s cuti=%s",
+            barber_id, tanggal, dibatalkan_libur, dibatalkan_cuti,
+        )
+    return {"dibatalkan_libur": dibatalkan_libur, "dibatalkan_cuti": dibatalkan_cuti}
+
+
 def ada_kelebihan_kuota_bulan_ini_sekarang(barber_id: int) -> bool:
     """Wrapper ada_kelebihan_kuota_bulan_ini() utk BULAN KALENDER BERJALAN
     (WIB) -- dipakai routers/izin_cuti.py::ambil_sisa_kuota_semua_barber()

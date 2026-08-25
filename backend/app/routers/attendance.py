@@ -27,6 +27,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import attendance_db
+import auto_libur_db
 import laporan_pdf
 import permissions
 from auth import (get_current_user, require_admin, require_barber, require_feature, require_owner_or_staff,
@@ -406,11 +407,22 @@ def ubah_status_koreksi(koreksi_id: int, body: KoreksiStatusBody,
                          user: dict = Depends(require_permission("izin_absensi_koreksi"))):
     _pastikan_koreksi_tenant_sama(user, attendance_db.get_koreksi(koreksi_id))
     try:
-        return attendance_db.set_status_koreksi(koreksi_id, body.status,
-                                                 catatan_approval=body.catatan_approval,
-                                                 disetujui_oleh=user["username"])
+        hasil = attendance_db.set_status_koreksi(koreksi_id, body.status,
+                                                  catatan_approval=body.catatan_approval,
+                                                  disetujui_oleh=user["username"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if body.status == "disetujui":
+        # PERMINTAAN OWNER: attendance_logs untuk tanggal ini SEKARANG
+        # sudah terisi (koreksi barusan) -- kalau Auto-Libur SUDAH
+        # TERLANJUR memproses tanggal itu sebelumnya (barber tidak pernah
+        # check-in saat itu diproses), catatan Libur/Cuti otomatisnya
+        # DIBATALKAN di sini supaya tidak dobel dengan absen yang baru
+        # dikoreksi -- kuota yang sempat terpakai otomatis kembali (lihat
+        # auto_libur_db.batalkan_auto_libur_untuk_tanggal()).
+        hasil["auto_libur_dibatalkan"] = auto_libur_db.batalkan_auto_libur_untuk_tanggal(
+            hasil["barber_id"], hasil["tanggal"])
+    return hasil
 
 
 @router.get("/{log_id}")
