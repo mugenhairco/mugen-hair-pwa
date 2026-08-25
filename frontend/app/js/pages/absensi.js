@@ -308,9 +308,13 @@ const PageAbsensi = (() => {
 
     if (gabunganAktif) {
       const habis = saldo.sisa_gabungan <= 0;
+      // PERMINTAAN OWNER: tampilkan TERPAKAI/kuota (bukan sisa/kuota) --
+      // konsisten dengan kartu Libur di bawah (0/5 makin naik ke 5/5 saat
+      // habis), bukan makin turun ke 0.
+      const terpakai = saldo.kuota_gabungan - saldo.sisa_gabungan;
       const anak = [
         MugenUI.el("h2", {}, "Izin + Cuti"),
-        MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
+        MugenUI.el("div", { class: "big-number" }, `${terpakai} / ${saldo.kuota_gabungan} hari`),
         MugenUI.el("div", { class: "subtitle" }, `Periode: ${saldo.periode_awal} s/d ${saldo.periode_akhir}.`),
       ];
       grid.appendChild(MugenUI.el("div", { class: "card" + (habis ? " card-danger" : "") }, anak));
@@ -925,10 +929,12 @@ const PageAbsensi = (() => {
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
+        // PERMINTAAN OWNER: tampilkan TERPAKAI/kuota (bukan sisa/kuota) --
+        // konsisten dengan kartu barber di atas.
         return MugenUI.buildTable([
           { key: "nama_barber", label: "Barber" },
-          { key: "sisa_gabungan", label: "Sisa Izin & Cuti", format: (v, r) => r.aktif ? `${v} / ${r.kuota_gabungan} hari` : "-" },
-          { key: "libur", label: "Sisa Libur (bulan ini)", format: (v) => v && v.aktif ? `${v.sisa} / ${v.kuota} hari` : "-" },
+          { key: "sisa_gabungan", label: "Izin & Cuti", format: (v, r) => r.aktif ? `${r.kuota_gabungan - v} / ${r.kuota_gabungan} hari` : "-" },
+          { key: "libur", label: "Libur (bulan ini)", format: (v) => v && v.aktif ? `${v.terpakai} / ${v.kuota} hari` : "-" },
         ], rows, { emptyText: "Belum ada barber aktif.", rowClass: (r) => r.kuota_habis ? "row-danger" : "" });
       }, { skeleton: { kind: "table", cols: 3, rows: 3 } });
     }

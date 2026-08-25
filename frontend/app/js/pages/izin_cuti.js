@@ -57,9 +57,12 @@ const PageIzinCuti = (() => {
     // mengembalikan mode_kuota="gabungan", lihat izin_cuti_db.py::get_sisa_kuota()).
     const grid = MugenUI.el("div", { class: "grid-cards" });
     if (saldo.kuota_gabungan != null) {
+      // PERMINTAAN OWNER: tampilkan TERPAKAI/kuota (bukan sisa/kuota) --
+      // konsisten dengan kartu Libur di halaman Absensi.
+      const terpakai = saldo.kuota_gabungan - saldo.sisa_gabungan;
       grid.appendChild(MugenUI.el("div", { class: "card" }, [
         MugenUI.el("h2", {}, "Izin + Cuti"),
-        MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
+        MugenUI.el("div", { class: "big-number" }, `${terpakai} / ${saldo.kuota_gabungan} hari`),
       ]));
     }
     if (grid.children.length > 0) card.appendChild(grid);

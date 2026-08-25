@@ -864,7 +864,12 @@
 // "Batalkan" untuk pengajuan yang sudah Disetujui; (3) Auto-Libur SEKARANG
 // otomatis real-time (begitu jam Pulang lewat) -- tombol manual "Proses
 // Auto-Libur" di Pengaturan DIHAPUS TOTAL (pengaturan.js).
-const ASSET_VERSION = "157";
+// v157 -> v158: PERMINTAAN Owner -- kartu/tabel "Izin + Cuti" (Absensi
+// barber, Absensi Owner, Kelola Izin per-barber) sekarang menampilkan
+// TERPAKAI/kuota (mis. "10/10 hari" saat habis), BUKAN LAGI sisa/kuota
+// (sebelumnya "0/10 hari") -- konsisten dengan kartu Libur yang sudah
+// terpakai/kuota sejak awal (absensi.js, izin_cuti.js).
+const ASSET_VERSION = "158";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
