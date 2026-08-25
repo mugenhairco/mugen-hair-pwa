@@ -433,6 +433,14 @@ input, select, textarea {
    dibuat kompak -- beda dari input teks lain yang full-width. */
 input[type="color"] { width: 64px; height: 42px; padding: 4px; cursor: pointer; }
 
+/* BUGFIX (tampilan tidak rapi -- checkbox/radio ikut ketimpa aturan
+   width:100%/padding/border di atas, sengaja dikecualikan di sini):
+   tanpa ini, checkbox melebar penuh selebar baris flex-nya (mis. label
+   "Transfer Bank"/QRIS/Payment Gateway di tab Payment Settings), mendorong
+   teks label di sebelahnya jauh terpisah alih-alih menempel rapi ke kotak
+   checkbox-nya -- checkbox/radio harus tetap ukuran kotak kecil natural. */
+input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; border: none; }
+
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
@@ -481,7 +489,16 @@ button.btn-danger:active:not(:disabled) { background: rgba(220,38,38,0.12); }
 
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+/* BUGFIX (tampilan tidak rapi/tulisan terpotong di HP): flex item TANPA
+   max-width eksplisit boleh tumbuh melebihi lebar container-nya kalau isi
+   di dalamnya menolak menyusut (mis. .row bersarang dengan anak-anak
+   min-width:140px di bawah) -- di layar sempit ini membuat SEBAGIAN .row
+   (mis. dropdown tahun di Dashboard > Bulanan/Periode) mendorong keluar
+   layar dan disembunyikan diam-diam oleh overflow-x:hidden pada .content,
+   BUKAN malah wrap ke baris baru seperti seharusnya (flex-wrap: wrap saja
+   TIDAK cukup mencegah ini). max-width:100% memaksa .row selalu pas dalam
+   container-nya, supaya flex-wrap barisnya sendiri benar-benar aktif. */
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; max-width: 100%; }
 .row > * { flex: 1; min-width: 140px; }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }

@@ -801,7 +801,17 @@
 // di background, dev-watermark-bg) dan footer "Powered by Rivoir"
 // (dev-watermark-footer) DIHAPUS TOTAL dari index.html/style.css, jadi
 // tidak tampil lagi di halaman manapun.
-const ASSET_VERSION = "150";
+// v150 -> v151: BUGFIX tampilan tidak rapi di HP (ditemukan Owner, dicek
+// langsung lewat browser -- bukan tebakan dari kode): (1) checkbox ikut
+// ketimpa aturan `input,select,textarea{width:100%}` global, membuatnya
+// melebar penuh & mendorong label di sebelahnya (mis. Booking > Payment
+// Settings) menjauh -- checkbox/radio sekarang dikecualikan. (2) `.row`
+// (dipakai di banyak halaman, mis. Dashboard > Bulanan/Periode) tidak
+// dibatasi max-width, jadi di layar sempit sebagian isinya (mis. dropdown
+// tahun) terdorong keluar viewport & disembunyikan diam-diam oleh
+// overflow-x:hidden alih-alih wrap ke baris baru -- sekarang diberi
+// max-width:100% supaya flex-wrap-nya benar-benar aktif.
+const ASSET_VERSION = "151";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
