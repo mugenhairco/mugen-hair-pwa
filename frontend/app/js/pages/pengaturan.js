@@ -960,9 +960,11 @@ const PagePengaturan = (() => {
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Pengaturan Izin & Cuti"));
       card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Opsional -- kalau semua nilai di bawah 0/kosong, pengajuan Cuti tidak dibatasi sama sekali (perilaku " +
-        "lama). Kebijakan ini HANYA berlaku untuk jenis Cuti (bukan Izin), dan HANYA mengikat pengajuan dari " +
-        "akun karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama karyawan kapan pun."));
+        "Opsional -- kalau Periode Kuota dikosongkan/0, pengajuan Izin & Cuti tidak dibatasi kuota sama " +
+        "sekali (perilaku lama). Aturan Izin & Cuti SEPENUHNYA TERPISAH (mengubah salah satu TIDAK memengaruhi " +
+        "yang lain) KECUALI kuota bisa dipilih Gabungan lewat Mode Kuota di bawah. Kebijakan ini HANYA mengikat " +
+        "pengajuan dari akun karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama " +
+        "karyawan kapan pun."));
 
       let settings;
       try {
@@ -985,32 +987,86 @@ const PagePengaturan = (() => {
         anak.forEach((n) => isian.appendChild(n));
       }
 
-      isian.appendChild(MugenUI.el("h3", {}, "Kuota Cuti"));
+      // REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): Mode Kuota
+      // menentukan apakah Izin & Cuti punya saldo SENDIRI-SENDIRI
+      // ("terpisah", default) atau berbagi SATU saldo bersama ("gabungan").
+      isian.appendChild(MugenUI.el("h3", {}, "Mode Kuota"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Jatah hari Cuti per periode (mis. 10 hari/3 bulan, atau 12 hari/tahun) -- boleh diambil dicicil " +
-        "(mis. Januari 3 hari, Februari 2 hari, Maret 5 hari = 10 hari) selama \"Boleh Dipecah\" aktif. " +
-        "Periode kuota mengikuti tahun kalender (Januari sebagai awal). Kosongkan/0 Periode Kuota untuk mematikan."));
+        "Terpisah: Izin dan Cuti masing-masing punya jatah hari sendiri (pakai Izin TIDAK mengurangi jatah " +
+        "Cuti, begitu juga sebaliknya). Gabungan: Izin dan Cuti berbagi SATU jatah hari bersama."));
+      const selModeKuota = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "terpisah" }, "Terpisah (saldo Izin & Cuti sendiri-sendiri)"),
+        MugenUI.el("option", { value: "gabungan" }, "Gabungan (satu saldo bersama Izin + Cuti)"),
+      ]);
+      selModeKuota.value = settings.mode_kuota || "terpisah";
+      baris("Mode Kuota", selModeKuota);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Periode Kuota"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Durasi satu periode (mis. 3 bulan atau 12 bulan) dan tanggal mulai periode PERTAMA -- periode " +
+        "berikutnya otomatis lanjut dari situ (mis. mulai 1 September, 3 bulan -> Sep-Nov, lalu Des-Feb, " +
+        "dst). Sisa kuota TIDAK PERNAH terbawa ke periode berikutnya -- periode baru selalu kuota penuh " +
+        "sesuai pengaturan di bawah. Kosongkan/0 Periode Kuota untuk mematikan kuota sama sekali."));
       const inputKuotaPeriode = MugenUI.el("input", { type: "number", min: "0",
         value: String(settings.kuota_periode_bulan ?? 0) });
-      baris("Periode Kuota (bulan, mis. 3 atau 12) -- 0 = mati", inputKuotaPeriode);
-      const inputKuotaMaksimal = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_maksimal_hari ?? 0) });
-      baris("Maksimal Cuti per Periode (hari)", inputKuotaMaksimal);
+      baris("Durasi Periode (bulan, mis. 3 atau 12) -- 0 = mati", inputKuotaPeriode);
+      const inputPeriodeMulaiDasar = MugenUI.el("input", { type: "date",
+        value: settings.periode_mulai_dasar || "" });
+      baris("Tanggal Mulai Periode Pertama", inputPeriodeMulaiDasar);
       const inputKuotaDipecah = MugenUI.el("input", { type: "checkbox" });
       inputKuotaDipecah.checked = settings.kuota_boleh_dipecah !== false;
       isian.appendChild(checkboxBaris(inputKuotaDipecah, "Boleh Dipecah (dicicil beberapa kali dalam periode)"));
 
+      const blokKuotaTerpisah = MugenUI.el("div");
+      blokKuotaTerpisah.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Cuti"));
+      const inputKuotaMaksimal = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_maksimal_hari ?? 0) });
+      blokKuotaTerpisah.appendChild(MugenUI.el("label", {}, "Maksimal Cuti per Periode (hari)"));
+      blokKuotaTerpisah.appendChild(inputKuotaMaksimal);
+      blokKuotaTerpisah.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Izin"));
+      const inputKuotaIzin = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_izin_hari ?? 0) });
+      blokKuotaTerpisah.appendChild(MugenUI.el("label", {}, "Maksimal Izin per Periode (hari)"));
+      blokKuotaTerpisah.appendChild(inputKuotaIzin);
+      isian.appendChild(blokKuotaTerpisah);
+
+      const blokKuotaGabungan = MugenUI.el("div");
+      blokKuotaGabungan.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Gabungan (Izin + Cuti)"));
+      const inputKuotaGabungan = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_gabungan_hari ?? 0) });
+      blokKuotaGabungan.appendChild(MugenUI.el("label", {}, "Maksimal Izin + Cuti per Periode (hari)"));
+      blokKuotaGabungan.appendChild(inputKuotaGabungan);
+      isian.appendChild(blokKuotaGabungan);
+
+      function terapkanTampilanMode() {
+        const gabungan = selModeKuota.value === "gabungan";
+        blokKuotaTerpisah.style.display = gabungan ? "none" : "";
+        blokKuotaGabungan.style.display = gabungan ? "" : "none";
+      }
+      terapkanTampilanMode();
+      selModeKuota.addEventListener("change", terapkanTampilanMode);
+
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Minimal H- Pengajuan Cuti"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Karyawan wajib mengajukan Cuti minimal sekian hari sebelum tanggal mulai. Kosongkan/0 = boleh " +
-        "mengajukan Cuti mendadak (tanpa batas hari sebelumnya)."));
+        "mengajukan Cuti mendadak (tanpa batas hari sebelumnya). TIDAK memengaruhi aturan Izin di bawah."));
       const inputHMin = MugenUI.el("input", { type: "number", min: "0",
         value: String(settings.h_min_pengajuan ?? 0) });
-      baris("Minimal H- (hari) -- 0 = tidak ada batas", inputHMin);
+      baris("Minimal H- Cuti (hari) -- 0 = tidak ada batas", inputHMin);
+
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Minimal H- Pengajuan Izin"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Karyawan wajib mengajukan Izin minimal sekian hari sebelum tanggal mulai. Kosongkan/0 (default) = " +
+        "Izin boleh diajukan kapan saja/mendadak, sesuai sifat Izin yang biasanya tidak terjadwal. TIDAK " +
+        "memengaruhi aturan Cuti di atas."));
+      const inputHMinIzin = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.h_min_pengajuan_izin ?? 0) });
+      baris("Minimal H- Izin (hari) -- 0 = boleh mendadak", inputHMinIzin);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Maksimal Cuti Bersamaan"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Jumlah maksimal karyawan yang boleh Cuti pada tanggal yang sama. Kosongkan/0 = tidak dibatasi."));
+        "Jumlah maksimal karyawan yang boleh Cuti pada tanggal yang sama. Kosongkan/0 = tidak dibatasi. " +
+        "HANYA berlaku untuk Cuti (bukan Izin)."));
       const inputMaksimalBersamaan = MugenUI.el("input", { type: "number", min: "0",
         value: String(settings.maksimal_bersamaan ?? 0) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
@@ -1023,10 +1079,15 @@ const PagePengaturan = (() => {
       btnSimpan.addEventListener("click", async () => {
         errorBox.textContent = "";
         const payload = {
+          mode_kuota: selModeKuota.value,
           kuota_periode_bulan: Number(inputKuotaPeriode.value) || 0,
+          periode_mulai_dasar: inputPeriodeMulaiDasar.value || null,
           kuota_maksimal_hari: Number(inputKuotaMaksimal.value) || 0,
+          kuota_izin_hari: Number(inputKuotaIzin.value) || 0,
+          kuota_gabungan_hari: Number(inputKuotaGabungan.value) || 0,
           kuota_boleh_dipecah: inputKuotaDipecah.checked,
           h_min_pengajuan: Number(inputHMin.value) || 0,
+          h_min_pengajuan_izin: Number(inputHMinIzin.value) || 0,
           maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
         };
         try {

@@ -430,8 +430,6 @@ CREATE TABLE IF NOT EXISTS izin_cuti (
 -- FITUR Kebijakan Cuti Dinamis (feedback Owner): SATU baris per tenant,
 -- default 0/off penuh -- tenant yang belum membuka kartu "Pengaturan Izin
 -- & Cuti" (menu Pengaturan > Karyawan) TIDAK terpengaruh sama sekali.
--- HANYA berlaku jenis='cuti' (lihat izin_cuti_db.py::_validasi_kebijakan_cuti()),
--- 'izin' tidak pernah divalidasi lewat mekanisme ini.
 CREATE TABLE IF NOT EXISTS izin_cuti_settings (
     tenant_id              INTEGER PRIMARY KEY,
     kuota_periode_bulan    INTEGER NOT NULL DEFAULT 0,
@@ -440,6 +438,34 @@ CREATE TABLE IF NOT EXISTS izin_cuti_settings (
     h_min_pengajuan        INTEGER NOT NULL DEFAULT 0,
     maksimal_bersamaan     INTEGER NOT NULL DEFAULT 0,
     updated_at             TEXT
+);
+
+-- REVISI Sistem Dinamis Cuti & Izin (permintaan Owner, Agustus 2026, lihat
+-- izin_cuti_migrasi.py): kuota izin & cuti sekarang bisa TERPISAH (saldo
+-- masing-masing) atau GABUNGAN (satu saldo bersama, mode_kuota), H-min
+-- pengajuan izin sekarang PUNYA field sendiri (h_min_pengajuan_izin,
+-- terpisah total dari h_min_pengajuan milik cuti), dan periode kuota
+-- diangkar ke tanggal bebas (periode_mulai_dasar) -- BUKAN lagi selalu
+-- Januari/tahun kalender (lihat izin_cuti_db.py::_periode_kuota()).
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS mode_kuota TEXT NOT NULL DEFAULT 'terpisah';
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_izin_hari INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_gabungan_hari INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS periode_mulai_dasar TEXT;
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS h_min_pengajuan_izin INTEGER NOT NULL DEFAULT 0;
+
+-- REVISI Sistem Dinamis Cuti & Izin: snapshot HISTORIS saldo cuti per
+-- titik cut-off (mis. migrasi Agustus 2026) -- murni catatan/tampilan,
+-- TIDAK PERNAH ikut dihitung mesin kuota dinamis (lihat izin_cuti_db.py::
+-- _validasi_kebijakan_pengajuan()). Seed data awal: izin_cuti_migrasi.py.
+CREATE TABLE IF NOT EXISTS izin_cuti_saldo_awal (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       INTEGER NOT NULL,
+    barber_id       INTEGER NOT NULL REFERENCES barbers(id),
+    jenis           TEXT NOT NULL DEFAULT 'cuti',
+    saldo_hari      INTEGER NOT NULL,
+    berlaku_sampai  TEXT NOT NULL,
+    catatan         TEXT,
+    created_at      TEXT NOT NULL
 );
 
 -- Modul Keuangan (Fase 1): Pemasukan. Cermin persis tabel `pengeluaran`

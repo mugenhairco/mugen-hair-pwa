@@ -111,6 +111,14 @@ class CutiSettingsBody(BaseModel):
     kuota_boleh_dipecah: bool | None = None
     h_min_pengajuan: int | None = None
     maksimal_bersamaan: int | None = None
+    # REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): mode kuota
+    # terpisah/gabungan + kuota izin/gabungan sendiri + tanggal angkar
+    # periode bebas + H-min izin terpisah total dari H-min cuti di atas.
+    mode_kuota: str | None = None
+    kuota_izin_hari: int | None = None
+    kuota_gabungan_hari: int | None = None
+    periode_mulai_dasar: str | None = None
+    h_min_pengajuan_izin: int | None = None
 
 
 @router.get("/pengaturan")
@@ -128,6 +136,42 @@ def ubah_cuti_settings(body: CutiSettingsBody, user: dict = Depends(require_perm
         return izin_cuti_db.set_cuti_settings(user["tenant_id"], **body.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/saldo")
+def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo' tidak
+    ditangkap sebagai path parameter pengajuan_id. Sisa kuota periode AKTIF
+    saat ini (izin/cuti/gabungan tergantung mode_kuota tenant) -- barber
+    HANYA boleh lihat miliknya sendiri, admin/staff (_cek_akses_lihat) boleh
+    lihat siapa pun lewat `barber_id`."""
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+        if barber_id is None:
+            raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
+    else:
+        _cek_akses_lihat(user)
+        if barber_id is None:
+            raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
+    return izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+
+
+@router.get("/saldo-awal")
+def ambil_saldo_awal(barber_id: int = None, user: dict = Depends(get_current_user)):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo-awal'
+    tidak ditangkap sebagai path parameter pengajuan_id. Snapshot HISTORIS
+    saldo cuti per titik cut-off (mis. migrasi Agustus 2026, lihat
+    izin_cuti_migrasi.py) -- murni catatan/tampilan, TIDAK dihitung mesin
+    kuota dinamis. Sama seperti /saldo: barber HANYA boleh lihat miliknya
+    sendiri, admin/staff boleh lihat siapa pun (atau semua kalau barber_id
+    dikosongkan)."""
+    if user["role"] == "barber":
+        barber_id = user.get("barber_id")
+        if barber_id is None:
+            raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
+    else:
+        _cek_akses_lihat(user)
+    return izin_cuti_db.get_saldo_awal(user["tenant_id"], barber_id=barber_id)
 
 
 @router.get("/{pengajuan_id}")

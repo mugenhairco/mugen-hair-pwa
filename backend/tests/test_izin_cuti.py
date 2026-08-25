@@ -76,7 +76,7 @@ def test_kuota_3_bulan_dipecah_multi_bulan_sesuai_contoh_owner(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
     izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
-                                    kuota_boleh_dipecah=True)
+                                    kuota_boleh_dipecah=True, periode_mulai_dasar="2026-01-01")
     # Januari 3 hari, Februari 2 hari, Maret 5 hari -> total 10 hari (Q1).
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-05", "2026-01-07", "Cuti 1", tenant_id=tenant_id)
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-02-10", "2026-02-11", "Cuti 2", tenant_id=tenant_id)
@@ -96,7 +96,8 @@ def test_kuota_3_bulan_dipecah_multi_bulan_sesuai_contoh_owner(single_tenant):
 def test_kuota_melebihi_batas_ditolak(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
-    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
+                                    periode_mulai_dasar="2026-01-01")
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-05", "2026-01-12", "Cuti 8 hari", tenant_id=tenant_id)
     # Sisa 2 hari, mengajukan 3 hari -> ditolak.
     try:
@@ -111,7 +112,7 @@ def test_kuota_tahunan_sesuai_contoh_owner(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
     izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=12, kuota_maksimal_hari=12,
-                                    kuota_boleh_dipecah=True)
+                                    kuota_boleh_dipecah=True, periode_mulai_dasar="2026-01-01")
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-05", "2026-01-06", "Jan", tenant_id=tenant_id)
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-03-10", "2026-03-12", "Mar", tenant_id=tenant_id)
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-06-01", "2026-06-02", "Jun", tenant_id=tenant_id)
@@ -129,7 +130,7 @@ def test_kuota_boleh_dipecah_false_menolak_pengajuan_kedua(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
     izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
-                                    kuota_boleh_dipecah=False)
+                                    kuota_boleh_dipecah=False, periode_mulai_dasar="2026-01-01")
     izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-05", "2026-01-07", "Cuti pertama", tenant_id=tenant_id)
     try:
         izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-02-01", "2026-02-02",
@@ -143,7 +144,8 @@ def test_kuota_periode_lain_barber_tidak_saling_memengaruhi(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_a = _barber(tenant_id, "Barber Kuota A")
     barber_b = _barber(tenant_id, "Barber Kuota B")
-    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
+                                    periode_mulai_dasar="2026-01-01")
     izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-01-05", "2026-01-12", "A pakai 8 hari", tenant_id=tenant_id)
     # Barber B kuotanya SENDIRI, belum terpakai sama sekali.
     hasil = izin_cuti_db.buat_pengajuan(barber_b, "cuti", "2026-01-05", "2026-01-12",
@@ -296,7 +298,7 @@ def test_izin_tidak_terpengaruh_kebijakan_apa_pun(single_tenant, monkeypatch):
     barber_a = _barber(tenant_id, "Barber Izin A")
     barber_b = _barber(tenant_id, "Barber Izin B")
     izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_maksimal_hari=1,
-                                    h_min_pengajuan=30, maksimal_bersamaan=1)
+                                    h_min_pengajuan=30, maksimal_bersamaan=1, periode_mulai_dasar="2026-01-01")
     monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-15")
     # A ambil izin mendadak (H+0, jauh di bawah H-30) dan dobel dengan izin B.
     izin_cuti_db.buat_pengajuan(barber_a, "izin", "2026-08-15", "2026-08-20", "Sakit A", tenant_id=tenant_id)
@@ -323,7 +325,8 @@ def test_override_melewati_kuota_dan_bentrok(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_a = _barber(tenant_id, "Barber Override A")
     barber_b = _barber(tenant_id, "Barber Override B")
-    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_maksimal_hari=1, maksimal_bersamaan=1)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_maksimal_hari=1, maksimal_bersamaan=1,
+                                    periode_mulai_dasar="2026-01-01")
     izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-07-16", "2026-07-19", "A", tenant_id=tenant_id,
                                  override=True)
     hasil_b = izin_cuti_db.buat_pengajuan(barber_b, "cuti", "2026-07-16", "2026-07-25",
@@ -407,10 +410,20 @@ def test_set_cuti_settings_menolak_nilai_negatif(single_tenant):
 def test_set_cuti_settings_menolak_periode_tanpa_maksimal_hari(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     try:
-        izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=0)
-        assert False, "Seharusnya ValueError (periode aktif tapi maksimal hari 0)"
+        izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=0,
+                                        periode_mulai_dasar="2026-01-01")
+        assert False, "Seharusnya ValueError (periode aktif tapi maksimal hari izin & cuti 0)"
     except ValueError:
         pass
+
+
+def test_set_cuti_settings_menolak_periode_tanpa_tanggal_mulai(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    try:
+        izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10)
+        assert False, "Seharusnya ValueError (periode aktif tapi periode_mulai_dasar kosong)"
+    except ValueError as e:
+        assert "tanggal mulai periode" in str(e).lower()
 
 
 # ---------------------------------------------------------------------------
@@ -425,7 +438,7 @@ def test_router_pengaturan_get_put(single_tenant):
 
     r2 = client.put("/api/izin-cuti/pengaturan",
                      json={"kuota_periode_bulan": 3, "kuota_maksimal_hari": 10, "h_min_pengajuan": 3,
-                           "maksimal_bersamaan": 1}, headers=headers)
+                           "maksimal_bersamaan": 1, "periode_mulai_dasar": "2026-01-01"}, headers=headers)
     assert r2.status_code == 200
     assert r2.json()["kuota_maksimal_hari"] == 10
 
@@ -615,6 +628,195 @@ def test_router_marquee_barber_bisa_lihat_punya_barber_lain(single_tenant, monke
     assert len(hasil) == 1
     assert hasil[0]["nama_barber"] == "Barber Lain Marquee"
     assert "alasan" not in hasil[0]
+
+
+# ---------------------------------------------------------------------------
+# REVISI Sistem Dinamis Cuti & Izin (permintaan Owner, Agustus 2026):
+# kuota izin/cuti terpisah ATAU gabungan, H-min izin terpisah dari cuti,
+# periode diangkar ke tanggal bebas (BUKAN lagi selalu Januari), tanpa
+# carry-over antar periode.
+# ---------------------------------------------------------------------------
+
+def test_izin_kuota_dan_h_min_terpisah_total_dari_cuti_contoh_owner(single_tenant, monkeypatch):
+    """Contoh PERSIS spesifikasi Owner: IZIN=7 hari, CUTI=7 hari, mode
+    terpisah (default) -- pakai 2 hari izin TIDAK mengurangi saldo cuti."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=7,
+                                    kuota_izin_hari=7, periode_mulai_dasar="2026-01-01")
+    izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-01-05", "2026-01-06", "Sakit 2 hari",
+                                 tenant_id=tenant_id)
+    # get_sisa_kuota() menghitung periode AKTIF dari "hari ini" -- dipatok
+    # di dalam periode Jan-Mar 2026 yang sama dengan pengajuan di atas.
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-01-20")
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo["aktif"] is True
+    assert saldo["mode_kuota"] == "terpisah"
+    assert saldo["sisa_izin"] == 5
+    assert saldo["sisa_cuti"] == 7  # SAMA SEKALI tidak berkurang oleh izin
+
+
+def test_izin_h_min_sendiri_tidak_terpengaruh_h_min_cuti(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, h_min_pengajuan=30, h_min_pengajuan_izin=0)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-15")
+    # Izin mendadak (H+1) TETAP boleh walau H-min CUTI diset 30 hari.
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-08-16", "2026-08-16",
+                                         "Sakit mendadak", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+    # Tapi cuti TETAP kena H-min 30 hari-nya sendiri.
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-16", "2026-08-16",
+                                     "Cuti mendadak (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (H-min cuti 30 hari)"
+    except ValueError as e:
+        assert "H-30" in str(e)
+
+
+def test_izin_h_min_sendiri_menolak_saat_diaktifkan(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, h_min_pengajuan_izin=5)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-08-15")
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-08-17", "2026-08-17",
+                                     "Izin H+2 (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (H-min izin 5 hari)"
+    except ValueError as e:
+        assert "H-5" in str(e)
+    # Mengubah H-min izin TIDAK mengubah H-min cuti -- cuti tetap 0/off.
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-16", "2026-08-16",
+                                         "Cuti mendadak tetap boleh", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+
+
+def test_mode_gabungan_izin_dan_cuti_berbagi_satu_saldo_contoh_owner(single_tenant, monkeypatch):
+    """Contoh PERSIS spesifikasi Owner: total kuota gabungan 10 hari, pakai
+    3 hari izin -> sisa 7, lalu 2 hari cuti -> sisa 5."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, mode_kuota="gabungan",
+                                    kuota_gabungan_hari=10, periode_mulai_dasar="2026-01-01")
+    # get_sisa_kuota() menghitung periode AKTIF dari "hari ini" -- dipatok
+    # di dalam periode Jan-Mar 2026 yang sama dengan seluruh pengajuan di
+    # bawah (termasuk yang di Februari).
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-03-01")
+    izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-01-05", "2026-01-07", "Izin 3 hari",
+                                 tenant_id=tenant_id)
+    saldo1 = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo1["sisa_gabungan"] == 7
+
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-02-01", "2026-02-02", "Cuti 2 hari",
+                                 tenant_id=tenant_id)
+    saldo2 = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo2["sisa_gabungan"] == 5
+
+    # Kuota gabungan TERSISA 5 -- mengajukan izin 6 hari (lintas jenis
+    # dengan cuti yang sudah dipakai) harus ditolak.
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-03-01", "2026-03-06",
+                                     "Izin 6 hari (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (kuota gabungan tersisa 5 hari)"
+    except ValueError as e:
+        assert "tersisa 5 hari" in str(e)
+
+
+def test_periode_diangkar_ke_tanggal_bebas_bukan_selalu_januari(single_tenant):
+    """periode_mulai_dasar BUKAN 1 Januari -- bucket periode HARUS
+    mengikuti angkar itu, bukan tahun kalender seperti perilaku lama."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    # Periode pertama: Sep-Nov 2026. September + Oktober -> 4+3 = 7 hari.
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-05", "2026-09-08", "Sep", tenant_id=tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-10-05", "2026-10-07", "Okt", tenant_id=tenant_id)
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    # (get_sisa_kuota pakai HARI INI, bukan tanggal pengajuan -- cek periode
+    # lewat _periode_kuota() langsung supaya independen dari hari ini.)
+    periode_awal, periode_akhir = izin_cuti_db._periode_kuota("2026-11-01", 3, "2026-09-01")
+    assert (periode_awal, periode_akhir) == ("2026-09-01", "2026-11-30")
+    # Desember 2026 SUDAH periode BERIKUTNYA (Des-Feb), bukan lagi Sep-Nov.
+    periode_des_awal, periode_des_akhir = izin_cuti_db._periode_kuota("2026-12-01", 3, "2026-09-01")
+    assert (periode_des_awal, periode_des_akhir) == ("2026-12-01", "2027-02-28")
+    assert saldo is not None  # sanity: get_sisa_kuota tidak error
+
+
+def test_no_carry_over_periode_baru_selalu_kuota_flat(single_tenant):
+    """PERSIS 4 contoh spesifikasi Owner (kuota=10hari/bulan): sisa 2 hari
+    di periode lama TIDAK PERNAH terbawa ke periode baru -- periode baru
+    SELALU tepat kuota yang dikonfigurasi, tidak kurang tidak lebih."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_maksimal_hari=10,
+                                    periode_mulai_dasar="2026-01-01")
+    # Januari: pakai 8 hari (sisa 2) -- TIDAK dibawa ke Februari.
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-01-01", "2026-01-08", "Jan 8 hari",
+                                 tenant_id=tenant_id)
+    # Februari: 10 hari PENUH tetap diizinkan (BUKAN 10+2=12).
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-02-01", "2026-02-10", "Feb 10 hari",
+                                         tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+    # 11 hari di Maret HARUS ditolak (kuota flat 10, bukan lebih).
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-03-01", "2026-03-11",
+                                     "Mar 11 hari (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (kuota Maret tetap 10, bukan terakumulasi)"
+    except ValueError as e:
+        assert "tersisa 10 hari" in str(e)
+
+
+def test_periode_mulai_dasar_tidak_berlaku_untuk_tanggal_sebelum_anchor(single_tenant):
+    """Tanggal SEBELUM periode_mulai_dasar (data/pengajuan lama, sebelum
+    sistem kuota dinamis diaktifkan) TIDAK PERNAH divalidasi lewat mesin
+    kuota -- walau kuotanya sangat ketat (1 hari/periode)."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, kuota_maksimal_hari=1,
+                                    periode_mulai_dasar="2026-09-01")
+    # 20 hari cuti di Juni 2026 (SEBELUM angkar Sep 2026) -- tetap diizinkan.
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-06-01", "2026-06-20",
+                                         "Cuti lama sebelum sistem dinamis", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+    # Tapi begitu tanggal_mulai >= periode_mulai_dasar, kuota ketat berlaku.
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-05", "2026-09-06",
+                                     "Cuti baru 2 hari (harusnya ditolak, kuota 1)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (kuota periode baru aktif, 1 hari)"
+    except ValueError as e:
+        assert "tersisa 1 hari" in str(e)
+
+
+def test_get_sisa_kuota_nonaktif_kalau_belum_dikonfigurasi(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo["aktif"] is False
+    assert saldo["sisa_izin"] is None
+    assert saldo["sisa_cuti"] is None
+    assert saldo["sisa_gabungan"] is None
+
+
+def test_router_saldo_barber_lihat_milik_sendiri_saja(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    import auth_db
+    barber_id = db.add_barber("Barber Saldo Router", tenant_id=tenant_id)
+    auth_db.tambah_user("barbersaldo", "passwordB123", role="barber", barber_id=barber_id,
+                         tenant_id=tenant_id)
+    client.put("/api/izin-cuti/pengaturan",
+               json={"kuota_periode_bulan": 3, "kuota_maksimal_hari": 10, "periode_mulai_dasar": "2026-01-01"},
+               headers=headers)
+
+    r_login = client.post("/api/auth/login", json={"username": "barbersaldo", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+    r = client.get("/api/izin-cuti/saldo", headers=headers_barber)
+    assert r.status_code == 200
+    assert r.json()["mode_kuota"] == "terpisah"
+
+    r_admin = client.get(f"/api/izin-cuti/saldo?barber_id={barber_id}", headers=headers)
+    assert r_admin.status_code == 200
 
 
 def test_router_marquee_butuh_login(single_tenant):

@@ -34,9 +34,70 @@ const PageIzinCuti = (() => {
     return btn;
   }
 
+  // REVISI Sistem Dinamis Cuti & Izin (permintaan Owner): kartu ringkas
+  // sisa kuota periode AKTIF saat ini -- HANYA muncul kalau tenant sudah
+  // mengaktifkan kuota periode (lihat izin_cuti_db.py::get_sisa_kuota(),
+  // `aktif`=False kalau belum dikonfigurasi Owner, kartu ini disembunyikan
+  // sepenuhnya, byte-for-byte sama seperti sebelum fitur kuota ada).
+  async function renderSaldoKuota(root, barberId) {
+    let saldo;
+    try {
+      saldo = await MugenApi.get(`/api/izin-cuti/saldo${barberId ? `?barber_id=${barberId}` : ""}`);
+    } catch (e) {
+      return; // gagal diam-diam -- kartu ini murni informasi tambahan, bukan penghalang
+    }
+    if (!saldo || !saldo.aktif) return;
+    const card = MugenUI.el("div", { class: "card" });
+    card.appendChild(MugenUI.el("h2", {}, "Sisa Kuota"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `Periode aktif: ${saldo.periode_awal} s/d ${saldo.periode_akhir}. Sisa kuota TIDAK pernah terbawa ` +
+      `ke periode berikutnya.`));
+    const grid = MugenUI.el("div", { class: "grid-cards" });
+    if (saldo.mode_kuota === "gabungan") {
+      if (saldo.kuota_gabungan != null) {
+        grid.appendChild(MugenUI.el("div", { class: "card" }, [
+          MugenUI.el("h2", {}, "Izin + Cuti (Gabungan)"),
+          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_gabungan} / ${saldo.kuota_gabungan} hari`),
+        ]));
+      }
+    } else {
+      if (saldo.kuota_izin != null) {
+        grid.appendChild(MugenUI.el("div", { class: "card" }, [
+          MugenUI.el("h2", {}, "Izin"),
+          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_izin} / ${saldo.kuota_izin} hari`),
+        ]));
+      }
+      if (saldo.kuota_cuti != null) {
+        grid.appendChild(MugenUI.el("div", { class: "card" }, [
+          MugenUI.el("h2", {}, "Cuti"),
+          MugenUI.el("div", { class: "big-number" }, `${saldo.sisa_cuti} / ${saldo.kuota_cuti} hari`),
+        ]));
+      }
+    }
+    if (grid.children.length > 0) card.appendChild(grid);
+    root.appendChild(card);
+
+    // Snapshot HISTORIS (mis. migrasi Agustus 2026) -- murni catatan, HANYA
+    // tampil kalau ada baris (kebanyakan tenant TIDAK akan punya apa pun
+    // di sini, lihat izin_cuti_migrasi.py).
+    try {
+      const saldoAwal = await MugenApi.get(`/api/izin-cuti/saldo-awal${barberId ? `?barber_id=${barberId}` : ""}`);
+      if (saldoAwal && saldoAwal.length > 0) {
+        const cardAwal = MugenUI.el("div", { class: "card" });
+        cardAwal.appendChild(MugenUI.el("h2", {}, "Riwayat Saldo Sebelumnya"));
+        for (const s of saldoAwal) {
+          cardAwal.appendChild(MugenUI.el("div", { class: "subtitle" },
+            `${labelJenis(s.jenis)}: ${s.saldo_hari} hari (per ${s.berlaku_sampai}, sebelum sistem kuota periode aktif)`));
+        }
+        root.appendChild(cardAwal);
+      }
+    } catch (e) { /* murni informasi tambahan -- gagal diam-diam */ }
+  }
+
   // ================= BARBER: pengajuan milik sendiri =================
   async function renderBarberView(root) {
     const today = MugenUI.isoHariIniWib(); // BUGFIX (audit): lihat MugenUI.isoHariIniWib()
+    await renderSaldoKuota(root);
     const formCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
     root.appendChild(formCard);
@@ -223,6 +284,16 @@ const PageIzinCuti = (() => {
       MugenUI.el("option", { value: "ditolak" }, "Ditolak"),
     ]);
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filJenis, filStatus]));
+    // REVISI Sistem Dinamis Cuti & Izin: sisa kuota karyawan yang dipilih
+    // di filter -- HANYA muncul kalau satu karyawan spesifik dipilih (bukan
+    // "Semua Karyawan", saldo per-orang tidak bermakna digabung banyak orang).
+    const saldoContainer = MugenUI.el("div");
+    root.insertBefore(saldoContainer, listCard);
+    async function perbaruiSaldoFilter() {
+      saldoContainer.innerHTML = "";
+      if (filBarber.value) await renderSaldoKuota(saldoContainer, filBarber.value);
+    }
+    filBarber.addEventListener("change", perbaruiSaldoFilter);
     filterCard.appendChild(tombolDownloadPdf(() => {
       const params = {};
       if (filBarber.value) params.barber_id = filBarber.value;

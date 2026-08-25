@@ -811,7 +811,21 @@
 // tahun) terdorong keluar viewport & disembunyikan diam-diam oleh
 // overflow-x:hidden alih-alih wrap ke baris baru -- sekarang diberi
 // max-width:100% supaya flex-wrap-nya benar-benar aktif.
-const ASSET_VERSION = "151";
+// v151 -> v152: PENYESUAIAN & SISTEM DINAMIS CUTI DAN IZIN (permintaan
+// Owner, Agustus 2026) -- kuota/periode Izin & Cuti sekarang sepenuhnya
+// dinamis lewat Pengaturan Izin & Cuti (Setting > Karyawan): mode kuota
+// terpisah (saldo Izin & Cuti sendiri-sendiri) atau gabungan (satu saldo
+// bersama), jumlah kuota, durasi periode, tanggal mulai periode (angkar
+// bebas, TIDAK lagi selalu Januari), H-min pengajuan Izin & Cuti TERPISAH
+// total (mengubah satu tidak memengaruhi yang lain). Tanpa carry-over --
+// periode baru selalu kuota penuh sesuai konfigurasi Owner. Kartu "Sisa
+// Kuota" baru di halaman Izin & Cuti (barber lihat miliknya sendiri,
+// Owner/Admin lihat siapa pun lewat filter karyawan). Migrasi Agustus
+// 2026: saldo cuti akhir Agustus (Jack 5/Roma 3/Rafik 7/Rendi 0/Mifta 0)
+// dicatat sebagai riwayat, konfigurasi periode awal (10 hari/3 bulan
+// mulai 1 September 2026) di-seed otomatis -- HANYA untuk tenant yang
+// benar-benar punya kelima nama karyawan itu, lihat izin_cuti_migrasi.py.
+const ASSET_VERSION = "152";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
