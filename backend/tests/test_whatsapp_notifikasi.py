@@ -384,6 +384,10 @@ def test_webhook_faspay_sukses_memicu_notifikasi_yang_sama(single_tenant, monkey
 
 def test_api_whatsapp_settings_owner_bisa_simpan_dan_lihat(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
+    # AUDIT (enforcement paket/subscription): GET/PUT /api/pengaturan/whatsapp
+    # sekarang digerbang fitur "whatsapp_reminder" (sebelumnya bocor tanpa
+    # gate apa pun -- lihat routers/pengaturan.py).
+    _beri_fitur_whatsapp_reminder(single_tenant["tenant_id"])
     r = client.put("/api/pengaturan/whatsapp", json={"fonnte_token": "token-abc"}, headers=headers)
     assert r.status_code == 200, r.text
     assert r.json()["fonnte_token"] == "token-abc"
@@ -401,6 +405,7 @@ def test_api_whatsapp_settings_owner_bisa_simpan_dan_lihat(single_tenant):
 
 def test_api_whatsapp_templates_simpan_tidak_menimpa_token(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
+    _beri_fitur_whatsapp_reminder(single_tenant["tenant_id"])
     client.put("/api/pengaturan/whatsapp", json={"fonnte_token": "token-tetap"}, headers=headers)
     r = client.put("/api/pengaturan/whatsapp", json={"templates": {"pembatalan": "Maaf {nama}, batal ya."}},
                     headers=headers)
@@ -423,6 +428,7 @@ def test_booking_pakai_template_custom_kalau_sudah_diatur(single_tenant, monkeyp
 def test_api_whatsapp_settings_staff_ditolak(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
+    _beri_fitur_whatsapp_reminder(tenant_id)  # supaya 403 di bawah murni soal role, bukan tercampur gerbang fitur
     import auth_db
     auth_db.tambah_user("staffwa", "passwordS123", role="staff", tenant_id=tenant_id)
     r_login = client.post("/api/auth/login", json={"username": "staffwa", "password": "passwordS123"})
@@ -434,12 +440,14 @@ def test_api_whatsapp_settings_staff_ditolak(single_tenant):
 
 def test_api_whatsapp_tes_tanpa_token_ditolak(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
+    _beri_fitur_whatsapp_reminder(single_tenant["tenant_id"])
     r = client.post("/api/pengaturan/whatsapp/tes", json={"nomor_tujuan": "081234567890"}, headers=headers)
     assert r.status_code == 422
 
 
 def test_api_whatsapp_tes_dengan_token(single_tenant, monkeypatch):
     client, headers = single_tenant["client"], single_tenant["headers"]
+    _beri_fitur_whatsapp_reminder(single_tenant["tenant_id"])
     client.put("/api/pengaturan/whatsapp", json={"fonnte_token": "token-ok"}, headers=headers)
     monkeypatch.setattr("routers.pengaturan.whatsapp_service.kirim_whatsapp", lambda *a, **kw: True)
     r = client.post("/api/pengaturan/whatsapp/tes", json={"nomor_tujuan": "081234567890"}, headers=headers)
@@ -450,6 +458,8 @@ def test_api_whatsapp_tes_dengan_token(single_tenant, monkeypatch):
 def test_tenant_isolation_token_tidak_bocor_via_api(two_tenants):
     client = two_tenants["client"]
     headers_a, headers_b = two_tenants["headers_a"], two_tenants["headers_b"]
+    _beri_fitur_whatsapp_reminder(two_tenants["tenant_a"])
+    _beri_fitur_whatsapp_reminder(two_tenants["tenant_b"])
     client.put("/api/pengaturan/whatsapp", json={"fonnte_token": "rahasia-a"}, headers=headers_a)
     r_b = client.get("/api/pengaturan/whatsapp", headers=headers_b)
     assert r_b.json()["fonnte_token"] == ""

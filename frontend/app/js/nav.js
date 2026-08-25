@@ -64,7 +64,13 @@ const MugenNav = (() => {
     // Owner: Pengaturan Absensi sebelumnya tab terpisah di menu Setting,
     // sekarang dipindahkan ke SINI, jadi satu tempat dengan menu Absensi
     // itu sendiri, lihat pages/absensi.js::renderPengaturanAbsensi()).
-    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"] },
+    // AUDIT (enforcement paket/subscription): backend menggerbang SELURUH
+    // /api/attendance dengan fitur "absensi" (routers/attendance.py, lihat
+    // feature_access.py) -- `feature` di sini SEKARANG ikut menyembunyikan
+    // menunya kalau tenant tidak punya fitur itu (sebelumnya menu tetap
+    // tampil, tenant baru tahu lewat 403 di dalam halaman). Lihat
+    // _lolosFitur() di bawah untuk cara field `feature` ini dipakai.
+    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"], feature: "absensi" },
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"],
@@ -134,16 +140,27 @@ const MugenNav = (() => {
     }, linkChildren);
   }
 
+  // AUDIT (enforcement paket/subscription): field opsional `feature` pada
+  // entri MENU_LIST -- kalau diisi, menu HANYA muncul kalau paket tenant
+  // ini menyertakan kode fitur tsb (sumber sama dengan backend, lihat
+  // feature_access.js::MugenFeature.has()). Generik untuk kode fitur APA
+  // PUN (bukan hardcode nama paket) -- menu lain tinggal tambah field ini
+  // kalau nanti perlu digerbang juga.
+  function _lolosFitur(item) {
+    if (!item.feature) return true;
+    return typeof MugenFeature !== "undefined" && MugenFeature.has(item.feature);
+  }
+
   // Bangun satu entri MENU (item flat ATAU grup) jadi elemen nav, atau null
   // kalau tidak ada apa pun yang boleh dilihat role user ini.
   function _bangunItemNav(item, user, activeHash) {
     if (!item.children) {
-      if (!item.roles.includes(user.role)) return null;
+      if (!item.roles.includes(user.role) || !_lolosFitur(item)) return null;
       const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
       return _elLink(item.hash, item.label, activeHash, user, badge);
     }
 
-    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role));
+    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role) && _lolosFitur(c));
     if (!childrenLolos.length) return null;
     if (childrenLolos.length === 1) {
       const only = childrenLolos[0];

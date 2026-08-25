@@ -772,7 +772,14 @@
 // Gateway" TIDAK LAGI tampil sebagai satu pilihan pembungkus -- Virtual
 // Account & QRIS langsung sejajar dengan metode lain di satu daftar
 // pilihan (backend/API TIDAK berubah, murni tampilan).
-const ASSET_VERSION = "145";
+// v145 -> v146: Enforcement fitur/paket -- absensi.js gerbang tombol Excel
+// dengan kode fitur yang benar ("export_excel", bukan "export_pdf"),
+// booking.js hapus gerbang "qris" basi, nav.js sembunyikan menu Absensi
+// kalau paket tidak menyertakannya, router.js tampilkan blok upgrade kalau
+// URL #/absensi dibuka langsung tanpa fitur itu, pengaturan.js gerbang tab
+// WhatsApp dengan fitur "whatsapp_reminder" (backend sekarang juga
+// menegakkannya, lihat routers/pengaturan.py).
+const ASSET_VERSION = "146";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

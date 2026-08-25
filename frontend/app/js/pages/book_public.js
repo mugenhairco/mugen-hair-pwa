@@ -656,11 +656,19 @@ const PageBookPublic = (() => {
       bankCode: null,
     };
 
+    // AUDIT (enforcement paket/subscription): /barbers & /services SEKARANG
+    // ikut digerbang "booking_online" di backend (sebelumnya bocor ke
+    // tenant mana pun tanpa fitur ini -- lihat
+    // routers/booking.py::_pastikan_booking_online_aktif()) -- jadi
+    // TIDAK BOLEH lagi dipanggil bersamaan dengan /pengaturan di SATU
+    // Promise.all (kalau fiturnya nonaktif, keduanya akan 403 dan
+    // menjatuhkan seluruh wizard ke pesan error generik alih-alih pesan
+    // ramah "Booking online belum tersedia" di bawah). /pengaturan +
+    // MugenBrand.refresh() dulu (KEDUANYA tidak pernah digerbang fitur
+    // ini), baru /barbers + /services kalau memang aktif.
     try {
-      [pengaturan, barbers, services] = await Promise.all([
+      [pengaturan] = await Promise.all([
         MugenApi.get("/api/public/booking/pengaturan"),
-        MugenApi.get("/api/public/booking/barbers"),
-        MugenApi.get("/api/public/booking/services"),
         MugenBrand.refresh(),
       ]);
     } catch (e) {
@@ -672,12 +680,21 @@ const PageBookPublic = (() => {
     // Feature Gating "booking_online": paket tenant ini tidak menyertakan
     // fitur ini -- endpoint /pengaturan sengaja membalas payload PENDEK
     // {"booking_online": false} (lihat routers/booking.py::public_pengaturan),
-    // tampilkan pesan ramah alih-alih lanjut ke Step 1 (Choose Barber) yang
-    // datanya sendiri sudah tidak lengkap (barbers/services tetap
-    // dipanggil di Promise.all di atas, tapi hasilnya tidak dipakai lagi).
+    // tampilkan pesan ramah alih-alih lanjut ke Step 1 (Choose Barber).
     if (pengaturan.booking_online === false) {
       body.innerHTML = ""; // buang skeleton sebelum tampilkan pesan
       body.appendChild(MugenUI.el("div", { class: "card" }, "Booking online belum tersedia untuk toko ini."));
+      return;
+    }
+
+    try {
+      [barbers, services] = await Promise.all([
+        MugenApi.get("/api/public/booking/barbers"),
+        MugenApi.get("/api/public/booking/services"),
+      ]);
+    } catch (e) {
+      body.innerHTML = ""; // buang skeleton sebelum tampilkan error
+      body.appendChild(errorStateRetry("Failed to load the booking form: " + e.message, () => { root.innerHTML = ""; renderWizard(root); }));
       return;
     }
 

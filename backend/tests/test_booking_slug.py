@@ -7,6 +7,7 @@
 - Super Admin: kolom booking_url (item 8).
 - Regresi: login/branding/dashboard/Super Admin TIDAK terganggu (item 10)."""
 
+import subscription_db
 import tenant_db
 
 
@@ -60,6 +61,13 @@ def test_resolusi_publik_lewat_booking_slug_setelah_diedit(two_tenants):
     mekanisme dengan resolusi subdomain lewat middleware) HARUS tetap
     menemukan tenant yang benar lewat booking_slug baru itu."""
     client = two_tenants["client"]
+    # AUDIT (enforcement paket/subscription): /api/public/booking/barbers
+    # sekarang digerbang fitur "booking_online" (lihat routers/booking.py::
+    # _pastikan_booking_online_aktif()) -- two_tenants TIDAK punya baris
+    # subscription sama sekali secara default (fail-CLOSED untuk fitur),
+    # jadi perlu diisi eksplisit di sini supaya test ini tetap menguji
+    # RESOLUSI booking_slug-nya, bukan malah kena gerbang fitur duluan.
+    subscription_db.create_default_subscription(two_tenants["tenant_a"])
     r = client.put(
         "/api/booking/booking-slug", json={"booking_slug": "customslugunik"},
         headers=two_tenants["headers_a"],

@@ -246,7 +246,7 @@ def _whatsapp_state(tenant_id: int) -> dict:
 
 
 @router.get("/whatsapp")
-def ambil_whatsapp(user: dict = Depends(require_admin)):
+def ambil_whatsapp(user: dict = Depends(require_admin), _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
     return _whatsapp_state(user["tenant_id"])
 
 
@@ -256,7 +256,8 @@ class WhatsappBody(BaseModel):
 
 
 @router.put("/whatsapp")
-def simpan_whatsapp(body: WhatsappBody, user: dict = Depends(require_admin)):
+def simpan_whatsapp(body: WhatsappBody, user: dict = Depends(require_admin),
+                     _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
     if body.fonnte_token is not None:
         whatsapp_service.set_token(body.fonnte_token, tenant_id=user["tenant_id"])
     if body.templates is not None:
@@ -272,7 +273,8 @@ class WhatsappTesBody(BaseModel):
 
 
 @router.post("/whatsapp/tes")
-def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin)):
+def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin),
+                  _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
     """Kirim satu pesan tes ke nomor yang diisi Owner -- supaya Owner bisa
     memastikan token Fonnte-nya benar SEBELUM mengandalkannya untuk
     notifikasi booking sungguhan."""

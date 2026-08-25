@@ -852,34 +852,45 @@ const PageAbsensi = (() => {
       return params;
     }
 
-    // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js --
-    // Export Excel memakai gate yang SAMA (lihat routers/attendance.py).
+    // AUDIT (enforcement paket/subscription): SEBELUMNYA tombol Excel ikut
+    // digerbang oleh "export_pdf" (kode SALAH -- backend
+    // routers/attendance.py:239 menggerbangnya dengan "export_excel",
+    // kode BEDA) -- akibatnya tenant yang punya export_excel TAPI TIDAK
+    // punya export_pdf kehilangan tombol Excel sama sekali, dan tenant
+    // sebaliknya (punya export_pdf, tidak punya export_excel) melihat
+    // tombol Excel yang selalu gagal 403. Sekarang tiap tombol dicek
+    // fiturnya SENDIRI-SENDIRI, sesuai gate backend masing-masing.
     function tombolExport() {
       const wrap = MugenUI.el("div", { class: "row", style: "flex:none;gap:10px;margin-top:10px;" });
-      if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
-        wrap.appendChild(MugenFeature.upgradeBlock("Export PDF/Excel"));
-        return wrap;
-      }
-      const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
-      btnPdf.addEventListener("click", () => {
-        const qs = new URLSearchParams(paramsAktif());
-        MugenPdfPreview.open({
-          generate: () => MugenApi.fetchBlob(`/api/attendance/pdf?${qs}`),
-          filename: MugenUI.namaFileAman("Laporan Absensi.pdf"),
-        });
-      });
-      const btnExcel = MugenUI.el("button", {}, "Export Excel");
-      btnExcel.addEventListener("click", async () => {
-        try {
+      const adaFitur = typeof MugenFeature === "undefined" || MugenFeature.has("export_pdf");
+      const adaFiturExcel = typeof MugenFeature === "undefined" || MugenFeature.has("export_excel");
+      if (adaFitur) {
+        const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
+        btnPdf.addEventListener("click", () => {
           const qs = new URLSearchParams(paramsAktif());
-          const blob = await MugenUI.withButtonLoading(btnExcel, () => MugenApi.fetchBlob(`/api/attendance/excel?${qs}`));
-          MugenApi.saveBlob(blob, MugenUI.namaFileAman("Laporan Absensi.xlsx"));
-        } catch (e) {
-          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-        }
-      });
-      wrap.appendChild(btnPdf);
-      wrap.appendChild(btnExcel);
+          MugenPdfPreview.open({
+            generate: () => MugenApi.fetchBlob(`/api/attendance/pdf?${qs}`),
+            filename: MugenUI.namaFileAman("Laporan Absensi.pdf"),
+          });
+        });
+        wrap.appendChild(btnPdf);
+      }
+      if (adaFiturExcel) {
+        const btnExcel = MugenUI.el("button", {}, "Export Excel");
+        btnExcel.addEventListener("click", async () => {
+          try {
+            const qs = new URLSearchParams(paramsAktif());
+            const blob = await MugenUI.withButtonLoading(btnExcel, () => MugenApi.fetchBlob(`/api/attendance/excel?${qs}`));
+            MugenApi.saveBlob(blob, MugenUI.namaFileAman("Laporan Absensi.xlsx"));
+          } catch (e) {
+            MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+          }
+        });
+        wrap.appendChild(btnExcel);
+      }
+      if (!adaFitur && !adaFiturExcel) {
+        wrap.appendChild(MugenFeature.upgradeBlock("Export PDF/Excel"));
+      }
       return wrap;
     }
     filterCard.appendChild(tombolExport());
