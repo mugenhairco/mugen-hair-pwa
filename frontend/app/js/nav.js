@@ -115,7 +115,7 @@ const MugenNav = (() => {
   // terkait (booking_notif.js/izin_notif.js) tiap polling -- sengaja
   // dibuat ulang di sini (bukan disimpan sekali) karena seluruh sidebar
   // di-render ULANG tiap pindah menu.
-  function _elLink(hash, label, activeHash, user, badge) {
+  function _elLink(hash, label, activeHash, user, badge, locked) {
     // .nav-initial (span lingkaran 2 huruf) HANYA terlihat saat
     // .sidebar.collapsed (lihat style.css) -- selalu dibuat supaya tidak
     // perlu render ulang saat collapse/expand, murni ditampilkan/
@@ -124,7 +124,16 @@ const MugenNav = (() => {
       MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(label)),
       MugenUI.el("span", {}, label),
     ];
-    if (badge && badge.roles.includes(user.role)) {
+    // AUDIT (enforcement paket/subscription -- REVISI feedback Owner): menu
+    // yang fiturnya TIDAK termasuk paket tenant TETAP tampil (BUKAN
+    // disembunyikan seperti sebelumnya) -- ikon gembok kecil + gaya redup
+    // supaya Owner tahu fiturnya ADA tapi belum termasuk paketnya, bukan
+    // mengira fiturnya tidak pernah ada sama sekali. Link TETAP bisa diklik
+    // (href tidak diubah) -- halaman tujuannya sendiri yang menampilkan
+    // blok "Upgrade Paket" (lihat router.js), BUKAN dicegah di sini.
+    if (locked) {
+      linkChildren.push(MugenUI.el("span", { class: "nav-lock-icon", "aria-label": "Belum termasuk paket" }, "🔒"));
+    } else if (badge && badge.roles.includes(user.role)) {
       linkChildren.push(MugenUI.el("span", { class: "nav-badge", id: badge.id, style: "display:none;" }));
     }
     return MugenUI.el("a", {
@@ -134,38 +143,38 @@ const MugenNav = (() => {
       // tampak saat sidebar collapsed (satu-satunya kondisi label ini
       // benar-benar tidak terlihat di layar). aria-label dipertahankan
       // untuk screen reader terlepas dari state collapsed/expanded.
-      "data-tooltip": label,
+      "data-tooltip": locked ? `${label} (belum termasuk paket)` : label,
       "aria-label": label,
-      class: activeHash.startsWith(hash) ? "active" : "",
+      class: (activeHash.startsWith(hash) ? "active" : "") + (locked ? " nav-locked" : ""),
     }, linkChildren);
   }
 
   // AUDIT (enforcement paket/subscription): field opsional `feature` pada
-  // entri MENU_LIST -- kalau diisi, menu HANYA muncul kalau paket tenant
-  // ini menyertakan kode fitur tsb (sumber sama dengan backend, lihat
-  // feature_access.js::MugenFeature.has()). Generik untuk kode fitur APA
-  // PUN (bukan hardcode nama paket) -- menu lain tinggal tambah field ini
-  // kalau nanti perlu digerbang juga.
-  function _lolosFitur(item) {
-    if (!item.feature) return true;
-    return typeof MugenFeature !== "undefined" && MugenFeature.has(item.feature);
+  // entri MENU_LIST -- kalau diisi DAN tenant TIDAK punya kode fitur itu
+  // (sumber sama dengan backend, lihat feature_access.js::MugenFeature.has()),
+  // menu tetap tampil TAPI ditandai terkunci (lihat _elLink() di atas).
+  // Generik untuk kode fitur APA PUN (bukan hardcode nama paket) -- menu
+  // lain tinggal tambah field ini kalau nanti perlu digerbang juga.
+  function _terkunciFitur(item) {
+    if (!item.feature) return false;
+    return !(typeof MugenFeature !== "undefined" && MugenFeature.has(item.feature));
   }
 
   // Bangun satu entri MENU (item flat ATAU grup) jadi elemen nav, atau null
   // kalau tidak ada apa pun yang boleh dilihat role user ini.
   function _bangunItemNav(item, user, activeHash) {
     if (!item.children) {
-      if (!item.roles.includes(user.role) || !_lolosFitur(item)) return null;
+      if (!item.roles.includes(user.role)) return null;
       const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
-      return _elLink(item.hash, item.label, activeHash, user, badge);
+      return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item));
     }
 
-    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role) && _lolosFitur(c));
+    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role));
     if (!childrenLolos.length) return null;
     if (childrenLolos.length === 1) {
       const only = childrenLolos[0];
       const badge = only.badgeId ? { id: only.badgeId, roles: only.badgeRoles || [] } : null;
-      return _elLink(only.hash, only.label, activeHash, user, badge);
+      return _elLink(only.hash, only.label, activeHash, user, badge, _terkunciFitur(only));
     }
 
     const grupAktif = childrenLolos.some((c) => activeHash.startsWith(c.hash));
@@ -184,7 +193,7 @@ const MugenNav = (() => {
     const submenu = MugenUI.el("div", { class: "nav-submenu" });
     for (const child of childrenLolos) {
       const badge = child.badgeId ? { id: child.badgeId, roles: child.badgeRoles || [] } : null;
-      submenu.appendChild(_elLink(child.hash, child.label, activeHash, user, badge));
+      submenu.appendChild(_elLink(child.hash, child.label, activeHash, user, badge, _terkunciFitur(child)));
     }
     toggle.addEventListener("click", () => wrap.classList.toggle("open"));
     wrap.appendChild(toggle);

@@ -779,7 +779,15 @@
 // URL #/absensi dibuka langsung tanpa fitur itu, pengaturan.js gerbang tab
 // WhatsApp dengan fitur "whatsapp_reminder" (backend sekarang juga
 // menegakkannya, lihat routers/pengaturan.py).
-const ASSET_VERSION = "146";
+// v146 -> v147: REVISI feedback Owner -- menu fitur yang belum termasuk
+// paket tenant SEKARANG TETAP TAMPIL (bukan disembunyikan), diredupkan +
+// ikon gembok (nav.js::_terkunciFitur()/_elLink()), klik tetap mengarah ke
+// halamannya yang menampilkan blok "Upgrade Paket" (pola sudah ada di
+// router.js untuk #/absensi). Kartu "Link Booking" di menu Booking >
+// Booking Settings sekarang diberi catatan jelas kalau fitur "booking_online"
+// belum termasuk paket toko (link/pengaturan slug TETAP ditampilkan, boleh
+// disiapkan lebih dulu, tapi Owner diberi tahu belum bisa diakses customer).
+const ASSET_VERSION = "147";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

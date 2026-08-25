@@ -1296,6 +1296,18 @@ const PageBooking = (() => {
 
   // ================= TAB: BOOKING SETTINGS =================
   async function renderBookingSettings(body) {
+    // AUDIT (enforcement paket/subscription -- REVISI feedback Owner):
+    // SEBELUMNYA kartu "Link Booking" di bawah tampil & berfungsi PENUH
+    // terlepas fitur "booking_online" aktif atau tidak -- Owner paket yang
+    // tidak menyertakan fitur ini tetap melihat link yang kelihatannya
+    // siap-pakai (walau halaman /book tujuannya sendiri sudah menolak
+    // customer, lihat routers/booking.py::_pastikan_booking_online_aktif()).
+    // Sekarang diberi catatan jelas di atas kartu -- link & pengaturan slug
+    // TETAP ditampilkan (Owner boleh menyiapkannya lebih dulu sebelum
+    // upgrade), TAPI Owner diberi tahu link itu belum bisa diakses customer.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("booking_online")) {
+      body.appendChild(MugenFeature.upgradeBlock("Booking Online"));
+    }
     const linkCard = MugenUI.el("div", { class: "card" });
     body.appendChild(linkCard);
     linkCard.appendChild(MugenUI.el("h2", {}, "Link Booking"));
