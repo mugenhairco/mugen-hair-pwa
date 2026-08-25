@@ -461,10 +461,19 @@ ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS auto_libur_tidak_absen_a
 -- titik cut-off (mis. migrasi Agustus 2026) -- murni catatan/tampilan,
 -- TIDAK PERNAH ikut dihitung mesin kuota dinamis (lihat izin_cuti_db.py::
 -- _validasi_kebijakan_pengajuan()). Seed data awal: izin_cuti_migrasi.py.
+--
+-- HOTFIX DEPLOY: `barber_id` SENGAJA TANPA "REFERENCES barbers(id)" (pola
+-- SAMA persis seperti manual_customer_transaksi di atas) -- versi awal
+-- tabel ini memakainya dan meng-crash boot produksi dengan
+-- "psycopg2.errors.InvalidForeignKey: there is no unique constraint
+-- matching given keys for referenced table 'barbers'" -- tabel `barbers`
+-- di database produksi TIDAK (lagi) punya constraint UNIQUE/PRIMARY KEY
+-- murni pada `id` yang bisa dirujuk FK baru. Menghapus FK ini membuat
+-- migrasi ini idempotent & aman dijalankan pada schema produksi apa adanya.
 CREATE TABLE IF NOT EXISTS izin_cuti_saldo_awal (
     id              SERIAL PRIMARY KEY,
     tenant_id       INTEGER NOT NULL,
-    barber_id       INTEGER NOT NULL REFERENCES barbers(id),
+    barber_id       INTEGER NOT NULL,
     jenis           TEXT NOT NULL DEFAULT 'cuti',
     saldo_hari      INTEGER NOT NULL,
     berlaku_sampai  TEXT NOT NULL,
