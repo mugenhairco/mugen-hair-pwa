@@ -258,6 +258,13 @@ a:hover { color: var(--accent-secondary); }
   background: var(--accent);
 }
 
+/* AUDIT (enforcement paket/subscription -- REVISI feedback Owner): menu
+   fitur yang belum termasuk paket tenant TETAP tampil (bukan disembunyikan),
+   diredupkan + ikon gembok -- lihat nav.js::_elLink()/_terkunciFitur(). */
+.sidebar nav a.nav-locked { opacity: .55; }
+.sidebar nav a.nav-locked:hover { opacity: .85; }
+.nav-lock-icon { font-size: 12px; flex-shrink: 0; }
+
 /* REVISI: badge jumlah booking belum dikonfirmasi (menu Booking, khusus
    admin) -- lihat nav.js/booking_notif.js. */
 .nav-badge {

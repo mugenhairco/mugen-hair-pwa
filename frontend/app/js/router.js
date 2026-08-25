@@ -385,11 +385,13 @@ const MugenRouter = (() => {
       // role boleh lihat halamannya sendiri-sendiri, dibedakan DI DALAM
       // absensi.js lewat user.role). Perlindungan sebenarnya tetap di
       // backend (routers/attendance.py).
-      // AUDIT (enforcement paket/subscription): kalau tenant ini tidak
-      // punya fitur "absensi" (mis. buka URL langsung tanpa lewat sidebar,
-      // sidebar SUDAH menyembunyikan menunya lewat nav.js), tampilkan blok
+      // AUDIT (enforcement paket/subscription -- REVISI feedback Owner):
+      // kalau tenant ini tidak punya fitur "absensi", tampilkan blok
       // upgrade di sini SEBELUM memuat halamannya sama sekali -- daripada
-      // menunggu 403 mentah dari backend.
+      // menunggu 403 mentah dari backend. Berlaku baik diakses lewat klik
+      // menu (nav.js SEKARANG tetap menampilkan menunya, diredupkan +
+      // ikon gembok, BUKAN disembunyikan -- lihat nav.js::_terkunciFitur())
+      // maupun URL langsung.
       if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
         content.appendChild(MugenFeature.upgradeBlock("Absensi"));
       } else {
