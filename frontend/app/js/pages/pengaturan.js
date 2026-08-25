@@ -1071,6 +1071,18 @@ const PagePengaturan = (() => {
         value: String(settings.maksimal_bersamaan ?? 0) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
 
+      // PERMINTAAN OWNER: barber yang tidak check-in pada hari kerja
+      // otomatis direkap jadi Cuti & mengurangi kuota -- lihat
+      // auto_libur_db.py. Default OFF, murni opsional.
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Auto-Libur Tidak Absen"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Kalau aktif: karyawan yang TIDAK check-in Absensi pada hari kerja (toko buka, bukan hari libur " +
+        "toko/Barber Holiday, dan belum ada pengajuan Izin/Cuti lain di tanggal itu) otomatis dicatat " +
+        "Cuti & mengurangi kuota Cuti-nya. Hanya memproses tanggal yang SUDAH LEWAT."));
+      const inputAutoLibur = MugenUI.el("input", { type: "checkbox" });
+      inputAutoLibur.checked = settings.auto_libur_tidak_absen_aktif === true;
+      isian.appendChild(checkboxBaris(inputAutoLibur, "Aktifkan Auto-Libur Tidak Absen"));
+
       const errorBox = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Izin & Cuti");
       card.appendChild(errorBox);
@@ -1089,12 +1101,46 @@ const PagePengaturan = (() => {
           h_min_pengajuan: Number(inputHMin.value) || 0,
           h_min_pengajuan_izin: Number(inputHMinIzin.value) || 0,
           maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
+          auto_libur_tidak_absen_aktif: inputAutoLibur.checked,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/izin-cuti/pengaturan", payload));
           MugenUI.toast("Pengaturan Izin & Cuti disimpan.", "success", { force: true });
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+
+      // ---- Kartu terpisah: pemicu proses Auto-Libur (TIDAK ADA scheduler
+      // di proyek ini -- lihat auto_libur_db.py -- Owner memproses SATU
+      // bulan tertentu secara manual, aman dijalankan berkali-kali). ----
+      const cardProses = MugenUI.el("div", { class: "card" });
+      body.appendChild(cardProses);
+      cardProses.appendChild(MugenUI.el("h2", {}, "Proses Auto-Libur"));
+      cardProses.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Jalankan pengecekan Auto-Libur Tidak Absen untuk SATU bulan tertentu (aktifkan dulu di atas). " +
+        "Aman dijalankan berkali-kali -- tidak akan membuat catatan ganda untuk tanggal yang sama."));
+      const today = new Date();
+      const selBulanProses = MugenUI.el("select");
+      for (let b = 1; b <= 12; b++) selBulanProses.appendChild(MugenUI.el("option", { value: String(b) }, MugenUI.namaBulan(b)));
+      selBulanProses.value = String(today.getMonth() + 1);
+      const selTahunProses = MugenUI.el("select");
+      for (let y = today.getFullYear() - 1; y <= today.getFullYear(); y++) selTahunProses.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
+      selTahunProses.value = String(today.getFullYear());
+      cardProses.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulanProses, selTahunProses]));
+      const errorProses = MugenUI.el("div", { class: "login-error" });
+      const btnProses = MugenUI.el("button", { class: "btn-primary", style: "margin-top:12px;" }, "Proses Auto-Libur");
+      cardProses.appendChild(errorProses);
+      cardProses.appendChild(btnProses);
+      btnProses.addEventListener("click", async () => {
+        errorProses.textContent = "";
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnProses, () => MugenApi.post("/api/izin-cuti/auto-libur/proses", {
+            tahun: Number(selTahunProses.value), bulan: Number(selBulanProses.value),
+          }));
+          MugenUI.toast(`Auto-Libur selesai diproses: ${hasil.jumlah_dibuat} catatan baru dibuat.`, "success", { force: true });
+        } catch (e) {
+          errorProses.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
         }
       });
     }

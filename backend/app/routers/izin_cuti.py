@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import auto_libur_db
 import izin_cuti_db
 import laporan_pdf
 import permissions
@@ -119,6 +120,9 @@ class CutiSettingsBody(BaseModel):
     kuota_gabungan_hari: int | None = None
     periode_mulai_dasar: str | None = None
     h_min_pengajuan_izin: int | None = None
+    # PERMINTAAN OWNER: barber yang tidak check-in pada hari kerja otomatis
+    # direkap jadi cuti & mengurangi kuota -- default OFF, lihat auto_libur_db.py.
+    auto_libur_tidak_absen_aktif: bool | None = None
 
 
 @router.get("/pengaturan")
@@ -172,6 +176,24 @@ def ambil_saldo_awal(barber_id: int = None, user: dict = Depends(get_current_use
     else:
         _cek_akses_lihat(user)
     return izin_cuti_db.get_saldo_awal(user["tenant_id"], barber_id=barber_id)
+
+
+class AutoLiburBody(BaseModel):
+    tahun: int
+    bulan: int
+
+
+@router.post("/auto-libur/proses")
+def proses_auto_libur(body: AutoLiburBody, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+    """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'auto-libur'
+    tidak ditangkap sebagai path parameter pengajuan_id. Pemicu MANUAL
+    (TIDAK ADA scheduler di proyek ini, lihat auto_libur_db.py) -- Owner/
+    staff (izin_cuti_karyawan) memproses satu bulan tertentu, dipanggil
+    kapan saja/berkali-kali dengan aman (idempotent)."""
+    try:
+        return auto_libur_db.proses_auto_libur(user["tenant_id"], body.tahun, body.bulan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/{pengajuan_id}")

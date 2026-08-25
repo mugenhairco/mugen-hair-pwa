@@ -452,6 +452,10 @@ ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_izin_hari INTEGER 
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS kuota_gabungan_hari INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS periode_mulai_dasar TEXT;
 ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS h_min_pengajuan_izin INTEGER NOT NULL DEFAULT 0;
+-- Auto-Libur (permintaan Owner): barber yang tidak check-in pada hari
+-- kerja otomatis direkap jadi cuti & mengurangi kuota -- default OFF,
+-- lihat auto_libur_db.py.
+ALTER TABLE izin_cuti_settings ADD COLUMN IF NOT EXISTS auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0;
 
 -- REVISI Sistem Dinamis Cuti & Izin: snapshot HISTORIS saldo cuti per
 -- titik cut-off (mis. migrasi Agustus 2026) -- murni catatan/tampilan,

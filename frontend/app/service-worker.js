@@ -825,7 +825,13 @@
 // dicatat sebagai riwayat, konfigurasi periode awal (10 hari/3 bulan
 // mulai 1 September 2026) di-seed otomatis -- HANYA untuk tenant yang
 // benar-benar punya kelima nama karyawan itu, lihat izin_cuti_migrasi.py.
-const ASSET_VERSION = "152";
+// v152 -> v153: PERMINTAAN OWNER -- Auto-Libur Tidak Absen: barber yang
+// tidak check-in Absensi pada hari kerja (toko buka, bukan hari libur
+// toko/Barber Holiday, belum ada Izin/Cuti lain di tanggal itu) otomatis
+// direkap jadi Cuti & mengurangi kuota Cuti -- default OFF, diaktifkan +
+// dipicu manual per bulan lewat Pengaturan Izin & Cuti (TIDAK ADA
+// scheduler di proyek ini, lihat auto_libur_db.py).
+const ASSET_VERSION = "153";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

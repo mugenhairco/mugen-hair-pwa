@@ -72,6 +72,7 @@ DEFAULT_CUTI_SETTINGS = {
     "kuota_gabungan_hari": 0,      # kuota BERSAMA izin+cuti (mode 'gabungan')
     "periode_mulai_dasar": None,   # tanggal YYYY-MM-DD, angkar periode -- None = kuota periode nonaktif
     "h_min_pengajuan_izin": 0,     # H-min IZIN -- terpisah total dari h_min_pengajuan (cuti)
+    "auto_libur_tidak_absen_aktif": False,  # lihat auto_libur_db.py -- default OFF
 }
 
 MODE_KUOTA_VALID = {"terpisah", "gabungan"}
@@ -121,6 +122,7 @@ def init_izin_cuti_db():
                 kuota_gabungan_hari    INTEGER NOT NULL DEFAULT 0,
                 periode_mulai_dasar    TEXT,
                 h_min_pengajuan_izin   INTEGER NOT NULL DEFAULT 0,
+                auto_libur_tidak_absen_aktif INTEGER NOT NULL DEFAULT 0,
                 updated_at             TEXT
             )
         """)
@@ -153,8 +155,9 @@ def _pastikan_baris_settings(conn, tenant_id: int):
         """INSERT INTO izin_cuti_settings (tenant_id, kuota_periode_bulan, kuota_maksimal_hari,
                                             kuota_boleh_dipecah, h_min_pengajuan, maksimal_bersamaan,
                                             mode_kuota, kuota_izin_hari, kuota_gabungan_hari,
-                                            periode_mulai_dasar, h_min_pengajuan_izin)
-           VALUES (?, 0, 0, 1, 0, 0, 'terpisah', 0, 0, NULL, 0) ON CONFLICT DO NOTHING""",
+                                            periode_mulai_dasar, h_min_pengajuan_izin,
+                                            auto_libur_tidak_absen_aktif)
+           VALUES (?, 0, 0, 1, 0, 0, 'terpisah', 0, 0, NULL, 0, 0) ON CONFLICT DO NOTHING""",
         (tenant_id,),
     )
 
@@ -167,6 +170,7 @@ def get_cuti_settings(tenant_id: int) -> dict:
         return {"tenant_id": tenant_id, **DEFAULT_CUTI_SETTINGS}
     hasil = dict(row)
     hasil["kuota_boleh_dipecah"] = bool(hasil["kuota_boleh_dipecah"])
+    hasil["auto_libur_tidak_absen_aktif"] = bool(hasil.get("auto_libur_tidak_absen_aktif"))
     return hasil
 
 
@@ -211,8 +215,9 @@ def set_cuti_settings(tenant_id: int, **fields) -> dict:
             """INSERT INTO izin_cuti_settings
                    (tenant_id, kuota_periode_bulan, kuota_maksimal_hari, kuota_boleh_dipecah,
                     h_min_pengajuan, maksimal_bersamaan, mode_kuota, kuota_izin_hari,
-                    kuota_gabungan_hari, periode_mulai_dasar, h_min_pengajuan_izin, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    kuota_gabungan_hari, periode_mulai_dasar, h_min_pengajuan_izin,
+                    auto_libur_tidak_absen_aktif, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (tenant_id) DO UPDATE SET
                     kuota_periode_bulan = excluded.kuota_periode_bulan,
                     kuota_maksimal_hari = excluded.kuota_maksimal_hari,
@@ -224,11 +229,13 @@ def set_cuti_settings(tenant_id: int, **fields) -> dict:
                     kuota_gabungan_hari = excluded.kuota_gabungan_hari,
                     periode_mulai_dasar = excluded.periode_mulai_dasar,
                     h_min_pengajuan_izin = excluded.h_min_pengajuan_izin,
+                    auto_libur_tidak_absen_aktif = excluded.auto_libur_tidak_absen_aktif,
                     updated_at = excluded.updated_at""",
             (tenant_id, int(baru["kuota_periode_bulan"]), int(baru["kuota_maksimal_hari"]),
              int(bool(baru["kuota_boleh_dipecah"])), int(baru["h_min_pengajuan"]), int(baru["maksimal_bersamaan"]),
              baru["mode_kuota"], int(baru["kuota_izin_hari"]), int(baru["kuota_gabungan_hari"]),
-             baru["periode_mulai_dasar"], int(baru["h_min_pengajuan_izin"]), now),
+             baru["periode_mulai_dasar"], int(baru["h_min_pengajuan_izin"]),
+             int(bool(baru["auto_libur_tidak_absen_aktif"])), now),
         )
     return get_cuti_settings(tenant_id)
 
