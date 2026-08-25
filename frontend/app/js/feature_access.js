@@ -33,8 +33,12 @@ const MugenFeature = (() => {
       MugenRouter.handle();
     });
     return MugenUI.el("div", { class: "card" }, [
-      MugenUI.el("div", { class: "subtitle" },
-        `${featureLabel} memerlukan paket yang lebih tinggi. Upgrade untuk menggunakan fitur ini.`),
+      // REVISI feedback Owner: pesan dipersingkat -- "Upgrade untuk
+      // menikmati fitur ini." (bukan lagi "X memerlukan paket yang lebih
+      // tinggi. Upgrade untuk menggunakan fitur ini." -- terlalu teknis).
+      // `featureLabel` tetap diterima pemanggil (konteks halaman/tab yang
+      // memanggilnya sudah cukup jelas fitur mana yang dimaksud).
+      MugenUI.el("div", { class: "subtitle" }, "Upgrade untuk menikmati fitur ini."),
       MugenUI.el("div", { style: "margin-top:12px;" }, btn),
     ]);
   }

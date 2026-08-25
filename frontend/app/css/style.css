@@ -93,51 +93,6 @@ body {
 }
 
 /* ---------------------------------------------------------------------
-   Watermark developer -- di luar #app SENGAJA (lihat index.html), supaya
-   tidak pernah ikut terhapus/tertimpa oleh render ulang SPA (setiap
-   halaman melakukan root.innerHTML = "" pada #app, bukan pada <body>) dan
-   tidak ada jalan untuk menonaktifkannya lewat menu Setting mana pun.
-   --------------------------------------------------------------------- */
-.dev-watermark-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  user-select: none;
-  overflow: hidden;
-  font-size: 13vw;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text);
-  opacity: 0.03;
-  white-space: nowrap;
-}
-.dev-watermark-footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 2px;
-  z-index: 5;
-  text-align: center;
-  font-size: 11px;
-  color: #94A3B8;
-  pointer-events: none;
-  user-select: none;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-/* REVISI Branding Rivoir: watermark BESAR sekarang tampil KONSISTEN di
-   SELURUH halaman aplikasi TERMASUK Web Booking (/book) -- sebelumnya
-   disembunyikan khusus di /book supaya tidak bentrok dengan fitur
-   Background Website (custom image/opacity per tenant, SUDAH DIHAPUS
-   TOTAL, lihat book_public.js) -- alasan itu sudah tidak berlaku lagi
-   karena Web Booking sekarang selalu memakai satu background default yang
-   sama seperti halaman lain. */
-
-/* ---------------------------------------------------------------------
    Layout app (sidebar + konten), dipakai setelah login.
    --------------------------------------------------------------------- */
 a { color: var(--accent); }
@@ -478,6 +433,14 @@ input, select, textarea {
    dibuat kompak -- beda dari input teks lain yang full-width. */
 input[type="color"] { width: 64px; height: 42px; padding: 4px; cursor: pointer; }
 
+/* BUGFIX (tampilan tidak rapi -- checkbox/radio ikut ketimpa aturan
+   width:100%/padding/border di atas, sengaja dikecualikan di sini):
+   tanpa ini, checkbox melebar penuh selebar baris flex-nya (mis. label
+   "Transfer Bank"/QRIS/Payment Gateway di tab Payment Settings), mendorong
+   teks label di sebelahnya jauh terpisah alih-alih menempel rapi ke kotak
+   checkbox-nya -- checkbox/radio harus tetap ukuran kotak kecil natural. */
+input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; border: none; }
+
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
@@ -526,7 +489,16 @@ button.btn-danger:active:not(:disabled) { background: rgba(220,38,38,0.12); }
 
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+/* BUGFIX (tampilan tidak rapi/tulisan terpotong di HP): flex item TANPA
+   max-width eksplisit boleh tumbuh melebihi lebar container-nya kalau isi
+   di dalamnya menolak menyusut (mis. .row bersarang dengan anak-anak
+   min-width:140px di bawah) -- di layar sempit ini membuat SEBAGIAN .row
+   (mis. dropdown tahun di Dashboard > Bulanan/Periode) mendorong keluar
+   layar dan disembunyikan diam-diam oleh overflow-x:hidden pada .content,
+   BUKAN malah wrap ke baris baru seperti seharusnya (flex-wrap: wrap saja
+   TIDAK cukup mencegah ini). max-width:100% memaksa .row selalu pas dalam
+   container-nya, supaya flex-wrap barisnya sendiri benar-benar aktif. */
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; max-width: 100%; }
 .row > * { flex: 1; min-width: 140px; }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }
@@ -877,6 +849,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     box-shadow: var(--shadow-elevated);
   }
   .sidebar.open { transform: translateX(0); }
+  /* REVISI feedback Owner: tombol hamburger (posisi fixed, z-index di ATAS
+     sidebar) menutupi logo/nama toko di pojok kiri atas sidebar begitu
+     sidebar dibuka -- disembunyikan selama sidebar terbuka (menutup sidebar
+     TETAP bisa lewat tap backdrop atau pilih menu, lihat router.js::shell(),
+     jadi tidak ada fungsi yang hilang). */
+  .sidebar.open ~ .hamburger { display: none; }
   .content { padding: 16px; padding-top: 64px; }
   .sidebar-backdrop {
     display: block;
@@ -886,7 +864,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     transition: opacity 0.2s ease;
   }
   .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
-  .dev-watermark-bg { font-size: 22vw; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {

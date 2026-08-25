@@ -1120,6 +1120,17 @@ const PageAbsensi = (() => {
     }
     root.appendChild(MugenUI.el("h1", {}, "Absensi"));
 
+    // AUDIT (enforcement paket/subscription -- REVISI feedback Owner):
+    // gerbang fitur "absensi" SEKARANG di sini (di DALAM halaman, pola SAMA
+    // seperti tab WhatsApp/Log Error di pengaturan.js) -- BUKAN lagi di
+    // router.js yang mengganti SELURUH `content` (judul "Absensi" di atas
+    // ikut hilang, terasa seperti halaman kosong). Judul halaman TETAP
+    // tampil dulu, baru kartu upgrade menggantikan isinya.
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
+      root.appendChild(MugenFeature.upgradeBlock("Absensi"));
+      return;
+    }
+
     if (user.role === "barber") {
       await renderBarberView(root);
     } else {

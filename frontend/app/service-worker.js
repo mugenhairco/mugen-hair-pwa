@@ -787,7 +787,51 @@
 // Booking Settings sekarang diberi catatan jelas kalau fitur "booking_online"
 // belum termasuk paket toko (link/pengaturan slug TETAP ditampilkan, boleh
 // disiapkan lebih dulu, tapi Owner diberi tahu belum bisa diakses customer).
-const ASSET_VERSION = "147";
+// v147 -> v148: REVISI feedback Owner -- pesan blok upgrade dipersingkat
+// jadi "Upgrade untuk menikmati fitur ini." (feature_access.js). Gerbang
+// fitur Absensi dipindah dari router.js (mengganti seluruh konten) ke
+// DALAM absensi.js sendiri (judul halaman tetap tampil dulu, pola sama
+// seperti WhatsApp/Log Error). WhatsApp dipindah dari tab Setting jadi
+// menu utama sidebar sendiri (pages/whatsapp.js baru). Hamburger mobile
+// disembunyikan selama sidebar terbuka supaya tidak menutupi logo toko.
+// v148 -> v149: REVISI feedback Owner -- halaman WhatsApp (pages/whatsapp.js):
+// hapus 2 paragraf keterangan (deskripsi fitur & cara hubungkan ke Fonnte),
+// label "Token API Fonnte" jadi "Token API" saja.
+// v149 -> v150: REVISI feedback Owner -- watermark developer BESAR ("Rivoir"
+// di background, dev-watermark-bg) dan footer "Powered by Rivoir"
+// (dev-watermark-footer) DIHAPUS TOTAL dari index.html/style.css, jadi
+// tidak tampil lagi di halaman manapun.
+// v150 -> v151: BUGFIX tampilan tidak rapi di HP (ditemukan Owner, dicek
+// langsung lewat browser -- bukan tebakan dari kode): (1) checkbox ikut
+// ketimpa aturan `input,select,textarea{width:100%}` global, membuatnya
+// melebar penuh & mendorong label di sebelahnya (mis. Booking > Payment
+// Settings) menjauh -- checkbox/radio sekarang dikecualikan. (2) `.row`
+// (dipakai di banyak halaman, mis. Dashboard > Bulanan/Periode) tidak
+// dibatasi max-width, jadi di layar sempit sebagian isinya (mis. dropdown
+// tahun) terdorong keluar viewport & disembunyikan diam-diam oleh
+// overflow-x:hidden alih-alih wrap ke baris baru -- sekarang diberi
+// max-width:100% supaya flex-wrap-nya benar-benar aktif.
+// v151 -> v152: PENYESUAIAN & SISTEM DINAMIS CUTI DAN IZIN (permintaan
+// Owner, Agustus 2026) -- kuota/periode Izin & Cuti sekarang sepenuhnya
+// dinamis lewat Pengaturan Izin & Cuti (Setting > Karyawan): mode kuota
+// terpisah (saldo Izin & Cuti sendiri-sendiri) atau gabungan (satu saldo
+// bersama), jumlah kuota, durasi periode, tanggal mulai periode (angkar
+// bebas, TIDAK lagi selalu Januari), H-min pengajuan Izin & Cuti TERPISAH
+// total (mengubah satu tidak memengaruhi yang lain). Tanpa carry-over --
+// periode baru selalu kuota penuh sesuai konfigurasi Owner. Kartu "Sisa
+// Kuota" baru di halaman Izin & Cuti (barber lihat miliknya sendiri,
+// Owner/Admin lihat siapa pun lewat filter karyawan). Migrasi Agustus
+// 2026: saldo cuti akhir Agustus (Jack 5/Roma 3/Rafik 7/Rendi 0/Mifta 0)
+// dicatat sebagai riwayat, konfigurasi periode awal (10 hari/3 bulan
+// mulai 1 September 2026) di-seed otomatis -- HANYA untuk tenant yang
+// benar-benar punya kelima nama karyawan itu, lihat izin_cuti_migrasi.py.
+// v152 -> v153: PERMINTAAN OWNER -- Auto-Libur Tidak Absen: barber yang
+// tidak check-in Absensi pada hari kerja (toko buka, bukan hari libur
+// toko/Barber Holiday, belum ada Izin/Cuti lain di tanggal itu) otomatis
+// direkap jadi Cuti & mengurangi kuota Cuti -- default OFF, diaktifkan +
+// dipicu manual per bulan lewat Pengaturan Izin & Cuti (TIDAK ADA
+// scheduler di proyek ini, lihat auto_libur_db.py).
+const ASSET_VERSION = "153";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -861,6 +905,10 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/billing.js",
   "/app/js/pages/produk.js",
   "/app/js/pages/booking.js",
+  // REVISI (feedback Owner): tab WhatsApp di Setting dipindah jadi menu
+  // sidebar sendiri -- file baru, harus terdaftar di sini juga (lihat
+  // catatan page_loader.js soal file lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/pages/whatsapp.js",
   "/app/js/pages/book_public.js",
   "/app/js/pages/riwayat_transaksi.js",
   "/app/js/pages/settlement_faspay.js",

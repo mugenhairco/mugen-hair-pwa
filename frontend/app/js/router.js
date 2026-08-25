@@ -237,15 +237,10 @@ const MugenRouter = (() => {
       return;
     }
 
-    // REVISI STRUKTUR WEBSITE CONTENT: watermark developer BESAR (dev-
-    // watermark-bg, di luar #app) disembunyikan KHUSUS selama di /book --
-    // "Website hanya menggunakan background yang dipilih oleh Owner" tapi
-    // kredit developer tetap wajib ada lewat watermark KECIL footer
-    // (dev-watermark-footer), yang TIDAK disentuh sama sekali di sini.
-    // Dipulihkan di sini juga (lapis pertahanan pertama, sebelum
-    // MugenTheme.applyStored() di bawah) supaya benar dari titik navigasi
-    // manapun -- book_public.js sendiri sudah menambah class ini lagi
-    // sebagai lapis pertahanan KEDUA (sama seperti pola forceLight()).
+    // Dipulihkan di sini (lapis pertahanan pertama, sebelum
+    // MugenTheme.applyStored() di bawah) supaya tema kembali benar dari
+    // titik navigasi manapun -- book_public.js sendiri sudah menambah
+    // class ini lagi sebagai lapis pertahanan KEDUA (pola forceLight()).
     document.body.classList.remove("book-public-active");
 
     // REVISI UI/UX: terapkan ulang tema tersimpan setiap kali masuk ke
@@ -386,17 +381,13 @@ const MugenRouter = (() => {
       // absensi.js lewat user.role). Perlindungan sebenarnya tetap di
       // backend (routers/attendance.py).
       // AUDIT (enforcement paket/subscription -- REVISI feedback Owner):
-      // kalau tenant ini tidak punya fitur "absensi", tampilkan blok
-      // upgrade di sini SEBELUM memuat halamannya sama sekali -- daripada
-      // menunggu 403 mentah dari backend. Berlaku baik diakses lewat klik
-      // menu (nav.js SEKARANG tetap menampilkan menunya, diredupkan +
-      // ikon gembok, BUKAN disembunyikan -- lihat nav.js::_terkunciFitur())
-      // maupun URL langsung.
-      if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
-        content.appendChild(MugenFeature.upgradeBlock("Absensi"));
-      } else {
-        renderResult = _renderLazy(content, "PageAbsensi", "js/pages/absensi.js");
-      }
+      // gerbang fitur "absensi" DIPINDAH ke DALAM absensi.js::render()
+      // (judul "Absensi" tetap tampil dulu, baru kartu upgrade -- BUKAN
+      // lagi mengganti seluruh `content` di sini, supaya terasa seperti
+      // halaman sungguhan yang terkunci, bukan layar kosong). Menu di
+      // sidebar TETAP tampil, diredupkan + ikon gembok (bukan disembunyikan
+      // -- lihat nav.js::_terkunciFitur()).
+      renderResult = _renderLazy(content, "PageAbsensi", "js/pages/absensi.js");
     } else if (hash.startsWith("#/keuangan/pemasukan")) {
       // Modul Keuangan (Fase 1): data operasional TOKO, Owner/'staff' akses
       // PENUH tanpa sistem izin, Barber tidak ada akses -- pola sama
@@ -451,6 +442,17 @@ const MugenRouter = (() => {
         return;
       }
       renderResult = _renderLazy(content, "PagePengeluaran", "js/pages/pengeluaran.js");
+    } else if (hash.startsWith("#/whatsapp")) {
+      // REVISI (feedback Owner): dulu tab di dalam Setting, dipindah jadi
+      // menu utama sendiri (lihat pages/whatsapp.js) -- KHUSUS Owner, pola
+      // role-check SAMA seperti #/billing di bawah. Gerbang fitur
+      // "whatsapp_reminder" ada DI DALAM whatsapp.js::render() sendiri
+      // (pola sama seperti #/absensi di atas), bukan di sini.
+      if (user.role !== "admin") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = _renderLazy(content, "PageWhatsapp", "js/pages/whatsapp.js");
     } else if (hash.startsWith("#/billing")) {
       // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (require_admin di
       // BACKEND juga -- routers/billing.py -- 'staff' TIDAK ikut, sama
