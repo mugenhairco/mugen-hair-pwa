@@ -787,7 +787,14 @@
 // Booking Settings sekarang diberi catatan jelas kalau fitur "booking_online"
 // belum termasuk paket toko (link/pengaturan slug TETAP ditampilkan, boleh
 // disiapkan lebih dulu, tapi Owner diberi tahu belum bisa diakses customer).
-const ASSET_VERSION = "147";
+// v147 -> v148: REVISI feedback Owner -- pesan blok upgrade dipersingkat
+// jadi "Upgrade untuk menikmati fitur ini." (feature_access.js). Gerbang
+// fitur Absensi dipindah dari router.js (mengganti seluruh konten) ke
+// DALAM absensi.js sendiri (judul halaman tetap tampil dulu, pola sama
+// seperti WhatsApp/Log Error). WhatsApp dipindah dari tab Setting jadi
+// menu utama sidebar sendiri (pages/whatsapp.js baru). Hamburger mobile
+// disembunyikan selama sidebar terbuka supaya tidak menutupi logo toko.
+const ASSET_VERSION = "148";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -861,6 +868,10 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/billing.js",
   "/app/js/pages/produk.js",
   "/app/js/pages/booking.js",
+  // REVISI (feedback Owner): tab WhatsApp di Setting dipindah jadi menu
+  // sidebar sendiri -- file baru, harus terdaftar di sini juga (lihat
+  // catatan page_loader.js soal file lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/pages/whatsapp.js",
   "/app/js/pages/book_public.js",
   "/app/js/pages/riwayat_transaksi.js",
   "/app/js/pages/settlement_faspay.js",

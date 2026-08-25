@@ -877,6 +877,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     box-shadow: var(--shadow-elevated);
   }
   .sidebar.open { transform: translateX(0); }
+  /* REVISI feedback Owner: tombol hamburger (posisi fixed, z-index di ATAS
+     sidebar) menutupi logo/nama toko di pojok kiri atas sidebar begitu
+     sidebar dibuka -- disembunyikan selama sidebar terbuka (menutup sidebar
+     TETAP bisa lewat tap backdrop atau pilih menu, lihat router.js::shell(),
+     jadi tidak ada fungsi yang hilang). */
+  .sidebar.open ~ .hamburger { display: none; }
   .content { padding: 16px; padding-top: 64px; }
   .sidebar-backdrop {
     display: block;

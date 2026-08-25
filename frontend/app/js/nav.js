@@ -99,6 +99,14 @@ const MugenNav = (() => {
       { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"] },
     ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
+    // REVISI (feedback Owner): dulu tab di dalam Setting, dipindah jadi menu
+    // utama sendiri supaya lebih mudah ditemukan (lihat pages/whatsapp.js).
+    // KHUSUS Owner (backend require_admin) -- token Fonnte kredensial pihak
+    // ketiga milik TOKO ini sendiri, sama seperti sebelumnya di dalam
+    // Setting, TIDAK didelegasikan ke staff. `feature` -- lihat catatan
+    // _terkunciFitur() di atas -- menu tetap tampil (redup+gembok) kalau
+    // paket tenant belum menyertakan "whatsapp_reminder".
+    { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin"], feature: "whatsapp_reminder" },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di
     // routers/billing.py) -- 'staff' TIDAK ikut, sama seperti tab
     // Subscription Phase 3 (pages/pengaturan.js), yang TIDAK diubah/
