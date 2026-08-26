@@ -731,6 +731,53 @@ def test_buat_transaksi_va_sukses_header_dan_payload_lengkap(single_tenant, monk
     assert body["additionalInfo"]["channelCode"] == "702"
     assert body["virtualAccountPhone"] == "6281234567890"
     assert body["totalAmount"] == {"value": "100000.00", "currency": "IDR"}
+    assert body["virtualAccountName"] == "Budi Santoso"
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX (dikonfirmasi dari error live berulang -- responseCode 4002701
+# "Invalid Field Format virtualAccountName", terjadi baik untuk nama
+# customer booking maupun nama toko/barbershop langganan yang mengandung
+# tanda baca, mis. "Mugen Hair Co.") -- virtualAccountName SEKARANG
+# dibersihkan (huruf/angka/spasi saja) sebelum dikirim ke Faspay.
+# ---------------------------------------------------------------------------
+
+def test_bersihkan_nama_va_membuang_tanda_baca():
+    assert snap_advance_client._bersihkan_nama_va("Mugen Hair Co.") == "Mugen Hair Co"
+
+
+def test_bersihkan_nama_va_merapatkan_spasi_dobel():
+    assert snap_advance_client._bersihkan_nama_va("Mugen   Hair  Co.") == "Mugen Hair Co"
+
+
+def test_bersihkan_nama_va_mempertahankan_nama_polos():
+    assert snap_advance_client._bersihkan_nama_va("romen") == "romen"
+
+
+def test_bersihkan_nama_va_mempertahankan_angka():
+    assert snap_advance_client._bersihkan_nama_va("Toko 88") == "Toko 88"
+
+
+def test_bersihkan_nama_va_kosong_atau_hanya_tanda_baca_fallback_customer():
+    assert snap_advance_client._bersihkan_nama_va("") == "Customer"
+    assert snap_advance_client._bersihkan_nama_va(None) == "Customer"
+    assert snap_advance_client._bersihkan_nama_va("...") == "Customer"
+
+
+def test_buat_transaksi_va_membersihkan_nama_bertanda_baca(single_tenant, monkeypatch):
+    """Skenario PERSIS bug live: nama toko "Mugen Hair Co." ditolak Faspay
+    sebelum perbaikan ini (responseCode 4002701) -- sekarang dikirim tanpa
+    titik."""
+    _pasang_kredensial_snap()
+    rekam = _RekamPanggilan()
+    monkeypatch.setattr(core, "post_json_raw", rekam)
+
+    snap_advance_client.buat_transaksi_va(
+        "SAAS-1-1-abc123456789", 3360000, {"nama": "Mugen Hair Co.", "whatsapp": "081234567890"},
+        channel_code="702")
+
+    body = json.loads(rekam.panggilan[0]["raw_body"])
+    assert body["virtualAccountName"] == "Mugen Hair Co"
 
 
 def test_buat_transaksi_va_signature_cocok_formula_resmi_faspay(single_tenant, monkeypatch):

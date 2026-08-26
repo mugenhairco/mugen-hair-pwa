@@ -203,6 +203,25 @@ def _format_msisdn_62(nomor: str) -> str:
     return digit
 
 
+def _bersihkan_nama_va(nama: str) -> str:
+    """BUGFIX (dikonfirmasi dari error live berulang -- responseCode
+    4002701 "Invalid Field Format virtualAccountName", terjadi untuk nama
+    customer booking MAUPUN nama toko/barbershop langganan): bank/Faspay
+    menolak `virtualAccountName` yang mengandung tanda baca (mis. titik
+    "." pada nama seperti "Mugen Hair Co."), sementara nama polos tanpa
+    tanda baca (mis. "romen") lolos. BUKAN dari dokumen resmi Faspay (tidak
+    ada spesifikasi format field ini di dokumen yang diberikan Owner) --
+    murni inferensi empiris dari bukti error sungguhan, sengaja KONSERVATIF
+    (huruf/angka/spasi saja) supaya kompatibel ke bank mana pun, bukan cuma
+    yang sudah terbukti gagal. Spasi dirapatkan (bukan cuma tanda baca yang
+    dibuang) supaya "Mugen Hair Co." tidak jadi "Mugen Hair Co" dengan jarak
+    dobel. Fallback "Customer" kalau hasil pembersihan kosong sama sekali
+    (mis. nama HANYA berisi tanda baca/emoji)."""
+    bersih = re.sub(r"[^A-Za-z0-9 ]", " ", nama or "")
+    bersih = re.sub(r"\s+", " ", bersih).strip()
+    return bersih or "Customer"
+
+
 def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dict = None,
                        *, channel_code: str) -> dict:
     """Create Dynamic VA -- POST {base}/v1.0/transfer-va/create-va (dokumen
@@ -228,7 +247,7 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
     ts_now = core.snap_timestamp_wib()
     expired = now.replace(hour=23, minute=59, second=59)
     body = {
-        "virtualAccountName": (customer_details.get("nama") or "Customer")[:128],
+        "virtualAccountName": _bersihkan_nama_va(customer_details.get("nama"))[:128],
         "trxId": payment_reference[:32],
         "totalAmount": {"value": f"{amount:.2f}", "currency": "IDR"},
         "expiredDate": expired.strftime("%Y-%m-%dT%H:%M:%S") + ts_now[-6:],
