@@ -474,6 +474,34 @@ def get_tenant_by_whatsapp(whatsapp: str):
         return dict(row) if row else None
 
 
+def set_whatsapp_akun(tenant_id: int, whatsapp: str) -> None:
+    """BUGFIX (ditemukan Owner): SEBELUM ini, `tenants.whatsapp` (dipakai
+    routers/billing.py sebagai syarat WAJIB checkout QRIS langganan SaaS,
+    lihat set_registrant_info()) HANYA pernah terisi SEKALI saat registrasi
+    tenant lewat routers/tenant_registration.py -- TIDAK ADA endpoint apa
+    pun untuk mengubahnya lagi setelahnya, padahal Pengaturan > Branding
+    punya field WhatsApp SENDIRI yang terlihat sama persis tapi menulis ke
+    tabel BERBEDA (branding_db.py) -- Owner mengisi WhatsApp di Branding,
+    checkout QRIS langganan TETAP menolak "wajib diisi" karena baca kolom
+    ini, bukan kolom branding. Sekarang dipanggil routers/pengaturan.py::
+    simpan_branding() SETIAP kali field WhatsApp Branding disimpan, supaya
+    SATU field yang Owner lihat benar-benar mengisi KEDUA tempat.
+
+    Nomor yang sudah dipakai tenant LAIN (unique index idx_tenants_whatsapp)
+    SENGAJA DILEWATI diam-diam (BUKAN error) -- ini dual-write "best effort"
+    menumpang Simpan Branding, TIDAK boleh menggagalkan penyimpanan Branding
+    utama Owner hanya karena tabrakan nomor di kolom lain yang Owner bahkan
+    tidak sedang lihat."""
+    whatsapp = (whatsapp or "").strip()
+    if not whatsapp:
+        return
+    existing = get_tenant_by_whatsapp(whatsapp)
+    if existing is not None and existing["id"] != tenant_id:
+        return
+    with get_conn() as conn:
+        conn.execute("UPDATE tenants SET whatsapp = ? WHERE id = ?", (whatsapp, tenant_id))
+
+
 def set_registrant_info(tenant_id: int, owner_name: str, email: str, whatsapp: str) -> None:
     """FONDASI Multi-Tenant Phase 5: dipanggil SEKALI, tepat setelah
     buat_tenant() berhasil di alur Register publik -- buat_tenant() sendiri
