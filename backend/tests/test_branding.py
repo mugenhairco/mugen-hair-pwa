@@ -12,6 +12,7 @@ import io
 import auth_db
 import branding_db
 import laporan_pdf
+import tenant_db
 
 
 def test_branding_platform_default_tanpa_sinyal_tenant(app_client):
@@ -300,3 +301,53 @@ def test_pdf_slip_gaji_header_ikut_tenant_yang_benar(two_tenants):
     pdf_bytes = laporan_pdf.buat_slip_gaji_pdf(slip_dummy)
     teks = PdfReader(io.BytesIO(pdf_bytes)).pages[0].extract_text()
     assert "Slip Toko Alpha" in teks
+
+
+# ---------------------------------------------------------------------------
+# BUGFIX (ditemukan Owner): field WhatsApp di Pengaturan > Branding
+# sebelumnya HANYA menulis ke branding_db.py, TIDAK PERNAH mengisi
+# tenants.whatsapp (kolom yang benar-benar dicek routers/billing.py sebagai
+# syarat WAJIB checkout QRIS langganan SaaS) -- Owner mengisi WhatsApp,
+# checkout tetap menolak "wajib diisi" karena baca kolom lain sama sekali.
+# ---------------------------------------------------------------------------
+
+def test_simpan_branding_whatsapp_ikut_mengisi_tenants_whatsapp(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    assert tenant_db.get_tenant(tenant_id)["whatsapp"] is None
+
+    r = client.put("/api/pengaturan/branding", headers=headers,
+                    json={"nama_barbershop": "Toko Contoh", "whatsapp": "081234567890"})
+    assert r.status_code == 200, r.text
+
+    assert tenant_db.get_tenant(tenant_id)["whatsapp"] == "081234567890"
+    assert branding_db.get_branding(tenant_id=tenant_id)["whatsapp"] == "081234567890"
+
+
+def test_simpan_branding_whatsapp_kosong_tidak_menghapus_tenants_whatsapp(single_tenant):
+    """`whatsapp: None` (field TIDAK disertakan sama sekali di body) --
+    pola SAMA seperti field lain di BrandingBody (None = tidak diubah) --
+    tenants.whatsapp yang sudah terisi TETAP ada."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    client.put("/api/pengaturan/branding", headers=headers,
+               json={"nama_barbershop": "Toko Contoh", "whatsapp": "081234567890"})
+
+    r = client.put("/api/pengaturan/branding", headers=headers, json={"tagline": "Baru"})
+    assert r.status_code == 200, r.text
+    assert tenant_db.get_tenant(tenant_id)["whatsapp"] == "081234567890"
+
+
+def test_simpan_branding_whatsapp_bentrok_tenant_lain_dilewati_diam_diam(two_tenants):
+    """Nomor yang sudah dipakai tenant LAIN (unique index idx_tenants_whatsapp)
+    tidak boleh menggagalkan Simpan Branding utama -- dual-write ini
+    best-effort, dilewati diam-diam kalau bentrok."""
+    client = two_tenants["client"]
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    tenant_db.set_registrant_info(tenant_a, "Owner A", "ownera@test.com", "081111111111")
+
+    r = client.put("/api/pengaturan/branding", headers=two_tenants["headers_b"],
+                    json={"nama_barbershop": "Toko B", "whatsapp": "081111111111"})
+    assert r.status_code == 200, r.text
+    assert tenant_db.get_tenant(tenant_b)["whatsapp"] is None
+    assert branding_db.get_branding(tenant_id=tenant_b)["whatsapp"] == "081111111111"

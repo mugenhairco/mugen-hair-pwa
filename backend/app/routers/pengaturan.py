@@ -162,6 +162,13 @@ def simpan_branding(body: BrandingBody, user: dict = Depends(require_permission(
         branding_db.update_branding(data, tenant_id=user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    # BUGFIX (ditemukan Owner): field WhatsApp di Branding TIDAK PERNAH
+    # mengisi tenants.whatsapp (kolom yang benar-benar dicek
+    # routers/billing.py sebagai syarat checkout QRIS langganan SaaS) --
+    # dua tabel berbeda, satu field yang Owner lihat -- lihat
+    # tenant_db.py::set_whatsapp_akun().
+    if body.whatsapp is not None:
+        tenant_db.set_whatsapp_akun(user["tenant_id"], body.whatsapp)
     return branding_db.get_branding(tenant_id=user["tenant_id"])
 
 
