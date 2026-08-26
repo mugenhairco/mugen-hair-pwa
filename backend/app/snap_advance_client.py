@@ -246,7 +246,13 @@ def buat_transaksi_va(payment_reference: str, amount: int, customer_details: dic
     headers = _headers_service("POST", PATH_VA_CREATE, raw_body, cfg)
     url = _base_url(is_production()) + PATH_VA_CREATE
     resp = core.post_json_raw(url, raw_body, headers, timeout=cfg["snap_timeout_detik"])
-    if resp.get("responseCode") != "2002500":
+    # BUGFIX (dikonfirmasi dari respons SUKSES sungguhan sandbox Faspay,
+    # bukan cuma dokumen): Create VA BRI (channelCode 800) mengembalikan
+    # responseCode "2002700" ("Success") -- BUKAN "2002500" seperti yang
+    # sebelumnya diasumsikan dari dokumen. Kode lama membuat transaksi yang
+    # SEBENARNYA BERHASIL di sisi Faspay (VA sudah terbentuk) malah
+    # ditolak/dibatalkan di sisi kita sendiri.
+    if resp.get("responseCode") != "2002700":
         raise core.GatewayRequestError(f"Create VA SNAP Advance ditolak Faspay: {resp}")
     va = resp["virtualAccountData"]
     return {

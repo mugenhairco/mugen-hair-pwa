@@ -673,7 +673,11 @@ class _RekamPanggilan:
             return {"accessToken": "token-uji-123"}
         if url.endswith("/transfer-va/create-va"):
             return {
-                "responseCode": "2002500", "responseMessage": "Success",
+                # BUGFIX: respons SUKSES sungguhan sandbox Faspay untuk Create
+                # VA memakai responseCode "2002700" (dikonfirmasi dari log
+                # produksi), BUKAN "2002500" -- lihat snap_advance_client.py::
+                # buat_transaksi_va().
+                "responseCode": "2002700", "responseMessage": "Success",
                 "virtualAccountData": {
                     "partnerServiceId": "70200000", "customerNo": "00000000000012345",
                     "virtualAccountNo": "7020000000000000000012345", "trxId": body.get("trxId"),
