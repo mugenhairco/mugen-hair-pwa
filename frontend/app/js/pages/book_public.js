@@ -1387,10 +1387,21 @@ const PageBookPublic = (() => {
         body.appendChild(MugenUI.el("h2", {}, "Menunggu Konfirmasi Pembayaran"));
         const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran memakai info di bawah.");
         const countdownEl = MugenUI.el("div", { class: "book-countdown" }, "15:00");
+        // Verifikasi Pembayaran Tanpa Menunggu Admin: tombol "Saya Sudah
+        // Bayar" -- TRIGGER pengecekan ULANG ke provider (endpoint publik
+        // POST snap-cek-ulang, FUNGSI PERSIS SAMA dengan tombol admin "Cek
+        // Ulang ke Provider"), BUKAN klaim status dari customer sendiri.
+        // Tombol dibiarkan tanpa class .btn-primary (bobot visual sekunder,
+        // konsisten dengan hierarki tombol app) supaya proporsional -- tidak
+        // bersaing dengan CTA utama halaman lain, tapi tetap mudah ditemukan
+        // karena ditaruh langsung di bawah countdown.
+        const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+        tambahkanEfekRipple(btnSudahBayar);
         body.appendChild(MugenUI.el("div", { class: "card" }, [
           MugenUI.el("div", { style: "text-align:center;" }, [
             statusLabelEl,
             countdownEl,
+            MugenUI.el("div", {}, [btnSudahBayar]),
           ]),
           MugenUI.el("hr"),
           MugenUI.el("div", { style: "text-align:center;" }, isiKontenSnapWaiting()),
@@ -1405,6 +1416,33 @@ const PageBookPublic = (() => {
         body.appendChild(MugenUI.el("div", { class: "subtitle", style: "text-align:center;margin-bottom:8px;" },
           "Status di halaman ini otomatis diperbarui begitu pembayaran Anda dikonfirmasi resmi oleh provider -- tidak perlu refresh manual."));
 
+        // Satu titik penerap status SATU-SATUNYA -- dipakai polling otomatis
+        // DAN tombol "Saya Sudah Bayar" di bawah, supaya perilaku transisi
+        // fase (PAID/FAILED/CANCELLED/EXPIRED) PERSIS sama dari kedua jalur,
+        // TIDAK ada logika kedua yang bisa mencong. Return true kalau fase
+        // berpindah (pemanggil TIDAK perlu berbuat apa-apa lagi setelah ini).
+        function terapkanStatusTerbaru(status) {
+          if (status.status === "PAID") {
+            clearInterval(pollTimer);
+            MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
+            goto(7);
+            return true;
+          }
+          if (["FAILED", "CANCELLED"].includes(status.status)) {
+            clearInterval(pollTimer);
+            fase = "gagal";
+            gantiFase();
+            return true;
+          }
+          if (status.status === "EXPIRED") {
+            clearInterval(pollTimer);
+            fase = "kedaluwarsa";
+            gantiFase();
+            return true;
+          }
+          return false; // masih CREATED/PENDING -- belum ada perubahan fase
+        }
+
         // Polling + countdown SAMA-SAMA self-clear begitu elemen ini sudah
         // tidak ada di DOM lagi (user pindah fase/keluar wizard lewat cara
         // APA PUN) -- pola guard yang sama seperti timer lain di file ini.
@@ -1416,22 +1454,30 @@ const PageBookPublic = (() => {
           } catch (e) {
             return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
           }
-          if (status.status === "PAID") {
-            clearInterval(pollTimer);
-            MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
-            goto(7);
-          } else if (["FAILED", "CANCELLED"].includes(status.status)) {
-            clearInterval(pollTimer);
-            fase = "gagal";
-            gantiFase();
-          } else if (status.status === "EXPIRED") {
-            clearInterval(pollTimer);
-            fase = "kedaluwarsa";
-            gantiFase();
-          } else if (status.status === "PENDING") {
+          if (!terapkanStatusTerbaru(status) && status.status === "PENDING") {
             statusLabelEl.textContent = "Pembayaran sedang diproses provider…";
           }
         }, POLLING_INTERVAL_MS);
+
+        // Tombol "Saya Sudah Bayar" -- SAMA SEKALI TIDAK mengubah status
+        // sendiri, murni memicu server memanggil ULANG API provider (lihat
+        // routers/booking.py::public_snap_cek_ulang()) lalu menerapkan
+        // hasilnya lewat terapkanStatusTerbaru() yang SAMA PERSIS dipakai
+        // polling di atas. Kalau provider belum melihat pembayaran, countdown
+        // TETAP berjalan (TIDAK dianggap gagal) -- customer boleh menekan
+        // tombol ini berkali-kali.
+        btnSudahBayar.addEventListener("click", async () => {
+          if (!document.body.contains(countdownEl)) return;
+          try {
+            const status = await MugenUI.withButtonLoading(btnSudahBayar,
+              () => MugenApi.post(`/api/public/booking/snap-cek-ulang/${paymentReference}`));
+            if (!terapkanStatusTerbaru(status)) {
+              statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah Anda menyelesaikan pembayaran.";
+            }
+          } catch (e) {
+            MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+          }
+        });
 
         // Countdown MURNI tampilan (estimasi batas waktu umum provider) --
         // TIDAK PERNAH mengubah fase sendiri begitu habis (status
