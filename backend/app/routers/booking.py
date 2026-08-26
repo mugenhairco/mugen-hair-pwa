@@ -411,6 +411,41 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
     }
 
 
+@public_router.post("/snap-cek-ulang/{payment_reference}")
+def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    """Tombol customer "Saya Sudah Bayar" (halaman booking publik, saat
+    countdown VA/QRIS berjalan) -- TRIGGER pengecekan status KE PROVIDER,
+    FUNGSI PERSIS SAMA dengan tombol admin "Cek Ulang ke Provider"
+    (cek_ulang_transaksi_snap() di atas, lihat snap_webhook.py::
+    rekonsiliasi_manual()) -- HANYA beda cara menemukan baris transaksi
+    (payment_reference publik yang sudah dipegang customer sejak booking
+    dibuat, sama seperti dipakai public_snap_status() di atas, BUKAN
+    transaksi_id+login staff). Sumber kebenaran status TETAP provider
+    (Faspay) -- endpoint ini TIDAK PERNAH menandai transaksi berhasil
+    sendiri, murni memicu query ulang lalu menerapkan hasilnya lewat
+    terapkan_status_transaksi() (jalur SAMA PERSIS webhook resmi)."""
+    transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
+    if transaksi is None or transaksi["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    try:
+        hasil = snap_webhook.rekonsiliasi_manual(transaksi["id"], tenant_id=tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
+    return {
+        "status": hasil["status"],
+        "channel": hasil["channel"],
+        "amount": hasil["amount"],
+        "va_number": hasil["va_number"],
+        "channel_code": hasil["channel_code"],
+        "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(hasil["channel_code"]),
+        "qr_url": hasil["qr_url"],
+        "qr_content": hasil["qr_content"],
+        "expired_at": hasil["expired_at"],
+    }
+
+
 # =====================================================================
 # ADMIN/OWNER
 # =====================================================================

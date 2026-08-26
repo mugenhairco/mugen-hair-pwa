@@ -1446,6 +1446,107 @@ def test_rekonsiliasi_manual_channel_tidak_didukung_ditolak(single_tenant):
         snap_webhook.rekonsiliasi_manual(row["id"], tenant_id=single_tenant["tenant_id"])
 
 
+# ---------------------------------------------------------------------------
+# Tombol customer "Saya Sudah Bayar" (POST /api/public/booking/snap-cek-ulang/
+# {payment_reference}) -- endpoint PUBLIK tanpa login yang memicu
+# snap_webhook.rekonsiliasi_manual() (query ULANG ke provider, BUKAN
+# menerima klaim status dari customer), fungsinya sama persis dengan
+# tombol admin "Cek Ulang ke Provider".
+# ---------------------------------------------------------------------------
+
+def _checkout_va_publik(app_client, monkeypatch, tenant_id, barber_id=None, service_id=None):
+    import payment_provider_client
+    _aktifkan_snap_orkestrasi()
+    barber_id = barber_id or db.add_barber("Barber Cek Ulang Publik", tenant_id=tenant_id)
+    service_id = service_id or db.add_service("Service Cek Ulang Publik", 100000, tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi",
+                         lambda *a, **kw: {"va_number": "70212345678901", "channel_code": "702"})
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    body = {
+        "barber_id": barber_id, "tanggal": tanggal, "jam_mulai": "13:00", "service_ids": [service_id],
+        "customer_nama": "Dedi", "customer_whatsapp": "081234567892", "metode_pembayaran": "gateway",
+        "channel": "va", "bank_code": "702",
+    }
+    r = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_public_snap_cek_ulang_status_paid_menerapkan_status(app_client, monkeypatch):
+    """Tombol "Saya Sudah Bayar" -- provider mengembalikan sukses -> status
+    transaksi (dan booking) SUNGGUHAN ikut berubah jadi PAID/terverifikasi,
+    sama seperti kalau admin yang menekan "Cek Ulang ke Provider"."""
+    tenant = _tenant_default_snap()
+    booking = _checkout_va_publik(app_client, monkeypatch, tenant["id"])
+    monkeypatch.setattr(snap_advance_client, "cek_status_transaksi",
+                         lambda ref, channel=None, **kw: {"paymentFlagStatus": "00",
+                                                           "paymentFlagReason": {"english": "Success"}})
+
+    r = app_client.post(f"/api/public/booking/snap-cek-ulang/{booking['payment_reference']}",
+                         params={"tenant": "mugen-hair-co"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "PAID"
+    booking_terbaru = booking_db.get_booking(booking["id"])
+    assert booking_terbaru["status_pembayaran"] == "terverifikasi"
+
+
+def test_public_snap_cek_ulang_belum_dibayar_tetap_pending_tanpa_error(app_client, monkeypatch):
+    """Belum terdeteksi bayar -> TETAP 200 dengan status PENDING (BUKAN
+    ditandai gagal), sesuai instruksi Owner: customer boleh menekan ulang
+    tombolnya, countdown tidak boleh berhenti gara-gara ini."""
+    tenant = _tenant_default_snap()
+    booking = _checkout_va_publik(app_client, monkeypatch, tenant["id"])
+    monkeypatch.setattr(snap_advance_client, "cek_status_transaksi",
+                         lambda ref, channel=None, **kw: {"paymentFlagStatus": None})
+
+    r = app_client.post(f"/api/public/booking/snap-cek-ulang/{booking['payment_reference']}",
+                         params={"tenant": "mugen-hair-co"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "PENDING"
+
+
+def test_public_snap_cek_ulang_payment_reference_tidak_dikenal_404(app_client):
+    tenant = _tenant_default_snap()
+    _aktifkan_snap_orkestrasi()
+    r = app_client.post("/api/public/booking/snap-cek-ulang/BOOKING-999-999-tidakada",
+                         params={"tenant": "mugen-hair-co"})
+    assert r.status_code == 404, r.text
+
+
+def test_public_snap_cek_ulang_tenant_lain_tidak_bisa_akses_404(app_client, monkeypatch):
+    """payment_reference milik tenant lain (walaupun ditebak persis) HARUS
+    tetap 404 lewat endpoint publik tenant ini -- isolasi cross-tenant sama
+    seperti public_snap_status()."""
+    import auth_db
+    slug_lain = f"toko-lain-cekulang-{next(_urutan_unik)}"
+    tenant_lain_id = tenant_db.buat_tenant(slug_lain, "Toko Lain Cek Ulang")
+    auth_db.tambah_user(f"ownerlain{next(_urutan_unik)}", "password123", role="admin", tenant_id=tenant_lain_id)
+
+    tenant = _tenant_default_snap()
+    booking = _checkout_va_publik(app_client, monkeypatch, tenant["id"])
+
+    r = app_client.post(f"/api/public/booking/snap-cek-ulang/{booking['payment_reference']}",
+                         params={"tenant": slug_lain})
+    assert r.status_code in (403, 404), r.text
+
+
+def test_public_snap_cek_ulang_gateway_error_502(app_client, monkeypatch):
+    """Provider genuinely tidak bisa dihubungi (network/5xx Faspay) -- customer
+    dapat pesan jelas (502), BUKAN 500 mentah, dan status transaksi TIDAK
+    berubah sama sekali."""
+    tenant = _tenant_default_snap()
+    booking = _checkout_va_publik(app_client, monkeypatch, tenant["id"])
+
+    def _meledak(*a, **kw):
+        raise core.GatewayRequestError("Faspay sedang tidak bisa dihubungi.")
+    monkeypatch.setattr(snap_advance_client, "cek_status_transaksi", _meledak)
+
+    r = app_client.post(f"/api/public/booking/snap-cek-ulang/{booking['payment_reference']}",
+                         params={"tenant": "mugen-hair-co"})
+    assert r.status_code == 502, r.text
+
+
 def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypatch):
     """GET /api/booking/transactions (Riwayat Transaksi Tenant) SEKARANG
     menggabung baris Xpress v4 (booking_payment_transactions) DAN SNAP

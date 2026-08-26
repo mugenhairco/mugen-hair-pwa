@@ -262,8 +262,90 @@ const PageBilling = (() => {
       kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
         "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
     }
-    MugenUI.infoModal({ title: "Selesaikan Pembayaran", body: MugenUI.el("div", { style: "text-align:center;" }, kontenModal) });
+
+    // Verifikasi Pembayaran Tanpa Menunggu Admin: countdown (MURNI tampilan/
+    // estimasi, pola SAMA PERSIS book_public.js -- status sungguhan TETAP
+    // dari polling/webhook di bawah) + tombol "Saya Sudah Bayar", TRIGGER
+    // pengecekan ULANG ke provider (endpoint yang SAMA dengan "Cek Ulang ke
+    // Provider" milik Owner di renderInvoiceCard() di atas), BUKAN klaim
+    // status dari Owner sendiri. Tombol TANPA .btn-primary (bobot visual
+    // sekunder, proporsional) supaya tidak bersaing dengan info VA/QR di
+    // atasnya, tapi tetap mudah ditemukan (langsung di bawah countdown).
+    const countdownEl = MugenUI.el("div", { class: "book-countdown", style: "margin:12px auto 0;" }, "15:00");
+    const statusLabelEl = MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;min-height:18px;" }, "");
+    const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:6px;" }, "Saya Sudah Bayar");
+    kontenModal.push(MugenUI.el("div", { style: "margin-top:6px;" }, [countdownEl, statusLabelEl, btnSudahBayar]));
+
+    const modalRef = MugenUI.infoModal({ title: "Selesaikan Pembayaran", body: MugenUI.el("div", { style: "text-align:center;" }, kontenModal) });
     MugenUI.toast("Status langganan akan diperbarui otomatis di sini setelah pembayaran dikonfirmasi.", "info", { force: true });
+
+    // Countdown 15 menit MURNI tampilan (estimasi batas waktu umum provider,
+    // pola SAMA PERSIS book_public.js::renderFaseWaiting()) -- TIDAK PERNAH
+    // mengubah status sendiri begitu habis, self-clear begitu modal ditutup
+    // (countdownEl lepas dari DOM).
+    const deadlineCountdown = Date.now() + 15 * 60 * 1000;
+    const countdownTimer = setInterval(() => {
+      if (!document.body.contains(countdownEl)) { clearInterval(countdownTimer); return; }
+      const sisaMs = deadlineCountdown - Date.now();
+      if (sisaMs <= 0) { clearInterval(countdownTimer); countdownEl.textContent = "00:00"; return; }
+      const sisaDetik = Math.floor(sisaMs / 1000);
+      const mm = String(Math.floor(sisaDetik / 60)).padStart(2, "0");
+      const ss = String(sisaDetik % 60).padStart(2, "0");
+      countdownEl.textContent = `${mm}:${ss}`;
+      countdownEl.classList.toggle("book-countdown-urgent", sisaDetik < 60);
+    }, 1000);
+
+    // Satu titik penerap status SATU-SATUNYA -- dipakai polling otomatis DI
+    // BAWAH DAN tombol "Saya Sudah Bayar" di atas, supaya perilaku
+    // (toast+segarkanLaluSelesai()/onSelesai()+tutup modal) PERSIS sama dari
+    // kedua jalur. Return true kalau statusnya final (pemanggil TIDAK perlu
+    // berbuat apa-apa lagi setelah ini).
+    function terapkanStatusInvoice(statusInvoice) {
+      if (statusInvoice === "paid") {
+        clearInterval(pollTimer);
+        clearInterval(countdownTimer);
+        modalRef.close();
+        MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
+        segarkanLaluSelesai();
+        return true;
+      }
+      if (["denied", "cancelled", "expired"].includes(statusInvoice)) {
+        clearInterval(pollTimer);
+        clearInterval(countdownTimer);
+        modalRef.close();
+        MugenUI.toast("Pembayaran tidak berhasil. Silakan coba lagi.", "error");
+        onSelesai();
+        return true;
+      }
+      return false; // masih "pending" -- belum ada perubahan
+    }
+
+    // Verifikasi Pembayaran Tanpa Menunggu Admin: tombol "Saya Sudah Bayar"
+    // -- SAMA SEKALI TIDAK mengubah status sendiri, murni memicu server
+    // memanggil ULANG API provider (endpoint yang SAMA dengan "Cek Ulang ke
+    // Provider" Owner di renderInvoiceCard()) lalu mengambil status invoice
+    // TERBARU dan menerapkannya lewat terapkanStatusInvoice() di atas. Kalau
+    // provider belum melihat pembayaran, countdown TETAP berjalan (TIDAK
+    // dianggap gagal) -- Owner boleh menekan tombol ini berkali-kali.
+    btnSudahBayar.addEventListener("click", async () => {
+      if (!document.body.contains(btnSudahBayar)) return;
+      try {
+        await MugenUI.withButtonLoading(btnSudahBayar,
+          () => MugenApi.post(`/api/billing/invoices/${invoice.id}/cek-ulang`));
+      } catch (e) {
+        MugenUI.toast(pesanError(e), "error");
+        return;
+      }
+      let terbaru;
+      try {
+        terbaru = await MugenApi.get(`/api/billing/invoices/${invoice.id}`);
+      } catch (e) {
+        return; // hiccup jaringan sesaat -- status tetap seperti sebelumnya
+      }
+      if (!terapkanStatusInvoice(terbaru.status)) {
+        statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah Anda menyelesaikan pembayaran.";
+      }
+    });
 
     // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
     // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah
@@ -288,15 +370,7 @@ const PageBilling = (() => {
       } catch (e) {
         return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
       }
-      if (terbaru.status === "paid") {
-        clearInterval(pollTimer);
-        MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-        segarkanLaluSelesai();
-      } else if (["denied", "cancelled", "expired"].includes(terbaru.status)) {
-        clearInterval(pollTimer);
-        MugenUI.toast("Pembayaran tidak berhasil. Silakan coba lagi.", "error");
-        onSelesai();
-      }
+      terapkanStatusInvoice(terbaru.status);
     }, 4000);
   }
 

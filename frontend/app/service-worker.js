@@ -869,7 +869,16 @@
 // TERPAKAI/kuota (mis. "10/10 hari" saat habis), BUKAN LAGI sisa/kuota
 // (sebelumnya "0/10 hari") -- konsisten dengan kartu Libur yang sudah
 // terpakai/kuota sejak awal (absensi.js, izin_cuti.js).
-const ASSET_VERSION = "158";
+// v158 -> v159: PERMINTAAN Owner -- "Verifikasi Pembayaran Tanpa Menunggu
+// Admin": tombol "Saya Sudah Bayar" BARU di halaman menunggu pembayaran
+// booking customer (book_public.js) DAN modal checkout Billing/Perpanjang
+// Langganan SaaS (billing.js) -- MURNI trigger pengecekan ULANG ke provider
+// (endpoint publik baru POST /api/public/booking/snap-cek-ulang/{ref} untuk
+// booking, endpoint tenant yang SUDAH ADA POST /api/billing/invoices/{id}/
+// cek-ulang untuk billing), TIDAK PERNAH mengklaim status sendiri -- sama
+// persis fungsi tombol admin "Cek Ulang ke Provider". Kalau provider belum
+// melihat pembayaran, countdown tetap jalan (bukan dianggap gagal).
+const ASSET_VERSION = "159";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
