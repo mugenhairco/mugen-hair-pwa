@@ -1341,7 +1341,12 @@ def test_orkestrasi_booking_channel_tidak_aktif_ditolak_422(app_client):
 def test_rekonsiliasi_manual_booking_snap_va_menerapkan_status(single_tenant, monkeypatch):
     """snap_webhook.rekonsiliasi_manual() untuk channel "va" -- memanggil
     snap_advance_client.cek_status_transaksi(channel="va", virtual_account_no=...)
-    lalu menerapkan status hasilnya lewat jalur SAMA PERSIS webhook resmi."""
+    lalu menerapkan status hasilnya lewat jalur SAMA PERSIS webhook resmi.
+    BUGFIX (dikonfirmasi dari respons Inquiry Status VA sungguhan): field
+    yang benar adalah `paymentFlagStatus` LANGSUNG di virtualAccountData,
+    BUKAN `additionalInfo.latestTransactionStatus` (itu bentuk payload
+    webhook notifikasi, beda respons -- lihat snap_webhook.py::
+    _map_payment_flag_status())."""
     booking = _siapkan_booking(single_tenant["tenant_id"], metode="gateway")
     row = snap_payment_db.buat_transaksi(
         "BOOKING", single_tenant["tenant_id"], booking["total_harga"],
@@ -1350,12 +1355,33 @@ def test_rekonsiliasi_manual_booking_snap_va_menerapkan_status(single_tenant, mo
     snap_payment_db.catat_hasil_create_transaction(row["id"], va_number="70212345678901", status="PENDING")
 
     monkeypatch.setattr(snap_advance_client, "cek_status_transaksi",
-                         lambda ref, channel=None, **kw: {"additionalInfo": {"latestTransactionStatus": "00"}})
+                         lambda ref, channel=None, **kw: {"paymentFlagStatus": "00",
+                                                            "paymentFlagReason": {"english": "Success"}})
 
     hasil = snap_webhook.rekonsiliasi_manual(row["id"], tenant_id=single_tenant["tenant_id"])
     assert hasil["status"] == "PAID"
     booking_terbaru = booking_db.get_booking(booking["id"])
     assert booking_terbaru["status_pembayaran"] == "terverifikasi"
+
+
+def test_rekonsiliasi_manual_booking_snap_va_belum_dibayar_tetap_pending_tanpa_error(single_tenant, monkeypatch):
+    """PERMINTAAN Owner (bug live "Cek Ulang ke Provider" melempar error
+    "latestTransactionStatus ... None" untuk VA yang genuinely belum
+    dibayar): Inquiry Status VA yang belum menunjukkan pembayaran (tanpa
+    paymentFlagStatus="00") HARUS tetap dianggap PENDING (tidak error),
+    bukan melempar ValueError."""
+    booking = _siapkan_booking(single_tenant["tenant_id"], metode="gateway")
+    row = snap_payment_db.buat_transaksi(
+        "BOOKING", single_tenant["tenant_id"], booking["total_harga"],
+        booking_id=booking["id"], channel="va",
+    )
+    snap_payment_db.catat_hasil_create_transaction(row["id"], va_number="70212345678901", status="PENDING")
+
+    monkeypatch.setattr(snap_advance_client, "cek_status_transaksi",
+                         lambda ref, channel=None, **kw: {"paymentFlagStatus": None})
+
+    hasil = snap_webhook.rekonsiliasi_manual(row["id"], tenant_id=single_tenant["tenant_id"])
+    assert hasil["status"] == "PENDING"
 
 
 def test_rekonsiliasi_manual_channel_tidak_didukung_ditolak(single_tenant):

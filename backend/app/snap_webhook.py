@@ -159,6 +159,23 @@ def _map_latest_transaction_status(status_code: str) -> str:
     return _STATUS_CODE_KE_INTERNAL[status_code]
 
 
+def _map_payment_flag_status(payment_flag_status) -> str:
+    """BUGFIX (dikonfirmasi dari error live "Cek Ulang ke Provider" --
+    respons Inquiry Status VA sungguhan TIDAK memakai
+    `additionalInfo.latestTransactionStatus` seperti payload webhook
+    notifikasi, melainkan `paymentFlagStatus` LANGSUNG di virtualAccountData,
+    lihat snap_advance_client.py::inquiry_status_va()). HANYA "00"
+    (dikonfirmasi resmi = Success/sudah dibayar) yang dipetakan ke PAID --
+    nilai lain (termasuk None/belum ada field ini sama sekali, mis. VA yang
+    memang belum dibayar) dianggap masih PENDING, BUKAN error -- "Cek Ulang
+    ke Provider" pada transaksi yang genuinely belum dibayar HARUS tetap
+    berhasil (hanya melapor "belum ada perubahan"), bukan melempar
+    exception."""
+    if payment_flag_status == "00":
+        return snap_payment_db.STATUS_PAID
+    return snap_payment_db.STATUS_PENDING
+
+
 JENIS_VALID = {"va", "qris", "direct_debit"}
 
 
@@ -276,7 +293,11 @@ def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
             transaksi["payment_reference"], channel="va", virtual_account_no=transaksi["va_number"],
             channel_code=transaksi["channel_code"],
         )
-        status_code = (hasil_provider.get("additionalInfo") or {}).get("latestTransactionStatus")
+        # BUGFIX: Inquiry Status VA sungguhan memakai `paymentFlagStatus`
+        # (lihat _map_payment_flag_status() di atas) -- BUKAN
+        # `additionalInfo.latestTransactionStatus` (itu field payload
+        # webhook notifikasi, beda respons/beda endpoint).
+        status_baru = _map_payment_flag_status(hasil_provider.get("paymentFlagStatus"))
     elif transaksi["channel"] == "qris":
         cfg = snap_advance_db.get_config_internal()
         hasil_provider = snap_advance_client.cek_status_transaksi(
@@ -285,8 +306,8 @@ def rekonsiliasi_manual(transaksi_id: int, tenant_id: int) -> dict:
             channel_code=cfg["snap_qris_channel_code"],
         )
         status_code = hasil_provider.get("latestTransactionStatus")
+        status_baru = _map_latest_transaction_status(status_code)
     else:
         raise ValueError(f"Rekonsiliasi manual belum didukung untuk channel {transaksi['channel']!r}.")
 
-    status_baru = _map_latest_transaction_status(status_code)
     return terapkan_status_transaksi(transaksi, status_baru, sumber="rekonsiliasi_manual")
