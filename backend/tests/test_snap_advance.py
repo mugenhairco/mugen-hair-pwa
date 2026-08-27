@@ -1600,3 +1600,135 @@ def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypat
     # diterjemahkan "diproses" di kosakata gateway lawas.
     assert baris_snap["status_pembayaran"] == "diproses"
     assert baris_snap["nomor_transaksi"] == r_checkout.json()["nomor_transaksi"]
+
+
+# ---------------------------------------------------------------------------
+# snap_advance_diagnostic.py -- alat uji SEMENTARA khusus sertifikasi Faspay
+# (permintaan tim Faspay: X-SIGNATURE/response ASLI untuk skenario error
+# generik yang tidak pernah terjadi wajar dari checkout produksi). Fokus
+# pengujian: (1) pengaman keras TIDAK PERNAH boleh jalan di production,
+# (2) tiap skenario mengirim body/signature yang BENAR-BENAR rusak sesuai
+# labelnya, (3) endpoint Super Admin hanya bisa diakses superadmin.
+# ---------------------------------------------------------------------------
+
+def test_uji_skenario_va_ditolak_saat_environment_production(single_tenant):
+    import snap_advance_diagnostic
+    private_pem, _ = _buat_keypair_rsa()
+    snap_advance_db.update_config(
+        environment="production", merchant_id="37070", partner_id="37070", channel_id="77001",
+        va_bank_aktif=["702"], private_key=private_pem, channel_aktif=["va", "qris"],
+    )
+    with pytest.raises(ValueError):
+        snap_advance_diagnostic.uji_skenario_va()
+
+
+def test_uji_skenario_qris_ditolak_saat_environment_production(single_tenant):
+    import snap_advance_diagnostic
+    private_pem, _ = _buat_keypair_rsa()
+    snap_advance_db.update_config(
+        environment="production", merchant_id="37070", partner_id="37070", channel_id="77001",
+        qris_channel_code="711", private_key=private_pem, channel_aktif=["va", "qris"],
+    )
+    with pytest.raises(ValueError):
+        snap_advance_diagnostic.uji_skenario_qris()
+
+
+def test_uji_skenario_va_mengirim_lima_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
+    import snap_advance_diagnostic
+    _aktifkan_snap_orkestrasi()
+    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id")
+    dipanggil = []
+
+    def _rekam(url, raw_body, headers, timeout=None):
+        dipanggil.append({"url": url, "body": json.loads(raw_body), "headers": headers})
+        if len(dipanggil) in (2, 5):  # Duplicate X-EXTERNAL-ID percobaan ke-2 sengaja ditolak
+            raise core.GatewayRequestError("Payment Gateway menolak permintaan (HTTP 409).")
+        return {"responseCode": "2002700", "responseMessage": "Success", "virtualAccountData": {}}
+
+    monkeypatch.setattr(core, "post_json_raw", _rekam)
+    hasil = snap_advance_diagnostic.uji_skenario_va()
+
+    assert len(hasil) == 5
+    assert len(dipanggil) == 5
+    assert all(p["url"].endswith("/v1.0/transfer-va/create-va") for p in dipanggil)
+
+    # 1. Unauthorized Signature -- signature TIDAK dihitung dari private key konfigurasi
+    cfg = snap_advance_db.get_config_internal()
+    assert dipanggil[0]["headers"]["X-SIGNATURE"] != _snap_sign_ulang(dipanggil[0], cfg["snap_private_key"])
+    # 2. Missing Mandatory Field -- totalAmount hilang
+    assert "totalAmount" not in dipanggil[1]["body"]
+    # 3. Invalid Field Format -- totalAmount.value tanpa 2 desimal
+    assert dipanggil[2]["body"]["totalAmount"]["value"] == "10000"
+    # 4 & 5. Duplicate X-EXTERNAL-ID -- X-EXTERNAL-ID SAMA PERSIS di kedua percobaan
+    assert dipanggil[3]["headers"]["X-EXTERNAL-ID"] == dipanggil[4]["headers"]["X-EXTERNAL-ID"]
+    assert hasil[3]["status"].startswith("TIDAK ditolak")
+    assert hasil[4]["status"].startswith("Ditolak")
+
+
+def _snap_sign_ulang(panggilan, private_key_pem):
+    """Helper test: hitung ulang X-SIGNATURE yang SEHARUSNYA muncul kalau
+    memakai private key konfigurasi asli, untuk dibandingkan (harus BEDA)
+    dengan signature skenario "Unauthorized" yang sengaja pakai keypair
+    palsu."""
+    import re
+    raw_body = json.dumps(panggilan["body"], separators=(",", ":"))
+    body_hash = core.sha256_lowercase_hex(raw_body)
+    string_to_sign = f"POST:/v1.0/transfer-va/create-va:{body_hash}:{panggilan['headers']['X-TIMESTAMP']}"
+    return core.sign_sha256_rsa(string_to_sign, private_key_pem)
+
+
+def test_uji_skenario_qris_mengirim_tujuh_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
+    import snap_advance_diagnostic
+    _aktifkan_snap_orkestrasi()
+    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id", qris_channel_code="711")
+    dipanggil = []
+
+    def _rekam(url, raw_body, headers, timeout=None):
+        dipanggil.append({"url": url, "body": json.loads(raw_body), "headers": headers})
+        if len(dipanggil) in (2, 5, 6, 7):
+            raise core.GatewayRequestError("Payment Gateway menolak permintaan.")
+        return {"responseCode": "2004700", "responseMessage": "success"}
+
+    monkeypatch.setattr(core, "post_json_raw", _rekam)
+    hasil = snap_advance_diagnostic.uji_skenario_qris()
+
+    assert len(hasil) == 7
+    assert all(p["url"].endswith("/v1.0/qr/qr-mpm-generate") for p in dipanggil[:6])
+    assert "amount" not in dipanggil[1]["body"]
+    assert dipanggil[2]["body"]["amount"]["value"] == "10000"
+    assert dipanggil[3]["headers"]["X-EXTERNAL-ID"] == dipanggil[4]["headers"]["X-EXTERNAL-ID"]
+    assert dipanggil[3]["body"]["merchantId"] == "37070"
+    # 18.7 Invalid Merchant
+    assert dipanggil[5]["body"]["merchantId"] == "99999"
+    # 18.11 Transaction Not Found -- lewat qr-mpm-query, BUKAN qr-mpm-generate
+    assert dipanggil[6]["url"].endswith("/v1.0/qr/qr-mpm-query")
+    assert "originalReferenceNo" in dipanggil[6]["body"]
+
+
+def test_endpoint_uji_sertifikasi_ditolak_untuk_produk_tidak_dikenal(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/direct_debit", headers=headers)
+    assert r.status_code == 422, r.text
+
+
+def test_endpoint_uji_sertifikasi_wajib_superadmin(app_client, single_tenant):
+    import auth_db
+    auth_db.tambah_user("adminbiasa1", "password123", role="admin", tenant_id=single_tenant["tenant_id"])
+    r_login = app_client.post("/api/auth/login", json={"username": "adminbiasa1", "password": "password123"})
+    headers = {"Authorization": f"Bearer {r_login.json()['token']}"}
+    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/va", headers=headers)
+    assert r.status_code == 403, r.text
+
+
+def test_endpoint_uji_sertifikasi_va_sukses_mencatat_audit_log(app_client, monkeypatch):
+    import superadmin_audit_db
+    _aktifkan_snap_orkestrasi()
+    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id")
+    monkeypatch.setattr(core, "post_json_raw",
+                         lambda url, raw_body, headers, timeout=None: {"responseCode": "2002700", "responseMessage": "Success"})
+    headers = _buat_superadmin_dan_login(app_client)
+    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/va", headers=headers)
+    assert r.status_code == 200, r.text
+    assert len(r.json()["hasil"]) == 5
+    log = superadmin_audit_db.list_log()
+    assert any(row["aksi"] == "uji_sertifikasi_snap_advance" for row in log)

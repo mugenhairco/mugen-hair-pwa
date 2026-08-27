@@ -44,11 +44,13 @@ dipukul -- lebih robust, tidak lagi bergantung pada daftar channelCode
 QRIS vs Direct Debit tidak pernah bertumpang tindih."""
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 import snap_advance_db
+import snap_advance_diagnostic
 import snap_webhook
 import superadmin_audit_db
 from auth import require_superadmin
@@ -102,6 +104,31 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
     return hasil
 
 
+@router.post("/uji-sertifikasi/{produk}")
+def uji_sertifikasi(produk: str, user: dict = Depends(require_superadmin)):
+    """Alat uji SEMENTARA khusus sertifikasi Faspay -- lihat
+    snap_advance_diagnostic.py untuk penjelasan lengkap kenapa ini
+    dibutuhkan (Faspay minta X-SIGNATURE/response ASLI untuk skenario error
+    generik yang tidak pernah terjadi wajar dari checkout produksi).
+    SENGAJA HANYA mengirim ke sandbox (guard keras di modul diagnostic),
+    dicatat lewat AUDIT LOG Super Admin yang sama dengan perubahan
+    konfigurasi lain -- SIAPA yang menjalankan alat uji ini TETAP
+    tercatat. `produk`: "va" atau "qris". Hasil detail SEBENARNYA ada di
+    Render Logs (SNAP REQUEST/SNAP RESPONSE) -- return di sini HANYA
+    ringkasan status per skenario supaya Super Admin tahu langkah mana
+    yang perlu dicek lognya."""
+    if produk not in ("va", "qris"):
+        raise HTTPException(status_code=422, detail="Produk tidak dikenal -- harus 'va' atau 'qris'.")
+    try:
+        hasil = snap_advance_diagnostic.uji_skenario_va() if produk == "va" else snap_advance_diagnostic.uji_skenario_qris()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
+    superadmin_audit_db.catat(user["username"], "uji_sertifikasi_snap_advance", detail=f"produk={produk}")
+    return {"hasil": hasil}
+
+
 async def _tangani_notifikasi(request: Request, jenis: str, path: str):
     """Helper BERSAMA ketiga endpoint di bawah -- SATU-SATUNYA tempat
     envelope HTTP (baca body/header, terjemahkan exception jadi status
@@ -109,16 +136,32 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
     EKSPLISIT dari endpoint mana yang dipukul (va/qris/direct_debit) --
     TIDAK LAGI ditebak dari isi payload (lihat catatan modul). `path`
     HARUS path resmi Faspay endpoint ini (dipakai verifikasi signature,
-    lihat snap_advance_client.py::verifikasi_signature_webhook())."""
+    lihat snap_advance_client.py::verifikasi_signature_webhook()).
+
+    BUKTI SERTIFIKASI + TROUBLESHOOTING (sama alasannya dengan
+    gateway_client_base.post_json_raw()): request MASUK dari Faspay dicatat
+    UTUH ke log server (level INFO, Render Logs) SEBELUM verifikasi
+    signature dilakukan -- supaya kalau Faspay genuinely mengirim notifikasi
+    tapi ditolak (mis. public key belum dikonfigurasi, atau formula
+    signature webhook yang BELUM dicocokkan 1:1 ke dokumen resmi, lihat
+    catatan verifikasi_signature_webhook()), penyebabnya kelihatan dari log
+    -- BUKAN cuma baris akses "400 Bad Request" tanpa detail apa pun."""
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     signature_header = request.headers.get("X-SIGNATURE", "")
     timestamp_header = request.headers.get("X-TIMESTAMP")
+    logger = logging.getLogger("mugen.gateway")
+    logger.info("SNAP WEBHOOK IN -- POST %s -- X-TIMESTAMP: %s -- X-SIGNATURE: %s -- BODY: %s",
+                path, timestamp_header, signature_header, raw_body)
     try:
         snap_webhook.proses_notifikasi(raw_body, signature_header, timestamp_header, jenis, path)
-        return snap_webhook.balas_notifikasi(jenis, json.loads(raw_body))
+        balasan = snap_webhook.balas_notifikasi(jenis, json.loads(raw_body))
+        logger.info("SNAP WEBHOOK IN -- POST %s -- diterima, balasan: %s", path, balasan)
+        return balasan
     except ValueError as e:
+        logger.error("SNAP WEBHOOK IN -- POST %s -- DITOLAK: %s", path, e)
         raise HTTPException(status_code=400, detail=str(e))
     except GatewayError as e:
+        logger.error("SNAP WEBHOOK IN -- POST %s -- error provider: %s", path, e)
         raise HTTPException(status_code=503, detail=str(e))
 
 

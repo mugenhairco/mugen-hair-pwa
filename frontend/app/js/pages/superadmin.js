@@ -1434,6 +1434,51 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(errorSnap);
     snapAdvanceCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSnap));
 
+    // Alat Uji Sertifikasi Faspay (SEMENTARA, boleh dihapus setelah
+    // sertifikasi selesai): feedback tim Faspay minta X-SIGNATURE/response
+    // ASLI untuk SETIAP skenario dokumen UAT, TERMASUK 4 skenario error
+    // generik "Any Service" (Unauthorized Signature/Missing Mandatory
+    // Field/Invalid Field Format/Duplicate X-EXTERNAL-ID) yang TIDAK
+    // PERNAH terjadi wajar dari checkout produksi (kode SELALU mengirim
+    // request yang benar). Tombol ini SENGAJA mengirim request yang
+    // dirusak ke SANDBOX Faspay (guard keras di snap_advance_diagnostic.py
+    // -- menolak total kalau environment="production") supaya responsnya
+    // tercatat asli di Render Logs (SNAP REQUEST/SNAP RESPONSE), lalu
+    // disalin manual ke dokumen sertifikasi. HANYA muncul saat environment
+    // = sandbox (dobel pengaman, backend juga sudah menolak).
+    const ujiSertifikasiCard = MugenUI.el("div", { style: "margin-top:20px;padding-top:16px;border-top:1px solid var(--border);" });
+    snapAdvanceCard.appendChild(ujiSertifikasiCard);
+    ujiSertifikasiCard.appendChild(MugenUI.el("h2", {}, "Alat Uji Sertifikasi Faspay (Sementara)"));
+    ujiSertifikasiCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Khusus permintaan tim Faspay: mengirim request yang SENGAJA dirusak (signature salah/field hilang/format salah/" +
+      "external-id duplikat/merchant tidak dikenal/transaksi tidak ditemukan) ke SANDBOX Faspay, supaya respons error " +
+      "ASLI mereka tercatat di Render Logs -- HANYA jalan kalau Environment di atas = Sandbox. Cek Render Logs setelah " +
+      "menekan tombol untuk melihat detail SNAP REQUEST/SNAP RESPONSE-nya. (Skenario Query Payment Pending/Successful " +
+      "TIDAK ada di sini -- tinggal pakai tombol \"Cek Ulang ke Provider\" pada transaksi QRIS sungguhan, sebelum & " +
+      "sesudah dibayar.)"));
+    const ujiSertifikasiHasil = MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;white-space:pre-wrap;" });
+    const btnUjiVa = MugenUI.el("button", { type: "button", style: "margin-top:8px;margin-right:8px;" }, "Uji Skenario Error -- VA");
+    const btnUjiQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Uji Skenario Error -- QRIS");
+    ujiSertifikasiCard.appendChild(MugenUI.el("div", {}, [btnUjiVa, btnUjiQris]));
+    ujiSertifikasiCard.appendChild(ujiSertifikasiHasil);
+
+    async function jalankanUjiSertifikasi(produk, btn) {
+      if (inSnapEnv.value !== "sandbox") {
+        MugenUI.toast("Hanya bisa dijalankan saat Environment SNAP Advance = Sandbox.", "error");
+        return;
+      }
+      ujiSertifikasiHasil.textContent = "";
+      try {
+        const r = await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/superadmin/snap-advance/uji-sertifikasi/${produk}`, {}));
+        ujiSertifikasiHasil.textContent = r.hasil.map((h) => `${h.skenario}\n  -> ${h.status}`).join("\n\n");
+        MugenUI.toast("Selesai -- cek Render Logs untuk detail SNAP REQUEST/SNAP RESPONSE tiap skenario.", "success", { force: true });
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    }
+    btnUjiVa.addEventListener("click", () => jalankanUjiSertifikasi("va", btnUjiVa));
+    btnUjiQris.addEventListener("click", () => jalankanUjiSertifikasi("qris", btnUjiQris));
+
     let snapChannelLabel = {};
     const snapChannelCheckbox = {};
 
