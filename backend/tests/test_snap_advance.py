@@ -1732,3 +1732,58 @@ def test_endpoint_uji_sertifikasi_va_sukses_mencatat_audit_log(app_client, monke
     assert len(r.json()["hasil"]) == 5
     log = superadmin_audit_db.list_log()
     assert any(row["aksi"] == "uji_sertifikasi_snap_advance" for row in log)
+
+
+# ---------------------------------------------------------------------------
+# snap_advance_client._debug_coba_variasi_formula_webhook() -- alat uji
+# SEMENTARA (permintaan Owner: notifikasi webhook nyata terus tertolak
+# walau public key sudah terisi) yang mencoba beberapa variasi formula
+# stringToSign, murni untuk logging tambahan -- self-test di sini
+# membuktikan alat ini SENDIRI benar (mendeteksi variasi yang genuinely
+# cocok, TIDAK ikut "cocok" untuk variasi yang salah).
+# ---------------------------------------------------------------------------
+
+def test_debug_variasi_formula_mendeteksi_baseline_yang_benar(single_tenant):
+    import snap_advance_client
+    private_pem, public_pem = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_pem)
+    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
+    timestamp = "2026-08-27T16:13:15+07:00"
+    path = "/v1.0/transfer-va/payment"
+    body_hash = core.sha256_lowercase_hex(raw_body)
+    string_to_sign = f"POST:{path}:{body_hash}:{timestamp}"
+    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
+
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
+
+    assert hasil["public_key_terisi"] is True
+    assert hasil["baseline (method:path:hash_lower:ts)"] is True
+    # Variasi LAIN (formula yang beda) TIDAK boleh ikut "cocok" -- signature
+    # RSA-SHA256 genuinely spesifik untuk SATU string_to_sign persis.
+    assert hasil["full URL, bukan path saja"] is False
+    assert hasil["tanpa timestamp"] is False
+
+
+def test_debug_variasi_formula_mendeteksi_full_url_yang_benar(single_tenant):
+    import snap_advance_client
+    private_pem, public_pem = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_pem)
+    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
+    timestamp = "2026-08-27T16:13:15+07:00"
+    path = "/v1.0/transfer-va/payment"
+    body_hash = core.sha256_lowercase_hex(raw_body)
+    # Faspay (hipotetis) menandatangani pakai FULL URL, bukan path saja.
+    string_to_sign = f"POST:https://api.rivoirsett.com{path}:{body_hash}:{timestamp}"
+    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
+
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
+
+    assert hasil["full URL, bukan path saja"] is True
+    assert hasil["baseline (method:path:hash_lower:ts)"] is False
+
+
+def test_debug_variasi_formula_public_key_kosong(single_tenant):
+    import snap_advance_client
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(
+        "{}", "sig-apa-saja", "2026-08-27T16:13:15+07:00", "POST", "/v1.0/transfer-va/payment")
+    assert hasil == {"public_key_terisi": False}

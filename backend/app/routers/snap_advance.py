@@ -49,6 +49,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+import snap_advance_client
 import snap_advance_db
 import snap_advance_diagnostic
 import snap_webhook
@@ -166,7 +167,16 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
         logger.info("SNAP WEBHOOK IN -- POST %s -- diterima, balasan: %s", path, balasan)
         return balasan
     except ValueError as e:
-        logger.error("SNAP WEBHOOK IN -- POST %s -- DITOLAK: %s", path, e)
+        # TROUBLESHOOTING SEMENTARA: signature ditolak PADAHAL public key
+        # sudah terisi -- coba beberapa variasi formula stringToSign yang
+        # paling mungkin beda dari asumsi kita (lihat catatan
+        # snap_advance_client.py::_debug_coba_variasi_formula_webhook()),
+        # memakai byte ASLI request ini (bukan ditik ulang manual), supaya
+        # kalau ada satu yang cocok langsung kelihatan dari log. TIDAK
+        # PERNAH mengubah keputusan tolak di atas -- murni logging tambahan.
+        variasi = snap_advance_client._debug_coba_variasi_formula_webhook(
+            raw_body, signature_header, timestamp_header, "POST", path)
+        logger.error("SNAP WEBHOOK IN -- POST %s -- DITOLAK: %s -- coba variasi formula: %s", path, e, variasi)
         raise HTTPException(status_code=400, detail=str(e))
     except GatewayError as e:
         logger.error("SNAP WEBHOOK IN -- POST %s -- error provider: %s", path, e)
