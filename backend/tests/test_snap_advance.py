@@ -1832,8 +1832,40 @@ def test_debug_variasi_formula_tidak_ada_yang_cocok(single_tenant):
 
     hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
 
-    assert hasil["kombinasi_yang_cocok"] == (
-        "TIDAK ADA satu pun yang cocok -- kemungkinan public key yang tersimpan bukan pasangan yang benar, atau "
-        "formula webhook Faspay benar-benar di luar variasi yang dicoba (perlu tanya langsung ke tim Faspay: "
-        "contoh resmi string-to-sign + signature Payment Notification, sama seperti dulu untuk Create VA)."
-    )
+    assert hasil["public_key_valid"] is True  # key-nya SENDIRI valid -- bukan itu penyebab gagalnya
+    assert "TIDAK ADA satu pun yang cocok" in hasil["kombinasi_yang_cocok"]
+    assert "public key VALID secara teknis" in hasil["kombinasi_yang_cocok"]
+
+
+def test_debug_variasi_formula_public_key_gagal_diparse(single_tenant):
+    """BUGFIX-guard TROUBLESHOOTING: verify_sha256_rsa() menelan kegagalan
+    parsing PEM jadi False (identik dengan "signature tidak cocok") --
+    kalau public key yang tersimpan SENDIRI rusak/salah format, itu harus
+    kelihatan JELAS (bukan tersamar sebagai "tidak ada kombinasi yang
+    cocok" padahal sebabnya beda sama sekali)."""
+    import snap_advance_client
+    snap_advance_db.update_config(faspay_public_key="INI BUKAN PEM YANG VALID SAMA SEKALI")
+
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(
+        "{}", "sig-apa-saja", "2026-08-27T16:13:15+07:00", "POST", "/v1.0/transfer-va/payment")
+
+    assert hasil["public_key_terisi"] is True
+    assert hasil["public_key_valid"] is False
+    assert hasil["public_key_error"]
+    assert "kombinasi_yang_cocok" not in hasil  # tidak sempat mencoba kombinasi apa pun
+
+
+def test_inspect_public_key_pem_valid():
+    _, public_pem = _buat_keypair_rsa()
+    hasil = core.inspect_public_key_pem(public_pem)
+    assert hasil == {"valid": True, "key_size_bits": 2048, "public_exponent": 65537}
+
+
+def test_inspect_public_key_pem_rusak():
+    hasil = core.inspect_public_key_pem("bukan PEM sama sekali")
+    assert hasil["valid"] is False
+    assert hasil["error"]
+
+
+def test_inspect_public_key_pem_kosong():
+    assert core.inspect_public_key_pem("") == {"valid": False, "error": "Public key kosong."}

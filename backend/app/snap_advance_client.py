@@ -585,6 +585,19 @@ def _debug_coba_variasi_formula_webhook(raw_body: str, signature_header: str, ti
     public_key = cfg.get("snap_faspay_public_key")
     if not public_key:
         return {"public_key_terisi": False}
+    # BUGFIX-guard TROUBLESHOOTING: verify_sha256_rsa() menelan SEMUA
+    # kegagalan parsing PEM jadi False yang IDENTIK dengan "signature tidak
+    # cocok" -- cek dulu key-nya SENDIRI valid secara teknis, supaya "TIDAK
+    # ADA kombinasi yang cocok" di bawah tidak disalahartikan sebagai
+    # murni soal formula padahal key-nya sendiri gagal diparse.
+    inspeksi_key = core.inspect_public_key_pem(public_key)
+    if not inspeksi_key["valid"]:
+        return {"public_key_terisi": True, "public_key_valid": False,
+                "public_key_error": inspeksi_key["error"],
+                "catatan": "Public key GAGAL diparse -- SEMUA percobaan formula di bawah pasti gagal karena ini, "
+                           "BUKAN karena formulanya salah. Cek ulang isi field Faspay Public Key di Super Admin "
+                           "(format harus -----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----, bukan "
+                           "-----BEGIN CERTIFICATE-----, dan tidak ada baris yang hilang/terpotong saat copy-paste)."}
 
     def _minify_ulang(body: str, sort_keys: bool) -> str | None:
         try:
@@ -622,6 +635,8 @@ def _debug_coba_variasi_formula_webhook(raw_body: str, signature_header: str, ti
 
     return {
         "public_key_terisi": True,
+        "public_key_valid": True,
+        "public_key_size_bits": inspeksi_key["key_size_bits"],
         "total_kombinasi_dicoba": total_dicoba,
-        "kombinasi_yang_cocok": hasil_cocok or "TIDAK ADA satu pun yang cocok -- kemungkinan public key yang tersimpan bukan pasangan yang benar, atau formula webhook Faspay benar-benar di luar variasi yang dicoba (perlu tanya langsung ke tim Faspay: contoh resmi string-to-sign + signature Payment Notification, sama seperti dulu untuk Create VA).",
+        "kombinasi_yang_cocok": hasil_cocok or "TIDAK ADA satu pun yang cocok -- public key VALID secara teknis (berhasil diparse), jadi kemungkinan besar bukan pasangan yang benar dari private key yang dipakai Faspay menandatangani notifikasi, atau formula webhook Faspay benar-benar di luar variasi yang dicoba (perlu tanya langsung ke tim Faspay: contoh resmi string-to-sign + signature Payment Notification, sama seperti dulu untuk Create VA).",
     }
