@@ -613,8 +613,17 @@ def _debug_coba_variasi_formula_webhook(raw_body: str, signature_header: str, ti
     if minify_urut is not None and minify_urut not in (raw_body, minify_asli):
         body_variasi["re-minify (field diurutkan alfabet)"] = minify_urut
 
-    url_merchant = "https://api.rivoirsett.com"
-    endpoint_variasi = {"path saja": path, "full URL": f"{url_merchant}{path}"}
+    # Domain BARU ("dianggap" registered ke Faspay per catatan modul
+    # routers/snap_advance.py) MAUPUN domain LAMA (main.py::_OLD_BACKEND_HOST
+    # -- masih di-redirect 308 ke domain baru, TANDA domain ini pernah/masih
+    # dipakai di suatu tempat) -- kalau URL Notification yang SUNGGUHAN
+    # terdaftar di sistem Faspay belum sempat diperbarui ke domain baru,
+    # signature mereka bisa saja dihitung dari domain LAMA ini.
+    endpoint_variasi = {
+        "path saja": path,
+        "full URL (domain baru api.rivoirsett.com)": f"https://api.rivoirsett.com{path}",
+        "full URL (domain LAMA mugen-hair-api.onrender.com)": f"https://mugen-hair-api.onrender.com{path}",
+    }
     method_variasi = {"METHOD besar": method, "method kecil": method.lower()}
     token_variasi = {"tanpa slot token": "", "slot token kosong": ":"}  # digabung LANGSUNG setelah endpoint
 
