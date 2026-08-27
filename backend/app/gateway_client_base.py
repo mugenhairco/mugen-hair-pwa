@@ -131,15 +131,30 @@ def post_json_raw(url: str, raw_body: str, headers: dict, timeout: int = _TIMEOU
     hash yang dikirim bisa tidak cocok dengan body yang benar-benar sampai
     ke provider. Pemanggil BERTANGGUNG JAWAB memastikan `raw_body` adalah
     string PERSIS yang di-hash untuk X-SIGNATURE. Penanganan error SAMA
-    PERSIS post_json()."""
+    PERSIS post_json().
+
+    BUKTI SERTIFIKASI (permintaan tim Faspay -- dokumen UAT wajib berisi
+    request/response SUNGGUHAN, bukan contoh/placeholder): setiap panggilan
+    lewat fungsi ini (SATU-SATUNYA jalur SNAP Advance, lihat docstring modul)
+    dicatat UTUH ke log server (level INFO, terlihat di Render Logs) --
+    method+url+header+body PERSIS yang terkirim, DAN body respons provider
+    kalau sukses. AMAN dicatat apa adanya: header SNAP (X-SIGNATURE/
+    X-PARTNER-ID/X-EXTERNAL-ID/CHANNEL-ID) bukan rahasia jangka panjang
+    (signature RSA tidak bisa dibalik jadi private key, ID-ID lain memang
+    sudah terlihat di halaman Super Admin) -- private key sendiri TIDAK
+    PERNAH ada di headers/body, HANYA dipakai internal menghitung
+    X-SIGNATURE sebelum sampai di sini."""
+    logger = logging.getLogger("mugen.gateway")
+    logger.info("SNAP REQUEST -- POST %s -- HEADER: %s -- BODY: %s", url, headers, raw_body)
     try:
         resp = requests.post(url, data=raw_body.encode(), headers=headers, timeout=timeout)
     except requests.exceptions.RequestException as e:
-        logging.getLogger("mugen.gateway").error("POST %s gagal (jaringan/timeout): %s", url, e)
+        logger.error("POST %s gagal (jaringan/timeout): %s", url, e)
         raise GatewayTimeoutError(f"Tidak dapat menghubungi Payment Gateway: {e}") from e
     if resp.status_code >= 400:
-        logging.getLogger("mugen.gateway").error("POST %s ditolak provider: HTTP %s %s", url, resp.status_code, resp.text)
+        logger.error("POST %s ditolak provider: HTTP %s %s", url, resp.status_code, resp.text)
         raise GatewayRequestError(f"Payment Gateway menolak permintaan (HTTP {resp.status_code}).")
+    logger.info("SNAP RESPONSE -- POST %s -- %s", url, resp.text)
     return resp.json()
 
 
