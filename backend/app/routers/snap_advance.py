@@ -150,8 +150,16 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
     signature_header = request.headers.get("X-SIGNATURE", "")
     timestamp_header = request.headers.get("X-TIMESTAMP")
     logger = logging.getLogger("mugen.gateway")
-    logger.info("SNAP WEBHOOK IN -- POST %s -- X-TIMESTAMP: %s -- X-SIGNATURE: %s -- BODY: %s",
-                path, timestamp_header, signature_header, raw_body)
+    # BUKTI SERTIFIKASI + TROUBLESHOOTING (lanjutan): snap_faspay_public_key
+    # BUKAN rahasia (public key, lihat snap_advance_db.py -- SENGAJA tidak
+    # masuk daftar field yang di-mask), jadi AMAN dicatat statusnya di sini
+    # -- membedakan "belum dikonfigurasi sama sekali" vs "sudah diisi tapi
+    # signature tetap tidak cocok" TANPA mengubah pesan error yang dibalas
+    # ke Faspay (tetap generik, pola sengaja SAMA seperti gateway_client_base.py::
+    # verify_sha512() -- lihat catatan snap_webhook.py::proses_notifikasi()).
+    public_key_terisi = bool(snap_advance_db.get_config().get("snap_faspay_public_key"))
+    logger.info("SNAP WEBHOOK IN -- POST %s -- X-TIMESTAMP: %s -- X-SIGNATURE: %s -- snap_faspay_public_key terisi: %s -- BODY: %s",
+                path, timestamp_header, signature_header, public_key_terisi, raw_body)
     try:
         snap_webhook.proses_notifikasi(raw_body, signature_header, timestamp_header, jenis, path)
         balasan = snap_webhook.balas_notifikasi(jenis, json.loads(raw_body))
