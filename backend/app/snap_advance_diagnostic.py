@@ -168,4 +168,20 @@ def uji_skenario_qris() -> list:
                   **_kirim(_snap.PATH_QRIS_GENERATE, body_dup, cfg, external_id_override=external_id_sama)})
     hasil.append({"skenario": "18.5 Duplicate X-EXTERNAL-ID (percobaan ke-2, HARUS ditolak Conflict)",
                   **_kirim(_snap.PATH_QRIS_GENERATE, body_dup, cfg, external_id_override=external_id_sama)})
+
+    # 18.7 Invalid Merchant -- merchantId SENGAJA diisi ID yang tidak terdaftar.
+    body_merchant_salah = {**body_valid, "partnerReferenceNo": ref_dasar + "E", "merchantId": "99999"}
+    hasil.append({"skenario": "18.7 Invalid Merchant (QR MPM Generate QR)",
+                  **_kirim(_snap.PATH_QRIS_GENERATE, body_merchant_salah, cfg)})
+
+    # 18.11 Transaction Not Found -- Query Payment atas referenceNo yang TIDAK PERNAH ada.
+    body_query_notfound = {
+        "originalReferenceNo": "TIDAKADA" + uuid.uuid4().hex[:8],
+        "originalPartnerReferenceNo": "TIDAKADA" + uuid.uuid4().hex[:8],
+        "serviceCode": "47",
+        "merchantId": cfg["snap_merchant_id"][:5],
+        "additionalInfo": {"channelCode": cfg["snap_qris_channel_code"]},
+    }
+    hasil.append({"skenario": "18.11 Transaction Not Found (QR MPM Query Payment)",
+                  **_kirim(_snap.PATH_QRIS_QUERY, body_query_notfound, cfg)})
     return hasil

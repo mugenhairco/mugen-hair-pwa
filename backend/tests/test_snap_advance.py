@@ -1677,7 +1677,7 @@ def _snap_sign_ulang(panggilan, private_key_pem):
     return core.sign_sha256_rsa(string_to_sign, private_key_pem)
 
 
-def test_uji_skenario_qris_mengirim_lima_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
+def test_uji_skenario_qris_mengirim_tujuh_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
     import snap_advance_diagnostic
     _aktifkan_snap_orkestrasi()
     snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id", qris_channel_code="711")
@@ -1685,19 +1685,24 @@ def test_uji_skenario_qris_mengirim_lima_request_dengan_kerusakan_yang_benar(sin
 
     def _rekam(url, raw_body, headers, timeout=None):
         dipanggil.append({"url": url, "body": json.loads(raw_body), "headers": headers})
-        if len(dipanggil) in (2, 5):
-            raise core.GatewayRequestError("Payment Gateway menolak permintaan (HTTP 409).")
+        if len(dipanggil) in (2, 5, 6, 7):
+            raise core.GatewayRequestError("Payment Gateway menolak permintaan.")
         return {"responseCode": "2004700", "responseMessage": "success"}
 
     monkeypatch.setattr(core, "post_json_raw", _rekam)
     hasil = snap_advance_diagnostic.uji_skenario_qris()
 
-    assert len(hasil) == 5
-    assert all(p["url"].endswith("/v1.0/qr/qr-mpm-generate") for p in dipanggil)
+    assert len(hasil) == 7
+    assert all(p["url"].endswith("/v1.0/qr/qr-mpm-generate") for p in dipanggil[:6])
     assert "amount" not in dipanggil[1]["body"]
     assert dipanggil[2]["body"]["amount"]["value"] == "10000"
     assert dipanggil[3]["headers"]["X-EXTERNAL-ID"] == dipanggil[4]["headers"]["X-EXTERNAL-ID"]
     assert dipanggil[3]["body"]["merchantId"] == "37070"
+    # 18.7 Invalid Merchant
+    assert dipanggil[5]["body"]["merchantId"] == "99999"
+    # 18.11 Transaction Not Found -- lewat qr-mpm-query, BUKAN qr-mpm-generate
+    assert dipanggil[6]["url"].endswith("/v1.0/qr/qr-mpm-query")
+    assert "originalReferenceNo" in dipanggil[6]["body"]
 
 
 def test_endpoint_uji_sertifikasi_ditolak_untuk_produk_tidak_dikenal(app_client):

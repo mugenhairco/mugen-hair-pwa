@@ -1451,9 +1451,11 @@ const PageSuperadmin = (() => {
     ujiSertifikasiCard.appendChild(MugenUI.el("h2", {}, "Alat Uji Sertifikasi Faspay (Sementara)"));
     ujiSertifikasiCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Khusus permintaan tim Faspay: mengirim request yang SENGAJA dirusak (signature salah/field hilang/format salah/" +
-      "external-id duplikat) ke SANDBOX Faspay, supaya respons error ASLI mereka tercatat di Render Logs -- HANYA " +
-      "jalan kalau Environment di atas = Sandbox. Cek Render Logs setelah menekan tombol untuk melihat detail SNAP " +
-      "REQUEST/SNAP RESPONSE-nya."));
+      "external-id duplikat/merchant tidak dikenal/transaksi tidak ditemukan) ke SANDBOX Faspay, supaya respons error " +
+      "ASLI mereka tercatat di Render Logs -- HANYA jalan kalau Environment di atas = Sandbox. Cek Render Logs setelah " +
+      "menekan tombol untuk melihat detail SNAP REQUEST/SNAP RESPONSE-nya. (Skenario Query Payment Pending/Successful " +
+      "TIDAK ada di sini -- tinggal pakai tombol \"Cek Ulang ke Provider\" pada transaksi QRIS sungguhan, sebelum & " +
+      "sesudah dibayar.)"));
     const ujiSertifikasiHasil = MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;white-space:pre-wrap;" });
     const btnUjiVa = MugenUI.el("button", { type: "button", style: "margin-top:8px;margin-right:8px;" }, "Uji Skenario Error -- VA");
     const btnUjiQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Uji Skenario Error -- QRIS");
