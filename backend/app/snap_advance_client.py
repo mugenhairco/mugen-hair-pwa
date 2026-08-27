@@ -552,3 +552,39 @@ def verifikasi_signature_webhook(raw_body: str, signature_header: str, timestamp
     body_hash = core.sha256_lowercase_hex(raw_body)
     string_to_sign = f"{method}:{path}:{body_hash}:{timestamp_header}"
     return core.verify_sha256_rsa(string_to_sign, signature_header, cfg["snap_faspay_public_key"])
+
+
+def _debug_coba_variasi_formula_webhook(raw_body: str, signature_header: str, timestamp_header: str,
+                                         method: str, path: str) -> dict:
+    """TROUBLESHOOTING SEMENTARA (permintaan Owner -- notifikasi webhook
+    Faspay nyata terus tertolak walau public key SUDAH terisi, lihat
+    catatan verifikasi_signature_webhook() soal formula yang belum
+    dicocokkan 1:1 ke dokumen resmi): dipanggil HANYA saat verifikasi
+    UTAMA di atas SUDAH gagal (murni logging tambahan, TIDAK PERNAH
+    mengubah keputusan terima/tolak) -- mencoba beberapa variasi formula
+    stringToSign yang PALING MUNGKIN beda dari asumsi kita, memakai BYTE
+    ASLI raw_body/signature/timestamp dari request yang SAMA (bukan
+    ditik ulang manual dari layar/log -- jadi TIDAK ADA risiko salah
+    transkripsi base64), supaya kelihatan dari log variasi MANA (kalau
+    ada) yang benar-benar cocok dengan public key yang tersimpan. BOLEH
+    dihapus total begitu formula yang benar sudah ditemukan &
+    verifikasi_signature_webhook() di atas diperbaiki permanen."""
+    cfg = snap_advance_db.get_config_internal()
+    public_key = cfg.get("snap_faspay_public_key")
+    if not public_key:
+        return {"public_key_terisi": False}
+    body_hash_lower = core.sha256_lowercase_hex(raw_body)
+    body_hash_upper = body_hash_lower.upper()
+    url_merchant = "https://api.rivoirsett.com"
+    kandidat = {
+        "baseline (method:path:hash_lower:ts)": f"{method}:{path}:{body_hash_lower}:{timestamp_header}",
+        "method lowercase": f"{method.lower()}:{path}:{body_hash_lower}:{timestamp_header}",
+        "full URL, bukan path saja": f"{method}:{url_merchant}{path}:{body_hash_lower}:{timestamp_header}",
+        "hash SHA-256 huruf besar": f"{method}:{path}:{body_hash_upper}:{timestamp_header}",
+        "tanpa timestamp": f"{method}:{path}:{body_hash_lower}",
+        "urutan: hash:path:ts": f"{body_hash_lower}:{path}:{timestamp_header}",
+    }
+    hasil = {"public_key_terisi": True}
+    for label, string_to_sign in kandidat.items():
+        hasil[label] = core.verify_sha256_rsa(string_to_sign, signature_header, public_key)
+    return hasil
