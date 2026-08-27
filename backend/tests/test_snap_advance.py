@@ -1757,11 +1757,14 @@ def test_debug_variasi_formula_mendeteksi_baseline_yang_benar(single_tenant):
     hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
 
     assert hasil["public_key_terisi"] is True
-    assert hasil["baseline (method:path:hash_lower:ts)"] is True
-    # Variasi LAIN (formula yang beda) TIDAK boleh ikut "cocok" -- signature
-    # RSA-SHA256 genuinely spesifik untuk SATU string_to_sign persis.
-    assert hasil["full URL, bukan path saja"] is False
-    assert hasil["tanpa timestamp"] is False
+    assert hasil["total_kombinasi_dicoba"] > 1
+    # Signature RSA-SHA256 genuinely spesifik untuk SATU string_to_sign persis
+    # -- HANYA kombinasi "baseline" (path saja, hash kecil, tanpa slot token,
+    # dengan timestamp) yang boleh cocok.
+    assert len(hasil["kombinasi_yang_cocok"]) == 1
+    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
+    assert cocok_string == string_to_sign
+    assert "path saja" in label and "dengan timestamp" in label
 
 
 def test_debug_variasi_formula_mendeteksi_full_url_yang_benar(single_tenant):
@@ -1778,8 +1781,33 @@ def test_debug_variasi_formula_mendeteksi_full_url_yang_benar(single_tenant):
 
     hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
 
-    assert hasil["full URL, bukan path saja"] is True
-    assert hasil["baseline (method:path:hash_lower:ts)"] is False
+    assert len(hasil["kombinasi_yang_cocok"]) == 1
+    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
+    assert cocok_string == string_to_sign
+    assert "full URL" in label
+
+
+def test_debug_variasi_formula_mendeteksi_body_re_minify_yang_benar(single_tenant):
+    """Kasus penting: signature dihitung Faspay dari representasi JSON
+    yang beda spasi (mis. tanpa spasi setelah ":"/",") dari byte mentah
+    yang benar-benar terkirim -- variasi "re-minify" HARUS bisa
+    menemukan ini walau body mentah punya spasi ekstra."""
+    import snap_advance_client
+    private_pem, public_pem = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_pem)
+    raw_body = '{"trxId": "BOOKING-1-1-abc", "latestTransactionStatus": "00"}'  # ada spasi setelah : dan ,
+    minified = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
+    timestamp = "2026-08-27T16:13:15+07:00"
+    path = "/v1.0/transfer-va/payment"
+    body_hash = core.sha256_lowercase_hex(minified)  # signature dihitung dari versi MINIFIED
+    string_to_sign = f"POST:{path}:{body_hash}:{timestamp}"
+    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
+
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
+
+    assert len(hasil["kombinasi_yang_cocok"]) == 1
+    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
+    assert "re-minify" in label
 
 
 def test_debug_variasi_formula_public_key_kosong(single_tenant):
@@ -1787,3 +1815,25 @@ def test_debug_variasi_formula_public_key_kosong(single_tenant):
     hasil = snap_advance_client._debug_coba_variasi_formula_webhook(
         "{}", "sig-apa-saja", "2026-08-27T16:13:15+07:00", "POST", "/v1.0/transfer-va/payment")
     assert hasil == {"public_key_terisi": False}
+
+
+def test_debug_variasi_formula_tidak_ada_yang_cocok(single_tenant):
+    import snap_advance_client
+    private_pem, public_pem = _buat_keypair_rsa()
+    snap_advance_db.update_config(faspay_public_key=public_pem)
+    lain_pem, _ = _buat_keypair_rsa()
+    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
+    timestamp = "2026-08-27T16:13:15+07:00"
+    path = "/v1.0/transfer-va/payment"
+    body_hash = core.sha256_lowercase_hex(raw_body)
+    # Signature dihitung pakai keypair LAIN -- tidak ada kombinasi APA PUN
+    # yang seharusnya cocok dengan public key yang tersimpan.
+    signature = core.sign_sha256_rsa(f"POST:{path}:{body_hash}:{timestamp}", lain_pem)
+
+    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
+
+    assert hasil["kombinasi_yang_cocok"] == (
+        "TIDAK ADA satu pun yang cocok -- kemungkinan public key yang tersimpan bukan pasangan yang benar, atau "
+        "formula webhook Faspay benar-benar di luar variasi yang dicoba (perlu tanya langsung ke tim Faspay: "
+        "contoh resmi string-to-sign + signature Payment Notification, sama seperti dulu untuk Create VA)."
+    )
