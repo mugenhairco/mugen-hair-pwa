@@ -49,6 +49,11 @@ AKSI_VALID = {
     # atas, lihat routers/snap_advance.py, snap_advance_db.py) -- SATU
     # konfigurasi dipakai untuk Booking Payment Tenant & SaaS Billing.
     "ubah_config_snap_advance",
+    # Alat Uji Sertifikasi Faspay (SEMENTARA, lihat snap_advance_diagnostic.py)
+    # -- mengirim request sengaja rusak ke sandbox Faspay, dicatat di sini
+    # supaya SIAPA yang menjalankannya tetap tercatat, sama seperti
+    # perubahan konfigurasi lain.
+    "uji_sertifikasi_snap_advance",
 }
 
 

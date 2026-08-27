@@ -49,6 +49,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 import snap_advance_db
+import snap_advance_diagnostic
 import snap_webhook
 import superadmin_audit_db
 from auth import require_superadmin
@@ -100,6 +101,31 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
     superadmin_audit_db.catat(user["username"], "ubah_config_snap_advance",
                                detail=f"environment={hasil['snap_environment']}, channel_aktif={hasil['snap_channel_aktif']}")
     return hasil
+
+
+@router.post("/uji-sertifikasi/{produk}")
+def uji_sertifikasi(produk: str, user: dict = Depends(require_superadmin)):
+    """Alat uji SEMENTARA khusus sertifikasi Faspay -- lihat
+    snap_advance_diagnostic.py untuk penjelasan lengkap kenapa ini
+    dibutuhkan (Faspay minta X-SIGNATURE/response ASLI untuk skenario error
+    generik yang tidak pernah terjadi wajar dari checkout produksi).
+    SENGAJA HANYA mengirim ke sandbox (guard keras di modul diagnostic),
+    dicatat lewat AUDIT LOG Super Admin yang sama dengan perubahan
+    konfigurasi lain -- SIAPA yang menjalankan alat uji ini TETAP
+    tercatat. `produk`: "va" atau "qris". Hasil detail SEBENARNYA ada di
+    Render Logs (SNAP REQUEST/SNAP RESPONSE) -- return di sini HANYA
+    ringkasan status per skenario supaya Super Admin tahu langkah mana
+    yang perlu dicek lognya."""
+    if produk not in ("va", "qris"):
+        raise HTTPException(status_code=422, detail="Produk tidak dikenal -- harus 'va' atau 'qris'.")
+    try:
+        hasil = snap_advance_diagnostic.uji_skenario_va() if produk == "va" else snap_advance_diagnostic.uji_skenario_qris()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
+    superadmin_audit_db.catat(user["username"], "uji_sertifikasi_snap_advance", detail=f"produk={produk}")
+    return {"hasil": hasil}
 
 
 async def _tangani_notifikasi(request: Request, jenis: str, path: str):

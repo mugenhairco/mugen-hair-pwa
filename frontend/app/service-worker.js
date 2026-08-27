@@ -878,7 +878,16 @@
 // cek-ulang untuk billing), TIDAK PERNAH mengklaim status sendiri -- sama
 // persis fungsi tombol admin "Cek Ulang ke Provider". Kalau provider belum
 // melihat pembayaran, countdown tetap jalan (bukan dianggap gagal).
-const ASSET_VERSION = "159";
+// v159 -> v160: PERMINTAAN Owner -- "Alat Uji Sertifikasi Faspay" (SEMENTARA)
+// di Super Admin > Faspay SNAP Advance: 2 tombol baru ("Uji Skenario Error --
+// VA"/"QRIS") yang sengaja mengirim request rusak (signature salah/field
+// hilang/format salah/external-id duplikat) ke SANDBOX Faspay supaya
+// responsnya tercatat asli di Render Logs, dipakai melengkapi dokumen UAT
+// sesuai permintaan tim Faspay (butuh X-SIGNATURE/response ASLI, bukan
+// contoh). Backend: modul baru snap_advance_diagnostic.py + endpoint
+// POST /api/superadmin/snap-advance/uji-sertifikasi/{produk}, HANYA jalan
+// saat environment=sandbox (guard keras).
+const ASSET_VERSION = "160";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
