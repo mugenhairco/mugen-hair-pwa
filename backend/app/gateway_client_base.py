@@ -276,6 +276,29 @@ def verify_sha256_rsa(string_to_sign: str, signature_b64: str, public_key_pem: s
         return False
 
 
+def inspect_public_key_pem(public_key_pem: str) -> dict:
+    """TROUBLESHOOTING (SNAP Advance -- notifikasi webhook terus tertolak
+    walau public key SUDAH terisi & dikonfirmasi "sama" oleh Owner):
+    verify_sha256_rsa() di atas menelan SEMUA kegagalan parsing PEM jadi
+    False yang IDENTIK dengan "signature tidak cocok" -- kalau key-nya
+    sendiri rusak/salah format (mis. tertempel sebagai CERTIFICATE bukan
+    PUBLIC KEY, ada baris hilang saat copy-paste, whitespace tersisip),
+    SEMUA percobaan formula manapun otomatis gagal tanpa ketahuan
+    sebabnya. Fungsi ini murni DIAGNOSTIK -- coba parse key-nya saja
+    (TIDAK verifikasi signature apa pun), return status jelas supaya bisa
+    dibedakan "key gagal diparse" vs "key valid tapi formula/pasangan
+    keynya yang salah"."""
+    if not public_key_pem:
+        return {"valid": False, "error": "Public key kosong."}
+    try:
+        key = serialization.load_pem_public_key(public_key_pem.encode())
+    except Exception as e:  # SENGAJA except luas -- murni diagnostik, tampilkan apa pun penyebabnya
+        return {"valid": False, "error": f"{type(e).__name__}: {e}"}
+    if not isinstance(key, RSAPublicKey):
+        return {"valid": False, "error": f"Bukan RSA public key (tipe: {type(key).__name__})."}
+    return {"valid": True, "key_size_bits": key.key_size, "public_exponent": key.public_numbers().e}
+
+
 # =============================================================================
 # SNAP Advance -- helper header X-TIMESTAMP/X-EXTERNAL-ID & hash body SHA-256
 # =============================================================================
