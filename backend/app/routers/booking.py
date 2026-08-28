@@ -694,21 +694,6 @@ def batalkan_booking(booking_id: int, user: dict = Depends(require_permission("i
     return booking_db.get_booking(booking_id)
 
 
-@router.delete("/{booking_id}")
-def hapus_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_hapus"))):
-    """Requirement Owner: Hapus PERMANEN satu booking, TERLEPAS dari status
-    apa pun (termasuk 'terverifikasi') -- BEDA izin dari /batalkan (lihat
-    catatan izin_booking_hapus di permissions.py: Batalkan otomatis kirim
-    WhatsApp pembatalan ke customer, Hapus tidak). Slot yang dipakai
-    booking ini otomatis terbuka lagi (lihat booking_db.py::hapus_booking())."""
-    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
-    try:
-        booking_db.hapus_booking(booking_id)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return {"ok": True}
-
-
 class ClosedSlotBody(BaseModel):
     barber_id: int
     tanggal: str
@@ -859,6 +844,29 @@ async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require
 def hapus_qris_endpoint(user: dict = Depends(require_permission("izin_booking_pengaturan"))):
     booking_db.hapus_qris(tenant_id=user["tenant_id"])
     return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
+
+
+# BUGFIX (routing shadow): endpoint generik `/{booking_id}` di bawah ini
+# SENGAJA ditaruh SETELAH semua path literal single-segment lain di router
+# ini (/riwayat, /qris, dst) -- Starlette mencocokkan route berdasarkan
+# URUTAN DIDAFTARKAN, path literal HARUS lebih dulu supaya tidak
+# "tertelan" oleh pola generik yang menganggap "riwayat"/"qris" sebagai
+# nilai booking_id (ditemukan lewat regresi test_qris_endpoints_bekerja_
+# tanpa_subscription_atau_fitur_apa_pun & test_router_hapus_riwayat_boleh_
+# untuk_staff -- keduanya sempat salah tertangkap ke sini).
+@router.delete("/{booking_id}")
+def hapus_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_hapus"))):
+    """Requirement Owner: Hapus PERMANEN satu booking, TERLEPAS dari status
+    apa pun (termasuk 'terverifikasi') -- BEDA izin dari /batalkan (lihat
+    catatan izin_booking_hapus di permissions.py: Batalkan otomatis kirim
+    WhatsApp pembatalan ke customer, Hapus tidak). Slot yang dipakai
+    booking ini otomatis terbuka lagi (lihat booking_db.py::hapus_booking())."""
+    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
+    try:
+        booking_db.hapus_booking(booking_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
 
 
 # ---- TOKO LIBUR (hari libur SELURUH toko, beda dari Barber Holiday) ----
