@@ -110,6 +110,17 @@ PERMISSION_DEFS = [
     # ---- Booking ----
     ("izin_booking_kelola", "booking", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)", True),
     ("izin_booking_batalkan", "booking", "Batalkan Booking", True),
+    # DIPISAH dari izin_booking_batalkan (permintaan eksplisit Owner):
+    # Batalkan otomatis mengirim WhatsApp pembatalan ke customer, Hapus
+    # Permanen TIDAK -- dua konsekuensi berbeda, jadi dua izin berbeda,
+    # pola SAMA seperti izin_produk_kelola vs izin_produk_hapus di atas /
+    # izin_input_data_kelola vs izin_input_data_hapus di bawah. Default
+    # FALSE (BUKAN True seperti kebanyakan izin "Perluasan Hak Akses Admin"
+    # lain di sini) -- ini kemampuan BARU yang belum pernah ada sama sekali
+    # untuk staff manapun sebelumnya (beda dari izin_input_data_hapus yang
+    # default True karena migrasi dari kemampuan yang SUDAH ADA), jadi tidak
+    # ada alasan default-nya menyala tanpa Owner sengaja mengaktifkan.
+    ("izin_booking_hapus", "booking", "Hapus Booking Permanen", False),
     ("izin_booking_pengaturan", "booking", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)", True),
     # ---- Produk ----
     ("izin_produk_kelola", "produk", "Kelola Produk (tambah/edit, restock/jual/tester)", True),
@@ -197,7 +208,7 @@ MENU_DEFS = {
     "absensi": {"label": "Absensi", "read_key": "izin_absensi_lihat",
                 "write_keys": ["izin_absensi_pengaturan", "izin_absensi_koreksi"]},
     "booking": {"label": "Booking", "read_key": "izin_booking_lihat",
-                "write_keys": ["izin_booking_kelola", "izin_booking_batalkan", "izin_booking_pengaturan"]},
+                "write_keys": ["izin_booking_kelola", "izin_booking_batalkan", "izin_booking_hapus", "izin_booking_pengaturan"]},
     "riwayat_transaksi": {"label": "Riwayat Transaksi", "read_key": "izin_riwayat_transaksi_lihat",
                            "write_keys": ["izin_riwayat_transaksi"]},
     "pemasukan": {"label": "Pemasukan", "read_key": "izin_pemasukan_lihat",

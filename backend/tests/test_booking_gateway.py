@@ -79,7 +79,7 @@ def _aktifkan_snap():
     payment_provider_client.is_enabled() True dan channel "va" aktif."""
     snap_advance_db.update_config(
         merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
-        private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
 

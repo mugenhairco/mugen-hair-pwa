@@ -66,7 +66,7 @@ def _aktifkan_billing_gateway_mock(monkeypatch, redirect="https://example.test/c
 def _aktifkan_snap_billing(monkeypatch, va_number="70212345678901", gagal=False):
     snap_advance_db.update_config(
         merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
-        private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
 

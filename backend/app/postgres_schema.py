@@ -1394,6 +1394,12 @@ CREATE TABLE IF NOT EXISTS error_logs (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_error_logs_tenant_id ON error_logs(tenant_id);
+
+-- Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN, bukan
+-- tanggal manual satu-satu) -- pasangan Postgres dari
+-- booking_form_migrasi.py::_migrasi_hari_libur_mingguan_barber(). JSON list
+-- nama hari (kosakata sama dengan HARI_LIST di booking_db.py).
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS hari_libur_mingguan TEXT NOT NULL DEFAULT '[]';
 """
 
 

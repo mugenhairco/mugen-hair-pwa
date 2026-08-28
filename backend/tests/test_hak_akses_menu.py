@@ -59,8 +59,13 @@ def test_menu_defs_lengkap_16_menu():
 
 def test_get_menu_level_default_sesuai_katalog(single_tenant):
     tenant_id = single_tenant["tenant_id"]
-    # Belum pernah diatur Owner -- default dari PERMISSION_DEFS (booking = True).
-    assert permissions.get_menu_level("booking", tenant_id=tenant_id) == "write"
+    # Belum pernah diatur Owner -- default dari PERMISSION_DEFS. Booking
+    # SEKARANG "read" (bukan "write") karena izin_booking_hapus (kemampuan
+    # BARU, Hapus Booking Permanen) default False -- SENGAJA, beda dari
+    # ketiga write_keys booking lain yang default True (lihat catatan
+    # izin_booking_hapus di permissions.py). "write" butuh SEMUA write_keys
+    # true, jadi default sekarang efektif "read".
+    assert permissions.get_menu_level("booking", tenant_id=tenant_id) == "read"
     # Kasbon default False untuk semua key -- "Tidak Ada Akses".
     assert permissions.get_menu_level("kasbon", tenant_id=tenant_id) == "none"
 
@@ -73,6 +78,7 @@ def test_set_menu_level_none_mematikan_baca_dan_tulis(single_tenant):
     assert izin["izin_booking_lihat"] is False
     assert izin["izin_booking_kelola"] is False
     assert izin["izin_booking_batalkan"] is False
+    assert izin["izin_booking_hapus"] is False
     assert izin["izin_booking_pengaturan"] is False
 
 
@@ -99,8 +105,8 @@ def test_get_menu_level_sebagian_key_tulis_nyala_tanpa_lihat_tetap_dianggap_baca
     """Data lama/kombinasi tidak biasa: SEBAGIAN key tulis True (bukan
     SEMUA) dan key baca eksplisit False -- tetap dianggap MINIMAL "read"
     (tulis tanpa bisa baca tidak masuk akal). Booking dipakai di sini karena
-    punya 3 key tulis (kelola/batalkan/pengaturan) -- perlu SEBAGIAN saja
-    true supaya "write" (butuh SEMUA true) tidak ikut terpicu."""
+    punya 4 key tulis (kelola/batalkan/hapus/pengaturan) -- perlu SEBAGIAN
+    saja true supaya "write" (butuh SEMUA true) tidak ikut terpicu."""
     tenant_id = single_tenant["tenant_id"]
     permissions.set_bulk({
         "izin_booking_lihat": False,
