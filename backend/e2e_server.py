@@ -13,6 +13,7 @@ Jalankan manual (dari folder backend/):
 Port: 8031 (HARUS SAMA dengan port yang dipanggil frontend/playwright.config.js
 lewat fixture route interception di frontend/e2e/fixtures.js)."""
 
+import asyncio
 import datetime
 import os
 import sys
@@ -42,7 +43,15 @@ import error_log_db  # noqa: E402
 import billing_db  # noqa: E402
 import subscription_db  # noqa: E402
 
-main.on_startup()  # jalankan migrasi + bootstrap Owner SEBELUM seeding di bawah
+
+# BUGFIX (CI E2E gagal sejak "on_event" dipindah ke "async def"): on_startup()
+# di main.py adalah coroutine (@app.on_event("startup") async def on_startup()),
+# memanggilnya langsung tanpa asyncio.run() cuma membuat objek coroutine yang
+# TIDAK PERNAH benar-benar dijalankan -- migrasi (bikin tabel `tenants`, dst)
+# diam-diam tidak pernah terjadi, lalu baris di bawah crash "no such table:
+# tenants". asyncio.run() memastikan coroutine-nya SELESAI dijalankan sebelum
+# seeding di bawah mulai.
+asyncio.run(main.on_startup())  # jalankan migrasi + bootstrap Owner SEBELUM seeding di bawah
 
 tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
 TENANT_ID = tenant["id"]
