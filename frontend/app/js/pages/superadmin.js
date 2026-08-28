@@ -601,6 +601,20 @@ const PageSuperadmin = (() => {
         } catch (e) { errPackageStatus.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
 
+      // --- Reset Subscription (Perbaikan Billing/Subscription, requirement
+      // Owner poin 3-6, 14, 15) --- koreksi package/periode/status SATU
+      // tenant TANPA menyentuh invoice/pembayaran sama sekali (lihat
+      // routers/subscription.py::reset_subscription()) -- TAMBAHAN di
+      // samping kontrol Package/Status di atas, BUKAN pengganti.
+      subsManagerBody.appendChild(MugenUI.el("div", { style: "margin-top:16px;padding-top:12px;border-top:1px solid var(--border);" }, [
+        MugenUI.el("div", { class: "subtitle" }, `Paket Saat Ini: ${LABEL_PACKAGE_SUBS[sub.package] || sub.package}`),
+        MugenUI.el("div", { class: "subtitle" },
+          `Tanggal Aktif Sampai Saat Ini: ${sub.periode_selesai ? formatWaktu(sub.periode_selesai) : "-"}`),
+      ]));
+      const btnResetSubs = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "↻ Reset Subscription");
+      subsManagerBody.appendChild(btnResetSubs);
+      btnResetSubs.addEventListener("click", () => bukaModalResetSubscription(tenant, sub));
+
       // --- Trial & Grace ---
       const infoTrial = sub.trial_start ? `${formatWaktu(sub.trial_start)} s/d ${formatWaktu(sub.trial_end)}` : "belum diatur";
       const infoGrace = sub.grace_start ? `${formatWaktu(sub.grace_start)} s/d ${formatWaktu(sub.grace_end)}` : "belum diatur";
@@ -708,6 +722,100 @@ const PageSuperadmin = (() => {
       });
 
       await loadPayments();
+    }
+
+    // Perbaikan Billing/Subscription (requirement Owner poin 3-6, 15): modal
+    // custom (pola SAMA PERSIS pages/billing.js::pilihChannelModal(), BUKAN
+    // MugenUI.confirmModal() -- modal itu cuma satu tombol ya/tidak, di sini
+    // butuh 4 field yang bisa diedit) untuk field Paket/Tanggal Mulai/
+    // Tanggal Aktif Sampai/Status, LALU MugenUI.confirmModal() sebagai
+    // langkah konfirmasi kedua yang menampilkan before->after (requirement
+    // poin 4) sebelum benar-benar memanggil endpoint reset.
+    function bukaModalResetSubscription(tenant, sub) {
+      const overlay = MugenUI.el("div", { class: "modal-overlay" });
+      const box = MugenUI.el("div", { class: "modal-box" });
+      box.appendChild(MugenUI.el("h3", {}, "Reset Subscription"));
+      box.appendChild(MugenUI.el("div", { class: "subtitle" }, tenant.nama_barbershop));
+
+      const selPackage = MugenUI.el("select");
+      for (const k of Object.keys(LABEL_PACKAGE_SUBS)) selPackage.appendChild(MugenUI.el("option", { value: k }, LABEL_PACKAGE_SUBS[k]));
+      selPackage.value = sub.package;
+
+      const inputMulai = MugenUI.el("input", { type: "date" });
+      inputMulai.value = sub.periode_mulai ? sub.periode_mulai.split("T")[0] : "";
+      const inputSelesai = MugenUI.el("input", { type: "date" });
+      inputSelesai.value = sub.periode_selesai ? sub.periode_selesai.split("T")[0] : "";
+
+      const selStatus = MugenUI.el("select");
+      for (const k of Object.keys(LABEL_STATUS_SUBS)) selStatus.appendChild(MugenUI.el("option", { value: k }, LABEL_STATUS_SUBS[k]));
+      selStatus.value = sub.status;
+
+      box.appendChild(MugenUI.el("div", { style: "text-align:left;margin-top:12px;display:flex;flex-direction:column;gap:10px;" }, [
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), selPackage]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tanggal Mulai"), inputMulai]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tanggal Aktif Sampai"), inputSelesai]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+      ]));
+
+      const errReset = MugenUI.el("div", { class: "login-error" });
+      box.appendChild(errReset);
+
+      const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
+      const btnLanjut = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Reset Subscription");
+      box.appendChild(MugenUI.el("div", { class: "modal-actions", style: "margin-top:14px;" }, [btnBatal, btnLanjut]));
+      overlay.appendChild(box);
+
+      function tutup() {
+        overlay.classList.add("closing");
+        setTimeout(() => overlay.remove(), 120);
+      }
+      btnBatal.addEventListener("click", tutup);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(); });
+
+      btnLanjut.addEventListener("click", async () => {
+        errReset.textContent = "";
+        if (!inputMulai.value || !inputSelesai.value) {
+          errReset.textContent = "Tanggal Mulai dan Tanggal Aktif Sampai wajib diisi.";
+          return;
+        }
+        const labelSebelum = {
+          package: LABEL_PACKAGE_SUBS[sub.package] || sub.package,
+          periode: sub.periode_selesai ? formatWaktu(sub.periode_selesai) : "-",
+          status: LABEL_STATUS_SUBS[sub.status] || sub.status,
+        };
+        const labelSesudah = {
+          package: LABEL_PACKAGE_SUBS[selPackage.value] || selPackage.value,
+          periode: formatWaktu(`${inputSelesai.value}T23:59:59`),
+          status: LABEL_STATUS_SUBS[selStatus.value] || selStatus.value,
+        };
+        tutup();
+        const ok = await MugenUI.confirmModal({
+          title: "Konfirmasi Reset Subscription",
+          message: [
+            `Paket: ${labelSebelum.package} -> ${labelSesudah.package}`,
+            `Tanggal Aktif Sampai: ${labelSebelum.periode} -> ${labelSesudah.periode}`,
+            `Status: ${labelSebelum.status} -> ${labelSesudah.status}`,
+            "Riwayat pembayaran & invoice TIDAK akan terhapus.",
+          ],
+          confirmText: "Reset Subscription",
+          danger: true,
+        });
+        if (!ok) return;
+        try {
+          await MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/reset`, {
+            package: selPackage.value,
+            tanggal_mulai: inputMulai.value,
+            tanggal_selesai: inputSelesai.value,
+            status: selStatus.value,
+          });
+          MugenUI.toast("Subscription berhasil direset.", "success", { force: true });
+          loadTenantList(); loadAuditLog(); renderSubscriptionManager(tenant);
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+
+      document.body.appendChild(overlay);
     }
 
     // ---------------------------------------------------------------

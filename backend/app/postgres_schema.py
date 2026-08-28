@@ -824,9 +824,19 @@ CREATE TABLE IF NOT EXISTS tenant_subscriptions (
     trial_end    TEXT,
     grace_start  TEXT,
     grace_end    TEXT,
+    periode_mulai   TEXT,
+    periode_selesai TEXT,
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+
+-- Perbaikan Billing/Subscription: instalasi Postgres yang SUDAH ADA sebelum
+-- kolom ini ditambahkan ke CREATE TABLE di atas (instalasi baru sudah dapat
+-- kolomnya langsung) -- lihat subscription_db.py::migrasi_periode_subscription()
+-- (jalur SQLite) untuk penjelasan lengkap: SATU-SATUNYA anchor otoritatif
+-- perpanjangan langganan (requirement Owner Billing/Subscription poin 1/6).
+ALTER TABLE tenant_subscriptions ADD COLUMN IF NOT EXISTS periode_mulai TEXT;
+ALTER TABLE tenant_subscriptions ADD COLUMN IF NOT EXISTS periode_selesai TEXT;
 
 CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     id                      SERIAL PRIMARY KEY,
@@ -933,11 +943,18 @@ CREATE TABLE IF NOT EXISTS subscription_invoices (
     snap_redirect_url   TEXT,
     periode_mulai       TEXT,
     periode_selesai     TEXT,
+    jumlah_bulan        INTEGER,
     raw_notification    TEXT,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL,
     paid_at             TEXT
 );
+
+-- Perbaikan Billing/Subscription: instalasi Postgres yang SUDAH ADA sebelum
+-- kolom ini ditambahkan ke CREATE TABLE di atas -- lihat
+-- billing_invoice_db.py::migrasi_jumlah_bulan_invoice() (jalur SQLite) untuk
+-- penjelasan lengkap.
+ALTER TABLE subscription_invoices ADD COLUMN IF NOT EXISTS jumlah_bulan INTEGER;
 
 -- Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: riwayat
 -- transisi status invoice (lihat billing_invoice_db.py::catat_status_log()

@@ -91,6 +91,8 @@ def init_subscription_db():
                 trial_end    TEXT,
                 grace_start  TEXT,
                 grace_end    TEXT,
+                periode_mulai   TEXT,
+                periode_selesai TEXT,
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT NOT NULL
             )
@@ -110,8 +112,31 @@ def init_subscription_db():
         """)
 
 
+def migrasi_periode_subscription():
+    """JALUR SQLITE SAJA (dipanggil dari main.py::on_startup() bersama
+    migrasi_*() lain, SETELAH migrasi_subscription()) -- menambah kolom
+    periode_mulai/periode_selesai ke tenant_subscriptions (idempotent) untuk
+    Perbaikan Billing/Subscription: anchor otoritatif perpanjangan
+    langganan (requirement 1/6). Jalur PostgreSQL: kolom yang sama sudah
+    langsung dibuat lewat `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` di
+    postgres_schema.py."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(tenant_subscriptions)").fetchall()]
+        if "periode_mulai" not in kolom:
+            conn.execute("ALTER TABLE tenant_subscriptions ADD COLUMN periode_mulai TEXT")
+        if "periode_selesai" not in kolom:
+            conn.execute("ALTER TABLE tenant_subscriptions ADD COLUMN periode_selesai TEXT")
+
+
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _sekarang() -> datetime:
+    """Seam terpisah dari _now() (yang mengembalikan string ISO untuk
+    penulisan kolom) -- dipakai _auto_suspend_jika_lewat() supaya test bisa
+    monkeypatch subscription_db._sekarang untuk mensimulasikan waktu."""
+    return datetime.now()
 
 
 # ============================= Platform Config =============================
@@ -151,9 +176,22 @@ def list_subscriptions() -> list:
 
 def akses_diblokir(tenant_id: int) -> bool:
     """False (TIDAK diblokir) kalau tenant belum punya baris subscription
-    sama sekali -- lihat penjelasan fail-open di docstring modul ini."""
+    sama sekali -- lihat penjelasan fail-open di docstring modul ini.
+
+    requirement Owner Billing/Subscription poin 8/9: sebelum memeriksa
+    status tersimpan, cek dulu apakah periode_selesai sudah lewat lebih
+    dari SUSPEND_GRACE_HARI hari -- kalau iya, _auto_suspend_jika_lewat()
+    menulis status jadi 'suspended' di sini juga (opportunistic, tanpa
+    cron/background job terpisah, konsisten dengan filosofi "gerbang di
+    satu titik" -- fungsi ini SUDAH dipanggil di setiap request lewat
+    auth.py). Selama masih dalam 7 hari (poin 8), status TETAP 'active' --
+    akses TIDAK diblokir, halaman Billing cukup menampilkan pesan periode
+    berakhir secara terpisah (lihat routers/subscription.py)."""
     sub = get_subscription(tenant_id)
-    return bool(sub and sub["status"] in STATUS_AKSES_DIBLOKIR)
+    if sub is None:
+        return False
+    sub = _auto_suspend_jika_lewat(sub)
+    return bool(sub["status"] in STATUS_AKSES_DIBLOKIR)
 
 
 def create_default_subscription(tenant_id: int, package: str = "free", status: str = "active") -> dict:
@@ -212,6 +250,80 @@ def update_status(tenant_id: int, status: str) -> dict:
         conn.execute("UPDATE tenant_subscriptions SET status = ?, updated_at = ? WHERE tenant_id = ?",
                      (status, _now(), tenant_id))
     return get_subscription(tenant_id)
+
+
+def set_periode(tenant_id: int, periode_mulai: str, periode_selesai: str) -> dict:
+    """Menulis periode_mulai/periode_selesai tenant_subscriptions --
+    SATU-SATUNYA anchor otoritatif requirement Owner Billing/Subscription
+    poin 1/6 (perpanjangan langganan SELALU menyambung dari periode_selesai
+    di sini, TIDAK PERNAH dari tanggal bayar). Dipanggil
+    billing_webhook._aktifkan_subscription() setiap kali invoice paid, DAN
+    reset_subscription() di bawah (Super Admin) -- keduanya sengaja lewat
+    fungsi tunggal ini supaya penulisan kolom ini konsisten."""
+    _wajib_ada(tenant_id)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tenant_subscriptions SET periode_mulai = ?, periode_selesai = ?, updated_at = ? "
+            "WHERE tenant_id = ?",
+            (periode_mulai, periode_selesai, _now(), tenant_id),
+        )
+    return get_subscription(tenant_id)
+
+
+def reset_subscription(tenant_id: int, package: str, periode_mulai: str, periode_selesai: str,
+                        status: str) -> dict:
+    """Super Admin SAJA (dipanggil dari routers/subscription.py, endpoint
+    PUT /{tenant_id}/reset) -- requirement Owner Billing/Subscription poin
+    3-6: koreksi package/periode/status SATU tenant (mis. tanggal keliru
+    dari sandbox/gateway/kesalahan admin) TANPA menyentuh invoice/payment/
+    webhook log SAMA SEKALI (poin 5) -- fungsi ini HANYA UPDATE
+    tenant_subscriptions, tidak menyentuh tabel lain apa pun. TIDAK
+    menyentuh trial_start/trial_end/grace_start/grace_end (di luar cakupan,
+    murni urusan Fase 3). periode_selesai yang ditulis di sini otomatis
+    jadi anchor BARU untuk perpanjangan berikutnya (poin 6) karena
+    _hitung_periode_baru() di billing_webhook.py SELALU membaca kolom ini,
+    tidak ada logika terpisah untuk "hasil Reset"."""
+    if package not in PACKAGE_VALID:
+        raise ValueError(f"Package harus salah satu dari: {', '.join(sorted(PACKAGE_VALID))}.")
+    if status not in STATUS_VALID:
+        raise ValueError(f"Status harus salah satu dari: {', '.join(sorted(STATUS_VALID))}.")
+    _wajib_ada(tenant_id)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tenant_subscriptions SET package = ?, periode_mulai = ?, periode_selesai = ?, "
+            "status = ?, updated_at = ? WHERE tenant_id = ?",
+            (package, periode_mulai, periode_selesai, status, _now(), tenant_id),
+        )
+    return get_subscription(tenant_id)
+
+
+SUSPEND_GRACE_HARI = 7  # requirement Owner Billing/Subscription poin 9: 7 hari
+                        # setelah periode_selesai lewat tanpa pembayaran sukses
+                        # berikutnya -> tenant otomatis "suspended".
+
+
+def _auto_suspend_jika_lewat(sub: dict) -> dict:
+    """Opportunistic, dijalankan di SETIAP panggilan akses_diblokir() --
+    HANYA berlaku untuk subscription berstatus 'active' yang punya
+    periode_selesai (kolom baru di atas) DAN sudah lewat SUSPEND_GRACE_HARI
+    hari tanpa pembayaran sukses berikutnya (pembayaran sukses menulis
+    ulang periode_selesai ke masa depan lewat
+    billing_webhook._aktifkan_subscription() -> set_periode() DAN
+    mengembalikan status ke 'active' lewat update_status(), jadi begitu
+    tenant bayar, kondisi suspend ini otomatis tidak lagi terpenuhi --
+    requirement poin 12/13 TIDAK butuh kode "un-suspend" terpisah).
+
+    TIDAK PERNAH menyentuh status 'trial'/'grace_period'/'cancelled'/
+    'suspended' yang sudah ada -- mekanisme trial/grace Fase 3 dan
+    override manual Super Admin (mis. 'cancelled') SAMA SEKALI TIDAK
+    disentuh di sini, sesuai batasan Owner "jangan mengubah requirement
+    sebelumnya"."""
+    if sub["status"] != "active" or not sub.get("periode_selesai"):
+        return sub
+    batas = datetime.fromisoformat(sub["periode_selesai"]) + timedelta(days=SUSPEND_GRACE_HARI)
+    if _sekarang() < batas:
+        return sub
+    return update_status(sub["tenant_id"], "suspended")
 
 
 def set_trial(tenant_id: int, trial_start: str = None, trial_end: str = None, hari: int = None) -> dict:

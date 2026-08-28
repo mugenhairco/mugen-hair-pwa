@@ -94,6 +94,7 @@ import error_log_db  # DIY error monitoring (bukan Sentry): tabel error_logs (id
 import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent, berdiri sendiri)
 from user_roles_migrasi import migrasi_user_roles  # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
 from subscription_migrasi import migrasi_subscription
+from subscription_db import migrasi_periode_subscription  # Perbaikan Billing/Subscription: kolom periode_mulai/periode_selesai di tenant_subscriptions (idempotent, jalur SQLite) -- anchor otoritatif perpanjangan langganan
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
 import billing_gateway_db  # Payment Gateway Billing SaaS (platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
 import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
@@ -431,6 +432,7 @@ async def on_startup():
         migrasi_lokasi_user()   # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
         migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
         migrasi_subscription()  # FONDASI Multi-Tenant Phase 3: tabel tenant_subscriptions + backfill (idempotent, WAJIB setelah migrasi_tenant())
+        migrasi_periode_subscription()  # Perbaikan Billing/Subscription: kolom periode_mulai/periode_selesai di tenant_subscriptions (idempotent, WAJIB setelah migrasi_subscription())
         billing_db.init_billing_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages + katalog fitur (idempotent)
         billing_db.seed_default_packages()  # seed 4 baris (free/basic/pro/enterprise) kalau belum ada (idempotent)
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, Export PDF, dst) kalau belum ada (idempotent)
@@ -442,6 +444,7 @@ async def on_startup():
         billing_db.migrasi_harga_pricing_v2()  # FITUR Landing Page & Pricing (paket 6 bulan): set harga bulanan + 6 bulan basic/pro/enterprise ke daftar harga resmi terbaru, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_tahunan_v1()  # FITUR Landing Page & Pricing (paket Tahunan): set harga_tahunan basic/pro/enterprise, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_invoice_db.init_billing_invoice_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
+        billing_invoice_db.migrasi_jumlah_bulan_invoice()  # Perbaikan Billing/Subscription: kolom jumlah_bulan di subscription_invoices (idempotent) -- snapshot siklus checkout untuk perpanjangan kalender
         billing_gateway_db.migrasi_billing_gateway()  # Payment Gateway Billing SaaS: bootstrap kredensial dari env var MIDTRANS_* lama ke database, HANYA kalau belum pernah diisi (idempotent)
         migrasi_booking_gateway()  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions + booking_payment_status_log (idempotent)
         migrasi_snap_payment()  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions + snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)

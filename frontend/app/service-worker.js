@@ -917,7 +917,21 @@
 // List Booking (izin terpisah dari Batalkan), modal konfirmasi di tengah
 // layar (reuse MugenUI.confirmModal yang sudah ada), slot langsung
 // terbuka lagi setelah dihapus.
-const ASSET_VERSION = "163";
+// v163 -> v164: Perbaikan Sistem Billing/Subscription Tenant -- (1)
+// perpanjangan langganan SEKARANG SELALU menyambung dari periode_selesai
+// tersimpan (tenant_subscriptions, kolom baru), TIDAK PERNAH dari tanggal
+// bayar (perbaikan bug pembayaran telat menggeser siklus); (2) perpanjangan
+// bulanan/6-bulanan/tahunan memakai matematika kalender sungguhan (31 Jan +
+// 1 bulan -> 28/29 Feb), bukan hitungan hari tetap; (3) tombol baru "↻
+// Reset Subscription" di Super Admin > Kelola Tenant > Subscription, dengan
+// modal konfirmasi before->after, TIDAK menyentuh invoice/riwayat
+// pembayaran sama sekali; (4) auto-suspend otomatis 7 hari setelah periode
+// berakhir tanpa pembayaran, halaman blokir baru "Langganan Anda Telah
+// Berakhir" + tombol "Perpanjang Langganan", otomatis aktif lagi begitu
+// dibayar tanpa aksi Super Admin; (5) halaman Billing tenant TIDAK LAGI
+// menampilkan riwayat pembayaran/invoice (Super Admin tetap bisa melihat
+// semua riwayat).
+const ASSET_VERSION = "164";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

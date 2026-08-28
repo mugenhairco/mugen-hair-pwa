@@ -193,6 +193,49 @@ class GraceBody(BaseModel):
     hari: int | None = None
 
 
+class ResetBody(BaseModel):
+    package: str
+    tanggal_mulai: str     # "YYYY-MM-DD"
+    tanggal_selesai: str   # "YYYY-MM-DD"
+    status: str
+
+
+@superadmin_router.put("/{tenant_id}/reset")
+def reset_subscription(tenant_id: int, body: ResetBody, user: dict = Depends(require_superadmin)):
+    """Perbaikan Billing/Subscription (requirement Owner poin 3-6, 14, 15):
+    "↻ Reset Subscription" -- koreksi package/periode/status SATU tenant
+    (mis. tanggal keliru dari sandbox/gateway/kesalahan admin) TANPA
+    menyentuh invoice/payment/webhook log SAMA SEKALI (poin 5) -- lihat
+    subscription_db.reset_subscription(), yang HANYA UPDATE
+    tenant_subscriptions. Tanggal dari frontend (<input type="date">) SAJA,
+    dinormalisasi ke awal/akhir hari supaya konsisten dengan format
+    isoformat(timespec="seconds") yang dipakai kolom periode_* lain.
+
+    periode_selesai yang ditulis di sini otomatis jadi anchor BARU untuk
+    perpanjangan berikutnya (poin 6) -- lihat billing_webhook.py::
+    _hitung_periode_baru(), tidak ada logika terpisah untuk "hasil Reset"."""
+    t = _tenant_wajib_ada(tenant_id)
+    sebelum = subscription_db.get_subscription(tenant_id)
+    if sebelum is None:
+        raise HTTPException(status_code=404, detail="Tenant ini belum punya data subscription.")
+    periode_mulai = f"{body.tanggal_mulai}T00:00:00"
+    periode_selesai = f"{body.tanggal_selesai}T23:59:59"
+    try:
+        hasil = subscription_db.reset_subscription(tenant_id, body.package, periode_mulai, periode_selesai,
+                                                     body.status)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(
+        user["username"], "reset_subscription", tenant_id=tenant_id, tenant_slug=t["slug"],
+        detail=(
+            f"package: {sebelum['package']} -> {body.package}, "
+            f"periode_selesai: {sebelum.get('periode_selesai') or '-'} -> {periode_selesai}, "
+            f"status: {sebelum['status']} -> {body.status}"
+        ),
+    )
+    return hasil
+
+
 @superadmin_router.put("/{tenant_id}/grace")
 def ubah_grace(tenant_id: int, body: GraceBody, user: dict = Depends(require_superadmin)):
     t = _tenant_wajib_ada(tenant_id)

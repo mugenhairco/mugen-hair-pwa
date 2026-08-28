@@ -40,6 +40,7 @@ from datetime import datetime, timedelta
 
 import billing_gateway_client
 import billing_invoice_db
+import billing_periode
 import subscription_db
 
 # BUGFIX (audit, race condition #20): _hitung_periode_mulai() membaca invoice
@@ -108,34 +109,62 @@ def _map_status(payment_status_code: str) -> str:
     return _STATUS_CODE_KE_STATUS[payment_status_code]
 
 
-def _hitung_periode_mulai(tenant_id: int, sekarang: datetime, exclude_invoice_id: int) -> datetime:
-    """"Perpanjangan otomatis": kalau tenant masih punya invoice PAID LAIN
-    dengan periode_selesai di MASA DEPAN (langganan berjalan belum habis),
-    periode baru MENYAMBUNG dari situ -- bukan dari sekarang, supaya sisa
-    hari yang sudah dibayar tidak hilang begitu Owner memperpanjang lebih
-    awal. Kalau tidak ada (pertama kali bayar, atau langganan sebelumnya
-    sudah kedaluwarsa), periode baru dimulai dari sekarang."""
-    sekarang_iso = sekarang.isoformat(timespec="seconds")
-    kandidat = [
-        inv for inv in billing_invoice_db.list_invoices(tenant_id=tenant_id)
-        if inv["id"] != exclude_invoice_id and inv["status"] == STATUS_PAID
-        and inv["periode_selesai"] and inv["periode_selesai"] > sekarang_iso
-    ]
-    if not kandidat:
-        return sekarang
-    terbaru = max(kandidat, key=lambda inv: inv["periode_selesai"])
-    return datetime.fromisoformat(terbaru["periode_selesai"])
+def _hitung_periode_baru(tenant_id: int, invoice: dict, sekarang: datetime) -> tuple[datetime, datetime]:
+    """Perbaikan Billing/Subscription (requirement Owner poin 1, 2, 6, 13):
+
+    ANCHOR (poin 1/6/13): periode_mulai yang baru SELALU dibaca dari
+    tenant_subscriptions.periode_selesai TERSIMPAN (lihat subscription_db.
+    set_periode()) -- BUKAN dari `sekarang`/tanggal bayar, dan BUKAN LAGI
+    dari scan invoice PAID lain (cara lama _hitung_periode_mulai(), yang
+    fallback ke `sekarang` begitu tidak ketemu invoice lain dengan
+    periode_selesai di masa depan -- bug PERSIS yang dikeluhkan Owner:
+    pembayaran TELAT setelah periode lama sudah lewat menggeser siklus ke
+    tanggal bayar). Kolom periode_selesai itu sendiri ditulis
+    _aktifkan_subscription() di bawah SETELAH SETIAP pembayaran sukses, DAN
+    bisa ditulis manual oleh Super Admin lewat subscription_db.
+    reset_subscription() -- jadi hasil Reset otomatis jadi anchor
+    berikutnya tanpa logika terpisah. Fallback ke `sekarang` HANYA kalau
+    tenant belum pernah punya periode_selesai sama sekali (pembayaran
+    PERTAMA tenant ini).
+
+    KALENDER (poin 2): kalau invoice ini tahu jumlah_bulan-nya (checkout
+    SEKARANG mengisi kolom itu, lihat routers/billing.py), durasi
+    ditambahkan lewat billing_periode.tambah_bulan_kalender() (bulan
+    kalender sungguhan, clamp akhir bulan) -- BUKAN timedelta(days=...).
+    Invoice LAMA/buatan test tanpa jumlah_bulan (None) TETAP memakai
+    timedelta(days=durasi_hari) apa adanya, TIDAK ADA perubahan perilaku
+    untuk baris itu."""
+    sub = subscription_db.get_subscription(tenant_id)
+    anchor = sekarang
+    if sub and sub.get("periode_selesai"):
+        anchor = datetime.fromisoformat(sub["periode_selesai"])
+    if invoice.get("jumlah_bulan"):
+        selesai = billing_periode.tambah_bulan_kalender(anchor, invoice["jumlah_bulan"])
+    else:
+        selesai = anchor + timedelta(days=invoice["durasi_hari"])
+    return anchor, selesai
 
 
-def _aktifkan_subscription(tenant_id: int, package_kode: str):
+def _aktifkan_subscription(tenant_id: int, package_kode: str, periode_mulai: str = None,
+                            periode_selesai: str = None):
     """SESUAI cakupan Phase 4: mengaktifkan PAKET + STATUS 'active' saja --
     trial_start/trial_end/grace_start/grace_end (murni urusan Phase 3)
-    SAMA SEKALI TIDAK disentuh di sini."""
+    SAMA SEKALI TIDAK disentuh di sini.
+
+    Perbaikan Billing/Subscription: `periode_mulai`/`periode_selesai`
+    (opsional) ditulis lewat subscription_db.set_periode() SETELAH
+    package/status -- ini SATU-SATUNYA penulis anchor periode di jalur
+    pembayaran (lihat _hitung_periode_baru() di atas), dan ini juga yang
+    membuat requirement poin 12/13 (un-suspend otomatis setelah bayar,
+    anchor tetap dari periode lama) berjalan TANPA kode tambahan: status
+    selalu kembali 'active' di sini, terlepas dari status sebelumnya."""
     if subscription_db.get_subscription(tenant_id) is None:
         subscription_db.create_default_subscription(tenant_id, package=package_kode, status="active")
-        return
-    subscription_db.update_package(tenant_id, package_kode)
-    subscription_db.update_status(tenant_id, "active")
+    else:
+        subscription_db.update_package(tenant_id, package_kode)
+        subscription_db.update_status(tenant_id, "active")
+    if periode_mulai and periode_selesai:
+        subscription_db.set_periode(tenant_id, periode_mulai, periode_selesai)
 
 
 def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
@@ -183,8 +212,7 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
         fields["raw_notification"] = raw_notification
     if status_baru == STATUS_PAID:
         sekarang = datetime.now()
-        periode_mulai = _hitung_periode_mulai(invoice["tenant_id"], sekarang, exclude_invoice_id=invoice["id"])
-        periode_selesai = periode_mulai + timedelta(days=invoice["durasi_hari"])
+        periode_mulai, periode_selesai = _hitung_periode_baru(invoice["tenant_id"], invoice, sekarang)
         fields["periode_mulai"] = periode_mulai.isoformat(timespec="seconds")
         fields["periode_selesai"] = periode_selesai.isoformat(timespec="seconds")
         fields["paid_at"] = sekarang.isoformat(timespec="seconds")
@@ -210,7 +238,8 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
     billing_invoice_db.catat_status_log(invoice["id"], invoice["status"], status_baru, sumber=sumber)
 
     if status_baru == STATUS_PAID:
-        _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"])
+        _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"],
+                                periode_mulai=fields["periode_mulai"], periode_selesai=fields["periode_selesai"])
 
     return billing_invoice_db.get_invoice(invoice["id"])
 

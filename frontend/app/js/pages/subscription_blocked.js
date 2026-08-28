@@ -14,10 +14,6 @@
 // diarahkan menghubungi Owner tokonya sendiri.
 
 const PageSubscriptionBlocked = (() => {
-  const LABEL_STATUS = {
-    trial: "Trial", active: "Active", grace_period: "Grace Period",
-    expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
-  };
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
 
   function formatWaktu(iso) {
@@ -43,7 +39,7 @@ const PageSubscriptionBlocked = (() => {
   // tenant yang diblokir (bukan cuma tenant baru Register) -- perbaikan UX
   // sekaligus untuk tenant lama yang subscription-nya expired.
   function btnBayar() {
-    const btn = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Pilih Paket / Bayar Sekarang");
+    const btn = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Perpanjang Langganan");
     btn.addEventListener("click", () => {
       location.hash = "#/billing";
       MugenRouter.handle();
@@ -59,7 +55,7 @@ const PageSubscriptionBlocked = (() => {
     card.appendChild(MugenUI.el("h1", { class: "brand-name" }, MugenBrand.get().nama_barbershop));
     MugenBrand.applyToDom();
 
-    card.appendChild(MugenUI.el("div", { class: "login-error", style: "margin-top:8px;" }, "Akses Dibatasi"));
+    card.appendChild(MugenUI.el("div", { class: "login-error", style: "margin-top:8px;" }, "Langganan Anda Telah Berakhir"));
 
     const user = MugenState.getUser();
     if (user.role === "admin") {
@@ -70,18 +66,24 @@ const PageSubscriptionBlocked = (() => {
 
       if (sub) {
         card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
-          `Status subscription toko ini: ${LABEL_STATUS[sub.status] || sub.status}. Hubungi penyedia layanan untuk mengaktifkan kembali.`));
-        const info = MugenUI.el("div", { style: "text-align:left;margin-top:16px;" }, [
+          "Segera lakukan pembayaran untuk mengaktifkan kembali layanan Anda."));
+        const baris = [
           MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
             MugenUI.el("span", { class: "subtitle" }, "Package"),
             MugenUI.el("span", {}, LABEL_PACKAGE[sub.package] || sub.package),
           ]),
-          MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [
-            MugenUI.el("span", { class: "subtitle" }, "Terakhir Diperbarui"),
-            MugenUI.el("span", {}, formatWaktu(sub.updated_at)),
-          ]),
-        ]);
-        card.appendChild(info);
+        ];
+        if (sub.periode_selesai) {
+          baris.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
+            MugenUI.el("span", { class: "subtitle" }, "Periode Aktif Berakhir"),
+            MugenUI.el("span", {}, formatWaktu(sub.periode_selesai)),
+          ]));
+        }
+        baris.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [
+          MugenUI.el("span", { class: "subtitle" }, "Terakhir Diperbarui"),
+          MugenUI.el("span", {}, formatWaktu(sub.updated_at)),
+        ]));
+        card.appendChild(MugenUI.el("div", { style: "text-align:left;margin-top:16px;" }, baris));
         card.appendChild(MugenUI.el("div", { style: "margin-top:20px;" }, btnBayar()));
       } else {
         card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },

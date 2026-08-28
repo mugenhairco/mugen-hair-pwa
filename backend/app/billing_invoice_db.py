@@ -53,6 +53,7 @@ def init_billing_invoice_db():
                 snap_redirect_url   TEXT,
                 periode_mulai       TEXT,
                 periode_selesai     TEXT,
+                jumlah_bulan        INTEGER,
                 raw_notification    TEXT,
                 created_at          TEXT NOT NULL,
                 updated_at          TEXT NOT NULL,
@@ -79,6 +80,23 @@ def init_billing_invoice_db():
         """)
 
 
+def migrasi_jumlah_bulan_invoice():
+    """JALUR SQLITE SAJA (dipanggil dari main.py::on_startup() SETELAH
+    init_billing_invoice_db()) -- menambah kolom jumlah_bulan ke
+    subscription_invoices (idempotent) untuk Perbaikan Billing/Subscription:
+    snapshot jumlah bulan kalender (1/6/12) saat checkout, dipakai
+    billing_periode.tambah_bulan_kalender() supaya perpanjangan mengikuti
+    kalender sungguhan (requirement Owner poin 2), bukan hitungan hari tetap.
+    Invoice LAMA (kolom ini NULL) TETAP memakai timedelta(days=durasi_hari)
+    apa adanya -- lihat billing_webhook.py::_hitung_periode_baru(). Jalur
+    PostgreSQL: kolom yang sama sudah langsung dibuat lewat
+    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` di postgres_schema.py."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(subscription_invoices)").fetchall()]
+        if "jumlah_bulan" not in kolom:
+            conn.execute("ALTER TABLE subscription_invoices ADD COLUMN jumlah_bulan INTEGER")
+
+
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
@@ -95,19 +113,25 @@ def _buat_nomor_invoice() -> str:
 
 
 def buat_invoice(order_id: str, tenant_id: int, package: dict,
-                  snap_token: str = None, snap_redirect_url: str = None) -> dict:
+                  snap_token: str = None, snap_redirect_url: str = None, jumlah_bulan: int = None) -> dict:
     """`package`: baris subscription_packages (billing_db.get_package_by_kode()/
-    get_package()) -- kode/nama/harga/durasi_hari disalin sebagai snapshot."""
+    get_package()) -- kode/nama/harga/durasi_hari disalin sebagai snapshot.
+
+    `jumlah_bulan` (opsional, 1/6/12): snapshot jumlah bulan kalender siklus
+    checkout ini (bulanan/6bulan/tahunan) -- lihat migrasi_jumlah_bulan_invoice()
+    di atas. Default None supaya SEMUA pemanggil lama (termasuk test yang
+    memanggil fungsi ini langsung tanpa parameter ini) tetap berjalan tanpa
+    perubahan, memakai jalur perhitungan periode lama (timedelta durasi_hari)."""
     nomor_invoice = _buat_nomor_invoice()
     now = _now()
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO subscription_invoices "
             "(nomor_invoice, order_id, tenant_id, package_kode, package_nama, jumlah, durasi_hari, "
-            "status, snap_token, snap_redirect_url, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
+            "status, snap_token, snap_redirect_url, jumlah_bulan, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
             (nomor_invoice, order_id, tenant_id, package["kode"], package["nama"], package["harga"],
-             package["durasi_hari"], snap_token, snap_redirect_url, now, now),
+             package["durasi_hari"], snap_token, snap_redirect_url, jumlah_bulan, now, now),
         )
     return get_invoice_by_order_id(order_id)
 

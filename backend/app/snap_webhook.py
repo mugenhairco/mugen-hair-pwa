@@ -77,16 +77,32 @@ def terapkan_status_transaksi(transaksi: dict, status_baru: str, sumber: str,
     begitu cek_status_transaksi() sudah nyata), supaya KEDUA jalur PERSIS
     sama aturannya (guard status final/idempotency/cascade), TIDAK ada jalur
     pintas kedua yang berperilaku beda -- pola SAMA PERSIS
-    booking_gateway_webhook.py::_terapkan_status()."""
+    booking_gateway_webhook.py::_terapkan_status().
+
+    Perbaikan Billing/Subscription (requirement Owner poin 7 -- pengerasan/
+    defense-in-depth, BUKAN perbaikan bug): notifikasi DUPLIKAT MURNI
+    (status baru == status transaksi yang SUDAH tersimpan) di-short-circuit
+    di SINI, sebelum memanggil snap_payment_db.update_status() sama sekali.
+    Perilaku AKHIR identik dengan sebelumnya TANPA baris ini -- guard
+    idempoten yang SEBENARNYA sudah ada di billing_webhook.py::
+    _terapkan_status_invoice() (pengecekan `invoice["status"] == status_baru`)
+    untuk SAAS_BILLING, dan di booking_db.py untuk BOOKING -- baris ini
+    murni menghindari round-trip update_status()+cascade yang tidak perlu
+    untuk kasus duplikat paling umum (retry provider mengirim status yang
+    SAMA berkali-kali), TIDAK mengganti/melemahkan guard yang sudah ada."""
+    if transaksi["status"] == status_baru:
+        return transaksi
+
     transaksi_setelah = snap_payment_db.update_status(
         transaksi["id"], status_baru, sumber=sumber,
         provider_transaction_id=provider_transaction_id, paid_at=paid_at,
     )
     if transaksi_setelah["status"] != status_baru:
-        # Idempoten (status sudah sama) ATAU ditolak guard status final --
-        # KEDUANYA berarti tidak ada apa pun yang berubah, cascade TIDAK
-        # boleh dieksekusi (SESUAI instruksi migrasi #6: "Booking tetap
-        # hanya sekali dianggap PAID").
+        # Ditolak guard status final (transaksi["status"] SUDAH final tapi
+        # BEDA dari status_baru -- kasus duplikat status SAMA sudah
+        # ditangani short-circuit di atas) -- tidak ada apa pun yang
+        # berubah, cascade TIDAK boleh dieksekusi (SESUAI instruksi migrasi
+        # #6: "Booking tetap hanya sekali dianggap PAID").
         return transaksi_setelah
 
     if transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_BOOKING:
