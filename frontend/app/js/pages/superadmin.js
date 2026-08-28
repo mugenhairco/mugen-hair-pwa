@@ -1380,10 +1380,18 @@ const PageSuperadmin = (() => {
     const inSnapMerchantId = MugenUI.el("input", { type: "text" });
     const inSnapPartnerId = MugenUI.el("input", { type: "text" });
     const inSnapClientId = MugenUI.el("input", { type: "text" });
-    const inSnapClientSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
-    const inSnapPrivateKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PRIVATE KEY-----" });
-    const inSnapPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay, untuk verifikasi webhook)" });
-    const inSnapWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    // Kredensial di bawah SENGAJA terpisah sandbox/production (Faspay
+    // menerbitkan keypair BERBEDA per environment) -- Merchant/Partner/
+    // Channel ID di atas TETAP satu field (Faspay mengonfirmasi ID yang
+    // sama dipakai kedua environment, cuma domain yang beda).
+    const inSnapSandboxClientSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapSandboxPrivateKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PRIVATE KEY-----" });
+    const inSnapSandboxPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay sandbox, untuk verifikasi webhook)" });
+    const inSnapSandboxWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapProductionClientSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
+    const inSnapProductionPrivateKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PRIVATE KEY-----" });
+    const inSnapProductionPublicKey = MugenUI.el("textarea", { rows: "4", placeholder: "-----BEGIN PUBLIC KEY----- (public key Faspay production, untuk verifikasi webhook)" });
+    const inSnapProductionWebhookSecret = MugenUI.el("input", { type: "password", autocomplete: "off" });
     const inSnapChannelId = MugenUI.el("input", { type: "text", placeholder: "mis. 77001" });
     const inSnapQrisChannelCode = MugenUI.el("select", {}, [MugenUI.el("option", { value: "" }, "-- pilih e-wallet QRIS --")]);
     const inSnapTimeout = MugenUI.el("input", { type: "number", min: "1" });
@@ -1401,15 +1409,27 @@ const PageSuperadmin = (() => {
     snapAdvanceCard.appendChild(inSnapPartnerId);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client ID (opsional -- TIDAK dipakai signature Create VA/QRIS/Direct Debit, klarifikasi resmi Faspay)"));
     snapAdvanceCard.appendChild(inSnapClientId);
+    snapAdvanceCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Kredensial Sandbox"));
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client Secret (opsional -- TIDAK dipakai signature Create VA/QRIS/Direct Debit, klarifikasi resmi Faspay)"));
-    snapAdvanceCard.appendChild(inSnapClientSecret);
+    snapAdvanceCard.appendChild(inSnapSandboxClientSecret);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Private Key (RSA, milik merchant -- untuk menandatangani permintaan)"));
-    snapAdvanceCard.appendChild(inSnapPrivateKey);
+    snapAdvanceCard.appendChild(inSnapSandboxPrivateKey);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Public Key Faspay (untuk memverifikasi webhook masuk)"));
-    snapAdvanceCard.appendChild(inSnapPublicKey);
+    snapAdvanceCard.appendChild(inSnapSandboxPublicKey);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Webhook Secret (kalau ada)"));
-    snapAdvanceCard.appendChild(inSnapWebhookSecret);
-    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "CHANNEL-ID (identifier layanan API Faspay, BUKAN kode bank -- diberikan Faspay, mis. 77001)"));
+    snapAdvanceCard.appendChild(inSnapSandboxWebhookSecret);
+
+    snapAdvanceCard.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Kredensial Production"));
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Client Secret (opsional -- TIDAK dipakai signature Create VA/QRIS/Direct Debit, klarifikasi resmi Faspay)"));
+    snapAdvanceCard.appendChild(inSnapProductionClientSecret);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Private Key (RSA, milik merchant -- untuk menandatangani permintaan)"));
+    snapAdvanceCard.appendChild(inSnapProductionPrivateKey);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Public Key Faspay (untuk memverifikasi webhook masuk)"));
+    snapAdvanceCard.appendChild(inSnapProductionPublicKey);
+    snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Webhook Secret (kalau ada)"));
+    snapAdvanceCard.appendChild(inSnapProductionWebhookSecret);
+
+    snapAdvanceCard.appendChild(MugenUI.el("label", { style: "margin-top:16px;" }, "CHANNEL-ID (identifier layanan API Faspay, BUKAN kode bank -- diberikan Faspay, mis. 77001)"));
     snapAdvanceCard.appendChild(inSnapChannelId);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Bank VA Aktif (customer memilih salah satu saat checkout)"));
     const snapVaBankList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
@@ -1433,51 +1453,6 @@ const PageSuperadmin = (() => {
     const btnSimpanSnap = MugenUI.el("button", { class: "btn-primary" }, "Simpan SNAP Advance");
     snapAdvanceCard.appendChild(errorSnap);
     snapAdvanceCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanSnap));
-
-    // Alat Uji Sertifikasi Faspay (SEMENTARA, boleh dihapus setelah
-    // sertifikasi selesai): feedback tim Faspay minta X-SIGNATURE/response
-    // ASLI untuk SETIAP skenario dokumen UAT, TERMASUK 4 skenario error
-    // generik "Any Service" (Unauthorized Signature/Missing Mandatory
-    // Field/Invalid Field Format/Duplicate X-EXTERNAL-ID) yang TIDAK
-    // PERNAH terjadi wajar dari checkout produksi (kode SELALU mengirim
-    // request yang benar). Tombol ini SENGAJA mengirim request yang
-    // dirusak ke SANDBOX Faspay (guard keras di snap_advance_diagnostic.py
-    // -- menolak total kalau environment="production") supaya responsnya
-    // tercatat asli di Render Logs (SNAP REQUEST/SNAP RESPONSE), lalu
-    // disalin manual ke dokumen sertifikasi. HANYA muncul saat environment
-    // = sandbox (dobel pengaman, backend juga sudah menolak).
-    const ujiSertifikasiCard = MugenUI.el("div", { style: "margin-top:20px;padding-top:16px;border-top:1px solid var(--border);" });
-    snapAdvanceCard.appendChild(ujiSertifikasiCard);
-    ujiSertifikasiCard.appendChild(MugenUI.el("h2", {}, "Alat Uji Sertifikasi Faspay (Sementara)"));
-    ujiSertifikasiCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Khusus permintaan tim Faspay: mengirim request yang SENGAJA dirusak (signature salah/field hilang/format salah/" +
-      "external-id duplikat/merchant tidak dikenal/transaksi tidak ditemukan) ke SANDBOX Faspay, supaya respons error " +
-      "ASLI mereka tercatat di Render Logs -- HANYA jalan kalau Environment di atas = Sandbox. Cek Render Logs setelah " +
-      "menekan tombol untuk melihat detail SNAP REQUEST/SNAP RESPONSE-nya. (Skenario Query Payment Pending/Successful " +
-      "TIDAK ada di sini -- tinggal pakai tombol \"Cek Ulang ke Provider\" pada transaksi QRIS sungguhan, sebelum & " +
-      "sesudah dibayar.)"));
-    const ujiSertifikasiHasil = MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;white-space:pre-wrap;" });
-    const btnUjiVa = MugenUI.el("button", { type: "button", style: "margin-top:8px;margin-right:8px;" }, "Uji Skenario Error -- VA");
-    const btnUjiQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Uji Skenario Error -- QRIS");
-    ujiSertifikasiCard.appendChild(MugenUI.el("div", {}, [btnUjiVa, btnUjiQris]));
-    ujiSertifikasiCard.appendChild(ujiSertifikasiHasil);
-
-    async function jalankanUjiSertifikasi(produk, btn) {
-      if (inSnapEnv.value !== "sandbox") {
-        MugenUI.toast("Hanya bisa dijalankan saat Environment SNAP Advance = Sandbox.", "error");
-        return;
-      }
-      ujiSertifikasiHasil.textContent = "";
-      try {
-        const r = await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/superadmin/snap-advance/uji-sertifikasi/${produk}`, {}));
-        ujiSertifikasiHasil.textContent = r.hasil.map((h) => `${h.skenario}\n  -> ${h.status}`).join("\n\n");
-        MugenUI.toast("Selesai -- cek Render Logs untuk detail SNAP REQUEST/SNAP RESPONSE tiap skenario.", "success", { force: true });
-      } catch (e) {
-        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-      }
-    }
-    btnUjiVa.addEventListener("click", () => jalankanUjiSertifikasi("va", btnUjiVa));
-    btnUjiQris.addEventListener("click", () => jalankanUjiSertifikasi("qris", btnUjiQris));
 
     let snapChannelLabel = {};
     const snapChannelCheckbox = {};
@@ -1533,14 +1508,22 @@ const PageSuperadmin = (() => {
         // dibuka. Mengirim field ini KOSONG saat Simpan berarti "tidak
         // diubah" (lihat snap_advance_db.py::update_config()) -- isi ulang
         // HANYA kalau memang mau mengganti nilainya.
-        inSnapClientSecret.value = "";
-        inSnapClientSecret.placeholder = cfg.snap_client_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
-        inSnapPrivateKey.value = "";
-        inSnapPrivateKey.placeholder = cfg.snap_private_key_terisi
+        inSnapSandboxClientSecret.value = "";
+        inSnapSandboxClientSecret.placeholder = cfg.snap_sandbox_client_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapSandboxPrivateKey.value = "";
+        inSnapSandboxPrivateKey.placeholder = cfg.snap_sandbox_private_key_terisi
           ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "-----BEGIN PRIVATE KEY-----";
-        inSnapPublicKey.value = cfg.snap_faspay_public_key || "";
-        inSnapWebhookSecret.value = "";
-        inSnapWebhookSecret.placeholder = cfg.snap_webhook_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapSandboxPublicKey.value = cfg.snap_sandbox_faspay_public_key || "";
+        inSnapSandboxWebhookSecret.value = "";
+        inSnapSandboxWebhookSecret.placeholder = cfg.snap_sandbox_webhook_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapProductionClientSecret.value = "";
+        inSnapProductionClientSecret.placeholder = cfg.snap_production_client_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
+        inSnapProductionPrivateKey.value = "";
+        inSnapProductionPrivateKey.placeholder = cfg.snap_production_private_key_terisi
+          ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "-----BEGIN PRIVATE KEY-----";
+        inSnapProductionPublicKey.value = cfg.snap_production_faspay_public_key || "";
+        inSnapProductionWebhookSecret.value = "";
+        inSnapProductionWebhookSecret.placeholder = cfg.snap_production_webhook_secret_terisi ? "(sudah diisi -- kosongkan supaya tidak berubah)" : "";
         inSnapChannelId.value = cfg.snap_channel_id || "";
         inSnapTimeout.value = cfg.snap_timeout_detik || 30;
         inSnapRetryMax.value = cfg.snap_retry_max || 3;
@@ -1567,9 +1550,12 @@ const PageSuperadmin = (() => {
         await MugenUI.withButtonLoading(btnSimpanSnap, () => MugenApi.put("/api/superadmin/snap-advance/config", {
           environment: inSnapEnv.value, sandbox_base_url: inSnapSandboxUrl.value,
           production_base_url: inSnapProductionUrl.value, merchant_id: inSnapMerchantId.value,
-          partner_id: inSnapPartnerId.value, client_id: inSnapClientId.value, client_secret: inSnapClientSecret.value,
-          private_key: inSnapPrivateKey.value, faspay_public_key: inSnapPublicKey.value,
-          webhook_secret: inSnapWebhookSecret.value, timeout_detik: Number(inSnapTimeout.value) || 30,
+          partner_id: inSnapPartnerId.value, client_id: inSnapClientId.value,
+          sandbox_client_secret: inSnapSandboxClientSecret.value, production_client_secret: inSnapProductionClientSecret.value,
+          sandbox_private_key: inSnapSandboxPrivateKey.value, production_private_key: inSnapProductionPrivateKey.value,
+          sandbox_faspay_public_key: inSnapSandboxPublicKey.value, production_faspay_public_key: inSnapProductionPublicKey.value,
+          sandbox_webhook_secret: inSnapSandboxWebhookSecret.value, production_webhook_secret: inSnapProductionWebhookSecret.value,
+          timeout_detik: Number(inSnapTimeout.value) || 30,
           retry_max: Number(inSnapRetryMax.value) || 0, channel_aktif,
           channel_id: inSnapChannelId.value, va_bank_aktif,
           qris_channel_code: inSnapQrisChannelCode.value,

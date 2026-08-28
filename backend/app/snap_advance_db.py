@@ -39,8 +39,23 @@ import database as db
 
 _KEYS_KREDENSIAL = [
     "snap_environment", "snap_sandbox_base_url", "snap_production_base_url",
-    "snap_merchant_id", "snap_partner_id", "snap_client_id", "snap_client_secret",
-    "snap_private_key", "snap_faspay_public_key", "snap_webhook_secret",
+    "snap_merchant_id", "snap_partner_id", "snap_client_id",
+    # Kredensial di bawah ini SENGAJA terpisah per environment (sandbox vs
+    # production) -- BEDA dari merchant_id/partner_id/channel_id di atas
+    # yang TETAP satu (Faspay mengonfirmasi Merchant ID SAMA dipakai untuk
+    # kedua environment, cuma domain/URL yang beda). private key kita &
+    # public key Faspay adalah PASANGAN kriptografi sungguhan per
+    # environment -- Faspay menerbitkan keypair BERBEDA untuk sandbox vs
+    # production, jadi menyimpannya sebagai SATU field akan membuat
+    # kredensial sandbox yang sudah teruji tertimpa begitu Super Admin
+    # mengisi kredensial production (dan sebaliknya), tanpa cara mudah
+    # untuk kembali test di sandbox. client_secret/webhook_secret ikut pola
+    # yang sama untuk konsistensi walau belum genuinely dipakai kode
+    # manapun sekarang (lihat catatan lama field ini, masih PENDING FASPAY).
+    "snap_sandbox_client_secret", "snap_production_client_secret",
+    "snap_sandbox_private_key", "snap_production_private_key",
+    "snap_sandbox_faspay_public_key", "snap_production_faspay_public_key",
+    "snap_sandbox_webhook_secret", "snap_production_webhook_secret",
     # CHANNEL-ID (header wajib SEMUA request SNAP -- identifier layanan API
     # Faspay sendiri, mis. "77001", KONSTAN per merchant, BEDA dari
     # `channelCode` per-bank di bawah maupun `snap_channel_aktif` --
@@ -155,10 +170,12 @@ _DEFAULT_RETRY_MAX = 3
 # dikirim kembali dalam response API GET konfigurasi" -- private key RSA
 # menandatangani SELURUH transaksi, beda kelas risiko dari sekadar API key
 # yang gampang di-rotate). client_secret/webhook_secret ikut kelompok yang
-# sama (rahasia simetris). snap_faspay_public_key SENGAJA TIDAK masuk sini
-# -- itu public key MILIK Faspay yang justru harus terlihat Super Admin
-# untuk verifikasi kecocokan, bukan sesuatu yang perlu disembunyikan.
-_FIELD_RAHASIA = ("snap_private_key", "snap_client_secret", "snap_webhook_secret")
+# sama (rahasia simetris). *_faspay_public_key SENGAJA TIDAK masuk sini --
+# itu public key MILIK Faspay yang justru harus terlihat Super Admin untuk
+# verifikasi kecocokan, bukan sesuatu yang perlu disembunyikan.
+_FIELD_RAHASIA = ("snap_sandbox_private_key", "snap_production_private_key",
+                   "snap_sandbox_client_secret", "snap_production_client_secret",
+                   "snap_sandbox_webhook_secret", "snap_production_webhook_secret")
 
 
 def get_config() -> dict:
@@ -219,12 +236,14 @@ def get_config() -> dict:
     # BUKAN jaminan kredensial ini benar-benar valid/cocok dengan yang
     # terdaftar di Faspay -- murni penanda "sudah diisi sesuatu", bukan
     # "sudah terverifikasi berfungsi".
-    # BUGFIX: dihitung dari `_terisi` (bukan `data["snap_private_key"]`
-    # langsung) -- field itu SUDAH dikosongkan oleh masking di atas, memakainya
-    # lagi di sini akan membuat `enabled` SELALU False walau kredensial
-    # sebenarnya sudah lengkap.
-    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"]
-                            and data["snap_channel_id"] and data["snap_private_key_terisi"])
+    # BUGFIX: dihitung dari `_terisi` (bukan private key mentah) -- field
+    # itu SUDAH dikosongkan oleh masking di atas, memakainya lagi di sini
+    # akan membuat `enabled` SELALU False walau kredensial sebenarnya sudah
+    # lengkap. Dicek dari private key environment yang SEDANG AKTIF saja
+    # (bukan sandbox DAN production sekaligus) -- "enabled" berarti "siap
+    # dipakai checkout SEKARANG dengan environment yang sedang dipilih".
+    data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"] and data["snap_channel_id"]
+                            and data[f"snap_{data['snap_environment']}_private_key_terisi"])
     return data
 
 
@@ -255,6 +274,16 @@ def get_config_internal() -> dict:
         data["snap_va_bank_aktif"] = json.loads(db.get_setting(_KUNCI_VA_BANK_AKTIF, _DEFAULT_VA_BANK_AKTIF, tenant_id=None))
     except (TypeError, ValueError):
         data["snap_va_bank_aktif"] = []
+    # Resolusi kredensial environment-AKTIF ke nama generik (snap_private_key,
+    # snap_faspay_public_key, dst) -- SATU-SATUNYA tempat sandbox/production
+    # "dipilih". snap_advance_client.py TETAP memakai nama generik ini apa
+    # adanya, TIDAK PERLU tahu field mentah snap_sandbox_*/snap_production_*
+    # -- jadi pindah environment TIDAK butuh perubahan kode di luar modul ini.
+    env = data["snap_environment"]
+    data["snap_private_key"] = data[f"snap_{env}_private_key"]
+    data["snap_faspay_public_key"] = data[f"snap_{env}_faspay_public_key"]
+    data["snap_client_secret"] = data[f"snap_{env}_client_secret"]
+    data["snap_webhook_secret"] = data[f"snap_{env}_webhook_secret"]
     data["enabled"] = bool(data["snap_merchant_id"] and data["snap_partner_id"]
                             and data["snap_channel_id"] and data["snap_private_key"])
     return data
@@ -262,8 +291,11 @@ def get_config_internal() -> dict:
 
 def update_config(environment: str = None, sandbox_base_url: str = None, production_base_url: str = None,
                    merchant_id: str = None, partner_id: str = None, client_id: str = None,
-                   client_secret: str = None, private_key: str = None, faspay_public_key: str = None,
-                   webhook_secret: str = None, timeout_detik: int = None, retry_max: int = None,
+                   sandbox_client_secret: str = None, production_client_secret: str = None,
+                   sandbox_private_key: str = None, production_private_key: str = None,
+                   sandbox_faspay_public_key: str = None, production_faspay_public_key: str = None,
+                   sandbox_webhook_secret: str = None, production_webhook_secret: str = None,
+                   timeout_detik: int = None, retry_max: int = None,
                    channel_aktif: list = None, channel_id: str = None, va_bank_aktif: list = None,
                    qris_channel_code: str = None) -> dict:
     data = {}
@@ -287,14 +319,22 @@ def update_config(environment: str = None, sandbox_base_url: str = None, product
     # diprefill) -- HANYA nilai non-kosong yang dianggap perubahan sungguhan.
     # Field BUKAN rahasia (mis. merchant_id di atas) TETAP boleh dikosongkan
     # dengan sengaja seperti sebelumnya, perilakunya tidak berubah.
-    if client_secret:
-        data["snap_client_secret"] = client_secret.strip()
-    if private_key:
-        data["snap_private_key"] = private_key.strip()
-    if faspay_public_key is not None:
-        data["snap_faspay_public_key"] = faspay_public_key.strip()
-    if webhook_secret:
-        data["snap_webhook_secret"] = webhook_secret.strip()
+    if sandbox_client_secret:
+        data["snap_sandbox_client_secret"] = sandbox_client_secret.strip()
+    if production_client_secret:
+        data["snap_production_client_secret"] = production_client_secret.strip()
+    if sandbox_private_key:
+        data["snap_sandbox_private_key"] = sandbox_private_key.strip()
+    if production_private_key:
+        data["snap_production_private_key"] = production_private_key.strip()
+    if sandbox_faspay_public_key is not None:
+        data["snap_sandbox_faspay_public_key"] = sandbox_faspay_public_key.strip()
+    if production_faspay_public_key is not None:
+        data["snap_production_faspay_public_key"] = production_faspay_public_key.strip()
+    if sandbox_webhook_secret:
+        data["snap_sandbox_webhook_secret"] = sandbox_webhook_secret.strip()
+    if production_webhook_secret:
+        data["snap_production_webhook_secret"] = production_webhook_secret.strip()
     if timeout_detik is not None:
         if timeout_detik <= 0:
             raise ValueError("Timeout harus lebih dari 0 detik.")

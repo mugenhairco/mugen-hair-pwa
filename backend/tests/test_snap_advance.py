@@ -470,7 +470,7 @@ def test_update_config_dan_enabled_true_setelah_lengkap():
     ID/Secret TIDAK PERNAH dipakai) -- field yang genuinely disyaratkan:
     merchant_id, partner_id, channel_id, private_key."""
     snap_advance_db.update_config(merchant_id="TEST-MID", partner_id="TEST-PID", channel_id="77001",
-                                   private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----")
+                                   sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----")
     cfg = snap_advance_db.get_config()
     assert cfg["enabled"] is True
     assert cfg["snap_merchant_id"] == "TEST-MID"
@@ -481,8 +481,8 @@ def test_update_config_enabled_tetap_false_tanpa_client_id_secret():
     dikosongkan sepenuhnya (sesuai instruksi tertulis Faspay), asalkan
     merchant_id/partner_id/channel_id/private_key sudah lengkap."""
     snap_advance_db.update_config(merchant_id="TEST-MID", partner_id="TEST-PID", channel_id="77001",
-                                   private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
-                                   client_id="", client_secret="")
+                                   sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+                                   client_id="", sandbox_client_secret="")
     cfg = snap_advance_db.get_config()
     assert cfg["enabled"] is True
     assert cfg["snap_client_id"] == ""
@@ -651,8 +651,8 @@ def _pasang_kredensial_snap():
     private_pem, public_pem = _buat_keypair_rsa()
     snap_advance_db.update_config(
         environment="sandbox", sandbox_base_url="https://debit-sandbox.faspay.co.id",
-        merchant_id="37070", partner_id="37070", client_id="CLIENT-TEST", client_secret="SECRET-TEST",
-        private_key=private_pem, faspay_public_key=public_pem, channel_id="77001",
+        merchant_id="37070", partner_id="37070", client_id="CLIENT-TEST", sandbox_client_secret="SECRET-TEST",
+        sandbox_private_key=private_pem, sandbox_faspay_public_key=public_pem, channel_id="77001",
         va_bank_aktif=["702"], qris_channel_code="711",
     )
     return private_pem, public_pem
@@ -948,7 +948,7 @@ def _tandatangani_notifikasi(raw_body: str, private_pem_faspay: str, path: str) 
 
 def test_verifikasi_signature_webhook_round_trip_sukses(single_tenant):
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     raw_body = json.dumps({"trxId": "BOOKING-1-1-abc"})
     signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
@@ -958,7 +958,7 @@ def test_verifikasi_signature_webhook_round_trip_sukses(single_tenant):
 
 def test_verifikasi_signature_webhook_gagal_kalau_body_diubah(single_tenant):
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     raw_body = json.dumps({"trxId": "BOOKING-1-1-abc"})
     signature, ts = _tandatangani_notifikasi(raw_body, private_faspay, "/v1.0/transfer-va/payment")
 
@@ -1053,7 +1053,7 @@ def test_proses_notifikasi_va_end_to_end_transisi_ke_paid(single_tenant):
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="va")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
 
     payload = {
         "partnerServiceId": "70200000", "customerNo": "00000000000012345",
@@ -1079,7 +1079,7 @@ def test_proses_notifikasi_direct_debit_end_to_end_transisi_ke_paid(single_tenan
     transaksi = snap_payment_db.buat_transaksi("SAAS_BILLING", tenant_id, 75000,
                                                 subscription_invoice_id=invoice["id"], channel="direct_debit")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
 
     payload = {
         "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "REF999",
@@ -1106,7 +1106,7 @@ def test_proses_notifikasi_qris_end_to_end_transisi_ke_paid(single_tenant):
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="qris")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
 
     payload = {
         "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "QRREF999",
@@ -1132,7 +1132,7 @@ def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_ten
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="va")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     payload = {"trxId": transaksi["payment_reference"],
                "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"}}
     raw_body = json.dumps(payload)
@@ -1157,7 +1157,7 @@ def test_endpoint_webhook_signature_valid_balas_200_dan_transisi_paid(app_client
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="va")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     payload = {"trxId": transaksi["payment_reference"],
                "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"}}
     raw_body = json.dumps(payload)
@@ -1185,7 +1185,7 @@ def test_endpoint_webhook_qris_path_resmi_balas_200_dan_transisi_paid(app_client
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="qris")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     payload = {
         "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "QRREF999",
         "amount": {"value": f"{booking['total_harga']:.2f}", "currency": "IDR"},
@@ -1211,7 +1211,7 @@ def test_endpoint_webhook_direct_debit_path_resmi_balas_200_dan_transisi_paid(ap
     transaksi = snap_payment_db.buat_transaksi("SAAS_BILLING", tenant_id, 75000,
                                                 subscription_invoice_id=invoice["id"], channel="direct_debit")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     payload = {
         "originalPartnerReferenceNo": transaksi["payment_reference"], "originalReferenceNo": "REF999",
         "amount": {"value": "75000.00", "currency": "IDR"},
@@ -1240,7 +1240,7 @@ def test_endpoint_webhook_signature_dari_endpoint_lain_ditolak(app_client, singl
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="va")
     private_faspay, public_faspay = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_faspay)
+    snap_advance_db.update_config(sandbox_faspay_public_key=public_faspay)
     payload = {"trxId": transaksi["payment_reference"],
                "additionalInfo": {"latestTransactionStatus": "00", "paymentDate": "2026-08-21 10:00:00"}}
     raw_body = json.dumps(payload)
@@ -1273,16 +1273,16 @@ def test_get_config_tidak_pernah_membocorkan_field_rahasia(single_tenant):
     TIDAK PERNAH keluar apa adanya lewat get_config(), digantikan penanda
     `_terisi` -- lihat snap_advance_db.py::get_config()."""
     private_pem, _ = _buat_keypair_rsa()
-    snap_advance_db.update_config(client_secret="rahasia-banget", private_key=private_pem, webhook_secret="ws-123")
+    snap_advance_db.update_config(sandbox_client_secret="rahasia-banget", sandbox_private_key=private_pem, sandbox_webhook_secret="ws-123")
 
     cfg = snap_advance_db.get_config()
 
-    assert cfg["snap_client_secret"] == ""
-    assert cfg["snap_private_key"] == ""
-    assert cfg["snap_webhook_secret"] == ""
-    assert cfg["snap_client_secret_terisi"] is True
-    assert cfg["snap_private_key_terisi"] is True
-    assert cfg["snap_webhook_secret_terisi"] is True
+    assert cfg["snap_sandbox_client_secret"] == ""
+    assert cfg["snap_sandbox_private_key"] == ""
+    assert cfg["snap_sandbox_webhook_secret"] == ""
+    assert cfg["snap_sandbox_client_secret_terisi"] is True
+    assert cfg["snap_sandbox_private_key_terisi"] is True
+    assert cfg["snap_sandbox_webhook_secret_terisi"] is True
     assert cfg["enabled"] is False  # merchant_id/client_id masih kosong di test ini
 
 
@@ -1292,9 +1292,9 @@ def test_update_config_string_kosong_field_rahasia_tidak_menghapus(single_tenant
     "kosongkan" -- BEDA dari field non-rahasia yang tetap boleh dikosongkan
     dengan sengaja."""
     private_pem, _ = _buat_keypair_rsa()
-    snap_advance_db.update_config(client_secret="rahasia-awal", private_key=private_pem)
+    snap_advance_db.update_config(sandbox_client_secret="rahasia-awal", sandbox_private_key=private_pem)
 
-    snap_advance_db.update_config(client_secret="", private_key="", merchant_id="MID-BARU")
+    snap_advance_db.update_config(sandbox_client_secret="", sandbox_private_key="", merchant_id="MID-BARU")
 
     cfg_internal = snap_advance_db.get_config_internal()
     assert cfg_internal["snap_client_secret"] == "rahasia-awal"  # TIDAK berubah
@@ -1306,7 +1306,7 @@ def test_get_config_internal_mengembalikan_nilai_asli(single_tenant):
     """get_config_internal() (dipakai snap_advance_client.py untuk benar-
     benar menandatangani/memanggil Faspay) TIDAK boleh ikut ter-mask."""
     private_pem, _ = _buat_keypair_rsa()
-    snap_advance_db.update_config(client_secret="rahasia-banget", private_key=private_pem)
+    snap_advance_db.update_config(sandbox_client_secret="rahasia-banget", sandbox_private_key=private_pem)
 
     cfg = snap_advance_db.get_config_internal()
 
@@ -1328,7 +1328,7 @@ def _aktifkan_snap_orkestrasi(channel_aktif=None):
     private_pem, _ = _buat_keypair_rsa()
     snap_advance_db.update_config(
         merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
-        private_key=private_pem, channel_aktif=channel_aktif if channel_aktif is not None else ["va", "qris"],
+        sandbox_private_key=private_pem, channel_aktif=channel_aktif if channel_aktif is not None else ["va", "qris"],
     )
 
 
@@ -1600,259 +1600,6 @@ def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypat
     # diterjemahkan "diproses" di kosakata gateway lawas.
     assert baris_snap["status_pembayaran"] == "diproses"
     assert baris_snap["nomor_transaksi"] == r_checkout.json()["nomor_transaksi"]
-
-
-# ---------------------------------------------------------------------------
-# snap_advance_diagnostic.py -- alat uji SEMENTARA khusus sertifikasi Faspay
-# (permintaan tim Faspay: X-SIGNATURE/response ASLI untuk skenario error
-# generik yang tidak pernah terjadi wajar dari checkout produksi). Fokus
-# pengujian: (1) pengaman keras TIDAK PERNAH boleh jalan di production,
-# (2) tiap skenario mengirim body/signature yang BENAR-BENAR rusak sesuai
-# labelnya, (3) endpoint Super Admin hanya bisa diakses superadmin.
-# ---------------------------------------------------------------------------
-
-def test_uji_skenario_va_ditolak_saat_environment_production(single_tenant):
-    import snap_advance_diagnostic
-    private_pem, _ = _buat_keypair_rsa()
-    snap_advance_db.update_config(
-        environment="production", merchant_id="37070", partner_id="37070", channel_id="77001",
-        va_bank_aktif=["702"], private_key=private_pem, channel_aktif=["va", "qris"],
-    )
-    with pytest.raises(ValueError):
-        snap_advance_diagnostic.uji_skenario_va()
-
-
-def test_uji_skenario_qris_ditolak_saat_environment_production(single_tenant):
-    import snap_advance_diagnostic
-    private_pem, _ = _buat_keypair_rsa()
-    snap_advance_db.update_config(
-        environment="production", merchant_id="37070", partner_id="37070", channel_id="77001",
-        qris_channel_code="711", private_key=private_pem, channel_aktif=["va", "qris"],
-    )
-    with pytest.raises(ValueError):
-        snap_advance_diagnostic.uji_skenario_qris()
-
-
-def test_uji_skenario_va_mengirim_lima_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
-    import snap_advance_diagnostic
-    _aktifkan_snap_orkestrasi()
-    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id")
-    dipanggil = []
-
-    def _rekam(url, raw_body, headers, timeout=None):
-        dipanggil.append({"url": url, "body": json.loads(raw_body), "headers": headers})
-        if len(dipanggil) in (2, 5):  # Duplicate X-EXTERNAL-ID percobaan ke-2 sengaja ditolak
-            raise core.GatewayRequestError("Payment Gateway menolak permintaan (HTTP 409).")
-        return {"responseCode": "2002700", "responseMessage": "Success", "virtualAccountData": {}}
-
-    monkeypatch.setattr(core, "post_json_raw", _rekam)
-    hasil = snap_advance_diagnostic.uji_skenario_va()
-
-    assert len(hasil) == 5
-    assert len(dipanggil) == 5
-    assert all(p["url"].endswith("/v1.0/transfer-va/create-va") for p in dipanggil)
-
-    # 1. Unauthorized Signature -- signature TIDAK dihitung dari private key konfigurasi
-    cfg = snap_advance_db.get_config_internal()
-    assert dipanggil[0]["headers"]["X-SIGNATURE"] != _snap_sign_ulang(dipanggil[0], cfg["snap_private_key"])
-    # 2. Missing Mandatory Field -- totalAmount hilang
-    assert "totalAmount" not in dipanggil[1]["body"]
-    # 3. Invalid Field Format -- totalAmount.value tanpa 2 desimal
-    assert dipanggil[2]["body"]["totalAmount"]["value"] == "10000"
-    # 4 & 5. Duplicate X-EXTERNAL-ID -- X-EXTERNAL-ID SAMA PERSIS di kedua percobaan
-    assert dipanggil[3]["headers"]["X-EXTERNAL-ID"] == dipanggil[4]["headers"]["X-EXTERNAL-ID"]
-    assert hasil[3]["status"].startswith("TIDAK ditolak")
-    assert hasil[4]["status"].startswith("Ditolak")
-
-
-def _snap_sign_ulang(panggilan, private_key_pem):
-    """Helper test: hitung ulang X-SIGNATURE yang SEHARUSNYA muncul kalau
-    memakai private key konfigurasi asli, untuk dibandingkan (harus BEDA)
-    dengan signature skenario "Unauthorized" yang sengaja pakai keypair
-    palsu."""
-    import re
-    raw_body = json.dumps(panggilan["body"], separators=(",", ":"))
-    body_hash = core.sha256_lowercase_hex(raw_body)
-    string_to_sign = f"POST:/v1.0/transfer-va/create-va:{body_hash}:{panggilan['headers']['X-TIMESTAMP']}"
-    return core.sign_sha256_rsa(string_to_sign, private_key_pem)
-
-
-def test_uji_skenario_qris_mengirim_tujuh_request_dengan_kerusakan_yang_benar(single_tenant, monkeypatch):
-    import snap_advance_diagnostic
-    _aktifkan_snap_orkestrasi()
-    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id", qris_channel_code="711")
-    dipanggil = []
-
-    def _rekam(url, raw_body, headers, timeout=None):
-        dipanggil.append({"url": url, "body": json.loads(raw_body), "headers": headers})
-        if len(dipanggil) in (2, 5, 6, 7):
-            raise core.GatewayRequestError("Payment Gateway menolak permintaan.")
-        return {"responseCode": "2004700", "responseMessage": "success"}
-
-    monkeypatch.setattr(core, "post_json_raw", _rekam)
-    hasil = snap_advance_diagnostic.uji_skenario_qris()
-
-    assert len(hasil) == 7
-    assert all(p["url"].endswith("/v1.0/qr/qr-mpm-generate") for p in dipanggil[:6])
-    assert "amount" not in dipanggil[1]["body"]
-    assert dipanggil[2]["body"]["amount"]["value"] == "10000"
-    assert dipanggil[3]["headers"]["X-EXTERNAL-ID"] == dipanggil[4]["headers"]["X-EXTERNAL-ID"]
-    assert dipanggil[3]["body"]["merchantId"] == "37070"
-    # 18.7 Invalid Merchant
-    assert dipanggil[5]["body"]["merchantId"] == "99999"
-    # 18.11 Transaction Not Found -- lewat qr-mpm-query, BUKAN qr-mpm-generate
-    assert dipanggil[6]["url"].endswith("/v1.0/qr/qr-mpm-query")
-    assert "originalReferenceNo" in dipanggil[6]["body"]
-
-
-def test_endpoint_uji_sertifikasi_ditolak_untuk_produk_tidak_dikenal(app_client):
-    headers = _buat_superadmin_dan_login(app_client)
-    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/direct_debit", headers=headers)
-    assert r.status_code == 422, r.text
-
-
-def test_endpoint_uji_sertifikasi_wajib_superadmin(app_client, single_tenant):
-    import auth_db
-    auth_db.tambah_user("adminbiasa1", "password123", role="admin", tenant_id=single_tenant["tenant_id"])
-    r_login = app_client.post("/api/auth/login", json={"username": "adminbiasa1", "password": "password123"})
-    headers = {"Authorization": f"Bearer {r_login.json()['token']}"}
-    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/va", headers=headers)
-    assert r.status_code == 403, r.text
-
-
-def test_endpoint_uji_sertifikasi_va_sukses_mencatat_audit_log(app_client, monkeypatch):
-    import superadmin_audit_db
-    _aktifkan_snap_orkestrasi()
-    snap_advance_db.update_config(sandbox_base_url="https://debit-sandbox.faspay.co.id")
-    monkeypatch.setattr(core, "post_json_raw",
-                         lambda url, raw_body, headers, timeout=None: {"responseCode": "2002700", "responseMessage": "Success"})
-    headers = _buat_superadmin_dan_login(app_client)
-    r = app_client.post("/api/superadmin/snap-advance/uji-sertifikasi/va", headers=headers)
-    assert r.status_code == 200, r.text
-    assert len(r.json()["hasil"]) == 5
-    log = superadmin_audit_db.list_log()
-    assert any(row["aksi"] == "uji_sertifikasi_snap_advance" for row in log)
-
-
-# ---------------------------------------------------------------------------
-# snap_advance_client._debug_coba_variasi_formula_webhook() -- alat uji
-# SEMENTARA (permintaan Owner: notifikasi webhook nyata terus tertolak
-# walau public key sudah terisi) yang mencoba beberapa variasi formula
-# stringToSign, murni untuk logging tambahan -- self-test di sini
-# membuktikan alat ini SENDIRI benar (mendeteksi variasi yang genuinely
-# cocok, TIDAK ikut "cocok" untuk variasi yang salah).
-# ---------------------------------------------------------------------------
-
-def test_debug_variasi_formula_mendeteksi_baseline_yang_benar(single_tenant):
-    import snap_advance_client
-    private_pem, public_pem = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_pem)
-    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
-    timestamp = "2026-08-27T16:13:15+07:00"
-    path = "/v1.0/transfer-va/payment"
-    body_hash = core.sha256_lowercase_hex(raw_body)
-    string_to_sign = f"POST:{path}:{body_hash}:{timestamp}"
-    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
-
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
-
-    assert hasil["public_key_terisi"] is True
-    assert hasil["total_kombinasi_dicoba"] > 1
-    # Signature RSA-SHA256 genuinely spesifik untuk SATU string_to_sign persis
-    # -- HANYA kombinasi "baseline" (path saja, hash kecil, tanpa slot token,
-    # dengan timestamp) yang boleh cocok.
-    assert len(hasil["kombinasi_yang_cocok"]) == 1
-    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
-    assert cocok_string == string_to_sign
-    assert "path saja" in label and "dengan timestamp" in label
-
-
-def test_debug_variasi_formula_mendeteksi_full_url_yang_benar(single_tenant):
-    import snap_advance_client
-    private_pem, public_pem = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_pem)
-    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
-    timestamp = "2026-08-27T16:13:15+07:00"
-    path = "/v1.0/transfer-va/payment"
-    body_hash = core.sha256_lowercase_hex(raw_body)
-    # Faspay (hipotetis) menandatangani pakai FULL URL, bukan path saja.
-    string_to_sign = f"POST:https://api.rivoirsett.com{path}:{body_hash}:{timestamp}"
-    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
-
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
-
-    assert len(hasil["kombinasi_yang_cocok"]) == 1
-    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
-    assert cocok_string == string_to_sign
-    assert "full URL" in label
-
-
-def test_debug_variasi_formula_mendeteksi_body_re_minify_yang_benar(single_tenant):
-    """Kasus penting: signature dihitung Faspay dari representasi JSON
-    yang beda spasi (mis. tanpa spasi setelah ":"/",") dari byte mentah
-    yang benar-benar terkirim -- variasi "re-minify" HARUS bisa
-    menemukan ini walau body mentah punya spasi ekstra."""
-    import snap_advance_client
-    private_pem, public_pem = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_pem)
-    raw_body = '{"trxId": "BOOKING-1-1-abc", "latestTransactionStatus": "00"}'  # ada spasi setelah : dan ,
-    minified = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
-    timestamp = "2026-08-27T16:13:15+07:00"
-    path = "/v1.0/transfer-va/payment"
-    body_hash = core.sha256_lowercase_hex(minified)  # signature dihitung dari versi MINIFIED
-    string_to_sign = f"POST:{path}:{body_hash}:{timestamp}"
-    signature = core.sign_sha256_rsa(string_to_sign, private_pem)
-
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
-
-    assert len(hasil["kombinasi_yang_cocok"]) == 1
-    (label, cocok_string), = hasil["kombinasi_yang_cocok"].items()
-    assert "re-minify" in label
-
-
-def test_debug_variasi_formula_public_key_kosong(single_tenant):
-    import snap_advance_client
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(
-        "{}", "sig-apa-saja", "2026-08-27T16:13:15+07:00", "POST", "/v1.0/transfer-va/payment")
-    assert hasil == {"public_key_terisi": False}
-
-
-def test_debug_variasi_formula_tidak_ada_yang_cocok(single_tenant):
-    import snap_advance_client
-    private_pem, public_pem = _buat_keypair_rsa()
-    snap_advance_db.update_config(faspay_public_key=public_pem)
-    lain_pem, _ = _buat_keypair_rsa()
-    raw_body = '{"trxId":"BOOKING-1-1-abc","latestTransactionStatus":"00"}'
-    timestamp = "2026-08-27T16:13:15+07:00"
-    path = "/v1.0/transfer-va/payment"
-    body_hash = core.sha256_lowercase_hex(raw_body)
-    # Signature dihitung pakai keypair LAIN -- tidak ada kombinasi APA PUN
-    # yang seharusnya cocok dengan public key yang tersimpan.
-    signature = core.sign_sha256_rsa(f"POST:{path}:{body_hash}:{timestamp}", lain_pem)
-
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(raw_body, signature, timestamp, "POST", path)
-
-    assert hasil["public_key_valid"] is True  # key-nya SENDIRI valid -- bukan itu penyebab gagalnya
-    assert "TIDAK ADA satu pun yang cocok" in hasil["kombinasi_yang_cocok"]
-    assert "public key VALID secara teknis" in hasil["kombinasi_yang_cocok"]
-
-
-def test_debug_variasi_formula_public_key_gagal_diparse(single_tenant):
-    """BUGFIX-guard TROUBLESHOOTING: verify_sha256_rsa() menelan kegagalan
-    parsing PEM jadi False (identik dengan "signature tidak cocok") --
-    kalau public key yang tersimpan SENDIRI rusak/salah format, itu harus
-    kelihatan JELAS (bukan tersamar sebagai "tidak ada kombinasi yang
-    cocok" padahal sebabnya beda sama sekali)."""
-    import snap_advance_client
-    snap_advance_db.update_config(faspay_public_key="INI BUKAN PEM YANG VALID SAMA SEKALI")
-
-    hasil = snap_advance_client._debug_coba_variasi_formula_webhook(
-        "{}", "sig-apa-saja", "2026-08-27T16:13:15+07:00", "POST", "/v1.0/transfer-va/payment")
-
-    assert hasil["public_key_terisi"] is True
-    assert hasil["public_key_valid"] is False
-    assert hasil["public_key_error"]
-    assert "kombinasi_yang_cocok" not in hasil  # tidak sempat mencoba kombinasi apa pun
 
 
 def test_inspect_public_key_pem_valid():

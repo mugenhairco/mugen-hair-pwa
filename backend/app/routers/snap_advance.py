@@ -49,9 +49,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-import snap_advance_client
 import snap_advance_db
-import snap_advance_diagnostic
 import snap_webhook
 import superadmin_audit_db
 from auth import require_superadmin
@@ -73,10 +71,14 @@ class ConfigBody(BaseModel):
     merchant_id: str | None = None
     partner_id: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
-    private_key: str | None = None
-    faspay_public_key: str | None = None
-    webhook_secret: str | None = None
+    sandbox_client_secret: str | None = None
+    production_client_secret: str | None = None
+    sandbox_private_key: str | None = None
+    production_private_key: str | None = None
+    sandbox_faspay_public_key: str | None = None
+    production_faspay_public_key: str | None = None
+    sandbox_webhook_secret: str | None = None
+    production_webhook_secret: str | None = None
     timeout_detik: int | None = None
     retry_max: int | None = None
     channel_aktif: list[str] | None = None
@@ -91,9 +93,13 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
         hasil = snap_advance_db.update_config(
             environment=body.environment, sandbox_base_url=body.sandbox_base_url,
             production_base_url=body.production_base_url, merchant_id=body.merchant_id,
-            partner_id=body.partner_id, client_id=body.client_id, client_secret=body.client_secret,
-            private_key=body.private_key, faspay_public_key=body.faspay_public_key,
-            webhook_secret=body.webhook_secret, timeout_detik=body.timeout_detik,
+            partner_id=body.partner_id, client_id=body.client_id,
+            sandbox_client_secret=body.sandbox_client_secret, production_client_secret=body.production_client_secret,
+            sandbox_private_key=body.sandbox_private_key, production_private_key=body.production_private_key,
+            sandbox_faspay_public_key=body.sandbox_faspay_public_key,
+            production_faspay_public_key=body.production_faspay_public_key,
+            sandbox_webhook_secret=body.sandbox_webhook_secret, production_webhook_secret=body.production_webhook_secret,
+            timeout_detik=body.timeout_detik,
             retry_max=body.retry_max, channel_aktif=body.channel_aktif,
             channel_id=body.channel_id, va_bank_aktif=body.va_bank_aktif,
             qris_channel_code=body.qris_channel_code,
@@ -103,31 +109,6 @@ def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
     superadmin_audit_db.catat(user["username"], "ubah_config_snap_advance",
                                detail=f"environment={hasil['snap_environment']}, channel_aktif={hasil['snap_channel_aktif']}")
     return hasil
-
-
-@router.post("/uji-sertifikasi/{produk}")
-def uji_sertifikasi(produk: str, user: dict = Depends(require_superadmin)):
-    """Alat uji SEMENTARA khusus sertifikasi Faspay -- lihat
-    snap_advance_diagnostic.py untuk penjelasan lengkap kenapa ini
-    dibutuhkan (Faspay minta X-SIGNATURE/response ASLI untuk skenario error
-    generik yang tidak pernah terjadi wajar dari checkout produksi).
-    SENGAJA HANYA mengirim ke sandbox (guard keras di modul diagnostic),
-    dicatat lewat AUDIT LOG Super Admin yang sama dengan perubahan
-    konfigurasi lain -- SIAPA yang menjalankan alat uji ini TETAP
-    tercatat. `produk`: "va" atau "qris". Hasil detail SEBENARNYA ada di
-    Render Logs (SNAP REQUEST/SNAP RESPONSE) -- return di sini HANYA
-    ringkasan status per skenario supaya Super Admin tahu langkah mana
-    yang perlu dicek lognya."""
-    if produk not in ("va", "qris"):
-        raise HTTPException(status_code=422, detail="Produk tidak dikenal -- harus 'va' atau 'qris'.")
-    try:
-        hasil = snap_advance_diagnostic.uji_skenario_va() if produk == "va" else snap_advance_diagnostic.uji_skenario_qris()
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except GatewayError as e:
-        raise HTTPException(status_code=502, detail=f"Gagal menghubungi Payment Gateway: {e}")
-    superadmin_audit_db.catat(user["username"], "uji_sertifikasi_snap_advance", detail=f"produk={produk}")
-    return {"hasil": hasil}
 
 
 async def _tangani_notifikasi(request: Request, jenis: str, path: str):
@@ -158,7 +139,8 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
     # signature tetap tidak cocok" TANPA mengubah pesan error yang dibalas
     # ke Faspay (tetap generik, pola sengaja SAMA seperti gateway_client_base.py::
     # verify_sha512() -- lihat catatan snap_webhook.py::proses_notifikasi()).
-    public_key_terisi = bool(snap_advance_db.get_config().get("snap_faspay_public_key"))
+    _cfg_publik = snap_advance_db.get_config()
+    public_key_terisi = bool(_cfg_publik.get(f"snap_{_cfg_publik['snap_environment']}_faspay_public_key"))
     logger.info("SNAP WEBHOOK IN -- POST %s -- X-TIMESTAMP: %s -- X-SIGNATURE: %s -- snap_faspay_public_key terisi: %s -- BODY: %s",
                 path, timestamp_header, signature_header, public_key_terisi, raw_body)
     try:
@@ -167,16 +149,7 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
         logger.info("SNAP WEBHOOK IN -- POST %s -- diterima, balasan: %s", path, balasan)
         return balasan
     except ValueError as e:
-        # TROUBLESHOOTING SEMENTARA: signature ditolak PADAHAL public key
-        # sudah terisi -- coba beberapa variasi formula stringToSign yang
-        # paling mungkin beda dari asumsi kita (lihat catatan
-        # snap_advance_client.py::_debug_coba_variasi_formula_webhook()),
-        # memakai byte ASLI request ini (bukan ditik ulang manual), supaya
-        # kalau ada satu yang cocok langsung kelihatan dari log. TIDAK
-        # PERNAH mengubah keputusan tolak di atas -- murni logging tambahan.
-        variasi = snap_advance_client._debug_coba_variasi_formula_webhook(
-            raw_body, signature_header, timestamp_header, "POST", path)
-        logger.error("SNAP WEBHOOK IN -- POST %s -- DITOLAK: %s -- coba variasi formula: %s", path, e, variasi)
+        logger.error("SNAP WEBHOOK IN -- POST %s -- DITOLAK: %s", path, e)
         raise HTTPException(status_code=400, detail=str(e))
     except GatewayError as e:
         logger.error("SNAP WEBHOOK IN -- POST %s -- error provider: %s", path, e)

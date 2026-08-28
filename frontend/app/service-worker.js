@@ -897,7 +897,15 @@
 // dipakai mendiagnosis kenapa satu notifikasi nyata sempat ditolak 400
 // (lihat routers/snap_advance.py) & sekaligus jadi bukti asli untuk
 // skenario "Payment Notification" begitu notifikasi berikutnya diterima.
-const ASSET_VERSION = "161";
+// v161 -> v162: sertifikasi Faspay SANDBOX SELESAI (webhook VA & QRIS
+// terbukti diverifikasi sukses) -- alat uji sementara (snap_advance_diagnostic.py,
+// tombol "Alat Uji Sertifikasi Faspay", debug variasi formula webhook)
+// DIHAPUS, sudah tidak diperlukan. Faspay mulai proses onboarding
+// Production -- Super Admin > Faspay SNAP Advance sekarang menyimpan
+// kredensial (Private Key/Public Key Faspay/Client Secret/Webhook Secret)
+// TERPISAH per environment (Sandbox vs Production), supaya ganti
+// Environment tidak lagi menimpa kredensial sandbox yang sudah teruji.
+const ASSET_VERSION = "162";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

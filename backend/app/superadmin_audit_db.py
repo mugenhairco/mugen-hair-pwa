@@ -53,7 +53,6 @@ AKSI_VALID = {
     # -- mengirim request sengaja rusak ke sandbox Faspay, dicatat di sini
     # supaya SIAPA yang menjalankannya tetap tercatat, sama seperti
     # perubahan konfigurasi lain.
-    "uji_sertifikasi_snap_advance",
 }
 
 
