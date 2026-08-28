@@ -694,6 +694,21 @@ def batalkan_booking(booking_id: int, user: dict = Depends(require_permission("i
     return booking_db.get_booking(booking_id)
 
 
+@router.delete("/{booking_id}")
+def hapus_booking(booking_id: int, user: dict = Depends(require_permission("izin_booking_hapus"))):
+    """Requirement Owner: Hapus PERMANEN satu booking, TERLEPAS dari status
+    apa pun (termasuk 'terverifikasi') -- BEDA izin dari /batalkan (lihat
+    catatan izin_booking_hapus di permissions.py: Batalkan otomatis kirim
+    WhatsApp pembatalan ke customer, Hapus tidak). Slot yang dipakai
+    booking ini otomatis terbuka lagi (lihat booking_db.py::hapus_booking())."""
+    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
+    try:
+        booking_db.hapus_booking(booking_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
 class ClosedSlotBody(BaseModel):
     barber_id: int
     tanggal: str
@@ -885,6 +900,10 @@ class BarberUrutanBody(BaseModel):
     urutan: int
 
 
+class BarberHariLiburBody(BaseModel):
+    hari_list: list[str]
+
+
 def _barber_publik(barber_id: int):
     """db.get_barber() lewat SELECT * -- ikut membawa kolom biner
     (foto_data BLOB, sejak Tahap 16) yang TIDAK bisa di-serialize jadi JSON
@@ -929,6 +948,19 @@ def ubah_urutan_barber(barber_id: int, body: BarberUrutanBody, user: dict = Depe
     _pastikan_barber_tenant_sama(user, barber_id)
     try:
         booking_db.set_urutan_barber(barber_id, body.urutan)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _barber_publik(barber_id)
+
+
+@router.put("/barber/{barber_id}/hari-libur")
+def ubah_hari_libur_mingguan_barber(barber_id: int, body: BarberHariLiburBody,
+                                     user: dict = Depends(require_permission("izin_booking_kelola"))):
+    """Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN) --
+    lihat booking_db.py::is_barber_libur()/set_hari_libur_mingguan()."""
+    _pastikan_barber_tenant_sama(user, barber_id)
+    try:
+        booking_db.set_hari_libur_mingguan(barber_id, body.hari_list)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return _barber_publik(barber_id)

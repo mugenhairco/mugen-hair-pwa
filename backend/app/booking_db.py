@@ -533,12 +533,39 @@ def _get_closed_slots_tanggal(conn, barber_id: int, tanggal: str) -> list:
 # ---------------------------------------------------------------------------
 
 def is_barber_libur(barber_id: int, tanggal: str) -> bool:
+    """Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN):
+    tanggal manual di absensi_libur TETAP mutlak (Cuti & Izin/payroll tidak
+    berubah sama sekali) -- DITAMBAH (additive OR) pola mingguan
+    `barbers.hari_libur_mingguan` (JSON list nama hari). Kalau tanggal itu
+    jatuh di salah satu hari libur mingguan barber ini, DIKALAHKAN kalau
+    barber SUDAH Check In hari itu (attendance_logs) -- shift tukar dadakan
+    tidak boleh diam-diam dianggap libur, baik untuk Booking maupun
+    auto_libur_db.py (yang memanggil fungsi ini juga, TIDAK disentuh
+    terpisah -- override ini otomatis berlaku di sana juga)."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
             (barber_id, tanggal),
         ).fetchone()
-        return row is not None
+        if row is not None:
+            return True
+
+        barber = conn.execute("SELECT hari_libur_mingguan FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+        if barber is None:
+            return False
+        try:
+            hari_libur_mingguan = json.loads(barber["hari_libur_mingguan"] or "[]")
+        except (TypeError, ValueError):
+            hari_libur_mingguan = []
+        hari_ini = HARI_LIST[datetime.strptime(tanggal, "%Y-%m-%d").weekday()]
+        if hari_ini not in hari_libur_mingguan:
+            return False
+
+        sudah_checkin = conn.execute(
+            "SELECT 1 FROM attendance_logs WHERE barber_id = ? AND tanggal = ?",
+            (barber_id, tanggal),
+        ).fetchone()
+        return sudah_checkin is None
 
 
 def is_barber_cuti(barber_id: int) -> bool:
@@ -686,17 +713,27 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None, tenant_i
         akhir = t + durasi
         if akhir > jam_tutup_menit:
             break  # durasi service tidak muat lagi sebelum tutup, kandidat berikutnya juga pasti tidak muat
+        konflik = None
         if toko_tutup or barber_libur:
             status = "closed"
         elif sekarang_menit is not None and t < sekarang_menit:
             status = "closed"  # jam yang sudah lewat hari ini, bukan slot yang benar-benar "ditutup" Owner
         elif any(_tumpang_tindih(t, akhir, b_mulai, b_akhir) for b_mulai, b_akhir in closed):
             status = "closed"
-        elif any(_tumpang_tindih(t, akhir, b_mulai, b_akhir) for b_mulai, b_akhir in booked):
-            status = "booked"
         else:
-            status = "available"
-        slots.append({"jam": _ke_hhmm(t), "status": status})
+            # Requirement Owner (pesan penjelasan waktu tidak tersedia):
+            # simpan rentang booking yang BENAR-BENAR bentrok (bukan cuma
+            # status "booked" polos) supaya frontend bisa menjelaskan
+            # PERSIS jam berapa sampai jam berapa yang sudah terpakai --
+            # cukup satu (yang pertama ketemu), tidak perlu daftar lengkap
+            # untuk pesan yang tetap ringkas dibaca customer.
+            konflik = next(((b_mulai, b_akhir) for b_mulai, b_akhir in booked
+                             if _tumpang_tindih(t, akhir, b_mulai, b_akhir)), None)
+            status = "booked" if konflik else "available"
+        slot_entry = {"jam": _ke_hhmm(t), "status": status}
+        if konflik is not None:
+            slot_entry["conflict"] = {"jam_mulai": _ke_hhmm(konflik[0]), "jam_selesai": _ke_hhmm(konflik[1])}
+        slots.append(slot_entry)
         t += interval
 
     return {
@@ -1352,6 +1389,33 @@ def hapus_riwayat_booking(tenant_id: int, sebelum_tanggal: str = None) -> int:
         return len(ids)
 
 
+def hapus_booking(booking_id: int) -> dict:
+    """Requirement Owner: Hapus PERMANEN satu booking (BEDA dari
+    batalkan_booking() di atas yang cuma soft-cancel status_booking, dan
+    BEDA dari hapus_riwayat_booking() yang hapus BANYAK sekaligus) -- boleh
+    dipakai TERLEPAS dari status_booking/status_pembayaran apa pun
+    (termasuk yang sudah 'terverifikasi', permintaan eksplisit Owner).
+    Urutan hapus SAMA PERSIS hapus_riwayat_booking() (anak sebelum induk),
+    discope ke SATU booking_id. Slot yang tadinya terpakai booking ini
+    OTOMATIS terbuka lagi setelah ini -- _get_booking_aktif_tanggal() cuma
+    membaca baris `bookings` yang masih ada, tidak perlu langkah "bebaskan
+    slot" terpisah. snap_payment_transactions SENGAJA tidak disentuh (tidak
+    ada FK constraint ke bookings, sama seperti hapus_riwayat_booking())."""
+    booking = get_booking(booking_id)
+    if booking is None:
+        raise ValueError("Booking tidak ditemukan.")
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM booking_payment_status_log WHERE transaction_id IN "
+            "(SELECT id FROM booking_payment_transactions WHERE booking_id = ?)",
+            (booking_id,),
+        )
+        conn.execute("DELETE FROM booking_payment_transactions WHERE booking_id = ?", (booking_id,))
+        conn.execute("DELETE FROM booking_items WHERE booking_id = ?", (booking_id,))
+        conn.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
+    return booking
+
+
 # ---------------------------------------------------------------------------
 # BARBER & SERVICE -- field TAMBAHAN khusus tampilan Booking (status
 # Active/On Vacation, foto, urutan). Kolom `nama`/`harga`/`aktif`/dst di
@@ -1381,6 +1445,18 @@ def set_urutan_barber(barber_id: int, urutan: int):
         raise ValueError("Barber tidak ditemukan.")
     with get_conn() as conn:
         conn.execute("UPDATE barbers SET urutan = ? WHERE id = ?", (int(urutan), barber_id))
+
+
+def set_hari_libur_mingguan(barber_id: int, hari_list: list):
+    """Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN) --
+    lihat catatan lengkap di is_barber_libur()."""
+    if db.get_barber(barber_id) is None:
+        raise ValueError("Barber tidak ditemukan.")
+    tidak_valid = [h for h in hari_list if h not in HARI_LIST]
+    if tidak_valid:
+        raise ValueError(f"Nama hari tidak dikenal: {', '.join(tidak_valid)}. Harus salah satu dari {', '.join(HARI_LIST)}.")
+    with get_conn() as conn:
+        conn.execute("UPDATE barbers SET hari_libur_mingguan = ? WHERE id = ?", (json.dumps(hari_list), barber_id))
 
 
 def simpan_foto_barber(barber_id: int, filename_asli: str, konten: bytes) -> str:

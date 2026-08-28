@@ -454,7 +454,7 @@ const PageBooking = (() => {
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
-  function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null, onReschedule = null } = {}) {
+  function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null, onReschedule = null, onHapus = null } = {}) {
     // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
     // r.nomor_transaksi tersimpan dari server (booking_db.py::
     // _buat_nomor_transaksi_booking(), format [JAM KONFIRMASI][MENIT
@@ -508,7 +508,7 @@ const PageBooking = (() => {
         format: (v) => MugenUI.el("span", { class: "badge" + (v === "aktif" ? "" : " badge-danger") }, STATUS_BOOKING_LABEL[v] || v),
       },
     ];
-    if (onVerifikasi || onBatalkan || onReschedule) {
+    if (onVerifikasi || onBatalkan || onReschedule || onHapus) {
       columns.push({
         key: "aksi", label: "Aksi", format: (_, r) => {
           const wrap = MugenUI.el("div", { class: "actions-cell" });
@@ -565,6 +565,19 @@ const PageBooking = (() => {
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               try { await onBatalkan(r); } finally { btn.disabled = false; }
+            });
+            wrap.appendChild(btn);
+          }
+          // Requirement Owner: tombol Hapus PERMANEN -- SELALU muncul,
+          // TERLEPAS dari status_booking/status_pembayaran apa pun
+          // (termasuk booking yang sudah "Terverifikasi" -- SENGAJA
+          // terpisah dari logika Verifikasi/Reschedule/Batalkan di atas,
+          // BUKAN pengganti tombol-tombol itu).
+          if (onHapus) {
+            const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try { await onHapus(r); } finally { btn.disabled = false; }
             });
             wrap.appendChild(btn);
           }
@@ -736,6 +749,20 @@ const PageBooking = (() => {
               MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
               load();
             }
+          },
+          onHapus: !bolehEdit ? null : async (r) => {
+            const ok = await MugenUI.confirmModal({
+              title: "Hapus Booking?",
+              message: `Booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai}) akan dihapus permanen dan seluruh slot waktu yang digunakan akan dibuka kembali untuk booking lainnya. Tindakan ini tidak bisa dibatalkan.`,
+              confirmText: "Hapus Booking", cancelText: "Batal", danger: true,
+            });
+            if (!ok) return;
+            try {
+              await MugenApi.del(`/api/booking/${r.id}`);
+              MugenUI.toast("Booking dihapus.", "success");
+              load();
+              MugenBookingNotif.refreshNow();
+            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
         }));
       } catch (e) {
@@ -968,77 +995,66 @@ const PageBooking = (() => {
   }
 
   // ================= TAB: BARBER HOLIDAY (pakai endpoint libur yg SUDAH ADA) =================
+  // Requirement Owner: Barber Holiday diganti dari input tanggal manual jadi
+  // jadwal libur MINGGUAN rutin per barber -- barber tidak perlu ditandai
+  // libur satu tanggal per satu tanggal lagi, cukup centang hari apa saja
+  // yang rutin libur, langsung berlaku otomatis setiap minggu (dicek
+  // booking_db.py::is_barber_libur(), dikalahkan otomatis kalau barber
+  // ternyata Check In di hari itu -- lihat catatan di sana). Libur dadakan
+  // satu hari (barber sakit mendadak dst) sudah tercakup fitur Auto-Libur
+  // (barber yang tidak Check In otomatis dianggap libur hari itu) -- input
+  // tanggal manual TIDAK lagi ada di tab ini (tapi TETAP tersedia di menu
+  // Input Data > Tandai Libur untuk keperluan Cuti & Izin/payroll).
+  const HARI_LIBUR_MINGGUAN = [
+    { value: "senin", label: "Senin" },
+    { value: "selasa", label: "Selasa" },
+    { value: "rabu", label: "Rabu" },
+    { value: "kamis", label: "Kamis" },
+    { value: "jumat", label: "Jumat" },
+    { value: "sabtu", label: "Sabtu" },
+    { value: "minggu", label: "Minggu" },
+  ];
+
   async function renderBarberHoliday(body, barbers) {
-    const formCard = MugenUI.el("div", { class: "card" });
-    const listCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(formCard);
-    body.appendChild(listCard);
+    const card = MugenUI.el("div", { class: "card" });
+    body.appendChild(card);
 
-    formCard.appendChild(MugenUI.el("h2", {}, "Tandai Libur Barber"));
-    formCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Barber yang libur otomatis tidak bisa dibooking pada tanggal itu (tetap tampil di halaman booking, abu-abu, status \"On Vacation\")."));
-    const selBarber = MugenUI.el("select");
-    for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    const inputTanggal = MugenUI.el("input", { type: "date", value: isoHariIniWib() });
-    const btnTandai = MugenUI.el("button", { class: "btn-primary" }, "Tandai Libur");
-    const btnBatalkan = MugenUI.el("button", {}, "Batalkan Libur");
-    const errorBox = MugenUI.el("div", { class: "login-error" });
+    card.appendChild(MugenUI.el("h2", {}, "Jadwal Libur Mingguan Barber"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Centang hari yang rutin libur untuk tiap barber -- otomatis berlaku setiap minggu, barber tidak bisa dibooking pada hari itu. " +
+      "Kalau barber ternyata Check In di hari libur rutinnya sendiri (shift tukar dadakan), hari itu otomatis dianggap tidak libur lagi."));
 
-    formCard.appendChild(MugenUI.el("label", {}, "Barber"));
-    formCard.appendChild(selBarber);
-    formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
-    formCard.appendChild(inputTanggal);
-    formCard.appendChild(errorBox);
-    formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnTandai, btnBatalkan]));
-
-    listCard.appendChild(MugenUI.el("h2", {}, "Daftar Libur Bulan Ini"));
-    const listBody = MugenUI.el("div");
-    listCard.appendChild(listBody);
-
-    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
-    async function loadList() {
-      listBody.innerHTML = "";
-      listBody.appendChild(MugenUI.skeleton("table", { cols: 2, rows: 3 }));
-      const today = new Date();
-      try {
-        const data = await MugenApi.get(`/api/input-data/libur?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
-        listBody.innerHTML = "";
-        if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "nama_barber", label: "Barber" },
-          ],
-          Array.isArray(data) ? data : [],
-          { emptyText: "Belum ada barber yang libur bulan ini." },
-        ));
-      } catch (e) {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.errorState(e.message));
+    for (const b of barbers) {
+      const row = MugenUI.el("div", { style: "margin-top:16px;padding-top:12px;border-top:1px solid var(--border);" });
+      row.appendChild(MugenUI.el("h3", { style: "margin:0 0 6px;" }, b.nama));
+      const checkboxWrap = MugenUI.el("div", { style: "display:flex;flex-wrap:wrap;gap:12px;" });
+      const checkboxes = {};
+      const hariAktif = new Set(b.hari_libur_mingguan || []);
+      for (const h of HARI_LIBUR_MINGGUAN) {
+        const cb = MugenUI.el("input", { type: "checkbox" });
+        cb.checked = hariAktif.has(h.value);
+        checkboxes[h.value] = cb;
+        checkboxWrap.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:4px;font-weight:normal;" }, [cb, h.label]));
       }
+      row.appendChild(checkboxWrap);
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { style: "margin-top:8px;" }, "Simpan");
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const hari_list = HARI_LIBUR_MINGGUAN.filter((h) => checkboxes[h.value].checked).map((h) => h.value);
+        try {
+          await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(`/api/booking/barber/${b.id}/hari-libur`, { hari_list }));
+          MugenUI.toast(`Jadwal libur ${b.nama} disimpan.`, "success");
+        } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+      });
+      row.appendChild(errorBox);
+      row.appendChild(btnSimpan);
+      card.appendChild(row);
     }
 
-    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-    btnTandai.addEventListener("click", async () => {
-      errorBox.textContent = "";
-      try {
-        await MugenUI.withButtonLoading(btnTandai,
-          () => MugenApi.post("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
-        MugenUI.toast("Ditandai libur.", "success");
-        loadList();
-      } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-    btnBatalkan.addEventListener("click", async () => {
-      errorBox.textContent = "";
-      try {
-        await MugenUI.withButtonLoading(btnBatalkan,
-          () => MugenApi.del("/api/input-data/libur", { barber_id: Number(selBarber.value), tanggal: inputTanggal.value }));
-        MugenUI.toast("Libur dibatalkan.", "success");
-        loadList();
-      } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    loadList();
+    if (!barbers.length) {
+      card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" }, "Belum ada barber."));
+    }
   }
 
   // ================= TAB: CLOSED SLOT =================

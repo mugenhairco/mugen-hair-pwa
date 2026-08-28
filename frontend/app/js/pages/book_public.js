@@ -1003,6 +1003,37 @@ const PageBookPublic = (() => {
       if (data.barber_libur) {
         slotBox.appendChild(kosongState("🌴", `${state.barberNama} is on leave on this date. Please choose another date or barber.`, btnPilihTanggalLain));
       } else {
+        // Requirement Owner (penjelasan waktu tidak tersedia + saran waktu
+        // alternatif): slot non-available SEKARANG tetap bisa diklik (BUKAN
+        // disabled seperti sebelumnya) -- klik menampilkan alasan spesifik +
+        // 2-3 waktu terdekat yang benar-benar tersedia, dari data.slots yang
+        // SUDAH ada di response ini (tidak perlu endpoint tambahan).
+        const namaServiceTerpilih = services.filter((sv) => state.serviceIds.includes(sv.id)).map((sv) => sv.nama).join(", ");
+        const jamKeMenit = (jam) => { const [h, m] = jam.split(":").map(Number); return h * 60 + m; };
+
+        function saranWaktuTerdekat(jamKlik) {
+          const tersedia = data.slots.filter((sl) => sl.status === "available");
+          if (!tersedia.length) return "";
+          const menitKlik = jamKeMenit(jamKlik);
+          const terurut = [...tersedia].sort((a, b) => Math.abs(jamKeMenit(a.jam) - menitKlik) - Math.abs(jamKeMenit(b.jam) - menitKlik));
+          return ` Suggested available times: ${terurut.slice(0, 3).map((sl) => sl.jam).join(", ")}.`;
+        }
+
+        function jelaskanSlotTidakTersedia(s) {
+          if (data.toko_libur) return "This time is not available — the shop is closed on this date.";
+          if (s.status === "closed" && s.conflict === undefined) {
+            return `This time is not available — ${namaServiceTerpilih || "the selected service"} needs about ` +
+              `${data.durasi_menit} min, which would run past closing time (${data.jam_tutup}).${saranWaktuTerdekat(s.jam)}`;
+          }
+          if (s.status === "booked" && s.conflict) {
+            return `This time is not available. ${namaServiceTerpilih || "The selected service"} needs about ` +
+              `${data.durasi_menit} min, and ${s.conflict.jam_mulai}–${s.conflict.jam_selesai} is already booked ` +
+              `by another appointment.${saranWaktuTerdekat(s.jam)}`;
+          }
+          return `This time is not available.${saranWaktuTerdekat(s.jam)}`;
+        }
+
+        const messageBox = MugenUI.el("div", { class: "book-warning", style: "display:none;margin-top:10px;" });
         const grid = MugenUI.el("div", { class: "book-slot-grid" });
         for (const s of data.slots) {
           const btn = MugenUI.el("button", {
@@ -1015,11 +1046,15 @@ const PageBookPublic = (() => {
               goto(5);
             });
           } else {
-            btn.disabled = true;
+            btn.addEventListener("click", () => {
+              messageBox.style.display = "";
+              messageBox.textContent = jelaskanSlotTidakTersedia(s);
+            });
           }
           grid.appendChild(btn);
         }
         slotBox.appendChild(grid);
+        slotBox.appendChild(messageBox);
         slotBox.appendChild(MugenUI.el("div", { class: "book-legend" }, [
           MugenUI.el("span", { class: "book-legend-item" }, [MugenUI.el("span", { class: "book-dot book-slot-available" }), " Available"]),
           MugenUI.el("span", { class: "book-legend-item" }, [MugenUI.el("span", { class: "book-dot book-slot-booked" }), " Booked"]),
@@ -1028,7 +1063,8 @@ const PageBookPublic = (() => {
         if (!data.slots.some((s) => s.status === "available")) {
           const btnTanggalLain2 = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:10px;" }, "Choose another date");
           btnTanggalLain2.addEventListener("click", () => goto(3));
-          slotBox.appendChild(MugenUI.el("div", { class: "book-warning" }, "No time slots available on this date. Please choose another date."));
+          slotBox.appendChild(MugenUI.el("div", { class: "book-warning" },
+            "There is no available time for this service on this date. Please choose another date."));
           slotBox.appendChild(btnTanggalLain2);
         }
       }

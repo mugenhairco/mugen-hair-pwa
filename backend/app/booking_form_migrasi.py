@@ -47,6 +47,7 @@ def migrasi_booking_form():
         _migrasi_urutan_service(conn)
         _normalisasi_urutan_service_kolisi(conn)
         _normalisasi_urutan_barber_kolisi(conn)
+        _migrasi_hari_libur_mingguan_barber(conn)
 
 
 def _migrasi_status_booking(conn):
@@ -68,6 +69,22 @@ def _migrasi_foto_dan_urutan_barber(conn):
         conn.execute("ALTER TABLE barbers ADD COLUMN urutan INTEGER NOT NULL DEFAULT 0")
         for i, row in enumerate(conn.execute("SELECT id FROM barbers ORDER BY nama").fetchall()):
             conn.execute("UPDATE barbers SET urutan = ? WHERE id = ?", (i, row["id"]))
+
+
+def _migrasi_hari_libur_mingguan_barber(conn):
+    """Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN, bukan
+    tanggal manual satu-satu): kolom baru `barbers.hari_libur_mingguan`
+    (JSON list nama hari, kosakata SAMA dengan HARI_LIST di booking_db.py --
+    mis. '["selasa"]'). Dicek booking_db.py::is_barber_libur() SEBAGAI
+    TAMBAHAN (additive OR) terhadap absensi_libur yang sudah ada -- tanggal
+    manual TETAP mutlak berlaku tanpa berubah (Cuti & Izin/payroll TIDAK
+    tersentuh sama sekali), jadwal mingguan ini HANYA menambah alasan baru
+    kenapa satu tanggal dianggap libur, secara otomatis tanpa admin perlu
+    input tanggal berulang setiap minggu."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(barbers)").fetchall()]
+    if "hari_libur_mingguan" in kolom:
+        return
+    conn.execute("ALTER TABLE barbers ADD COLUMN hari_libur_mingguan TEXT NOT NULL DEFAULT '[]'")
 
 
 def _migrasi_urutan_service(conn):

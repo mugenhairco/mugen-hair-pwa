@@ -1113,6 +1113,7 @@ const PagePengaturan = (() => {
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama layanan" });
       const inputHarga = MugenUI.el("input", { type: "number", min: "0", value: "0" });
       const inputModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputDurasi = MugenUI.el("input", { type: "number", min: "1", value: "60" });
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
       const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
       const formError = MugenUI.el("div", { class: "login-error" });
@@ -1126,6 +1127,10 @@ const PagePengaturan = (() => {
       formCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:-6px;" },
         "Kosongkan/isi 0 kalau layanan ini tidak punya biaya modal. Kalau diisi, nilainya dikurangkan dari " +
         "Harga sebelum dikali Persentase Komisi (Setting > Komisi)."));
+      formCard.appendChild(MugenUI.el("label", {}, "Durasi (menit)"));
+      formCard.appendChild(inputDurasi);
+      formCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:-6px;" },
+        "Menentukan berapa lama layanan ini memakai slot barber saat Booking -- mis. Dry Cut 60 menit, Perm 120 menit."));
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
@@ -1137,6 +1142,7 @@ const PagePengaturan = (() => {
         inputNama.value = "";
         inputHarga.value = "0";
         inputModal.value = "0";
+        inputDurasi.value = "60";
         formError.textContent = "";
       }
       btnBatal.addEventListener("click", resetForm);
@@ -1146,10 +1152,12 @@ const PagePengaturan = (() => {
         if (!inputNama.value.trim()) { formError.textContent = "Nama layanan tidak boleh kosong."; return; }
         const harga = Number(inputHarga.value);
         const modal = Number(inputModal.value);
+        const durasi_menit = Number(inputDurasi.value);
         if (Number.isNaN(harga) || harga < 0) { formError.textContent = "Harga tidak valid."; return; }
         if (Number.isNaN(modal) || modal < 0) { formError.textContent = "Harga Modal tidak valid."; return; }
+        if (Number.isNaN(durasi_menit) || durasi_menit <= 0) { formError.textContent = "Durasi tidak valid."; return; }
         try {
-          const body2 = { nama: inputNama.value.trim(), harga, modal };
+          const body2 = { nama: inputNama.value.trim(), harga, modal, durasi_menit };
           await MugenUI.withButtonLoading(btnSubmit, async () => {
             if (editingId) {
               await MugenApi.put(`/api/pengaturan/service/${editingId}`, body2);
@@ -1182,6 +1190,7 @@ const PagePengaturan = (() => {
               { key: "nama", label: "Nama" },
               { key: "harga", label: "Harga", format: MugenUI.formatRupiah },
               { key: "modal", label: "Harga Modal", format: (v) => MugenUI.formatRupiah(v || 0) },
+              { key: "durasi_menit", label: "Durasi", format: (v) => `${v || 60} menit` },
               { key: "nilai_komisi", label: "Nilai Komisi Barber", format: (_, r) => MugenUI.formatRupiah(hitungKomisi(r.harga, r.modal)) },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               { key: "urutan", label: "Urutan" },
@@ -1197,6 +1206,7 @@ const PagePengaturan = (() => {
                     inputNama.value = r.nama;
                     inputHarga.value = String(r.harga);
                     inputModal.value = String(r.modal || 0);
+                    inputDurasi.value = String(r.durasi_menit || 60);
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });
                   });

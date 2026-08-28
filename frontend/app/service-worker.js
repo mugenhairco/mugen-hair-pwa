@@ -905,7 +905,19 @@
 // kredensial (Private Key/Public Key Faspay/Client Secret/Webhook Secret)
 // TERPISAH per environment (Sandbox vs Production), supaya ganti
 // Environment tidak lagi menimpa kredensial sandbox yang sudah teruji.
-const ASSET_VERSION = "162";
+// v162 -> v163: Requirement Owner (Service Durasi, Validasi Booking, Barber
+// Holiday Mingguan & Hapus Booking) -- (1) field Durasi (menit) baru di
+// Pengaturan > Layanan; (2) pesan penjelasan + saran waktu alternatif saat
+// customer memilih slot yang tidak tersedia (book_public.js, slot booked/
+// closed sekarang bisa diklik untuk lihat alasannya, bukan disabled polos);
+// (3) Barber Holiday diganti dari input tanggal manual jadi jadwal libur
+// MINGGUAN rutin per barber (booking.js tab "Jadwal Libur Mingguan
+// Barber"), otomatis dikalahkan kalau barber ternyata Check In di hari
+// libur mingguannya sendiri; (4) tombol Hapus Booking PERMANEN baru di
+// List Booking (izin terpisah dari Batalkan), modal konfirmasi di tengah
+// layar (reuse MugenUI.confirmModal yang sudah ada), slot langsung
+// terbuka lagi setelah dihapus.
+const ASSET_VERSION = "163";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
