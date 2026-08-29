@@ -166,8 +166,15 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     # butuh subscription_invoice_id yang sudah ada. snap_token/snap_redirect_url
     # (kolom lawas Xpress) SENGAJA dibiarkan kosong -- SNAP tidak punya
     # padanannya, detail VA/QR tersimpan di snap_payment_transactions.
+    # Perbaikan Billing/Subscription (requirement Owner poin 2): jumlah_bulan
+    # kalender (BUKAN durasi_hari efektif di atas, yang tetap dipakai apa
+    # adanya untuk invoice lama) dari siklus checkout ini -- dipakai
+    # billing_webhook.py::_hitung_periode_baru() supaya perpanjangan
+    # mengikuti kalender sungguhan (31 Jan + 1 bulan -> 28/29 Feb), bukan
+    # hitungan hari tetap.
+    jumlah_bulan = {"bulanan": 1, "6bulan": 6, "tahunan": 12}[body.siklus]
     order_id = billing_invoice_db.buat_order_id(user["tenant_id"])
-    invoice = billing_invoice_db.buat_invoice(order_id, user["tenant_id"], paket)
+    invoice = billing_invoice_db.buat_invoice(order_id, user["tenant_id"], paket, jumlah_bulan=jumlah_bulan)
     row = snap_payment_db.buat_transaksi(
         snap_payment_db.TRANSACTION_TYPE_SAAS_BILLING, user["tenant_id"], paket["harga"],
         subscription_invoice_id=invoice["id"], channel=body.channel,

@@ -10,6 +10,8 @@ sekali oleh subscription.status (dua mekanisme independen, lihat
 subscription_db.py)."""
 
 import auth_db
+import billing_db
+import billing_invoice_db
 import database as db
 import subscription_db
 import tenant_db
@@ -455,3 +457,145 @@ def test_book_publik_tenant_lain_tidak_ikut_terblokir(two_tenants):
     r_b = client.get("/api/public/booking/barbers?tenant=test-toko-b")
     assert r_a.status_code == 403
     assert r_b.status_code == 200
+
+
+# ============================= Perbaikan Billing/Subscription: Auto-Suspend (requirement 8, 9, 12, 13) =============================
+
+def _sub_aktif_dengan_periode(tenant_id, hari_lewat):
+    """Tenant status 'active' dengan periode_selesai `hari_lewat` hari yang
+    lalu dari sekarang (negatif = MASIH di masa depan)."""
+    from datetime import datetime, timedelta
+    subscription_db.update_status(tenant_id, "active")
+    periode_selesai = (datetime.now() - timedelta(days=hari_lewat)).isoformat(timespec="seconds")
+    subscription_db.set_periode(tenant_id, periode_selesai, periode_selesai)
+
+
+def test_status_aktif_dengan_periode_selesai_masa_depan_tidak_diblokir(app_client):
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=-10)
+    assert subscription_db.akses_diblokir(tenant["id"]) is False
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "active"
+
+
+def test_status_aktif_periode_lewat_dalam_7_hari_belum_disuspend(app_client):
+    """requirement poin 8: periode sudah berakhir TAPI belum lewat 7 hari --
+    akses TETAP terbuka, status TETAP 'active' (belum auto-suspend)."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=3)
+    assert subscription_db.akses_diblokir(tenant["id"]) is False
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "active"
+
+
+def test_status_aktif_periode_lewat_lebih_dari_7_hari_otomatis_suspended(app_client):
+    """requirement poin 9: lewat lebih dari 7 hari tanpa pembayaran sukses
+    -> status OTOMATIS jadi 'suspended', akses diblokir."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    assert subscription_db.akses_diblokir(tenant["id"]) is True
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "suspended"
+
+
+def test_auto_suspend_tidak_menghapus_tenant_atau_invoice_atau_riwayat(app_client):
+    """requirement poin 9: auto-suspend TIDAK PERNAH menghapus tenant/
+    database/invoice/riwayat pembayaran -- murni mengubah kolom status."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    paket = billing_db.get_package_by_kode("pro")
+    order_id = billing_invoice_db.buat_order_id(tenant["id"])
+    invoice = billing_invoice_db.buat_invoice(order_id, tenant["id"], paket)
+
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    subscription_db.akses_diblokir(tenant["id"])  # memicu auto-suspend
+
+    assert tenant_db.get_tenant(tenant["id"]) is not None
+    assert billing_invoice_db.get_invoice(invoice["id"]) is not None
+
+
+def test_status_trial_tidak_terpengaruh_auto_suspend(app_client):
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    from datetime import datetime, timedelta
+    periode_selesai = (datetime.now() - timedelta(days=30)).isoformat(timespec="seconds")
+    subscription_db.set_periode(tenant["id"], periode_selesai, periode_selesai)
+    subscription_db.update_status(tenant["id"], "trial")
+
+    assert subscription_db.akses_diblokir(tenant["id"]) is False
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "trial"
+
+
+def test_status_grace_period_tidak_terpengaruh_auto_suspend(app_client):
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    from datetime import datetime, timedelta
+    periode_selesai = (datetime.now() - timedelta(days=30)).isoformat(timespec="seconds")
+    subscription_db.set_periode(tenant["id"], periode_selesai, periode_selesai)
+    subscription_db.update_status(tenant["id"], "grace_period")
+
+    assert subscription_db.akses_diblokir(tenant["id"]) is False
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "grace_period"
+
+
+def test_status_cancelled_manual_tidak_diubah_oleh_auto_suspend(app_client):
+    """Status 'cancelled' yang di-set manual Super Admin TETAP 'cancelled'
+    (bukan diam-diam ditimpa 'suspended') -- _auto_suspend_jika_lewat()
+    hanya beraksi untuk status == 'active'."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    from datetime import datetime, timedelta
+    periode_selesai = (datetime.now() - timedelta(days=30)).isoformat(timespec="seconds")
+    subscription_db.set_periode(tenant["id"], periode_selesai, periode_selesai)
+    subscription_db.update_status(tenant["id"], "cancelled")
+
+    assert subscription_db.akses_diblokir(tenant["id"]) is True
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "cancelled"
+
+
+def test_pembayaran_setelah_suspend_otomatis_kembali_aktif(app_client, monkeypatch):
+    """requirement poin 12: Suspended -> pembayaran sukses -> status
+    otomatis 'active' kembali, TANPA aksi Super Admin apa pun."""
+    from test_billing_webhook import _buat_invoice, _dengan_server_key, _payload
+    import billing_webhook
+
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    assert subscription_db.akses_diblokir(tenant["id"]) is True
+    assert subscription_db.get_subscription(tenant["id"])["status"] == "suspended"
+
+    _dengan_server_key(monkeypatch)
+    invoice = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30)
+    billing_webhook.proses_notifikasi(_payload(invoice["order_id"], "2", invoice["jumlah"]))
+
+    sub = subscription_db.get_subscription(tenant["id"])
+    assert sub["status"] == "active"
+    assert subscription_db.akses_diblokir(tenant["id"]) is False
+
+
+def test_pembayaran_setelah_suspend_anchor_tetap_dari_periode_lama(app_client, monkeypatch):
+    """requirement poin 13: walau dibayar SETELAH suspend, tanggal bayar
+    TETAP TIDAK jadi anchor baru -- mengikuti aturan requirement poin 1
+    (menyambung dari periode_selesai lama)."""
+    from test_billing_webhook import _buat_invoice, _dengan_server_key, _payload
+    import billing_webhook
+
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    periode_selesai_lama = subscription_db.get_subscription(tenant["id"])["periode_selesai"]
+    subscription_db.akses_diblokir(tenant["id"])  # picu auto-suspend
+
+    _dengan_server_key(monkeypatch)
+    invoice = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30)
+    hasil = billing_webhook.proses_notifikasi(_payload(invoice["order_id"], "2", invoice["jumlah"]))
+
+    assert hasil["periode_mulai"] == periode_selesai_lama
+
+
+def test_akses_diblokir_publik_booking_ikut_ter_suspend(two_tenants):
+    """Regresi lintas titik panggil akses_diblokir(): auto-suspend yang
+    terpicu lewat SATU titik panggil (mis. /api/subscription/status) harus
+    otomatis terlihat di titik panggil LAIN (halaman publik booking) juga,
+    karena status disimpan (bukan cache per-request)."""
+    client = two_tenants["client"]
+    subscription_db.create_default_subscription(two_tenants["tenant_a"], package="pro", status="active")
+    _sub_aktif_dengan_periode(two_tenants["tenant_a"], hari_lewat=8)
+
+    r_status = client.get("/api/subscription/status", headers=two_tenants["headers_a"])
+    assert r_status.json()["akses_diblokir"] is True
+
+    r_publik = client.get("/api/public/booking/barbers?tenant=test-toko-a")
+    assert r_publik.status_code == 403

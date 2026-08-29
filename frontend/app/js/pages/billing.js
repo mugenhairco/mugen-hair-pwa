@@ -27,30 +27,10 @@ const PageBilling = (() => {
     trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
     expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
   };
-  const LABEL_STATUS_INVOICE = {
-    pending: "Menunggu Pembayaran", paid: "Berhasil", denied: "Ditolak",
-    cancelled: "Dibatalkan", expired: "Kedaluwarsa",
-  };
-  const BADGE_STATUS_INVOICE = {
-    pending: "badge-warning", paid: "badge-success", denied: "badge-danger",
-    cancelled: "badge-danger", expired: "badge-danger",
-  };
-
   function formatWaktu(iso) {
     if (!iso) return "-";
     const [tanggal, jam] = iso.split("T");
     return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
-  }
-
-  // Invoice PAID paling baru yang periode_selesai-nya masih di masa depan
-  // -- SATU-SATUNYA sumber "periode aktif sekarang" di frontend (backend
-  // TIDAK menyimpan tanggal ini di tenant_subscriptions sama sekali, lihat
-  // catatan panjang di billing_webhook.py soal alasannya).
-  function invoicePeriodeAktif(invoices) {
-    const now = new Date().toISOString();
-    const kandidat = (invoices || []).filter((inv) => inv.status === "paid" && inv.periode_selesai && inv.periode_selesai > now);
-    if (!kandidat.length) return null;
-    return kandidat.reduce((a, b) => (a.periode_selesai > b.periode_selesai ? a : b));
   }
 
   let _snapLoadPromise = null;
@@ -137,7 +117,7 @@ const PageBilling = (() => {
     });
   }
 
-  function renderStatusCard(root, sub, invoices, packages, config) {
+  function renderStatusCard(root, sub, packages, config) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Paket & Status Langganan"));
@@ -147,12 +127,21 @@ const PageBilling = (() => {
         `Akses toko ini sedang dibatasi karena status subscription "${LABEL_STATUS_SUB[sub.status] || sub.status}". ` +
         "Selesaikan pembayaran di bawah untuk mengaktifkan kembali."));
     }
+    // Perbaikan Billing/Subscription (requirement Owner poin 8): periode
+    // sudah lewat TAPI belum sampai batas auto-suspend (masih dalam masa
+    // 7 hari, lihat subscription_db.py::SUSPEND_GRACE_HARI) -- akses TIDAK
+    // diblokir (sub.akses_diblokir masih false), tapi Owner tetap perlu
+    // tahu periode sudah berakhir supaya segera memperpanjang.
+    const now = new Date().toISOString();
+    if (!sub.akses_diblokir && sub.periode_selesai && sub.periode_selesai < now) {
+      card.appendChild(MugenUI.el("div", { class: "login-error", style: "margin-bottom:12px;" },
+        "Periode langganan toko ini sudah berakhir. Selesaikan pembayaran di bawah untuk memperpanjang sebelum akses dibatasi."));
+    }
     if (!config.enabled) {
       card.appendChild(MugenUI.el("div", { class: "login-error", style: "margin-bottom:12px;" },
         "Pembayaran online belum aktif untuk toko ini -- hubungi penyedia layanan."));
     }
 
-    const periodeAktif = invoicePeriodeAktif(invoices);
     const ringkasan = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;margin-bottom:8px;" }, [
       MugenUI.el("div", {}, [
         MugenUI.el("div", { class: "subtitle" }, "Paket"),
@@ -165,7 +154,7 @@ const PageBilling = (() => {
       ]),
       MugenUI.el("div", {}, [
         MugenUI.el("div", { class: "subtitle" }, "Periode Aktif Berakhir"),
-        MugenUI.el("div", { style: "font-weight:700;" }, periodeAktif ? formatWaktu(periodeAktif.periode_selesai) : "-"),
+        MugenUI.el("div", { style: "font-weight:700;" }, sub.periode_selesai ? formatWaktu(sub.periode_selesai) : "-"),
       ]),
     ]);
     card.appendChild(ringkasan);
@@ -580,44 +569,6 @@ const PageBilling = (() => {
     gambarUlangGrid();
   }
 
-  function renderInvoiceCard(root, invoices, reload) {
-    const card = MugenUI.el("div", { class: "card" });
-    root.appendChild(card);
-    card.appendChild(MugenUI.el("h2", {}, "Riwayat Pembayaran"));
-
-    const kolom = [
-      { key: "nomor_invoice", label: "No. Invoice" },
-      { key: "package_nama", label: "Paket" },
-      { key: "jumlah", label: "Jumlah", format: (v) => MugenUI.formatRupiah(v) },
-      { key: "metode_pembayaran", label: "Metode", format: (v) => v || "-" },
-      { key: "status", label: "Status", format: (v) => MugenUI.el("span", { class: "badge " + (BADGE_STATUS_INVOICE[v] || "") }, LABEL_STATUS_INVOICE[v] || v) },
-      { key: "created_at", label: "Tanggal", format: (v) => formatWaktu(v) },
-      {
-        // AUDIT (perbaikan pasca-audit kesiapan): jalur RESMI untuk invoice
-        // yang macet karena webhook TIDAK PERNAH sampai sama sekali --
-        // HANYA muncul untuk status "pending" (belum final), server yang
-        // memanggil ulang provider (Server Key sendiri), Owner TIDAK PERNAH
-        // bisa mengklaim status sendiri (lihat routers/billing.py::
-        // cek_ulang_invoice()).
-        key: "aksi", label: "Aksi", format: (_, inv) => {
-          if (inv.status !== "pending") return "-";
-          const btn = MugenUI.el("button", { type: "button" }, "Cek Ulang ke Provider");
-          btn.addEventListener("click", async () => {
-            try {
-              await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/billing/invoices/${inv.id}/cek-ulang`));
-              MugenUI.toast("Status berhasil diperbarui dari provider.", "success", { force: true });
-              reload();
-            } catch (e) {
-              MugenUI.toast(pesanError(e), "error");
-            }
-          });
-          return btn;
-        },
-      },
-    ];
-    card.appendChild(MugenUI.buildTable(kolom, invoices, { emptyText: "Belum ada riwayat pembayaran." }));
-  }
-
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Billing & Pembayaran"));
@@ -626,13 +577,20 @@ const PageBilling = (() => {
     const loadingCard = MugenUI.skeleton("card", { lines: 3 });
     root.appendChild(loadingCard);
 
-    let sub, config, packages, invoices;
+    // Perbaikan Billing/Subscription (requirement Owner poin 11, dikonfirmasi
+    // via klarifikasi): riwayat pembayaran/invoice DISEMBUNYIKAN TOTAL dari
+    // halaman Billing tenant -- Owner hanya melihat status paket/periode &
+    // tombol bayar. /api/billing/invoices (list) TIDAK dihapus/dibatasi di
+    // backend (tetap dipakai monitoring Super Admin) -- halaman ini murni
+    // berhenti memanggilnya. Status "Periode Aktif Berakhir" sekarang dibaca
+    // langsung dari sub.periode_selesai (tenant_subscriptions), TIDAK LAGI
+    // scan invoices (lihat subscription_db.py::set_periode()).
+    let sub, config, packages;
     try {
-      [sub, config, packages, invoices] = await Promise.all([
+      [sub, config, packages] = await Promise.all([
         MugenApi.get("/api/subscription/me"),
         MugenApi.get("/api/billing/config"),
         MugenApi.get("/api/billing/packages"),
-        MugenApi.get("/api/billing/invoices"),
       ]);
     } catch (e) {
       loadingCard.innerHTML = "";
@@ -641,9 +599,8 @@ const PageBilling = (() => {
     }
     loadingCard.remove();
 
-    renderStatusCard(root, sub, invoices, packages, config);
+    renderStatusCard(root, sub, packages, config);
     renderPaketCard(root, sub, config, packages, () => render(root));
-    renderInvoiceCard(root, invoices, () => render(root));
   }
 
   return { render };

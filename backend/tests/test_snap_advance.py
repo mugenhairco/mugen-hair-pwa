@@ -324,6 +324,34 @@ def test_cascade_saas_billing_idempoten_webhook_dobel_hanya_aktivasi_sekali(sing
     assert len(panggilan) == 1
 
 
+def test_duplikat_paid_snap_billing_hanya_extend_sekali(single_tenant):
+    """Perbaikan Billing/Subscription (requirement Owner poin 7): notifikasi
+    PAID yang SAMA (payment_reference/order_id sama, retry provider) dikirim
+    berkali-kali TIDAK BOLEH memperpanjang periode_selesai tenant lebih dari
+    sekali -- SATU pembayaran hanya SATU kali extend. Dibuktikan langsung
+    lewat tenant_subscriptions.periode_selesai (anchor otoritatif, req 1/6),
+    BUKAN cuma jumlah pemanggilan update_status() (lihat test di atas)."""
+    tenant_id = single_tenant["tenant_id"]
+    invoice = _siapkan_invoice(tenant_id, nominal=150000)
+    transaksi = snap_payment_db.buat_transaksi("SAAS_BILLING", tenant_id, 150000,
+                                                subscription_invoice_id=invoice["id"])
+
+    for _ in range(5):
+        snap_webhook.terapkan_status_transaksi(snap_payment_db.get_transaksi(transaksi["id"]), "PAID", sumber="webhook")
+
+    langganan = subscription_db.get_subscription(tenant_id)
+    periode_selesai_setelah_5x = langganan["periode_selesai"]
+
+    # baris di subscription_invoice_status_log HANYA satu transisi sungguhan
+    # (pending -> paid), 4 notifikasi duplikat berikutnya TIDAK menambah log.
+    log = billing_invoice_db.list_status_log(invoice["id"])
+    assert len(log) == 1
+
+    # panggil sekali lagi dari transaksi yang SAMA -- tetap tidak berubah.
+    snap_webhook.terapkan_status_transaksi(snap_payment_db.get_transaksi(transaksi["id"]), "PAID", sumber="webhook")
+    assert subscription_db.get_subscription(tenant_id)["periode_selesai"] == periode_selesai_setelah_5x
+
+
 def test_cross_domain_isolation_booking_tidak_pernah_sentuh_invoice(single_tenant):
     """SESUAI instruksi migrasi #14: "Booking payment tidak pernah dapat
     mengubah SaaS invoice"."""

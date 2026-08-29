@@ -57,14 +57,14 @@ def _payload(order_id, payment_status_code, nominal, payment_channel="Bank Trans
     }
 
 
-def _buat_invoice(tenant_id, package_kode="pro", harga=249000, durasi_hari=30):
+def _buat_invoice(tenant_id, package_kode="pro", harga=249000, durasi_hari=30, jumlah_bulan=None):
     paket = billing_db.get_package_by_kode(package_kode)
     if harga is not None or durasi_hari is not None:
         billing_db.update_package(paket["id"], harga=harga, durasi_hari=durasi_hari)
         paket = billing_db.get_package(paket["id"])
     order_id = billing_invoice_db.buat_order_id(tenant_id)
-    return billing_invoice_db.buat_invoice(order_id, tenant_id, paket,
-                                            snap_token="tok", snap_redirect_url="https://example.test/x")
+    return billing_invoice_db.buat_invoice(order_id, tenant_id, paket, snap_token="tok",
+                                            snap_redirect_url="https://example.test/x", jumlah_bulan=jumlah_bulan)
 
 
 def _tenant_default():
@@ -240,25 +240,59 @@ def test_perpanjangan_menyambung_dari_periode_lama_yang_belum_habis(app_client, 
     assert periode_selesai_2 > periode_selesai_1
 
 
-def test_periode_baru_mulai_dari_sekarang_kalau_sudah_kedaluwarsa(app_client, monkeypatch):
+def test_periode_baru_tetap_menyambung_dari_anchor_walau_sudah_lewat(app_client, monkeypatch):
+    """requirement Owner Billing/Subscription poin 1: pembayaran TERLAMBAT
+    (periode lama sudah lewat berhari-hari) tidak boleh menggeser siklus ke
+    tanggal bayar -- periode baru TETAP menyambung dari anchor
+    tenant_subscriptions.periode_selesai LAMA. Ini SENGAJA MENGGANTI
+    perilaku test lama (test_periode_baru_mulai_dari_sekarang_kalau_sudah_kedaluwarsa,
+    yang membuktikan fallback ke `sekarang` -- PERSIS bug yang dikeluhkan
+    Owner, lihat billing_webhook.py::_hitung_periode_baru())."""
     _dengan_server_key(monkeypatch)
     tenant = _tenant_default()
 
     invoice1 = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30)
     billing_webhook.proses_notifikasi(_payload(invoice1["order_id"], "2", invoice1["jumlah"]))
-    # simulasikan periode SUDAH lewat (manipulasi langsung, bukan lewat webhook)
+    # simulasikan anchor SUDAH lewat -- tulis LANGSUNG ke tenant_subscriptions
+    # (BUKAN invoice, sesuai anchor baru req 1/6), pola sama seperti Reset Subscription.
+    sub = subscription_db.get_subscription(tenant["id"])
     kedaluwarsa = (datetime.now() - timedelta(days=5)).isoformat(timespec="seconds")
-    billing_invoice_db.update_invoice(invoice1["id"], periode_selesai=kedaluwarsa)
+    subscription_db.set_periode(tenant["id"], sub["periode_mulai"], kedaluwarsa)
 
-    # periode_mulai disimpan timespec="seconds" (lihat billing_webhook.py) --
-    # bandingkan dengan presisi yang sama supaya tidak gagal karena
-    # microsecond "sebelum" > periode_mulai yang sudah dibulatkan ke bawah.
-    sebelum = datetime.now().replace(microsecond=0)
     invoice2 = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30)
     hasil2 = billing_webhook.proses_notifikasi(_payload(invoice2["order_id"], "2", invoice2["jumlah"]))
 
-    periode_mulai_2 = datetime.fromisoformat(hasil2["periode_mulai"])
-    assert periode_mulai_2 >= sebelum
+    assert hasil2["periode_mulai"] == kedaluwarsa  # BUKAN "sekarang"
+
+
+def test_kalender_bulanan_31_januari_ke_28_februari(app_client, monkeypatch):
+    """requirement Owner Billing/Subscription poin 2: invoice dengan
+    jumlah_bulan terisi memakai billing_periode.tambah_bulan_kalender()
+    (kalender sungguhan), BUKAN timedelta(days=durasi_hari)."""
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    subscription_db.set_periode(tenant["id"], "2026-01-31T00:00:00", "2026-01-31T00:00:00")
+
+    invoice = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30, jumlah_bulan=1)
+    hasil = billing_webhook.proses_notifikasi(_payload(invoice["order_id"], "2", invoice["jumlah"]))
+
+    assert hasil["periode_mulai"] == "2026-01-31T00:00:00"
+    assert hasil["periode_selesai"] == "2026-02-28T00:00:00"
+
+
+def test_invoice_tanpa_jumlah_bulan_tetap_pakai_durasi_hari_lama(app_client, monkeypatch):
+    """Regresi eksplisit (batasan Owner "jangan mengubah requirement
+    sebelumnya"): invoice TANPA jumlah_bulan (None -- checkout lama/buatan
+    test lama) tetap memakai timedelta(days=durasi_hari) apa adanya."""
+    _dengan_server_key(monkeypatch)
+    tenant = _tenant_default()
+    subscription_db.set_periode(tenant["id"], "2026-01-31T00:00:00", "2026-01-31T00:00:00")
+
+    invoice = _buat_invoice(tenant["id"], package_kode="pro", durasi_hari=30, jumlah_bulan=None)
+    hasil = billing_webhook.proses_notifikasi(_payload(invoice["order_id"], "2", invoice["jumlah"]))
+
+    assert hasil["periode_mulai"] == "2026-01-31T00:00:00"
+    assert hasil["periode_selesai"] == (datetime(2026, 1, 31) + timedelta(days=30)).isoformat(timespec="seconds")
 
 
 # ============================= Idempoten =============================

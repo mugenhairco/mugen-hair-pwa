@@ -25,6 +25,11 @@ AKSI_VALID = {
     # lihat routers/subscription.py, subscription_db.py.
     "ubah_package_subscription", "ubah_status_subscription",
     "ubah_trial_subscription", "ubah_grace_subscription",
+    # Perbaikan Billing/Subscription: "↻ Reset Subscription" -- koreksi
+    # package/periode/status SATU tenant TANPA menyentuh invoice/pembayaran,
+    # lihat routers/subscription.py::reset_subscription()/
+    # subscription_db.py::reset_subscription().
+    "reset_subscription",
     # FONDASI Multi-Tenant Phase 5 (Landing Page SaaS) -- registrasi
     # tenant self-service lewat halaman publik, lihat routers/tenant_registration.py.
     "registrasi_publik",
