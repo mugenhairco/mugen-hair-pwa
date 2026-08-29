@@ -15,7 +15,7 @@ import email_auth_db
 import email_service
 import email_templates
 import tenant_db
-from auth import buat_token, get_current_user
+from auth import buat_token, get_current_user, hash_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -152,7 +152,24 @@ def login(body: LoginBody, request: Request):
             )
 
     token = buat_token(user["id"])
+    # Kontrol Sesi Login Satu-Device per Akun: menulis ULANG hash token
+    # aktif akun ini -- otomatis mencabut sesi/device sebelumnya (lihat
+    # auth.py::get_current_user()/hash_token()), berlaku SELURUH role
+    # (Owner/Admin/Barber/Superadmin, sesuai keputusan Owner).
+    auth_db.set_session_hash(user["id"], hash_token(token))
+    user.pop("current_session_hash", None)
     return {"token": token, "user": user, "tenant": tenant_info}
+
+
+@router.post("/logout")
+def logout(user: dict = Depends(get_current_user)):
+    """Kontrol Sesi Login Satu-Device per Akun: mencabut sesi di BACKEND
+    (bukan cuma menghapus token di frontend, lihat nav.js) -- token yang
+    baru saja dipakai untuk memanggil endpoint ini langsung tidak valid
+    lagi di request berikutnya, sama seperti kalau akun ini login di
+    device lain."""
+    auth_db.set_session_hash(user["id"], None)
+    return {"ok": True}
 
 
 @router.get("/me")
@@ -176,6 +193,7 @@ def simpan_tema(body: TemaBody, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=422, detail=str(e))
     diperbarui = auth_db.get_user(user["id"])
     diperbarui.pop("password_hash", None)
+    diperbarui.pop("current_session_hash", None)
     return diperbarui
 
 

@@ -324,6 +324,16 @@ def nonaktifkan_user(user_id: int):
         conn.execute("UPDATE users SET aktif = 0 WHERE id = ?", (user_id,))
 
 
+def set_session_hash(user_id: int, session_hash: str | None):
+    """Kontrol Sesi Login Satu-Device per Akun -- menulis hash token yang
+    SEDANG aktif untuk akun ini (lihat auth.py::hash_token()). Dipanggil
+    routers/auth_router.py::login() (setiap login menulis ULANG kolom ini,
+    otomatis mencabut sesi/device sebelumnya) dan logout() (menulis None,
+    supaya token yang di-logout manual juga benar-benar mati di backend)."""
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET current_session_hash = ? WHERE id = ?", (session_hash, user_id))
+
+
 def hapus_user(user_id: int):
     """Hapus PERMANEN (bukan Nonaktifkan) -- aman dilakukan kapan pun, tidak
     ada tabel lain yang menyimpan FK ke users.id (kolom 'dibuat_oleh'/

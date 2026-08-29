@@ -14,6 +14,7 @@ tabel `users` (auth_db.nonaktifkan_user) — token lama otomatis ditolak
 karena get_current_user selalu re-check ke database, bukan cuma percaya isi token.
 """
 
+import hashlib
 import os
 
 from fastapi import Depends, HTTPException, Request, status
@@ -78,6 +79,20 @@ def buat_token(user_id: int) -> str:
     return _serializer.dumps({"user_id": user_id})
 
 
+def hash_token(token: str) -> str:
+    """Kontrol Sesi Login Satu-Device per Akun -- hash SHA-256 murni
+    (tidak reversibel, aman dibandingkan/disimpan) dari string token
+    ITSELF. itsdangerous menyisipkan timestamp SETIAP kali .dumps()
+    dipanggil (lihat buat_token()), jadi token baru untuk user_id yang
+    SAMA selalu menghasilkan hash yang BERBEDA -- login di device mana pun
+    otomatis membuat hash lama (tersimpan di users.current_session_hash,
+    lihat auth_db.set_session_hash()) tidak pernah cocok lagi begitu
+    ditulis ulang. Dipakai get_current_user()/resolve_tenant_hibrid()/
+    resolve_tenant_untuk_branding() di bawah, DAN routers/auth_router.py
+    (login/logout)."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _decode_token(token: str) -> int:
     try:
         data = _serializer.loads(token, max_age=TOKEN_MAX_AGE_DETIK)
@@ -107,6 +122,17 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
     user = auth_db.get_user(user_id)
     if user is None or not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif atau tidak ditemukan.")
+    # Kontrol Sesi Login Satu-Device per Akun: token ini HARUS sama dengan
+    # token TERAKHIR yang diterbitkan untuk akun ini (users.current_session_hash,
+    # ditulis routers/auth_router.py::login() SETIAP kali akun ini login --
+    # lihat hash_token() untuk kenapa login di device lain otomatis membuat
+    # perbandingan ini gagal). Dicek di SINI (satu-satunya titik yang
+    # dilewati SETIAP request ber-token, sama seperti pengecekan tenant/
+    # subscription/feature di bawah) supaya sesi lama langsung mati di
+    # request BERIKUTNYA, tanpa polling/heartbeat apa pun.
+    if hash_token(credentials.credentials) != user.get("current_session_hash"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                             detail="Sesi ini sudah tidak berlaku (akun sedang login di perangkat lain). Silakan login kembali.")
     # BUGFIX: sebelumnya hanya mengecek `tenant_id is not None` -- secara
     # PRAKTIK tetap benar untuk superadmin yang dibuat lewat jalur normal
     # (tambah_user() MEWAJIBKAN tenant_id=None untuk role ini), tapi
@@ -150,6 +176,7 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
                 detail="Aplikasi Barber tidak tersedia di paket toko ini. Hubungi Owner untuk upgrade paket.",
             )
     user.pop("password_hash", None)
+    user.pop("current_session_hash", None)
     return user
 
 
@@ -224,7 +251,13 @@ def resolve_tenant_hibrid(request: Request, credentials: HTTPAuthorizationCreden
         try:
             user_id = _decode_token(credentials.credentials)
             user = auth_db.get_user(user_id)
-            if user is not None and user.get("aktif") and user.get("tenant_id") is not None:
+            # Kontrol Sesi Login Satu-Device per Akun: sesi yang sudah
+            # dicabut (lihat get_current_user()) TIDAK dianggap sesi valid
+            # di sini juga -- jatuh ke fallback publik di bawah (BUKAN
+            # error, dependency ini memang best-effort), bukan diam-diam
+            # tetap memakai identitas sesi lama.
+            if (user is not None and user.get("aktif") and user.get("tenant_id") is not None
+                    and hash_token(credentials.credentials) == user.get("current_session_hash")):
                 # BUGFIX (audit): dulu tidak mengecek status tenant di sini
                 # sama sekali -- beda dari get_current_user() yang secara
                 # eksplisit mengecek ulang status tenant di SETIAP request
@@ -307,7 +340,11 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
         try:
             user_id = _decode_token(credentials.credentials)
             user = auth_db.get_user(user_id)
-            if user is not None and user.get("aktif"):
+            # Kontrol Sesi Login Satu-Device per Akun: sama seperti
+            # resolve_tenant_hibrid() di atas -- sesi yang sudah dicabut
+            # jatuh ke fallback slug publik di bawah, bukan tetap dipakai.
+            if (user is not None and user.get("aktif")
+                    and hash_token(credentials.credentials) == user.get("current_session_hash")):
                 if user.get("role") == "superadmin":
                     return None
                 # BUGFIX (audit): sama seperti resolve_tenant_hibrid() di
