@@ -618,6 +618,7 @@ def list_user(user: dict = Depends(require_owner_or_staff)):
     daftar = auth_db.get_user_list(tenant_id=user["tenant_id"])
     for u in daftar:
         u.pop("password_hash", None)  # jangan pernah kirim hash ke frontend
+        u.pop("current_session_hash", None)
     return daftar
 
 
@@ -684,6 +685,7 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
 
     hasil = auth_db.get_user(new_id)
     hasil.pop("password_hash", None)
+    hasil.pop("current_session_hash", None)
     return hasil
 
 
@@ -808,6 +810,7 @@ def ubah_role_user(user_id: int, body: UserRoleBody, user: dict = Depends(requir
     auth_db.set_custom_role(user_id, body.custom_role_id)
     hasil = auth_db.get_user(user_id)
     hasil.pop("password_hash", None)
+    hasil.pop("current_session_hash", None)
     return hasil
 
 
@@ -1075,6 +1078,7 @@ def ubah_email_profil(body: ProfilEmailBody, user: dict = Depends(require_admin)
     )
     diperbarui = auth_db.get_user(user["id"])
     diperbarui.pop("password_hash", None)
+    diperbarui.pop("current_session_hash", None)
     return diperbarui
 
 

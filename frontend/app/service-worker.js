@@ -931,7 +931,14 @@
 // dibayar tanpa aksi Super Admin; (5) halaman Billing tenant TIDAK LAGI
 // menampilkan riwayat pembayaran/invoice (Super Admin tetap bisa melihat
 // semua riwayat).
-const ASSET_VERSION = "164";
+// v164 -> v165: Kontrol Sesi Login Satu-Device per Akun -- login di
+// device/browser lain (Owner/Admin/Barber/Superadmin) otomatis mencabut
+// sesi sebelumnya DI BACKEND (bukan cuma dihapus di frontend); device lama
+// dianggap logout di request BERIKUTNYA (murni lewat interceptor 401 yang
+// sudah ada, TANPA polling/heartbeat tambahan apa pun). Akun Barber yang
+// berbeda tetap bebas login bersamaan. Tombol Keluar sekarang juga
+// mencabut sesi di backend (bukan cuma menghapus token lokal).
+const ASSET_VERSION = "165";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

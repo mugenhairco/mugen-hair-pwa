@@ -66,6 +66,7 @@ from karyawan_migrasi import migrasi_karyawan
 from email_auth_migrasi import migrasi_email_auth
 from r2_storage_migrasi import migrasi_r2_storage
 from lokasi_user_migrasi import migrasi_lokasi_user  # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
+from session_login_migrasi import migrasi_session_login  # Kontrol Sesi Login Satu-Device: kolom users.current_session_hash (idempotent)
 import tenant_migrasi
 from tenant_migrasi import migrasi_tenant
 import tenant_db
@@ -430,6 +431,7 @@ async def on_startup():
         migrasi_absensi_libur_sumber()  # KOREKSI Owner: kolom absensi_libur.sumber (idempotent) -- bedakan baris Barber Holiday manual dari yang dibuat Auto-Libur
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_lokasi_user()   # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
+        migrasi_session_login()  # Kontrol Sesi Login Satu-Device: kolom users.current_session_hash (idempotent)
         migrasi_tenant()        # FONDASI Multi-Tenant Phase 1: tabel tenants + kolom tenant_id (idempotent)
         migrasi_subscription()  # FONDASI Multi-Tenant Phase 3: tabel tenant_subscriptions + backfill (idempotent, WAJIB setelah migrasi_tenant())
         migrasi_periode_subscription()  # Perbaikan Billing/Subscription: kolom periode_mulai/periode_selesai di tenant_subscriptions (idempotent, WAJIB setelah migrasi_subscription())

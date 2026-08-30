@@ -290,7 +290,11 @@ const MugenNav = (() => {
       // sign out terasa nyata, bukan langsung lompat ke halaman Login.
       btnLogout.disabled = true;
       try {
-        await MugenUI.withLoading(() => Promise.resolve(), {
+        // Kontrol Sesi Login Satu-Device per Akun: mencabut sesi di
+        // BACKEND (requirement "sesi lama harus benar-benar tidak valid
+        // di backend, bukan hanya dihapus dari frontend") -- best-effort,
+        // gagal jaringan TIDAK PERNAH menghalangi logout lokal di bawah.
+        await MugenUI.withLoading(() => MugenApi.post("/api/auth/logout", {}).catch(() => {}), {
           message: "Sedang keluar dari aplikasi…",
           minMs: 1000,
         });

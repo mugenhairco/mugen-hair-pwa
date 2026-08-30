@@ -216,7 +216,8 @@ CREATE TABLE IF NOT EXISTS users (
     aktif           INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL,
     tema            TEXT NOT NULL DEFAULT 'terang',
-    custom_role_id  INTEGER
+    custom_role_id  INTEGER,
+    current_session_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -1152,6 +1153,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS lokasi_updated_at TEXT;
 -- yang sudah ada) berarti "pakai set izin default tenant", TIDAK BERUBAH
 -- sama sekali dari perilaku lama.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id INTEGER;
+
+-- Kontrol Sesi Login Satu-Device per Akun -- lihat session_login_migrasi.py
+-- (jalur SQLite, SAMA PERSIS niatnya) + auth.py::hash_token()/get_current_user().
+-- Hash SHA-256 token yang SEDANG aktif untuk akun ini -- login manapun
+-- menulis ulang kolom ini, otomatis mencabut sesi lama.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS current_session_hash TEXT;
 
 -- Token sekali pakai (kedaluwarsa lewat expires_at) -- TERPISAH TOTAL dari
 -- mekanisme token sesi login (auth.py, tidak disentuh migrasi ini).
