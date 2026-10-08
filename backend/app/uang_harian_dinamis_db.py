@@ -36,6 +36,14 @@ KONSEP INTI (lihat get_config() untuk bentuk lengkap konfigurasi):
   service acuan yang SAMA dari database.get_uang_harian_acuan_ids(), hanya
   ambang minimal & konsekuensinya yang baru/berbeda).
 
+ABSENSI TIDAK LENGKAP (PERMINTAAN OWNER): untuk Tenant yang `aktif=True`,
+tanggal yang TIDAK punya check-in DAN check-out LENGKAP hari itu (tidak ada
+baris attendance_logs sama sekali, ATAU ada baris tapi cuma check-in SAJA
+atau check-out SAJA) -- Uang Harian MUTLAK Rp0 untuk tanggal itu, apa pun
+hasil evaluasi lain (lihat _hasil_absensi_tidak_lengkap()/
+_evaluasi_hari_dengan_fallback()). Berlaku SELAMA barber belum mengajukan
+Koreksi Absensi untuk tanggal itu dan disetujui.
+
 KOREKSI ABSENSI: TIDAK ADA logika koreksi khusus di modul ini sama sekali --
 attendance_db._terapkan_koreksi_ke_log() SUDAH menulis ulang attendance_logs
 begitu koreksi disetujui (Approved), jadi evaluasi_hari() di bawah (yang
@@ -175,10 +183,13 @@ def set_config(tenant_id: int, **fields) -> dict:
 
 def _akumulasi_limit_bulan(barber_id: int, tenant_id: int, tahun: int, bulan: int) -> dict:
     """{tanggal: {"terlambat_menit": int|None, "terlambat_limit_lampaui": bool,
-                  "pulang_awal_menit": int|None, "pulang_awal_limit_lampaui": bool}}
+                  "pulang_awal_menit": int|None, "pulang_awal_limit_lampaui": bool,
+                  "punya_check_in": bool, "punya_check_out": bool}}
     -- SATU pass urut tanggal naik, meniru persis attendance_db.hitung_ringkasan_bulan()
     supaya "limit habis" di sini SELALU konsisten dengan yang sudah tampil di
-    Absensi (>=, bukan >)."""
+    Absensi (>=, bukan >). `punya_check_in`/`punya_check_out` dipakai
+    _evaluasi_hari_dengan_fallback() (PERMINTAAN OWNER) -- Absensi hari itu
+    harus LENGKAP (check-in DAN check-out) sebelum Uang Harian dievaluasi."""
     settings = attendance_db.get_settings(tenant_id)
     batas_terlambat = settings["batas_menit_terlambat"]
     batas_pulang_awal = settings["batas_menit_pulang_awal"]
@@ -209,6 +220,8 @@ def _akumulasi_limit_bulan(barber_id: int, tenant_id: int, tahun: int, bulan: in
             "terlambat_limit_lampaui": terlambat_lampaui,
             "pulang_awal_menit": menit_pulang_awal,
             "pulang_awal_limit_lampaui": pulang_awal_lampaui,
+            "punya_check_in": row["check_in_at"] is not None,
+            "punya_check_out": row["check_out_at"] is not None,
         }
     return hasil
 
@@ -331,12 +344,10 @@ def evaluasi_hari(barber: dict, tanggal: str, config: dict, akumulasi_hari: dict
 def _hasil_sistem_lama(barber: dict, tanggal: str, tenant_id, sumber: str) -> dict:
     """Breakdown SATU hari pakai sistem LAMA (murni jumlah service acuan
     hari itu >= target) -- SAMA PERSIS logika
-    database.hitung_uang_harian_per_hari() versi lama. Dipakai DUA jalur:
-    (1) Tenant belum opt-in sama sekali (sumber="tenant_belum_opt_in"), (2)
-    Tenant SUDAH opt-in tapi TANGGAL INI tidak punya data Absensi sama
-    sekali (sumber="tanggal_tanpa_absensi", lihat catatan panjang di
-    evaluasi_hari_dengan_fallback() -- termasuk SEMUA tanggal dari sebelum
-    fitur Absensi ada)."""
+    database.hitung_uang_harian_per_hari() versi lama. HANYA dipakai untuk
+    Tenant yang belum opt-in Uang Harian Dinamis sama sekali
+    (sumber="tenant_belum_opt_in") -- lihat _hasil_absensi_tidak_lengkap()
+    di bawah untuk jalur Tenant yang SUDAH opt-in."""
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     jumlah = _jumlah_service_acuan_hari(barber["id"], tanggal, acuan_ids)
@@ -353,27 +364,46 @@ def _hasil_sistem_lama(barber: dict, tanggal: str, tenant_id, sumber: str) -> di
     }
 
 
+def _hasil_absensi_tidak_lengkap(barber: dict, tanggal: str, sumber: str) -> dict:
+    """PERMINTAAN OWNER: untuk Tenant yang SUDAH opt-in Uang Harian Dinamis,
+    tanggal yang TIDAK punya Absensi check-in DAN check-out LENGKAP (tidak
+    ada baris attendance_logs sama sekali, ATAU ada baris tapi cuma salah
+    satu dari check_in_at/check_out_at yang terisi) -- Uang Harian MUTLAK
+    Rp0 untuk tanggal itu, TIDAK dijumlahkan/dicampur dengan potongan atau
+    syarat lain apa pun (termasuk Service Rule). Berlaku SELAMA barber
+    belum mengajukan Koreksi Absensi untuk tanggal itu dan disetujui --
+    begitu disetujui, attendance_logs tertulis ulang lengkap (lihat
+    attendance_db._terapkan_koreksi_ke_log()) dan tanggal itu otomatis
+    kembali dievaluasi normal lewat evaluasi_hari() di panggilan berikutnya
+    (data dibaca live, TIDAK ADA nilai yang dibekukan di sini)."""
+    nominal_dasar = int(barber["uang_harian"] or 0)
+    return {
+        "tanggal": tanggal,
+        "sumber": sumber,
+        "uang_harian_dasar": nominal_dasar,
+        "absensi_tidak_lengkap": True,
+        "potongan_persen": 100,
+        "uang_harian_final": 0,
+    }
+
+
 def _evaluasi_hari_dengan_fallback(barber: dict, tanggal: str, tenant_id, config: dict,
                                     akumulasi_bulan_ini: dict) -> dict:
-    """PERBAIKAN (feedback Owner): SEBELUM ini, tanggal yang tidak punya
-    data Absensi sama sekali (termasuk SELURUH riwayat dari sebelum fitur
-    Absensi ada -- barber belum pernah Check In sama sekali di tanggal itu)
-    tetap "dipaksa" lewat mesin baru, yang secara diam-diam menganggap tidak
-    ada pelanggaran apa pun (karena tidak ada data untuk dievaluasi) --
-    hasilnya TIDAK KONSISTEN antara breakdown per-hari (tampak 100% cair,
-    karena tidak ada pelanggaran terdeteksi) dan agregat bulanan/rentang
-    (tampak Rp0, karena tanggal itu tidak pernah ikut masuk perulangan sama
-    sekali). Sekarang KEDUANYA konsisten: tanggal yang TIDAK punya baris
-    attendance_logs otomatis fallback ke sistem LAMA (jumlah service vs
-    target) untuk tanggal itu SAJA -- riwayat lama sebelum Absensi ada tidak
-    pernah berubah jadi Rp0 begitu saja hanya karena Tenant mengaktifkan
-    fitur ini. Tanggal yang PUNYA data Absensi tetap dievaluasi penuh lewat
-    mesin baru seperti biasa."""
-    if tanggal in akumulasi_bulan_ini:
-        hasil = evaluasi_hari(barber, tanggal, config, akumulasi_bulan_ini)
-        hasil["sumber"] = "absensi"
-        return hasil
-    return _hasil_sistem_lama(barber, tanggal, tenant_id, sumber="tanggal_tanpa_absensi")
+    """PERMINTAAN OWNER: tanggal yang TIDAK punya Absensi check-in DAN
+    check-out LENGKAP hari itu (tidak ada baris attendance_logs sama
+    sekali, ATAU ada baris tapi cuma check-in SAJA atau check-out SAJA) --
+    Uang Harian MUTLAK Rp0 (lihat _hasil_absensi_tidak_lengkap()), TIDAK
+    lagi fallback ke sistem lama berbasis jumlah service seperti
+    sebelumnya. Tanggal yang punya Absensi LENGKAP tetap dievaluasi penuh
+    lewat mesin baru (evaluasi_hari()) seperti biasa."""
+    info = akumulasi_bulan_ini.get(tanggal)
+    if info is None:
+        return _hasil_absensi_tidak_lengkap(barber, tanggal, sumber="tidak_ada_absensi")
+    if not (info.get("punya_check_in") and info.get("punya_check_out")):
+        return _hasil_absensi_tidak_lengkap(barber, tanggal, sumber="absensi_tidak_lengkap")
+    hasil = evaluasi_hari(barber, tanggal, config, akumulasi_bulan_ini)
+    hasil["sumber"] = "absensi"
+    return hasil
 
 
 def _tanggal_dengan_service_bulan(barber_id: int, tenant_id, tahun: int, bulan: int) -> dict:
