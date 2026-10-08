@@ -506,6 +506,12 @@ const MugenRouter = (() => {
     // Aman dipanggil untuk role apa pun -- modul ini sendiri yang
     // memeriksa (lewat _bolehPoll()) apakah user admin/staff.
     if (typeof MugenIzinNotif !== "undefined") MugenIzinNotif.refreshNow();
+    // OPTIMASI BANDWIDTH: badge Booking (booking_notif.js) TIDAK lagi
+    // polling periodik -- di-refresh SEKALI di sini tiap kali user
+    // berpindah menu, pola SAMA PERSIS MugenIzinNotif di atas. Aman
+    // dipanggil untuk role apa pun -- modul ini sendiri yang memeriksa
+    // (lewat _bolehPoll()) apakah user admin/staff.
+    if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
   }
 
   function init() {

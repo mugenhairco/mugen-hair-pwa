@@ -855,18 +855,6 @@ def test_router_saldo_barber_lihat_milik_sendiri_saja(single_tenant):
     assert r_admin.status_code == 200
 
 
-def test_router_saldo_menyertakan_libur_nonaktif_default(single_tenant):
-    """KOREKSI Owner: /saldo SEKARANG juga menyertakan field `libur`
-    (Kuota Libur bulan berjalan, auto_libur_db.py) -- default OFF (aktif
-    False) selama Owner belum mengisi kuota_libur_bulanan."""
-    client, headers = single_tenant["client"], single_tenant["headers"]
-    tenant_id = single_tenant["tenant_id"]
-    barber_id = _barber(tenant_id)
-    r = client.get(f"/api/izin-cuti/saldo?barber_id={barber_id}", headers=headers)
-    assert r.status_code == 200
-    assert r.json()["libur"] == {"aktif": False, "kuota": None, "terpakai": None, "sisa": None}
-
-
 def test_router_marquee_butuh_login(single_tenant):
     client = single_tenant["client"]
     r = client.get("/api/izin-cuti/marquee")

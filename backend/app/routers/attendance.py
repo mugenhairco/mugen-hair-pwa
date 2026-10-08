@@ -27,7 +27,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import attendance_db
-import auto_libur_db
 import izin_cuti_db
 import laporan_pdf
 import permissions
@@ -439,16 +438,6 @@ def ubah_status_koreksi(koreksi_id: int, body: KoreksiStatusBody,
                                                   disetujui_oleh=user["username"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    if body.status == "disetujui":
-        # PERMINTAAN OWNER: attendance_logs untuk tanggal ini SEKARANG
-        # sudah terisi (koreksi barusan) -- kalau Auto-Libur SUDAH
-        # TERLANJUR memproses tanggal itu sebelumnya (barber tidak pernah
-        # check-in saat itu diproses), catatan Libur/Cuti otomatisnya
-        # DIBATALKAN di sini supaya tidak dobel dengan absen yang baru
-        # dikoreksi -- kuota yang sempat terpakai otomatis kembali (lihat
-        # auto_libur_db.batalkan_auto_libur_untuk_tanggal()).
-        hasil["auto_libur_dibatalkan"] = auto_libur_db.batalkan_auto_libur_untuk_tanggal(
-            hasil["barber_id"], hasil["tanggal"])
     return hasil
 
 
