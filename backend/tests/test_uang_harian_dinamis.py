@@ -77,6 +77,7 @@ def test_hanya_toleransi(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_gunakan_limit=False, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)  # terlambat 35 > toleransi 30
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     b = uhd.breakdown_hari(barber, "2026-08-03")
     assert b["uang_harian_final"] == 48000
     assert b["keterlambatan"]["dilanggar"] is True
@@ -89,6 +90,7 @@ def test_hanya_limit(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=False,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)  # cumulative 35 < limit 120
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     b = uhd.breakdown_hari(barber, "2026-08-03")
     assert b["uang_harian_final"] == 60000
     assert b["keterlambatan"]["dilanggar"] is False
@@ -101,6 +103,7 @@ def test_toleransi_dan_limit_keduanya_aktif(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20, kombinasi_metode="OR")
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     b = uhd.breakdown_hari(barber, "2026-08-03")
     assert b["keterlambatan"]["gunakan_toleransi"] and b["keterlambatan"]["gunakan_limit"]
 
@@ -112,6 +115,7 @@ def test_toleransi_tidak_dilanggar_seratus_persen(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 15)  # 15 < toleransi 30
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 60000
 
 
@@ -123,6 +127,7 @@ def test_toleransi_dilanggar_limit_tersedia_tergantung_mode(single_tenant, monke
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_gunakan_limit=False, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 48000  # Hanya Toleransi -> trigger
 
     uhd.set_config(tenant_id, keterlambatan_gunakan_toleransi=False, keterlambatan_gunakan_limit=True)
@@ -136,7 +141,9 @@ def test_limit_terlampaui_trigger(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=False,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-01", 10, 30)  # terlambat 90, cum 90
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-01", 18, 0)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-05", 9, 40)  # terlambat 40, cum 130 > 120
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-05", 18, 0)
     assert uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"] == 60000
     b5 = uhd.breakdown_hari(barber, "2026-08-05")
     assert b5["uang_harian_final"] == 48000
@@ -150,6 +157,7 @@ def test_kombinasi_or(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20, kombinasi_metode="OR")
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)  # toleransi dilanggar, limit belum habis
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 48000
 
 
@@ -160,6 +168,7 @@ def test_kombinasi_and(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20, kombinasi_metode="AND")
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)  # toleransi dilanggar, limit belum habis
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 60000  # AND butuh keduanya
 
 
@@ -197,7 +206,9 @@ def test_limit_reset_tiap_bulan(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=False,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-30", 11, 0)  # terlambat 120, cum 120 (habis)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-30", 18, 0)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-09-01", 9, 40)  # bulan BARU, cum 40 (reset)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-09-01", 18, 0)
     b_agustus = uhd.breakdown_hari(barber, "2026-08-30")
     b_september = uhd.breakdown_hari(barber, "2026-09-01")
     assert b_agustus["keterlambatan"]["limit_lampaui"] is True
@@ -215,9 +226,10 @@ def test_koreksi_pending_tidak_finalisasi(single_tenant, monkeypatch):
                                           "Lupa check-in", tenant_id=tenant_id)
     b = uhd.breakdown_hari(barber, "2026-08-03")
     # Belum ada log Absensi RESMI sama sekali (koreksi masih pending) --
-    # fallback ke sistem lama (PERBAIKAN, lihat _evaluasi_hari_dengan_fallback()),
-    # tanpa service sama sekali di tanggal ini -> target tidak tercapai -> Rp0.
-    assert b["sumber"] == "tanggal_tanpa_absensi"
+    # PERMINTAAN OWNER: tidak ada check-in+check-out lengkap = Rp0 mutlak
+    # (lihat _hasil_absensi_tidak_lengkap()).
+    assert b["sumber"] == "tidak_ada_absensi"
+    assert b["absensi_tidak_lengkap"] is True
     assert b["uang_harian_final"] == 0
 
 
@@ -230,6 +242,10 @@ def test_koreksi_approved_dipakai_sebagai_data_resmi(single_tenant, monkeypatch)
     koreksi = attendance_db.buat_pengajuan_koreksi(barber["id"], "2026-08-03", "check_in", "09:35",
                                                      "Lupa check-in", tenant_id=tenant_id)
     attendance_db.set_status_koreksi(koreksi["id"], "disetujui")
+    # PERMINTAAN OWNER: check-in SAJA (biar sudah dikoreksi/disetujui) masih
+    # "absensi tidak lengkap" selama check-out hari itu belum ada -- barber
+    # tetap check-out normal supaya hari ini lengkap dan dievaluasi penuh.
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     b = uhd.breakdown_hari(barber, "2026-08-03")
     assert b["keterlambatan"]["menit"] == 35
     assert b["uang_harian_final"] == 48000
@@ -246,8 +262,8 @@ def test_koreksi_ditolak_tidak_mengubah_data(single_tenant, monkeypatch):
     attendance_db.set_status_koreksi(koreksi["id"], "ditolak")
     b = uhd.breakdown_hari(barber, "2026-08-03")
     # Koreksi ditolak TIDAK PERNAH menyentuh attendance_logs -- tetap tidak
-    # ada log Absensi resmi, fallback sistem lama sama seperti kasus pending.
-    assert b["sumber"] == "tanggal_tanpa_absensi"
+    # ada log Absensi resmi sama sekali, Rp0 mutlak sama seperti kasus pending.
+    assert b["sumber"] == "tidak_ada_absensi"
     assert b["uang_harian_final"] == 0
 
 
@@ -258,10 +274,12 @@ def test_service_rule_syarat(single_tenant, monkeypatch):
     sid = _service(tenant_id)
     uhd.set_config(tenant_id, aktif=True, service_rule_mode="SYARAT", service_rule_minimal=2)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 0)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     _isi_service(barber["id"], "2026-08-03", sid, 2)
     assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 60000  # terpenuhi
 
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-04", 9, 0)
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-04", 18, 0)
     _isi_service(barber["id"], "2026-08-04", sid, 1)
     assert uhd.breakdown_hari(barber, "2026-08-04")["uang_harian_final"] == 0  # tidak terpenuhi
 
@@ -275,6 +293,7 @@ def test_service_terpenuhi_absensi_tetap_potong(single_tenant, monkeypatch):
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20, service_rule_mode="SYARAT", service_rule_minimal=2)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 35)  # toleransi dilanggar
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-03", 18, 0)
     _isi_service(barber["id"], "2026-08-03", sid, 2)  # service terpenuhi
     b = uhd.breakdown_hari(barber, "2026-08-03")
     assert b["service"]["terpenuhi"] is True
@@ -292,6 +311,7 @@ def test_isolasi_konfigurasi_antar_tenant(two_tenants, monkeypatch):
     assert uhd.get_config(tenant_a)["aktif"] is True
     assert uhd.get_config(tenant_b)["aktif"] is False
     _checkin(monkeypatch, tenant_a, barber_a["id"], "2026-08-03", 9, 35)
+    _checkout(monkeypatch, tenant_a, barber_a["id"], "2026-08-03", 18, 0)
     _checkin(monkeypatch, tenant_b, barber_b["id"], "2026-08-03", 9, 35)
     assert uhd.breakdown_hari(barber_a, "2026-08-03")["uang_harian_final"] == 48000
     assert database.hitung_uang_harian_per_hari(barber_b, "2026-08-03") == 0  # sistem lama, tanpa service
@@ -317,38 +337,36 @@ def test_payroll_bulan_konsisten_dengan_breakdown_harian(single_tenant, monkeypa
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=False,
                    keterlambatan_gunakan_limit=True, keterlambatan_potongan_persen=20)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-01", 10, 30)  # cum 90
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-01", 18, 0)
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-05", 9, 40)  # cum 130 > 120 -> trigger
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-05", 18, 0)
     total_bulan = database.hitung_uang_harian_bulan(barber, 2026, 8)
     total_manual = (uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"]
                      + uhd.breakdown_hari(barber, "2026-08-05")["uang_harian_final"])
     assert total_bulan == total_manual == 60000 + 48000
 
 
-# PERBAIKAN (feedback Owner): tanggal yang TIDAK punya data Absensi sama
-# sekali (termasuk seluruh riwayat sebelum fitur Absensi ada) harus fallback
-# ke sistem LAMA (jumlah service vs target), BUKAN otomatis Rp0.
-def test_tanggal_tanpa_absensi_fallback_sistem_lama(single_tenant):
+# PERMINTAAN OWNER: tanggal yang TIDAK punya data Absensi sama sekali --
+# Uang Harian MUTLAK Rp0, TIDAK lagi fallback ke sistem lama (jumlah
+# service vs target) seperti sebelumnya -- apa pun jumlah service hari itu.
+def test_tanggal_tanpa_absensi_mutlak_nol(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber = _setup(tenant_id)
     sid = _service(tenant_id)
     database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20)
-    # TIDAK ADA check-in sama sekali untuk tanggal ini -- hanya transaksi service
-    # (meniru data lama dari sebelum fitur Absensi ada).
+    # TIDAK ADA check-in sama sekali untuk tanggal ini -- hanya transaksi
+    # service, target TERCAPAI (2 >= 2) -- tetap Rp0 karena tidak ada Absensi.
     _isi_service(barber["id"], "2020-01-15", sid, 2)
     b = uhd.breakdown_hari(barber, "2020-01-15")
-    assert b["sumber"] == "tanggal_tanpa_absensi"
-    assert b["uang_harian_final"] == 60000  # target tercapai -> cair penuh, BUKAN Rp0
-    # jumlah service TIDAK memenuhi target -> tetap Rp0 (perilaku sistem lama yang benar)
-    _isi_service(barber["id"], "2020-01-16", sid, 1)
-    b2 = uhd.breakdown_hari(barber, "2020-01-16")
-    assert b2["uang_harian_final"] == 0
+    assert b["sumber"] == "tidak_ada_absensi"
+    assert b["absensi_tidak_lengkap"] is True
+    assert b["uang_harian_final"] == 0
 
 
 # Breakdown per-hari dan agregat bulanan HARUS konsisten untuk tanggal tanpa
-# Absensi (sebelumnya breakdown_hari() menampilkan 100% tapi
-# hitung_uang_harian_dinamis_bulan() menghitungnya Rp0 -- bug, sudah diperbaiki).
+# Absensi -- keduanya Rp0.
 def test_breakdown_dan_agregat_bulanan_konsisten_untuk_tanggal_tanpa_absensi(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber = _setup(tenant_id)
@@ -356,15 +374,15 @@ def test_breakdown_dan_agregat_bulanan_konsisten_untuk_tanggal_tanpa_absensi(sin
     database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20)
-    _isi_service(barber["id"], "2020-01-15", sid, 2)  # tanpa Absensi, target tercapai
+    _isi_service(barber["id"], "2020-01-15", sid, 2)  # tanpa Absensi, target tercapai -- tetap Rp0
     breakdown_final = uhd.breakdown_hari(barber, "2020-01-15")["uang_harian_final"]
     bulan_total = uhd.hitung_uang_harian_dinamis_bulan(barber, 2020, 1)
-    assert breakdown_final == bulan_total == 60000
+    assert breakdown_final == bulan_total == 0
 
 
-# Bulan CAMPURAN: sebagian tanggal punya Absensi (dievaluasi mesin baru),
-# sebagian lain hanya punya transaksi service tanpa Absensi (fallback sistem
-# lama) -- total bulan harus menjumlahkan HASIL BENAR dari keduanya.
+# Bulan CAMPURAN: sebagian tanggal punya Absensi LENGKAP (dievaluasi mesin
+# baru), sebagian lain hanya punya transaksi service tanpa Absensi (Rp0
+# mutlak) -- total bulan harus menjumlahkan HASIL BENAR dari keduanya.
 def test_bulan_campuran_absensi_dan_tanpa_absensi(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     barber = _setup(tenant_id, batas_menit_terlambat=120)
@@ -372,38 +390,94 @@ def test_bulan_campuran_absensi_dan_tanpa_absensi(single_tenant, monkeypatch):
     database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20)
-    # Tanggal 1: ADA Absensi, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
+    # Tanggal 1: ADA Absensi LENGKAP, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-01", 9, 35)
-    # Tanggal 15: TIDAK ADA Absensi, hanya service (fallback), target tercapai -> 60000
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-08-01", 18, 0)
+    # Tanggal 15: TIDAK ADA Absensi, hanya service (target tercapai) -- tetap Rp0
     _isi_service(barber["id"], "2026-08-15", sid, 2)
-    # Tanggal 20: TIDAK ADA Absensi, hanya service (fallback), target TIDAK tercapai -> 0
+    # Tanggal 20: TIDAK ADA Absensi, hanya service (target TIDAK tercapai) -- tetap Rp0
     _isi_service(barber["id"], "2026-08-20", sid, 1)
     total = uhd.hitung_uang_harian_dinamis_bulan(barber, 2026, 8)
-    assert total == 48000 + 60000 + 0
+    assert total == 48000 + 0 + 0
 
 
-# Audit menyeluruh (feedback Owner): hitung_uang_harian_dinamis_rentang()
-# (dipakai Laporan PDF, BUKAN cuma _bulan yang dites di atas) HARUS ikut
-# fallback sistem lama untuk tanggal tanpa Absensi juga -- termasuk saat
-# rentangnya melintasi 2 bulan kalender (limit akumulasi reset per bulan).
-def test_rentang_fallback_sistem_lama_lintas_bulan(single_tenant, monkeypatch):
+# Audit menyeluruh: hitung_uang_harian_dinamis_rentang() (dipakai Laporan
+# PDF, BUKAN cuma _bulan yang dites di atas) HARUS ikut aturan Rp0 mutlak
+# untuk tanggal tanpa Absensi juga -- termasuk saat rentangnya melintasi 2
+# bulan kalender (limit akumulasi reset per bulan).
+def test_rentang_absensi_tidak_lengkap_mutlak_nol_lintas_bulan(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     barber = _setup(tenant_id, batas_menit_terlambat=120)
     sid = _service(tenant_id)
     database.set_setting("uang_harian_target_service_harian", "2", tenant_id=tenant_id)
     uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
                    keterlambatan_potongan_persen=20)
-    # Bulan Juli: ADA Absensi, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
+    # Bulan Juli: ADA Absensi LENGKAP, terlambat 35 > toleransi 30 -> potongan 20% -> 48000
     _checkin(monkeypatch, tenant_id, barber["id"], "2026-07-31", 9, 35)
-    # Bulan Agustus: TIDAK ADA Absensi, hanya service (fallback), target tercapai -> 60000
+    _checkout(monkeypatch, tenant_id, barber["id"], "2026-07-31", 18, 0)
+    # Bulan Agustus: TIDAK ADA Absensi, hanya service (target tercapai) -- tetap Rp0
     _isi_service(barber["id"], "2026-08-01", sid, 2)
-    # Bulan Agustus: TIDAK ADA Absensi, hanya service (fallback), target TIDAK tercapai -> 0
+    # Bulan Agustus: TIDAK ADA Absensi, hanya service (target TIDAK tercapai) -- tetap Rp0
     _isi_service(barber["id"], "2026-08-02", sid, 1)
     total = uhd.hitung_uang_harian_dinamis_rentang(barber, "2026-07-31", "2026-08-02")
-    assert total == 48000 + 60000 + 0
+    assert total == 48000 + 0 + 0
     # breakdown per-hari harus konsisten dengan kontribusi rentang di atas
-    assert uhd.breakdown_hari(barber, "2026-08-01")["sumber"] == "tanggal_tanpa_absensi"
-    assert uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"] == 60000
+    assert uhd.breakdown_hari(barber, "2026-08-01")["sumber"] == "tidak_ada_absensi"
+    assert uhd.breakdown_hari(barber, "2026-08-01")["uang_harian_final"] == 0
+
+
+# PERMINTAAN OWNER: HANYA Check In (lupa Check Out) -- Uang Harian MUTLAK
+# Rp0, walau check-in-nya sendiri tepat waktu (tidak ada pelanggaran
+# toleransi/limit apa pun yang bisa dievaluasi).
+def test_hanya_check_in_tanpa_check_out_mutlak_nol(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 0)  # tepat waktu, TIDAK check-out
+    b = uhd.breakdown_hari(barber, "2026-08-03")
+    assert b["sumber"] == "absensi_tidak_lengkap"
+    assert b["absensi_tidak_lengkap"] is True
+    assert b["uang_harian_final"] == 0
+
+
+# PERMINTAAN OWNER: HANYA Check Out (barber TIDAK PERNAH Check In hari itu
+# sama sekali -- baris hanya ada lewat Koreksi Absensi check_out yang
+# disetujui, lihat attendance_db._terapkan_koreksi_ke_log()) -- Uang Harian
+# tetap MUTLAK Rp0 selama check_in_at masih kosong. (Normal Check Out lewat
+# attendance_db.check_out() SENDIRI sudah menolak kalau belum Check In hari
+# itu -- "hanya check-out" secara nyata HANYA bisa terjadi lewat Koreksi.)
+def test_hanya_check_out_tanpa_check_in_mutlak_nol(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    koreksi = attendance_db.buat_pengajuan_koreksi(barber["id"], "2026-08-03", "check_out", "18:00",
+                                                     "Lupa check-out, lupa check-in juga", tenant_id=tenant_id)
+    attendance_db.set_status_koreksi(koreksi["id"], "disetujui")
+    b = uhd.breakdown_hari(barber, "2026-08-03")
+    assert b["sumber"] == "absensi_tidak_lengkap"
+    assert b["absensi_tidak_lengkap"] is True
+    assert b["uang_harian_final"] == 0
+
+
+# PERMINTAAN OWNER: begitu Koreksi Absensi untuk bagian yang kosong
+# disetujui (melengkapi check-in DAN check-out hari itu), Uang Harian
+# otomatis kembali dievaluasi normal -- TIDAK lagi Rp0.
+def test_koreksi_melengkapi_absensi_kembali_dievaluasi_normal(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber = _setup(tenant_id)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_potongan_persen=20)
+    _checkin(monkeypatch, tenant_id, barber["id"], "2026-08-03", 9, 0)  # tepat waktu, TIDAK check-out
+    assert uhd.breakdown_hari(barber, "2026-08-03")["uang_harian_final"] == 0  # belum lengkap
+
+    koreksi = attendance_db.buat_pengajuan_koreksi(barber["id"], "2026-08-03", "check_out", "18:00",
+                                                     "Lupa check-out", tenant_id=tenant_id)
+    attendance_db.set_status_koreksi(koreksi["id"], "disetujui")
+    b = uhd.breakdown_hari(barber, "2026-08-03")
+    assert b["sumber"] == "absensi"
+    assert b["uang_harian_final"] == 60000  # lengkap & tidak ada pelanggaran -> cair penuh
 
 
 # Audit menyeluruh (feedback Owner): GET /breakdown dengan `tanggal` format

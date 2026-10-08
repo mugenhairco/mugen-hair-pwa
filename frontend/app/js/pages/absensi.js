@@ -167,18 +167,27 @@ const PageAbsensi = (() => {
   function tampilkanBreakdown(b) {
     const baris = [_barisBreakdown("Uang Harian Dasar", MugenUI.formatRupiah(b.uang_harian_dasar))];
 
-    // PERBAIKAN (feedback Owner): tanggal yang TIDAK punya data Absensi sama
-    // sekali (termasuk seluruh riwayat sebelum fitur Absensi ada) otomatis
-    // jatuh ke sistem lama (backend: uang_harian_dinamis_db.py::
-    // _evaluasi_hari_dengan_fallback()) -- dikenali di sini dari TIDAK
-    // adanya `b.keterlambatan` (bukan cuma `b.aktif`, karena hari ini bisa
-    // saja jatuh ke sistem lama WALAU Tenant-nya sendiri sudah aktif).
+    // PERMINTAAN OWNER: Tenant yang sudah opt-in Uang Harian Dinamis, tapi
+    // tanggal ini TIDAK punya Absensi check-in+check-out LENGKAP (tidak
+    // ada baris sama sekali, ATAU cuma salah satu) -- Uang Harian MUTLAK
+    // Rp0 (backend: uang_harian_dinamis_db.py::_hasil_absensi_tidak_lengkap()),
+    // TIDAK lagi fallback ke sistem lama berbasis jumlah service.
+    if (b.absensi_tidak_lengkap) {
+      baris.push(MugenUI.el("div", { class: "subtitle", style: "padding:6px 0;" },
+        b.sumber === "tidak_ada_absensi"
+          ? "Tidak ada catatan Check In maupun Check Out untuk tanggal ini -- Uang Harian Rp0 sampai barber mengajukan Koreksi Absensi dan disetujui."
+          : "Catatan Absensi tanggal ini tidak lengkap (cuma Check In atau cuma Check Out saja) -- Uang Harian Rp0 sampai Koreksi Absensi diajukan dan disetujui."));
+      baris.push(_barisBreakdown("Potongan Final", `${b.potongan_persen}%`));
+      baris.push(MugenUI.el("div", { style: "border-top:1px solid var(--border);margin:8px 0;" }));
+      baris.push(_barisBreakdown("Uang Harian Final", MugenUI.formatRupiah(b.uang_harian_final)));
+      return MugenUI.el("div", { style: "min-width:280px;" }, baris);
+    }
+
+    // PERBAIKAN (feedback Owner): Tenant yang BELUM opt-in Uang Harian
+    // Dinamis sama sekali tetap memakai sistem lama (murni jumlah
+    // service) -- dikenali di sini dari TIDAK adanya `b.keterlambatan`.
     const pakaiSistemLama = !b.keterlambatan;
     if (pakaiSistemLama) {
-      if (b.sumber === "tanggal_tanpa_absensi") {
-        baris.push(MugenUI.el("div", { class: "subtitle", style: "padding:6px 0;" },
-          "Tanggal ini tidak punya data Absensi (mis. sebelum fitur Absensi ada) -- dihitung pakai sistem lama (jumlah service), TIDAK terpengaruh Uang Harian Dinamis."));
-      }
       baris.push(_barisBreakdown("Service (sistem lama)", `${b.service.jumlah} / ${b.service.minimal}`));
       baris.push(_barisBreakdown("Syarat Service", b.service.terpenuhi ? "✓ Terpenuhi" : "✕ Tidak Terpenuhi"));
     } else {
