@@ -808,25 +808,27 @@ const PageBookPublic = (() => {
       body.appendChild(MugenUI.el("h2", {}, "Choose Barber"));
       const grid = MugenUI.el("div", { class: "book-barber-grid" });
       for (const b of barbers) {
+        // PERMINTAAN OWNER: barber yang libur HARI INI (b.libur_hari_ini)
+        // TETAP bisa diklik -- cuma info "Off today", bukan diblokir total
+        // seperti sebelumnya. Customer lanjut ke Step 3 (kalender) dan
+        // pilih tanggal lain yang barber ini tidak libur; kalender/Step 4
+        // sudah menangani sendiri kalau tanggal yang akhirnya dipilih
+        // ternyata hari libur barber ini (lihat data.barber_libur di bawah).
         const card = MugenUI.el("button", {
-          class: "book-barber-card" + (b.libur_hari_ini ? " disabled" : ""),
+          class: "book-barber-card",
           type: "button",
         }, [
           b.foto_url
             ? MugenUI.el("img", { src: MUGEN_API_BASE + b.foto_url, class: "book-barber-foto", alt: b.nama })
             : MugenUI.el("div", { class: "book-barber-foto book-barber-foto-kosong" }, b.nama.charAt(0).toUpperCase()),
           MugenUI.el("div", { class: "book-barber-nama" }, b.nama),
-          b.libur_hari_ini ? MugenUI.el("div", { class: "book-barber-status" }, "On Vacation") : null,
+          b.libur_hari_ini ? MugenUI.el("div", { class: "book-barber-status" }, "Off today") : null,
         ]);
-        if (!b.libur_hari_ini) {
-          card.addEventListener("click", () => {
-            state.barberId = b.id;
-            state.barberNama = b.nama;
-            goto(2);
-          });
-        } else {
-          card.disabled = true;
-        }
+        card.addEventListener("click", () => {
+          state.barberId = b.id;
+          state.barberNama = b.nama;
+          goto(2);
+        });
         grid.appendChild(card);
       }
       if (barbers.length) {

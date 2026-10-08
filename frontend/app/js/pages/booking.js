@@ -1004,10 +1004,9 @@ const PageBooking = (() => {
   // yang rutin libur, langsung berlaku otomatis setiap minggu (dicek
   // booking_db.py::is_barber_libur(), dikalahkan otomatis kalau barber
   // ternyata Check In di hari itu -- lihat catatan di sana). Libur dadakan
-  // satu hari (barber sakit mendadak dst) sudah tercakup fitur Auto-Libur
-  // (barber yang tidak Check In otomatis dianggap libur hari itu) -- input
-  // tanggal manual TIDAK lagi ada di tab ini (tapi TETAP tersedia di menu
-  // Input Data > Tandai Libur untuk keperluan Cuti & Izin/payroll).
+  // satu hari (barber sakit mendadak dst) TIDAK ditangani di tab ini --
+  // input tanggal manual TIDAK ada di sini, tapi TETAP tersedia di menu
+  // Input Data > Tandai Libur untuk keperluan Cuti & Izin/payroll.
   const HARI_LIBUR_MINGGUAN = [
     { value: "senin", label: "Senin" },
     { value: "selasa", label: "Selasa" },

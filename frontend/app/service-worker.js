@@ -949,7 +949,24 @@
 // (selalu begitu sejak awal) -- sebelumnya dipaksa no-store, jadi
 // gambar yang sama diunduh ulang penuh tiap buka halaman. Tambah
 // GZipMiddleware (kompresi transparan, tidak mengubah isi respons).
-const ASSET_VERSION = "166";
+// v166 -> v167: PERMINTAAN Owner -- fitur "Auto-Libur Tidak Absen" (barber
+// yang tidak Check In sampai jam Pulang otomatis dicatat Libur/Cuti)
+// DIHAPUS TOTAL: loop background real-time, sapuan bulanan, cascade
+// Libur->Cuti&Izin->Libur kelebihan kuota, kartu "Sisa Kuota Libur",
+// toggle+kuota "Auto-Libur Tidak Absen" di Pengaturan Izin & Cuti, dan
+// stabilo merah "Hari Libur" di Rekap Bulanan. Satu-satunya cara mencatat
+// Barber Holiday/libur sekarang MANUAL lewat menu Input Data > Tandai
+// Libur (tidak berubah). Kolom DB terkait dibiarkan di skema (riwayat
+// lama tetap ada, tidak dihapus/dimigrasikan).
+// v167 -> v168: PERMINTAAN Owner -- halaman booking publik (book_public.js
+// Step 1 Choose Barber): kartu barber yang libur HARI INI (jadwal libur
+// mingguan) TIDAK lagi diblokir total ("On Vacation", tidak bisa diklik) --
+// sekarang tetap bisa diklik (label jadi "Off today"), customer lanjut ke
+// Step 3 kalender dan pilih tanggal lain yang barber itu tidak libur. Kalau
+// akhirnya tetap memilih tanggal yang ternyata hari libur barber ini, Step 4
+// (Select Time) sudah menangani sendiri (pesan "is on leave on this date",
+// logic ini sudah ada sebelumnya, tidak berubah).
+const ASSET_VERSION = "168";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

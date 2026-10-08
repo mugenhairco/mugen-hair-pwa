@@ -1034,28 +1034,6 @@ const PagePengaturan = (() => {
         value: String(settings.maksimal_bersamaan ?? 0) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
 
-      // PERMINTAAN OWNER (KOREKSI): barber yang tidak check-in pada hari
-      // kerja otomatis dicatat LIBUR (bukan langsung Cuti) & mengurangi
-      // Kuota Libur/bulan -- lihat auto_libur_db.py. Default OFF, murni
-      // opsional. PERMINTAAN OWNER (revisi berikutnya): diproses OTOMATIS
-      // real-time begitu jam operasional (jam Pulang, Pengaturan Absensi)
-      // lewat -- TIDAK LAGI tombol manual (dihapus total).
-      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Auto-Libur Tidak Absen"));
-      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-        "Kalau aktif: karyawan yang TIDAK check-in Absensi pada hari kerja (toko buka, bukan hari libur " +
-        "toko/Barber Holiday, dan belum ada pengajuan Izin/Cuti lain di tanggal itu) otomatis dicatat " +
-        "Libur, mengurangi Kuota Libur/bulan di bawah. Kalau Kuota Libur bulan itu sudah habis, tanggal " +
-        "berikutnya diambilkan dari Kuota Izin & Cuti (Gabungan) di atas. Kalau KEDUA kuota itu sama-sama " +
-        "habis, tanggal tetap dicatat Libur tapi baris Hari Libur bulan itu di Rekap Bulanan distabilo " +
-        "merah. Diproses OTOMATIS begitu jam Pulang (Pengaturan Absensi) hari itu sudah lewat -- tidak " +
-        "perlu tombol/aksi manual apa pun."));
-      const inputAutoLibur = MugenUI.el("input", { type: "checkbox" });
-      inputAutoLibur.checked = settings.auto_libur_tidak_absen_aktif === true;
-      isian.appendChild(checkboxBaris(inputAutoLibur, "Aktifkan Auto-Libur Tidak Absen"));
-      const inputKuotaLibur = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_libur_bulanan ?? 0) });
-      baris("Kuota Libur per Bulan (hari) -- 0 = tidak dipakai, langsung ke Kuota Izin & Cuti", inputKuotaLibur);
-
       const errorBox = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Izin & Cuti");
       card.appendChild(errorBox);
@@ -1070,8 +1048,6 @@ const PagePengaturan = (() => {
           kuota_boleh_dipecah: inputKuotaDipecah.checked,
           h_min_pengajuan: Number(inputHMin.value) || 0,
           maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
-          auto_libur_tidak_absen_aktif: inputAutoLibur.checked,
-          kuota_libur_bulanan: Number(inputKuotaLibur.value) || 0,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/izin-cuti/pengaturan", payload));
