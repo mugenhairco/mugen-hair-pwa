@@ -4,14 +4,18 @@
 // endpoint /verifikasi & /batalkan), jadi badge/suara ini tidak berguna
 // (dan tidak ditampilkan) untuk akun Barber.
 //
-// Real-time TANPA reload dicapai lewat POLLING ringan (bukan WebSocket --
-// backend FastAPI di app ini murni REST, menambah infrastruktur WebSocket
-// hanya untuk satu badge angka tidak sepadan) ke endpoint SATU angka
-// /api/booking/belum-dikonfirmasi setiap POLL_MS. Loop ini berjalan
-// SEPANJANG APLIKASI TERBUKA (dimulai sekali dari app.js), TIDAK terikat ke
-// halaman Booking manapun -- supaya badge di sidebar tetap ter-update walau
-// Admin sedang membuka halaman lain, PERSIS seperti badge notifikasi pada
-// umumnya.
+// OPTIMASI BANDWIDTH (permintaan Owner): SEBELUMNYA polling periodik ke
+// /api/booking/belum-dikonfirmasi setiap beberapa detik SELAMA aplikasi
+// terbuka -- dashboard yang ditinggal terbuka seharian (mis. layar kasir/
+// resepsionis) menghasilkan request terus-menerus sepanjang hari walau
+// tidak ada aktivitas sama sekali. SEKARANG murni EVENT-DRIVEN (TIDAK ADA
+// setInterval/timer jaringan sama sekali, pola SAMA PERSIS izin_notif.js
+// yang sudah lebih dulu direvisi serupa) -- badge diperbarui HANYA pada
+// momen nyata: aplikasi pertama dibuka, setelah login, SETIAP kali user
+// berpindah menu (lihat router.js::handle(), "ada aksi klik" pengguna),
+// setelah aksi Verifikasi/Batalkan booking, dan saat tab ini kembali
+// terlihat setelah disembunyikan (Page Visibility API -- bukan timer,
+// murni reaksi atas tab di-switch oleh user).
 //
 // Suara pengingat: karena tidak ada akses legal untuk menyertakan file suara
 // asli iPhone (aset berhak cipta Apple), suara di sini disintesis LANGSUNG
@@ -21,12 +25,12 @@
 // (grafik SVG, animasi CSS) -- tanpa aset eksternal, tetap berfungsi offline.
 
 const MugenBookingNotif = (() => {
-  const POLL_MS = 15000;     // 15 detik -- cukup terasa "real-time" tanpa membebani server
-  const REMINDER_MS = 60000; // 1 menit, sesuai instruksi
+  const REMINDER_MS = 60000; // 1 menit, sesuai instruksi -- MURNI lokal (bunyi ulang dari
+                             // lastCount yang sudah diketahui), TIDAK ADA request jaringan
+                             // sama sekali, jadi TIDAK disentuh oleh optimasi bandwidth ini.
 
   let lastCount = null; // null = belum pernah polling sukses (baseline belum diketahui)
   let reminderTimer = null;
-  let pollTimer = null;
   let audioCtx = null;
 
   // ---- Suara: satu AudioContext dipakai ulang (bukan bikin baru tiap
@@ -153,42 +157,27 @@ const MugenBookingNotif = (() => {
     }
   }
 
-  // Dipanggil booking.js setelah aksi Verifikasi/Batalkan supaya badge
-  // langsung ter-update saat itu juga, tidak perlu menunggu POLL_MS berikutnya.
+  // Dipanggil router.js (tiap pindah menu) dan booking.js (setelah aksi
+  // Verifikasi/Batalkan) supaya badge langsung ter-update saat itu juga --
+  // SATU-SATUNYA jalur badge ini diperbarui sekarang (lihat init()).
   function refreshNow() {
     _poll();
   }
 
-  function _mulaiPollInterval() {
-    if (pollTimer) return; // sudah jalan
-    pollTimer = setInterval(_poll, POLL_MS);
-  }
-
-  function _hentikanPollInterval() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  // REVISI Efisiensi Polling: interval network HANYA jalan selagi tab ini
-  // terlihat (Page Visibility API) -- di-pause total begitu tab
-  // disembunyikan/pindah tab lain (TIDAK ADA request ke backend selama
-  // itu), lalu di-refresh SEKALI + interval dilanjutkan lagi begitu tab
-  // terlihat kembali. Reminder chime (playChime(), lihat _mulaiReminder())
-  // SENGAJA TIDAK ikut di-pause -- itu murni bunyi lokal (tanpa request
-  // network sama sekali), Admin tetap perlu dengar pengingat booking
-  // pending walau tab sedang di background/diminimize.
+  // OPTIMASI BANDWIDTH: TIDAK ADA lagi setInterval ke jaringan sama sekali
+  // -- badge diperbarui murni event-driven: sekali saat app dibuka (di
+  // sini), lagi tiap kali user berpindah menu (router.js::handle(), lihat
+  // komentar di atas file ini), setelah aksi Verifikasi/Batalkan
+  // (booking.js memanggil refreshNow()), dan saat tab ini kembali
+  // terlihat setelah disembunyikan (Page Visibility API -- reaksi atas
+  // tab di-switch oleh user, BUKAN timer). Reminder chime (playChime(),
+  // lihat _mulaiReminder()) SENGAJA TIDAK terpengaruh -- itu murni bunyi
+  // lokal dari lastCount yang sudah diketahui, tanpa request jaringan
+  // apa pun.
   function init() {
     _poll();
-    _mulaiPollInterval();
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") {
-        _hentikanPollInterval();
-      } else {
-        _poll(); // data mungkin sudah basi selama tab disembunyikan
-        _mulaiPollInterval();
-      }
+      if (document.visibilityState === "visible") _poll(); // data mungkin sudah basi selama tab disembunyikan
     });
   }
 

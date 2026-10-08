@@ -938,7 +938,18 @@
 // sudah ada, TANPA polling/heartbeat tambahan apa pun). Akun Barber yang
 // berbeda tetap bebas login bersamaan. Tombol Keluar sekarang juga
 // mencabut sesi di backend (bukan cuma menghapus token lokal).
-const ASSET_VERSION = "165";
+// v165 -> v166: Optimasi Bandwidth Render -- badge notifikasi booking
+// (booking_notif.js) TIDAK lagi polling periodik ke server (dulu tiap 15
+// detik SELAMA aplikasi terbuka) -- sekarang murni event-driven (refresh
+// saat app dibuka/login, tiap pindah menu, setelah aksi Verifikasi/
+// Batalkan, klik tombol "Muat Ulang" di Booking, dan saat tab kembali
+// terlihat), pola sama seperti badge Izin & Cuti. Backend: endpoint
+// gambar upload (logo/favicon/hero/galeri/foto barber/QRIS) sekarang
+// cacheable 1 tahun di browser selama URL-nya membawa `?v=<versi>`
+// (selalu begitu sejak awal) -- sebelumnya dipaksa no-store, jadi
+// gambar yang sama diunduh ulang penuh tiap buka halaman. Tambah
+// GZipMiddleware (kompresi transparan, tidak mengubah isi respons).
+const ASSET_VERSION = "166";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

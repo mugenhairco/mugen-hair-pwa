@@ -45,6 +45,7 @@ if _APP_DIR not in sys.path:
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
 import database as db
@@ -196,6 +197,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# OPTIMASI BANDWIDTH: kompresi respons transparan (gzip) -- Starlette HANYA
+# mengompres kalau body SUDAH LEBIH BESAR dari minimum_size DAN client
+# mengirim header `Accept-Encoding: gzip` (semua browser modern selalu
+# mengirim ini) -- TIDAK mengubah isi respons sama sekali (JSON/HTML/JS/CSS
+# tetap identik setelah didekompres browser), murni mengurangi ukuran byte
+# di jaringan. Sebelumnya TIDAK ADA middleware ini sama sekali -- SELURUH
+# respons (termasuk JSON daftar booking/rekap yang bisa besar) dikirim
+# APA ADANYA tanpa kompresi.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # Domain lama Render (*.onrender.com) -> domain produksi: permanent redirect
 # HTTP 308 (bukan 301/302 -- 308 SATU-SATUNYA kode redirect yang menjamin
 # method+body request tetap dipertahankan persis, penting karena endpoint di
@@ -229,6 +240,33 @@ async def _redirect_domain_lama(request: Request, call_next):
 app.add_middleware(TenantResolutionMiddleware)
 
 
+# OPTIMASI BANDWIDTH: path persis/awalan endpoint yang menyajikan file
+# upload (logo/favicon/hero image/hero video/foto About/foto galeri/foto
+# barber/QRIS) -- SEMUA SUDAH dipanggil frontend dengan query `?v=<nama_
+# file_unik>` (lihat pengaturan_identitas.py/website_content.py/
+# booking_db.py/branding_db.py), jadi aman di-cache immutable SELAMA `v`
+# ada di request (lihat _log_dan_no_store() di bawah). TIDAK termasuk
+# endpoint PDF/Excel (laporan dinamis per filter, tidak punya versi) atau
+# endpoint JSON apa pun -- keduanya TETAP no-store seperti sebelumnya.
+_PATH_GAMBAR_VERSIONED_PERSIS = {
+    "/api/pengaturan/logo",
+    "/api/pengaturan/favicon",
+    "/api/website/hero-image",
+    "/api/website/hero-video",
+    "/api/website/about-foto",
+    "/api/public/booking/qris",
+}
+_PATH_GAMBAR_VERSIONED_AWALAN = ("/api/public/booking/barber-foto/",)
+
+
+def _adalah_path_gambar_versioned(path: str) -> bool:
+    if path in _PATH_GAMBAR_VERSIONED_PERSIS:
+        return True
+    if path.startswith(_PATH_GAMBAR_VERSIONED_AWALAN):
+        return True
+    return path.startswith("/api/website/gallery/") and path.endswith("/foto")
+
+
 @app.middleware("http")
 async def _log_dan_no_store(request: Request, call_next):
     """
@@ -239,6 +277,19 @@ async def _log_dan_no_store(request: Request, call_next):
        cache HTTP di lapisan mana pun (browser, proxy/CDN perantara) yang
        bisa menyajikan balasan API basi -- sebelumnya tidak ada header ini
        sama sekali, jadi murni bergantung pada default browser.
+
+       OPTIMASI BANDWIDTH (pengecualian SEMPIT, lihat _PATH_GAMBAR_VERSIONED
+       di bawah): endpoint yang menyajikan file upload (logo/favicon/hero/
+       galeri/foto barber/QRIS) SUDAH membangun URL-nya dengan query `?v=
+       <nama_file_unik>` (lihat pengaturan_identitas.py/website_content.py/
+       booking_db.py/branding_db.py -- nama file R2 SELALU uuid4, berubah
+       SETIAP kali file diganti) SEJAK SEBELUM perbaikan ini -- jadi URL
+       dengan `v` tertentu SUDAH PASTI immutable (kalau Owner ganti logo,
+       frontend otomatis minta URL BARU dengan `v` baru, URL lama tidak
+       pernah diminta lagi). Endpoint ini lolos dari no-store HANYA kalau
+       query `v` benar-benar ada di request -- permintaan TANPA `v` (jalur
+       lama/langsung) tetap no-store seperti sebelumnya, tidak ada
+       perubahan perilaku untuk kasus itu.
     2. Log method/path/status/durasi/instance_id tiap request -- supaya
        laporan "data tidak tersimpan" bisa dicek langsung dari log: apakah
        request Simpan/Edit/Hapus itu benar-benar sampai, berhasil (2xx),
@@ -250,7 +301,10 @@ async def _log_dan_no_store(request: Request, call_next):
     durasi_ms = round((time.monotonic() - mulai) * 1000, 1)
 
     if request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-store"
+        if _adalah_path_gambar_versioned(request.url.path) and request.query_params.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-store"
 
     if request.url.path.startswith("/api/"):
         level = logging.INFO if response.status_code < 400 else logging.WARNING

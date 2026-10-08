@@ -689,11 +689,11 @@ const PageBooking = (() => {
     // customer/webhook TIDAK PERNAH muncul di tabel ini sampai admin
     // reload browser manual (load() di bawah HANYA terpanggil sekali saat
     // tab dibuka + saat filter berubah, TIDAK ADA polling/auto-refresh
-    // tabelnya -- beda dari badge notifikasi MugenBookingNotif yang
-    // memang sudah polling sendiri). Tombol ini murni memanggil load()
-    // yang SUDAH ADA lagi -- setiap panggilan MugenApi.get() SELALU ke
-    // server dulu (useCache di sini cuma fallback offline, lihat api.js),
-    // jadi tidak perlu bypass cache apa pun.
+    // tabelnya). OPTIMASI BANDWIDTH: badge notifikasi MugenBookingNotif
+    // SEKARANG JUGA murni manual/event-driven (tidak lagi polling sendiri,
+    // lihat booking_notif.js) -- tombol ini SEKARANG JUGA memicu
+    // refreshNow()-nya (di bawah), supaya "Muat Ulang" booking dan "Muat
+    // Ulang" badge terjadi bersamaan dalam satu klik, sesuai permintaan Owner.
     const btnRefresh = MugenUI.el("button", { type: "button", title: "Muat Ulang Booking" }, "↻ Muat Ulang");
     row.appendChild(btnRefresh);
     const tableWrap = MugenUI.el("div");
@@ -774,7 +774,10 @@ const PageBooking = (() => {
     selTahun.addEventListener("change", load);
     selBarber.addEventListener("change", load);
     selStatus.addEventListener("change", load);
-    btnRefresh.addEventListener("click", () => MugenUI.withButtonLoading(btnRefresh, load));
+    btnRefresh.addEventListener("click", () => MugenUI.withButtonLoading(btnRefresh, async () => {
+      await load();
+      if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
+    }));
     load();
   }
 
