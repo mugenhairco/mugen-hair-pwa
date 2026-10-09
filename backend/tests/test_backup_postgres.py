@@ -147,9 +147,18 @@ _SCRIPT_POOL_TIMEOUT = textwrap.dedent("""
         "bisa menggantung tanpa batas saat dipakai ulang"
     )
     assert kwargs.get("keepalives_idle"), "keepalives_idle tidak diset"
-    assert "statement_timeout" in (kwargs.get("options") or ""), (
-        "statement_timeout tidak diset -- satu query individual bisa "
-        "menggantung tanpa batas kalau tertahan lock/kontensi"
+    # KOREKSI (migrasi ke Neon): statement_timeout TIDAK LAGI dikirim lewat
+    # parameter koneksi `options` (startup parameter) -- pooler Neon
+    # (PgBouncer) menolaknya mentah-mentah (psycopg2.OperationalError:
+    # "unsupported startup parameter in options"), bikin SETIAP koneksi
+    # baru gagal total lewat endpoint pooled. Perlindungan statement_timeout
+    # sekarang WAJIB diatur sekali secara permanen di server lewat
+    # `ALTER ROLE <role> SET statement_timeout = '30s'` (lihat README bagian
+    # Migrasi Neon) -- bukan tanggung jawab konfigurasi pool ini lagi,
+    # jadi TIDAK dicek di sini.
+    assert "options" not in kwargs, (
+        "parameter `options` seharusnya TIDAK ADA lagi di kwargs pool -- "
+        "pooler Neon menolak startup parameter apa pun lewat sini"
     )
 
     # Pool dengan konfigurasi ini TETAP harus bisa dipakai normal terhadap

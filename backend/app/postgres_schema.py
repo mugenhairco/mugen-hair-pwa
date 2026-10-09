@@ -2362,15 +2362,18 @@ def _coba_backfill_koneksi_baru(tenant_id: int, kandidat: str) -> str:
             db_compat.DATABASE_URL,
             connect_timeout=10,
             keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
-            options="-c lock_timeout=5000 -c statement_timeout=10000",
         )
         _logger.info("[postgres_schema] _backfill_booking_slug(): tenant id=%s koneksi baru didapat (%.2fs).",
                      tenant_id, time.monotonic() - _t0)
         cur = conn.cursor()
-        # SET eksplisit sebagai pertahanan LAPIS KEDUA -- kalau parameter
-        # `options` di atas (startup parameter) ternyata tidak berlaku di
-        # lingkungan tertentu, perintah SQL biasa ini tidak bisa diam-diam
-        # diabaikan dengan cara yang sama.
+        # KOREKSI (migrasi ke Neon): `options="-c lock_timeout=... -c
+        # statement_timeout=..."` (startup parameter) DIHAPUS -- pooler Neon
+        # (PgBouncer) MENOLAK startup parameter ini mentah-mentah
+        # (psycopg2.OperationalError: "unsupported startup parameter in
+        # options"), bikin connect() di atas gagal total lewat endpoint
+        # pooled, jadi SET eksplisit di bawah ini TIDAK PERNAH sempat
+        # jalan. SET biasa (bukan startup parameter) ini sendirian sudah
+        # cukup -- aman dipakai lewat pooled ATAUPUN direct endpoint.
         cur.execute("SET lock_timeout = '5s'")
         cur.execute("SET statement_timeout = '10s'")
         cur.execute("UPDATE tenants SET booking_slug = %s WHERE id = %s", (kandidat, tenant_id))

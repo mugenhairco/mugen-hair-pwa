@@ -71,13 +71,22 @@ def _get_pool():
     ada (mis. tersimpan idle di pool, load balancer/NAT memutusnya tanpa
     FIN yang benar) dalam waktu terbatas (idle 30 detik + 3x interval 10
     detik = maksimal ~60 detik) alih-alih menggantung tanpa batas saat
-    dipakai ulang. options=statement_timeout membatasi SETIAP query
-    individual (bukan cuma fase koneksi) supaya query yang kebetulan
-    tertahan lock/kontensi lama juga gagal dengan error yang jelas, bukan
-    menggantung tanpa batas -- pertahanan berlapis untuk kelas masalah yang
-    SAMA (sesuatu yang menggantung selamanya HARUS berubah jadi error cepat
-    yang bisa ditangani, tidak pernah membiarkan request menggantung tanpa
-    batas waktu)."""
+    dipakai ulang.
+
+    KOREKSI (migrasi ke Neon): statement_timeout per-query SEBELUMNYA
+    dikirim lewat parameter koneksi `options="-c statement_timeout=..."`
+    (startup parameter) -- pooler Neon (PgBouncer) MENOLAK startup
+    parameter ini mentah-mentah (psycopg2.OperationalError: "unsupported
+    startup parameter in options: statement_timeout", lihat
+    https://neon.com/docs/connect/connection-errors#unsupported-startup-parameter),
+    bikin SETIAP koneksi baru gagal total lewat endpoint pooled Neon.
+    DIHAPUS dari sini -- gantinya statement_timeout diatur SEKALI secara
+    permanen di sisi server lewat `ALTER ROLE ... SET statement_timeout`
+    (dijalankan manual sekali di Neon SQL Editor, lihat README bagian
+    Migrasi Neon) supaya otomatis berlaku untuk SETIAP koneksi baru role
+    itu tanpa perlu parameter apa pun saat connect -- aman dipakai lewat
+    pooled ATAU direct endpoint, dan TIDAK bergantung pada perilaku
+    transaction-pooling PgBouncer terhadap SET per-sesi."""
     # BUGFIX "connection pool exhausted": default lama (10) terlalu kecil
     # untuk satu kali page load Owner Dashboard -- diaudit langsung dari log
     # produksi, SATU page load menembakkan 12+ request yang menyentuh
@@ -97,12 +106,10 @@ def _get_pool():
         minconn = int(os.environ.get("PG_POOL_MIN", "1"))
         maxconn = int(os.environ.get("PG_POOL_MAX", "20"))
         connect_timeout = int(os.environ.get("PG_CONNECT_TIMEOUT", "10"))
-        statement_timeout_ms = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", "30000"))
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn, maxconn, dsn=DATABASE_URL,
             connect_timeout=connect_timeout,
             keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
-            options=f"-c statement_timeout={statement_timeout_ms}",
         )
     return _pool
 
