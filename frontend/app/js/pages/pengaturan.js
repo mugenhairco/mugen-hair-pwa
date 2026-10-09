@@ -1034,6 +1034,21 @@ const PagePengaturan = (() => {
         value: String(settings.maksimal_bersamaan ?? 0) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
 
+      // PERMINTAAN OWNER: jatah "Kuota Libur/bulan" untuk Tandai Libur
+      // MANUAL (Input Data) -- 0 = tidak dibatasi (perilaku lama, tidak ada
+      // cascade apa pun). Begitu kuota ini habis, Tandai Libur berikutnya
+      // bulan itu OTOMATIS dicatat sebagai Cuti (mengurangi Kuota Izin &
+      // Cuti di atas) -- lihat kuota_libur_db.py.
+      isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kuota Libur per Bulan"));
+      isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
+        "Jatah hari Libur (Input Data > Tandai Libur) per barber per bulan kalender. Begitu habis, Tandai " +
+        "Libur selanjutnya di bulan itu otomatis dicatat sebagai Cuti (mengurangi Kuota Izin & Cuti di atas). " +
+        "Kalau KEDUA kuota itu sama-sama habis, tanggal tetap dicatat Libur tapi baris Hari Libur bulan itu " +
+        "di Rekap Bulanan distabilo merah. Kosongkan/0 = tidak dibatasi, tidak ada cascade sama sekali."));
+      const inputKuotaLibur = MugenUI.el("input", { type: "number", min: "0",
+        value: String(settings.kuota_libur_bulanan ?? 0) });
+      baris("Kuota Libur per Bulan (hari) -- 0 = tidak dibatasi", inputKuotaLibur);
+
       const errorBox = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pengaturan Izin & Cuti");
       card.appendChild(errorBox);
@@ -1048,6 +1063,7 @@ const PagePengaturan = (() => {
           kuota_boleh_dipecah: inputKuotaDipecah.checked,
           h_min_pengajuan: Number(inputHMin.value) || 0,
           maksimal_bersamaan: Number(inputMaksimalBersamaan.value) || 0,
+          kuota_libur_bulanan: Number(inputKuotaLibur.value) || 0,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/izin-cuti/pengaturan", payload));

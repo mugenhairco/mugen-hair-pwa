@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 import database as db
 import izin_cuti_db
+import kuota_libur_db
 import laporan_pdf
 import permissions
 from auth import get_current_user, require_feature, require_permission
@@ -119,6 +120,12 @@ class CutiSettingsBody(BaseModel):
     # `h_min_pengajuan_izin` SENGAJA TIDAK diterima lagi dari sini (model
     # 'terpisah' dihapus, mode_kuota dipaksa 'gabungan' di set_cuti_settings()).
     kuota_gabungan_hari: int | None = None
+    # PERMINTAAN OWNER: jatah "Kuota Libur/bulan" untuk Tandai Libur MANUAL
+    # (Input Data) -- 0 = tidak dibatasi/tidak dipakai (perilaku lama,
+    # TIDAK ada cascade apa pun). Begitu kuota ini habis, Tandai Libur
+    # berikutnya bulan itu OTOMATIS dicatat sebagai Cuti (mengurangi
+    # kuota_gabungan_hari di atas) -- lihat kuota_libur_db.py.
+    kuota_libur_bulanan: int | None = None
 
 
 @router.get("/pengaturan")
@@ -142,9 +149,11 @@ def ubah_cuti_settings(body: CutiSettingsBody, user: dict = Depends(require_perm
 def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_user)):
     """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo' tidak
     ditangkap sebagai path parameter pengajuan_id. Sisa kuota periode AKTIF
-    saat ini (SATU saldo bersama Izin+Cuti) -- barber HANYA boleh lihat
-    miliknya sendiri, admin/staff (_cek_akses_lihat) boleh lihat siapa pun
-    lewat `barber_id`."""
+    saat ini (SATU saldo bersama Izin+Cuti) + Sisa Kuota Libur bulan
+    berjalan (field `libur`, lihat kuota_libur_db.py::
+    get_sisa_kuota_libur_bulan_ini(), reset per bulan kalender, TIDAK ikut
+    periode Izin&Cuti) -- barber HANYA boleh lihat miliknya sendiri,
+    admin/staff (_cek_akses_lihat) boleh lihat siapa pun lewat `barber_id`."""
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
         if barber_id is None:
@@ -153,17 +162,22 @@ def ambil_sisa_kuota(barber_id: int = None, user: dict = Depends(get_current_use
         _cek_akses_lihat(user)
         if barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
-    return izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil = izin_cuti_db.get_sisa_kuota(barber_id, user["tenant_id"])
+    hasil["libur"] = kuota_libur_db.get_sisa_kuota_libur_bulan_ini(barber_id, user["tenant_id"])
+    return hasil
 
 
 @router.get("/saldo-semua-barber")
 def ambil_sisa_kuota_semua_barber(user: dict = Depends(get_current_user)):
     """Route ini didaftarkan SEBELUM /{pengajuan_id} supaya 'saldo-semua-
     barber' tidak ditangkap sebagai path parameter pengajuan_id. Tabel
-    ringkasan Sisa Kuota Izin&Cuti SEMUA barber sekaligus untuk Absensi >
-    Owner -- pola SAMA seperti /marquee (dipakai lintas-halaman oleh
-    absensi.js), HANYA admin/staff (_cek_akses_lihat), barber tidak perlu
-    endpoint ini (sudah pakai /saldo miliknya sendiri)."""
+    ringkasan Sisa Kuota (Izin&Cuti + Libur) SEMUA barber sekaligus untuk
+    Absensi > Owner -- pola SAMA seperti /marquee (dipakai lintas-halaman
+    oleh absensi.js), HANYA admin/staff (_cek_akses_lihat), barber tidak
+    perlu endpoint ini (sudah pakai /saldo miliknya sendiri). `kuota_habis`
+    =True kalau ADA tanggal bulan ini yang Kuota Libur DAN kuota gabungan
+    Izin&Cuti SAMA-SAMA sudah habis (lihat kuota_libur_db.py::
+    ada_kelebihan_kuota_bulan_ini())."""
     if user["role"] == "barber":
         # Endpoint ini mengembalikan data SEMUA barber -- BEDA dari
         # _cek_akses_lihat() biasa (yang meloloskan barber tanpa syarat
@@ -175,8 +189,10 @@ def ambil_sisa_kuota_semua_barber(user: dict = Depends(get_current_user)):
     hasil = []
     for barber in db.get_barbers(tenant_id=user["tenant_id"]):
         saldo = izin_cuti_db.get_sisa_kuota(barber["id"], user["tenant_id"])
+        saldo["libur"] = kuota_libur_db.get_sisa_kuota_libur_bulan_ini(barber["id"], user["tenant_id"])
         saldo["barber_id"] = barber["id"]
         saldo["nama_barber"] = barber["nama"]
+        saldo["kuota_habis"] = kuota_libur_db.ada_kelebihan_kuota_bulan_ini_sekarang(barber["id"])
         hasil.append(saldo)
     return hasil
 
