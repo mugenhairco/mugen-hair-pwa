@@ -966,7 +966,18 @@
 // akhirnya tetap memilih tanggal yang ternyata hari libur barber ini, Step 4
 // (Select Time) sudah menangani sendiri (pesan "is on leave on this date",
 // logic ini sudah ada sebelumnya, tidak berubah).
-const ASSET_VERSION = "168";
+// v168 -> v169: PERMINTAAN Owner -- "Kuota Libur per Bulan" dikembalikan
+// (sempat ikut terhapus bersama Auto-Libur di v167) TAPI sekarang dipicu
+// MANUAL lewat Input Data > Tandai Libur (bukan sweep otomatis) --
+// kuota_libur_db.py. Selama kuota bulan itu masih tersedia, Tandai Libur
+// berjalan seperti biasa; begitu habis, Tandai Libur berikutnya OTOMATIS
+// dicatat sebagai Cuti (mengurangi Kuota Izin & Cuti); kalau KEDUA kuota
+// itu sama-sama habis, tanggal tetap dicatat Libur tapi distabilo merah
+// di Rekap Bulanan. Kartu "Sisa Kuota Libur" (Absensi barber & Owner) dan
+// input "Kuota Libur per Bulan" (Pengaturan Izin & Cuti) dikembalikan --
+// TANPA toggle "Aktifkan Auto-Libur" (fitur sweep otomatisnya permanen
+// dihapus, tidak dikembalikan).
+const ASSET_VERSION = "169";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

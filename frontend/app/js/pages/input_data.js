@@ -296,8 +296,18 @@ const PageInputData = (() => {
       if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
       try {
         // REVISI UI/UX Premium: spinner inline di tombol, tanpa overlay layar penuh.
-        await MugenUI.withButtonLoading(btnTandaiLibur, () => MugenApi.post("/api/input-data/libur", liburBody()));
-        MugenUI.toast("Ditandai libur.", "success");
+        const hasil = await MugenUI.withButtonLoading(btnTandaiLibur, () => MugenApi.post("/api/input-data/libur", liburBody()));
+        // PERMINTAAN OWNER: Tandai Libur sekarang bisa "dikonversi" otomatis
+        // kalau Kuota Libur bulan itu sudah habis (lihat kuota_libur_db.py)
+        // -- beri tahu Admin/Owner persis apa yang terjadi, bukan selalu
+        // "Ditandai libur" walau sebenarnya tercatat sebagai Cuti.
+        if (hasil.jenis === "cuti") {
+          MugenUI.toast("Kuota Libur bulan ini sudah habis -- tanggal ini dicatat sebagai Cuti.", "success", { force: true });
+        } else if (hasil.jenis === "kelebihan_kuota") {
+          MugenUI.toast("Kuota Libur & Izin/Cuti bulan ini sama-sama sudah habis -- tetap ditandai libur (distabilo merah di Rekap).", "success", { force: true });
+        } else {
+          MugenUI.toast("Ditandai libur.", "success");
+        }
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });
     btnBatalkanLibur.addEventListener("click", async () => {

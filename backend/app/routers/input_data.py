@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 import database as db
+import kuota_libur_db
 import manual_customer_db
 from auth import require_permission, require_menu_read
 
@@ -209,9 +210,14 @@ def list_libur(tahun: int = None, bulan: int = None, user: dict = Depends(requir
 
 @router.post("/libur")
 def tandai_libur(body: LiburBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
+    """PERMINTAAN OWNER: Tandai Libur sekarang lewat kuota_libur_db (cascade
+    Kuota Libur -> Cuti, lihat modul docstring-nya) BUKAN lagi langsung
+    db.tandai_libur() -- `jenis` dikembalikan ('libur'/'cuti'/
+    'kelebihan_kuota') supaya frontend bisa kasih tahu Admin/Owner persis
+    apa yang terjadi kalau kuotanya sudah habis."""
     barber_id = _resolve_barber_id(user, body.barber_id)
-    db.tandai_libur(barber_id, body.tanggal)
-    return {"ok": True}
+    jenis = kuota_libur_db.tandai_libur_dengan_kuota(barber_id, user["tenant_id"], body.tanggal)
+    return {"ok": True, "jenis": jenis}
 
 
 @router.delete("/libur")

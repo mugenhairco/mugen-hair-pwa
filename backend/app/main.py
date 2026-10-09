@@ -81,7 +81,7 @@ import komisi_penyesuaian_db
 import reimburse_db
 import izin_cuti_db
 from izin_cuti_migrasi import migrasi_izin_cuti, seed_konfigurasi_awal_agustus_2026, migrasi_konsolidasi_kuota_gabungan  # REVISI Sistem Dinamis Cuti & Izin: kolom kuota/periode dinamis (idempotent, jalur SQLite) + seed saldo awal Agustus 2026 (portable, kedua jalur DB) + PERBAIKAN Sistem Kuota IZIN & CUTI: lipat mode 'terpisah' lama jadi 'gabungan' (portable, kedua jalur DB)
-from auto_libur_db import migrasi_absensi_libur_sumber  # Migrasi skema kolom absensi_libur.sumber (idempotent, jalur SQLite) -- fitur Auto-Libur sendiri sudah dihapus, lihat auto_libur_db.py
+from kuota_libur_db import migrasi_absensi_libur_sumber  # Migrasi skema kolom absensi_libur.sumber (idempotent, jalur SQLite) -- dipakai Kuota Libur (Tandai Libur manual), lihat kuota_libur_db.py
 import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
@@ -480,7 +480,7 @@ async def on_startup():
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_izin_cuti()     # REVISI Sistem Dinamis Cuti & Izin: kolom mode_kuota/kuota_izin_hari/kuota_gabungan_hari/periode_mulai_dasar/h_min_pengajuan_izin di izin_cuti_settings + tabel izin_cuti_saldo_awal (idempotent)
-        migrasi_absensi_libur_sumber()  # Migrasi skema kolom absensi_libur.sumber (idempotent) -- fitur Auto-Libur sendiri sudah dihapus, lihat auto_libur_db.py
+        migrasi_absensi_libur_sumber()  # Migrasi skema kolom absensi_libur.sumber (idempotent) -- dipakai Kuota Libur (Tandai Libur manual), lihat kuota_libur_db.py
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_lokasi_user()   # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
         migrasi_session_login()  # Kontrol Sesi Login Satu-Device: kolom users.current_session_hash (idempotent)

@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 import database as db
 import kasbon_db
+import kuota_libur_db
 import pengeluaran_db
 import reimburse_db
 import data_non_barber_db
@@ -113,6 +114,10 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
         r["reimburse"] = reimburse_db.get_saldo_periode(r["barber_id"], tahun, bulan)
         r["kasbon_dibayar"] = kasbon_db.get_total_dibayar_periode(r["barber_id"], tahun, bulan)
         r["total_pendapatan"] = r["total_pendapatan"] + r["reimburse"] - r["kasbon_dibayar"]
+        # PERMINTAAN OWNER: stabilo merah baris "Hari Libur" kalau bulan ini
+        # ADA tanggal yang Kuota Libur DAN kuota Izin&Cuti-nya sama-sama
+        # sudah habis -- lihat kuota_libur_db.py::ada_kelebihan_kuota_bulan_ini().
+        r["kuota_habis"] = kuota_libur_db.ada_kelebihan_kuota_bulan_ini(r["barber_id"], tahun, bulan)
     return data
 
 
