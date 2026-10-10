@@ -31,7 +31,8 @@ Modul ini JUGA berisi katalog fitur (`subscription_features` +
 
 REVISI (audit "fitur hardcode di Superadmin" -- diminta Owner): katalog ini
 SEBELUMNYA berisi 14 kode, HANYA 4 yang sungguhan menggerbang sesuatu di
-kode (booking_online/export_pdf/qris/log_error) -- 10 sisanya (Dashboard
+kode (booking_online/export_pdf/qris/log_error, log_error BELAKANGAN
+dihapus juga, lihat hapus_gerbang_log_error() di bawah) -- 10 sisanya (Dashboard
 Owner/Barber, Multi Barber, Multi Cabang, Google Calendar, Export Excel,
 Virtual Account, API, Priority Support) murni LABEL yang bisa dicentang
 Superadmin tanpa efek teknis apa pun, berpotensi menjanjikan sesuatu yang
@@ -70,12 +71,6 @@ from subscription_db import PACKAGE_VALID
 # tiba-tiba kehilangan Booking Online/Export PDF begitu deploy ini jalan
 # (SEBELUM Feature Gating, keduanya selalu menyala untuk SEMUA tenant
 # tanpa syarat apa pun -- default paket HARUS mencerminkan itu).
-# "log_error" SENGAJA TIDAK dimasukkan sini walau sekarang juga sungguhan
-# digerbang (lihat feature_access.py/routers/error_log.py) -- fitur itu
-# BARU dibangun SETELAH Feature Gating ini ada, jadi tidak pernah menyala
-# tanpa syarat untuk siapa pun sebelumnya; default fail-CLOSED yang sama
-# seperti fitur katalog lain yang belum ditegakkan (multi_cabang dkk) sudah
-# benar -- Super Admin yang memutuskan paket mana dapat fitur ini.
 # "qris" SEBELUMNYA ada di sini juga -- DIHAPUS (diminta Owner, lihat
 # hapus_gerbang_qris() di bawah): QRIS adalah metode pembayaran INTI yang
 # HARUS tersedia untuk SEMUA paket tanpa kecuali, jadi tidak masuk akal
@@ -97,7 +92,6 @@ _FITUR_DEFAULT = (
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
-    ("log_error", "Log Error"),
     # FITUR Feature Gating lanjutan (diminta Owner): dua kode BARU, SUNGGUHAN
     # digerbang sejak awal ditambahkan (BEDA dari export_excel/whatsapp_
     # reminder di atas, yang sengaja di-grandfather karena sebelumnya SELALU
@@ -425,6 +419,29 @@ def hapus_gerbang_qris():
     with get_conn() as conn:
         conn.execute("DELETE FROM subscription_features WHERE kode = 'qris'")
     set_setting(_KUNCI_HAPUS_GERBANG_QRIS, "1")
+
+
+_KUNCI_HAPUS_GERBANG_LOG_ERROR = "billing_hapus_gerbang_log_error_selesai"
+
+
+def hapus_gerbang_log_error():
+    """SEKALI SAJA sepanjang umur database (diminta Owner) -- fitur Log Error
+    (DIY error monitoring, lihat main.py::_tangani_exception_global() versi
+    lama & error_report.js yang SUDAH dihapus total dari kode) dicabut
+    seluruhnya, bukan cuma disembunyikan. Menghapus PERMANEN baris
+    "log_error" dari `subscription_features` supaya baris yang SUDAH sempat
+    ter-seed di database production ikut terhapus, bukan cuma tidak
+    ditambah lagi -- `ON DELETE CASCADE` di subscription_package_features
+    otomatis melepasnya dari paket mana pun yang sudah mencentangnya,
+    supaya Katalog Fitur Superadmin berhenti menampilkan checkbox "Log
+    Error" yang sudah tidak berarti apa-apa lagi. Pola SAMA PERSIS
+    hapus_gerbang_qris() di atas -- lihat docstring itu untuk penjelasan
+    flag `settings` sekali-jalan."""
+    if get_setting(_KUNCI_HAPUS_GERBANG_LOG_ERROR, default=None) == "1":
+        return
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subscription_features WHERE kode = 'log_error'")
+    set_setting(_KUNCI_HAPUS_GERBANG_LOG_ERROR, "1")
 
 
 _KODE_FITUR_DEKORATIF_MARKETING = (

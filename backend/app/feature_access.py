@@ -23,7 +23,7 @@ Cakupan fitur yang SUNGGUHAN ditegakkan (audit lanjutan -- diperbarui,
 DAFTAR LAMA di sini SEBELUMNYA SUDAH BASI, lihat catatan "KOREKSI" di
 bawah): `booking_online`, `export_pdf`, `export_excel`, `whatsapp_reminder`
 (sebagian -- lihat booking_db.py::_kirim_notifikasi_wa_booking() +
-routers/pengaturan.py endpoint WhatsApp), `log_error`, `barber_app`,
+routers/pengaturan.py endpoint WhatsApp), `barber_app`,
 `absensi`. Kode fitur dekoratif-marketing (manajemen_bisnis/manajemen_barber/
 hak_akses_role/manajemen_layanan/pengaturan_komisi_gaji, lihat
 billing_db.py::_KODE_FITUR_DEKORATIF_MARKETING) SENGAJA TIDAK ditegakkan --
@@ -37,7 +37,9 @@ KOREKSI (audit lanjutan -- enforcement paket/subscription): kode `qris`
 SUDAH DIHAPUS TOTAL dari katalog (billing_db.py::hapus_gerbang_qris(), QRIS
 sekarang metode INTI bukan opsional per paket) -- TIDAK PERNAH lagi
 digerbang di mana pun, catatan lama yang menyebutnya sudah basi & dihapus
-dari sini. Status subscription (expired/suspended/cancelled) TIDAK dicek
+dari sini. Kode `log_error` JUGA SUDAH DIHAPUS TOTAL (billing_db.py::
+hapus_gerbang_log_error(), fitur Log Error dicabut seluruhnya dari
+aplikasi) -- catatan lama yang menyebutnya di atas sudah basi. Status subscription (expired/suspended/cancelled) TIDAK dicek
 di modul ini -- itu ditegakkan TERPISAH di auth.py::get_current_user()
 (satu titik untuk SELURUH endpoint ber-login, lihat
 _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION di sana), bukan tanggung jawab

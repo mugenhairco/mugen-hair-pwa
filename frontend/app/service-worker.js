@@ -693,10 +693,12 @@
 // memfilter, ini murni jaring pengaman kalau deploy backend/frontend
 // sempat tidak sinkron.
 // v115 -> v116: FITUR DIY error monitoring (bukan Sentry) -- modul baru
-// js/error_report.js (listener global window.onerror/unhandledrejection,
-// POST /api/log-error) ditambahkan ke APP_SHELL. Owner melihat hasilnya
+// js/error_report.js ditambahkan ke APP_SHELL. Owner melihat hasilnya
 // lewat Setting > Log Error (pages/pengaturan.js, sudah dimuat dinamis,
 // tidak perlu masuk APP_SHELL_BER_VERSI terpisah).
+// FITUR Log Error DIHAPUS TOTAL belakangan (diminta Owner) -- js/
+// error_report.js dihapus dari APP_SHELL lagi (lihat catatan versi
+// ASSET_VERSION terbaru di bawah untuk nomor versi persisnya).
 // v134 -> v135: Faspay SNAP Return/Landing Page universal "/book/return"
 // (audit lanjutan #5) -- book_public.js menambah cabang render statis baru
 // (renderPembayaranKembali()), TIDAK ADA file baru ditambahkan ke APP_SHELL.
@@ -977,7 +979,20 @@
 // input "Kuota Libur per Bulan" (Pengaturan Izin & Cuti) dikembalikan --
 // TANPA toggle "Aktifkan Auto-Libur" (fitur sweep otomatisnya permanen
 // dihapus, tidak dikembalikan).
-const ASSET_VERSION = "169";
+// v169 -> v170: PERMINTAAN Owner, tiga perubahan -- (1) fitur Log Error (DIY
+// error monitoring) DIHAPUS TOTAL, js/error_report.js DIHAPUS dari
+// APP_SHELL (tidak ada file baru ditambahkan); (2) BUGFIX tab Barber
+// Holiday (pages/booking.js) -- centang hari libur lalu Simpan, refresh,
+// centangnya hilang lagi (akar masalah di backend, murni field JSON yang
+// tidak di-parse, tidak ada perubahan file frontend baru selain yang di
+// poin 3); (3) tombol "Hapus Semua" ditambahkan di tab Closed Slot
+// (pages/booking.js), menghapus seluruh slot ditutup bulan yang sedang
+// ditampilkan; (4) BUGFIX kalender Select Date di halaman booking publik
+// (css/style.css::.book-calendar-cell) -- sel tanggal mewarisi padding
+// horizontal 36px dari aturan generik `button`, membuat grid 7 kolom
+// overflow di layar HP sempit (kolom Sabtu & sebagian Jumat terpotong/
+// terdorong keluar viewport) -- padding dihapus, tidak ada file baru.
+const ASSET_VERSION = "170";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1014,7 +1029,6 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/state.js",
   "/app/js/theme.js",
   "/app/js/api.js",
-  "/app/js/error_report.js",
   "/app/js/ui.js",
   "/app/js/pdf_preview.js",
   "/app/js/brand.js",

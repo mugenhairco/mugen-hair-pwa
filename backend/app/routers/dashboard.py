@@ -5,7 +5,8 @@ akun login-nya di tabel users, bukan dari parameter request — supaya Barber
 tidak bisa mengintip data barber lain hanya dengan mengubah query string)."""
 
 import calendar
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,9 +16,17 @@ from auth import require_admin, require_barber, require_owner_or_staff, require_
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
+# BUGFIX (laporan Owner: jam di beberapa fitur tidak mengikuti WIB) --
+# `date.today()` polos SEBELUMNYA dipakai di sini, mengikuti jam SISTEM
+# SERVER (Render = UTC, 7 jam di belakang WIB) -- "bulan ini" default
+# Dashboard Owner bisa diam-diam menampilkan BULAN LALU di jendela tengah
+# malam-07:00 WIB tepat di pergantian bulan (server masih UTC bulan
+# sebelumnya). Sama seperti catatan WIB di booking_db.py/routers/booking.py.
+_WIB = ZoneInfo("Asia/Jakarta")
+
 
 def _bulan_ini():
-    today = date.today()
+    today = datetime.now(_WIB).date()
     return today.year, today.month
 
 

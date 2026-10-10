@@ -32,8 +32,15 @@ sengaja di sini bukan di database.py supaya tidak circular import)."""
 import threading
 from collections import defaultdict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from database import get_conn, get_barber
+
+# BUGFIX (laporan Owner: jam di beberapa fitur tidak mengikuti WIB) --
+# dipakai terapkan_potongan_slip_gaji() di bawah untuk tanggal "hari ini"
+# potongan otomatis, HARUS Asia/Jakarta (sama seperti catatan panjang di
+# booking_db.py), BUKAN jam sistem server (Render = UTC).
+WIB = ZoneInfo("Asia/Jakarta")
 
 # BUGFIX (audit, race condition): bayar_kasbon() membaca "sisa" lalu
 # menulis INSERT+UPDATE di transaksi yang sama, tapi SELECT tidak
@@ -302,7 +309,7 @@ def terapkan_potongan_slip_gaji(barber_id: int, slip_gaji_id: int, jumlah: int) 
 
     sisa_potongan = jumlah
     total_diterapkan = 0
-    tanggal_hari_ini = datetime.now().strftime("%Y-%m-%d")
+    tanggal_hari_ini = datetime.now(WIB).strftime("%Y-%m-%d")
     for row in outstanding:
         if sisa_potongan <= 0:
             break

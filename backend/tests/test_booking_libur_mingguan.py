@@ -97,3 +97,53 @@ def test_hitung_slot_semua_closed_pada_hari_libur_mingguan_barber(single_tenant)
     hasil = booking_db.hitung_slot(barber_id, rabu, [service_id], tenant_id=tenant_id)
     assert hasil["barber_libur"] is True
     assert all(s["status"] == "closed" for s in hasil["slots"])
+
+
+# ============================= Regresi API: hari_libur_mingguan harus LIST, bukan string JSON mentah =============================
+# BUGFIX laporan Owner: centang hari libur di tab Barber Holiday, klik
+# Simpan, refresh halaman -- centangnya hilang lagi, padahal tersimpan
+# benar di database. Akar masalah: SELECT * di database.py::get_barbers()/
+# get_barber() membawa kolom hari_libur_mingguan APA ADANYA (TEKS JSON,
+# mis. '["senin"]'), lalu routers/input_data.py::_tanpa_kolom_biner() &
+# routers/booking.py::_barber_publik() (dua titik serialisasi API untuk
+# field ini) meneruskannya mentah ke frontend. pages/booking.js::
+# renderBarberHoliday() memakai `new Set(b.hari_libur_mingguan)` -- kalau
+# diberi STRING (bukan array), Set memecahnya PER-KARAKTER, jadi
+# `.has("senin")` SELALU false walau data sungguhan tersimpan benar. Test
+# di bawah mengunci KEDUA endpoint supaya field ini SELALU berupa list
+# Python asli (ikut ter-serialize jadi JSON array, bukan JSON string) di
+# respons API, bukan hanya diuji lewat pemanggilan fungsi booking_db.py
+# langsung (yang tidak pernah melewati lapisan serialisasi API ini sama
+# sekali, makanya bug ini lolos sebelumnya).
+
+def test_put_hari_libur_respons_list_bukan_string(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    barber_id = _barber(single_tenant["tenant_id"])
+
+    r = client.put(f"/api/booking/barber/{barber_id}/hari-libur", json={"hari_list": ["senin", "selasa"]},
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["hari_libur_mingguan"] == ["senin", "selasa"]
+
+
+def test_get_input_data_barbers_hari_libur_mingguan_list_bukan_string(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    barber_id = _barber(single_tenant["tenant_id"])
+    booking_db.set_hari_libur_mingguan(barber_id, ["minggu"])
+
+    r = client.get("/api/input-data/barbers", headers=headers)
+    assert r.status_code == 200, r.text
+    barber = next(b for b in r.json() if b["id"] == barber_id)
+    assert barber["hari_libur_mingguan"] == ["minggu"]
+
+
+def test_get_input_data_barbers_hari_libur_mingguan_kosong_tetap_list(single_tenant):
+    """Barber yang belum pernah diatur jadwal libur mingguannya sama sekali
+    (default kolom '[]') HARUS tetap balas list kosong, bukan string '[]'."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    barber_id = _barber(single_tenant["tenant_id"])
+
+    r = client.get("/api/input-data/barbers", headers=headers)
+    assert r.status_code == 200, r.text
+    barber = next(b for b in r.json() if b["id"] == barber_id)
+    assert barber["hari_libur_mingguan"] == []

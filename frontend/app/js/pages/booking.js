@@ -1091,9 +1091,14 @@ const PageBooking = (() => {
     formCard.appendChild(errorBox);
     formCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
 
-    listCard.appendChild(MugenUI.el("h2", {}, "Daftar Slot Ditutup Bulan Ini"));
+    const listHeaderRow = MugenUI.el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;" });
+    listHeaderRow.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "Daftar Slot Ditutup Bulan Ini"));
+    const btnHapusSemua = MugenUI.el("button", { class: "btn-danger" }, "Hapus Semua");
+    listHeaderRow.appendChild(btnHapusSemua);
+    listCard.appendChild(listHeaderRow);
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
+    btnHapusSemua.style.display = "none";
 
     // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
     async function loadList() {
@@ -1103,6 +1108,7 @@ const PageBooking = (() => {
       try {
         const data = await MugenApi.get(`/api/booking/closed-slot?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`, { useCache: true });
         listBody.innerHTML = "";
+        btnHapusSemua.style.display = Array.isArray(data) && data.length ? "" : "none";
         if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         listBody.appendChild(MugenUI.buildTable(
           [
@@ -1131,8 +1137,20 @@ const PageBooking = (() => {
       } catch (e) {
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.errorState(e.message));
+        btnHapusSemua.style.display = "none";
       }
     }
+
+    btnHapusSemua.addEventListener("click", async () => {
+      const today = new Date();
+      if (!confirm("Hapus SEMUA slot ditutup bulan ini? Tindakan ini tidak bisa dibatalkan.")) return;
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnHapusSemua, () => MugenApi.del(
+          `/api/booking/closed-slot?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`));
+        MugenUI.toast(`${hasil.jumlah_terhapus} slot ditutup dihapus.`, "success");
+        loadList();
+      } catch (e) { MugenUI.toast(e.message, "error"); }
+    });
 
     // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
     btnSimpan.addEventListener("click", async () => {

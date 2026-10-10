@@ -45,7 +45,8 @@ KETERBATASAN JUJUR (BUKAN diselesaikan dengan menebak):
   tersebut akan gagal Inquiry dan masuk "tidak_bisa_dicek", BUKAN
   disalahartikan diam-diam."""
 
-from datetime import date, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import gateway_client_base as core
 import snap_advance_client
@@ -81,9 +82,20 @@ H1_TIDAK_BISA_DICEK = "tidak_bisa_dicek"
 # produk terpisah, lihat catatan snap_advance_client.py audit lanjutan #4).
 _CHANNEL_BISA_DICEK_LANGSUNG = {"va"}  # qris/direct_debit/ewallet perlu channel_code, lihat _cek_transaksi_ke_faspay()
 
+# BUGFIX (laporan Owner: jam di beberapa fitur tidak mengikuti WIB) -- _now()
+# SEBELUMNYA memakai datetime.now() polos (jam SISTEM SERVER, Render = UTC,
+# 7 jam di belakang WIB) untuk submitted_at. _bisa_h1() di bawah membaca
+# tanggal KALENDER dari submitted_at itu untuk aturan "H+1" -- kalau
+# submitted_at tersimpan tanpa offset zona waktu, tanggal kalendernya bisa
+# salah (mundur satu hari) persis di jendela tengah malam-07:00 WIB. now()
+# dengan offset eksplisit (+07:00) menjaga keduanya (penyimpanan & _bisa_h1()
+# di bawah) konsisten memakai tanggal kalender WIB, sama seperti catatan WIB
+# di booking_db.py.
+WIB = ZoneInfo("Asia/Jakarta")
+
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(WIB).isoformat(timespec="seconds")
 
 
 def _ambil_transaksi_tenant_tanggal(tenant_id: int, tanggal: str) -> list:
@@ -231,7 +243,7 @@ def _bisa_h1(settlement: dict) -> bool:
     24 jam presisi (sesuai spesifikasi "Jangan menganggap Settlement Report
     Faspay tersedia secara real-time")."""
     tanggal_submit = datetime.fromisoformat(settlement["submitted_at"]).date()
-    return date.today() > tanggal_submit
+    return datetime.now(WIB).date() > tanggal_submit
 
 
 def _cek_transaksi_ke_faspay(transaksi: dict) -> tuple:

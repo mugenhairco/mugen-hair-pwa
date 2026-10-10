@@ -31,7 +31,9 @@ file terpisah, supaya mudah dilihat sekali baca):
 Barber Holiday SENGAJA tidak punya endpoint baru di sini -- dikelola
 lewat /api/input-data/libur yang SUDAH ADA (lihat catatan di booking_db.py)."""
 
-from datetime import date, timedelta
+import json
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
@@ -56,6 +58,20 @@ from auth import require_barber, require_permission, require_menu_read, resolve_
 
 router = APIRouter(prefix="/api/booking", tags=["booking"])
 public_router = APIRouter(prefix="/api/public/booking", tags=["booking-public"])
+
+# BUGFIX (laporan Owner: jam di beberapa fitur tidak mengikuti WIB) -- sama
+# seperti catatan panjang di booking_db.py (lihat WIB di sana): `date.today()`
+# polos mengikuti jam SISTEM SERVER (Render = UTC, 7 jam di belakang WIB),
+# BUKAN waktu Indonesia. Dua endpoint publik di bawah (public_barbers()/
+# public_pengaturan()) SEBELUMNYA memakai date.today() polos -- status
+# "libur hari ini" & highlight "Toko Libur" di kalender /book bisa salah
+# tanggal persis di jendela tengah malam-07:00 WIB (server masih menganggap
+# ini "kemarin").
+_WIB = ZoneInfo("Asia/Jakarta")
+
+
+def _hari_ini_wib() -> date:
+    return datetime.now(_WIB).date()
 
 
 def resolve_tenant_publik_aktif(tenant_id: int = Depends(resolve_tenant_publik)) -> int:
@@ -124,7 +140,7 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     (abu-abu/On Vacation) sebelum tanggal dipilih -- validasi yang
     SEBENARNYA tetap dicek ulang per tanggal lewat /slot dan saat submit."""
     _pastikan_booking_online_aktif(tenant_id)
-    hari_ini = date.today().isoformat()
+    hari_ini = _hari_ini_wib().isoformat()
     barbers = sorted(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id), key=lambda b: (b.get("urutan") or 0, b["nama"]))
     # AUDIT 404 file media: <img src> yang memuat foto_url di bawah tidak
     # bisa membawa Bearer token/Origin (lihat tenant_db.slug_untuk_url_media()
@@ -190,7 +206,7 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         return {"booking_online": False}
     booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id)
-    hari_ini = date.today()
+    hari_ini = _hari_ini_wib()
     batas = hari_ini + timedelta(days=booking_settings["maksimal_hari_kedepan"])
     toko_libur_tanggal = [
         tl["tanggal"] for tl in booking_db.get_toko_libur_list(tenant_id=tenant_id)
@@ -728,6 +744,17 @@ def hapus_closed_slot(closed_slot_id: int, user: dict = Depends(require_permissi
     return {"ok": True}
 
 
+@router.delete("/closed-slot")
+def hapus_semua_closed_slot(tahun: int = None, bulan: int = None,
+                             user: dict = Depends(require_permission("izin_booking_kelola"))):
+    """Tombol "Hapus Semua" di tab Closed Slot (pages/booking.js::
+    renderClosedSlot()) -- lingkup SAMA PERSIS dengan filter GET /closed-slot
+    yang sedang ditampilkan (bulan berjalan), BUKAN seluruh riwayat
+    sepanjang masa, lihat docstring booking_db.py::hapus_semua_closed_slot()."""
+    jumlah = booking_db.hapus_semua_closed_slot(user["tenant_id"], tahun=tahun, bulan=bulan)
+    return {"ok": True, "jumlah_terhapus": jumlah}
+
+
 class BookingSettingsBody(BaseModel):
     jam_buka: str | None = None
     jam_tutup: str | None = None
@@ -926,6 +953,16 @@ def _barber_publik(barber_id: int):
     if barber:
         barber.pop("foto_data", None)
         barber.pop("foto_r2_key", None)
+        # BUGFIX (Barber Holiday, sama seperti routers/input_data.py::
+        # _tanpa_kolom_biner()): SELECT * membawa hari_libur_mingguan
+        # mentah sebagai STRING JSON, bukan list -- di-parse di sini juga
+        # supaya respons PUT /hari-libur (dan endpoint lain yang lewat
+        # fungsi ini) konsisten dengan /api/input-data/barbers.
+        if "hari_libur_mingguan" in barber:
+            try:
+                barber["hari_libur_mingguan"] = json.loads(barber["hari_libur_mingguan"] or "[]")
+            except (TypeError, ValueError):
+                barber["hari_libur_mingguan"] = []
     return barber
 
 

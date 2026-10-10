@@ -1399,25 +1399,11 @@ CREATE TABLE IF NOT EXISTS attendance_koreksi (
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_tenant_id ON attendance_koreksi(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_barber_id ON attendance_koreksi(barber_id);
 
--- DIY error monitoring (bukan Sentry, lihat error_log_db.py): SATU tabel
--- menampung catatan error frontend (POST /api/log-error) maupun backend
--- (auto-capture crash tak terduga, lihat main.py::_tangani_exception_global()).
--- `tenant_id` SENGAJA TANPA "REFERENCES tenants(id)", pola sama seperti
--- SELURUH tabel lain di file ini (lihat catatan HOTFIX DEPLOY di atas) --
--- juga SENGAJA nullable (error sebelum tenant sempat diketahui, mis. di
--- halaman Login, ATAU crash backend yang exception handler globalnya tidak
--- tahu sesi tenant mana yang sedang aktif).
-CREATE TABLE IF NOT EXISTS error_logs (
-    id         SERIAL PRIMARY KEY,
-    tenant_id  INTEGER,
-    sumber     TEXT NOT NULL,
-    pesan      TEXT NOT NULL,
-    detail     TEXT,
-    url        TEXT,
-    user_agent TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_error_logs_tenant_id ON error_logs(tenant_id);
+-- Fitur Log Error (DIY error monitoring, bukan Sentry) DIHAPUS TOTAL
+-- (diminta Owner) -- tabel error_logs yang sempat terbuat di instalasi
+-- lama di-DROP di sini, BUKAN dibuat lagi (pola sama seperti
+-- landing_testimonials di atas).
+DROP TABLE IF EXISTS error_logs;
 
 -- Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN, bukan
 -- tanggal manual satu-satu) -- pasangan Postgres dari
@@ -1668,6 +1654,7 @@ def create_all():
         _migrasi_hapus_fitur_dekoratif(conn)
         _migrasi_seed_fitur_baru_digerbang(conn)
         _migrasi_hapus_gerbang_qris(conn)
+        _migrasi_hapus_gerbang_log_error(conn)
         _migrasi_seed_fitur_dekoratif_marketing(conn)
         _migrasi_harga_pricing_v2(conn)
         _migrasi_harga_tahunan_v1(conn)
@@ -1763,7 +1750,6 @@ _FITUR_DEFAULT_POSTGRES = (
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
     ("whatsapp_reminder", "WhatsApp Reminder"),
-    ("log_error", "Log Error"),
     # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- lihat docstring di sana.
     # TIDAK ADA grandfather untuk kedua kode ini (keputusan eksplisit
     # Owner), jadi TIDAK ADA fungsi _migrasi_seed_fitur_baru_digerbang()
@@ -1816,9 +1802,9 @@ def _migrasi_billing_features(conn):
     ke 6 kode -- HANYA yang sungguhan ditegakkan di kode (lihat
     billing_db.py::_FITUR_DEFAULT untuk audit lengkap kenapa 8 kode lain
     dihapus & 2 kode -- export_excel/whatsapp_reminder -- baru digerbang).
-    "log_error" SEBELUMNYA TERLEWAT di jalur Postgres ini (hanya ada di
-    billing_db.py._FITUR_DEFAULT, tidak pernah disalin ke sini) -- audit
-    yang sama menemukan & memperbaiki gap ini sekalian."""
+    "log_error" SEMPAT ada di sini juga -- DIHAPUS TOTAL belakangan (lihat
+    _migrasi_hapus_gerbang_log_error() di bawah, fitur Log Error dicabut
+    seluruhnya dari aplikasi)."""
     now = datetime.now().isoformat(timespec="seconds")
     existing = {r["kode"] for r in conn.execute("SELECT kode FROM subscription_features").fetchall()}
     for urutan, (kode, nama) in enumerate(_FITUR_DEFAULT_POSTGRES):
@@ -1933,6 +1919,21 @@ def _migrasi_hapus_gerbang_qris(conn):
         return
     conn.execute("DELETE FROM subscription_features WHERE kode = 'qris'")
     _set_flag(conn, _KUNCI_HAPUS_GERBANG_QRIS)
+
+
+_KUNCI_HAPUS_GERBANG_LOG_ERROR = "billing_hapus_gerbang_log_error_selesai"
+
+
+def _migrasi_hapus_gerbang_log_error(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::hapus_
+    gerbang_log_error() (jalur SQLite) -- lihat docstring itu untuk
+    penjelasan lengkap. `ON DELETE CASCADE` di subscription_package_features
+    otomatis melepas "log_error" dari paket mana pun yang sudah
+    mencentangnya."""
+    if _ambil_flag(conn, _KUNCI_HAPUS_GERBANG_LOG_ERROR):
+        return
+    conn.execute("DELETE FROM subscription_features WHERE kode = 'log_error'")
+    _set_flag(conn, _KUNCI_HAPUS_GERBANG_LOG_ERROR)
 
 
 def _migrasi_seed_fitur_dekoratif_marketing(conn):

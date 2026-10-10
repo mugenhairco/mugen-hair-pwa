@@ -26,7 +26,7 @@ const MugenApi = (() => {
 
   // BUGFIX: `payload.detail` dari backend BIASANYA string biasa (ValueError
   // dkk), TAPI auth.require_feature() (lihat routers/attendance.py,
-  // booking.py, error_log.py) sengaja membalas OBJEK terstruktur
+  // booking.py) sengaja membalas OBJEK terstruktur
   // `{message, feature, upgrade_required}` di body JSON (kontrak backend
   // TIDAK diubah, tetap diuji apa adanya lewat TestClient di
   // backend/tests/) -- TAPI belum ada satu pun halaman yang membaca
