@@ -1196,6 +1196,17 @@ body.book-public-active {
   aspect-ratio: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px;
   min-height: auto; box-shadow: none;
   color: var(--text); cursor: pointer; font-size: 13px; font-weight: 600;
+  /* BUGFIX (mobile, laporan Owner): sel kalender ini elemen <button>
+     (pages/book_public.js) -- SEBELUMNYA tidak pernah menimpa `padding`/
+     `min-width` dari aturan generik `button` (padding: 10px 18px) di atas,
+     jadi tiap sel punya padding horizontal 36px walau isinya cuma 1-2
+     digit angka. Grid 7 kolom (.book-calendar-grid) jadi tidak muat di
+     layar HP sempit -- kolom Sabtu (dan sebagian Jumat) terpotong/
+     terdorong keluar viewport. padding 0 + min-width 0 membiarkan kolom
+     1fr menyusut sesuai lebar layar sungguhan, aspect-ratio:1 tetap
+     menjaga sel selalu persegi.
+  */
+  padding: 0; min-width: 0;
 }
 .book-calendar-cell.empty { background: transparent; border: none; }
 .book-calendar-cell.disabled { opacity: 0.3; cursor: not-allowed; }

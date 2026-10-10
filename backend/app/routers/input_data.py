@@ -19,6 +19,8 @@ TULIS (POST/PUT tambah/koreksi transaksi & libur) tetap
 `require_permission("izin_input_data_hapus")` (lihat permissions.py, default
 TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
@@ -67,10 +69,28 @@ def _tanpa_kolom_biner(barbers: list) -> list:
     dropdown Input Data/Slip Gaji/Kasbon/Reimburse/Izin & Cuti/filter Rekap
     akan crash 500 begitu ada barber yang punya foto tersimpan -- murni bug
     pre-existing, tidak terkait R2, diperbaiki di lapisan API karena
-    database.py sendiri harus tetap identik dengan aplikasi Desktop)."""
+    database.py sendiri harus tetap identik dengan aplikasi Desktop).
+
+    BUGFIX (Barber Holiday, laporan Owner: centang hari libur lalu Simpan,
+    refresh halaman, centangnya hilang lagi): `hari_libur_mingguan` di
+    kolom tabel `barbers` tersimpan sebagai TEKS JSON (mis. '["senin"]'),
+    SAMA PERSIS seperti dibaca booking_db.py::is_barber_libur() -- tapi
+    SELECT * di sini membawanya mentah sebagai STRING, bukan list. Frontend
+    (pages/booking.js::renderBarberHoliday()) memakai `new Set(b.
+    hari_libur_mingguan)` yang kalau diberi STRING akan memecahnya jadi Set
+    PER-KARAKTER ('[', '"', 's', dst), bukan per-nama-hari -- checkbox jadi
+    SELALU terlihat tidak tercentang padahal datanya tersimpan benar di
+    database. Di-parse jadi list sungguhan di sini (satu-satunya titik
+    serialisasi API untuk /barbers & /karyawan) supaya frontend menerima
+    array JSON yang benar."""
     for b in barbers:
         b.pop("foto_data", None)
         b.pop("foto_r2_key", None)
+        if "hari_libur_mingguan" in b:
+            try:
+                b["hari_libur_mingguan"] = json.loads(b["hari_libur_mingguan"] or "[]")
+            except (TypeError, ValueError):
+                b["hari_libur_mingguan"] = []
     return barbers
 
 

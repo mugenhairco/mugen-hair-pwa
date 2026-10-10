@@ -34,7 +34,6 @@ import logging
 import os
 import sys
 import time
-import traceback
 import uuid
 from datetime import datetime, timezone
 
@@ -90,7 +89,6 @@ import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
-import error_log_db  # DIY error monitoring (bukan Sentry): tabel error_logs (idempotent, berdiri sendiri)
 import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent, berdiri sendiri)
 from user_roles_migrasi import migrasi_user_roles  # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
 from subscription_migrasi import migrasi_subscription
@@ -103,7 +101,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, error_log, snap_advance, faspay_settlement, faspay_settlement_superadmin
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -316,36 +314,17 @@ async def _log_dan_no_store(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def _tangani_exception_global(request: Request, exc: Exception):
-    """DIY error monitoring (bukan Sentry, lihat error_log_db.py untuk latar
-    belakang). SEBELUM handler ini ada, exception tak tertangani HANYA
-    tercatat ke stdout (logger.critical di bawah, TETAP dipertahankan) --
-    Owner/dev harus buka log Render manual untuk tahu ada masalah. Sekarang
-    JUGA tersimpan ke tabel error_logs supaya kelihatan lewat Setting > Log
-    Error tanpa akses Render sama sekali. HANYA menangkap exception yang
-    BENAR-BENAR tak terduga (bug) -- HTTPException/RequestValidationError
-    yang sengaja dilempar endpoint (404/422/dst di seluruh routers/*.py)
-    TETAP ditangani handler bawaan FastAPI seperti biasa (lebih spesifik,
-    tidak lewat sini sama sekali), respons API normal untuk itu TIDAK
-    berubah.
-
-    tenant_id SELALU None di sini -- exception handler global tidak
-    dijalankan lewat dependency injection endpoint (mis. get_current_user),
-    jadi tidak tahu request ini punya sesi tenant yang mana tanpa
-    mendekode header Authorization manual. Pencatatan ke error_logs
-    best-effort MURNI (try/except telan diam-diam) -- exception SEKUNDER di
-    sini TIDAK BOLEH menggagalkan respons 500 yang harus tetap terkirim ke
-    client."""
+    """Exception tak tertangani (bug BENAR-BENAR tak terduga) tercatat ke
+    stdout (logger.critical di bawah -- Render/hosting mana pun menangkap
+    ini otomatis sebagai log platform) dan dibalas 500 generik ke client,
+    BUKAN stack trace mentah. HTTPException/RequestValidationError yang
+    sengaja dilempar endpoint (404/422/dst di seluruh routers/*.py) TETAP
+    ditangani handler bawaan FastAPI seperti biasa (lebih spesifik, tidak
+    lewat sini sama sekali), respons API normal untuk itu TIDAK berubah."""
     logger.critical(
         "[%s] Unhandled exception %s %s: %s",
         _INSTANCE_ID, request.method, request.url.path, exc, exc_info=True,
     )
-    try:
-        error_log_db.catat_error(
-            sumber="backend", pesan=f"{exc.__class__.__name__}: {exc}",
-            detail=traceback.format_exc(), url=str(request.url),
-        )
-    except Exception:
-        pass
     return JSONResponse(status_code=500, content={"detail": "Terjadi kesalahan pada server."})
 
 
@@ -389,7 +368,6 @@ app.include_router(faspay_settlement_superadmin.router)
 app.include_router(attendance.router)
 app.include_router(uang_harian_dinamis.router)
 app.include_router(push.router)
-app.include_router(error_log.router)
 
 
 @app.on_event("startup")
@@ -459,7 +437,12 @@ async def on_startup():
         attendance_db.init_attendance_db()  # Modul BARU Absensi: tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
         uang_harian_dinamis_db.init_uang_harian_dinamis_db()  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent, membaca Absensi read-only)
         push_db.init_push_db()  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
-        error_log_db.init_error_log_db()  # DIY error monitoring: tabel error_logs (idempotent, berdiri sendiri)
+        # Fitur Log Error (DIY error monitoring) DIHAPUS TOTAL (diminta Owner) --
+        # tabel error_logs yang sempat terbuat di instalasi lama di-DROP di sini,
+        # BUKAN dibuat lagi (pola sama seperti landing_testimonials, lihat
+        # landing_migrasi.py). DROP TABLE IF EXISTS aman dipanggil berkali-kali.
+        with db.get_conn() as _conn:
+            _conn.execute("DROP TABLE IF EXISTS error_logs")
         pemasukan_db.init_pemasukan_db()  # Modul Keuangan Fase 1: tabel pemasukan (idempotent)
         uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)
@@ -494,6 +477,7 @@ async def on_startup():
         billing_db.hapus_fitur_tanpa_fungsi_nyata()  # AUDIT "fitur hardcode di Superadmin": hapus permanen 8 kode fitur yang TIDAK PERNAH menggerbang apa pun di kode, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.seed_grandfather_fitur_baru_digerbang()  # AUDIT yang sama: export_excel/whatsapp_reminder baru digerbang sekarang -- assign ke SEMUA paket SEKALI SAJA supaya tenant lama tidak kehilangan akses yang sebelumnya selalu menyala (idempotent lewat flag settings, lihat docstring)
         billing_db.hapus_gerbang_qris()  # diminta Owner: QRIS bukan lagi fitur ber-gerbang paket (metode pembayaran inti untuk semua) -- hapus permanen kode "qris" dari katalog fitur, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
+        billing_db.hapus_gerbang_log_error()  # diminta Owner: fitur Log Error dihapus total -- hapus permanen kode "log_error" dari katalog fitur, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.seed_fitur_dekoratif_marketing()  # diminta Owner: 5 kode dekoratif (Manajemen Bisnis/Barber/Layanan, Role & Hak Akses, Komisi & Gaji) -- MURNI tampilan kartu harga, TIDAK menggerbang apa pun -- assign bertahap per paket SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_pricing_v2()  # FITUR Landing Page & Pricing (paket 6 bulan): set harga bulanan + 6 bulan basic/pro/enterprise ke daftar harga resmi terbaru, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)
         billing_db.migrasi_harga_tahunan_v1()  # FITUR Landing Page & Pricing (paket Tahunan): set harga_tahunan basic/pro/enterprise, SEKALI SAJA (idempotent lewat flag settings, lihat docstring)

@@ -165,8 +165,9 @@ def test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
 # DEFAULT) -- fitur ini di-grandfather lewat billing_db.py::seed_grandfather_
 # fitur_baru_digerbang() (SEKALI, ke SEMUA paket, karena sebelum audit ini
 # selalu gratis untuk semua tenant), jadi tenant dengan subscription APA PUN
-# otomatis sudah punya fitur ini TANPA assign manual -- beda dari log_error
-# yang fail-CLOSED murni (lihat test_error_log.py).
+# otomatis sudah punya fitur ini TANPA assign manual -- beda dari fitur
+# katalog lain yang fail-CLOSED murni (mis. "absensi"/"barber_app", lihat
+# bagian di bawah).
 #
 # CATATAN (FITUR Feature Gating "Absensi Karyawan", ditambah belakangan):
 # /api/attendance/excel SEKARANG JUGA tergerbang "absensi" di level router

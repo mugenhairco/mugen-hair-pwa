@@ -299,18 +299,19 @@ def test_update_package_nama_kosong_ditolak():
 # ============================= Katalog Fitur =============================
 # REVISI (audit "fitur hardcode di Superadmin", diminta Owner): katalog
 # dipangkas dari 14 ke 6 kode -- HANYA yang sungguhan menggerbang sesuatu
-# di kode (booking_online/export_pdf/export_excel/qris/whatsapp_reminder/
-# log_error, lihat billing_db.py::_FITUR_DEFAULT untuk audit lengkap kenapa
-# 8 kode lain dihapus). Endpoint POST /features (bikin kode fitur bebas)
-# DIHAPUS TOTAL -- Super Admin sekarang HANYA bisa mencentang/hapus-centang
-# dari daftar tetap ini, jadi test_superadmin_tambah_fitur_* DIHAPUS
-# (endpoint-nya sudah tidak ada), diganti test yang mengunci perilaku baru
-# ini (404/405).
+# di kode (booking_online/export_pdf/export_excel/qris/whatsapp_reminder,
+# lihat billing_db.py::_FITUR_DEFAULT untuk audit lengkap kenapa 8 kode
+# lain dihapus; "log_error" SEMPAT masuk daftar ini juga -- DIHAPUS TOTAL
+# belakangan, lihat billing_db.py::hapus_gerbang_log_error()). Endpoint
+# POST /features (bikin kode fitur bebas) DIHAPUS TOTAL -- Super Admin
+# sekarang HANYA bisa mencentang/hapus-centang dari daftar tetap ini, jadi
+# test_superadmin_tambah_fitur_* DIHAPUS (endpoint-nya sudah tidak ada),
+# diganti test yang mengunci perilaku baru ini (404/405).
 
 def test_boot_seed_katalog_fitur_default(app_client):
     fitur = billing_db.list_features()
     kode = {f["kode"] for f in fitur}
-    assert kode == {"booking_online", "export_pdf", "export_excel", "whatsapp_reminder", "log_error",
+    assert kode == {"booking_online", "export_pdf", "export_excel", "whatsapp_reminder",
                      "barber_app", "absensi", "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
                      "manajemen_layanan", "pengaturan_komisi_gaji"}
 
@@ -329,7 +330,7 @@ def test_superadmin_list_features(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/features", headers=headers)
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 12
+    assert len(r.json()) == 11
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_features(two_tenants):
@@ -346,7 +347,7 @@ def test_superadmin_tidak_bisa_lagi_tambah_fitur_baru(app_client):
         "kode": "sms_reminder", "nama": "SMS Reminder",
     })
     assert r.status_code in (404, 405)
-    assert len(billing_db.list_features()) == 12
+    assert len(billing_db.list_features()) == 11
 
 
 def test_superadmin_ubah_fitur(app_client):
@@ -364,14 +365,14 @@ def test_superadmin_ubah_fitur(app_client):
 
 def test_superadmin_nonaktifkan_fitur(app_client):
     headers = _buat_superadmin_dan_login(app_client)
-    fitur = billing_db.get_feature_by_kode("log_error")
+    fitur = billing_db.get_feature_by_kode("whatsapp_reminder")
 
     r = app_client.put(f"/api/superadmin/billing/features/{fitur['id']}", headers=headers, json={"aktif": False})
     assert r.status_code == 200, r.text
     assert r.json()["aktif"] == 0
 
     aktif_saja = billing_db.list_features(hanya_aktif=True)
-    assert "log_error" not in {f["kode"] for f in aktif_saja}
+    assert "whatsapp_reminder" not in {f["kode"] for f in aktif_saja}
 
 
 def test_superadmin_hapus_fitur(app_client):
@@ -426,12 +427,12 @@ def test_ubah_penugasan_fitur_mengganti_seluruh_daftar_lama(app_client):
     pro = billing_db.get_package_by_kode("pro")
     booking = billing_db.get_feature_by_kode("booking_online")
     export_pdf = billing_db.get_feature_by_kode("export_pdf")
-    log_error = billing_db.get_feature_by_kode("log_error")
+    whatsapp_reminder = billing_db.get_feature_by_kode("whatsapp_reminder")
 
     billing_db.set_package_features(pro["id"], [booking["id"], export_pdf["id"]])
-    hasil = billing_db.set_package_features(pro["id"], [log_error["id"]])
+    hasil = billing_db.set_package_features(pro["id"], [whatsapp_reminder["id"]])
 
-    assert {f["kode"] for f in hasil} == {"log_error"}
+    assert {f["kode"] for f in hasil} == {"whatsapp_reminder"}
 
 
 def test_centang_fitur_tidak_ada_di_katalog_ditolak(app_client):
@@ -454,13 +455,13 @@ def test_dua_paket_beda_bisa_punya_fitur_berbeda(app_client):
     free = billing_db.get_package_by_kode("free")
     enterprise = billing_db.get_package_by_kode("enterprise")
     booking = billing_db.get_feature_by_kode("booking_online")
-    log_error = billing_db.get_feature_by_kode("log_error")
+    export_excel = billing_db.get_feature_by_kode("export_excel")
 
     billing_db.set_package_features(free["id"], [booking["id"]])
-    billing_db.set_package_features(enterprise["id"], [booking["id"], log_error["id"]])
+    billing_db.set_package_features(enterprise["id"], [booking["id"], export_excel["id"]])
 
     assert {f["kode"] for f in billing_db.get_package_features(free["id"])} == {"booking_online"}
-    assert {f["kode"] for f in billing_db.get_package_features(enterprise["id"])} == {"booking_online", "log_error"}
+    assert {f["kode"] for f in billing_db.get_package_features(enterprise["id"])} == {"booking_online", "export_excel"}
 
 
 def test_audit_log_mencatat_perubahan_fitur(app_client):

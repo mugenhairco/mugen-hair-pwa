@@ -491,6 +491,27 @@ def hapus_closed_slot(closed_slot_id: int):
         conn.execute("DELETE FROM closed_slot WHERE id = ?", (closed_slot_id,))
 
 
+def hapus_semua_closed_slot(tenant_id: int, tahun: int = None, bulan: int = None) -> int:
+    """FITUR Owner: tombol "Hapus Semua" di tab Closed Slot (pages/
+    booking.js::renderClosedSlot()) -- menghapus SELURUH baris yang SEDANG
+    TAMPIL di daftar (lingkup SAMA PERSIS dengan get_closed_slot_list() di
+    atas, biasanya difilter bulan berjalan), bukan seluruh riwayat
+    sepanjang masa, supaya perilakunya konsisten/dapat diprediksi dengan
+    apa yang Owner lihat di layar saat menekan tombol. `tenant_id` WAJIB
+    (beda dari hapus_closed_slot() satuan yang sudah fetch-then-authorize
+    di router) -- fungsi ini sendiri yang memfilter, supaya tidak mungkin
+    menghapus baris tenant lain. Mengembalikan jumlah baris yang terhapus
+    supaya router bisa membalas pesan yang informatif."""
+    q = "DELETE FROM closed_slot WHERE tenant_id = ?"
+    params = [tenant_id]
+    if tahun is not None:
+        q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
+    if bulan is not None:
+        q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    with get_conn() as conn:
+        return conn.execute(q, params).rowcount
+
+
 def get_closed_slot(closed_slot_id: int):
     """FONDASI Multi-Tenant Phase 1: dipakai router untuk fetch-then-authorize
     sebelum hapus_closed_slot() (yang sendiri tetap tidak menerima parameter
