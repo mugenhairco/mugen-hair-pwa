@@ -181,10 +181,11 @@ def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypa
     service_id = db.add_service("Cukur Booking Push2", 50000, tenant_id=tenant_id)
 
     panggilan = {}
-    def _catat(tid, roles, title, body, url=None):
+    def _catat(tid, roles, title, body, url=None, jenis=None):
         panggilan["tenant_id"] = tid
         panggilan["roles"] = roles
         panggilan["title"] = title
+        panggilan["jenis"] = jenis
         return 1
     monkeypatch.setattr(push_service, "kirim_ke_role", _catat)
 
@@ -197,6 +198,10 @@ def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypa
     assert panggilan["tenant_id"] == tenant_id
     assert set(panggilan["roles"]) == {"admin", "staff"}
     assert "Booking Baru" in panggilan["title"]
+    # FITUR Auto-Refresh Booking via Push: `jenis` WAJIB "booking_baru" --
+    # ini yang dipakai service-worker.js membedakan push ini dari jenis
+    # push lain (izin_cuti dkk) saat merelai postMessage ke tab terbuka.
+    assert panggilan["jenis"] == "booking_baru"
 
 
 # ---------------------------------------------------------------------------
