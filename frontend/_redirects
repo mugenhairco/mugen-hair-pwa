@@ -1,0 +1,26 @@
+# _redirects — Cloudflare Pages: SAMA PERSIS logikanya dengan bagian
+# `routes:` di render.yaml (Render Static Site) -- dibuat terpisah di sini
+# karena Cloudflare Pages TIDAK membaca render.yaml sama sekali, formatnya
+# sendiri ("source destination [status]", satu baris per aturan, file ini
+# otomatis dibaca Cloudflare Pages dari root folder yang dipublikasikan).
+#
+# Status 301 = REDIRECT sungguhan (URL di address bar browser berubah).
+# Status 200 = REWRITE (proxy diam-diam ke file lain, URL di address bar
+# TETAP sama -- supaya refresh halaman itu juga tetap berfungsi, bukan 404).
+
+# BUGFIX penting (SAMA PERSIS alasan di render.yaml): frontend/app/index.html
+# memuat asetnya lewat path RELATIF ("js/app.js", "css/style.css", dst) --
+# relatif terhadap URL dokumen yang SEDANG dibuka. Kalau seseorang membuka
+# "/app" TANPA garis miring akhir, browser menafsirkan aset relatif itu
+# sebagai child dari "/" (root), BUKAN child dari "/app/", sehingga semua
+# aset 404 dan aplikasi blank putih.
+/app /app/ 301
+
+# FITUR Kompatibilitas URL Booking (Instagram Bio dkk): halaman booking
+# publik bisa diakses lewat PATH ASLI (bukan hash route) -- REWRITE (bukan
+# redirect) ke app/index.html yang sama, router.js mendeteksi
+# location.pathname-nya sendiri dan langsung merender PageBookPublic.
+/book /app/index.html 200
+/book/* /app/index.html 200
+/app/book /app/index.html 200
+/app/book/* /app/index.html 200
