@@ -20,7 +20,18 @@
 # publik bisa diakses lewat PATH ASLI (bukan hash route) -- REWRITE (bukan
 # redirect) ke app/index.html yang sama, router.js mendeteksi
 # location.pathname-nya sendiri dan langsung merender PageBookPublic.
-/book /app/index.html 200
-/book/* /app/index.html 200
-/app/book /app/index.html 200
-/app/book/* /app/index.html 200
+#
+# BUGFIX (Cloudflare Workers Assets, bukan Render): tujuan rewrite SENGAJA
+# "/app/" (folder), BUKAN "/app/index.html" (nama file eksplisit) seperti
+# versi pertama -- Cloudflare punya normalisasi "clean URL" bawaan yang
+# menganggap "/app/index.html" sebagai alias tidak-kanonik dari "/app/" dan
+# otomatis mencoba meluruskannya, yang kalau digabung dengan rewrite di
+# sini (sama-sama berakhir di index.html yang sama) terdeteksi sebagai
+# LOOP TAK BERUJUNG oleh validator Cloudflare ("Invalid _redirects
+# configuration: Infinite loop detected") -- deploy gagal total. Mengarah
+# ke folder-nya saja menghindari tabrakan ini; isinya tetap index.html
+# yang sama (folder otomatis membuka index.html di dalamnya).
+/book /app/ 200
+/book/* /app/ 200
+/app/book /app/ 200
+/app/book/* /app/ 200
