@@ -1,0 +1,17 @@
+# _headers — Cloudflare Pages: SAMA PERSIS logikanya dengan bagian
+# `headers:` di render.yaml (Render Static Site) -- Cloudflare Pages TIDAK
+# membaca render.yaml sama sekali, file ini format sendiri (dibaca otomatis
+# dari root folder yang dipublikasikan).
+#
+# /api/* TIDAK PERNAH ada di hosting statis ini (seluruhnya dilayani
+# backend terpisah, api.rivoirsett.com) -- header ini murni jaga-jaga
+# supaya file publik (index.html/manifest.json/dst) tidak pernah tersimpan
+# di HTTP cache perantara dengan cara yang bisa menunda pembaruan konten
+# (Service Worker sendiri sudah punya mekanisme versioning-nya sendiri,
+# lihat service-worker.js/app/service-worker.js -- header ini lapis
+# tambahan yang tidak mengganggu keduanya).
+/index.html
+  Cache-Control: no-cache
+
+/app/index.html
+  Cache-Control: no-cache
