@@ -88,6 +88,22 @@ def test_mine_tanpa_parameter_baru_perilaku_lama_tidak_berubah(single_tenant):
     assert len(r.json()) == 2
 
 
+def test_mine_tidak_mengandung_nomor_whatsapp_customer(single_tenant):
+    """PERMINTAAN Owner: akun Barber TIDAK boleh melihat nomor WhatsApp
+    customer sama sekali (hanya Owner/Admin yang boleh menghubungi
+    customer langsung) -- field ini harus sudah hilang dari respons JSON
+    endpoint ini sendiri, bukan hanya disembunyikan di frontend."""
+    client, tenant_id = single_tenant["client"], single_tenant["tenant_id"]
+    barber_id, service_id, headers = _siapkan_barber(client, tenant_id, "barberhi4")
+    _booking(tenant_id, barber_id, service_id, hari_offset=1)
+
+    r = client.get("/api/booking/mine", headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert len(data) == 1
+    assert "customer_whatsapp" not in data[0]
+
+
 def test_mine_tanggal_tetap_terisolasi_per_barber(single_tenant):
     """Barber A TIDAK BISA melihat booking Barber B lewat parameter
     tanggal/dari_tanggal apa pun -- barber_id SELALU dari akun login,

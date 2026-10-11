@@ -1069,5 +1069,13 @@ def booking_saya(tahun: int = None, bulan: int = None, tanggal: str = None, dari
     barber_id = user.get("barber_id")
     if barber_id is None:
         raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber. Hubungi Owner.")
-    return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
-                                        dari_tanggal=dari_tanggal, tenant_id=user["tenant_id"])
+    daftar = booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tanggal=tanggal,
+                                          dari_tanggal=dari_tanggal, tenant_id=user["tenant_id"])
+    # PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke akun
+    # Barber (hanya Owner/Admin yang boleh menghubungi customer langsung) --
+    # dihapus di sini (BUKAN hanya disembunyikan di frontend) supaya
+    # respons API endpoint ini sendiri sudah bersih, sama seperti pola
+    # pembersihan field lain di codebase ini (mis. _tanpa_kolom_biner()).
+    for b in daftar:
+        b.pop("customer_whatsapp", None)
+    return daftar

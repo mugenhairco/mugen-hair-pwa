@@ -297,11 +297,15 @@ const PageBooking = (() => {
       MugenUI.el("span", { class: "booking-card-jam" }, `${r.jam_mulai}–${r.jam_selesai}`),
       badge ? MugenUI.el("span", { class: "badge " + badge.kelas }, badge.label) : "",
     ]);
+    // PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke akun
+    // Barber -- kartu ini (tab "Hari Ini"/"Akan Datang") EKSKLUSIF untuk
+    // Barber, jadi baris WhatsApp yang sebelumnya ada di sini dihapus
+    // total (backend /api/booking/mine juga sudah tidak mengirim field
+    // ini sama sekali, lihat routers/booking.py::booking_saya()).
     const card = MugenUI.el("div", { class: kelas }, [
       baris1,
       MugenUI.el("div", { class: "booking-card-nama" }, r.customer_nama),
       MugenUI.el("div", { class: "booking-card-service" }, r.daftar_service || "-"),
-      MugenUI.el("div", { class: "booking-card-wa" }, waLinkCell(r.customer_whatsapp)),
     ]);
     return card;
   }
@@ -419,7 +423,14 @@ const PageBooking = (() => {
         // halaman ini menampilkan offlineBanner kalau datanya bukan dari
         // server yang baru saja dipanggil.
         if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false }));
+        // PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke
+        // akun Barber -- tab ini ("Semua Booking") satu-satunya pemakai
+        // bookingTable() yang EKSKLUSIF Barber, jadi withWhatsapp:false
+        // HANYA di sini (Booking List/Calendar milik Owner/Admin di bawah
+        // tetap default true). Backend /api/booking/mine juga sudah tidak
+        // mengirim field ini sama sekali (lihat routers/booking.py::
+        // booking_saya()) -- ini lapis tampilan kedua.
+        card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false, withWhatsapp: false }));
       } catch (e) {
         card.innerHTML = "";
         card.appendChild(MugenUI.errorState(e.message));
@@ -454,7 +465,7 @@ const PageBooking = (() => {
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
-  function bookingTable(rows, { withBarber = true, onVerifikasi = null, onBatalkan = null, onReschedule = null, onHapus = null } = {}) {
+  function bookingTable(rows, { withBarber = true, withWhatsapp = true, onVerifikasi = null, onBatalkan = null, onReschedule = null, onHapus = null } = {}) {
     // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
     // r.nomor_transaksi tersimpan dari server (booking_db.py::
     // _buat_nomor_transaksi_booking(), format [JAM KONFIRMASI][MENIT
@@ -484,7 +495,10 @@ const PageBooking = (() => {
       { key: "jam_mulai", label: "Jam", format: (_, r) => `${r.jam_mulai}-${r.jam_selesai}` },
       ...(withBarber ? [{ key: "nama_barber", label: "Barber" }] : []),
       { key: "customer_nama", label: "Customer" },
-      { key: "customer_whatsapp", label: "WhatsApp", format: (v) => waLinkCell(v) },
+      // PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke akun
+      // Barber -- withWhatsapp:false dikirim KHUSUS oleh renderBarberSemuaBooking()
+      // (satu-satunya pemakai bookingTable() ini yang EKSKLUSIF Barber).
+      ...(withWhatsapp ? [{ key: "customer_whatsapp", label: "WhatsApp", format: (v) => waLinkCell(v) }] : []),
       { key: "daftar_service", label: "Service" },
       { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
       { key: "metode_pembayaran", label: "Metode", format: (v) => METODE_LABEL[v] || v },
