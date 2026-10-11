@@ -1002,7 +1002,15 @@
 // detik) dan merender ulang halaman Booking kalau sedang dibuka --
 // SELURUHNYA reaksi atas push yang memang sudah dikirim backend, TIDAK
 // menambah polling/timer jaringan apa pun saat idle.
-const ASSET_VERSION = "171";
+// v171 -> v172: PERMINTAAN Owner -- nomor WhatsApp customer TIDAK lagi
+// ditampilkan ke akun Barber (hanya Owner/Admin yang boleh menghubungi
+// customer langsung). Dihapus di backend (GET /api/booking/mine, lihat
+// routers/booking.py::booking_saya()) DAN di pages/booking.js (kartu
+// "Hari Ini"/"Akan Datang" + kolom tabel "Semua Booking", keduanya
+// EKSKLUSIF tampilan Barber) -- tampilan Booking List/Calendar milik
+// Owner/Admin TIDAK berubah, tetap menampilkan nomor WhatsApp seperti
+// sebelumnya.
+const ASSET_VERSION = "172";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
