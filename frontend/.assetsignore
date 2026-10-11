@@ -1,0 +1,22 @@
+# .assetsignore — Cloudflare Workers Static Assets
+# =============================================================================
+# BUGFIX deploy Cloudflare gagal ("Asset too large", batas 25 MiB per file):
+# root directory Cloudflare untuk Worker ini diset ke "frontend" (supaya
+# situs statis sungguhan -- frontend/index.html, frontend/app/ -- yang
+# ter-upload, BUKAN seluruh repo termasuk folder backend/), tapi Cloudflare
+# otomatis menjalankan `npm install` begitu melihat frontend/package.json
+# (package.json itu MURNI untuk suite E2E Playwright lokal/CI, lihat
+# frontend/playwright.config.js -- TIDAK terkait proses build produksi sama
+# sekali, lihat render-build.sh) -- hasil install (folder node_modules,
+# berisi driver browser Playwright yang berukuran besar) ikut terhitung
+# sebagai "aset situs" yang harus di-upload, melebihi batas ukuran file
+# Cloudflare. File ini (format sama seperti .gitignore) memberi tahu
+# Cloudflare supaya path-path di bawah TIDAK ikut di-upload sebagai aset
+# situs, walau fisiknya tetap ada di folder build sementara Cloudflare.
+node_modules/
+e2e/
+playwright-report/
+test-results/
+package.json
+package-lock.json
+playwright.config.js
