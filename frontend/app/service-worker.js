@@ -992,7 +992,17 @@
 // horizontal 36px dari aturan generik `button`, membuat grid 7 kolom
 // overflow di layar HP sempit (kolom Sabtu & sebagian Jumat terpotong/
 // terdorong keluar viewport) -- padding dihapus, tidak ada file baru.
-const ASSET_VERSION = "170";
+// v170 -> v171: FITUR BARU -- Auto-Refresh Booking via Push (event-driven,
+// BUKAN polling): push "Booking Baru" (push_service.py) sekarang membawa
+// field `jenis="booking_baru"` di payload-nya; listener "push" di bawah
+// (tidak diubah strukturnya, HANYA ditambah) merelai payload itu lewat
+// postMessage ke setiap tab app yang sedang terbuka. js/app.js (file lain,
+// tidak dihapus dari sini) mendengarkan pesan itu lalu memanggil
+// MugenBookingNotif.refreshNow() SEKETIKA (bukan menunggu reminder 60
+// detik) dan merender ulang halaman Booking kalau sedang dibuka --
+// SELURUHNYA reaksi atas push yang memang sudah dikirim backend, TIDAK
+// menambah polling/timer jaringan apa pun saat idle.
+const ASSET_VERSION = "171";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1160,9 +1170,14 @@ self.addEventListener("fetch", (event) => {
 
 // FITUR Notifikasi Push (Web Push/VAPID, termasuk iPhone lewat PWA "Add to
 // Home Screen" sejak iOS 16.4): payload dikirim backend (push_service.py)
-// sebagai JSON {title, body, url} -- lihat push_notif.js utk alur
-// subscribe. Event ini HANYA menampilkan notifikasi sistem, TIDAK PERNAH
-// menyentuh cache/APP_SHELL di atas.
+// sebagai JSON {title, body, url, jenis?} -- lihat push_notif.js utk alur
+// subscribe. Event ini menampilkan notifikasi sistem SEPERTI SEBELUMNYA,
+// DAN (BARU) merelai payload itu lewat postMessage ke setiap tab app yang
+// SEDANG TERBUKA -- supaya app.js bisa auto-refresh badge/daftar booking
+// SEKETIKA push diterima, TANPA perlu Admin membuka notifikasi sistemnya
+// dulu. Murni reaksi atas push yang memang sudah dikirim backend (event-
+// driven), TIDAK menambah polling/timer jaringan apa pun -- lihat
+// app.js::addEventListener("message", ...) utk sisi penerimanya.
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -1172,20 +1187,27 @@ self.addEventListener("push", (event) => {
   }
   const title = data.title || "Rivoir";
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      // Getar tetap terasa walau nada dering notifikasi perangkat
-      // dimatikan/silent (opsi `vibrate` DIPISAH total dari volume/nada
-      // dering sistem) -- pola pendek-jeda-panjang supaya terasa beda
-      // dari getar notifikasi app lain. HANYA berlaku Android/Chrome;
-      // iOS Safari mengabaikan opsi ini sepenuhnya dan selalu ikut
-      // pengaturan getar/silent SISTEM (di luar kendali Web Push API,
-      // tidak ada workaround dari sisi web).
-      vibrate: [200, 100, 200],
-      data: { url: data.url || "/app/" },
-    })
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: data.body || "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        // Getar tetap terasa walau nada dering notifikasi perangkat
+        // dimatikan/silent (opsi `vibrate` DIPISAH total dari volume/nada
+        // dering sistem) -- pola pendek-jeda-panjang supaya terasa beda
+        // dari getar notifikasi app lain. HANYA berlaku Android/Chrome;
+        // iOS Safari mengabaikan opsi ini sepenuhnya dan selalu ikut
+        // pengaturan getar/silent SISTEM (di luar kendali Web Push API,
+        // tidak ada workaround dari sisi web).
+        vibrate: [200, 100, 200],
+        data: { url: data.url || "/app/" },
+      }),
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          client.postMessage({ type: "push-notifikasi", jenis: data.jenis || null, url: data.url || "/app/" });
+        }
+      }),
+    ])
   );
 });
 

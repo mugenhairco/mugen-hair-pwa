@@ -893,6 +893,14 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
             title="Booking Baru",
             body=f"{booking.get('customer_nama') or 'Customer'} booking {booking.get('tanggal')} {booking.get('jam_mulai')}.",
             url="/app/#/booking",
+            # FITUR Auto-Refresh Booking via Push: `jenis` diteruskan ke payload
+            # push (lihat push_service.py) supaya service-worker.js bisa
+            # merelai postMessage KHUSUS untuk push jenis ini ke tab yang
+            # terbuka -- app.js lalu memanggil MugenBookingNotif.refreshNow()
+            # + render ulang halaman Booking kalau sedang dibuka, TANPA
+            # menambah polling/timer jaringan apa pun (murni reaksi atas push
+            # yang memang sudah dikirim backend saat booking baru masuk).
+            jenis="booking_baru",
         )
     except Exception as e:
         logger.error("Notifikasi push booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)

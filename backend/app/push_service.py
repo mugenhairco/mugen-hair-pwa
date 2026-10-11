@@ -73,12 +73,19 @@ def _kirim_ke_satu_subscription(sub: dict, payload: dict) -> bool:
         return False
 
 
-def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = None) -> int:
+def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = None, jenis: str = None) -> int:
     if not IS_ENABLED:
         logger.info("Push '%s' TIDAK dikirim (%d subscription dilewati) -- VAPID_* belum dikonfigurasi.",
                      title, len(subs))
         return 0
     payload = {"title": title, "body": body, "url": url or "/app/"}
+    # FITUR Auto-Refresh Booking via Push: `jenis` opsional, HANYA dipakai
+    # service-worker.js untuk membedakan push "booking_baru" (perlu relay
+    # postMessage ke tab yang terbuka supaya app.js auto-refresh badge +
+    # daftar booking) dari jenis push lain (izin_cuti dkk) yang tidak perlu
+    # relay apa pun -- lihat service-worker.js::push listener.
+    if jenis:
+        payload["jenis"] = jenis
     terkirim = 0
     for sub in subs:
         if _kirim_ke_satu_subscription(sub, payload):
@@ -86,20 +93,20 @@ def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = 
     return terkirim
 
 
-def kirim_ke_user(user_id: int, title: str, body: str, url: str = None) -> int:
+def kirim_ke_user(user_id: int, title: str, body: str, url: str = None, jenis: str = None) -> int:
     """Kirim ke SEMUA perangkat yang subscribe atas nama akun ini (bisa 0
     kalau belum pernah mengaktifkan notifikasi push sama sekali -- itu
     kondisi NORMAL, bukan error)."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_user(user_id), title, body, url)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_user(user_id), title, body, url, jenis)
 
 
-def kirim_ke_barber(barber_id: int, title: str, body: str, url: str = None) -> int:
+def kirim_ke_barber(barber_id: int, title: str, body: str, url: str = None, jenis: str = None) -> int:
     """Kirim ke akun login barber ini SAJA (bukan tenant_id/roles seperti
     kirim_ke_role() -- lihat push_db.get_subscriptions_untuk_barber())."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_barber(barber_id), title, body, url)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_barber(barber_id), title, body, url, jenis)
 
 
-def kirim_ke_role(tenant_id: int, roles: list, title: str, body: str, url: str = None) -> int:
+def kirim_ke_role(tenant_id: int, roles: list, title: str, body: str, url: str = None, jenis: str = None) -> int:
     """Kirim ke SEMUA akun tenant ini yang role-nya termasuk `roles` (mis.
     Booking Baru/Pengajuan Izin -> ["admin", "staff"])."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_role(tenant_id, roles), title, body, url)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_role(tenant_id, roles), title, body, url, jenis)
