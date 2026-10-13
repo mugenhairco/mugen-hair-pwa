@@ -29,6 +29,7 @@ selalu dipakai dan tidak boleh dibalik):
   4. Available
 """
 
+import io
 import json
 import logging
 import re
@@ -36,6 +37,8 @@ import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from PIL import Image, ImageOps
 
 import booking_gateway_db
 import database as db
@@ -1488,12 +1491,55 @@ def set_hari_libur_mingguan(barber_id: int, hari_list: list):
         conn.execute("UPDATE barbers SET hari_libur_mingguan = ? WHERE id = ?", (json.dumps(hari_list), barber_id))
 
 
+# BUGFIX (audit performa halaman booking publik, lihat _perkecil_foto_barber()
+# di bawah): foto barber ditampilkan Owner mungil 92x92px (style.css::
+# .book-barber-foto), jauh lebih kecil dari foto asli kamera HP yang bisa
+# beberapa MB -- sisi terpanjang di atas ini sudah >4x lipat kerapatan
+# retina untuk ukuran tampil itu, jadi tidak ada penurunan kualitas yang
+# terlihat di layar mana pun.
+_FOTO_BARBER_MAKS_DIMENSI_PX = 480
+_FOTO_BARBER_KUALITAS_LOSSY = 82
+
+
+def _perkecil_foto_barber(konten: bytes, ext: str) -> bytes:
+    """BUGFIX (audit performa halaman booking publik -- temuan log: foto
+    barber mentah ukuran asli upload butuh 11-14 detik/foto diunduh dari R2
+    lewat server untuk tampilan 92x92px). Perkecil & kompres SEKALI di sini
+    saat Owner upload, bukan dibiarkan menyimpan file mentah yang baru
+    terasa lambat berulang-ulang tiap pengunjung baru memuatnya. Kegagalan
+    memproses (file aneh/corrupt tapi lolos validasi ekstensi di
+    r2_storage.validasi_dan_beri_nama()) TIDAK PERNAH membatalkan upload --
+    fallback ke bytes asli, supaya Owner tidak pernah terblokir gara-gara
+    optimasi ini."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(konten)))
+        img.thumbnail((_FOTO_BARBER_MAKS_DIMENSI_PX, _FOTO_BARBER_MAKS_DIMENSI_PX), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        if ext in ("jpg", "jpeg"):
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=_FOTO_BARBER_KUALITAS_LOSSY, optimize=True)
+        elif ext == "webp":
+            img.save(buf, format="WEBP", quality=_FOTO_BARBER_KUALITAS_LOSSY)
+        elif ext == "png":
+            img.save(buf, format="PNG", optimize=True)
+        else:
+            return konten
+        hasil = buf.getvalue()
+        return hasil if len(hasil) < len(konten) else konten
+    except Exception:
+        logging.getLogger("mugen.booking").warning(
+            "Gagal memperkecil foto barber, memakai bytes asli dari upload.", exc_info=True)
+        return konten
+
+
 def simpan_foto_barber(barber_id: int, filename_asli: str, konten: bytes) -> str:
     if db.get_barber(barber_id) is None:
         raise ValueError("Barber tidak ditemukan.")
     nama_file, content_type = r2_storage.validasi_dan_beri_nama(
         filename_asli, konten, FOTO_EXT_KE_CONTENT_TYPE, "foto",
         maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES)
+    konten = _perkecil_foto_barber(konten, nama_file.rsplit(".", 1)[-1].lower())
     r2_key_lama = _ambil_foto_r2_key(barber_id)
 
     if r2_storage.IS_ENABLED:

@@ -66,3 +66,13 @@ pywebpush>=2.0.0
 # karena SNAP Advance mengimpornya langsung.
 cryptography>=41.0.0
 
+# BUGFIX (audit performa halaman booking publik): foto barber sebelumnya
+# disimpan ke R2 MENTAH persis ukuran asli diupload (bisa beberapa MB per
+# foto dari kamera HP) -- halaman pilih barber menampilkan foto ukuran
+# 92x92px, jadi pengunjung BARU (belum punya cache browser) terpaksa
+# menunggu beberapa MB terunduh dari R2 lewat server untuk tiap foto,
+# berkali-kali lipat lebih lambat dari yang seharusnya. Pillow dipakai
+# booking_db.py::simpan_foto_barber() untuk memperkecil & mengompres foto
+# SEKALI saat Owner upload, bukan berulang tiap pengunjung.
+Pillow>=10.0.0
+

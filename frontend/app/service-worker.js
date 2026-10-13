@@ -1019,7 +1019,12 @@
 // layanan penjadwal GRATIS dari LUAR aplikasi secara berkala -- TIDAK ADA
 // proses baru yang berjalan terus-menerus di server (lihat
 // absensi_reminder_db.py).
-const ASSET_VERSION = "173";
+// v173 -> v174: REVISI UI/UX -- teks statis "Memuat aplikasi..." (index.html,
+// tampil SEBELUM router.js/app.js sempat merender apa pun) diganti animasi
+// spinner modern di tengah layar (css/style.css::.boot-loading, reuse
+// keyframe mugen-spin yang sudah dipakai .loading-overlay). Murni tampilan,
+// tidak mengubah urutan/logika boot apa pun.
+const ASSET_VERSION = "174";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
