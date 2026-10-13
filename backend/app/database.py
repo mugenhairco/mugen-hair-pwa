@@ -371,13 +371,17 @@ def get_barber(barber_id: int):
 
 
 def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
-                jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None):
+                jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None,
+                nomor_whatsapp: str = None):
     """BOOKING UI/UX #1 (bugfix, sama seperti add_service() di services.py):
     SEBELUMNYA `urutan` tidak pernah diisi di sini, jadi selalu memakai
     default kolom (0) -- begitu 2+ karyawan berbagi urutan=0, tombol ↑/↓ di
     Settings > Karyawan (yang menukar NILAI urutan dua baris bersebelahan)
     jadi tidak berefek (menukar 0 dengan 0). Sekarang karyawan baru selalu
-    mendapat urutan berikutnya (MAX + 1, di-scope per tenant)."""
+    mendapat urutan berikutnya (MAX + 1, di-scope per tenant).
+
+    `nomor_whatsapp`: FITUR Reminder Absensi via WhatsApp -- opsional,
+    nomor WhatsApp pribadi karyawan (lihat karyawan_migrasi.py)."""
     with get_conn() as conn:
         if tenant_id is not None:
             urutan_maks = conn.execute(
@@ -386,15 +390,17 @@ def add_barber(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
         else:
             urutan_maks = conn.execute("SELECT COALESCE(MAX(urutan), -1) AS m FROM barbers").fetchone()["m"]
         cur = conn.execute(
-            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari, tenant_id, urutan) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari), tenant_id, urutan_maks + 1),
+            "INSERT INTO barbers (nama, is_rafiq, uang_harian, jabatan, gaji_per_hari, tenant_id, urutan, nomor_whatsapp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (nama.strip(), 1 if is_rafiq else 0, int(uang_harian), jabatan, int(gaji_per_hari), tenant_id,
+             urutan_maks + 1, (nomor_whatsapp or "").strip() or None),
         )
         return cur.lastrowid
 
 
 def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None,
-                   uang_harian: int = None, jabatan: str = None, gaji_per_hari: int = None):
+                   uang_harian: int = None, jabatan: str = None, gaji_per_hari: int = None,
+                   nomor_whatsapp: str = None):
     fields, values = [], []
     if nama is not None:
         fields.append("nama = ?"); values.append(nama.strip())
@@ -408,6 +414,8 @@ def update_barber(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif
         fields.append("jabatan = ?"); values.append(jabatan)
     if gaji_per_hari is not None:
         fields.append("gaji_per_hari = ?"); values.append(int(gaji_per_hari))
+    if nomor_whatsapp is not None:
+        fields.append("nomor_whatsapp = ?"); values.append(nomor_whatsapp.strip() or None)
     if not fields:
         return
     values.append(barber_id)

@@ -87,6 +87,7 @@ import data_non_barber_db
 import manual_customer_db  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service, berdiri sendiri dari transaksi Barber (idempotent)
 import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
+import absensi_reminder_db  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
 import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent, berdiri sendiri)
@@ -101,7 +102,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -366,6 +367,7 @@ app.include_router(snap_advance.notification_router)
 app.include_router(faspay_settlement.router)
 app.include_router(faspay_settlement_superadmin.router)
 app.include_router(attendance.router)
+app.include_router(cron_reminder.router)
 app.include_router(uang_harian_dinamis.router)
 app.include_router(push.router)
 
@@ -435,6 +437,7 @@ async def on_startup():
         reimburse_db.init_reimburse_db()  # Modul Karyawan Fase 4: tabel reimburse (idempotent; kolom slip_gaji.reimburse dibuat di init_slip_gaji_db() di atas)
         izin_cuti_db.init_izin_cuti_db()  # Modul Karyawan Fase 5: tabel izin_cuti (idempotent, berdiri sendiri)
         attendance_db.init_attendance_db()  # Modul BARU Absensi: tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
+        absensi_reminder_db.init_absensi_reminder_db()  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
         uang_harian_dinamis_db.init_uang_harian_dinamis_db()  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent, membaca Absensi read-only)
         push_db.init_push_db()  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
         # Fitur Log Error (DIY error monitoring) DIHAPUS TOTAL (diminta Owner) --

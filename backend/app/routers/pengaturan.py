@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, Fil
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import absensi_reminder_db
 import auth_db
 import billing_limits
 import branding_db
@@ -296,6 +297,48 @@ def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin),
     return {"ok": True}
 
 
+# ================= REMINDER ABSENSI VIA WHATSAPP =================
+# PERMINTAAN Owner: tab TERPISAH dari Notifikasi WhatsApp Booking di atas
+# (frontend: menu WhatsApp > tab "Reminder Absensi") -- isinya HANYA
+# aktif/nonaktif + template pesan Check In/Check Out (lihat
+# absensi_reminder_db.py; pengiriman sungguhan dipicu endpoint cron
+# TERPISAH, lihat routers/cron_reminder.py). Digerbang fitur "absensi"
+# (BUKAN "whatsapp_reminder") -- reminder ini tidak berguna tanpa modul
+# Absensi aktif. KHUSUS Owner, pola sama seperti /whatsapp di atas.
+
+def _absensi_reminder_state(tenant_id: int) -> dict:
+    return {
+        "aktif": absensi_reminder_db.get_aktif(tenant_id),
+        "templates": absensi_reminder_db.get_templates(tenant_id),
+        "defaults": absensi_reminder_db.DEFAULT_TEMPLATES,
+        "jenis_pesan": [{"jenis": j, "label": l, "deskripsi": d} for j, l, d in absensi_reminder_db.JENIS_PESAN],
+        "placeholder_info": [{"placeholder": p, "keterangan": k} for p, k in absensi_reminder_db.PLACEHOLDER_INFO],
+    }
+
+
+@router.get("/absensi-reminder")
+def ambil_absensi_reminder(user: dict = Depends(require_admin), _fitur: dict = Depends(require_feature("absensi"))):
+    return _absensi_reminder_state(user["tenant_id"])
+
+
+class AbsensiReminderBody(BaseModel):
+    aktif: bool | None = None
+    templates: dict[str, str] | None = None
+
+
+@router.put("/absensi-reminder")
+def simpan_absensi_reminder(body: AbsensiReminderBody, user: dict = Depends(require_admin),
+                             _fitur: dict = Depends(require_feature("absensi"))):
+    if body.aktif is not None:
+        absensi_reminder_db.set_aktif(body.aktif, tenant_id=user["tenant_id"])
+    if body.templates is not None:
+        try:
+            absensi_reminder_db.set_templates(body.templates, tenant_id=user["tenant_id"])
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    return _absensi_reminder_state(user["tenant_id"])
+
+
 # ================= TARGET BONUS SERVICE (tier bertingkat) — REVISI =================
 # Sebelumnya cuma satu target/nominal (di /komisi) -- diganti daftar tier
 # bertingkat (mis. 100 service -> Rp100.000, 115 service -> Rp150.000, dst),
@@ -406,6 +449,10 @@ class BarberBody(BaseModel):
     uang_harian: int = 0
     jabatan: str = "barber"
     gaji_per_hari: int = 0
+    # FITUR Reminder Absensi via WhatsApp: nomor WhatsApp pribadi karyawan
+    # (beda dari nomor WhatsApp TOKO di routers/pengaturan.py::/whatsapp),
+    # opsional -- lihat absensi_reminder_db.py.
+    nomor_whatsapp: str | None = None
 
 
 class BarberUpdateBody(BaseModel):
@@ -415,6 +462,7 @@ class BarberUpdateBody(BaseModel):
     uang_harian: int | None = None
     jabatan: str | None = None
     gaji_per_hari: int | None = None
+    nomor_whatsapp: str | None = None
 
 
 def _tanpa_kolom_biner(barber: dict | None) -> dict | None:
@@ -453,7 +501,7 @@ def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
         billing_limits.pastikan_boleh_tambah_barber(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = pengaturan_barber.tambah_barber_validated(
             body.nama, body.is_rafiq, body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
-            tenant_id=user["tenant_id"],
+            tenant_id=user["tenant_id"], nomor_whatsapp=body.nomor_whatsapp,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -467,6 +515,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
         pengaturan_barber.update_barber_validated(
             barber_id, nama=body.nama, is_rafiq=body.is_rafiq, aktif=body.aktif,
             uang_harian=body.uang_harian, jabatan=body.jabatan, gaji_per_hari=body.gaji_per_hari,
+            nomor_whatsapp=body.nomor_whatsapp,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

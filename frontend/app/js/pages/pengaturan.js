@@ -705,6 +705,15 @@ const PagePengaturan = (() => {
       wrapGajiPerHari.appendChild(MugenUI.el("label", {}, "Gaji per Hari (Rp)"));
       wrapGajiPerHari.appendChild(inputGajiPerHari);
 
+      // FITUR Reminder Absensi via WhatsApp: nomor WhatsApp PRIBADI karyawan
+      // (beda dari nomor WhatsApp TOKO di menu WhatsApp) -- opsional, dipakai
+      // mengirim pengingat Check In/Check Out (lihat tab "Reminder Absensi"
+      // di menu WhatsApp). Ditampilkan untuk SEMUA jabatan (bukan cuma
+      // Barber) supaya konsisten dengan form ini secara umum, walau saat ini
+      // HANYA jabatan Barber yang punya akun Absensi (Kasir/OB/Kru tidak
+      // login sama sekali, lihat karyawan_migrasi.py).
+      const inputNomorWhatsapp = MugenUI.el("input", { type: "text", placeholder: "Contoh: 081234567890" });
+
       function terapkanTampilanJabatan() {
         const barber = selJabatan.value === "barber";
         wrapUangHarian.style.display = barber ? "" : "none";
@@ -724,6 +733,8 @@ const PagePengaturan = (() => {
       formCard.appendChild(wrapJabatanKustom);
       formCard.appendChild(wrapUangHarian);
       formCard.appendChild(wrapGajiPerHari);
+      formCard.appendChild(MugenUI.el("label", {}, "Nomor WhatsApp (opsional)"));
+      formCard.appendChild(inputNomorWhatsapp);
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatal]));
 
@@ -738,6 +749,7 @@ const PagePengaturan = (() => {
         wrapJabatanKustom.style.display = "none";
         inputUangHarian.value = "0";
         inputGajiPerHari.value = "0";
+        inputNomorWhatsapp.value = "";
         terapkanTampilanJabatan();
         formError.textContent = "";
       }
@@ -766,6 +778,7 @@ const PagePengaturan = (() => {
           const body2 = {
             nama: inputNama.value.trim(), uang_harian: uangHarian,
             jabatan: jabatanDikirim, gaji_per_hari: gajiPerHari,
+            nomor_whatsapp: inputNomorWhatsapp.value.trim(),
           };
           await MugenUI.withButtonLoading(btnSubmit, async () => {
             if (editingId) {
@@ -857,6 +870,7 @@ const PagePengaturan = (() => {
                     }
                     inputUangHarian.value = String(r.uang_harian || 0);
                     inputGajiPerHari.value = String(r.gaji_per_hari || 0);
+                    inputNomorWhatsapp.value = r.nomor_whatsapp || "";
                     terapkanTampilanJabatan();
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });
