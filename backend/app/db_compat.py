@@ -182,10 +182,49 @@ class _PGConn:
         return getattr(self._conn, name)
 
 
+# BUGFIX (migrasi Neon): koneksi yang DIAM LAMA di dalam pool jadi basi di
+# sisi server TANPA client tahu, kalau Neon meng-auto-suspend compute-nya
+# karena idle (~5 menit -- batas waktu ini TERPISAH TOTAL dari "tidur"
+# Render, bisa saja Render tetap menyala tapi Neon sudah suspend sendiri
+# karena tidak ada query sama sekali dalam jendela itu). psycopg2 TIDAK
+# mendeteksi socket yang mati di sisi server tanpa round-trip -- query
+# PERTAMA lewat koneksi basi itu gagal "SSL connection has been closed
+# unexpectedly" (OperationalError) atau "connection already closed"
+# (InterfaceError), BUKAN auto-reconnect, dan merusak request pemanggilnya
+# (ditemukan lewat 500 Internal Server Error nyata di produksi, bukan
+# dugaan -- lihat log Render saat cron absensi mencoba endpoint /api/health
+# setelah Neon sempat idle).
+_MAKSIMAL_PERCOBAAN_KONEKSI = 5
+
+
+def _ambil_koneksi_valid(pool):
+    """Validasi SEKALI (`SELECT 1`, murah) SEBELUM koneksi diserahkan ke
+    pemanggil -- koneksi yang ternyata basi DIBUANG TOTAL dari pool
+    (`close=True`, BUKAN dikembalikan supaya tidak terus-menerus dicoba
+    ulang oleh request lain) lalu diganti yang baru. Diulang beberapa kali
+    (bukan sekali) karena MUNGKIN seluruh koneksi yang sedang nganggur di
+    pool sama-sama basi bersamaan (semuanya idle lewat jendela auto-suspend
+    Neon yang sama) -- percobaan TERAKHIR sengaja TIDAK menangkap error lagi
+    supaya kegagalan Neon yang SUNGGUHAN (bukan cuma koneksi basi) tetap
+    terlihat jelas sebagai error asli, bukan diam-diam ditelan."""
+    for _ in range(_MAKSIMAL_PERCOBAAN_KONEKSI - 1):
+        raw = pool.getconn()
+        try:
+            with raw.cursor() as cur:
+                cur.execute("SELECT 1")
+            return raw
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            pool.putconn(raw, close=True)
+    raw = pool.getconn()
+    with raw.cursor() as cur:
+        cur.execute("SELECT 1")
+    return raw
+
+
 @contextmanager
 def get_conn():
     pool = _get_pool()
-    raw = pool.getconn()
+    raw = _ambil_koneksi_valid(pool)
     raw.cursor_factory = psycopg2.extras.RealDictCursor
     try:
         yield _PGConn(raw)
