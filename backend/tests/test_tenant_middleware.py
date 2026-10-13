@@ -203,3 +203,36 @@ def test_endpoint_publik_dengan_tenant_eksplisit_tetap_berfungsi(app_client):
     umum."""
     r = app_client.get("/api/public/booking/barbers?tenant=mugen-hair-co")
     assert r.status_code == 200, r.text
+
+
+# =============================================================================
+# BUGFIX (audit biaya Neon): /api/health TIDAK PERNAH boleh menyentuh
+# database -- lihat catatan _PATH_TANPA_RESOLUSI_TENANT di tenant_middleware.py.
+# =============================================================================
+
+def test_api_health_tidak_memanggil_lookup_custom_domain(app_client, monkeypatch):
+    """Host yang SAMA SEKALI bukan subdomain rivoirsett.com (persis kasus
+    ketukan cron langsung ke domain Render, mis. mugen-hair-pwa.onrender.com)
+    SEBELUM perbaikan ini jatuh ke _slug_dari_custom_domain() yang query
+    database -- sekarang HARUS dilewati total untuk path ini."""
+    import tenant_db
+    dipanggil = {"ya": False}
+    asli = tenant_db.get_tenant_by_custom_domain
+
+    def _mata_mata(host):
+        dipanggil["ya"] = True
+        return asli(host)
+    monkeypatch.setattr(tenant_db, "get_tenant_by_custom_domain", _mata_mata)
+
+    r = app_client.get("/api/health", headers={"Host": "mugen-hair-pwa.onrender.com"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ok"
+    assert dipanggil["ya"] is False, "GET /api/health TIDAK BOLEH memicu query database sama sekali"
+
+
+def test_endpoint_lain_tetap_melewati_resolusi_tenant_normal(app_client):
+    """Regresi: pengecualian di atas KHUSUS /api/health -- endpoint publik
+    lain (mis. /api/health/diagnostik yang butuh login+tenant) TIDAK ikut
+    terpengaruh, resolusi tenant normal tetap berjalan untuk path lain."""
+    r = app_client.get("/api/health/diagnostik")
+    assert r.status_code == 401  # butuh login (require_admin), BUKAN 200 tanpa auth

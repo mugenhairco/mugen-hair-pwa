@@ -134,8 +134,30 @@ def _slug_dari_custom_domain(host: str) -> str | None:
     return t["slug"] if t else None
 
 
+# BUGFIX (ditemukan lewat audit biaya Neon -- FITUR Reminder Absensi via
+# WhatsApp, ketukan "tetap hangat" eksternal ke /api/health setiap 10 menit
+# untuk mencegah Render tidur): path PUBLIK murni status/monitoring ini
+# TIDAK PERNAH butuh tenant context sama sekali (lihat main.py::health()),
+# TAPI sebelumnya tetap lewat SELURUH rantai resolusi di bawah -- untuk Host
+# yang bukan subdomain *.rivoirsett.com (persis kasus ketukan cron, yang
+# sengaja menembak langsung ke domain Render, lihat catatan di
+# absensi_reminder_db.py), itu jatuh ke _slug_dari_custom_domain() yang
+# melakukan QUERY DATABASE. Neon (auto-suspend ~5 menit idle, TERPISAH dari
+# tidur Render) jadi ikut "dibangunkan" oleh SETIAP ketukan penghangat yang
+# sama sekali tidak perlu menyentuh database -- pada jadwal tiap 10 menit
+# selama 16 jam/hari, ini membuat Neon aktif ~8 jam/hari (240 jam/bulan),
+# JAUH melebihi jatah gratis 100 jam/bulan. Dikecualikan SECARA EKSPLISIT
+# di sini (bukan di main.py) supaya SATU tempat ini jadi sumber kebenaran
+# "path mana yang tidak butuh tenant context" -- TIDAK termasuk
+# /api/health/diagnostik (khusus admin, tetap butuh tenant context normal).
+_PATH_TANPA_RESOLUSI_TENANT = {"/api/health"}
+
+
 class TenantResolutionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        if request.url.path in _PATH_TANPA_RESOLUSI_TENANT:
+            request.state.requested_tenant_slug = None
+            return await call_next(request)
         host = _hostname_dari_origin_atau_host(request)
         slug = (
             request.query_params.get("tenant")
