@@ -87,9 +87,41 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.status-placeholder {
-  padding: 24px;
+/* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
+   merender apa pun ke #app) -- SEBELUMNYA teks statis polos "Memuat
+   aplikasi...". Ditaruh di tengah viewport PERSIS seperti ini (bukan
+   .loading-overlay yang dipakai withLoading() -- itu scrim gelap di ATAS
+   konten yang sudah ada, di sini belum ada konten apa pun untuk
+   didimkan), spinner-nya reuse keyframe mugen-spin yang sama supaya
+   gerakannya konsisten dengan spinner lain di aplikasi (lihat
+   .loading-spinner). Warna dari token --accent/--border (BUKAN warna
+   literal) supaya begitu theme.js menaruh data-theme="dark" di <html> --
+   terjadi SESAAT setelah markup ini, lihat urutan <script> di index.html,
+   sama seperti teks statis lama yang digantikan ini -- spinner otomatis
+   ikut tema yang benar tanpa kode tambahan apa pun, bukan nyangkut warna
+   Light kalau sempat kelihatan sebelum itu. Web Booking (/book) tidak
+   relevan dengan catatan ini karena book_public.js memaksa Light terlepas
+   dari tema akun manapun.*/
+.boot-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.boot-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mugen-spin 0.7s linear infinite;
+}
+.boot-loading-text {
+  margin: 0;
   color: var(--text-dim);
+  font-size: 14px;
 }
 
 /* ---------------------------------------------------------------------
