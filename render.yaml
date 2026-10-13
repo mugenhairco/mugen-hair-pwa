@@ -98,6 +98,13 @@ services:
         sync: false
       - key: MIDTRANS_IS_PRODUCTION
         sync: false
+      # FITUR Reminder Absensi via WhatsApp: kunci rahasia yang HARUS sama
+      # persis dengan yang dikirim layanan penjadwal eksternal (cron-job.org
+      # dkk) lewat header "X-Cron-Secret" ke POST /api/cron/absensi-reminder
+      # -- lihat routers/cron_reminder.py. Kosongkan untuk menonaktifkan
+      # (endpoint menolak SEMUA permintaan kalau belum diisi, fail-closed).
+      - key: CRON_REMINDER_SECRET
+        sync: false
 
   # =====================================================================
   # FRONTEND — Landing Page (/) + Dashboard PWA (/app/), Render Static Site

@@ -1,4 +1,4 @@
-// pages/whatsapp.js — Notifikasi WhatsApp Otomatis Booking
+// pages/whatsapp.js — Notifikasi WhatsApp Otomatis
 // =============================================================================
 // REVISI (feedback Owner): SEBELUMNYA tab "WhatsApp" di dalam Setting --
 // dipindah jadi menu utama sidebar sendiri (lihat nav.js/router.js), supaya
@@ -6,14 +6,19 @@
 // require_admin -- token Fonnte adalah kredensial pihak ketiga milik TOKO
 // ini sendiri, tidak didelegasikan ke staff lewat Hak Akses Admin, sama
 // seperti dulu di dalam Setting), murni dipindah lokasinya.
+//
+// FITUR Reminder Absensi via WhatsApp: tab KEDUA ditambahkan di sini
+// ("Reminder Absensi"), TERPISAH dari tab "Notifikasi Booking" yang sudah
+// ada (permintaan Owner eksplisit -- dua hal berbeda sama sekali: satu
+// untuk customer, satu untuk barber). Masing-masing tab menggerbang fitur
+// paketnya SENDIRI-SENDIRI (whatsapp_reminder vs absensi) -- BUKAN satu
+// gerbang untuk seluruh halaman seperti sebelumnya, supaya tenant yang
+// cuma punya salah satu fitur tetap bisa memakai tab yang relevan.
 
 const PageWhatsapp = (() => {
-  async function render(root) {
-    root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "WhatsApp"));
-
+  async function renderNotifikasiBooking(body) {
     const card = MugenUI.el("div", { class: "card" });
-    root.appendChild(card);
+    body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Notifikasi WhatsApp Booking"));
 
     // AUDIT (enforcement paket/subscription): tab ini digerbang fitur
@@ -52,7 +57,7 @@ const PageWhatsapp = (() => {
       try {
         await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/whatsapp", { fonnte_token: inputToken.value.trim() }));
         MugenUI.toast("Token WhatsApp disimpan.", "success");
-        render(root);
+        renderNotifikasiBooking(body);
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -78,7 +83,7 @@ const PageWhatsapp = (() => {
 
     // ---- Kartu kedua: isi pesan (bisa diatur sendiri per jenis) ----
     const templateCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(templateCard);
+    body.appendChild(templateCard);
     templateCard.appendChild(MugenUI.el("h2", {}, "Isi Pesan"));
     templateCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Atur sendiri kalimat yang dikirim ke customer untuk tiap jenis pesan. Kosongkan untuk memakai kalimat bawaan."));
@@ -117,6 +122,121 @@ const PageWhatsapp = (() => {
         errorTemplate.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
     });
+  }
+
+  // FITUR Reminder Absensi via WhatsApp: tab KEDUA, berdiri sendiri total
+  // dari tab Notifikasi Booking di atas -- endpoint backend terpisah
+  // (/api/pengaturan/absensi-reminder, gerbang fitur "absensi" BUKAN
+  // "whatsapp_reminder"), lihat absensi_reminder_db.py. Pengiriman
+  // sungguhannya dipicu endpoint cron TERPISAH dari luar aplikasi (lihat
+  // routers/cron_reminder.py) -- tab ini HANYA mengatur aktif/nonaktif +
+  // isi pesan, TIDAK ada tombol "kirim sekarang" di sini.
+  async function renderReminderAbsensi(body) {
+    const card = MugenUI.el("div", { class: "card" });
+    body.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Reminder Absensi"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" },
+      "Kirim pengingat WhatsApp otomatis ke barber yang belum Check In begitu jam operasional toko dimulai, "
+      + "dan ke barber yang belum Check Out setelah 1 jam dari jam tutup. Barber yang sedang Libur/Cuti/Izin "
+      + "pada hari itu tidak dikirimi apa pun. Nomor WhatsApp tiap barber diatur di Pengaturan > Karyawan."));
+
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
+      card.appendChild(MugenFeature.upgradeBlock("Reminder Absensi"));
+      return;
+    }
+
+    let s;
+    try {
+      s = await MugenApi.get("/api/pengaturan/absensi-reminder");
+    } catch (e) {
+      card.appendChild(MugenUI.errorState(e.message));
+      return;
+    }
+
+    const chkAktif = MugenUI.el("input", { type: "checkbox" });
+    chkAktif.checked = !!s.aktif;
+    const labelAktif = MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;font-weight:normal;" },
+      [chkAktif, "Aktifkan Reminder Absensi"]);
+    card.appendChild(labelAktif);
+
+    const errorAktif = MugenUI.el("div", { class: "login-error" });
+    card.appendChild(errorAktif);
+    chkAktif.addEventListener("change", async () => {
+      errorAktif.textContent = "";
+      try {
+        await MugenApi.put("/api/pengaturan/absensi-reminder", { aktif: chkAktif.checked });
+        MugenUI.toast(chkAktif.checked ? "Reminder Absensi diaktifkan." : "Reminder Absensi dinonaktifkan.", "success");
+      } catch (e) {
+        chkAktif.checked = !chkAktif.checked;
+        errorAktif.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+
+    // ---- Kartu kedua: isi pesan (Check In/Check Out) ----
+    const templateCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(templateCard);
+    templateCard.appendChild(MugenUI.el("h2", {}, "Isi Pesan"));
+    templateCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Atur sendiri kalimat yang dikirim ke barber untuk tiap jenis pengingat. Kosongkan untuk memakai kalimat bawaan."));
+
+    const placeholderText = s.placeholder_info.map((p) => `${p.placeholder} (${p.keterangan})`).join(", ");
+    templateCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" },
+      `Placeholder yang bisa dipakai -- otomatis diisi sistem: ${placeholderText}.`));
+
+    for (const jp of s.jenis_pesan) {
+      templateCard.appendChild(MugenUI.el("label", {}, jp.label));
+      templateCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:-4px;margin-bottom:6px;" }, jp.deskripsi));
+      const textarea = MugenUI.el("textarea", {
+        rows: "5", placeholder: s.defaults[jp.jenis],
+      }, s.templates[jp.jenis] || "");
+      templateCard.appendChild(textarea);
+      const btnReset = MugenUI.el("button", { style: "margin:8px 0 18px;" }, "Kembalikan ke Kalimat Bawaan");
+      btnReset.addEventListener("click", () => { textarea.value = ""; });
+      templateCard.appendChild(btnReset);
+
+      jp._textarea = textarea;
+    }
+
+    const errorTemplate = MugenUI.el("div", { class: "login-error" });
+    const btnSimpanTemplate = MugenUI.el("button", { class: "btn-primary" }, "Simpan Isi Pesan");
+    templateCard.appendChild(errorTemplate);
+    templateCard.appendChild(MugenUI.el("div", { style: "margin-top:4px;" }, btnSimpanTemplate));
+
+    btnSimpanTemplate.addEventListener("click", async () => {
+      errorTemplate.textContent = "";
+      const templates = {};
+      for (const jp of s.jenis_pesan) templates[jp.jenis] = jp._textarea.value.trim();
+      try {
+        await MugenUI.withButtonLoading(btnSimpanTemplate, () => MugenApi.put("/api/pengaturan/absensi-reminder", { templates }));
+        MugenUI.toast("Isi pesan disimpan.", "success");
+      } catch (e) {
+        errorTemplate.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+  }
+
+  async function render(root) {
+    root.innerHTML = "";
+    root.appendChild(MugenUI.el("h1", {}, "WhatsApp"));
+
+    const tabItems = [
+      { key: "Notifikasi Booking", label: "Notifikasi Booking" },
+      { key: "Reminder Absensi", label: "Reminder Absensi" },
+    ];
+    const body = MugenUI.el("div");
+
+    async function renderBody(activeTab) {
+      body.innerHTML = "";
+      if (activeTab === "Notifikasi Booking") await renderNotifikasiBooking(body);
+      else if (activeTab === "Reminder Absensi") await renderReminderAbsensi(body);
+    }
+
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    root.appendChild(tabsCtl.bar);
+    root.appendChild(body);
+    requestAnimationFrame(tabsCtl.moveIndicator);
+
+    renderBody(tabsCtl.active);
   }
 
   return { render };

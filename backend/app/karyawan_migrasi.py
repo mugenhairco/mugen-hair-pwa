@@ -29,6 +29,7 @@ def migrasi_karyawan():
     with get_conn() as conn:
         _migrasi_kolom_jabatan(conn)
         _migrasi_kolom_gaji_per_hari(conn)
+        _migrasi_kolom_nomor_whatsapp(conn)
 
 
 def _migrasi_kolom_jabatan(conn):
@@ -43,3 +44,15 @@ def _migrasi_kolom_gaji_per_hari(conn):
     if "gaji_per_hari" in kolom:
         return
     conn.execute("ALTER TABLE barbers ADD COLUMN gaji_per_hari INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrasi_kolom_nomor_whatsapp(conn):
+    """FITUR Reminder Absensi via WhatsApp: nomor WhatsApp PRIBADI karyawan
+    (beda dari nomor WhatsApp TOKO di whatsapp_service.py) -- dipakai
+    absensi_reminder_db.py mengirim pengingat Check In/Check Out. Opsional
+    (boleh kosong, karyawan tanpa nomor otomatis dilewati pengiriman
+    pengingat, lihat absensi_reminder_db.py)."""
+    kolom = [r["name"] for r in conn.execute("PRAGMA table_info(barbers)").fetchall()]
+    if "nomor_whatsapp" in kolom:
+        return
+    conn.execute("ALTER TABLE barbers ADD COLUMN nomor_whatsapp TEXT")

@@ -73,7 +73,8 @@ def hapus_barber(barber_id: int):
 
 
 def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int = 0,
-                             jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None) -> int:
+                             jabatan: str = "barber", gaji_per_hari: int = 0, tenant_id: int = None,
+                             nomor_whatsapp: str = None) -> int:
     if not (nama or "").strip():
         raise ValueError("Nama karyawan tidak boleh kosong.")
     jabatan = (jabatan or "").strip()
@@ -85,13 +86,14 @@ def tambah_barber_validated(nama: str, is_rafiq: bool = False, uang_harian: int 
         raise ValueError("Gaji per hari tidak boleh negatif.")
     try:
         return db.add_barber(nama, is_rafiq, uang_harian, jabatan=jabatan, gaji_per_hari=gaji_per_hari,
-                              tenant_id=tenant_id)
+                              tenant_id=tenant_id, nomor_whatsapp=nomor_whatsapp)
     except IntegrityError:
         raise ValueError(f"Nama karyawan '{nama.strip()}' sudah dipakai.")
 
 
 def update_barber_validated(barber_id: int, nama: str = None, is_rafiq: bool = None, aktif: bool = None,
-                             uang_harian: int = None, jabatan: str = None, gaji_per_hari: int = None):
+                             uang_harian: int = None, jabatan: str = None, gaji_per_hari: int = None,
+                             nomor_whatsapp: str = None):
     if db.get_barber(barber_id) is None:
         raise ValueError("Karyawan tidak ditemukan.")
     if nama is not None and not nama.strip():
@@ -106,6 +108,6 @@ def update_barber_validated(barber_id: int, nama: str = None, is_rafiq: bool = N
         raise ValueError("Gaji per hari tidak boleh negatif.")
     try:
         db.update_barber(barber_id, nama=nama, is_rafiq=is_rafiq, aktif=aktif, uang_harian=uang_harian,
-                          jabatan=jabatan, gaji_per_hari=gaji_per_hari)
+                          jabatan=jabatan, gaji_per_hari=gaji_per_hari, nomor_whatsapp=nomor_whatsapp)
     except IntegrityError:
         raise ValueError(f"Nama karyawan '{(nama or '').strip()}' sudah dipakai.")

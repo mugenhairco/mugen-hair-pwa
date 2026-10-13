@@ -302,6 +302,11 @@ ALTER TABLE barbers ADD COLUMN IF NOT EXISTS gaji_per_hari INTEGER NOT NULL DEFA
 -- TETAP dipakai untuk tentukan Content-Type dari ekstensi, tidak berubah.
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS foto_data BYTEA;
 
+-- FITUR Reminder Absensi via WhatsApp: nomor WhatsApp PRIBADI karyawan
+-- (beda dari nomor WhatsApp TOKO di whatsapp_service.py), lihat
+-- karyawan_migrasi.py::_migrasi_kolom_nomor_whatsapp() untuk jalur SQLite.
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS nomor_whatsapp TEXT;
+
 CREATE TABLE IF NOT EXISTS slip_gaji (
     id                SERIAL PRIMARY KEY,
     barber_id         INTEGER NOT NULL REFERENCES barbers(id),
@@ -1368,6 +1373,19 @@ CREATE TABLE IF NOT EXISTS attendance_audit_logs (
     device       TEXT,
     ip_address   TEXT,
     tenant_id    INTEGER
+);
+
+-- FITUR Reminder Absensi via WhatsApp: lihat absensi_reminder_db.py --
+-- SATU baris per (barber, tanggal, jenis) supaya pengingat maksimal 1x per
+-- barber per jenis per hari walau endpoint pemicu dipanggil berkali-kali.
+CREATE TABLE IF NOT EXISTS absensi_reminder_log (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INTEGER NOT NULL,
+    barber_id   INTEGER NOT NULL,
+    tanggal     TEXT NOT NULL,
+    jenis       TEXT NOT NULL,
+    dikirim_at  TEXT NOT NULL,
+    UNIQUE(barber_id, tanggal, jenis)
 );
 
 CREATE INDEX IF NOT EXISTS idx_attendance_logs_tenant_tanggal ON attendance_logs(tenant_id, tanggal);

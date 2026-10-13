@@ -1010,7 +1010,16 @@
 // EKSKLUSIF tampilan Barber) -- tampilan Booking List/Calendar milik
 // Owner/Admin TIDAK berubah, tetap menampilkan nomor WhatsApp seperti
 // sebelumnya.
-const ASSET_VERSION = "172";
+// v172 -> v173: FITUR BARU -- Reminder Absensi via WhatsApp (permintaan
+// Owner): tab baru "Reminder Absensi" di menu WhatsApp (pages/whatsapp.js,
+// terpisah dari tab "Notifikasi Booking"), Owner atur aktif/nonaktif +
+// template pesan Check In/Check Out. Field baru "Nomor WhatsApp" di form
+// Tambah/Edit Karyawan (pages/pengaturan.js). Pengirimannya dipicu
+// endpoint cron terpisah (routers/cron_reminder.py) yang "diketuk"
+// layanan penjadwal GRATIS dari LUAR aplikasi secara berkala -- TIDAK ADA
+// proses baru yang berjalan terus-menerus di server (lihat
+// absensi_reminder_db.py).
+const ASSET_VERSION = "173";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
