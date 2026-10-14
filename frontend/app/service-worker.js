@@ -1051,7 +1051,11 @@
 // TETAP menunggu jawaban server (hasilnya Libur/Cuti/Kelebihan Kuota
 // ditentukan server, tidak bisa ditebak di browser) -- tidak ada
 // perubahan struktural di sana, sudah pakai spinner inline sebelumnya.
-const ASSET_VERSION = "178";
+// v178 -> v179: PERMINTAAN Owner -- perlakuan instan di atas (v178) berlaku
+// juga untuk Simpan KOREKSI transaksi (bukan cuma transaksi baru) --
+// input_data.js, jaring pengaman localStorage yang sama dipakai ulang
+// (entry koreksi dibedakan lewat `editId`, kirim PUT bukan POST saat retry).
+const ASSET_VERSION = "179";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
