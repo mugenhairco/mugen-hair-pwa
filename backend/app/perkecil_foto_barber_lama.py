@@ -64,11 +64,13 @@ from database import get_conn  # noqa: E402
 class MigrasiTidakDiizinkan(RuntimeError):
     """DATABASE_URL belum diisi -- tidak ada database production untuk
     diproses (lihat ATURAN KESELAMATAN di atas). Dipisah dari sys.exit()
-    CLI supaya modul ini AMAN diimpor dari proses lain (lihat
-    routers/migrasi_foto_barber.py -- endpoint sekali-pakai yang menjalankan
-    jalankan_migrasi() di bawah DI DALAM proses backend yang sudah punya
-    DATABASE_URL/R2_* production, tanpa modul ini sendiri pernah menyentuh
-    kredensial apa pun secara langsung)."""
+    CLI supaya jalankan_migrasi() di bawah AMAN diimpor & dipanggil dari
+    proses lain -- dipakai SEKALI oleh endpoint sementara
+    routers/migrasi_foto_barber.py untuk menjalankan migrasi ini langsung
+    di proses backend production (satu-satunya tempat yang sudah punya
+    DATABASE_URL/R2_* tanpa kredensial berpindah tangan), endpoint itu
+    SUDAH DIHAPUS lagi setelah migrasi selesai (lihat riwayat git kalau
+    perlu dijalankan ulang lewat jalur yang sama)."""
 
 
 def _ext(filename: str) -> str:

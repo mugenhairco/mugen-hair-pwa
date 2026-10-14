@@ -102,7 +102,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, migrasi_foto_barber  # migrasi_foto_barber: endpoint SEKALI-PAKAI, lihat routers/migrasi_foto_barber.py -- dihapus lagi setelah migrasi foto barber lama selesai dijalankan
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -368,7 +368,6 @@ app.include_router(faspay_settlement.router)
 app.include_router(faspay_settlement_superadmin.router)
 app.include_router(attendance.router)
 app.include_router(cron_reminder.router)
-app.include_router(migrasi_foto_barber.router)  # TEMPORARY -- lihat catatan di routers/migrasi_foto_barber.py
 app.include_router(uang_harian_dinamis.router)
 app.include_router(push.router)
 
