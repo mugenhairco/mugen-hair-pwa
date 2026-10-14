@@ -7,7 +7,7 @@ barber (barbers.nomor_whatsapp, lihat karyawan_migrasi.py), BUKAN sebaliknya.
 
 TRIGGER WAKTU (bukan event user) -- BEDA dari pola event-driven lain di
 aplikasi ini (push notifikasi booking dkk): "jam operasional toko sudah
-mulai tapi barber belum Check In" dan "sudah 1 jam lewat jam tutup tapi
+mulai tapi barber belum Check In" dan "jam tutup toko sudah lewat tapi
 barber belum Check Out" TIDAK bisa diketahui dari reaksi atas suatu aksi,
 HARUS dicek berbasis waktu. Mengikuti keputusan eksplisit Owner (TIDAK ada
 proses berjalan terus-menerus di server/background scheduler, lihat
@@ -29,7 +29,7 @@ Libur/Cuti/Izin pada tanggal itu (lihat _barber_sedang_libur_cuti_izin()),
 dan barber yang belum mengisi nomor WhatsApp pribadinya sama sekali.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import attendance_db
@@ -57,7 +57,7 @@ JENIS_PESAN = [
     ("checkin", "Pengingat Check In",
      "Dikirim SEKALI saat jam operasional toko sudah mulai tapi barber belum Check In hari itu."),
     ("checkout", "Pengingat Check Out",
-     "Dikirim SEKALI saat sudah 1 jam lewat dari jam tutup toko tapi barber belum Check Out hari itu."),
+     "Dikirim SEKALI persis saat jam tutup toko tapi barber belum Check Out hari itu."),
 ]
 
 PLACEHOLDER_INFO = [
@@ -193,8 +193,8 @@ def _barber_sedang_libur_cuti_izin(barber_id: int, tanggal: str) -> bool:
 def jalankan_pengecekan() -> dict:
     """Loop SELURUH tenant AKTIF yang mengaktifkan fitur ini, kirim
     pengingat WA Check In (begitu jam buka toko lewat) / Check Out (begitu
-    1 jam lewat jam tutup toko) ke barber yang belum melakukannya HARI INI
-    -- lihat catatan modul untuk aturan pengecualian & idempotensi.
+    jam tutup toko lewat) ke barber yang belum melakukannya HARI INI --
+    lihat catatan modul untuk aturan pengecualian & idempotensi.
     Mengembalikan ringkasan jumlah (untuk log/debug endpoint pemicu)."""
     sekarang = _sekarang_wib()
     tanggal = sekarang.strftime("%Y-%m-%d")
@@ -216,7 +216,11 @@ def jalankan_pengecekan() -> dict:
         jam_buka, jam_tutup = pengaturan["jam_buka"], pengaturan["jam_tutup"]
 
         lewat_jam_buka = sekarang >= _gabung_jam(tanggal, jam_buka)
-        batas_checkout = _gabung_jam(tanggal, jam_tutup) + timedelta(hours=1)
+        # REVISI Owner: SEBELUMNYA jam_tutup + 1 jam (buffer, antisipasi
+        # barber masih beres-beres) -- diganti PERSIS jam_tutup atas
+        # permintaan eksplisit Owner, pengingat Check Out dikirim begitu
+        # jam tutup toko lewat, bukan 1 jam sesudahnya.
+        batas_checkout = _gabung_jam(tanggal, jam_tutup)
         lewat_batas_checkout = sekarang >= batas_checkout
         if not lewat_jam_buka and not lewat_batas_checkout:
             continue

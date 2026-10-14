@@ -194,6 +194,29 @@ def test_checkout_terkirim_sekali_untuk_yang_belum_checkout(single_tenant, monke
     assert len(terkirim) == 1
 
 
+def test_checkout_terkirim_persis_jam_tutup_bukan_1_jam_sesudahnya(single_tenant, monkeypatch):
+    """REVISI Owner: pengingat Check Out dikirim PERSIS begitu jam tutup
+    toko lewat (jam_tutup=20:00 di _siapkan()), BUKAN 1 jam sesudahnya
+    (perilaku lama) -- 19:59 (1 menit SEBELUM tutup) belum boleh terkirim,
+    20:00 (PERSIS jam tutup) sudah harus terkirim."""
+    tenant_id = single_tenant["tenant_id"]
+    _siapkan(tenant_id)
+    barber_id = _tambah_barber(tenant_id, "Rizal")
+    _insert_log(barber_id, tenant_id, _hari_ini(), check_in=True, check_out=False)
+    terkirim = _mock_wa(monkeypatch)
+
+    _patch_now(monkeypatch, _jam("19:59"))
+    hasil_sebelum = absensi_reminder_db.jalankan_pengecekan()
+    assert hasil_sebelum["checkout_terkirim"] == 0
+    assert len(terkirim) == 0
+
+    _patch_now(monkeypatch, _jam("20:00"))
+    hasil_pas = absensi_reminder_db.jalankan_pengecekan()
+    assert hasil_pas["checkout_terkirim"] == 1
+    assert len(terkirim) == 1
+    assert "Rizal" in terkirim[0]["pesan"]
+
+
 def test_checkout_tidak_dikirim_kalau_sudah_checkout(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     _siapkan(tenant_id)
