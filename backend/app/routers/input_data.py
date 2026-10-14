@@ -236,7 +236,10 @@ def tandai_libur(body: LiburBody, user: dict = Depends(require_permission("izin_
     'kelebihan_kuota') supaya frontend bisa kasih tahu Admin/Owner persis
     apa yang terjadi kalau kuotanya sudah habis."""
     barber_id = _resolve_barber_id(user, body.barber_id)
-    jenis = kuota_libur_db.tandai_libur_dengan_kuota(barber_id, user["tenant_id"], body.tanggal)
+    try:
+        jenis = kuota_libur_db.tandai_libur_dengan_kuota(barber_id, user["tenant_id"], body.tanggal)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True, "jenis": jenis}
 
 

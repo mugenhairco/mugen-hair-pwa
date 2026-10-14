@@ -107,7 +107,23 @@ def tandai_libur_dengan_kuota(barber_id: int, tenant_id: int, tanggal: str) -> s
     langsung -- menerapkan cascade Kuota Libur (lihat modul docstring) SAAT
     Admin/Owner menandai Libur manual untuk satu tanggal. Return
     'libur' | 'cuti' | 'kelebihan_kuota' supaya caller (router) bisa
-    memberi tahu Admin/Owner persis apa yang terjadi."""
+    memberi tahu Admin/Owner persis apa yang terjadi.
+
+    PERMINTAAN OWNER: Tandai Libur DITOLAK (ValueError) kalau tanggal ini
+    sudah tercakup pengajuan Izin/Cuti yang DISETUJUI milik barber yang
+    sama -- validasi arah SEBALIKNYA dari yang sudah ada di
+    izin_cuti_db.buat_pengajuan() (yang menolak pengajuan baru di atas
+    tanggal yang sudah Libur). Tanpa ini, satu tanggal bisa tercatat
+    GANDA (Libur DAN Cuti/Izin sekaligus) -- bikin Rekap & Bonus Customer
+    (hari_libur) salah hitung."""
+    pengajuan_aktif = izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, tanggal)
+    if pengajuan_aktif is not None:
+        jenis_label = "Izin" if pengajuan_aktif["jenis"] == "izin" else "Cuti"
+        raise ValueError(
+            f"Tidak bisa ditandai Libur -- barber ini tercatat sedang {jenis_label} pada tanggal ini "
+            f"({pengajuan_aktif['tanggal_mulai']} s/d {pengajuan_aktif['tanggal_selesai']})."
+        )
+
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     kuota = settings.get("kuota_libur_bulanan", 0)
     if kuota <= 0:

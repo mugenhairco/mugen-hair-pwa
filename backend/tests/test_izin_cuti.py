@@ -957,7 +957,7 @@ def test_potong_karena_checkin_contoh_owner_1_sampai_7_checkin_hari_ke_5(single_
     izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
 
     hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-05")
-    assert hasil == {"aksi": "dipotong", "tanggal_selesai_baru": "2026-09-04"}
+    assert hasil == {"aksi": "dipotong", "tanggal_mulai_baru": None, "tanggal_selesai_baru": "2026-09-04"}
     pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
     assert pengajuan_baru["tanggal_mulai"] == "2026-09-01"
     assert pengajuan_baru["tanggal_selesai"] == "2026-09-04"
@@ -967,10 +967,9 @@ def test_potong_karena_checkin_contoh_owner_1_sampai_7_checkin_hari_ke_5(single_
     assert saldo["sisa_gabungan"] == 6  # 10 - 4 hari (1-4) terpakai, 5-7 kembali
 
 
-def test_potong_karena_checkin_hari_pertama_menghapus_seluruh_pengajuan(single_tenant, monkeypatch):
-    """PERMINTAAN OWNER (kasus Romen): Check In di hari PERTAMA rentang --
-    belum ada satu hari pun yang benar-benar dijalani -> SELURUH pengajuan
-    dihapus, kuota kembali penuh."""
+def test_potong_karena_checkin_hari_pertama_satu_hari_menghapus_seluruh_pengajuan(single_tenant, monkeypatch):
+    """Pengajuan SATU HARI SAJA: Check In di hari itu -> tidak ada hari
+    tersisa untuk digeser, SELURUH pengajuan dihapus, kuota kembali penuh."""
     tenant_id = single_tenant["tenant_id"]
     barber_id = _barber(tenant_id)
     monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
@@ -981,10 +980,71 @@ def test_potong_karena_checkin_hari_pertama_menghapus_seluruh_pengajuan(single_t
     izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
 
     hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-01")
-    assert hasil == {"aksi": "dihapus", "tanggal_selesai_baru": None}
+    assert hasil == {"aksi": "dihapus", "tanggal_mulai_baru": None, "tanggal_selesai_baru": None}
     assert izin_cuti_db.get_pengajuan(p["id"]) is None
     saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
     assert saldo["sisa_gabungan"] == 10
+
+
+def test_potong_karena_checkin_hari_pertama_rentang_panjang_dimajukan_bukan_dihapus(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER: Cuti 11-14 (contoh Owner), Check In di hari
+    PERTAMA (tgl 11) -> rentang DIMAJUKAN jadi 12-14 (TIDAK dihapus total),
+    kuota tgl 11 saja yang kembali. Check In LAGI di hari pertama yang
+    SEKARANG berlaku (tgl 12) -> dimajukan lagi jadi 13-14 -- satu hari per
+    Check In, sisa hari (13-14) TETAP Cuti karena belum tentu besok Check
+    In lagi atau tidak."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-11", "2026-09-14",
+                                     "Cuti 4 hari", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+    saldo_awal = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo_awal["sisa_gabungan"] == 6  # 10 - 4 hari (11-14)
+
+    hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-11")
+    assert hasil == {"aksi": "dimajukan", "tanggal_mulai_baru": "2026-09-12", "tanggal_selesai_baru": None}
+    pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru["tanggal_mulai"] == "2026-09-12"
+    assert pengajuan_baru["tanggal_selesai"] == "2026-09-14"
+    assert pengajuan_baru["status"] == "disetujui"
+    saldo = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo["sisa_gabungan"] == 7  # tgl 11 saja yang kembali
+
+    # Check In LAGI besoknya (sekarang tanggal_mulai yang berlaku = 12) -- digeser lagi, BUKAN dihapus/dibatalkan.
+    hasil2 = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-12")
+    assert hasil2 == {"aksi": "dimajukan", "tanggal_mulai_baru": "2026-09-13", "tanggal_selesai_baru": None}
+    pengajuan_baru2 = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru2["tanggal_mulai"] == "2026-09-13"
+    assert pengajuan_baru2["tanggal_selesai"] == "2026-09-14"  # tgl 13-14 TETAP Cuti, tidak dihapus
+    saldo2 = izin_cuti_db.get_sisa_kuota(barber_id, tenant_id)
+    assert saldo2["sisa_gabungan"] == 8  # tgl 11 dan 12 kembali, 13-14 masih terpakai
+
+
+def test_potong_karena_checkin_tengah_rentang_setelah_dimajukan_membatalkan_sisa(single_tenant, monkeypatch):
+    """Lanjutan kasus Owner: Cuti 11-14, Check In berurutan di 11 lalu 12
+    (rentang jadi 13-14), TAPI kalau Check In BERIKUTNYA justru melompat
+    (bukan tanggal_mulai yang SEKARANG berlaku, mis. balik lagi Cuti di
+    tgl 13 tapi langsung Check In di tgl 14) -> sisanya dibatalkan
+    sekaligus seperti kasus tengah rentang biasa, BUKAN digeser."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=1, kuota_gabungan_hari=10,
+                                    periode_mulai_dasar="2026-09-01")
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-11", "2026-09-14",
+                                     "Cuti 4 hari", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+    izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-11")  # jadi 12-14
+    izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-12")  # jadi 13-14
+
+    hasil = izin_cuti_db.potong_karena_checkin(p["id"], "2026-09-14")  # tanggal_mulai SAAT INI = 13, bukan 14
+    assert hasil == {"aksi": "dipotong", "tanggal_mulai_baru": None, "tanggal_selesai_baru": "2026-09-13"}
+    pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru["tanggal_mulai"] == "2026-09-13"
+    assert pengajuan_baru["tanggal_selesai"] == "2026-09-13"
 
 
 def test_potong_karena_checkin_pengajuan_pending_ditolak(single_tenant):
@@ -1099,7 +1159,51 @@ def test_router_checkin_saat_sedang_cuti_minta_konfirmasi_lalu_memotong_rentang(
     r2 = client.post("/api/attendance/check-in", json={**payload, "konfirmasi_cuti_izin": True},
                       headers=headers_barber)
     assert r2.status_code == 200, r2.text
-    assert r2.json()["cuti_izin_disesuaikan"] == {"aksi": "dipotong", "tanggal_selesai_baru": "2026-09-04"}
+    assert r2.json()["cuti_izin_disesuaikan"] == {
+        "aksi": "dipotong", "tanggal_mulai_baru": None, "tanggal_selesai_baru": "2026-09-04"}
 
     pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
     assert pengajuan_baru["tanggal_selesai"] == "2026-09-04"
+
+
+def test_router_checkin_di_hari_pertama_cuti_dimajukan_bukan_dihapus(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER: Check In lewat endpoint beneran (bukan panggil
+    fungsi db langsung) di hari PERTAMA Cuti multi-hari -> rentang
+    DIMAJUKAN 1 hari, bukan dihapus total."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    client.put("/api/attendance/settings",
+               json={"lokasi_latitude": -6.175392, "lokasi_longitude": 106.827153, "radius_meter": 500,
+                     "jam_masuk": "09:00", "jam_pulang": "20:00"},
+               headers=headers)
+    import auth_db
+    barber_id = _barber(tenant_id, "Barber Checkin Hari Pertama")
+    auth_db.tambah_user("barberhari1", "passwordB123", role="barber", barber_id=barber_id,
+                         tenant_id=tenant_id)
+    r_login = client.post("/api/auth/login", json={"username": "barberhari1", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-11", "2026-09-14",
+                                     "Cuti 4 hari", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+
+    import attendance_db
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    wib = ZoneInfo("Asia/Jakarta")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 9, 11, 10, 0, tzinfo=wib))
+
+    payload = {"latitude": -6.175392, "longitude": 106.827153}
+    r1 = client.post("/api/attendance/check-in", json=payload, headers=headers_barber)
+    assert r1.status_code == 409
+
+    r2 = client.post("/api/attendance/check-in", json={**payload, "konfirmasi_cuti_izin": True},
+                      headers=headers_barber)
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["cuti_izin_disesuaikan"] == {
+        "aksi": "dimajukan", "tanggal_mulai_baru": "2026-09-12", "tanggal_selesai_baru": None}
+
+    pengajuan_baru = izin_cuti_db.get_pengajuan(p["id"])
+    assert pengajuan_baru["tanggal_mulai"] == "2026-09-12"
+    assert pengajuan_baru["tanggal_selesai"] == "2026-09-14"
+    assert pengajuan_baru["status"] == "disetujui"

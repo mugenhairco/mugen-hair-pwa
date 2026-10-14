@@ -791,30 +791,64 @@ def get_pengajuan_aktif_pada_tanggal(barber_id: int, tanggal: str) -> dict | Non
 
 def potong_karena_checkin(pengajuan_id: int, tanggal_checkin: str) -> dict:
     """PERMINTAAN OWNER: barber Check In padahal tanggal ini masih dalam
-    rentang Cuti/Izin yang disetujui -- rentang dipotong supaya HANYA
-    mencakup hari-hari SEBELUM tanggal_checkin (contoh Owner: Cuti tanggal
-    1-7, Check In di hari ke-5 -> tanggal_selesai dipotong jadi hari ke-4,
-    hari 5-7 kembali ke kuota). Kalau tanggal_checkin == tanggal_mulai
-    (belum ada satu hari pun yang benar-benar dijalani), SELURUH pengajuan
-    dihapus. Kuota kembali OTOMATIS (dihitung live dari baris yang ADA,
-    lihat _kuota_terpakai_hari() -- TIDAK PERLU logika "refund" terpisah).
-    Return {"aksi": "dihapus"|"dipotong", "tanggal_selesai_baru": str|None}."""
+    rentang Cuti/Izin yang disetujui.
+
+    Dua kasus, dibedakan dari POSISI tanggal_checkin di rentang yang
+    SEDANG berlaku saat ini (bukan rentang pengajuan awal -- rentang bisa
+    sudah bergeser dari Check In sebelumnya, lihat kasus pertama):
+
+    1. tanggal_checkin == tanggal_mulai (hari PERTAMA yang sedang berlaku):
+       barber masuk kerja TEPAT di awal rentang -- rentang DIMAJUKAN 1 hari
+       (tanggal_mulai digeser maju), sisa hari SETELAHNYA TETAP Cuti/Izin
+       (TIDAK ikut dihapus/dibatalkan -- kita belum tahu apakah besok dia
+       Check In lagi atau benar-benar lanjut cuti). Kalau setelah digeser
+       tidak ada hari tersisa (rentang 1 hari), baru SELURUH pengajuan
+       dihapus (tidak ada apa-apa lagi yang bisa "digeser").
+       Contoh Owner: Cuti 11-14, Check In tanggal 11 -> jadi 12-14. Besok
+       Check In lagi di tanggal 12 (SEKARANG tanggal_mulai yang berlaku)
+       -> jadi 13-14, dst, SATU hari per Check In, tidak pernah lebih maju
+       dari itu.
+    2. tanggal_checkin JATUH DI TENGAH rentang (bukan tanggal_mulai saat
+       ini): barber melompat masuk kerja padahal masih ada hari SEBELUM
+       tanggal_checkin yang belum dijalani sebagai cuti -- SISA rentang
+       dari tanggal_checkin dan seterusnya dibatalkan sekaligus (rentang
+       dipotong supaya HANYA mencakup hari-hari SEBELUM tanggal_checkin).
+       Contoh Owner: Cuti 11-14, Check In di tanggal 13 (tanggal_mulai
+       SAAT INI masih 11, belum pernah digeser) -> tanggal_selesai
+       dipotong jadi 12, tanggal 13-14 kembali ke kuota SEKALIGUS (BUKAN
+       digeser satu-satu -- begitu melompat ke tengah, sisanya dianggap
+       batal semua).
+
+    Kuota kembali OTOMATIS di kedua kasus (dihitung live dari baris yang
+    ADA, lihat _kuota_terpakai_hari() -- TIDAK PERLU logika "refund"
+    terpisah).
+    Return {"aksi": "dimajukan"|"dihapus"|"dipotong",
+            "tanggal_mulai_baru": str|None, "tanggal_selesai_baru": str|None}."""
     existing = get_pengajuan(pengajuan_id)
     if existing is None or existing["status"] != "disetujui":
         raise ValueError("Pengajuan tidak ditemukan atau bukan berstatus Disetujui.")
+    now = datetime.now().isoformat(timespec="seconds")
     if tanggal_checkin == existing["tanggal_mulai"]:
+        tanggal_mulai_baru = (datetime.strptime(tanggal_checkin, "%Y-%m-%d")
+                               + timedelta(days=1)).strftime("%Y-%m-%d")
+        if tanggal_mulai_baru > existing["tanggal_selesai"]:
+            with get_conn() as conn:
+                conn.execute("DELETE FROM izin_cuti WHERE id = ?", (pengajuan_id,))
+            return {"aksi": "dihapus", "tanggal_mulai_baru": None, "tanggal_selesai_baru": None}
         with get_conn() as conn:
-            conn.execute("DELETE FROM izin_cuti WHERE id = ?", (pengajuan_id,))
-        return {"aksi": "dihapus", "tanggal_selesai_baru": None}
+            conn.execute(
+                "UPDATE izin_cuti SET tanggal_mulai = ?, updated_at = ? WHERE id = ?",
+                (tanggal_mulai_baru, now, pengajuan_id),
+            )
+        return {"aksi": "dimajukan", "tanggal_mulai_baru": tanggal_mulai_baru, "tanggal_selesai_baru": None}
     tanggal_selesai_baru = (datetime.strptime(tanggal_checkin, "%Y-%m-%d")
                              - timedelta(days=1)).strftime("%Y-%m-%d")
-    now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         conn.execute(
             "UPDATE izin_cuti SET tanggal_selesai = ?, updated_at = ? WHERE id = ?",
             (tanggal_selesai_baru, now, pengajuan_id),
         )
-    return {"aksi": "dipotong", "tanggal_selesai_baru": tanggal_selesai_baru}
+    return {"aksi": "dipotong", "tanggal_mulai_baru": None, "tanggal_selesai_baru": tanggal_selesai_baru}
 
 
 def batalkan_pengajuan_disetujui(pengajuan_id: int) -> dict:
