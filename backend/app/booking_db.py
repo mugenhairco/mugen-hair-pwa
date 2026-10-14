@@ -845,6 +845,29 @@ def _is_advance_booking(created_at: str, tanggal: str) -> bool:
     return dibuat_utc.astimezone(WIB).date().isoformat() < tanggal
 
 
+def _jalankan_di_belakang(fn, *args):
+    """PERBAIKAN PERFORMA (permintaan Owner): WhatsApp (Fonnte, timeout 15
+    detik -- lihat whatsapp_service._TIMEOUT_DETIK) dan Push (pywebpush,
+    timeout 10 detik PER penerima, dikirim BERURUTAN -- lihat
+    push_service._kirim_ke_daftar_subscription()) adalah panggilan HTTP
+    KELUAR yang bisa lambat/macet. Sebelumnya dipanggil LANGSUNG di jalur
+    booking utama (buat_booking()/verifikasi_pembayaran()/
+    batalkan_booking()/terima_booking()) -- customer/Admin menunggu sampai
+    notifikasi itu SELESAI (atau timeout) sebelum respons booking-nya
+    SENDIRI balik, bisa belasan sampai puluhan detik kalau Fonnte/layanan
+    push sedang lambat/tidak responsif. Dipindah ke thread terpisah
+    (daemon -- tidak menahan proses berhenti) supaya respons booking
+    langsung balik begitu DATABASE-nya sendiri selesai; notifikasinya
+    tetap terkirim, cuma di belakang, TIDAK PERNAH menggagalkan booking
+    utamanya kalau gagal. AMAN dipanggil dari thread mana pun -- `fn`
+    (_kirim_notifikasi_wa_booking()/_kirim_notifikasi_push_booking_baru()
+    di bawah) SUDAH membungkus isinya sendiri dengan try/except (tidak
+    pernah melempar ke pemanggil), dan koneksi database
+    (ThreadedConnectionPool, lihat db_compat.py) memang dirancang aman
+    dipakai dari banyak thread sekaligus."""
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
 def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     """FITUR Notifikasi WhatsApp Otomatis Booking: dipanggil dari
     buat_booking()/verifikasi_pembayaran()/batalkan_booking() di bawah --
@@ -1051,15 +1074,15 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # di tempat/rekening, "gateway" dapat pesan sendiri lewat
     # verifikasi_pembayaran() begitu Faspay konfirmasi sukses).
     if metode_pembayaran == "qris":
-        _kirim_notifikasi_wa_booking(booking_baru, "reminder_qris")
+        _jalankan_di_belakang(_kirim_notifikasi_wa_booking, booking_baru, "reminder_qris")
     # Pesan Otomatis Berdasarkan Jam Operasional Tenant: TAMBAHAN (bukan
     # pengganti) notifikasi di atas -- dikirim untuk SEMUA metode
     # pembayaran begitu booking dibuat SAAT toko sedang di luar jam
     # operasional (permintaan Owner: "juga ingin ada pesan WhatsApp" untuk
     # kasus ini, bisa diedit lewat Setting > WhatsApp seperti template lain).
     if dibuat_di_luar_jam_operasional:
-        _kirim_notifikasi_wa_booking(booking_baru, "booking_luar_jam_operasional")
-    _kirim_notifikasi_push_booking_baru(booking_baru)
+        _jalankan_di_belakang(_kirim_notifikasi_wa_booking, booking_baru, "booking_luar_jam_operasional")
+    _jalankan_di_belakang(_kirim_notifikasi_push_booking_baru, booking_baru)
     return booking_baru
 
 
@@ -1233,7 +1256,7 @@ def batalkan_booking(booking_id: int):
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_booking = 'dibatalkan' WHERE id = ?", (booking_id,))
     if not sudah_dibatalkan:
-        _kirim_notifikasi_wa_booking(get_booking(booking_id), "pembatalan")
+        _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "pembatalan")
 
 
 def verifikasi_pembayaran(booking_id: int, oleh: str = None):
@@ -1278,7 +1301,7 @@ def verifikasi_pembayaran(booking_id: int, oleh: str = None):
                 (now, (oleh or "").strip() or None, booking_id),
             )
     if not sudah_terverifikasi:
-        _kirim_notifikasi_wa_booking(get_booking(booking_id), "konfirmasi_pembayaran")
+        _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "konfirmasi_pembayaran")
 
 
 def terima_booking(booking_id: int, oleh: str = None):
@@ -1326,7 +1349,7 @@ def terima_booking(booking_id: int, oleh: str = None):
                 (now, (oleh or "").strip() or None, booking_id),
             )
         if booking["metode_pembayaran"] == "qris" and booking["status_pembayaran"] != "terverifikasi":
-            _kirim_notifikasi_wa_booking(get_booking(booking_id), "reminder_qris")
+            _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "reminder_qris")
 
 
 def reschedule_booking(booking_id: int, tenant_id: int = None, barber_id: int = None, tanggal: str = None,
