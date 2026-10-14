@@ -887,10 +887,17 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
     "best effort" sama persis _kirim_notifikasi_wa_booking() di atas, TIDAK
     PERNAH melempar exception maupun menggagalkan booking utamanya kalau
     push gagal/belum dikonfigurasi Owner (lihat push_service.IS_ENABLED).
-    Dikirim ke role admin/staff (yang mengelola menu Booking) -- audiens
-    SAMA seperti badge/suara "Booking Baru" yang sudah ada (booking_notif.js)."""
+    DUA audiens, DUA percobaan TERPISAH (satu gagal tidak menggagalkan yang
+    lain):
+    1. Role admin/staff (yang mengelola menu Booking) -- audiens SAMA
+       seperti badge/suara "Booking Baru" yang sudah ada (booking_notif.js).
+    2. PERMINTAAN Owner: barber yang kebagian booking ini JUGA diberi tahu
+       lewat akun login barber-nya sendiri (kirim_ke_barber() -- TIDAK ada
+       efek apa pun kalau barber ybs belum punya akun login/belum
+       mengaktifkan notifikasi push sendiri, lihat push_db.
+       get_subscriptions_untuk_barber())."""
+    tenant_id = booking.get("tenant_id")
     try:
-        tenant_id = booking.get("tenant_id")
         push_service.kirim_ke_role(
             tenant_id, ["admin", "staff"],
             title="Booking Baru",
@@ -906,7 +913,21 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
             jenis="booking_baru",
         )
     except Exception as e:
-        logger.error("Notifikasi push booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
+        logger.error("Notifikasi push booking #%s (role admin/staff) GAGAL disiapkan: %s: %s",
+                      booking.get("id"), type(e).__name__, e)
+    try:
+        barber_id = booking.get("barber_id")
+        if barber_id is not None:
+            push_service.kirim_ke_barber(
+                barber_id,
+                title="Booking Baru",
+                body=f"{booking.get('customer_nama') or 'Customer'} booking Anda {booking.get('tanggal')} {booking.get('jam_mulai')}.",
+                url="/app/#/booking",
+                jenis="booking_baru",
+            )
+    except Exception as e:
+        logger.error("Notifikasi push booking #%s (barber ybs) GAGAL disiapkan: %s: %s",
+                      booking.get("id"), type(e).__name__, e)
 
 
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
