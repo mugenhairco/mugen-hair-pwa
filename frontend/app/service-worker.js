@@ -1038,7 +1038,11 @@
 // TANPA query ?v=), jadi bump ASSET_VERSION di sini WAJIB supaya Service
 // Worker benar-benar mengambil ulang manifest.json yang baru, bukan
 // menyajikan versi lama dari cache selamanya.
-const ASSET_VERSION = "176";
+// v176 -> v177: PERMINTAAN Owner -- hapus section "Grafik Pendapatan"
+// (Harian + Bulanan) dari Dashboard Owner (dashboard_owner.js), termasuk
+// endpoint backend /owner/grafik-harian & /owner/grafik-bulanan dan
+// ui.js::barChart() (tidak dipakai di mana pun lagi setelah ini).
+const ASSET_VERSION = "177";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

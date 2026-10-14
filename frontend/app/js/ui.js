@@ -474,62 +474,9 @@ const MugenUI = (() => {
       `Sedang offline — menampilkan data tersimpan terakhir (${waktu}).`);
   }
 
-  // Diagram batang SVG sederhana, dibuat manual TANPA library eksternal --
-  // sengaja begitu supaya PWA tetap bisa dipakai offline (kalau pakai
-  // library dari CDN, chart akan gagal dimuat begitu tidak ada internet).
-  // data: [{ value: number, ...apapun }]. `xLabel(d, i)` -> teks di bawah
-  // tiap batang, `yFormat(value)` -> teks di tooltip (hover/tap batang).
-  function barChart(data, { xLabel = (d, i) => String(i + 1), yFormat = String } = {}) {
-    const svgNS = "http://www.w3.org/2000/svg";
-    const barW = 26, gap = 6, height = 190;
-    const padding = { top: 10, bottom: 32 };
-    const width = Math.max(1, data.length) * (barW + gap) + gap;
-    const chartH = height - padding.top - padding.bottom;
-    const maxVal = Math.max(1, ...data.map((d) => Number(d.value) || 0));
-
-    const svg = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(height));
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-
-    if (!data.length) {
-      const empty = el("div", { style: "color:var(--text-dim);padding:12px 0;" }, "Belum ada data.");
-      return empty;
-    }
-
-    data.forEach((d, i) => {
-      const nilai = Number(d.value) || 0;
-      const barH = Math.max(0, (nilai / maxVal) * chartH);
-      const x = gap + i * (barW + gap);
-      const y = padding.top + (chartH - barH);
-
-      const rect = document.createElementNS(svgNS, "rect");
-      rect.setAttribute("x", String(x));
-      rect.setAttribute("y", String(y));
-      rect.setAttribute("width", String(barW));
-      rect.setAttribute("height", String(barH));
-      rect.setAttribute("rx", "3");
-      rect.setAttribute("fill", "var(--accent)");
-      const title = document.createElementNS(svgNS, "title");
-      title.textContent = `${xLabel(d, i)}: ${yFormat(nilai)}`;
-      rect.appendChild(title);
-      svg.appendChild(rect);
-
-      const label = document.createElementNS(svgNS, "text");
-      label.setAttribute("x", String(x + barW / 2));
-      label.setAttribute("y", String(height - padding.bottom + 16));
-      label.setAttribute("text-anchor", "middle");
-      label.setAttribute("font-size", "10");
-      label.setAttribute("fill", "var(--text-dim)");
-      label.textContent = xLabel(d, i);
-      svg.appendChild(label);
-    });
-
-    return el("div", { style: "overflow-x:auto;" }, svg);
-  }
-
   // Diagram lingkaran (progress ring) SVG, dibuat manual TANPA library
-  // eksternal (pola sama seperti barChart() di atas) -- dipakai kartu
+  // eksternal (sengaja begitu supaya PWA tetap bisa dipakai offline) --
+  // dipakai kartu
   // "Sisa Limit Bulan Ini" Absensi Barber (pages/absensi.js). `pct` 0-100
   // menentukan seberapa penuh arc-nya, `value`+`unit` ditampilkan di
   // tengah lingkaran dengan animasi hitung naik dari 0 (rAF, ~700ms,
@@ -735,7 +682,7 @@ const MugenUI = (() => {
 
   return {
     formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
-    serviceCell, keteranganCell, offlineBanner, barChart, progressRing, showLoading, hideLoading, withLoading,
+    serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
