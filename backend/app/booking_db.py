@@ -287,11 +287,21 @@ def get_booking_settings(tenant_id: int = None) -> dict:
     (10:00-20:00, interval 60 menit, maks 30 hari ke depan) mencegah 500
     (dulu int(None) meledak) sampai Owner tenant itu mengaturnya sendiri,
     SAMA PERSIS dengan DEFAULT_BOOKING_SETTINGS di booking_migrasi.py/
-    postgres_schema.py yang otomatis di-seed untuk instalasi satu-tenant."""
-    s = {k: db.get_setting(k, tenant_id=tenant_id) for k in BOOKING_SETTINGS_KEYS}
+    postgres_schema.py yang otomatis di-seed untuk instalasi satu-tenant.
+
+    PERBAIKAN PERFORMA (permintaan Owner): sebelumnya SETIAP key di atas
+    diambil lewat db.get_setting() TERPISAH -- masing-masing SATU round-trip
+    DB sendiri. Untuk Neon (database jarak jauh, bukan lokal) ini menumpuk
+    jadi detik-detik nyata di halaman booking publik (lihat juga
+    get_payment_settings()/payment_gateway_db.get_config() di bawah, SAMA
+    PERSIS pola & perbaikannya) -- diukur lewat log produksi (/api/public/
+    booking/pengaturan konsisten 1-2,8 detik). db.get_all_settings() sudah
+    ADA (SATU query, semua key tenant ini) -- sekadar belum dipakai di sini,
+    tinggal baca dari dict-nya, hasil akhirnya PERSIS SAMA."""
+    semua = db.get_all_settings(tenant_id=tenant_id)
+    s = {k: semua.get(k) for k in BOOKING_SETTINGS_KEYS}
     try:
-        hari_operasional = json.loads(db.get_setting("booking_hari_operasional", _DEFAULT_HARI_OPERASIONAL,
-                                                       tenant_id=tenant_id))
+        hari_operasional = json.loads(semua.get("booking_hari_operasional") or _DEFAULT_HARI_OPERASIONAL)
     except (TypeError, ValueError):
         hari_operasional = list(HARI_LIST)
     return {
@@ -306,15 +316,10 @@ def get_booking_settings(tenant_id: int = None) -> dict:
         # Pesan di bawah ini TETAP di sini karena bukan "konten tampilan
         # website", melainkan pesan transaksional alur booking (konfirmasi
         # sukses & validasi form), beda kategori.
-        "pesan_penutup": db.get_setting(
-            "booking_pesan_penutup",
-            "Terima kasih! Kami akan segera menghubungi Anda lewat WhatsApp untuk konfirmasi.",
-            tenant_id=tenant_id,
-        ),
-        "pesan_nama_kosong": db.get_setting("booking_pesan_nama_kosong", "Nama tidak boleh kosong.",
-                                             tenant_id=tenant_id),
-        "pesan_whatsapp_invalid": db.get_setting("booking_pesan_whatsapp_invalid", "Nomor WhatsApp tidak valid.",
-                                                  tenant_id=tenant_id),
+        "pesan_penutup": semua.get("booking_pesan_penutup")
+        or "Terima kasih! Kami akan segera menghubungi Anda lewat WhatsApp untuk konfirmasi.",
+        "pesan_nama_kosong": semua.get("booking_pesan_nama_kosong") or "Nama tidak boleh kosong.",
+        "pesan_whatsapp_invalid": semua.get("booking_pesan_whatsapp_invalid") or "Nomor WhatsApp tidak valid.",
     }
 
 
@@ -371,19 +376,21 @@ DEFAULT_METODE_INSTRUKSI = {
 
 
 def get_payment_settings(tenant_id: int = None) -> dict:
-    s = {k: db.get_setting(k, tenant_id=tenant_id) for k in PAYMENT_SETTINGS_KEYS}
+    """PERBAIKAN PERFORMA (lihat catatan lengkap di get_booking_settings()
+    di atas): SATU db.get_all_settings() menggantikan 7 panggilan
+    db.get_setting() terpisah yang sebelumnya ada di sini."""
+    semua = db.get_all_settings(tenant_id=tenant_id)
+    s = {k: semua.get(k) for k in PAYMENT_SETTINGS_KEYS}
     try:
         metode_aktif = json.loads(s["booking_metode_aktif"] or "[]")
     except (TypeError, ValueError):
         metode_aktif = []
     try:
-        metode_nama_custom = json.loads(db.get_setting("booking_metode_nama", _DEFAULT_METODE_NAMA,
-                                                         tenant_id=tenant_id))
+        metode_nama_custom = json.loads(semua.get("booking_metode_nama") or _DEFAULT_METODE_NAMA)
     except (TypeError, ValueError):
         metode_nama_custom = {}
     try:
-        metode_instruksi_custom = json.loads(db.get_setting("booking_metode_instruksi", _DEFAULT_METODE_INSTRUKSI,
-                                                              tenant_id=tenant_id))
+        metode_instruksi_custom = json.loads(semua.get("booking_metode_instruksi") or _DEFAULT_METODE_INSTRUKSI)
     except (TypeError, ValueError):
         metode_instruksi_custom = {}
     qris_filename = file_asset_db.ambil_meta("qris", tenant_id=tenant_id)

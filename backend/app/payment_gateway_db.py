@@ -51,10 +51,19 @@ _DEFAULT_METODE_AKTIF = json.dumps(["qris", "va", "gopay", "shopeepay", "dana", 
 def get_config() -> dict:
     """Config LENGKAP termasuk kredensial -- HANYA dipanggil dari endpoint
     require_superadmin (routers/payment_gateway.py), tidak pernah diekspos
-    ke tenant/publik. Lihat get_public_channels() untuk yang aman dipublikasikan."""
-    data = {k: db.get_setting(k, "", tenant_id=None) for k in _KEYS_KREDENSIAL}
+    ke tenant/publik. Lihat get_public_channels() untuk yang aman dipublikasikan.
+
+    PERBAIKAN PERFORMA (permintaan Owner): get_public_channels() di bawah
+    (dipanggil SETIAP kali halaman booking publik dibuka, lihat routers/
+    booking.py::public_pengaturan()) memanggil fungsi ini -- sebelumnya 9
+    db.get_setting() terpisah (9 round-trip DB) jadi bagian dari N+1 yang
+    membuat halaman booking lambat di awal (lihat catatan lengkap di
+    booking_db.py::get_booking_settings()). SATU db.get_all_settings()
+    menggantikannya, hasil akhir sama persis."""
+    semua = db.get_all_settings(tenant_id=None)
+    data = {k: semua.get(k, "") or "" for k in _KEYS_KREDENSIAL}
     try:
-        metode_aktif = json.loads(db.get_setting(_KUNCI_METODE_AKTIF, _DEFAULT_METODE_AKTIF, tenant_id=None))
+        metode_aktif = json.loads(semua.get(_KUNCI_METODE_AKTIF) or _DEFAULT_METODE_AKTIF)
     except (TypeError, ValueError):
         metode_aktif = []
     data["metode_aktif"] = metode_aktif
