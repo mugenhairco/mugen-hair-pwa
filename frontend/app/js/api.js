@@ -124,6 +124,15 @@ const MugenApi = (() => {
     if (method === "GET" && useCache) {
       MugenState.cacheSet(cacheKey, payload);
     }
+    // PERMINTAAN OWNER: SETIAP panggilan mutasi (bukan GET) yang sukses --
+    // dari menu mana pun, sekarang ATAU di masa depan -- menandai Dashboard
+    // "kotor" (lihat state.js::tandaiDashboardKotor()) supaya Dashboard
+    // fetch ulang SEKALI begitu dibuka lagi, bukan terus-terusan menampilkan
+    // angka yang sudah basi. Satu hook di sini (bukan dipanggil manual di
+    // tiap halaman) supaya tidak ada jalur simpan/edit/hapus yang terlewat.
+    if (method !== "GET") {
+      MugenState.tandaiDashboardKotor();
+    }
     return payload;
   }
 
@@ -151,6 +160,7 @@ const MugenApi = (() => {
       const pesan = _pesanDariDetail(payload && payload.detail);
       throw new ApiError(pesan, response.status, _normalisasiPayload(payload));
     }
+    MugenState.tandaiDashboardKotor(); // lihat catatan di request() di atas
     return payload;
   }
 

@@ -1055,7 +1055,20 @@
 // juga untuk Simpan KOREKSI transaksi (bukan cuma transaksi baru) --
 // input_data.js, jaring pengaman localStorage yang sama dipakai ulang
 // (entry koreksi dibedakan lewat `editId`, kirim PUT bukan POST saat retry).
-const ASSET_VERSION = "179";
+// v179 -> v180: PERMINTAAN Owner -- 3 perubahan:
+// (1) Dashboard (Owner/Admin & Barber) tidak fetch ulang ke server setiap
+// dibuka lagi (pindah menu lalu balik) kalau TIDAK ADA simpan/edit/hapus
+// apa pun sejak terakhir dimuat di sesi ini -- state.js (dashboardKotor,
+// in-memory) + api.js (menandai kotor di setiap request mutasi) +
+// dashboard_owner.js/dashboard_barber.js (cache in-memory hasil fetch
+// terakhir, dipakai ulang instan kalau belum kotor).
+// (2) Produk (Tambah/Ubah Produk & Restock/Jual/Tester) sekarang instan
+// seperti Simpan Transaksi -- produk.js, jaring pengaman localStorage sendiri.
+// (3) Absensi: "Ajukan Koreksi Absensi" (sisi barber) instan + jaring
+// pengaman localStorage; tombol "Setujui"/"Tolak" (sisi Admin/Owner) tidak
+// lagi blokir tombol menunggu server (refresh kartu Limit/Kuota/Absensi
+// tetap menunggu hasil ASLI, tidak ditebak) -- absensi.js.
+const ASSET_VERSION = "180";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
