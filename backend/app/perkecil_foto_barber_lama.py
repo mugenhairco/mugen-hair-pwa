@@ -56,14 +56,19 @@ if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
 
 import db_compat  # noqa: E402
-
-if not db_compat.IS_POSTGRES:
-    print("DATABASE_URL belum diisi -- tidak ada database production untuk diproses. Batal.", file=sys.stderr)
-    sys.exit(1)
-
 import booking_db  # noqa: E402
 import r2_storage  # noqa: E402
 from database import get_conn  # noqa: E402
+
+
+class MigrasiTidakDiizinkan(RuntimeError):
+    """DATABASE_URL belum diisi -- tidak ada database production untuk
+    diproses (lihat ATURAN KESELAMATAN di atas). Dipisah dari sys.exit()
+    CLI supaya modul ini AMAN diimpor dari proses lain (lihat
+    routers/migrasi_foto_barber.py -- endpoint sekali-pakai yang menjalankan
+    jalankan_migrasi() di bawah DI DALAM proses backend yang sudah punya
+    DATABASE_URL/R2_* production, tanpa modul ini sendiri pernah menyentuh
+    kredensial apa pun secara langsung)."""
 
 
 def _ext(filename: str) -> str:
@@ -96,10 +101,16 @@ def _tulis_bytes_baru(row, hasil: bytes, ext: str):
             conn.execute("UPDATE barbers SET foto_data = ? WHERE id = ?", (hasil, row["id"]))
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true", help="Hitung & tampilkan ukuran sebelum/sesudah saja, tidak menulis apa pun.")
-    args = parser.parse_args()
+def jalankan_migrasi(dry_run: bool) -> dict:
+    """Inti migrasi, DIPAKAI BERSAMA oleh CLI (main() di bawah) dan endpoint
+    sekali-pakai (routers/migrasi_foto_barber.py) -- SATU logika, bukan
+    diduplikasi. Return dict ringkasan (lihat kunci di bawah) + "rincian"
+    per-barber, supaya pemanggil (CLI mencetak, endpoint membalas JSON)
+    bisa menyajikannya sesuai kebutuhan masing-masing tanpa mengulang
+    perhitungan apa pun."""
+    if not db_compat.IS_POSTGRES:
+        raise MigrasiTidakDiizinkan(
+            "DATABASE_URL belum diisi -- tidak ada database production untuk diproses.")
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -108,43 +119,81 @@ def main():
             "AND (foto_r2_key IS NOT NULL OR (foto_data IS NOT NULL AND length(foto_data) > 0))"
         ).fetchall()
 
-    print(f"{len(rows)} barber punya foto. ({'DRY RUN -- tidak ada perubahan' if args.dry_run else 'JALAN SUNGGUHAN'})")
-    print()
-
     diproses = 0
     dilewati = 0
     total_lama = 0
     total_baru = 0
+    rincian = []
     for row in rows:
         data_lama, alasan_gagal = _baca_bytes_lama(row)
         if data_lama is None:
-            print(f"  [SKIP] barber id={row['id']}: {alasan_gagal}.")
             dilewati += 1
+            rincian.append({"barber_id": row["id"], "status": "skip", "alasan": alasan_gagal})
             continue
 
         ext = _ext(row["foto_filename"])
         hasil = booking_db._perkecil_foto_barber(data_lama, ext)
         if len(hasil) >= len(data_lama):
-            print(f"  [SKIP] barber id={row['id']}: sudah kecil/optimal ({len(data_lama):,} bytes), tidak diubah.")
             dilewati += 1
+            rincian.append({
+                "barber_id": row["id"], "status": "skip",
+                "alasan": f"sudah kecil/optimal ({len(data_lama)} bytes), tidak diubah",
+            })
             continue
 
-        if not args.dry_run:
+        if not dry_run:
             _tulis_bytes_baru(row, hasil, ext)
 
         diproses += 1
         total_lama += len(data_lama)
         total_baru += len(hasil)
-        hemat = (1 - len(hasil) / len(data_lama)) * 100
-        print(f"  [OK] barber id={row['id']}: {len(data_lama):,} -> {len(hasil):,} bytes (hemat {hemat:.0f}%).")
+        rincian.append({
+            "barber_id": row["id"], "status": "ok",
+            "ukuran_lama_bytes": len(data_lama), "ukuran_baru_bytes": len(hasil),
+            "hemat_persen": round((1 - len(hasil) / len(data_lama)) * 100),
+        })
+
+    return {
+        "dry_run": dry_run,
+        "total_barber_punya_foto": len(rows),
+        "diproses": diproses,
+        "dilewati": dilewati,
+        "total_ukuran_lama_bytes": total_lama,
+        "total_ukuran_baru_bytes": total_baru,
+        "hemat_persen_total": round((1 - total_baru / total_lama) * 100) if total_lama else 0,
+        "rincian": rincian,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dry-run", action="store_true", help="Hitung & tampilkan ukuran sebelum/sesudah saja, tidak menulis apa pun.")
+    args = parser.parse_args()
+
+    try:
+        hasil = jalankan_migrasi(dry_run=args.dry_run)
+    except MigrasiTidakDiizinkan as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    print(f"{hasil['total_barber_punya_foto']} barber punya foto. "
+          f"({'DRY RUN -- tidak ada perubahan' if args.dry_run else 'JALAN SUNGGUHAN'})")
+    print()
+    for baris in hasil["rincian"]:
+        if baris["status"] == "skip":
+            print(f"  [SKIP] barber id={baris['barber_id']}: {baris['alasan']}.")
+        else:
+            print(f"  [OK] barber id={baris['barber_id']}: {baris['ukuran_lama_bytes']:,} -> "
+                  f"{baris['ukuran_baru_bytes']:,} bytes (hemat {baris['hemat_persen']}%).")
 
     print()
     verb = "AKAN diperkecil" if args.dry_run else "berhasil diperkecil"
-    if diproses:
-        hemat_total = (1 - total_baru / total_lama) * 100 if total_lama else 0
-        print(f"{diproses} foto {verb}, {dilewati} dilewati. Total {total_lama:,} -> {total_baru:,} bytes (hemat {hemat_total:.0f}%).")
+    if hasil["diproses"]:
+        print(f"{hasil['diproses']} foto {verb}, {hasil['dilewati']} dilewati. "
+              f"Total {hasil['total_ukuran_lama_bytes']:,} -> {hasil['total_ukuran_baru_bytes']:,} bytes "
+              f"(hemat {hasil['hemat_persen_total']}%).")
     else:
-        print(f"Tidak ada foto yang perlu diperkecil ({dilewati} dilewati).")
+        print(f"Tidak ada foto yang perlu diperkecil ({hasil['dilewati']} dilewati).")
 
 
 if __name__ == "__main__":
