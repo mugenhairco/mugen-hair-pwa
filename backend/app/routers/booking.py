@@ -205,14 +205,21 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     audit lengkapnya -- kode "qris" DIHAPUS TOTAL dari katalog fitur."""
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         return {"booking_online": False}
-    booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id)
+    # PERBAIKAN PERFORMA (permintaan Owner): get_booking_settings() dan
+    # get_payment_settings() DI BAWAH sebelumnya masing-masing memanggil
+    # db.get_all_settings(tenant_id) SENDIRI -- dua round-trip DB untuk
+    # data tenant yang SAMA PERSIS. Fetch SEKALI di sini, oper ke keduanya
+    # lewat `semua_settings` (lihat catatan lengkap di booking_db.py::
+    # get_booking_settings()).
+    semua_settings = db.get_all_settings(tenant_id=tenant_id)
+    booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id, semua_settings=semua_settings)
     hari_ini = _hari_ini_wib()
     batas = hari_ini + timedelta(days=booking_settings["maksimal_hari_kedepan"])
     toko_libur_tanggal = [
         tl["tanggal"] for tl in booking_db.get_toko_libur_list(tenant_id=tenant_id)
         if hari_ini.isoformat() <= tl["tanggal"] <= batas.isoformat()
     ]
-    payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id)
+    payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id, semua_settings=semua_settings)
     return {
         "booking_online": True,
         **booking_settings,

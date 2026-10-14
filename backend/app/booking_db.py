@@ -280,7 +280,7 @@ def _whatsapp_valid(nomor: str) -> bool:
 # SETTING BOOKING (jam operasional, interval, maks. hari ke depan)
 # ---------------------------------------------------------------------------
 
-def get_booking_settings(tenant_id: int = None) -> dict:
+def get_booking_settings(tenant_id: int = None, semua_settings: dict = None) -> dict:
     """FONDASI Multi-Tenant Phase 1: tenant BARU (dibuat lewat
     tenant_db.buat_tenant(), belum pernah membuka Setting > Booking Settings
     sama sekali) belum punya baris `settings` apa pun -- default di bawah
@@ -297,8 +297,16 @@ def get_booking_settings(tenant_id: int = None) -> dict:
     PERSIS pola & perbaikannya) -- diukur lewat log produksi (/api/public/
     booking/pengaturan konsisten 1-2,8 detik). db.get_all_settings() sudah
     ADA (SATU query, semua key tenant ini) -- sekadar belum dipakai di sini,
-    tinggal baca dari dict-nya, hasil akhirnya PERSIS SAMA."""
-    semua = db.get_all_settings(tenant_id=tenant_id)
+    tinggal baca dari dict-nya, hasil akhirnya PERSIS SAMA.
+
+    `semua_settings` opsional: caller yang SUDAH punya hasil
+    db.get_all_settings(tenant_id=tenant_id) sendiri (lihat routers/
+    booking.py::public_pengaturan(), satu-satunya tempat yang memanggil
+    get_booking_settings() DAN get_payment_settings() tenant yang SAMA di
+    request yang SAMA) bisa mengopernya di sini supaya tidak fetch ulang
+    query yang IDENTIK dua kali. Caller lain (mayoritas, panggil fungsi ini
+    SENDIRIAN) biarkan default None -- fetch sendiri seperti biasa."""
+    semua = semua_settings if semua_settings is not None else db.get_all_settings(tenant_id=tenant_id)
     s = {k: semua.get(k) for k in BOOKING_SETTINGS_KEYS}
     try:
         hari_operasional = json.loads(semua.get("booking_hari_operasional") or _DEFAULT_HARI_OPERASIONAL)
@@ -375,11 +383,12 @@ DEFAULT_METODE_INSTRUKSI = {
 }
 
 
-def get_payment_settings(tenant_id: int = None) -> dict:
+def get_payment_settings(tenant_id: int = None, semua_settings: dict = None) -> dict:
     """PERBAIKAN PERFORMA (lihat catatan lengkap di get_booking_settings()
     di atas): SATU db.get_all_settings() menggantikan 7 panggilan
-    db.get_setting() terpisah yang sebelumnya ada di sini."""
-    semua = db.get_all_settings(tenant_id=tenant_id)
+    db.get_setting() terpisah yang sebelumnya ada di sini. `semua_settings`
+    opsional -- lihat catatan parameter yang sama di get_booking_settings()."""
+    semua = semua_settings if semua_settings is not None else db.get_all_settings(tenant_id=tenant_id)
     s = {k: semua.get(k) for k in PAYMENT_SETTINGS_KEYS}
     try:
         metode_aktif = json.loads(s["booking_metode_aktif"] or "[]")
@@ -458,8 +467,61 @@ def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str =
 # untuk logo barbershop (slot tunggal, lihat file_asset_db.py).
 EXT_KE_CONTENT_TYPE = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
 
+# PERBAIKAN PERFORMA (laporan Owner: foto QRIS tampil pelan-pelan dari atas
+# ke bawah di halaman booking publik -- gejala file gambar mentah/besar,
+# sama seperti kasus foto barber sebelumnya, lihat _perkecil_foto_barber()
+# di atas). Screenshot QRIS dari HP/aplikasi bank/e-wallet sebelumnya
+# disimpan & dilayani APA ADANYA (bisa 1-3MB), tidak ada kompresi sama
+# sekali. Dimensi maksimal di sini SENGAJA jauh lebih besar & kualitas
+# JPEG jauh lebih tinggi daripada foto barber (480px/q82) -- QRIS HARUS
+# tetap bisa di-scan kamera HP customer, resolusi/ketajaman modul QR-nya
+# tidak boleh dikorbankan demi ukuran file. 1200px & kualitas 90 masih
+# jauh lebih besar dari kebutuhan scan sungguhan (QRIS resmi biasanya
+# ditampilkan di layar HP, beberapa ratus px saja sudah cukup), tapi tetap
+# memangkas drastis dari screenshot mentah beberapa MB.
+_QRIS_MAKS_DIMENSI_PX = 1200
+_QRIS_KUALITAS_LOSSY = 90
+
+
+def _perkecil_qris(konten: bytes, ext: str) -> bytes:
+    """Fallback ke bytes asli kalau pemrosesan gagal (file aneh/corrupt
+    tapi lolos validasi ekstensi) ATAU kalau gambar sudah lebih kecil dari
+    batas di atas -- TIDAK PERNAH membatalkan upload/mengecilkan yang
+    sudah kecil, sama seperti _perkecil_foto_barber()."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(konten)))
+        if img.width <= _QRIS_MAKS_DIMENSI_PX and img.height <= _QRIS_MAKS_DIMENSI_PX and ext == "png":
+            return konten  # PNG kecil: biarkan lossless apa adanya, tidak perlu diproses ulang.
+        img.thumbnail((_QRIS_MAKS_DIMENSI_PX, _QRIS_MAKS_DIMENSI_PX), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        if ext in ("jpg", "jpeg"):
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=_QRIS_KUALITAS_LOSSY, optimize=True)
+        elif ext == "webp":
+            img.save(buf, format="WEBP", quality=_QRIS_KUALITAS_LOSSY)
+        elif ext == "png":
+            img.save(buf, format="PNG", optimize=True)
+        else:
+            return konten
+        hasil = buf.getvalue()
+        return hasil if len(hasil) < len(konten) else konten
+    except Exception:
+        logging.getLogger("mugen.booking").warning(
+            "Gagal memperkecil foto QRIS, memakai bytes asli dari upload.", exc_info=True)
+        return konten
+
 
 def simpan_qris(filename_asli: str, konten: bytes, tenant_id: int = None) -> str:
+    # Ekstensi diambil APA ADANYA dari nama file asli HANYA untuk memilih
+    # format kompresi di _perkecil_qris() di bawah -- file_asset_db.simpan()
+    # di baris terakhir TETAP melakukan validasi ekstensi/content-type/
+    # ukuran yang SEBENARNYA (lewat r2_storage.validasi_dan_beri_nama()),
+    # jadi upload dengan ekstensi salah/dipalsukan tetap ditolak di sana
+    # seperti biasa -- ekstensi di sini cuma percobaan kompresi, bukan
+    # validasi keamanan.
+    ext = filename_asli.rsplit(".", 1)[-1].lower() if "." in filename_asli else ""
+    konten = _perkecil_qris(konten, ext)
     return file_asset_db.simpan("qris", filename_asli, konten, EXT_KE_CONTENT_TYPE, "QRIS",
                                  maks_ukuran_bytes=r2_storage.MAKS_UKURAN_GAMBAR_BYTES, tenant_id=tenant_id)
 
