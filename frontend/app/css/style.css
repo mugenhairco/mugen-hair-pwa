@@ -1849,8 +1849,7 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    (progress ring) Sisa Limit, ilustrasi status hari ini, animasi baris
    Riwayat, dan shake Keterangan limit habis (pages/absensi.js::
    renderBarberView()). Semua SVG dibuat manual (TANPA aset gambar/
-   library eksternal, pola sama seperti barChart() di ui.js) supaya PWA
-   tetap ringan & bisa dipakai offline.
+   library eksternal) supaya PWA tetap ringan & bisa dipakai offline.
    --------------------------------------------------------------------- */
 .mugen-ring-wrap { position: relative; flex: none; }
 .mugen-ring-center {

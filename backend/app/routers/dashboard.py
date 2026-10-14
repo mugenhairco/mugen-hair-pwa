@@ -4,7 +4,6 @@ Barber: HANYA bisa lihat ringkasan miliknya sendiri (barber_id diambil dari
 akun login-nya di tabel users, bukan dari parameter request — supaya Barber
 tidak bisa mengintip data barber lain hanya dengan mengubah query string)."""
 
-import calendar
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -227,50 +226,3 @@ def _barber_terpilih(barber_id: int, tenant_id: int):
     return db.get_barbers(tenant_id=tenant_id)
 
 
-@router.get("/owner/grafik-harian")
-def grafik_harian(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(require_admin)):
-    """Diagram batang PENDAPATAN HARIAN (khusus Owner) untuk satu bulan --
-    satu batang per tanggal (1 s.d. jumlah hari di bulan itu), termasuk
-    tanggal yang belum ada transaksi (nilainya 0, supaya sumbu tanggal tetap
-    utuh/tidak "loncat"). barber_id kosong = gabungan SEMUA barber.
-
-    Pendapatan di sini = Komisi + Tips + Uang Harian hari itu (memakai
-    hitung_uang_harian_per_hari yang sudah ada, aturan target service acuan
-    per hari -- lihat Setting > Uang Harian -- TIDAK diubah sama sekali).
-    Bonus Customer SENGAJA tidak
-    diikutkan -- itu perhitungan BULANAN (lihat hitung_bonus_customer), tidak
-    ada cara membaginya secara berarti per tanggal, jadi disertakan penuh di
-    /owner/grafik-bulanan (total_pendapatan bulan itu) supaya tidak ada
-    angka yang menyesatkan di kedua grafik."""
-    jumlah_hari = calendar.monthrange(tahun, bulan)[1]
-    barbers = _barber_terpilih(barber_id, user["tenant_id"])
-
-    # AUDIT KONEKSI: SEBELUMNYA satu checkout koneksi per barber PER HARI
-    # (sampai ~31x per barber) -- get_pendapatan_harian_semua_barber() (versi
-    # batch, rumus IDENTIK, lihat docstring-nya) mengambil seluruh transaksi
-    # bulan itu lewat SATU query lalu mengelompokkan per hari di Python.
-    pendapatan_per_hari = db.get_pendapatan_harian_semua_barber(barbers, tahun, bulan, jumlah_hari, tenant_id=user["tenant_id"])
-
-    return [{"tanggal": h, "pendapatan": pendapatan_per_hari[h]} for h in range(1, jumlah_hari + 1)]
-
-
-@router.get("/owner/grafik-bulanan")
-def grafik_bulanan(tahun: int, barber_id: int = None, user: dict = Depends(require_admin)):
-    """Diagram batang PENDAPATAN BULANAN (khusus Owner) untuk satu tahun --
-    satu batang per bulan (Januari s.d. Desember), termasuk bulan yang belum
-    ada data (nilainya 0). barber_id kosong = gabungan SEMUA barber.
-    Pendapatan di sini = total_pendapatan PENUH (Komisi + Tips + Uang Harian
-    + Bonus Customer) dari get_ringkasan_barber_bulan yang sudah ada --
-    bonus wajar diikutkan di sini karena memang perhitungan bulanan."""
-    barbers = _barber_terpilih(barber_id, user["tenant_id"])
-
-    # AUDIT KONEKSI: SEBELUMNYA get_ringkasan_barber_bulan() (per barber, ~15
-    # checkout koneksi) dipanggil untuk SETIAP barber x SETIAP bulan (12x) --
-    # sekarang get_ringkasan_semua_barber_bulan() dipanggil sekali PER BULAN
-    # (bukan lagi per barber juga), rumus IDENTIK.
-    hasil = []
-    for bulan in range(1, 13):
-        ringkasan_bulan = db.get_ringkasan_semua_barber_bulan(barbers, tahun, bulan, tenant_id=user["tenant_id"])
-        total = sum(r["total_pendapatan"] for r in ringkasan_bulan)
-        hasil.append({"bulan": bulan, "pendapatan": total})
-    return hasil

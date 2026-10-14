@@ -1582,58 +1582,6 @@ def get_ringkasan_semua_barber_periode(barbers: list, tanggal_mulai: str, tangga
     return hasil
 
 
-def get_pendapatan_harian_semua_barber(barbers: list, tahun: int, bulan: int, jumlah_hari: int, tenant_id=None) -> dict:
-    """AUDIT KONEKSI: versi BATCH dari pola di routers/dashboard.py::grafik_harian()
-    -- endpoint itu SEBELUMNYA memanggil db.get_transaksi_list() per barber
-    DITAMBAH db.hitung_uang_harian_per_hari() per barber PER HARI (sampai
-    ~31x per barber, lihat AUDIT KONEKSI di get_ringkasan_semua_barber_bulan
-    di atas untuk penjelasan lengkap akar penyebab pool exhaustion). Di sini
-    seluruh transaksi bulan itu diambil SEKALI, dikelompokkan per
-    (barber_id, tanggal) di Python -- rumus per hari TETAP SAMA PERSIS:
-    komisi + tips hari itu, ditambah nominal uang_harian barber HANYA jika
-    jumlah service acuan (Setting > Uang Harian) hari itu >= target."""
-    pendapatan_per_hari = {h: 0 for h in range(1, jumlah_hari + 1)}
-    if not barbers:
-        return pendapatan_per_hari
-
-    barber_ids = {b["id"] for b in barbers}
-    barber_by_id = {b["id"]: b for b in barbers}
-    transaksi_semua = get_transaksi_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
-
-    acuan_uh_cache = {}
-
-    def _acuan_uh(tid):
-        if tid not in acuan_uh_cache:
-            acuan_uh_cache[tid] = (set(get_uang_harian_acuan_ids(tenant_id=tid)), target_uang_harian_per_hari(tenant_id=tid))
-        return acuan_uh_cache[tid]
-
-    jumlah_acuan_per_barber_hari = {}  # (barber_id, tanggal) -> jumlah service acuan Uang Harian
-    for t in transaksi_semua:
-        barber_id = t["barber_id"]
-        if barber_id not in barber_ids:
-            continue
-        hari = int(t["tanggal"][8:10])
-        pendapatan_per_hari[hari] = pendapatan_per_hari.get(hari, 0) + t["total_komisi"] + t["tips"]
-
-        acuan_ids, _target = _acuan_uh(barber_by_id[barber_id].get("tenant_id"))
-        for it in t["items"]:
-            if it["service_id"] in acuan_ids:
-                key = (barber_id, t["tanggal"])
-                jumlah_acuan_per_barber_hari[key] = jumlah_acuan_per_barber_hari.get(key, 0) + it["jumlah"]
-
-    for barber in barbers:
-        barber_id = barber["id"]
-        _acuan_ids, target = _acuan_uh(barber.get("tenant_id"))
-        nominal = int(barber["uang_harian"] or 0)
-        for hari in range(1, jumlah_hari + 1):
-            tanggal_iso = f"{tahun:04d}-{bulan:02d}-{hari:02d}"
-            jumlah = jumlah_acuan_per_barber_hari.get((barber_id, tanggal_iso), 0)
-            if jumlah >= target:
-                pendapatan_per_hari[hari] += nominal
-
-    return pendapatan_per_hari
-
-
 def get_pendapatan_transaksi(transaksi: dict) -> int:
     """Pendapatan barber ATAS SATU transaksi = total komisi semua service di transaksi itu
     (transaksi_detail) + tips transaksi itu. (Uang harian & bonus dihitung level

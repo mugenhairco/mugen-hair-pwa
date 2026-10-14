@@ -1,9 +1,8 @@
 // pdfjs_boot.js — TYPE MODULE (lihat index.html) supaya bisa `import` build
 // PDF.js langsung dari file lokal (vendor/pdfjs/, BUKAN dari CDN -- PWA ini
-// harus tetap bisa dipakai offline/di jaringan lambat, lihat prinsip yang
-// sama di ui.js barChart()). File .mjs sengaja disimpan APA ADANYA dari
-// paket resmi pdfjs-dist (legacy build, kompatibilitas browser lebih luas)
-// -- TIDAK dimodifikasi.
+// harus tetap bisa dipakai offline/di jaringan lambat). File .mjs sengaja
+// disimpan APA ADANYA dari paket resmi pdfjs-dist (legacy build,
+// kompatibilitas browser lebih luas) -- TIDAK dimodifikasi.
 //
 // PERBAIKAN PERFORMA (halaman /book lambat saat pertama kali dibuka):
 // SEBELUMNYA baris ini melakukan `import` STATIS ke pdf.min.js (512KB) di
