@@ -1024,7 +1024,11 @@
 // spinner modern di tengah layar (css/style.css::.boot-loading, reuse
 // keyframe mugen-spin yang sudah dipakai .loading-overlay). Murni tampilan,
 // tidak mengubah urutan/logika boot apa pun.
-const ASSET_VERSION = "174";
+// v174 -> v175: REVISI Owner -- Pengingat Check Out (absensi_reminder_db.py)
+// SEBELUMNYA dikirim 1 jam setelah jam tutup toko, sekarang dikirim PERSIS
+// begitu jam tutup lewat. Teks deskripsi tab "Reminder Absensi"
+// (pages/whatsapp.js) diperbarui mengikuti.
+const ASSET_VERSION = "175";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -137,7 +137,7 @@ const PageWhatsapp = (() => {
     card.appendChild(MugenUI.el("h2", {}, "Reminder Absensi"));
     card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:14px;" },
       "Kirim pengingat WhatsApp otomatis ke barber yang belum Check In begitu jam operasional toko dimulai, "
-      + "dan ke barber yang belum Check Out setelah 1 jam dari jam tutup. Barber yang sedang Libur/Cuti/Izin "
+      + "dan ke barber yang belum Check Out begitu jam tutup toko lewat. Barber yang sedang Libur/Cuti/Izin "
       + "pada hari itu tidak dikirimi apa pun. Nomor WhatsApp tiap barber diatur di Pengaturan > Karyawan."));
 
     if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
