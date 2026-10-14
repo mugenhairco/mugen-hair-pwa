@@ -153,6 +153,26 @@ def _default_barber_app_dan_absensi_aktif(monkeypatch):
     monkeypatch.setattr(feature_access, "tenant_has_feature", _selalu_aktif_untuk_dua_kode_ini)
 
 
+@pytest.fixture(autouse=True)
+def _notifikasi_booking_sinkron(monkeypatch):
+    """PERBAIKAN PERFORMA (permintaan Owner): booking_db.py sekarang
+    mengirim WhatsApp/Push lewat booking_db._jalankan_di_belakang() (thread
+    terpisah, daemon) supaya respons booking TIDAK menunggu Fonnte/pywebpush
+    selesai (keduanya panggilan HTTP keluar, bisa lambat/timeout -- lihat
+    docstring _jalankan_di_belakang() di booking_db.py). SELURUH test yang
+    sudah ada (test_whatsapp_notifikasi.py/test_push.py dkk) ditulis
+    SEBELUM perubahan ini & mengandalkan notifikasi SELESAI TEPAT SAAT
+    buat_booking()/dkk return (assert langsung sesudahnya) -- thread
+    terpisah membuatnya race condition (kadang belum sempat jalan sama
+    sekali saat assert dibaca, kadang DB temporer test sudah dibongkar
+    test berikutnya duluan). Fixture autouse ini memaksa _jalankan_di_
+    belakang() memanggil fungsinya LANGSUNG (synchronous, TANPA thread)
+    SELAMA test -- murni di lapisan test, perilaku produksi (threading
+    sungguhan) tidak disentuh sama sekali."""
+    import booking_db
+    monkeypatch.setattr(booking_db, "_jalankan_di_belakang", lambda fn, *args: fn(*args))
+
+
 def has_postgres() -> bool:
     """True kalau ada PostgreSQL yang bisa diajak konek di localhost:5432
     dengan kredensial default test (postgres/postgres, database
