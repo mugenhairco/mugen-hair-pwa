@@ -217,23 +217,24 @@ const PageInputData = (() => {
 
     btnBatalKoreksi.addEventListener("click", resetForm);
 
-    // --- Jaring pengaman Transaksi baru (lihat catatan bacaPendingTransaksi()
-    // di atas) -- disimpan per-user di localStorage, dihapus begitu server
-    // mengonfirmasi sukses. Hanya untuk transaksi BARU (bukan Koreksi --
-    // Koreksi mengubah baris yang SUDAH ada di server, lebih jarang dipakai,
-    // dan tetap aman menunggu jawaban server seperti biasa).
+    // --- Jaring pengaman Simpan BARU & Simpan Koreksi (lihat catatan
+    // bacaPendingTransaksi() di atas) -- disimpan per-user di localStorage,
+    // dihapus begitu server mengonfirmasi sukses. Entry koreksi dibedakan
+    // lewat `editId` (lihat labelItemsUntukPending()/kirimTransaksiPending()
+    // di bawah -- PUT ke baris itu, bukan POST baris baru).
     let pendingList = bacaPendingTransaksi(user.id);
 
-    function labelItemsUntukPending(body) {
+    function labelItemsUntukPending(body, editId) {
       const daftar = body.items
         .map((it) => {
           const s = services.find((sv) => sv.id === it.service_id);
           return `${s ? s.nama : "?"} x${it.jumlah}`;
         })
         .join(", ");
-      if (!isAdmin) return `${body.tanggal} -- ${daftar}`;
+      const prefix = editId ? `Koreksi #${editId}` : body.tanggal;
+      if (!isAdmin) return `${prefix} -- ${daftar}`;
       const b = barbers.find((bb) => bb.id === body.barber_id);
-      return `${body.tanggal} -- ${b ? b.nama : "?"}: ${daftar}`;
+      return `${prefix} -- ${b ? b.nama : "?"}: ${daftar}`;
     }
 
     function renderPendingBanner() {
@@ -247,7 +248,7 @@ const PageInputData = (() => {
       box.appendChild(MugenUI.el("div", { style: "font-weight:600;margin-bottom:6px;" },
         `${pendingList.length} transaksi belum terkonfirmasi tersimpan di server.`));
       box.appendChild(MugenUI.el("div", { style: "margin-bottom:8px;color:var(--text-muted);" },
-        'Cek dulu di "Transaksi Bulan Ini" di bawah -- kalau sudah muncul di sana, klik "Sudah Ada, Buang" (jangan Kirim Ulang supaya tidak dobel).'));
+        'Cek dulu di "Transaksi Bulan Ini" di bawah -- kalau transaksi baru sudah muncul di sana, atau koreksinya sudah berubah, klik "Sudah Ada, Buang" (jangan Kirim Ulang supaya tidak dobel/tertimpa).'));
       for (const entry of pendingList) {
         const row = MugenUI.el("div", { class: "row", style: "align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px;" });
         row.appendChild(MugenUI.el("div", { style: "flex:1;" }, entry.label));
@@ -267,7 +268,9 @@ const PageInputData = (() => {
     }
 
     function kirimTransaksiPending(entry, btnEl) {
-      const kirim = () => MugenApi.post("/api/input-data/transaksi", entry.body);
+      const kirim = () => entry.editId
+        ? MugenApi.put(`/api/input-data/transaksi/${entry.editId}`, entry.body)
+        : MugenApi.post("/api/input-data/transaksi", entry.body);
       (btnEl ? MugenUI.withButtonLoading(btnEl, kirim) : kirim())
         .then(() => {
           pendingList = pendingList.filter((e) => e.tempId !== entry.tempId);
@@ -302,32 +305,19 @@ const PageInputData = (() => {
         catatan: inputCatatan.value || null,
       };
 
-      if (editingId) {
-        // Koreksi transaksi yang sudah ada -- tetap menunggu jawaban server
-        // seperti sebelumnya (lihat alasan di komentar pendingList atas).
-        try {
-          await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.put(`/api/input-data/transaksi/${editingId}`, body));
-          MugenUI.toast("Transaksi dikoreksi.", "success");
-          resetForm();
-          loadList();
-        } catch (e) {
-          formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-        return;
-      }
-
-      // PERMINTAAN OWNER: Transaksi BARU -- jangan tunggu server, supaya
-      // kasir bisa langsung lanjut input transaksi berikutnya tanpa
-      // loading. Dicatat dulu ke jaring pengaman (localStorage) SEBELUM
-      // form dikosongkan, baru dikirim diam-diam di belakang.
+      // PERMINTAAN OWNER: Simpan BARU maupun Simpan Koreksi -- jangan tunggu
+      // server, supaya kasir bisa langsung lanjut tanpa loading. Dicatat
+      // dulu ke jaring pengaman (localStorage) SEBELUM form dikosongkan,
+      // baru dikirim diam-diam di belakang (lihat kirimTransaksiPending()).
       const entry = {
         tempId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        editId: editingId,
         body,
-        label: labelItemsUntukPending(body),
+        label: labelItemsUntukPending(body, editingId),
       };
       pendingList = [...pendingList, entry];
       tulisPendingTransaksi(user.id, pendingList);
-      MugenUI.toast("Transaksi disimpan.", "success");
+      MugenUI.toast(editingId ? "Transaksi dikoreksi." : "Transaksi disimpan.", "success");
       resetForm();
       kirimTransaksiPending(entry);
     });
