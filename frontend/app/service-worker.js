@@ -1042,7 +1042,16 @@
 // (Harian + Bulanan) dari Dashboard Owner (dashboard_owner.js), termasuk
 // endpoint backend /owner/grafik-harian & /owner/grafik-bulanan dan
 // ui.js::barChart() (tidak dipakai di mana pun lagi setelah ini).
-const ASSET_VERSION = "177";
+// v177 -> v178: PERMINTAAN Owner -- Simpan Transaksi baru (Input Data)
+// tidak lagi menunggu jawaban server (form langsung kosong, request jalan
+// di belakang) supaya kasir tidak merasa loading tiap simpan satu
+// transaksi; jaga-jaga tab ditutup sebelum server menjawab, transaksi
+// yang belum terkonfirmasi disimpan ke localStorage dan ditampilkan lagi
+// lewat banner saat halaman dibuka ulang (input_data.js). Tandai Libur
+// TETAP menunggu jawaban server (hasilnya Libur/Cuti/Kelebihan Kuota
+// ditentukan server, tidak bisa ditebak di browser) -- tidak ada
+// perubahan struktural di sana, sudah pakai spinner inline sebelumnya.
+const ASSET_VERSION = "178";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
