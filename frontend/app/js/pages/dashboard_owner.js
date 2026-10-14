@@ -21,6 +21,21 @@
 const PageDashboardOwner = (() => {
   const COLLAPSE_KEY = "mugen_dashboard_owner_collapse_v1";
 
+  // PERMINTAAN OWNER: simpan hasil fetch TERAKHIR (in-memory, hilang kalau
+  // app di-reload) supaya kalau Dashboard dibuka lagi tanpa ada data baru
+  // (lihat MugenState.dashboardPerluRefresh()), halaman bisa langsung
+  // dirender ulang dari sini TANPA fetch/skeleton sama sekali. Disimpan di
+  // LUAR render() (modul-level) supaya bertahan lintas navigasi menu;
+  // `userId` dicocokkan supaya tidak salah pakai cache akun lain kalau ada
+  // logout+login user berbeda tanpa reload app.
+  let _cacheTerakhir = null; // { userId, url, data } | null
+
+  function _ambilDariCache(userId, url) {
+    if (!_cacheTerakhir) return null;
+    if (_cacheTerakhir.userId !== userId || _cacheTerakhir.url !== url) return null;
+    return _cacheTerakhir.data;
+  }
+
   function _loadCollapseState() {
     try {
       return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
@@ -192,7 +207,26 @@ const PageDashboardOwner = (() => {
     // menimpa dashboard dengan angka bulan yang salah.
     let urutanTerkini = 0;
 
-    async function load() {
+    async function load(opts = {}) {
+      const url = mode === "periode"
+        ? `/api/dashboard/owner/periode?tanggal_mulai=${tanggalMulai}&tanggal_selesai=${tanggalSelesai}`
+        : `/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`;
+
+      // PERMINTAAN OWNER: begitu Dashboard dibuka lagi (pindah menu lalu
+      // balik) TANPA ada simpan/edit/hapus apa pun sejak terakhir kali
+      // Dashboard INI berhasil dimuat, tampilkan ulang hasil fetch terakhir
+      // PERSIS seperti itu -- instan, tanpa skeleton/fetch sama sekali.
+      // Hanya dicek untuk pemuatan AWAL (opts.bisaDariCache, dipanggil
+      // SEKALI dari akhir render() di bawah) -- ganti bulan/tahun/periode
+      // manual oleh user (handler di bawah, TANPA opts) SELALU fetch ulang.
+      if (opts.bisaDariCache && !MugenState.dashboardPerluRefresh()) {
+        const cached = _ambilDariCache(MugenState.getUser().id, url);
+        if (cached) {
+          renderDenganData(cached);
+          return;
+        }
+      }
+
       const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton (bentuk kartu) menggantikan teks
       // "Memuat..." -- kartu asli otomatis beranimasi masuk begitu
@@ -204,11 +238,23 @@ const PageDashboardOwner = (() => {
         MugenUI.skeleton("card", { lines: 2 }),
       ]));
       try {
-        const url = mode === "periode"
-          ? `/api/dashboard/owner/periode?tanggal_mulai=${tanggalMulai}&tanggal_selesai=${tanggalSelesai}`
-          : `/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`;
         const data = await MugenApi.get(url, { useCache: true });
         if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
+        if (!data.__offline) {
+          // Cache offline (data.__offline) SENGAJA tidak disimpan ke sini --
+          // bukan representasi data yang sebenarnya berhasil dimuat barusan.
+          _cacheTerakhir = { userId: MugenState.getUser().id, url, data };
+          MugenState.tandaiDashboardBersih();
+        }
+        renderDenganData(data);
+      } catch (e) {
+        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
+        body.innerHTML = "";
+        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
+      }
+    }
+
+    function renderDenganData(data) {
         body.innerHTML = "";
         if (data.__offline) body.appendChild(MugenUI.offlineBanner(data.__cachedAt));
 
@@ -299,12 +345,6 @@ const PageDashboardOwner = (() => {
           ],
           data.per_barber,
         ));
-
-      } catch (e) {
-        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
-        body.innerHTML = "";
-        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
-      }
     }
 
     btnCollapseAll.addEventListener("click", () => {
@@ -323,7 +363,9 @@ const PageDashboardOwner = (() => {
     selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
     inputTanggalMulai.addEventListener("change", () => { tanggalMulai = inputTanggalMulai.value; load(); });
     inputTanggalSelesai.addEventListener("change", () => { tanggalSelesai = inputTanggalSelesai.value; load(); });
-    load();
+    // bisaDariCache: true HANYA di pemuatan AWAL ini -- ganti bulan/tahun/
+    // periode manual oleh user (keempat handler di atas) SELALU fetch ulang.
+    load({ bisaDariCache: true });
   }
 
   return { render };

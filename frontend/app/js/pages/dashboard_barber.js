@@ -4,6 +4,17 @@
 // tidak bisa melihat data barber lain.
 
 const PageDashboardBarber = (() => {
+  // PERMINTAAN OWNER: lihat catatan lengkap pola yang sama persis di
+  // pages/dashboard_owner.js (_cacheTerakhir/_ambilDariCache) -- in-memory,
+  // modul-level supaya bertahan lintas navigasi menu, direset tiap reload app.
+  let _cacheTerakhir = null; // { userId, urlA, urlB, data: [r, rekapRows] } | null
+
+  function _ambilDariCache(userId, urlA, urlB) {
+    if (!_cacheTerakhir) return null;
+    if (_cacheTerakhir.userId !== userId || _cacheTerakhir.urlA !== urlA || _cacheTerakhir.urlB !== urlB) return null;
+    return _cacheTerakhir.data;
+  }
+
   function render(root) {
     const today = new Date();
     let tahun = today.getFullYear();
@@ -123,7 +134,22 @@ const PageDashboardBarber = (() => {
     // berurutan, data bulan yang lebih lama bisa menimpa bulan yang lebih baru.
     let urutanTerkini = 0;
 
-    async function load() {
+    async function load(opts = {}) {
+      const urlA = `/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`;
+      const urlB = `/api/rekap/transaksi?tahun=${tahun}&bulan=${bulan}`;
+
+      // PERMINTAAN OWNER: lihat catatan lengkap di dashboard_owner.js --
+      // Dashboard dibuka lagi tanpa ada simpan/edit/hapus apa pun sejak
+      // terakhir kali berhasil dimuat = tampilkan ulang hasil terakhir
+      // instan, tanpa fetch/skeleton. Hanya untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.dashboardPerluRefresh()) {
+        const cached = _ambilDariCache(MugenState.getUser().id, urlA, urlB);
+        if (cached) {
+          renderDenganData(cached[0], cached[1]);
+          return;
+        }
+      }
+
       const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat..." --
       // kartu asli otomatis beranimasi masuk begitu ditambahkan (lihat
@@ -135,10 +161,23 @@ const PageDashboardBarber = (() => {
       ]));
       try {
         const [r, rekapRows] = await Promise.all([
-          MugenApi.get(`/api/dashboard/barber?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
-          MugenApi.get(`/api/rekap/transaksi?tahun=${tahun}&bulan=${bulan}`, { useCache: true }),
+          MugenApi.get(urlA, { useCache: true }),
+          MugenApi.get(urlB, { useCache: true }),
         ]);
         if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
+        if (!r.__offline && !rekapRows.__offline) {
+          _cacheTerakhir = { userId: MugenState.getUser().id, urlA, urlB, data: [r, rekapRows] };
+          MugenState.tandaiDashboardBersih();
+        }
+        renderDenganData(r, rekapRows);
+      } catch (e) {
+        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
+        body.innerHTML = "";
+        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
+      }
+    }
+
+    function renderDenganData(r, rekapRows) {
         body.innerHTML = "";
         if (r.__offline) body.appendChild(MugenUI.offlineBanner(r.__cachedAt));
 
@@ -208,18 +247,15 @@ const PageDashboardBarber = (() => {
           body.appendChild(MugenUI.el("h2", {}, "Reimburse"));
           body.appendChild(reimburseTable);
         }
-      } catch (e) {
-        if (urutanSaya !== urutanTerkini) return; // respons basi, jangan timpa hasil yang lebih baru
-        body.innerHTML = "";
-        body.appendChild(MugenUI.el("div", { class: "card" }, MugenUI.errorState(e.message)));
-      }
     }
 
     // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
     // -- skeleton di body sendiri (lihat load() di atas) sudah cukup.
     selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
     selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
-    load();
+    // bisaDariCache: true HANYA di pemuatan AWAL -- ganti bulan/tahun manual
+    // oleh user (kedua handler di atas) SELALU fetch ulang.
+    load({ bisaDariCache: true });
   }
 
   return { render };

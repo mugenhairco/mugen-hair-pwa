@@ -87,6 +87,33 @@ const MugenState = (() => {
     return v;
   }
 
+  // PERMINTAAN OWNER: Dashboard (Owner/Admin maupun Barber) jangan fetch
+  // ulang ke server setiap kali halaman itu dibuka lagi (mis. pindah ke
+  // menu lain lalu balik) kalau TIDAK ADA data baru yang masuk sejak
+  // terakhir kali Dashboard berhasil dimuat -- supaya tidak ada
+  // skeleton/loading berulang-ulang tanpa alasan. "Ada data baru" diartikan
+  // SEDERHANA & AMAN: user INI SENDIRI baru menyimpan/mengoreksi/menghapus
+  // sesuatu (lewat method HTTP selain GET, lihat api.js::request()) sejak
+  // Dashboard terakhir ditandai bersih -- BUKAN memantau perubahan dari
+  // user lain (kasir/barber lain), itu di luar cakupan permintaan ini.
+  // SENGAJA in-memory (bukan localStorage/sessionStorage): otomatis reset
+  // ke "kotor" (perlu fetch) setiap kali aplikasi dimuat ulang dari awal
+  // (cold start PWA/refresh browser) -- hanya berlaku SELAMA satu kali
+  // muat app (SPA, navigasi antar menu tidak reload index.html).
+  let _dashboardKotor = true;
+
+  function tandaiDashboardKotor() {
+    _dashboardKotor = true;
+  }
+
+  function dashboardPerluRefresh() {
+    return _dashboardKotor;
+  }
+
+  function tandaiDashboardBersih() {
+    _dashboardKotor = false;
+  }
+
   function cacheSet(key, data) {
     try {
       localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, savedAt: Date.now() }));
@@ -103,5 +130,6 @@ const MugenState = (() => {
   return {
     getToken, getUser, setSession, clearSession, isLoggedIn, cacheSet, cacheGet,
     markLoginEntrance, consumeLoginEntrance, getTenantSlug, rememberTenantSlug,
+    tandaiDashboardKotor, dashboardPerluRefresh, tandaiDashboardBersih,
   };
 })();

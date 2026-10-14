@@ -103,6 +103,28 @@ const PageAbsensi = (() => {
     return MugenUI.el("span", { class: "badge" + (status === "disetujui" ? "" : status === "ditolak" ? " badge-danger" : " badge-libur") }, label);
   }
 
+  // PERMINTAAN OWNER: Ajukan Koreksi Absensi (sisi barber) sama seperti
+  // Simpan Transaksi (input_data.js) -- jangan tunggu server, supaya tidak
+  // "loading" tiap kirim. Jaring pengaman localStorage per-user yang sama
+  // persis (lihat catatan lengkap di input_data.js::bacaPendingTransaksi()).
+  function kunciPendingKoreksiAbsensi(userId) {
+    return `mugen_pending_koreksi_absensi_user_${userId}`;
+  }
+  function bacaPendingKoreksiAbsensi(userId) {
+    try {
+      return JSON.parse(localStorage.getItem(kunciPendingKoreksiAbsensi(userId)) || "[]");
+    } catch (e) {
+      return [];
+    }
+  }
+  function tulisPendingKoreksiAbsensi(userId, daftar) {
+    try {
+      localStorage.setItem(kunciPendingKoreksiAbsensi(userId), JSON.stringify(daftar));
+    } catch (e) {
+      // localStorage penuh/diblokir -- biarkan, jaring pengamannya saja yang tidak aktif.
+    }
+  }
+
   // Geolocation Promise-based, enableHighAccuracy + maximumAge:0 (ANTI FAKE
   // GPS: selalu ambil lokasi TERBARU dari perangkat, TIDAK PERNAH menerima
   // koordinat cache) -- backend TETAP memvalidasi ulang semuanya, ini murni
@@ -579,6 +601,10 @@ const PageAbsensi = (() => {
     koreksiCard.appendChild(MugenUI.el("h2", {}, "Ajukan Koreksi Absensi"));
     koreksiCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Lupa Check In atau Check Out? Ajukan koreksi jam yang seharusnya di sini -- akan diproses (disetujui/ditolak) oleh Admin/Owner."));
+    // Banner pengajuan yang belum terkonfirmasi sukses (lihat catatan
+    // bacaPendingKoreksiAbsensi() di atas) -- biasanya kosong/tersembunyi.
+    const koreksiPendingBanner = MugenUI.el("div", { style: "display:none;" });
+    koreksiCard.appendChild(koreksiPendingBanner);
     const kTanggal = MugenUI.el("input", { type: "date", value: MugenUI.isoHariIniWib() });
     const kJenis = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "check_in" }, "Check In"),
@@ -638,6 +664,58 @@ const PageAbsensi = (() => {
     }
     loadKoreksiSaya();
 
+    // PERMINTAAN OWNER: Ajukan Koreksi instan (tidak menunggu server) --
+    // pola sama persis dengan Simpan Transaksi di input_data.js.
+    const userIni = MugenState.getUser();
+    let koreksiPendingList = bacaPendingKoreksiAbsensi(userIni.id);
+
+    function renderKoreksiPendingBanner() {
+      koreksiPendingBanner.innerHTML = "";
+      if (koreksiPendingList.length === 0) {
+        koreksiPendingBanner.style.display = "none";
+        return;
+      }
+      koreksiPendingBanner.style.display = "";
+      const box = MugenUI.el("div", { class: "card", style: "border:1px solid var(--danger);" });
+      box.appendChild(MugenUI.el("div", { style: "font-weight:600;margin-bottom:6px;" },
+        `${koreksiPendingList.length} pengajuan koreksi belum terkonfirmasi tersimpan di server.`));
+      box.appendChild(MugenUI.el("div", { style: "margin-bottom:8px;color:var(--text-muted);" },
+        'Cek dulu di "Riwayat Koreksi Saya" di bawah -- kalau sudah muncul di sana, klik "Sudah Ada, Buang" (jangan Kirim Ulang supaya tidak dobel).'));
+      for (const entry of koreksiPendingList) {
+        const row = MugenUI.el("div", { class: "row", style: "align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px;" });
+        row.appendChild(MugenUI.el("div", { style: "flex:1;" }, entry.label));
+        const btnKirim = MugenUI.el("button", {}, "Kirim Ulang");
+        btnKirim.addEventListener("click", () => kirimKoreksiPending(entry, btnKirim));
+        const btnBuang = MugenUI.el("button", { class: "btn-danger" }, "Sudah Ada, Buang");
+        btnBuang.addEventListener("click", () => {
+          koreksiPendingList = koreksiPendingList.filter((e) => e.tempId !== entry.tempId);
+          tulisPendingKoreksiAbsensi(userIni.id, koreksiPendingList);
+          renderKoreksiPendingBanner();
+        });
+        row.appendChild(btnKirim);
+        row.appendChild(btnBuang);
+        box.appendChild(row);
+      }
+      koreksiPendingBanner.appendChild(box);
+    }
+
+    function kirimKoreksiPending(entry, btnEl) {
+      const kirim = () => MugenApi.post("/api/attendance/koreksi", entry.body);
+      (btnEl ? MugenUI.withButtonLoading(btnEl, kirim) : kirim())
+        .then(() => {
+          koreksiPendingList = koreksiPendingList.filter((e) => e.tempId !== entry.tempId);
+          tulisPendingKoreksiAbsensi(userIni.id, koreksiPendingList);
+          renderKoreksiPendingBanner();
+          loadKoreksiSaya();
+        })
+        .catch((e) => {
+          renderKoreksiPendingBanner();
+          MugenUI.toast(`Pengajuan ${entry.label} gagal terkirim: ${e.detail && e.detail.detail ? e.detail.detail : e.message}`, "error", { force: true });
+        });
+    }
+
+    renderKoreksiPendingBanner();
+
     kBtn.addEventListener("click", async () => {
       if (!kJam.value) {
         MugenUI.infoModal({ title: "Belum Lengkap", body: MugenUI.el("p", {}, "Jam yang seharusnya wajib diisi.") });
@@ -663,16 +741,20 @@ const PageAbsensi = (() => {
         confirmText: "Ajukan",
       });
       if (!ok) return;
-      try {
-        await MugenUI.withButtonLoading(kBtn, () => MugenApi.post("/api/attendance/koreksi", {
-          tanggal: kTanggal.value, jenis: kJenis.value, waktu_diajukan: kJam.value, alasan: kAlasan.value.trim(),
-        }));
-        MugenUI.toast("Pengajuan koreksi berhasil dikirim.", "success");
-        kJam.value = ""; kAlasan.value = "";
-        loadKoreksiSaya();
-      } catch (e) {
-        MugenUI.infoModal({ title: "Gagal Mengajukan Koreksi", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
-      }
+
+      // PERMINTAAN OWNER: jangan tunggu server -- langsung tampil sukses,
+      // kirim diam-diam di belakang (jaring pengaman localStorage di atas).
+      const body = { tanggal: kTanggal.value, jenis: kJenis.value, waktu_diajukan: kJam.value, alasan: kAlasan.value.trim() };
+      const entry = {
+        tempId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        body,
+        label: `${MugenUI.formatTanggal(body.tanggal)} -- ${LABEL_JENIS_KOREKSI[body.jenis] || body.jenis} ${body.waktu_diajukan}`,
+      };
+      koreksiPendingList = [...koreksiPendingList, entry];
+      tulisPendingKoreksiAbsensi(userIni.id, koreksiPendingList);
+      MugenUI.toast("Pengajuan koreksi berhasil dikirim.", "success");
+      kJam.value = ""; kAlasan.value = "";
+      kirimKoreksiPending(entry);
     });
   }
 
@@ -1131,16 +1213,28 @@ const PageAbsensi = (() => {
 
     async function ubahStatusKoreksi(btn, id, status) {
       const catatan = prompt(status === "ditolak" ? "Alasan penolakan (opsional):" : "Catatan approval (opsional):") || "";
-      try {
-        await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan }));
-        MugenUI.toast(`Koreksi ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
-        loadKoreksi();
-        loadList();
-        loadLimit();
-        loadRingkasanKuota();
-      } catch (e) {
-        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-      }
+      // PERMINTAAN OWNER: tombol Setujui/Tolak tidak lagi menunggu/blokir
+      // sampai server menjawab -- toast tampil instan, PUT jalan di
+      // belakang. Daftar Koreksi/Absensi/Limit/Kuota (loadKoreksi/loadList/
+      // loadLimit/loadRingkasanKuota) BARU di-refresh setelah PUT-nya
+      // sungguh sukses -- angka itu hasil approve/tolak yang SEBENARNYA,
+      // tidak bisa ditebak di browser (beda dari Tandai Libur yang juga
+      // sengaja TIDAK dibuat instan, lihat input_data.js).
+      const labelAsli = btn.textContent;
+      btn.disabled = true;
+      MugenUI.toast(`Koreksi ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
+      MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan })
+        .then(() => {
+          loadKoreksi();
+          loadList();
+          loadLimit();
+          loadRingkasanKuota();
+        })
+        .catch((e) => {
+          btn.disabled = false;
+          btn.textContent = labelAsli;
+          MugenUI.toast(`Gagal memproses koreksi: ${e.detail && e.detail.detail ? e.detail.detail : e.message}`, "error", { force: true });
+        });
     }
 
     async function loadKoreksi() {
