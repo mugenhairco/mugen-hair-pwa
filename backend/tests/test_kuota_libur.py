@@ -119,6 +119,87 @@ def test_set_cuti_settings_kuota_libur_bulanan_tersimpan(single_tenant):
 
 
 # ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Tandai Libur DITOLAK kalau tanggal sudah tercakup
+# pengajuan Izin/Cuti yang DISETUJUI -- cegah satu tanggal tercatat ganda
+# (Libur DAN Cuti/Izin sekaligus), yang sebelumnya bikin Rekap & Bonus
+# Customer (hari_libur) salah hitung.
+# ---------------------------------------------------------------------------
+
+def test_tandai_libur_ditolak_kalau_sedang_cuti(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-10-10", "2026-10-13",
+                                 "Cuti keluarga", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(
+        izin_cuti_db.get_pengajuan_list(barber_id=barber_id, tenant_id=tenant_id)[0]["id"],
+        "disetujui", disetujui_oleh="Owner",
+    )
+    try:
+        kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-10-11")
+        assert False, "Seharusnya ValueError"
+    except ValueError as e:
+        assert "Cuti" in str(e)
+    assert db.get_hari_libur(barber_id, 2026, 10) == 0  # tidak ada baris Libur yang kebuat
+
+
+def test_tandai_libur_ditolak_kalau_sedang_izin(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-10-11", "2026-10-11",
+                                 "Keperluan keluarga", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(
+        izin_cuti_db.get_pengajuan_list(barber_id=barber_id, tenant_id=tenant_id)[0]["id"],
+        "disetujui", disetujui_oleh="Owner",
+    )
+    try:
+        kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-10-11")
+        assert False, "Seharusnya ValueError"
+    except ValueError as e:
+        assert "Izin" in str(e)
+
+
+def test_tandai_libur_tetap_boleh_di_luar_rentang_cuti(single_tenant):
+    """Validasi hanya menolak tanggal yang MEMANG tercakup rentang Cuti/Izin
+    -- tanggal lain tetap bisa ditandai Libur seperti biasa."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-10-10", "2026-10-13",
+                                 "Cuti keluarga", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(
+        izin_cuti_db.get_pengajuan_list(barber_id=barber_id, tenant_id=tenant_id)[0]["id"],
+        "disetujui", disetujui_oleh="Owner",
+    )
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-10-14")  # sehari setelah cuti berakhir
+    assert jenis == "libur"
+
+
+def test_tandai_libur_tetap_boleh_kalau_cuti_masih_pending(single_tenant):
+    """Validasi hanya menolak pengajuan yang SUDAH disetujui -- yang masih
+    pending tidak menghalangi Tandai Libur."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-10-10", "2026-10-13",
+                                 "Cuti keluarga", tenant_id=tenant_id, override=True)  # tetap 'pending'
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-10-11")
+    assert jenis == "libur"
+
+
+def test_router_tandai_libur_ditolak_422_kalau_sedang_cuti(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-10-10", "2026-10-13",
+                                 "Cuti keluarga", tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(
+        izin_cuti_db.get_pengajuan_list(barber_id=barber_id, tenant_id=tenant_id)[0]["id"],
+        "disetujui", disetujui_oleh="Owner",
+    )
+    r = client.post("/api/input-data/libur", json={"barber_id": barber_id, "tanggal": "2026-10-11"}, headers=headers)
+    assert r.status_code == 422
+    assert "Cuti" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
 # Router-level (HTTP) -- pastikan wiring routers/input_data.py,
 # routers/izin_cuti.py, routers/rekap.py benar.
 # ---------------------------------------------------------------------------
