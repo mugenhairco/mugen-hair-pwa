@@ -204,6 +204,53 @@ def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypa
     assert panggilan["jenis"] == "booking_baru"
 
 
+def test_buat_booking_memanggil_push_ke_barber_ybs(single_tenant, monkeypatch):
+    """PERMINTAAN Owner: barber yang kebagian booking ini JUGA diberi tahu
+    lewat akun login barber-nya sendiri (kirim_ke_barber()), TERPISAH dari
+    push ke role admin/staff di atas."""
+    tenant_id = single_tenant["tenant_id"]
+    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    barber_id = db.add_barber("Barber Booking Push3", tenant_id=tenant_id)
+    service_id = db.add_service("Cukur Booking Push3", 50000, tenant_id=tenant_id)
+    monkeypatch.setattr(push_service, "kirim_ke_role", lambda *a, **kw: 1)
+
+    panggilan = {}
+    monkeypatch.setattr(push_service, "kirim_ke_barber",
+                         lambda bid, title, body, url=None, jenis=None: panggilan.update(
+                             barber_id=bid, title=title, jenis=jenis) or 1)
+
+    from datetime import timedelta
+    tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
+    booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="12:00",
+                             service_ids=[service_id], customer_nama="Dewi",
+                             customer_whatsapp="081234567892", metode_pembayaran="transfer",
+                             tenant_id=tenant_id)
+    assert panggilan["barber_id"] == barber_id
+    assert "Booking Baru" in panggilan["title"]
+    assert panggilan["jenis"] == "booking_baru"
+
+
+def test_buat_booking_sukses_walau_push_ke_barber_meledak(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    barber_id = db.add_barber("Barber Booking Push4", tenant_id=tenant_id)
+    service_id = db.add_service("Cukur Booking Push4", 50000, tenant_id=tenant_id)
+    monkeypatch.setattr(push_service, "kirim_ke_role", lambda *a, **kw: 1)
+
+    def _meledak(*a, **kw):
+        raise RuntimeError("Simulasi push_service ke barber gagal total")
+    monkeypatch.setattr(push_service, "kirim_ke_barber", _meledak)
+
+    from datetime import timedelta
+    tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
+    hasil = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="13:00",
+                                     service_ids=[service_id], customer_nama="Rio",
+                                     customer_whatsapp="081234567893", metode_pembayaran="transfer",
+                                     tenant_id=tenant_id)
+    assert hasil["id"] is not None
+    assert hasil["customer_nama"] == "Rio"
+
+
 # ---------------------------------------------------------------------------
 # Titik pemicu: Izin/Cuti -- pengajuan baru (ke admin/staff) + status
 # disetujui/ditolak (ke barber ybs), TIDAK PERNAH menggagalkan operasinya
