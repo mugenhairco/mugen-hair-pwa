@@ -1028,7 +1028,17 @@
 // SEBELUMNYA dikirim 1 jam setelah jam tutup toko, sekarang dikirim PERSIS
 // begitu jam tutup lewat. Teks deskripsi tab "Reminder Absensi"
 // (pages/whatsapp.js) diperbarui mengikuti.
-const ASSET_VERSION = "175";
+// v175 -> v176: REVISI Owner -- hapus "orientation": "portrait-primary" dari
+// manifest.json (sebelumnya mengunci aplikasi terinstall SELALU portrait,
+// mengganggu Owner yang pakai tablet landscape). Diuji manual lintas
+// beberapa ukuran viewport (tablet & HP landscape) -- TIDAK ada overflow
+// halaman/elemen terpotong ditemukan (lihat .table-wrap yang sudah ada di
+// ui.js::buildTable() untuk tabel lebar, scroll horizontal sendiri per
+// tabel, bukan bug). manifest.json ada di _APP_SHELL_TANPA_VERSI (precache
+// TANPA query ?v=), jadi bump ASSET_VERSION di sini WAJIB supaya Service
+// Worker benar-benar mengambil ulang manifest.json yang baru, bukan
+// menyajikan versi lama dari cache selamanya.
+const ASSET_VERSION = "176";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
