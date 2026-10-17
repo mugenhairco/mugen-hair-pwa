@@ -1456,6 +1456,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_bot_pesan_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_bot_pesan_log_tenant_id ON whatsapp_bot_pesan_log(tenant_id);
+
+ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS device_token TEXT;
 """
 
 

@@ -2,23 +2,26 @@
 =============================================================================
 Dua kelompok endpoint, lihat whatsapp_bot_db.py untuk arsitektur lengkap:
 
-1. `public_router` (/api/whatsapp-bot/webhook): dipanggil Meta WhatsApp
-   Cloud API -- SENGAJA TIDAK memakai sesi login Rivoir sama sekali (Meta
-   tidak punya token Rivoir). GET = handshake verifikasi webhook (Meta
-   mengirim hub.verify_token, kita cocokkan ke env var
-   WHATSAPP_BOT_VERIFY_TOKEN, pola SAMA seperti CRON_REMINDER_SECRET di
-   routers/cron_reminder.py -- fail-CLOSED kalau env var belum diisi). POST
-   = pesan masuk sungguhan, tenant-nya diketahui dari `phone_number_id` di
-   payload (lihat whatsapp_bot_db.get_config_by_phone_number_id()).
+1. `public_router` (/api/whatsapp-bot/webhook/{secret}): dipanggil Fonnte --
+   SENGAJA TIDAK memakai sesi login Rivoir sama sekali (Fonnte tidak punya
+   token Rivoir). Fonnte TIDAK punya handshake verifikasi webhook seperti
+   Meta (tidak ada langkah GET terpisah) -- ia langsung POST ke URL yang
+   diisi di dashboard device->edit->webhook begitu ada pesan masuk. Supaya
+   endpoint ini tidak bisa dipanggil sembarang orang, URL webhook-nya
+   membawa secret di path (`{secret}`, dicocokkan ke env var
+   WHATSAPP_BOT_WEBHOOK_SECRET, pola SAMA seperti CRON_REMINDER_SECRET di
+   routers/cron_reminder.py) -- fail-CLOSED kalau env var belum diisi.
+   Tenant-nya diketahui dari field `device` di payload (nomor WA bot itu
+   sendiri, lihat whatsapp_bot_db.get_config_by_phone_number_id()).
 
    TAHAP INI (fondasi): pesan masuk dicatat (whatsapp_bot_db.catat_pesan())
-   + kuota dicek, lalu dibalas konfirmasi sederhana lewat Graph API --
+   + kuota dicek, lalu dibalas konfirmasi sederhana lewat Fonnte Send API --
    PARSING pesan jadi transaksi/libur SUNGGUHAN (format "Romen Dry Cut 3,
    Tips 30rb...") & pembatasan akses per role (barber cuma lihat rekap
    miliknya sendiri) adalah tahap LANJUTAN, belum dibangun di sini.
 
 2. `superadmin_router` (/api/superadmin/whatsapp-bot): KHUSUS Superadmin
-   (require_superadmin) -- daftarkan/ubah Phone Number ID per tenant +
+   (require_superadmin) -- daftarkan/ubah nomor+device_token per tenant +
    aktifkan/nonaktifkan + atur kuota pesan/bulan. Permintaan Owner eksplisit:
    "yang memiliki hak untuk mengaktifkan atau mengatur [WA Bot] hanya
    superadmin" -- Owner/Admin tenant TIDAK PUNYA endpoint untuk mengubah
@@ -28,7 +31,7 @@ import logging
 import os
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 import tenant_db
@@ -40,90 +43,80 @@ logger = logging.getLogger("mugen.whatsapp_bot")
 public_router = APIRouter(prefix="/api/whatsapp-bot", tags=["whatsapp-bot"])
 superadmin_router = APIRouter(prefix="/api/superadmin/whatsapp-bot", tags=["whatsapp-bot-superadmin"])
 
-_VERIFY_TOKEN = os.environ.get("WHATSAPP_BOT_VERIFY_TOKEN", "").strip()
-_ACCESS_TOKEN = os.environ.get("WHATSAPP_BOT_ACCESS_TOKEN", "").strip()
-_GRAPH_API_VERSION = "v23.0"
-_GRAPH_BASE_URL = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
+_WEBHOOK_SECRET = os.environ.get("WHATSAPP_BOT_WEBHOOK_SECRET", "").strip()
+_FONNTE_SEND_URL = "https://api.fonnte.com/send"
 
 
-# ---------------------------------------------------------------------------
-# Webhook publik (Meta) -- TANPA sesi login Rivoir
-# ---------------------------------------------------------------------------
-
-@public_router.get("/webhook")
-def verifikasi_webhook(
-    hub_mode: str = Query(default="", alias="hub.mode"),
-    hub_verify_token: str = Query(default="", alias="hub.verify_token"),
-    hub_challenge: str = Query(default="", alias="hub.challenge"),
-):
-    """Handshake SEKALI SAJA saat Superadmin klik "Verify and save" di Meta
-    App Dashboard -- WAJIB fail-CLOSED kalau WHATSAPP_BOT_VERIFY_TOKEN
-    belum diisi (jangan sampai verifikasi lolos tanpa proteksi apa pun)."""
-    if not _VERIFY_TOKEN or hub_mode != "subscribe" or hub_verify_token != _VERIFY_TOKEN:
-        raise HTTPException(status_code=403, detail="Verifikasi gagal.")
-    return int(hub_challenge) if hub_challenge.isdigit() else hub_challenge
-
-
-def _kirim_balasan(phone_number_id: str, ke_wa_id: str, teks: str) -> None:
+def _kirim_balasan(device_token: str, ke_nomor: str, teks: str) -> None:
     """Best-effort -- kegagalan kirim balasan TIDAK BOLEH menggagalkan
-    pemrosesan webhook (Meta tetap butuh respons 200 dari endpoint POST
-    terlepas dari berhasil/tidaknya balasan terkirim, supaya Meta tidak
-    mengulang-ulang kirim payload yang sama)."""
-    if not _ACCESS_TOKEN:
-        logger.warning("WA Bot: WHATSAPP_BOT_ACCESS_TOKEN belum diisi -- balasan TIDAK dikirim.")
+    pemrosesan webhook (tetap balas 200 ke Fonnte terlepas dari
+    berhasil/tidaknya balasan terkirim)."""
+    if not device_token:
+        logger.warning("WA Bot: device_token tenant ini kosong -- balasan TIDAK dikirim.")
         return
     try:
         resp = requests.post(
-            f"{_GRAPH_BASE_URL}/{phone_number_id}/messages",
-            headers={"Authorization": f"Bearer {_ACCESS_TOKEN}", "Content-Type": "application/json"},
-            json={"messaging_product": "whatsapp", "to": ke_wa_id, "type": "text", "text": {"body": teks}},
+            _FONNTE_SEND_URL,
+            headers={"Authorization": device_token},
+            data={"target": ke_nomor, "message": teks},
             timeout=15,
         )
         if resp.status_code >= 400:
-            logger.error("WA Bot: gagal kirim balasan ke %s: HTTP %s %s", ke_wa_id, resp.status_code, resp.text)
+            logger.error("WA Bot: gagal kirim balasan ke %s: HTTP %s %s", ke_nomor, resp.status_code, resp.text)
     except Exception as e:
-        logger.error("WA Bot: gagal kirim balasan ke %s: %s: %s", ke_wa_id, type(e).__name__, e)
+        logger.error("WA Bot: gagal kirim balasan ke %s: %s: %s", ke_nomor, type(e).__name__, e)
 
 
-@public_router.post("/webhook")
-async def terima_webhook(request: Request):
-    """SELALU balas 200 (bahkan untuk payload yang diabaikan/gagal) --
-    Meta akan mengulang-ulang kirim payload yang sama kalau dapat status
-    non-2xx, yang justru bikin masalah dobel, bukan membantu."""
-    payload = await request.json()
-    for entry in payload.get("entry", []):
-        for change in entry.get("changes", []):
-            value = change.get("value", {})
-            phone_number_id = value.get("metadata", {}).get("phone_number_id")
-            if not phone_number_id:
-                continue
-            pesan_list = value.get("messages")
-            if not pesan_list:
-                continue  # "statuses" (status terkirim/gagal pesan KELUAR) -- bukan pesan masuk, abaikan
-            config = whatsapp_bot_db.get_config_by_phone_number_id(phone_number_id)
-            for pesan in pesan_list:
-                wa_id_pengirim = pesan.get("from", "")
-                isi_pesan = pesan.get("text", {}).get("body", "")
-                if config is None:
-                    continue  # nomor ini tidak terdaftar/dinonaktifkan Superadmin -- diam-diam diabaikan
-                tenant_id = config["tenant_id"]
-                kuota = whatsapp_bot_db.cek_kuota(tenant_id)
-                if kuota["habis"]:
-                    whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "ditolak_kuota")
-                    _kirim_balasan(phone_number_id, wa_id_pengirim,
-                                    "Kuota pesan WA Bot bulan ini sudah habis. Hubungi Owner/Admin.")
-                    continue
-                # TAHAP FONDASI: catat + balas konfirmasi diterima. Parsing
-                # jadi transaksi/libur sungguhan (format "Romen Dry Cut 3,
-                # Tips 30rb...") menyusul di tahap lanjutan.
-                whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "diproses")
-                _kirim_balasan(phone_number_id, wa_id_pengirim,
-                                "Pesan diterima Rivoir WA Bot. Fitur pemrosesan otomatis sedang disiapkan.")
+# ---------------------------------------------------------------------------
+# Webhook publik (Fonnte) -- TANPA sesi login Rivoir
+# ---------------------------------------------------------------------------
+
+@public_router.post("/webhook/{secret}")
+async def terima_webhook(secret: str, request: Request):
+    """SELALU balas 200 untuk payload yang sah tapi diabaikan (nomor tidak
+    terdaftar/kuota habis) -- hanya secret yang salah/kosong yang ditolak
+    403. Fonnte mengirim payload form-encoded (field `device`, `sender`,
+    `message`, `name`) -- dicoba JSON dulu untuk jaga-jaga, baru fallback
+    form."""
+    if not _WEBHOOK_SECRET or secret != _WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        form = await request.form()
+        payload = dict(form)
+
+    nomor_device = str(payload.get("device") or "").strip()
+    wa_id_pengirim = str(payload.get("sender") or "").strip()
+    isi_pesan = str(payload.get("message") or "")
+
+    if not nomor_device or not wa_id_pengirim:
+        return {"ok": True}  # payload tidak dikenali (mis. event non-pesan) -- abaikan
+
+    config = whatsapp_bot_db.get_config_by_phone_number_id(nomor_device)
+    if config is None:
+        return {"ok": True}  # nomor ini tidak terdaftar/dinonaktifkan Superadmin -- diam-diam diabaikan
+
+    tenant_id = config["tenant_id"]
+    kuota = whatsapp_bot_db.cek_kuota(tenant_id)
+    if kuota["habis"]:
+        whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "ditolak_kuota")
+        _kirim_balasan(config["device_token"], wa_id_pengirim,
+                        "Kuota pesan WA Bot bulan ini sudah habis. Hubungi Owner/Admin.")
+        return {"ok": True}
+
+    # TAHAP FONDASI: catat + balas konfirmasi diterima. Parsing jadi
+    # transaksi/libur sungguhan (format "Romen Dry Cut 3, Tips 30rb...")
+    # menyusul di tahap lanjutan.
+    whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "diproses")
+    _kirim_balasan(config["device_token"], wa_id_pengirim,
+                    "Pesan diterima Rivoir WA Bot. Fitur pemrosesan otomatis sedang disiapkan.")
     return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
-# Superadmin -- kelola nomor/aktif/kuota per tenant
+# Superadmin -- kelola nomor/token/aktif/kuota per tenant
 # ---------------------------------------------------------------------------
 
 @superadmin_router.get("")
@@ -144,7 +137,8 @@ def list_konfigurasi(user: dict = Depends(require_superadmin)):
 
 
 class KonfigurasiBody(BaseModel):
-    phone_number_id: str
+    phone_number_id: str  # nomor WA device Fonnte (nomor bot itu sendiri)
+    device_token: str  # token API device ini (dashboard Fonnte -> device list)
     nama_nomor: str | None = None
     kuota_pesan_bulanan: int | None = None
 
@@ -155,7 +149,7 @@ def atur_konfigurasi(tenant_id: int, body: KonfigurasiBody, user: dict = Depends
         raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
     try:
         return whatsapp_bot_db.upsert_config(
-            tenant_id, body.phone_number_id, nama_nomor=body.nama_nomor,
+            tenant_id, body.phone_number_id, body.device_token, nama_nomor=body.nama_nomor,
             kuota_pesan_bulanan=body.kuota_pesan_bulanan, diatur_oleh=user["username"],
         )
     except ValueError as e:
