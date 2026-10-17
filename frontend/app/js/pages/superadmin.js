@@ -2248,12 +2248,20 @@ const PageSuperadmin = (() => {
       const inputToken = MugenUI.el("input", { type: "password", autocomplete: "off", placeholder: "Device Token (dashboard Fonnte -> device list)", value: b.config ? b.config.device_token || "" : "" });
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Label nomor (opsional)", value: b.config ? b.config.nama_nomor || "" : "" });
       const inputKuota = MugenUI.el("input", { type: "number", min: "0", placeholder: String(50), value: b.config ? String(b.config.kuota_pesan_bulanan) : "" });
+      // FITUR WA Bot (Input Data & Rekap via WhatsApp): nomor yang setara
+      // akses Owner PENUH lewat bot (input data siapa saja + rekap siapa
+      // saja) -- OPSIONAL, beda dari Nomor Device Fonnte di atas (nomor
+      // bot itu sendiri) dan dari nomor_whatsapp tiap barber (diatur di
+      // Setting > Karyawan, akses terbatas ke data masing-masing).
+      const inputNomorOwner = MugenUI.el("input", { type: "text", placeholder: "mis. 6281234567890 (opsional)",
+        value: b.config ? b.config.nomor_owner_whatsapp || "" : "" });
 
       waBotEditBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Device Fonnte"), inputNomor]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Device Token"), inputToken]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Label Nomor"), inputNama]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kuota Pesan/Bulan"), inputKuota]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner (WA) -- akses penuh lewat bot"), inputNomorOwner]),
       ]));
 
       const errEdit = MugenUI.el("div", { class: "login-error" });
@@ -2268,6 +2276,7 @@ const PageSuperadmin = (() => {
           device_token: inputToken.value.trim(),
           nama_nomor: inputNama.value.trim() || null,
           kuota_pesan_bulanan: inputKuota.value === "" ? null : parseInt(inputKuota.value, 10),
+          nomor_owner_whatsapp: inputNomorOwner.value.trim() || null,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan,

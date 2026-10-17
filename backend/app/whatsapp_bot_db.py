@@ -40,11 +40,26 @@ Superadmin-editable per tenant) -- dihitung LIVE dari whatsapp_bot_pesan_log
 bulan berjalan (pola SAMA seperti kuota_libur_db.py/izin_cuti_db.py: TIDAK
 ADA kolom "sisa kuota" tersimpan/reset terjadwal, selalu dihitung ulang)."""
 
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
 from database import get_conn
 
 DEFAULT_KUOTA_PESAN_BULANAN = 50
+
+# Jendela anti-dobel (idempotency) -- webhook Fonnte yang terkirim ulang
+# (retry jaringan dsb) untuk pesan yang PERSIS SAMA dari pengirim yang
+# SAMA dalam rentang waktu ini dianggap duplikat, diabaikan (lihat
+# pesan_duplikat() di bawah, dipanggil routers/whatsapp_bot.py SEBELUM
+# whatsapp_bot_parser.proses_pesan()). Pola SAMA seperti idempotensi
+# absensi_reminder_db.py, cuma di sini dicek dari whatsapp_bot_pesan_log
+# yang sudah ada (tidak perlu tabel baru).
+_JENDELA_DUPLIKAT_DETIK = 120
+
+# Konfirmasi input (preview -> YA/BATAL) kedaluwarsa setelah ini -- pesan
+# baru yang tidak nyambung ke pending lama (atau balasan YA/BATAL yang
+# datang telat) tidak akan "nyangkut" ke konfirmasi basi.
+_JENDELA_PENDING_DETIK = 600
 
 
 def init_whatsapp_bot_db():
@@ -57,6 +72,7 @@ def init_whatsapp_bot_db():
                 tenant_id               INTEGER NOT NULL UNIQUE,
                 phone_number_id         TEXT NOT NULL UNIQUE,
                 device_token            TEXT,
+                nomor_owner_whatsapp    TEXT,
                 nama_nomor              TEXT,
                 aktif                   INTEGER NOT NULL DEFAULT 0,
                 kuota_pesan_bulanan     INTEGER NOT NULL DEFAULT 50,
@@ -77,6 +93,17 @@ def init_whatsapp_bot_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_whatsapp_bot_pesan_log_tenant_id "
                       "ON whatsapp_bot_pesan_log(tenant_id)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS whatsapp_bot_pending_input (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id       INTEGER NOT NULL,
+                wa_id_pengirim  TEXT NOT NULL,
+                jenis           TEXT NOT NULL,
+                payload         TEXT NOT NULL,
+                created_at      TEXT NOT NULL,
+                UNIQUE(tenant_id, wa_id_pengirim)
+            )
+        """)
 
 
 def _now_iso() -> str:
@@ -120,20 +147,25 @@ def get_config_by_phone_number_id(phone_number_id: str) -> dict | None:
 
 
 def upsert_config(tenant_id: int, phone_number_id: str, device_token: str, nama_nomor: str = None,
-                   kuota_pesan_bulanan: int = None, diatur_oleh: str = "") -> dict:
+                   kuota_pesan_bulanan: int = None, diatur_oleh: str = "",
+                   nomor_owner_whatsapp: str = None) -> dict:
     """Superadmin daftarkan/ubah nomor+token WA Bot milik satu tenant.
     `device_token` WAJIB diisi (beda dari arsitektur Meta lama -- Fonnte
     tidak punya token platform-wide, setiap device token-nya sendiri,
-    lihat docstring modul). `aktif` SENGAJA TIDAK diisi di sini -- tenant
-    baru SELALU mulai nonaktif, Superadmin menyalakannya eksplisit lewat
-    set_aktif() (mencegah pesan masuk diproses sebelum Superadmin benar-
-    benar siap)."""
+    lihat docstring modul). `nomor_owner_whatsapp` OPSIONAL -- tenant bisa
+    jalan tanpa ini diisi (artinya belum ada nomor yang setara akses Owner
+    lewat WA, cuma barber yang bisa pakai command self-only), lihat
+    whatsapp_bot_parser.py::resolve_role(). `aktif` SENGAJA TIDAK diisi di
+    sini -- tenant baru SELALU mulai nonaktif, Superadmin menyalakannya
+    eksplisit lewat set_aktif() (mencegah pesan masuk diproses sebelum
+    Superadmin benar-benar siap)."""
     phone_number_id = (phone_number_id or "").strip()
     if not phone_number_id:
         raise ValueError("Nomor device Fonnte wajib diisi.")
     device_token = (device_token or "").strip()
     if not device_token:
         raise ValueError("Device Token Fonnte wajib diisi.")
+    nomor_owner_whatsapp = (nomor_owner_whatsapp or "").strip() or None
     kuota = DEFAULT_KUOTA_PESAN_BULANAN if kuota_pesan_bulanan is None else int(kuota_pesan_bulanan)
     if kuota < 0:
         raise ValueError("Kuota pesan tidak boleh negatif.")
@@ -144,18 +176,20 @@ def upsert_config(tenant_id: int, phone_number_id: str, device_token: str, nama_
         if existing:
             conn.execute(
                 """UPDATE whatsapp_bot_config
-                   SET phone_number_id = ?, device_token = ?, nama_nomor = ?, kuota_pesan_bulanan = ?,
-                       diatur_oleh = ?, updated_at = ?
+                   SET phone_number_id = ?, device_token = ?, nomor_owner_whatsapp = ?, nama_nomor = ?,
+                       kuota_pesan_bulanan = ?, diatur_oleh = ?, updated_at = ?
                    WHERE tenant_id = ?""",
-                (phone_number_id, device_token, nama_nomor, kuota, diatur_oleh, now, tenant_id),
+                (phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, kuota, diatur_oleh,
+                 now, tenant_id),
             )
         else:
             conn.execute(
                 """INSERT INTO whatsapp_bot_config
-                   (tenant_id, phone_number_id, device_token, nama_nomor, aktif, kuota_pesan_bulanan,
-                    diatur_oleh, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)""",
-                (tenant_id, phone_number_id, device_token, nama_nomor, kuota, diatur_oleh, now, now),
+                   (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, aktif,
+                    kuota_pesan_bulanan, diatur_oleh, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, kuota,
+                 diatur_oleh, now, now),
             )
     return get_config(tenant_id)
 
@@ -211,3 +245,75 @@ def cek_kuota(tenant_id: int) -> dict:
     terpakai = kuota_terpakai_bulan_ini(tenant_id)
     sisa = max(0, kuota - terpakai)
     return {"kuota": kuota, "terpakai": terpakai, "sisa": sisa, "habis": terpakai >= kuota}
+
+
+def pesan_duplikat(tenant_id: int, wa_id_pengirim: str, isi_pesan: str) -> bool:
+    """True kalau pesan PERSIS SAMA (tenant+pengirim+isi) sudah tercatat di
+    whatsapp_bot_pesan_log dalam _JENDELA_DUPLIKAT_DETIK terakhir --
+    dipanggil routers/whatsapp_bot.py SEBELUM whatsapp_bot_parser.
+    proses_pesan(), supaya webhook yang terkirim ulang (retry jaringan
+    Fonnte dsb) tidak diproses dua kali (lihat catatan modul: ini
+    SANGAT PENTING untuk command yang MENULIS data, bukan cuma baca)."""
+    batas = (datetime.now() - timedelta(seconds=_JENDELA_DUPLIKAT_DETIK)).isoformat(timespec="seconds")
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS jumlah FROM whatsapp_bot_pesan_log
+               WHERE tenant_id = ? AND wa_id_pengirim = ? AND isi_pesan = ? AND created_at >= ?""",
+            (tenant_id, wa_id_pengirim, isi_pesan, batas),
+        ).fetchone()
+    return row["jumlah"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Konfirmasi input tertunda (preview -> YA/BATAL, lihat whatsapp_bot_parser.py)
+# -- SATU baris per (tenant_id, wa_id_pengirim), upsert (pesan input BARU
+# dari pengirim yang sama otomatis MENIMPA/membatalkan pending lama -- tidak
+# ada cara pending "nyangkut" ganda).
+# ---------------------------------------------------------------------------
+
+def simpan_pending(tenant_id: int, wa_id_pengirim: str, jenis: str, payload: dict) -> None:
+    now = _now_iso()
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM whatsapp_bot_pending_input WHERE tenant_id = ? AND wa_id_pengirim = ?",
+            (tenant_id, wa_id_pengirim),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE whatsapp_bot_pending_input SET jenis = ?, payload = ?, created_at = ? WHERE id = ?",
+                (jenis, payload_json, now, existing["id"]),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO whatsapp_bot_pending_input (tenant_id, wa_id_pengirim, jenis, payload, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (tenant_id, wa_id_pengirim, jenis, payload_json, now),
+            )
+
+
+def ambil_pending(tenant_id: int, wa_id_pengirim: str) -> dict | None:
+    """Return {"jenis": str, "payload": dict} atau None kalau tidak ada
+    atau sudah kedaluwarsa (> _JENDELA_PENDING_DETIK sejak disimpan) --
+    pending yang sudah kedaluwarsa SEKALIGUS dihapus di sini (tidak perlu
+    cron/job terpisah, cukup dibersihkan saat dibaca)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM whatsapp_bot_pending_input WHERE tenant_id = ? AND wa_id_pengirim = ?",
+            (tenant_id, wa_id_pengirim),
+        ).fetchone()
+        if row is None:
+            return None
+        umur = (datetime.now() - datetime.fromisoformat(row["created_at"])).total_seconds()
+        if umur > _JENDELA_PENDING_DETIK:
+            conn.execute("DELETE FROM whatsapp_bot_pending_input WHERE id = ?", (row["id"],))
+            return None
+        return {"jenis": row["jenis"], "payload": json.loads(row["payload"])}
+
+
+def hapus_pending(tenant_id: int, wa_id_pengirim: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM whatsapp_bot_pending_input WHERE tenant_id = ? AND wa_id_pengirim = ?",
+            (tenant_id, wa_id_pengirim),
+        )

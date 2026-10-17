@@ -169,7 +169,7 @@ def test_webhook_post_nomor_tidak_terdaftar_diabaikan(single_tenant, monkeypatch
 def test_webhook_post_pesan_diproses_dan_tercatat(single_tenant, monkeypatch):
     monkeypatch.setattr(whatsapp_bot, "_WEBHOOK_SECRET", "secret-rahasia")
     tenant_id = single_tenant["tenant_id"]
-    wb_db.upsert_config(tenant_id, "pnid-1", "token-1")
+    wb_db.upsert_config(tenant_id, "pnid-1", "token-1", nomor_owner_whatsapp="6281111")
     wb_db.set_aktif(tenant_id, True)
 
     client = single_tenant["client"]
@@ -192,7 +192,7 @@ def test_webhook_post_tenant_nonaktif_diabaikan(single_tenant, monkeypatch):
 def test_webhook_post_kuota_habis_ditolak(single_tenant, monkeypatch):
     monkeypatch.setattr(whatsapp_bot, "_WEBHOOK_SECRET", "secret-rahasia")
     tenant_id = single_tenant["tenant_id"]
-    wb_db.upsert_config(tenant_id, "pnid-3", "token-3", kuota_pesan_bulanan=1)
+    wb_db.upsert_config(tenant_id, "pnid-3", "token-3", kuota_pesan_bulanan=1, nomor_owner_whatsapp="6281111")
     wb_db.set_aktif(tenant_id, True)
 
     client = single_tenant["client"]

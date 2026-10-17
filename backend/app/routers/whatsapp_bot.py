@@ -14,11 +14,15 @@ Dua kelompok endpoint, lihat whatsapp_bot_db.py untuk arsitektur lengkap:
    Tenant-nya diketahui dari field `device` di payload (nomor WA bot itu
    sendiri, lihat whatsapp_bot_db.get_config_by_phone_number_id()).
 
-   TAHAP INI (fondasi): pesan masuk dicatat (whatsapp_bot_db.catat_pesan())
-   + kuota dicek, lalu dibalas konfirmasi sederhana lewat Fonnte Send API --
-   PARSING pesan jadi transaksi/libur SUNGGUHAN (format "Romen Dry Cut 3,
-   Tips 30rb...") & pembatasan akses per role (barber cuma lihat rekap
-   miliknya sendiri) adalah tahap LANJUTAN, belum dibangun di sini.
+   PARSING pesan jadi command (Input Data, Rekap, Absensi, Cuti/Izin,
+   Booking, dll) + resolusi akses Owner/Barber SEPENUHNYA ada di
+   whatsapp_bot_parser.py::proses_pesan() -- handler di sini murni
+   "pipa": cek duplikat (anti pesan dobel, lihat whatsapp_bot_db.
+   pesan_duplikat()) -> panggil proses_pesan() -> kalau hasilnya None
+   (nomor pengirim tidak dikenal) diam total, TIDAK menyentuh kuota sama
+   sekali -- kalau ada balasan, BARU kuota dicek (quota berlaku SAMA untuk
+   SEMUA jenis pesan yang benar-benar diproses, baca maupun tulis,
+   keputusan eksplisit Owner, TIDAK dipisah).
 
 2. `superadmin_router` (/api/superadmin/whatsapp-bot): KHUSUS Superadmin
    (require_superadmin) -- daftarkan/ubah nomor+device_token per tenant +
@@ -37,6 +41,7 @@ from pydantic import BaseModel
 import superadmin_audit_db
 import tenant_db
 import whatsapp_bot_db
+import whatsapp_bot_parser
 from auth import require_superadmin
 
 logger = logging.getLogger("mugen.whatsapp_bot")
@@ -75,10 +80,10 @@ def _kirim_balasan(device_token: str, ke_nomor: str, teks: str) -> None:
 @public_router.post("/webhook/{secret}")
 async def terima_webhook(secret: str, request: Request):
     """SELALU balas 200 untuk payload yang sah tapi diabaikan (nomor tidak
-    terdaftar/kuota habis) -- hanya secret yang salah/kosong yang ditolak
-    403. Fonnte mengirim payload form-encoded (field `device`, `sender`,
-    `message`, `name`) -- dicoba JSON dulu untuk jaga-jaga, baru fallback
-    form."""
+    terdaftar/tidak dikenal/kuota habis) -- hanya secret yang salah/kosong
+    yang ditolak 403. Fonnte mengirim payload form-encoded (field
+    `device`, `sender`, `message`, `name`) -- dicoba JSON dulu untuk jaga-
+    jaga, baru fallback form."""
     if not _WEBHOOK_SECRET or secret != _WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
@@ -100,6 +105,14 @@ async def terima_webhook(secret: str, request: Request):
         return {"ok": True}  # nomor ini tidak terdaftar/dinonaktifkan Superadmin -- diam-diam diabaikan
 
     tenant_id = config["tenant_id"]
+
+    if whatsapp_bot_db.pesan_duplikat(tenant_id, wa_id_pengirim, isi_pesan):
+        return {"ok": True}  # webhook terkirim ulang (retry Fonnte) -- SUDAH diproses, jangan diulang
+
+    balasan = whatsapp_bot_parser.proses_pesan(tenant_id, config, wa_id_pengirim, isi_pesan)
+    if balasan is None:
+        return {"ok": True}  # pengirim tidak dikenal (bukan Owner, bukan barber tenant ini) -- diam total
+
     kuota = whatsapp_bot_db.cek_kuota(tenant_id)
     if kuota["habis"]:
         whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "ditolak_kuota")
@@ -107,12 +120,8 @@ async def terima_webhook(secret: str, request: Request):
                         "Kuota pesan WA Bot bulan ini sudah habis. Hubungi Owner/Admin.")
         return {"ok": True}
 
-    # TAHAP FONDASI: catat + balas konfirmasi diterima. Parsing jadi
-    # transaksi/libur sungguhan (format "Romen Dry Cut 3, Tips 30rb...")
-    # menyusul di tahap lanjutan.
     whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "diproses")
-    _kirim_balasan(config["device_token"], wa_id_pengirim,
-                    "Pesan diterima Rivoir WA Bot. Fitur pemrosesan otomatis sedang disiapkan.")
+    _kirim_balasan(config["device_token"], wa_id_pengirim, balasan)
     return {"ok": True}
 
 
@@ -142,6 +151,9 @@ class KonfigurasiBody(BaseModel):
     device_token: str  # token API device ini (dashboard Fonnte -> device list)
     nama_nomor: str | None = None
     kuota_pesan_bulanan: int | None = None
+    # nomor WA yang setara akses Owner penuh lewat bot (input data siapa
+    # saja + rekap siapa saja) -- OPSIONAL, lihat whatsapp_bot_parser.py.
+    nomor_owner_whatsapp: str | None = None
 
 
 @superadmin_router.put("/{tenant_id}")
@@ -153,6 +165,7 @@ def atur_konfigurasi(tenant_id: int, body: KonfigurasiBody, user: dict = Depends
         hasil = whatsapp_bot_db.upsert_config(
             tenant_id, body.phone_number_id, body.device_token, nama_nomor=body.nama_nomor,
             kuota_pesan_bulanan=body.kuota_pesan_bulanan, diatur_oleh=user["username"],
+            nomor_owner_whatsapp=body.nomor_owner_whatsapp,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
