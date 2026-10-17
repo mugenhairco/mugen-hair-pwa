@@ -1428,6 +1428,34 @@ DROP TABLE IF EXISTS error_logs;
 -- booking_form_migrasi.py::_migrasi_hari_libur_mingguan_barber(). JSON list
 -- nama hari (kosakata sama dengan HARI_LIST di booking_db.py).
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS hari_libur_mingguan TEXT NOT NULL DEFAULT '[]';
+
+-- FITUR WA Bot (Input Data & Rekap via WhatsApp) -- lihat whatsapp_bot_db.py
+-- untuk arsitektur lengkap (SATU Meta App/WABA dipakai bersama seluruh
+-- tenant, dibedakan lewat phone_number_id per tenant, dikelola EKSKLUSIF
+-- Superadmin). Kredensial (Access Token, Verify Token) TIDAK PERNAH masuk
+-- tabel ini -- murni environment variable platform-wide.
+CREATE TABLE IF NOT EXISTS whatsapp_bot_config (
+    id                      SERIAL PRIMARY KEY,
+    tenant_id               INTEGER NOT NULL UNIQUE,
+    phone_number_id         TEXT NOT NULL UNIQUE,
+    nama_nomor              TEXT,
+    aktif                   INTEGER NOT NULL DEFAULT 0,
+    kuota_pesan_bulanan     INTEGER NOT NULL DEFAULT 50,
+    diatur_oleh             TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_bot_pesan_log (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       INTEGER NOT NULL,
+    wa_id_pengirim  TEXT NOT NULL,
+    isi_pesan       TEXT,
+    status          TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_bot_pesan_log_tenant_id ON whatsapp_bot_pesan_log(tenant_id);
 """
 
 
