@@ -136,6 +136,7 @@ def init_db():
                 barber_id        INTEGER NOT NULL,
                 tips             INTEGER NOT NULL DEFAULT 0,
                 catatan          TEXT,
+                sumber           TEXT,            -- NULL = input manual web, 'wa_bot' = via WA Bot
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT,
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
@@ -220,6 +221,7 @@ def init_db():
                 tipe       TEXT NOT NULL,     -- 'restock' atau 'jual'
                 jumlah     INTEGER NOT NULL,  -- selalu positif, arah ditentukan oleh 'tipe'
                 catatan    TEXT,
+                sumber     TEXT,              -- NULL = input manual web, 'wa_bot' = via WA Bot
                 created_at TEXT NOT NULL,
                 updated_at TEXT,
                 FOREIGN KEY (produk_id) REFERENCES produk(id)
@@ -577,10 +579,15 @@ def _bersihkan_items(items):
     return hasil
 
 
-def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, catatan: str = None):
+def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, catatan: str = None,
+                      sumber: str = None):
     """SIMPAN data baru. Selalu membuat header transaksi baru + baris transaksi_detail
     untuk setiap service yang jumlahnya > 0.
-    `items` = list of {'service_id': int, 'jumlah': int}."""
+    `items` = list of {'service_id': int, 'jumlah': int}.
+    `sumber`: FITUR WA Bot (Input Data via WhatsApp) -- 'wa_bot' kalau transaksi
+    ini berasal dari parsing pesan WA (lihat whatsapp_bot_parser.py), None
+    (default) untuk input manual lewat web seperti sebelumnya -- murni
+    penanda audit, TIDAK mempengaruhi perhitungan apa pun."""
     _validasi_tanggal(tanggal)
     valid_items = _bersihkan_items(items)
     if not valid_items:
@@ -589,8 +596,8 @@ def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, c
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO transaksi (tanggal, barber_id, tips, catatan, created_at) VALUES (?, ?, ?, ?, ?)",
-            (tanggal, barber_id, int(tips), catatan, now),
+            "INSERT INTO transaksi (tanggal, barber_id, tips, catatan, sumber, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (tanggal, barber_id, int(tips), catatan, sumber, now),
         )
         transaksi_id = cur.lastrowid
         for it in valid_items:
@@ -2074,7 +2081,7 @@ def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = Non
 
 
 def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
-                          catatan: str = None, kata_kerja: str = "dipakai") -> int:
+                          catatan: str = None, kata_kerja: str = "dipakai", sumber: str = None) -> int:
     """Dipakai bersama oleh jual_produk() dan tester_produk() -- keduanya
     MENGURANGI stok dan divalidasi kronologis dengan cara SAMA PERSIS (lihat
     get_stok_produk/_saldo_valid: tipe apa pun SELAIN 'restock' otomatis
@@ -2099,20 +2106,21 @@ def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
         now = datetime.now().isoformat(timespec="seconds")
         cur = conn.execute(
             """INSERT INTO produk_mutasi
-               (produk_id, tanggal, tipe, jumlah, catatan, created_at,
+               (produk_id, tanggal, tipe, jumlah, catatan, sumber, created_at,
                 harga_modal_saat_itu, harga_jual_saat_itu)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (produk_id, tanggal, tipe, int(jumlah), catatan, now,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (produk_id, tanggal, tipe, int(jumlah), catatan, sumber, now,
              produk["harga_modal"], produk["harga_jual"]),
         )
         return cur.lastrowid
 
 
-def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
+def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None, sumber: str = None) -> int:
     """Penjualan = mengurangi stok DAN menambah omzet (lihat
     get_omzet_penjualan_produk). DITOLAK kalau membuat saldo stok jadi
-    negatif di titik manapun secara kronologis (bukan cuma dicek di akhir)."""
-    return _catat_keluar_produk(produk_id, tanggal, jumlah, "jual", catatan, kata_kerja="dijual")
+    negatif di titik manapun secara kronologis (bukan cuma dicek di akhir).
+    `sumber`: lihat catatan di tambah_transaksi() -- pola yang sama."""
+    return _catat_keluar_produk(produk_id, tanggal, jumlah, "jual", catatan, kata_kerja="dijual", sumber=sumber)
 
 
 def tester_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:

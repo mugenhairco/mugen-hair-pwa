@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS transaksi (
     barber_id   INTEGER NOT NULL REFERENCES barbers(id),
     tips        INTEGER NOT NULL DEFAULT 0,
     catatan     TEXT,
+    sumber      TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT
 );
@@ -201,6 +202,7 @@ CREATE TABLE IF NOT EXISTS produk_mutasi (
     tipe                    TEXT NOT NULL,
     jumlah                  INTEGER NOT NULL,
     catatan                 TEXT,
+    sumber                  TEXT,
     created_at              TEXT NOT NULL,
     updated_at              TEXT,
     harga_modal_saat_itu    INTEGER,
@@ -1456,6 +1458,28 @@ CREATE TABLE IF NOT EXISTS whatsapp_bot_pesan_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_bot_pesan_log_tenant_id ON whatsapp_bot_pesan_log(tenant_id);
+
+ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS device_token TEXT;
+
+-- FITUR WA Bot -- Input Data & Rekap: nomor WA yang setara akses Owner
+-- penuh lewat bot (input data siapa saja + rekap siapa saja) -- BEDA dari
+-- phone_number_id (nomor bot itu sendiri) dan barbers.nomor_whatsapp
+-- (nomor barber individual, akses self-only kecuali Cuti/Izin) -- lihat
+-- whatsapp_bot_parser.py::resolve_role().
+ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp TEXT;
+
+CREATE TABLE IF NOT EXISTS whatsapp_bot_pending_input (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       INTEGER NOT NULL,
+    wa_id_pengirim  TEXT NOT NULL,
+    jenis           TEXT NOT NULL,
+    payload         TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(tenant_id, wa_id_pengirim)
+);
+
+ALTER TABLE transaksi ADD COLUMN IF NOT EXISTS sumber TEXT;
+ALTER TABLE produk_mutasi ADD COLUMN IF NOT EXISTS sumber TEXT;
 """
 
 
