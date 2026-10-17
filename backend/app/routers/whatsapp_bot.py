@@ -34,6 +34,7 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+import superadmin_audit_db
 import tenant_db
 import whatsapp_bot_db
 from auth import require_superadmin
@@ -145,15 +146,18 @@ class KonfigurasiBody(BaseModel):
 
 @superadmin_router.put("/{tenant_id}")
 def atur_konfigurasi(tenant_id: int, body: KonfigurasiBody, user: dict = Depends(require_superadmin)):
-    if tenant_db.get_tenant(tenant_id) is None:
+    t = tenant_db.get_tenant(tenant_id)
+    if t is None:
         raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
     try:
-        return whatsapp_bot_db.upsert_config(
+        hasil = whatsapp_bot_db.upsert_config(
             tenant_id, body.phone_number_id, body.device_token, nama_nomor=body.nama_nomor,
             kuota_pesan_bulanan=body.kuota_pesan_bulanan, diatur_oleh=user["username"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "ubah_config_whatsapp_bot", tenant_id=tenant_id, tenant_slug=t["slug"])
+    return hasil
 
 
 class StatusBody(BaseModel):
@@ -162,13 +166,20 @@ class StatusBody(BaseModel):
 
 @superadmin_router.put("/{tenant_id}/status")
 def ubah_status(tenant_id: int, body: StatusBody, user: dict = Depends(require_superadmin)):
+    t = tenant_db.get_tenant(tenant_id)
     try:
-        return whatsapp_bot_db.set_aktif(tenant_id, body.aktif, diatur_oleh=user["username"])
+        hasil = whatsapp_bot_db.set_aktif(tenant_id, body.aktif, diatur_oleh=user["username"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "ubah_status_whatsapp_bot", tenant_id=tenant_id,
+                               tenant_slug=t["slug"] if t else None)
+    return hasil
 
 
 @superadmin_router.delete("/{tenant_id}")
 def hapus_konfigurasi(tenant_id: int, user: dict = Depends(require_superadmin)):
+    t = tenant_db.get_tenant(tenant_id)
     whatsapp_bot_db.hapus_config(tenant_id)
+    superadmin_audit_db.catat(user["username"], "hapus_config_whatsapp_bot", tenant_id=tenant_id,
+                               tenant_slug=t["slug"] if t else None)
     return {"ok": True}
