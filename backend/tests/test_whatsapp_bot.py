@@ -202,6 +202,25 @@ def test_webhook_post_kuota_habis_ditolak(single_tenant, monkeypatch):
     assert wb_db.kuota_terpakai_bulan_ini(tenant_id) == 1  # pesan ke-2 DITOLAK, tidak ikut terhitung
 
 
+def test_webhook_post_command_baca_sama_persis_tetap_diproses_ulang(single_tenant, monkeypatch):
+    """Permintaan Owner: proteksi anti-dobel (jendela 2 menit) jangan
+    berlaku untuk command BACA -- kirim "Menu" dua kali berturut-turut
+    (isi PERSIS sama, biasanya kena dedup) harus tetap dibalas dua-duanya,
+    beda dari command TULIS yang masih diproteksi (lihat test lain)."""
+    monkeypatch.setattr(whatsapp_bot, "_WEBHOOK_SECRET", "secret-rahasia")
+    dikirim = []
+    monkeypatch.setattr(whatsapp_bot, "_kirim_balasan",
+                         lambda device_token, ke_nomor, teks: dikirim.append(teks))
+    tenant_id = single_tenant["tenant_id"]
+    wb_db.upsert_config(tenant_id, "pnid-6", "token-6", nomor_owner_whatsapp="6281111")
+    wb_db.set_aktif(tenant_id, True)
+
+    client = single_tenant["client"]
+    client.post(_url(), data={"device": "pnid-6", "sender": "6281111", "message": "Menu"})
+    client.post(_url(), data={"device": "pnid-6", "sender": "6281111", "message": "Menu"})
+    assert len(dikirim) == 2  # dua-duanya diproses & dibalas, tidak ada yang kena dedup
+
+
 def test_webhook_post_sisa_kuota_1_tambahkan_peringatan(single_tenant, monkeypatch):
     """Permintaan Owner: pesan TERAKHIR sebelum kuota benar-benar habis
     (sisa jadi 1 SETELAH pesan ini dihitung) dikasih peringatan tambahan

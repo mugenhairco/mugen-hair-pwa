@@ -320,6 +320,54 @@ def _hitung_hari_libur_rentang(barber_id: int, tanggal_mulai: str, tanggal_seles
 # yang sudah lolos cek nomor device terdaftar + kuota belum habis.
 # ---------------------------------------------------------------------------
 
+def adalah_command_baca(isi_pesan: str) -> bool:
+    """True kalau `isi_pesan` PASTI command baca-saja (Rekap/Absensi/Cuti/
+    Booking/Kuota Libur/Keterlambatan/Menu/Daftar Produk/Rekap Produk) --
+    dipanggil routers/whatsapp_bot.py SEBELUM memutuskan apakah proteksi
+    anti-dobel (whatsapp_bot_db.pesan_duplikat()) perlu diterapkan.
+
+    PERMINTAAN OWNER: proteksi anti-dobel (jendela 2 menit) awalnya
+    berlaku utuh untuk SEMUA pesan -- efek sampingnya, Owner yang sengaja
+    kirim ulang command BACA yang persis sama (mis. "Rekap 18 oktober"
+    dua kali berturut-turut) jadi tidak dibalas apa pun di percobaan
+    kedua, padahal command baca TIDAK PERNAH berisiko dobel data. Jadi
+    dipersempit: HANYA command baca yang boleh lewati proteksi ini --
+    cocok PERSIS pola yang sama dengan percabangan di proses_pesan() di
+    bawah (bukan reimplementasi logika baru, murni klasifikasi teks).
+    Default-nya SELALU False (tetap diproteksi) kalau ragu -- termasuk
+    pesan kosong, "YA"/"BATAL", dan apa pun yang berpotensi Input
+    Service/Tandai Libur/Input Produk (SEMUANYA command TULIS, salah
+    klasifikasi di sini bisa bikin transaksi tercatat dobel)."""
+    teks = (isi_pesan or "").strip()
+    if not teks:
+        return False
+    if teks.upper() in ("YA", "BATAL"):
+        return False
+    teks_lower = teks.lower().strip()
+    kata0 = teks_lower.split()[0] if teks_lower.split() else ""
+    if teks_lower in ("menu", "help", "bantuan"):
+        return True
+    if teks_lower == "daftar produk":
+        return True
+    if teks_lower.startswith("rekap produk"):
+        return True
+    if kata0 == "produk":
+        return False  # Input Produk -- TULIS
+    if kata0 == "rekap":
+        return True
+    if kata0 == "absensi" or teks_lower.startswith("absen "):
+        return True
+    if kata0 in ("cuti", "izin"):
+        return True
+    if kata0 == "booking":
+        return True
+    if teks_lower == "kuota libur" or teks_lower.startswith("kuota libur "):
+        return True
+    if teks_lower == "keterlambatan" or teks_lower.startswith("keterlambatan "):
+        return True
+    return False  # sisanya berpotensi Input Service/Tandai Libur -- TULIS
+
+
 def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: str) -> str | None:
     """Return teks balasan, atau None kalau TIDAK BOLEH membalas apa pun
     (nomor pengirim tidak dikenali sama sekali -- bukan Owner, bukan

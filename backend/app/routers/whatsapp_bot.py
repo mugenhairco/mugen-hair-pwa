@@ -106,7 +106,13 @@ async def terima_webhook(secret: str, request: Request):
 
     tenant_id = config["tenant_id"]
 
-    if whatsapp_bot_db.pesan_duplikat(tenant_id, wa_id_pengirim, isi_pesan):
+    # PERMINTAAN OWNER: proteksi anti-dobel HANYA berlaku untuk command
+    # yang menulis data -- command baca (Rekap/Absensi/dst) selalu boleh
+    # diproses ulang walau isinya persis sama, supaya Owner yang sengaja
+    # kirim ulang command baca yang sama tetap dapat balasan (lihat
+    # docstring whatsapp_bot_parser.adalah_command_baca()).
+    if not whatsapp_bot_parser.adalah_command_baca(isi_pesan) and \
+            whatsapp_bot_db.pesan_duplikat(tenant_id, wa_id_pengirim, isi_pesan):
         return {"ok": True}  # webhook terkirim ulang (retry Fonnte) -- SUDAH diproses, jangan diulang
 
     balasan = whatsapp_bot_parser.proses_pesan(tenant_id, config, wa_id_pengirim, isi_pesan)

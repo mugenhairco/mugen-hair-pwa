@@ -78,6 +78,26 @@ def test_resolve_role_tidak_dikenal(single_tenant):
     assert barber is None
 
 
+# ---------------------------------------------------------------------------
+# adalah_command_baca() -- klasifikasi teks murni (tanpa DB), dipakai
+# routers/whatsapp_bot.py untuk mempersempit proteksi anti-dobel supaya
+# cuma berlaku untuk command TULIS (permintaan Owner).
+# ---------------------------------------------------------------------------
+
+def test_adalah_command_baca_true_untuk_command_baca():
+    for teks in ["Rekap 18 oktober", "rekap 18 oktober - 20 oktober", "Absensi 18 oktober",
+                 "Absen hari ini", "Cuti Oktober", "Izin Oktober", "Booking hari ini",
+                 "Kuota Libur", "Kuota Libur Romen", "Keterlambatan", "Menu", "Help", "Bantuan",
+                 "Daftar Produk", "Rekap Produk Oktober"]:
+        assert wbp.adalah_command_baca(teks) is True, teks
+
+
+def test_adalah_command_baca_false_untuk_command_tulis_atau_ambigu():
+    for teks in ["YA", "BATAL", "ya", "batal", "", "   ", "Romen 18 oktober", "Mifta libur",
+                 "Produk 18 oktober"]:
+        assert wbp.adalah_command_baca(teks) is False, teks
+
+
 def test_proses_pesan_nomor_tidak_dikenal_tidak_membalas(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id)
@@ -588,13 +608,21 @@ def test_webhook_kuota_tidak_terpakai_untuk_pengirim_tidak_dikenal(single_tenant
 
 
 def test_webhook_pesan_duplikat_diproses_sekali_saja(single_tenant, monkeypatch):
+    """REVISI (permintaan Owner): proteksi anti-dobel sekarang cuma
+    berlaku untuk command TULIS (lihat adalah_command_baca()) -- dites
+    pakai pesan yang BUKAN command baca ("Halo", tidak cocok pola apa
+    pun = diklasifikasi TULIS/berpotensi Input Service) supaya tetap
+    menguji skenario asli (webhook retry Fonnte), bukan kena pengecualian
+    command baca yang sekarang SELALU diproses ulang (lihat test
+    test_webhook_post_command_baca_sama_persis_tetap_diproses_ulang di
+    test_whatsapp_bot.py)."""
     monkeypatch.setattr("routers.whatsapp_bot._WEBHOOK_SECRET", "secret-rahasia")
     tenant_id = single_tenant["tenant_id"]
     config = wb_db.upsert_config(tenant_id, "pnid-2", "token-2", nomor_owner_whatsapp="628110000000")
     wb_db.set_aktif(tenant_id, True)
 
     client = single_tenant["client"]
-    data = {"device": "pnid-2", "sender": "628110000000", "message": "Menu"}
+    data = {"device": "pnid-2", "sender": "628110000000", "message": "Halo"}
     client.post("/api/whatsapp-bot/webhook/secret-rahasia", data=data)
     client.post("/api/whatsapp-bot/webhook/secret-rahasia", data=data)  # dikirim ulang (retry)
     assert wb_db.kuota_terpakai_bulan_ini(tenant_id) == 1  # BUKAN 2
