@@ -441,11 +441,13 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
 
 def _pesan_tidak_dikenali() -> str:
     """REVISI (permintaan Owner): pesan yang TIDAK DIKENALI jangan langsung
-    dibalas daftar Menu lengkap (dianggap mengagetkan/kepanjangan) --
-    cukup pesan singkat yang mengarahkan ke command *Menu* eksplisit kalau
-    memang mau lihat daftar lengkap. Menu lengkap TETAP dikirim untuk
-    permintaan EKSPLISIT ("menu"/"help"/"bantuan", lihat _menu_teks())."""
-    return "Perintah tidak dikenali. Ketik *Menu* untuk lihat daftar perintah."
+    dibalas daftar Menu lengkap (dianggap mengagetkan/kepanjangan) -- cukup
+    pesan singkat. REVISI LAGI (permintaan Owner): kata/saran "Menu" juga
+    dihapus dari pesan singkat ini (sebelumnya "...Ketik Menu untuk lihat
+    daftar perintah.") -- TAPI command "menu"/"help"/"bantuan" itu sendiri
+    TETAP berfungsi kalau diketik manual (lihat _menu_teks()), cuma tidak
+    lagi disarankan proaktif di sini."""
+    return "Perintah tidak dikenali."
 
 
 def _menu_teks(role: str) -> str:
