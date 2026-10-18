@@ -329,6 +329,46 @@ def test_rekap_periode(single_tenant):
     assert "Potong Rambut Test x3" in balasan  # agregat 1+2
 
 
+def test_rekap_periode_dengan_nama_barber_sebelum_tanggal_tidak_tampilkan_semua(single_tenant):
+    """BUGFIX laporan Owner: "Rekap Romen 11 oktober - 16 oktober 2026" --
+    nama barber yang ditulis SEBELUM rentang tanggal sebelumnya hilang di
+    _parse_periode() (cuma teks SETELAH tanggal kedua yang diambil), jadi
+    _cmd_rekap() jatuh ke default "semua barber" walau nama sudah jelas
+    disebut. Harus tetap terbatas ke Romen saja, Mifta tidak boleh ikut
+    muncul."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    _barber(tenant_id, "Mifta")
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    db.tambah_transaksi("2026-10-11", romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000",
+                                "Rekap Romen 11 oktober - 16 oktober 2026")
+    assert "Romen" in balasan
+    assert "Mifta" not in balasan
+
+
+def test_rekap_periode_uang_harian_ikut_dihitung(single_tenant):
+    """BUGFIX: sebelumnya Uang Harian cuma dihitung kalau tanggal_mulai ==
+    tanggal_selesai -- rekap PERIODE selalu Rp0/hilang tanpa pernah
+    memanggil hitung_uang_harian_dinamis_rentang() yang sudah ada."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    with db.get_conn() as conn:
+        conn.execute("UPDATE barbers SET uang_harian = ? WHERE id = ?", (100000, romen_id))
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    db.set_uang_harian_acuan_ids([sid], tenant_id=tenant_id)
+    db.set_setting("uang_harian_target_service_harian", "1", tenant_id=tenant_id)
+    db.tambah_transaksi("2026-10-11", romen_id, [{"service_id": sid, "jumlah": 1}])
+    db.tambah_transaksi("2026-10-12", romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000",
+                                "Rekap 11 oktober - 12 oktober 2026")
+    assert "Uang Harian: Rp200.000" in balasan  # 2 hari x Rp100.000
+
+
 # ---------------------------------------------------------------------------
 # Absensi
 # ---------------------------------------------------------------------------

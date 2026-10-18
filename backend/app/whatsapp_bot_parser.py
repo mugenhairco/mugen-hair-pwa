@@ -97,10 +97,18 @@ def _cari_tanggal(teks: str):
 def _parse_periode(teks: str):
     """'11 oktober - 15 oktober 2026' -> (mulai_iso, selesai_iso, sisa_teks)
     -- None kalau tidak ditemukan DUA tanggal dipisah '-' (berarti bukan
-    periode, caller fallback ke tanggal tunggal)."""
+    periode, caller fallback ke tanggal tunggal).
+
+    BUGFIX: `sisa_teks` HARUS menggabungkan teks SEBELUM tanggal pertama
+    ("Romen" di "Romen 11 oktober - 16 oktober 2026") DAN teks SETELAH
+    tanggal kedua ("jaka" di "11 oktober - 16 oktober 2026 jaka") --
+    sebelumnya cuma teks setelah yang diambil, jadi nama barber yang
+    ditulis SEBELUM rentang tanggal hilang begitu saja dan _cmd_rekap()
+    jatuh ke default "semua barber"."""
     tm1 = _cari_tanggal(teks)
     if tm1 is None:
         return None
+    sebelum = teks[:tm1[0]]
     sisa = teks[tm1[1]:]
     m_strip = re.match(r"\s*-\s*", sisa)
     if not m_strip:
@@ -109,7 +117,8 @@ def _parse_periode(teks: str):
     tm2 = _cari_tanggal(sisa)
     if tm2 is None:
         return None
-    sisa_setelah = (sisa[:tm2[0]] + sisa[tm2[1]:]).strip()
+    setelah = sisa[tm2[1]:]
+    sisa_setelah = (sebelum + " " + setelah).strip()
     return (tm1[2], tm2[2], sisa_setelah)
 
 
@@ -697,13 +706,28 @@ def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal
     lines.append(f"Total Tips: {_rupiah(total_tips)}")
 
     uang_harian_total = 0
-    if tanggal_mulai == tanggal_selesai:
-        try:
+    try:
+        if tanggal_mulai == tanggal_selesai:
             uh = uang_harian_dinamis_db.breakdown_hari(barber, tanggal_mulai)
             uang_harian_total = uh.get("uang_harian_final", 0)
-            lines.append(f"Uang Harian: {_rupiah(uang_harian_total)}")
-        except Exception:
-            pass
+        else:
+            # BUGFIX: sebelumnya Uang Harian cuma dihitung untuk rekap SATU
+            # hari (breakdown_hari()) -- rekap PERIODE (rentang tanggal)
+            # selalu dapat Rp0. Dipakai database.hitung_uang_harian_rentang()
+            # (BUKAN uang_harian_dinamis_db.hitung_uang_harian_dinamis_rentang()
+            # langsung) -- wrapper di database.py ini yang PUNYA percabangan
+            # opt-in Uang Harian Dinamis (lihat _uang_harian_dinamis_aktif()):
+            # tenant yang BELUM opt-in (mayoritas, termasuk default) tetap
+            # pakai sistem lama berbasis jumlah service, SAMA seperti jalur
+            # satu-hari (breakdown_hari() sudah menangani ini sendiri) --
+            # manggil modul dinamis langsung TANPA percabangan ini bikin
+            # Uang Harian SELALU Rp0 untuk tenant yang belum opt-in, karena
+            # modul dinamis mensyaratkan data Absensi check-in+check-out
+            # lengkap tiap tanggal, bukan sekadar jumlah service.
+            uang_harian_total = db.hitung_uang_harian_rentang(barber, tanggal_mulai, tanggal_selesai)
+        lines.append(f"Uang Harian: {_rupiah(uang_harian_total)}")
+    except Exception:
+        pass
 
     if jumlah_libur:
         lines.append(f"Total Hari Libur: {jumlah_libur} hari")
