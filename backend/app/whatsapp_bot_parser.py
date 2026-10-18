@@ -398,7 +398,6 @@ def _menu_teks(role: str) -> str:
     contoh-contoh yang sudah disepakati waktu rancang fitur ini."""
     if role == "owner":
         return (
-            "*Menu WA Bot (Owner)*\n\n"
             "Input data service, contoh:\n"
             "Romen 11 oktober 2026\n"
             "Dc 2\n"
@@ -428,7 +427,6 @@ def _menu_teks(role: str) -> str:
             "Keterlambatan bulan ini: ketik *Keterlambatan* (atau *Keterlambatan Romen*)"
         )
     return (
-        "*Menu WA Bot*\n\n"
         "Lihat rekap kamu, contoh:\n"
         "Rekap 11 oktober 2026\n"
         "Rekap 11 oktober - 15 oktober 2026\n\n"

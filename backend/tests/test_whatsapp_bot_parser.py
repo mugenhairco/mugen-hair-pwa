@@ -99,10 +99,13 @@ def test_menu_owner_dan_barber_beda(single_tenant):
 
 
 def test_pesan_tidak_dikenali_balas_menu(single_tenant):
+    """REVISI (permintaan Owner): judul "*Menu WA Bot*" dihapus dari teks
+    balasan -- jadi dites lewat isi command (bukan lagi kata "Menu") untuk
+    pastikan pesan tak dikenali tetap dibalas daftar bantuan, bukan diam."""
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "asdfghjkl random teks")
-    assert "Menu" in balasan
+    assert "Input data service" in balasan
 
 
 # ---------------------------------------------------------------------------
