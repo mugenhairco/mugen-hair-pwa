@@ -121,6 +121,13 @@ async def terima_webhook(secret: str, request: Request):
         return {"ok": True}
 
     whatsapp_bot_db.catat_pesan(tenant_id, wa_id_pengirim, isi_pesan, "diproses")
+    # PERMINTAAN OWNER: beri peringatan di balasan pesan TERAKHIR sebelum
+    # kuota benar-benar habis (bukan cuma pesan penolakan SETELAH kuota
+    # habis, yang sudah ada di atas) -- dicek SETELAH catat_pesan() di
+    # atas supaya `sisa` mencerminkan kuota SETELAH pesan ini terhitung.
+    kuota_setelah = whatsapp_bot_db.cek_kuota(tenant_id)
+    if kuota_setelah["sisa"] == 1:
+        balasan += "\n\n⚠️ Sisa kuota pesan bulan ini tinggal 1."
     _kirim_balasan(config["device_token"], wa_id_pengirim, balasan)
     return {"ok": True}
 

@@ -202,6 +202,35 @@ def test_webhook_post_kuota_habis_ditolak(single_tenant, monkeypatch):
     assert wb_db.kuota_terpakai_bulan_ini(tenant_id) == 1  # pesan ke-2 DITOLAK, tidak ikut terhitung
 
 
+def test_webhook_post_sisa_kuota_1_tambahkan_peringatan(single_tenant, monkeypatch):
+    """Permintaan Owner: pesan TERAKHIR sebelum kuota benar-benar habis
+    (sisa jadi 1 SETELAH pesan ini dihitung) dikasih peringatan tambahan
+    di balasannya -- beda dari pesan penolakan "kuota habis" yang baru
+    muncul SETELAH kuota benar-benar 0 (sudah dites terpisah di atas)."""
+    monkeypatch.setattr(whatsapp_bot, "_WEBHOOK_SECRET", "secret-rahasia")
+    dikirim = []
+    monkeypatch.setattr(whatsapp_bot, "_kirim_balasan",
+                         lambda device_token, ke_nomor, teks: dikirim.append(teks))
+    tenant_id = single_tenant["tenant_id"]
+    wb_db.upsert_config(tenant_id, "pnid-5", "token-5", kuota_pesan_bulanan=3, nomor_owner_whatsapp="6281111")
+    wb_db.set_aktif(tenant_id, True)
+
+    client = single_tenant["client"]
+    # Isi pesan sengaja DIBEDAKAN ("Menu" vs "Help") supaya tidak kena
+    # proteksi anti-dobel (pesan_duplikat() mendeteksi isi PERSIS SAMA
+    # dari pengirim sama dalam jendela waktu pendek -- lihat
+    # whatsapp_bot_db.py) -- keduanya tetap trigger command Menu yang sama.
+    r1 = client.post(_url(), data={"device": "pnid-5", "sender": "6281111", "message": "Menu"})
+    assert r1.status_code == 200, r1.text
+    assert "Sisa kuota pesan bulan ini tinggal 1" not in dikirim[0]  # kuota 3, terpakai 1, sisa 2
+
+    # Pesan ke-2: terpakai jadi 2, sisa 1 -- ini pesan TERAKHIR sebelum
+    # benar-benar habis, harus dikasih peringatan.
+    r2 = client.post(_url(), data={"device": "pnid-5", "sender": "6281111", "message": "Help"})
+    assert r2.status_code == 200, r2.text
+    assert "Sisa kuota pesan bulan ini tinggal 1" in dikirim[1]
+
+
 def test_webhook_post_payload_tanpa_sender_diabaikan(single_tenant, monkeypatch):
     """Payload event lain dari Fonnte yang tidak membawa field sender/device
     yang dikenali -- harus diabaikan tanpa error, bukan dianggap pesan masuk."""
