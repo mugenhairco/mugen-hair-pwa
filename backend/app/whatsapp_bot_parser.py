@@ -330,14 +330,14 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
 
     teks = (isi_pesan or "").strip()
     if not teks:
-        return _menu_teks(role)
+        return _pesan_tidak_dikenali()
 
     atas = teks.upper()
     if atas in ("YA", "BATAL"):
         pending = whatsapp_bot_db.ambil_pending(tenant_id, wa_id_pengirim)
         if pending is not None:
             return _proses_konfirmasi(tenant_id, wa_id_pengirim, pending, atas)
-        return _menu_teks(role)
+        return _pesan_tidak_dikenali()
 
     teks_lower = teks.lower().strip()
     kata = teks_lower.split()
@@ -348,7 +348,7 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
 
     if teks_lower == "daftar produk":
         if role != "owner":
-            return _menu_teks(role)
+            return _pesan_tidak_dikenali()
         return _cmd_daftar_produk(tenant_id)
 
     if teks_lower.startswith("rekap produk"):
@@ -388,7 +388,16 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
         if hasil is not None:
             return hasil
 
-    return _menu_teks(role)
+    return _pesan_tidak_dikenali()
+
+
+def _pesan_tidak_dikenali() -> str:
+    """REVISI (permintaan Owner): pesan yang TIDAK DIKENALI jangan langsung
+    dibalas daftar Menu lengkap (dianggap mengagetkan/kepanjangan) --
+    cukup pesan singkat yang mengarahkan ke command *Menu* eksplisit kalau
+    memang mau lihat daftar lengkap. Menu lengkap TETAP dikirim untuk
+    permintaan EKSPLISIT ("menu"/"help"/"bantuan", lihat _menu_teks())."""
+    return "Perintah tidak dikenali. Ketik *Menu* untuk lihat daftar perintah."
 
 
 def _menu_teks(role: str) -> str:

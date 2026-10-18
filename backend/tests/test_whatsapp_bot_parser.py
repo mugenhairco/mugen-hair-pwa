@@ -98,14 +98,30 @@ def test_menu_owner_dan_barber_beda(single_tenant):
     assert "Input data" not in balasan_barber
 
 
-def test_pesan_tidak_dikenali_balas_menu(single_tenant):
-    """REVISI (permintaan Owner): judul "*Menu WA Bot*" dihapus dari teks
-    balasan -- jadi dites lewat isi command (bukan lagi kata "Menu") untuk
-    pastikan pesan tak dikenali tetap dibalas daftar bantuan, bukan diam."""
+def test_pesan_tidak_dikenali_balas_singkat_bukan_menu_lengkap(single_tenant):
+    """REVISI (permintaan Owner): pesan tidak dikenali JANGAN langsung
+    dibalas daftar Menu lengkap -- cukup pesan singkat yang mengarahkan
+    ketik "Menu". Menu lengkap TETAP dikirim kalau diminta EKSPLISIT
+    (lihat test_menu_eksplisit_tetap_lengkap di bawah)."""
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "asdfghjkl random teks")
+    assert "tidak dikenali" in balasan.lower()
+    assert "Input data service" not in balasan  # bukan daftar Menu lengkap
+
+
+def test_menu_eksplisit_tetap_lengkap(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Menu")
     assert "Input data service" in balasan
+
+
+def test_ya_tanpa_pending_balas_singkat_bukan_menu(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "tidak dikenali" in balasan.lower()
 
 
 # ---------------------------------------------------------------------------
