@@ -277,6 +277,77 @@ def test_daftar_produk(single_tenant):
     assert "2. Captain Clay 80gr" in balasan
 
 
+def test_daftar_produk_tampilkan_sisa_stok(single_tenant):
+    """Permintaan Owner: Daftar Produk ikut tampilkan sisa stok per produk."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _produk(tenant_id, "Captain Clay 30gr", 45000, stok=7)
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Daftar Produk")
+    assert "Sisa: 7" in balasan
+
+
+def test_restock_produk_pakai_nomor(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    p1 = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=5)
+
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", "Restock 11 oktober 2026\n1 10")
+    assert "Konfirmasi Restock Produk" in preview
+    assert "Captain Clay 30gr +10" in preview
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "berhasil disimpan" in balasan
+    assert db.get_stok_produk(p1) == 15  # 5 awal + 10 restock
+
+
+def test_restock_produk_ditolak_untuk_barber(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Jaka", nomor_whatsapp="628199999999")
+    _produk(tenant_id, "Captain Clay 30gr", 45000)
+    balasan = wbp.proses_pesan(tenant_id, config, "628199999999", "Restock\nCaptain Clay 30 10")
+    assert "khusus" in balasan.lower() or "Owner" in balasan
+
+
+def test_tester_produk_pakai_nama_mengurangi_stok_tanpa_omzet(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    p1 = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=5)
+
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000",
+                                "Tester 11 oktober 2026\nCaptain Clay 30 2")
+    assert "Konfirmasi Tester Produk" in preview
+    assert "Captain Clay 30gr -2" in preview
+    assert "TIDAK dihitung omzet" in preview
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "berhasil disimpan" in balasan
+    assert db.get_stok_produk(p1) == 3  # 5 awal - 2 tester
+    mutasi = db.get_mutasi_produk_list(produk_id=p1, tipe="tester", tenant_id=tenant_id)
+    assert len(mutasi) == 1
+    omzet = db.get_omzet_penjualan_produk(tahun=2026, bulan=10, tenant_id=tenant_id)
+    assert omzet == 0  # tester TIDAK ikut omzet
+
+
+def test_tester_produk_stok_tidak_cukup_gagal(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _produk(tenant_id, "Captain Clay 30gr", 45000, stok=1)
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "Tester 11 oktober 2026\nCaptain Clay 30 5")
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "GAGAL" in balasan
+
+
+def test_tester_produk_ditolak_untuk_barber(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Jaka", nomor_whatsapp="628199999999")
+    _produk(tenant_id, "Captain Clay 30gr", 45000)
+    balasan = wbp.proses_pesan(tenant_id, config, "628199999999", "Tester\nCaptain Clay 30 1")
+    assert "khusus" in balasan.lower() or "Owner" in balasan
+
+
 def test_input_produk_pakai_nama_dan_nomor(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")

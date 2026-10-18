@@ -409,6 +409,16 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
             return "Maaf, input produk cuma bisa dilakukan dari nomor Owner."
         return _cmd_input_produk(tenant_id, wa_id_pengirim, teks[len("produk"):].strip())
 
+    if kata0 == "restock":
+        if role != "owner":
+            return "Maaf, restock produk cuma bisa dilakukan dari nomor Owner."
+        return _cmd_restock_produk(tenant_id, wa_id_pengirim, teks[len("restock"):].strip())
+
+    if kata0 == "tester":
+        if role != "owner":
+            return "Maaf, tester produk cuma bisa dilakukan dari nomor Owner."
+        return _cmd_tester_produk(tenant_id, wa_id_pengirim, teks[len("tester"):].strip())
+
     if kata0 == "rekap":
         return _cmd_rekap(tenant_id, role, barber_self, teks[len("rekap"):].strip())
 
@@ -471,7 +481,13 @@ def _menu_teks(role: str) -> str:
             "Input produk, contoh:\n"
             "_Produk 11 oktober 2026_\n"
             "_1 2_\n\n"
-            "Lihat daftar produk: ketik *Daftar Produk*\n\n"
+            "Restock produk, contoh:\n"
+            "_Restock 11 oktober 2026_\n"
+            "_1 10_\n\n"
+            "Tester produk, contoh:\n"
+            "_Tester 11 oktober 2026_\n"
+            "_1 1_\n\n"
+            "Lihat daftar produk (+ sisa stok): ketik *Daftar Produk*\n\n"
             "Lihat rekap, contoh:\n"
             "_Rekap 11 oktober 2026_\n"
             "_Rekap 11 oktober - 15 oktober 2026_\n"
@@ -545,6 +561,25 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
         if gagal:
             return "⚠️ Sebagian produk GAGAL disimpan (stok tidak cukup):\n" + "\n".join(gagal)
         return f"✅ Penjualan produk ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
+
+    if jenis == "restock_produk":
+        # restock_produk() SELALU aman (tidak mungkin saldo negatif, lihat
+        # docstring database.py) -- tidak perlu try/except per item seperti
+        # input_produk/tester_produk di atas/bawah.
+        for it in p["items"]:
+            db.restock_produk(it["produk_id"], p["tanggal"], it["jumlah"])
+        return f"✅ Restock produk ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
+
+    if jenis == "tester_produk":
+        gagal = []
+        for it in p["items"]:
+            try:
+                db.tester_produk(it["produk_id"], p["tanggal"], it["jumlah"])
+            except ValueError as e:
+                gagal.append(f"{it['nama']}: {e}")
+        if gagal:
+            return "⚠️ Sebagian produk GAGAL disimpan (stok tidak cukup):\n" + "\n".join(gagal)
+        return f"✅ Tester produk ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
 
     return "❌ Konfirmasi tidak dikenali."
 
@@ -647,8 +682,12 @@ def _cmd_daftar_produk(tenant_id: int) -> str:
     if not produk_list:
         lines.append("Belum ada produk aktif.")
         return "\n".join(lines)
+    # PERMINTAAN OWNER: tampilkan sisa stok -- get_produk_list() SUDAH
+    # menyertakan field "stok" (hitung ulang live dari produk_mutasi, lihat
+    # database.py::get_stok_produk()), jadi tinggal dipakai, tidak perlu
+    # query tambahan sama sekali.
     for i, p in enumerate(produk_list, start=1):
-        lines.append(f"{i}. {p['nama']} - {_rupiah(p['harga_jual'])}")
+        lines.append(f"{i}. {p['nama']} - {_rupiah(p['harga_jual'])} (Sisa: {p['stok']})")
     return "\n".join(lines)
 
 
@@ -709,6 +748,89 @@ def _cmd_input_produk(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: st
 
     payload = {"tanggal": tanggal, "items": items_simpan}
     whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_produk", payload)
+    return "\n".join(lines)
+
+
+def _parse_baris_produk_mutasi(tenant_id: int, sisa_setelah_kata: str, format_hint: str):
+    """Dipakai BERSAMA oleh Restock & Tester (permintaan Owner) -- parsing
+    tanggal+baris kode/nomor+jumlah PERSIS SAMA seperti _cmd_input_produk()
+    di atas, TAPI tidak perlu subtotal rupiah (restock/tester tidak
+    mengubah omzet) jadi dipisah sebagai helper sendiri alih-alih
+    menumpangi _cmd_input_produk(). Return (tanggal, items, None) kalau
+    valid, atau (None, None, pesan_error) kalau gagal -- `items` = list
+    {"produk_id", "nama", "jumlah"}."""
+    baris = [l.strip() for l in sisa_setelah_kata.split("\n") if l.strip()]
+    tanggal = date.today().isoformat()
+    if baris:
+        tm = _cari_tanggal(baris[0])
+        if tm:
+            tanggal = tm[2]
+            sisa0 = (baris[0][:tm[0]] + baris[0][tm[1]:]).strip()
+            if sisa0:
+                baris[0] = sisa0
+            else:
+                baris = baris[1:]
+
+    if not baris:
+        return None, None, f'Format: "{format_hint} [tanggal]" lalu baris kode/nomor+jumlah, mis. "Captain Clay 30 1".'
+
+    produk_list = db.get_produk_list(tenant_id=tenant_id)
+    produk_terurut = sorted(produk_list, key=lambda p: p["id"])
+
+    items = []
+    for baris_item in baris:
+        parsed = _parse_baris_kode_jumlah(baris_item, POLA_PRODUK)
+        if parsed is None:
+            return None, None, f'Baris tidak dikenali: "{baris_item}".'
+        kode, jumlah = parsed
+        if kode.isdigit():
+            idx = int(kode)
+            if idx < 1 or idx > len(produk_terurut):
+                return None, None, f'Nomor produk {idx} tidak ada di daftar. Kirim "Daftar Produk" untuk lihat nomornya.'
+            p = produk_terurut[idx - 1]
+        else:
+            cocok = _cocokkan(kode, produk_list, "nama")
+            if len(cocok) == 0:
+                return None, None, f'Produk "{kode}" tidak dikenali.'
+            if len(cocok) > 1:
+                return None, None, _teks_ambigu_list(kode, cocok, "nama")
+            p = cocok[0]
+        items.append({"produk_id": p["id"], "nama": p["nama"], "jumlah": jumlah})
+
+    if not items:
+        return None, None, "Tidak ada produk yang diisi."
+    return tanggal, items, None
+
+
+def _cmd_restock_produk(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: str) -> str:
+    tanggal, items, error = _parse_baris_produk_mutasi(tenant_id, sisa_setelah_kata, "Restock")
+    if error:
+        return error
+
+    lines = ["*Konfirmasi Restock Produk*", _format_tanggal_id(tanggal), ""]
+    for it in items:
+        lines.append(f"{it['nama']} +{it['jumlah']}")
+    lines.append("")
+    lines.append("Balas *YA* untuk simpan, atau *BATAL*.")
+
+    payload = {"tanggal": tanggal, "items": items}
+    whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "restock_produk", payload)
+    return "\n".join(lines)
+
+
+def _cmd_tester_produk(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: str) -> str:
+    tanggal, items, error = _parse_baris_produk_mutasi(tenant_id, sisa_setelah_kata, "Tester")
+    if error:
+        return error
+
+    lines = ["*Konfirmasi Tester Produk*", _format_tanggal_id(tanggal), ""]
+    for it in items:
+        lines.append(f"{it['nama']} -{it['jumlah']} (tester, TIDAK dihitung omzet)")
+    lines.append("")
+    lines.append("Balas *YA* untuk simpan, atau *BATAL*.")
+
+    payload = {"tanggal": tanggal, "items": items}
+    whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "tester_produk", payload)
     return "\n".join(lines)
 
 
