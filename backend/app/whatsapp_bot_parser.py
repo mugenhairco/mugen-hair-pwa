@@ -376,29 +376,56 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
 
 
 def _menu_teks(role: str) -> str:
+    """REVISI (feedback Owner: menu versi sebelumnya pakai notasi
+    placeholder ala command-line, "<nama barber> [tanggal]", susah dibaca)
+    -- diganti CONTOH PESAN SUNGGUHAN yang tinggal ditiru, sama seperti
+    contoh-contoh yang sudah disepakati waktu rancang fitur ini."""
     if role == "owner":
         return (
             "*Menu WA Bot (Owner)*\n\n"
-            '*Input data:* "<nama barber> [tanggal]" lalu baris kode+jumlah, diakhiri "Tips <nominal>"\n'
-            '*Tandai libur:* "<nama barber> libur [tanggal]"\n'
-            '*Input produk:* "Produk [tanggal]" lalu baris kode/nomor+jumlah\n'
-            '*Daftar Produk*\n'
-            '*Rekap* <tanggal/periode> [nama barber]\n'
-            '*Rekap Produk* <bulan>\n'
-            '*Absensi* <tanggal> / *Absen hari ini*\n'
-            '*Cuti* <bulan>\n'
-            '*Booking* hari ini / besok / <tanggal>\n'
-            '*Kuota Libur* [nama]\n'
-            '*Keterlambatan* [nama]'
+            "Input data service, contoh:\n"
+            "Romen 11 oktober 2026\n"
+            "Dc 2\n"
+            "Tips 30rb\n\n"
+            "Tandai libur, contoh:\n"
+            "Mifta libur\n\n"
+            "Input produk, contoh:\n"
+            "Produk 11 oktober 2026\n"
+            "1 2\n\n"
+            "Lihat daftar produk: ketik *Daftar Produk*\n\n"
+            "Lihat rekap, contoh:\n"
+            "Rekap 11 oktober 2026\n"
+            "Rekap 11 oktober - 15 oktober 2026\n"
+            "Rekap 11 oktober romen\n\n"
+            "Rekap penjualan produk, contoh:\n"
+            "Rekap Produk Oktober\n\n"
+            "Lihat absensi, contoh:\n"
+            "Absensi 11 oktober 2026\n"
+            "Absen hari ini\n\n"
+            "Lihat cuti/izin, contoh:\n"
+            "Cuti Oktober\n\n"
+            "Lihat booking, contoh:\n"
+            "Booking hari ini\n"
+            "Booking besok\n"
+            "Booking 20 oktober\n\n"
+            "Sisa kuota libur: ketik *Kuota Libur* (atau *Kuota Libur Romen* untuk satu barber)\n\n"
+            "Keterlambatan bulan ini: ketik *Keterlambatan* (atau *Keterlambatan Romen*)"
         )
     return (
         "*Menu WA Bot*\n\n"
-        '*Rekap* <tanggal/periode> -- data kamu sendiri\n'
-        '*Absensi* <tanggal> / *Absen hari ini* -- data kamu sendiri\n'
-        '*Cuti* <bulan> -- semua barber\n'
-        '*Booking* hari ini / besok / <tanggal> -- punya kamu sendiri (hari ini & ke depan saja)\n'
-        '*Kuota Libur* -- punya kamu sendiri\n'
-        '*Keterlambatan* -- punya kamu sendiri'
+        "Lihat rekap kamu, contoh:\n"
+        "Rekap 11 oktober 2026\n"
+        "Rekap 11 oktober - 15 oktober 2026\n\n"
+        "Lihat absensi kamu, contoh:\n"
+        "Absensi 11 oktober 2026\n"
+        "Absen hari ini\n\n"
+        "Lihat cuti/izin semua barber, contoh:\n"
+        "Cuti Oktober\n\n"
+        "Lihat booking kamu (hari ini & ke depan saja), contoh:\n"
+        "Booking hari ini\n"
+        "Booking besok\n\n"
+        "Sisa kuota libur kamu: ketik *Kuota Libur*\n\n"
+        "Keterlambatan kamu bulan ini: ketik *Keterlambatan*"
     )
 
 
