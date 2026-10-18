@@ -57,6 +57,11 @@ SUMBER_WA_BOT = "wa_bot"
 _BULAN_ID = {
     "januari": 1, "februari": 2, "maret": 3, "april": 4, "mei": 5, "juni": 6,
     "juli": 7, "agustus": 8, "september": 9, "oktober": 10, "november": 11, "desember": 12,
+    # Singkatan 3 huruf umum (feedback Owner: "Rekap 18 okt" harus tetap
+    # dikenali, bukan cuma nama bulan lengkap) -- "agt" ditambah sebagai
+    # varian "agu" karena dua-duanya sama umum dipakai untuk Agustus.
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7,
+    "agu": 8, "agt": 8, "sep": 9, "okt": 10, "nov": 11, "des": 12,
 }
 _NAMA_BULAN = {v: k.capitalize() for k, v in _BULAN_ID.items()}
 _NAMA_BULAN_SINGKAT = {
@@ -78,9 +83,20 @@ def _rupiah(n: int) -> str:
 
 def _cari_tanggal(teks: str):
     """Return (start, end, iso) dari substring tanggal PERTAMA yang
-    ditemukan di `teks` (format '11 oktober 2026' / '11 oktober', tahun
-    opsional = tahun ini), atau None kalau tidak ada pola tanggal valid."""
-    pola = r"(\d{1,2})\s+(" + "|".join(_BULAN_ID.keys()) + r")(?:\s+(\d{4}))?"
+    ditemukan di `teks` (format '11 oktober 2026' / '11 oktober' / '11 okt',
+    tahun opsional = tahun ini), atau None kalau tidak ada pola tanggal
+    valid.
+
+    BUGFIX nama bulan: alternasi regex Python mencoba tiap pilihan BERURUT
+    dari kiri dan berhenti di yang PERTAMA cocok (bukan yang terpanjang) --
+    kalau "okt" dicoba sebelum "oktober" di input "11 oktober 2026", yang
+    kecocok cuma "okt" dan sisa "ober" bikin grup tahun opsional gagal
+    cocok (butuh spasi tepat setelahnya), jadi TAHUN DIAM-DIAM TERABAIKAN
+    dan jatuh ke default tahun ini -- salah tanpa error apa pun. Diurutkan
+    terpanjang dulu supaya nama bulan lengkap SELALU menang sebelum
+    singkatannya dicoba."""
+    nama_bulan_terurut = sorted(_BULAN_ID.keys(), key=len, reverse=True)
+    pola = r"(\d{1,2})\s+(" + "|".join(nama_bulan_terurut) + r")(?:\s+(\d{4}))?"
     m = re.search(pola, teks, re.IGNORECASE)
     if not m:
         return None

@@ -304,6 +304,57 @@ def test_rekap_satu_tanggal_barber_self_only(single_tenant):
     assert "Rp50.000" in balasan  # komisi
 
 
+def test_rekap_nama_bulan_singkatan_dikenali(single_tenant):
+    """Feedback Owner: "Rekap 18 okt 2026" (singkatan 3 huruf) harus tetap
+    dikenali, bukan cuma nama bulan lengkap. Tahun disebut eksplisit supaya
+    test ini TIDAK bergantung ke tahun berjalan saat dijalankan (hindari
+    flaky lintas tahun, lihat juga test tanpa tahun di bawah)."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    db.tambah_transaksi("2026-10-18", romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 18 okt 2026")
+    assert "Potong Rambut Test x1" in balasan
+
+
+def test_rekap_nama_bulan_singkatan_tanpa_tahun_pakai_tahun_berjalan(single_tenant):
+    """Singkatan bulan TANPA tahun tetap default ke tahun berjalan, sama
+    seperti nama bulan lengkap tanpa tahun -- dites pakai date.today()
+    supaya tidak flaky lintas tahun."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    hari_ini = date.today()
+    db.tambah_transaksi(hari_ini.isoformat(), romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    bulan_singkat = {1: "jan", 2: "feb", 3: "mar", 4: "apr", 5: "mei", 6: "jun", 7: "jul",
+                     8: "agu", 9: "sep", 10: "okt", 11: "nov", 12: "des"}[hari_ini.month]
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", f"Rekap {hari_ini.day} {bulan_singkat}")
+    assert "Potong Rambut Test x1" in balasan
+
+
+def test_rekap_nama_bulan_lengkap_tidak_terpotong_singkatannya_sendiri(single_tenant):
+    """BUGFIX: menambahkan singkatan "okt" ke _BULAN_ID TIDAK BOLEH bikin
+    "11 oktober 2026" malah ke-parse jadi cuma "11 okt" (alternasi regex
+    berhenti di match PERTAMA, bukan terpanjang) -- itu bikin grup tahun
+    opsional gagal cocok dan diam-diam jatuh ke tahun ini, bukan 2026.
+    Dites dengan tahun yang BEDA dari tahun berjalan supaya kegagalan ini
+    pasti ketahuan (transaksi di 2026 tidak akan ketemu kalau bot salah
+    sangka ini "tahun ini")."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    db.tambah_transaksi("2026-10-11", romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 11 oktober 2026")
+    assert "11 Okt 2026" in balasan
+    assert "Potong Rambut Test x1" in balasan
+
+
 def test_rekap_owner_semua_barber_termasuk_libur(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
