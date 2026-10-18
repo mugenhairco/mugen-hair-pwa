@@ -1116,10 +1116,19 @@ def _cmd_keterlambatan(tenant_id: int, role: str, barber_self: dict, sisa_teks: 
         return error
     tahun, bulan = _bulan_sekarang()
     lines = ["*Keterlambatan & Pulang Cepat*", f"Bulan {_NAMA_BULAN[bulan]} {tahun} (berjalan)", ""]
+    blok = []
     for b in barbers_target:
-        ringkasan = attendance_db.hitung_ringkasan_bulan(b["id"], tenant_id)
-        catatan = ringkasan["keterangan_per_tanggal"].values()
-        telat = sum(1 for notes in catatan if any("Terlambat" in n for n in notes))
-        pulang_awal = sum(1 for notes in catatan if any("Pulang lebih awal" in n for n in notes))
-        lines.append(f"{b['nama']}: Telat {telat}x, Pulang Cepat {pulang_awal}x")
+        ringkasan = attendance_db.hitung_ringkasan_bulan(b["id"], tenant_id, tahun, bulan)
+        baris_telat = (f"Keterlambatan: {ringkasan['menit_terlambat_terpakai']}/"
+                       f"{ringkasan['batas_menit_terlambat']} menit "
+                       f"(sisa {ringkasan['sisa_limit_terlambat']} menit)")
+        if ringkasan["sisa_limit_terlambat"] == 0:
+            baris_telat += " — limit habis"
+        baris_pulang = (f"Pulang Cepat: {ringkasan['menit_pulang_awal_terpakai']}/"
+                        f"{ringkasan['batas_menit_pulang_awal']} menit "
+                        f"(sisa {ringkasan['sisa_limit_pulang_awal']} menit)")
+        if ringkasan["sisa_limit_pulang_awal"] == 0:
+            baris_pulang += " — limit habis"
+        blok.append(f"{b['nama']}\n{baris_telat}\n{baris_pulang}")
+    lines.append("\n\n".join(blok))
     return "\n".join(lines)

@@ -653,12 +653,14 @@ def test_kuota_libur_self_only(single_tenant):
     assert "Romen" not in balasan
 
 
-def test_keterlambatan_tanpa_pengaturan_nol(single_tenant):
+def test_keterlambatan_tanpa_pengaturan_tampilkan_limit(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     _barber(tenant_id, "Romen")
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Keterlambatan")
-    assert "Romen: Telat 0x, Pulang Cepat 0x" in balasan
+    assert "Romen" in balasan
+    assert "Keterlambatan: 0/120 menit (sisa 120 menit)" in balasan
+    assert "Pulang Cepat: 0/120 menit (sisa 120 menit)" in balasan
 
 
 # ---------------------------------------------------------------------------
