@@ -202,6 +202,23 @@ def ubah_status(tenant_id: int, body: StatusBody, user: dict = Depends(require_s
     return hasil
 
 
+class TampilkanPotonganKeterlambatanBody(BaseModel):
+    aktif: bool
+
+
+@superadmin_router.put("/{tenant_id}/tampilkan-potongan-keterlambatan")
+def ubah_tampilkan_potongan_keterlambatan(tenant_id: int, body: TampilkanPotonganKeterlambatanBody,
+                                           user: dict = Depends(require_superadmin)):
+    t = tenant_db.get_tenant(tenant_id)
+    try:
+        hasil = whatsapp_bot_db.set_tampilkan_potongan_keterlambatan(tenant_id, body.aktif, diatur_oleh=user["username"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "ubah_tampilkan_potongan_keterlambatan_whatsapp_bot", tenant_id=tenant_id,
+                               tenant_slug=t["slug"] if t else None)
+    return hasil
+
+
 @superadmin_router.delete("/{tenant_id}")
 def hapus_konfigurasi(tenant_id: int, user: dict = Depends(require_superadmin)):
     t = tenant_db.get_tenant(tenant_id)

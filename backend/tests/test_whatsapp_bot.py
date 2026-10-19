@@ -298,6 +298,22 @@ def test_superadmin_atur_lalu_aktifkan(single_tenant):
     assert baris["config"]["aktif"] is True
 
 
+def test_superadmin_toggle_tampilkan_potongan_keterlambatan(single_tenant):
+    client = single_tenant["client"]
+    headers = _superadmin_headers(client)
+    tenant_id = single_tenant["tenant_id"]
+
+    client.put(f"/api/superadmin/whatsapp-bot/{tenant_id}", headers=headers,
+               json={"phone_number_id": "pnid-super", "device_token": "token-super"})
+    assert wb_db.get_config(tenant_id)["tampilkan_potongan_keterlambatan"] is True  # default aktif
+
+    r = client.put(f"/api/superadmin/whatsapp-bot/{tenant_id}/tampilkan-potongan-keterlambatan",
+                    headers=headers, json={"aktif": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["tampilkan_potongan_keterlambatan"] is False
+    assert wb_db.get_config(tenant_id)["tampilkan_potongan_keterlambatan"] is False
+
+
 def test_superadmin_atur_tanpa_token_ditolak_422(single_tenant):
     client = single_tenant["client"]
     headers = _superadmin_headers(client)

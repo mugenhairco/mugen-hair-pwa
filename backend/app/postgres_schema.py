@@ -1468,6 +1468,13 @@ ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS device_token TEXT;
 -- whatsapp_bot_parser.py::resolve_role().
 ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp TEXT;
 
+-- FITUR WA Bot -- toggle tampilan Uang Harian di Rekap WA Bot: kalau
+-- dimatikan Superadmin, potongan keterlambatan/limit habis diabaikan
+-- KHUSUS untuk tampilan pesan WA (angka asli di Dashboard/Slip Gaji/
+-- Laporan PDF tidak berubah) -- lihat whatsapp_bot_parser.py::
+-- _uang_harian_tampilan_hari().
+ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS tampilkan_potongan_keterlambatan INTEGER NOT NULL DEFAULT 1;
+
 CREATE TABLE IF NOT EXISTS whatsapp_bot_pending_input (
     id              SERIAL PRIMARY KEY,
     tenant_id       INTEGER NOT NULL,

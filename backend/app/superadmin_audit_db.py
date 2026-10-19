@@ -61,6 +61,7 @@ AKSI_VALID = {
     # FITUR WA Bot (Input Data & Rekap via WhatsApp, Fonnte) -- lihat
     # whatsapp_bot_db.py/routers/whatsapp_bot.py, EKSKLUSIF Superadmin.
     "ubah_config_whatsapp_bot", "ubah_status_whatsapp_bot", "hapus_config_whatsapp_bot",
+    "ubah_tampilkan_potongan_keterlambatan_whatsapp_bot",
 }
 
 

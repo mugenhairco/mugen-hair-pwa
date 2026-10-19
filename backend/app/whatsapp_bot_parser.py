@@ -420,7 +420,8 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
         return _cmd_tester_produk(tenant_id, wa_id_pengirim, teks[len("tester"):].strip())
 
     if kata0 == "rekap":
-        return _cmd_rekap(tenant_id, role, barber_self, teks[len("rekap"):].strip())
+        return _cmd_rekap(tenant_id, role, barber_self, teks[len("rekap"):].strip(),
+                           config.get("tampilkan_potongan_keterlambatan", True))
 
     if kata0 == "absensi":
         return _cmd_absensi(tenant_id, role, barber_self, teks[len("absensi"):].strip())
@@ -862,7 +863,15 @@ def _cmd_rekap_produk(tenant_id: int, sisa_teks: str) -> str:
 # sendiri saja.
 # ---------------------------------------------------------------------------
 
-def _cmd_rekap(tenant_id: int, role: str, barber_self: dict, sisa_teks: str) -> str:
+# PERMINTAAN OWNER: rekap PERIODE (bukan satu hari) sampai 10 hari
+# ditampilkan DETAIL PER HARI (lihat _rekap_satu_barber_per_hari()) --
+# lebih dari itu (mis. rekap 1 bulan penuh) tetap format agregat lama
+# (_rekap_satu_barber()) supaya pesan tidak kepanjangan.
+_BATAS_HARI_REKAP_DETAIL = 10
+
+
+def _cmd_rekap(tenant_id: int, role: str, barber_self: dict, sisa_teks: str,
+                tampilkan_potongan_keterlambatan: bool = True) -> str:
     periode = _parse_periode(sisa_teks) if sisa_teks else None
     if periode:
         tanggal_mulai, tanggal_selesai, sisa_setelah = periode
@@ -894,14 +903,63 @@ def _cmd_rekap(tenant_id: int, role: str, barber_self: dict, sisa_teks: str) -> 
     else:
         judul = f"*Rekap Periode {_format_tanggal_id(tanggal_mulai)} - {_format_tanggal_id(tanggal_selesai)}*"
 
+    jumlah_hari = (date.fromisoformat(tanggal_selesai) - date.fromisoformat(tanggal_mulai)).days + 1
+    per_hari = tanggal_mulai != tanggal_selesai and jumlah_hari <= _BATAS_HARI_REKAP_DETAIL
+
     blok = [judul, ""]
     for b in barbers_target:
-        blok.append(_rekap_satu_barber(tenant_id, b, tanggal_mulai, tanggal_selesai))
+        if per_hari:
+            blok.append(_rekap_satu_barber_per_hari(tenant_id, b, tanggal_mulai, tanggal_selesai,
+                                                      tampilkan_potongan_keterlambatan))
+        else:
+            blok.append(_rekap_satu_barber(tenant_id, b, tanggal_mulai, tanggal_selesai,
+                                            tampilkan_potongan_keterlambatan))
         blok.append("")
     return "\n".join(blok).rstrip()
 
 
-def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> str:
+def _uang_harian_tampilan_hari(tenant_id: int, barber: dict, tanggal: str,
+                                tampilkan_potongan_keterlambatan: bool) -> int:
+    """Uang Harian SATU hari untuk DITAMPILKAN di WA Bot -- sama persis
+    db.hitung_uang_harian_per_hari() (termasuk percabangan opt-in Uang
+    Harian Dinamis), KECUALI Superadmin menonaktifkan
+    `tampilkan_potongan_keterlambatan` DAN tenant memang memakai Uang
+    Harian Dinamis -- dalam kondisi itu potongan KHUSUS dari keterlambatan/
+    pulang lebih awal diabaikan UNTUK TAMPILAN SAJA (potongan syarat
+    minimal service TETAP berlaku apa adanya, termasuk Rp0 mutlak kalau
+    syaratnya tidak terpenuhi). Angka SESUNGGUHNYA yang dibayarkan
+    (Dashboard/Slip Gaji/Laporan PDF) TIDAK disentuh fungsi ini sama
+    sekali -- murni lapisan tampilan pesan WA Bot."""
+    if tampilkan_potongan_keterlambatan or not uang_harian_dinamis_db.get_config(tenant_id)["aktif"]:
+        return db.hitung_uang_harian_per_hari(barber, tanggal)
+    breakdown = uang_harian_dinamis_db.breakdown_hari(barber, tanggal)
+    service = breakdown["service"]
+    if service["mode"] == "SYARAT" and not service["terpenuhi"]:
+        return breakdown["uang_harian_final"]
+    # Toggle ini KHUSUS keterlambatan (permintaan Owner) -- potongan pulang
+    # lebih awal dan syarat minimal service TETAP berlaku apa adanya, cuma
+    # kontribusi "keterlambatan" yang diabaikan dari MAX (lihat
+    # uang_harian_dinamis_db.evaluasi_hari(), section 11 & 13: potongan
+    # digabung pakai MAX, bukan dijumlahkan).
+    potongan_tanpa_keterlambatan = max(breakdown["pulang_awal"]["potongan_persen"], service["potongan_persen"])
+    return round(breakdown["uang_harian_dasar"] * (100 - potongan_tanpa_keterlambatan) / 100)
+
+
+def _uang_harian_tampilan_rentang(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal_selesai: str,
+                                   tampilkan_potongan_keterlambatan: bool) -> int:
+    if tampilkan_potongan_keterlambatan or not uang_harian_dinamis_db.get_config(tenant_id)["aktif"]:
+        return db.hitung_uang_harian_rentang(barber, tanggal_mulai, tanggal_selesai)
+    total = 0
+    cur = date.fromisoformat(tanggal_mulai)
+    akhir = date.fromisoformat(tanggal_selesai)
+    while cur <= akhir:
+        total += _uang_harian_tampilan_hari(tenant_id, barber, cur.isoformat(), tampilkan_potongan_keterlambatan)
+        cur += timedelta(days=1)
+    return total
+
+
+def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal_selesai: str,
+                        tampilkan_potongan_keterlambatan: bool = True) -> str:
     lines = [f"*{barber['nama']}*"]
     transaksi_list = db.get_transaksi_list(barber_id=barber["id"], tanggal_mulai=tanggal_mulai,
                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
@@ -935,8 +993,8 @@ def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal
     uang_harian_total = 0
     try:
         if tanggal_mulai == tanggal_selesai:
-            uh = uang_harian_dinamis_db.breakdown_hari(barber, tanggal_mulai)
-            uang_harian_total = uh.get("uang_harian_final", 0)
+            uang_harian_total = _uang_harian_tampilan_hari(tenant_id, barber, tanggal_mulai,
+                                                             tampilkan_potongan_keterlambatan)
         else:
             # BUGFIX: sebelumnya Uang Harian cuma dihitung untuk rekap SATU
             # hari (breakdown_hari()) -- rekap PERIODE (rentang tanggal)
@@ -951,7 +1009,8 @@ def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal
             # Uang Harian SELALU Rp0 untuk tenant yang belum opt-in, karena
             # modul dinamis mensyaratkan data Absensi check-in+check-out
             # lengkap tiap tanggal, bukan sekadar jumlah service.
-            uang_harian_total = db.hitung_uang_harian_rentang(barber, tanggal_mulai, tanggal_selesai)
+            uang_harian_total = _uang_harian_tampilan_rentang(tenant_id, barber, tanggal_mulai, tanggal_selesai,
+                                                                tampilkan_potongan_keterlambatan)
         lines.append(f"Uang Harian: {_rupiah(uang_harian_total)}")
     except Exception:
         pass
@@ -962,6 +1021,76 @@ def _rekap_satu_barber(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal
     grand_total = total_komisi + total_tips + uang_harian_total
     lines.append(f"*Grand Total: {_rupiah(grand_total)}*")
     return "\n".join(lines)
+
+
+def _rekap_satu_barber_per_hari(tenant_id: int, barber: dict, tanggal_mulai: str, tanggal_selesai: str,
+                                 tampilkan_potongan_keterlambatan: bool = True) -> str:
+    """PERMINTAAN OWNER: rekap periode pendek (<= _BATAS_HARI_REKAP_DETAIL
+    hari) dipecah per tanggal -- tiap hari tetap ditampilkan WALAU tidak
+    ada transaksi (Libur/Cuti/Izin/Tanpa keterangan/Tidak ada transaksi),
+    supaya kelihatan lengkap semua hari dalam periode, bukan cuma angka
+    agregat keseluruhan."""
+    lines = [f"*{barber['nama']}*", ""]
+    tanggal_absen = {l["tanggal"] for l in attendance_db.get_log_list(
+        tenant_id, tanggal_dari=tanggal_mulai, tanggal_sampai=tanggal_selesai, barber_id=barber["id"])}
+
+    total_komisi = 0
+    total_tips = 0
+    total_uang_harian = 0
+    jumlah_libur = 0
+
+    cur = date.fromisoformat(tanggal_mulai)
+    akhir = date.fromisoformat(tanggal_selesai)
+    while cur <= akhir:
+        tanggal = cur.isoformat()
+        blok = [f"*{_format_tanggal_id(tanggal)}*"]
+        status = _status_libur_cuti_hari(barber["id"], tanggal)
+        if status == "LIBUR":
+            blok.append("Libur")
+            jumlah_libur += 1
+        elif status == "CUTI":
+            blok.append("Cuti")
+        elif status == "IZIN":
+            blok.append("Izin")
+        else:
+            transaksi_hari = db.get_transaksi_list(barber_id=barber["id"], tanggal_mulai=tanggal,
+                                                     tanggal_selesai=tanggal, tenant_id=tenant_id)
+            if not transaksi_hari:
+                blok.append("Tidak ada transaksi." if tanggal in tanggal_absen else "Tanpa keterangan")
+            else:
+                agregat_service: dict[str, int] = {}
+                komisi_hari = 0
+                tips_hari = 0
+                for t in transaksi_hari:
+                    tips_hari += t.get("tips", 0) or 0
+                    komisi_hari += t.get("total_komisi", 0) or 0
+                    for it in t["items"]:
+                        agregat_service[it["nama_service"]] = agregat_service.get(it["nama_service"], 0) + it["jumlah"]
+                for nama, jml in agregat_service.items():
+                    blok.append(f"{nama} x{jml}")
+                try:
+                    uang_harian_hari = _uang_harian_tampilan_hari(tenant_id, barber, tanggal,
+                                                                    tampilkan_potongan_keterlambatan)
+                except Exception:
+                    uang_harian_hari = 0
+                blok.append(f"Komisi: {_rupiah(komisi_hari)}")
+                blok.append(f"Tips: {_rupiah(tips_hari)}")
+                blok.append(f"Uang Harian: {_rupiah(uang_harian_hari)}")
+                total_komisi += komisi_hari
+                total_tips += tips_hari
+                total_uang_harian += uang_harian_hari
+        lines.append("\n".join(blok))
+        lines.append("")
+        cur += timedelta(days=1)
+
+    grand_total = total_komisi + total_tips + total_uang_harian
+    lines.append(f"Total Komisi: {_rupiah(total_komisi)}")
+    lines.append(f"Total Tips: {_rupiah(total_tips)}")
+    lines.append(f"Total Uang Harian: {_rupiah(total_uang_harian)}")
+    if jumlah_libur:
+        lines.append(f"Total Hari Libur: {jumlah_libur} hari")
+    lines.append(f"*Grand Total: {_rupiah(grand_total)}*")
+    return "\n".join(lines).rstrip()
 
 
 # ---------------------------------------------------------------------------

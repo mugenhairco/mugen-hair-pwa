@@ -76,6 +76,7 @@ def init_whatsapp_bot_db():
                 nama_nomor              TEXT,
                 aktif                   INTEGER NOT NULL DEFAULT 0,
                 kuota_pesan_bulanan     INTEGER NOT NULL DEFAULT 50,
+                tampilkan_potongan_keterlambatan INTEGER NOT NULL DEFAULT 1,
                 diatur_oleh             TEXT,
                 created_at              TEXT NOT NULL,
                 updated_at              TEXT
@@ -113,6 +114,7 @@ def _now_iso() -> str:
 def _row_ke_dict(row) -> dict:
     hasil = dict(row)
     hasil["aktif"] = bool(hasil["aktif"])
+    hasil["tampilkan_potongan_keterlambatan"] = bool(hasil.get("tampilkan_potongan_keterlambatan", 1))
     return hasil
 
 
@@ -201,6 +203,24 @@ def set_aktif(tenant_id: int, aktif: bool, diatur_oleh: str = "") -> dict:
     with get_conn() as conn:
         conn.execute(
             "UPDATE whatsapp_bot_config SET aktif = ?, diatur_oleh = ?, updated_at = ? WHERE tenant_id = ?",
+            (1 if aktif else 0, diatur_oleh, _now_iso(), tenant_id),
+        )
+    return get_config(tenant_id)
+
+
+def set_tampilkan_potongan_keterlambatan(tenant_id: int, aktif: bool, diatur_oleh: str = "") -> dict:
+    """Superadmin-only: kalau `aktif=False`, Uang Harian yang DITAMPILKAN di
+    pesan WA Bot (Rekap) mengabaikan khusus potongan keterlambatan/limit
+    habis (lihat whatsapp_bot_parser.py::_uang_harian_tampilan_hari()) --
+    MURNI lapisan tampilan, angka yang SESUNGGUHNYA dibayarkan (Dashboard/
+    Slip Gaji/Laporan PDF) TIDAK berubah sama sekali."""
+    existing = get_config(tenant_id)
+    if existing is None:
+        raise ValueError("Tenant ini belum punya konfigurasi WA Bot -- daftarkan Phone Number ID dulu.")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE whatsapp_bot_config SET tampilkan_potongan_keterlambatan = ?, diatur_oleh = ?, "
+            "updated_at = ? WHERE tenant_id = ?",
             (1 if aktif else 0, diatur_oleh, _now_iso(), tenant_id),
         )
     return get_config(tenant_id)

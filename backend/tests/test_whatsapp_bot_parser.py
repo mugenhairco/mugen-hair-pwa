@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import attendance_db
 import database as db
 import izin_cuti_db
+import uang_harian_dinamis_db as uhd
 import whatsapp_bot_db as wb_db
 import whatsapp_bot_parser as wbp
 
@@ -477,7 +478,10 @@ def test_rekap_owner_semua_barber_termasuk_libur(single_tenant):
     assert "Romen" in balasan and "Tidak ada transaksi" in balasan
 
 
-def test_rekap_periode(single_tenant):
+def test_rekap_periode_sampai_10_hari_dipecah_per_hari(single_tenant):
+    """PERMINTAAN OWNER: rekap periode <= 10 hari dipecah per tanggal
+    (bukan agregat total keseluruhan) -- tiap hari tetap muncul walau
+    tidak ada transaksi, supaya Owner lihat lengkap semua hari."""
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     romen_id = _barber(tenant_id, "Romen")
@@ -487,7 +491,27 @@ def test_rekap_periode(single_tenant):
 
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 11 oktober - 15 oktober 2026")
     assert "Periode" in balasan
-    assert "Potong Rambut Test x3" in balasan  # agregat 1+2
+    assert "11 Okt 2026" in balasan and "Potong Rambut Test x1" in balasan
+    assert "13 Okt 2026" in balasan and "Potong Rambut Test x2" in balasan
+    assert "12 Okt 2026" in balasan and "14 Okt 2026" in balasan and "15 Okt 2026" in balasan
+    assert "Tanpa keterangan" in balasan  # hari 12/14/15 tidak ada transaksi & tidak absen
+    assert "Total Komisi: Rp120.000" in balasan  # komisi (bukan harga) qty 1 + qty 2
+
+
+def test_rekap_periode_lebih_dari_10_hari_tetap_agregat(single_tenant):
+    """Periode > 10 hari TETAP format agregat lama (tidak dipecah per
+    hari) supaya pesan tidak kepanjangan."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen_id = _barber(tenant_id, "Romen")
+    sid = _service(tenant_id, "Potong Rambut Test", 100000)
+    db.tambah_transaksi("2026-10-01", romen_id, [{"service_id": sid, "jumlah": 1}])
+    db.tambah_transaksi("2026-10-11", romen_id, [{"service_id": sid, "jumlah": 2}])
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 1 oktober - 15 oktober 2026")
+    assert "Periode" in balasan
+    assert "Potong Rambut Test x3" in balasan  # agregat 1+2, bukan per hari
+    assert "Tanpa keterangan" not in balasan
 
 
 def test_rekap_periode_dengan_nama_barber_sebelum_tanggal_tidak_tampilkan_semua(single_tenant):
@@ -528,6 +552,63 @@ def test_rekap_periode_uang_harian_ikut_dihitung(single_tenant):
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000",
                                 "Rekap 11 oktober - 12 oktober 2026")
     assert "Uang Harian: Rp200.000" in balasan  # 2 hari x Rp100.000
+
+
+def test_rekap_per_hari_bedakan_tanpa_keterangan_dan_tidak_ada_transaksi(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER: hari tanpa transaksi dibedakan -- "Tanpa
+    keterangan" kalau barber TIDAK absen/check-in hari itu, "Tidak ada
+    transaksi." kalau sudah check-in tapi memang tidak ada transaksi."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    attendance_db.set_settings(tenant_id, jam_masuk="09:00", jam_pulang="18:00",
+                                lokasi_latitude=-6.175392, lokasi_longitude=106.827153, radius_meter=500)
+    romen_id = _barber(tenant_id, "Romen")
+
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 10, 12, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, romen_id, -6.175392, 106.827153, accuracy=15)
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 11 oktober - 13 oktober 2026")
+    assert "*11 Okt 2026*\nTanpa keterangan" in balasan  # tidak absen
+    assert "*12 Okt 2026*\nTidak ada transaksi." in balasan  # sudah absen, tidak ada transaksi
+    assert "*13 Okt 2026*\nTanpa keterangan" in balasan
+
+
+def test_rekap_toggle_sembunyikan_potongan_keterlambatan(single_tenant, monkeypatch):
+    """PERMINTAAN OWNER: Superadmin bisa matikan tampilan potongan
+    keterlambatan khusus di WA Bot -- Uang Harian yang DITAMPILKAN
+    mengabaikan potongan keterlambatan (toleransi ATAU limit, sama-sama
+    masuk keterlambatan["potongan_persen"] di evaluasi_hari()), potongan
+    lain TETAP berlaku. Angka ASLI (Dashboard/Slip Gaji) tidak berubah --
+    dicek lewat db.hitung_uang_harian_per_hari() langsung."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    attendance_db.set_settings(tenant_id, jam_masuk="09:00", toleransi_menit=30, jam_pulang="18:00",
+                                lokasi_latitude=-6.175392, lokasi_longitude=106.827153, radius_meter=500)
+    romen_id = _barber(tenant_id, "Romen")
+    db.update_barber(romen_id, uang_harian=60000)
+    uhd.set_config(tenant_id, aktif=True, keterlambatan_gunakan_toleransi=True,
+                   keterlambatan_gunakan_limit=False, keterlambatan_potongan_persen=20)
+    sid = _service(tenant_id, "Potong Rambut Test", 50000)
+    db.tambah_transaksi("2026-10-11", romen_id, [{"service_id": sid, "jumlah": 1}])
+
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 10, 11, 9, 35, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, romen_id, -6.175392, 106.827153, accuracy=15)
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 10, 11, 18, 0, tzinfo=WIB))
+    attendance_db.check_out(tenant_id, romen_id, -6.175392, 106.827153, accuracy=15)
+
+    barber = db.get_barber(romen_id)
+    assert db.hitung_uang_harian_per_hari(barber, "2026-10-11") == 48000  # 60rb - 20%
+
+    balasan_default = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap 11 oktober 2026")
+    assert "Uang Harian: Rp48.000" in balasan_default  # default: tampilkan potongan apa adanya
+
+    wb_db.set_tampilkan_potongan_keterlambatan(tenant_id, False)
+    config_off = wb_db.get_config(tenant_id)
+    balasan_off = wbp.proses_pesan(tenant_id, config_off, "628110000000", "Rekap 11 oktober 2026")
+    assert "Uang Harian: Rp60.000" in balasan_off  # potongan keterlambatan disembunyikan
+
+    # Angka ASLI (dipakai Dashboard/Slip Gaji) TETAP 48.000, tidak ikut berubah.
+    assert db.hitung_uang_harian_per_hari(barber, "2026-10-11") == 48000
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,7 @@ const PageSuperadmin = (() => {
     // FITUR WA Bot (Input Data & Rekap via WhatsApp, Fonnte).
     ubah_config_whatsapp_bot: "Ubah Konfigurasi WA Bot",
     ubah_status_whatsapp_bot: "Ubah Status WA Bot",
+    ubah_tampilkan_potongan_keterlambatan_whatsapp_bot: "Ubah Tampilan Potongan Keterlambatan WA Bot",
     hapus_config_whatsapp_bot: "Hapus Konfigurasi WA Bot",
   };
 
@@ -2211,6 +2212,28 @@ const PageSuperadmin = (() => {
                     }
                   });
                   wrap.appendChild(btnToggle);
+                  // FITUR WA Bot: toggle tampilan Uang Harian di pesan Rekap
+                  // WA -- kalau dimatikan, potongan keterlambatan/limit habis
+                  // diabaikan KHUSUS untuk tampilan WA (angka asli di
+                  // Dashboard/Slip Gaji/Laporan PDF tidak berubah sama sekali,
+                  // lihat whatsapp_bot_parser.py::_uang_harian_tampilan_hari()).
+                  const menujuTampilkanPotongan = !b.config.tampilkan_potongan_keterlambatan;
+                  const btnTogglePotongan = MugenUI.el("button", {},
+                    menujuTampilkanPotongan ? "Tampilkan Potongan Telat" : "Sembunyikan Potongan Telat");
+                  btnTogglePotongan.addEventListener("click", async () => {
+                    if (!confirm(`${menujuTampilkanPotongan ? "Tampilkan" : "Sembunyikan"} potongan keterlambatan di Uang Harian pesan WA Bot untuk "${b.nama_barbershop}"?`)) return;
+                    try {
+                      await MugenUI.withButtonLoading(btnTogglePotongan,
+                        () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}/tampilkan-potongan-keterlambatan`,
+                          { aktif: menujuTampilkanPotongan }));
+                      MugenUI.toast("Setting tampilan WA Bot diperbarui.", "success");
+                      loadWaBotList();
+                      loadAuditLog();
+                    } catch (e) {
+                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnTogglePotongan);
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
                     if (!confirm(`Hapus konfigurasi WA Bot "${b.nama_barbershop}"? Nomor & token akan dilepas dari tenant ini.`)) return;
