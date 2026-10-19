@@ -314,6 +314,30 @@ def test_superadmin_toggle_tampilkan_potongan_keterlambatan(single_tenant):
     assert wb_db.get_config(tenant_id)["tampilkan_potongan_keterlambatan"] is False
 
 
+def test_superadmin_atur_dua_nomor_owner(single_tenant):
+    client = single_tenant["client"]
+    headers = _superadmin_headers(client)
+    tenant_id = single_tenant["tenant_id"]
+
+    r = client.put(f"/api/superadmin/whatsapp-bot/{tenant_id}", headers=headers,
+                    json={"phone_number_id": "pnid-super", "device_token": "token-super",
+                          "nomor_owner_whatsapp": "628110000000", "nomor_owner_whatsapp_2": "628120000000"})
+    assert r.status_code == 200, r.text
+    assert r.json()["nomor_owner_whatsapp"] == "628110000000"
+    assert r.json()["nomor_owner_whatsapp_2"] == "628120000000"
+
+
+def test_superadmin_atur_nomor_owner_1_dan_2_sama_ditolak_422(single_tenant):
+    client = single_tenant["client"]
+    headers = _superadmin_headers(client)
+    tenant_id = single_tenant["tenant_id"]
+
+    r = client.put(f"/api/superadmin/whatsapp-bot/{tenant_id}", headers=headers,
+                    json={"phone_number_id": "pnid-super", "device_token": "token-super",
+                          "nomor_owner_whatsapp": "628110000000", "nomor_owner_whatsapp_2": "628110000000"})
+    assert r.status_code == 422
+
+
 def test_superadmin_atur_tanpa_token_ditolak_422(single_tenant):
     client = single_tenant["client"]
     headers = _superadmin_headers(client)

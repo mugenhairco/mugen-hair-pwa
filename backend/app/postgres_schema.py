@@ -1468,6 +1468,11 @@ ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS device_token TEXT;
 -- whatsapp_bot_parser.py::resolve_role().
 ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp TEXT;
 
+-- PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner PENUH lewat WA
+-- Bot per tenant (toko dengan 2 pemilik/pengelola) -- lihat
+-- whatsapp_bot_parser.py::resolve_role().
+ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp_2 TEXT;
+
 -- FITUR WA Bot -- toggle tampilan Uang Harian di Rekap WA Bot: kalau
 -- dimatikan Superadmin, potongan keterlambatan/limit habis diabaikan
 -- KHUSUS untuk tampilan pesan WA (angka asli di Dashboard/Slip Gaji/

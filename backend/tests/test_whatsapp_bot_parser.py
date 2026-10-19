@@ -62,6 +62,34 @@ def test_resolve_role_owner_nomor_beda_format_tetap_cocok(single_tenant):
     assert role == "owner"
 
 
+def test_resolve_role_owner_nomor_kedua_juga_dikenali(single_tenant):
+    """PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner penuh per
+    tenant -- nomor kedua (nomor_owner_whatsapp_2) HARUS dikenali sama
+    seperti nomor pertama."""
+    tenant_id = single_tenant["tenant_id"]
+    wb_db.upsert_config(tenant_id, "device-1", "token-x", nomor_owner_whatsapp="628110000000",
+                         nomor_owner_whatsapp_2="628120000000")
+    wb_db.set_aktif(tenant_id, True)
+    config = wb_db.get_config(tenant_id)
+
+    role1, _ = wbp.resolve_role(tenant_id, config, "628110000000")
+    assert role1 == "owner"
+    role2, _ = wbp.resolve_role(tenant_id, config, "628120000000")
+    assert role2 == "owner"
+    role_tidak_dikenal, _ = wbp.resolve_role(tenant_id, config, "628130000000")
+    assert role_tidak_dikenal is None
+
+
+def test_upsert_config_nomor_owner_1_dan_2_sama_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    try:
+        wb_db.upsert_config(tenant_id, "device-1", "token-x", nomor_owner_whatsapp="628110000000",
+                             nomor_owner_whatsapp_2="08110000000")  # format beda, nomor sama
+        assert False, "harus raise ValueError"
+    except ValueError as e:
+        assert "tidak boleh sama" in str(e)
+
+
 def test_resolve_role_barber(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id)

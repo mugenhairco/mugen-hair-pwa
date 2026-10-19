@@ -165,8 +165,11 @@ class KonfigurasiBody(BaseModel):
     nama_nomor: str | None = None
     kuota_pesan_bulanan: int | None = None
     # nomor WA yang setara akses Owner penuh lewat bot (input data siapa
-    # saja + rekap siapa saja) -- OPSIONAL, lihat whatsapp_bot_parser.py.
+    # saja + rekap siapa saja) -- OPSIONAL, maksimal 2 nomor per tenant
+    # (permintaan Owner: toko dengan 2 pemilik/pengelola), lihat
+    # whatsapp_bot_parser.py::resolve_role().
     nomor_owner_whatsapp: str | None = None
+    nomor_owner_whatsapp_2: str | None = None
 
 
 @superadmin_router.put("/{tenant_id}")
@@ -179,6 +182,7 @@ def atur_konfigurasi(tenant_id: int, body: KonfigurasiBody, user: dict = Depends
             tenant_id, body.phone_number_id, body.device_token, nama_nomor=body.nama_nomor,
             kuota_pesan_bulanan=body.kuota_pesan_bulanan, diatur_oleh=user["username"],
             nomor_owner_whatsapp=body.nomor_owner_whatsapp,
+            nomor_owner_whatsapp_2=body.nomor_owner_whatsapp_2,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -41,6 +41,7 @@ bulan berjalan (pola SAMA seperti kuota_libur_db.py/izin_cuti_db.py: TIDAK
 ADA kolom "sisa kuota" tersimpan/reset terjadwal, selalu dihitung ulang)."""
 
 import json
+import re
 from datetime import datetime, timedelta
 
 from database import get_conn
@@ -73,6 +74,7 @@ def init_whatsapp_bot_db():
                 phone_number_id         TEXT NOT NULL UNIQUE,
                 device_token            TEXT,
                 nomor_owner_whatsapp    TEXT,
+                nomor_owner_whatsapp_2  TEXT,
                 nama_nomor              TEXT,
                 aktif                   INTEGER NOT NULL DEFAULT 0,
                 kuota_pesan_bulanan     INTEGER NOT NULL DEFAULT 50,
@@ -148,15 +150,29 @@ def get_config_by_phone_number_id(phone_number_id: str) -> dict | None:
     return _row_ke_dict(row) if row else None
 
 
+def _digit_nomor(n: str) -> str:
+    """Normalisasi RINGAN (digit saja, 0 depan -> 62) -- HANYA dipakai
+    untuk cek duplikat Nomor Owner 1/2 di sini. Normalisasi LENGKAP (dipakai
+    resolve_role() membandingkan ke nomor pengirim pesan) ada di
+    whatsapp_bot_parser.py::_normalisasi_nomor() -- TIDAK diimpor dari sini
+    supaya whatsapp_bot_db.py tidak bergantung ke whatsapp_bot_parser.py."""
+    digit = re.sub(r"\D", "", n or "")
+    if digit.startswith("0"):
+        digit = "62" + digit[1:]
+    return digit
+
+
 def upsert_config(tenant_id: int, phone_number_id: str, device_token: str, nama_nomor: str = None,
                    kuota_pesan_bulanan: int = None, diatur_oleh: str = "",
-                   nomor_owner_whatsapp: str = None) -> dict:
+                   nomor_owner_whatsapp: str = None, nomor_owner_whatsapp_2: str = None) -> dict:
     """Superadmin daftarkan/ubah nomor+token WA Bot milik satu tenant.
     `device_token` WAJIB diisi (beda dari arsitektur Meta lama -- Fonnte
     tidak punya token platform-wide, setiap device token-nya sendiri,
-    lihat docstring modul). `nomor_owner_whatsapp` OPSIONAL -- tenant bisa
-    jalan tanpa ini diisi (artinya belum ada nomor yang setara akses Owner
-    lewat WA, cuma barber yang bisa pakai command self-only), lihat
+    lihat docstring modul). `nomor_owner_whatsapp`/`nomor_owner_whatsapp_2`
+    OPSIONAL -- maksimal 2 nomor setara akses Owner PENUH lewat bot per
+    tenant (permintaan Owner: toko dengan 2 pemilik/pengelola), tenant bisa
+    jalan tanpa keduanya diisi (artinya belum ada nomor yang setara akses
+    Owner lewat WA, cuma barber yang bisa pakai command self-only), lihat
     whatsapp_bot_parser.py::resolve_role(). `aktif` SENGAJA TIDAK diisi di
     sini -- tenant baru SELALU mulai nonaktif, Superadmin menyalakannya
     eksplisit lewat set_aktif() (mencegah pesan masuk diproses sebelum
@@ -168,6 +184,10 @@ def upsert_config(tenant_id: int, phone_number_id: str, device_token: str, nama_
     if not device_token:
         raise ValueError("Device Token Fonnte wajib diisi.")
     nomor_owner_whatsapp = (nomor_owner_whatsapp or "").strip() or None
+    nomor_owner_whatsapp_2 = (nomor_owner_whatsapp_2 or "").strip() or None
+    if nomor_owner_whatsapp and nomor_owner_whatsapp_2 and \
+            _digit_nomor(nomor_owner_whatsapp) == _digit_nomor(nomor_owner_whatsapp_2):
+        raise ValueError("Nomor Owner 1 dan Nomor Owner 2 tidak boleh sama.")
     kuota = DEFAULT_KUOTA_PESAN_BULANAN if kuota_pesan_bulanan is None else int(kuota_pesan_bulanan)
     if kuota < 0:
         raise ValueError("Kuota pesan tidak boleh negatif.")
@@ -178,19 +198,21 @@ def upsert_config(tenant_id: int, phone_number_id: str, device_token: str, nama_
         if existing:
             conn.execute(
                 """UPDATE whatsapp_bot_config
-                   SET phone_number_id = ?, device_token = ?, nomor_owner_whatsapp = ?, nama_nomor = ?,
+                   SET phone_number_id = ?, device_token = ?, nomor_owner_whatsapp = ?,
+                       nomor_owner_whatsapp_2 = ?, nama_nomor = ?,
                        kuota_pesan_bulanan = ?, diatur_oleh = ?, updated_at = ?
                    WHERE tenant_id = ?""",
-                (phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, kuota, diatur_oleh,
-                 now, tenant_id),
+                (phone_number_id, device_token, nomor_owner_whatsapp, nomor_owner_whatsapp_2, nama_nomor,
+                 kuota, diatur_oleh, now, tenant_id),
             )
         else:
             conn.execute(
                 """INSERT INTO whatsapp_bot_config
-                   (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, aktif,
-                    kuota_pesan_bulanan, diatur_oleh, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
-                (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nama_nomor, kuota,
+                   (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nomor_owner_whatsapp_2,
+                    nama_nomor, aktif, kuota_pesan_bulanan, diatur_oleh, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                (tenant_id, phone_number_id, device_token, nomor_owner_whatsapp, nomor_owner_whatsapp_2,
+                 nama_nomor, kuota,
                  diatur_oleh, now, now),
             )
     return get_config(tenant_id)

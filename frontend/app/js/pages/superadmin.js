@@ -2278,13 +2278,19 @@ const PageSuperadmin = (() => {
       // Setting > Karyawan, akses terbatas ke data masing-masing).
       const inputNomorOwner = MugenUI.el("input", { type: "text", placeholder: "mis. 6281234567890 (opsional)",
         value: b.config ? b.config.nomor_owner_whatsapp || "" : "" });
+      // PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner PENUH lewat
+      // bot per tenant (toko dengan 2 pemilik/pengelola) -- OPSIONAL,
+      // kosongkan kalau cuma butuh 1 nomor Owner.
+      const inputNomorOwner2 = MugenUI.el("input", { type: "text", placeholder: "mis. 6281234567891 (opsional, maks. 2)",
+        value: b.config ? b.config.nomor_owner_whatsapp_2 || "" : "" });
 
       waBotEditBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Device Fonnte"), inputNomor]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Device Token"), inputToken]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Label Nomor"), inputNama]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kuota Pesan/Bulan"), inputKuota]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner (WA) -- akses penuh lewat bot"), inputNomorOwner]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner 1 (WA) -- akses penuh lewat bot"), inputNomorOwner]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner 2 (WA) -- opsional"), inputNomorOwner2]),
       ]));
 
       const errEdit = MugenUI.el("div", { class: "login-error" });
@@ -2300,6 +2306,7 @@ const PageSuperadmin = (() => {
           nama_nomor: inputNama.value.trim() || null,
           kuota_pesan_bulanan: inputKuota.value === "" ? null : parseInt(inputKuota.value, 10),
           nomor_owner_whatsapp: inputNomorOwner.value.trim() || null,
+          nomor_owner_whatsapp_2: inputNomorOwner2.value.trim() || null,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan,

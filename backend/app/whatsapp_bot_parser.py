@@ -275,11 +275,15 @@ def _normalisasi_nomor(n: str) -> str:
 def resolve_role(tenant_id: int, config: dict, wa_id_pengirim: str):
     """Return ('owner', None) | ('barber', barber_dict) | (None, None).
     Nomor dibandingkan SETELAH dinormalisasi (lihat _normalisasi_nomor,
-    supaya 0812.../+62812.../62812... semua dianggap nomor yang sama)."""
-    nomor_owner = (config.get("nomor_owner_whatsapp") or "").strip() if config else ""
+    supaya 0812.../+62812.../62812... semua dianggap nomor yang sama).
+    PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner PENUH per tenant
+    (nomor_owner_whatsapp + nomor_owner_whatsapp_2, keduanya opsional)."""
     nomor_pengirim = _normalisasi_nomor(wa_id_pengirim)
-    if nomor_owner and _normalisasi_nomor(nomor_owner) == nomor_pengirim:
-        return "owner", None
+    nomor_owner_list = [config.get("nomor_owner_whatsapp"), config.get("nomor_owner_whatsapp_2")] if config else []
+    for nomor_owner in nomor_owner_list:
+        nomor_owner = (nomor_owner or "").strip()
+        if nomor_owner and _normalisasi_nomor(nomor_owner) == nomor_pengirim:
+            return "owner", None
     barbers = db.get_barbers(tenant_id=tenant_id, hanya_aktif=False)
     for b in barbers:
         if b.get("nomor_whatsapp") and _normalisasi_nomor(b["nomor_whatsapp"]) == nomor_pengirim:
