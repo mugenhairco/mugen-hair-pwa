@@ -441,6 +441,29 @@ def ubah_status_koreksi(koreksi_id: int, body: KoreksiStatusBody,
     return hasil
 
 
+@router.delete("/koreksi-riwayat/{koreksi_id}")
+def hapus_satu_riwayat_koreksi(koreksi_id: int, user: dict = Depends(require_permission("izin_absensi_koreksi"))):
+    """PERMINTAAN OWNER: hapus riwayat koreksi yang SUDAH diputuskan
+    (Disetujui/Ditolak) -- BEDA dari DELETE /koreksi/{koreksi_id} di atas
+    (barber batalkan pengajuan sendiri yang MASIH pending) -- endpoint ini
+    KEBALIKANNYA, khusus yang SUDAH diputuskan, KHUSUS Owner/Admin dengan
+    hak izin_absensi_koreksi."""
+    _pastikan_koreksi_tenant_sama(user, attendance_db.get_koreksi(koreksi_id))
+    try:
+        attendance_db.hapus_riwayat_koreksi(koreksi_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
+@router.delete("/koreksi-riwayat")
+def hapus_semua_riwayat_koreksi(user: dict = Depends(require_permission("izin_absensi_koreksi"))):
+    """Hapus SEMUA riwayat koreksi yang sudah Disetujui/Ditolak sekaligus
+    -- pengajuan yang masih Pending TIDAK ikut terhapus."""
+    jumlah = attendance_db.hapus_semua_riwayat_koreksi(user["tenant_id"])
+    return {"ok": True, "jumlah_dihapus": jumlah}
+
+
 @router.get("/{log_id}")
 def detail_absensi(log_id: int, user: dict = Depends(get_current_user)):
     _cek_akses_lihat(user)

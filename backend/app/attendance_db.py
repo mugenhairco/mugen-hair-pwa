@@ -44,6 +44,7 @@ import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import database
 from database import get_conn, get_barber
 
 WIB = ZoneInfo("Asia/Jakarta")
@@ -585,10 +586,33 @@ def hitung_ringkasan_bulan(barber_id: int, tenant_id: int, tahun: int = None, bu
     habis" (keputusan Owner: limit habis TIDAK memblokir absensi, cuma
     dicatat). Batas limit sendiri (menit/bulan, terpisah untuk keterlambatan
     vs pulang lebih awal) diambil dari attendance_settings -- BISA DIATUR
-    Owner/Admin lewat menu Absensi, kartu Pengaturan Absensi (lihat set_settings())."""
+    Owner/Admin lewat menu Absensi, kartu Pengaturan Absensi (lihat set_settings()).
+
+    PEMBEKUAN (PERMINTAAN OWNER): kalau bulan ini sudah dibekukan (lihat
+    _bekukan_sebelum_hapus_riwayat(), dipanggil hapus_riwayat_absensi()
+    sebelum attendance_logs-nya dihapus), nilai beku itu SELALU dipakai
+    apa adanya -- `keterangan_per_tanggal` kosong (baris mentahnya sudah
+    tidak ada, tapi tidak ada pemanggil yang butuh ini untuk bulan beku,
+    lihat get_log_list() -- selalu query attendance_logs LANGSUNG, jadi
+    otomatis tidak relevan lagi untuk bulan yang sudah dihapus)."""
     if tahun is None or bulan is None:
         sekarang = _sekarang_wib()
         tahun, bulan = tahun or sekarang.year, bulan or sekarang.month
+    beku = database.get_keterlambatan_beku(barber_id, tahun, bulan)
+    if beku is not None:
+        return {
+            "barber_id": barber_id,
+            "tahun": tahun,
+            "bulan": bulan,
+            "batas_menit_terlambat": beku["batas_menit_terlambat"],
+            "batas_menit_pulang_awal": beku["batas_menit_pulang_awal"],
+            "ambang_peringatan_menit": AMBANG_PERINGATAN_MENIT,
+            "menit_terlambat_terpakai": beku["menit_terlambat_terpakai"],
+            "sisa_limit_terlambat": max(0, beku["batas_menit_terlambat"] - beku["menit_terlambat_terpakai"]),
+            "menit_pulang_awal_terpakai": beku["menit_pulang_awal_terpakai"],
+            "sisa_limit_pulang_awal": max(0, beku["batas_menit_pulang_awal"] - beku["menit_pulang_awal_terpakai"]),
+            "keterangan_per_tanggal": {},
+        }
     settings = get_settings(tenant_id)
     batas_terlambat = settings["batas_menit_terlambat"]
     batas_pulang_awal = settings["batas_menit_pulang_awal"]
@@ -688,6 +712,52 @@ def hapus_semua_audit_log(tenant_id: int) -> int:
         return conn.execute("DELETE FROM attendance_audit_logs WHERE tenant_id = ?", (tenant_id,)).rowcount
 
 
+def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None) -> None:
+    """PERMINTAAN OWNER: dipanggil hapus_riwayat_absensi() SEBELUM baris
+    attendance_logs benar-benar dihapus -- membekukan (simpan permanen,
+    lihat database.py::simpan_uang_harian_beku()/simpan_keterlambatan_beku())
+    Uang Harian per tanggal DAN ringkasan Keterlambatan/Pulang Cepat per
+    bulan yang masih bergantung ke data yang akan hilang, supaya Rekap/
+    Dashboard/Slip Gaji/Laporan PDF/WA Bot tetap menampilkan angka yang
+    SAMA setelah riwayat mentahnya dihapus. Uang Harian HANYA dibekukan
+    untuk tenant yang sudah opt-in Uang Harian Dinamis (tenant yang belum
+    opt-in tidak pernah bergantung attendance_logs sama sekali, lihat
+    database._uang_harian_dinamis_aktif()) -- Keterlambatan/Pulang Cepat
+    SELALU dibekukan (fitur Absensi biasa, tidak terikat opt-in itu)."""
+    with get_conn() as conn:
+        q = "SELECT DISTINCT barber_id, tanggal FROM attendance_logs WHERE tenant_id = ?"
+        params = [tenant_id]
+        if barber_id is not None:
+            q += " AND barber_id = ?"
+            params.append(barber_id)
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    if not rows:
+        return
+
+    tanggal_per_barber: dict[int, list[str]] = {}
+    for r in rows:
+        tanggal_per_barber.setdefault(r["barber_id"], []).append(r["tanggal"])
+
+    import uang_harian_dinamis_db  # local: hindari circular import (lihat puncak modul)
+    uang_harian_aktif = uang_harian_dinamis_db.get_config(tenant_id)["aktif"]
+
+    for b_id, daftar_tanggal in tanggal_per_barber.items():
+        barber = get_barber(b_id)
+        if barber is None:
+            continue
+        if uang_harian_aktif:
+            for tanggal in daftar_tanggal:
+                nominal = database.hitung_uang_harian_per_hari(barber, tanggal)
+                database.simpan_uang_harian_beku(tenant_id, b_id, tanggal, nominal)
+        for tahun, bulan in {(int(t[:4]), int(t[5:7])) for t in daftar_tanggal}:
+            ringkasan = hitung_ringkasan_bulan(b_id, tenant_id, tahun, bulan)
+            database.simpan_keterlambatan_beku(
+                tenant_id, b_id, tahun, bulan,
+                ringkasan["batas_menit_terlambat"], ringkasan["menit_terlambat_terpakai"],
+                ringkasan["batas_menit_pulang_awal"], ringkasan["menit_pulang_awal_terpakai"],
+            )
+
+
 def hapus_riwayat_absensi(tenant_id: int, barber_id: int = None) -> int:
     """Hapus PERMANEN (hard delete, sampai ke database) riwayat Check In/Out
     (attendance_logs) milik tenant ini -- diminta Owner/Admin untuk
@@ -696,7 +766,14 @@ def hapus_riwayat_absensi(tenant_id: int, barber_id: int = None) -> int:
     menyentuh attendance_koreksi/attendance_audit_logs sama sekali --
     masing-masing sudah punya alur/tombol hapus sendiri (lihat
     hapus_pengajuan_koreksi()/hapus_semua_audit_log()). Mengembalikan jumlah
-    baris yang terhapus (untuk pesan konfirmasi UI)."""
+    baris yang terhapus (untuk pesan konfirmasi UI).
+
+    PEMBEKUAN (PERMINTAAN OWNER): Uang Harian & Keterlambatan/Pulang Cepat
+    yang masih bergantung ke baris yang AKAN dihapus ini dibekukan dulu
+    (lihat _bekukan_sebelum_hapus_riwayat() di atas) SEBELUM DELETE di
+    bawah benar-benar jalan -- supaya angka yang sudah pernah dihitung
+    tidak berubah gara-gara riwayat mentahnya hilang."""
+    _bekukan_sebelum_hapus_riwayat(tenant_id, barber_id)
     with get_conn() as conn:
         if barber_id is not None:
             return conn.execute(
@@ -1054,3 +1131,37 @@ def set_status_koreksi(koreksi_id: int, status: str, catatan_approval: str = "",
     if status == "disetujui":
         _terapkan_koreksi_ke_log(existing)
     return get_koreksi(koreksi_id)
+
+
+def hapus_riwayat_koreksi(koreksi_id: int) -> None:
+    """PERMINTAAN OWNER: hapus PERMANEN satu baris riwayat koreksi yang
+    SUDAH diputuskan (Disetujui/Ditolak) -- KEBALIKAN dari
+    hapus_pengajuan_koreksi() di atas (barber batalkan pengajuan sendiri
+    yang MASIH 'pending') -- endpoint ini KHUSUS Owner/Admin
+    (izin_absensi_koreksi), dipakai untuk membersihkan riwayat yang
+    menumpuk. Pengajuan yang MASIH 'pending' TIDAK boleh dihapus lewat
+    sini (harus diputuskan Setujui/Tolak dulu, atau dibatalkan barber
+    sendiri lewat hapus_pengajuan_koreksi()). TIDAK menyentuh
+    attendance_logs yang sudah ditulis koreksi ini (lihat
+    _terapkan_koreksi_ke_log()) -- cuma riwayat PENGAJUANnya yang hilang,
+    data Absensi hasil koreksi TETAP ada."""
+    existing = get_koreksi(koreksi_id)
+    if existing is None:
+        raise ValueError("Pengajuan koreksi tidak ditemukan.")
+    if existing["status"] == "pending":
+        raise ValueError("Pengajuan yang masih Pending tidak bisa dihapus dari sini -- "
+                          "putuskan (Setujui/Tolak) dulu.")
+    with get_conn() as conn:
+        conn.execute("DELETE FROM attendance_koreksi WHERE id = ?", (koreksi_id,))
+
+
+def hapus_semua_riwayat_koreksi(tenant_id: int) -> int:
+    """Hapus PERMANEN SEMUA riwayat koreksi yang SUDAH diputuskan
+    (Disetujui/Ditolak) milik tenant ini sekaligus -- pengajuan yang masih
+    'pending' TIDAK ikut terhapus. Mengembalikan jumlah baris yang
+    terhapus (untuk pesan konfirmasi UI)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM attendance_koreksi WHERE tenant_id = ? AND status != 'pending'",
+            (tenant_id,),
+        ).rowcount

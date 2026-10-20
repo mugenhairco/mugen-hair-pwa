@@ -1419,6 +1419,44 @@ CREATE TABLE IF NOT EXISTS attendance_koreksi (
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_tenant_id ON attendance_koreksi(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_koreksi_barber_id ON attendance_koreksi(barber_id);
 
+-- PERMINTAAN OWNER: "Hapus Riwayat Absensi" HARUS tetap membuat Uang
+-- Harian & Keterlambatan/Pulang Cepat yang SUDAH dihitung tampil SAMA
+-- PERSIS walau attendance_logs mentahnya hilang -- nilai dihitung &
+-- dibekukan (disimpan permanen) di sini SEBELUM baris attendance_logs
+-- dihapus (lihat attendance_db.py::_bekukan_sebelum_hapus_riwayat()),
+-- lalu database.py::hitung_uang_harian_per_hari()/_bulan()/_rentang() dan
+-- attendance_db.py::hitung_ringkasan_bulan() SELALU cek tabel ini lebih
+-- dulu sebelum hitung live. uang_harian_beku HANYA dipakai tenant yang
+-- sudah opt-in Uang Harian Dinamis -- keterlambatan_beku SELALU dipakai
+-- (fitur Absensi biasa, tidak terikat opt-in itu).
+CREATE TABLE IF NOT EXISTS uang_harian_beku (
+    id         SERIAL PRIMARY KEY,
+    tenant_id  INTEGER NOT NULL,
+    barber_id  INTEGER NOT NULL,
+    tanggal    TEXT NOT NULL,
+    nominal    INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(barber_id, tanggal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uang_harian_beku_tenant ON uang_harian_beku(tenant_id);
+
+CREATE TABLE IF NOT EXISTS keterlambatan_beku (
+    id                          SERIAL PRIMARY KEY,
+    tenant_id                   INTEGER NOT NULL,
+    barber_id                   INTEGER NOT NULL,
+    tahun                       INTEGER NOT NULL,
+    bulan                       INTEGER NOT NULL,
+    batas_menit_terlambat       INTEGER NOT NULL,
+    menit_terlambat_terpakai    INTEGER NOT NULL,
+    batas_menit_pulang_awal     INTEGER NOT NULL,
+    menit_pulang_awal_terpakai  INTEGER NOT NULL,
+    created_at                  TEXT NOT NULL,
+    UNIQUE(barber_id, tahun, bulan)
+);
+
+CREATE INDEX IF NOT EXISTS idx_keterlambatan_beku_tenant ON keterlambatan_beku(tenant_id);
+
 -- Fitur Log Error (DIY error monitoring, bukan Sentry) DIHAPUS TOTAL
 -- (diminta Owner) -- tabel error_logs yang sempat terbuat di instalasi
 -- lama di-DROP di sini, BUKAN dibuat lagi (pola sama seperti

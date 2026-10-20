@@ -228,6 +228,47 @@ def init_db():
             )
         """)
 
+        # PERMINTAAN OWNER: "Hapus Riwayat Absensi" (attendance_db.py) HARUS
+        # tetap membuat Uang Harian & Keterlambatan/Pulang Cepat yang SUDAH
+        # dihitung tampil SAMA PERSIS walau attendance_logs mentahnya hilang
+        # -- nilai dihitung & dibekukan (disimpan permanen) di SINI SEBELUM
+        # baris attendance_logs dihapus (lihat attendance_db._bekukan_
+        # sebelum_hapus_riwayat()), lalu hitung_uang_harian_per_hari()/
+        # _bulan()/_rentang() di bawah SELALU cek tabel ini lebih dulu
+        # sebelum hitung live. uang_harian_beku HANYA dipakai tenant yang
+        # sudah opt-in Uang Harian Dinamis (yang belum opt-in tidak pernah
+        # bergantung attendance_logs sama sekali) -- keterlambatan_beku
+        # SELALU dipakai (fitur Absensi biasa, tidak terikat opt-in).
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS uang_harian_beku (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id  INTEGER NOT NULL,
+                barber_id  INTEGER NOT NULL,
+                tanggal    TEXT NOT NULL,
+                nominal    INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(barber_id, tanggal)
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_uang_harian_beku_tenant ON uang_harian_beku(tenant_id)")
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS keterlambatan_beku (
+                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id                   INTEGER NOT NULL,
+                barber_id                   INTEGER NOT NULL,
+                tahun                       INTEGER NOT NULL,
+                bulan                       INTEGER NOT NULL,
+                batas_menit_terlambat       INTEGER NOT NULL,
+                menit_terlambat_terpakai    INTEGER NOT NULL,
+                batas_menit_pulang_awal     INTEGER NOT NULL,
+                menit_pulang_awal_terpakai  INTEGER NOT NULL,
+                created_at                  TEXT NOT NULL,
+                UNIQUE(barber_id, tahun, bulan)
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_keterlambatan_beku_tenant ON keterlambatan_beku(tenant_id)")
+
         # isi setting default hanya jika belum ada key tersebut (tidak menimpa yang sudah diubah user)
         # "ON CONFLICT DO NOTHING" (tanpa target) -- dialek-netral, berlaku sama
         # persis dengan "INSERT OR IGNORE" di SQLite 3.24+ maupun PostgreSQL.
@@ -965,6 +1006,77 @@ def _uang_harian_dinamis_aktif(tenant_id) -> bool:
     return uang_harian_dinamis_db.get_config(tenant_id)["aktif"]
 
 
+# ---------------------------------------------------------------------------
+# PEMBEKUAN Uang Harian & Keterlambatan (lihat catatan CREATE TABLE di
+# init_db() soal uang_harian_beku/keterlambatan_beku) -- dipakai
+# attendance_db.py SEBELUM menghapus attendance_logs (Hapus Riwayat
+# Absensi), dan dibaca di SINI (hitung_uang_harian_per_hari/_bulan/
+# _rentang di bawah) supaya tanggal yang sudah dibekukan TIDAK PERNAH
+# dihitung ulang dari attendance_logs lagi (yang mungkin sudah tidak ada).
+# ---------------------------------------------------------------------------
+
+def get_uang_harian_beku(barber_id: int, tanggal: str) -> int | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT nominal FROM uang_harian_beku WHERE barber_id = ? AND tanggal = ?",
+            (barber_id, tanggal),
+        ).fetchone()
+    return row["nominal"] if row else None
+
+
+def get_uang_harian_beku_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> dict:
+    """{tanggal: nominal} untuk SEMUA tanggal beku barber ini dalam rentang
+    (dipakai hitung_uang_harian_bulan(), dengan tanggal_selesai "-31" --
+    aman walau bulan itu < 31 hari, perbandingan string ISO tetap benar)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT tanggal, nominal FROM uang_harian_beku WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ?",
+            (barber_id, tanggal_mulai, tanggal_selesai),
+        ).fetchall()
+    return {r["tanggal"]: r["nominal"] for r in rows}
+
+
+def simpan_uang_harian_beku(tenant_id: int, barber_id: int, tanggal: str, nominal: int) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO uang_harian_beku (tenant_id, barber_id, tanggal, nominal, created_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(barber_id, tanggal) DO UPDATE SET
+                   nominal = excluded.nominal, created_at = excluded.created_at""",
+            (tenant_id, barber_id, tanggal, nominal, now),
+        )
+
+
+def get_keterlambatan_beku(barber_id: int, tahun: int, bulan: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM keterlambatan_beku WHERE barber_id = ? AND tahun = ? AND bulan = ?",
+            (barber_id, tahun, bulan),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def simpan_keterlambatan_beku(tenant_id: int, barber_id: int, tahun: int, bulan: int,
+                               batas_menit_terlambat: int, menit_terlambat_terpakai: int,
+                               batas_menit_pulang_awal: int, menit_pulang_awal_terpakai: int) -> None:
+    now = datetime.now().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO keterlambatan_beku (tenant_id, barber_id, tahun, bulan, batas_menit_terlambat,
+                   menit_terlambat_terpakai, batas_menit_pulang_awal, menit_pulang_awal_terpakai, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(barber_id, tahun, bulan) DO UPDATE SET
+                   batas_menit_terlambat = excluded.batas_menit_terlambat,
+                   menit_terlambat_terpakai = excluded.menit_terlambat_terpakai,
+                   batas_menit_pulang_awal = excluded.batas_menit_pulang_awal,
+                   menit_pulang_awal_terpakai = excluded.menit_pulang_awal_terpakai,
+                   created_at = excluded.created_at""",
+            (tenant_id, barber_id, tahun, bulan, batas_menit_terlambat, menit_terlambat_terpakai,
+             batas_menit_pulang_awal, menit_pulang_awal_terpakai, now),
+        )
+
+
 def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     """FONDASI Multi-Tenant Phase 1: tenant_id diambil dari `barber` yang
     sudah diterima fungsi ini (bukan parameter baru) -- lihat get_barbers().
@@ -985,7 +1097,15 @@ def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     hitung_uang_harian_bulan()/_rentang() di bawah (SATU query per bulan,
     tidak berulang) -- fungsi INI (per_hari) hanya untuk lookup satu hari
     tunggal, jumlah pemanggilan berulangnya dalam praktik dibatasi jumlah
-    hari kerja per bulan (puluhan), bukan skala yang perlu cache tambahan."""
+    hari kerja per bulan (puluhan), bukan skala yang perlu cache tambahan.
+
+    PEMBEKUAN: kalau tanggal ini sudah dibekukan (lihat simpan_uang_harian_beku(),
+    dipanggil attendance_db.py sebelum Hapus Riwayat Absensi), nilai beku itu
+    SELALU dipakai apa adanya -- TIDAK pernah hitung ulang dari attendance_logs
+    (yang kemungkinan sudah tidak ada)."""
+    beku = get_uang_harian_beku(barber["id"], tanggal)
+    if beku is not None:
+        return beku
     tenant_id = barber.get("tenant_id")
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
@@ -1015,11 +1135,21 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
     hitung_uang_harian_per_hari).
 
     FITUR Uang Harian Dinamis: percabangan SAMA seperti hitung_uang_harian_per_hari()
-    di atas -- Tenant yang belum opt-in tidak terpengaruh sama sekali."""
+    di atas -- Tenant yang belum opt-in tidak terpengaruh sama sekali.
+
+    PEMBEKUAN: tanggal yang sudah dibekukan (lihat hitung_uang_harian_per_hari())
+    dijumlahkan dari uang_harian_beku langsung, DIKECUALIKAN dari perhitungan
+    live (baik jalur Uang Harian Dinamis maupun sistem lama di bawah) supaya
+    tidak dihitung dua kali/salah (attendance_logs-nya mungkin sudah tidak ada)."""
     tenant_id = barber.get("tenant_id")
+    beku_map = get_uang_harian_beku_rentang(barber["id"], f"{tahun:04d}-{bulan:02d}-01",
+                                             f"{tahun:04d}-{bulan:02d}-31")
+    total_beku = sum(beku_map.values())
+    abaikan_tanggal = set(beku_map.keys())
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
-        return uang_harian_dinamis_db.hitung_uang_harian_dinamis_bulan(barber, tahun, bulan)
+        return total_beku + uang_harian_dinamis_db.hitung_uang_harian_dinamis_bulan(
+            barber, tahun, bulan, abaikan_tanggal=abaikan_tanggal)
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
@@ -1036,18 +1166,24 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
             jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
 
     nominal = int(barber["uang_harian"] or 0)
-    return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= target)
+    return total_beku + sum(nominal for tanggal, jumlah in jumlah_per_hari.items()
+                             if tanggal not in abaikan_tanggal and jumlah >= target)
 
 
 def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> int:
     """Versi rentang tanggal bebas dari hitung_uang_harian_bulan() di atas --
     dipakai Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom,
     BUKAN satu bulan kalender penuh). Aturan hitungnya SAMA PERSIS (termasuk
-    percabangan Uang Harian Dinamis, lihat hitung_uang_harian_per_hari())."""
+    percabangan Uang Harian Dinamis DAN pembekuan, lihat
+    hitung_uang_harian_per_hari()/hitung_uang_harian_bulan())."""
     tenant_id = barber.get("tenant_id")
+    beku_map = get_uang_harian_beku_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
+    total_beku = sum(beku_map.values())
+    abaikan_tanggal = set(beku_map.keys())
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
-        return uang_harian_dinamis_db.hitung_uang_harian_dinamis_rentang(barber, tanggal_mulai, tanggal_selesai)
+        return total_beku + uang_harian_dinamis_db.hitung_uang_harian_dinamis_rentang(
+            barber, tanggal_mulai, tanggal_selesai, abaikan_tanggal=abaikan_tanggal)
     acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
     target = target_uang_harian_per_hari(tenant_id=tenant_id)
     with get_conn() as conn:
@@ -1064,7 +1200,8 @@ def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai
             jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
 
     nominal = int(barber["uang_harian"] or 0)
-    return sum(nominal for jumlah in jumlah_per_hari.values() if jumlah >= target)
+    return total_beku + sum(nominal for tanggal, jumlah in jumlah_per_hari.items()
+                             if tanggal not in abaikan_tanggal and jumlah >= target)
 
 
 # ---------------------------------------------------------------------------

@@ -1207,7 +1207,23 @@ const PageAbsensi = (() => {
       MugenUI.el("option", { value: "disetujui" }, "Disetujui"),
       MugenUI.el("option", { value: "ditolak" }, "Ditolak"),
     ]);
-    koreksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:10px;" }, [kFilStatus]));
+    // PERMINTAAN OWNER: hapus riwayat koreksi yang SUDAH diputuskan
+    // (Disetujui/Ditolak) sekaligus -- Pending TIDAK ikut terhapus
+    // (backend menolak hapus Pending lewat endpoint ini, lihat
+    // attendance_db.py::hapus_semua_riwayat_koreksi()).
+    const btnHapusSemuaKoreksi = MugenUI.el("button", { class: "btn-danger" }, "Hapus Semua Riwayat");
+    btnHapusSemuaKoreksi.addEventListener("click", async () => {
+      if (!confirm("Hapus SEMUA riwayat koreksi yang sudah Disetujui/Ditolak secara permanen? Pengajuan yang masih Pending TIDAK ikut terhapus. Tindakan ini TIDAK BISA dibatalkan.")) return;
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnHapusSemuaKoreksi, () => MugenApi.del("/api/attendance/koreksi-riwayat"));
+        MugenUI.toast(`${hasil.jumlah_dihapus} riwayat koreksi dihapus.`, "success");
+        loadKoreksi();
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    });
+    koreksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:8px;margin-bottom:10px;" },
+      [kFilStatus, btnHapusSemuaKoreksi]));
     const koreksiListBody = MugenUI.el("div");
     koreksiCard.appendChild(koreksiListBody);
 
@@ -1257,7 +1273,21 @@ const PageAbsensi = (() => {
           {
             key: "aksi", label: "Aksi", format: (_, r) => {
               if (r.status !== "pending") {
-                return MugenUI.el("span", { class: "subtitle" }, r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-");
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                wrap.appendChild(MugenUI.el("span", { class: "subtitle" }, r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-"));
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus riwayat koreksi ${LABEL_JENIS_KOREKSI[r.jenis] || r.jenis} tanggal ${r.tanggal} (${r.nama_barber})? Tindakan ini TIDAK BISA dibatalkan.`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/attendance/koreksi-riwayat/${r.id}`));
+                    MugenUI.toast("Riwayat koreksi dihapus.", "success");
+                    loadKoreksi();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnHapus);
+                return wrap;
               }
               const wrap = MugenUI.el("div", { class: "actions-cell" });
               const btnSetujui = MugenUI.el("button", {}, "Setujui");
@@ -1334,7 +1364,7 @@ const PageAbsensi = (() => {
     root.appendChild(resetCard);
     resetCard.appendChild(MugenUI.el("h2", {}, "Reset Riwayat Absensi Karyawan"));
     resetCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-      "Hapus PERMANEN riwayat Check In/Out (Daftar Absensi, Sisa Limit, Keterangan) untuk mengantisipasi data yang menumpuk. Pilih satu barber, atau \"Semua Barber\" untuk menghapus riwayat SELURUH karyawan. Tindakan ini TIDAK BISA dibatalkan."));
+      "Hapus PERMANEN riwayat Check In/Out (Daftar Absensi, Sisa Limit, Keterangan) untuk mengantisipasi data yang menumpuk. Pilih satu barber, atau \"Semua Barber\" untuk menghapus riwayat SELURUH karyawan. Tindakan ini TIDAK BISA dibatalkan -- Uang Harian & Keterlambatan/Pulang Cepat yang sudah pernah dihitung TETAP SAMA (dibekukan otomatis sebelum riwayat mentahnya dihapus), tidak ikut hilang/reset."));
     const selResetBarber = MugenUI.el("select");
     selResetBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
     for (const b of barbers) selResetBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));

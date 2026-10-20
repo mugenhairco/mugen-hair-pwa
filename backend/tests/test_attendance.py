@@ -534,6 +534,41 @@ def test_koreksi_hapus_pending_sukses_tapi_bukan_setelah_diproses(single_tenant)
         attendance_db.hapus_pengajuan_koreksi(koreksi2["id"])
 
 
+def test_hapus_riwayat_koreksi_hanya_boleh_yang_sudah_diputuskan(single_tenant):
+    """PERMINTAAN OWNER: hapus riwayat koreksi (beda dari batalkan
+    pengajuan sendiri yang masih pending) -- KEBALIKAN syaratnya, HANYA
+    boleh untuk yang SUDAH Disetujui/Ditolak."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Koreksi Hapus")
+    koreksi = attendance_db.buat_pengajuan_koreksi(barber_a, "2026-08-20", "check_in", "09:05", "Lupa",
+                                                     tenant_id=tenant_id)
+    with pytest.raises(ValueError, match="masih Pending"):
+        attendance_db.hapus_riwayat_koreksi(koreksi["id"])
+
+    attendance_db.set_status_koreksi(koreksi["id"], "disetujui")
+    attendance_db.hapus_riwayat_koreksi(koreksi["id"])
+    assert attendance_db.get_koreksi(koreksi["id"]) is None
+
+
+def test_hapus_semua_riwayat_koreksi_sisakan_pending(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Koreksi Semua")
+    k1 = attendance_db.buat_pengajuan_koreksi(barber_a, "2026-08-21", "check_in", "09:05", "Lupa1",
+                                               tenant_id=tenant_id)
+    k2 = attendance_db.buat_pengajuan_koreksi(barber_a, "2026-08-22", "check_in", "09:05", "Lupa2",
+                                               tenant_id=tenant_id)
+    k3 = attendance_db.buat_pengajuan_koreksi(barber_a, "2026-08-23", "check_in", "09:05", "Lupa3",
+                                               tenant_id=tenant_id)
+    attendance_db.set_status_koreksi(k1["id"], "disetujui")
+    attendance_db.set_status_koreksi(k2["id"], "ditolak")
+
+    jumlah = attendance_db.hapus_semua_riwayat_koreksi(tenant_id)
+    assert jumlah == 2
+    assert attendance_db.get_koreksi(k1["id"]) is None
+    assert attendance_db.get_koreksi(k2["id"]) is None
+    assert attendance_db.get_koreksi(k3["id"]) is not None  # pending tetap ada
+
+
 def test_api_koreksi_ajukan_dan_approve(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
@@ -580,6 +615,51 @@ def test_api_koreksi_ajukan_dan_approve(single_tenant):
 
     r_list = client.get("/api/attendance", params={"tanggal": "2026-08-05"}, headers=headers)
     assert any(row["barber_id"] == barber_id and row.get("check_in_at") for row in r_list.json())
+
+
+def test_api_hapus_riwayat_koreksi(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Koreksi API Hapus")
+
+    import auth_db
+    auth_db.tambah_user("barberkoreksihapus", "passwordB123", role="barber", barber_id=barber_a,
+                         tenant_id=tenant_id)
+    r_login = client.post("/api/auth/login", json={"username": "barberkoreksihapus", "password": "passwordB123"})
+    headers_barber = {"Authorization": f"Bearer {r_login.json()['token']}"}
+
+    r_post = client.post("/api/attendance/koreksi",
+                          json={"tanggal": "2026-08-25", "jenis": "check_in", "waktu_diajukan": "09:05",
+                                "alasan": "Lupa check-in"},
+                          headers=headers_barber)
+    koreksi_id = r_post.json()["id"]
+
+    # Barber TIDAK boleh hapus riwayat (bahkan punya sendiri) -- endpoint
+    # ini khusus Owner/Admin (izin_absensi_koreksi).
+    assert client.delete(f"/api/attendance/koreksi-riwayat/{koreksi_id}", headers=headers_barber).status_code == 403
+
+    # Masih pending -- Owner pun ditolak (422) lewat endpoint ini.
+    r_masih_pending = client.delete(f"/api/attendance/koreksi-riwayat/{koreksi_id}", headers=headers)
+    assert r_masih_pending.status_code == 422
+
+    client.put(f"/api/attendance/koreksi/{koreksi_id}/status", json={"status": "disetujui"}, headers=headers)
+    r_hapus = client.delete(f"/api/attendance/koreksi-riwayat/{koreksi_id}", headers=headers)
+    assert r_hapus.status_code == 200, r_hapus.text
+    assert attendance_db.get_koreksi(koreksi_id) is None
+
+
+def test_api_hapus_semua_riwayat_koreksi(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id, "Barber Koreksi API Hapus Semua")
+    k1 = attendance_db.buat_pengajuan_koreksi(barber_a, "2026-08-26", "check_in", "09:05", "Lupa",
+                                               tenant_id=tenant_id)
+    attendance_db.set_status_koreksi(k1["id"], "ditolak")
+
+    r = client.delete("/api/attendance/koreksi-riwayat", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["jumlah_dihapus"] == 1
+    assert attendance_db.get_koreksi(k1["id"]) is None
 
 
 def test_api_ringkasan_bulan(single_tenant):
@@ -823,3 +903,67 @@ def test_api_hapus_riwayat_owner_dan_staff_sama_sama_boleh(single_tenant, monkey
     r_staff = client.delete(f"/api/attendance/riwayat?barber_id={barber_a}", headers=headers_staff)
     assert r_staff.status_code == 200, r_staff.text
     assert r_staff.json()["jumlah_dihapus"] == 1
+
+
+# ---------------------------------------------------------------------------
+# FITUR (PERMINTAAN OWNER): Pembekuan Uang Harian & Keterlambatan/Pulang
+# Cepat sebelum Hapus Riwayat Absensi -- supaya angka yang sudah pernah
+# dihitung TETAP SAMA walau attendance_logs mentahnya dihapus.
+# ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_absensi_membekukan_keterlambatan_bulan_itu(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_a = _barber(tenant_id, "Barber Beku Keterlambatan")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 20, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_a, TOKO_LAT, TOKO_LNG, accuracy=15)  # telat 20 menit
+
+    ringkasan_sebelum = attendance_db.hitung_ringkasan_bulan(barber_a, tenant_id, 2026, 8)
+    assert ringkasan_sebelum["menit_terlambat_terpakai"] == 20
+
+    attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_a)
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_a) == []
+
+    ringkasan_setelah = attendance_db.hitung_ringkasan_bulan(barber_a, tenant_id, 2026, 8)
+    assert ringkasan_setelah["menit_terlambat_terpakai"] == 20  # TETAP SAMA, bukan reset ke 0
+    assert ringkasan_setelah["sisa_limit_terlambat"] == ringkasan_sebelum["sisa_limit_terlambat"]
+    assert ringkasan_setelah["batas_menit_terlambat"] == ringkasan_sebelum["batas_menit_terlambat"]
+
+
+def test_hapus_riwayat_absensi_membekukan_uang_harian_jika_dinamis_aktif(single_tenant, monkeypatch):
+    import database
+    import uang_harian_dinamis_db as uhd
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_id = _barber(tenant_id, "Barber Beku Uang Harian")
+    database.update_barber(barber_id, uang_harian=60000)
+    uhd.set_config(tenant_id, aktif=True)
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_id, TOKO_LAT, TOKO_LNG, accuracy=15)
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 18, 0, tzinfo=WIB))
+    attendance_db.check_out(tenant_id, barber_id, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    barber = database.get_barber(barber_id)
+    assert database.hitung_uang_harian_per_hari(barber, "2026-08-13") == 60000
+
+    attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_id)
+    assert attendance_db.get_log_list(tenant_id, tanggal="2026-08-13", barber_id=barber_id) == []
+
+    # Tanpa pembekuan, ini akan jadi Rp0 (absensi tidak lengkap karena baris
+    # attendance_logs sudah hilang) -- DENGAN pembekuan, nilai TETAP SAMA.
+    assert database.hitung_uang_harian_per_hari(barber, "2026-08-13") == 60000
+
+
+def test_hapus_riwayat_absensi_tidak_bekukan_uang_harian_kalau_belum_opt_in(single_tenant, monkeypatch):
+    """Tenant yang BELUM opt-in Uang Harian Dinamis tidak pernah bergantung
+    attendance_logs sama sekali -- tidak perlu dibekukan (tabel beku tetap
+    kosong untuk tanggal ini)."""
+    import database
+    tenant_id = single_tenant["tenant_id"]
+    _atur_lokasi_toko(tenant_id)
+    barber_id = _barber(tenant_id, "Barber Tanpa Opt In")
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_id, TOKO_LAT, TOKO_LNG, accuracy=15)
+
+    attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_id)
+    assert database.get_uang_harian_beku(barber_id, "2026-08-13") is None

@@ -427,35 +427,43 @@ def _tanggal_dengan_service_bulan(barber_id: int, tenant_id, tahun: int, bulan: 
     return hasil
 
 
-def hitung_uang_harian_dinamis_bulan(barber: dict, tahun: int, bulan: int) -> int:
+def hitung_uang_harian_dinamis_bulan(barber: dict, tahun: int, bulan: int, abaikan_tanggal: set = None) -> int:
+    """`abaikan_tanggal` (PERMINTAAN OWNER, fitur pembekuan): tanggal yang
+    SUDAH dibekukan (lihat database.py::hitung_uang_harian_bulan()) --
+    dikecualikan dari perhitungan di sini karena sudah dijumlahkan
+    terpisah oleh pemanggil dari uang_harian_beku, supaya tidak dihitung
+    ulang dari data attendance_logs yang mungkin sudah dihapus."""
     tenant_id = barber.get("tenant_id")
     config = get_config(tenant_id)
     akumulasi = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
     tanggal_service = _tanggal_dengan_service_bulan(barber["id"], tenant_id, tahun, bulan)
-    semua_tanggal = set(akumulasi) | set(tanggal_service)
+    semua_tanggal = (set(akumulasi) | set(tanggal_service)) - (abaikan_tanggal or set())
     total = 0
     for tanggal in semua_tanggal:
         total += _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config, akumulasi)["uang_harian_final"]
     return total
 
 
-def hitung_uang_harian_dinamis_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> int:
+def hitung_uang_harian_dinamis_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai: str,
+                                        abaikan_tanggal: set = None) -> int:
     """Rentang bebas (Laporan PDF) -- BISA melintasi 2+ bulan kalender,
     jadi akumulasi limit dihitung PER BULAN yang tercakup (limit reset tiap
-    tanggal 1, sama seperti Absensi) lalu digabung."""
+    tanggal 1, sama seperti Absensi) lalu digabung. `abaikan_tanggal`: lihat
+    catatan hitung_uang_harian_dinamis_bulan() di atas."""
     tenant_id = barber.get("tenant_id")
     config = get_config(tenant_id)
     mulai = datetime.strptime(tanggal_mulai, "%Y-%m-%d")
     selesai = datetime.strptime(tanggal_selesai, "%Y-%m-%d")
     total = 0
     akumulasi_cache: dict[tuple[int, int], dict] = {}
+    abaikan_tanggal = abaikan_tanggal or set()
     tahun, bulan = mulai.year, mulai.month
     while (tahun, bulan) <= (selesai.year, selesai.month):
         if (tahun, bulan) not in akumulasi_cache:
             akumulasi_cache[(tahun, bulan)] = _akumulasi_limit_bulan(barber["id"], tenant_id, tahun, bulan)
         akumulasi = akumulasi_cache[(tahun, bulan)]
         tanggal_service = _tanggal_dengan_service_bulan(barber["id"], tenant_id, tahun, bulan)
-        semua_tanggal = set(akumulasi) | set(tanggal_service)
+        semua_tanggal = (set(akumulasi) | set(tanggal_service)) - abaikan_tanggal
         for tanggal in semua_tanggal:
             if tanggal_mulai <= tanggal <= tanggal_selesai:
                 total += _evaluasi_hari_dengan_fallback(barber, tanggal, tenant_id, config,
