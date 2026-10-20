@@ -269,3 +269,66 @@ def test_router_rekap_bulanan_menyertakan_kuota_habis(single_tenant):
     assert r.status_code == 200, r.text
     baris = next(b for b in r.json() if b["barber_id"] == barber_id)
     assert baris["kuota_habis"] is True
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: tanda visual beda di kolom Keterangan Rekap Transaksi
+# untuk tanggal yang Tandai Libur-nya "nebeng" kuota lain (bukan kuota
+# Libur asli) -- lihat kuota_libur_db.py::tandai_rekap_transaksi_kuota().
+# ---------------------------------------------------------------------------
+
+def test_rekap_transaksi_tandai_libur_dari_kuota_cuti_izin(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1)
+    kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-01")  # kuota libur dipakai
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-02")  # auto-Cuti
+    assert jenis == "cuti"
+
+    data = db.get_rekap_transaksi_list(tahun=2026, bulan=8, barber_id=barber_id, tenant_id=tenant_id)
+    data = kld.tandai_rekap_transaksi_kuota(data, tahun=2026, bulan=8, barber_id=barber_id, tenant_id=tenant_id)
+
+    baris_asli = next(r for r in data if r["tanggal"] == "2026-08-01")
+    assert baris_asli["keterangan"] == "Libur"
+    assert baris_asli.get("dari_kuota_cuti_izin") is not True
+
+    baris_otomatis = next(r for r in data if r["tanggal"] == "2026-08-02")
+    assert baris_otomatis["tipe"] == "libur"
+    assert baris_otomatis["keterangan"] == "Libur ⚠️"
+    assert baris_otomatis["dari_kuota_cuti_izin"] is True
+    assert baris_otomatis["barber_id"] == barber_id
+
+
+def test_rekap_transaksi_tandai_libur_kelebihan_kuota(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1, kuota_periode_bulan=1,
+                                    periode_mulai_dasar="2026-08-01", kuota_gabungan_hari=1)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-08-15", "2026-08-15",
+                                 "Cuti biasa", tenant_id=tenant_id, override=True)
+    kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-01")  # kuota libur dipakai
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-02")  # kelebihan_kuota
+    assert jenis == "kelebihan_kuota"
+
+    data = db.get_rekap_transaksi_list(tahun=2026, bulan=8, barber_id=barber_id, tenant_id=tenant_id)
+    data = kld.tandai_rekap_transaksi_kuota(data, tahun=2026, bulan=8, barber_id=barber_id, tenant_id=tenant_id)
+
+    baris = next(r for r in data if r["tanggal"] == "2026-08-02")
+    assert baris["keterangan"] == "Libur 🔴"
+    assert baris.get("dari_kuota_cuti_izin") is not True  # tombol Hapus Libur TETAP ada
+
+
+def test_router_rekap_transaksi_menandai_libur_dari_kuota(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1)
+    kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-01")
+    kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-02")  # auto-Cuti
+
+    r = client.get("/api/rekap/transaksi", params={"tahun": 2026, "bulan": 8, "barber_id": barber_id},
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    baris = next(b for b in r.json() if b["tanggal"] == "2026-08-02")
+    assert baris["keterangan"] == "Libur ⚠️"
+    assert baris["dari_kuota_cuti_izin"] is True

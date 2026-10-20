@@ -68,6 +68,11 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     # filter "Semua Karyawan"/pilih karyawan non-barber selalu kosong.
     data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
                                                          tenant_id=user["tenant_id"])
+    # PERMINTAAN OWNER: tanda visual beda ("Libur ⚠️"/"Libur 🔴") untuk
+    # tanggal yang Tandai Libur-nya sebenarnya "nebeng" kuota Cuti/Izin atau
+    # kuota keduanya sudah habis -- lihat kuota_libur_db.py.
+    data = kuota_libur_db.tandai_rekap_transaksi_kuota(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                         tanggal=tanggal, tenant_id=user["tenant_id"])
     return data
 
 

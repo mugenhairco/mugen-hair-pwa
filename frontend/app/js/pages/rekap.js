@@ -253,7 +253,18 @@ const PageRekap = (() => {
           const kolomKet = {
             key: "keterangan", label: "Ket.", format: (v, r) => {
               if (!v) return "-";
-              if (r.tipe === "libur") return MugenUI.el("span", { class: "badge badge-libur" }, v);
+              if (r.tipe === "libur") {
+                // PERMINTAAN OWNER: "Libur ⚠️" (diambil dari kuota Cuti/Izin
+                // karena kuota Libur bulanan habis) / "Libur 🔴" (kuota
+                // Libur DAN Izin/Cuti gabungan sama-sama habis) -- lihat
+                // kuota_libur_db.py::tandai_rekap_transaksi_kuota().
+                const title = v.includes("⚠️")
+                  ? "Libur ini diambil dari kuota Cuti/Izin karena kuota Libur bulanan sudah habis -- BUKAN pengajuan Cuti/Izin asli dari barber."
+                  : v.includes("🔴")
+                    ? "Kuota Libur DAN kuota gabungan Izin/Cuti bulan ini sama-sama sudah habis."
+                    : null;
+                return MugenUI.el("span", { class: "badge badge-libur", ...(title ? { title } : {}) }, v);
+              }
               return MugenUI.keteranganCell(v);
             },
           };
@@ -321,6 +332,11 @@ const PageRekap = (() => {
               ...(isOwner ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   if (r.tipe === "libur") {
+                    // PERMINTAAN OWNER: baris "Libur ⚠️" (lihat kolomKet di
+                    // atas) tidak punya apa pun di absensi_libur untuk
+                    // dihapus (tersimpan di izin_cuti) -- tombol Hapus
+                    // Keterangan Libur di sini TIDAK berlaku untuk baris ini.
+                    if (r.dari_kuota_cuti_izin) return "-";
                     return tombolAksi({
                       label: "🗑 Hapus", title: "Hapus Keterangan Libur",
                       confirmTitle: "Hapus Keterangan Libur",
