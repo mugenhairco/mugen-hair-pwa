@@ -808,3 +808,191 @@ def test_webhook_pesan_duplikat_diproses_sekali_saja(single_tenant, monkeypatch)
     client.post("/api/whatsapp-bot/webhook/secret-rahasia", data=data)
     client.post("/api/whatsapp-bot/webhook/secret-rahasia", data=data)  # dikirim ulang (retry)
     assert wb_db.kuota_terpakai_bulan_ini(tenant_id) == 1  # BUKAN 2
+
+
+# ---------------------------------------------------------------------------
+# INPUT HARIAN (gabungan banyak barber + Libur + Produk, koreksi interaktif)
+# ---------------------------------------------------------------------------
+
+def test_input_harian_lengkap_tanpa_koreksi_lalu_ya(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    ozi = _barber(tenant_id, "Ozi")
+    mifta = _barber(tenant_id, "Mifta")
+    _service(tenant_id, "Dandan Cepat", 100000, modal=10000)
+    _service(tenant_id, "Hebat Wangi", 150000, modal=20000)
+    _produk(tenant_id, "Wax Pomade", 50000)
+    db.set_setting("persentase_komisi", "50", tenant_id=tenant_id)
+
+    pesan = (
+        "Input Harian 20 oktober 2026\n"
+        "Romen\n"
+        "Dc 3\n"
+        "Tips 60000\n"
+        "Ozi\n"
+        "Dc 2\n"
+        "Hw 2\n"
+        "Tips 55000\n"
+        "Libur: Mifta\n"
+        "Produk:\n"
+        "Wax Pomade 1"
+    )
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "Konfirmasi Input Harian" in preview
+    assert "Romen" in preview and "Ozi" in preview
+    assert "Mifta" in preview
+    assert "Wax Pomade x1" in preview
+    assert "YA" in preview
+    # belum tersimpan apa pun sebelum konfirmasi
+    assert db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id) == []
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "diproses" in balasan
+    assert "Romen" in balasan and "Ozi" in balasan and "Mifta" in balasan
+
+    daftar_romen = db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)
+    assert len(daftar_romen) == 1
+    assert daftar_romen[0]["tips"] == 60000
+    assert daftar_romen[0]["sumber"] == "wa_bot"
+
+    daftar_ozi = db.get_transaksi_list(barber_id=ozi, tenant_id=tenant_id)
+    assert len(daftar_ozi) == 1
+    assert len(daftar_ozi[0]["items"]) == 2
+
+    assert db.get_hari_libur(mifta, 2026, 10) == 1
+    mutasi = db.get_mutasi_produk_list(tipe="jual", tenant_id=tenant_id)
+    assert len(mutasi) == 1
+    assert mutasi[0]["jumlah"] == 1
+
+
+def test_input_harian_koreksi_kode_servis_lalu_lanjut(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nXyz 3\nTips 0"
+    tanya = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "tidak dikenali" in tanya
+    assert "Romen" in tanya  # konteks baris disebut di bagian barber mana
+
+    # belum tersimpan sebagai pending siap-YA (masih draft koreksi)
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending["jenis"] == "input_harian_draft"
+
+    balasan_koreksi = wbp.proses_pesan(tenant_id, config, "628110000000", "Dc")
+    assert "Konfirmasi Input Harian" in balasan_koreksi
+    assert "Dandan Cepat x3" in balasan_koreksi
+
+    hasil = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "diproses" in hasil
+    daftar = db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)
+    assert daftar[0]["items"][0]["jumlah"] == 3
+
+
+def test_input_harian_koreksi_nama_barber_lalu_lanjut(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomenn\nDc 1\nTips 0"
+    tanya = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "tidak" in tanya.lower()
+
+    balasan_koreksi = wbp.proses_pesan(tenant_id, config, "628110000000", "Romen")
+    assert "Konfirmasi Input Harian" in balasan_koreksi
+    assert "Romen" in balasan_koreksi
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert len(db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)) == 1
+
+
+def test_input_harian_koreksi_nama_produk_lalu_lanjut(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000)
+    pid = _produk(tenant_id, "Wax Pomade", 50000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nDc 1\nTips 0\nProduk:\nWex Pomade 2"
+    tanya = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "produk" in tanya.lower()
+
+    balasan_koreksi = wbp.proses_pesan(tenant_id, config, "628110000000", "Wax Pomade")
+    assert "Wax Pomade x2" in balasan_koreksi
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    mutasi = db.get_mutasi_produk_list(produk_id=pid, tipe="jual", tenant_id=tenant_id)
+    assert len(mutasi) == 1
+    assert mutasi[0]["jumlah"] == 2
+
+
+def test_input_harian_koreksi_nama_libur_lalu_lanjut(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Romen")
+    mifta = _barber(tenant_id, "Mifta")
+    _service(tenant_id, "Dandan Cepat", 100000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nDc 1\nTips 0\nLibur: Miftah"
+    tanya = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "Libur" in tanya
+
+    balasan_koreksi = wbp.proses_pesan(tenant_id, config, "628110000000", "Mifta")
+    assert "Konfirmasi Input Harian" in balasan_koreksi
+    assert "Mifta" in balasan_koreksi
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert db.get_hari_libur(mifta, 2026, 10) == 1
+
+
+def test_input_harian_batal_saat_menunggu_koreksi_membatalkan_semua(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nXyz 3\nTips 0"
+    wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "BATAL")
+    assert "dibatalkan" in balasan
+    assert wb_db.ambil_pending(tenant_id, "628110000000") is None
+    assert db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id) == []
+
+
+def test_input_harian_libur_kena_cascade_kuota_ditampilkan_di_hasil(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    mifta = _barber(tenant_id, "Mifta")
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=0)  # 0 = tidak dibatasi -> selalu "libur" murni
+    # Set kuota 1 lalu habiskan dulu supaya baris Libur di Input Harian jatuh ke cascade Cuti.
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1)
+    db.tandai_libur(mifta, "2026-10-01")  # kuota Libur bulan itu sudah terpakai 1/1
+
+    pesan = "Input Harian 20 oktober 2026\nLibur: Mifta"
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "Konfirmasi Input Harian" in preview
+
+    hasil = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "CUTI" in hasil
+
+
+def test_input_harian_ditolak_untuk_barber(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Romen")
+    _barber(tenant_id, "Jaka", nomor_whatsapp="628199999999")
+    _service(tenant_id, "Dandan Cepat", 100000)
+    balasan = wbp.proses_pesan(tenant_id, config, "628199999999", "Input Harian\nRomen\nDc 1\nTips 0")
+    assert "khusus" in balasan.lower() or "Owner" in balasan
+
+
+def test_input_harian_tanpa_tanggal_pakai_hari_ini(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000)
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", "Input Harian\nRomen\nDc 1\nTips 0")
+    assert "Konfirmasi Input Harian" in preview

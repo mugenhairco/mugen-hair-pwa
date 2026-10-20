@@ -36,6 +36,17 @@ selalu minta klarifikasi (daftar bernomor) dan GAGALKAN SELURUH input itu
 (tidak memproses baris lain secara parsial), supaya Owner tidak kaget ada
 baris yang "diam-diam" ditebak salah.
 
+INPUT HARIAN (permintaan Owner, pengganti form kertas "List Customer
+Harian" -- lihat docstring _cmd_input_harian()): SATU PENGECUALIAN dari
+aturan "gagal total" di atas -- gabungan banyak barber + Libur + Produk
+dalam satu pesan, jadi kalau langsung gagal total di baris pertama yang
+keliru, Owner harus ketik ULANG SELURUH pesan panjang itu dari awal.
+Sebagai gantinya, parsing BERHENTI SEMENTARA tepat di baris yang
+bermasalah (bot tanya spesifik), lalu LANJUT dari situ begitu Owner balas
+koreksinya -- lihat whatsapp_bot_db jenis pending "input_harian_draft" vs
+"input_harian" (siap-YA/BATAL) di _lanjutkan_parsing_input_harian()/
+_terapkan_koreksi_input_harian().
+
 REVISI (WA biasa, bukan Business): menu/command TETAP teks biasa (bukan
 tombol/list interaktif WhatsApp Business) -- Owner memakai nomor WA biasa
 untuk device Fonnte, belum dipastikan kompatibel dengan fitur interaktif
@@ -247,6 +258,55 @@ def _hasil_barber_gagal(ketik: str, cocok: list) -> str:
     return _teks_ambigu_list(ketik, cocok, "nama")
 
 
+def _cocokkan_satu_service(kode: str, services: list):
+    """Dipakai Input Data & Input Harian -- return (service_dict, None)
+    kalau cocok PAS SATU, atau (None, pesan_error) kalau 0/2+ kandidat."""
+    cocok = _cocokkan(kode, services, "nama")
+    if len(cocok) == 0:
+        return None, f'Service "{kode}" tidak dikenali. Cek penulisan atau ketik "Menu".'
+    if len(cocok) > 1:
+        return None, _teks_ambigu_list(kode, cocok, "nama")
+    return cocok[0], None
+
+
+def _cocokkan_satu_produk(kode: str, produk_list: list, produk_terurut: list):
+    """Dipakai Input Produk/Restock/Tester/Input Harian -- SAMA PERSIS logika
+    yang sebelumnya ada inline di _cmd_input_produk()/_parse_baris_produk_mutasi()
+    (nomor urut Daftar Produk ATAU nama/akronim), diekstrak supaya bisa
+    dipakai ULANG baris-per-baris oleh parser Input Harian (lihat
+    _lanjutkan_parsing_input_harian()). Return (produk_dict, None) kalau
+    cocok PAS SATU, atau (None, pesan_error)."""
+    if kode.isdigit():
+        idx = int(kode)
+        if idx < 1 or idx > len(produk_terurut):
+            return None, f'Nomor produk {idx} tidak ada di daftar. Kirim "Daftar Produk" untuk lihat nomornya.'
+        return produk_terurut[idx - 1], None
+    cocok = _cocokkan(kode, produk_list, "nama")
+    if len(cocok) == 0:
+        return None, f'Produk "{kode}" tidak dikenali.'
+    if len(cocok) > 1:
+        return None, _teks_ambigu_list(kode, cocok, "nama")
+    return cocok[0], None
+
+
+def _resolve_koreksi_kode_jumlah(balasan: str, jumlah_lama: int | None, pola: str):
+    """Dipakai koreksi service_line/produk_line Input Harian -- balasan user
+    ATAS pertanyaan koreksi bisa berupa baris LENGKAP ('<kode> <jumlah>',
+    mis. kalau user keliru ketik ulang semuanya) ATAU cuma kode/nama
+    penggantinya saja (umumnya, karena jumlahnya sendiri sudah benar dari
+    baris asli) -- coba parse sebagai baris lengkap dulu, fallback pakai
+    `jumlah_lama` (dari baris asli yang salah) kalau balasan cuma kode/nama
+    tanpa angka. Return (kode, jumlah) atau (None, None) kalau jumlah_lama
+    juga None (baris asli dulu TIDAK match pola sama sekali, jadi balasan
+    WAJIB berupa baris lengkap)."""
+    parsed = _parse_baris_kode_jumlah(balasan, pola)
+    if parsed is not None:
+        return parsed
+    if jumlah_lama is not None:
+        return balasan.strip(), jumlah_lama
+    return None, None
+
+
 def _parse_baris_kode_jumlah(baris: str, pola: str):
     m = re.match(pola, baris.strip())
     if not m:
@@ -385,8 +445,23 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
         return _pesan_tidak_dikenali()
 
     atas = teks.upper()
+
+    # PERMINTAAN OWNER (Input Harian): kalau ada draft Input Harian yang
+    # masih menunggu koreksi SATU baris tertentu (lihat
+    # _lanjutkan_parsing_input_harian()), balasan APA PUN dari pengirim
+    # yang sama (selain BATAL) dianggap jawaban koreksi itu -- BUKAN
+    # command baru. Dicek PALING AWAL (sebelum YA/BATAL generik di bawah)
+    # supaya BATAL saat menunggu koreksi juga lewat jalur ini, bukan
+    # _proses_konfirmasi() yang mengasumsikan pending sudah berupa preview
+    # lengkap siap simpan.
+    pending = whatsapp_bot_db.ambil_pending(tenant_id, wa_id_pengirim)
+    if pending is not None and pending["jenis"] == "input_harian_draft":
+        if atas == "BATAL":
+            whatsapp_bot_db.hapus_pending(tenant_id, wa_id_pengirim)
+            return "❌ Input Harian dibatalkan, tidak ada data tersimpan."
+        return _terapkan_koreksi_input_harian(tenant_id, wa_id_pengirim, pending["payload"], teks)
+
     if atas in ("YA", "BATAL"):
-        pending = whatsapp_bot_db.ambil_pending(tenant_id, wa_id_pengirim)
         if pending is not None:
             return _proses_konfirmasi(tenant_id, wa_id_pengirim, pending, atas)
         return _pesan_tidak_dikenali()
@@ -444,6 +519,11 @@ def proses_pesan(tenant_id: int, config: dict, wa_id_pengirim: str, isi_pesan: s
     if teks_lower == "keterlambatan" or teks_lower.startswith("keterlambatan "):
         return _cmd_keterlambatan(tenant_id, role, barber_self, teks[len("keterlambatan"):].strip())
 
+    if kata0 == "input" and len(kata) > 1 and kata[1] == "harian":
+        if role != "owner":
+            return "Maaf, Input Harian cuma bisa dilakukan dari nomor Owner."
+        return _cmd_input_harian(tenant_id, wa_id_pengirim, teks[len("input harian"):].strip())
+
     # Sisanya (Input Service / Tandai Libur) -- EKSKLUSIF Owner, dikenali
     # dari baris pertama yang cocok ke nama barber tenant ini.
     if role == "owner":
@@ -481,6 +561,17 @@ def _menu_teks(role: str) -> str:
             "_Romen 11 oktober 2026_\n"
             "_Dc 2_\n"
             "_Tips 30rb_\n\n"
+            "Input harian (gabungan banyak barber + libur + produk sekaligus), contoh:\n"
+            "_Input Harian 11 oktober 2026_\n"
+            "_Romen_\n"
+            "_Dc 2_\n"
+            "_Tips 30rb_\n"
+            "_Ozi_\n"
+            "_Hw 1_\n"
+            "_Tips 20rb_\n"
+            "_Libur: Mifta_\n"
+            "_Produk:_\n"
+            "_Wax Pomade 1_\n\n"
             "Tandai libur, contoh:\n"
             "_Mifta libur_\n\n"
             "Input produk, contoh:\n"
@@ -546,6 +637,9 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
         db.tambah_transaksi(p["tanggal"], p["barber_id"], p["items"], tips=p["tips"], sumber=SUMBER_WA_BOT)
         return f"✅ Data {p['nama_barber']} ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
 
+    if jenis == "input_harian":
+        return _simpan_input_harian(tenant_id, p)
+
     if jenis == "tandai_libur":
         try:
             jenis_hasil = kuota_libur_db.tandai_libur_dengan_kuota(p["barber_id"], tenant_id, p["tanggal"])
@@ -587,6 +681,50 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
         return f"✅ Tester produk ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
 
     return "❌ Konfirmasi tidak dikenali."
+
+
+def _simpan_input_harian(tenant_id: int, p: dict) -> str:
+    """YA pada "Konfirmasi Input Harian" -- simpan SEMUANYA: transaksi tiap
+    barber, status Libur/Cuti tiap barber (lewat cascade kuota yang SAMA
+    seperti command "<barber> libur" biasa, lihat kuota_libur_db.py --
+    hasilnya BISA jadi Cuti/"kelebihan_kuota" kalau kuota Libur bulan itu
+    sudah habis, PERMINTAAN OWNER supaya ini ditunjukkan apa adanya di sini,
+    bukan diasumsikan selalu Libur murni), dan penjualan produk. SEBAGIAN
+    gagal (stok produk tidak cukup / tanggal sudah tercakup Cuti/Izin lain)
+    TIDAK menggagalkan bagian lain -- tiap bagian independen, dilaporkan
+    per baris di hasil akhir (sama pola seperti input_produk/tester_produk
+    di atas, bukan transaksi database tunggal)."""
+    hasil = []
+
+    for b in p["barbers"]:
+        try:
+            db.tambah_transaksi(p["tanggal"], b["barber_id"], b["items"], tips=b["tips"], sumber=SUMBER_WA_BOT)
+            hasil.append(f"✅ Data {b['nama_barber']} tersimpan.")
+        except ValueError as e:
+            hasil.append(f"❌ Data {b['nama_barber']} GAGAL: {e}")
+
+    label_libur = {"libur": "LIBUR", "cuti": "CUTI (kuota libur bulan ini sudah habis)",
+                   "kelebihan_kuota": "LIBUR (kuota Libur & Cuti sama-sama sudah habis)"}
+    for l in p["libur"]:
+        try:
+            jenis_hasil = kuota_libur_db.tandai_libur_dengan_kuota(l["barber_id"], tenant_id, p["tanggal"])
+            hasil.append(f"✅ {l['nama_barber']} ditandai {label_libur.get(jenis_hasil, jenis_hasil)}.")
+        except ValueError as e:
+            hasil.append(f"❌ {l['nama_barber']}: {e}")
+
+    if p["produk"]:
+        gagal_produk = []
+        for it in p["produk"]:
+            try:
+                db.jual_produk(it["produk_id"], p["tanggal"], it["jumlah"], sumber=SUMBER_WA_BOT)
+            except ValueError as e:
+                gagal_produk.append(f"{it['nama']}: {e}")
+        if gagal_produk:
+            hasil.append("⚠️ Sebagian produk GAGAL disimpan (stok tidak cukup):\n" + "\n".join(gagal_produk))
+        else:
+            hasil.append("✅ Penjualan produk tersimpan.")
+
+    return f"*Input Harian {_format_tanggal_id(p['tanggal'])} diproses:*\n\n" + "\n".join(hasil)
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +812,359 @@ def _parse_dan_preview_input_service(tenant_id: int, wa_id_pengirim: str, barber
     payload = {"barber_id": barber["id"], "nama_barber": barber["nama"], "tanggal": tanggal,
                "items": items_simpan, "tips": tips}
     whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_service", payload)
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# INPUT HARIAN (Owner only) -- gabungan SATU pesan utk seluruh hari: banyak
+# barber (servis masing-masing + tips), siapa Libur, dan produk terjual.
+# Permintaan Owner (pengganti form kertas "List Customer Harian"):
+#
+#   Input Harian 20 oktober 2026
+#
+#   Romen
+#   Dc 3
+#   Tips 60000
+#
+#   Ozi
+#   Dc 2
+#   Hw 2
+#   Tips 55000
+#
+#   Libur: Mifta
+#
+#   Produk:
+#   Wax Pomade 2
+#
+# KOREKSI INTERAKTIF (beda dari semua command lain di modul ini, yang
+# gagal TOTAL kalau ada satu baris salah -- lihat docstring modul):
+# begitu parsing mentok di SATU baris yang tidak dikenali/ambigu (nama
+# barber/kode servis/nama produk), draft yang SUDAH berhasil diuraikan
+# sejauh itu disimpan sebagai pending jenis "input_harian_draft"
+# (whatsapp_bot_db.simpan_pending(), payload = state parser lengkap --
+# lihat _lanjutkan_parsing_input_harian()), lalu bot tanya SPESIFIK baris
+# mana yang bermasalah dan minta balasan SINGKAT penggantinya (bukan minta
+# kirim ulang semuanya dari awal). proses_pesan() mengenali pending jenis
+# ini PALING AWAL (sebelum YA/BATAL generik) dan mengarahkan balasan
+# berikutnya ke _terapkan_koreksi_input_harian(), yang menempelkan
+# koreksi itu ke draft lalu memanggil ULANG _lanjutkan_parsing_input_harian()
+# utk melanjutkan sisa baris -- bisa berulang kalau ada beberapa baris
+# bermasalah. Begitu SEMUA baris beres, baru ditampilkan SATU ringkasan
+# lengkap (semua barber + servis + tips, siapa Libur, produk apa saja,
+# total keseluruhan) dengan YA/BATAL seperti command lain -- disimpan
+# sebagai pending jenis "input_harian" (lihat _proses_konfirmasi()).
+# ---------------------------------------------------------------------------
+
+def _cmd_input_harian(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: str) -> str:
+    baris = [l.strip() for l in sisa_setelah_kata.split("\n") if l.strip()]
+    tanggal = date.today().isoformat()
+    if baris:
+        tm = _cari_tanggal(baris[0])
+        if tm:
+            tanggal = tm[2]
+            sisa0 = (baris[0][:tm[0]] + baris[0][tm[1]:]).strip()
+            if sisa0:
+                baris[0] = sisa0
+            else:
+                baris = baris[1:]
+
+    if not baris:
+        return ('Format: "Input Harian [tanggal]" lalu per barber (nama lalu baris servis, '
+                '"Tips <nominal>"), "Libur: <nama>, <nama>", dan "Produk:" + baris '
+                '"<nama/nomor produk> <jumlah>". Ketik "Menu" untuk contoh lengkap.')
+
+    draft = {
+        "tanggal": tanggal,
+        "baris": baris,
+        "idx": 0,
+        "section": None,  # None | "barber" | "produk"
+        "barber_aktif": None,
+        "barbers": [],
+        "libur": [],
+        "produk": [],
+        "koreksi": None,
+        "libur_tokens": None,
+        "libur_idx": None,
+    }
+    return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+
+def _lanjutkan_parsing_input_harian(tenant_id: int, wa_id_pengirim: str, draft: dict) -> str:
+    """Lanjutkan parsing draft Input Harian dari posisi yang tersimpan di
+    `draft` (idx/libur_idx) sampai SELESAI (tampilkan ringkasan final +
+    YA/BATAL) atau MENTOK di satu baris yang perlu dikoreksi (simpan draft
+    sbg pending "input_harian_draft" + kembalikan pertanyaan spesifik).
+    Dipanggil dari _cmd_input_harian() (parsing awal) MAUPUN
+    _terapkan_koreksi_input_harian() (lanjutan setelah satu koreksi
+    diterapkan) -- murni fungsi lanjutan, tidak peduli dari mana asalnya."""
+    barbers_tenant = db.get_barbers(tenant_id=tenant_id)
+    services = db.get_services(tenant_id=tenant_id)
+    produk_list = db.get_produk_list(tenant_id=tenant_id)
+    produk_terurut = sorted(produk_list, key=lambda p: p["id"])
+
+    # Tuntaskan dulu token Libur yang masih tersisa (kalau sedang di
+    # tengah SATU baris "Libur: a, b, c" -- tiap nama divalidasi satu per
+    # satu, bisa mentok di tengah tanpa mengulang nama yang sudah benar).
+    if draft["libur_tokens"] is not None:
+        while draft["libur_idx"] < len(draft["libur_tokens"]):
+            nama = draft["libur_tokens"][draft["libur_idx"]].strip()
+            cocok = _cocokkan_barber(nama, barbers_tenant)
+            if len(cocok) != 1:
+                draft["koreksi"] = {"tipe": "libur_nama"}
+                whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+                pesan_gagal = _hasil_barber_gagal(nama, cocok)
+                return f'Baris Libur -- {pesan_gagal}\n\nBalas nama penggantinya, atau *BATAL* untuk batalkan semua.'
+            b = cocok[0]
+            draft["libur"].append({"barber_id": b["id"], "nama_barber": b["nama"]})
+            draft["libur_idx"] += 1
+        draft["libur_tokens"] = None
+        draft["libur_idx"] = None
+
+    while draft["idx"] < len(draft["baris"]):
+        baris = draft["baris"][draft["idx"]]
+        baris_lower = baris.lower().strip()
+
+        # --- Penanda bagian "Libur" ---
+        if baris_lower == "libur" or baris_lower.startswith("libur:") or baris_lower.startswith("libur "):
+            sisa = baris[len("libur"):].lstrip(": ").strip()
+            draft["idx"] += 1
+            # BUGFIX: tutup blok barber yg sedang berjalan (kalau ada) dengan
+            # MENYIMPANNYA dulu ke draft["barbers"] -- sebelumnya langsung
+            # di-None-kan di sini, diam-diam MEMBUANG servis+tips barber yang
+            # baru selesai diketik kalau baris berikutnya langsung "Libur"/
+            # "Produk" (bukan barber lain).
+            if draft["barber_aktif"] is not None:
+                draft["barbers"].append(draft["barber_aktif"])
+                draft["barber_aktif"] = None
+            draft["section"] = None
+            tokens = [t.strip() for t in sisa.split(",") if t.strip()]
+            if not tokens:
+                continue  # baris "Libur" kosong -- lewati
+            draft["libur_tokens"] = tokens
+            draft["libur_idx"] = 0
+            return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+        # --- Penanda bagian "Produk" ---
+        if baris_lower == "produk" or baris_lower.startswith("produk:"):
+            draft["idx"] += 1
+            if draft["barber_aktif"] is not None:  # lihat BUGFIX catatan di penanda "Libur" di atas
+                draft["barbers"].append(draft["barber_aktif"])
+                draft["barber_aktif"] = None
+            draft["section"] = "produk"
+            continue
+
+        # --- Baris di dalam bagian Produk ---
+        if draft["section"] == "produk":
+            parsed = _parse_baris_kode_jumlah(baris, POLA_PRODUK)
+            if parsed is None:
+                draft["koreksi"] = {"tipe": "produk_line", "jumlah": None}
+                whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+                return (f'Baris produk "{baris}" formatnya tidak saya kenali '
+                        '(harus "<nama/nomor produk> <jumlah>").\n\n'
+                        'Balas baris yang benar, atau *BATAL* untuk batalkan semua.')
+            kode, jumlah = parsed
+            produk, error = _cocokkan_satu_produk(kode, produk_list, produk_terurut)
+            if error:
+                draft["koreksi"] = {"tipe": "produk_line", "jumlah": jumlah}
+                whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+                return f'Baris produk -- {error}\n\nBalas nama/nomor produk yang benar, atau *BATAL* untuk batalkan semua.'
+            draft["produk"].append({"produk_id": produk["id"], "nama": produk["nama"], "jumlah": jumlah,
+                                     "harga_jual": produk["harga_jual"]})
+            draft["idx"] += 1
+            continue
+
+        # --- Baris "Tips <nominal>" di dalam blok barber ---
+        if draft["section"] == "barber" and baris_lower.startswith("tips"):
+            draft["barber_aktif"]["tips"] = _parse_nominal(baris[len("tips"):].strip())
+            draft["idx"] += 1
+            continue
+
+        # --- Baris servis di dalam blok barber ---
+        if draft["section"] == "barber":
+            parsed = _parse_baris_kode_jumlah(baris, POLA_SERVICE)
+            if parsed is not None:
+                kode, jumlah = parsed
+                service, error = _cocokkan_satu_service(kode, services)
+                if error is None:
+                    draft["barber_aktif"]["items"].append(
+                        {"service_id": service["id"], "nama": service["nama"], "jumlah": jumlah,
+                         "harga": service["harga"], "modal": service.get("modal", 0)})
+                    draft["idx"] += 1
+                    continue
+                draft["koreksi"] = {"tipe": "service_line", "jumlah": jumlah,
+                                     "barber_nama": draft["barber_aktif"]["nama_barber"]}
+                whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+                return (f'Baris "{baris}" di bagian {draft["barber_aktif"]["nama_barber"]} -- {error}\n\n'
+                        'Balas kode servis yang benar, atau *BATAL* untuk batalkan semua.')
+            # baris TIDAK cocok pola servis sama sekali -- mungkin maksudnya
+            # baris barber BARU (menutup blok ini) -- JANGAN maju idx dulu,
+            # jatuhkan ke pengecekan nama barber di bawah.
+
+        # --- Baris nama barber baru (menutup blok sebelumnya kalau ada) ---
+        cocok = _cocokkan_barber(baris, barbers_tenant)
+        if len(cocok) == 1:
+            if draft["barber_aktif"] is not None:
+                draft["barbers"].append(draft["barber_aktif"])
+            b = cocok[0]
+            draft["barber_aktif"] = {"barber_id": b["id"], "nama_barber": b["nama"], "items": [], "tips": 0}
+            draft["section"] = "barber"
+            draft["idx"] += 1
+            continue
+
+        draft["koreksi"] = {"tipe": "barber_block"}
+        whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+        if cocok:
+            pesan_gagal = _hasil_barber_gagal(baris, cocok)
+        elif draft["section"] == "barber":
+            pesan_gagal = (f'Baris "{baris}" tidak saya kenali (bukan format servis yang valid, '
+                            'bukan juga nama barber lain, "Libur", atau "Produk").')
+        else:
+            pesan_gagal = f'Baris "{baris}" tidak saya kenali sebagai nama barber, "Libur", atau "Produk".'
+        return f'{pesan_gagal}\n\nBalas nama barber yang benar untuk baris ini, atau *BATAL* untuk batalkan semua.'
+
+    # --- Semua baris selesai -- tutup blok barber terakhir kalau masih terbuka ---
+    if draft["barber_aktif"] is not None:
+        draft["barbers"].append(draft["barber_aktif"])
+        draft["barber_aktif"] = None
+
+    if not draft["barbers"] and not draft["libur"] and not draft["produk"]:
+        return "Tidak ada data yang diisi -- minimal satu barber/Libur/Produk."
+
+    return _tampilkan_ringkasan_input_harian(tenant_id, wa_id_pengirim, draft)
+
+
+def _terapkan_koreksi_input_harian(tenant_id: int, wa_id_pengirim: str, draft: dict, balasan: str) -> str:
+    """Menerima balasan SINGKAT user atas pertanyaan koreksi yang tersimpan
+    di draft['koreksi'], menerapkannya ke draft, lalu memanggil ULANG
+    _lanjutkan_parsing_input_harian() utk melanjutkan sisa baris dari titik
+    yang sama (idx TIDAK dimundurkan -- baris yang salah itu dianggap
+    "terselesaikan" oleh balasan ini, bukan diulang)."""
+    koreksi = draft["koreksi"]
+    tipe = koreksi["tipe"]
+    draft["koreksi"] = None
+    balasan = balasan.strip()
+
+    if tipe == "barber_block":
+        barbers_tenant = db.get_barbers(tenant_id=tenant_id)
+        cocok = _cocokkan_barber(balasan, barbers_tenant)
+        if len(cocok) != 1:
+            draft["koreksi"] = {"tipe": "barber_block"}
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            pesan_gagal = _hasil_barber_gagal(balasan, cocok)
+            return f'{pesan_gagal}\n\nBalas nama barber yang benar, atau *BATAL* untuk batalkan semua.'
+        if draft["barber_aktif"] is not None:
+            draft["barbers"].append(draft["barber_aktif"])
+        b = cocok[0]
+        draft["barber_aktif"] = {"barber_id": b["id"], "nama_barber": b["nama"], "items": [], "tips": 0}
+        draft["section"] = "barber"
+        draft["idx"] += 1
+        return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+    if tipe == "service_line":
+        kode, jumlah = _resolve_koreksi_kode_jumlah(balasan, koreksi["jumlah"], POLA_SERVICE)
+        if kode is None:
+            draft["koreksi"] = koreksi
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            return ('Format harus "<kode servis> <jumlah>", mis. "Dc 2".\n\n'
+                     'Balas baris yang benar, atau *BATAL* untuk batalkan semua.')
+        services = db.get_services(tenant_id=tenant_id)
+        service, error = _cocokkan_satu_service(kode, services)
+        if error:
+            draft["koreksi"] = {"tipe": "service_line", "jumlah": jumlah, "barber_nama": koreksi["barber_nama"]}
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            return f'{error}\n\nBalas kode servis yang benar, atau *BATAL* untuk batalkan semua.'
+        draft["barber_aktif"]["items"].append(
+            {"service_id": service["id"], "nama": service["nama"], "jumlah": jumlah,
+             "harga": service["harga"], "modal": service.get("modal", 0)})
+        draft["idx"] += 1
+        return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+    if tipe == "produk_line":
+        kode, jumlah = _resolve_koreksi_kode_jumlah(balasan, koreksi["jumlah"], POLA_PRODUK)
+        if kode is None:
+            draft["koreksi"] = koreksi
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            return ('Format harus "<nama/nomor produk> <jumlah>".\n\n'
+                     'Balas baris yang benar, atau *BATAL* untuk batalkan semua.')
+        produk_list = db.get_produk_list(tenant_id=tenant_id)
+        produk_terurut = sorted(produk_list, key=lambda p: p["id"])
+        produk, error = _cocokkan_satu_produk(kode, produk_list, produk_terurut)
+        if error:
+            draft["koreksi"] = {"tipe": "produk_line", "jumlah": jumlah}
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            return f'{error}\n\nBalas nama/nomor produk yang benar, atau *BATAL* untuk batalkan semua.'
+        draft["produk"].append({"produk_id": produk["id"], "nama": produk["nama"], "jumlah": jumlah,
+                                 "harga_jual": produk["harga_jual"]})
+        draft["idx"] += 1
+        return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+    if tipe == "libur_nama":
+        barbers_tenant = db.get_barbers(tenant_id=tenant_id)
+        cocok = _cocokkan_barber(balasan, barbers_tenant)
+        if len(cocok) != 1:
+            draft["koreksi"] = {"tipe": "libur_nama"}
+            whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian_draft", draft)
+            pesan_gagal = _hasil_barber_gagal(balasan, cocok)
+            return f'{pesan_gagal}\n\nBalas nama penggantinya, atau *BATAL* untuk batalkan semua.'
+        b = cocok[0]
+        draft["libur"].append({"barber_id": b["id"], "nama_barber": b["nama"]})
+        draft["libur_idx"] += 1
+        return _lanjutkan_parsing_input_harian(tenant_id, wa_id_pengirim, draft)
+
+    return "❌ Koreksi tidak dikenali."
+
+
+def _tampilkan_ringkasan_input_harian(tenant_id: int, wa_id_pengirim: str, draft: dict) -> str:
+    """Draft SUDAH lengkap tanpa baris bermasalah -- bangun SATU ringkasan
+    lengkap (semua barber + servis + tips, siapa Libur, produk apa saja,
+    total keseluruhan), simpan sbg pending jenis "input_harian" (lihat
+    _proses_konfirmasi()), minta YA/BATAL seperti command lain."""
+    lines = ["*Konfirmasi Input Harian*", _format_tanggal_id(draft["tanggal"]), ""]
+    total_keseluruhan = 0
+
+    for b in draft["barbers"]:
+        lines.append(f"*{b['nama_barber']}*")
+        komisi_barber = 0
+        for it in b["items"]:
+            komisi = db.hitung_komisi_service(it["harga"], it.get("modal", 0), tenant_id=tenant_id) * it["jumlah"]
+            komisi_barber += komisi
+            lines.append(f"{it['nama']} x{it['jumlah']} = Komisi {_rupiah(komisi)}")
+        lines.append(f"Tips: {_rupiah(b['tips'])}")
+        subtotal = komisi_barber + b["tips"]
+        lines.append(f"Subtotal: {_rupiah(subtotal)}")
+        lines.append("")
+        total_keseluruhan += subtotal
+
+    if draft["libur"]:
+        lines.append("*Libur*")
+        for l in draft["libur"]:
+            lines.append(f"- {l['nama_barber']}")
+        lines.append("")
+
+    if draft["produk"]:
+        lines.append("*Produk Terjual*")
+        total_produk = 0
+        for p in draft["produk"]:
+            subtotal = p["harga_jual"] * p["jumlah"]
+            total_produk += subtotal
+            lines.append(f"{p['nama']} x{p['jumlah']} = {_rupiah(subtotal)}")
+        lines.append(f"Total Produk: {_rupiah(total_produk)}")
+        lines.append("")
+        total_keseluruhan += total_produk
+
+    lines.append(f"*Total Keseluruhan: {_rupiah(total_keseluruhan)}*")
+    lines.append("")
+    lines.append("Balas *YA* untuk simpan semua, atau *BATAL* untuk batalkan.")
+
+    payload = {
+        "tanggal": draft["tanggal"],
+        "barbers": [{"barber_id": b["barber_id"], "nama_barber": b["nama_barber"],
+                     "items": [{"service_id": it["service_id"], "jumlah": it["jumlah"]} for it in b["items"]],
+                     "tips": b["tips"]} for b in draft["barbers"]],
+        "libur": draft["libur"],
+        "produk": [{"produk_id": p["produk_id"], "nama": p["nama"], "jumlah": p["jumlah"]} for p in draft["produk"]],
+    }
+    whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian", payload)
     return "\n".join(lines)
 
 
