@@ -132,6 +132,14 @@ const MugenApi = (() => {
     // tiap halaman) supaya tidak ada jalur simpan/edit/hapus yang terlewat.
     if (method !== "GET") {
       MugenState.tandaiDashboardKotor();
+      // PERMINTAAN OWNER: sama seperti Dashboard di atas -- Rekap & Produk
+      // juga tidak perlu fetch ulang tiap dibuka lagi kalau tidak ada
+      // perubahan (lihat state.js::tandaiHalamanKotor()). Booking SENGAJA
+      // TIDAK didaftarkan di sini -- booking baru bisa masuk dari pelanggan
+      // langsung (halaman booking publik), bukan cuma dari aksi akun ini,
+      // jadi tetap fetch ulang seperti biasa setiap dibuka.
+      MugenState.tandaiHalamanKotor("rekap");
+      MugenState.tandaiHalamanKotor("produk");
     }
     return payload;
   }

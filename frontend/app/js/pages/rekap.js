@@ -1,6 +1,25 @@
 // pages/rekap.js
 
 const PageRekap = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti dashboard_owner.js::_cacheTerakhir
+  // -- simpan hasil fetch TERAKHIR tiap tab (Transaksi/Bulanan/Pengeluaran,
+  // key dibedakan lewat `tab` di bawah) di LUAR render() (modul-level) supaya
+  // bertahan lintas navigasi menu. Kalau Rekap dibuka lagi TANPA ada
+  // simpan/edit/hapus apa pun sejak terakhir kali TAB itu berhasil dimuat
+  // (lihat state.js::halamanPerluRefresh("rekap")) DAN filter (url) yang
+  // aktif sama persis, tampilkan ulang data ini TANPA fetch/skeleton.
+  let _cacheTerakhir = {}; // { [tab]: { userId, url, data } }
+
+  function _ambilDariCache(tab, userId, url) {
+    const c = _cacheTerakhir[tab];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(tab, userId, url, data) {
+    _cacheTerakhir[tab] = { userId, url, data };
+  }
+
   // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
   // mengunduh -- PDF dibuat lalu ditampilkan dulu lewat MugenPdfPreview
   // (Preview PDF di dalam aplikasi, dengan Zoom/Nomor Halaman/Download
@@ -28,7 +47,11 @@ const PageRekap = (() => {
   // satu pola untuk hapus transaksi/reimburse/Keterangan Libur dan
   // batalkan pembayaran kasbon, supaya konfirmasi/loading/toast/refresh-nya
   // konsisten. `onSelesai` (opsional) dipanggil setelah sukses menghapus/
-  // membatalkan, dipakai renderTransaksi() untuk memuat ulang tabel.
+  // membatalkan -- kalau TIDAK diisi (default, dipakai renderTransaksi()),
+  // baris tabel ini sendiri yang dihapus dari DOM (btn.closest("tr")),
+  // baris di bawahnya otomatis naik -- TIDAK memuat ulang seluruh tabel
+  // (permintaan Owner: loading cukup di tombolnya sendiri, bukan reset
+  // semua baris + skeleton lagi).
   // `hapusBody` (opsional): baris "libur" TIDAK punya `id` (dihapus lewat
   // kombinasi barber_id+tanggal di body, bukan lewat path param seperti
   // transaksi/reimburse/kasbon/non_barber -- lihat DELETE /api/input-data/libur,
@@ -49,7 +72,12 @@ const PageRekap = (() => {
         // REVISI UI/UX Premium: spinner inline di tombol sendiri, bukan overlay layar penuh
         await MugenUI.withButtonLoading(btn, () => MugenApi.del(hapusUrl, hapusBody));
         MugenUI.toast(pesanSukses, "success", { force: true });
-        if (onSelesai) onSelesai();
+        if (onSelesai) {
+          onSelesai();
+        } else {
+          const tr = btn.closest("tr");
+          if (tr) tr.remove();
+        }
       } catch (e) {
         MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
       }
@@ -211,17 +239,10 @@ const PageRekap = (() => {
       body.appendChild(pdfRow);
       body.appendChild(tableWrap);
 
-      async function load() {
-        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
+      function renderDenganData(data) {
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : (isAdmin ? 8 : 11), rows: 4 }));
-        try {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
-          const data = await MugenApi.get(`/api/rekap/transaksi?${qs}`, { useCache: true });
-          tableWrap.innerHTML = "";
-          if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-          const rows = Array.isArray(data) ? data : [];
+        if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+        const rows = Array.isArray(data) ? data : [];
           // Ket.: baris "libur" MURNI tetap badge pil (persis seperti
           // sebelumnya, tidak berubah). Jenis lain (catatan Input Data,
           // Reimburse/Kasbon/Gaji Non-Barber) bisa berisi lebih dari satu
@@ -310,7 +331,6 @@ const PageRekap = (() => {
                       hapusUrl: "/api/input-data/libur",
                       hapusBody: { barber_id: r.barber_id, tanggal: r.tanggal },
                       pesanSukses: "Keterangan libur berhasil dihapus.",
-                      onSelesai: load,
                     });
                   }
                   if (r.id == null) return "-";
@@ -324,7 +344,6 @@ const PageRekap = (() => {
                       ],
                       hapusUrl: `/api/input-data/transaksi/${r.id}`,
                       pesanSukses: "Transaksi berhasil dihapus.",
-                      onSelesai: load,
                     });
                   }
                   if (r.tipe === "reimburse") {
@@ -338,7 +357,6 @@ const PageRekap = (() => {
                       ],
                       hapusUrl: `/api/reimburse/${r.id}/rekap`,
                       pesanSukses: "Klaim reimburse berhasil dihapus.",
-                      onSelesai: load,
                     });
                   }
                   if (r.tipe === "kasbon") {
@@ -353,7 +371,6 @@ const PageRekap = (() => {
                       ],
                       hapusUrl: `/api/kasbon/pembayaran/${r.id}`,
                       pesanSukses: "Pembayaran kasbon berhasil dibatalkan.",
-                      onSelesai: load,
                     });
                   }
                   if (r.tipe === "non_barber") {
@@ -366,7 +383,6 @@ const PageRekap = (() => {
                       ],
                       hapusUrl: `/api/data-non-barber/${r.id}`,
                       pesanSukses: "Data gaji Non-Barber berhasil dihapus.",
-                      onSelesai: load,
                     });
                   }
                   return "-";
@@ -375,6 +391,42 @@ const PageRekap = (() => {
             ],
             rows,
           ));
+      }
+
+      async function load(opts = {}) {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
+        const url = `/api/rekap/transaksi?${qs}`;
+
+        // PERMINTAAN OWNER: pola SAMA seperti Dashboard (lihat
+        // dashboard_owner.js) -- begitu tab Transaksi dibuka lagi (pindah
+        // menu lalu balik) TANPA ada simpan/edit/hapus apa pun sejak
+        // terakhir kali tab INI berhasil dimuat, DAN filter (url) yang
+        // aktif sama persis, tampilkan ulang hasil fetch terakhir PERSIS
+        // seperti itu -- instan, tanpa skeleton/fetch sama sekali. Hanya
+        // dicek untuk pemuatan AWAL (opts.bisaDariCache, dipanggil SEKALI
+        // di akhir renderTransaksi() di bawah) -- ganti filter manual oleh
+        // user (event listener di bawah, TANPA opts) SELALU fetch ulang.
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap")) {
+          const cached = _ambilDariCache("transaksi", MugenState.getUser().id, url);
+          if (cached) {
+            renderDenganData(cached);
+            return;
+          }
+        }
+
+        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : (isAdmin ? 8 : 11), rows: 4 }));
+        try {
+          const data = await MugenApi.get(url, { useCache: true });
+          if (!data.__offline) {
+            // Cache offline (data.__offline) SENGAJA tidak disimpan ke sini --
+            // bukan representasi data yang sebenarnya berhasil dimuat barusan.
+            _simpanKeCache("transaksi", MugenState.getUser().id, url, data);
+            MugenState.tandaiHalamanBersih("rekap");
+          }
+          renderDenganData(data);
         } catch (e) {
           tableWrap.innerHTML = "";
           tableWrap.appendChild(MugenUI.errorState(e.message));
@@ -382,10 +434,10 @@ const PageRekap = (() => {
       }
       // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
       // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
-      if (selBarber) selBarber.addEventListener("change", load);
-      load();
+      selBulan.addEventListener("change", () => load());
+      selTahun.addEventListener("change", () => load());
+      if (selBarber) selBarber.addEventListener("change", () => load());
+      load({ bisaDariCache: true });
     }
 
     async function renderBulanan() {
@@ -405,39 +457,59 @@ const PageRekap = (() => {
       body.appendChild(row);
       body.appendChild(tableWrap);
 
-      async function load() {
+      function renderDenganData(data) {
+        tableWrap.innerHTML = "";
+        if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+        const rows = Array.isArray(data) ? data : [];
+        tableWrap.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama_barber", label: "Barber" },
+            { key: "jumlah_service", label: "Jml Service" },
+            { key: "total_komisi", label: "Komisi", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+            // PERMINTAAN OWNER: stabilo merah kalau bulan ini ADA tanggal
+            // yang Kuota Libur DAN kuota Izin&Cuti-nya sama-sama sudah
+            // habis -- lihat routers/rekap.py (field `kuota_habis`).
+            { key: "hari_libur", label: "Hari Libur", format: (v, row) => row.kuota_habis
+              ? MugenUI.el("span", { class: "badge badge-danger",
+                  title: "Kuota Libur & Izin/Cuti bulan ini sudah habis" }, String(v ?? "-"))
+              : String(v ?? "-") },
+            { key: "target_tercapai", label: "Target Bonus", format: (v) => v ? "Tercapai" : "Belum" },
+            { key: "bonus_customer", label: "Bonus Cust.", format: MugenUI.formatRupiah },
+            { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },
+            { key: "kasbon_dibayar", label: "Kasbon Dibayar", format: MugenUI.formatRupiah },
+            { key: "total_pendapatan", label: "Total", format: MugenUI.formatRupiah },
+          ],
+          rows,
+        ));
+      }
+
+      async function load(opts = {}) {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
+        const url = `/api/rekap/bulanan?${qs}`;
+
+        // PERMINTAAN OWNER: lihat catatan panjang di load() renderTransaksi()
+        // di atas -- pola SAMA PERSIS, cuma key cache beda ("bulanan").
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap")) {
+          const cached = _ambilDariCache("bulanan", MugenState.getUser().id, url);
+          if (cached) {
+            renderDenganData(cached);
+            return;
+          }
+        }
+
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 11, rows: 4 }));
         try {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
-          const data = await MugenApi.get(`/api/rekap/bulanan?${qs}`, { useCache: true });
-          tableWrap.innerHTML = "";
-          if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-          const rows = Array.isArray(data) ? data : [];
-          tableWrap.appendChild(MugenUI.buildTable(
-            [
-              { key: "nama_barber", label: "Barber" },
-              { key: "jumlah_service", label: "Jml Service" },
-              { key: "total_komisi", label: "Komisi", format: MugenUI.formatRupiah },
-              { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-              { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-              // PERMINTAAN OWNER: stabilo merah kalau bulan ini ADA tanggal
-              // yang Kuota Libur DAN kuota Izin&Cuti-nya sama-sama sudah
-              // habis -- lihat routers/rekap.py (field `kuota_habis`).
-              { key: "hari_libur", label: "Hari Libur", format: (v, row) => row.kuota_habis
-                ? MugenUI.el("span", { class: "badge badge-danger",
-                    title: "Kuota Libur & Izin/Cuti bulan ini sudah habis" }, String(v ?? "-"))
-                : String(v ?? "-") },
-              { key: "target_tercapai", label: "Target Bonus", format: (v) => v ? "Tercapai" : "Belum" },
-              { key: "bonus_customer", label: "Bonus Cust.", format: MugenUI.formatRupiah },
-              { key: "reimburse", label: "Reimburse", format: MugenUI.formatRupiah },
-              { key: "kasbon_dibayar", label: "Kasbon Dibayar", format: MugenUI.formatRupiah },
-              { key: "total_pendapatan", label: "Total", format: MugenUI.formatRupiah },
-            ],
-            rows,
-          ));
+          const data = await MugenApi.get(url, { useCache: true });
+          if (!data.__offline) {
+            _simpanKeCache("bulanan", MugenState.getUser().id, url, data);
+            MugenState.tandaiHalamanBersih("rekap");
+          }
+          renderDenganData(data);
         } catch (e) {
           tableWrap.innerHTML = "";
           tableWrap.appendChild(MugenUI.errorState(e.message));
@@ -445,10 +517,10 @@ const PageRekap = (() => {
       }
       // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
       // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
-      if (selBarber) selBarber.addEventListener("change", load);
-      load();
+      selBulan.addEventListener("change", () => load());
+      selTahun.addEventListener("change", () => load());
+      if (selBarber) selBarber.addEventListener("change", () => load());
+      load({ bisaDariCache: true });
     }
 
     async function renderPengeluaran() {
@@ -466,28 +538,48 @@ const PageRekap = (() => {
       body.appendChild(totalBox);
       body.appendChild(tableWrap);
 
-      async function load() {
+      function renderDenganData(data) {
+        tableWrap.innerHTML = "";
+        totalBox.innerHTML = "";
+        if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+        totalBox.appendChild(MugenUI.el("h2", {}, "Total Pengeluaran Bulan Ini"));
+        totalBox.appendChild(MugenUI.el("div", { class: "big-number" }, MugenUI.formatRupiah(data.total)));
+        tableWrap.appendChild(MugenUI.buildTable(
+          [
+            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+            { key: "kategori", label: "Kategori", format: (v) => v || "-" },
+            { key: "keterangan", label: "Keterangan" },
+            { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
+            { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+          ],
+          data.daftar,
+        ));
+      }
+
+      async function load(opts = {}) {
+        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+        const url = `/api/rekap/pengeluaran?${qs}`;
+
+        // PERMINTAAN OWNER: lihat catatan panjang di load() renderTransaksi()
+        // di atas -- pola SAMA PERSIS, cuma key cache beda ("pengeluaran").
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap")) {
+          const cached = _ambilDariCache("pengeluaran", MugenState.getUser().id, url);
+          if (cached) {
+            renderDenganData(cached);
+            return;
+          }
+        }
+
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
         try {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          const data = await MugenApi.get(`/api/rekap/pengeluaran?${qs}`, { useCache: true });
-          tableWrap.innerHTML = "";
-          totalBox.innerHTML = "";
-          if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-          totalBox.appendChild(MugenUI.el("h2", {}, "Total Pengeluaran Bulan Ini"));
-          totalBox.appendChild(MugenUI.el("div", { class: "big-number" }, MugenUI.formatRupiah(data.total)));
-          tableWrap.appendChild(MugenUI.buildTable(
-            [
-              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "kategori", label: "Kategori", format: (v) => v || "-" },
-              { key: "keterangan", label: "Keterangan" },
-              { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
-              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-            ],
-            data.daftar,
-          ));
+          const data = await MugenApi.get(url, { useCache: true });
+          if (!data.__offline) {
+            _simpanKeCache("pengeluaran", MugenState.getUser().id, url, data);
+            MugenState.tandaiHalamanBersih("rekap");
+          }
+          renderDenganData(data);
         } catch (e) {
           tableWrap.innerHTML = "";
           tableWrap.appendChild(MugenUI.errorState(e.message));
@@ -495,9 +587,9 @@ const PageRekap = (() => {
       }
       // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
       // -- skeleton di dalam tableWrap sendiri (di atas) sudah jadi feedback yang cukup.
-      selBulan.addEventListener("change", load);
-      selTahun.addEventListener("change", load);
-      load();
+      selBulan.addEventListener("change", () => load());
+      selTahun.addEventListener("change", () => load());
+      load({ bisaDariCache: true });
     }
 
     renderBody();

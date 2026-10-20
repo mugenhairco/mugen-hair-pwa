@@ -114,6 +114,26 @@ const MugenState = (() => {
     _dashboardKotor = false;
   }
 
+  // PERMINTAAN OWNER: pola SAMA seperti _dashboardKotor di atas, tapi
+  // generik (bisa dipakai halaman lain selain Dashboard -- Rekap, Produk,
+  // dst) supaya tidak perlu pasangan tiga fungsi baru per halaman. Key
+  // yang belum pernah didaftarkan dianggap "kotor" (perlu fetch) secara
+  // default -- SENGAJA in-memory (bukan localStorage), reset ke "kotor"
+  // tiap aplikasi dimuat ulang dari awal, sama seperti _dashboardKotor.
+  const _halamanKotor = {};
+
+  function tandaiHalamanKotor(nama) {
+    _halamanKotor[nama] = true;
+  }
+
+  function halamanPerluRefresh(nama) {
+    return _halamanKotor[nama] !== false;
+  }
+
+  function tandaiHalamanBersih(nama) {
+    _halamanKotor[nama] = false;
+  }
+
   function cacheSet(key, data) {
     try {
       localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, savedAt: Date.now() }));
@@ -131,5 +151,6 @@ const MugenState = (() => {
     getToken, getUser, setSession, clearSession, isLoggedIn, cacheSet, cacheGet,
     markLoginEntrance, consumeLoginEntrance, getTenantSlug, rememberTenantSlug,
     tandaiDashboardKotor, dashboardPerluRefresh, tandaiDashboardBersih,
+    tandaiHalamanKotor, halamanPerluRefresh, tandaiHalamanBersih,
   };
 })();

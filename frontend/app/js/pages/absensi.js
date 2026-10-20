@@ -651,7 +651,10 @@ const PageAbsensi = (() => {
                 try {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/attendance/koreksi/${r.id}`));
                   MugenUI.toast("Pengajuan koreksi dibatalkan.", "success");
-                  loadKoreksiSaya();
+                  // PERMINTAAN OWNER: cukup baris ini yang hilang dari tabel
+                  // (baris di bawahnya otomatis naik) -- TIDAK memuat ulang
+                  // seluruh "Riwayat Koreksi Saya".
+                  btnHapus.closest("tr")?.remove();
                 } catch (e) {
                   MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                 }
@@ -1229,28 +1232,25 @@ const PageAbsensi = (() => {
 
     async function ubahStatusKoreksi(btn, id, status) {
       const catatan = prompt(status === "ditolak" ? "Alasan penolakan (opsional):" : "Catatan approval (opsional):") || "";
-      // PERMINTAAN OWNER: tombol Setujui/Tolak tidak lagi menunggu/blokir
-      // sampai server menjawab -- toast tampil instan, PUT jalan di
-      // belakang. Daftar Koreksi/Absensi/Limit/Kuota (loadKoreksi/loadList/
-      // loadLimit/loadRingkasanKuota) BARU di-refresh setelah PUT-nya
-      // sungguh sukses -- angka itu hasil approve/tolak yang SEBENARNYA,
-      // tidak bisa ditebak di browser (beda dari Tandai Libur yang juga
-      // sengaja TIDAK dibuat instan, lihat input_data.js).
-      const labelAsli = btn.textContent;
-      btn.disabled = true;
-      MugenUI.toast(`Koreksi ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
-      MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan })
-        .then(() => {
-          loadKoreksi();
-          loadList();
-          loadLimit();
-          loadRingkasanKuota();
-        })
-        .catch((e) => {
-          btn.disabled = false;
-          btn.textContent = labelAsli;
-          MugenUI.toast(`Gagal memproses koreksi: ${e.detail && e.detail.detail ? e.detail.detail : e.message}`, "error", { force: true });
-        });
+      // REVISI (permintaan Owner): tombol Setujui/Tolak SEKARANG menunggu
+      // server (spinner di tombol lewat withButtonLoading, pola SAMA
+      // seperti tombol Hapus di Rekap) -- begitu sukses, baris INI SAJA
+      // yang dihapus dari tabel (baris di bawahnya otomatis naik, TIDAK
+      // memuat ulang seluruh "Pengajuan Koreksi Absensi"). Daftar Absensi &
+      // kartu Limit TETAP di-refresh (loadList/loadLimit) -- approve/tolak
+      // koreksi benar-benar mengubah data itu, beda dari tabel koreksi
+      // sendiri yang cukup kehilangan satu baris.
+      try {
+        await MugenUI.withButtonLoading(btn,
+          () => MugenApi.put(`/api/attendance/koreksi/${id}/status`, { status, catatan_approval: catatan }));
+        MugenUI.toast(`Koreksi ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
+        btn.closest("tr")?.remove();
+        loadList();
+        loadLimit();
+        loadRingkasanKuota();
+      } catch (e) {
+        MugenUI.toast(`Gagal memproses koreksi: ${e.detail && e.detail.detail ? e.detail.detail : e.message}`, "error", { force: true });
+      }
     }
 
     async function loadKoreksi() {
@@ -1281,7 +1281,10 @@ const PageAbsensi = (() => {
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/attendance/koreksi-riwayat/${r.id}`));
                     MugenUI.toast("Riwayat koreksi dihapus.", "success");
-                    loadKoreksi();
+                    // PERMINTAAN OWNER: cukup baris ini yang hilang (baris
+                    // di bawahnya otomatis naik) -- TIDAK memuat ulang
+                    // seluruh tabel.
+                    btnHapus.closest("tr")?.remove();
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }

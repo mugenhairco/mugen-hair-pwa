@@ -9,6 +9,25 @@
 //    (mengikuti pesan error dari backend kalau saldo stok akan jadi negatif).
 
 const PageProduk = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti dashboard_owner.js/rekap.js --
+  // simpan hasil fetch TERAKHIR (Daftar Produk & Riwayat Mutasi, key
+  // dibedakan lewat `bagian` di bawah) di LUAR render() (modul-level)
+  // supaya bertahan lintas navigasi menu. Kalau Produk dibuka lagi TANPA
+  // ada simpan/edit/hapus apa pun sejak terakhir kali BAGIAN itu berhasil
+  // dimuat (lihat state.js::halamanPerluRefresh("produk")) DAN filter
+  // (url) yang aktif sama persis, tampilkan ulang data ini TANPA fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function todayIso() {
     // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
     return MugenUI.isoHariIniWib();
@@ -232,16 +251,11 @@ const PageProduk = (() => {
     const produkListBody = MugenUI.el("div");
     produkListCard.appendChild(produkListBody);
 
-    async function loadProdukList() {
-      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+    function renderDenganDataProduk(data) {
+      produkList = Array.isArray(data) ? data : [];
       produkListBody.innerHTML = "";
-      produkListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
-      try {
-        const data = await MugenApi.get("/api/produk?hanya_aktif=true", { useCache: true });
-        produkList = Array.isArray(data) ? data : [];
-        produkListBody.innerHTML = "";
-        if (data.__offline) produkListBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        produkListBody.appendChild(MugenUI.buildTable(
+      if (data.__offline) produkListBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      produkListBody.appendChild(MugenUI.buildTable(
           [
             { key: "nama", label: "Nama Produk" },
             { key: "harga_modal", label: "Harga Modal", format: MugenUI.formatRupiah },
@@ -283,6 +297,37 @@ const PageProduk = (() => {
           produkList,
           { emptyText: "Belum ada produk." },
         ));
+    }
+
+    async function loadProdukList(opts = {}) {
+      const url = "/api/produk?hanya_aktif=true";
+
+      // PERMINTAAN OWNER: pola SAMA seperti Dashboard/Rekap -- begitu menu
+      // Produk dibuka lagi (pindah menu lalu balik) TANPA ada simpan/edit/
+      // hapus apa pun sejak terakhir kali Daftar Produk berhasil dimuat,
+      // tampilkan ulang hasil fetch terakhir PERSIS seperti itu -- instan,
+      // tanpa skeleton/fetch sama sekali. Hanya dicek untuk pemuatan AWAL
+      // (opts.bisaDariCache, dipanggil SEKALI di akhir render() di bawah)
+      // -- refresh setelah simpan/hapus (call site lain di file ini, TANPA
+      // opts) SELALU fetch ulang.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("produk")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          renderDenganDataProduk(cached);
+          return;
+        }
+      }
+
+      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+      produkListBody.innerHTML = "";
+      produkListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 4 }));
+      try {
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) {
+          _simpanKeCache("daftar", MugenState.getUser().id, url, data);
+          MugenState.tandaiHalamanBersih("produk");
+        }
+        renderDenganDataProduk(data);
       } catch (e) {
         produkListBody.innerHTML = "";
         produkListBody.appendChild(MugenUI.errorState(e.message));
@@ -439,19 +484,11 @@ const PageProduk = (() => {
       })();
     }
 
-    async function loadRiwayat() {
-      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+    function renderDenganDataRiwayat(data) {
       riwayatBody.innerHTML = "";
-      riwayatBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
-      try {
-        const qs = new URLSearchParams({ tahun: selTahunFilter.value, bulan: selBulanFilter.value });
-        if (selProdukFilter.value) qs.set("produk_id", selProdukFilter.value);
-        if (selTipeFilter.value) qs.set("tipe", selTipeFilter.value);
-        const data = await MugenApi.get(`/api/produk/mutasi?${qs}`, { useCache: true });
-        riwayatBody.innerHTML = "";
-        if (data.__offline) riwayatBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        const rows = Array.isArray(data) ? data : [];
-        riwayatBody.appendChild(MugenUI.buildTable(
+      if (data.__offline) riwayatBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      const rows = Array.isArray(data) ? data : [];
+      riwayatBody.appendChild(MugenUI.buildTable(
           [
             { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
             { key: "nama_produk", label: "Produk" },
@@ -492,6 +529,34 @@ const PageProduk = (() => {
           rows,
           { emptyText: "Belum ada riwayat mutasi." },
         ));
+    }
+
+    async function loadRiwayat(opts = {}) {
+      const qs = new URLSearchParams({ tahun: selTahunFilter.value, bulan: selBulanFilter.value });
+      if (selProdukFilter.value) qs.set("produk_id", selProdukFilter.value);
+      if (selTipeFilter.value) qs.set("tipe", selTipeFilter.value);
+      const url = `/api/produk/mutasi?${qs}`;
+
+      // PERMINTAAN OWNER: lihat catatan panjang di loadProdukList() di atas
+      // -- pola SAMA PERSIS, cuma key cache beda ("riwayat").
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("produk")) {
+        const cached = _ambilDariCache("riwayat", MugenState.getUser().id, url);
+        if (cached) {
+          renderDenganDataRiwayat(cached);
+          return;
+        }
+      }
+
+      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...".
+      riwayatBody.innerHTML = "";
+      riwayatBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 4 }));
+      try {
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) {
+          _simpanKeCache("riwayat", MugenState.getUser().id, url, data);
+          MugenState.tandaiHalamanBersih("produk");
+        }
+        renderDenganDataRiwayat(data);
       } catch (e) {
         riwayatBody.innerHTML = "";
         riwayatBody.appendChild(MugenUI.errorState(e.message));
@@ -500,16 +565,16 @@ const PageProduk = (() => {
 
     // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
     // -- skeleton di riwayatBody sendiri (di atas) sudah cukup.
-    selProdukFilter.addEventListener("change", loadRiwayat);
-    selTipeFilter.addEventListener("change", loadRiwayat);
-    selBulanFilter.addEventListener("change", loadRiwayat);
+    selProdukFilter.addEventListener("change", () => loadRiwayat());
+    selTipeFilter.addEventListener("change", () => loadRiwayat());
+    selBulanFilter.addEventListener("change", () => loadRiwayat());
     selTahunFilter.addEventListener("change", loadRiwayat);
 
     resetProdukForm();
     if (bolehEdit) renderProdukPendingBanner();
-    await loadProdukList();
+    await loadProdukList({ bisaDariCache: true });
     isiOpsiProdukFilter();
-    loadRiwayat();
+    loadRiwayat({ bisaDariCache: true });
   }
 
   return { render };
