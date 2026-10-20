@@ -10,11 +10,23 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import attendance_db
+import booking_db
 import database as db
 import izin_cuti_db
 import uang_harian_dinamis_db as uhd
 import whatsapp_bot_db as wb_db
 import whatsapp_bot_parser as wbp
+from booking_db import _hari_ini_wib
+
+
+def _tanggal_hari(nama_hari_target, offset_awal=0):
+    """Cari tanggal terdekat yang jatuh pada nama_hari_target -- sama
+    persis pola di test_booking_libur_mingguan.py/test_kuota_libur.py."""
+    idx_target = booking_db.HARI_LIST.index(nama_hari_target)
+    tanggal = _hari_ini_wib() + timedelta(days=offset_awal)
+    while tanggal.weekday() != idx_target:
+        tanggal += timedelta(days=1)
+    return tanggal.isoformat()
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -996,3 +1008,51 @@ def test_input_harian_tanpa_tanggal_pakai_hari_ini(single_tenant):
     _service(tenant_id, "Dandan Cepat", 100000)
     preview = wbp.proses_pesan(tenant_id, config, "628110000000", "Input Harian\nRomen\nDc 1\nTips 0")
     assert "Konfirmasi Input Harian" in preview
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Tandai Libur (standalone "<barber> libur" MAUPUN baris
+# "Libur:" di Input Harian) DITOLAK kalau tanggal itu sudah otomatis Libur
+# Mingguan (Barber Holiday) -- lihat kuota_libur_db.tandai_libur_dengan_kuota()/
+# test_kuota_libur.py untuk cakupan lengkap fungsi intinya. Test di sini
+# cuma memastikan guard itu TEREFLEKSI dengan benar lewat kedua jalur WA Bot.
+# ---------------------------------------------------------------------------
+
+_BULAN_NAMA_ID = {1: "januari", 2: "februari", 3: "maret", 4: "april", 5: "mei", 6: "juni",
+                   7: "juli", 8: "agustus", 9: "september", 10: "oktober", 11: "november", 12: "desember"}
+
+
+def _ke_teks_tanggal_id(iso: str) -> str:
+    y, m, d = (int(x) for x in iso.split("-"))
+    return f"{d} {_BULAN_NAMA_ID[m]} {y}"
+
+
+def test_tandai_libur_standalone_ditolak_kalau_jadwal_mingguan(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    barber_id = _barber(tenant_id, "Romen")
+    booking_db.set_hari_libur_mingguan(barber_id, ["senin"])
+    senin = _tanggal_hari("senin", offset_awal=1)
+
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", f"Romen libur {_ke_teks_tanggal_id(senin)}")
+    assert "Konfirmasi Tandai Libur" in preview  # preview tidak prediksi cascade, sama seperti kuota
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "Libur Mingguan" in balasan
+    assert db.get_hari_libur(barber_id, int(senin[:4]), int(senin[5:7])) == 0
+
+
+def test_input_harian_libur_ditolak_kalau_jadwal_mingguan(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    barber_id = _barber(tenant_id, "Romen")
+    booking_db.set_hari_libur_mingguan(barber_id, ["senin"])
+    senin = _tanggal_hari("senin", offset_awal=1)
+
+    pesan = f"Input Harian {_ke_teks_tanggal_id(senin)}\nLibur: Romen"
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    assert "Konfirmasi Input Harian" in preview  # preview tidak prediksi cascade, sama seperti kasus kuota
+
+    hasil = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
+    assert "Libur Mingguan" in hasil
+    assert db.get_hari_libur(barber_id, int(senin[:4]), int(senin[5:7])) == 0

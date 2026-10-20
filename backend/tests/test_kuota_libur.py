@@ -9,15 +9,28 @@ sebagai Cuti (mengurangi kuota gabungan Izin & Cuti). Kalau KEDUA kuota
 itu sama-sama habis, tanggal tetap dicatat Libur tapi ditandai
 sumber='kelebihan_kuota' (dipakai Rekap Bulanan untuk stabilo merah)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import attendance_db
+import booking_db
 import database as db
 import izin_cuti_db
 import kuota_libur_db as kld
+from booking_db import _hari_ini_wib
 
 WIB = ZoneInfo("Asia/Jakarta")
+
+
+def _tanggal_hari(nama_hari_target, offset_awal=0):
+    """Cari tanggal terdekat (mulai offset_awal hari dari sekarang) yang
+    jatuh pada nama_hari_target ("senin".."minggu") -- sama persis pola di
+    test_booking_libur_mingguan.py."""
+    idx_target = booking_db.HARI_LIST.index(nama_hari_target)
+    tanggal = _hari_ini_wib() + timedelta(days=offset_awal)
+    while tanggal.weekday() != idx_target:
+        tanggal += timedelta(days=1)
+    return tanggal.isoformat()
 
 
 def _barber(tenant_id, nama="Kuota Libur Barber"):
@@ -116,6 +129,70 @@ def test_set_cuti_settings_kuota_libur_bulanan_tersimpan(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     hasil = izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=5)
     assert hasil["kuota_libur_bulanan"] == 5
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: Tandai Libur DITOLAK kalau tanggal itu sudah otomatis
+# Libur Mingguan (Barber Holiday) -- sebelumnya diam-diam diproses seperti
+# biasa, memakai 1 jatah kuota Libur bulanan untuk hari yang sebenarnya
+# sudah otomatis libur tanpa perlu dicatat manual sama sekali. DIKALAHKAN
+# kalau barber SUDAH Check In hari itu (shift tukar dadakan).
+# ---------------------------------------------------------------------------
+
+def test_tandai_libur_ditolak_kalau_sudah_jadwal_mingguan(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    selasa = _tanggal_hari("selasa", offset_awal=1)
+
+    try:
+        kld.tandai_libur_dengan_kuota(barber_id, tenant_id, selasa)
+        assert False, "Seharusnya ValueError"
+    except ValueError as e:
+        assert "Libur Mingguan" in str(e)
+    assert db.get_hari_libur(barber_id, int(selasa[:4]), int(selasa[5:7])) == 0  # tidak ada baris Libur yang kebuat
+
+
+def test_tandai_libur_tetap_boleh_kalau_jadwal_mingguan_tapi_sudah_checkin(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    selasa = _tanggal_hari("selasa", offset_awal=1)
+    with booking_db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO attendance_logs (barber_id, tanggal, check_in_at, created_at, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (barber_id, selasa, "2026-01-01T09:00:00", "2026-01-01T09:00:00", tenant_id),
+        )
+
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, selasa)
+    assert jenis == "libur"
+    assert db.get_hari_libur(barber_id, int(selasa[:4]), int(selasa[5:7])) == 1
+
+
+def test_tandai_libur_normal_di_hari_bukan_jadwal_mingguan(single_tenant):
+    """Regresi additive: barber TANPA jadwal mingguan di tanggal itu tetap
+    bisa ditandai Libur manual seperti biasa, tidak terpengaruh guard baru
+    ini sama sekali."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    senin = _tanggal_hari("senin", offset_awal=1)
+
+    jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, senin)
+    assert jenis == "libur"
+
+
+def test_router_tandai_libur_ditolak_422_kalau_jadwal_mingguan(single_tenant):
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["rabu"])
+    rabu = _tanggal_hari("rabu", offset_awal=1)
+
+    r = client.post("/api/input-data/libur", json={"barber_id": barber_id, "tanggal": rabu}, headers=headers)
+    assert r.status_code == 422, r.text
+    assert "Libur Mingguan" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

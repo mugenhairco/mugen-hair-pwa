@@ -625,16 +625,55 @@ def _get_closed_slots_tanggal(conn, barber_id: int, tanggal: str) -> list:
 # database.py benar-benar tidak tersentuh sama sekali untuk modul ini).
 # ---------------------------------------------------------------------------
 
+def _jadwal_mingguan_libur(barber_id: int, tanggal: str, conn) -> bool:
+    """Inti CUMA pola mingguan (`barbers.hari_libur_mingguan`), TANPA ikut
+    cek baris manual absensi_libur -- diekstrak dari is_barber_libur() di
+    bawah supaya bisa dipakai TERPISAH oleh is_jadwal_mingguan_libur()
+    (kuota_libur_db.py, lihat docstring di sana) tanpa mengubah perilaku
+    is_barber_libur() sendiri satu karakter pun. Kalau tanggal itu jatuh di
+    salah satu hari libur mingguan barber ini, DIKALAHKAN kalau barber
+    SUDAH Check In hari itu (attendance_logs) -- shift tukar dadakan tidak
+    boleh diam-diam dianggap libur."""
+    barber = conn.execute("SELECT hari_libur_mingguan FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+    if barber is None:
+        return False
+    try:
+        hari_libur_mingguan = json.loads(barber["hari_libur_mingguan"] or "[]")
+    except (TypeError, ValueError):
+        hari_libur_mingguan = []
+    hari_ini = HARI_LIST[datetime.strptime(tanggal, "%Y-%m-%d").weekday()]
+    if hari_ini not in hari_libur_mingguan:
+        return False
+
+    sudah_checkin = conn.execute(
+        "SELECT 1 FROM attendance_logs WHERE barber_id = ? AND tanggal = ?",
+        (barber_id, tanggal),
+    ).fetchone()
+    return sudah_checkin is None
+
+
+def is_jadwal_mingguan_libur(barber_id: int, tanggal: str) -> bool:
+    """Wrapper publik dari _jadwal_mingguan_libur() -- KHUSUS cek pola
+    mingguan (TIDAK ikut re-cek baris manual absensi_libur seperti
+    is_barber_libur() di bawah). PERMINTAAN OWNER: dipakai
+    kuota_libur_db.py::tandai_libur_dengan_kuota() supaya Tandai Libur
+    manual (web/WA Bot) MENOLAK tanggal yang sudah otomatis Libur Mingguan
+    (jadwal rutin barber, tidak perlu dicatat manual lagi) -- sengaja TIDAK
+    pakai is_barber_libur() langsung di sana, supaya tanggal yang sudah
+    MANUAL ditandai Libur sebelumnya tetap berperilaku SAMA seperti dulu
+    (no-op lewat ON CONFLICT DO NOTHING di database.tandai_libur()), bukan
+    ikut ditolak."""
+    with get_conn() as conn:
+        return _jadwal_mingguan_libur(barber_id, tanggal, conn)
+
+
 def is_barber_libur(barber_id: int, tanggal: str) -> bool:
     """Requirement Owner (Barber Holiday jadi jadwal libur MINGGUAN):
     tanggal manual di absensi_libur TETAP mutlak (Cuti & Izin/payroll tidak
-    berubah sama sekali) -- DITAMBAH (additive OR) pola mingguan
-    `barbers.hari_libur_mingguan` (JSON list nama hari). Kalau tanggal itu
-    jatuh di salah satu hari libur mingguan barber ini, DIKALAHKAN kalau
-    barber SUDAH Check In hari itu (attendance_logs) -- shift tukar dadakan
-    tidak boleh diam-diam dianggap libur, baik untuk Booking maupun
-    auto_libur_db.py (yang memanggil fungsi ini juga, TIDAK disentuh
-    terpisah -- override ini otomatis berlaku di sana juga)."""
+    berubah sama sekali) -- DITAMBAH (additive OR) pola mingguan (lihat
+    _jadwal_mingguan_libur()), dipakai Booking maupun auto_libur_db.py
+    (yang memanggil fungsi ini juga, TIDAK disentuh terpisah -- override
+    Check In otomatis berlaku di sana juga)."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
@@ -642,23 +681,7 @@ def is_barber_libur(barber_id: int, tanggal: str) -> bool:
         ).fetchone()
         if row is not None:
             return True
-
-        barber = conn.execute("SELECT hari_libur_mingguan FROM barbers WHERE id = ?", (barber_id,)).fetchone()
-        if barber is None:
-            return False
-        try:
-            hari_libur_mingguan = json.loads(barber["hari_libur_mingguan"] or "[]")
-        except (TypeError, ValueError):
-            hari_libur_mingguan = []
-        hari_ini = HARI_LIST[datetime.strptime(tanggal, "%Y-%m-%d").weekday()]
-        if hari_ini not in hari_libur_mingguan:
-            return False
-
-        sudah_checkin = conn.execute(
-            "SELECT 1 FROM attendance_logs WHERE barber_id = ? AND tanggal = ?",
-            (barber_id, tanggal),
-        ).fetchone()
-        return sudah_checkin is None
+        return _jadwal_mingguan_libur(barber_id, tanggal, conn)
 
 
 def is_barber_cuti(barber_id: int) -> bool:
