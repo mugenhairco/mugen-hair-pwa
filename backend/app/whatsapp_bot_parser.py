@@ -656,7 +656,8 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
         gagal = []
         for it in p["items"]:
             try:
-                db.jual_produk(it["produk_id"], p["tanggal"], it["jumlah"], sumber=SUMBER_WA_BOT)
+                db.jual_produk(it["produk_id"], p["tanggal"], it["jumlah"], sumber=SUMBER_WA_BOT,
+                                idempotency_key=it.get("idempotency_key"))
             except ValueError as e:
                 gagal.append(f"{it['nama']}: {e}")
         if gagal:
@@ -668,14 +669,14 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
         # docstring database.py) -- tidak perlu try/except per item seperti
         # input_produk/tester_produk di atas/bawah.
         for it in p["items"]:
-            db.restock_produk(it["produk_id"], p["tanggal"], it["jumlah"])
+            db.restock_produk(it["produk_id"], p["tanggal"], it["jumlah"], idempotency_key=it.get("idempotency_key"))
         return f"✅ Restock produk ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
 
     if jenis == "tester_produk":
         gagal = []
         for it in p["items"]:
             try:
-                db.tester_produk(it["produk_id"], p["tanggal"], it["jumlah"])
+                db.tester_produk(it["produk_id"], p["tanggal"], it["jumlah"], idempotency_key=it.get("idempotency_key"))
             except ValueError as e:
                 gagal.append(f"{it['nama']}: {e}")
         if gagal:
@@ -719,7 +720,8 @@ def _simpan_input_harian(tenant_id: int, p: dict) -> str:
         gagal_produk = []
         for it in p["produk"]:
             try:
-                db.jual_produk(it["produk_id"], p["tanggal"], it["jumlah"], sumber=SUMBER_WA_BOT)
+                db.jual_produk(it["produk_id"], p["tanggal"], it["jumlah"], sumber=SUMBER_WA_BOT,
+                                idempotency_key=it.get("idempotency_key"))
             except ValueError as e:
                 gagal_produk.append(f"{it['nama']}: {e}")
         if gagal_produk:
@@ -1179,7 +1181,8 @@ def _tampilkan_ringkasan_input_harian(tenant_id: int, wa_id_pengirim: str, draft
                      "items": [{"service_id": it["service_id"], "jumlah": it["jumlah"]} for it in b["items"]],
                      "tips": b["tips"], "idempotency_key": uuid.uuid4().hex} for b in draft["barbers"]],
         "libur": draft["libur"],
-        "produk": [{"produk_id": p["produk_id"], "nama": p["nama"], "jumlah": p["jumlah"]} for p in draft["produk"]],
+        "produk": [{"produk_id": p["produk_id"], "nama": p["nama"], "jumlah": p["jumlah"],
+                    "idempotency_key": uuid.uuid4().hex} for p in draft["produk"]],
     }
     whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_harian", payload)
     return "\n".join(lines)
@@ -1245,7 +1248,11 @@ def _cmd_input_produk(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: st
             p = cocok[0]
         subtotal = p["harga_jual"] * jumlah
         items_preview.append((p["nama"], jumlah, subtotal))
-        items_simpan.append({"produk_id": p["id"], "nama": p["nama"], "jumlah": jumlah})
+        # PERBAIKAN Owner (audit "tidak boleh input dobel"): idempotency_key
+        # per item, dibuat sekali di sini -- lihat catatan lengkap di
+        # _parse_dan_preview_input_service().
+        items_simpan.append({"produk_id": p["id"], "nama": p["nama"], "jumlah": jumlah,
+                              "idempotency_key": uuid.uuid4().hex})
 
     if not items_simpan:
         return "Tidak ada produk yang diisi."
@@ -1308,7 +1315,11 @@ def _parse_baris_produk_mutasi(tenant_id: int, sisa_setelah_kata: str, format_hi
             if len(cocok) > 1:
                 return None, None, _teks_ambigu_list(kode, cocok, "nama")
             p = cocok[0]
-        items.append({"produk_id": p["id"], "nama": p["nama"], "jumlah": jumlah})
+        # PERBAIKAN Owner (audit "tidak boleh input dobel"): idempotency_key
+        # per item, dibuat sekali di sini -- lihat catatan lengkap di
+        # _parse_dan_preview_input_service().
+        items.append({"produk_id": p["id"], "nama": p["nama"], "jumlah": jumlah,
+                       "idempotency_key": uuid.uuid4().hex})
 
     if not items:
         return None, None, "Tidak ada produk yang diisi."

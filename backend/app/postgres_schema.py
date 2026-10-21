@@ -222,11 +222,23 @@ CREATE TABLE IF NOT EXISTS produk_mutasi (
     jumlah                  INTEGER NOT NULL,
     catatan                 TEXT,
     sumber                  TEXT,
+    idempotency_key         TEXT,
     created_at              TEXT NOT NULL,
     updated_at              TEXT,
     harga_modal_saat_itu    INTEGER,
     harga_jual_saat_itu     INTEGER
 );
+-- PERBAIKAN Owner (audit "tidak boleh input dobel"): sama alasannya
+-- persis seperti `transaksi.idempotency_key` di atas -- WA Bot (Jual/
+-- Restock/Tester Produk) membawa token per item yang dibuat sekali saat
+-- preview, dipakai ulang saat konfirmasi; percobaan kedua dengan key yang
+-- SAMA untuk produk yang SAMA dikembalikan mutasi yang SUDAH ADA (bukan
+-- baris baru), menutup celah race condition/webhook terkirim ulang. ADD
+-- COLUMN biasa + UNIQUE INDEX (bukan ADD CONSTRAINT, lihat alasan lengkap
+-- di catatan `absensi_libur` di atas) -- aman untuk instalasi yang SUDAH ADA.
+ALTER TABLE produk_mutasi ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_produk_mutasi_idempotency
+    ON produk_mutasi(produk_id, idempotency_key);
 
 CREATE TABLE IF NOT EXISTS users (
     id              SERIAL PRIMARY KEY,

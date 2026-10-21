@@ -218,18 +218,21 @@ def init_db():
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS produk_mutasi (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                produk_id  INTEGER NOT NULL,
-                tanggal    TEXT NOT NULL,     -- format YYYY-MM-DD
-                tipe       TEXT NOT NULL,     -- 'restock' atau 'jual'
-                jumlah     INTEGER NOT NULL,  -- selalu positif, arah ditentukan oleh 'tipe'
-                catatan    TEXT,
-                sumber     TEXT,              -- NULL = input manual web, 'wa_bot' = via WA Bot
-                created_at TEXT NOT NULL,
-                updated_at TEXT,
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                produk_id        INTEGER NOT NULL,
+                tanggal          TEXT NOT NULL,     -- format YYYY-MM-DD
+                tipe             TEXT NOT NULL,     -- 'restock' atau 'jual'
+                jumlah           INTEGER NOT NULL,  -- selalu positif, arah ditentukan oleh 'tipe'
+                catatan          TEXT,
+                sumber           TEXT,              -- NULL = input manual web, 'wa_bot' = via WA Bot
+                idempotency_key  TEXT,              -- PERBAIKAN Owner "tidak boleh input dobel" (lihat migrasi_produk_mutasi_idempotency_key())
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT,
                 FOREIGN KEY (produk_id) REFERENCES produk(id)
             )
         """)
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_produk_mutasi_idempotency "
+                   "ON produk_mutasi(produk_id, idempotency_key)")
 
         # PERMINTAAN OWNER: "Hapus Riwayat Absensi" (attendance_db.py) HARUS
         # tetap membuat Uang Harian & Keterlambatan/Pulang Cepat yang SUDAH
@@ -314,6 +317,19 @@ def migrasi_transaksi_idempotency_key():
             conn.execute("ALTER TABLE transaksi ADD COLUMN idempotency_key TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_transaksi_barber_idempotency "
                      "ON transaksi(barber_id, idempotency_key)")
+
+
+def migrasi_produk_mutasi_idempotency_key():
+    """JALUR SQLITE SAJA -- sama persis pola migrasi_transaksi_idempotency_key()
+    di atas, untuk kolom `idempotency_key` + unique index di `produk_mutasi`
+    (Jual/Restock/Tester Produk). Lihat docstring kolomnya di
+    postgres_schema.py untuk alasan lengkap ("tidak boleh input dobel")."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(produk_mutasi)").fetchall()]
+        if "idempotency_key" not in kolom:
+            conn.execute("ALTER TABLE produk_mutasi ADD COLUMN idempotency_key TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_produk_mutasi_idempotency "
+                     "ON produk_mutasi(produk_id, idempotency_key)")
 
 
 # ---------------------------------------------------------------------------
@@ -2290,24 +2306,45 @@ def get_produk_list(hanya_aktif: bool = True, tenant_id: int = None) -> list:
         return produk_rows
 
 
-def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
+def _cari_mutasi_produk_id_by_idempotency_key(produk_id: int, idempotency_key: str) -> int | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM produk_mutasi WHERE produk_id = ? AND idempotency_key = ?",
+            (produk_id, idempotency_key),
+        ).fetchone()
+    return row["id"] if row else None
+
+
+def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None,
+                    idempotency_key: str = None) -> int:
     """Restock = satu-satunya cara menambah stok. Selalu aman (tidak mungkin
-    membuat saldo negatif), jadi tidak perlu divalidasi kronologis."""
+    membuat saldo negatif), jadi tidak perlu divalidasi kronologis.
+    `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
+    pola yang SAMA PERSIS seperti tambah_transaksi()/_catat_keluar_produk()
+    di bawah, dipakai WA Bot (Restock Produk, lihat whatsapp_bot_parser.py)."""
     _validasi_tanggal(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah restock harus lebih dari 0.")
     now = datetime.now().isoformat(timespec="seconds")
-    with get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, catatan, created_at)
-               VALUES (?, ?, 'restock', ?, ?, ?)""",
-            (produk_id, tanggal, int(jumlah), catatan, now),
-        )
-        return cur.lastrowid
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, catatan, idempotency_key, created_at)
+                   VALUES (?, ?, 'restock', ?, ?, ?, ?)""",
+                (produk_id, tanggal, int(jumlah), catatan, idempotency_key, now),
+            )
+            return cur.lastrowid
+    except IntegrityError:
+        if idempotency_key:
+            existing_id = _cari_mutasi_produk_id_by_idempotency_key(produk_id, idempotency_key)
+            if existing_id is not None:
+                return existing_id
+        raise
 
 
 def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
-                          catatan: str = None, kata_kerja: str = "dipakai", sumber: str = None) -> int:
+                          catatan: str = None, kata_kerja: str = "dipakai", sumber: str = None,
+                          idempotency_key: str = None) -> int:
     """Dipakai bersama oleh jual_produk() dan tester_produk() -- keduanya
     MENGURANGI stok dan divalidasi kronologis dengan cara SAMA PERSIS (lihat
     get_stok_produk/_saldo_valid: tipe apa pun SELAIN 'restock' otomatis
@@ -2315,47 +2352,66 @@ def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
     saldo sama sekali). Harga modal/jual produk SAAT INI ikut disimpan
     (snapshot) di baris mutasi supaya laporan omzet (get_omzet_penjualan_produk,
     hanya menjumlahkan tipe='jual') bulan lalu TIDAK berubah kalau harga
-    produk diedit belakangan."""
+    produk diedit belakangan.
+    `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
+    sama perannya seperti tambah_transaksi(): kalau INSERT gagal karena
+    idempotency_key ini SUDAH ada untuk produk yang sama (unique index
+    idx_produk_mutasi_idempotency), mutasi yang SUDAH ADA dikembalikan apa
+    adanya (BUKAN baris baru -- menutup celah race condition/webhook WA
+    Bot terkirim ulang, lihat whatsapp_bot_parser.py)."""
     _validasi_tanggal(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")
     produk = get_produk(produk_id)
-    with _kunci_produk(produk_id), get_conn() as conn:
-        mutasi = _ambil_semua_mutasi(conn, produk_id)
-        mutasi.append({"id": None, "tanggal": tanggal, "tipe": tipe, "jumlah": int(jumlah)})
-        if not _saldo_valid(mutasi):
-            stok_sekarang = get_stok_produk(produk_id)
-            raise ValueError(
-                f"Stok tidak mencukupi. Sisa stok saat ini: {stok_sekarang}, "
-                f"jumlah yang mau {kata_kerja}: {jumlah}."
+    try:
+        with _kunci_produk(produk_id), get_conn() as conn:
+            mutasi = _ambil_semua_mutasi(conn, produk_id)
+            mutasi.append({"id": None, "tanggal": tanggal, "tipe": tipe, "jumlah": int(jumlah)})
+            if not _saldo_valid(mutasi):
+                stok_sekarang = get_stok_produk(produk_id)
+                raise ValueError(
+                    f"Stok tidak mencukupi. Sisa stok saat ini: {stok_sekarang}, "
+                    f"jumlah yang mau {kata_kerja}: {jumlah}."
+                )
+            now = datetime.now().isoformat(timespec="seconds")
+            cur = conn.execute(
+                """INSERT INTO produk_mutasi
+                   (produk_id, tanggal, tipe, jumlah, catatan, sumber, idempotency_key, created_at,
+                    harga_modal_saat_itu, harga_jual_saat_itu)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (produk_id, tanggal, tipe, int(jumlah), catatan, sumber, idempotency_key, now,
+                 produk["harga_modal"], produk["harga_jual"]),
             )
-        now = datetime.now().isoformat(timespec="seconds")
-        cur = conn.execute(
-            """INSERT INTO produk_mutasi
-               (produk_id, tanggal, tipe, jumlah, catatan, sumber, created_at,
-                harga_modal_saat_itu, harga_jual_saat_itu)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (produk_id, tanggal, tipe, int(jumlah), catatan, sumber, now,
-             produk["harga_modal"], produk["harga_jual"]),
-        )
-        return cur.lastrowid
+            return cur.lastrowid
+    except IntegrityError:
+        if idempotency_key:
+            existing_id = _cari_mutasi_produk_id_by_idempotency_key(produk_id, idempotency_key)
+            if existing_id is not None:
+                return existing_id
+        raise
 
 
-def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None, sumber: str = None) -> int:
+def jual_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None, sumber: str = None,
+                 idempotency_key: str = None) -> int:
     """Penjualan = mengurangi stok DAN menambah omzet (lihat
     get_omzet_penjualan_produk). DITOLAK kalau membuat saldo stok jadi
     negatif di titik manapun secara kronologis (bukan cuma dicek di akhir).
-    `sumber`: lihat catatan di tambah_transaksi() -- pola yang sama."""
-    return _catat_keluar_produk(produk_id, tanggal, jumlah, "jual", catatan, kata_kerja="dijual", sumber=sumber)
+    `sumber`: lihat catatan di tambah_transaksi() -- pola yang sama.
+    `idempotency_key`: lihat catatan di _catat_keluar_produk()."""
+    return _catat_keluar_produk(produk_id, tanggal, jumlah, "jual", catatan, kata_kerja="dijual", sumber=sumber,
+                                 idempotency_key=idempotency_key)
 
 
-def tester_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None) -> int:
+def tester_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None,
+                   idempotency_key: str = None) -> int:
     """Tester = mengurangi stok SAMA PERSIS seperti Jual (dipakai untuk
     dicoba customer, sample, dsb), TAPI TIDAK menambah nilai penjualan --
     get_omzet_penjualan_produk() hanya menjumlahkan tipe='jual', tipe
     'tester' sengaja dilewati. Tetap tercatat penuh di riwayat mutasi
-    (GET /api/produk/mutasi) seperti tipe lainnya."""
-    return _catat_keluar_produk(produk_id, tanggal, jumlah, "tester", catatan, kata_kerja="dipakai tester")
+    (GET /api/produk/mutasi) seperti tipe lainnya. `idempotency_key`: lihat
+    catatan di _catat_keluar_produk()."""
+    return _catat_keluar_produk(produk_id, tanggal, jumlah, "tester", catatan, kata_kerja="dipakai tester",
+                                 idempotency_key=idempotency_key)
 
 
 def koreksi_mutasi_produk(mutasi_id: int, tanggal: str, jumlah: int, catatan: str = None):

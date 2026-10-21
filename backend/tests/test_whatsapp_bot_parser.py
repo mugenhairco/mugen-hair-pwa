@@ -1122,3 +1122,71 @@ def test_input_harian_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_ten
 
     daftar = db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)
     assert len(daftar) == 1
+
+
+def test_input_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    produk_id = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=10)
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "Produk\nCaptain Clay 30 2")
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending is not None
+    assert pending["payload"]["items"][0].get("idempotency_key")
+
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "berhasil disimpan" in balasan1
+    assert "berhasil disimpan" in balasan2
+    assert db.get_stok_produk(produk_id) == 8  # HANYA terpotong sekali (bukan 6)
+
+
+def test_restock_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    produk_id = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=5)
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "Restock\nCaptain Clay 30 10")
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending["payload"]["items"][0].get("idempotency_key")
+
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "berhasil disimpan" in balasan1
+    assert "berhasil disimpan" in balasan2
+    assert db.get_stok_produk(produk_id) == 15  # HANYA bertambah sekali (bukan 25)
+
+
+def test_tester_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    produk_id = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=10)
+
+    wbp.proses_pesan(tenant_id, config, "628110000000", "Tester\nCaptain Clay 30 2")
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending["payload"]["items"][0].get("idempotency_key")
+
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "berhasil disimpan" in balasan1
+    assert "berhasil disimpan" in balasan2
+    assert db.get_stok_produk(produk_id) == 8  # HANYA terpotong sekali (bukan 6)
+
+
+def test_input_harian_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000, modal=10000)
+    produk_id = _produk(tenant_id, "Wax Pomade", 50000, stok=10)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nDc 1\nTips 0\nProduk:\nWax Pomade 2"
+    wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending["payload"]["produk"][0].get("idempotency_key")
+
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "diproses" in balasan1
+    assert "diproses" in balasan2
+    assert db.get_stok_produk(produk_id) == 8  # HANYA terpotong sekali (bukan 6)
