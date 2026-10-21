@@ -189,8 +189,20 @@ CREATE TABLE IF NOT EXISTS transaksi_detail (
     service_id    INTEGER NOT NULL REFERENCES services(id),
     nama_service  TEXT NOT NULL,
     harga         INTEGER NOT NULL,
+    modal         INTEGER,
     jumlah        INTEGER NOT NULL DEFAULT 1
 );
+-- PERBAIKAN Owner (audit "komisi berubah kalau harga diubah kemudian
+-- hari"): `harga` SUDAH disalin/snapshot saat transaksi dibuat, TAPI
+-- `modal` TIDAK -- komisi transaksi LAMA dihitung ulang dengan modal
+-- SERVICE SAAT INI (live) setiap kali Rekap/PDF/Slip Gaji dibuka,
+-- membuat komisi historis berubah diam-diam kalau Owner mengedit Harga
+-- Modal sebuah service belakangan. `database.py::_lengkapi_transaksi()`/
+-- `_lengkapi_transaksi_batch()` sekarang memakai kolom ini (NULL = baris
+-- lama sebelum kolom ini ada, fallback ke modal live -- perilaku TIDAK
+-- berubah untuk baris itu). ADD COLUMN biasa, aman untuk instalasi yang
+-- SUDAH ADA.
+ALTER TABLE transaksi_detail ADD COLUMN IF NOT EXISTS modal INTEGER;
 
 CREATE TABLE IF NOT EXISTS absensi_libur (
     id        SERIAL PRIMARY KEY,

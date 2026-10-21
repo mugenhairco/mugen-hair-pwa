@@ -206,6 +206,17 @@ def koreksi_transaksi(transaksi_id: int, body: KoreksiBody, user: dict = Depends
     barber_id = body.barber_id
     if user["role"] == "barber":
         barber_id = None  # barber tidak boleh memindahkan transaksinya ke barber lain
+    elif barber_id is not None:
+        # FONDASI Multi-Tenant Phase 1 (audit "celah atau hal yang tidak
+        # wajar"): _resolve_barber_id() di atas SUDAH memverifikasi ini
+        # untuk tambah_transaksi() (POST) sejak awal, tapi koreksi (PUT) ini
+        # TIDAK PERNAH diberi pengecekan yang sama -- bug nyata: Owner/Admin
+        # Tenant A bisa memindahkan transaksi MILIKNYA SENDIRI ke barber_id
+        # Tenant B hanya dengan menebak/menaikkan id, membuat transaksi itu
+        # (dan komisinya) ikut tercatat di pembukuan/slip gaji Tenant B.
+        barber = db.get_barber(barber_id)
+        if barber is None or barber.get("tenant_id") != user.get("tenant_id"):
+            raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
     try:
         db.koreksi_transaksi(
             transaksi_id, tanggal=body.tanggal, barber_id=barber_id,

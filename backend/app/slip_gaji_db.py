@@ -27,12 +27,24 @@ yang SAMA dibuat di postgres_schema.py (create_all() TIDAK memanggil fungsi
 ini sama sekali di jalur itu).
 """
 
+import threading
+from collections import defaultdict
 from datetime import datetime
 
 import kasbon_db
 from database import get_conn, get_barber, get_ringkasan_barber_bulan
 
 STATUS_VALID = {"belum_dibayar", "sudah_dibayar"}
+
+# PERBAIKAN Owner (audit "celah atau hal yang tidak wajar"): lock in-process
+# per slip_id, pola SAMA PERSIS seperti _kunci_per_kasbon (kasbon_db.py)/
+# _kunci_produk (database.py)/_kunci_slot_booking (booking_db.py) -- lihat
+# tandai_status() di bawah untuk alasan lengkap.
+_kunci_per_slip: dict[int, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_slip(slip_id: int) -> threading.Lock:
+    return _kunci_per_slip[slip_id]
 
 
 def init_slip_gaji_db():
@@ -366,27 +378,39 @@ def tandai_status(slip_id: int, status: str) -> dict:
        FIFO) -- BUKAN saat slip digenerate/dihitung ulang.
     -> 'belum_dibayar' (dari 'sudah_dibayar'): potongan yang sempat
        diterapkan di atas DIBATALKAN (kasbon_db.batalkan_potongan_slip_gaji()),
-       saldo kasbon terkait dikembalikan seperti semula."""
+       saldo kasbon terkait dikembalikan seperti semula.
+
+    PERBAIKAN Owner (audit "celah atau hal yang tidak wajar"): SELURUH
+    fungsi ini (baca status_lama -> UPDATE -> terapkan/batalkan potongan
+    kasbon) dikunci per slip_id (_kunci_slip()) -- SEBELUMNYA dua
+    pemanggilan nyaris bersamaan untuk SLIP YANG SAMA (dua tab Admin, atau
+    double-klik yang lolos sebelum tombol frontend terdisable) bisa
+    KEDUANYA membaca status_lama='belum_dibayar' SEBELUM salah satu
+    sempat menulis UPDATE-nya, sehingga KEDUANYA lolos kondisi transisi
+    dan KEDUANYA memanggil terapkan_potongan_slip_gaji() -- memotong saldo
+    kasbon barber itu DUA KALI untuk SATU tindakan "tandai sudah dibayar"
+    (dan membuat dua baris kasbon_pembayaran untuk potongan yang sama)."""
     if status not in STATUS_VALID:
         raise ValueError(f"Status tidak dikenal: {status}")
-    existing = get_slip_gaji(slip_id)
-    if existing is None:
-        raise ValueError("Slip Gaji tidak ditemukan.")
-    status_lama = existing["status"]
-    now = datetime.now().isoformat(timespec="seconds")
-    tanggal_dibayar = now[:10] if status == "sudah_dibayar" else None
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE slip_gaji SET status = ?, tanggal_dibayar = ?, updated_at = ? WHERE id = ?",
-            (status, tanggal_dibayar, now, slip_id),
-        )
+    with _kunci_slip(slip_id):
+        existing = get_slip_gaji(slip_id)
+        if existing is None:
+            raise ValueError("Slip Gaji tidak ditemukan.")
+        status_lama = existing["status"]
+        now = datetime.now().isoformat(timespec="seconds")
+        tanggal_dibayar = now[:10] if status == "sudah_dibayar" else None
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE slip_gaji SET status = ?, tanggal_dibayar = ?, updated_at = ? WHERE id = ?",
+                (status, tanggal_dibayar, now, slip_id),
+            )
 
-    if status == "sudah_dibayar" and status_lama != "sudah_dibayar" and existing["potongan_kasbon"] > 0:
-        kasbon_db.terapkan_potongan_slip_gaji(existing["barber_id"], slip_id, existing["potongan_kasbon"])
-    elif status == "belum_dibayar" and status_lama == "sudah_dibayar":
-        kasbon_db.batalkan_potongan_slip_gaji(slip_id)
+        if status == "sudah_dibayar" and status_lama != "sudah_dibayar" and existing["potongan_kasbon"] > 0:
+            kasbon_db.terapkan_potongan_slip_gaji(existing["barber_id"], slip_id, existing["potongan_kasbon"])
+        elif status == "belum_dibayar" and status_lama == "sudah_dibayar":
+            kasbon_db.batalkan_potongan_slip_gaji(slip_id)
 
-    return get_slip_gaji(slip_id)
+        return get_slip_gaji(slip_id)
 
 
 def hapus_slip_gaji(slip_id: int):

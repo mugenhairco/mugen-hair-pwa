@@ -473,6 +473,7 @@ async def on_startup():
         migrasi_absensi_libur_sumber()  # Migrasi skema kolom absensi_libur.sumber (idempotent) -- dipakai Kuota Libur (Tandai Libur manual), lihat kuota_libur_db.py
         db.migrasi_transaksi_idempotency_key()  # Migrasi skema kolom transaksi.idempotency_key + unique index (idempotent) -- cegah Transaksi dobel dari "Kirim Ulang", lihat database.py
         db.migrasi_produk_mutasi_idempotency_key()  # Migrasi skema kolom produk_mutasi.idempotency_key + unique index (idempotent) -- cegah Jual/Restock/Tester Produk dobel via WA Bot, lihat database.py
+        db.migrasi_transaksi_detail_modal_snapshot()  # Migrasi skema kolom transaksi_detail.modal (idempotent) -- cegah komisi historis berubah diam-diam kalau Harga Modal service diedit belakangan, lihat database.py
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_lokasi_user()   # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
         migrasi_session_login()  # Kontrol Sesi Login Satu-Device: kolom users.current_session_hash (idempotent)

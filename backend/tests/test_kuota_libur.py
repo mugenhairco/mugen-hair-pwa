@@ -652,3 +652,46 @@ def test_terapkan_kuota_libur_diulang_tanggal_sama_idempoten(single_tenant):
     assert hasil1 == "libur"
     assert hasil2 == "libur"
     assert db.get_hari_libur(barber_id, 2026, 8) == 1
+
+
+# ---------------------------------------------------------------------------
+# PERMINTAAN OWNER: kalau jadwal Barber Holiday (hari_libur_mingguan)
+# diubah, tanggal yang SUDAH tercatat Libur (sudah "diinput") TIDAK BOLEH
+# berubah -- TAPI tanggal yang BELUM tercatat (belum "diinput") HARUS
+# mengikuti jadwal yang BARU, bukan jadwal lama saat tanggal itu lewat.
+# set_hari_libur_mingguan() sendiri TIDAK PERNAH menyentuh absensi_libur
+# (lihat booking_db.py) -- jaminan "sudah diinput tidak diubah" datang
+# dari pastikan_libur_mingguan_tercatat() yang SELALU skip tanggal yang
+# sudah punya baris (`sudah_ada`), dan "belum diinput ikut jadwal baru"
+# datang dari is_jadwal_mingguan_libur() yang SELALU membaca jadwal
+# TERKINI (live), bukan jadwal yang berlaku saat tanggal itu.
+# ---------------------------------------------------------------------------
+
+def test_libur_mingguan_sudah_tercatat_tidak_berubah_saat_jadwal_diganti(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    _patch_hari_ini(monkeypatch, "2026-08-04")  # Selasa pertama -- materialisasi jadwal LAMA
+    kld.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-01", "2026-08-04")
+    assert db.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-04") == 1  # 4 Agustus (Selasa) tercatat
+
+    # Jadwal diganti dari Selasa -> Rabu. Tanggal yang SUDAH tercatat
+    # (4 Agustus) HARUS tetap Libur, walau Selasa bukan lagi jadwalnya.
+    booking_db.set_hari_libur_mingguan(barber_id, ["rabu"])
+    _patch_hari_ini(monkeypatch, "2026-08-12")  # Rabu kedua -- lanjut materialisasi jadwal BARU
+    kld.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-01", "2026-08-12")
+
+    baris = db.get_libur_list(barber_id=barber_id, tahun=2026, bulan=8)
+    tanggal_libur = {b["tanggal"] for b in baris}
+    # 4 Agustus (Selasa, SUDAH tercatat sebelum jadwal diganti) -- TETAP ada.
+    # 11 Agustus (Selasa KEDUA, BELUM tercatat sebelum jadwal diganti) --
+    #   TIDAK ikut tercatat (Selasa bukan lagi jadwalnya saat akhirnya diproses).
+    # 5 & 12 Agustus (Rabu, jadwal BARU, belum tercatat) -- tercatat sebagai Libur.
+    assert tanggal_libur == {"2026-08-04", "2026-08-05", "2026-08-12"}
+
+    with kld.get_conn() as conn:
+        row_lama = conn.execute(
+            "SELECT sumber FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
+            (barber_id, "2026-08-04"),
+        ).fetchone()
+    assert row_lama["sumber"] == kld.SUMBER_LIBUR_MINGGUAN  # baris lama tidak diubah/ditimpa

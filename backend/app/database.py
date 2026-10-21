@@ -153,6 +153,7 @@ def init_db():
                 service_id       INTEGER NOT NULL,
                 nama_service     TEXT NOT NULL,   -- disalin saat transaksi dibuat (histori aman walau service diubah/dihapus)
                 harga            INTEGER NOT NULL,-- disalin saat transaksi dibuat
+                modal            INTEGER,         -- disalin saat transaksi dibuat (lihat migrasi_transaksi_detail_modal_snapshot() -- NULL = baris lama sebelum kolom ini ada, fallback ke modal LIVE)
                 jumlah           INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (transaksi_id) REFERENCES transaksi(id) ON DELETE CASCADE,
                 FOREIGN KEY (service_id) REFERENCES services(id)
@@ -330,6 +331,34 @@ def migrasi_produk_mutasi_idempotency_key():
             conn.execute("ALTER TABLE produk_mutasi ADD COLUMN idempotency_key TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_produk_mutasi_idempotency "
                      "ON produk_mutasi(produk_id, idempotency_key)")
+
+
+def migrasi_transaksi_detail_modal_snapshot():
+    """JALUR SQLITE SAJA -- menambah kolom `modal` ke `transaksi_detail`
+    (idempotent), sama pola migrasi_* lain di atas.
+
+    PERBAIKAN Owner (audit "komisi berubah kalau harga diubah kemudian
+    hari"): sebelumnya `harga` (harga jual) SUDAH disalin/snapshot saat
+    transaksi dibuat (supaya histori aman kalau harga service diedit
+    belakangan), TAPI `modal` (harga modal) TIDAK -- setiap kali komisi
+    transaksi LAMA dihitung ulang (buka Rekap, cetak PDF, generate Slip
+    Gaji baru), kode mengambil modal SERVICE SAAT INI (live), bukan modal
+    yang berlaku saat transaksi itu terjadi. Akibatnya: Owner mengubah
+    Harga Modal sebuah service di bulan Juni, dan SELURUH komisi historis
+    bulan-bulan sebelumnya (yang slip gajinya belum ditandai "sudah
+    dibayar") ikut berubah diam-diam tanpa jejak audit -- padahal harga
+    yang dibayar customer dan komisi yang sudah dijanjikan ke barber tidak
+    pernah berubah. Diperbaiki dengan menyalin `modal` PERSIS SAMA seperti
+    `harga` (lihat tambah_transaksi()/koreksi_transaksi()) -- `_lengkapi_
+    transaksi()`/`_lengkapi_transaksi_batch()` dibawah sekarang memakai
+    nilai snapshot ini, HANYA fallback ke modal live kalau snapshot NULL
+    (baris transaksi LAMA, dari sebelum migrasi ini -- tidak ada cara
+    mengetahui modal saat itu, jadi perilaku untuk baris lama TIDAK
+    berubah dari sebelumnya)."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(transaksi_detail)").fetchall()]
+        if "modal" not in kolom:
+            conn.execute("ALTER TABLE transaksi_detail ADD COLUMN modal INTEGER")
 
 
 # ---------------------------------------------------------------------------
@@ -695,9 +724,10 @@ def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, c
                 if service is None:
                     raise ValueError("Service tidak ditemukan")
                 conn.execute(
-                    """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, jumlah)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (transaksi_id, service["id"], service["nama"], service["harga"], it["jumlah"]),
+                    """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, modal, jumlah)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (transaksi_id, service["id"], service["nama"], service["harga"], service["modal"] or 0,
+                     it["jumlah"]),
                 )
             return transaksi_id
     except IntegrityError:
@@ -757,9 +787,10 @@ def koreksi_transaksi(transaksi_id: int, tanggal: str = None, barber_id: int = N
                 if service is None:
                     raise ValueError("Service tidak ditemukan")
                 conn.execute(
-                    """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, jumlah)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (transaksi_id, service["id"], service["nama"], service["harga"], it["jumlah"]),
+                    """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, modal, jumlah)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (transaksi_id, service["id"], service["nama"], service["harga"], service["modal"] or 0,
+                     it["jumlah"]),
                 )
 
 
@@ -775,6 +806,21 @@ def _peta_modal_service(conn) -> dict:
     barbershop biasanya belasan) -- dipakai _lengkapi_transaksi/_lengkapi_transaksi_batch/
     hitung_preview_items supaya hitung_komisi_service() tidak perlu query per item."""
     return {r["id"]: (r["modal"] or 0) for r in conn.execute("SELECT id, modal FROM services").fetchall()}
+
+
+def _modal_snapshot_atau_live(item_detail: dict, modal_map: dict) -> int:
+    """PERBAIKAN Owner (audit "komisi berubah kalau harga diubah kemudian
+    hari"): pakai `modal` yang DISNAPSHOT di baris transaksi_detail ini
+    sendiri (disalin saat transaksi dibuat/dikoreksi, lihat
+    tambah_transaksi()/koreksi_transaksi()) -- SELALU, termasuk kalau
+    nilainya 0 (modal memang benar-benar 0 saat itu). HANYA fallback ke
+    modal SERVICE SAAT INI (live, dari modal_map) kalau snapshot-nya NULL
+    -- berarti baris ini dibuat SEBELUM kolom `modal` ada (migrasi lama),
+    jadi modal aslinya memang tidak pernah tercatat, dan modal live adalah
+    satu-satunya nilai yang tersedia (perilaku SAMA seperti sebelum
+    perbaikan ini, TIDAK berubah untuk baris lama)."""
+    modal_snapshot = item_detail.get("modal")
+    return modal_snapshot if modal_snapshot is not None else modal_map.get(item_detail["service_id"], 0)
 
 
 def _tenant_id_barber(conn, barber_id) -> int | None:
@@ -809,7 +855,7 @@ def _lengkapi_transaksi(conn, header: dict) -> dict:
     header["jumlah_item"] = sum(it["jumlah"] for it in items)
     header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
     header["total_komisi"] = sum(
-        hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0), tenant_id=tenant_id) * it["jumlah"]
+        hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id) * it["jumlah"]
         for it in items
     )
     header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
@@ -849,7 +895,7 @@ def _lengkapi_transaksi_batch(conn, headers: list) -> list:
         header["jumlah_item"] = sum(it["jumlah"] for it in items)
         header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
         header["total_komisi"] = sum(
-            hitung_komisi_service(it["harga"], modal_map.get(it["service_id"], 0), tenant_id=tenant_id) * it["jumlah"]
+            hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id) * it["jumlah"]
             for it in items
         )
         header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
