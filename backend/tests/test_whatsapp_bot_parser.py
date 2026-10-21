@@ -1068,3 +1068,57 @@ def test_input_harian_libur_ditolak_kalau_jadwal_mingguan(single_tenant, monkeyp
     hasil = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
     assert "Libur Mingguan" in hasil
     assert db.get_hari_libur(barber_id, 2026, 8) == 1
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Owner (audit "tidak boleh input dobel"): idempotency_key per
+# pending Transaksi (input_service & Input Harian) -- menutup celah race
+# condition (dua webhook diproses BERSAMAAN, keduanya membawa pending yang
+# SAMA sebelum salah satu sempat hapus_pending(), atau Fonnte mengirim
+# ulang webhook di LUAR jendela whatsapp_bot_db.pesan_duplikat() 2 menit).
+# ---------------------------------------------------------------------------
+
+def test_input_service_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    barber_id = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Potong Rambut Test", 105000)
+
+    pesan = "Romen 11 oktober 2026\nPotong 2"
+    wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending is not None
+    assert pending["payload"].get("idempotency_key")
+
+    # Simulasi dua request "YA" yang diproses BERSAMAAN -- keduanya
+    # membawa pending yang SAMA (idempotency_key sama persis), karena
+    # keduanya terlanjur membaca pending ini SEBELUM salah satu sempat
+    # hapus_pending() (lihat _proses_konfirmasi()).
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "berhasil disimpan" in balasan1
+    assert "berhasil disimpan" in balasan2
+
+    daftar = db.get_transaksi_list(barber_id=barber_id, tenant_id=tenant_id)
+    assert len(daftar) == 1
+
+
+def test_input_harian_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    romen = _barber(tenant_id, "Romen")
+    _service(tenant_id, "Dandan Cepat", 100000, modal=10000)
+
+    pesan = "Input Harian 20 oktober 2026\nRomen\nDc 3\nTips 60000"
+    wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
+    pending = wb_db.ambil_pending(tenant_id, "628110000000")
+    assert pending is not None
+    assert pending["payload"]["barbers"][0].get("idempotency_key")
+
+    balasan1 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    balasan2 = wbp._proses_konfirmasi(tenant_id, "628110000000", pending, "YA")
+    assert "diproses" in balasan1
+    assert "diproses" in balasan2
+
+    daftar = db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)
+    assert len(daftar) == 1

@@ -53,6 +53,7 @@ untuk device Fonnte, belum dipastikan kompatibel dengan fitur interaktif
 semacam itu."""
 
 import re
+import uuid
 from datetime import date, timedelta
 
 import attendance_db
@@ -634,7 +635,8 @@ def _proses_konfirmasi(tenant_id: int, wa_id_pengirim: str, pending: dict, jawab
     whatsapp_bot_db.hapus_pending(tenant_id, wa_id_pengirim)
 
     if jenis == "input_service":
-        db.tambah_transaksi(p["tanggal"], p["barber_id"], p["items"], tips=p["tips"], sumber=SUMBER_WA_BOT)
+        db.tambah_transaksi(p["tanggal"], p["barber_id"], p["items"], tips=p["tips"], sumber=SUMBER_WA_BOT,
+                             idempotency_key=p.get("idempotency_key"))
         return f"✅ Data {p['nama_barber']} ({_format_tanggal_id(p['tanggal'])}) berhasil disimpan."
 
     if jenis == "input_harian":
@@ -698,7 +700,8 @@ def _simpan_input_harian(tenant_id: int, p: dict) -> str:
 
     for b in p["barbers"]:
         try:
-            db.tambah_transaksi(p["tanggal"], b["barber_id"], b["items"], tips=b["tips"], sumber=SUMBER_WA_BOT)
+            db.tambah_transaksi(p["tanggal"], b["barber_id"], b["items"], tips=b["tips"], sumber=SUMBER_WA_BOT,
+                                 idempotency_key=b.get("idempotency_key"))
             hasil.append(f"✅ Data {b['nama_barber']} tersimpan.")
         except ValueError as e:
             hasil.append(f"❌ Data {b['nama_barber']} GAGAL: {e}")
@@ -809,8 +812,18 @@ def _parse_dan_preview_input_service(tenant_id: int, wa_id_pengirim: str, barber
     lines.append("")
     lines.append("Balas *YA* untuk simpan, atau *BATAL* untuk batalkan.")
 
+    # PERBAIKAN Owner (audit "tidak boleh input dobel"): idempotency_key
+    # dibuat SEKALI di sini (bertahan sama lewat pending tersimpan, TIDAK
+    # dibuat ulang tiap percobaan konfirmasi) -- lihat pemakaiannya di
+    # _proses_konfirmasi() jenis "input_service" + database.py::
+    # tambah_transaksi(). Menutup celah webhook Fonnte yang terkirim ULANG
+    # tepat di luar jendela _JENDELA_DUPLIKAT_DETIK (whatsapp_bot_db.
+    # pesan_duplikat()), atau dua request "YA" yang diproses BERSAMAAN
+    # (race condition -- pesan_duplikat() sendiri rentan TOCTOU karena
+    # baris log-nya baru tercatat SETELAH proses_pesan() selesai, lihat
+    # routers/whatsapp_bot.py).
     payload = {"barber_id": barber["id"], "nama_barber": barber["nama"], "tanggal": tanggal,
-               "items": items_simpan, "tips": tips}
+               "items": items_simpan, "tips": tips, "idempotency_key": uuid.uuid4().hex}
     whatsapp_bot_db.simpan_pending(tenant_id, wa_id_pengirim, "input_service", payload)
     return "\n".join(lines)
 
@@ -1156,11 +1169,15 @@ def _tampilkan_ringkasan_input_harian(tenant_id: int, wa_id_pengirim: str, draft
     lines.append("")
     lines.append("Balas *YA* untuk simpan semua, atau *BATAL* untuk batalkan.")
 
+    # PERBAIKAN Owner (audit "tidak boleh input dobel"): idempotency_key
+    # PER BARBER dibuat SEKALI di sini (sama alasannya seperti catatan di
+    # _parse_dan_preview_input_service() -- lihat pemakaiannya di
+    # _simpan_input_harian()).
     payload = {
         "tanggal": draft["tanggal"],
         "barbers": [{"barber_id": b["barber_id"], "nama_barber": b["nama_barber"],
                      "items": [{"service_id": it["service_id"], "jumlah": it["jumlah"]} for it in b["items"]],
-                     "tips": b["tips"]} for b in draft["barbers"]],
+                     "tips": b["tips"], "idempotency_key": uuid.uuid4().hex} for b in draft["barbers"]],
         "libur": draft["libur"],
         "produk": [{"produk_id": p["produk_id"], "nama": p["nama"], "jumlah": p["jumlah"]} for p in draft["produk"]],
     }

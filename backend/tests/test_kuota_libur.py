@@ -616,3 +616,39 @@ def test_tandai_libur_dengan_kuota_lihat_libur_mingguan_lain_bulan_itu(single_te
 
     jenis = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-05")  # Rabu, BUKAN jadwal mingguan
     assert jenis == "cuti"  # kuota Libur (1) sudah terpakai oleh Selasa 4 Agustus yang otomatis
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Owner (audit "tidak boleh input dobel"): mengulang Tandai Libur
+# untuk tanggal yang SAMA (SUDAH tercatat Libur) TIDAK BOLEH menghitung
+# ulang cascade kuota -- khusus kalau kuota bulan itu PAS di batas (tanggal
+# itu sendiri salah satu dari yang "terpakai"), sebelumnya salah membuat
+# PENGAJUAN CUTI TAMBAHAN untuk tanggal yang sama (tercatat Libur DAN Cuti
+# sekaligus).
+# ---------------------------------------------------------------------------
+
+def test_tandai_libur_diulang_tanggal_sama_saat_kuota_pas_batas_tidak_jadi_cuti(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1)
+
+    jenis1 = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-01")
+    assert jenis1 == "libur"  # kuota (1/1) PAS terpakai oleh tanggal ini sendiri
+
+    jenis2 = kld.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-08-01")
+    assert jenis2 == "libur"  # diulang, HARUS tetap "libur" -- BUKAN "cuti"
+
+    assert db.get_hari_libur(barber_id, 2026, 8) == 1
+    assert izin_cuti_db.get_pengajuan_list(barber_id=barber_id, tenant_id=tenant_id) == []
+
+
+def test_terapkan_kuota_libur_diulang_tanggal_sama_idempoten(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=0)  # tanpa batas kuota sama sekali
+
+    hasil1 = kld._terapkan_kuota_libur(barber_id, tenant_id, "2026-08-01")
+    hasil2 = kld._terapkan_kuota_libur(barber_id, tenant_id, "2026-08-01")
+    assert hasil1 == "libur"
+    assert hasil2 == "libur"
+    assert db.get_hari_libur(barber_id, 2026, 8) == 1

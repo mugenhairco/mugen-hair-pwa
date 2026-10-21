@@ -311,7 +311,28 @@ def _terapkan_kuota_libur(barber_id: int, tenant_id: int, tanggal: str, sumber_l
     di bawah murni MENGHITUNG baris yang SUDAH ada di database saat
     dipanggil (termasuk baris yang baru saja dibuat pemanggil SEBELUMNYA
     dalam loop pastikan_libur_mingguan_tercatat(), karena setiap baris
-    langsung commit sebelum tanggal berikutnya diproses)."""
+    langsung commit sebelum tanggal berikutnya diproses).
+
+    PERBAIKAN Owner (audit "tidak boleh input dobel"): kalau tanggal ini
+    SUDAH punya baris absensi_libur (sumber apa pun -- percobaan
+    Tandai Libur sebelumnya, atau materialisasi Libur Mingguan), cascade
+    SELALU dianggap sudah "libur" tanpa menghitung ulang kuota sama
+    sekali -- TANPA ini, mengulang "Tandai Libur" untuk tanggal yang
+    PERSIS sama saat kuota bulan itu PAS di batas (mis. 5/5, dan 1 dari
+    5 itu adalah tanggal ini sendiri) akan salah membuat PENGAJUAN CUTI
+    TAMBAHAN untuk tanggal yang sama (tanggal itu jadi tercatat Libur
+    DAN Cuti sekaligus) -- bikin Rekap & kuota salah hitung, dan baris
+    Cuti itu dibuat lewat INSERT langsung di bawah (BUKAN
+    izin_cuti_db.buat_pengajuan()), jadi tidak lewat guard tumpang
+    tindih yang ada di sana sama sekali."""
+    with get_conn() as conn:
+        sudah_ada = conn.execute(
+            "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
+            (barber_id, tanggal),
+        ).fetchone()
+    if sudah_ada is not None:
+        return "libur"
+
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     kuota = settings.get("kuota_libur_bulanan", 0)
     if kuota <= 0:
