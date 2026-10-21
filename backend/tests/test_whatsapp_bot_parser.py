@@ -431,8 +431,73 @@ def test_rekap_produk_bulan(single_tenant):
     pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
     db.jual_produk(pid, "2026-10-05", 3)
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk Oktober 2026")
-    assert "Captain Clay 30gr: 3 terjual" in balasan
-    assert "Rp135.000" in balasan
+    assert "*Terjual*" in balasan
+    assert "5 Okt: Captain Clay 30gr x3 = Rp135.000" in balasan
+    assert "Total Terjual: Rp135.000" in balasan
+    assert "*Total Penjualan Produk: Rp135.000*" in balasan
+
+
+def test_rekap_produk_detail_tanggal_jual_tester_restock(single_tenant):
+    """PERMINTAAN OWNER: rekap detail menampilkan tanggal Terjual, Tester,
+    DAN Restock -- dikelompokkan per jenis, bukan cuma agregat per produk."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
+    db.restock_produk(pid, "2026-10-01", 20)
+    db.jual_produk(pid, "2026-10-05", 3)
+    db.tester_produk(pid, "2026-10-10", 1)
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk Oktober 2026")
+
+    assert "*Terjual*" in balasan
+    assert "5 Okt: Captain Clay 30gr x3 = Rp135.000" in balasan
+    assert "Total Terjual: Rp135.000" in balasan
+
+    assert "*Tester*" in balasan
+    assert "10 Okt: Captain Clay 30gr x1" in balasan
+    assert "Total Tester: 1 item" in balasan
+
+    assert "*Restock*" in balasan
+    assert "1 Okt: Captain Clay 30gr +20" in balasan
+    assert "Total Restock: 20 item" in balasan
+
+    # Total Penjualan Produk HANYA dari tipe 'jual' -- Tester/Restock tidak ikut.
+    assert "*Total Penjualan Produk: Rp135.000*" in balasan
+
+
+def test_rekap_produk_tanpa_mutasi_sama_sekali(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    _produk(tenant_id, "Captain Clay 30gr", 45000)
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk Desember 2026")
+    assert "Tidak ada mutasi produk pada periode ini." in balasan
+
+
+def test_rekap_produk_tanggal_spesifik_hanya_tanggal_itu(single_tenant):
+    """PERMINTAAN OWNER: selaras dengan "Rekap" (transaksi) yang bisa
+    menerima satu tanggal spesifik -- "Rekap Produk 11 oktober 2026"
+    HANYA menampilkan tanggal itu, bukan seluruh bulan Oktober."""
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
+    db.jual_produk(pid, "2026-10-05", 3)
+    db.jual_produk(pid, "2026-10-11", 2)  # tanggal lain, bulan sama -- TIDAK boleh ikut
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk 11 oktober 2026")
+    assert "*Rekap Produk - 11 Okt 2026*" in balasan
+    assert "11 Okt: Captain Clay 30gr x2 = Rp90.000" in balasan
+    assert "5 Okt" not in balasan
+    assert "Rp135.000" not in balasan
+
+
+def test_rekap_produk_tanggal_spesifik_tanpa_mutasi(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    config = _config(tenant_id, nomor_owner="628110000000")
+    pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
+    db.jual_produk(pid, "2026-10-05", 3)
+
+    balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk 11 oktober 2026")
+    assert "Tidak ada mutasi produk pada periode ini." in balasan
 
 
 # ---------------------------------------------------------------------------

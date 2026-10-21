@@ -155,6 +155,15 @@ def _format_tanggal_id(iso: str) -> str:
     return f"{d} {_NAMA_BULAN_SINGKAT[m]} {y}"
 
 
+def _format_tanggal_pendek(iso: str) -> str:
+    """Tanggal+bulan SAJA (tanpa tahun) -- dipakai daftar per-baris dalam
+    laporan yang sudah terikat satu bulan/tahun tertentu di judulnya
+    sendiri (mis. _cmd_rekap_produk()), supaya tiap baris tidak perlu
+    mengulang tahun yang sama."""
+    y, m, d = (int(x) for x in iso.split("-"))
+    return f"{d} {_NAMA_BULAN_SINGKAT[m]}"
+
+
 def _parse_nominal(teks: str) -> int:
     """'30rb' -> 30000, '1jt' -> 1000000, '30.000'/'30000' -> 30000.
     Tidak ada parser nominal shorthand yang sudah ada di codebase ini,
@@ -1359,25 +1368,68 @@ def _cmd_tester_produk(tenant_id: int, wa_id_pengirim: str, sisa_setelah_kata: s
 
 
 def _cmd_rekap_produk(tenant_id: int, sisa_teks: str) -> str:
-    tahun, bulan = _bulan_dari_teks(sisa_teks) or _bulan_sekarang()
-    rows = db.get_mutasi_produk_list(tipe="jual", tahun=tahun, bulan=bulan, tenant_id=tenant_id)
-    agregat: dict[str, dict] = {}
-    for r in rows:
-        key = r["nama_produk"]
-        a = agregat.setdefault(key, {"jumlah": 0, "omzet": 0})
-        a["jumlah"] += r["jumlah"]
-        a["omzet"] += r["jumlah"] * (r.get("harga_jual_saat_itu") or 0)
+    """REVISI (permintaan Owner): sebelumnya cuma agregat total per produk
+    (jumlah terjual + omzet, HANYA tipe 'jual') -- sekarang detail PER
+    TANGGAL untuk KETIGA jenis mutasi (Jual/Tester/Restock), dikelompokkan
+    per jenis, urut tanggal, masing-masing ditutup subtotal di akhir
+    bagiannya. "Total Penjualan Produk" di baris paling akhir TETAP murni
+    dari tipe 'jual' (Tester/Restock bukan omzet, sama seperti perilaku lama).
 
-    lines = [f"*Rekap Produk - {_NAMA_BULAN[bulan]} {tahun}*", ""]
-    if not agregat:
-        lines.append("Tidak ada penjualan produk bulan ini.")
+    REVISI (permintaan Owner): selaras dengan command "Rekap" (transaksi)
+    yang sudah bisa menerima SATU tanggal spesifik -- "Rekap Produk 11
+    oktober 2026" sekarang juga menampilkan HANYA tanggal itu (bukan
+    seluruh bulan), bukan cuma nama bulan/"bulan ini"/"bulan depan" saja.
+    `_cari_tanggal()` HANYA cocok kalau ada angka tanggal di depan nama
+    bulan ("11 oktober") -- "Rekap Produk Oktober 2026" (tanpa angka
+    tanggal) tetap jatuh ke _bulan_dari_teks() seperti sebelumnya,
+    perilaku lama TIDAK berubah."""
+    tanggal_spesifik = None
+    tm = _cari_tanggal(sisa_teks)
+    if tm:
+        tanggal_spesifik = tm[2]
+        tahun, bulan = int(tanggal_spesifik[:4]), int(tanggal_spesifik[5:7])
+    else:
+        tahun, bulan = _bulan_dari_teks(sisa_teks) or _bulan_sekarang()
+
+    rows = db.get_mutasi_produk_list(tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+    if tanggal_spesifik:
+        rows = [r for r in rows if r["tanggal"] == tanggal_spesifik]
+    rows = sorted(rows, key=lambda r: (r["tanggal"], r["id"]))  # kronologis (query asalnya DESC)
+
+    judul = _format_tanggal_id(tanggal_spesifik) if tanggal_spesifik else f"{_NAMA_BULAN[bulan]} {tahun}"
+    lines = [f"*Rekap Produk - {judul}*", ""]
+    if not rows:
+        lines.append("Tidak ada mutasi produk pada periode ini.")
         return "\n".join(lines)
-    total = 0
-    for nama, data in agregat.items():
-        lines.append(f"{nama}: {data['jumlah']} terjual = {_rupiah(data['omzet'])}")
-        total += data["omzet"]
-    lines.append("")
-    lines.append(f"*Total Penjualan Produk: {_rupiah(total)}*")
+
+    terjual = [r for r in rows if r["tipe"] == "jual"]
+    tester = [r for r in rows if r["tipe"] == "tester"]
+    restock = [r for r in rows if r["tipe"] == "restock"]
+    total_omzet = sum(r["jumlah"] * (r.get("harga_jual_saat_itu") or 0) for r in terjual)
+
+    if terjual:
+        lines.append("*Terjual*")
+        for r in terjual:
+            omzet = r["jumlah"] * (r.get("harga_jual_saat_itu") or 0)
+            lines.append(f"{_format_tanggal_pendek(r['tanggal'])}: {r['nama_produk']} x{r['jumlah']} = {_rupiah(omzet)}")
+        lines.append(f"Total Terjual: {_rupiah(total_omzet)}")
+        lines.append("")
+
+    if tester:
+        lines.append("*Tester*")
+        for r in tester:
+            lines.append(f"{_format_tanggal_pendek(r['tanggal'])}: {r['nama_produk']} x{r['jumlah']}")
+        lines.append(f"Total Tester: {sum(r['jumlah'] for r in tester)} item")
+        lines.append("")
+
+    if restock:
+        lines.append("*Restock*")
+        for r in restock:
+            lines.append(f"{_format_tanggal_pendek(r['tanggal'])}: {r['nama_produk']} +{r['jumlah']}")
+        lines.append(f"Total Restock: {sum(r['jumlah'] for r in restock)} item")
+        lines.append("")
+
+    lines.append(f"*Total Penjualan Produk: {_rupiah(total_omzet)}*")
     return "\n".join(lines)
 
 
