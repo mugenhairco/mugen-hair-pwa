@@ -20,13 +20,24 @@ sumber='kelebihan_kuota' -- dipakai Rekap Bulanan (routers/rekap.py) dan
 ringkasan kuota (routers/izin_cuti.py) untuk menstabilo baris itu merah.
 
 Modul ini MENGGANTIKAN auto_libur_db.py (fitur "Auto-Libur Tidak Absen" --
-barber yang lupa Check In otomatis dicatat Libur/Cuti -- SUDAH DIHAPUS
-TOTAL atas permintaan Owner, lihat riwayat git). Kuota Libur di sini HANYA
-dipicu MANUAL oleh Admin/Owner lewat Input Data > Tandai Libur -- TIDAK
-ADA loop/sweep/proses otomatis apa pun di modul ini.
+barber yang lupa Check In SEMBARANG HARI otomatis dicatat Libur/Cuti --
+SUDAH DIHAPUS TOTAL atas permintaan Owner, lihat riwayat git). TIDAK ADA
+cron/sweep/loop/proses latar belakang apa pun di modul ini.
+
+REVISI (PERMINTAAN OWNER): jadwal Libur Mingguan (Barber Holiday,
+barbers.hari_libur_mingguan) SEKARANG ikut masuk kolam kuota Libur yang
+SAMA ini -- lihat pastikan_libur_mingguan_tercatat() di bawah. BEDA dari
+auto_libur_db.py yang dihapus (yang memicu untuk SEMBARANG hari barber
+lupa Check In): ini HANYA memicu di hari yang MEMANG jadwal mingguan tetap
+barber itu sendiri, dan BUKAN proses latar belakang -- dipanggil OPORTUNISTIK
+(baris dibuat SAAT dibutuhkan, lihat database.py::get_hari_libur_rentang())
+oleh titik-titik baca yang sudah ada, bukan timer/cron terpisah. Barber yang
+Check In di hari jadwal mingguannya sendiri (shift tukar dadakan) membuat
+baris ini (kalau sempat terlanjur dibuat) DIHAPUS oleh attendance_db.
+check_in() -- lihat SUMBER_LIBUR_MINGGUAN.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import attendance_db
 import booking_db
@@ -35,6 +46,7 @@ import izin_cuti_db
 from database import get_conn
 
 SUMBER_KELEBIHAN_KUOTA = "kelebihan_kuota"
+SUMBER_LIBUR_MINGGUAN = "libur_mingguan"
 DIAJUKAN_OLEH_KUOTA_LIBUR = "Sistem (Kuota Libur Habis)"
 
 
@@ -271,16 +283,45 @@ def tandai_libur_dengan_kuota(barber_id: int, tenant_id: int, tanggal: str) -> s
             f"({pengajuan_aktif['tanggal_mulai']} s/d {pengajuan_aktif['tanggal_selesai']})."
         )
 
+    # PERMINTAAN OWNER: pastikan baris Libur Mingguan bulan ini SUDAH
+    # tercatat dulu (lihat pastikan_libur_mingguan_tercatat()) SEBELUM kuota
+    # dihitung di bawah -- tanpa ini, permintaan manual bisa salah hitung
+    # kalau tidak ada yang kebetulan sudah buka Rekap/Dashboard barber ini
+    # bulan ini (satu-satunya titik lain yang memicu pencatatan otomatis).
+    tahun, bulan = int(tanggal[:4]), int(tanggal[5:7])
+    awal_bulan = f"{tahun:04d}-{bulan:02d}-01"
+    pastikan_libur_mingguan_tercatat(barber_id, tenant_id, awal_bulan, tanggal)
+
+    return _terapkan_kuota_libur(barber_id, tenant_id, tanggal)
+
+
+def _terapkan_kuota_libur(barber_id: int, tenant_id: int, tanggal: str, sumber_libur: str = None) -> str:
+    """Inti cascade kuota (TANPA guard jadwal mingguan/Cuti-Izin aktif, dan
+    TANPA memanggil pastikan_libur_mingguan_tercatat() -- caller-nya
+    masing-masing yang bertanggung jawab) -- diekstrak APA ADANYA (rumus
+    tidak diubah) dari tandai_libur_dengan_kuota() supaya bisa dipakai ULANG
+    oleh pastikan_libur_mingguan_tercatat() (lihat di bawah) tanpa duplikasi
+    logika. `sumber_libur`: diteruskan ke database.tandai_libur() KHUSUS
+    kalau hasilnya 'libur' murni (BUKAN kelebihan_kuota, yang sumbernya
+    SELALU SUMBER_KELEBIHAN_KUOTA apa pun nilai parameter ini) -- None
+    (default) sama persis perilaku lama (Libur manual biasa).
+
+    PENTING (hindari rekursi tak berujung): fungsi ini TIDAK PERNAH memicu
+    pastikan_libur_mingguan_tercatat() lagi -- _libur_terpakai_bulan_ini()
+    di bawah murni MENGHITUNG baris yang SUDAH ada di database saat
+    dipanggil (termasuk baris yang baru saja dibuat pemanggil SEBELUMNYA
+    dalam loop pastikan_libur_mingguan_tercatat(), karena setiap baris
+    langsung commit sebelum tanggal berikutnya diproses)."""
     settings = izin_cuti_db.get_cuti_settings(tenant_id)
     kuota = settings.get("kuota_libur_bulanan", 0)
     if kuota <= 0:
-        db.tandai_libur(barber_id, tanggal)
+        db.tandai_libur(barber_id, tanggal, sumber=sumber_libur)
         return "libur"
 
     tahun, bulan = int(tanggal[:4]), int(tanggal[5:7])
     terpakai = _libur_terpakai_bulan_ini(barber_id, tahun, bulan)
     if terpakai < kuota:
-        db.tandai_libur(barber_id, tanggal)
+        db.tandai_libur(barber_id, tanggal, sumber=sumber_libur)
         return "libur"
 
     sisa = izin_cuti_db.get_sisa_kuota_gabungan_pada_tanggal(barber_id, tenant_id, tanggal)
@@ -300,3 +341,44 @@ def tandai_libur_dengan_kuota(barber_id: int, tenant_id: int, tanggal: str) -> s
 
     db.tandai_libur(barber_id, tanggal, sumber=SUMBER_KELEBIHAN_KUOTA)
     return "kelebihan_kuota"
+
+
+def pastikan_libur_mingguan_tercatat(barber_id: int, tenant_id: int, tanggal_mulai: str, tanggal_selesai: str) -> None:
+    """PERMINTAAN OWNER (lihat docstring modul): jadwal Libur Mingguan
+    (Barber Holiday) barber ini BENAR-BENAR tercatat (baris nyata di
+    absensi_libur/izin_cuti, BUKAN cuma status terhitung di tempat) dan
+    MENGURANGI kuota Libur gabungan yang SAMA dengan Tandai Libur manual --
+    lewat cascade yang SAMA PERSIS (_terapkan_kuota_libur() di atas). TIDAK
+    ADA cron/sweep: fungsi ini dipanggil OPORTUNISTIK setiap kali data Libur
+    barber ini dibutuhkan (database.py::get_hari_libur_rentang()/
+    get_libur_list(), MAUPUN tandai_libur_dengan_kuota() sendiri di atas) --
+    idempotent, aman dipanggil berkali-kali untuk rentang yang sama.
+
+    Begitu barber Check In di hari jadwal mingguannya, baris
+    sumber=SUMBER_LIBUR_MINGGUAN yang SUDAH TERLANJUR dibuat (kalau ada)
+    akan dihapus oleh attendance_db.check_in() -- fungsi ini sendiri TIDAK
+    PERNAH membuat baris untuk tanggal yang SUDAH ada Check In, dicegah
+    lewat booking_db.is_jadwal_mingguan_libur() (sudah mengandung override
+    Check In itu).
+
+    Dibatasi ke tanggal <= HARI INI (WIB) -- jadwal masa depan belum tentu
+    barber benar-benar tidak Check In nanti, jadi tidak boleh dibuatkan
+    baris Libur lebih awal dari waktunya."""
+    hari_ini = attendance_db.tanggal_hari_ini()
+    akhir_efektif = min(tanggal_selesai, hari_ini)
+    if akhir_efektif < tanggal_mulai:
+        return
+
+    d = date.fromisoformat(tanggal_mulai)
+    akhir = date.fromisoformat(akhir_efektif)
+    while d <= akhir:
+        iso = d.isoformat()
+        if booking_db.is_jadwal_mingguan_libur(barber_id, iso):
+            with get_conn() as conn:
+                sudah_ada = conn.execute(
+                    "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
+                    (barber_id, iso),
+                ).fetchone()
+            if sudah_ada is None and izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, iso) is None:
+                _terapkan_kuota_libur(barber_id, tenant_id, iso, sumber_libur=SUMBER_LIBUR_MINGGUAN)
+        d += timedelta(days=1)

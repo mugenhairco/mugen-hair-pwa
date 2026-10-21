@@ -15,7 +15,7 @@ import sqlite3
 import os
 import threading
 from collections import defaultdict
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from contextlib import contextmanager
 
 import db_compat
@@ -137,11 +137,14 @@ def init_db():
                 tips             INTEGER NOT NULL DEFAULT 0,
                 catatan          TEXT,
                 sumber           TEXT,            -- NULL = input manual web, 'wa_bot' = via WA Bot
+                idempotency_key  TEXT,            -- PERBAIKAN Owner "tidak boleh input dobel" (lihat kuota_libur_db.py-style migrasi di bawah)
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT,
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_transaksi_barber_idempotency "
+                   "ON transaksi(barber_id, idempotency_key)")
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS transaksi_detail (
@@ -292,6 +295,25 @@ def init_db():
                 "INSERT INTO services (nama, harga, pakai_potongan_chemical) VALUES (?, ?, ?)",
                 default_services,
             )
+
+
+def migrasi_transaksi_idempotency_key():
+    """JALUR SQLITE SAJA (dipanggil dari main.py::on_startup() bersama
+    migrasi_*() lain) -- PRAGMA table_info() di bawah ini SQL SQLite murni.
+    Menambah kolom `idempotency_key` + unique index ke `transaksi`
+    (idempotent) untuk database lokal yang dibuat SEBELUM kolom ini ada
+    (CREATE TABLE IF NOT EXISTS di init_db() tidak pernah menambahkan
+    kolom baru ke tabel yang sudah ada). Jalur PostgreSQL: kolom + index
+    yang sama sudah langsung dibuat lewat `ALTER TABLE ... ADD COLUMN IF
+    NOT EXISTS`/`CREATE UNIQUE INDEX IF NOT EXISTS` di postgres_schema.py.
+    Lihat docstring kolomnya di sana untuk alasan lengkap ("tidak boleh
+    input dobel")."""
+    with get_conn() as conn:
+        kolom = [r["name"] for r in conn.execute("PRAGMA table_info(transaksi)").fetchall()]
+        if "idempotency_key" not in kolom:
+            conn.execute("ALTER TABLE transaksi ADD COLUMN idempotency_key TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_transaksi_barber_idempotency "
+                     "ON transaksi(barber_id, idempotency_key)")
 
 
 # ---------------------------------------------------------------------------
@@ -621,36 +643,62 @@ def _bersihkan_items(items):
 
 
 def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, catatan: str = None,
-                      sumber: str = None):
+                      sumber: str = None, idempotency_key: str = None):
     """SIMPAN data baru. Selalu membuat header transaksi baru + baris transaksi_detail
     untuk setiap service yang jumlahnya > 0.
     `items` = list of {'service_id': int, 'jumlah': int}.
     `sumber`: FITUR WA Bot (Input Data via WhatsApp) -- 'wa_bot' kalau transaksi
     ini berasal dari parsing pesan WA (lihat whatsapp_bot_parser.py), None
     (default) untuk input manual lewat web seperti sebelumnya -- murni
-    penanda audit, TIDAK mempengaruhi perhitungan apa pun."""
+    penanda audit, TIDAK mempengaruhi perhitungan apa pun.
+    `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
+    tempId yang SUDAH dibuat frontend (input_data.js) per entry SEBELUM
+    dikirim, dipakai ulang kalau entry yang SAMA terkirim lagi (tombol
+    "Kirim Ulang" di jaring pengaman localStorage, lihat catatan lengkap
+    di input_data.js). Kalau INSERT gagal karena idempotency_key ini SUDAH
+    ada untuk barber yang sama (unique index idx_transaksi_barber_idempotency,
+    lihat postgres_schema.py/database.py::migrasi_transaksi_idempotency_key()),
+    transaksi yang SUDAH ADA itu dikembalikan apa adanya (BUKAN baris baru)
+    -- percobaan kedua jadi no-op aman, bukan duplikat."""
     _validasi_tanggal(tanggal)
     valid_items = _bersihkan_items(items)
     if not valid_items:
         raise ValueError("Minimal satu service harus diisi jumlahnya (lebih dari 0).")
 
     now = datetime.now().isoformat(timespec="seconds")
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO transaksi (tanggal, barber_id, tips, catatan, sumber, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (tanggal, barber_id, int(tips), catatan, sumber, now),
-        )
-        transaksi_id = cur.lastrowid
-        for it in valid_items:
-            service = conn.execute("SELECT * FROM services WHERE id = ?", (it["service_id"],)).fetchone()
-            if service is None:
-                raise ValueError("Service tidak ditemukan")
-            conn.execute(
-                """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, jumlah)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (transaksi_id, service["id"], service["nama"], service["harga"], it["jumlah"]),
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO transaksi (tanggal, barber_id, tips, catatan, sumber, idempotency_key, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (tanggal, barber_id, int(tips), catatan, sumber, idempotency_key, now),
             )
-        return transaksi_id
+            transaksi_id = cur.lastrowid
+            for it in valid_items:
+                service = conn.execute("SELECT * FROM services WHERE id = ?", (it["service_id"],)).fetchone()
+                if service is None:
+                    raise ValueError("Service tidak ditemukan")
+                conn.execute(
+                    """INSERT INTO transaksi_detail (transaksi_id, service_id, nama_service, harga, jumlah)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (transaksi_id, service["id"], service["nama"], service["harga"], it["jumlah"]),
+                )
+            return transaksi_id
+    except IntegrityError:
+        if idempotency_key:
+            existing_id = _cari_transaksi_id_by_idempotency_key(barber_id, idempotency_key)
+            if existing_id is not None:
+                return existing_id
+        raise
+
+
+def _cari_transaksi_id_by_idempotency_key(barber_id: int, idempotency_key: str) -> int | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM transaksi WHERE barber_id = ? AND idempotency_key = ?",
+            (barber_id, idempotency_key),
+        ).fetchone()
+    return row["id"] if row else None
 
 
 def koreksi_transaksi(transaksi_id: int, tanggal: str = None, barber_id: int = None,
@@ -900,19 +948,32 @@ def batalkan_libur(barber_id: int, tanggal: str):
         )
 
 
+def _pastikan_libur_mingguan_sebelum_hitung(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> None:
+    """PERMINTAAN OWNER: dipanggil get_hari_libur()/get_hari_libur_rentang()/
+    get_libur_list() di bawah SEBELUM menghitung/menampilkan -- memastikan
+    jadwal Libur Mingguan (Barber Holiday) barber ini BENAR-BENAR tercatat
+    (lihat kuota_libur_db.py::pastikan_libur_mingguan_tercatat()) supaya
+    Rekap/Bonus Customer/Laporan PDF/dll konsisten dengan kuota. Import
+    lokal: kuota_libur_db mengimpor database (hindari siklik). Diam-diam
+    dilewati (bukan error) kalau barber/tenant_id tidak diketahui."""
+    barber = get_barber(barber_id)
+    if barber is None or barber.get("tenant_id") is None:
+        return
+    import kuota_libur_db
+    kuota_libur_db.pastikan_libur_mingguan_tercatat(barber_id, barber["tenant_id"], tanggal_mulai, tanggal_selesai)
+
+
 def get_hari_libur(barber_id: int, tahun: int, bulan: int) -> int:
-    with get_conn() as conn:
-        row = conn.execute(
-            """SELECT COUNT(*) AS jumlah FROM absensi_libur
-               WHERE barber_id = ? AND tanggal LIKE ?""",
-            (barber_id, f"{tahun:04d}-{bulan:02d}-%"),
-        ).fetchone()
-        return row["jumlah"]
+    awal = f"{tahun:04d}-{bulan:02d}-01"
+    akhir = (date(tahun + 1, 1, 1) if bulan == 12 else date(tahun, bulan + 1, 1)) - timedelta(days=1)
+    return get_hari_libur_rentang(barber_id, awal, akhir.isoformat())
 
 
 def get_hari_libur_rentang(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> int:
-    """Versi rentang tanggal bebas dari get_hari_libur() di atas -- dipakai
-    Laporan PDF (Laporan Transaksi dgn filter Dari/Sampai custom)."""
+    """Versi rentang tanggal bebas -- dipakai Laporan PDF (Laporan Transaksi
+    dgn filter Dari/Sampai custom) MAUPUN get_hari_libur() di atas (satu
+    bulan kalender)."""
+    _pastikan_libur_mingguan_sebelum_hitung(barber_id, tanggal_mulai, tanggal_selesai)
     with get_conn() as conn:
         row = conn.execute(
             """SELECT COUNT(*) AS jumlah FROM absensi_libur
@@ -1749,6 +1810,34 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
     tenant-scoped TRANSITIF lewat JOIN ke barbers, hanya di-JOIN kalau
     tenant_id diisi (query tanpa tenant_id identik persis seperti sebelum
     Phase 1)."""
+    # PERMINTAAN OWNER: pastikan jadwal Libur Mingguan (Barber Holiday)
+    # SUDAH tercatat dulu sebelum ditampilkan di sini -- lihat
+    # _pastikan_libur_mingguan_sebelum_hitung(). `get_libur_list()` bisa
+    # dipanggil TANPA barber_id (gabungan semua barber tenant ini), jadi
+    # loop per barber -- range tanggal efektif dihitung dulu dari
+    # kombinasi parameter yang SUDAH PASTI terbatas (tanggal tunggal,
+    # tanggal_mulai/tanggal_selesai, atau tahun+bulan) -- kombinasi lain
+    # (mis. bulan TANPA tahun, atau tidak ada filter tanggal sama sekali)
+    # SENGAJA dilewati (tidak materialisasi) daripada mengulang rentang
+    # tidak terbatas (1970-sekarang) yang bisa sangat lambat.
+    _rentang = None
+    if tanggal is not None:
+        _rentang = (tanggal, tanggal)
+    elif tanggal_mulai is not None or tanggal_selesai is not None:
+        _rentang = (tanggal_mulai or "1970-01-01", tanggal_selesai or date.today().isoformat())
+    elif tahun is not None and bulan is not None:
+        _akhir_bulan = (date(tahun + 1, 1, 1) if bulan == 12 else date(tahun, bulan + 1, 1)) - timedelta(days=1)
+        _rentang = (f"{tahun:04d}-{bulan:02d}-01", _akhir_bulan.isoformat())
+    elif tahun is not None:
+        _rentang = (f"{tahun:04d}-01-01", f"{tahun:04d}-12-31")
+
+    if _rentang is not None:
+        if barber_id is not None:
+            _pastikan_libur_mingguan_sebelum_hitung(barber_id, *_rentang)
+        elif tenant_id is not None:
+            for _b in get_barbers(tenant_id=tenant_id):
+                _pastikan_libur_mingguan_sebelum_hitung(_b["id"], *_rentang)
+
     q = "SELECT al.barber_id AS barber_id, al.tanggal AS tanggal FROM absensi_libur al"
     if tenant_id is not None:
         q += " JOIN barbers b ON b.id = al.barber_id"

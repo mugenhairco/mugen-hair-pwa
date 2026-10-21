@@ -1207,3 +1207,110 @@ def test_router_checkin_di_hari_pertama_cuti_dimajukan_bukan_dihapus(single_tena
     assert pengajuan_baru["tanggal_mulai"] == "2026-09-12"
     assert pengajuan_baru["tanggal_selesai"] == "2026-09-14"
     assert pengajuan_baru["status"] == "disetujui"
+
+
+# ---------------------------------------------------------------------------
+# PERBAIKAN Owner (audit "tidak boleh input dobel"): Izin/Cuti baru tidak
+# boleh tumpang tindih dengan pengajuan Izin/Cuti LAIN milik barber yang
+# SAMA yang masih aktif (pending/disetujui) -- integritas data, SELALU
+# dicek terlepas override, BEDA dari kebijakan kuota/H-min/maksimal
+# bersamaan yang dilewati kalau override=True.
+# ---------------------------------------------------------------------------
+
+def test_pengajuan_baru_ditolak_kalau_tumpang_tindih_pending_milik_sendiri(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                 "Cuti pertama", tenant_id=tenant_id)
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-14", "2026-09-16",
+                                     "Izin tumpang tindih (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (tumpang tindih)"
+    except ValueError as e:
+        assert "tumpang tindih" in str(e).lower()
+
+
+def test_pengajuan_baru_ditolak_kalau_tumpang_tindih_disetujui_milik_sendiri(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                     "Cuti disetujui", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "disetujui", disetujui_oleh="Owner")
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-01", "2026-09-10",
+                                     "Cuti lain, ujung bersentuhan (harusnya ditolak)", tenant_id=tenant_id)
+        assert False, "Seharusnya ValueError (tumpang tindih)"
+    except ValueError as e:
+        assert "tumpang tindih" in str(e).lower()
+
+
+def test_pengajuan_baru_boleh_kalau_tidak_tumpang_tindih(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                 "Cuti pertama", tenant_id=tenant_id)
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-16", "2026-09-17",
+                                         "Izin, bersebelahan (TIDAK tumpang tindih)", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+
+
+def test_pengajuan_baru_boleh_tumpang_tindih_dengan_pengajuan_ditolak(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                     "Cuti ditolak", tenant_id=tenant_id)
+    izin_cuti_db.set_status_pengajuan(p["id"], "ditolak", disetujui_oleh="Owner")
+    hasil = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-12", "2026-09-13",
+                                         "Cuti baru di tanggal yang sama (boleh, yang lama ditolak)",
+                                         tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+
+
+def test_pengajuan_baru_boleh_tumpang_tindih_dengan_barber_lain(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = _barber(tenant_id)
+    barber_b = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-09-10", "2026-09-15",
+                                 "Cuti Barber A", tenant_id=tenant_id)
+    hasil = izin_cuti_db.buat_pengajuan(barber_b, "cuti", "2026-09-10", "2026-09-15",
+                                         "Cuti Barber B, tanggal sama (barber beda, boleh)", tenant_id=tenant_id)
+    assert hasil["status"] == "pending"
+
+
+def test_pengajuan_baru_ditolak_tumpang_tindih_walau_override(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                 "Cuti pertama", tenant_id=tenant_id)
+    try:
+        izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-12", "2026-09-13",
+                                     "Owner input atas nama barber, tumpang tindih (harusnya ditolak)",
+                                     tenant_id=tenant_id, override=True)
+        assert False, "Seharusnya ValueError (tumpang tindih, integritas data -- bukan kebijakan)"
+    except ValueError as e:
+        assert "tumpang tindih" in str(e).lower()
+
+
+def test_edit_pengajuan_ditolak_kalau_diubah_jadi_tumpang_tindih(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-10", "2026-09-15",
+                                 "Cuti pertama", tenant_id=tenant_id)
+    p2 = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-20", "2026-09-21",
+                                      "Izin kedua, awalnya tidak tumpang tindih", tenant_id=tenant_id)
+    try:
+        izin_cuti_db.edit_pengajuan(p2["id"], tanggal_mulai="2026-09-14", tanggal_selesai="2026-09-16")
+        assert False, "Seharusnya ValueError (diubah jadi tumpang tindih)"
+    except ValueError as e:
+        assert "tumpang tindih" in str(e).lower()
+
+
+def test_edit_pengajuan_boleh_tetap_di_tanggal_sendiri(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    p = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-09-10", "2026-09-11",
+                                     "Izin", tenant_id=tenant_id)
+    # `kecuali_pengajuan_id` -- edit alasan saja (tanggal tetap sama persis)
+    # TIDAK dianggap tumpang tindih dengan dirinya sendiri.
+    edited = izin_cuti_db.edit_pengajuan(p["id"], alasan="Izin (alasan diperbarui)")
+    assert edited["alasan"] == "Izin (alasan diperbarui)"

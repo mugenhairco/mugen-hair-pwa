@@ -297,12 +297,24 @@ const PageInputData = (() => {
         formError.textContent = "Pilih barber terlebih dahulu.";
         return;
       }
+      // PERBAIKAN Owner (audit "tidak boleh input dobel"): tempId dibuat
+      // DULU (bukan di objek entry seperti sebelumnya) supaya bisa
+      // diselipkan ke body sebagai idempotency_key -- kalau entry ini
+      // nanti terkirim LEBIH dari sekali (tombol "Kirim Ulang") padahal
+      // percobaan pertamanya sebenarnya sudah sukses di server, server
+      // (database.py::tambah_transaksi()) mengembalikan transaksi yang
+      // SUDAH ADA alih-alih membuat baris baru. HANYA relevan untuk
+      // Simpan BARU (POST) -- Simpan Koreksi (PUT ke baris yang sudah
+      // ada) sudah idempoten secara alami, tapi tidak masalah ikut
+      // dikirim juga (diabaikan server untuk endpoint itu).
+      const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const body = {
         tanggal: inputTanggal.value,
         barber_id: isAdmin ? Number(selBarber.value) : null,
         items,
         tips: Number(inputTips.value) || 0,
         catatan: inputCatatan.value || null,
+        idempotency_key: tempId,
       };
 
       // PERMINTAAN OWNER: Simpan BARU maupun Simpan Koreksi -- jangan tunggu
@@ -310,7 +322,7 @@ const PageInputData = (() => {
       // dulu ke jaring pengaman (localStorage) SEBELUM form dikosongkan,
       // baru dikirim diam-diam di belakang (lihat kirimTransaksiPending()).
       const entry = {
-        tempId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        tempId,
         editId: editingId,
         body,
         label: labelItemsUntukPending(body, editingId),

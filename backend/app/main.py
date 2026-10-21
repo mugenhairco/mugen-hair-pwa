@@ -471,6 +471,7 @@ async def on_startup():
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
         migrasi_izin_cuti()     # REVISI Sistem Dinamis Cuti & Izin: kolom mode_kuota/kuota_izin_hari/kuota_gabungan_hari/periode_mulai_dasar/h_min_pengajuan_izin di izin_cuti_settings + tabel izin_cuti_saldo_awal (idempotent)
         migrasi_absensi_libur_sumber()  # Migrasi skema kolom absensi_libur.sumber (idempotent) -- dipakai Kuota Libur (Tandai Libur manual), lihat kuota_libur_db.py
+        db.migrasi_transaksi_idempotency_key()  # Migrasi skema kolom transaksi.idempotency_key + unique index (idempotent) -- cegah Transaksi dobel dari "Kirim Ulang", lihat database.py
         migrasi_r2_storage()    # Migrasi Cloudflare R2: kolom *_r2_key di file_asset/website_gallery/barbers/reimburse (idempotent)
         migrasi_lokasi_user()   # FITUR Izin Lokasi APK Android: kolom users.lokasi_lat/lokasi_lng/lokasi_updated_at (idempotent)
         migrasi_session_login()  # Kontrol Sesi Login Satu-Device: kolom users.current_session_hash (idempotent)

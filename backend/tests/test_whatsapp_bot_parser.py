@@ -1027,32 +1027,44 @@ def _ke_teks_tanggal_id(iso: str) -> str:
     return f"{d} {_BULAN_NAMA_ID[m]} {y}"
 
 
-def test_tandai_libur_standalone_ditolak_kalau_jadwal_mingguan(single_tenant):
+def test_tandai_libur_standalone_ditolak_kalau_jadwal_mingguan(single_tenant, monkeypatch):
+    """"Hari ini" DIBEKUKAN PERSIS di tanggal target (bukan dari
+    _tanggal_hari()/jam dinding sungguhan) -- sejak kuota_libur_db.py::
+    pastikan_libur_mingguan_tercatat() ada, get_hari_libur() BENAR-BENAR
+    mematerialisasi tanggal jadwal mingguan LAIN di bulan yang sama yang
+    kebetulan sudah lewat -- lihat test_kuota_libur.py untuk cakupan
+    lengkapnya. Tanggal dipilih di hari ke-1..7 (jaminan kemunculan
+    PERTAMA hari itu bulan ini, tidak ada tanggal jadwal mingguan lain
+    sebelumnya) supaya hasil hitung deterministik."""
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     barber_id = _barber(tenant_id, "Romen")
     booking_db.set_hari_libur_mingguan(barber_id, ["senin"])
-    senin = _tanggal_hari("senin", offset_awal=1)
+    tanggal = "2026-08-03"  # Senin, hari ke-3 -- kemunculan PERTAMA "senin" bulan itu
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 3, 9, 0, tzinfo=WIB))
 
-    preview = wbp.proses_pesan(tenant_id, config, "628110000000", f"Romen libur {_ke_teks_tanggal_id(senin)}")
+    preview = wbp.proses_pesan(tenant_id, config, "628110000000", f"Romen libur {_ke_teks_tanggal_id(tanggal)}")
     assert "Konfirmasi Tandai Libur" in preview  # preview tidak prediksi cascade, sama seperti kuota
 
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
     assert "Libur Mingguan" in balasan
-    assert db.get_hari_libur(barber_id, int(senin[:4]), int(senin[5:7])) == 0
+    # Baris MANUAL ditolak, TAPI tanggal ini TETAP otomatis ter-materialisasi
+    # sebagai Libur Mingguan begitu get_hari_libur() dipanggil.
+    assert db.get_hari_libur(barber_id, 2026, 8) == 1
 
 
-def test_input_harian_libur_ditolak_kalau_jadwal_mingguan(single_tenant):
+def test_input_harian_libur_ditolak_kalau_jadwal_mingguan(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     barber_id = _barber(tenant_id, "Romen")
     booking_db.set_hari_libur_mingguan(barber_id, ["senin"])
-    senin = _tanggal_hari("senin", offset_awal=1)
+    tanggal = "2026-08-03"  # Senin, hari ke-3 -- kemunculan PERTAMA "senin" bulan itu
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 3, 9, 0, tzinfo=WIB))
 
-    pesan = f"Input Harian {_ke_teks_tanggal_id(senin)}\nLibur: Romen"
+    pesan = f"Input Harian {_ke_teks_tanggal_id(tanggal)}\nLibur: Romen"
     preview = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
     assert "Konfirmasi Input Harian" in preview  # preview tidak prediksi cascade, sama seperti kasus kuota
 
     hasil = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
     assert "Libur Mingguan" in hasil
-    assert db.get_hari_libur(barber_id, int(senin[:4]), int(senin[5:7])) == 0
+    assert db.get_hari_libur(barber_id, 2026, 8) == 1

@@ -43,6 +43,7 @@ class TransaksiBody(BaseModel):
     items: list[ItemBody]
     tips: int = 0
     catatan: str | None = None
+    idempotency_key: str | None = None  # PERBAIKAN Owner "tidak boleh input dobel" -- lihat database.py::tambah_transaksi()
 
 
 class KoreksiBody(BaseModel):
@@ -192,6 +193,7 @@ def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permissio
             tanggal=body.tanggal, barber_id=barber_id,
             items=[it.model_dump() for it in body.items],
             tips=body.tips, catatan=body.catatan,
+            idempotency_key=body.idempotency_key,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

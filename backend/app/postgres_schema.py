@@ -154,15 +154,34 @@ CREATE TABLE IF NOT EXISTS services (
 );
 
 CREATE TABLE IF NOT EXISTS transaksi (
-    id          SERIAL PRIMARY KEY,
-    tanggal     TEXT NOT NULL,
-    barber_id   INTEGER NOT NULL REFERENCES barbers(id),
-    tips        INTEGER NOT NULL DEFAULT 0,
-    catatan     TEXT,
-    sumber      TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT
+    id               SERIAL PRIMARY KEY,
+    tanggal          TEXT NOT NULL,
+    barber_id        INTEGER NOT NULL REFERENCES barbers(id),
+    tips             INTEGER NOT NULL DEFAULT 0,
+    catatan          TEXT,
+    sumber           TEXT,
+    idempotency_key  TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT
 );
+-- PERBAIKAN Owner (audit "tidak boleh input dobel"): frontend (input_data.js)
+-- mengirim ulang transaksi yang belum terkonfirmasi sukses (jaring pengamanan
+-- tab ditutup/koneksi putus sebelum server menjawab) lewat tombol "Kirim
+-- Ulang" -- kalau request ASLINYA ternyata sudah berhasil tersimpan di server
+-- SEBELUM tab ditutup (hanya responsnya yang tidak sempat diterima klien),
+-- "Kirim Ulang" akan membuat baris DOBEL. `idempotency_key` (tempId yang
+-- SUDAH dibuat klien per entry, lihat input_data.js) dikirim di body
+-- POST/PUT -- percobaan kedua dengan key yang SAMA untuk barber yang SAMA
+-- dikembalikan transaksi yang SUDAH ADA (bukan bikin baris baru), lihat
+-- database.py::tambah_transaksi(). ADD COLUMN biasa (bukan FK) + UNIQUE
+-- INDEX (BUKAN ADD CONSTRAINT UNIQUE -- Postgres tidak punya "IF NOT EXISTS"
+-- untuk itu, sedangkan CREATE UNIQUE INDEX punya; NULL dianggap tidak sama
+-- dengan NULL lain oleh index ini, jadi baris lama/sumber lain yang tidak
+-- mengisi key tetap bebas tidak terbatas) -- aman untuk instalasi Postgres
+-- yang SUDAH ADA.
+ALTER TABLE transaksi ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transaksi_barber_idempotency
+    ON transaksi(barber_id, idempotency_key);
 
 CREATE TABLE IF NOT EXISTS transaksi_detail (
     id            SERIAL PRIMARY KEY,
@@ -1583,6 +1602,45 @@ def _pastikan_primary_key_settings(conn) -> None:
     _logger.warning("[postgres_schema] create_all(): constraint settings_pkey berhasil ditambahkan.")
 
 
+def _pastikan_unique_absensi_libur(conn) -> None:
+    """HOTFIX (temuan Owner: barber Jaka tercatat 2 baris Libur dobel untuk
+    tanggal yang SAMA, 6 Oktober 2026 -- satu sumber 'auto_libur' peninggalan
+    fitur lama, satu manual) -- SAMA PERSIS akar masalah
+    _pastikan_primary_key_settings() di atas: `_TABLES` SUDAH mendeklarasikan
+    `UNIQUE(barber_id, tanggal)` di absensi_libur, TAPI `CREATE TABLE IF NOT
+    EXISTS` tidak pernah menambahkan constraint itu ke tabel yang sudah ada
+    sebelum constraint ini ditambahkan ke _TABLES. Akibatnya database.
+    tandai_libur()/kuota_libur_db.py SELURUHNYA memakai "ON CONFLICT DO
+    NOTHING" TANPA target kolom (tidak butuh constraint apa pun untuk tidak
+    error) -- jadi INSERT dobel untuk (barber_id, tanggal) yang sama TIDAK
+    PERNAH terdeteksi sebagai bentrok, cuma diam-diam tersisipkan sebagai
+    baris baru. Dampaknya FATAL untuk kuota: _libur_terpakai_bulan_ini()
+    menghitung COUNT(*) mentah, jadi satu hari libur dobel dihitung 2 --
+    bisa membuat kuota tampak habis lebih cepat dari seharusnya (kasus Jaka:
+    kuota 5 tampak habis padahal baru 4 hari berbeda yang benar-benar
+    terpakai, memicu Tandai Libur berikutnya salah ke-cascade jadi Cuti)."""
+    ada = conn.execute(
+        "SELECT 1 FROM information_schema.table_constraints tc "
+        "JOIN information_schema.key_column_usage kcu "
+        "  ON tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name "
+        "WHERE tc.table_name = 'absensi_libur' AND tc.constraint_type = 'UNIQUE' "
+        "GROUP BY tc.constraint_name "
+        "HAVING COUNT(*) FILTER (WHERE kcu.column_name IN ('barber_id', 'tanggal')) = 2"
+    ).fetchone()
+    if ada:
+        return
+    _logger.warning(
+        "[postgres_schema] create_all(): tabel absensi_libur TIDAK punya UNIQUE(barber_id, tanggal) "
+        "constraint -- membersihkan baris dobel & menambahkan constraint sekarang."
+    )
+    conn.execute(
+        "DELETE FROM absensi_libur a USING absensi_libur b "
+        "WHERE a.barber_id = b.barber_id AND a.tanggal = b.tanggal AND a.id > b.id"
+    )
+    conn.execute("ALTER TABLE absensi_libur ADD CONSTRAINT absensi_libur_barber_tanggal_key UNIQUE (barber_id, tanggal)")
+    _logger.warning("[postgres_schema] create_all(): constraint absensi_libur_barber_tanggal_key berhasil ditambahkan.")
+
+
 def create_all():
     """Idempotent -- aman dipanggil tiap kali proses ini boot (sama seperti
     init_db() di jalur SQLite). TIDAK PERNAH menghapus/menimpa data yang
@@ -1662,6 +1720,10 @@ def create_all():
 
         _pastikan_primary_key_settings(conn)
         _logger.info("[postgres_schema] create_all(): constraint settings.key diverifikasi (%.2fs).",
+                     time.monotonic() - _mulai)
+
+        _pastikan_unique_absensi_libur(conn)
+        _logger.info("[postgres_schema] create_all(): constraint absensi_libur(barber_id, tanggal) diverifikasi (%.2fs).",
                      time.monotonic() - _mulai)
 
         # FONDASI Multi-Tenant Phase 1: tenant default (merepresentasikan

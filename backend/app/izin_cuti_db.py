@@ -390,6 +390,30 @@ def _tanggal_sudah_libur_dalam_rentang(barber_id: int, tanggal_mulai: str, tangg
     return row["tanggal"] if row else None
 
 
+def _tanggal_tumpang_tindih_pengajuan_lain(barber_id: int, tanggal_mulai: str, tanggal_selesai: str,
+                                            kecuali_pengajuan_id: int = None) -> dict | None:
+    """PERBAIKAN Owner (audit integritas data "tidak boleh input dobel"):
+    Izin/Cuti BARU tidak boleh tumpang tindih dengan pengajuan Izin/Cuti
+    LAIN milik barber yang SAMA yang masih aktif (status 'pending' ATAU
+    'disetujui' -- 'ditolak' dan yang sudah dihapus tidak dihitung). Sama
+    seperti pengecekan Libur (_tanggal_sudah_libur_dalam_rentang()) di
+    atas, ini soal integritas DATA (dua catatan Izin/Cuti yang saling
+    tumpang tindih untuk barber yang sama), BUKAN "kebijakan" seperti
+    kuota/H-min -- jadi SELALU dicek di buat_pengajuan()/edit_pengajuan(),
+    TERMASUK saat override=True. Return baris pengajuan yang tumpang
+    tindih (paling awal tanggal_mulai-nya kalau lebih dari satu), atau
+    None kalau tidak ada."""
+    q = ("SELECT * FROM izin_cuti WHERE barber_id = ? AND status IN ('pending', 'disetujui') "
+         "AND tanggal_mulai <= ? AND tanggal_selesai >= ?")
+    params = [barber_id, tanggal_selesai, tanggal_mulai]
+    if kecuali_pengajuan_id is not None:
+        q += " AND id != ?"; params.append(kecuali_pengajuan_id)
+    q += " ORDER BY tanggal_mulai ASC LIMIT 1"
+    with get_conn() as conn:
+        row = conn.execute(q, params).fetchone()
+    return dict(row) if row else None
+
+
 def _validasi_kebijakan_pengajuan(barber_id: int, tenant_id: int, jenis: str, tanggal_mulai: str,
                                    tanggal_selesai: str, kecuali_pengajuan_id: int = None) -> None:
     """Raise ValueError (pesan siap tampil) kalau melanggar kebijakan --
@@ -676,6 +700,17 @@ def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_seles
     if tanggal_libur is not None:
         raise ValueError(f"Tanggal {tanggal_libur} sudah tercatat sebagai Libur. Batalkan/hapus catatan "
                           f"Libur itu dulu kalau ingin mengajukan Izin/Cuti pada tanggal tersebut.")
+    # PERBAIKAN Owner (audit "tidak boleh input dobel"): tolak kalau
+    # tumpang tindih dengan pengajuan Izin/Cuti lain milik barber ini
+    # yang masih aktif -- integritas data, SELALU dicek terlepas override.
+    tumpang_tindih = _tanggal_tumpang_tindih_pengajuan_lain(barber_id, tanggal_mulai, tanggal_selesai)
+    if tumpang_tindih is not None:
+        raise ValueError(
+            f"Tanggal {tanggal_mulai} s/d {tanggal_selesai} tumpang tindih dengan pengajuan "
+            f"{_JENIS_LABEL.get(tumpang_tindih['jenis'], tumpang_tindih['jenis'])} lain milik barber ini "
+            f"({tumpang_tindih['tanggal_mulai']} s/d {tumpang_tindih['tanggal_selesai']}, "
+            f"status {tumpang_tindih['status']})."
+        )
     if not override:
         _validasi_kebijakan_pengajuan(barber_id, tenant_id if tenant_id is not None else barber["tenant_id"],
                                        jenis, tanggal_mulai, tanggal_selesai)
@@ -720,6 +755,19 @@ def edit_pengajuan(pengajuan_id: int, jenis: str = None, tanggal_mulai: str = No
     if tanggal_libur is not None:
         raise ValueError(f"Tanggal {tanggal_libur} sudah tercatat sebagai Libur. Batalkan/hapus catatan "
                           f"Libur itu dulu kalau ingin mengajukan Izin/Cuti pada tanggal tersebut.")
+    # PERBAIKAN Owner (audit "tidak boleh input dobel"): sama seperti
+    # buat_pengajuan() -- integritas data, SELALU dicek terlepas override.
+    # `kecuali_pengajuan_id` mengeluarkan baris ybs sendiri dari pengecekan
+    # (bukan dianggap "tumpang tindih dengan dirinya sendiri").
+    tumpang_tindih = _tanggal_tumpang_tindih_pengajuan_lain(existing["barber_id"], mulai_baru, selesai_baru,
+                                                             kecuali_pengajuan_id=pengajuan_id)
+    if tumpang_tindih is not None:
+        raise ValueError(
+            f"Tanggal {mulai_baru} s/d {selesai_baru} tumpang tindih dengan pengajuan "
+            f"{_JENIS_LABEL.get(tumpang_tindih['jenis'], tumpang_tindih['jenis'])} lain milik barber ini "
+            f"({tumpang_tindih['tanggal_mulai']} s/d {tumpang_tindih['tanggal_selesai']}, "
+            f"status {tumpang_tindih['status']})."
+        )
     # FITUR Kebijakan Cuti Dinamis: divalidasi ULANG di sini (bukan cuma
     # buat_pengajuan()) supaya barber tidak bisa melewati kebijakan dengan
     # mengajukan tanggal yang valid lalu langsung mengedit ke tanggal yang

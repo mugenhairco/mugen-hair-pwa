@@ -929,6 +929,21 @@ def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None,
                     latitude=latitude, longitude=longitude, accuracy=accuracy,
                     browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
         raise ValueError("Anda sudah Check In hari ini.")
+    # PERMINTAAN OWNER (lihat kuota_libur_db.py::pastikan_libur_mingguan_tercatat()):
+    # kalau hari jadwal mingguan (Barber Holiday) ini SUDAH TERLANJUR
+    # tercatat otomatis sebagai Libur (mis. Owner sempat buka Rekap/
+    # Dashboard SEBELUM barber ini Check In), Check In yang BARU SAJA
+    # berhasil ini membatalkannya -- shift tukar dadakan TIDAK boleh tetap
+    # dianggap Libur. HANYA baris sumber='libur_mingguan' yang dihapus di
+    # sini -- baris Libur manual/kelebihan_kuota TIDAK PERNAH ikut terhapus
+    # oleh Check In. Import lokal: kuota_libur_db mengimpor attendance_db
+    # (hindari siklik).
+    import kuota_libur_db
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber = ?",
+            (barber_id, sekarang.strftime("%Y-%m-%d"), kuota_libur_db.SUMBER_LIBUR_MINGGUAN),
+        )
     catat_audit(barber_id, "check_in", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
     return _lengkapi(get_log_hari_ini(barber_id, tenant_id), settings)
