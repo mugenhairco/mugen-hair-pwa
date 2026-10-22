@@ -538,10 +538,14 @@ const PageBooking = (() => {
           // disembunyikan untuk metode itu.
           if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", {}, "Verifikasi");
-            btn.addEventListener("click", async () => {
-              btn.disabled = true;
-              try { await onVerifikasi(r); } finally { btn.disabled = false; }
-            });
+            // REVISI UI/UX (permintaan Owner): sebelumnya onVerifikasi()
+            // memanggil load() yang mengganti SELURUH tabel dengan skeleton
+            // (tabel "reset" sesaat) -- sekarang HANYA tombol yang diklik
+            // yang tampil loading (spinner inline, lihat withButtonLoading()
+            // di ui.js), caller (renderBookingList()) memanggil load()
+            // dengan {silent:true} jadi baris lama tetap tampil sampai data
+            // baru siap, tanpa skeleton berkedip.
+            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onVerifikasi(r)));
             wrap.appendChild(btn);
           }
           if (r.metode_pembayaran === "gateway" && r.gateway_transaksi_id) {
@@ -569,17 +573,11 @@ const PageBooking = (() => {
           if (r.status_booking === "aktif" && r.status_pembayaran === "terverifikasi"
               && r.metode_pembayaran !== "gateway" && onReschedule) {
             const btn = MugenUI.el("button", {}, "Jadwal Ulang");
-            btn.addEventListener("click", async () => {
-              btn.disabled = true;
-              try { await onReschedule(r); } finally { btn.disabled = false; }
-            });
+            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onReschedule(r)));
             wrap.appendChild(btn);
           } else if (onBatalkan && r.status_booking === "aktif") {
             const btn = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
-            btn.addEventListener("click", async () => {
-              btn.disabled = true;
-              try { await onBatalkan(r); } finally { btn.disabled = false; }
-            });
+            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onBatalkan(r)));
             wrap.appendChild(btn);
           }
           // Requirement Owner: tombol Hapus PERMANEN -- SELALU muncul,
@@ -589,10 +587,7 @@ const PageBooking = (() => {
           // BUKAN pengganti tombol-tombol itu).
           if (onHapus) {
             const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-            btn.addEventListener("click", async () => {
-              btn.disabled = true;
-              try { await onHapus(r); } finally { btn.disabled = false; }
-            });
+            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onHapus(r)));
             wrap.appendChild(btn);
           }
           return wrap;
@@ -719,9 +714,20 @@ const PageBooking = (() => {
     // sudah menonaktifkan tombolnya sendiri selama proses berjalan, lihat
     // bookingTable() di atas) TANPA overlay layar penuh -- lihat catatan
     // withLoading() di ui.js.
-    async function load() {
-      tableWrap.innerHTML = "";
-      tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
+    // REVISI UI/UX (permintaan Owner): tombol Verifikasi/Batalkan/Reschedule/
+    // Hapus sekarang HANYA menampilkan loading di tombolnya sendiri (lihat
+    // bookingTable() di atas) -- load({silent:true}) dipanggil dari
+    // callback-callback itu supaya tabel TIDAK diganti skeleton/"direset"
+    // lagi, baris lama tetap tampil sampai data baru siap (pola sama
+    // seperti loadList({silent}) di pages/input_data.js). Filter
+    // (bulan/tahun/barber/status) & tombol "Muat Ulang" TETAP pakai
+    // skeleton penuh (silent=false, default) -- itu memang pergantian
+    // konten besar, bukan aksi satu baris.
+    async function load({ silent = false } = {}) {
+      if (!silent) {
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
+      }
       try {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber.value) qs.set("barber_id", selBarber.value);
@@ -744,7 +750,7 @@ const PageBooking = (() => {
               // sedikit titik toast sukses yang tetap ditampilkan di seluruh
               // aplikasi (lihat daftar whitelist di ui.js::toast()).
               MugenUI.toast("Pembayaran diterima, booking dikonfirmasi.", "success", { force: true });
-              load();
+              load({ silent: true });
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
@@ -753,7 +759,7 @@ const PageBooking = (() => {
             try {
               await MugenApi.post(`/api/booking/${r.id}/batalkan`);
               MugenUI.toast("Booking dibatalkan.", "success");
-              load();
+              load({ silent: true });
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
@@ -761,7 +767,7 @@ const PageBooking = (() => {
             const berhasil = await bukaRescheduleModal(r, barbers, services || []);
             if (berhasil) {
               MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
-              load();
+              load({ silent: true });
             }
           },
           onHapus: !bolehEdit ? null : async (r) => {
@@ -774,7 +780,7 @@ const PageBooking = (() => {
             try {
               await MugenApi.del(`/api/booking/${r.id}`);
               MugenUI.toast("Booking dihapus.", "success");
-              load();
+              load({ silent: true });
               MugenBookingNotif.refreshNow();
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
