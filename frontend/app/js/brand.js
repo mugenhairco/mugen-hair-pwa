@@ -37,14 +37,17 @@ const MugenBrand = (() => {
     is_platform_default: true,
   };
 
-  // BUGFIX KRITIS (Branding Super Admin): akun 'superadmin' TIDAK PERNAH
-  // terikat tenant mana pun (auth.get_current_tenant_id() menolaknya),
-  // jadi TIDAK BOLEH pernah menampilkan nama/logo/favicon/warna tenant
-  // apa pun -- backend (resolve_tenant_untuk_branding()) SUDAH benar
-  // memprioritaskan tenant_id dari sesi login (None utk superadmin) di
+  // BUGFIX KRITIS (Branding Super Admin & Sales): akun 'superadmin' MAUPUN
+  // 'sales' TIDAK PERNAH terikat tenant mana pun (tenant_id selalu None,
+  // lihat auth_db.tambah_user()/auth.get_current_tenant_id() yang menolak
+  // keduanya), jadi TIDAK BOLEH pernah menampilkan nama/logo/favicon/warna
+  // tenant apa pun -- backend (resolve_tenant_untuk_branding()) SUDAH benar
+  // memprioritaskan tenant_id dari sesi login (None utk kedua role ini) di
   // atas parameter `tenant` apa pun, TAPI dua hal di sisi FRONTEND ini
   // sebelumnya membuat branding tenant TERAKHIR yang login di perangkat
-  // itu tetap "bocor" tampil ke Super Admin:
+  // itu tetap "bocor" tampil ke Super Admin/Sales (laporan: Portal Sales
+  // menampilkan nama+logo tenant yang terakhir login di perangkat itu,
+  // bukan "Rivoir"):
   // 1. Cache localStorage (KEY di bawah) TIDAK PERNAH dihapus saat logout
   //    (by design, untuk UX tenant yang login lagi) -- dibaca & diterapkan
   //    INSTAN begitu modul ini dimuat, SEBELUM refresh() sempat selesai.
@@ -53,17 +56,24 @@ const MugenBrand = (() => {
   //    -- aman di backend (diabaikan kalau ada sesi login valid), tapi
   //    fetch-nya tetap makan waktu jaringan, jadi ADA JEDA sebelum branding
   //    platform yang benar diterapkan (flash branding tenant lama sekejap).
-  // Diperbaiki dengan mengecek role sesi SEKARANG di DUA titik: sinkron di
-  // sini (module load -- menangani hard refresh SAAT sudah login Super
-  // Admin) dan sinkron di AWAL refresh() SEBELUM baris `await` mana pun
-  // (menangani login BARU sebagai Super Admin dalam sesi SPA yang sama,
-  // lihat pages/login.js) -- keduanya memaksa branding platform + hapus
-  // cache SEKETIKA, TANPA menunggu jaringan sama sekali.
-  function _isSuperadminSession() {
+  // Diperbaiki dengan mengecek sesi SEKARANG di DUA titik: sinkron di sini
+  // (module load -- menangani hard refresh SAAT sudah login Super Admin/
+  // Sales) dan sinkron di AWAL refresh() SEBELUM baris `await` mana pun
+  // (menangani login BARU sebagai Super Admin/Sales dalam sesi SPA yang
+  // sama, lihat pages/login.js) -- keduanya memaksa branding platform +
+  // hapus cache SEKETIKA, TANPA menunggu jaringan sama sekali.
+  //
+  // INVARIAN dipakai (BUKAN daftar nama role, pola SAMA PERSIS
+  // auth.py::get_current_user() di backend "berlaku untuk role APA PUN
+  // selama tenant_id is None"): `user.tenant_id` null/undefined berarti
+  // akun ini TIDAK PERNAH terikat tenant mana pun -- otomatis benar untuk
+  // 'superadmin' DAN 'sales' sekarang, dan untuk role baru serupa di masa
+  // depan TANPA perlu menambah nama role lagi di sini.
+  function _isTenantlessSession() {
     try {
       if (typeof MugenState === "undefined" || !MugenState.isLoggedIn()) return false;
       const user = MugenState.getUser();
-      return !!user && user.role === "superadmin";
+      return !!user && (user.tenant_id === null || user.tenant_id === undefined);
     } catch (e) {
       return false;
     }
@@ -74,11 +84,11 @@ const MugenBrand = (() => {
   }
 
   let current = DEFAULT;
-  if (_isSuperadminSession()) {
-    // Super Admin: JANGAN PERNAH baca cache branding tenant apa pun --
+  if (_isTenantlessSession()) {
+    // Super Admin/Sales: JANGAN PERNAH baca cache branding tenant apa pun --
     // paksa platform branding sejak baris pertama, sekaligus bersihkan
     // sisa cache tenant lama supaya tidak nyangkut di localStorage selama
-    // sesi Super Admin aktif.
+    // sesi role ini aktif.
     _hapusCacheTenant();
   } else {
     try {
@@ -233,18 +243,18 @@ const MugenBrand = (() => {
   }
 
   async function refresh() {
-    // BUGFIX KRITIS (Branding Super Admin): dicek SINKRON di baris PALING
-    // AWAL, SEBELUM `await` apa pun -- javascript menjalankan bagian
+    // BUGFIX KRITIS (Branding Super Admin/Sales): dicek SINKRON di baris
+    // PALING AWAL, SEBELUM `await` apa pun -- javascript menjalankan bagian
     // sinkron sebuah fungsi async SEKETIKA saat dipanggil (baru berhenti
     // di `await` pertama), jadi `current`/DOM sudah dipaksa ke platform
     // branding + cache tenant sudah bersih SEBELUM baris kode APA PUN
     // setelah pemanggilan refresh() ini sempat jalan -- termasuk
     // MugenRouter.handle() yang dipanggil TANPA await refresh() di
-    // pages/login.js begitu Super Admin BARU SAJA login (fetch di bawah
-    // TETAP dilakukan sesudahnya, murni konfirmasi/jaga-jaga kalau branding
-    // platform suatu saat jadi bisa dikonfigurasi, TIDAK ADA jeda tampilan
-    // menunggu hasilnya lebih dulu).
-    if (_isSuperadminSession()) {
+    // pages/login.js begitu Super Admin/Sales BARU SAJA login (fetch di
+    // bawah TETAP dilakukan sesudahnya, murni konfirmasi/jaga-jaga kalau
+    // branding platform suatu saat jadi bisa dikonfigurasi, TIDAK ADA jeda
+    // tampilan menunggu hasilnya lebih dulu).
+    if (_isTenantlessSession()) {
       current = DEFAULT;
       _hapusCacheTenant();
       applyToDom();
