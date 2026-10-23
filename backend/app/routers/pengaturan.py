@@ -102,7 +102,12 @@ def ambil_identitas(tenant_id: int = Depends(resolve_tenant_hibrid)):
 
 
 @router.put("/identitas")
-def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_permission("izin_setting_identitas"))):
+def simpan_identitas(body: IdentitasBody, user: dict = Depends(require_permission("izin_setting_branding"))):
+    # REVISI Hak Akses (hapus key izin_setting_identitas -- sudah lama
+    # orphan, tidak ada UI yang bisa memberikannya ke staff manapun, lihat
+    # catatan upload_logo() di bawah yang sudah lebih dulu memakai
+    # izin_setting_branding untuk alasan yang sama): disatukan ke
+    # izin_setting_branding, sama seperti upload_logo().
     try:
         pengaturan_identitas.update_identitas(body.model_dump(), tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -214,13 +219,13 @@ class KomisiBody(BaseModel):
 
 
 @router.get("/komisi")
-def ambil_komisi(user: dict = Depends(require_admin)):
+def ambil_komisi(user: dict = Depends(require_permission("izin_setting_komisi"))):
     semua = db.get_all_settings(tenant_id=user["tenant_id"])
     return {k: semua.get(k) for k in KOMISI_KEYS}
 
 
 @router.put("/komisi")
-def simpan_komisi(body: KomisiBody, user: dict = Depends(require_admin)):
+def simpan_komisi(body: KomisiBody, user: dict = Depends(require_permission("izin_setting_komisi"))):
     data = body.model_dump()
     for k, v in data.items():
         if v < 0:
@@ -233,9 +238,13 @@ def simpan_komisi(body: KomisiBody, user: dict = Depends(require_admin)):
 # ================= WHATSAPP (FITUR Notifikasi WhatsApp Otomatis Booking) =================
 # Token Fonnte PER TENANT (Owner menghubungkan nomor WhatsApp TOKO-nya
 # sendiri lewat scan QR di situs Fonnte, lalu tempel token API-nya di sini)
-# -- lihat docstring lengkap whatsapp_service.py. KHUSUS Owner (require_admin,
-# BUKAN require_permission) -- kredensial pihak ketiga, sama seperti tab
-# Komisi/Bonus Service, TIDAK didelegasikan ke staff lewat Hak Akses Admin.
+# -- lihat docstring lengkap whatsapp_service.py. REVISI Hak Akses (hapus
+# menu Owner-only hardcoded -- TIDAK ADA LAGI menu yang permanen Owner-only
+# kecuali Billing & Hak Akses User, lihat permissions.py): sekarang
+# `require_permission("izin_whatsapp_notifikasi_booking")`, bisa
+# didelegasikan Owner ke Role manapun (migrasi otomatis selalu False
+# untuk staff lama -- menu ini dulu Owner-only murni, jadi TIDAK ADA
+# staff yang kehilangan akses, karena memang tidak pernah punya akses).
 
 def _whatsapp_state(tenant_id: int) -> dict:
     return {
@@ -254,7 +263,7 @@ def _whatsapp_state(tenant_id: int) -> dict:
 
 
 @router.get("/whatsapp")
-def ambil_whatsapp(user: dict = Depends(require_admin), _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
+def ambil_whatsapp(user: dict = Depends(require_permission("izin_whatsapp_notifikasi_booking"))):
     return _whatsapp_state(user["tenant_id"])
 
 
@@ -264,8 +273,7 @@ class WhatsappBody(BaseModel):
 
 
 @router.put("/whatsapp")
-def simpan_whatsapp(body: WhatsappBody, user: dict = Depends(require_admin),
-                     _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
+def simpan_whatsapp(body: WhatsappBody, user: dict = Depends(require_permission("izin_whatsapp_notifikasi_booking"))):
     if body.fonnte_token is not None:
         whatsapp_service.set_token(body.fonnte_token, tenant_id=user["tenant_id"])
     if body.templates is not None:
@@ -281,8 +289,7 @@ class WhatsappTesBody(BaseModel):
 
 
 @router.post("/whatsapp/tes")
-def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin),
-                  _fitur: dict = Depends(require_feature("whatsapp_reminder"))):
+def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_permission("izin_whatsapp_notifikasi_booking"))):
     """Kirim satu pesan tes ke nomor yang diisi Owner -- supaya Owner bisa
     memastikan token Fonnte-nya benar SEBELUM mengandalkannya untuk
     notifikasi booking sungguhan."""
@@ -304,7 +311,8 @@ def tes_whatsapp(body: WhatsappTesBody, user: dict = Depends(require_admin),
 # absensi_reminder_db.py; pengiriman sungguhan dipicu endpoint cron
 # TERPISAH, lihat routers/cron_reminder.py). Digerbang fitur "absensi"
 # (BUKAN "whatsapp_reminder") -- reminder ini tidak berguna tanpa modul
-# Absensi aktif. KHUSUS Owner, pola sama seperti /whatsapp di atas.
+# Absensi aktif. REVISI Hak Akses: sekarang `izin_whatsapp_reminder_absensi`
+# (grantable, pola sama seperti /whatsapp di atas).
 
 def _absensi_reminder_state(tenant_id: int) -> dict:
     return {
@@ -317,7 +325,7 @@ def _absensi_reminder_state(tenant_id: int) -> dict:
 
 
 @router.get("/absensi-reminder")
-def ambil_absensi_reminder(user: dict = Depends(require_admin), _fitur: dict = Depends(require_feature("absensi"))):
+def ambil_absensi_reminder(user: dict = Depends(require_permission("izin_whatsapp_reminder_absensi"))):
     return _absensi_reminder_state(user["tenant_id"])
 
 
@@ -327,8 +335,7 @@ class AbsensiReminderBody(BaseModel):
 
 
 @router.put("/absensi-reminder")
-def simpan_absensi_reminder(body: AbsensiReminderBody, user: dict = Depends(require_admin),
-                             _fitur: dict = Depends(require_feature("absensi"))):
+def simpan_absensi_reminder(body: AbsensiReminderBody, user: dict = Depends(require_permission("izin_whatsapp_reminder_absensi"))):
     if body.aktif is not None:
         absensi_reminder_db.set_aktif(body.aktif, tenant_id=user["tenant_id"])
     if body.templates is not None:
@@ -355,12 +362,12 @@ class BonusTierUpdateBody(BaseModel):
 
 
 @router.get("/bonus-tiers")
-def list_bonus_tiers(user: dict = Depends(require_admin)):
+def list_bonus_tiers(user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     return db.get_bonus_customer_tiers(tenant_id=user["tenant_id"])
 
 
 @router.post("/bonus-tiers")
-def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_admin)):
+def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     try:
         return pengaturan_bonus.tambah_tier(body.target, body.bonus, tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -368,7 +375,7 @@ def tambah_bonus_tier(body: BonusTierBody, user: dict = Depends(require_admin)):
 
 
 @router.put("/bonus-tiers/{target}")
-def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends(require_admin)):
+def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     try:
         return pengaturan_bonus.ubah_tier(target, body.target, body.bonus, tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -376,7 +383,7 @@ def ubah_bonus_tier(target: int, body: BonusTierUpdateBody, user: dict = Depends
 
 
 @router.delete("/bonus-tiers/{target}")
-def hapus_bonus_tier(target: int, user: dict = Depends(require_admin)):
+def hapus_bonus_tier(target: int, user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     try:
         return pengaturan_bonus.hapus_tier(target, tenant_id=user["tenant_id"])
     except ValueError as e:
@@ -395,23 +402,23 @@ class AcuanServiceBody(BaseModel):
 
 
 @router.get("/bonus-service-acuan")
-def ambil_bonus_service_acuan(user: dict = Depends(require_admin)):
+def ambil_bonus_service_acuan(user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     return {"service_ids": db.get_bonus_service_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.put("/bonus-service-acuan")
-def simpan_bonus_service_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
+def simpan_bonus_service_acuan(body: AcuanServiceBody, user: dict = Depends(require_permission("izin_setting_bonus_service"))):
     db.set_bonus_service_acuan_ids(body.service_ids, tenant_id=user["tenant_id"])
     return {"service_ids": db.get_bonus_service_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.get("/uang-harian-acuan")
-def ambil_uang_harian_acuan(user: dict = Depends(require_admin)):
+def ambil_uang_harian_acuan(user: dict = Depends(require_permission("izin_setting_uang_harian"))):
     return {"service_ids": db.get_uang_harian_acuan_ids(tenant_id=user["tenant_id"])}
 
 
 @router.put("/uang-harian-acuan")
-def simpan_uang_harian_acuan(body: AcuanServiceBody, user: dict = Depends(require_admin)):
+def simpan_uang_harian_acuan(body: AcuanServiceBody, user: dict = Depends(require_permission("izin_setting_uang_harian"))):
     db.set_uang_harian_acuan_ids(body.service_ids, tenant_id=user["tenant_id"])
     return {"service_ids": db.get_uang_harian_acuan_ids(tenant_id=user["tenant_id"])}
 
@@ -425,12 +432,12 @@ class UangHarianTargetBody(BaseModel):
 
 
 @router.get("/uang-harian-target")
-def ambil_uang_harian_target(user: dict = Depends(require_admin)):
+def ambil_uang_harian_target(user: dict = Depends(require_permission("izin_setting_uang_harian"))):
     return {"target": db.target_uang_harian_per_hari(tenant_id=user["tenant_id"])}
 
 
 @router.put("/uang-harian-target")
-def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(require_admin)):
+def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(require_permission("izin_setting_uang_harian"))):
     if body.target <= 0:
         raise HTTPException(status_code=422, detail="Target harus lebih dari 0.")
     db.set_setting("uang_harian_target_service_harian", body.target, tenant_id=user["tenant_id"])
@@ -490,13 +497,13 @@ def _pastikan_barber_tenant_sama(user: dict, target: dict | None):
 
 
 @router.get("/barber")
-def list_barber(user: dict = Depends(require_admin)):
+def list_barber(user: dict = Depends(require_permission("izin_setting_karyawan"))):
     # tampilkan semua jabatan, aktif & nonaktif, di halaman Setting
     return [_tanpa_kolom_biner(b) for b in db.get_karyawan(hanya_aktif=False, tenant_id=user["tenant_id"])]
 
 
 @router.post("/barber")
-def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
+def tambah_barber(body: BarberBody, user: dict = Depends(require_permission("izin_setting_karyawan"))):
     try:
         billing_limits.pastikan_boleh_tambah_barber(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = pengaturan_barber.tambah_barber_validated(
@@ -509,7 +516,7 @@ def tambah_barber(body: BarberBody, user: dict = Depends(require_admin)):
 
 
 @router.put("/barber/{barber_id}")
-def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(require_admin)):
+def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(require_permission("izin_setting_karyawan"))):
     _pastikan_barber_tenant_sama(user, db.get_barber(barber_id))
     try:
         pengaturan_barber.update_barber_validated(
@@ -523,7 +530,7 @@ def update_barber(barber_id: int, body: BarberUpdateBody, user: dict = Depends(r
 
 
 @router.delete("/barber/{barber_id}")
-def hapus_barber(barber_id: int, user: dict = Depends(require_admin)):
+def hapus_barber(barber_id: int, user: dict = Depends(require_permission("izin_setting_karyawan"))):
     _pastikan_barber_tenant_sama(user, db.get_barber(barber_id))
     try:
         pengaturan_barber.hapus_barber(barber_id)
@@ -559,12 +566,12 @@ def _pastikan_service_tenant_sama(user: dict, target: dict | None):
 
 
 @router.get("/service")
-def list_service(user: dict = Depends(require_admin)):
+def list_service(user: dict = Depends(require_permission("izin_setting_layanan"))):
     return db.get_services(hanya_aktif=False, tenant_id=user["tenant_id"])
 
 
 @router.post("/service")
-def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
+def tambah_service(body: ServiceBody, user: dict = Depends(require_permission("izin_setting_layanan"))):
     try:
         billing_limits.pastikan_boleh_tambah_layanan(user["tenant_id"])  # FONDASI Multi-Tenant Phase 4
         new_id = pengaturan_service.tambah_service_lengkap(
@@ -577,7 +584,7 @@ def tambah_service(body: ServiceBody, user: dict = Depends(require_admin)):
 
 
 @router.put("/service/{service_id}")
-def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depends(require_admin)):
+def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depends(require_permission("izin_setting_layanan"))):
     _pastikan_service_tenant_sama(user, db.get_service(service_id))
     try:
         pengaturan_service.update_service_lengkap(
@@ -591,7 +598,7 @@ def update_service(service_id: int, body: ServiceUpdateBody, user: dict = Depend
 
 
 @router.delete("/service/{service_id}")
-def hapus_service(service_id: int, user: dict = Depends(require_admin)):
+def hapus_service(service_id: int, user: dict = Depends(require_permission("izin_setting_layanan"))):
     _pastikan_service_tenant_sama(user, db.get_service(service_id))
     try:
         db.hapus_service(service_id)  # fungsi Tahap 2, sudah menolak kalau pernah dipakai transaksi
@@ -615,10 +622,11 @@ class UserBody(BaseModel):
     # TIDAK PERNAH menandai blokir_sampai_verifikasi (login TETAP langsung
     # bisa dengan password yang diatur Owner, sesuai desain yang sudah ada).
     email: str = ""
-    # FITUR Role Custom: OPSIONAL, HANYA relevan untuk role='staff' -- None
-    # (default) = akun ini memakai set izin default tenant (Hak Akses User),
-    # PERSIS perilaku lama. Diisi (Owner-murni, lihat validasi di bawah) =
-    # akun ini ditempelkan ke role custom itu sejak dibuat.
+    # FITUR Role Custom: REVISI (hapus Role "Admin" bawaan) -- WAJIB diisi
+    # untuk role='staff' (divalidasi tambah_user() di bawah, lihat
+    # permissions.py untuk latar belakang lengkap). Owner memilih SALAH
+    # SATU Role yang sudah dibuatnya sendiri (Setting > Hak Akses User)
+    # sejak akun ini dibuat -- tidak ada lagi set izin default tanpa Role.
     custom_role_id: int | None = None
 
 
@@ -683,13 +691,14 @@ def tambah_user(body: UserBody, user: dict = Depends(require_owner_or_staff)):
         barber_target = db.get_barber(body.barber_id)
         if barber_target is None or barber_target.get("tenant_id") != user["tenant_id"]:
             raise HTTPException(status_code=422, detail="Barber tidak ditemukan.")
-    # FITUR Role Custom: hanya masuk akal untuk role='staff' -- staff yang
-    # membuat user ('body.role' sudah dipaksa "barber" di atas) tidak
-    # pernah sampai sini dengan custom_role_id terisi dalam praktik, guard
-    # ini murni lapis kedua eksplisit (defense in depth).
-    if body.custom_role_id is not None:
-        if body.role != "staff":
-            raise HTTPException(status_code=422, detail="Role custom hanya berlaku untuk akun ber-role Admin.")
+    # FITUR Role Custom: REVISI (hapus Role "Admin" bawaan) -- WAJIB diisi
+    # untuk role='staff' (staff yang membuat user, body.role sudah dipaksa
+    # "barber" di atas, tidak pernah sampai baris ini dengan role='staff').
+    if body.custom_role_id is not None and body.role != "staff":
+        raise HTTPException(status_code=422, detail="Role custom hanya berlaku untuk akun ber-role Admin.")
+    if body.role == "staff":
+        if body.custom_role_id is None:
+            raise HTTPException(status_code=422, detail="Role wajib dipilih untuk akun Admin baru.")
         role_target = user_roles_db.get_role(body.custom_role_id)
         if role_target is None or role_target.get("tenant_id") != user["tenant_id"]:
             raise HTTPException(status_code=422, detail="Role tidak ditemukan.")
@@ -835,12 +844,12 @@ def hapus_user(user_id: int, user: dict = Depends(require_owner_or_staff)):
     return {"ok": True}
 
 
-# Ganti Role akun 'staff' -- None = balik ke Role "Admin" (bawaan/default),
-# diisi = pindah ke Role Custom itu. Owner-murni (require_admin, SAMA
-# seperti PUT /hak-akses-admin di bawah -- staff tidak pernah boleh
-# mengatur Role/izinnya sendiri ataupun staff lain).
+# Ganti Role akun 'staff' -- REVISI (hapus Role "Admin" bawaan): WAJIB
+# diisi Role Custom yang sungguhan, tidak ada lagi "balik ke default".
+# Owner-murni (require_admin -- staff tidak pernah boleh mengatur Role/
+# izinnya sendiri ataupun staff lain).
 class UserRoleBody(BaseModel):
-    custom_role_id: int | None = None  # None = Role "Admin" (bawaan/default)
+    custom_role_id: int
 
 
 @router.put("/user/{user_id}/role")
@@ -852,10 +861,9 @@ def ubah_role_user(user_id: int, body: UserRoleBody, user: dict = Depends(requir
     _pastikan_target_tenant_sama(user, target)
     if target["role"] != "staff":
         raise HTTPException(status_code=422, detail="Role custom hanya berlaku untuk akun ber-role Admin.")
-    if body.custom_role_id is not None:
-        role_target = user_roles_db.get_role(body.custom_role_id)
-        if role_target is None or role_target.get("tenant_id") != user["tenant_id"]:
-            raise HTTPException(status_code=422, detail="Role tidak ditemukan.")
+    role_target = user_roles_db.get_role(body.custom_role_id)
+    if role_target is None or role_target.get("tenant_id") != user["tenant_id"]:
+        raise HTTPException(status_code=422, detail="Role tidak ditemukan.")
     auth_db.set_custom_role(user_id, body.custom_role_id)
     hasil = auth_db.get_user(user_id)
     hasil.pop("password_hash", None)
@@ -863,77 +871,48 @@ def ubah_role_user(user_id: int, body: UserRoleBody, user: dict = Depends(requir
     return hasil
 
 
-# ================= HAK AKSES USER: ROLE "ADMIN" (bawaan/default) =================
-# Menu Setting > Hak Akses User, HANYA Owner (require_admin murni, bukan
-# require_owner_or_staff -- Admin TIDAK BOLEH mengatur hak aksesnya sendiri
-# ataupun Admin lain). Lihat permissions.py untuk daftar lengkap key &
-# default -- endpoint ini mengatur izin Role "Admin" (Role BAWAAN, dipakai
-# staff yang Role-nya BUKAN salah satu Role Custom -- lihat MANAJEMEN ROLE
-# CUSTOM di bawah untuk Role bernama sendiri yang bisa dibuat Owner). URL
-# path /hak-akses-admin TIDAK diubah (kompatibilitas), murni label UI-nya
-# yang sekarang "Role Admin" di tab Hak Akses User (frontend menyatukan
-# tampilan Role "Admin" ini dengan tabel Role Custom, lihat pages/
-# pengaturan.js::renderHakAksesAdmin()).
-
-class HakAksesAdminBody(BaseModel):
-    izin: dict[str, bool]
-
+# ================= HAK AKSES USER (REVISI: Role "Admin" bawaan DIHAPUS) =================
+# Menu Setting > Hak Akses User. SELURUH endpoint di sini SEKARANG murni
+# mengatur Role Custom (lihat MANAJEMEN ROLE CUSTOM di bawah) -- tidak ada
+# lagi Role "Admin" bawaan/default yang dipakai staff ber-custom_role_id
+# NULL (lihat permissions.py & user_roles_db.py untuk latar belakang
+# lengkap). URL path /hak-akses-admin TIDAK diubah (kompatibilitas) --
+# endpoint ini SEKARANG hanya dipakai akun yang login untuk MEMBACA izin
+# EFEKTIF-nya sendiri (lihat GET di bawah); mengatur checklist SATU Role
+# tertentu pakai endpoint terpisah, GET/PUT /api/user-roles/{id}/permissions.
 
 # GET boleh dibaca 'staff' JUGA (bukan hanya Owner) -- staff perlu tahu hak
 # aksesnya sendiri supaya frontend-nya bisa menampilkan tab/aksi yang sesuai
-# (lihat pages/pengaturan.js). Mengubahnya (PUT di bawah) TETAP Owner-murni.
-# Mengembalikan izin EFEKTIF akun yang login sesuai Role-nya -- staff yang
-# Role-nya salah satu Role Custom (users.custom_role_id) melihat checklist
-# Role Custom itu, BUKAN selalu Role "Admin" (lihat permissions.py).
-# Mengatur checklist SATU Role tertentu (dipakai halaman kelola Role, BUKAN
-# "punya saya sendiri") pakai endpoint terpisah, lihat
-# GET/PUT /api/user-roles/{id}/permissions di bawah.
+# (lihat pages/pengaturan.js). Mengembalikan izin EFEKTIF akun yang login
+# sesuai Role Custom-nya (users.custom_role_id, SEKARANG WAJIB terisi untuk
+# role='staff' -- lihat permissions.py::get_all()).
 @router.get("/hak-akses-admin")
 def ambil_hak_akses_admin(user: dict = Depends(require_owner_or_staff)):
-    hasil = permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
-    # FITUR Hak Akses Menu (permintaan Owner): "menu" -- {menu_key: level}
-    # ("none"/"read"/"write") EFEKTIF akun yang login, dihitung dari checklist
-    # izin_* di atas (lihat permissions.py::MENU_DEFS/get_all_menu_levels()).
-    # Dipakai frontend (js/menu_access.js) SEMUA halaman untuk gerbang
-    # tampil-kosong/nonaktifkan tombol edit -- bukan hanya Setting/Absensi
-    # seperti sebelumnya.
-    hasil["menu"] = permissions.get_all_menu_levels(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
-    return hasil
+    return permissions.get_all(tenant_id=user["tenant_id"], role_id=user.get("custom_role_id"))
 
 
-@router.put("/hak-akses-admin")
-def simpan_hak_akses_admin(body: HakAksesAdminBody, user: dict = Depends(require_admin)):
-    try:
-        return permissions.set_bulk(body.izin, tenant_id=user["tenant_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
-class HakAksesMenuBody(BaseModel):
-    menu: dict[str, str]
-
-
-@router.put("/hak-akses-admin-menu")
-def simpan_hak_akses_admin_menu(body: HakAksesMenuBody, user: dict = Depends(require_admin)):
-    """Hak Akses Menu (permintaan Owner) -- versi BARU form "Kelola Izin":
-    satu dropdown Tidak Ada Akses/Baca/Baca & Edit per menu, bukan checklist
-    izin_* mentah (PUT /hak-akses-admin di atas TETAP ada, tidak dihapus,
-    murni tidak lagi dipanggil dari UI baru -- lihat permissions.py::
-    set_all_menu_levels())."""
-    try:
-        return permissions.set_all_menu_levels(body.menu, tenant_id=user["tenant_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+# FITUR Pohon Hak Akses (satu sumber kebenaran untuk UI checklist dropdown
+# Setting > Hak Akses User -- lihat pages/pengaturan.js::renderHakAksesAdmin()):
+# metadata (label + hubungan induk/anak) permissions.py::PERMISSION_TREE,
+# BUKAN nilai boolean-nya (itu tetap lewat GET /hak-akses-admin atau
+# GET /user-roles/{id}/permissions di bawah) -- Owner-murni, hanya dipakai
+# halaman kelola Role.
+@router.get("/permission-tree")
+def ambil_permission_tree(user: dict = Depends(require_admin)):
+    return {
+        "nodes": [{"key": k, "label": label, "parent": parent} for k, (label, parent) in permissions.PERMISSION_TREE.items()],
+        "cross_cutting": sorted(permissions.CROSS_CUTTING_KEYS),
+    }
 
 
 # ================= MANAJEMEN ROLE CUSTOM (FITUR Role User Custom, diminta Owner) =================
-# Owner bisa membuat Role bernama sendiri (mis. "Kasir", "Supervisor"),
-# masing-masing dengan checklist izin_* SENDIRI (katalog SAMA persis
-# dengan Role "Admin" di atas -- lihat user_roles_db.py), lalu Role itu
+# Owner bisa membuat Role bernama bebas (mis. "Staff", "Kasir", "Supervisor"),
+# masing-masing dengan checklist izin_* SENDIRI (katalog permissions.
+# PERMISSION_TREE, lihat user_roles_db.py) -- SEMUA Role sederajat, TIDAK
+# ADA LAGI Role "Admin" bawaan/default (lihat REVISI Hak Akses). Role itu
 # dipilih LANGSUNG sebagai Role akun staff tertentu (PUT /user/{id}/role
-# di atas, atau saat POST /user) -- BUKAN "ditempelkan ke Admin", akun itu
-# memakai HANYA izin Role Custom-nya. Seluruh endpoint di sini Owner-murni
-# (require_admin), sama seperti PUT /hak-akses-admin.
+# di atas, atau saat POST /user, WAJIB diisi). Seluruh endpoint mutasi di
+# sini Owner-murni (require_admin).
 
 def _pastikan_role_tenant_sama(user: dict, role: dict | None):
     """Pola SAMA seperti _pastikan_target_tenant_sama() untuk user -- 404
@@ -978,12 +957,11 @@ def ubah_user_role(role_id: int, body: UserRoleNamaBody, user: dict = Depends(re
 
 @router.delete("/user-roles/{role_id}")
 def hapus_user_role(role_id: int, user: dict = Depends(require_admin)):
-    """Staff yang masih ditempelkan ke role ini OTOMATIS balik ke set izin
-    default tenant (auth_db.lepas_custom_role_dari_semua_user(), dipanggil
-    SEBELUM baris role-nya sendiri dihapus) -- TIDAK PERNAH diblokir/macet
-    karena role-nya hilang, keputusan eksplisit Owner."""
+    """REVISI (hapus Role "Admin" bawaan): DIBLOKIR (422) selama masih ada
+    akun yang memakai Role ini -- lihat user_roles_db.delete_role(). Owner
+    harus memindahkan akun yang terkena ke Role lain dahulu (PUT
+    /user/{id}/role) sebelum bisa menghapus Role ini."""
     _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
-    auth_db.lepas_custom_role_dari_semua_user(role_id)
     try:
         user_roles_db.delete_role(role_id)
     except ValueError as e:
@@ -994,9 +972,11 @@ def hapus_user_role(role_id: int, user: dict = Depends(require_admin)):
 @router.get("/user-roles/{role_id}/permissions")
 def ambil_user_role_permissions(role_id: int, user: dict = Depends(require_admin)):
     _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
-    hasil = permissions.get_all(role_id=role_id)
-    hasil["menu"] = permissions.get_all_menu_levels(role_id=role_id)
-    return hasil
+    return permissions.get_all(role_id=role_id)
+
+
+class HakAksesAdminBody(BaseModel):
+    izin: dict[str, bool]
 
 
 @router.put("/user-roles/{role_id}/permissions")
@@ -1004,17 +984,6 @@ def simpan_user_role_permissions(role_id: int, body: HakAksesAdminBody, user: di
     _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
     try:
         return permissions.set_bulk(body.izin, role_id=role_id)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
-@router.put("/user-roles/{role_id}/menu-permissions")
-def simpan_user_role_menu_permissions(role_id: int, body: HakAksesMenuBody, user: dict = Depends(require_admin)):
-    """Versi BARU form "Kelola Izin" untuk Role Custom -- lihat
-    simpan_hak_akses_admin_menu() di atas untuk penjelasan lengkap."""
-    _pastikan_role_tenant_sama(user, user_roles_db.get_role(role_id))
-    try:
-        return permissions.set_all_menu_levels(body.menu, role_id=role_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -1095,14 +1064,17 @@ def download_laporan_pdf(jenis: str, barber_id: int | None = None,
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-# ================= PROFIL (akun Owner sendiri) =================
+# ================= PROFIL (akun sendiri -- Owner & Admin) =================
 # FITUR Email, Verifikasi Email, Lupa Kata Sandi -- item 5: tenant LAMA
 # (dibuat sebelum fitur email ini ada, atau lewat Super Admin) belum tentu
-# punya email tersimpan sama sekali. Endpoint ini KHUSUS Owner (require_admin
-# -- BUKAN require_owner_or_staff, staff/karyawan TIDAK mengatur email
-# Owner) menambah/mengubah email AKUN SENDIRI, memicu email verifikasi --
+# punya email tersimpan sama sekali. REVISI Hak Akses (permintaan Owner):
+# "Profil" BUKAN sesuatu yang "diberikan" lewat checklist Role -- setiap
+# akun (Owner MAUPUN Admin/staff) otomatis punya akses ke profilnya
+# SENDIRI, jadi endpoint ini SEKARANG `require_owner_or_staff` (BUKAN lagi
+# require_admin murni) -- aman karena `user["id"]` di sini SELALU id akun
+# yang login sendiri (self-service, tidak pernah menyentuh akun lain).
 # TIDAK PERNAH menyetel blokir_sampai_verifikasi (HANYA milik alur
-# Registrasi mandiri baru, lihat email_auth_migrasi.py), jadi Owner tenant
+# Registrasi mandiri baru, lihat email_auth_migrasi.py), jadi akun tenant
 # lama TIDAK PERNAH terblokir login karena ini walau belum sempat
 # memverifikasi emailnya.
 
@@ -1111,7 +1083,7 @@ class ProfilEmailBody(BaseModel):
 
 
 @router.put("/profil/email")
-def ubah_email_profil(body: ProfilEmailBody, user: dict = Depends(require_admin)):
+def ubah_email_profil(body: ProfilEmailBody, user: dict = Depends(require_owner_or_staff)):
     email = (body.email or "").strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Format email tidak valid.")
@@ -1132,10 +1104,10 @@ def ubah_email_profil(body: ProfilEmailBody, user: dict = Depends(require_admin)
 
 
 @router.post("/profil/kirim-ulang-verifikasi")
-def kirim_ulang_verifikasi_profil(user: dict = Depends(require_admin)):
+def kirim_ulang_verifikasi_profil(user: dict = Depends(require_owner_or_staff)):
     """Tombol "Kirim Ulang" di halaman Profil -- BEDA dari /api/public/
     registration/resend-verification (endpoint PUBLIK untuk akun yang
-    BELUM BISA login sama sekali): endpoint ini untuk Owner yang SUDAH
+    BELUM BISA login sama sekali): endpoint ini untuk akun yang SUDAH
     login (tenant lama menambah email, tapi belum sempat klik link-nya)."""
     if not user.get("email"):
         raise HTTPException(status_code=422, detail="Belum ada email tersimpan -- isi email Anda dulu.")

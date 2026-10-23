@@ -156,9 +156,12 @@ def test_branding_staff_tanpa_izin_ditolak(two_tenants):
 
 def test_branding_staff_dengan_izin_bisa_ubah(two_tenants):
     client = two_tenants["client"]
-    client.put("/api/pengaturan/hak-akses-admin", headers=two_tenants["headers_a"],
-                json={"izin": {"izin_setting_branding": True}})
-    auth_db.tambah_user("staffB", "password123", role="staff", tenant_id=two_tenants["tenant_a"])
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"},
+                        headers=two_tenants["headers_a"]).json()
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions", headers=two_tenants["headers_a"],
+               json={"izin": {"izin_setting_branding": True}})
+    auth_db.tambah_user("staffB", "password123", role="staff", tenant_id=two_tenants["tenant_a"],
+                         custom_role_id=role["id"])
     r = client.post("/api/auth/login", json={"username": "staffB", "password": "password123"})
     headers_staff = {"Authorization": f"Bearer {r.json()['token']}"}
 

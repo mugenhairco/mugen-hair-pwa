@@ -16,6 +16,8 @@ import hashlib
 import itertools
 from datetime import timedelta
 
+import pytest
+
 import billing_db
 import booking_db
 import booking_gateway_db
@@ -27,6 +29,26 @@ import tenant_db
 import whatsapp_service
 import whatsapp_templates
 from booking_db import _hari_ini_wib
+
+
+@pytest.fixture(autouse=True)
+def _default_barber_app_dan_absensi_aktif():
+    """OVERRIDE fixture autouse SAMA PERSIS namanya di conftest.py jadi
+    no-op (TIDAK memonkeypatch feature_access.tenant_has_menu_access() ke
+    selalu True) -- REVISI Work #2: "whatsapp_reminder" bukan lagi kode
+    fitur tersendiri (lihat billing_db.py::hapus_fitur_absorbed_ke_tree()),
+    diwakili root key pohon permissions.PERMISSION_TREE (izin_whatsapp_
+    lihat), dicek lewat feature_access.tenant_has_menu_access() di
+    booking_db.py::_kirim_notifikasi_wa_booking() -- SELURUH test "tanpa
+    fitur ini TIDAK mengirim" di file ini butuh perilaku fail-closed
+    SUNGGUHAN, bukan dipaksa True lewat patch global. Ini AMAN (tidak
+    mematahkan test lain di file ini yang memanggil _beri_fitur_whatsapp_
+    reminder()) karena paket "free" (paket DEFAULT, sudah ada SEJAK BOOT)
+    otomatis mendapat izin_whatsapp_lihat=True lewat migrasi_grandfather_
+    package_permissions() -- whatsapp_reminder MEMANG sudah digrandfather
+    sejak awal (beda dari absensi), jadi perilaku asli ini tetap identik
+    dengan patch global untuk SEMUA test yang sudah ada."""
+    yield
 
 
 def _beri_fitur_whatsapp_reminder(tenant_id):
@@ -294,14 +316,18 @@ def test_buat_booking_transfer_tidak_mengirim_reminder(single_tenant, monkeypatc
 
 
 def test_buat_booking_qris_tidak_mengirim_reminder_tanpa_fitur_whatsapp_reminder(single_tenant, monkeypatch):
-    """Feature Gating "whatsapp_reminder" (AUDIT "fitur hardcode di
-    Superadmin"): paket TANPA fitur ini (dicabut manual Super Admin, walau
-    di-grandfather otomatis sejak boot) -- notifikasi TIDAK PERNAH dicoba
-    dikirim sama sekali (bukan dicoba lalu gagal)."""
+    """REVISI Work #2: "whatsapp_reminder" bukan lagi kode fitur tersendiri
+    -- paket TANPA izin_whatsapp_lihat (dicabut manual Super Admin lewat
+    Package Permission Tree, walau di-grandfather otomatis sejak boot)
+    -- notifikasi TIDAK PERNAH dicoba dikirim sama sekali (bukan dicoba
+    lalu gagal)."""
+    import permissions
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
     free = billing_db.get_package_by_kode("free")
-    billing_db.set_package_features(free["id"], [])  # cabut semua fitur, termasuk whatsapp_reminder
+    aktif = billing_db.get_package_permission_keys(free["id"])
+    kunci_whatsapp = {"izin_whatsapp_lihat"} | permissions._descendants("izin_whatsapp_lihat")
+    billing_db.set_package_permission_keys(free["id"], aktif - kunci_whatsapp)  # cabut izin_whatsapp_lihat
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
     _buat_booking(tenant_id, "qris")

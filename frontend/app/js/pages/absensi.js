@@ -913,6 +913,10 @@ const PageAbsensi = (() => {
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
+    // REVISI Hak Akses (sub-item BARU, lihat permissions.py::
+    // PERMISSION_TREE izin_absensi_export_excel) -- dipakai tombolExport()
+    // di bawah, SELAIN gate paket "export_excel" yang sudah ada.
+    const bolehExportExcel = await MugenMenuAccess.has("izin_absensi_export_excel");
 
     let barbers = [];
     try {
@@ -1105,7 +1109,7 @@ const PageAbsensi = (() => {
     function tombolExport() {
       const wrap = MugenUI.el("div", { class: "row", style: "flex:none;gap:10px;margin-top:10px;" });
       const adaFitur = typeof MugenFeature === "undefined" || MugenFeature.has("export_pdf");
-      const adaFiturExcel = typeof MugenFeature === "undefined" || MugenFeature.has("export_excel");
+      const adaFiturExcel = bolehExportExcel && (typeof MugenFeature === "undefined" || MugenFeature.has("export_excel"));
       if (adaFitur) {
         const btnPdf = MugenUI.el("button", {}, "Cetak PDF");
         btnPdf.addEventListener("click", () => {
@@ -1405,16 +1409,14 @@ const PageAbsensi = (() => {
     }
     root.appendChild(MugenUI.el("h1", {}, "Absensi"));
 
-    // AUDIT (enforcement paket/subscription -- REVISI feedback Owner):
-    // gerbang fitur "absensi" SEKARANG di sini (di DALAM halaman, pola SAMA
-    // seperti tab WhatsApp/Log Error di pengaturan.js) -- BUKAN lagi di
-    // router.js yang mengganti SELURUH `content` (judul "Absensi" di atas
-    // ikut hilang, terasa seperti halaman kosong). Judul halaman TETAP
-    // tampil dulu, baru kartu upgrade menggantikan isinya.
-    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
-      root.appendChild(MugenFeature.upgradeBlock("Absensi"));
-      return;
-    }
+    // REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+    // "absensi" tersendiri DIHAPUS -- gate paket SEKARANG murni di backend
+    // (izin_absensi_lihat, lewat auth.py::require_menu_feature()), BUKAN
+    // lagi dicek/ditampilkan sebagai kartu upgrade terpisah di sini (tidak
+    // ada API frontend untuk baca akses paket mentah -- lihat
+    // menu_access.js, yang HANYA baca izin Role, selalu true untuk Owner).
+    // Tenant yang paketnya memang belum menyertakan menu ini akan melihat
+    // pesan error dari 403 backend (upgrade_required) di dalam halaman.
 
     if (user.role === "barber") {
       await renderBarberView(root);

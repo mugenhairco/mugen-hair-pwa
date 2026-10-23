@@ -29,17 +29,23 @@ const MugenNav = (() => {
   }
 
 
-  // REVISI Hak Akses Admin (kedua): 'staff' (label UI "Admin") sekarang
-  // punya akses PENUH sama persis seperti Owner ke Input Data/Booking/
-  // Pengeluaran/Produk/Rekap -- kelima menu ini TIDAK memakai sistem izin
-  // sama sekali (lihat permissions.py). HANYA menu Dashboard (kartu
-  // difilter) dan Setting (tab difilter) yang tetap diatur lewat Hak
-  // Akses Admin.
+  // REVISI BESAR Hak Akses (hapus Role "Admin" bawaan, lihat backend
+  // permissions.py::PERMISSION_TREE): SEMUA menu (KECUALI Billing & Hak
+  // Akses User, lihat renderHakAksesAdmin() di pengaturan.js) SEKARANG
+  // grantable Owner ke Role manapun -- `roles` di bawah TETAP dipakai
+  // sebagai gerbang PERTAMA (tipe akun: admin/staff/barber, TIDAK PERNAH
+  // disentuh untuk Owner/Barber), field BARU `izin` (opsional) adalah
+  // gerbang KEDUA KHUSUS untuk 'staff' -- root key izin_* menu ini (dari
+  // PERMISSION_TREE) yang dicek lewat MugenMenuAccess.has() di
+  // _bangunItemNav()/_lolosIzin() di bawah SEBELUM menu ditampilkan. Menu
+  // TANPA field `izin` (Dashboard/Karyawan/Absensi dst -- granularitasnya
+  // sendiri sudah diatur DI DALAM halamannya masing-masing, lihat
+  // menu_access.js) tetap tampil untuk SEMUA role di `roles`.
   const MENU = [
     { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"] },
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
-    { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"] },
-    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"] },
+    { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"], izin: "izin_input_data_lihat" },
+    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"], izin: "izin_rekap_lihat" },
     // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi,
     // Fase 4: Reimburse, Fase 5: Izin & Cuti. `children` dirender sebagai
     // grup expand/collapse KALAU child yang lolos filter role >= 2 (kondisi
@@ -70,10 +76,17 @@ const MugenNav = (() => {
     // menunya kalau tenant tidak punya fitur itu (sebelumnya menu tetap
     // tampil, tenant baru tahu lewat 403 di dalam halaman). Lihat
     // _lolosFitur() di bawah untuk cara field `feature` ini dipakai.
-    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"], feature: "absensi" },
+    // REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+    // "absensi" tersendiri DIHAPUS -- ikon gembok 🔒 paket (field `feature`)
+    // TIDAK LAGI dipakai di sini (akan selalu "terkunci" keliru kalau
+    // dipertahankan, karena kodenya sudah tidak ada di katalog manapun) --
+    // gerbang package-level SEKARANG lewat izin_absensi_lihat, ditegakkan
+    // backend (auth.py::require_menu_feature()), BUKAN ditampilkan sebagai
+    // gembok di sini.
+    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"] },
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
-    { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"],
+    { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"], izin: "izin_booking_lihat",
       badgeId: "booking-badge", badgeRoles: ["admin", "staff"] },
     // Modul Keuangan -- Fase 1: Pemasukan, Fase 2 (semula Transfer Kas/Bank,
     // dihapus & diganti Uang Kas -- lihat uang_kas_db.py): Uang Kas.
@@ -81,32 +94,32 @@ const MugenNav = (() => {
     // child -- hash/route/halaman-nya TIDAK berubah sama sekali (tetap
     // #/pengeluaran, tetap PagePengeluaran), murni penataan ulang lokasi di
     // sidebar sesuai pengelompokan modul di spesifikasi, BUKAN perubahan
-    // fitur. Sama seperti grup Karyawan: staff akses PENUH tanpa sistem
-    // izin (data finansial toko, bukan data payroll individu).
+    // fitur.
     { label: "Keuangan", roles: ["admin", "staff"], children: [
-      { hash: "#/keuangan/pemasukan", label: "Pemasukan", roles: ["admin", "staff"] },
-      { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"] },
-      { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"] },
+      { hash: "#/keuangan/pemasukan", label: "Pemasukan", roles: ["admin", "staff"], izin: "izin_pemasukan_lihat" },
+      { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"], izin: "izin_pengeluaran_lihat" },
+      { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"], izin: "izin_uang_kas_lihat" },
       // Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant:
       // riwayat transaksi Payment Gateway booking milik toko ini sendiri
-      // (lihat pages/riwayat_transaksi.js) -- roles SAMA dengan Pemasukan/
-      // Pengeluaran/Uang Kas (data finansial toko, staff akses penuh).
-      { hash: "#/keuangan/riwayat-transaksi", label: "Riwayat Transaksi", roles: ["admin", "staff"] },
+      // (lihat pages/riwayat_transaksi.js). Label diperjelas (PERMINTAAN
+      // OWNER) supaya tidak tertukar dengan tab "Transaksi" di menu Rekap.
+      { hash: "#/keuangan/riwayat-transaksi", label: "Riwayat Transaksi (Payment Gateway)", roles: ["admin", "staff"],
+        izin: "izin_riwayat_transaksi_lihat" },
       // Settlement Faspay per Terminal (Tenant): closing harian transaksi
-      // Faspay SNAP Advance toko ini sendiri (lihat pages/settlement_faspay.js)
-      // -- roles SAMA dengan menu Keuangan lain, akses SEBENARNYA diatur
-      // per-menu lewat Hak Akses (default OFF untuk staff, fitur baru).
-      { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"] },
+      // Faspay SNAP Advance toko ini sendiri (lihat pages/settlement_faspay.js).
+      { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"], izin: "izin_settlement_faspay_lihat" },
     ]},
-    { hash: "#/produk", label: "Produk", roles: ["admin", "staff"] },
-    // REVISI (feedback Owner): dulu tab di dalam Setting, dipindah jadi menu
-    // utama sendiri supaya lebih mudah ditemukan (lihat pages/whatsapp.js).
-    // KHUSUS Owner (backend require_admin) -- token Fonnte kredensial pihak
-    // ketiga milik TOKO ini sendiri, sama seperti sebelumnya di dalam
-    // Setting, TIDAK didelegasikan ke staff. `feature` -- lihat catatan
-    // _terkunciFitur() di atas -- menu tetap tampil (redup+gembok) kalau
-    // paket tenant belum menyertakan "whatsapp_reminder".
-    { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin"], feature: "whatsapp_reminder" },
+    { hash: "#/produk", label: "Produk", roles: ["admin", "staff"], izin: "izin_produk_lihat" },
+    // REVISI Hak Akses (hapus menu Owner-only hardcoded -- lihat
+    // permissions.py): WhatsApp SEKARANG grantable Owner ke Role manapun
+    // (dulu KHUSUS Owner murni, token Fonnte kredensial pihak ketiga,
+    // TIDAK didelegasikan) -- `roles` dibuka untuk 'staff' juga, gerbang
+    // SEBENARNYA sekarang lewat `izin` (root izin_whatsapp_lihat). `feature`
+    // -- lihat catatan _terkunciFitur() di atas -- menu tetap tampil
+    // (redup+gembok) kalau paket tenant belum menyertakan "whatsapp_reminder".
+    // `feature: "whatsapp_reminder"` DIHAPUS (lihat catatan Absensi di
+    // atas, alasan sama persis).
+    { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin", "staff"], izin: "izin_whatsapp_lihat" },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di
     // routers/billing.py) -- 'staff' TIDAK ikut, sama seperti tab
     // Subscription Phase 3 (pages/pengaturan.js), yang TIDAK diubah/
@@ -168,16 +181,26 @@ const MugenNav = (() => {
     return !(typeof MugenFeature !== "undefined" && MugenFeature.has(item.feature));
   }
 
+  // REVISI Hak Akses: gerbang KEDUA khusus 'staff' -- item TANPA field
+  // `izin` (granularitasnya sendiri sudah diatur DI DALAM halamannya,
+  // lihat menu_access.js) selalu lolos di sini. MugenMenuAccess.hasSync()
+  // fail-open ke true kalau cache belum terisi (lihat docstringnya) --
+  // backend TETAP lapis pertahanan sebenarnya.
+  function _lolosIzin(item) {
+    if (!item.izin) return true;
+    return MugenMenuAccess.hasSync(item.izin);
+  }
+
   // Bangun satu entri MENU (item flat ATAU grup) jadi elemen nav, atau null
   // kalau tidak ada apa pun yang boleh dilihat role user ini.
   function _bangunItemNav(item, user, activeHash) {
     if (!item.children) {
-      if (!item.roles.includes(user.role)) return null;
+      if (!item.roles.includes(user.role) || !_lolosIzin(item)) return null;
       const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
       return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item));
     }
 
-    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role));
+    const childrenLolos = item.children.filter((c) => c.roles.includes(user.role) && _lolosIzin(c));
     if (!childrenLolos.length) return null;
     if (childrenLolos.length === 1) {
       const only = childrenLolos[0];
@@ -211,6 +234,12 @@ const MugenNav = (() => {
 
   function render(activeHash) {
     const user = MugenState.getUser();
+    // REVISI Hak Akses: picu pengisian cache izin (non-blocking, lihat
+    // menu_access.js::preload()) -- render() ini dipanggil SETIAP pindah
+    // halaman (shell(), lihat router.js), jadi cache biasanya sudah
+    // terisi sebelum navigasi KEDUA, tanpa perlu mengubah render() ini
+    // jadi async.
+    if (typeof MugenMenuAccess !== "undefined") MugenMenuAccess.preload();
     const sidebar = MugenUI.el("aside", {
       class: "sidebar" + (_collapsedTersimpan() ? " collapsed" : ""),
     });

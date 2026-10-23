@@ -222,6 +222,11 @@ const PageReimburse = (() => {
       return;
     }
     const bolehEdit = levelReimburse === "write";
+    // REVISI Hak Akses (sub-item Tambah terpisah, lihat permissions.py::
+    // PERMISSION_TREE izin_reimburse_tambah) -- form Tambah Klaim (atas
+    // nama barber) SEKARANG punya saklar sendiri, terpisah dari
+    // izin_reimburse (Setujui/Tolak).
+    const bolehTambah = await MugenMenuAccess.has("izin_reimburse_tambah");
 
     const today = new Date();
     let editingId = null;
@@ -237,8 +242,18 @@ const PageReimburse = (() => {
     const formCard = MugenUI.el("div", { class: "card" });
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
-    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Edit Klaim.
-    if (bolehEdit) root.appendChild(formCard);
+    // Hak Akses: form ini dipakai BERSAMA untuk Tambah (izin_reimburse_
+    // tambah) MAUPUN Edit klaim pending yang sudah ada (izin_reimburse,
+    // lewat tombol Edit per baris -- lihat isiFormUntukEdit()) -- tampil
+    // kalau SALAH SATU dari keduanya aktif (tombol Tambah di bawah form
+    // sendiri tetap disembunyikan terpisah kalau hanya izin_reimburse
+    // yang aktif, lihat btnSubmit di bawah).
+    if (bolehTambah || bolehEdit) root.appendChild(formCard);
+    // Mode awal form = "Tambah" -- sembunyikan dari awal kalau HANYA
+    // izin_reimburse (Setujui/Tolak) aktif tanpa izin_reimburse_tambah;
+    // isiFormUntukEdit()/resetForm() di bawah membuka/menutupnya lagi
+    // sesuai mode yang sedang aktif.
+    if (!bolehTambah) formCard.style.display = "none";
     root.appendChild(filterCard);
     root.appendChild(listCard);
 
@@ -284,9 +299,11 @@ const PageReimburse = (() => {
       inputNominal.value = "0";
       inputKeterangan.value = "";
       formError.textContent = "";
+      if (!bolehTambah) formCard.style.display = "none";
     }
 
     function isiFormUntukEdit(r) {
+      formCard.style.display = "";
       editingId = r.id;
       formTitle.textContent = `Edit Klaim #${r.id}`;
       btnSubmit.textContent = "Simpan Perubahan";

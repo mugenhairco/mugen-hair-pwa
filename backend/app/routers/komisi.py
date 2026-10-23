@@ -147,7 +147,7 @@ def edit_penyesuaian(penyesuaian_id: int, body: PenyesuaianEditBody,
 
 
 @router.delete("/penyesuaian/{penyesuaian_id}")
-def hapus_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_permission("izin_komisi"))):
+def hapus_penyesuaian(penyesuaian_id: int, user: dict = Depends(require_permission("izin_komisi_hapus"))):
     _pastikan_penyesuaian_tenant_sama(user, komisi_penyesuaian_db.get_penyesuaian(penyesuaian_id))
     try:
         komisi_penyesuaian_db.hapus_penyesuaian(penyesuaian_id)

@@ -91,40 +91,11 @@ _FITUR_DEFAULT = (
     ("booking_online", "Booking Online"),
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
-    ("whatsapp_reminder", "WhatsApp Reminder"),
-    # FITUR Feature Gating lanjutan (diminta Owner): dua kode BARU, SUNGGUHAN
-    # digerbang sejak awal ditambahkan (BEDA dari export_excel/whatsapp_
-    # reminder di atas, yang sengaja di-grandfather karena sebelumnya SELALU
-    # menyala gratis) -- "barber_app" (login akun ber-role 'barber', lihat
-    # routers/auth_router.py::login()) dan "absensi" (SELURUH modul
-    # /api/attendance/*, lihat routers/attendance.py) TIDAK PERNAH ada
-    # sebelum ini, jadi TIDAK ADA seed_grandfather_*() untuk keduanya --
+    # FITUR Feature Gating lanjutan (diminta Owner): "barber_app" (login
+    # akun ber-role 'barber', lihat routers/auth_router.py::login()) --
     # SENGAJA (keputusan eksplisit Owner) fail-CLOSED langsung untuk paket
-    # mana pun yang belum dicentang Super Admin begitu deploy ini jalan,
-    # BUKAN menyala dulu lalu dicabut belakangan.
+    # mana pun yang belum dicentang Super Admin.
     ("barber_app", "Aplikasi Barber (Login Barber)"),
-    ("absensi", "Absensi Karyawan"),
-    # FITUR marketing DEKORATIF (diminta Owner secara EKSPLISIT & SADAR --
-    # BEDA dari 10 kode dekoratif lama yang DIHAPUS di audit "fitur hardcode
-    # di Superadmin" karena menjanjikan fungsi yang TIDAK PERNAH ada sama
-    # sekali): KELIMA kode di bawah ini menggambarkan kemampuan yang
-    # SUNGGUHAN ADA & JALAN di aplikasi untuk SEMUA tenant (Manajemen
-    # Barber/Karyawan, Role & Hak Akses -- termasuk Role Custom, lihat
-    # user_roles_db.py --, Manajemen Layanan, Komisi & Slip Gaji, Dashboard
-    # bisnis) -- HANYA saja TIDAK per-tenant digerbang teknis (SEMUA tenant
-    # sudah bisa memakainya apa pun paketnya). Murni ditampilkan sebagai
-    # daftar centang di kartu harga Landing Page supaya perbandingan paket
-    # terlihat lebih lengkap -- TIDAK ADA satu pun require_feature()/
-    # tenant_has_feature() yang memanggil kode-kode ini di mana pun di
-    # kode aplikasi (CEK sebelum menambah penegakan apa pun di sini -- kalau
-    # suatu saat SUNGGUHAN mau digerbang teknis, pindahkan ke atas
-    # bersama kode-kode nyata, JANGAN diam-diam menggerbang kode yang
-    # sudah terlanjur tampil sebagai "termasuk" di paket murah).
-    ("manajemen_bisnis", "Manajemen Bisnis & Dashboard"),
-    ("manajemen_barber", "Manajemen Barber & Karyawan"),
-    ("hak_akses_role", "Role & Hak Akses"),
-    ("manajemen_layanan", "Manajemen Layanan & Harga"),
-    ("pengaturan_komisi_gaji", "Pengaturan Komisi & Gaji"),
 )
 
 # Batas pemakaian (kolom nullable di subscription_packages, NULL = tidak
@@ -220,6 +191,25 @@ def init_billing_db():
                 UNIQUE(package_id, feature_id),
                 FOREIGN KEY (package_id) REFERENCES subscription_packages(id),
                 FOREIGN KEY (feature_id) REFERENCES subscription_features(id) ON DELETE CASCADE
+            )
+        """)
+        # FITUR Package Permission Tree (Work #2, diminta Owner): batas
+        # LUAR per-paket -- menu/tab/sub-item APA SAJA (katalog SAMA PERSIS
+        # permissions.PERMISSION_TREE, lihat docstring modul di atas) yang
+        # TERSEDIA SAMA SEKALI untuk tenant paket ini, TERLEPAS dari Role
+        # staff-nya (yang mengatur batas DALAM, lihat permissions.py/
+        # user_role_permissions). Pola tabel SAMA PERSIS user_role_permissions
+        # (package_id/izin_key, bukan role_id/izin_key) -- package_id PAKAI
+        # FK (tabel ini BARU, PRIMARY KEY benar sejak awal, BUKAN tabel
+        # produksi lama).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscription_package_permissions (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                package_id   INTEGER NOT NULL,
+                izin_key     TEXT NOT NULL,
+                created_at   TEXT NOT NULL,
+                UNIQUE(package_id, izin_key),
+                FOREIGN KEY (package_id) REFERENCES subscription_packages(id) ON DELETE CASCADE
             )
         """)
 
@@ -419,6 +409,41 @@ def hapus_gerbang_qris():
     with get_conn() as conn:
         conn.execute("DELETE FROM subscription_features WHERE kode = 'qris'")
     set_setting(_KUNCI_HAPUS_GERBANG_QRIS, "1")
+
+
+_KODE_FITUR_DIHAPUS_WORK_2 = (
+    # 5 kode dekoratif-marketing (lihat _KODE_FITUR_DEKORATIF_MARKETING di
+    # bawah) -- diganti SELURUHNYA oleh checklist menu nyata lewat Package
+    # Permission Tree (Work #2, lihat migrasi_grandfather_package_permissions()
+    # di atas), bukan lagi label tanpa penegakan.
+    "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
+    "manajemen_layanan", "pengaturan_komisi_gaji",
+    # 2 kode yang DULU sungguhan ditegakkan (absensi/whatsapp_reminder) --
+    # SEKARANG diwakili root key pohon yang sama (izin_absensi_lihat/
+    # izin_whatsapp_lihat) lewat Package Permission Tree, bukan kode
+    # fitur terpisah lagi (lihat auth.py::require_menu_feature()).
+    "absensi", "whatsapp_reminder",
+)
+_KUNCI_HAPUS_FITUR_WORK_2 = "billing_hapus_fitur_absorbed_tree_work2_selesai"
+
+
+def hapus_fitur_absorbed_ke_tree():
+    """SEKALI SAJA sepanjang umur database (Work #2, diminta Owner) -- DELETE
+    permanen `_KODE_FITUR_DIHAPUS_WORK_2` dari `subscription_features`
+    (pola SAMA PERSIS hapus_fitur_tanpa_fungsi_nyata()/hapus_gerbang_qris()
+    di atas) -- `ON DELETE CASCADE` otomatis melepasnya dari paket mana pun
+    yang masih mencentangnya. Akses tenant TIDAK terpengaruh (migrasi
+    grandfather Package Permission Tree di atas sudah memberi akses penuh
+    lebih dulu untuk key pengganti keduanya)."""
+    if get_setting(_KUNCI_HAPUS_FITUR_WORK_2, default=None) == "1":
+        return
+    placeholder = ", ".join("?" for _ in _KODE_FITUR_DIHAPUS_WORK_2)
+    with get_conn() as conn:
+        conn.execute(
+            f"DELETE FROM subscription_features WHERE kode IN ({placeholder})",
+            _KODE_FITUR_DIHAPUS_WORK_2,
+        )
+    set_setting(_KUNCI_HAPUS_FITUR_WORK_2, "1")
 
 
 _KUNCI_HAPUS_GERBANG_LOG_ERROR = "billing_hapus_gerbang_log_error_selesai"
@@ -652,3 +677,82 @@ def set_package_features(package_id: int, feature_ids: list) -> list:
                 (package_id, fid, now),
             )
     return get_package_features(package_id)
+
+
+# ============================= Package Permission Tree (Work #2) =============================
+# Batas LUAR per-paket -- lihat catatan tabel subscription_package_permissions
+# di init_billing_db() di atas. Pola fungsi SAMA PERSIS user_roles_db.py::
+# get_role_permission_keys()/set_role_permission_keys() -- fail-CLOSED
+# (package BARU yang belum pernah disentuh Super Admin = kosong, TIDAK ADA
+# menu/fitur apa pun yang tersedia untuk tenant paket itu) KECUALI untuk
+# paket yang SUDAH ADA sebelum Work #2 (lihat migrasi_grandfather_package_
+# permissions() di bawah -- full akses, mencerminkan kondisi nyata SEBELUM
+# gate ini ada).
+
+def get_package_permission_keys(package_id: int) -> set:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT izin_key FROM subscription_package_permissions WHERE package_id = ?", (package_id,)
+        ).fetchall()
+        return {r["izin_key"] for r in rows}
+
+
+def set_package_permission_keys(package_id: int, keys: set):
+    if get_package(package_id) is None:
+        raise ValueError("Paket tidak ditemukan.")
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM subscription_package_permissions WHERE package_id = ?", (package_id,))
+        for key in keys:
+            conn.execute(
+                "INSERT INTO subscription_package_permissions (package_id, izin_key, created_at) VALUES (?, ?, ?)",
+                (package_id, key, now),
+            )
+
+
+_KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS = "billing_grandfather_package_permissions_selesai"
+
+
+def migrasi_grandfather_package_permissions():
+    """SEKALI SAJA sepanjang umur database (idempotent lewat flag `settings`,
+    pola SAMA PERSIS seed_default_package_features() di atas) -- Work #2
+    (Superadmin Package Permission Tree) baru menambahkan GATE SUNGGUHAN
+    untuk SELURUH menu/tab/sub-item (lihat auth.py::require_permission()/
+    require_menu_read(), sekarang JUGA memeriksa tenant_has_menu_access())
+    yang SEBELUM ini TIDAK PERNAH digerbang per-paket sama sekali (SEMUA
+    tenant, apa pun paketnya, selalu bisa memakai SEMUA menu). Supaya TIDAK
+    ADA satu pun tenant yang tiba-tiba kehilangan akses begitu revisi ini
+    deploy (PERMINTAAN OWNER EKSPLISIT: "paket yang sudah ada otomatis
+    semua menunya tercentang, sama seperti kondisi sekarang, akses penuh"),
+    SETIAP paket yang SUDAH ADA sebelum migrasi ini pertama jalan diberi
+    SELURUH key permissions.PERMISSION_TREE (akses penuh) -- paket BARU
+    yang dibuat Super Admin SETELAH migrasi ini pertama jalan TIDAK ikut
+    (mulai kosong/fail-closed, Super Admin mengisi sendiri, SAMA seperti
+    Role baru di user_roles_db.py)."""
+    if get_setting(_KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS, default=None) == "1":
+        return
+    import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
+    semua_key = set(permissions.PERMISSION_KEYS)
+    # PENGECUALIAN PENTING: root "izin_absensi_lihat" (+ seluruh
+    # keturunannya) TIDAK ikut blanket True di atas -- "absensi" adalah
+    # SATU-SATUNYA fitur yang SEBELUM diabsorb ke tree ini (lihat
+    # hapus_fitur_absorbed_ke_tree() di bawah) sengaja fail-CLOSED TANPA
+    # grandfather sama sekali (keputusan eksplisit Owner, lihat catatan
+    # conftest.py::_default_barber_app_dan_absensi_aktif/_FITUR_DEFAULT di
+    # atas -- beda dari whatsapp_reminder yang MEMANG sudah digrandfather
+    # lewat seed_grandfather_fitur_baru_digerbang()). Menyamakannya dengan
+    # menu lain (yang memang selalu terbuka tanpa gate apa pun sebelum Work
+    # #2) akan DIAM-DIAM membuka Absensi untuk paket yang Owner sengaja
+    # belum mengaktifkannya -- state per-paket yang SUDAH ADA (fitur
+    # "absensi" tercentang/tidak di subscription_package_features, DIBACA
+    # SEBELUM hapus_fitur_absorbed_ke_tree() menghapus barisnya) dibawa apa
+    # adanya ke izin_absensi_lihat, BUKAN ditimpa True untuk semua paket.
+    kunci_absensi = {"izin_absensi_lihat"} | permissions._descendants("izin_absensi_lihat")
+    kunci_tanpa_absensi = semua_key - kunci_absensi
+    fitur_absensi = get_feature_by_kode("absensi")
+    for paket in list_packages():
+        kunci_paket = set(kunci_tanpa_absensi)
+        if fitur_absensi and fitur_absensi["id"] in {f["id"] for f in get_package_features(paket["id"])}:
+            kunci_paket |= kunci_absensi
+        set_package_permission_keys(paket["id"], kunci_paket)
+    set_setting(_KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS, "1")

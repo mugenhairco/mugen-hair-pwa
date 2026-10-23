@@ -21,15 +21,10 @@ const PageWhatsapp = (() => {
     body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Notifikasi WhatsApp Booking"));
 
-    // AUDIT (enforcement paket/subscription): tab ini digerbang fitur
-    // "whatsapp_reminder" (backend juga menggerbang GET/PUT
-    // /api/pengaturan/whatsapp + POST .../tes) -- pola sama seperti
-    // Absensi/Log Error, halaman tetap tampil (judul di atas) tapi isinya
-    // diganti blok upgrade.
-    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("whatsapp_reminder")) {
-      card.appendChild(MugenFeature.upgradeBlock("Notifikasi WhatsApp"));
-      return;
-    }
+    // REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+    // "whatsapp_reminder" tersendiri DIHAPUS -- gate paket SEKARANG murni
+    // di backend (izin_whatsapp_notifikasi_booking, lewat require_permission()),
+    // BUKAN lagi dicek/ditampilkan sebagai kartu upgrade terpisah di sini.
 
     let s;
     try {
@@ -140,10 +135,9 @@ const PageWhatsapp = (() => {
       + "dan ke barber yang belum Check Out begitu jam tutup toko lewat. Barber yang sedang Libur/Cuti/Izin "
       + "pada hari itu tidak dikirimi apa pun. Nomor WhatsApp tiap barber diatur di Pengaturan > Karyawan."));
 
-    if (typeof MugenFeature !== "undefined" && !MugenFeature.has("absensi")) {
-      card.appendChild(MugenFeature.upgradeBlock("Reminder Absensi"));
-      return;
-    }
+    // REVISI Work #2: kode fitur "absensi" tersendiri DIHAPUS -- gate
+    // paket SEKARANG murni di backend (izin_absensi_lihat/izin_whatsapp_
+    // reminder_absensi), BUKAN lagi kartu upgrade terpisah di sini.
 
     let s;
     try {
@@ -219,10 +213,22 @@ const PageWhatsapp = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "WhatsApp"));
 
-    const tabItems = [
-      { key: "Notifikasi Booking", label: "Notifikasi Booking" },
-      { key: "Reminder Absensi", label: "Reminder Absensi" },
-    ];
+    // REVISI Hak Akses (sub-item per tab terpisah, lihat permissions.py::
+    // PERMISSION_TREE): dulu DUA tab ini Owner-only murni -- SEKARANG
+    // masing-masing punya saklar sendiri (izin_whatsapp_notifikasi_booking/
+    // izin_whatsapp_reminder_absensi), Owner tetap lihat semua.
+    const ALL_TABS = { "Notifikasi Booking": "izin_whatsapp_notifikasi_booking", "Reminder Absensi": "izin_whatsapp_reminder_absensi" };
+    const user = MugenState.getUser();
+    let tabsLolos = Object.keys(ALL_TABS);
+    if (user.role !== "admin") {
+      const hasilIzin = await Promise.all(tabsLolos.map((t) => MugenMenuAccess.has(ALL_TABS[t])));
+      tabsLolos = tabsLolos.filter((_, i) => hasilIzin[i]);
+    }
+    if (!tabsLolos.length) {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const tabItems = tabsLolos.map((t) => ({ key: t, label: t }));
     const body = MugenUI.el("div");
 
     async function renderBody(activeTab) {

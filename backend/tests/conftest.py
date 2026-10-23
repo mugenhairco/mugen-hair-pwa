@@ -141,7 +141,24 @@ def _default_barber_app_dan_absensi_aktif(monkeypatch):
     lapisan test, TIDAK mengubah data paket/migrasi produksi apa pun sama
     sekali. test_feature_access.py (tempat perilaku ASLI fail-closed KEDUA
     gate ini justru diuji) meng-OVERRIDE fixture ini lewat fixture nama
-    SAMA PERSIS yang no-op -- lihat fixture dengan nama sama di file itu."""
+    SAMA PERSIS yang no-op -- lihat fixture dengan nama sama di file itu.
+
+    REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+    "absensi" tersendiri DIHAPUS -- diwakili root key pohon yang sama
+    dipakai Role (izin_absensi_lihat), dicek lewat feature_access.
+    tenant_has_menu_access() (FUNGSI BARU, auth.py::require_permission()/
+    require_menu_read()/require_menu_feature() SEKARANG SEMUA memanggilnya
+    sebagai gerbang package-level TAMBAHAN). Fixture single_tenant/
+    two_tenants SENGAJA TIDAK membuat baris subscription/paket (lihat
+    docstring masing-masing) -- TANPA override di sini, tenant_has_menu_
+    access() akan fail-closed (sub is None -> False) untuk SETIAP key,
+    membuat SELURUH endpoint ber-require_permission()/require_menu_read()
+    di seluruh suite ini ditolak 403 sejak awal, TIDAK PERNAH relevan
+    dengan yang sedang diuji test manapun. Dipatch SELALU True di sini
+    (pola SAMA PERSIS tenant_has_feature() di atas) -- test_billing_
+    package_permissions.py (tempat perilaku ASLI fail-closed-nya justru
+    diuji) meng-OVERRIDE fixture ini lewat fixture nama SAMA PERSIS yang
+    no-op, sama seperti test_feature_access.py untuk tenant_has_feature()."""
     import feature_access
     asli = feature_access.tenant_has_feature
 
@@ -151,6 +168,7 @@ def _default_barber_app_dan_absensi_aktif(monkeypatch):
         return asli(tenant_id, kode)
 
     monkeypatch.setattr(feature_access, "tenant_has_feature", _selalu_aktif_untuk_dua_kode_ini)
+    monkeypatch.setattr(feature_access, "tenant_has_menu_access", lambda tenant_id, izin_key: True)
 
 
 @pytest.fixture(autouse=True)

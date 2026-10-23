@@ -133,12 +133,17 @@ def test_router_hapus_riwayat_ditolak_untuk_barber(single_tenant):
 
 
 def test_router_hapus_riwayat_boleh_untuk_staff(single_tenant):
-    """require_owner_or_staff -- staff (role "Admin" di UI) SAMA seperti
-    Owner, TANPA delegasi permission terpisah."""
-    client, tenant_id = single_tenant["client"], single_tenant["tenant_id"]
+    """REVISI Hak Akses (hapus Role "Admin" bawaan): endpoint ini SEKARANG
+    digerbang izin_booking_hapus (require_permission) -- staff WAJIB punya
+    Role eksplisit DENGAN key ini diaktifkan Owner, TIDAK LAGI otomatis
+    sama seperti Owner."""
+    client, headers_owner, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
     barber_id, service_id = _siapkan_barber(tenant_id)
     _booking(tenant_id, barber_id, service_id, hari_offset=1)
-    auth_db.tambah_user("staffreset", "password123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"}, headers=headers_owner).json()
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions",
+               json={"izin": {"izin_booking_hapus": True}}, headers=headers_owner)
+    auth_db.tambah_user("staffreset", "password123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r = client.post("/api/auth/login", json={"username": "staffreset", "password": "password123"})
     assert r.status_code == 200, r.text
     headers = {"Authorization": f"Bearer {r.json()['token']}"}

@@ -4,12 +4,10 @@ SAMA PERSIS routers/pemasukan.py: data operasional TOKO, Barber ditolak
 total DI BACKEND (require_owner_or_staff).
 
 REVISI (Perluasan Hak Akses Admin -- diminta Owner): endpoint LIHAT (GET)
-sekarang `require_menu_read("uang_kas")` (level menu "Uang Kas", lihat
-permissions.py::MENU_DEFS) -- endpoint TULIS (ubah saldo awal, tambah/edit
-penyesuaian) tetap `require_permission("izin_uang_kas_kelola")`, endpoint
-HAPUS tetap `require_permission("izin_uang_kas_hapus")` (lihat
-permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
-tiba-tiba terkunci)."""
+sekarang `require_menu_read("uang_kas")` (root "izin_uang_kas_lihat", lihat
+permissions.py::PERMISSION_TREE) -- endpoint TULIS (ubah saldo awal,
+tambah/edit penyesuaian) tetap `require_permission("izin_uang_kas_kelola")`,
+endpoint HAPUS tetap `require_permission("izin_uang_kas_hapus")`."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response

@@ -10,14 +10,13 @@ mungkin) tapi sudah tidak pernah tereksekusi lagi karena
 sebelum mencapai kode itu.
 
 REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
-sekarang `require_menu_read("input_data")` (level menu "Input Data" --
-"Tidak Ada Akses" menolak staff, "Baca"/"Baca & Edit" meloloskan, lihat
-permissions.py::MENU_DEFS -- REVISI dari `require_owner_or_staff` polos
-yang SEBELUMNYA selalu meloloskan staff tanpa syarat apa pun) -- endpoint
-TULIS (POST/PUT tambah/koreksi transaksi & libur) tetap
+sekarang `require_menu_read("input_data")` (root "izin_input_data_lihat" --
+tidak dicentang menolak staff, dicentang meloloskan, lihat
+permissions.py::PERMISSION_TREE -- REVISI dari `require_owner_or_staff`
+polos yang SEBELUMNYA selalu meloloskan staff tanpa syarat apa pun) --
+endpoint TULIS (POST/PUT tambah/koreksi transaksi & libur) tetap
 `require_permission("izin_input_data_kelola")`, endpoint HAPUS tetap
-`require_permission("izin_input_data_hapus")` (lihat permissions.py, default
-TRUE supaya staff yang sudah pakai modul ini tidak tiba-tiba terkunci)."""
+`require_permission("izin_input_data_hapus")`."""
 
 import json
 

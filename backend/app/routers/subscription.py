@@ -25,7 +25,7 @@ import billing_db
 import subscription_db
 import superadmin_audit_db
 import tenant_db
-from auth import get_current_user, require_admin, require_superadmin
+from auth import get_current_user, require_admin, require_permission, require_superadmin
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 superadmin_router = APIRouter(prefix="/api/superadmin/subscriptions", tags=["subscription-superadmin"])
@@ -34,10 +34,14 @@ superadmin_router = APIRouter(prefix="/api/superadmin/subscriptions", tags=["sub
 # ============================= Owner (read-only) =============================
 
 @router.get("/me")
-def subscription_saya(user: dict = Depends(require_admin)):
-    """Read-only -- Owner HANYA melihat, tidak ada cara mengubah apa pun dari
-    endpoint ini. `akses_diblokir` dikirim eksplisit supaya frontend tidak
-    perlu duplikasi logika STATUS_AKSES_DIBLOKIR sendiri (lihat
+def subscription_saya(user: dict = Depends(require_permission("izin_setting_subscription"))):
+    """Read-only -- HANYA melihat, tidak ada cara mengubah apa pun dari
+    endpoint ini (BEDA dari /api/billing/* yang tetap murni require_admin,
+    TIDAK disentuh revisi ini -- menu Billing tetap Owner-only). `izin_
+    setting_subscription` (permissions.py::PERMISSION_TREE) menggerbang
+    tab "Subscription" di Setting -- grantable, tapi tetap read-only, jadi
+    risikonya rendah. `akses_diblokir` dikirim eksplisit supaya frontend
+    tidak perlu duplikasi logika STATUS_AKSES_DIBLOKIR sendiri (lihat
     subscription_db.py)."""
     sub = subscription_db.get_subscription(user["tenant_id"])
     if sub is None:

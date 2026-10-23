@@ -8,6 +8,74 @@
 // routers/superadmin.py::buat_tenant()).
 
 const PageSuperadmin = (() => {
+  let _permissionTreeCache = null;
+  async function _muatPermissionTreeSuperadmin() {
+    if (_permissionTreeCache) return _permissionTreeCache;
+    _permissionTreeCache = await MugenApi.get("/api/superadmin/billing/permission-tree");
+    return _permissionTreeCache;
+  }
+
+  // FITUR Package Permission Tree (Work #2, diminta Owner): pola dropdown/
+  // expand SAMA PERSIS pages/pengaturan.js::buildPermissionTreeUI() (Role
+  // Owner tenant) -- diduplikasi di sini (bukan diimpor lintas modul,
+  // konsisten dengan konvensi file ini) karena dipakai menggerbang PAKET,
+  // bukan Role. Lihat docstring lengkap di pengaturan.js untuk perilaku
+  // dropdown/cascade-uncheck-nya.
+  function buildPermissionTreeUI(container, tree, izinData) {
+    const checkboxes = {};
+    const childrenOf = {};
+    for (const node of tree.nodes) {
+      const p = node.parent;
+      if (!childrenOf[p]) childrenOf[p] = [];
+      childrenOf[p].push(node);
+    }
+    const crossCutting = new Set(tree.cross_cutting || []);
+
+    function semuaKeturunan(key) {
+      const hasil = [];
+      for (const anak of (childrenOf[key] || [])) {
+        hasil.push(anak.key);
+        hasil.push(...semuaKeturunan(anak.key));
+      }
+      return hasil;
+    }
+
+    function buildNode(node, target) {
+      const row = MugenUI.el("label", { class: "perm-tree-row" });
+      const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+      cb.checked = !!izinData[node.key];
+      checkboxes[node.key] = cb;
+      row.appendChild(cb);
+      row.appendChild(MugenUI.el("span", {}, node.label));
+      target.appendChild(row);
+
+      const anakList = childrenOf[node.key] || [];
+      if (!anakList.length) return;
+      const anakBox = MugenUI.el("div", { class: "perm-tree-children",
+        style: `margin-left:22px;${cb.checked ? "" : "display:none;"}` });
+      target.appendChild(anakBox);
+      for (const anak of anakList) buildNode(anak, anakBox);
+      cb.addEventListener("change", () => {
+        anakBox.style.display = cb.checked ? "" : "none";
+        if (!cb.checked) {
+          for (const keyKeturunan of semuaKeturunan(node.key)) {
+            if (checkboxes[keyKeturunan]) checkboxes[keyKeturunan].checked = false;
+          }
+        }
+      });
+    }
+
+    const roots = (childrenOf[null] || []).filter((n) => !crossCutting.has(n.key));
+    for (const root of roots) buildNode(root, container);
+
+    const sejajar = (childrenOf[null] || []).filter((n) => crossCutting.has(n.key));
+    if (sejajar.length) {
+      container.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Lintas Menu"));
+      for (const node of sejajar) buildNode(node, container);
+    }
+    return checkboxes;
+  }
+
   // waktu audit log disimpan sebagai ISO "YYYY-MM-DDTHH:MM:SS" (lihat
   // superadmin_audit_db.py) -- formatTanggal() di ui.js hanya untuk tanggal
   // tanpa jam (split "-" saja), jadi dipakai formatter lokal kecil di sini.
@@ -890,11 +958,13 @@ const PageSuperadmin = (() => {
     async function renderBillingPackageEdit(paket) {
       billingPackageEditBody.innerHTML = "";
       billingPackageEditBody.appendChild(MugenUI.skeleton("card", { lines: 3 }));
-      let fiturTertandai;
+      let fiturTertandai, permissionTree, paketPermissions;
       try {
-        [_katalogFiturCache, fiturTertandai] = await Promise.all([
+        [_katalogFiturCache, fiturTertandai, permissionTree, paketPermissions] = await Promise.all([
           MugenApi.get("/api/superadmin/billing/features"),
           MugenApi.get(`/api/superadmin/billing/packages/${paket.id}/features`),
+          _muatPermissionTreeSuperadmin(),
+          MugenApi.get(`/api/superadmin/billing/packages/${paket.id}/permissions`),
         ]);
       } catch (e) {
         billingPackageEditBody.innerHTML = "";
@@ -956,6 +1026,17 @@ const PageSuperadmin = (() => {
       }
       billingPackageEditBody.appendChild(fiturWrap);
 
+      // --- Package Permission Tree (Work #2, diminta Owner): POHON MENU
+      // YANG SAMA PERSIS dipakai Role Owner tenant, menentukan menu/tab/
+      // sub-item APA SAJA yang tersedia SAMA SEKALI untuk tenant paket ini
+      // -- BATAS LUAR, di LUAR (sebelum) checklist Role di dalam tenant. ---
+      billingPackageEditBody.appendChild(MugenUI.el("h3", { style: "margin-top:16px;" }, "Menu & Fitur (Package Permission Tree)"));
+      billingPackageEditBody.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Centang menu/tab/sub-item yang TERSEDIA untuk tenant paket ini -- Role staff di dalam satu tenant hanya bisa memakai apa yang sudah dicentang di sini."));
+      const permTreeContainer = MugenUI.el("div", { class: "perm-tree" });
+      billingPackageEditBody.appendChild(permTreeContainer);
+      const permCheckboxes = buildPermissionTreeUI(permTreeContainer, permissionTree, paketPermissions);
+
       const errEdit = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Paket");
       billingPackageEditBody.appendChild(errEdit);
@@ -976,10 +1057,13 @@ const PageSuperadmin = (() => {
           body[key] = v === "" ? null : parseInt(v, 10);
         }
         const featureIds = checkboxFitur.filter((cb) => cb.checked).map((cb) => parseInt(cb.dataset.featureId, 10));
+        const izinPaket = {};
+        for (const [key, cb] of Object.entries(permCheckboxes)) izinPaket[key] = cb.checked;
         try {
           await MugenUI.withButtonLoading(btnSimpan, async () => {
             await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}`, body);
             await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}/features`, { feature_ids: featureIds });
+            await MugenApi.put(`/api/superadmin/billing/packages/${paket.id}/permissions`, { izin: izinPaket });
           });
           MugenUI.toast("Paket billing disimpan.", "success");
           loadAuditLog();

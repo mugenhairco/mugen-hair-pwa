@@ -592,6 +592,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   gap: 8px 16px; margin: 8px 0 4px;
 }
 
+/* FITUR Pohon Hak Akses (REVISI Hak Akses -- dropdown/expand per unit,
+   lihat pages/pengaturan.js::buildPermissionTreeUI()). */
+.perm-tree { max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+.perm-tree-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; cursor: pointer;
+}
+.perm-tree-row input { width: auto; flex-shrink: 0; }
+.perm-tree-children {
+  border-left: 2px solid var(--border); padding-left: 10px; margin-bottom: 4px;
+}
+
 /* REVISI UI/UX: switch Dark Mode modern (Setting > Tampilan untuk
    Owner/Admin, di atas tombol Keluar untuk user lain -- lihat nav.js).
    Animasi 200ms (dalam rentang 150-250ms yang diminta). */

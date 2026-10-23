@@ -89,11 +89,26 @@ const PageRekap = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
-    // Fitur Hapus Rekap Transaksi: KHUSUS Owner (role "admin" di kode ini
-    // -- lihat konvensi penamaan role di seluruh aplikasi, "staff" = Admin
-    // di tampilan). Admin/Barber TIDAK melihat tombolnya sama sekali.
-    const isOwner = user.role === "admin";
     const today = new Date();
+
+    // REVISI Hak Akses Granular: kolom "Aksi" (Hapus Transaksi/Reimburse/
+    // Keterangan Libur/Gaji Non-Barber, Batalkan Kasbon) di tab Rekap >
+    // Transaksi DULU hanya tampil untuk Owner -- sekarang Staff yang
+    // Role-nya diberi izin terkait JUGA bisa melihat tombolnya,
+    // masing-masing jenis baris dicek lewat key izin yang SAMA PERSIS
+    // dipakai endpoint backend-nya (lihat routers/input_data.py::
+    // hapus_transaksi()/batalkan_libur() -- "izin_input_data_hapus",
+    // routers/reimburse.py::hapus_reimburse_dari_rekap() -- "izin_reimburse_
+    // hapus", routers/kasbon.py::batalkan_pembayaran() -- "izin_kasbon",
+    // routers/data_non_barber.py::hapus_data_non_barber() -- "izin_data_
+    // non_barber_hapus"). Kolom
+    // itu sendiri TETAP tidak pernah tampil untuk Barber (!isAdmin) --
+    // konsep "Aksi" administratif ini tidak relevan untuk mereka.
+    const bolehHapusTransaksi = isAdmin && (await MugenMenuAccess.has("izin_input_data_hapus"));
+    const bolehHapusReimburse = isAdmin && (await MugenMenuAccess.has("izin_reimburse_hapus"));
+    const bolehBatalKasbon = isAdmin && (await MugenMenuAccess.has("izin_kasbon"));
+    const bolehHapusNonBarber = isAdmin && (await MugenMenuAccess.has("izin_data_non_barber_hapus"));
+    const bolehLihatKolomAksi = isAdmin;
 
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Rekap"));
@@ -314,24 +329,28 @@ const PageRekap = (() => {
           tableWrap.appendChild(MugenUI.buildTable(
             [
               ...(isAdmin ? kolomAdmin : kolomBarber),
-              // Kolom Hapus KHUSUS Owner (isOwner). Lima jenis baris punya
-              // aksi berbeda: "transaksi" (hapus transaksi asli), "reimburse"
-              // (hapus klaim yang sudah disetujui, dengan peringatan lebih
-              // kuat karena ini uang yang sudah cair), "kasbon" (batalkan
-              // SATU pembayaran manual saja -- pembayaran hasil potong
-              // otomatis Slip Gaji, sumber="potong_gaji", sengaja TIDAK bisa
-              // dihapus dari sini supaya tidak bentrok dengan status Slip
-              // Gaji terkait, harus lewat pembatalan status Slip Gaji itu
-              // sendiri), "non_barber" (hapus entri Gaji Non-Barber, Input
-              // Data Non-Barber), "libur" (hapus Keterangan Libur -- REVISI:
-              // sebelumnya SELALU dash karena baris ini tidak punya "id" sama
-              // sekali, dicek TERPISAH dari baris lain SEBELUM gerbang
-              // `r.id == null` di bawah supaya tidak ikut ke-skip; dihapus
-              // lewat kombinasi barber_id+tanggal, bukan id, lihat
-              // tombolAksi()/DELETE /api/input-data/libur).
-              ...(isOwner ? [{
+              // Kolom Hapus -- Owner selalu lihat semua, Staff dicek per
+              // jenis baris lewat bolehHapusTransaksi/bolehHapusReimburse/
+              // bolehBatalKasbon/bolehHapusNonBarber (lihat deklarasinya di
+              // atas). Lima jenis baris punya aksi berbeda: "transaksi"
+              // (hapus transaksi asli), "reimburse" (hapus klaim yang sudah
+              // disetujui, dengan peringatan lebih kuat karena ini uang yang
+              // sudah cair), "kasbon" (batalkan SATU pembayaran manual saja
+              // -- pembayaran hasil potong otomatis Slip Gaji, sumber=
+              // "potong_gaji", sengaja TIDAK bisa dihapus dari sini supaya
+              // tidak bentrok dengan status Slip Gaji terkait, harus lewat
+              // pembatalan status Slip Gaji itu sendiri), "non_barber"
+              // (hapus entri Gaji Non-Barber, Input Data Non-Barber),
+              // "libur" (hapus Keterangan Libur -- REVISI: sebelumnya
+              // SELALU dash karena baris ini tidak punya "id" sama sekali,
+              // dicek TERPISAH dari baris lain SEBELUM gerbang `r.id == null`
+              // di bawah supaya tidak ikut ke-skip; dihapus lewat kombinasi
+              // barber_id+tanggal, bukan id, lihat tombolAksi()/DELETE
+              // /api/input-data/libur).
+              ...(bolehLihatKolomAksi ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   if (r.tipe === "libur") {
+                    if (!bolehHapusTransaksi) return "-";
                     // PERMINTAAN OWNER: baris "Libur ⚠️" (lihat kolomKet di
                     // atas) tidak punya apa pun di absensi_libur untuk
                     // dihapus (tersimpan di izin_cuti) -- tombol Hapus
@@ -351,6 +370,7 @@ const PageRekap = (() => {
                   }
                   if (r.id == null) return "-";
                   if (r.tipe === "transaksi") {
+                    if (!bolehHapusTransaksi) return "-";
                     return tombolAksi({
                       label: "🗑 Hapus", title: "Hapus Transaksi",
                       confirmTitle: "Hapus Transaksi",
@@ -363,6 +383,7 @@ const PageRekap = (() => {
                     });
                   }
                   if (r.tipe === "reimburse") {
+                    if (!bolehHapusReimburse) return "-";
                     return tombolAksi({
                       label: "🗑 Hapus", title: "Hapus Klaim Reimburse",
                       confirmTitle: "Hapus Klaim Reimburse",
@@ -377,6 +398,7 @@ const PageRekap = (() => {
                   }
                   if (r.tipe === "kasbon") {
                     if (r.sumber !== "manual") return "-"; // potong_gaji: lewat Slip Gaji
+                    if (!bolehBatalKasbon) return "-";
                     return tombolAksi({
                       label: "↩ Batalkan", title: "Batalkan Pembayaran Kasbon",
                       confirmTitle: "Batalkan Pembayaran Kasbon",
@@ -390,6 +412,7 @@ const PageRekap = (() => {
                     });
                   }
                   if (r.tipe === "non_barber") {
+                    if (!bolehHapusNonBarber) return "-";
                     return tombolAksi({
                       label: "🗑 Hapus", title: "Hapus Data Gaji Non-Barber",
                       confirmTitle: "Hapus Data Gaji Non-Barber",
@@ -433,7 +456,7 @@ const PageRekap = (() => {
 
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isOwner ? 9 : (isAdmin ? 8 : 11), rows: 4 }));
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
         try {
           const data = await MugenApi.get(url, { useCache: true });
           if (!data.__offline) {

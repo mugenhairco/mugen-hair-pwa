@@ -447,6 +447,68 @@ def ubah_package_features(package_id: int, body: PackageFeaturesBody, user: dict
     return hasil
 
 
+# ============================= Package Permission Tree (Work #2, diminta Owner) =============================
+# Batas LUAR per-paket -- Super Admin menggunakan POHON MENU YANG SAMA
+# PERSIS dipakai Owner tenant untuk Role (permissions.PERMISSION_TREE,
+# lihat routers/pengaturan.py::ambil_permission_tree(), SAMA SUMBERNYA,
+# key-nya identik) untuk menentukan menu/tab/sub-item APA SAJA yang
+# tersedia SAMA SEKALI untuk tenant paket ini -- BUKAN lagi dikotak-kotakan
+# lewat kode fitur dekoratif. Role staff (permissions.py::user_role_
+# permissions) mengatur batas DALAM, di antara apa yang paket ini sendiri
+# sudah izinkan (lihat auth.py::require_permission()/require_menu_read()
+# -- dua gerbang berurutan).
+
+@superadmin_router.get("/permission-tree")
+def ambil_permission_tree_superadmin(user: dict = Depends(require_superadmin)):
+    """Metadata pohon (label + induk/anak) -- SAMA PERSIS routers/
+    pengaturan.py::ambil_permission_tree() (Owner tenant), direplikasi di
+    sini HANYA karena endpoint itu require_admin (tenant-scoped), BUKAN
+    require_superadmin. Isi/sumbernya SATU-SATUNYA permissions.PERMISSION_TREE,
+    TIDAK diduplikasi manual."""
+    import permissions  # import lokal: hindari import siklik
+    return {
+        "nodes": [{"key": k, "label": label, "parent": parent} for k, (label, parent) in permissions.PERMISSION_TREE.items()],
+        "cross_cutting": sorted(permissions.CROSS_CUTTING_KEYS),
+    }
+
+
+@superadmin_router.get("/packages/{package_id}/permissions")
+def ambil_package_permissions(package_id: int, user: dict = Depends(require_superadmin)):
+    import permissions  # import lokal: hindari import siklik
+    if billing_db.get_package(package_id) is None:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan.")
+    aktif = billing_db.get_package_permission_keys(package_id)
+    return {key: (key in aktif) for key in permissions.PERMISSION_KEYS}
+
+
+class PackagePermissionsBody(BaseModel):
+    izin: dict[str, bool]
+
+
+@superadmin_router.put("/packages/{package_id}/permissions")
+def simpan_package_permissions(package_id: int, body: PackagePermissionsBody, user: dict = Depends(require_superadmin)):
+    import permissions  # import lokal: hindari import siklik
+    if billing_db.get_package(package_id) is None:
+        raise HTTPException(status_code=404, detail="Paket tidak ditemukan.")
+    tidak_dikenal = set(body.izin.keys()) - permissions.PERMISSION_KEYS
+    if tidak_dikenal:
+        raise HTTPException(status_code=422, detail=f"Key tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
+    aktif = billing_db.get_package_permission_keys(package_id)
+    for key, nilai in body.izin.items():
+        if nilai:
+            aktif.add(key)
+        else:
+            # PERBAIKAN (konsistensi pohon, sama seperti permissions.py::
+            # set_bulk()): node induk dimatikan -> seluruh keturunannya
+            # ikut dimatikan juga.
+            aktif.discard(key)
+            aktif -= permissions._descendants(key)
+    billing_db.set_package_permission_keys(package_id, aktif)
+    superadmin_audit_db.catat(user["username"], "ubah_permission_tree_paket_billing",
+                               detail=f"package_id={package_id}, izin={body.izin}")
+    return {key: (key in aktif) for key in permissions.PERMISSION_KEYS}
+
+
 # ============================= Monitoring Invoice/Pembayaran (semua tenant) =============================
 
 @superadmin_router.get("/invoices")

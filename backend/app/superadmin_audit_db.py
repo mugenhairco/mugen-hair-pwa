@@ -43,6 +43,9 @@ AKSI_VALID = {
     # sudah dihapus total (lihat routers/billing.py).
     "ubah_fitur_billing", "hapus_fitur_billing",
     "ubah_fitur_paket_billing",
+    # REVISI Work #2 (Superadmin Package Permission Tree): izin per-menu
+    # untuk paket billing -- lihat routers/billing.py::simpan_package_permissions().
+    "ubah_permission_tree_paket_billing",
     # Payment Gateway (booking publik, platform-wide) -- lihat
     # routers/payment_gateway.py, payment_gateway_db.py.
     "ubah_config_payment_gateway",

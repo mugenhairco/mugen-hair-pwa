@@ -158,8 +158,8 @@ def buat_reimburse(body: ReimburseBody, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Akun ini belum dikaitkan ke data Barber.")
         barber_id = user["barber_id"]
     elif user["role"] in ("admin", "staff"):
-        if user["role"] == "staff" and not permissions.has("izin_reimburse", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
-            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Reimburse. Hubungi Owner.")
+        if user["role"] == "staff" and not permissions.has("izin_reimburse_tambah", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
+            raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk menambah klaim Reimburse. Hubungi Owner.")
         if body.barber_id is None:
             raise HTTPException(status_code=422, detail="barber_id wajib diisi.")
         barber_id = body.barber_id
@@ -205,7 +205,7 @@ def hapus_reimburse(reimburse_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/{reimburse_id}/rekap")
-def hapus_reimburse_dari_rekap(reimburse_id: int, user: dict = Depends(require_permission("izin_reimburse"))):
+def hapus_reimburse_dari_rekap(reimburse_id: int, user: dict = Depends(require_permission("izin_reimburse_hapus"))):
     """Hapus klaim reimburse yang SUDAH disetujui, dipakai KHUSUS tombol
     Hapus di Rekap Transaksi -- beda dari DELETE /{reimburse_id} biasa di
     atas yang cuma izinkan klaim 'pending'."""

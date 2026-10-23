@@ -167,33 +167,45 @@ const PageBooking = (() => {
     }
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
-    // pesan kosong, tanpa tab/data apa pun. "Baca" (bolehEdit=false, dipakai
-    // di renderBookingList() di bawah) menyembunyikan tombol Verifikasi/
-    // Batalkan/Reschedule di tab Booking List; tab lain (Closed Slot/
-    // Payment Settings/dst) tetap terbuka tampilannya, aksinya ditolak
-    // backend (403) kalau diklik.
+    // pesan kosong, tanpa tab/data apa pun.
     const levelBooking = await MugenMenuAccess.get("booking");
     if (levelBooking === "none") {
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
-    const bolehEditBooking = levelBooking === "write";
+    // REVISI Hak Akses (sub-item per tab terpisah, lihat permissions.py::
+    // PERMISSION_TREE): tombol Verifikasi/Batalkan/Reschedule di tab
+    // Booking List SEKARANG digerbang izin_booking_list spesifik (BUKAN
+    // lagi level kasar root menu Booking).
+    const bolehEditBooking = await MugenMenuAccess.has("izin_booking_list");
 
-    // REVISI Website Content (PR 1): tab "Website Content" HANYA untuk Owner
-    // ('admin'), TIDAK PERNAH untuk staff ('Admin') -- sama seperti pola tab
-    // Owner-murni di pengaturan.js (Komisi/Bonus Service/Hak Akses Admin),
-    // BUKAN lewat sistem izin permissions.py.
+    // REVISI Hak Akses (hapus tab Owner-only hardcoded -- TERMASUK
+    // "Website Content", SEKARANG grantable lewat izin_booking_website_
+    // content, BUKAN lagi role==='admin' murni): setiap tab SEKARANG
+    // tampil/tidak berdasarkan sub-item masing-masing di PERMISSION_TREE,
+    // dropdown/expand yang Owner atur di Setting > Hak Akses User.
     const isOwner = user.role === "admin";
-    const tabItems = [
-      { key: "Booking List", label: "Booking List" },
-      { key: "Calendar", label: "Calendar" },
-      { key: "Operating Hours", label: "Operating Hours" },
-      { key: "Barber Holiday", label: "Barber Holiday" },
-      { key: "Closed Slot", label: "Closed Slot" },
-      { key: "Payment Settings", label: "Payment Settings" },
-      { key: "Booking Settings", label: "Booking Settings" },
-      ...(isOwner ? [{ key: "Website Content", label: "Website Content" }] : []),
-    ];
+    const TAB_IZIN = {
+      "Booking List": "izin_booking_list",
+      "Calendar": "izin_booking_calendar",
+      "Operating Hours": "izin_booking_operating_hours",
+      "Barber Holiday": "izin_booking_barber_holiday",
+      "Closed Slot": "izin_booking_closed_slot",
+      "Payment Settings": "izin_booking_payment_settings",
+      "Booking Settings": "izin_booking_settings",
+      "Website Content": "izin_booking_website_content",
+    };
+    const ALL_TABS = Object.keys(TAB_IZIN);
+    let tabsLolos = ALL_TABS;
+    if (!isOwner) {
+      const hasilIzin = await Promise.all(ALL_TABS.map((t) => MugenMenuAccess.has(TAB_IZIN[t])));
+      tabsLolos = ALL_TABS.filter((_, i) => hasilIzin[i]);
+    }
+    if (!tabsLolos.length) {
+      root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
+      return;
+    }
+    const tabItems = tabsLolos.map((t) => ({ key: t, label: t }));
     const body = MugenUI.el("div");
 
     let barbers = [];

@@ -19,7 +19,7 @@ import pengeluaran_db
 import reimburse_db
 import data_non_barber_db
 import laporan_pdf
-from auth import get_current_user, require_feature, require_menu_read
+from auth import get_current_user, require_feature, require_menu_read, require_owner_or_staff
 
 router = APIRouter(prefix="/api/rekap", tags=["rekap"])
 
@@ -30,24 +30,27 @@ def _pdf_response(konten: bytes, prefix: str) -> Response:
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-def _cek_akses_rekap(user: dict):
+def _cek_akses_rekap(user: dict, tab_key: str):
     """Hak Akses Menu (permintaan Owner): Owner & Barber SELALU lolos
     (Rekap sudah otomatis dibatasi ke data Barber sendiri, lihat docstring
-    modul) -- HANYA 'staff' yang digerbang level menu "rekap" (require_menu_read
-    tidak dipakai langsung di sini karena dependency itu menolak Barber
-    lewat require_owner_or_staff, padahal Barber justru harus tetap lolos)."""
+    modul) -- HANYA 'staff' yang digerbang (require_menu_read tidak
+    dipakai langsung di sini karena dependency itu menolak Barber lewat
+    require_owner_or_staff, padahal Barber justru harus tetap lolos).
+    `tab_key`: key izin_* tab spesifik (Transaksi/Bulanan/Pengeluaran) --
+    REVISI (tutup celah lama): tab Rekap Pengeluaran dulu hanya digerbang
+    role 'admin'/'staff' polos, TANPA izin_* apa pun -- sekarang punya
+    saklar sendiri (izin_rekap_pengeluaran) sama seperti 2 tab lainnya."""
     if user["role"] in ("admin", "barber"):
         return
     import permissions  # import lokal: hindari import siklik
-    level = permissions.get_menu_level("rekap", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id"))
-    if level == permissions.LEVEL_NONE:
+    if not permissions.has(tab_key, tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
         raise HTTPException(status_code=403, detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
 
 
 @router.get("/transaksi")
 def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
                      tanggal: str = None, user: dict = Depends(get_current_user)):
-    _cek_akses_rekap(user)
+    _cek_akses_rekap(user, "izin_rekap_transaksi")
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
@@ -84,7 +87,7 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
     hari, TIDAK berubah) atau 'ringkasan' ("Rekap Periode (Ringkasan)" BARU
     -- satu baris per karyawan untuk seluruh periode, lihat
     laporan_pdf.buat_pdf_rekap_transaksi_ringkasan())."""
-    _cek_akses_rekap(user)
+    _cek_akses_rekap(user, "izin_rekap_transaksi")
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     if jenis == "ringkasan":
@@ -104,7 +107,7 @@ def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = N
 
 @router.get("/bulanan")
 def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user)):
-    _cek_akses_rekap(user)
+    _cek_akses_rekap(user, "izin_rekap_bulanan")
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     data = db.get_rekap_bulanan_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tenant_id=user["tenant_id"])
@@ -129,7 +132,7 @@ def rekap_bulanan(tahun: int, bulan: int, barber_id: int = None, user: dict = De
 @router.get("/bulanan/pdf")
 def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict = Depends(get_current_user),
                        _fitur: dict = Depends(require_feature("export_pdf"))):
-    _cek_akses_rekap(user)
+    _cek_akses_rekap(user, "izin_rekap_bulanan")
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     konten = laporan_pdf.buat_pdf_rekap_bulanan(tahun, bulan, barber_id, user["username"],
@@ -137,15 +140,30 @@ def rekap_bulanan_pdf(tahun: int, bulan: int, barber_id: int = None, user: dict 
     return _pdf_response(konten, "rekap_bulanan")
 
 
+def _cek_akses_rekap_pengeluaran(user: dict):
+    """Data operasional TOKO (bukan milik barber manapun) -- khusus Owner/
+    Admin, BEDA dari _cek_akses_rekap() di atas yang juga meloloskan
+    Barber (lihat docstring modul). REVISI (tutup celah lama): dulu hanya
+    `require_menu_read("rekap")` (root menu Rekap) -- sekarang tab
+    spesifik izin_rekap_pengeluaran, sama seperti 2 tab Rekap lainnya."""
+    if user["role"] == "admin":
+        return
+    import permissions  # import lokal: hindari import siklik
+    if not permissions.has("izin_rekap_pengeluaran", tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
+        raise HTTPException(status_code=403, detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
+
+
 @router.get("/pengeluaran")
-def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("rekap"))):
+def rekap_pengeluaran(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff)):
+    _cek_akses_rekap_pengeluaran(user)
     daftar = pengeluaran_db.get_pengeluaran_list(tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     total = sum(p["jumlah"] for p in daftar)
     return {"daftar": daftar, "total": total}
 
 
 @router.get("/pengeluaran/pdf")
-def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_menu_read("rekap")),
+def rekap_pengeluaran_pdf(tahun: int = None, bulan: int = None, user: dict = Depends(require_owner_or_staff),
                            _fitur: dict = Depends(require_feature("export_pdf"))):
+    _cek_akses_rekap_pengeluaran(user)
     konten = laporan_pdf.buat_pdf_rekap_pengeluaran(tahun, bulan, user["username"], tenant_id=user["tenant_id"])
     return _pdf_response(konten, "rekap_pengeluaran")

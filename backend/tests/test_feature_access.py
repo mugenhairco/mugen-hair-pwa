@@ -30,6 +30,7 @@ import pytest
 
 import billing_db
 import feature_access
+import permissions
 import subscription_db
 
 
@@ -53,6 +54,20 @@ def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def _set_izin_paket(client, headers, package_kode: str, izin_key: str, nilai: bool = True):
+    """REVISI Work #2 (Superadmin Package Permission Tree): "absensi" TIDAK
+    LAGI kode fitur tersendiri (lihat billing_db.py::hapus_fitur_absorbed_
+    ke_tree()) -- diwakili root key pohon permissions.PERMISSION_TREE
+    (izin_absensi_lihat), diaktifkan/dicabut lewat endpoint PUT
+    /api/superadmin/billing/packages/{id}/permissions (BUKAN lagi lewat
+    _set_fitur_paket_persis()/PUT .../features), dicek lewat
+    feature_access.tenant_has_menu_access()."""
+    paket = billing_db.get_package_by_kode(package_kode)
+    r = client.put(f"/api/superadmin/billing/packages/{paket['id']}/permissions", headers=headers,
+                    json={"izin": {izin_key: nilai}})
+    assert r.status_code == 200, r.text
 
 
 def _set_fitur_paket_persis(client, headers, package_kode: str, *fitur_kodes):
@@ -180,7 +195,11 @@ def test_pdf_endpoint_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
 def test_excel_endpoint_403_upgrade_required_tanpa_fitur_export_excel(single_tenant):
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
     superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "absensi")  # HANYA absensi, TANPA export_excel
+    # export_excel di-grandfather ke SEMUA paket sejak boot (lihat catatan
+    # modul) -- harus DICABUT eksplisit dulu di sini supaya skenario "tanpa
+    # export_excel" sungguhan diuji, bukan diam-diam masih aktif.
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free")
+    _set_izin_paket(single_tenant["client"], superadmin_headers, "free", "izin_absensi_lihat")  # HANYA absensi, TANPA export_excel
 
     r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
     assert r.status_code == 403
@@ -197,7 +216,8 @@ def test_excel_endpoint_sukses_dengan_fitur_grandfather_default(single_tenant):
     supaya gate router-level itu tidak ikut menolak."""
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
     superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "export_excel", "absensi")
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "export_excel")
+    _set_izin_paket(single_tenant["client"], superadmin_headers, "free", "izin_absensi_lihat")
 
     r = single_tenant["client"].get("/api/attendance/excel", headers=single_tenant["headers"])
     assert r.status_code == 200, r.text
@@ -232,10 +252,20 @@ def test_hapus_fitur_tanpa_fungsi_nyata_tidak_menghapus_lagi_kalau_superadmin_ta
 
 
 def test_seed_grandfather_fitur_baru_digerbang_assign_ke_semua_paket(app_client):
-    for kode in ("export_excel", "whatsapp_reminder"):
-        fitur = billing_db.get_feature_by_kode(kode)
-        for paket in billing_db.list_packages():
-            assert fitur["id"] in {f["id"] for f in billing_db.get_package_features(paket["id"])}
+    """REVISI Work #2: "whatsapp_reminder" TIDAK LAGI kode fitur tersendiri
+    (diabsorb ke tree, diwakili izin_whatsapp_lihat) -- hanya "export_excel"
+    yang masih diuji lewat jalur fitur lama di sini. Grandfather untuk
+    izin_whatsapp_lihat sendiri diuji di test_billing_package_permissions.py
+    (key ini BUKAN pengecualian seperti izin_absensi_lihat -- whatsapp_
+    reminder MEMANG sudah digrandfather sejak awal, jadi blanket True di
+    migrasi_grandfather_package_permissions() justru BENAR untuk key ini)."""
+    fitur = billing_db.get_feature_by_kode("export_excel")
+    for paket in billing_db.list_packages():
+        assert fitur["id"] in {f["id"] for f in billing_db.get_package_features(paket["id"])}
+    kunci_whatsapp = {"izin_whatsapp_lihat"} | permissions._descendants("izin_whatsapp_lihat")
+    for paket in billing_db.list_packages():
+        aktif = billing_db.get_package_permission_keys(paket["id"])
+        assert kunci_whatsapp <= aktif, f"paket {paket['kode']} harus tetap punya akses WhatsApp (grandfather)"
 
 
 def test_seed_grandfather_fitur_baru_digerbang_tidak_mengembalikan_yang_dicabut_manual(app_client):
@@ -381,12 +411,15 @@ def test_login_staff_tidak_terpengaruh_gate_barber_app(single_tenant):
     assert r.status_code == 200, r.text
 
 
-# ============================= Absensi Karyawan (absensi, routers/attendance.py, SELURUH modul) =============================
-# Diminta Owner: SATU gate `dependencies=[Depends(require_feature("absensi"))]`
+# ============================= Absensi Karyawan (izin_absensi_lihat, routers/attendance.py, SELURUH modul) =============================
+# Diminta Owner: SATU gate `dependencies=[Depends(require_menu_feature("izin_absensi_lihat"))]`
 # di level router menggerbang SELURUH endpoint /api/attendance/* sekaligus
 # (Check In/Out, dashboard, riwayat, pengaturan, koreksi, export) -- fail-
-# CLOSED SEJAK AWAL, TIDAK ADA grandfather, independen dari gate
-# "barber_app" di atas (tenant bisa punya satu tanpa yang lain).
+# CLOSED SEJAK AWAL, TIDAK ADA grandfather (lihat billing_db.py::migrasi_
+# grandfather_package_permissions(), izin_absensi_lihat DIKECUALIKAN dari
+# blanket True), independen dari gate "barber_app" di atas (tenant bisa
+# punya satu tanpa yang lain). REVISI Work #2: "absensi" bukan lagi kode
+# fitur tersendiri, diwakili root key pohon ini -- lihat _set_izin_paket().
 
 def test_absensi_dashboard_403_tanpa_fitur_absensi(single_tenant):
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
@@ -395,13 +428,13 @@ def test_absensi_dashboard_403_tanpa_fitur_absensi(single_tenant):
     assert r.status_code == 403
     detail = r.json()["detail"]
     assert detail["upgrade_required"] is True
-    assert detail["feature"] == "absensi"
+    assert detail["feature"] == "izin_absensi_lihat"
 
 
 def test_absensi_dashboard_sukses_dengan_fitur_absensi(single_tenant):
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
     superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "absensi")
+    _set_izin_paket(single_tenant["client"], superadmin_headers, "free", "izin_absensi_lihat")
 
     r = single_tenant["client"].get("/api/attendance/dashboard", headers=single_tenant["headers"])
     assert r.status_code == 200, r.text
@@ -432,13 +465,14 @@ def test_absensi_checkin_barber_403_tanpa_fitur_absensi_walau_barber_app_aktif(s
 
     r = single_tenant["client"].get("/api/attendance/today", headers=headers_barber)
     assert r.status_code == 403
-    assert r.json()["detail"]["feature"] == "absensi"
+    assert r.json()["detail"]["feature"] == "izin_absensi_lihat"
 
 
 def test_absensi_checkin_barber_sukses_dengan_barber_app_dan_absensi_aktif(single_tenant):
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
     superadmin_headers = _buat_superadmin_dan_login(single_tenant["client"])
-    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "barber_app", "absensi")
+    _set_fitur_paket_persis(single_tenant["client"], superadmin_headers, "free", "barber_app")
+    _set_izin_paket(single_tenant["client"], superadmin_headers, "free", "izin_absensi_lihat")
     _buat_barber(single_tenant["tenant_id"])
 
     r_login = single_tenant["client"].post("/api/auth/login", json={"username": "barber1", "password": "passwordB123"})
@@ -455,7 +489,7 @@ def test_absensi_akun_lain_paket_lain_tidak_ikut_terpengaruh(two_tenants):
     subscription_db.create_default_subscription(two_tenants["tenant_a"], package="free", status="active")
     subscription_db.create_default_subscription(two_tenants["tenant_b"], package="basic", status="active")
     superadmin_headers = _buat_superadmin_dan_login(two_tenants["client"])
-    _set_fitur_paket_persis(two_tenants["client"], superadmin_headers, "free", "absensi")
+    _set_izin_paket(two_tenants["client"], superadmin_headers, "free", "izin_absensi_lihat")
 
     ra = two_tenants["client"].get("/api/attendance/dashboard", headers=two_tenants["headers_a"])
     assert ra.status_code == 200, ra.text

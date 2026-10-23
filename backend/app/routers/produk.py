@@ -8,14 +8,16 @@ barber manapun — seluruh endpoint di sini KHUSUS Owner ('admin') dan Admin
 Data di tahap lanjut kalau nanti diminta eksplisit; untuk saat ini, kelola
 stok sepenuhnya di tangan Owner/Admin.
 
-REVISI (Perluasan Hak Akses Admin, diminta Owner): endpoint LIHAT (GET)
-sekarang `require_menu_read("produk")` (level menu "Produk", lihat
-permissions.py::MENU_DEFS) -- endpoint TULIS (tambah/edit produk,
-restock/jual/tester, koreksi mutasi) tetap
-`require_permission("izin_produk_kelola")`, endpoint HAPUS (nonaktifkan
-produk, hapus mutasi) tetap `require_permission("izin_produk_hapus")` (lihat
-permissions.py, default TRUE supaya staff yang sudah pakai modul ini tidak
-tiba-tiba terkunci).
+REVISI Hak Akses (tree permissions.py::PERMISSION_TREE): endpoint LIHAT
+(GET) `require_menu_read("produk")` (root izin_produk_lihat). Tambah/edit
+katalog produk itu sendiri `izin_produk_kelola`. Restock/Jual/Tester
+(TERMASUK koreksi mutasi) `izin_produk_mutasi` -- key BARU, dipisah dari
+izin_produk_kelola supaya Owner bisa memberi izin edit katalog TANPA
+otomatis memberi izin transaksi stok, atau sebaliknya (migrasi otomatis
+mewarisi nilai lama izin_produk_kelola, lihat user_roles_db.py::
+migrasi_role_staff_default() -- staff lama TIDAK kehilangan akses).
+Nonaktifkan produk & hapus mutasi tetap SATU flag bersama
+`izin_produk_hapus` (reuse, sama seperti sebelumnya).
 
 Semua logika hitung stok (validasi saldo tidak boleh negatif, dsb) ada di
 database.py (TIDAK diubah di sini) — router ini hanya meneruskan request ke
@@ -104,7 +106,7 @@ def nonaktifkan_produk(produk_id: int, user: dict = Depends(require_permission("
 
 
 @router.post("/{produk_id}/restock")
-def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
+def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_mutasi"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.restock_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
@@ -114,7 +116,7 @@ def restock_produk(produk_id: int, body: MutasiBody, user: dict = Depends(requir
 
 
 @router.post("/{produk_id}/jual")
-def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
+def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_mutasi"))):
     _pastikan_produk_tenant_sama(user, db.get_produk(produk_id))
     try:
         mutasi_id = db.jual_produk(produk_id, body.tanggal, body.jumlah, body.catatan)
@@ -124,7 +126,7 @@ def jual_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_p
 
 
 @router.post("/{produk_id}/tester")
-def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
+def tester_produk(produk_id: int, body: MutasiBody, user: dict = Depends(require_permission("izin_produk_mutasi"))):
     """REVISI: tipe transaksi baru 'Tester' -- mengurangi stok sama seperti
     Jual, TAPI TIDAK menambah omzet (lihat db.tester_produk/
     db.get_omzet_penjualan_produk), tetap tercatat penuh di riwayat mutasi."""
@@ -158,7 +160,7 @@ def list_mutasi_pdf(produk_id: int = None, tipe: str = None, tahun: int = None, 
 
 
 @router.put("/mutasi/{mutasi_id}")
-def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_permission("izin_produk_kelola"))):
+def koreksi_mutasi(mutasi_id: int, body: KoreksiMutasiBody, user: dict = Depends(require_permission("izin_produk_mutasi"))):
     _pastikan_mutasi_tenant_sama(user, db.get_mutasi_produk(mutasi_id))
     try:
         db.koreksi_mutasi_produk(mutasi_id, body.tanggal, body.jumlah, body.catatan)

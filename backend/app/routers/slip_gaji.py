@@ -133,7 +133,7 @@ def ubah_status_slip_gaji(slip_id: int, body: StatusBody, user: dict = Depends(r
 
 
 @router.delete("/{slip_id}")
-def hapus_slip_gaji(slip_id: int, user: dict = Depends(require_permission("izin_slip_gaji"))):
+def hapus_slip_gaji(slip_id: int, user: dict = Depends(require_permission("izin_slip_gaji_hapus"))):
     _pastikan_slip_tenant_sama(user, slip_gaji_db.get_slip_gaji(slip_id))
     try:
         slip_gaji_db.hapus_slip_gaji(slip_id)

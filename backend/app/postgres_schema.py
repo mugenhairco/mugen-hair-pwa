@@ -956,6 +956,20 @@ CREATE TABLE IF NOT EXISTS subscription_package_features (
     UNIQUE(package_id, feature_id)
 );
 
+-- FITUR Package Permission Tree (Work #2, diminta Owner, lihat billing_db.py
+-- jalur SQLite untuk penjelasan lengkap): batas LUAR per-paket -- menu/
+-- tab/sub-item APA SAJA (katalog SAMA PERSIS permissions.PERMISSION_TREE)
+-- yang tersedia sama sekali untuk tenant paket ini. package_id PAKAI
+-- foreign key (tabel BARU, sama alasannya seperti subscription_package_
+-- features di atas).
+CREATE TABLE IF NOT EXISTS subscription_package_permissions (
+    id           SERIAL PRIMARY KEY,
+    package_id   INTEGER NOT NULL REFERENCES subscription_packages(id) ON DELETE CASCADE,
+    izin_key     TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    UNIQUE(package_id, izin_key)
+);
+
 -- FITUR Role Custom (diminta Owner, lihat user_roles_db.py jalur SQLite
 -- untuk penjelasan lengkap): role_id PAKAI foreign key (tabel BARU, sama
 -- alasannya seperti subscription_package_features di atas).
@@ -1862,6 +1876,8 @@ def create_all():
         _migrasi_hapus_gerbang_qris(conn)
         _migrasi_hapus_gerbang_log_error(conn)
         _migrasi_seed_fitur_dekoratif_marketing(conn)
+        _migrasi_grandfather_package_permissions(conn)
+        _migrasi_hapus_fitur_absorbed_tree(conn)
         _migrasi_harga_pricing_v2(conn)
         _migrasi_harga_tahunan_v1(conn)
         _logger.info("[postgres_schema] create_all(): migrasi billing packages/features selesai (%.2fs).",
@@ -1955,22 +1971,14 @@ _FITUR_DEFAULT_POSTGRES = (
     ("booking_online", "Booking Online"),
     ("export_pdf", "Export PDF"),
     ("export_excel", "Export Excel"),
-    ("whatsapp_reminder", "WhatsApp Reminder"),
     # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- lihat docstring di sana.
-    # TIDAK ADA grandfather untuk kedua kode ini (keputusan eksplisit
-    # Owner), jadi TIDAK ADA fungsi _migrasi_seed_fitur_baru_digerbang()
-    # kedua untuk keduanya -- cukup masuk katalog di sini.
+    # REVISI Work #2 (Superadmin Package Permission Tree): "whatsapp_
+    # reminder"/"absensi" DIHAPUS dari sini (diwakili root key pohon yang
+    # sama dipakai Role, izin_whatsapp_lihat/izin_absensi_lihat) dan 5 kode
+    # marketing dekoratif DIHAPUS SELURUHNYA (diganti sepenuhnya oleh
+    # checklist menu nyata) -- lihat _migrasi_grandfather_package_
+    # permissions()/_migrasi_hapus_fitur_absorbed_tree() di bawah.
     ("barber_app", "Aplikasi Barber (Login Barber)"),
-    ("absensi", "Absensi Karyawan"),
-    # SAMA PERSIS billing_db.py::_FITUR_DEFAULT -- 5 kode marketing
-    # DEKORATIF (diminta Owner, "agar terlihat ramai"), TIDAK ADA satu pun
-    # require_feature()/tenant_has_feature() yang memanggil kode-kode ini
-    # di kode aplikasi mana pun -- lihat docstring lengkap di billing_db.py.
-    ("manajemen_bisnis", "Manajemen Bisnis & Dashboard"),
-    ("manajemen_barber", "Manajemen Barber & Karyawan"),
-    ("hak_akses_role", "Role & Hak Akses"),
-    ("manajemen_layanan", "Manajemen Layanan & Harga"),
-    ("pengaturan_komisi_gaji", "Pengaturan Komisi & Gaji"),
 )
 # "qris" DIHAPUS dari sini (diminta Owner) -- lihat _migrasi_hapus_gerbang_
 # qris() di bawah & docstring billing_db.py::hapus_gerbang_qris().
@@ -2172,6 +2180,77 @@ def _migrasi_seed_fitur_dekoratif_marketing(conn):
                 (paket["id"], feature_id, now),
             )
     _set_flag(conn, _KUNCI_SEED_FITUR_DEKORATIF_MARKETING)
+
+
+_KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS = "billing_grandfather_package_permissions_selesai"
+_KUNCI_HAPUS_FITUR_WORK_2 = "billing_hapus_fitur_absorbed_tree_work2_selesai"
+_KODE_FITUR_DIHAPUS_WORK_2_POSTGRES = (
+    "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
+    "manajemen_layanan", "pengaturan_komisi_gaji", "absensi", "whatsapp_reminder",
+)
+
+
+def _migrasi_grandfather_package_permissions(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::
+    migrasi_grandfather_package_permissions() (jalur SQLite) -- lihat
+    docstring itu untuk penjelasan lengkap. WAJIB jalan SEBELUM auth.py
+    menegakkan gate Package Permission Tree, supaya tidak ada tenant
+    production yang tiba-tiba kehilangan akses."""
+    if _ambil_flag(conn, _KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS):
+        return
+    import permissions  # import lokal: hindari import siklik
+    semua_key = set(permissions.PERMISSION_KEYS)
+    # PENGECUALIAN PENTING (SAMA PERSIS billing_db.py::migrasi_grandfather_
+    # package_permissions() jalur SQLite -- lihat docstring itu untuk
+    # penjelasan lengkap): root "izin_absensi_lihat" + seluruh keturunannya
+    # TIDAK ikut blanket True -- "absensi" SENGAJA fail-CLOSED TANPA
+    # grandfather sejak awal (beda dari whatsapp_reminder yang MEMANG sudah
+    # digrandfather). State per-paket yang SUDAH ADA (fitur "absensi"
+    # tercentang/tidak, DIBACA SEBELUM _migrasi_hapus_fitur_absorbed_tree()
+    # menghapus barisnya) dibawa apa adanya, BUKAN ditimpa True untuk semua.
+    kunci_absensi = {"izin_absensi_lihat"} | permissions._descendants("izin_absensi_lihat")
+    kunci_tanpa_absensi = semua_key - kunci_absensi
+    fitur_absensi = conn.execute(
+        "SELECT id FROM subscription_features WHERE kode = 'absensi'"
+    ).fetchone()
+    now = datetime.now().isoformat(timespec="seconds")
+    paket_rows = conn.execute("SELECT id FROM subscription_packages").fetchall()
+    for paket in paket_rows:
+        kunci_paket = set(kunci_tanpa_absensi)
+        if fitur_absensi:
+            punya_absensi = conn.execute(
+                "SELECT 1 FROM subscription_package_features WHERE package_id = ? AND feature_id = ?",
+                (paket["id"], fitur_absensi["id"]),
+            ).fetchone()
+            if punya_absensi:
+                kunci_paket |= kunci_absensi
+        sudah_ada = {r["izin_key"] for r in conn.execute(
+            "SELECT izin_key FROM subscription_package_permissions WHERE package_id = ?", (paket["id"],)
+        ).fetchall()}
+        for key in kunci_paket:
+            if key in sudah_ada:
+                continue
+            conn.execute(
+                "INSERT INTO subscription_package_permissions (package_id, izin_key, created_at) VALUES (?, ?, ?)",
+                (paket["id"], key, now),
+            )
+    _set_flag(conn, _KUNCI_GRANDFATHER_PACKAGE_PERMISSIONS)
+
+
+def _migrasi_hapus_fitur_absorbed_tree(conn):
+    """Versi PostgreSQL, SAMA PERSIS logikanya dengan billing_db.py::
+    hapus_fitur_absorbed_ke_tree() (jalur SQLite) -- lihat docstring itu
+    untuk penjelasan lengkap. `ON DELETE CASCADE` di subscription_package_
+    features otomatis melepas kode-kode ini dari paket mana pun yang masih
+    mencentangnya."""
+    if _ambil_flag(conn, _KUNCI_HAPUS_FITUR_WORK_2):
+        return
+    placeholder = ", ".join("?" for _ in _KODE_FITUR_DIHAPUS_WORK_2_POSTGRES)
+    conn.execute(
+        f"DELETE FROM subscription_features WHERE kode IN ({placeholder})",
+        _KODE_FITUR_DIHAPUS_WORK_2_POSTGRES,
+    )
+    _set_flag(conn, _KUNCI_HAPUS_FITUR_WORK_2)
 
 
 _HARGA_PRICING_V2 = {

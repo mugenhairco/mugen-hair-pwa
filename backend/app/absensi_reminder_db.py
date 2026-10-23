@@ -205,7 +205,10 @@ def jalankan_pengecekan() -> dict:
         tenant_id = tenant["id"]
         if tenant.get("status") != "aktif":
             continue
-        if not feature_access.tenant_has_feature(tenant_id, "absensi"):
+        # REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+        # "absensi" tersendiri DIHAPUS -- diwakili root key pohon yang
+        # sama dipakai Role (izin_absensi_lihat, lihat permissions.py).
+        if not feature_access.tenant_has_menu_access(tenant_id, "izin_absensi_lihat"):
             continue
         if not get_aktif(tenant_id):
             continue

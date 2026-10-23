@@ -307,7 +307,7 @@ def ubah_status_pengajuan(pengajuan_id: int, body: StatusBody,
 
 
 @router.post("/{pengajuan_id}/batalkan")
-def batalkan_pengajuan(pengajuan_id: int, user: dict = Depends(require_permission("izin_cuti_karyawan"))):
+def batalkan_pengajuan(pengajuan_id: int, user: dict = Depends(require_permission("izin_cuti_karyawan_hapus"))):
     """PERMINTAAN OWNER: batalkan pengajuan yang SUDAH disetujui (mis.
     barber ternyata tetap masuk kerja padahal tercatat Cuti/Izin) --
     kuota kembali otomatis (live-computed), lihat izin_cuti_db.py::

@@ -309,11 +309,19 @@ def test_update_package_nama_kosong_ditolak():
 # diganti test yang mengunci perilaku baru ini (404/405).
 
 def test_boot_seed_katalog_fitur_default(app_client):
+    """REVISI Work #2 (Superadmin Package Permission Tree): katalog
+    dipangkas lagi dari 11 ke 4 kode SEJAJAR murni (booking_online/
+    export_pdf/export_excel/barber_app) -- 5 kode dekoratif (manajemen_
+    bisnis/manajemen_barber/hak_akses_role/manajemen_layanan/pengaturan_
+    komisi_gaji) DIHAPUS TOTAL, diganti checkbox sungguhan dari
+    permissions.PERMISSION_TREE (lihat billing_db.py::subscription_package_
+    permissions); 2 kode lain (absensi/whatsapp_reminder) DIABSORB ke
+    dalam pohon yang sama (diwakili izin_absensi_lihat/izin_whatsapp_lihat,
+    dicek lewat feature_access.tenant_has_menu_access()), BUKAN lagi kode
+    fitur tersendiri -- lihat billing_db.py::hapus_fitur_absorbed_ke_tree()."""
     fitur = billing_db.list_features()
     kode = {f["kode"] for f in fitur}
-    assert kode == {"booking_online", "export_pdf", "export_excel", "whatsapp_reminder",
-                     "barber_app", "absensi", "manajemen_bisnis", "manajemen_barber", "hak_akses_role",
-                     "manajemen_layanan", "pengaturan_komisi_gaji"}
+    assert kode == {"booking_online", "export_pdf", "export_excel", "barber_app"}
 
 
 def test_seed_fitur_idempotent_tidak_menimpa_perubahan(app_client):
@@ -330,7 +338,7 @@ def test_superadmin_list_features(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/superadmin/billing/features", headers=headers)
     assert r.status_code == 200, r.text
-    assert len(r.json()) == 11
+    assert len(r.json()) == 4
 
 
 def test_akun_tenant_biasa_ditolak_endpoint_features(two_tenants):
@@ -347,7 +355,7 @@ def test_superadmin_tidak_bisa_lagi_tambah_fitur_baru(app_client):
         "kode": "sms_reminder", "nama": "SMS Reminder",
     })
     assert r.status_code in (404, 405)
-    assert len(billing_db.list_features()) == 11
+    assert len(billing_db.list_features()) == 4
 
 
 def test_superadmin_ubah_fitur(app_client):
@@ -365,14 +373,14 @@ def test_superadmin_ubah_fitur(app_client):
 
 def test_superadmin_nonaktifkan_fitur(app_client):
     headers = _buat_superadmin_dan_login(app_client)
-    fitur = billing_db.get_feature_by_kode("whatsapp_reminder")
+    fitur = billing_db.get_feature_by_kode("barber_app")
 
     r = app_client.put(f"/api/superadmin/billing/features/{fitur['id']}", headers=headers, json={"aktif": False})
     assert r.status_code == 200, r.text
     assert r.json()["aktif"] == 0
 
     aktif_saja = billing_db.list_features(hanya_aktif=True)
-    assert "whatsapp_reminder" not in {f["kode"] for f in aktif_saja}
+    assert "barber_app" not in {f["kode"] for f in aktif_saja}
 
 
 def test_superadmin_hapus_fitur(app_client):
@@ -386,7 +394,7 @@ def test_superadmin_hapus_fitur(app_client):
 
 def test_hapus_fitur_melepas_dari_semua_paket_cascade(app_client):
     headers = _buat_superadmin_dan_login(app_client)
-    fitur = billing_db.get_feature_by_kode("whatsapp_reminder")
+    fitur = billing_db.get_feature_by_kode("export_excel")
     basic = billing_db.get_package_by_kode("basic")
     pro = billing_db.get_package_by_kode("pro")
     billing_db.set_package_features(basic["id"], [fitur["id"]])
@@ -427,12 +435,12 @@ def test_ubah_penugasan_fitur_mengganti_seluruh_daftar_lama(app_client):
     pro = billing_db.get_package_by_kode("pro")
     booking = billing_db.get_feature_by_kode("booking_online")
     export_pdf = billing_db.get_feature_by_kode("export_pdf")
-    whatsapp_reminder = billing_db.get_feature_by_kode("whatsapp_reminder")
+    export_excel = billing_db.get_feature_by_kode("export_excel")
 
     billing_db.set_package_features(pro["id"], [booking["id"], export_pdf["id"]])
-    hasil = billing_db.set_package_features(pro["id"], [whatsapp_reminder["id"]])
+    hasil = billing_db.set_package_features(pro["id"], [export_excel["id"]])
 
-    assert {f["kode"] for f in hasil} == {"whatsapp_reminder"}
+    assert {f["kode"] for f in hasil} == {"export_excel"}
 
 
 def test_centang_fitur_tidak_ada_di_katalog_ditolak(app_client):

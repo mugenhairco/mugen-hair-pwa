@@ -11,12 +11,10 @@ izin_pengeluaran_* SEMPAT dihapus total di REVISI kedua (Admin/'staff'
 akses PENUH tanpa syarat apa pun) -- SEKARANG DIHIDUPKAN KEMBALI dengan
 nama kode BARU (izin_pengeluaran_kelola/izin_pengeluaran_hapus, lihat
 permissions.py) supaya Owner bisa membatasi lagi kalau mau. Endpoint LIHAT
-(GET) sekarang `require_menu_read("pengeluaran")` (level menu "Pengeluaran",
-lihat permissions.py::MENU_DEFS) -- endpoint TULIS (tambah/edit) tetap
-`require_permission("izin_pengeluaran_kelola")`, endpoint HAPUS tetap
-`require_permission("izin_pengeluaran_hapus")`. Default KEDUANYA True --
-staff yang sudah pakai modul ini tidak tiba-tiba terkunci begitu perubahan
-ini deploy."""
+(GET) sekarang `require_menu_read("pengeluaran")` (root "izin_pengeluaran_
+lihat", lihat permissions.py::PERMISSION_TREE) -- endpoint TULIS (tambah/
+edit) tetap `require_permission("izin_pengeluaran_kelola")`, endpoint
+HAPUS tetap `require_permission("izin_pengeluaran_hapus")`."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response

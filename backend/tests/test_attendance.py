@@ -242,16 +242,20 @@ def test_tenant_isolation(two_tenants):
 # ---------------------------------------------------------------------------
 
 def test_api_settings_get_izin_lihat_tanpa_permission(single_tenant):
-    """staff SELALU boleh MELIHAT settings (pola sama pengeluaran.py) --
-    hanya MENGUBAH yang butuh izin_absensi_pengaturan."""
+    """REVISI Hak Akses (hapus Role "Admin" bawaan, PERMISSION_TREE fail-
+    closed): staff TANPA Role/izin absensi apa pun SEKARANG ditolak total
+    (GET maupun PUT) -- BUKAN lagi selalu boleh melihat tanpa syarat seperti
+    sistem lama. Lihat routers/attendance.py::_cek_akses_lihat() (has_any
+    izin_absensi_lihat/izin_absensi_pengaturan/izin_absensi_koreksi)."""
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import auth_db
-    auth_db.tambah_user("staff1", "passwordS123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kosong"}, headers=headers).json()
+    auth_db.tambah_user("staff1", "passwordS123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r_login = client.post("/api/auth/login", json={"username": "staff1", "password": "passwordS123"})
     headers_staff = {"Authorization": f"Bearer {r_login.json()['token']}"}
 
-    assert client.get("/api/attendance/settings", headers=headers_staff).status_code == 200
+    assert client.get("/api/attendance/settings", headers=headers_staff).status_code == 403
     r = client.put("/api/attendance/settings", json={"jam_masuk": "08:00"}, headers=headers_staff)
     assert r.status_code == 403
 
@@ -259,13 +263,23 @@ def test_api_settings_get_izin_lihat_tanpa_permission(single_tenant):
     assert r2.status_code == 200
     assert r2.json()["jam_masuk"] == "08:00"
 
+    # Dengan izin_absensi_lihat -- GET boleh, tapi PUT (butuh izin_absensi_
+    # pengaturan secara spesifik) tetap ditolak.
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions",
+               json={"izin": {"izin_absensi_lihat": True}}, headers=headers)
+    assert client.get("/api/attendance/settings", headers=headers_staff).status_code == 200
+    assert client.put("/api/attendance/settings", json={"jam_masuk": "08:15"},
+                       headers=headers_staff).status_code == 403
+
 
 def test_api_settings_staff_dengan_izin_boleh_ubah(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import auth_db
-    auth_db.tambah_user("staff2", "passwordS123", role="staff", tenant_id=tenant_id)
-    client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_absensi_pengaturan": True}}, headers=headers)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"}, headers=headers).json()
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions",
+               json={"izin": {"izin_absensi_pengaturan": True}}, headers=headers)
+    auth_db.tambah_user("staff2", "passwordS123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
 
     r_login = client.post("/api/auth/login", json={"username": "staff2", "password": "passwordS123"})
     headers_staff = {"Authorization": f"Bearer {r_login.json()['token']}"}
@@ -597,7 +611,8 @@ def test_api_koreksi_ajukan_dan_approve(single_tenant):
     assert r_approve_barber.status_code == 403
 
     # staff TANPA izin_absensi_koreksi ditolak.
-    auth_db.tambah_user("staffkoreksi", "passwordS123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir Koreksi"}, headers=headers).json()
+    auth_db.tambah_user("staffkoreksi", "passwordS123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r_login_staff = client.post("/api/auth/login", json={"username": "staffkoreksi", "password": "passwordS123"})
     headers_staff = {"Authorization": f"Bearer {r_login_staff.json()['token']}"}
     r_approve_staff_denied = client.put(f"/api/attendance/koreksi/{koreksi_id}/status",
@@ -605,7 +620,8 @@ def test_api_koreksi_ajukan_dan_approve(single_tenant):
     assert r_approve_staff_denied.status_code == 403
 
     # staff TAPI sudah diberi izin -- boleh.
-    client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_absensi_koreksi": True}}, headers=headers)
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions",
+               json={"izin": {"izin_absensi_koreksi": True}}, headers=headers)
     r_login_staff2 = client.post("/api/auth/login", json={"username": "staffkoreksi", "password": "passwordS123"})
     headers_staff2 = {"Authorization": f"Bearer {r_login_staff2.json()['token']}"}
     r_approve = client.put(f"/api/attendance/koreksi/{koreksi_id}/status",
@@ -805,15 +821,14 @@ def test_api_hapus_audit_log_khusus_owner(single_tenant):
     attendance_db.catat_audit(barber_a, "check_in", True, tenant_id=tenant_id)
 
     import auth_db
-    auth_db.tambah_user("staffaudit", "passwordS123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir Audit"}, headers=headers).json()
+    auth_db.tambah_user("staffaudit", "passwordS123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r_login_staff = client.post("/api/auth/login", json={"username": "staffaudit", "password": "passwordS123"})
     headers_staff = {"Authorization": f"Bearer {r_login_staff.json()['token']}"}
     # staff DITOLAK walau diberi SEMUA izin lain -- endpoint ini require_admin murni.
-    client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_absensi_koreksi": True,
-                                                                  "izin_absensi_pengaturan": True}}, headers=headers)
-    r_login_staff2 = client.post("/api/auth/login", json={"username": "staffaudit", "password": "passwordS123"})
-    headers_staff2 = {"Authorization": f"Bearer {r_login_staff2.json()['token']}"}
-    assert client.delete("/api/attendance/audit", headers=headers_staff2).status_code == 403
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions",
+               json={"izin": {"izin_absensi_koreksi": True, "izin_absensi_pengaturan": True}}, headers=headers)
+    assert client.delete("/api/attendance/audit", headers=headers_staff).status_code == 403
     assert len(attendance_db.get_audit_list(tenant_id)) == 1
 
     r_owner = client.delete("/api/attendance/audit", headers=headers)

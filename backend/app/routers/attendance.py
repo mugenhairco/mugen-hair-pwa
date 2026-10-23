@@ -30,23 +30,27 @@ import attendance_db
 import izin_cuti_db
 import laporan_pdf
 import permissions
-from auth import (get_current_user, require_admin, require_barber, require_feature, require_owner_or_staff,
-                   require_permission)
+from auth import (get_current_user, require_admin, require_barber, require_feature, require_menu_feature,
+                   require_owner_or_staff, require_permission)
 
-# FITUR Feature Gating "Absensi Karyawan" (diminta Owner): SELURUH endpoint
-# di router ini (Check In/Out, riwayat, dashboard, pengaturan, koreksi,
-# audit, export PDF/Excel) digerbang SATU kode fitur "absensi" lewat
-# `dependencies=` di level router -- FastAPI menjalankannya untuk SETIAP
-# request ke prefix ini, TIDAK PERLU ditambahkan satu per satu ke tiap
-# endpoint. Fail-CLOSED SEJAK AWAL (TIDAK ada grandfather, lihat
-# billing_db.py::_FITUR_DEFAULT), keputusan eksplisit Owner -- berlaku
-# untuk SEMUA role (Owner/Admin/Barber) tanpa kecuali, independen dari
-# gate "barber_app" (login akun barber, lihat routers/auth_router.py) --
-# tenant bisa saja punya barber_app TANPA absensi (barber tetap bisa login
-# & booking, tapi menu Absensi tidak bisa dipakai sama sekali), atau
-# sebaliknya.
+# FITUR Feature Gating "Absensi Karyawan": SELURUH endpoint di router ini
+# (Check In/Out, riwayat, dashboard, pengaturan, koreksi, audit, export
+# PDF/Excel) digerbang SATU key `izin_absensi_lihat` lewat `dependencies=`
+# di level router -- FastAPI menjalankannya untuk SETIAP request ke
+# prefix ini, TIDAK PERLU ditambahkan satu per satu ke tiap endpoint.
+# REVISI Work #2 (Superadmin Package Permission Tree, diminta Owner): dulu
+# kode fitur "absensi" tersendiri (subscription_features, fail-CLOSED
+# tanpa grandfather) -- SEKARANG diwakili root key pohon yang sama dipakai
+# Role (izin_absensi_lihat, lihat permissions.py::PERMISSION_TREE), dicek
+# lewat require_menu_feature() (package-ONLY, BUKAN require_permission --
+# endpoint di sini juga dipakai Barber self-service yang tidak lewat
+# require_owner_or_staff). Berlaku untuk SEMUA role (Owner/Admin/Barber)
+# tanpa kecuali, independen dari gate "barber_app" (login akun barber,
+# lihat routers/auth_router.py) -- tenant bisa saja punya barber_app TANPA
+# izin_absensi_lihat (barber tetap bisa login & booking, tapi menu Absensi
+# tidak bisa dipakai sama sekali), atau sebaliknya.
 router = APIRouter(prefix="/api/attendance", tags=["attendance"],
-                    dependencies=[Depends(require_feature("absensi"))])
+                    dependencies=[Depends(require_menu_feature("izin_absensi_lihat"))])
 
 
 def _cek_akses_lihat(user: dict):
@@ -271,8 +275,18 @@ def daftar_absensi_excel(tanggal: str = None, tanggal_dari: str = None, tanggal_
     diam ikut aturan Export PDF, supaya Super Admin bisa mengatur keduanya
     independen per paket (lihat billing_db.py::seed_grandfather_fitur_baru_
     digerbang() -- fitur ini sebelumnya selalu menyala gratis, di-grandfather
-    ke SEMUA paket yang sudah ada supaya tenant lama tidak kehilangan akses)."""
+    ke SEMUA paket yang sudah ada supaya tenant lama tidak kehilangan akses).
+
+    REVISI Hak Akses (tree permissions.py::PERMISSION_TREE): role-level gate
+    BARU `izin_absensi_export_excel` -- SEBELUMNYA hanya digerbang paket
+    (require_feature di atas) TANPA izin_* Role sama sekali (migrasi otomatis
+    mewarisi True dari izin_absensi_lihat lama supaya staff yang sudah bisa
+    lihat Absensi tidak tiba-tiba kehilangan akses Export Excel, lihat
+    user_roles_db.py::migrasi_role_staff_default())."""
     _cek_akses_lihat(user)
+    if user["role"] == "staff" and not permissions.has("izin_absensi_export_excel",
+                                                         tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
+        raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk Export Excel. Hubungi Owner.")
     import attendance_excel
     konten = attendance_excel.buat_excel_absensi_list(tanggal, tanggal_dari, tanggal_sampai, barber_id, status,
                                                         tenant_id=user["tenant_id"])

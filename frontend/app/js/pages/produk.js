@@ -87,7 +87,13 @@ const PageProduk = (() => {
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
-    const bolehEdit = levelProduk === "write";
+    // REVISI Hak Akses (sub-item terpisah, lihat permissions.py::
+    // PERMISSION_TREE): Tambah/Kelola Produk (izin_produk_kelola) dan
+    // Restock/Jual/Tester (izin_produk_mutasi) SEKARANG dua saklar
+    // terpisah, BUKAN lagi satu level kasar.
+    const bolehKelolaProduk = await MugenMenuAccess.has("izin_produk_kelola");
+    const bolehMutasi = await MugenMenuAccess.has("izin_produk_mutasi");
+    const bolehHapusProduk = await MugenMenuAccess.has("izin_produk_hapus");
     const user = MugenState.getUser();
 
     let produkList = [];
@@ -98,19 +104,20 @@ const PageProduk = (() => {
     const produkListCard = MugenUI.el("div", { class: "card" });
     const mutasiFormCard = MugenUI.el("div", { class: "card", style: "display:none;" });
     const riwayatCard = MugenUI.el("div", { class: "card" });
-    // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Ubah Produk &
-    // form Mutasi (restock/jual/tester); daftar produk & riwayat tetap tampil.
-    if (bolehEdit) root.appendChild(produkPendingBanner);
-    if (bolehEdit) root.appendChild(produkFormCard);
+    // Hak Akses: form Tambah/Ubah Produk (izin_produk_kelola) & form
+    // Mutasi (izin_produk_mutasi) masing-masing punya saklar sendiri;
+    // daftar produk & riwayat tetap tampil.
+    if (bolehKelolaProduk) root.appendChild(produkPendingBanner);
+    if (bolehKelolaProduk) root.appendChild(produkFormCard);
     root.appendChild(produkListCard);
-    if (bolehEdit) root.appendChild(mutasiFormCard);
+    if (bolehMutasi) root.appendChild(mutasiFormCard);
     root.appendChild(riwayatCard);
 
     // PERMINTAAN OWNER: lihat catatan lengkap pola ini di
     // input_data.js::pendingList (Simpan Transaksi) -- di sini satu
     // antrian dipakai untuk DUA jenis aksi (produk & mutasi), dibedakan
     // lewat `entry.jenis`.
-    let produkPendingList = bolehEdit ? bacaPendingProduk(user.id) : [];
+    let produkPendingList = (bolehKelolaProduk || bolehMutasi) ? bacaPendingProduk(user.id) : [];
 
     function renderProdukPendingBanner() {
       produkPendingBanner.innerHTML = "";
@@ -262,34 +269,43 @@ const PageProduk = (() => {
             { key: "harga_jual", label: "Harga Jual", format: MugenUI.formatRupiah },
             { key: "stok", label: "Sisa Stok" },
             {
+              // REVISI Hak Akses (sub-item terpisah): Restock/Jual/Tester
+              // (izin_produk_mutasi), Ubah (izin_produk_kelola), Nonaktifkan
+              // (izin_produk_hapus) -- masing-masing tombol gerbangnya sendiri.
               key: "aksi", label: "Aksi", format: (_, p) => {
-                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
+                if (!bolehMutasi && !bolehKelolaProduk && !bolehHapusProduk) return MugenUI.el("span", {}, "-");
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnRestock = MugenUI.el("button", {}, "Restock");
-                btnRestock.addEventListener("click", () => bukaFormMutasi(p, "restock"));
-                const btnJual = MugenUI.el("button", {}, "Jual");
-                btnJual.addEventListener("click", () => bukaFormMutasi(p, "jual"));
-                const btnTester = MugenUI.el("button", {}, "Tester");
-                btnTester.addEventListener("click", () => bukaFormMutasi(p, "tester"));
-                const btnUbah = MugenUI.el("button", {}, "Ubah");
-                btnUbah.addEventListener("click", () => isiFormUbahProduk(p));
-                const btnNonaktif = MugenUI.el("button", { class: "btn-danger" }, "Nonaktifkan");
-                btnNonaktif.addEventListener("click", async () => {
-                  if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
-                  try {
-                    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-                    await MugenUI.withButtonLoading(btnNonaktif, () => MugenApi.del(`/api/produk/${p.id}`));
-                    MugenUI.toast("Produk dinonaktifkan.", "success");
-                    loadProdukList();
-                  } catch (e) {
-                    MugenUI.toast(e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnRestock);
-                wrap.appendChild(btnJual);
-                wrap.appendChild(btnTester);
-                wrap.appendChild(btnUbah);
-                wrap.appendChild(btnNonaktif);
+                if (bolehMutasi) {
+                  const btnRestock = MugenUI.el("button", {}, "Restock");
+                  btnRestock.addEventListener("click", () => bukaFormMutasi(p, "restock"));
+                  const btnJual = MugenUI.el("button", {}, "Jual");
+                  btnJual.addEventListener("click", () => bukaFormMutasi(p, "jual"));
+                  const btnTester = MugenUI.el("button", {}, "Tester");
+                  btnTester.addEventListener("click", () => bukaFormMutasi(p, "tester"));
+                  wrap.appendChild(btnRestock);
+                  wrap.appendChild(btnJual);
+                  wrap.appendChild(btnTester);
+                }
+                if (bolehKelolaProduk) {
+                  const btnUbah = MugenUI.el("button", {}, "Ubah");
+                  btnUbah.addEventListener("click", () => isiFormUbahProduk(p));
+                  wrap.appendChild(btnUbah);
+                }
+                if (bolehHapusProduk) {
+                  const btnNonaktif = MugenUI.el("button", { class: "btn-danger" }, "Nonaktifkan");
+                  btnNonaktif.addEventListener("click", async () => {
+                    if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
+                    try {
+                      // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
+                      await MugenUI.withButtonLoading(btnNonaktif, () => MugenApi.del(`/api/produk/${p.id}`));
+                      MugenUI.toast("Produk dinonaktifkan.", "success");
+                      loadProdukList();
+                    } catch (e) {
+                      MugenUI.toast(e.message, "error");
+                    }
+                  });
+                  wrap.appendChild(btnNonaktif);
+                }
                 return wrap;
               },
             },
@@ -502,11 +518,17 @@ const PageProduk = (() => {
             { key: "sisa_stok", label: "Sisa Stok" },
             { key: "catatan", label: "Catatan" },
             {
+              // REVISI Hak Akses (sub-item terpisah): Koreksi (izin_produk_
+              // mutasi) dan Hapus (izin_produk_hapus) punya gerbang sendiri.
               key: "aksi", label: "Aksi", format: (_, m) => {
-                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
+                if (!bolehMutasi && !bolehHapusProduk) return MugenUI.el("span", {}, "-");
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnKoreksi = MugenUI.el("button", {}, "Koreksi");
-                btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(btnKoreksi, m));
+                if (bolehMutasi) {
+                  const btnKoreksi = MugenUI.el("button", {}, "Koreksi");
+                  btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(btnKoreksi, m));
+                  wrap.appendChild(btnKoreksi);
+                }
+                if (!bolehHapusProduk) return wrap;
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`)) return;
@@ -520,7 +542,6 @@ const PageProduk = (() => {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }
                 });
-                wrap.appendChild(btnKoreksi);
                 wrap.appendChild(btnHapus);
                 return wrap;
               },
@@ -571,7 +592,7 @@ const PageProduk = (() => {
     selTahunFilter.addEventListener("change", loadRiwayat);
 
     resetProdukForm();
-    if (bolehEdit) renderProdukPendingBanner();
+    if (bolehKelolaProduk || bolehMutasi) renderProdukPendingBanner();
     await loadProdukList({ bisaDariCache: true });
     isiOpsiProdukFilter();
     loadRiwayat({ bisaDariCache: true });

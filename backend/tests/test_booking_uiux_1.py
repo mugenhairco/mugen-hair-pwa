@@ -148,9 +148,10 @@ def test_upload_logo_staff_tanpa_izin_branding_ditolak(single_tenant):
 
 def test_upload_logo_staff_dengan_izin_branding_diterima(single_tenant):
     client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
-    client.put("/api/pengaturan/hak-akses-admin", headers=headers,
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"}, headers=headers).json()
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions", headers=headers,
                json={"izin": {"izin_setting_branding": True}})
-    auth_db.tambah_user("staffLogo2", "password123", role="staff", tenant_id=tenant_id)
+    auth_db.tambah_user("staffLogo2", "password123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r = client.post("/api/auth/login", json={"username": "staffLogo2", "password": "password123"})
     headers_staff = {"Authorization": f"Bearer {r.json()['token']}"}
 

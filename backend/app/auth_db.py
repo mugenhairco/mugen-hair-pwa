@@ -217,14 +217,44 @@ def set_custom_role(user_id: int, custom_role_id: int | None):
 
 
 def lepas_custom_role_dari_semua_user(custom_role_id: int):
-    """FITUR Role Custom: dipanggil SEBELUM sebuah role dihapus
-    (user_roles_db.delete_role()) -- SEMUA akun staff yang masih
-    ditempelkan ke role itu otomatis balik ke set izin default tenant
-    (custom_role_id = NULL), TIDAK PERNAH macet/terkunci karena role-nya
-    tiba-tiba hilang (keputusan eksplisit Owner, lihat routers/
-    pengaturan.py::hapus_user_role())."""
+    """FITUR Role Custom -- dipakai jalur MIGRASI SAJA (lihat
+    user_roles_db.migrasi_role_staff_default(), BUKAN dipanggil lagi dari
+    hapus_user_role()). REVISI Hak Akses (hapus Role "Admin" bawaan):
+    SETELAH migrasi, `custom_role_id = NULL` TIDAK LAGI punya arti "Role
+    Admin default" -- sekarang berarti akun itu TANPA role, tidak lolos
+    pengecekan izin apa pun (fail-closed, lihat permissions.py). Owner
+    MENGHAPUS sebuah Role (routers/pengaturan.py::hapus_user_role())
+    SEKARANG DIBLOKIR selama masih ada akun yang memakainya (lihat
+    hitung_user_dengan_custom_role_id() di bawah) -- bukan lagi
+    "melepas otomatis ke default" seperti sebelum revisi ini."""
     with get_conn() as conn:
         conn.execute("UPDATE users SET custom_role_id = NULL WHERE custom_role_id = ?", (custom_role_id,))
+
+
+def hitung_user_dengan_custom_role_id(custom_role_id: int) -> int:
+    """Jumlah akun yang MASIH memakai Role ini -- dipakai hapus_user_role()
+    (routers/pengaturan.py) untuk memblokir penghapusan Role yang masih
+    dipakai (lihat catatan lepas_custom_role_dari_semua_user() di atas)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS jumlah FROM users WHERE custom_role_id = ?", (custom_role_id,)
+        ).fetchone()
+        return row["jumlah"]
+
+
+def get_user_list_tanpa_role(tenant_id: int) -> list:
+    """FITUR Migrasi Role Staff Default (hapus Role "Admin" bawaan): akun
+    'staff' aktif milik tenant ini yang `custom_role_id` masih NULL --
+    dipakai user_roles_db.migrasi_role_staff_default() untuk menempelkan
+    SEMUA akun semacam ini ke Role "Staff" baru yang dibuat migrasi
+    (membawa izin lama tenant ini apa adanya), supaya tidak ada akun yang
+    mendadak terkunci (fail-closed) begitu revisi ini di-deploy."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM users WHERE tenant_id = ? AND role = 'staff' AND custom_role_id IS NULL",
+            (tenant_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_user_by_username(username: str, tenant_id: int = None):

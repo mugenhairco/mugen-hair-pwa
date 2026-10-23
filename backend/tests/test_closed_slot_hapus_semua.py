@@ -68,19 +68,20 @@ def test_delete_closed_slot_bulk_endpoint(single_tenant):
 
 
 def test_delete_closed_slot_bulk_endpoint_ditolak_tanpa_izin_kelola(single_tenant):
-    """Pola SAMA PERSIS test_perluasan_hak_akses_admin.py -- izin_booking_
-    kelola default TRUE (grandfather), jadi harus dimatikan eksplisit dulu
-    oleh Owner lewat PUT /hak-akses-admin sebelum staff kena 403."""
+    """REVISI Hak Akses (hapus Role "Admin" bawaan): staff WAJIB punya Role
+    eksplisit, Role baru mulai kosong/fail-closed (lihat permissions.py::
+    PERMISSION_TREE) -- DELETE closed-slot (izin_booking_closed_slot)
+    ditolak kecuali Owner mengaktifkannya lewat PUT /user-roles/{id}/
+    permissions, TIDAK ADA LAGI default TRUE (grandfather) seperti sistem
+    lama."""
     import auth_db
 
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    auth_db.tambah_user("staffcs", "password123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"}, headers=headers).json()
+    auth_db.tambah_user("staffcs", "password123", role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r_login = client.post("/api/auth/login", json={"username": "staffcs", "password": "password123"})
     headers_staff = {"Authorization": f"Bearer {r_login.json()['token']}"}
-
-    r = client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_booking_kelola": False}}, headers=headers)
-    assert r.status_code == 200, r.text
 
     r = client.delete("/api/booking/closed-slot", headers=headers_staff)
     assert r.status_code == 403

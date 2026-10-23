@@ -146,6 +146,10 @@ const PageKasbon = (() => {
       return;
     }
     const bolehEdit = levelKasbon === "write";
+    // REVISI Hak Akses (sub-item Hapus terpisah, lihat permissions.py::
+    // PERMISSION_TREE izin_kasbon_hapus) -- tombol Hapus SEKARANG punya
+    // saklar sendiri, terpisah dari izin_kasbon (Tambah & Kelola).
+    const bolehHapus = await MugenMenuAccess.has("izin_kasbon_hapus");
 
     const today = new Date();
     let editingId = null;
@@ -395,7 +399,7 @@ const PageKasbon = (() => {
                   btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
                   wrap.appendChild(btnEdit);
 
-                  if (r.sisa >= r.jumlah) { // belum ada pembayaran sama sekali
+                  if (bolehHapus && r.sisa >= r.jumlah) { // belum ada pembayaran sama sekali
                     const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                     btnHapus.addEventListener("click", async () => {
                       if (!confirm(`Hapus kasbon ${r.nama_barber} tanggal ${r.tanggal}?`)) return;

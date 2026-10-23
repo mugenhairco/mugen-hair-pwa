@@ -246,12 +246,15 @@ const PageIzinCuti = (() => {
   async function renderAdminView(root) {
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa data apa pun.
-    const levelIzinCuti = await MugenMenuAccess.get("izin_cuti");
+    const levelIzinCuti = await MugenMenuAccess.get("cuti_karyawan");
     if (levelIzinCuti === "none") {
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
     const bolehEdit = levelIzinCuti === "write";
+    // REVISI Hak Akses (sub-item Hapus/Batalkan terpisah, lihat
+    // permissions.py::PERMISSION_TREE izin_cuti_karyawan_hapus).
+    const bolehHapus = await MugenMenuAccess.has("izin_cuti_karyawan_hapus");
 
     let barbers = [];
     try {
@@ -371,7 +374,7 @@ const PageIzinCuti = (() => {
                   if (r.catatan_approval) {
                     wrapDisetujui.appendChild(MugenUI.el("span", { class: "subtitle" }, `Catatan: ${r.catatan_approval}`));
                   }
-                  if (bolehEdit) {
+                  if (bolehHapus) {
                     // PERMINTAAN OWNER: tombol Batalkan untuk pengajuan yang
                     // sudah disetujui (mis. barber ternyata tetap masuk kerja).
                     const btnBatalkan = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");

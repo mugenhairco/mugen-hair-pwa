@@ -61,3 +61,24 @@ def tenant_has_feature(tenant_id: int, kode: str) -> bool:
     if paket is None:
         return False
     return any(f["kode"] == kode for f in billing_db.get_package_features(paket["id"]))
+
+
+def tenant_has_menu_access(tenant_id: int, izin_key: str) -> bool:
+    """Work #2 (Superadmin Package Permission Tree, diminta Owner): True
+    kalau paket AKTIF tenant ini menyertakan `izin_key` (key APA PUN dari
+    permissions.PERMISSION_TREE -- root menu, tab, maupun sub-item/aksi
+    destruktif, SAMA PERSIS katalog yang dipakai Role di dalam satu
+    tenant) -- lihat billing_db.py::subscription_package_permissions.
+    Fail-CLOSED sama seperti tenant_has_feature() di atas (tenant tanpa
+    baris subscription/paket dianggap TIDAK PUNYA akses apa pun). Dipanggil
+    auth.py::require_permission()/require_menu_read() SEBAGAI GERBANG
+    KEDUA (batas LUAR, berlaku untuk SEMUA role termasuk Owner -- paket
+    menentukan apa yang BISA diakses sama sekali, Role staff di dalam
+    tenant itu mengatur siapa yang BOLEH memakainya, lihat permissions.py)."""
+    sub = subscription_db.get_subscription(tenant_id)
+    if sub is None:
+        return False
+    paket = billing_db.get_package_by_kode(sub["package"])
+    if paket is None:
+        return False
+    return izin_key in billing_db.get_package_permission_keys(paket["id"])

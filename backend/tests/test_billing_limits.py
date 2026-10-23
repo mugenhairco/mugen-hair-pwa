@@ -109,8 +109,13 @@ def test_http_tambah_user_ditolak_saat_limit_tercapai(app_client):
     jumlah_sekarang = len(auth_db.get_user_list(tenant_id=tenant["id"]))
     billing_db.update_package(free["id"], max_user=jumlah_sekarang)
 
+    # REVISI Hak Akses (hapus Role "Admin" bawaan): custom_role_id SEKARANG
+    # wajib diisi untuk role='staff' -- role sungguhan dibuat dulu di sini
+    # supaya baris di bawah menguji limit billing-nya, bukan validasi Role.
+    role = app_client.post("/api/pengaturan/user-roles", headers=headers, json={"nama": "Staff"}).json()
     r = app_client.post("/api/pengaturan/user", headers=headers,
-                         json={"username": "staffbaru", "password": "password123", "role": "staff"})
+                         json={"username": "staffbaru", "password": "password123", "role": "staff",
+                               "custom_role_id": role["id"]})
     assert r.status_code == 422
     assert "maksimal" in r.json()["detail"]
 

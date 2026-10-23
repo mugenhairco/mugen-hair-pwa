@@ -1,340 +1,257 @@
 """
 permissions.py — Hak Akses User (dinamis, disimpan di PostgreSQL)
 =============================================================================
-STRUKTUR: USER -> ROLE -> HAK AKSES. Role 'staff' (label UI: "Admin") duduk
-di antara 'admin' (label UI: "Owner", akses penuh TANPA batasan apa pun) dan
-'barber'. Apa yang boleh dilakukan role 'staff' TIDAK di-hardcode di kode --
-Owner mengatur lewat menu Setting > Hak Akses User (lihat
-routers/pengaturan.py), yang SEKARANG menampilkan SATU tabel Role berisi
-Role bawaan "Admin" + seluruh Role Custom (lihat user_roles_db.py) -- BUKAN
-lagi dua konsep terpisah. Role "Admin" adalah Role BAWAAN/default (tidak
-bisa diganti nama/dihapus), izinnya disimpan sebagai baris di tabel
-`settings` yang sudah ada (key-value generik, sudah dialek-netral
-SQLite/PostgreSQL lewat db_compat.py -- endpoint /hak-akses-admin, URL path
-TIDAK diubah, murni label UI) -- dipakai SEMUA akun staff yang Role-nya
-"Admin" (belum memilih Role Custom lain).
+REVISI BESAR (permintaan Owner, Oktober 2026): sistem "Hak Akses Menu" 3
+level (Tidak Ada Akses/Baca/Baca & Edit) DIHAPUS TOTAL -- diganti SATU
+saklar boolean per unit ("boleh akses atau tidak", tidak ada lagi
+pembedaan baca vs tulis). Konsep Role "Admin" BAWAAN juga DIHAPUS -- tidak
+ada lagi role 'staff' yang otomatis punya izin tanpa Role eksplisit. SETIAP
+akun 'staff' WAJIB punya Role (lihat user_roles_db.py) -- nama bebas
+("Staff", "Kasir", atau apa pun), dibuat Owner sendiri, checklist izinnya
+100% ditentukan Owner lewat pohon PERMISSION_TREE di bawah. Role "Staff"
+dibuat otomatis oleh migrasi (migrasi_role_staff_default(), dipanggil dari
+main.py) untuk tiap tenant, membawa persis nilai izin yang SEBELUMNYA
+tersimpan di tabel `settings` sebagai Role "Admin" lama -- supaya tidak
+ada akun yang mendadak terkunci begitu revisi ini di-deploy. Setelah
+migrasi, SETIAP akun 'staff' (termasuk yang dulu role_id NULL/"Admin")
+WAJIB punya users.custom_role_id terisi -- lihat migrasi_assign_role_staff_
+default_ke_user_lama() di user_roles_db.py.
 
-FITUR Role Custom (diminta Owner): Owner bisa membuat Role bernama sendiri
-(mis. "Kasir", "Supervisor" -- lihat user_roles_db.py) dengan checklist
-izin_* SENDIRI dari katalog yang SAMA persis di bawah ini (TIDAK ADA sistem
-izin baru, murni Role tambahan di luar "Admin"/"Owner"/"Barber"), dipilih
-LANGSUNG sebagai Role saat membuat/mengedit User (tab User) lewat
-`users.custom_role_id` -- BUKAN "ditempelkan ke Admin", akun ber-Role Kasir
-memakai HANYA izin Role Kasir, tidak pernah gabungan dengan Role "Admin".
-Parameter `role_id` OPSIONAL di get_all()/has()/has_any()/set_bulk() di
-bawah -- diisi = baca/tulis checklist Role Custom itu, None (default, JUGA
-berlaku untuk staff ber-Role "Admin") = pakai set izin Role "Admin" di atas,
-100% kompatibel mundur.
+STRUKTUR: USER -> ROLE -> HAK AKSES. Role 'staff' (TIDAK ADA LAGI label UI
+"Admin" -- itu cuma nama SALAH SATU Role yang kebetulan dibuat migrasi,
+bukan konsep istimewa) duduk di antara 'admin' ("Owner", akses penuh TANPA
+batasan apa pun, TIDAK PERNAH disentuh revisi ini) dan 'barber' (TIDAK
+PERNAH disentuh revisi ini -- tetap hardcoded seperti sebelumnya, lihat
+nav.js/auth.py).
+
+PERMISSION_TREE (katalog baru): {node_key: {"label", "parent", "roots": bool}}
+-- setiap node punya SATU key izin_* (sama persis nama variabelnya),
+`parent` = node_key induknya (None = menu paling atas) untuk kebutuhan UI
+dropdown (anak-anak HANYA tampil kalau induknya sudah dicentang, lihat
+pages/pengaturan.js & pages/superadmin.js yang me-render pohon ini).
+Beberapa izin LINTAS-MENU (Download Laporan PDF, dst) SENGAJA tidak punya
+`parent` (None) DAN tidak pernah jadi induk siapa pun -- ditampilkan
+sejajar di luar pohon menu, bukan di dalam satu menu tertentu (lihat
+CROSS_CUTTING_KEYS).
+
+"Hak Akses User" (mengatur Role orang lain) dan "Billing" TETAP permanen
+Owner-only, TIDAK PERNAH masuk PERMISSION_TREE -- tidak ada Role manapun
+yang bisa diberi akses ke situ.
 
 Owner ('admin') SELALU lolos setiap pengecekan izin di sini tanpa syarat
-(lihat auth.require_permission) -- daftar & default di bawah ini HANYA
-berlaku untuk role 'staff'.
+(lihat auth.require_permission) -- seluruh katalog di bawah HANYA berlaku
+untuk role 'staff'.
 """
 
 import json
 
 import database as db
 
-# (key, grup, label, default) -- default HANYA prasangka awal sebelum Owner
-# pernah mengatur apa pun; begitu Owner menyimpan lewat menu Hak Akses
-# Admin, nilai tersimpan menang selamanya (lihat get_all()).
-PERMISSION_DEFS = [
-    # ---- Dashboard: kartu apa saja yang boleh dilihat 'staff' ----
-    ("izin_dashboard_nilai_service", "dashboard", "Nilai Service", True),
-    ("izin_dashboard_jumlah_service", "dashboard", "Jumlah Service", True),
-    ("izin_dashboard_pengeluaran_toko", "dashboard", "Pengeluaran Toko", True),
-    ("izin_dashboard_penjualan_produk", "dashboard", "Penjualan Produk", True),
-    ("izin_dashboard_total_komisi", "dashboard", "Total Komisi Barber", False),
-    ("izin_dashboard_total_tips", "dashboard", "Total Tips", False),
-    ("izin_dashboard_uang_harian", "dashboard", "Uang Harian", False),
-    ("izin_dashboard_bonus_customer", "dashboard", "Bonus Customer", False),
-    ("izin_dashboard_laba_kotor", "dashboard", "Laba Kotor Toko", False),
-    # ---- User: HANYA berlaku untuk mengelola user ber-role Barber ----
-    ("izin_user_tambah", "user", "Membuat User Barber", False),
-    ("izin_user_hapus", "user", "Menonaktifkan/Mengaktifkan/Menghapus Permanen User Barber", False),
-    ("izin_user_ganti_password", "user", "Mengubah Password User Barber", False),
-    # REVISI (kedua): grup "Pengeluaran" DIHAPUS dari sini -- menu
-    # Pengeluaran tidak lagi memakai sistem izin sama sekali, 'staff' (Admin)
-    # selalu punya akses PENUH sama persis seperti Owner (lihat
-    # routers/pengeluaran.py).
-    # ---- Backup ----
-    ("izin_backup_export", "backup", "Export Database", False),
-    ("izin_backup_import", "backup", "Import Database", False),
-    # ---- Laporan ----
-    ("izin_laporan_pdf", "laporan", "Download Laporan PDF", False),
-    # ---- Karyawan (Modul Karyawan, Fase 1: Slip Gaji, Fase 2: Kasbon) ----
-    ("izin_slip_gaji", "karyawan", "Kelola Slip Gaji", False),
-    ("izin_kasbon", "karyawan", "Kelola Kasbon Karyawan", False),
-    ("izin_komisi", "karyawan", "Kelola Penyesuaian Komisi", False),
-    ("izin_reimburse", "karyawan", "Kelola Reimburse", False),
-    ("izin_cuti_karyawan", "karyawan", "Kelola Izin & Cuti", False),
-    # ---- Setting: akses ke tab-nya sendiri ----
-    ("izin_setting_identitas", "setting", "Tab Identitas Barbershop", False),
-    ("izin_setting_tampilan", "setting", "Tab Tampilan", False),
-    ("izin_setting_user", "setting", "Tab User", False),
-    ("izin_setting_backup", "setting", "Tab Backup", False),
-    # FONDASI Multi-Tenant Phase 2.2: Tab Branding (nama, logo, favicon,
-    # warna, tagline, alamat, whatsapp, email, website) -- permission
-    # TERPISAH dari izin_setting_identitas supaya Owner bisa memberi izin
-    # granular (mis. staff boleh atur Branding tapi tidak boleh ke tab
-    # Identitas lama, atau sebaliknya) sesuai instruksi "Admin dapat
-    # mengubah Branding jika memiliki izin".
-    ("izin_setting_branding", "setting", "Tab Branding", False),
-    # ---- Absensi (modul GPS Check In/Out) ----
-    # Lihat spesifikasi (chat) untuk pembagian peran: Owner ('admin') akses
-    # penuh TANPA syarat (seperti biasa). 'staff' (Admin) SELALU boleh
-    # MELIHAT (dashboard/riwayat/laporan Absensi -- tidak digerbang
-    # permission apa pun, sama seperti pengeluaran.py), tapi MENGUBAH
-    # Pengaturan Absensi (jam kerja/radius/lokasi toko) wajib izin eksplisit
-    # ini dari Owner (lihat require_permission("izin_absensi_pengaturan")
-    # di routers/attendance.py).
-    ("izin_absensi_pengaturan", "absensi", "Kelola Pengaturan Absensi", False),
-    # FITUR Koreksi Absensi: staff (Admin) SELALU boleh MELIHAT pengajuan
-    # koreksi (sama seperti dashboard/riwayat Absensi lainnya), tapi
-    # approve/reject wajib izin eksplisit ini -- pola sama persis
-    # izin_cuti_karyawan (approval Izin & Cuti).
-    ("izin_absensi_koreksi", "absensi", "Approve/Reject Koreksi Absensi", False),
-    # ---- Perluasan Hak Akses Admin (diminta Owner): modul operasional
-    # harian di bawah ini SEBELUMNYA staff selalu akses PENUH tanpa syarat
-    # apa pun (require_owner_or_staff polos, tidak ada permission sama
-    # sekali) -- SEKARANG bisa diatur granular Owner, dipecah "Kelola"
-    # (tambah/edit, risiko rendah) vs "Hapus" (destruktif, risiko lebih
-    # tinggi) per modul, pola SAMA seperti izin_user_tambah vs izin_user_
-    # hapus. Default TRUE untuk SEMUA (bukan False seperti kebanyakan
-    # permission granular lain di atas) -- SENGAJA, supaya staff yang
-    # SUDAH memakai modul ini sehari-hari TIDAK tiba-tiba terkunci begitu
-    # perubahan ini deploy; Owner tetap bebas mematikan kapan pun lewat
-    # Setting > Hak Akses Admin. Endpoint GET (lihat data) TIDAK ikut
-    # digerbang -- staff SELALU boleh melihat, sama seperti pola karyawan
-    # (kasbon.py dkk) yang sudah ada.
-    # ---- Booking ----
-    ("izin_booking_kelola", "booking", "Kelola Booking (verifikasi pembayaran, closed slot, toko libur)", True),
-    ("izin_booking_batalkan", "booking", "Batalkan Booking", True),
-    # DIPISAH dari izin_booking_batalkan (permintaan eksplisit Owner):
-    # Batalkan otomatis mengirim WhatsApp pembatalan ke customer, Hapus
-    # Permanen TIDAK -- dua konsekuensi berbeda, jadi dua izin berbeda,
-    # pola SAMA seperti izin_produk_kelola vs izin_produk_hapus di atas /
-    # izin_input_data_kelola vs izin_input_data_hapus di bawah. Default
-    # FALSE (BUKAN True seperti kebanyakan izin "Perluasan Hak Akses Admin"
-    # lain di sini) -- ini kemampuan BARU yang belum pernah ada sama sekali
-    # untuk staff manapun sebelumnya (beda dari izin_input_data_hapus yang
-    # default True karena migrasi dari kemampuan yang SUDAH ADA), jadi tidak
-    # ada alasan default-nya menyala tanpa Owner sengaja mengaktifkan.
-    ("izin_booking_hapus", "booking", "Hapus Booking Permanen", False),
-    ("izin_booking_pengaturan", "booking", "Pengaturan Booking (jadwal, Metode Pembayaran, QRIS, URL Booking)", True),
-    # ---- Produk ----
-    ("izin_produk_kelola", "produk", "Kelola Produk (tambah/edit, restock/jual/tester)", True),
-    ("izin_produk_hapus", "produk", "Hapus Produk & Koreksi/Hapus Mutasi", True),
-    # ---- Pengeluaran ----
-    ("izin_pengeluaran_kelola", "pengeluaran", "Kelola Pengeluaran (catat/edit)", True),
-    ("izin_pengeluaran_hapus", "pengeluaran", "Hapus Pengeluaran", True),
-    # ---- Pemasukan ----
-    ("izin_pemasukan_kelola", "pemasukan", "Kelola Pemasukan (catat/edit)", True),
-    ("izin_pemasukan_hapus", "pemasukan", "Hapus Pemasukan", True),
-    # ---- Uang Kas ----
-    ("izin_uang_kas_kelola", "uang_kas", "Kelola Uang Kas (saldo awal, penyesuaian)", True),
-    ("izin_uang_kas_hapus", "uang_kas", "Hapus Penyesuaian Uang Kas", True),
-    # ---- Data Non-Barber ----
-    ("izin_data_non_barber_kelola", "data_non_barber", "Kelola Data Non-Barber (tambah/edit)", True),
-    ("izin_data_non_barber_hapus", "data_non_barber", "Hapus Data Non-Barber", True),
-    # ---- Input Data / Transaksi (termasuk hapus dari tombol Aksi di Rekap Transaksi) ----
-    ("izin_input_data_kelola", "input_data", "Kelola Transaksi Harian (tambah/edit, tandai/batalkan libur)", True),
-    ("izin_input_data_hapus", "input_data", "Hapus Transaksi Harian", True),
-    # ---- Riwayat Transaksi (menu Keuangan > Riwayat Transaksi -- SEBELUMNYA
-    # aksi "Cek Ulang"-nya menumpang izin_booking_kelola walau ini menu
-    # terpisah di sidebar; sekarang key sendiri supaya Hak Akses Menu bisa
-    # mengatur Booking dan Riwayat Transaksi independen, lihat MENU_DEFS) ----
-    ("izin_riwayat_transaksi", "riwayat_transaksi", "Cek Ulang Status Transaksi Payment Gateway", True),
-    # ---- Settlement Faspay (closing harian transaksi SNAP Advance per
-    # tenant/"terminal") -- pola SAMA PERSIS Riwayat Transaksi di atas ----
-    ("izin_settlement_faspay", "settlement_faspay", "Submit Settlement Faspay", False),
-    # ---- Katalog KHUSUS "Hak Akses Menu" (permintaan Owner: setiap menu di
-    # sidebar punya SATU level -- Tidak Ada Akses/Baca/Baca & Edit -- bukan
-    # checklist per-aksi). Key "_lihat" di bawah ini MURNI gerbang MELIHAT
-    # (dulu sebagian besar modul operasional -- Booking/Input Data/Produk/
-    # Pengeluaran/Pemasukan/Uang Kas/Dashboard/Rekap/Absensi/Riwayat
-    # Transaksi -- GET-nya SAMA SEKALI TIDAK digerbang izin apa pun, staff
-    # SELALU bisa lihat; modul Karyawan -- Kasbon/Komisi/Slip Gaji/
-    # Reimburse/Izin Cuti -- justru SEBALIKNYA, satu key yang sama menggerbang
-    # baca DAN tulis sekaligus). Level "Baca" = key "_lihat" ini True, key
-    # tulis (existing di atas) False. Level "Baca & Edit" = key "_lihat" DAN
-    # SEMUA key tulis True. Level "Tidak Ada Akses" = semuanya False. Lihat
-    # MENU_DEFS/get_menu_level()/set_menu_level() di bawah untuk pemetaan
-    # lengkap tiap menu -> (key baca, [key tulis]) dan cara level dihitung/
-    # disimpan. Default True untuk modul yang SEBELUMNYA selalu terbuka
-    # (supaya tidak ada staff yang tiba-tiba terkunci begitu revisi ini
-    # deploy), default False untuk modul Karyawan (SAMA seperti default key
-    # tulisnya, konsisten dengan perilaku lama).
-    ("izin_dashboard_lihat", "menu", "Lihat menu Dashboard", True),
-    ("izin_input_data_lihat", "menu", "Lihat menu Input Data", True),
-    ("izin_rekap_lihat", "menu", "Lihat menu Rekap", True),
-    ("izin_slip_gaji_lihat", "menu", "Lihat menu Slip Gaji", False),
-    ("izin_kasbon_lihat", "menu", "Lihat menu Kasbon", False),
-    ("izin_komisi_lihat", "menu", "Lihat menu Komisi", False),
-    ("izin_reimburse_lihat", "menu", "Lihat menu Reimburse", False),
-    ("izin_cuti_karyawan_lihat", "menu", "Lihat menu Izin & Cuti", False),
-    ("izin_absensi_lihat", "menu", "Lihat menu Absensi", True),
-    ("izin_booking_lihat", "menu", "Lihat menu Booking", True),
-    ("izin_riwayat_transaksi_lihat", "menu", "Lihat menu Riwayat Transaksi", True),
-    ("izin_pemasukan_lihat", "menu", "Lihat menu Pemasukan", True),
-    ("izin_pengeluaran_lihat", "menu", "Lihat menu Pengeluaran", True),
-    ("izin_uang_kas_lihat", "menu", "Lihat menu Uang Kas", True),
-    ("izin_produk_lihat", "menu", "Lihat menu Produk", True),
-    ("izin_settlement_faspay_lihat", "menu", "Lihat menu Settlement Faspay", False),
-]
-
-PERMISSION_KEYS = {key for key, *_ in PERMISSION_DEFS}
-
 # ---------------------------------------------------------------------------
-# Hak Akses Menu (permintaan Owner): SATU level per menu sidebar --
-# "Tidak Ada Akses" / "Baca" / "Baca & Edit" -- dibangun DI ATAS katalog
-# izin_* yang sudah ada di atas (TIDAK ADA sistem penyimpanan baru, tetap
-# lewat get_all()/set_bulk() yang sama, jadi Role Custom & Role "Admin"
-# bawaan otomatis ikut kompatibel tanpa kode terpisah). Setting & Billing
-# SENGAJA TIDAK masuk sini -- Setting sudah punya delegasi tab sendiri
-# (izin_setting_*, lebih granular dari 3 level ini) dan Billing selalu
-# khusus Owner (require_admin) -- di luar cakupan permintaan ini.
-MENU_DEFS = {
-    "dashboard": {"label": "Dashboard", "read_key": "izin_dashboard_lihat", "write_keys": []},
-    "input_data": {"label": "Input Data", "read_key": "izin_input_data_lihat",
-                    "write_keys": ["izin_input_data_kelola", "izin_input_data_hapus",
-                                    "izin_data_non_barber_kelola", "izin_data_non_barber_hapus"]},
-    "rekap": {"label": "Rekap", "read_key": "izin_rekap_lihat", "write_keys": []},
-    "slip_gaji": {"label": "Slip Gaji", "read_key": "izin_slip_gaji_lihat", "write_keys": ["izin_slip_gaji"]},
-    "kasbon": {"label": "Kasbon", "read_key": "izin_kasbon_lihat", "write_keys": ["izin_kasbon"]},
-    "komisi": {"label": "Komisi", "read_key": "izin_komisi_lihat", "write_keys": ["izin_komisi"]},
-    "reimburse": {"label": "Reimburse", "read_key": "izin_reimburse_lihat", "write_keys": ["izin_reimburse"]},
-    "izin_cuti": {"label": "Izin & Cuti", "read_key": "izin_cuti_karyawan_lihat", "write_keys": ["izin_cuti_karyawan"]},
-    "absensi": {"label": "Absensi", "read_key": "izin_absensi_lihat",
-                "write_keys": ["izin_absensi_pengaturan", "izin_absensi_koreksi"]},
-    "booking": {"label": "Booking", "read_key": "izin_booking_lihat",
-                "write_keys": ["izin_booking_kelola", "izin_booking_batalkan", "izin_booking_hapus", "izin_booking_pengaturan"]},
-    "riwayat_transaksi": {"label": "Riwayat Transaksi", "read_key": "izin_riwayat_transaksi_lihat",
-                           "write_keys": ["izin_riwayat_transaksi"]},
-    "pemasukan": {"label": "Pemasukan", "read_key": "izin_pemasukan_lihat",
-                  "write_keys": ["izin_pemasukan_kelola", "izin_pemasukan_hapus"]},
-    "pengeluaran": {"label": "Pengeluaran", "read_key": "izin_pengeluaran_lihat",
-                     "write_keys": ["izin_pengeluaran_kelola", "izin_pengeluaran_hapus"]},
-    "uang_kas": {"label": "Uang Kas", "read_key": "izin_uang_kas_lihat",
-                 "write_keys": ["izin_uang_kas_kelola", "izin_uang_kas_hapus"]},
-    "produk": {"label": "Produk", "read_key": "izin_produk_lihat",
-               "write_keys": ["izin_produk_kelola", "izin_produk_hapus"]},
-    "settlement_faspay": {"label": "Settlement Faspay", "read_key": "izin_settlement_faspay_lihat",
-                           "write_keys": ["izin_settlement_faspay"]},
+# PERMISSION_TREE -- katalog tunggal. Setiap entri: key -> (label, parent).
+# `parent=None` DAN tidak jadi induk node lain = root menu ATAU izin
+# lintas-menu (lihat CROSS_CUTTING_KEYS di bawah untuk daftar yang mana).
+# Urutan di dict ini DIPAKAI APA ADANYA sebagai urutan tampil di UI.
+# ---------------------------------------------------------------------------
+PERMISSION_TREE = {
+    # ---- Dashboard ----
+    "izin_dashboard_lihat": ("Dashboard", None),
+    "izin_dashboard_nilai_service": ("Nilai Service", "izin_dashboard_lihat"),
+    "izin_dashboard_jumlah_service": ("Jumlah Service", "izin_dashboard_lihat"),
+    "izin_dashboard_pengeluaran_toko": ("Pengeluaran Toko", "izin_dashboard_lihat"),
+    "izin_dashboard_penjualan_produk": ("Penjualan Produk", "izin_dashboard_lihat"),
+    "izin_dashboard_total_komisi": ("Total Komisi Barber", "izin_dashboard_lihat"),
+    "izin_dashboard_total_tips": ("Total Tips", "izin_dashboard_lihat"),
+    "izin_dashboard_uang_harian": ("Uang Harian", "izin_dashboard_lihat"),
+    "izin_dashboard_bonus_customer": ("Bonus Customer", "izin_dashboard_lihat"),
+    "izin_dashboard_laba_kotor": ("Laba Kotor Toko", "izin_dashboard_lihat"),
+
+    # ---- Input Data ----
+    "izin_input_data_lihat": ("Input Data", None),
+    "izin_input_data_kelola": ("Input Barber (Transaksi & Tandai Libur, termasuk Koreksi)", "izin_input_data_lihat"),
+    "izin_input_data_hapus": ("Hapus Transaksi", "izin_input_data_kelola"),
+    "izin_manual_customer": ("Manual Customer (Waiting List / Booking Jalan)", "izin_input_data_lihat"),
+    "izin_data_non_barber_kelola": ("Data Non-Barber (Kasir/OB/Kru -- input gaji harian)", "izin_input_data_lihat"),
+    "izin_data_non_barber_hapus": ("Hapus Data Non-Barber", "izin_data_non_barber_kelola"),
+
+    # ---- Rekap ----
+    "izin_rekap_lihat": ("Rekap", None),
+    "izin_rekap_transaksi": ("Transaksi", "izin_rekap_lihat"),
+    "izin_rekap_bulanan": ("Bulanan", "izin_rekap_lihat"),
+    "izin_rekap_pengeluaran": ("Pengeluaran (dari tab Rekap)", "izin_rekap_lihat"),
+
+    # ---- Absensi ----
+    "izin_absensi_lihat": ("Absensi", None),
+    "izin_absensi_dashboard": ("Dashboard Ringkasan", "izin_absensi_lihat"),
+    "izin_absensi_limit": ("Sisa Limit Bulan Ini", "izin_absensi_lihat"),
+    "izin_absensi_pengaturan": ("Pengaturan Absensi (jam kerja, radius, lokasi toko)", "izin_absensi_lihat"),
+    "izin_absensi_koreksi": ("Approve/Reject Koreksi Absensi", "izin_absensi_lihat"),
+    "izin_absensi_export_excel": ("Export Excel Riwayat Absensi", "izin_absensi_lihat"),
+
+    # ---- Produk ----
+    "izin_produk_lihat": ("Produk", None),
+    "izin_produk_kelola": ("Tambah & Kelola Daftar Produk", "izin_produk_lihat"),
+    "izin_produk_mutasi": ("Restock / Jual / Tester", "izin_produk_lihat"),
+    "izin_produk_riwayat_mutasi": ("Riwayat Mutasi", "izin_produk_lihat"),
+    "izin_produk_hapus": ("Nonaktifkan Produk / Hapus Mutasi", "izin_produk_lihat"),
+
+    # ---- Pengeluaran ----
+    "izin_pengeluaran_lihat": ("Pengeluaran", None),
+    "izin_pengeluaran_kelola": ("Tambah & Kelola Pengeluaran", "izin_pengeluaran_lihat"),
+    "izin_pengeluaran_hapus": ("Hapus Pengeluaran", "izin_pengeluaran_kelola"),
+
+    # ---- Pemasukan ----
+    "izin_pemasukan_lihat": ("Pemasukan", None),
+    "izin_pemasukan_kelola": ("Tambah & Kelola Pemasukan", "izin_pemasukan_lihat"),
+    "izin_pemasukan_hapus": ("Hapus Pemasukan", "izin_pemasukan_kelola"),
+
+    # ---- Uang Kas ----
+    "izin_uang_kas_lihat": ("Uang Kas", None),
+    "izin_uang_kas_kelola": ("Kelola Penyesuaian Kas (saldo awal, penyesuaian)", "izin_uang_kas_lihat"),
+    "izin_uang_kas_hapus": ("Hapus Penyesuaian Kas", "izin_uang_kas_kelola"),
+
+    # ---- Riwayat Transaksi (Payment Gateway) -- label diperjelas supaya
+    # tidak tertukar dengan Rekap > Transaksi (permintaan Owner) ----
+    "izin_riwayat_transaksi_lihat": ("Riwayat Transaksi (Payment Gateway)", None),
+    "izin_riwayat_transaksi": ("Cek Ulang Status Pembayaran Gateway", "izin_riwayat_transaksi_lihat"),
+
+    # ---- Settlement Faspay ----
+    "izin_settlement_faspay_lihat": ("Settlement Faspay", None),
+    "izin_settlement_faspay": ("Submit Closing Harian", "izin_settlement_faspay_lihat"),
+
+    # ---- Kasbon (tampilan admin -- lihat semua karyawan) ----
+    "izin_kasbon_lihat": ("Kasbon", None),
+    "izin_kasbon": ("Tambah & Kelola Kasbon (buat kasbon baru, proses pembayaran)", "izin_kasbon_lihat"),
+    "izin_kasbon_hapus": ("Hapus Kasbon", "izin_kasbon"),
+
+    # ---- Komisi ----
+    "izin_komisi_lihat": ("Komisi", None),
+    "izin_komisi": ("Tambah & Kelola Penyesuaian Komisi", "izin_komisi_lihat"),
+    "izin_komisi_hapus": ("Hapus Penyesuaian Komisi", "izin_komisi"),
+
+    # ---- Slip Gaji ----
+    "izin_slip_gaji_lihat": ("Slip Gaji", None),
+    "izin_slip_gaji": ("Generate & Kelola Slip Gaji (termasuk Tandai/Batalkan Sudah Dibayar)", "izin_slip_gaji_lihat"),
+    "izin_slip_gaji_hapus": ("Hapus Slip Gaji", "izin_slip_gaji"),
+
+    # ---- Reimburse (tampilan admin) ----
+    "izin_reimburse_lihat": ("Reimburse", None),
+    "izin_reimburse": ("Setujui / Tolak Klaim Reimburse", "izin_reimburse_lihat"),
+    "izin_reimburse_tambah": ("Tambah Klaim (atas nama barber)", "izin_reimburse_lihat"),
+    "izin_reimburse_hapus": ("Hapus Klaim Reimburse", "izin_reimburse"),
+
+    # ---- Izin & Cuti (tampilan admin) ----
+    "izin_cuti_karyawan_lihat": ("Izin & Cuti", None),
+    "izin_cuti_karyawan": ("Setujui / Tolak Pengajuan", "izin_cuti_karyawan_lihat"),
+    "izin_cuti_karyawan_hapus": ("Hapus / Batalkan Pengajuan", "izin_cuti_karyawan"),
+
+    # ---- Booking ----
+    "izin_booking_lihat": ("Booking", None),
+    "izin_booking_list": ("Booking List", "izin_booking_lihat"),
+    "izin_booking_hapus": ("Hapus Booking Permanen", "izin_booking_list"),
+    "izin_booking_calendar": ("Calendar", "izin_booking_lihat"),
+    "izin_booking_operating_hours": ("Operating Hours", "izin_booking_lihat"),
+    "izin_booking_barber_holiday": ("Barber Holiday", "izin_booking_lihat"),
+    "izin_booking_closed_slot": ("Closed Slot", "izin_booking_lihat"),
+    "izin_booking_payment_settings": ("Payment Settings", "izin_booking_lihat"),
+    "izin_booking_settings": ("Booking Settings", "izin_booking_lihat"),
+    "izin_booking_website_content": ("Website Content", "izin_booking_lihat"),
+
+    # ---- WhatsApp (sebelumnya hardcoded Owner-only, SEKARANG dibuka) ----
+    "izin_whatsapp_lihat": ("WhatsApp", None),
+    "izin_whatsapp_notifikasi_booking": ("Notifikasi Booking", "izin_whatsapp_lihat"),
+    "izin_whatsapp_reminder_absensi": ("Reminder Absensi", "izin_whatsapp_lihat"),
+
+    # ---- Setting (sebelumnya 8 tab hardcoded Owner-only, SEKARANG dibuka
+    # SEMUA kecuali "Hak Akses User" -- lihat catatan modul. "Profil" TIDAK
+    # masuk di sini sama sekali -- bukan izin yang diberikan ke orang lain,
+    # setiap akun otomatis punya akses ke Profil-nya sendiri.) ----
+    "izin_setting_lihat": ("Setting", None),
+    "izin_setting_branding": ("Branding", "izin_setting_lihat"),
+    "izin_setting_tampilan": ("Tampilan", "izin_setting_lihat"),
+    "izin_setting_komisi": ("Komisi", "izin_setting_lihat"),
+    "izin_setting_bonus_service": ("Bonus Service", "izin_setting_lihat"),
+    "izin_setting_uang_harian": ("Uang Harian", "izin_setting_lihat"),
+    "izin_setting_karyawan": ("Karyawan (tambah/edit Barber & Non-Barber, gaji)", "izin_setting_lihat"),
+    "izin_setting_layanan": ("Layanan (Service & harga)", "izin_setting_lihat"),
+    "izin_setting_subscription": ("Subscription (lihat status paket -- read-only)", "izin_setting_lihat"),
+    "izin_setting_user": ("User (tambah/edit akun Kasir/Staff/Barber)", "izin_setting_lihat"),
+    "izin_user_tambah": ("Membuat User Barber", "izin_setting_user"),
+    "izin_user_hapus": ("Menonaktifkan/Mengaktifkan/Menghapus Permanen User Barber", "izin_setting_user"),
+    "izin_user_ganti_password": ("Mengubah Password User Barber", "izin_setting_user"),
+    "izin_setting_backup": ("Backup", "izin_setting_lihat"),
+    "izin_backup_export": ("Export Database", "izin_setting_backup"),
+    "izin_backup_import": ("Import Database", "izin_setting_backup"),
+    # "Hak Akses User" SENGAJA TIDAK ADA DI SINI -- permanen Owner-only.
+
+    # ---- Lintas-menu (sejajar, TIDAK ada di dalam satu menu manapun --
+    # lihat CROSS_CUTTING_KEYS) ----
+    "izin_laporan_pdf": ("Download Laporan PDF (semua modul)", None),
 }
 
-LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT = "none", "read", "write"
+# Key yang SENGAJA tidak masuk pohon menu manapun -- ditampilkan sejajar/
+# terpisah di UI (lihat docstring modul).
+CROSS_CUTTING_KEYS = {"izin_laporan_pdf"}
+
+PERMISSION_KEYS = set(PERMISSION_TREE.keys())
 
 
-def get_menu_level(menu_key: str, tenant_id=None, role_id=None) -> str:
-    """Level EFEKTIF ("none"/"read"/"write") satu menu, dihitung dari key
-    baca+tulisnya (lihat MENU_DEFS). Kalau ANY key tulis sudah True (mis.
-    data lama sebelum revisi ini, atau kombinasi tidak biasa) tapi key baca
-    lupa ikut True, tetap dianggap minimal "read" -- tulis TANPA bisa baca
-    tidak masuk akal buat pengguna."""
-    if menu_key not in MENU_DEFS:
-        raise ValueError(f"Menu tidak dikenal: {menu_key}")
-    definisi = MENU_DEFS[menu_key]
-    izin = get_all(tenant_id=tenant_id, role_id=role_id)
-    baca = izin.get(definisi["read_key"], False)
-    write_keys = definisi["write_keys"]
-    semua_tulis = bool(write_keys) and all(izin.get(k, False) for k in write_keys)
-    if semua_tulis:
-        return LEVEL_EDIT
-    if baca or any(izin.get(k, False) for k in write_keys):
-        return LEVEL_BACA
-    return LEVEL_NONE
+def tree_children(parent_key) -> list:
+    """Daftar key yang `parent`-nya persis `parent_key`, urutan sesuai
+    PERMISSION_TREE. `parent_key=None` -> seluruh root (menu utama +
+    izin lintas-menu)."""
+    return [k for k, (_label, parent) in PERMISSION_TREE.items() if parent == parent_key]
 
 
-def get_all_menu_levels(tenant_id=None, role_id=None) -> dict:
-    """{menu_key: level} untuk SELURUH menu di MENU_DEFS -- satu query
-    get_all() dipakai ulang untuk semua menu (bukan panggil get_menu_level()
-    N kali, masing-masing query database sendiri)."""
-    izin = get_all(tenant_id=tenant_id, role_id=role_id)
-    hasil = {}
-    for menu_key, definisi in MENU_DEFS.items():
-        baca = izin.get(definisi["read_key"], False)
-        write_keys = definisi["write_keys"]
-        semua_tulis = bool(write_keys) and all(izin.get(k, False) for k in write_keys)
-        if semua_tulis:
-            hasil[menu_key] = LEVEL_EDIT
-        elif baca or any(izin.get(k, False) for k in write_keys):
-            hasil[menu_key] = LEVEL_BACA
-        else:
-            hasil[menu_key] = LEVEL_NONE
+def tree_roots() -> list:
+    """Root menu SAJA (bukan izin lintas-menu) -- akar pohon dropdown di UI."""
+    return [k for k in tree_children(None) if k not in CROSS_CUTTING_KEYS]
+
+
+def _descendants(key) -> set:
+    hasil = set()
+    for anak in tree_children(key):
+        hasil.add(anak)
+        hasil |= _descendants(anak)
     return hasil
-
-
-def set_menu_level(menu_key: str, level: str, tenant_id=None, role_id=None) -> dict:
-    """Simpan satu level menu -- diterjemahkan ke key baca+tulis lama lewat
-    set_bulk() yang sudah ada (lihat MENU_DEFS)."""
-    if menu_key not in MENU_DEFS:
-        raise ValueError(f"Menu tidak dikenal: {menu_key}")
-    if level not in (LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT):
-        raise ValueError(f"Level tidak dikenal: {level}")
-    definisi = MENU_DEFS[menu_key]
-    data = {definisi["read_key"]: level in (LEVEL_BACA, LEVEL_EDIT)}
-    for k in definisi["write_keys"]:
-        data[k] = (level == LEVEL_EDIT)
-    return set_bulk(data, tenant_id=tenant_id, role_id=role_id)
-
-
-def set_all_menu_levels(levels: dict, tenant_id=None, role_id=None) -> dict:
-    """Simpan BANYAK level menu sekaligus (dipakai form "Kelola Izin" yang
-    baru -- satu PUT menyimpan seluruh dropdown menu untuk satu Role) --
-    satu set_bulk() gabungan (bukan N kali panggil set_menu_level(), N kali
-    query terpisah)."""
-    tidak_dikenal = set(levels.keys()) - set(MENU_DEFS.keys())
-    if tidak_dikenal:
-        raise ValueError(f"Menu tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
-    data = {}
-    for menu_key, level in levels.items():
-        if level not in (LEVEL_NONE, LEVEL_BACA, LEVEL_EDIT):
-            raise ValueError(f"Level tidak dikenal untuk menu {menu_key}: {level}")
-        definisi = MENU_DEFS[menu_key]
-        data[definisi["read_key"]] = level in (LEVEL_BACA, LEVEL_EDIT)
-        for k in definisi["write_keys"]:
-            data[k] = (level == LEVEL_EDIT)
-    set_bulk(data, tenant_id=tenant_id, role_id=role_id)
-    return get_all_menu_levels(tenant_id=tenant_id, role_id=role_id)
 
 
 def get_all(tenant_id=None, role_id=None) -> dict:
-    """{key: bool} untuk SELURUH permission.
+    """{key: bool} untuk SELURUH permission di PERMISSION_TREE.
 
-    FITUR Role Custom (diminta Owner, lihat user_roles_db.py): `role_id`
-    OPSIONAL -- diisi (akun 'staff' yang Role-nya salah satu Role Custom
-    lewat users.custom_role_id) -> baca dari user_role_permissions (fail-
-    CLOSED, kode yang tidak ada di sana = False, TIDAK PERNAH pakai default
-    PERMISSION_DEFS -- role baru sengaja mulai kosong, lihat docstring
-    modul user_roles_db.py). `role_id=None` (default, JUGA berlaku untuk
-    SEMUA akun staff ber-Role "Admin", Role bawaan) -> PERSIS perilaku
-    lama, dengan default dari PERMISSION_DEFS kalau Owner belum pernah
-    mengaturnya sama sekali. SATU query (get_all_settings(),
-    sudah ada sejak Tahap 2) -- bukan satu query per key -- karena fungsi
-    ini dipanggil di SETIAP pengecekan require_permission()/has(), termasuk
-    untuk request yang datang beruntun.
+    FITUR Role (diminta Owner -- REVISI besar: TIDAK ADA LAGI Role "Admin"
+    bawaan/default, lihat docstring modul): `role_id` WAJIB diisi untuk
+    SEMUA akun 'staff' (lihat user_roles_db.py) -- dibaca dari
+    user_role_permissions (fail-CLOSED, key yang tidak ada di sana =
+    False, TIDAK PERNAH pakai default apa pun -- Role baru sengaja mulai
+    kosong). `role_id=None` HANYA dipakai jalur internal/migrasi (mis.
+    membaca nilai lama dari tabel `settings` saat memindahkan Role "Admin"
+    lama ke Role "Staff" baru, lihat migrasi_role_staff_default()) --
+    TIDAK PERNAH dipakai lagi oleh request login staff biasa begitu
+    migrasi selesai (auth.require_permission SELALU mengisi role_id dari
+    users.custom_role_id, yang SEKARANG wajib terisi untuk role 'staff').
 
-    FONDASI Multi-Tenant Phase 1: `tenant_id` opsional (lihat catatan
-    db.get_setting()/_kunci_tenant()) -- Hak Akses User adalah pengaturan
-    PER TOKO (Owner Tenant A tidak boleh mengatur Admin Tenant B), jadi
-    endpoint ber-login WAJIB mengisi ini (lihat auth.require_permission)."""
+    SATU query (get_all_settings() untuk jalur role_id=None, atau SATU
+    query ke user_role_permissions untuk role_id terisi) -- bukan satu
+    query per key -- karena fungsi ini dipanggil di SETIAP pengecekan
+    require_permission()/has(), termasuk untuk request yang datang
+    beruntun.
+
+    FONDASI Multi-Tenant Phase 1: `tenant_id` opsional, HANYA relevan
+    untuk jalur role_id=None (baca tabel `settings` lama, dipakai migrasi)."""
     if role_id is not None:
         import user_roles_db  # import lokal: hindari import siklik (user_roles_db.py -> database.py)
         aktif = user_roles_db.get_role_permission_keys(role_id)
-        return {key: (key in aktif) for key, *_ in PERMISSION_DEFS}
+        return {key: (key in aktif) for key in PERMISSION_TREE}
     semua = db.get_all_settings(tenant_id=tenant_id)
-    hasil = {}
-    for key, _grup, _label, default in PERMISSION_DEFS:
-        nilai = semua.get(key)
-        hasil[key] = (nilai == "1") if nilai is not None else default
-    return hasil
+    return {key: (semua.get(key) == "1") for key in PERMISSION_TREE}
 
 
 def set_bulk(data: dict, tenant_id=None, role_id=None) -> dict:
     """Timpa permission yang DIKIRIM saja (key yang tidak dikirim tetap
     seperti sebelumnya) -- validasi key dulu supaya tidak ada key sembarang
-    ikut tersimpan. `role_id` opsional -- lihat get_all()."""
+    ikut tersimpan. `role_id` WAJIB diisi untuk pemakaian normal (lihat
+    get_all())."""
     tidak_dikenal = set(data.keys()) - PERMISSION_KEYS
     if tidak_dikenal:
         raise ValueError(f"Permission tidak dikenal: {', '.join(sorted(tidak_dikenal))}")
@@ -346,6 +263,12 @@ def set_bulk(data: dict, tenant_id=None, role_id=None) -> dict:
                 aktif.add(key)
             else:
                 aktif.discard(key)
+                # PERBAIKAN (konsistensi pohon): kalau sebuah node induk
+                # dimatikan, SELURUH keturunannya ikut dimatikan juga --
+                # mencegah state "anak aktif tapi induknya tidak" yang
+                # tidak mungkin direpresentasikan di UI dropdown (anak
+                # hanya muncul kalau induk dicentang).
+                aktif -= _descendants(key)
         user_roles_db.set_role_permission_keys(role_id, aktif)
         return get_all(role_id=role_id)
     bersih = {key: ("1" if bool(v) else "0") for key, v in data.items()}

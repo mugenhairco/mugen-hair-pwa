@@ -986,7 +986,10 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     sama seperti token Fonnte kosong."""
     tenant_id = booking.get("tenant_id")
     import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
-    if tenant_id is None or not feature_access.tenant_has_feature(tenant_id, "whatsapp_reminder"):
+    # REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
+    # "whatsapp_reminder" tersendiri DIHAPUS -- diwakili root key pohon
+    # yang sama dipakai Role (izin_whatsapp_lihat, lihat permissions.py).
+    if tenant_id is None or not feature_access.tenant_has_menu_access(tenant_id, "izin_whatsapp_lihat"):
         return
     try:
         nama_toko = pengaturan_identitas.get_identitas(tenant_id=tenant_id).get("nama_barbershop") or "Kami"

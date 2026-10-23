@@ -408,20 +408,59 @@ def require_feature(kode: str):
     return _dep
 
 
+def require_menu_feature(izin_key: str):
+    """Dependency factory (Work #2, diminta Owner): versi require_feature()
+    di atas yang memeriksa Package Permission Tree (izin_key dari
+    permissions.PERMISSION_TREE, lihat feature_access.tenant_has_menu_access())
+    bukan katalog subscription_features lama -- dipakai mengganti
+    require_feature("absensi")/require_feature("whatsapp_reminder") yang
+    SEKARANG diwakili root key pohon yang sama (izin_absensi_lihat/
+    izin_whatsapp_lihat), SEKALI gate ini sudah meng-cover seluruh menunya
+    (BUKAN penggantian baru -- modul ini sudah SAMA PERSIS menegakkan
+    package di gerbang 1 require_permission()/require_menu_read(), key ini
+    HANYA dibutuhkan untuk titik yang TIDAK memakai salah satu dari
+    keduanya, mis. router level `dependencies=` yang juga harus meloloskan
+    Barber self-service, atau fungsi non-endpoint seperti booking_db.py::
+    _kirim_notifikasi_wa_booking())."""
+    def _dep(user: dict = Depends(get_current_user)) -> dict:
+        if user["role"] == "superadmin":
+            return user
+        import feature_access  # import lokal: hindari import siklik
+        tenant_id = user.get("tenant_id")
+        if tenant_id is None or not feature_access.tenant_has_menu_access(tenant_id, izin_key):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+                "message": "Menu ini tidak termasuk paket Anda saat ini. Upgrade paket untuk menggunakannya.",
+                "feature": izin_key,
+                "upgrade_required": True,
+            })
+        return user
+    return _dep
+
+
 def require_permission(key: str):
-    """Dependency factory: Owner ('admin') SELALU lolos tanpa syarat (akses
-    penuh, sesuai spesifikasi -- tidak pernah dibatasi hak akses apa pun).
-    'staff' hanya lolos kalau Owner sudah mengaktifkan permission `key` ini
-    lewat Setting > Hak Akses User. 'barber' selalu ditolak (permission
-    Admin tidak berlaku untuk akun Barber).
+    """Dependency factory -- DUA gerbang berurutan (Work #2, diminta Owner):
+    1. Package Permission Tree (BATAS LUAR, berlaku untuk SEMUA role
+       TERMASUK Owner -- paket tenant menentukan apa yang BISA diakses
+       SAMA SEKALI, lihat feature_access.tenant_has_menu_access() &
+       billing_db.py::subscription_package_permissions). Gagal di sini =
+       403 upgrade_required, SAMA PERSIS bentuk error require_feature().
+    2. Role (BATAS DALAM, HANYA berlaku untuk 'staff'): Owner ('admin')
+       SELALU lolos tanpa syarat begitu lolos gerbang 1. 'staff' hanya
+       lolos kalau Owner sudah mengaktifkan permission `key` ini lewat
+       Setting > Hak Akses User. 'barber' selalu ditolak (lewat
+       require_owner_or_staff).
 
     FITUR Role Custom: `user.get("custom_role_id")` (kolom baru di tabel
     `users`, lihat user_roles_db.py) diteruskan apa adanya ke
-    permissions.has() -- None (staff belum ditempelkan ke role custom
-    mana pun, termasuk SEMUA staff yang sudah ada sebelum fitur ini) tetap
-    memakai set izin default tenant PERSIS seperti sebelumnya, 100%
-    kompatibel mundur."""
+    permissions.has()."""
     def _dep(user: dict = Depends(require_owner_or_staff)) -> dict:
+        import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
+        if not feature_access.tenant_has_menu_access(user.get("tenant_id"), key):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+                "message": "Menu/fitur ini tidak termasuk paket Anda saat ini. Upgrade paket untuk menggunakannya.",
+                "feature": key,
+                "upgrade_required": True,
+            })
         if user["role"] == "admin":
             return user
         import permissions  # import lokal: hindari import siklik (permissions.py -> database.py)
@@ -434,14 +473,18 @@ def require_permission(key: str):
 
 def require_menu_read(menu_key: str):
     """Dependency factory Hak Akses Menu (permintaan Owner, lihat
-    permissions.py::MENU_DEFS): gerbang MELIHAT satu menu sidebar -- Owner
-    ('admin') SELALU lolos tanpa syarat, 'staff' lolos kalau level menu ini
-    ("Baca" ATAU "Baca & Edit") bukan "Tidak Ada Akses". Dipasang di
-    endpoint GET modul yang SEBELUMNYA selalu terbuka untuk staff tanpa
-    permission apa pun (Booking/Input Data/Produk/Pengeluaran/Pemasukan/
-    Uang Kas/Dashboard/Rekap/Absensi/Riwayat Transaksi) -- PENTING dicek di
-    backend, BUKAN cuma menyembunyikan konten di frontend, supaya user
-    tanpa akses tetap ditolak walau memanggil endpoint-nya langsung.
+    permissions.py::PERMISSION_TREE): gerbang MELIHAT satu menu sidebar --
+    Owner ('admin') SELALU lolos tanpa syarat, 'staff' lolos kalau root
+    menu ini (`izin_<menu_key>_lihat`) dicentang Role-nya. REVISI (hapus
+    sistem Baca/Baca & Edit 3-level): tidak ada lagi perbedaan level, HANYA
+    satu saklar boolean "boleh akses atau tidak" -- sama seperti
+    require_permission() di atas, HANYA beda nama key yang dicek (selalu
+    root `_lihat` menu, bukan key spesifik per-aksi). Dipasang di endpoint
+    GET modul yang SEBELUMNYA selalu terbuka untuk staff tanpa permission
+    apa pun (Booking/Input Data/Produk/Pengeluaran/Pemasukan/Uang Kas/
+    Dashboard/Rekap/Absensi/Riwayat Transaksi) -- PENTING dicek di backend,
+    BUKAN cuma menyembunyikan konten di frontend, supaya user tanpa akses
+    tetap ditolak walau memanggil endpoint-nya langsung.
 
     TIDAK dipakai untuk modul Karyawan (Kasbon/Komisi/Slip Gaji/Reimburse/
     Izin Cuti) -- router-router itu sudah punya pengecekan sendiri
@@ -449,13 +492,20 @@ def require_menu_read(menu_key: str):
     permissions.has(), lihat masing-masing router) karena juga perlu
     menangani akses Barber (self-service) yang di luar cakupan Hak Akses
     Menu ini sama sekali."""
+    key = f"izin_{menu_key}_lihat"
+
     def _dep(user: dict = Depends(require_owner_or_staff)) -> dict:
+        import feature_access  # import lokal: hindari import siklik
+        if not feature_access.tenant_has_menu_access(user.get("tenant_id"), key):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+                "message": "Menu ini tidak termasuk paket Anda saat ini. Upgrade paket untuk menggunakannya.",
+                "feature": key,
+                "upgrade_required": True,
+            })
         if user["role"] == "admin":
             return user
         import permissions  # import lokal: hindari import siklik
-        level = permissions.get_menu_level(menu_key, tenant_id=user.get("tenant_id"),
-                                            role_id=user.get("custom_role_id"))
-        if level == permissions.LEVEL_NONE:
+        if not permissions.has(key, tenant_id=user.get("tenant_id"), role_id=user.get("custom_role_id")):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                  detail="Admin tidak punya akses ke menu ini. Hubungi Owner.")
         return user

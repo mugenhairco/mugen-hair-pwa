@@ -140,6 +140,9 @@ const PageKomisi = (() => {
       return;
     }
     const bolehEdit = levelKomisi === "write";
+    // REVISI Hak Akses (sub-item Hapus terpisah, lihat permissions.py::
+    // PERMISSION_TREE izin_komisi_hapus).
+    const bolehHapus = await MugenMenuAccess.has("izin_komisi_hapus");
 
     const today = new Date();
     let editingId = null;
@@ -328,6 +331,7 @@ const PageKomisi = (() => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnEdit = MugenUI.el("button", {}, "Edit");
                 btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+                if (!bolehHapus) { wrap.appendChild(btnEdit); return wrap; }
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
                   if (!confirm(`Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`)) return;

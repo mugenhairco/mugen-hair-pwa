@@ -95,19 +95,29 @@ def test_periode_bonus_customer_selalu_none_dan_laba_kotor_tanpa_bonus(single_te
 
 
 def test_periode_staff_tetap_difilter_hak_akses(single_tenant):
+    """REVISI Hak Akses (hapus Role "Admin" bawaan, PERMISSION_TREE
+    fail-closed): staff WAJIB punya Role eksplisit -- Role baru mulai
+    kosong, jadi Owner mengaktifkan izin_dashboard_lihat + beberapa kartu
+    (TANPA izin_dashboard_total_komisi) lewat PUT /user-roles/{id}/
+    permissions, lalu dibuktikan HANYA kartu komisi yang ikut None."""
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id, barber_id, service_id = _setup(single_tenant)
     import auth_db
-    auth_db.tambah_user("staffperiode", "passwordS123", role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kasir"}, headers=headers).json()
+    client.put(f"/api/pengaturan/user-roles/{role['id']}/permissions", headers=headers, json={"izin": {
+        "izin_dashboard_lihat": True, "izin_dashboard_nilai_service": True,
+        "izin_dashboard_total_tips": True, "izin_dashboard_uang_harian": True,
+    }})
+    auth_db.tambah_user("staffperiode", "passwordS123", role="staff", tenant_id=tenant_id,
+                         custom_role_id=role["id"])
     r_login = client.post("/api/auth/login", json={"username": "staffperiode", "password": "passwordS123"})
     headers_staff = {"Authorization": f"Bearer {r_login.json()['token']}"}
-
-    client.put("/api/pengaturan/hak-akses-admin", json={"izin": {"izin_dashboard_total_komisi": False}}, headers=headers)
 
     r = client.get("/api/dashboard/owner/periode?tanggal_mulai=2026-08-01&tanggal_selesai=2026-08-31", headers=headers_staff)
     assert r.status_code == 200, r.text
     data = r.json()
-    assert data["total_toko"]["komisi"] is None
+    assert data["total_toko"]["komisi"] is None  # TIDAK diizinkan Role ini
+    assert data["total_toko"]["nilai_service"] is not None  # diizinkan Role ini
     assert data["per_barber"] == []  # rincian per-barber di luar cakupan Dashboard Admin
 
 

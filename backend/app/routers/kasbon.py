@@ -146,7 +146,7 @@ def edit_kasbon(kasbon_id: int, body: KasbonEditBody, user: dict = Depends(requi
 
 
 @router.delete("/{kasbon_id}")
-def hapus_kasbon(kasbon_id: int, user: dict = Depends(require_permission("izin_kasbon"))):
+def hapus_kasbon(kasbon_id: int, user: dict = Depends(require_permission("izin_kasbon_hapus"))):
     _pastikan_kasbon_tenant_sama(user, kasbon_db.get_kasbon(kasbon_id))
     try:
         kasbon_db.hapus_kasbon(kasbon_id)

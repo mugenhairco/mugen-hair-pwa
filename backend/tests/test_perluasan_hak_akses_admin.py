@@ -1,45 +1,57 @@
 """test_perluasan_hak_akses_admin.py — Perluasan Hak Akses Admin (diminta Owner)
 =============================================================================
-Cakupan: 14 kode izin baru (permissions.py) yang menggerbang modul
-operasional yang SEBELUMNYA staff ('Admin') selalu akses PENUH tanpa syarat
-apa pun -- Booking (izin_booking_kelola/batalkan/pengaturan), Produk
+Cakupan: kode izin (permissions.py) yang menggerbang modul operasional yang
+SEBELUMNYA staff ('Admin') selalu akses PENUH tanpa syarat apa pun --
+Booking (izin_booking_closed_slot/hapus/payment_settings), Produk
 (izin_produk_kelola/hapus), Pengeluaran (izin_pengeluaran_kelola/hapus),
 Pemasukan (izin_pemasukan_kelola/hapus), Uang Kas (izin_uang_kas_kelola/
 hapus), Data Non-Barber (izin_data_non_barber_kelola/hapus), Input Data /
 Transaksi Harian (izin_input_data_kelola/hapus).
 
-Pola test SAMA PERSIS test_attendance.py (izin_absensi_pengaturan/koreksi):
-SATU endpoint representatif per kode izin (bukan seluruh endpoint yang
-digerbang -- pola-nya identik untuk endpoint lain di modul yang sama),
-membuktikan (1) default TRUE -- staff langsung bisa tanpa Owner mengatur
-apa pun (grandfather, staff yang sudah pakai modul ini tidak tiba-tiba
-terkunci), (2) Owner bisa mematikannya lewat PUT /hak-akses-admin -> staff
-403 dengan pesan jelas, (3) Owner ('admin') SELALU lolos tanpa syarat
-terlepas dari pengaturan izin apa pun (lihat auth.require_permission)."""
+REVISI BESAR Hak Akses (hapus Role "Admin" bawaan/default, satu checklist
+dropdown per menu/tab/sub-item -- lihat permissions.py::PERMISSION_TREE):
+TIDAK ADA LAGI default TRUE (grandfather) untuk staff tanpa Role eksplisit
+-- SETIAP Role baru mulai 100% kosong (fail-closed), termasuk SELURUH key
+di file ini. Pola test SAMA PERSIS test_role_custom.py: Owner membuat Role
+custom, staff WAJIB diberi custom_role_id-nya, lalu (1) TANPA izin
+eksplisit staff selalu 403, (2) Owner mengaktifkan satu key lewat PUT
+/user-roles/{id}/permissions -> staff baru boleh, (3) Owner ('admin')
+SELALU lolos tanpa syarat terlepas dari isi Role apa pun (lihat
+auth.require_permission)."""
 
 import database as db
-import permissions
 
 
-def _buat_staff(client, headers_owner, tenant_id, username="staff1", password="passwordS123"):
+def _buat_role_dan_staff(client, headers_owner, tenant_id, nama_role="Kasir",
+                          username="staff1", password="passwordS123"):
     import auth_db
-    auth_db.tambah_user(username, password, role="staff", tenant_id=tenant_id)
+    role = client.post("/api/pengaturan/user-roles", json={"nama": nama_role}, headers=headers_owner).json()
+    auth_db.tambah_user(username, password, role="staff", tenant_id=tenant_id, custom_role_id=role["id"])
     r = client.post("/api/auth/login", json={"username": username, "password": password})
     assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['token']}"}
+    headers_staff = {"Authorization": f"Bearer {r.json()['token']}"}
+    return role["id"], headers_staff
 
 
-def _matikan_izin(client, headers_owner, key: str):
-    r = client.put("/api/pengaturan/hak-akses-admin", json={"izin": {key: False}}, headers=headers_owner)
+def _beri_izin(client, headers_owner, role_id: int, key: str):
+    r = client.put(f"/api/pengaturan/user-roles/{role_id}/permissions",
+                    json={"izin": {key: True}}, headers=headers_owner)
     assert r.status_code == 200, r.text
 
 
-# ============================= Default TRUE (grandfather) =============================
+# ============================= Fail-closed (Role baru mulai kosong) =============================
 
-def test_semua_izin_baru_default_true(single_tenant):
-    izin = permissions.get_all(tenant_id=single_tenant["tenant_id"])
-    kunci_baru = [
-        "izin_booking_kelola", "izin_booking_batalkan", "izin_booking_pengaturan",
+def test_semua_izin_baru_default_false(single_tenant):
+    """REVISI (hapus grandfather lama): Role baru TIDAK PERNAH mulai dengan
+    izin apa pun menyala -- lihat test_permission_tree.py::test_role_baru_
+    fail_closed_semua_false untuk versi generik (SELURUH key), di sini
+    cukup dibuktikan untuk 14 key spesifik modul ini."""
+    import permissions
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    role = client.post("/api/pengaturan/user-roles", json={"nama": "Kosong"}, headers=headers).json()
+    izin = permissions.get_all(role_id=role["id"])
+    kunci = [
+        "izin_booking_closed_slot", "izin_booking_hapus", "izin_booking_payment_settings",
         "izin_produk_kelola", "izin_produk_hapus",
         "izin_pengeluaran_kelola", "izin_pengeluaran_hapus",
         "izin_pemasukan_kelola", "izin_pemasukan_hapus",
@@ -47,18 +59,17 @@ def test_semua_izin_baru_default_true(single_tenant):
         "izin_data_non_barber_kelola", "izin_data_non_barber_hapus",
         "izin_input_data_kelola", "izin_input_data_hapus",
     ]
-    for key in kunci_baru:
-        assert izin[key] is True, f"{key} harus default True (grandfather)"
+    for key in kunci:
+        assert izin[key] is False, f"{key} harus default False (fail-closed)"
 
 
 # ============================= Booking =============================
 
-def test_booking_kelola_off_403_lalu_owner_tetap_lolos(single_tenant):
+def test_booking_closed_slot_tanpa_izin_403_lalu_owner_tetap_lolos(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     barber_id = db.add_barber("Barber Izin", tenant_id=tenant_id)
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_booking_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     body = {"barber_id": barber_id, "tanggal": "2026-09-01", "jam_mulai": "09:00", "jam_selesai": "10:00"}
     r_staff = client.post("/api/booking/closed-slot", json=body, headers=headers_staff)
@@ -68,65 +79,87 @@ def test_booking_kelola_off_403_lalu_owner_tetap_lolos(single_tenant):
     r_owner = client.post("/api/booking/closed-slot", json=body, headers=headers)
     assert r_owner.status_code == 200, r_owner.text
 
+    _beri_izin(client, headers, role_id, "izin_booking_closed_slot")
+    r_staff2 = client.post("/api/booking/closed-slot", json=body, headers=headers_staff)
+    assert r_staff2.status_code == 200, r_staff2.text
 
-def test_booking_batalkan_off_403(single_tenant):
+
+def test_booking_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_booking_batalkan")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete("/api/booking/riwayat", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_booking_hapus")
+    r2 = client.delete("/api/booking/riwayat", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_booking_pengaturan_off_403(single_tenant):
+
+def test_booking_payment_settings_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_booking_pengaturan")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.put("/api/booking/payment-settings", json={"metode_aktif": ["transfer"]}, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_booking_payment_settings")
+    r2 = client.put("/api/booking/payment-settings", json={"metode_aktif": ["transfer"]}, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Produk =============================
 
-def test_produk_kelola_off_403(single_tenant):
+def test_produk_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_produk_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.post("/api/produk", json={"nama": "Pomade Izin", "harga_modal": 10000, "harga_jual": 20000},
                      headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_produk_kelola")
+    r2 = client.post("/api/produk", json={"nama": "Pomade Izin", "harga_modal": 10000, "harga_jual": 20000},
+                      headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_produk_hapus_off_403(single_tenant):
+
+def test_produk_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     produk_id = db.tambah_produk("Pomade Hapus", 10000, 20000, tenant_id=tenant_id)
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_produk_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/produk/{produk_id}", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_produk_hapus")
+    r2 = client.delete(f"/api/produk/{produk_id}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Pengeluaran =============================
 
-def test_pengeluaran_kelola_off_403(single_tenant):
+def test_pengeluaran_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_pengeluaran_kelola")
+    import uang_kas_db
+    uang_kas_db.set_saldo_awal(1_000_000, "owner1", tenant_id)
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     body = {"tanggal": "2026-09-01", "kategori": "Lainnya", "keterangan": "Tes", "jumlah": 10000}
     r = client.post("/api/pengeluaran", json=body, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_pengeluaran_kelola")
+    r2 = client.post("/api/pengeluaran", json=body, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_pengeluaran_hapus_off_403(single_tenant):
+
+def test_pengeluaran_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import pengeluaran_db
@@ -141,27 +174,33 @@ def test_pengeluaran_hapus_off_403(single_tenant):
         tanggal="2026-09-01", kategori="Lainnya", keterangan="Tes", jumlah=10000,
         barber_id=None, aktif=True, sumber_dana="kas", dibuat_oleh="owner1", tenant_id=tenant_id,
     )
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_pengeluaran_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/pengeluaran/{pengeluaran_id}", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_pengeluaran_hapus")
+    r2 = client.delete(f"/api/pengeluaran/{pengeluaran_id}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Pemasukan =============================
 
-def test_pemasukan_kelola_off_403(single_tenant):
+def test_pemasukan_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_pemasukan_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     body = {"tanggal": "2026-09-01", "kategori": "Lainnya", "keterangan": "Tes", "jumlah": 10000}
     r = client.post("/api/pemasukan", json=body, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_pemasukan_kelola")
+    r2 = client.post("/api/pemasukan", json=body, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_pemasukan_hapus_off_403(single_tenant):
+
+def test_pemasukan_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import pemasukan_db
@@ -169,26 +208,32 @@ def test_pemasukan_hapus_off_403(single_tenant):
         tanggal="2026-09-01", kategori="Lainnya", keterangan="Tes", jumlah=10000,
         barber_id=None, aktif=True, tenant_id=tenant_id,
     )
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_pemasukan_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/pemasukan/{pemasukan_id}", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_pemasukan_hapus")
+    r2 = client.delete(f"/api/pemasukan/{pemasukan_id}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Uang Kas =============================
 
-def test_uang_kas_kelola_off_403(single_tenant):
+def test_uang_kas_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_uang_kas_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.put("/api/uang-kas/saldo-awal", json={"saldo": 500000}, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_uang_kas_kelola")
+    r2 = client.put("/api/uang-kas/saldo-awal", json={"saldo": 500000}, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_uang_kas_hapus_off_403(single_tenant):
+
+def test_uang_kas_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import uang_kas_db
@@ -196,21 +241,23 @@ def test_uang_kas_hapus_off_403(single_tenant):
         tanggal="2026-09-01", jenis="tambah", jumlah=10000, keterangan="Tes",
         dibuat_oleh="owner1", tenant_id=tenant_id,
     )
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_uang_kas_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/uang-kas/{penyesuaian_id}", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_uang_kas_hapus")
+    r2 = client.delete(f"/api/uang-kas/{penyesuaian_id}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Data Non-Barber =============================
 
-def test_data_non_barber_kelola_off_403(single_tenant):
+def test_data_non_barber_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     karyawan_id = db.add_barber("Kasir Izin", jabatan="Kasir", tenant_id=tenant_id)
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_data_non_barber_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     body = {
         "barber_id": karyawan_id, "tanggal_mulai": "2026-09-01", "tanggal_selesai": "2026-09-01",
@@ -219,8 +266,12 @@ def test_data_non_barber_kelola_off_403(single_tenant):
     r = client.post("/api/data-non-barber", json=body, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_data_non_barber_kelola")
+    r2 = client.post("/api/data-non-barber", json=body, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_data_non_barber_hapus_off_403(single_tenant):
+
+def test_data_non_barber_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     import data_non_barber_db
@@ -229,29 +280,35 @@ def test_data_non_barber_hapus_off_403(single_tenant):
         karyawan_id, "2026-09-01", "2026-09-01", 100000, 1,
         dibuat_oleh="owner1", tenant_id=tenant_id,
     )
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_data_non_barber_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/data-non-barber/{entry['id']}", headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_data_non_barber_hapus")
+    r2 = client.delete(f"/api/data-non-barber/{entry['id']}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text
+
 
 # ============================= Input Data / Transaksi =============================
 
-def test_input_data_kelola_off_403(single_tenant):
+def test_input_data_kelola_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     barber_id = db.add_barber("Barber Transaksi", tenant_id=tenant_id)
     service_id = db.add_service("Potong Izin", 50000, tenant_id=tenant_id)
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_input_data_kelola")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     body = {"tanggal": "2026-09-01", "barber_id": barber_id, "items": [{"service_id": service_id, "jumlah": 1}]}
     r = client.post("/api/input-data/transaksi", json=body, headers=headers_staff)
     assert r.status_code == 403
 
+    _beri_izin(client, headers, role_id, "izin_input_data_kelola")
+    r2 = client.post("/api/input-data/transaksi", json=body, headers=headers_staff)
+    assert r2.status_code == 200, r2.text
 
-def test_input_data_hapus_off_403(single_tenant):
+
+def test_input_data_hapus_tanpa_izin_403(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     barber_id = db.add_barber("Barber Transaksi Hapus", tenant_id=tenant_id)
@@ -260,8 +317,11 @@ def test_input_data_hapus_off_403(single_tenant):
         tanggal="2026-09-01", barber_id=barber_id, items=[{"service_id": service_id, "jumlah": 1}],
         tips=0, catatan=None,
     )
-    headers_staff = _buat_staff(client, headers, tenant_id)
-    _matikan_izin(client, headers, "izin_input_data_hapus")
+    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
 
     r = client.delete(f"/api/input-data/transaksi/{transaksi_id}", headers=headers_staff)
     assert r.status_code == 403
+
+    _beri_izin(client, headers, role_id, "izin_input_data_hapus")
+    r2 = client.delete(f"/api/input-data/transaksi/{transaksi_id}", headers=headers_staff)
+    assert r2.status_code == 200, r2.text

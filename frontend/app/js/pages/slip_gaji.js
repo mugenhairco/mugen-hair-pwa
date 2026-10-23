@@ -51,7 +51,7 @@ const PageSlipGaji = (() => {
 
   // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
   // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-  async function loadListInto(listBody, params, isAdmin, onBerubah) {
+  async function loadListInto(listBody, params, isAdmin, onBerubah, bolehHapus = false) {
     await MugenUI.refreshInto(listBody, async () => {
       try {
         const qs = new URLSearchParams(params);
@@ -102,7 +102,7 @@ const PageSlipGaji = (() => {
                 });
                 wrap.appendChild(btnStatus);
 
-                if (r.status !== "sudah_dibayar") {
+                if (bolehHapus && r.status !== "sudah_dibayar") {
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
                     if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`)) return;
@@ -152,6 +152,9 @@ const PageSlipGaji = (() => {
       return;
     }
     const bolehEdit = levelSlipGaji === "write";
+    // REVISI Hak Akses (sub-item Hapus terpisah, lihat permissions.py::
+    // PERMISSION_TREE izin_slip_gaji_hapus).
+    const bolehHapus = await MugenMenuAccess.has("izin_slip_gaji_hapus");
 
     const today = new Date();
     let barbers = [];
@@ -429,7 +432,7 @@ const PageSlipGaji = (() => {
     listCard.appendChild(listBody);
 
     function loadList() {
-      loadListInto(listBody, paramsFilterAktif(), true, loadList);
+      loadListInto(listBody, paramsFilterAktif(), true, loadList, bolehHapus);
     }
 
     filBarber.addEventListener("change", loadList);

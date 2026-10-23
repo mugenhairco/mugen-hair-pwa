@@ -110,7 +110,7 @@ def test_router_hapus_booking_ditolak_tanpa_izin_booking_hapus(single_tenant):
 
     auth_db.tambah_user("staffhapus1", "password123", role="staff", tenant_id=tenant_id)
     permissions.set_bulk({
-        "izin_booking_lihat": True, "izin_booking_kelola": True, "izin_booking_batalkan": True,
+        "izin_booking_lihat": True, "izin_booking_list": True,
         "izin_booking_hapus": False,
     }, tenant_id=tenant_id)
     r = client.post("/api/auth/login", json={"username": "staffhapus1", "password": "password123"})

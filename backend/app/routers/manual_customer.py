@@ -1,20 +1,20 @@
 """routers/manual_customer.py — /api/manual-customer/*
 FITUR BARU: Input Data metode "Manual Customer" (Waiting List/Booking) --
-akses SAMA PERSIS seperti /api/input-data/* dan /api/data-non-barber/*
-(Owner 'admin' dan Admin 'staff', Barber tidak pernah akses). Endpoint LIHAT
-(GET) `require_owner_or_staff`, endpoint TULIS (POST/PUT tambah/koreksi/
-Closing) `require_permission("izin_input_data_kelola")`, endpoint HAPUS
-(DELETE/Reset) `require_permission("izin_input_data_hapus")` -- MENGIKUTI
-PERSIS pola akses routers/input_data.py (Perluasan Hak Akses Admin) supaya
-staff yang sudah diberi izin Input Data otomatis juga bisa memakai Manual
-Customer, tidak perlu izin terpisah baru. Lihat manual_customer_db.py untuk
+akses Owner 'admin' dan Admin 'staff', Barber tidak pernah akses. REVISI
+Hak Akses (tree permissions.py::PERMISSION_TREE): SELURUH endpoint
+(GET/POST/PUT/DELETE) SEKARANG satu flag sendiri `izin_manual_customer`
+(key BARU, sub-item TERPISAH dari "Input Barber" di bawah menu Input Data
+-- Owner bisa memberi akses Manual Customer TANPA otomatis memberi akses
+Input Barber, atau sebaliknya; migrasi otomatis mewarisi nilai lama
+izin_input_data_kelola, lihat user_roles_db.py::migrasi_role_staff_default()
+-- staff lama TIDAK kehilangan akses). Lihat manual_customer_db.py untuk
 penjelasan lengkap desain modul ini."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import manual_customer_db
-from auth import require_permission, require_menu_read
+from auth import require_permission
 
 router = APIRouter(prefix="/api/manual-customer", tags=["manual-customer"])
 
@@ -47,17 +47,17 @@ class ManualCustomerEditBody(BaseModel):
 
 
 @router.get("/status")
-def status_hari(tanggal: str, user: dict = Depends(require_menu_read("input_data"))):
+def status_hari(tanggal: str, user: dict = Depends(require_permission("izin_manual_customer"))):
     return manual_customer_db.get_status_hari(user["tenant_id"], tanggal)
 
 
 @router.get("/transaksi")
-def list_transaksi(tanggal: str, user: dict = Depends(require_menu_read("input_data"))):
+def list_transaksi(tanggal: str, user: dict = Depends(require_permission("izin_manual_customer"))):
     return manual_customer_db.get_manual_customer_list(user["tenant_id"], tanggal)
 
 
 @router.post("/transaksi")
-def tambah_transaksi(body: ManualCustomerBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
+def tambah_transaksi(body: ManualCustomerBody, user: dict = Depends(require_permission("izin_manual_customer"))):
     try:
         return manual_customer_db.tambah_manual_customer(
             tenant_id=user["tenant_id"], tanggal=body.tanggal, nama_customer=body.nama_customer,
@@ -70,7 +70,7 @@ def tambah_transaksi(body: ManualCustomerBody, user: dict = Depends(require_perm
 
 
 @router.put("/transaksi/{entry_id}")
-def edit_transaksi(entry_id: int, body: ManualCustomerEditBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
+def edit_transaksi(entry_id: int, body: ManualCustomerEditBody, user: dict = Depends(require_permission("izin_manual_customer"))):
     _pastikan_entry_tenant_sama(user, manual_customer_db.get_manual_customer(entry_id))
     try:
         return manual_customer_db.edit_manual_customer(
@@ -82,7 +82,7 @@ def edit_transaksi(entry_id: int, body: ManualCustomerEditBody, user: dict = Dep
 
 
 @router.delete("/transaksi/{entry_id}")
-def hapus_transaksi_endpoint(entry_id: int, user: dict = Depends(require_permission("izin_input_data_hapus"))):
+def hapus_transaksi_endpoint(entry_id: int, user: dict = Depends(require_permission("izin_manual_customer"))):
     _pastikan_entry_tenant_sama(user, manual_customer_db.get_manual_customer(entry_id))
     try:
         manual_customer_db.hapus_manual_customer(entry_id, tenant_id=user["tenant_id"])
@@ -92,7 +92,7 @@ def hapus_transaksi_endpoint(entry_id: int, user: dict = Depends(require_permiss
 
 
 @router.post("/close")
-def tutup_hari(tanggal: str, user: dict = Depends(require_permission("izin_input_data_kelola"))):
+def tutup_hari(tanggal: str, user: dict = Depends(require_permission("izin_manual_customer"))):
     try:
         return manual_customer_db.tutup_hari(user["tenant_id"], tanggal, ditutup_oleh=user["username"])
     except ValueError as e:
@@ -100,6 +100,6 @@ def tutup_hari(tanggal: str, user: dict = Depends(require_permission("izin_input
 
 
 @router.post("/reset")
-def reset_hari(tanggal: str, user: dict = Depends(require_permission("izin_input_data_hapus"))):
+def reset_hari(tanggal: str, user: dict = Depends(require_permission("izin_manual_customer"))):
     manual_customer_db.reset_hari(user["tenant_id"], tanggal)
     return {"ok": True}
