@@ -299,6 +299,50 @@ def test_superadmin_tandai_komisi_sudah_dibayar(app_client):
     assert hasil["nama_tenant"] == tenant["nama_barbershop"]
 
 
+def test_kode_referral_list_menyertakan_username(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    _buat_sales_via_api(app_client, headers)
+    r = app_client.get("/api/superadmin/sales/kode-referral", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["username"] == "sales1"
+
+
+def test_superadmin_ganti_password_akun_sales(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    kode = _buat_sales_via_api(app_client, headers)
+    user = auth_db.get_user_by_username("sales1")
+
+    r = app_client.put(f"/api/superadmin/sales/akun/{user['id']}/password", headers=headers,
+                        json={"password": "passwordbaru999"})
+    assert r.status_code == 200, r.text
+
+    # Password lama sudah tidak berlaku, password baru bisa dipakai login.
+    r_lama = app_client.post("/api/auth/login", json={"username": "sales1", "password": "passwordsales1"})
+    assert r_lama.status_code == 401
+    r_baru = app_client.post("/api/auth/login", json={"username": "sales1", "password": "passwordbaru999"})
+    assert r_baru.status_code == 200, r_baru.text
+
+
+def test_ganti_password_sales_password_terlalu_pendek_ditolak(app_client):
+    headers = _buat_superadmin_dan_login(app_client)
+    _buat_sales_via_api(app_client, headers)
+    user = auth_db.get_user_by_username("sales1")
+    r = app_client.put(f"/api/superadmin/sales/akun/{user['id']}/password", headers=headers, json={"password": "ab"})
+    assert r.status_code == 422
+
+
+def test_ganti_password_sales_tidak_bisa_sasar_akun_bukan_sales(app_client):
+    """Endpoint ini KHUSUS akun role 'sales' -- tidak boleh jadi jalan
+    pintas reset password akun Owner tenant mana pun walau Superadmin tahu
+    user_id-nya."""
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    pemilik_id = auth_db.tambah_user("ownerpercobaan", "passwordowner123", "admin", tenant_id=tenant["id"])
+    r = app_client.put(f"/api/superadmin/sales/akun/{pemilik_id}/password", headers=headers,
+                        json={"password": "passwordbaru999"})
+    assert r.status_code == 404
+
+
 def test_komisi_status_tidak_valid_ditolak(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     kode = _buat_sales_via_api(app_client, headers)

@@ -38,7 +38,7 @@ AKSI_VALID = {
     # FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py):
     # Super Admin merekrut sales + kode referral, komisi fleksibel, dan
     # transaksi Lisensi Lifetime (Beli Putus) yang diproses manual.
-    "buat_akun_sales", "ubah_kode_referral", "tempel_referral_tenant",
+    "buat_akun_sales", "ubah_password_sales", "ubah_kode_referral", "tempel_referral_tenant",
     "ubah_status_komisi", "buat_transaksi_lifetime", "ubah_status_lifetime",
     # FONDASI Multi-Tenant Phase 4 (Billing & Payment Gateway) -- lihat
     # routers/billing.py, billing_db.py.

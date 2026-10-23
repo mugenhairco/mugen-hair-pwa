@@ -116,6 +116,7 @@ const PageSuperadmin = (() => {
     hapus_config_whatsapp_bot: "Hapus Konfigurasi WA Bot",
     // FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py).
     buat_akun_sales: "Buat Akun Sales",
+    ubah_password_sales: "Ubah Password Sales",
     ubah_kode_referral: "Ubah Kode Referral",
     tempel_referral_tenant: "Tempel Kode Referral ke Tenant",
     ubah_status_komisi: "Ubah Status Komisi",
@@ -2519,6 +2520,7 @@ const PageSuperadmin = (() => {
           [
             { key: "kode", label: "Kode" },
             { key: "nama_sales", label: "Nama Sales" },
+            { key: "username", label: "Username" },
             { key: "komisi_persen_baru", label: "Baru", format: (v) => `${v}%` },
             { key: "komisi_persen_repeat", label: "Repeat", format: (v) => `${v}%` },
             { key: "komisi_persen_lifetime", label: "Lifetime", format: (v) => `${v}%` },
@@ -2550,6 +2552,23 @@ const PageSuperadmin = (() => {
                   }
                 });
                 wrap.appendChild(btnUbah);
+                // REVISI (laporan Superadmin): password akun sales TIDAK
+                // BISA dilihat (hash satu arah, sama seperti semua akun
+                // lain) -- tombol ini satu-satunya cara Superadmin
+                // mengubahnya kalau sales lupa/minta diganti.
+                const btnGantiPassword = MugenUI.el("button", {}, "Ganti Password");
+                btnGantiPassword.addEventListener("click", async () => {
+                  const passwordBaru = prompt(`Password baru untuk akun "${k.username}" (minimal 4 karakter):`);
+                  if (passwordBaru === null) return;
+                  try {
+                    await MugenApi.put(`/api/superadmin/sales/akun/${k.user_id}/password`, { password: passwordBaru });
+                    MugenUI.toast("Password akun sales diperbarui.", "success");
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnGantiPassword);
                 const menujuAktif = !k.aktif;
                 const btnToggle = MugenUI.el("button", { class: menujuAktif ? "" : "btn-danger" },
                   menujuAktif ? "Aktifkan" : "Nonaktifkan");
@@ -2582,7 +2601,19 @@ const PageSuperadmin = (() => {
     salesLifetimeCard.appendChild(MugenUI.el("h2", {}, "Lisensi Lifetime (Beli Putus)"));
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Dicatat manual -- deal terjadi di luar aplikasi, nomor VA Faspay dibuat/diberikan ke klien sendiri oleh Super Admin. Begitu ditandai Lunas, tenant otomatis mendapat akses permanen (status 'Lifetime') di paket yang dipilih, dan komisi (kalau kode referral dipasang) tercatat otomatis."));
-    const ltTenantId = MugenUI.el("input", { type: "number", placeholder: "ID Tenant" });
+    // REVISI (bugfix UX, laporan Superadmin): SEBELUMNYA input angka "ID
+    // Tenant" polos -- tabel daftar Tenant di tab sebelah TIDAK PERNAH
+    // menampilkan ID mentahnya sama sekali, jadi tidak ada cara normal
+    // untuk tahu angka yang harus diketik di sini. Diganti dropdown nama
+    // toko (opsinya dimuat dari endpoint yang SAMA dipakai loadTenantList(),
+    // lihat loadTenantOptionsLifetime() di bawah), Superadmin tinggal
+    // pilih nama, tidak perlu tahu ID sama sekali. Tenant itu sendiri HARUS
+    // SUDAH terdaftar lebih dulu (daftar mandiri lewat halaman Daftar, atau
+    // Superadmin buat manual lewat tab Tenant) -- dropdown ini murni
+    // memilih dari yang sudah ada, bukan alur pendaftaran baru.
+    const ltTenantSelect = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "" }, "Memuat daftar tenant..."),
+    ]);
     const ltPackage = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "basic" }, "Basic"),
       MugenUI.el("option", { value: "pro" }, "Pro"),
@@ -2593,10 +2624,24 @@ const PageSuperadmin = (() => {
     const ltVa = MugenUI.el("input", { type: "text", placeholder: "Nomor Virtual Account" });
     const ltKodeReferral = MugenUI.el("input", { type: "text", placeholder: "Kode Referral (opsional)" });
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "ID Tenant"), ltTenantId]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tenant"), ltTenantSelect]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), ltPackage]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nominal"), ltAmount]),
     ]));
+
+    async function loadTenantOptionsLifetime() {
+      try {
+        const tenants = await MugenApi.get("/api/superadmin/tenants");
+        ltTenantSelect.innerHTML = "";
+        ltTenantSelect.appendChild(MugenUI.el("option", { value: "" }, "Pilih Tenant..."));
+        for (const t of tenants) {
+          ltTenantSelect.appendChild(MugenUI.el("option", { value: String(t.id) }, `${t.nama_barbershop} (${t.slug})`));
+        }
+      } catch (e) {
+        ltTenantSelect.innerHTML = "";
+        ltTenantSelect.appendChild(MugenUI.el("option", { value: "" }, "Gagal memuat daftar tenant."));
+      }
+    }
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "margin-top:8px;" }, [
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Provider"), ltProvider]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor VA"), ltVa]),
@@ -2609,6 +2654,10 @@ const PageSuperadmin = (() => {
     salesLifetimeCard.appendChild(lifetimeListBody);
 
     btnBuatLifetime.addEventListener("click", async () => {
+      if (!ltTenantSelect.value) {
+        MugenUI.toast("Pilih tenant dulu -- kalau tenantnya belum ada di daftar, minta dia daftar sendiri lewat halaman Daftar, atau buat toko barunya lewat tab Tenant.", "error");
+        return;
+      }
       try {
         let referral_code_id = null;
         const kodeDiketik = ltKodeReferral.value.trim();
@@ -2619,11 +2668,11 @@ const PageSuperadmin = (() => {
           referral_code_id = cocok.id;
         }
         await MugenUI.withButtonLoading(btnBuatLifetime, () => MugenApi.post("/api/superadmin/sales/lifetime", {
-          tenant_id: Number(ltTenantId.value), package_kode: ltPackage.value, amount: Number(ltAmount.value),
+          tenant_id: Number(ltTenantSelect.value), package_kode: ltPackage.value, amount: Number(ltAmount.value),
           provider: ltProvider.value.trim(), virtual_account_number: ltVa.value.trim(), referral_code_id,
         }));
         MugenUI.toast("Transaksi Lifetime dicatat.", "success");
-        ltTenantId.value = ""; ltAmount.value = ""; ltVa.value = ""; ltKodeReferral.value = "";
+        ltTenantSelect.value = ""; ltAmount.value = ""; ltVa.value = ""; ltKodeReferral.value = "";
         loadLifetimeList();
         loadAuditLog();
       } catch (e) {
@@ -2747,6 +2796,7 @@ const PageSuperadmin = (() => {
     await muatSettlement();
     await loadWaBotList();
     await loadKodeReferral();
+    await loadTenantOptionsLifetime();
     await loadLifetimeList();
     await loadSalesKomisi();
     await loadAuditLog();

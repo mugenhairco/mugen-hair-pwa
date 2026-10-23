@@ -75,7 +75,16 @@ def buat_akun_sales(body: BuatAkunSalesBody, user: dict = Depends(require_supera
 
 @superadmin_router.get("/kode-referral")
 def list_kode_referral(user: dict = Depends(require_superadmin)):
-    return sales_db.list_kode_referral()
+    # REVISI (laporan Superadmin): tiap baris dilengkapi `username` akun
+    # login sales-nya -- dibutuhkan frontend untuk tombol "Ganti Password"
+    # (lihat PUT /akun/{user_id}/password di bawah) dan supaya Superadmin
+    # tahu username mana yang harus diberikan ke orangnya, tanpa perlu buka
+    # tabel users secara terpisah.
+    hasil = []
+    for kode in sales_db.list_kode_referral():
+        akun = auth_db.get_user(kode["user_id"])
+        hasil.append({**kode, "username": akun["username"] if akun else None})
+    return hasil
 
 
 class UbahKodeReferralBody(BaseModel):
@@ -96,6 +105,31 @@ def ubah_kode_referral(id_: int, body: UbahKodeReferralBody, user: dict = Depend
     superadmin_audit_db.catat(user["username"], "ubah_kode_referral",
                                detail=f"kode_id={id_}, kode={hasil['kode']}")
     return hasil
+
+
+class GantiPasswordSalesBody(BaseModel):
+    password: str
+
+
+@superadmin_router.put("/akun/{user_id}/password")
+def ganti_password_sales(user_id: int, body: GantiPasswordSalesBody, user: dict = Depends(require_superadmin)):
+    """FITUR (laporan Superadmin): password akun sales TIDAK PERNAH bisa
+    dilihat (hash satu arah, sama seperti seluruh akun lain di aplikasi
+    ini -- tidak ada cara menampilkan password asli siapa pun, bahkan untuk
+    Super Admin), tapi SEBELUMNYA juga tidak ada cara mengubahnya kalau
+    sales lupa/butuh diganti -- endpoint ini mengisi celah itu, khusus
+    akun ber-role 'sales' (menolak tegas kalau user_id yang dikirim
+    ternyata akun role lain, supaya endpoint ini tidak disalahgunakan jadi
+    jalan pintas reset password akun Owner/Admin/Barber tenant mana pun)."""
+    target = auth_db.get_user(user_id)
+    if target is None or target["role"] != "sales":
+        raise HTTPException(status_code=404, detail="Akun sales tidak ditemukan.")
+    try:
+        auth_db.ganti_password(user_id, body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "ubah_password_sales", detail=f"user_id={user_id}, username={target['username']}")
+    return {"ok": True}
 
 
 # ============================= Super Admin: Atribusi Tenant =============================
