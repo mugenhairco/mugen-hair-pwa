@@ -1006,12 +1006,21 @@ const PageSuperadmin = (() => {
       const inputAktif = MugenUI.el("input", { type: "checkbox" });
       inputAktif.checked = !!paket.aktif;
       const inputDeskripsi = MugenUI.el("textarea", { rows: "2" }, paket.deskripsi || "");
+      // FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli
+      // Putus): nominal katalog per paket, diisi otomatis ke form "Buat
+      // Transaksi Lifetime" di tab Sales & Referral (lihat salesLifetimeCard
+      // di bawah) -- kosongkan kalau paket ini tidak dijual Lifetime.
+      const inputHargaLifetime = MugenUI.el("input", {
+        type: "number", min: "0", placeholder: "tidak dijual Lifetime",
+        value: paket.harga_lifetime !== null && paket.harga_lifetime !== undefined ? String(paket.harga_lifetime) : "",
+      });
 
       billingPackageEditBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nama"), inputNama]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Harga (Rp)"), inputHarga]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Durasi (hari)"), inputDurasi]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Urutan"), inputUrutan]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Harga Lifetime (Rp)"), inputHargaLifetime]),
       ]));
       billingPackageEditBody.appendChild(MugenUI.el("label", { style: "margin-top:10px;display:flex;align-items:center;gap:6px;" }, [inputAktif, "Aktif (tampil di katalog Owner)"]));
       billingPackageEditBody.appendChild(MugenUI.el("label", {}, "Deskripsi"));
@@ -1074,6 +1083,7 @@ const PageSuperadmin = (() => {
           urutan: parseInt(inputUrutan.value, 10) || 0,
           aktif: inputAktif.checked,
           deskripsi: inputDeskripsi.value,
+          harga_lifetime: inputHargaLifetime.value === "" ? null : parseInt(inputHargaLifetime.value, 10),
         };
         for (const [key] of LIMIT_FIELDS) {
           const v = inputLimit[key].value;
@@ -2597,10 +2607,19 @@ const PageSuperadmin = (() => {
       }
     }
 
-    // --- Transaksi Lisensi Lifetime (Beli Putus, manual) ---
+    // --- Transaksi Lisensi Lifetime (Beli Putus) ---
+    // REVISI (desain awal keliru -- Faspay tidak punya dashboard manusia
+    // untuk membuat VA, VA hanya bisa dibuat lewat API): Super Admin
+    // SEKARANG hanya memilih tenant + paket + metode pembayaran, nominal
+    // & VA/QR dibuat OTOMATIS lewat gateway SNAP Advance yang SAMA dipakai
+    // checkout langganan biasa (lihat routers/sales.py::buat_lifetime()).
+    // Begitu tenant membayar (otomatis terdeteksi webhook, lihat
+    // snap_webhook.py::_cascade_lifetime_license()), tenant otomatis
+    // mendapat akses permanen (status 'Lifetime') di paket yang dipilih,
+    // dan komisi (kalau kode referral dipasang) tercatat otomatis.
     salesLifetimeCard.appendChild(MugenUI.el("h2", {}, "Lisensi Lifetime (Beli Putus)"));
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Dicatat manual -- deal terjadi di luar aplikasi, nomor VA Faspay dibuat/diberikan ke klien sendiri oleh Super Admin. Begitu ditandai Lunas, tenant otomatis mendapat akses permanen (status 'Lifetime') di paket yang dipilih, dan komisi (kalau kode referral dipasang) tercatat otomatis."));
+      "Pilih tenant & paket -- nominal dan Virtual Account/QRIS dibuat otomatis lewat Faspay SNAP Advance (gateway yang sama dipakai checkout langganan biasa). Begitu tenant membayar, status Lifetime aktif otomatis -- Super Admin tidak perlu menandai lunas manual."));
     // REVISI (bugfix UX, laporan Superadmin): SEBELUMNYA input angka "ID
     // Tenant" polos -- tabel daftar Tenant di tab sebelah TIDAK PERNAH
     // menampilkan ID mentahnya sama sekali, jadi tidak ada cara normal
@@ -2615,18 +2634,26 @@ const PageSuperadmin = (() => {
       MugenUI.el("option", { value: "" }, "Memuat daftar tenant..."),
     ]);
     const ltPackage = MugenUI.el("select", {}, [
-      MugenUI.el("option", { value: "basic" }, "Basic"),
-      MugenUI.el("option", { value: "pro" }, "Pro"),
-      MugenUI.el("option", { value: "enterprise" }, "Enterprise"),
+      MugenUI.el("option", { value: "" }, "Memuat daftar paket..."),
     ]);
-    const ltAmount = MugenUI.el("input", { type: "number", placeholder: "Nominal (Rp)" });
-    const ltProvider = MugenUI.el("input", { type: "text", value: "faspay" });
-    const ltVa = MugenUI.el("input", { type: "text", placeholder: "Nomor Virtual Account" });
+    const ltAmount = MugenUI.el("input", { type: "number", placeholder: "Nominal (Rp) -- otomatis dari katalog" });
+    const ltChannel = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "" }, "Memuat metode pembayaran..."),
+    ]);
+    const ltBankCode = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "" }, "-- pilih bank VA --"),
+    ]);
+    const ltBankCodeWrap = MugenUI.el("div", {}, [MugenUI.el("label", {}, "Bank VA"), ltBankCode]);
     const ltKodeReferral = MugenUI.el("input", { type: "text", placeholder: "Kode Referral (opsional)" });
-    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row" }, [
+    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tenant"), ltTenantSelect]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), ltPackage]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nominal"), ltAmount]),
+    ]));
+    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-top:8px;" }, [
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Pembayaran"), ltChannel]),
+      ltBankCodeWrap,
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kode Referral"), ltKodeReferral]),
     ]));
 
     async function loadTenantOptionsLifetime() {
@@ -2642,13 +2669,64 @@ const PageSuperadmin = (() => {
         ltTenantSelect.appendChild(MugenUI.el("option", { value: "" }, "Gagal memuat daftar tenant."));
       }
     }
-    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "margin-top:8px;" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Provider"), ltProvider]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor VA"), ltVa]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kode Referral"), ltKodeReferral]),
-    ]));
-    const btnBuatLifetime = MugenUI.el("button", {}, "Catat Transaksi Lifetime");
-    salesLifetimeCard.appendChild(btnBuatLifetime);
+
+    // {kode: harga_lifetime} -- diisi loadLifetimePaketOptions(), dipakai
+    // auto-fill ltAmount begitu Superadmin mengganti pilihan paket.
+    let _hargaLifetimePerPaket = {};
+    async function loadLifetimePaketOptions() {
+      try {
+        const paket = await MugenApi.get("/api/superadmin/billing/packages");
+        ltPackage.innerHTML = "";
+        _hargaLifetimePerPaket = {};
+        for (const p of paket) {
+          _hargaLifetimePerPaket[p.kode] = p.harga_lifetime || null;
+          const label = p.harga_lifetime ? `${p.nama} (${MugenUI.formatRupiah(p.harga_lifetime)})` : `${p.nama} (belum diatur)`;
+          ltPackage.appendChild(MugenUI.el("option", { value: p.kode }, label));
+        }
+        if (ltPackage.options.length) ltAmount.value = _hargaLifetimePerPaket[ltPackage.value] || "";
+      } catch (e) {
+        ltPackage.innerHTML = "";
+        ltPackage.appendChild(MugenUI.el("option", { value: "" }, "Gagal memuat daftar paket."));
+      }
+    }
+    ltPackage.addEventListener("change", () => {
+      const harga = _hargaLifetimePerPaket[ltPackage.value];
+      if (harga) ltAmount.value = harga;
+    });
+
+    // Metode pembayaran & bank VA aktif -- SAMA PERSIS konfigurasi SNAP
+    // Advance yang Super Admin atur di tab "Payment Gateway SNAP Advance"
+    // (lihat loadSnapAdvanceConfig() di atas) -- form Lifetime di sini
+    // TIDAK boleh menawarkan channel/bank yang belum/tidak diaktifkan.
+    const LABEL_CHANNEL_LIFETIME = { va: "Virtual Account", qris: "QRIS" };
+    async function loadLifetimeChannelOptions() {
+      try {
+        const cfg = await MugenApi.get("/api/superadmin/snap-advance/config");
+        const channelAktif = cfg.snap_channel_aktif || [];
+        ltChannel.innerHTML = "";
+        if (!channelAktif.length) {
+          ltChannel.appendChild(MugenUI.el("option", { value: "" }, "Belum ada metode pembayaran aktif."));
+        }
+        for (const kode of channelAktif) {
+          ltChannel.appendChild(MugenUI.el("option", { value: kode }, LABEL_CHANNEL_LIFETIME[kode] || kode));
+        }
+        const vaBankLabel = cfg.va_channel_code_label || {};
+        ltBankCode.innerHTML = "";
+        for (const kode of (cfg.snap_va_bank_aktif || [])) {
+          ltBankCode.appendChild(MugenUI.el("option", { value: kode }, MugenUI.bankNamaLengkap(kode, vaBankLabel[kode])));
+        }
+        ltBankCodeWrap.style.display = ltChannel.value === "va" ? "" : "none";
+      } catch (e) {
+        ltChannel.innerHTML = "";
+        ltChannel.appendChild(MugenUI.el("option", { value: "" }, "Gagal memuat metode pembayaran."));
+      }
+    }
+    ltChannel.addEventListener("change", () => {
+      ltBankCodeWrap.style.display = ltChannel.value === "va" ? "" : "none";
+    });
+
+    const btnBuatLifetime = MugenUI.el("button", {}, "Buat Transaksi Lifetime");
+    salesLifetimeCard.appendChild(MugenUI.el("div", { style: "margin-top:10px;" }, btnBuatLifetime));
     const lifetimeListBody = MugenUI.el("div");
     salesLifetimeCard.appendChild(MugenUI.el("h3", { style: "margin-top:18px;" }, "Riwayat Transaksi Lifetime"));
     salesLifetimeCard.appendChild(lifetimeListBody);
@@ -2656,6 +2734,14 @@ const PageSuperadmin = (() => {
     btnBuatLifetime.addEventListener("click", async () => {
       if (!ltTenantSelect.value) {
         MugenUI.toast("Pilih tenant dulu -- kalau tenantnya belum ada di daftar, minta dia daftar sendiri lewat halaman Daftar, atau buat toko barunya lewat tab Tenant.", "error");
+        return;
+      }
+      if (!ltChannel.value) {
+        MugenUI.toast("Pilih metode pembayaran dulu.", "error");
+        return;
+      }
+      if (ltChannel.value === "va" && !ltBankCode.value) {
+        MugenUI.toast("Pilih bank VA dulu.", "error");
         return;
       }
       try {
@@ -2668,11 +2754,13 @@ const PageSuperadmin = (() => {
           referral_code_id = cocok.id;
         }
         await MugenUI.withButtonLoading(btnBuatLifetime, () => MugenApi.post("/api/superadmin/sales/lifetime", {
-          tenant_id: Number(ltTenantSelect.value), package_kode: ltPackage.value, amount: Number(ltAmount.value),
-          provider: ltProvider.value.trim(), virtual_account_number: ltVa.value.trim(), referral_code_id,
+          tenant_id: Number(ltTenantSelect.value), package_kode: ltPackage.value,
+          amount: ltAmount.value === "" ? null : Number(ltAmount.value),
+          channel: ltChannel.value, bank_code: ltChannel.value === "va" ? ltBankCode.value : null,
+          referral_code_id,
         }));
-        MugenUI.toast("Transaksi Lifetime dicatat.", "success");
-        ltTenantSelect.value = ""; ltAmount.value = ""; ltVa.value = ""; ltKodeReferral.value = "";
+        MugenUI.toast("Transaksi Lifetime dibuat -- VA/QR siap ditagihkan ke tenant.", "success");
+        ltTenantSelect.value = ""; ltKodeReferral.value = "";
         loadLifetimeList();
         loadAuditLog();
       } catch (e) {
@@ -2682,7 +2770,7 @@ const PageSuperadmin = (() => {
 
     async function loadLifetimeList() {
       lifetimeListBody.innerHTML = "";
-      lifetimeListBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 3 }));
+      lifetimeListBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 3 }));
       try {
         const daftar = await MugenApi.get("/api/superadmin/sales/lifetime");
         lifetimeListBody.innerHTML = "";
@@ -2693,19 +2781,33 @@ const PageSuperadmin = (() => {
             { key: "amount", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
             { key: "kode_referral", label: "Kode Referral", format: (v) => v || "-" },
             {
+              key: "instrumen", label: "VA/QR", format: (_, p) => {
+                if (p.channel === "va" && p.va_number) {
+                  return MugenUI.el("div", {}, [
+                    MugenUI.el("div", { class: "subtitle" }, MugenUI.bankNamaLengkap(p.channel_code, p.va_bank_label)),
+                    MugenUI.el("div", { style: "font-weight:700;" }, p.va_number),
+                  ]);
+                }
+                if (p.channel === "qris" && p.qr_url) {
+                  return MugenUI.el("a", { href: p.qr_url, target: "_blank" }, "Lihat QRIS");
+                }
+                return "-";
+              },
+            },
+            {
               key: "payment_status", label: "Status",
               format: (v) => {
                 const cls = v === "paid" ? "badge-success" : v === "pending" ? "badge-warning" : "badge-danger";
-                const label = { pending: "Menunggu", paid: "Lunas", expired: "Kedaluwarsa", failed: "Gagal" }[v] || v;
+                const label = { pending: "Menunggu", paid: "Lunas", expired: "Kedaluwarsa", failed: "Gagal", cancelled: "Dibatalkan" }[v] || v;
                 return MugenUI.el("span", { class: `badge ${cls}` }, label);
               },
             },
             {
               key: "aksi", label: "Aksi", format: (_, p) => {
                 if (p.payment_status !== "pending") return "-";
-                const btn = MugenUI.el("button", {}, "Tandai Lunas");
+                const btn = MugenUI.el("button", {}, "Tandai Lunas Manual");
                 btn.addEventListener("click", async () => {
-                  if (!confirm(`Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS? Tenant ini akan langsung mendapat akses permanen.`)) return;
+                  if (!confirm(`Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS secara manual? Normalnya ini otomatis begitu pembayaran dikonfirmasi gateway -- hanya pakai ini kalau tenant membayar lewat jalur lain di luar aplikasi. Tenant akan langsung mendapat akses permanen.`)) return;
                   try {
                     await MugenUI.withButtonLoading(btn,
                       () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "paid" }));
@@ -2797,6 +2899,8 @@ const PageSuperadmin = (() => {
     await loadWaBotList();
     await loadKodeReferral();
     await loadTenantOptionsLifetime();
+    await loadLifetimePaketOptions();
+    await loadLifetimeChannelOptions();
     await loadLifetimeList();
     await loadSalesKomisi();
     await loadAuditLog();

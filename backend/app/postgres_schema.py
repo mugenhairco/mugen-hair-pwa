@@ -963,6 +963,7 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
     harga        INTEGER NOT NULL DEFAULT 0,
     harga_6bulan INTEGER,
     harga_tahunan INTEGER,
+    harga_lifetime INTEGER,
     durasi_hari  INTEGER NOT NULL DEFAULT 30,
     aktif        INTEGER NOT NULL DEFAULT 1,
     urutan       INTEGER NOT NULL DEFAULT 0,
@@ -983,6 +984,12 @@ CREATE TABLE IF NOT EXISTS subscription_packages (
 -- itu.
 ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_6bulan INTEGER;
 ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_tahunan INTEGER;
+
+-- FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli Putus):
+-- harga katalog per paket, dipakai routers/sales.py untuk mengisi nominal
+-- otomatis saat Super Admin membuat transaksi Lifetime (bisa dioverride
+-- manual per transaksi kalau perlu). Lihat billing_db.py untuk jalur SQLite.
+ALTER TABLE subscription_packages ADD COLUMN IF NOT EXISTS harga_lifetime INTEGER;
 
 CREATE TABLE IF NOT EXISTS subscription_features (
     id           SERIAL PRIMARY KEY,
@@ -1139,6 +1146,7 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
     tenant_id                 INTEGER NOT NULL,
     booking_id                INTEGER,
     subscription_invoice_id   INTEGER,
+    lifetime_purchase_id      INTEGER,
     channel                   TEXT,
     channel_code              TEXT,
     ewallet_provider          TEXT,
@@ -1171,6 +1179,13 @@ ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS binding_id INTEGE
 -- default yang mungkin sudah berubah, lihat snap_payment_migrasi.py (jalur
 -- SQLite) untuk penjelasan lengkap.
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS channel_code TEXT;
+
+-- FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli Putus)
+-- dibayar lewat gateway SNAP Advance yang SAMA dengan Booking Payment &
+-- SaaS Billing di atas -- kolom ini menautkan transaksi SNAP ke baris
+-- tenant_lifetime_purchases (sales_db.py) untuk cascade status via webhook,
+-- lihat snap_webhook.py::_cascade_lifetime_license().
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS lifetime_purchase_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     id              SERIAL PRIMARY KEY,

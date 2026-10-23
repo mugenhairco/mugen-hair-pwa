@@ -50,6 +50,7 @@ import json
 import billing_invoice_db
 import billing_webhook
 import booking_db
+import sales_db
 import snap_advance_client
 import snap_advance_db
 import snap_payment_db
@@ -66,6 +67,17 @@ _STATUS_KE_VOCAB_BILLING = {
     snap_payment_db.STATUS_FAILED: billing_webhook.STATUS_DENIED,
     snap_payment_db.STATUS_EXPIRED: billing_webhook.STATUS_EXPIRED,
     snap_payment_db.STATUS_CANCELLED: billing_webhook.STATUS_CANCELLED,
+}
+
+# FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli Putus):
+# pemetaan vocabulary SNAP Advance -> vocabulary sales_db.PAYMENT_STATUS_VALID
+# ('pending'/'paid'/'failed'/'expired'/'cancelled', lihat sales_db.py).
+_STATUS_KE_PAYMENT_STATUS_LIFETIME = {
+    snap_payment_db.STATUS_PAID: "paid",
+    snap_payment_db.STATUS_PENDING: "pending",
+    snap_payment_db.STATUS_FAILED: "failed",
+    snap_payment_db.STATUS_EXPIRED: "expired",
+    snap_payment_db.STATUS_CANCELLED: "cancelled",
 }
 
 
@@ -109,6 +121,8 @@ def terapkan_status_transaksi(transaksi: dict, status_baru: str, sumber: str,
         _cascade_booking(transaksi["booking_id"], status_baru)
     elif transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_SAAS_BILLING:
         _cascade_saas_billing(transaksi["subscription_invoice_id"], status_baru, sumber)
+    elif transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_LIFETIME_LICENSE:
+        _cascade_lifetime_license(transaksi["lifetime_purchase_id"], status_baru)
 
     return snap_payment_db.get_transaksi(transaksi["id"])
 
@@ -143,6 +157,26 @@ def _cascade_saas_billing(subscription_invoice_id: int, status_baru: str, sumber
     status_billing = _STATUS_KE_VOCAB_BILLING[status_baru]
     with billing_webhook._kunci_tenant(invoice["tenant_id"]):
         billing_webhook._terapkan_status_invoice(invoice, status_billing, sumber=sumber)
+
+
+def _cascade_lifetime_license(lifetime_purchase_id: int, status_baru: str):
+    """Domain LIFETIME_LICENSE (FITUR Program Afiliasi Sales/Marketing) --
+    reuse TOTAL sales_db.tandai_status_lifetime() (kalau 'paid': SEKALIGUS
+    meng-upgrade subscription tenant jadi akses permanen + catat komisi
+    otomatis, lihat docstring modul itu) -- TIDAK ada logika bisnis baru
+    ditulis di sini, pola SAMA PERSIS _cascade_booking()/
+    _cascade_saas_billing() di atas. Status SNAP yang tidak dipetakan
+    (seharusnya tidak pernah terjadi, lihat _STATUS_KE_PAYMENT_STATUS_LIFETIME)
+    diabaikan diam-diam, BUKAN dilempar ke pemanggil (pola sama persis
+    _cascade_booking() dkk -- cascade kegagalan tidak boleh menggagalkan
+    pencatatan status transaksi SNAP itu sendiri)."""
+    payment_status = _STATUS_KE_PAYMENT_STATUS_LIFETIME.get(status_baru)
+    if payment_status is None:
+        return
+    try:
+        sales_db.tandai_status_lifetime(lifetime_purchase_id, payment_status)
+    except ValueError:
+        pass  # transaksi Lifetime sudah tidak ada -- transaksi SNAP tetap tercatat apa adanya
 
 
 # Pemetaan `latestTransactionStatus` (dokumen resmi VA & Direct Debit yang

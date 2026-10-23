@@ -33,6 +33,7 @@ import billing_limits
 import billing_webhook
 import gateway_client_base
 import payment_provider_client
+import sales_db
 import snap_advance_db
 import snap_payment_db
 import snap_webhook
@@ -212,6 +213,34 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     }
 
 
+@router.get("/lifetime-pending")
+def lifetime_pending_saya(user: dict = Depends(require_admin)):
+    """FITUR Program Afiliasi Sales/Marketing: tampilkan transaksi Lisensi
+    Lifetime milik tenant ini SENDIRI yang masih 'pending' (VA/QR dibuat
+    Super Admin lewat Dashboard Sales & Referral, lihat routers/sales.py::
+    buat_lifetime()) supaya Owner bisa langsung membayar dari halaman
+    Billing miliknya tanpa perlu dikirim link terpisah -- begitu webhook
+    SNAP Advance menandainya lunas, subscription tenant ini otomatis
+    berubah jadi 'lifetime' (lihat snap_webhook.py::
+    _cascade_lifetime_license()), setelah itu endpoint ini kembali
+    mengembalikan None (tidak ada lagi transaksi 'pending')."""
+    daftar = sales_db.list_lifetime_purchases(tenant_id=user["tenant_id"])
+    pending = next((p for p in daftar if p["payment_status"] == "pending"), None)
+    if pending is None:
+        return None
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(pending["id"])
+    return {
+        **pending,
+        "channel": transaksi["channel"] if transaksi else None,
+        "channel_code": transaksi["channel_code"] if transaksi else None,
+        "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]) if transaksi else None,
+        "va_number": transaksi["va_number"] if transaksi else None,
+        "qr_url": transaksi["qr_url"] if transaksi else None,
+        "qr_content": transaksi["qr_content"] if transaksi else None,
+        "expired_at": transaksi["expired_at"] if transaksi else None,
+    }
+
+
 class DowngradeBody(BaseModel):
     package_id: int
 
@@ -357,6 +386,7 @@ class PackageUpdateBody(BaseModel):
     harga: int | None = None
     harga_6bulan: int | None = None
     harga_tahunan: int | None = None
+    harga_lifetime: int | None = None
     durasi_hari: int | None = None
     aktif: bool | None = None
     urutan: int | None = None

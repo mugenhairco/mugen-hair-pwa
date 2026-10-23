@@ -143,6 +143,7 @@ def init_billing_db():
                 harga        INTEGER NOT NULL DEFAULT 0,
                 harga_6bulan INTEGER,
                 harga_tahunan INTEGER,
+                harga_lifetime INTEGER,
                 durasi_hari  INTEGER NOT NULL DEFAULT 30,
                 aktif        INTEGER NOT NULL DEFAULT 1,
                 urutan       INTEGER NOT NULL DEFAULT 0,
@@ -164,6 +165,12 @@ def init_billing_db():
             conn.execute("ALTER TABLE subscription_packages ADD COLUMN harga_6bulan INTEGER")
         if kolom and "harga_tahunan" not in kolom:
             conn.execute("ALTER TABLE subscription_packages ADD COLUMN harga_tahunan INTEGER")
+        # FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli
+        # Putus): harga katalog per paket, dipakai routers/sales.py untuk
+        # mengisi nominal otomatis saat Super Admin membuat transaksi
+        # Lifetime (bisa dioverride manual per transaksi kalau perlu).
+        if kolom and "harga_lifetime" not in kolom:
+            conn.execute("ALTER TABLE subscription_packages ADD COLUMN harga_lifetime INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS subscription_features (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -542,7 +549,7 @@ def update_package(package_id: int, **fields) -> dict:
     keterkaitan seluruh tenant yang sudah memakai kode itu)."""
     if get_package(package_id) is None:
         raise ValueError("Paket tidak ditemukan.")
-    kolom_diizinkan = {"nama", "harga", "harga_6bulan", "harga_tahunan", "durasi_hari", "aktif", "urutan", "deskripsi", *LIMIT_FIELDS}
+    kolom_diizinkan = {"nama", "harga", "harga_6bulan", "harga_tahunan", "harga_lifetime", "durasi_hari", "aktif", "urutan", "deskripsi", *LIMIT_FIELDS}
     aman = {k: v for k, v in fields.items() if k in kolom_diizinkan}
     if not aman:
         return get_package(package_id)
@@ -561,6 +568,8 @@ def update_package(package_id: int, **fields) -> dict:
         raise ValueError("Harga 6 bulan tidak boleh negatif.")
     if "harga_tahunan" in aman and aman["harga_tahunan"] is not None and aman["harga_tahunan"] < 0:
         raise ValueError("Harga tahunan tidak boleh negatif.")
+    if "harga_lifetime" in aman and aman["harga_lifetime"] is not None and aman["harga_lifetime"] < 0:
+        raise ValueError("Harga lifetime tidak boleh negatif.")
     if "durasi_hari" in aman and (not aman["durasi_hari"] or aman["durasi_hari"] < 1):
         raise ValueError("Durasi langganan minimal 1 hari.")
     for limit_key in LIMIT_FIELDS:

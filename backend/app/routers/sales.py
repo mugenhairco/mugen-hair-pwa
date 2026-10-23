@@ -6,10 +6,11 @@ Dua router dalam SATU file ini (pola sama seperti routers/subscription.py):
    'superadmin': merekrut akun sales (+ kode referral pertamanya
    sekaligus), mengubah persentase komisi (fleksibel per kode), menempel
    kode referral manual ke tenant tertentu, melihat SELURUH komisi lintas
-   sales + toggle status bayar, dan mengelola transaksi Lisensi Lifetime
-   (dicatat manual, ditandai lunas di sini -- lihat sales_db.py untuk efek
-   sampingnya: upgrade subscription + komisi otomatis). SETIAP aksi
-   tercatat ke superadmin_audit_log, pola sama persis routers/subscription.py.
+   sales + toggle status bayar, dan membuat transaksi Lisensi Lifetime
+   lewat gateway Faspay SNAP Advance NYATA (menirukan routers/billing.py::
+   checkout(), lihat sales_db.py untuk efek samping begitu webhook
+   menandainya lunas: upgrade subscription + komisi otomatis). SETIAP
+   aksi tercatat ke superadmin_audit_log, pola sama persis routers/subscription.py.
 
 2. `router` (prefix `/api/sales`) — KHUSUS role 'sales' (require_sales):
    Portal Sales miliknya sendiri, read-only -- kode referral miliknya,
@@ -22,7 +23,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import auth_db
+import billing_db
+import gateway_client_base
+import payment_provider_client
 import sales_db
+import snap_advance_db
+import snap_payment_db
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -185,12 +191,30 @@ def ubah_status_komisi(id_: int, body: UbahStatusKomisiBody, user: dict = Depend
 
 
 # ============================= Super Admin: Lisensi Lifetime (Beli Putus) =============================
+# REVISI (desain awal keliru -- Faspay tidak punya dashboard manusia untuk
+# membuat VA, VA hanya bisa dibuat lewat API): transaksi Lifetime SEKARANG
+# dibayar lewat gateway SNAP Advance NYATA yang SAMA dipakai checkout
+# langganan biasa (payment_provider_client.py), pola di bawah ini MENIRU
+# PERSIS routers/billing.py::checkout() -- lihat sales_db.py untuk alasan
+# lengkap kenapa tenant_lifetime_purchases sekarang hanya mencatat intent
+# (VA/QR nyata ada di snap_payment_transactions).
 
 def _lengkapi_lifetime(p: dict) -> dict:
     t = tenant_db.get_tenant(p["tenant_id"])
     kode = sales_db.get_kode_referral(p["referral_code_id"]) if p.get("referral_code_id") else None
-    return {**p, "nama_tenant": t["nama_barbershop"] if t else None,
-            "kode_referral": kode["kode"] if kode else None}
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(p["id"])
+    return {
+        **p, "nama_tenant": t["nama_barbershop"] if t else None,
+        "kode_referral": kode["kode"] if kode else None,
+        "channel": transaksi["channel"] if transaksi else None,
+        "channel_code": transaksi["channel_code"] if transaksi else None,
+        "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]) if transaksi else None,
+        "va_number": transaksi["va_number"] if transaksi else None,
+        "qr_url": transaksi["qr_url"] if transaksi else None,
+        "qr_content": transaksi["qr_content"] if transaksi else None,
+        "snap_status": transaksi["status"] if transaksi else None,
+        "snap_expired_at": transaksi["expired_at"] if transaksi else None,
+    }
 
 
 @superadmin_router.get("/lifetime")
@@ -201,11 +225,14 @@ def list_lifetime(user: dict = Depends(require_superadmin)):
 class BuatLifetimeBody(BaseModel):
     tenant_id: int
     package_kode: str
-    amount: int
-    provider: str = "faspay"
-    virtual_account_number: str
+    # Nominal BOLEH dikosongkan -- diisi otomatis dari katalog
+    # subscription_packages.harga_lifetime (lihat billing_db.py), Super
+    # Admin hanya perlu override manual kalau harga transaksi ini memang
+    # sengaja beda dari katalog.
+    amount: int | None = None
+    channel: str
+    bank_code: str | None = None
     referral_code_id: int | None = None
-    expired_at: str | None = None
 
 
 @superadmin_router.post("/lifetime")
@@ -213,18 +240,59 @@ def buat_lifetime(body: BuatLifetimeBody, user: dict = Depends(require_superadmi
     t = tenant_db.get_tenant(body.tenant_id)
     if t is None:
         raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+    if not payment_provider_client.is_enabled():
+        raise HTTPException(status_code=503, detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
+    if body.channel not in payment_provider_client.channel_aktif():
+        raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
+    if body.channel == "va" and body.bank_code not in payment_provider_client.va_bank_aktif():
+        raise HTTPException(status_code=422, detail="Bank VA tidak tersedia -- silakan pilih bank lain.")
+    if body.channel == "qris" and not t.get("whatsapp"):
+        raise HTTPException(status_code=422, detail="Nomor WhatsApp tenant wajib diisi untuk pembayaran QRIS.")
+
+    paket = billing_db.get_package_by_kode(body.package_kode)
+    if paket is None:
+        raise HTTPException(status_code=422, detail="Paket tidak ditemukan.")
+    amount = body.amount if body.amount is not None else paket.get("harga_lifetime")
+    if not amount or amount <= 0:
+        raise HTTPException(status_code=422,
+                             detail="Nominal Lifetime belum diatur untuk paket ini -- isi harga_lifetime di tab Paket, atau isi nominal manual.")
+
     try:
-        hasil = sales_db.buat_lifetime_purchase(
-            body.tenant_id, body.package_kode, body.amount, body.provider,
-            body.virtual_account_number, referral_code_id=body.referral_code_id,
-            expired_at=body.expired_at, dibuat_oleh=user["username"],
+        purchase = sales_db.buat_lifetime_purchase(
+            body.tenant_id, body.package_kode, amount,
+            referral_code_id=body.referral_code_id, dibuat_oleh=user["username"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    row = snap_payment_db.buat_transaksi(
+        snap_payment_db.TRANSACTION_TYPE_LIFETIME_LICENSE, body.tenant_id, amount,
+        lifetime_purchase_id=purchase["id"], channel=body.channel,
+        channel_code=body.bank_code if body.channel == "va" else None,
+    )
+    customer_details = {
+        "nama": (t["nama_barbershop"] or "Tenant")[:128],
+        "whatsapp": t.get("whatsapp"),
+    }
+    try:
+        hasil = payment_provider_client.buat_transaksi(
+            body.channel, row["payment_reference"], amount, customer_details,
+            channel_code=body.bank_code if body.channel == "va" else None,
+        )
+    except gateway_client_base.GatewayError as e:
+        snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
+        sales_db.tandai_status_lifetime(purchase["id"], "failed")
+        raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
+
+    snap_payment_db.catat_hasil_create_transaction(
+        row["id"], provider_transaction_id=hasil.get("provider_transaction_id"),
+        va_number=hasil.get("va_number"), qr_content=hasil.get("qr_content"), qr_url=hasil.get("qr_url"),
+        expired_at=hasil.get("expired_at"), provider_response=hasil.get("provider_response"), status="PENDING",
+    )
     superadmin_audit_db.catat(user["username"], "buat_transaksi_lifetime", tenant_id=body.tenant_id,
                                tenant_slug=t["slug"],
-                               detail=f"package={body.package_kode}, amount={body.amount}")
-    return _lengkapi_lifetime(hasil)
+                               detail=f"package={body.package_kode}, amount={amount}")
+    return _lengkapi_lifetime(sales_db.get_lifetime_purchase(purchase["id"]))
 
 
 class UbahStatusLifetimeBody(BaseModel):
@@ -233,6 +301,11 @@ class UbahStatusLifetimeBody(BaseModel):
 
 @superadmin_router.put("/lifetime/{id_}/status")
 def ubah_status_lifetime(id_: int, body: UbahStatusLifetimeBody, user: dict = Depends(require_superadmin)):
+    """Koreksi MANUAL -- status lunas SEKARANG normalnya otomatis lewat
+    webhook SNAP Advance (lihat snap_webhook.py::_cascade_lifetime_license()),
+    endpoint ini tetap dipertahankan untuk kasus pengecualian (mis. Super
+    Admin menerima pembayaran lewat jalur lain di luar gateway, atau perlu
+    membatalkan transaksi yang macet)."""
     purchase = sales_db.get_lifetime_purchase(id_)
     if purchase is None:
         raise HTTPException(status_code=404, detail="Transaksi Lifetime tidak ditemukan.")

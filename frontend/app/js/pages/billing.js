@@ -22,10 +22,15 @@ const PageBilling = (() => {
   const LABEL_STATUS_SUB = {
     trial: "Trial", active: "Aktif", grace_period: "Grace Period",
     expired: "Kedaluwarsa", suspended: "Ditangguhkan", cancelled: "Dibatalkan",
+    // FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli
+    // Putus): status permanen, akses TIDAK PERNAH diblokir lagi (lihat
+    // subscription_db.STATUS_AKSES_DIBLOKIR).
+    lifetime: "Lifetime",
   };
   const BADGE_STATUS_SUB = {
     trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
     expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
+    lifetime: "badge-success",
   };
   function formatWaktu(iso) {
     if (!iso) return "-";
@@ -158,6 +163,40 @@ const PageBilling = (() => {
       ]),
     ]);
     card.appendChild(ringkasan);
+  }
+
+  // FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli Putus):
+  // transaksi dibuat Super Admin lewat Dashboard Sales & Referral (routers/
+  // sales.py::buat_lifetime()), VA/QR-nya ditampilkan di SINI supaya Owner
+  // bisa langsung membayar dari halaman Billing miliknya sendiri, TANPA
+  // perlu dikirim link/info terpisah -- begitu webhook SNAP Advance
+  // menandainya lunas, status subscription otomatis berubah 'lifetime'
+  // (lihat snap_webhook.py::_cascade_lifetime_license()), kartu ini
+  // otomatis tidak tampil lagi di reload berikutnya (GET /lifetime-pending
+  // mengembalikan None begitu tidak ada lagi transaksi 'pending').
+  function renderLifetimePendingCard(root, pending) {
+    if (!pending) return;
+    const card = MugenUI.el("div", { class: "card" });
+    root.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Pembayaran Lisensi Lifetime"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      `Super Admin telah membuatkan transaksi Lisensi Lifetime paket ${LABEL_PACKAGE[pending.package_kode] || pending.package_kode} senilai ${MugenUI.formatRupiah(pending.amount)} untuk toko ini. Selesaikan pembayaran di bawah -- status langganan akan otomatis berubah permanen (Lifetime) begitu pembayaran dikonfirmasi.`));
+
+    const konten = [];
+    if (pending.channel === "va" && pending.va_number) {
+      konten.push(MugenUI.el("div", { class: "subtitle" },
+        pending.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(pending.channel_code, pending.va_bank_label)}` : "Virtual Account"));
+      konten.push(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;margin-top:4px;" }, pending.va_number));
+      konten.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+        "Transfer PERSIS sejumlah tagihan di atas ke nomor Virtual Account ini lewat m-banking/ATM."));
+    } else if (pending.channel === "qris" && pending.qr_url) {
+      konten.push(MugenUI.el("img", { src: pending.qr_url, alt: "QRIS", style: "max-width:240px;width:100%;" }));
+      konten.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+        "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
+    } else {
+      konten.push(MugenUI.el("div", { class: "subtitle" }, "Instrumen pembayaran belum tersedia -- hubungi penyedia layanan."));
+    }
+    card.appendChild(MugenUI.el("div", { style: "text-align:center;margin-top:12px;" }, konten));
   }
 
   function _bersihkanPendingKode() {
@@ -585,12 +624,13 @@ const PageBilling = (() => {
     // berhenti memanggilnya. Status "Periode Aktif Berakhir" sekarang dibaca
     // langsung dari sub.periode_selesai (tenant_subscriptions), TIDAK LAGI
     // scan invoices (lihat subscription_db.py::set_periode()).
-    let sub, config, packages;
+    let sub, config, packages, lifetimePending;
     try {
-      [sub, config, packages] = await Promise.all([
+      [sub, config, packages, lifetimePending] = await Promise.all([
         MugenApi.get("/api/subscription/me"),
         MugenApi.get("/api/billing/config"),
         MugenApi.get("/api/billing/packages"),
+        MugenApi.get("/api/billing/lifetime-pending"),
       ]);
     } catch (e) {
       loadingCard.innerHTML = "";
@@ -600,6 +640,7 @@ const PageBilling = (() => {
     loadingCard.remove();
 
     renderStatusCard(root, sub, packages, config);
+    renderLifetimePendingCard(root, lifetimePending);
     renderPaketCard(root, sub, config, packages, () => render(root));
   }
 

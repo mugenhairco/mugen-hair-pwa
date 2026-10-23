@@ -13,7 +13,13 @@ masuk endpoint tenant-scope maupun endpoint khusus Super Admin)."""
 import pytest
 
 import auth_db
+import billing_db
+import gateway_client_base
+import payment_provider_client
 import sales_db
+import snap_advance_db
+import snap_payment_db
+import snap_webhook
 import subscription_db
 import tenant_db
 
@@ -27,6 +33,25 @@ def _login(client, username, password):
 def _buat_superadmin_dan_login(client, username="superadmin1", password="rahasia123"):
     auth_db.tambah_user(username=username, password=password, role="superadmin", tenant_id=None)
     return _login(client, username, password)
+
+
+# Migrasi Faspay SNAP Advance: transaksi Lisensi Lifetime SEKARANG lewat
+# gateway NYATA yang SAMA dipakai checkout langganan biasa -- pola mock
+# SAMA PERSIS test_billing_checkout.py::_aktifkan_snap_billing() (TIDAK
+# PERNAH memanggil provider sungguhan).
+def _aktifkan_snap_lifetime(monkeypatch, va_number="70299999999999", gagal=False):
+    snap_advance_db.update_config(
+        merchant_id="37070", partner_id="37070", channel_id="77001", va_bank_aktif=["702"],
+        sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
+        channel_aktif=["va", "qris"],
+    )
+
+    def _hasil(*a, **kw):
+        if gagal:
+            raise gateway_client_base.GatewayTimeoutError("Provider timeout.")
+        return {"va_number": va_number, "provider_transaction_id": "trx-lifetime-1",
+                "expired_at": "2026-01-01T23:59:59+07:00", "provider_response": "{}"}
+    monkeypatch.setattr(payment_provider_client, "buat_transaksi", _hasil)
 
 
 def _buat_sales_via_api(client, headers_superadmin, username="sales1", password="passwordsales1",
@@ -218,25 +243,34 @@ def test_komisi_tidak_duplikat_kalau_status_paid_ditandai_dua_kali(app_client):
 
 
 # ============================= Lisensi Lifetime (Beli Putus) =============================
+# REVISI (desain awal keliru -- Faspay tidak punya dashboard manusia untuk
+# membuat VA, VA hanya bisa dibuat lewat API): transaksi Lifetime SEKARANG
+# lewat gateway SNAP Advance NYATA yang SAMA dipakai checkout langganan
+# biasa (mock payment_provider_client.buat_transaksi(), lihat
+# _aktifkan_snap_lifetime() di atas) -- status lunas ditentukan webhook
+# (snap_webhook.terapkan_status_transaksi(), SAMA fungsi dipakai
+# routers/snap_advance.py), BUKAN lagi PUT /lifetime/{id}/status manual.
 
-def test_lifetime_purchase_upgrade_tenant_dan_catat_komisi(app_client):
+def test_lifetime_purchase_bayar_lewat_snap_lalu_webhook_upgrade_tenant_dan_catat_komisi(app_client, monkeypatch):
     headers = _buat_superadmin_dan_login(app_client)
     kode = _buat_sales_via_api(app_client, headers)
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch, va_number="70211112222")
 
     r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
         "tenant_id": tenant["id"], "package_kode": "enterprise", "amount": 20000000,
-        "provider": "faspay", "virtual_account_number": "VA-LIFETIME-1",
-        "referral_code_id": kode["id"],
+        "channel": "va", "bank_code": "702", "referral_code_id": kode["id"],
     })
     assert r.status_code == 200, r.text
     purchase = r.json()
     assert purchase["payment_status"] == "pending"
+    assert purchase["channel"] == "va"
+    assert purchase["va_number"] == "70211112222"
 
-    r2 = app_client.put(f"/api/superadmin/sales/lifetime/{purchase['id']}/status", headers=headers,
-                         json={"payment_status": "paid"})
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["payment_status"] == "paid"
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(purchase["id"])
+    assert transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_LIFETIME_LICENSE
+    hasil = snap_webhook.terapkan_status_transaksi(transaksi, "PAID", sumber="webhook")
+    assert hasil["status"] == "PAID"
 
     sub = subscription_db.get_subscription(tenant["id"])
     assert sub["status"] == "lifetime"
@@ -249,29 +283,126 @@ def test_lifetime_purchase_upgrade_tenant_dan_catat_komisi(app_client):
     assert komisi[0]["nominal_komisi"] == 6000000  # 30% dari 20jt
 
 
-def test_lifetime_purchase_tanpa_referral_tidak_catat_komisi(app_client):
+def test_lifetime_purchase_tanpa_referral_tidak_catat_komisi(app_client, monkeypatch):
     headers = _buat_superadmin_dan_login(app_client)
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch)
     r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
         "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
-        "provider": "faspay", "virtual_account_number": "VA-LIFETIME-2",
+        "channel": "va", "bank_code": "702",
     })
     purchase = r.json()
-    app_client.put(f"/api/superadmin/sales/lifetime/{purchase['id']}/status", headers=headers,
-                    json={"payment_status": "paid"})
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(purchase["id"])
+    snap_webhook.terapkan_status_transaksi(transaksi, "PAID", sumber="webhook")
     sub = subscription_db.get_subscription(tenant["id"])
     assert sub["status"] == "lifetime"
     assert sales_db.list_komisi_semua() == []
 
 
-def test_lifetime_package_kode_tidak_valid_ditolak(app_client):
+def test_lifetime_amount_otomatis_dari_katalog_harga_lifetime(app_client, monkeypatch):
+    """Nominal boleh dikosongkan -- diisi otomatis dari
+    subscription_packages.harga_lifetime (lihat billing_db.py)."""
     headers = _buat_superadmin_dan_login(app_client)
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    pro = billing_db.get_package_by_kode("pro")
+    billing_db.update_package(pro["id"], harga_lifetime=17000000)
+    _aktifkan_snap_lifetime(monkeypatch)
+
     r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
-        "tenant_id": tenant["id"], "package_kode": "free", "amount": 1000000,
-        "provider": "faspay", "virtual_account_number": "VA-X",
+        "tenant_id": tenant["id"], "package_kode": "pro", "channel": "va", "bank_code": "702",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["amount"] == 17000000
+
+
+def test_lifetime_amount_kosong_tanpa_katalog_harga_lifetime_ditolak(app_client, monkeypatch):
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch)
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "channel": "va", "bank_code": "702",
     })
     assert r.status_code == 422
+
+
+def test_lifetime_package_kode_tidak_valid_ditolak(app_client, monkeypatch):
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch)
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
+        "tenant_id": tenant["id"], "package_kode": "free", "amount": 1000000,
+        "channel": "va", "bank_code": "702",
+    })
+    assert r.status_code == 422
+
+
+def test_lifetime_gateway_gagal_menandai_transaksi_failed(app_client, monkeypatch):
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch, gagal=True)
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
+        "channel": "va", "bank_code": "702",
+    })
+    assert r.status_code == 502, r.text
+    purchase = sales_db.list_lifetime_purchases(tenant_id=tenant["id"])[0]
+    assert purchase["payment_status"] == "failed"
+    sub = subscription_db.get_subscription(tenant["id"])
+    assert sub["status"] != "lifetime"
+
+
+def test_lifetime_status_manual_override_tetap_tersedia(app_client, monkeypatch):
+    """Endpoint PUT /lifetime/{id}/status DIPERTAHANKAN untuk koreksi
+    manual (mis. tenant membayar lewat jalur lain di luar gateway) --
+    TIDAK dihapus walau status lunas sekarang normalnya otomatis lewat
+    webhook."""
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch)
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
+        "channel": "va", "bank_code": "702",
+    })
+    purchase = r.json()
+    r2 = app_client.put(f"/api/superadmin/sales/lifetime/{purchase['id']}/status", headers=headers,
+                         json={"payment_status": "paid"})
+    assert r2.status_code == 200, r2.text
+    sub = subscription_db.get_subscription(tenant["id"])
+    assert sub["status"] == "lifetime"
+
+
+# ============================= Billing tenant: tampilkan Lifetime pending =============================
+
+def test_billing_lifetime_pending_tampil_lalu_hilang_setelah_lunas(app_client, monkeypatch):
+    headers_sa = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    auth_db.tambah_user("owner_lifetime", "passwordowner123", "admin", tenant_id=tenant["id"])
+    headers_owner = _login(app_client, "owner_lifetime", "passwordowner123")
+    _aktifkan_snap_lifetime(monkeypatch, va_number="70233334444")
+
+    r_belum = app_client.get("/api/billing/lifetime-pending", headers=headers_owner)
+    assert r_belum.status_code == 200
+    assert r_belum.json() is None
+
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers_sa, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
+        "channel": "va", "bank_code": "702",
+    })
+    purchase = r.json()
+
+    r_pending = app_client.get("/api/billing/lifetime-pending", headers=headers_owner)
+    assert r_pending.status_code == 200
+    data = r_pending.json()
+    assert data["id"] == purchase["id"]
+    assert data["va_number"] == "70233334444"
+    assert data["amount"] == 15000000
+
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(purchase["id"])
+    snap_webhook.terapkan_status_transaksi(transaksi, "PAID", sumber="webhook")
+
+    r_sesudah = app_client.get("/api/billing/lifetime-pending", headers=headers_owner)
+    assert r_sesudah.status_code == 200
+    assert r_sesudah.json() is None
 
 
 # ============================= Komisi: toggle status bayar =============================

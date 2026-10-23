@@ -27,14 +27,25 @@ baru dibuat):
      dari jumlah pembayaran 'paid' sebelumnya == 0) -> persen "baru".
      Pembayaran kedua dan seterusnya (perpanjangan, SELAMANYA selama masih
      berlangganan) -> persen "repeat".
-  B. Penjualan Lisensi Lifetime -- SEPENUHNYA manual oleh Super Admin
-     (tenant TIDAK checkout sendiri, lihat buat_lifetime_purchase()):
-     Super Admin mencatat transaksi (nominal, nomor VA Faspay, kode
-     referral opsional) lalu menandainya lunas lewat
-     tandai_lifetime_dibayar(), yang SEKALIGUS (1) meng-upgrade status
-     langganan tenant itu jadi 'lifetime' (akses tidak pernah diblokir
-     lagi, lihat subscription_db.STATUS_VALID/STATUS_AKSES_DIBLOKIR) dan
-     (2) mencatat komisi otomatis kalau kode referral terpasang.
+  B. Penjualan Lisensi Lifetime -- Super Admin memilih tenant + paket
+     (nominal diisi otomatis dari subscription_packages.harga_lifetime,
+     lihat buat_lifetime_purchase()), lalu transaksi pembayarannya NYATA
+     lewat gateway Faspay SNAP Advance yang SAMA dipakai checkout
+     langganan biasa (payment_provider_client.py -> snap_payment_db.py,
+     lihat routers/sales.py::buat_lifetime() yang menirukan PERSIS pola
+     routers/billing.py::checkout()) -- TIDAK LAGI VA/provider diketik
+     manual (REVISI: desain awal keliru, Faspay tidak punya dashboard
+     manusia untuk membuat VA, VA hanya bisa dibuat lewat API). Baris
+     tenant_lifetime_purchases di bawah ini MURNI mencatat intent
+     pembelian (tenant, paket, nominal, kode referral) -- instrumen
+     pembayaran nyata (nomor VA/QR) tersimpan di
+     snap_payment_transactions.lifetime_purchase_id, status LUNAS
+     ditentukan webhook SNAP (snap_webhook.py::_cascade_lifetime_license())
+     yang memanggil tandai_status_lifetime() di bawah, SEKALIGUS (1)
+     meng-upgrade status langganan tenant itu jadi 'lifetime' (akses
+     tidak pernah diblokir lagi, lihat subscription_db.STATUS_VALID/
+     STATUS_AKSES_DIBLOKIR) dan (2) mencatat komisi otomatis kalau kode
+     referral terpasang.
 
 Tabel baru murni milik modul ini (pola sama seperti kasbon_db.py) --
 init_sales_db() dipanggil dari main.py on_startup() jalur SQLite. Jalur
@@ -49,7 +60,7 @@ from db_compat import IntegrityError
 
 JENIS_KOMISI_VALID = {"baru", "repeat", "lifetime"}
 STATUS_KOMISI_VALID = {"belum_dibayar", "sudah_dibayar"}
-PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed"}
+PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed", "cancelled"}
 
 KOMISI_PERSEN_BARU_DEFAULT = 50
 KOMISI_PERSEN_REPEAT_DEFAULT = 20
@@ -338,18 +349,19 @@ def tandai_komisi(id_: int, status: str) -> dict:
 
 # ============================= Lifetime Purchases =============================
 
-def buat_lifetime_purchase(tenant_id: int, package_kode: str, amount: int, provider: str,
-                            virtual_account_number: str, referral_code_id: int | None = None,
-                            expired_at: str | None = None, dibuat_oleh: str | None = None) -> dict:
-    provider = (provider or "").strip()
-    virtual_account_number = (virtual_account_number or "").strip()
+def buat_lifetime_purchase(tenant_id: int, package_kode: str, amount: int,
+                            referral_code_id: int | None = None, dibuat_oleh: str | None = None) -> dict:
+    """MURNI mencatat intent pembelian (REVISI: provider/virtual_account_number
+    TIDAK LAGI diterima di sini -- instrumen pembayaran nyata dibuat lewat
+    gateway SNAP Advance SETELAH baris ini ada, lihat routers/sales.py::
+    buat_lifetime() yang menirukan routers/billing.py::checkout(), VA/QR
+    tersimpan di snap_payment_transactions, bukan di tabel ini). Kolom
+    `provider`/`virtual_account_number` tabel ini diisi placeholder tetap
+    (riwayat -- dulu wajib diketik manual) supaya skema TIDAK perlu
+    migrasi NOT NULL."""
     package_kode = (package_kode or "").strip().lower()
     if package_kode not in {"basic", "pro", "enterprise"}:
         raise ValueError("Paket lisensi harus 'basic', 'pro', atau 'enterprise'.")
-    if not provider:
-        raise ValueError("Provider tidak boleh kosong.")
-    if not virtual_account_number:
-        raise ValueError("Nomor Virtual Account tidak boleh kosong.")
     if amount is None or amount <= 0:
         raise ValueError("Amount harus lebih besar dari 0.")
     if referral_code_id is not None and get_kode_referral(referral_code_id) is None:
@@ -359,11 +371,11 @@ def buat_lifetime_purchase(tenant_id: int, package_kode: str, amount: int, provi
         cur = conn.execute(
             "INSERT INTO tenant_lifetime_purchases (tenant_id, package_kode, amount, provider, "
             "virtual_account_number, referral_code_id, payment_status, expired_at, dibuat_oleh, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-            (tenant_id, package_kode, amount, provider, virtual_account_number,
-             referral_code_id, expired_at, dibuat_oleh, now),
+            "VALUES (?, ?, ?, 'snap_advance', '', ?, 'pending', NULL, ?, ?)",
+            (tenant_id, package_kode, amount, referral_code_id, dibuat_oleh, now),
         )
-    return get_lifetime_purchase(cur.lastrowid)
+        new_id = cur.lastrowid
+    return get_lifetime_purchase(new_id)
 
 
 def get_lifetime_purchase(id_: int) -> dict | None:

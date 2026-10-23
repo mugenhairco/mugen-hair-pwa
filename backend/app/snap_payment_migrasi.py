@@ -51,6 +51,7 @@ def migrasi_snap_payment():
                 tenant_id                 INTEGER NOT NULL,
                 booking_id                INTEGER,
                 subscription_invoice_id   INTEGER,
+                lifetime_purchase_id      INTEGER,
                 channel                   TEXT,
                 channel_code              TEXT,
                 ewallet_provider          TEXT,
@@ -81,6 +82,13 @@ def migrasi_snap_payment():
         kolom = [r["name"] for r in conn.execute("PRAGMA table_info(snap_payment_transactions)").fetchall()]
         if "channel_code" not in kolom:
             conn.execute("ALTER TABLE snap_payment_transactions ADD COLUMN channel_code TEXT")
+        # FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli
+        # Putus) dibayar lewat gateway SNAP Advance yang SAMA dengan Booking
+        # Payment & SaaS Billing -- kolom ini menautkan transaksi SNAP ke
+        # baris tenant_lifetime_purchases (sales_db.py), lihat
+        # snap_webhook.py::_cascade_lifetime_license().
+        if "lifetime_purchase_id" not in kolom:
+            conn.execute("ALTER TABLE snap_payment_transactions ADD COLUMN lifetime_purchase_id INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS snap_payment_status_log (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
