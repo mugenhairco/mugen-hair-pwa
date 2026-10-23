@@ -700,7 +700,55 @@
     window.LpSlider.init(container, { onSelect: (i) => openFeatureDetail(FEATURES[i]) });
   }
 
-  // ============================= Pricing (WAJIB dari database) =============================
+  // ============================= Pricing (harga dari database, bullet marketing statis) =============================
+
+  // BUGFIX (REVISI Work #2, Superadmin Package Permission Tree): bullet
+  // kartu harga di Landing Page DULU diambil dari `p.fitur`
+  // (billing_db.get_package_features(), 5 kode dekoratif-marketing murni
+  // tampilan -- lihat catatan _KODE_FITUR_DEKORATIF_MARKETING/
+  // _SEBARAN_FITUR_DEKORATIF_PER_PAKET di billing_db.py, "agar terlihat
+  // ramai") -- KELIMA kode itu SEKARANG sudah DIHAPUS PERMANEN dari
+  // katalog (billing_db.py::hapus_fitur_absorbed_ke_tree(), diganti
+  // checklist menu nyata untuk kebutuhan TEKNIS Package Permission Tree),
+  // jadi `p.fitur` paket manapun yang TIDAK kebetulan masih pakai salah
+  // satu dari 4 kode fitur teknis (booking_online/export_pdf/export_excel/
+  // barber_app -- yang namanya pun tidak cocok jadi copy marketing) akan
+  // KOSONG -- kartu harga tampil rusak (bullet "-" doang, lihat
+  // screenshot laporan Owner). Marketing copy TIDAK SEHARUSNYA terikat ke
+  // flag fitur teknis Superadmin sejak awal -- daftar statis di bawah ini
+  // (independen dari database, progresif makin lengkap per tier, sama
+  // semangatnya dengan _SEBARAN_FITUR_DEKORATIF_PER_PAKET lama) adalah
+  // SATU-SATUNYA sumber bullet kartu harga sekarang.
+  const MARKETING_FITUR = {
+    free: [
+      "Dashboard Bisnis (ringkasan pendapatan & performa toko)",
+      "Booking Online untuk pelanggan",
+    ],
+    basic: [
+      "Dashboard Bisnis (ringkasan pendapatan & performa toko)",
+      "Booking Online untuk pelanggan",
+      "Manajemen Barber & Layanan",
+      "Export Laporan PDF",
+    ],
+    pro: [
+      "Dashboard Bisnis (ringkasan pendapatan & performa toko)",
+      "Booking Online untuk pelanggan",
+      "Manajemen Barber & Layanan",
+      "Export Laporan PDF & Excel",
+      "Role Custom & Hak Akses Staff",
+      "Pengaturan Komisi & Gaji Otomatis",
+    ],
+    enterprise: [
+      "Dashboard Bisnis (ringkasan pendapatan & performa toko)",
+      "Booking Online untuk pelanggan",
+      "Manajemen Barber & Layanan",
+      "Export Laporan PDF & Excel",
+      "Role Custom & Hak Akses Staff",
+      "Pengaturan Komisi & Gaji Otomatis",
+      "Aplikasi Barber (login mandiri untuk tiap barber)",
+      "Dukungan Prioritas",
+    ],
+  };
 
   // FITUR Landing Page & Pricing (paket 6 bulan): siklus aktif disimpan di
   // luar renderPricing() supaya toggle Bulanan/6 Bulan bisa render ULANG
@@ -778,7 +826,7 @@
     // ADA kolom terpisah untuk ini, konsisten dengan pola hematRupiah di
     // atas yang juga dihitung, bukan disimpan).
     const efektifBulananTahunan = pakaiTahunan ? Math.round(p.harga_tahunan / 12) : 0;
-    const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
+    const fitur = (MARKETING_FITUR[p.kode] || []).map((nama) => el("li", {}, nama));
 
     const body = [
       el("div", { class: "lp-modal-price" }, [
@@ -804,7 +852,7 @@
     const track = container.querySelector(".lp-slider-track");
     track.innerHTML = "";
     packages.forEach((p) => {
-      const fitur = (p.fitur || []).map((f) => el("li", {}, f.nama));
+      const fitur = (MARKETING_FITUR[p.kode] || []).map((nama) => el("li", {}, nama));
       const btnPilih = buatTombolPilihPaket(p.kode, siklus);
 
       // pakai6: paket ini BENAR-BENAR menampilkan harga 6 bulan sekarang --
