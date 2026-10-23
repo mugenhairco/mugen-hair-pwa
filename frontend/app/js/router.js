@@ -319,6 +319,28 @@ const MugenRouter = (() => {
     // (baris _pulihkanScroll di akhir fungsi ini).
     let renderResult;
 
+    // REVISI Work #2 (Superadmin Package Permission Tree, diminta Owner):
+    // SATU gerbang package-level untuk SEMUA rute yang terdaftar di
+    // nav.js dengan field `izin` (lihat MugenNav.cariIzinUntukHash()) --
+    // menu TETAP tampil di sidebar (diredupkan + ikon gembok, lihat
+    // nav.js::_terkunciPaket()), link TETAP bisa diklik, tapi halaman
+    // tujuannya diganti blok "Upgrade Paket" di sini -- SATU titik
+    // keputusan generik untuk SEMUA menu berizin, menggantikan pola lama
+    // yang ditulis manual per halaman (bandingkan #/absensi/#/whatsapp
+    // sebelum revisi ini). Barber tidak pernah terkena (field `izin` di
+    // MENU HANYA dipasang di menu admin/staff) -- dicek eksplisit sebagai
+    // jaring pengaman tambahan, bukan cuma mengandalkan nav.js tidak
+    // menampilkan link-nya.
+    if (user.role !== "barber" && typeof MugenNav.cariIzinUntukHash === "function") {
+      const target = MugenNav.cariIzinUntukHash(hash);
+      if (target && typeof MugenFeature !== "undefined" && !MugenFeature.hasIzin(target.izin)) {
+        content.appendChild(MugenUI.el("h1", {}, target.label));
+        content.appendChild(MugenFeature.upgradeBlock(target.label));
+        _pulihkanScroll(hash, content);
+        return;
+      }
+    }
+
     if (hash.startsWith("#/dashboard")) {
       { const dp = resolveDashboardPage(user); renderResult = _renderLazy(content, dp.globalName, dp.src); }
     } else if (hash.startsWith("#/input-data")) {

@@ -69,18 +69,27 @@ def subscription_status(user: dict = Depends(get_current_user)):
     Superadmin atau webhook Payment Gateway) langsung berlaku di panggilan
     berikutnya -- tidak ada apa pun yang di-cache di sisi server."""
     if user.get("tenant_id") is None:
-        return {"akses_diblokir": False, "package": None, "features": []}
+        return {"akses_diblokir": False, "package": None, "features": [], "izin_paket": []}
     tenant_id = user["tenant_id"]
     sub = subscription_db.get_subscription(tenant_id)
     fitur = []
+    izin_paket = []
     if sub is not None:
         paket = billing_db.get_package_by_kode(sub["package"])
         if paket is not None:
             fitur = [f["kode"] for f in billing_db.get_package_features(paket["id"])]
+            # Work #2 (Superadmin Package Permission Tree): daftar key izin_*
+            # (permissions.PERMISSION_TREE) yang TERMASUK paket ini --
+            # dikirim di respons yang SAMA dengan `features` (pola identik,
+            # lihat catatan di atas) supaya frontend (feature_access.js::
+            # MugenFeature.hasIzin()) bisa mengunci menu/sub-menu di sidebar
+            # (nav.js) & halaman tujuan TANPA endpoint/refresh terpisah.
+            izin_paket = list(billing_db.get_package_permission_keys(paket["id"]))
     return {
         "akses_diblokir": subscription_db.akses_diblokir(tenant_id),
         "package": sub["package"] if sub else None,
         "features": fitur,
+        "izin_paket": izin_paket,
     }
 
 

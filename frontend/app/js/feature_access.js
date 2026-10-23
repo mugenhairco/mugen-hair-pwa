@@ -20,6 +20,20 @@ const MugenFeature = (() => {
     return !!(sub && Array.isArray(sub.features) && sub.features.includes(kode));
   }
 
+  // REVISI Work #2 (Superadmin Package Permission Tree): versi has() di
+  // atas untuk 4 kode fitur "sejajar" lama (export_pdf/export_excel/
+  // booking_online/barber_app) -- hasIzin() di sini untuk key izin_*
+  // (permissions.PERMISSION_TREE) yang TERMASUK paket tenant, sumbernya
+  // SAMA PERSIS (MugenSubscription.get(), field `izin_paket`, lihat
+  // routers/subscription.py::subscription_status()). Dipakai nav.js
+  // (ikon gembok sidebar) & router.js (blok "Upgrade Paket" pengganti
+  // halaman tujuan) -- BUKAN gerbang Role (itu MugenMenuAccess di
+  // menu_access.js, lapisan TERPISAH).
+  function hasIzin(izinKey) {
+    const sub = typeof MugenSubscription !== "undefined" ? MugenSubscription.get() : null;
+    return !!(sub && Array.isArray(sub.izin_paket) && sub.izin_paket.includes(izinKey));
+  }
+
   // Blok pengganti tombol/bagian yang digerbang -- pola sama seperti
   // "disabled + subtitle penjelasan" yang sudah dipakai pengaturan.js untuk
   // izin_* (Hak Akses Admin), bedanya di sini tombolnya "Upgrade Paket"
@@ -43,5 +57,5 @@ const MugenFeature = (() => {
     ]);
   }
 
-  return { has, upgradeBlock };
+  return { has, hasIzin, upgradeBlock };
 })();

@@ -83,7 +83,15 @@ const MugenNav = (() => {
     // gerbang package-level SEKARANG lewat izin_absensi_lihat, ditegakkan
     // backend (auth.py::require_menu_feature()), BUKAN ditampilkan sebagai
     // gembok di sini.
-    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"] },
+    // `izinPaket` (BEDA dari `izin`): root Absensi TIDAK punya field `izin`
+    // biasa (Role-nya has_any beberapa key -- izin_absensi_lihat/
+    // _pengaturan/_koreksi, lihat routers/attendance.py::_cek_akses_lihat()
+    // -- field `izin` tunggal di sini akan KELIRU menyembunyikan menu untuk
+    // staff yang HANYA punya salah satu dari ketiganya), tapi batas PAKET
+    // (Package Permission Tree) tetap satu root tunggal -- `izinPaket`
+    // dicek TERPISAH khusus untuk itu (lihat _terkunciPaket()/
+    // cariIzinUntukHash() di bawah, fallback ke `izin` kalau tidak diisi).
+    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"], izinPaket: "izin_absensi_lihat" },
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"], izin: "izin_booking_lihat",
@@ -181,6 +189,20 @@ const MugenNav = (() => {
     return !(typeof MugenFeature !== "undefined" && MugenFeature.has(item.feature));
   }
 
+  // REVISI Work #2 (Superadmin Package Permission Tree): versi _terkunciFitur()
+  // di atas untuk 4 kode "sejajar" lama -- ini untuk root key izin_* (field
+  // `izin`, SUDAH ADA di MENU untuk gerbang Role lewat _lolosIzin()) yang
+  // TIDAK termasuk Package Permission Tree paket tenant. Dicek TERPISAH
+  // dari _lolosIzin() (Role, MugenMenuAccess -- kalau GAGAL menu
+  // disembunyikan total) -- paket yang gagal di sini menu TETAP tampil,
+  // cuma dikunci (pola SAMA PERSIS _terkunciFitur(), digabung lewat || di
+  // _elLink()).
+  function _terkunciPaket(item) {
+    const key = item.izinPaket || item.izin;
+    if (!key) return false;
+    return !(typeof MugenFeature !== "undefined" && MugenFeature.hasIzin(key));
+  }
+
   // REVISI Hak Akses: gerbang KEDUA khusus 'staff' -- item TANPA field
   // `izin` (granularitasnya sendiri sudah diatur DI DALAM halamannya,
   // lihat menu_access.js) selalu lolos di sini. MugenMenuAccess.hasSync()
@@ -197,7 +219,7 @@ const MugenNav = (() => {
     if (!item.children) {
       if (!item.roles.includes(user.role) || !_lolosIzin(item)) return null;
       const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
-      return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item));
+      return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item) || _terkunciPaket(item));
     }
 
     const childrenLolos = item.children.filter((c) => c.roles.includes(user.role) && _lolosIzin(c));
@@ -205,7 +227,7 @@ const MugenNav = (() => {
     if (childrenLolos.length === 1) {
       const only = childrenLolos[0];
       const badge = only.badgeId ? { id: only.badgeId, roles: only.badgeRoles || [] } : null;
-      return _elLink(only.hash, only.label, activeHash, user, badge, _terkunciFitur(only));
+      return _elLink(only.hash, only.label, activeHash, user, badge, _terkunciFitur(only) || _terkunciPaket(only));
     }
 
     const grupAktif = childrenLolos.some((c) => activeHash.startsWith(c.hash));
@@ -224,12 +246,39 @@ const MugenNav = (() => {
     const submenu = MugenUI.el("div", { class: "nav-submenu" });
     for (const child of childrenLolos) {
       const badge = child.badgeId ? { id: child.badgeId, roles: child.badgeRoles || [] } : null;
-      submenu.appendChild(_elLink(child.hash, child.label, activeHash, user, badge, _terkunciFitur(child)));
+      submenu.appendChild(_elLink(child.hash, child.label, activeHash, user, badge, _terkunciFitur(child) || _terkunciPaket(child)));
     }
     toggle.addEventListener("click", () => wrap.classList.toggle("open"));
     wrap.appendChild(toggle);
     wrap.appendChild(submenu);
     return wrap;
+  }
+
+  // REVISI Work #2 (Superadmin Package Permission Tree): dipakai router.js
+  // SEBELUM memuat halaman tujuan -- kalau hash ini (match PERSIS pola
+  // `hash.startsWith(item.hash)` yang sama dipakai handle()) punya field
+  // `izin` DAN package tenant tidak menyertakannya, router.js menampilkan
+  // blok "Upgrade Paket" (MugenFeature.upgradeBlock()) di tempat halaman
+  // sungguhan -- SATU titik keputusan ini menggantikan perlunya menyentuh
+  // render() tiap halaman satu per satu (pola lama #/absensi/#/whatsapp,
+  // lihat catatan router.js). Return null kalau hash ini TIDAK ada di
+  // MENU sama sekali, ATAU tidak punya field `izin` (menu itu tidak
+  // digerbang Package Permission Tree -- Dashboard/Karyawan/Billing/
+  // Setting dst, granularitasnya sendiri sudah diatur di dalam
+  // halamannya, lihat catatan atas MENU).
+  function cariIzinUntukHash(hash) {
+    for (const item of MENU) {
+      if (item.children) {
+        for (const child of item.children) {
+          const key = child.izinPaket || child.izin;
+          if (key && hash.startsWith(child.hash)) return { izin: key, label: child.label };
+        }
+        continue;
+      }
+      const key = item.izinPaket || item.izin;
+      if (key && hash.startsWith(item.hash)) return { izin: key, label: item.label };
+    }
+    return null;
   }
 
   function render(activeHash) {
@@ -342,5 +391,5 @@ const MugenNav = (() => {
     return sidebar;
   }
 
-  return { render };
+  return { render, cariIzinUntukHash };
 })();

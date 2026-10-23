@@ -1410,13 +1410,21 @@ const PageAbsensi = (() => {
     root.appendChild(MugenUI.el("h1", {}, "Absensi"));
 
     // REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
-    // "absensi" tersendiri DIHAPUS -- gate paket SEKARANG murni di backend
-    // (izin_absensi_lihat, lewat auth.py::require_menu_feature()), BUKAN
-    // lagi dicek/ditampilkan sebagai kartu upgrade terpisah di sini (tidak
-    // ada API frontend untuk baca akses paket mentah -- lihat
-    // menu_access.js, yang HANYA baca izin Role, selalu true untuk Owner).
-    // Tenant yang paketnya memang belum menyertakan menu ini akan melihat
-    // pesan error dari 403 backend (upgrade_required) di dalam halaman.
+    // "absensi" tersendiri DIHAPUS -- gate paket ditegakkan backend
+    // (izin_absensi_lihat, lewat auth.py::require_menu_feature()). BUGFIX:
+    // sekarang JUGA ditampilkan di sini (MugenFeature.hasIzin(), field
+    // `izin_paket` dari subscription.js -- lihat routers/subscription.py::
+    // subscription_status()) -- judul "Absensi" tetap tampil dulu, baru
+    // kartu upgrade MENGGANTIKAN konten (BUKAN lagi menunggu 403 di dalam
+    // halaman, pola SAMA PERSIS nav.js/router.js untuk menu ber-field
+    // `izin`, HANYA dipasang manual di sini karena root Absensi punya
+    // has_any multi-key di sisi Role -- lihat routers/attendance.py::
+    // _cek_akses_lihat() -- sehingga tidak masuk gerbang generik
+    // router.js::MugenNav.cariIzinUntukHash()).
+    if (typeof MugenFeature !== "undefined" && !MugenFeature.hasIzin("izin_absensi_lihat")) {
+      root.appendChild(MugenFeature.upgradeBlock("Absensi"));
+      return;
+    }
 
     if (user.role === "barber") {
       await renderBarberView(root);

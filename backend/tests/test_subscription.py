@@ -149,7 +149,34 @@ def test_status_endpoint_superadmin_tidak_diblokir(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/subscription/status", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"akses_diblokir": False, "package": None, "features": []}
+    assert r.json() == {"akses_diblokir": False, "package": None, "features": [], "izin_paket": []}
+
+
+def test_status_endpoint_izin_paket_cerminkan_package_permission_tree(app_client):
+    """REVISI Work #2 (Superadmin Package Permission Tree): `izin_paket`
+    di respons /status HARUS persis sama dengan billing_db.get_package_
+    permission_keys() paket tenant ini -- sumber MugenFeature.hasIzin()
+    (feature_access.js) dipakai nav.js/router.js untuk kunci menu/sub-menu
+    yang tidak termasuk paket."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    auth_db.tambah_user("ownerizinpaket", "password123", role="admin", tenant_id=tenant["id"])
+    headers = _login(app_client, "ownerizinpaket", "password123")
+    subscription_db.create_default_subscription(tenant["id"], package="free", status="active")
+    free = billing_db.get_package_by_kode("free")
+    billing_db.set_package_permission_keys(free["id"], {"izin_absensi_lihat", "izin_booking_lihat"})
+
+    r = app_client.get("/api/subscription/status", headers=headers)
+    assert r.status_code == 200
+    assert set(r.json()["izin_paket"]) == {"izin_absensi_lihat", "izin_booking_lihat"}
+
+
+def test_status_endpoint_izin_paket_kosong_tanpa_subscription(two_tenants):
+    """Tenant TANPA baris subscription sama sekali (lihat catatan fixture
+    two_tenants di conftest.py) -- fail-closed, `izin_paket` HARUS kosong,
+    bukan diam-diam penuh."""
+    r = two_tenants["client"].get("/api/subscription/status", headers=two_tenants["headers_a"])
+    assert r.status_code == 200
+    assert r.json()["izin_paket"] == []
 
 
 def test_owner_tidak_bisa_lihat_subscription_tenant_lain(two_tenants):
