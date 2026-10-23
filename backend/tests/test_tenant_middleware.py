@@ -59,6 +59,43 @@ def test_login_lewat_subdomain(monkeypatch, two_tenants):
     assert r.json()["tenant"]["slug"] == "test-toko-a"
 
 
+def test_login_lewat_subdomain_tenant_lain_ditolak(monkeypatch, two_tenants):
+    """KEAMANAN: subdomain tenant A TIDAK BOLEH bisa dipakai login dengan
+    kredensial milik tenant B -- auth_db.autentikasi() men-scope pencarian
+    user KETAT ke tenant_id hasil resolusi subdomain (lihat
+    get_user_by_username()), jadi baris user tenant B (tenant_id berbeda)
+    TIDAK PERNAH cocok sekalipun password-nya benar untuk akun itu di
+    tenant B sendiri."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "mugenhair.app")
+    client = two_tenants["client"]
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "ownerB", "password": "passwordB123"},
+        headers={"Host": "test-toko-a.mugenhair.app"},
+    )
+    assert r.status_code == 401, r.text
+
+    # Kebalikannya (subdomain tenant B + kredensial tenant A) juga ditolak --
+    # bukan kebetulan satu arah saja.
+    r2 = client.post(
+        "/api/auth/login",
+        json={"username": "ownerA", "password": "passwordA123"},
+        headers={"Host": "test-toko-b.mugenhair.app"},
+    )
+    assert r2.status_code == 401, r2.text
+
+    # Kredensial tenant B TETAP berhasil login lewat subdomain-nya SENDIRI
+    # (membuktikan penolakan di atas memang karena scoping tenant, bukan
+    # password yang salah ketik atau bug lain).
+    r3 = client.post(
+        "/api/auth/login",
+        json={"username": "ownerB", "password": "passwordB123"},
+        headers={"Host": "test-toko-b.mugenhair.app"},
+    )
+    assert r3.status_code == 200, r3.text
+    assert r3.json()["tenant"]["slug"] == "test-toko-b"
+
+
 def test_branding_lewat_subdomain_default(two_tenants):
     """Default runtime (rivoirsett.com AKTIF tanpa monkeypatch apa pun) --
     GET /api/tenant/branding lewat Host subdomain harus mengembalikan

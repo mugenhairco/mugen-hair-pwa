@@ -134,14 +134,19 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                              detail="Sesi ini sudah tidak berlaku (akun sedang login di perangkat lain). Silakan login kembali.")
     # BUGFIX: sebelumnya hanya mengecek `tenant_id is not None` -- secara
-    # PRAKTIK tetap benar untuk superadmin yang dibuat lewat jalur normal
-    # (tambah_user() MEWAJIBKAN tenant_id=None untuk role ini), tapi
-    # bergantung diam-diam pada invarian itu, bukan pengecekan role
-    # eksplisit. Superadmin adalah akun PLATFORM (pengelola SELURUH tenant,
-    # lihat require_superadmin() di bawah) -- TIDAK BOLEH pernah diblokir
-    # oleh status tenant mana pun, jadi role dicek LANGSUNG di sini supaya
-    # tidak bergantung pada invarian data.
-    if user["role"] != "superadmin" and user.get("tenant_id") is not None:
+    # PRAKTIK tetap benar untuk superadmin/sales yang dibuat lewat jalur
+    # normal (tambah_user() MEWAJIBKAN tenant_id=None untuk kedua role
+    # ini), tapi bergantung diam-diam pada invarian itu, bukan pengecekan
+    # role eksplisit. Superadmin DAN sales adalah akun PLATFORM (tidak
+    # terikat satu barbershop mana pun, lihat require_superadmin()/
+    # require_sales() di bawah) -- TIDAK BOLEH pernah diblokir oleh status
+    # tenant mana pun, jadi role dicek LANGSUNG di sini supaya tidak
+    # bergantung pada invarian data (gejala NYATA kalau invarian itu
+    # dilanggar: akun 'sales' yang baris tenant_id-nya KEBETULAN terisi
+    # bukan hanya diblokir di sini -- branding-nya ikut "bocor" jadi
+    # branding tenant itu, lihat resolve_tenant_untuk_branding() di
+    # bawah & BUGFIX Branding Super Admin/Sales di frontend/js/brand.js).
+    if user["role"] not in ("superadmin", "sales") and user.get("tenant_id") is not None:
         import tenant_db  # import lokal: hindari import siklik (tenant_db.py -> database.py)
         tenant = tenant_db.get_tenant(user["tenant_id"])
         if tenant is None or tenant["status"] != "aktif":
@@ -334,16 +339,19 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
     1. Sesi login valid (token benar, akun aktif) -> `user["tenant_id"]`
        APA ADANYA -- integer untuk Owner/Admin/Barber biasa (branding toko
        sendiri, TIDAK BISA disuntik lewat query string manapun), atau None
-       untuk superadmin (branding platform, sesuai spesifikasi "Super Admin
-       tetap branding platform, bukan branding tenant tertentu") -- role
-       'superadmin' SELALU dipetakan ke None secara EKSPLISIT di sini
-       (BUKAN cuma mengandalkan `user["tenant_id"]` yang kebetulan NULL),
-       supaya branding platform tetap benar walau baris user di database
-       ternyata korup/tidak konsisten dengan invarian "superadmin tidak
-       terikat tenant" (mis. tenant_id ter-isi lewat jalur lain di luar
-       auth_db.tambah_user(), yang seharusnya menolak kombinasi itu -- lihat
-       BUGFIX Branding Super Admin di frontend/js/brand.js untuk gejala
-       yang PERSIS ditimbulkan bug data semacam ini).
+       untuk superadmin MAUPUN sales (branding platform, sesuai spesifikasi
+       "Super Admin tetap branding platform, bukan branding tenant
+       tertentu" -- berlaku sama untuk akun Sales, keduanya SAMA-SAMA tidak
+       terikat tenant mana pun) -- role 'superadmin'/'sales' SELALU
+       dipetakan ke None secara EKSPLISIT di sini (BUKAN cuma mengandalkan
+       `user["tenant_id"]` yang kebetulan NULL), supaya branding platform
+       tetap benar walau baris user di database ternyata korup/tidak
+       konsisten dengan invarian "superadmin/sales tidak terikat tenant"
+       (mis. tenant_id ter-isi lewat jalur lain di luar auth_db.tambah_user(),
+       yang seharusnya menolak kombinasi itu -- SUDAH PERNAH TERJADI NYATA
+       di produksi untuk akun 'sales': lihat BUGFIX Branding Super Admin/
+       Sales di frontend/js/brand.js untuk gejala yang PERSIS ditimbulkan
+       bug data semacam ini).
     2. Tidak ada sesi valid (pengunjung anonim / halaman Login belum
        submit) -> `tenant` (query string eksplisit, TERMASUK slug yang
        "diingat" browser dari login sebelumnya -- lihat frontend/js/
@@ -360,7 +368,13 @@ def resolve_tenant_untuk_branding(request: Request, credentials: HTTPAuthorizati
             # jatuh ke fallback slug publik di bawah, bukan tetap dipakai.
             if (user is not None and user.get("aktif")
                     and hash_token(credentials.credentials) == user.get("current_session_hash")):
-                if user.get("role") == "superadmin":
+                # 'superadmin' MAUPUN 'sales' dicek LANGSUNG by role (BUKAN
+                # cuma mengandalkan tenant_id yang kebetulan NULL) -- lihat
+                # BUGFIX KRITIS (Branding Super Admin/Sales) di
+                # frontend/js/brand.js untuk gejala PERSIS yang ditimbulkan
+                # kalau baris user di database korup/melanggar invarian ini
+                # (sudah pernah terjadi nyata di produksi).
+                if user.get("role") in ("superadmin", "sales"):
                     return None
                 # BUGFIX (audit): sama seperti resolve_tenant_hibrid() di
                 # atas -- dulu tidak mengecek status tenant, jadi staff

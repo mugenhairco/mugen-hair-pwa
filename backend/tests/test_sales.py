@@ -22,6 +22,7 @@ import snap_payment_db
 import snap_webhook
 import subscription_db
 import tenant_db
+from database import get_conn
 
 
 def _login(client, username, password):
@@ -619,3 +620,51 @@ def test_owner_tenant_tidak_bisa_akses_portal_sales_maupun_superadmin_sales(two_
     assert r.status_code == 403
     r2 = two_tenants["client"].get("/api/superadmin/sales/kode-referral", headers=two_tenants["headers_a"])
     assert r2.status_code == 403
+
+
+# ============================= Defense-in-depth: data korup (tenant_id ter-isi untuk akun sales) =============================
+# INSIDEN NYATA produksi: satu baris akun 'sales' kedapatan tenant_id-nya
+# ter-isi (seharusnya NULL, ditegakkan auth_db.tambah_user() -- cara
+# persisnya terjadi tidak diketahui, tapi EFEKNYA dikonfirmasi langsung
+# dari database produksi). Tes di bawah ini SENGAJA mensimulasikan baris
+# yang sama (lewat SQL langsung, BUKAN tambah_user(), supaya validasi
+# invariannya tidak ikut mencegat) untuk membuktikan role 'sales' TETAP
+# diperlakukan sebagai akun platform (branding, akses tenant-scope, login)
+# WALAU datanya korup -- lihat BUGFIX di auth.py::get_current_user()/
+# resolve_tenant_untuk_branding() dan routers/auth_router.py::login().
+
+def _rusak_tenant_id_akun(username: str, tenant_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tenant_id = ? WHERE username = ?", (tenant_id, username))
+
+
+def test_sales_tenant_id_korup_tetap_dapat_branding_platform(app_client):
+    headers_sa = _buat_superadmin_dan_login(app_client)
+    _buat_sales_via_api(app_client, headers_sa)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _rusak_tenant_id_akun("sales1", tenant["id"])
+
+    headers_sales = _login(app_client, "sales1", "passwordsales1")
+    r = app_client.get("/api/tenant/branding", headers=headers_sales)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["nama_barbershop"] == "Rivoir"
+    assert data["is_platform_default"] is True
+
+
+def test_sales_tenant_id_korup_tetap_bisa_login_dan_akses_portal_sales(app_client):
+    headers_sa = _buat_superadmin_dan_login(app_client)
+    _buat_sales_via_api(app_client, headers_sa)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _rusak_tenant_id_akun("sales1", tenant["id"])
+
+    r_login = app_client.post("/api/auth/login", json={"username": "sales1", "password": "passwordsales1"})
+    assert r_login.status_code == 200, r_login.text
+    # tenant_info login TIDAK ikut mengarah ke tenant tempat tenant_id-nya
+    # korup -- akun ini TETAP akun platform, bukan "milik" tenant manapun.
+    assert r_login.json()["tenant"] is None
+
+    headers_sales = {"Authorization": f"Bearer {r_login.json()['token']}"}
+    r_me = app_client.get("/api/sales/me", headers=headers_sales)
+    assert r_me.status_code == 200, r_me.text
+    assert r_me.json()["kode"] == "PROMO10"

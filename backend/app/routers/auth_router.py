@@ -120,15 +120,19 @@ def login(body: LoginBody, request: Request):
             },
         )
 
-    # BUGFIX: superadmin (akun PLATFORM, mengelola SELURUH tenant) HARUS
-    # SELALU bisa login apa pun status tenant mana pun -- role dicek
-    # LANGSUNG di sini (bukan hanya bergantung pada invarian "superadmin
-    # selalu tenant_id=None" yang ditegakkan tambah_user()), supaya tidak
-    # ikut ditolak kalau invarian itu ternyata dilanggar. Hanya akun
-    # owner/admin ('admin'), staff, dan barber -- yang memang terikat SATU
-    # tenant -- yang divalidasi terhadap status tenant di bawah ini.
+    # BUGFIX: superadmin & sales (akun PLATFORM, TIDAK terikat tenant mana
+    # pun) HARUS SELALU bisa login apa pun status tenant mana pun -- role
+    # dicek LANGSUNG di sini (bukan hanya bergantung pada invarian
+    # "superadmin/sales selalu tenant_id=None" yang ditegakkan
+    # tambah_user()), supaya tidak ikut ditolak/salah kirim tenant_info
+    # kalau invarian itu ternyata dilanggar (SUDAH PERNAH TERJADI NYATA di
+    # produksi untuk akun 'sales' -- lihat BUGFIX Branding Super Admin/
+    # Sales di frontend/js/brand.js & auth.py::get_current_user() untuk
+    # gejala PERSIS yang ditimbulkan). Hanya akun owner/admin ('admin'),
+    # staff, dan barber -- yang memang terikat SATU tenant -- yang
+    # divalidasi terhadap status tenant di bawah ini.
     tenant_info = None
-    if user["role"] != "superadmin" and user.get("tenant_id") is not None:
+    if user["role"] not in ("superadmin", "sales") and user.get("tenant_id") is not None:
         t = tenant_db.get_tenant(user["tenant_id"])
         if t is None or t["status"] != "aktif":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
