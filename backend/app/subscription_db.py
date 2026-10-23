@@ -45,8 +45,15 @@ from datetime import datetime, timedelta
 from database import get_conn, get_setting, set_setting
 
 PACKAGE_VALID = {"free", "basic", "pro", "enterprise"}
-STATUS_VALID = {"trial", "active", "grace_period", "expired", "suspended", "cancelled"}
+STATUS_VALID = {"trial", "active", "grace_period", "expired", "suspended", "cancelled", "lifetime"}
 STATUS_AKSES_DIBLOKIR = {"expired", "suspended", "cancelled"}
+# FITUR Program Afiliasi Sales (sales_db.py) -- Lisensi Beli Putus: status
+# BARU 'lifetime' SENGAJA tidak dimasukkan ke STATUS_AKSES_DIBLOKIR (akses
+# tidak pernah diblokir) dan _auto_suspend_jika_lewat() di bawah HANYA
+# bertindak untuk status 'active' (lihat fungsinya) -- status 'lifetime'
+# otomatis kebal dari auto-suspend berbasis periode_selesai TANPA perlu
+# logika baru, karena tenant lifetime memang tidak pernah diberi
+# periode_selesai (tidak ada siklus perpanjangan apa pun lagi).
 PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed"}
 
 # Default platform (dipakai kalau Super Admin belum pernah mengatur lewat

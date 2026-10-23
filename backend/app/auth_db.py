@@ -183,12 +183,12 @@ def tambah_user(username: str, password: str, role: str, barber_id: int = None, 
     username = (username or "").strip()
     if not username:
         raise ValueError("Username tidak boleh kosong.")
-    if role not in ("admin", "staff", "barber", "superadmin"):
-        raise ValueError("Role harus 'admin' (Owner), 'staff' (Admin), 'barber', atau 'superadmin'.")
+    if role not in ("admin", "staff", "barber", "superadmin", "sales"):
+        raise ValueError("Role harus 'admin' (Owner), 'staff' (Admin), 'barber', 'superadmin', atau 'sales'.")
     if role == "barber" and barber_id is None:
         raise ValueError("User dengan role 'barber' wajib dikaitkan ke barber_id.")
-    if role == "superadmin" and tenant_id is not None:
-        raise ValueError("User ber-role 'superadmin' tidak boleh dikaitkan ke tenant mana pun.")
+    if role in ("superadmin", "sales") and tenant_id is not None:
+        raise ValueError(f"User ber-role '{role}' tidak boleh dikaitkan ke tenant mana pun.")
     if not password or len(password) < 4:
         raise ValueError("Password minimal 4 karakter.")
 

@@ -68,6 +68,13 @@ class RegisterBody(BaseModel):
     whatsapp: str = ""
     password: str = ""
     confirm_password: str = ""
+    # FITUR Program Afiliasi Sales/Marketing (sales_db.py): opsional,
+    # diisi otomatis dari parameter URL ?ref=KODE (lihat frontend/js/
+    # register.js) atau diketik manual oleh tenant. Kode yang tidak
+    # dikenal/tidak aktif TIDAK menggagalkan pendaftaran -- murni diabaikan
+    # (lihat _validasi()/register() di bawah), supaya typo kode referral
+    # tidak pernah memblokir calon pelanggan mendaftar.
+    referral_code: str = ""
 
 
 def _validasi(body: RegisterBody) -> None:
@@ -151,6 +158,17 @@ def register(body: RegisterBody):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     tenant_db.set_registrant_info(tenant_id, body.owner_name.strip(), email, whatsapp)
+
+    # FITUR Program Afiliasi Sales/Marketing: lihat catatan referral_code
+    # di RegisterBody di atas -- diam-diam diabaikan kalau kodenya tidak
+    # dikenal/tidak aktif, SENGAJA tidak dijadikan error (tenant yang
+    # salah ketik kode referral tetap harus bisa mendaftar).
+    kode_referral = (body.referral_code or "").strip()
+    if kode_referral:
+        import sales_db
+        kode = sales_db.get_kode_referral_by_kode(kode_referral)
+        if kode is not None and kode["aktif"]:
+            sales_db.set_tenant_referral(tenant_id, kode["id"])
 
     try:
         user_id = auth_db.tambah_user(username=username, password=body.password, role="admin", tenant_id=tenant_id)

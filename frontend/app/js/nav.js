@@ -305,7 +305,7 @@ const MugenNav = (() => {
     // style.css, mekanisme mobile TETAP hamburger seperti sebelumnya).
     // Superadmin TIDAK ikut (menunya cuma satu link, collapse tidak
     // berguna) -- dicek di bawah sebelum ditambahkan.
-    if (user.role !== "superadmin") {
+    if (user.role !== "superadmin" && user.role !== "sales") {
       const btnCollapse = MugenUI.el("button", {
         type: "button", class: "sidebar-collapse-btn", title: "Collapse/Expand Menu",
       }, "‹");
@@ -323,6 +323,10 @@ const MugenNav = (() => {
     // satu link ke satu-satunya halaman yang dia punya.
     if (user.role === "superadmin") {
       nav.appendChild(_elLink("#/dashboard", "Kelola Tenant", activeHash, user, null));
+    } else if (user.role === "sales") {
+      // FITUR Program Afiliasi Sales/Marketing: pola identik superadmin di
+      // atas -- satu-satunya halaman milik akun ini (Portal Sales).
+      nav.appendChild(_elLink("#/dashboard", "Portal Sales", activeHash, user, null));
     } else {
       for (const item of MENU) {
         const el = _bangunItemNav(item, user, activeHash);
@@ -335,7 +339,7 @@ const MugenNav = (() => {
     }
     sidebar.appendChild(nav);
 
-    const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber", superadmin: "Super Admin" };
+    const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber", superadmin: "Super Admin", sales: "Sales" };
     const userBox = MugenUI.el("div", { class: "user-box" }, [
       MugenUI.el("div", {}, user.username),
       MugenUI.el("div", {}, LABEL_ROLE[user.role] || user.role),

@@ -290,6 +290,17 @@ const MugenRouter = (() => {
       return;
     }
 
+    // FITUR Program Afiliasi Sales/Marketing: akun 'sales' (tenant_id=NULL,
+    // pola identik 'superadmin' di atas) -- satu-satunya halaman yang
+    // relevan adalah Portal Sales miliknya sendiri, dirender untuk hash
+    // APA PUN yang diminta (sama seperti cabang superadmin, sales juga
+    // tidak punya menu lain untuk dituju).
+    if (user.role === "sales") {
+      const content = shell();
+      Promise.resolve(_renderLazy(content, "PageSalesPortal", "js/pages/sales_portal.js")).then(() => _pulihkanScroll(hash, content));
+      return;
+    }
+
     // FONDASI Multi-Tenant Phase 3: tenant yang subscription-nya Expired/
     // Suspended/Cancelled dialihkan ke halaman status untuk HASH APA PUN
     // (pola sama seperti superadmin di atas) -- Owner/Admin/Barber toko itu

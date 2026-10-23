@@ -114,6 +114,13 @@ const PageSuperadmin = (() => {
     ubah_status_whatsapp_bot: "Ubah Status WA Bot",
     ubah_tampilkan_potongan_keterlambatan_whatsapp_bot: "Ubah Tampilan Potongan Keterlambatan WA Bot",
     hapus_config_whatsapp_bot: "Hapus Konfigurasi WA Bot",
+    // FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py).
+    buat_akun_sales: "Buat Akun Sales",
+    ubah_kode_referral: "Ubah Kode Referral",
+    tempel_referral_tenant: "Tempel Kode Referral ke Tenant",
+    ubah_status_komisi: "Ubah Status Komisi",
+    buat_transaksi_lifetime: "Buat Transaksi Lifetime",
+    ubah_status_lifetime: "Ubah Status Lifetime",
   };
 
   const LABEL_STATUS_INVOICE = {
@@ -219,6 +226,15 @@ const PageSuperadmin = (() => {
     // billingPackageEditCard di atas).
     const waBotCard = MugenUI.el("div", { class: "card" });
     const waBotEditCard = MugenUI.el("div", { class: "card" });
+    // FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py):
+    // tiga kartu -- rekrut akun sales + daftar kode referral (persentase
+    // komisi fleksibel, diedit lewat prompt() pola sama seperti "Ubah Slug"
+    // di atas), transaksi Lisensi Lifetime (dicatat manual, lihat
+    // docstring sales_db.py), dan daftar komisi lintas sales (toggle
+    // status bayar).
+    const salesCard = MugenUI.el("div", { class: "card" });
+    const salesLifetimeCard = MugenUI.el("div", { class: "card" });
+    const salesKomisiCard = MugenUI.el("div", { class: "card" });
 
     const tabDashboard = MugenUI.el("div");
     const tabTenant = MugenUI.el("div", { style: "display:none;" });
@@ -228,7 +244,8 @@ const PageSuperadmin = (() => {
     const tabTransaksi = MugenUI.el("div", { style: "display:none;" });
     const tabSettlement = MugenUI.el("div", { style: "display:none;" });
     const tabWaBot = MugenUI.el("div", { style: "display:none;" });
-    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi, settlement: tabSettlement, wabot: tabWaBot };
+    const tabSales = MugenUI.el("div", { style: "display:none;" });
+    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi, settlement: tabSettlement, wabot: tabWaBot, sales: tabSales };
     const tabsCtl = MugenUI.tabs(
       [
         { key: "dashboard", label: "Dashboard" },
@@ -239,6 +256,7 @@ const PageSuperadmin = (() => {
         { key: "transaksi", label: "Riwayat Transaksi" },
         { key: "settlement", label: "Settlement Faspay" },
         { key: "wabot", label: "WA Bot" },
+        { key: "sales", label: "Sales & Referral" },
       ],
       {
         onChange: (key) => {
@@ -260,6 +278,7 @@ const PageSuperadmin = (() => {
     root.appendChild(tabTransaksi);
     root.appendChild(tabSettlement);
     root.appendChild(tabWaBot);
+    root.appendChild(tabSales);
     requestAnimationFrame(tabsCtl.moveIndicator);
 
     tabDashboard.appendChild(dashboardSummaryCard);
@@ -302,6 +321,9 @@ const PageSuperadmin = (() => {
 
     tabWaBot.appendChild(waBotCard);
     tabWaBot.appendChild(waBotEditCard);
+    tabSales.appendChild(salesCard);
+    tabSales.appendChild(salesLifetimeCard);
+    tabSales.appendChild(salesKomisiCard);
 
     // ---------------------------------------------------------------
     // 0. DASHBOARD -- Ringkasan Sistem (murni dihitung dari data yang SUDAH
@@ -2436,6 +2458,280 @@ const PageSuperadmin = (() => {
       }
     }
 
+    // ---------------------------------------------------------------
+    // FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py)
+    // ---------------------------------------------------------------
+    const LABEL_PACKAGE_SALES = { basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
+    const LABEL_JENIS_KOMISI = { baru: "Pendaftaran Baru", repeat: "Perpanjangan", lifetime: "Lisensi Lifetime" };
+
+    salesCard.appendChild(MugenUI.el("h2", {}, "Rekrut Sales Baru"));
+    salesCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Akun login (role Sales) + kode referral pertamanya dibuat sekaligus. Kasih username/password ini ke orangnya -- dia login lewat halaman login yang sama dipakai semua akun."));
+    const fUsername = MugenUI.el("input", { type: "text", placeholder: "Username" });
+    const fPassword = MugenUI.el("input", { type: "text", placeholder: "Password (min. 4 karakter)" });
+    const fNamaSales = MugenUI.el("input", { type: "text", placeholder: "Nama Sales" });
+    const fKode = MugenUI.el("input", { type: "text", placeholder: "Kode Referral, mis. BUDI10" });
+    const fPersenBaru = MugenUI.el("input", { type: "number", value: "50", min: "0", max: "100" });
+    const fPersenRepeat = MugenUI.el("input", { type: "number", value: "20", min: "0", max: "100" });
+    const fPersenLifetime = MugenUI.el("input", { type: "number", value: "30", min: "0", max: "100" });
+    salesCard.appendChild(MugenUI.el("label", {}, "Username"));
+    salesCard.appendChild(fUsername);
+    salesCard.appendChild(MugenUI.el("label", {}, "Password"));
+    salesCard.appendChild(fPassword);
+    salesCard.appendChild(MugenUI.el("label", {}, "Nama Sales"));
+    salesCard.appendChild(fNamaSales);
+    salesCard.appendChild(MugenUI.el("label", {}, "Kode Referral"));
+    salesCard.appendChild(fKode);
+    salesCard.appendChild(MugenUI.el("div", { class: "row", style: "margin-top:8px;" }, [
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Komisi Baru (%)"), fPersenBaru]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Komisi Repeat (%)"), fPersenRepeat]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Komisi Lifetime (%)"), fPersenLifetime]),
+    ]));
+    const btnBuatSales = MugenUI.el("button", {}, "Buat Akun Sales");
+    salesCard.appendChild(btnBuatSales);
+    btnBuatSales.addEventListener("click", async () => {
+      try {
+        await MugenUI.withButtonLoading(btnBuatSales, () => MugenApi.post("/api/superadmin/sales/akun", {
+          username: fUsername.value.trim(), password: fPassword.value, nama_sales: fNamaSales.value.trim(),
+          kode: fKode.value.trim(), komisi_persen_baru: Number(fPersenBaru.value),
+          komisi_persen_repeat: Number(fPersenRepeat.value), komisi_persen_lifetime: Number(fPersenLifetime.value),
+        }));
+        MugenUI.toast("Akun sales dibuat.", "success");
+        fUsername.value = ""; fPassword.value = ""; fNamaSales.value = ""; fKode.value = "";
+        loadKodeReferral();
+        loadAuditLog();
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    });
+
+    const kodeReferralBody = MugenUI.el("div");
+    salesCard.appendChild(MugenUI.el("h3", { style: "margin-top:18px;" }, "Daftar Kode Referral"));
+    salesCard.appendChild(kodeReferralBody);
+
+    async function loadKodeReferral() {
+      kodeReferralBody.innerHTML = "";
+      kodeReferralBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 3 }));
+      try {
+        const daftar = await MugenApi.get("/api/superadmin/sales/kode-referral");
+        kodeReferralBody.innerHTML = "";
+        kodeReferralBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "kode", label: "Kode" },
+            { key: "nama_sales", label: "Nama Sales" },
+            { key: "komisi_persen_baru", label: "Baru", format: (v) => `${v}%` },
+            { key: "komisi_persen_repeat", label: "Repeat", format: (v) => `${v}%` },
+            { key: "komisi_persen_lifetime", label: "Lifetime", format: (v) => `${v}%` },
+            {
+              key: "aktif", label: "Status",
+              format: (v) => MugenUI.el("span", { class: "badge " + (v ? "badge-success" : "badge-libur") }, v ? "Aktif" : "Nonaktif"),
+            },
+            {
+              key: "aksi", label: "Aksi", format: (_, k) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnUbah = MugenUI.el("button", {}, "Ubah Komisi");
+                btnUbah.addEventListener("click", async () => {
+                  const baru = prompt("Persen komisi Pendaftaran Baru (0-100):", k.komisi_persen_baru);
+                  if (baru === null) return;
+                  const repeat = prompt("Persen komisi Perpanjangan (0-100):", k.komisi_persen_repeat);
+                  if (repeat === null) return;
+                  const lifetime = prompt("Persen komisi Lisensi Lifetime (0-100):", k.komisi_persen_lifetime);
+                  if (lifetime === null) return;
+                  try {
+                    await MugenApi.put(`/api/superadmin/sales/kode-referral/${k.id}`, {
+                      komisi_persen_baru: Number(baru), komisi_persen_repeat: Number(repeat),
+                      komisi_persen_lifetime: Number(lifetime),
+                    });
+                    MugenUI.toast("Komisi diperbarui.", "success");
+                    loadKodeReferral();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnUbah);
+                const menujuAktif = !k.aktif;
+                const btnToggle = MugenUI.el("button", { class: menujuAktif ? "" : "btn-danger" },
+                  menujuAktif ? "Aktifkan" : "Nonaktifkan");
+                btnToggle.addEventListener("click", async () => {
+                  if (!confirm(`${menujuAktif ? "Aktifkan" : "Nonaktifkan"} kode "${k.kode}"?`)) return;
+                  try {
+                    await MugenApi.put(`/api/superadmin/sales/kode-referral/${k.id}`, { aktif: menujuAktif });
+                    MugenUI.toast("Status kode diperbarui.", "success");
+                    loadKodeReferral();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnToggle);
+                return wrap;
+              },
+            },
+          ],
+          daftar,
+          { emptyText: "Belum ada sales yang direkrut." },
+        ));
+      } catch (e) {
+        kodeReferralBody.innerHTML = "";
+        kodeReferralBody.appendChild(MugenUI.errorState(e.message));
+      }
+    }
+
+    // --- Transaksi Lisensi Lifetime (Beli Putus, manual) ---
+    salesLifetimeCard.appendChild(MugenUI.el("h2", {}, "Lisensi Lifetime (Beli Putus)"));
+    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Dicatat manual -- deal terjadi di luar aplikasi, nomor VA Faspay dibuat/diberikan ke klien sendiri oleh Super Admin. Begitu ditandai Lunas, tenant otomatis mendapat akses permanen (status 'Lifetime') di paket yang dipilih, dan komisi (kalau kode referral dipasang) tercatat otomatis."));
+    const ltTenantId = MugenUI.el("input", { type: "number", placeholder: "ID Tenant" });
+    const ltPackage = MugenUI.el("select", {}, [
+      MugenUI.el("option", { value: "basic" }, "Basic"),
+      MugenUI.el("option", { value: "pro" }, "Pro"),
+      MugenUI.el("option", { value: "enterprise" }, "Enterprise"),
+    ]);
+    const ltAmount = MugenUI.el("input", { type: "number", placeholder: "Nominal (Rp)" });
+    const ltProvider = MugenUI.el("input", { type: "text", value: "faspay" });
+    const ltVa = MugenUI.el("input", { type: "text", placeholder: "Nomor Virtual Account" });
+    const ltKodeReferral = MugenUI.el("input", { type: "text", placeholder: "Kode Referral (opsional)" });
+    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row" }, [
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "ID Tenant"), ltTenantId]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), ltPackage]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nominal"), ltAmount]),
+    ]));
+    salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "margin-top:8px;" }, [
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Provider"), ltProvider]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor VA"), ltVa]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kode Referral"), ltKodeReferral]),
+    ]));
+    const btnBuatLifetime = MugenUI.el("button", {}, "Catat Transaksi Lifetime");
+    salesLifetimeCard.appendChild(btnBuatLifetime);
+    const lifetimeListBody = MugenUI.el("div");
+    salesLifetimeCard.appendChild(MugenUI.el("h3", { style: "margin-top:18px;" }, "Riwayat Transaksi Lifetime"));
+    salesLifetimeCard.appendChild(lifetimeListBody);
+
+    btnBuatLifetime.addEventListener("click", async () => {
+      try {
+        let referral_code_id = null;
+        const kodeDiketik = ltKodeReferral.value.trim();
+        if (kodeDiketik) {
+          const semuaKode = await MugenApi.get("/api/superadmin/sales/kode-referral");
+          const cocok = semuaKode.find((k) => k.kode.toUpperCase() === kodeDiketik.toUpperCase());
+          if (!cocok) { MugenUI.toast(`Kode referral "${kodeDiketik}" tidak ditemukan.`, "error"); return; }
+          referral_code_id = cocok.id;
+        }
+        await MugenUI.withButtonLoading(btnBuatLifetime, () => MugenApi.post("/api/superadmin/sales/lifetime", {
+          tenant_id: Number(ltTenantId.value), package_kode: ltPackage.value, amount: Number(ltAmount.value),
+          provider: ltProvider.value.trim(), virtual_account_number: ltVa.value.trim(), referral_code_id,
+        }));
+        MugenUI.toast("Transaksi Lifetime dicatat.", "success");
+        ltTenantId.value = ""; ltAmount.value = ""; ltVa.value = ""; ltKodeReferral.value = "";
+        loadLifetimeList();
+        loadAuditLog();
+      } catch (e) {
+        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+      }
+    });
+
+    async function loadLifetimeList() {
+      lifetimeListBody.innerHTML = "";
+      lifetimeListBody.appendChild(MugenUI.skeleton("table", { cols: 6, rows: 3 }));
+      try {
+        const daftar = await MugenApi.get("/api/superadmin/sales/lifetime");
+        lifetimeListBody.innerHTML = "";
+        lifetimeListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama_tenant", label: "Tenant" },
+            { key: "package_kode", label: "Paket", format: (v) => LABEL_PACKAGE_SALES[v] || v },
+            { key: "amount", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+            { key: "kode_referral", label: "Kode Referral", format: (v) => v || "-" },
+            {
+              key: "payment_status", label: "Status",
+              format: (v) => {
+                const cls = v === "paid" ? "badge-success" : v === "pending" ? "badge-warning" : "badge-danger";
+                const label = { pending: "Menunggu", paid: "Lunas", expired: "Kedaluwarsa", failed: "Gagal" }[v] || v;
+                return MugenUI.el("span", { class: `badge ${cls}` }, label);
+              },
+            },
+            {
+              key: "aksi", label: "Aksi", format: (_, p) => {
+                if (p.payment_status !== "pending") return "-";
+                const btn = MugenUI.el("button", {}, "Tandai Lunas");
+                btn.addEventListener("click", async () => {
+                  if (!confirm(`Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS? Tenant ini akan langsung mendapat akses permanen.`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btn,
+                      () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "paid" }));
+                    MugenUI.toast("Transaksi Lifetime ditandai lunas, tenant sudah di-upgrade.", "success");
+                    loadLifetimeList();
+                    loadSalesKomisi();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                return btn;
+              },
+            },
+          ],
+          daftar,
+          { emptyText: "Belum ada transaksi Lifetime." },
+        ));
+      } catch (e) {
+        lifetimeListBody.innerHTML = "";
+        lifetimeListBody.appendChild(MugenUI.errorState(e.message));
+      }
+    }
+
+    // --- Komisi lintas sales ---
+    salesKomisiCard.appendChild(MugenUI.el("h2", {}, "Komisi Sales"));
+    const salesKomisiBody = MugenUI.el("div");
+    salesKomisiCard.appendChild(salesKomisiBody);
+
+    async function loadSalesKomisi() {
+      salesKomisiBody.innerHTML = "";
+      salesKomisiBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 3 }));
+      try {
+        const daftar = await MugenApi.get("/api/superadmin/sales/komisi");
+        salesKomisiBody.innerHTML = "";
+        salesKomisiBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "nama_sales", label: "Sales" },
+            { key: "nama_tenant", label: "Tenant" },
+            { key: "jenis", label: "Jenis", format: (v) => LABEL_JENIS_KOMISI[v] || v },
+            { key: "nominal_dibayar", label: "Dibayar Tenant", format: (v) => MugenUI.formatRupiah(v) },
+            { key: "nominal_komisi", label: "Komisi", format: (v) => MugenUI.formatRupiah(v) },
+            {
+              key: "status", label: "Status",
+              format: (v) => MugenUI.el("span", { class: "badge " + (v === "sudah_dibayar" ? "badge-success" : "badge-warning") },
+                v === "sudah_dibayar" ? "Sudah Dibayar" : "Belum Dibayar"),
+            },
+            {
+              key: "aksi", label: "Aksi", format: (_, k) => {
+                const menujuStatus = k.status === "sudah_dibayar" ? "belum_dibayar" : "sudah_dibayar";
+                const btn = MugenUI.el("button", {}, menujuStatus === "sudah_dibayar" ? "Tandai Sudah Dibayar" : "Tandai Belum Dibayar");
+                btn.addEventListener("click", async () => {
+                  try {
+                    await MugenUI.withButtonLoading(btn,
+                      () => MugenApi.put(`/api/superadmin/sales/komisi/${k.id}/status`, { status: menujuStatus }));
+                    MugenUI.toast("Status komisi diperbarui.", "success");
+                    loadSalesKomisi();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                return btn;
+              },
+            },
+          ],
+          daftar,
+          { emptyText: "Belum ada komisi tercatat." },
+        ));
+      } catch (e) {
+        salesKomisiBody.innerHTML = "";
+        salesKomisiBody.appendChild(MugenUI.errorState(e.message));
+      }
+    }
+
     await loadTenantList();
     await loadSubsConfig();
     await loadBillingPackages();
@@ -2450,6 +2746,9 @@ const PageSuperadmin = (() => {
     await loadTransaksi();
     await muatSettlement();
     await loadWaBotList();
+    await loadKodeReferral();
+    await loadLifetimeList();
+    await loadSalesKomisi();
     await loadAuditLog();
   }
 

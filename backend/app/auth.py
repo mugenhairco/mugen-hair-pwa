@@ -219,6 +219,21 @@ def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_sales(user: dict = Depends(get_current_user)) -> dict:
+    """FITUR Program Afiliasi Sales (sales_db.py): akun `role='sales'`
+    (selalu `tenant_id=None`, pola identik 'superadmin' di atas -- lihat
+    auth_db.tambah_user()) mengelola portalnya sendiri (kode referral,
+    tenant yang terdaftar lewat kodenya, rincian komisi). get_current_user()
+    sudah melewatkan pengecekan tenant aktif untuk akun tenant_id=None
+    (lihat kondisi `user["role"] != "superadmin" and user.get("tenant_id")
+    is not None` di atas -- berlaku untuk role APA PUN selama tenant_id
+    None, termasuk 'sales'), jadi tidak ada penyesuaian lain yang
+    dibutuhkan di luar dependency ini."""
+    if user["role"] != "sales":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Khusus akun Sales.")
+    return user
+
+
 def require_owner_or_staff(user: dict = Depends(get_current_user)) -> dict:
     """'admin' (Owner, akses penuh) atau 'staff' (Admin, akses dibatasi hak
     akses yang diatur Owner lewat Setting > Hak Akses Admin -- lihat

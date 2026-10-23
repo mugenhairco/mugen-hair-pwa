@@ -47,6 +47,15 @@ const PageRegister = (() => {
     const inputWhatsapp = MugenUI.el("input", { type: "tel", placeholder: "Nomor WhatsApp", autocomplete: "tel" });
     const inputPassword = MugenUI.el("input", { type: "password", placeholder: "Password", autocomplete: "new-password" });
     const inputConfirmPassword = MugenUI.el("input", { type: "password", placeholder: "Konfirmasi Password", autocomplete: "new-password" });
+    // FITUR Program Afiliasi Sales/Marketing (sales_db.py): opsional --
+    // diisi otomatis dari parameter "?ref=KODE" di URL pendaftaran (link
+    // yang dibagikan sales, mis. ".../#/register?ref=PROMO10"), atau
+    // diketik manual. Kode yang tidak dikenal diabaikan diam-diam oleh
+    // backend (routers/tenant_registration.py), TIDAK PERNAH memblokir
+    // pendaftaran.
+    const inputReferral = MugenUI.el("input", { type: "text", placeholder: "Kode Referral (opsional)" });
+    const kodeDariUrl = MugenUI.ambilQueryHash().get("ref");
+    if (kodeDariUrl) inputReferral.value = kodeDariUrl;
     const errorBox = MugenUI.el("div", { class: "login-error" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Daftar");
 
@@ -61,6 +70,7 @@ const PageRegister = (() => {
       MugenUI.el("label", {}, "Nomor WhatsApp"), inputWhatsapp,
       MugenUI.el("label", {}, "Password"), inputPassword,
       MugenUI.el("label", {}, "Konfirmasi Password"), inputConfirmPassword,
+      MugenUI.el("label", {}, "Kode Referral (opsional)"), inputReferral,
       errorBox,
       btnSubmit,
     ]);
@@ -113,6 +123,7 @@ const PageRegister = (() => {
           whatsapp: inputWhatsapp.value.trim(),
           password: inputPassword.value,
           confirm_password: inputConfirmPassword.value,
+          referral_code: inputReferral.value.trim(),
         }), { message: "Mendaftarkan toko Anda…" });
         tampilkanCekEmail(email);
       } catch (e) {

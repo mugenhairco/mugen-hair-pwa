@@ -743,6 +743,11 @@ CREATE TABLE IF NOT EXISTS tenants (
     created_at         TEXT NOT NULL
 );
 
+-- FITUR Program Afiliasi Sales/Marketing (sales_db.py): kode referral yang
+-- dipakai tenant saat mendaftar sendiri (opsional), atau ditempel manual
+-- oleh Super Admin.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS referral_code_id INTEGER;
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
 ALTER TABLE services ADD COLUMN IF NOT EXISTS tenant_id INTEGER;
@@ -898,6 +903,52 @@ CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
     amount                  INTEGER NOT NULL,
     expired_at              TEXT,
     paid_at                 TEXT,
+    created_at              TEXT NOT NULL
+);
+
+-- FITUR Program Afiliasi Sales/Marketing (sales_db.py) -- lihat docstring
+-- modul itu untuk penjelasan lengkap dua jenis insentif (Langganan vs
+-- Lisensi Lifetime) dan kapan komisi dicatat otomatis.
+CREATE TABLE IF NOT EXISTS sales_referral_codes (
+    id                      SERIAL PRIMARY KEY,
+    kode                    TEXT NOT NULL UNIQUE,
+    user_id                 INTEGER NOT NULL,
+    nama_sales              TEXT NOT NULL,
+    komisi_persen_baru      REAL NOT NULL DEFAULT 50,
+    komisi_persen_repeat    REAL NOT NULL DEFAULT 20,
+    komisi_persen_lifetime  REAL NOT NULL DEFAULT 30,
+    aktif                   INTEGER NOT NULL DEFAULT 1,
+    created_at              TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sales_commissions (
+    id                SERIAL PRIMARY KEY,
+    referral_code_id  INTEGER NOT NULL,
+    tenant_id         INTEGER NOT NULL,
+    jenis             TEXT NOT NULL,
+    sumber_tabel      TEXT NOT NULL,
+    sumber_id         INTEGER NOT NULL,
+    nominal_dibayar   INTEGER NOT NULL,
+    persen_komisi     REAL NOT NULL,
+    nominal_komisi    INTEGER NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'belum_dibayar',
+    dibuat_at         TEXT NOT NULL,
+    dibayar_at        TEXT,
+    UNIQUE(sumber_tabel, sumber_id)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_lifetime_purchases (
+    id                      SERIAL PRIMARY KEY,
+    tenant_id               INTEGER NOT NULL,
+    package_kode            TEXT NOT NULL,
+    amount                  INTEGER NOT NULL,
+    provider                TEXT NOT NULL,
+    virtual_account_number  TEXT NOT NULL,
+    referral_code_id        INTEGER,
+    payment_status          TEXT NOT NULL DEFAULT 'pending',
+    expired_at              TEXT,
+    paid_at                 TEXT,
+    dibuat_oleh             TEXT,
     created_at              TEXT NOT NULL
 );
 

@@ -306,6 +306,16 @@ def ubah_status_payment(payment_id: int, body: PaymentStatusBody, user: dict = D
         hasil = subscription_db.tandai_status_pembayaran(payment_id, body.payment_status, paid_at=body.paid_at)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    # FITUR Program Afiliasi Sales/Marketing (sales_db.py): begitu
+    # pembayaran langganan ditandai lunas, cek otomatis apakah tenant ini
+    # terdaftar lewat kode referral -- kalau ya, catat komisi (baru/repeat
+    # ditentukan di dalam sales_db.py sendiri, berdasarkan riwayat
+    # pembayaran 'paid' tenant ini). Import lokal (hindari import siklik di
+    # level modul, pola sama seperti modul lain di proyek ini) -- tidak ada
+    # efek apa pun kalau tenant tidak punya kode referral terpasang.
+    if body.payment_status == "paid":
+        import sales_db
+        sales_db.catat_komisi_dari_subscription_payment(hasil)
     t = tenant_db.get_tenant(payment["tenant_id"])
     superadmin_audit_db.catat(user["username"], "ubah_status_pembayaran_subscription",
                                tenant_id=payment["tenant_id"], tenant_slug=t["slug"] if t else None,

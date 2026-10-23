@@ -1068,7 +1068,7 @@
 // pengaman localStorage; tombol "Setujui"/"Tolak" (sisi Admin/Owner) tidak
 // lagi blokir tombol menunggu server (refresh kartu Limit/Kuota/Absensi
 // tetap menunggu hasil ASLI, tidak ditebak) -- absensi.js.
-const ASSET_VERSION = "191";
+const ASSET_VERSION = "192";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1149,6 +1149,10 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/riwayat_transaksi.js",
   "/app/js/pages/settlement_faspay.js",
   "/app/js/pages/superadmin.js",
+  // FITUR Program Afiliasi Sales/Marketing: Portal Sales (role 'sales'),
+  // file baru -- harus terdaftar di sini juga (lihat catatan page_loader.js
+  // soal file lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/pages/sales_portal.js",
   "/app/js/pages/subscription_blocked.js",
   "/app/js/pages/tenant_not_found.js",
   "/app/js/tenant_guard.js",
