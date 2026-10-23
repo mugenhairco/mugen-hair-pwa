@@ -299,13 +299,30 @@ class UbahStatusLifetimeBody(BaseModel):
     payment_status: str
 
 
+# Status yang berarti "transaksi ini SELESAI, tidak lagi menunggu
+# pembayaran" -- dipakai di bawah untuk ikut menghentikan transaksi SNAP
+# yang masih menggantung (lihat ubah_status_lifetime()).
+_PAYMENT_STATUS_KE_SNAP_STATUS = {"cancelled": "CANCELLED", "failed": "FAILED", "expired": "EXPIRED"}
+
+
 @superadmin_router.put("/lifetime/{id_}/status")
 def ubah_status_lifetime(id_: int, body: UbahStatusLifetimeBody, user: dict = Depends(require_superadmin)):
     """Koreksi MANUAL -- status lunas SEKARANG normalnya otomatis lewat
     webhook SNAP Advance (lihat snap_webhook.py::_cascade_lifetime_license()),
     endpoint ini tetap dipertahankan untuk kasus pengecualian (mis. Super
     Admin menerima pembayaran lewat jalur lain di luar gateway, atau perlu
-    membatalkan transaksi yang macet)."""
+    membatalkan transaksi yang macet -- tombol "Batalkan" di Dashboard
+    Sales & Referral lewat endpoint ini juga).
+
+    Membatalkan/menggagalkan (`payment_status` masuk
+    `_PAYMENT_STATUS_KE_SNAP_STATUS`) ikut menghentikan transaksi SNAP
+    Advance terkait (kalau masih aktif) -- SEKADAR mencegah webhook yang
+    telat datang mengira transaksi ini masih perlu diproses (TIDAK bisa
+    membatalkan transfer bank yang SUDAH terlanjur dilakukan tenant --
+    itu perlu ditangani manual/refund di luar aplikasi). sales_db.
+    tandai_status_lifetime() SENDIRI sudah idempoten terhadap status final
+    (lihat PAYMENT_STATUS_FINAL) -- lapis INI murni jaga-jaga supaya sisi
+    gateway juga konsisten, bukan satu-satunya proteksi."""
     purchase = sales_db.get_lifetime_purchase(id_)
     if purchase is None:
         raise HTTPException(status_code=404, detail="Transaksi Lifetime tidak ditemukan.")
@@ -313,6 +330,13 @@ def ubah_status_lifetime(id_: int, body: UbahStatusLifetimeBody, user: dict = De
         hasil = sales_db.tandai_status_lifetime(id_, body.payment_status)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    snap_status_baru = _PAYMENT_STATUS_KE_SNAP_STATUS.get(body.payment_status)
+    if snap_status_baru:
+        transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(id_)
+        if transaksi is not None and transaksi["status"] not in snap_payment_db.STATUS_FINAL:
+            snap_payment_db.update_status(transaksi["id"], snap_status_baru, sumber="dibatalkan_manual_superadmin")
+
     t = tenant_db.get_tenant(purchase["tenant_id"])
     superadmin_audit_db.catat(user["username"], "ubah_status_lifetime", tenant_id=purchase["tenant_id"],
                                tenant_slug=t["slug"] if t else None,

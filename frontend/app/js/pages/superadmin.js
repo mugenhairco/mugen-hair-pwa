@@ -2805,11 +2805,11 @@ const PageSuperadmin = (() => {
             {
               key: "aksi", label: "Aksi", format: (_, p) => {
                 if (p.payment_status !== "pending") return "-";
-                const btn = MugenUI.el("button", {}, "Tandai Lunas Manual");
-                btn.addEventListener("click", async () => {
+                const btnLunas = MugenUI.el("button", {}, "Tandai Lunas Manual");
+                btnLunas.addEventListener("click", async () => {
                   if (!confirm(`Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS secara manual? Normalnya ini otomatis begitu pembayaran dikonfirmasi gateway -- hanya pakai ini kalau tenant membayar lewat jalur lain di luar aplikasi. Tenant akan langsung mendapat akses permanen.`)) return;
                   try {
-                    await MugenUI.withButtonLoading(btn,
+                    await MugenUI.withButtonLoading(btnLunas,
                       () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "paid" }));
                     MugenUI.toast("Transaksi Lifetime ditandai lunas, tenant sudah di-upgrade.", "success");
                     loadLifetimeList();
@@ -2819,7 +2819,28 @@ const PageSuperadmin = (() => {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                   }
                 });
-                return btn;
+                // FITUR: tombol Batalkan -- VA/QR yang sudah terlanjur
+                // dibuat & tampil di halaman Billing tenant (lihat
+                // routers/billing.py::lifetime_pending_saya()) perlu bisa
+                // dihentikan kalau transaksinya batal (salah paket, test,
+                // dll). Begitu dibatalkan, baris ini berhenti muncul di
+                // Billing tenant -- TAPI TIDAK bisa membatalkan transfer
+                // bank yang SUDAH terlanjur dilakukan (lihat peringatan
+                // confirm() di bawah).
+                const btnBatal = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
+                btnBatal.addEventListener("click", async () => {
+                  if (!confirm(`Batalkan transaksi Lifetime "${p.nama_tenant}"? VA/QR-nya akan berhenti ditampilkan di halaman Billing tenant. PERHATIAN: ini TIDAK membatalkan transfer bank yang mungkin SUDAH terlanjur dilakukan tenant ke VA tersebut -- pastikan dulu belum ada pembayaran masuk sebelum membatalkan.`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnBatal,
+                      () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "cancelled" }));
+                    MugenUI.toast("Transaksi Lifetime dibatalkan.", "success");
+                    loadLifetimeList();
+                    loadAuditLog();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                return MugenUI.el("div", { class: "actions-cell" }, [btnLunas, btnBatal]);
               },
             },
           ],

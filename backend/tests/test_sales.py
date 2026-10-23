@@ -371,6 +371,58 @@ def test_lifetime_status_manual_override_tetap_tersedia(app_client, monkeypatch)
     assert sub["status"] == "lifetime"
 
 
+def test_lifetime_batalkan_hilang_dari_billing_tenant_dan_snap_ikut_dibatalkan(app_client, monkeypatch):
+    headers_sa = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    auth_db.tambah_user("owner_batal_lifetime", "passwordowner123", "admin", tenant_id=tenant["id"])
+    headers_owner = _login(app_client, "owner_batal_lifetime", "passwordowner123")
+    _aktifkan_snap_lifetime(monkeypatch)
+
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers_sa, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
+        "channel": "va", "bank_code": "702",
+    })
+    purchase = r.json()
+    assert app_client.get("/api/billing/lifetime-pending", headers=headers_owner).json()["id"] == purchase["id"]
+
+    r2 = app_client.put(f"/api/superadmin/sales/lifetime/{purchase['id']}/status", headers=headers_sa,
+                         json={"payment_status": "cancelled"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["payment_status"] == "cancelled"
+
+    # Hilang dari halaman Billing tenant.
+    assert app_client.get("/api/billing/lifetime-pending", headers=headers_owner).json() is None
+
+    # Transaksi SNAP terkait ikut dibatalkan (BUKAN masih menggantung di CREATED/PENDING).
+    transaksi = snap_payment_db.get_transaksi_terkini_untuk_lifetime_purchase(purchase["id"])
+    assert transaksi["status"] == "CANCELLED"
+
+
+def test_lifetime_dibatalkan_tidak_bisa_diaktifkan_ulang_webhook_telat(app_client, monkeypatch):
+    """Guard idempotency sales_db.PAYMENT_STATUS_FINAL -- status final TIDAK
+    bisa ditimpa lagi, termasuk oleh webhook SNAP yang telat datang SETELAH
+    Super Admin membatalkan transaksinya."""
+    headers_sa = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    _aktifkan_snap_lifetime(monkeypatch)
+    r = app_client.post("/api/superadmin/sales/lifetime", headers=headers_sa, json={
+        "tenant_id": tenant["id"], "package_kode": "basic", "amount": 15000000,
+        "channel": "va", "bank_code": "702",
+    })
+    purchase = r.json()
+    app_client.put(f"/api/superadmin/sales/lifetime/{purchase['id']}/status", headers=headers_sa,
+                    json={"payment_status": "cancelled"})
+
+    # Webhook telat yang MASIH mencoba menandai PAID, dipanggil LANGSUNG di
+    # layer sales_db supaya menguji guard PAYMENT_STATUS_FINAL-nya sendiri,
+    # terpisah dari guard STATUS_FINAL milik snap_payment_db yang sudah
+    # menghalangi di layer gateway.
+    hasil = sales_db.tandai_status_lifetime(purchase["id"], "paid")
+    assert hasil["payment_status"] == "cancelled"
+    sub = subscription_db.get_subscription(tenant["id"])
+    assert sub["status"] != "lifetime"
+
+
 # ============================= Billing tenant: tampilkan Lifetime pending =============================
 
 def test_billing_lifetime_pending_tampil_lalu_hilang_setelah_lunas(app_client, monkeypatch):

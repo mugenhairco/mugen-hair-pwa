@@ -61,6 +61,14 @@ from db_compat import IntegrityError
 JENIS_KOMISI_VALID = {"baru", "repeat", "lifetime"}
 STATUS_KOMISI_VALID = {"belum_dibayar", "sudah_dibayar"}
 PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed", "cancelled"}
+# Begitu satu transaksi Lifetime mencapai salah satu status ini, TIDAK ADA
+# transisi lanjutan yang sah -- SATU baris tenant_lifetime_purchases
+# merepresentasikan SATU percobaan pembelian, bukan state yang bisa
+# bolak-balik (mis. "cancelled" -> "paid" lewat webhook SNAP yang telat
+# datang SETELAH Super Admin membatalkannya -- lihat tandai_status_lifetime()
+# di bawah). Pola SAMA PERSIS snap_payment_db.STATUS_FINAL (idempotency/
+# guard status final).
+PAYMENT_STATUS_FINAL = {"paid", "expired", "failed", "cancelled"}
 
 KOMISI_PERSEN_BARU_DEFAULT = 50
 KOMISI_PERSEN_REPEAT_DEFAULT = 20
@@ -401,12 +409,21 @@ def tandai_status_lifetime(id_: int, payment_status: str) -> dict:
     package = tier yang dibeli) dan mencatat komisi otomatis -- lihat
     docstring modul ini. Import subscription_db DI DALAM fungsi (lokal)
     supaya tidak ada import silang antar modul penyimpanan murni di level
-    modul, konsisten dengan pola auth.py/routers lain di proyek ini."""
+    modul, konsisten dengan pola auth.py/routers lain di proyek ini.
+
+    Idempoten -- kalau baris ini SUDAH berstatus final (lihat
+    PAYMENT_STATUS_FINAL di atas), panggilan ini NO-OP (return apa adanya,
+    TIDAK melempar error) -- SENGAJA supaya webhook SNAP yang telat datang
+    SETELAH Super Admin membatalkan transaksi ini manual (routers/sales.py::
+    ubah_status_lifetime()) tidak diam-diam mengaktifkan kembali akses
+    Lifetime tenant."""
     if payment_status not in PAYMENT_STATUS_VALID:
         raise ValueError(f"payment_status harus salah satu dari: {', '.join(sorted(PAYMENT_STATUS_VALID))}.")
     purchase = get_lifetime_purchase(id_)
     if purchase is None:
         raise ValueError("Transaksi Lifetime tidak ditemukan.")
+    if purchase["payment_status"] in PAYMENT_STATUS_FINAL:
+        return purchase
     paid_at = _now() if payment_status == "paid" else purchase.get("paid_at")
     with get_conn() as conn:
         conn.execute("UPDATE tenant_lifetime_purchases SET payment_status = ?, paid_at = ? WHERE id = ?",
