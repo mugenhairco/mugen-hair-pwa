@@ -81,7 +81,10 @@ def migrasi_tenant():
         _backfill_toko_utama(conn)
         for tabel in _TABEL_TENANT_LANGSUNG:
             _tambah_kolom_tenant_id(conn, tabel)
-            _backfill_tenant_id(conn, tabel, tenant_id_default)
+            if tabel == "users":
+                _backfill_tenant_id_users(conn, tenant_id_default)
+            else:
+                _backfill_tenant_id(conn, tabel, tenant_id_default)
         _migrasi_prefix_settings(conn, tenant_id_default)
         _backfill_default_settings_semua_tenant(conn)
 
@@ -175,6 +178,27 @@ def _backfill_tenant_id(conn, tabel: str, tenant_id_default: int):
     tidak pernah menimpa baris yang sudah pernah di-assign ke tenant lain
     (mis. tenant baru yang dibuat setelah Phase 1 ini aktif)."""
     conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_id_default,))
+
+
+def _backfill_tenant_id_users(conn, tenant_id_default: int):
+    """BUGFIX KRITIS (insiden produksi): `users` BEDA dari semua tabel lain
+    di _TABEL_TENANT_LANGSUNG -- `tenant_id IS NULL` di tabel ini BUKAN
+    SELALU berarti "baris lama dari sebelum Phase 1 ini aktif, perlu
+    di-backfill". Role 'superadmin' DAN 'sales' (ditambahkan belakangan,
+    FONDASI Multi-Tenant Phase 2.1 & Program Afiliasi Sales) MEMANG SENGAJA
+    tenant_id=NULL SELAMANYA (akun platform, tidak terikat tenant manapun,
+    lihat auth_db.tambah_user()) -- migrasi ini jalan SETIAP boot (idempotent
+    by design untuk tabel LAIN), jadi TANPA pengecualian eksplisit di sini,
+    akun superadmin/sales yang dibuat SETELAH Phase 1 (tenant_id=NULL by
+    design) ikut "dibackfill" ke tenant default pada boot BERIKUTNYA --
+    ditemukan nyata lewat insiden produksi: akun superadmin UTAMA & akun
+    sales kedapatan tenant_id-nya terisi ulang berkali-kali SETIAP deploy,
+    membuka celah login lewat subdomain tenant itu (lihat BUGFIX terkait di
+    routers/auth_router.py::login())."""
+    conn.execute(
+        "UPDATE users SET tenant_id = ? WHERE tenant_id IS NULL AND role NOT IN ('superadmin', 'sales')",
+        (tenant_id_default,),
+    )
 
 
 def _key_sudah_diprefix(key: str) -> bool:

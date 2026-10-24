@@ -11,6 +11,7 @@ rivoirsett.com sama sekali."""
 import auth_db
 import tenant_db
 import tenant_middleware
+from database import get_conn
 
 
 def test_subdomain_mati_total_kalau_base_domain_dikosongkan(monkeypatch):
@@ -123,6 +124,62 @@ def test_superadmin_tidak_bisa_login_lewat_subdomain_tenant(monkeypatch, two_ten
     r2 = client.post("/api/auth/login", json={"username": "superadmin1", "password": "rahasiasuperadmin123"})
     assert r2.status_code == 200, r2.text
     assert r2.json()["user"]["role"] == "superadmin"
+
+
+def test_superadmin_data_korup_tenant_id_terisi_tetap_ditolak_lewat_subdomain(monkeypatch, two_tenants):
+    """INSIDEN NYATA produksi: akun 'superadmin' UTAMA kedapatan tenant_id-nya
+    ter-isi (seharusnya selalu NULL) -- SEBELUM perbaikan ini, kondisi data
+    korup semacam ini membuat login_lewat_subdomain yang di-scope ke tenant
+    itu BERHASIL (query SQL kebetulan cocok), menembus gerbang login yang
+    seharusnya menolak role 'superadmin' lewat subdomain APAPUN. Tes ini
+    mensimulasikan PERSIS baris yang sama (lewat SQL langsung, BUKAN
+    tambah_user(), supaya validasi invariannya tidak ikut mencegat) untuk
+    membuktikan guard role eksplisit di routers/auth_router.py::login()
+    menolaknya WALAU datanya korup, bukan hanya mengandalkan tenant_id yang
+    seharusnya NULL."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "mugenhair.app")
+    tenant_a = two_tenants["tenant_a"]
+    auth_db.tambah_user("superadmin2", "rahasiasuperadmin456", role="superadmin", tenant_id=None)
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tenant_id = ? WHERE username = ?", (tenant_a, "superadmin2"))
+
+    client = two_tenants["client"]
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "superadmin2", "password": "rahasiasuperadmin456"},
+        headers={"Host": "test-toko-a.mugenhair.app"},
+    )
+    assert r.status_code == 401, r.text
+
+    # Tanpa subdomain, akun yang SAMA (datanya masih korup) tetap berhasil
+    # login normal -- membuktikan penolakan di atas murni soal subdomain,
+    # bukan akunnya jadi terkunci total gara-gara tenant_id yang korup.
+    r2 = client.post("/api/auth/login", json={"username": "superadmin2", "password": "rahasiasuperadmin456"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["user"]["role"] == "superadmin"
+
+
+def test_sales_data_korup_tenant_id_terisi_tetap_ditolak_lewat_subdomain(monkeypatch, two_tenants):
+    """Sama seperti test superadmin di atas, tapi untuk role 'sales' --
+    kedua role ini SAMA-SAMA akun platform (tidak terikat tenant manapun),
+    jadi guard role eksplisit di login() harus menolak keduanya."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "mugenhair.app")
+    tenant_a = two_tenants["tenant_a"]
+    auth_db.tambah_user("sales_korup", "rahasiasalescorrupt1", role="sales", tenant_id=None)
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tenant_id = ? WHERE username = ?", (tenant_a, "sales_korup"))
+
+    client = two_tenants["client"]
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "sales_korup", "password": "rahasiasalescorrupt1"},
+        headers={"Host": "test-toko-a.mugenhair.app"},
+    )
+    assert r.status_code == 401, r.text
+
+    r2 = client.post("/api/auth/login", json={"username": "sales_korup", "password": "rahasiasalescorrupt1"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["user"]["role"] == "sales"
     assert r2.json()["tenant"] is None
 
 

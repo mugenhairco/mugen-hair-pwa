@@ -1839,11 +1839,28 @@ def create_all():
         _backfill_toko_utama(conn)
         _logger.info("[postgres_schema] create_all(): tenant default id=%s siap (%.2fs).",
                      tenant_default_id, time.monotonic() - _mulai)
-        for tabel in ("users", "barbers", "services", "produk", "pengeluaran",
+        for tabel in ("barbers", "services", "produk", "pengeluaran",
                       "website_gallery", "bookings", "closed_slot", "toko_libur",
                       # FONDASI Multi-Tenant Phase 1.1 -- lihat ALTER TABLE di atas.
                       "pemasukan", "kas_saldo_awal", "kas_penyesuaian"):
             conn.execute(f"UPDATE {tabel} SET tenant_id = ? WHERE tenant_id IS NULL", (tenant_default_id,))
+        # BUGFIX KRITIS (insiden produksi): `users` DIKELUARKAN dari loop
+        # generik di atas -- `tenant_id IS NULL` di tabel ini BUKAN SELALU
+        # "baris lama dari sebelum Phase 1, perlu di-backfill". Role
+        # 'superadmin' DAN 'sales' (ditambahkan belakangan, FONDASI Multi-
+        # Tenant Phase 2.1 & Program Afiliasi Sales) MEMANG SENGAJA
+        # tenant_id=NULL SELAMANYA (akun platform, lihat
+        # auth_db.tambah_user()) -- create_all() ini jalan SETIAP boot, jadi
+        # TANPA pengecualian eksplisit di sini, akun superadmin/sales yang
+        # dibuat SETELAH Phase 1 ikut "dibackfill" ke tenant default pada
+        # boot BERIKUTNYA -- ditemukan nyata lewat insiden produksi: akun
+        # superadmin UTAMA & akun sales kedapatan tenant_id-nya terisi ulang
+        # SETIAP deploy, membuka celah login lewat subdomain tenant itu
+        # (lihat BUGFIX terkait di routers/auth_router.py::login()).
+        conn.execute(
+            "UPDATE users SET tenant_id = ? WHERE tenant_id IS NULL AND role NOT IN ('superadmin', 'sales')",
+            (tenant_default_id,),
+        )
         _logger.info("[postgres_schema] create_all(): backfill tenant_id per-tabel selesai (%.2fs).",
                      time.monotonic() - _mulai)
 

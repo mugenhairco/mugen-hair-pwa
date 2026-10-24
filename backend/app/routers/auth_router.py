@@ -7,8 +7,6 @@ untuk pengiriman. login() sendiri mendapat SATU gerbang tambahan (lihat
 komentar di dalamnya) -- SELAIN itu, endpoint/alur login yang sudah ada
 TIDAK diubah sama sekali."""
 
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -20,11 +18,6 @@ import tenant_db
 from auth import buat_token, get_current_user, hash_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-# DIAGNOSTIK SEMENTARA (investigasi laporan "Superadmin bisa login lewat
-# subdomain tenant") -- murni logging, TIDAK mengubah perilaku apa pun.
-# HAPUS setelah investigasi selesai.
-_log_diagnostik = logging.getLogger("mugen.diagnostik_login")
 
 
 class LoginBody(BaseModel):
@@ -69,13 +62,6 @@ def login(body: LoginBody, request: Request):
          pemanggil yang SUDAH terbukti tahu password yang benar (lihat
          auth_db.autentikasi()), jadi tidak membuka celah enumerasi akun."""
     slug = body.tenant or getattr(request.state, "requested_tenant_slug", None)
-    # DIAGNOSTIK SEMENTARA -- lihat catatan di atas modul, HAPUS setelah investigasi selesai.
-    _log_diagnostik.info(
-        "LOGIN DIAGNOSTIK username=%r body.tenant=%r requested_tenant_slug=%r slug_final=%r "
-        "origin=%r host=%r x_tenant_slug=%r",
-        body.username, body.tenant, getattr(request.state, "requested_tenant_slug", None), slug,
-        request.headers.get("origin"), request.headers.get("host"), request.headers.get("x-tenant-slug"),
-    )
 
     tenant_id = None
     if slug:
@@ -112,6 +98,20 @@ def login(body: LoginBody, request: Request):
 
     user = hasil
     if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah.")
+    # BUGFIX KRITIS (insiden produksi -- akun 'superadmin' UTAMA kedapatan
+    # tenant_id-nya terisi, seharusnya selalu NULL): login lewat slug/
+    # subdomain tenant (`slug` terisi di atas) TIDAK PERNAH boleh berhasil
+    # untuk role 'superadmin'/'sales', APAPUN isi kolom tenant_id baris itu
+    # -- kedua role ini adalah akun PLATFORM, bukan milik satu tenant mana
+    # pun, jadi lolos lewat pencarian yang di-scope ke SATU tenant tertentu
+    # SELALU salah, bahkan kalau (lewat data yang korup) kebetulan "cocok".
+    # Dicek LANGSUNG by role di sini (bukan hanya mengandalkan invarian
+    # tenant_id=NULL yang ditegakkan tambah_user()), pola SAMA PERSIS
+    # BUGFIX lain di auth.py::get_current_user()/resolve_tenant_untuk_branding().
+    # Pesan generik SAMA seperti username/password salah -- tidak membocorkan
+    # bahwa username ini sebenarnya ada tapi role-nya tidak diizinkan lewat jalur ini.
+    if slug and user["role"] in ("superadmin", "sales"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah.")
     if not user.get("aktif"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Akun tidak aktif, hubungi Owner.")

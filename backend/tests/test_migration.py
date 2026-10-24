@@ -108,3 +108,46 @@ def test_migrasi_database_lama_tanpa_kehilangan_data(tmp_path):
         assert saldo_baru["saldo"] == 0
         assert saldo_baru["id"] == tenant_baru
         assert uang_kas_db.get_saldo_awal(default_id)["saldo"] == 5000000
+
+
+def test_migrasi_tenant_tidak_menimpa_tenant_id_superadmin_dan_sales(app_client):
+    """INSIDEN NYATA produksi: migrasi_tenant() (dan padanannya di
+    postgres_schema.py::create_all()) jalan SETIAP boot/deploy -- loop
+    backfill tenant_id generik di dalamnya SEBELUMNYA memperlakukan
+    `tenant_id IS NULL` di tabel `users` sama seperti tabel lain ("baris
+    lama, perlu dibackfill ke tenant default"), PADAHAL role 'superadmin'
+    dan 'sales' MEMANG SENGAJA tenant_id=NULL SELAMANYA. Akibatnya akun
+    superadmin UTAMA & akun sales produksi kedapatan tenant_id-nya terisi
+    ULANG tiap kali backend redeploy -- membuka celah login lewat subdomain
+    tenant itu (lihat BUGFIX terkait di routers/auth_router.py::login()).
+    Tes ini memanggil migrasi_tenant() ULANG (simulasi redeploy) SETELAH
+    akun superadmin/sales dibuat, membuktikan tenant_id-nya TETAP NULL."""
+    import auth_db
+    from tenant_migrasi import migrasi_tenant
+
+    auth_db.tambah_user("superadmin_migrasi", "passwordsuperadmin1", role="superadmin", tenant_id=None)
+    auth_db.tambah_user("sales_migrasi", "passwordsalesmigrasi1", role="sales", tenant_id=None)
+
+    migrasi_tenant()  # simulasi redeploy/reboot berikutnya
+
+    sa = auth_db.get_user_by_username("superadmin_migrasi")
+    sales = auth_db.get_user_by_username("sales_migrasi")
+    assert sa["tenant_id"] is None
+    assert sales["tenant_id"] is None
+
+    # Akun 'admin'/'staff'/'barber' biasa yang tenant_id-nya KEBETULAN NULL
+    # (skenario Phase 1 lama -- data pre-multi-tenant, bukan platform) TETAP
+    # ter-backfill normal ke tenant default -- perilaku ini TIDAK berubah
+    # sama sekali, murni role 'superadmin'/'sales' yang dikecualikan.
+    import database
+    import tenant_db
+
+    default_id = tenant_db.get_tenant_by_slug("mugen-hair-co")["id"]
+    with database.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, tenant_id, created_at) "
+            "VALUES ('admin_lama_null', 'x', 'admin', NULL, '2020-01-01T00:00:00')"
+        )
+    migrasi_tenant()
+    admin_lama = auth_db.get_user_by_username("admin_lama_null")
+    assert admin_lama["tenant_id"] == default_id
