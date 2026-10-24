@@ -8,6 +8,7 @@ app/dst) TIDAK PERNAH dianggap slug tenant, dan Custom Domain (kolom
 tenants.custom_domain) jadi fallback kalau Host tidak berbentuk subdomain
 rivoirsett.com sama sekali."""
 
+import auth_db
 import tenant_db
 import tenant_middleware
 
@@ -94,6 +95,35 @@ def test_login_lewat_subdomain_tenant_lain_ditolak(monkeypatch, two_tenants):
     )
     assert r3.status_code == 200, r3.text
     assert r3.json()["tenant"]["slug"] == "test-toko-b"
+
+
+def test_superadmin_tidak_bisa_login_lewat_subdomain_tenant(monkeypatch, two_tenants):
+    """Akun 'superadmin' (selalu tenant_id=NULL) TIDAK BISA login lewat
+    subdomain tenant mana pun -- subdomain memaksa pencarian user DI-SCOPE
+    ketat ke tenant_id tenant itu (lihat auth_db.get_user_by_username()),
+    dan NULL tidak pernah cocok dengan tenant_id spesifik manapun di SQL,
+    jadi hasilnya 401 biasa (SAMA seperti password salah) -- BUKAN error/
+    crash, dan BUKAN diam-diam login sebagai superadmin dengan konteks
+    tenant yang salah. Superadmin WAJIB tetap login lewat domain tanpa
+    subdomain (rivoirsett.com/#/login) atau admin.rivoirsett.com."""
+    monkeypatch.setattr(tenant_middleware, "SUBDOMAIN_BASE_DOMAIN", "mugenhair.app")
+    auth_db.tambah_user("superadmin1", "rahasiasuperadmin123", role="superadmin", tenant_id=None)
+    client = two_tenants["client"]
+
+    r = client.post(
+        "/api/auth/login",
+        json={"username": "superadmin1", "password": "rahasiasuperadmin123"},
+        headers={"Host": "test-toko-a.mugenhair.app"},
+    )
+    assert r.status_code == 401, r.text
+
+    # Tanpa subdomain (login normal), akun yang SAMA tetap berhasil login --
+    # membuktikan penolakan di atas murni soal scoping subdomain, akunnya
+    # sendiri tidak rusak/kena pengaruh apa pun dari percobaan yang gagal.
+    r2 = client.post("/api/auth/login", json={"username": "superadmin1", "password": "rahasiasuperadmin123"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["user"]["role"] == "superadmin"
+    assert r2.json()["tenant"] is None
 
 
 def test_branding_lewat_subdomain_default(two_tenants):
