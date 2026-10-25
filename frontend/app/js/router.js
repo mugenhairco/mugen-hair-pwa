@@ -331,7 +331,17 @@ const MugenRouter = (() => {
     // sama sekali (Owner-only), jadi kalau tenant mereka terlanjur
     // ter-suspend, #/perpanjangan tetap jadi satu-satunya jalan bagi
     // mereka untuk membantu Owner membayar tanpa harus login sebagai Owner.
-    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")) {
+    // #/booking (FITUR Jalan Buntu Limit Booking, diminta Owner): tenant
+    // suspended yang booking aktif bulan ini melebihi limit paket tujuan
+    // tidak bisa downgrade/checkout (billing_limits.evaluasi_downgrade(),
+    // field max_booking) -- satu-satunya cara mengurangi pemakaian
+    // (batalkan booking) ada di halaman ini, jadi ikut dikecualikan sama
+    // seperti #/pengaturan untuk kasus barber/user/layanan (lihat auth.py::
+    // _booking_bebas_blokir() untuk sisi backend-nya -- hanya GET list &
+    // POST batalkan yang benar-benar dikecualikan di sana, endpoint
+    // booking lain seperti payment-settings/qris tetap 403).
+    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")
+        && !hash.startsWith("#/booking")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;
