@@ -801,6 +801,24 @@ def hapus_transaksi(transaksi_id: int):
         conn.execute("DELETE FROM transaksi WHERE id = ?", (transaksi_id,))
 
 
+def hapus_riwayat_transaksi(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN SEMUA transaksi (beserta transaksi_detail-nya, ikut
+    terhapus otomatis lewat ON DELETE CASCADE, sama seperti
+    hapus_transaksi() di atas) milik SEMUA barber tenant ini, bertanggal
+    lebih lama dari `sebelum_tanggal` ("YYYY-MM-DD"). Dipanggil HANYA
+    setelah arsip PDF (Rekap Detail per barber + Rekap Ringkasan gabungan)
+    sudah terkirim ke email tenant -- lihat data_purge_db.py untuk urutan
+    lengkapnya. Mengembalikan jumlah baris transaksi (header) yang
+    terhapus."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM transaksi WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?) "
+            "AND tanggal < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
+
+
 def _peta_modal_service(conn) -> dict:
     """Peta {service_id: modal} SEKALI ambil (tabel services kecil, jumlah layanan
     barbershop biasanya belasan) -- dipakai _lengkapi_transaksi/_lengkapi_transaksi_batch/
@@ -2367,7 +2385,13 @@ def _saldo_valid(mutasi_list: list) -> bool:
     )
     saldo = 0
     for r in urutan:
-        saldo += r["jumlah"] if r["tipe"] == "restock" else -r["jumlah"]
+        # FITUR Pembersihan Data Bulanan Otomatis: 'saldo_awal' (baris
+        # sintetis carry-forward, lihat data_purge_db.py::
+        # arsipkan_saldo_awal_produk()) MENAMBAH saldo, SAMA seperti
+        # 'restock' -- HARUS konsisten dengan get_stok_produk() di bawah,
+        # supaya simulasi di sini tidak menganggap stok negatif padahal
+        # get_stok_produk() bilang cukup.
+        saldo += r["jumlah"] if r["tipe"] in ("restock", "saldo_awal") else -r["jumlah"]
         if saldo < 0:
             return False
     return True
@@ -2439,11 +2463,62 @@ def get_produk(produk_id: int):
 def get_stok_produk(produk_id: int) -> int:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT COALESCE(SUM(CASE WHEN tipe = 'restock' THEN jumlah ELSE -jumlah END), 0) AS stok
+            """SELECT COALESCE(SUM(CASE WHEN tipe IN ('restock', 'saldo_awal') THEN jumlah ELSE -jumlah END), 0)
+                      AS stok
                FROM produk_mutasi WHERE produk_id = ?""",
             (produk_id,),
         ).fetchone()
         return row["stok"]
+
+
+def arsipkan_dan_hapus_mutasi_lama(produk_id: int, sebelum_tanggal: str) -> int | None:
+    """FITUR Pembersihan Data Bulanan Otomatis: dipanggil data_purge_db.py
+    SEBELUM baris produk_mutasi lama (tanggal < sebelum_tanggal) benar-benar
+    dihapus. Menghitung saldo bersih SELURUH mutasi di rentang yang akan
+    dihapus itu, menyisipkan SATU baris sintetis tipe='saldo_awal'
+    bertanggal PERSIS sebelum_tanggal yang membawa saldo itu, LALU
+    menghapus baris-baris lama -- SEMUA dalam satu koneksi/transaksi
+    (atomik), supaya get_stok_produk()/_saldo_valid() tetap akurat
+    walau riwayat mentahnya sudah hilang (pola idenya sama seperti
+    attendance_db.py::_bekukan_sebelum_hapus_riwayat(), tapi di sini
+    saldonya DIBAWA ke baris produk_mutasi baru, bukan dibekukan ke
+    tabel snapshot terpisah -- stok memang selalu dihitung ulang dari
+    produk_mutasi, tidak ada tabel snapshot stok tersendiri).
+
+    'saldo_awal' DIPERLAKUKAN SAMA seperti 'restock' (menambah saldo) oleh
+    get_stok_produk()/_saldo_valid() di atas -- WAJIB konsisten, jangan
+    diubah salah satu tanpa yang lain.
+
+    Dikunci per produk_id (lock SAMA seperti jual_produk()/restock_produk())
+    supaya tidak bertabrakan dengan mutasi baru yang masuk bersamaan.
+    Aman dipanggil berulang: kalau tidak ada baris tersisa di rentang itu
+    (sudah pernah diarsipkan, atau produk ini belum punya mutasi sama
+    sekali sebelum tanggal itu), tidak melakukan apa pun, mengembalikan
+    None. Mengembalikan saldo yang diarsipkan kalau ada."""
+    with _kunci_produk(produk_id):
+        with get_conn() as conn:
+            row = conn.execute(
+                """SELECT COALESCE(SUM(CASE WHEN tipe IN ('restock', 'saldo_awal') THEN jumlah ELSE -jumlah END), 0)
+                          AS saldo, COUNT(*) AS jumlah_baris
+                   FROM produk_mutasi WHERE produk_id = ? AND tanggal < ?""",
+                (produk_id, sebelum_tanggal),
+            ).fetchone()
+            if row["jumlah_baris"] == 0:
+                return None
+            # Saldo historis seharusnya TIDAK PERNAH negatif (dijaga _saldo_valid()
+            # di setiap mutasi) -- max(0, ...) murni jaga-jaga defensif, bukan
+            # perilaku yang diharapkan terjadi.
+            saldo = max(0, row["saldo"])
+            now = datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                """INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, catatan, created_at)
+                   VALUES (?, ?, 'saldo_awal', ?, ?, ?)""",
+                (produk_id, sebelum_tanggal, saldo,
+                 "Saldo awal otomatis (arsip pembersihan data bulanan)", now),
+            )
+            conn.execute("DELETE FROM produk_mutasi WHERE produk_id = ? AND tanggal < ?",
+                         (produk_id, sebelum_tanggal))
+            return saldo
 
 
 def get_produk_list(hanya_aktif: bool = True, tenant_id: int = None) -> list:
@@ -2638,7 +2713,8 @@ def get_mutasi_produk(mutasi_id: int):
 
 
 def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
-                            tahun: int = None, bulan: int = None, tenant_id: int = None) -> list:
+                            tahun: int = None, bulan: int = None, tenant_id: int = None,
+                            tanggal_mulai: str = None, tanggal_selesai: str = None) -> list:
     """Urutan: tanggal terbaru dulu. Ikut menyertakan nama_produk supaya UI tidak
     perlu join sendiri. `tenant_id`: lihat catatan di get_mutasi_produk().
 
@@ -2649,7 +2725,14 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
     stok terkini, jadi baris riwayat mutasi mengikuti arti yang sama supaya
     tidak ada dua makna "Sisa Stok" berbeda di halaman yang sama). Dihitung
     ulang PER produk_id (di-cache di sini) supaya produk dengan banyak
-    baris mutasi tidak memicu query berulang."""
+    baris mutasi tidak memicu query berulang.
+
+    FITUR Pembersihan Data Bulanan Otomatis: `tanggal_mulai`/`tanggal_selesai`
+    (opsional, pola SAMA seperti get_transaksi_list()) MENGGANTIKAN
+    tahun/bulan kalau diisi -- dipakai data_purge_db.py untuk arsip PDF
+    rentang arbitrer (bisa lebih dari satu bulan kalender, mis. backlog
+    catch-up pertama kali) yang tidak bisa diekspresikan lewat tahun/bulan
+    tunggal."""
     q = """SELECT pm.*, p.nama AS nama_produk FROM produk_mutasi pm
            JOIN produk p ON p.id = pm.produk_id WHERE 1=1"""
     params = []
@@ -2661,7 +2744,10 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
         q += " AND pm.tipe = ?"; params.append(tipe)
     # BUGFIX PERFORMA: lihat catatan lengkap di get_transaksi_list() --
     # pola SAMA (range bisa pakai index, bukan LIKE wildcard-di-awal).
-    if tahun is not None and bulan is not None:
+    if tanggal_mulai is not None and tanggal_selesai is not None:
+        q += " AND pm.tanggal >= ? AND pm.tanggal <= ?"
+        params.append(tanggal_mulai); params.append(tanggal_selesai)
+    elif tahun is not None and bulan is not None:
         q += " AND pm.tanggal >= ? AND pm.tanggal <= ?"
         params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
     elif tahun is not None:

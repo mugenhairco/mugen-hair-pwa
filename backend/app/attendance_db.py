@@ -699,20 +699,28 @@ def catat_audit(barber_id: int, aksi: str, sukses: bool, alasan_gagal: str = Non
         )
 
 
-def hapus_semua_audit_log(tenant_id: int) -> int:
-    """Hapus PERMANEN (hard delete, sampai ke database) SELURUH baris
-    attendance_audit_logs milik tenant ini -- diminta Owner untuk
-    membersihkan riwayat percobaan Check In/Out yang menumpuk. BEDA dari
-    seluruh tabel lain di modul ini (attendance_logs/attendance_koreksi
-    TIDAK PERNAH dihapus lewat aplikasi) -- audit log SENGAJA dikecualikan
-    dari prinsip itu karena murni log investigasi teknis (Fake GPS dkk),
-    bukan data historis absensi/gaji yang harus dipertahankan. Mengembalikan
-    jumlah baris yang terhapus (untuk pesan konfirmasi UI)."""
+def hapus_audit_log_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis: hapus PERMANEN baris
+    attendance_audit_logs milik tenant ini bertanggal (waktu_server) lebih
+    lama dari `sebelum_tanggal` ("YYYY-MM-DD") -- GANTI dari
+    hapus_semua_audit_log() lama (hapus SELURUH baris tanpa batas tanggal,
+    dipakai tombol manual "Hapus Semua Log Audit" yang sudah dihapus
+    SELURUHNYA dari aplikasi, lihat data_purge_db.py) -- audit log TETAP
+    dikecualikan dari prinsip "attendance_logs/attendance_koreksi tidak
+    pernah dihapus" karena murni log investigasi teknis (Fake GPS dkk),
+    bukan data historis absensi/gaji. `waktu_server` adalah datetime ISO
+    penuh ("YYYY-MM-DDTHH:MM:SS") -- perbandingan string `< sebelum_tanggal`
+    (tanggal murni) tetap benar karena "YYYY-MM-DD" < "YYYY-MM-DDT..." pada
+    tanggal yang sama (baris PERSIS di tanggal cutoff tidak ikut terhapus).
+    Mengembalikan jumlah baris yang terhapus."""
     with get_conn() as conn:
-        return conn.execute("DELETE FROM attendance_audit_logs WHERE tenant_id = ?", (tenant_id,)).rowcount
+        return conn.execute(
+            "DELETE FROM attendance_audit_logs WHERE tenant_id = ? AND waktu_server < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
 
 
-def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None) -> None:
+def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None, sebelum_tanggal: str = None) -> None:
     """PERMINTAAN OWNER: dipanggil hapus_riwayat_absensi() SEBELUM baris
     attendance_logs benar-benar dihapus -- membekukan (simpan permanen,
     lihat database.py::simpan_uang_harian_beku()/simpan_keterlambatan_beku())
@@ -723,13 +731,21 @@ def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None) -> Non
     untuk tenant yang sudah opt-in Uang Harian Dinamis (tenant yang belum
     opt-in tidak pernah bergantung attendance_logs sama sekali, lihat
     database._uang_harian_dinamis_aktif()) -- Keterlambatan/Pulang Cepat
-    SELALU dibekukan (fitur Absensi biasa, tidak terikat opt-in itu)."""
+    SELALU dibekukan (fitur Absensi biasa, tidak terikat opt-in itu).
+
+    FITUR Pembersihan Data Bulanan Otomatis: `sebelum_tanggal` opsional
+    ("YYYY-MM-DD") -- diisi data_purge_db.py supaya HANYA baris lebih lama
+    dari itu yang dibekukan+dihapus (riwayat bulan berjalan/mendatang tetap
+    aman), kosong (None) = perilaku lama (seluruh riwayat barber/tenant)."""
     with get_conn() as conn:
         q = "SELECT DISTINCT barber_id, tanggal FROM attendance_logs WHERE tenant_id = ?"
         params = [tenant_id]
         if barber_id is not None:
             q += " AND barber_id = ?"
             params.append(barber_id)
+        if sebelum_tanggal is not None:
+            q += " AND tanggal < ?"
+            params.append(sebelum_tanggal)
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     if not rows:
         return
@@ -758,29 +774,37 @@ def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None) -> Non
             )
 
 
-def hapus_riwayat_absensi(tenant_id: int, barber_id: int = None) -> int:
+def hapus_riwayat_absensi(tenant_id: int, barber_id: int = None, sebelum_tanggal: str = None) -> int:
     """Hapus PERMANEN (hard delete, sampai ke database) riwayat Check In/Out
-    (attendance_logs) milik tenant ini -- diminta Owner/Admin untuk
-    mengantisipasi data yang menumpuk. barber_id diisi -> HANYA riwayat
-    barber itu yang terhapus; kosong -> SEMUA barber di tenant ini. TIDAK
-    menyentuh attendance_koreksi/attendance_audit_logs sama sekali --
-    masing-masing sudah punya alur/tombol hapus sendiri (lihat
-    hapus_pengajuan_koreksi()/hapus_semua_audit_log()). Mengembalikan jumlah
-    baris yang terhapus (untuk pesan konfirmasi UI).
+    (attendance_logs) milik tenant ini. barber_id diisi -> HANYA riwayat
+    barber itu yang terhapus; kosong -> SEMUA barber di tenant ini.
+    `sebelum_tanggal` opsional ("YYYY-MM-DD", FITUR Pembersihan Data
+    Bulanan Otomatis, lihat data_purge_db.py) -- diisi -> HANYA baris
+    bertanggal lebih lama dari itu yang terhapus; kosong -> SEMUA riwayat
+    (perilaku lama, sebelumnya dipakai tombol manual "Hapus Riwayat
+    Absensi Karyawan" yang sudah dihapus SELURUHNYA dari aplikasi, fungsi
+    ini sekarang HANYA dipanggil data_purge_db.py dengan sebelum_tanggal
+    terisi). TIDAK menyentuh attendance_koreksi/attendance_audit_logs sama
+    sekali -- masing-masing punya jalur hapusnya sendiri (lihat
+    hapus_pengajuan_koreksi()/hapus_audit_log_sebelum()). Mengembalikan
+    jumlah baris yang terhapus.
 
     PEMBEKUAN (PERMINTAAN OWNER): Uang Harian & Keterlambatan/Pulang Cepat
     yang masih bergantung ke baris yang AKAN dihapus ini dibekukan dulu
     (lihat _bekukan_sebelum_hapus_riwayat() di atas) SEBELUM DELETE di
     bawah benar-benar jalan -- supaya angka yang sudah pernah dihitung
     tidak berubah gara-gara riwayat mentahnya hilang."""
-    _bekukan_sebelum_hapus_riwayat(tenant_id, barber_id)
+    _bekukan_sebelum_hapus_riwayat(tenant_id, barber_id, sebelum_tanggal)
     with get_conn() as conn:
+        q = "DELETE FROM attendance_logs WHERE tenant_id = ?"
+        params = [tenant_id]
         if barber_id is not None:
-            return conn.execute(
-                "DELETE FROM attendance_logs WHERE tenant_id = ? AND barber_id = ?",
-                (tenant_id, barber_id),
-            ).rowcount
-        return conn.execute("DELETE FROM attendance_logs WHERE tenant_id = ?", (tenant_id,)).rowcount
+            q += " AND barber_id = ?"
+            params.append(barber_id)
+        if sebelum_tanggal is not None:
+            q += " AND tanggal < ?"
+            params.append(sebelum_tanggal)
+        return conn.execute(q, params).rowcount
 
 
 def get_audit_list(tenant_id: int, barber_id: int = None, tanggal_dari: str = None,
@@ -1170,13 +1194,18 @@ def hapus_riwayat_koreksi(koreksi_id: int) -> None:
         conn.execute("DELETE FROM attendance_koreksi WHERE id = ?", (koreksi_id,))
 
 
-def hapus_semua_riwayat_koreksi(tenant_id: int) -> int:
-    """Hapus PERMANEN SEMUA riwayat koreksi yang SUDAH diputuskan
-    (Disetujui/Ditolak) milik tenant ini sekaligus -- pengajuan yang masih
-    'pending' TIDAK ikut terhapus. Mengembalikan jumlah baris yang
-    terhapus (untuk pesan konfirmasi UI)."""
+def hapus_koreksi_terputuskan_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis: hapus PERMANEN riwayat
+    koreksi yang SUDAH diputuskan (Disetujui/Ditolak) milik tenant ini,
+    bertanggal lebih lama dari `sebelum_tanggal` ("YYYY-MM-DD") -- pengajuan
+    yang masih 'pending' TIDAK PERNAH ikut terhapus apa pun tanggalnya
+    (masih butuh keputusan Owner/Admin). GANTI dari
+    hapus_semua_riwayat_koreksi() lama (hapus SEMUA yang sudah diputuskan
+    tanpa batas tanggal, dipakai tombol manual "Hapus Semua Riwayat" di
+    tab Pengajuan Koreksi yang sudah dihapus SELURUHNYA dari aplikasi,
+    lihat data_purge_db.py). Mengembalikan jumlah baris yang terhapus."""
     with get_conn() as conn:
         return conn.execute(
-            "DELETE FROM attendance_koreksi WHERE tenant_id = ? AND status != 'pending'",
-            (tenant_id,),
+            "DELETE FROM attendance_koreksi WHERE tenant_id = ? AND status != 'pending' AND tanggal < ?",
+            (tenant_id, sebelum_tanggal),
         ).rowcount

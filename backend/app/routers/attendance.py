@@ -30,7 +30,7 @@ import attendance_db
 import izin_cuti_db
 import laporan_pdf
 import permissions
-from auth import (get_current_user, require_admin, require_barber, require_feature, require_menu_feature,
+from auth import (get_current_user, require_barber, require_feature, require_menu_feature,
                    require_owner_or_staff, require_permission)
 
 # FITUR Feature Gating "Absensi Karyawan": SELURUH endpoint di router ini
@@ -304,26 +304,13 @@ def audit_log(barber_id: int = None, tanggal_dari: str = None, tanggal_sampai: s
                                          tanggal_sampai=tanggal_sampai)
 
 
-@router.delete("/audit")
-def hapus_audit_log(user: dict = Depends(require_admin)):
-    """Hapus PERMANEN seluruh Log Audit (diminta Owner) -- KHUSUS Owner
-    (require_admin, TIDAK bisa didelegasikan lewat Hak Akses Admin ke staff)
-    karena log ini sendiri adalah alat investigasi Fake GPS/kecurangan --
-    staff yang berkepentingan dalam hasil investigasi tidak boleh punya
-    kuasa menghapus buktinya."""
-    jumlah = attendance_db.hapus_semua_audit_log(user["tenant_id"])
-    return {"ok": True, "jumlah_dihapus": jumlah}
-
-
-@router.delete("/riwayat")
-def hapus_riwayat(barber_id: int = None, user: dict = Depends(require_owner_or_staff)):
-    """Reset/hapus PERMANEN riwayat Check In/Out (attendance_logs) --
-    mengantisipasi data yang menumpuk (permintaan Owner). barber_id diisi ->
-    hanya riwayat barber itu; kosong -> SEMUA barber. Owner ATAU Admin
-    (staff) boleh -- BEDA dari DELETE /audit di atas (KHUSUS Owner), karena
-    ini murni pembersihan data operasional, bukan bukti investigasi."""
-    jumlah = attendance_db.hapus_riwayat_absensi(user["tenant_id"], barber_id=barber_id)
-    return {"ok": True, "jumlah_dihapus": jumlah}
+# PERMINTAAN OWNER (FITUR Pembersihan Data Bulanan Otomatis): tombol manual
+# "Hapus Semua Log Audit" dan "Hapus Riwayat Absensi Karyawan" (masing-masing
+# dulu DELETE /audit dan DELETE /riwayat di sini) sudah DIHAPUS SELURUHNYA --
+# tidak diperlukan lagi karena sistem sekarang membersihkan data lama secara
+# otomatis setiap tanggal 10 (lihat data_purge_db.py/routers/cron_purge_data.py).
+# attendance_db.hapus_audit_log_sebelum()/hapus_riwayat_absensi() TETAP ADA,
+# sekarang HANYA dipanggil pipeline otomatis itu, bukan endpoint HTTP mana pun.
 
 
 # ---------------------------------------------------------------------------
@@ -470,12 +457,11 @@ def hapus_satu_riwayat_koreksi(koreksi_id: int, user: dict = Depends(require_per
     return {"ok": True}
 
 
-@router.delete("/koreksi-riwayat")
-def hapus_semua_riwayat_koreksi(user: dict = Depends(require_permission("izin_absensi_koreksi"))):
-    """Hapus SEMUA riwayat koreksi yang sudah Disetujui/Ditolak sekaligus
-    -- pengajuan yang masih Pending TIDAK ikut terhapus."""
-    jumlah = attendance_db.hapus_semua_riwayat_koreksi(user["tenant_id"])
-    return {"ok": True, "jumlah_dihapus": jumlah}
+# PERMINTAAN OWNER (FITUR Pembersihan Data Bulanan Otomatis): tombol manual
+# "Hapus Semua Riwayat" di tab Pengajuan Koreksi (dulu DELETE /koreksi-riwayat
+# di sini) sudah DIHAPUS SELURUHNYA -- lihat catatan di dekat DELETE /audit di
+# atas. attendance_db.hapus_koreksi_terputuskan_sebelum() TETAP ADA, sekarang
+# HANYA dipanggil pipeline otomatis itu.
 
 
 @router.get("/{log_id}")

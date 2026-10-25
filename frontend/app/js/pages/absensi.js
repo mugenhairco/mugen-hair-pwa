@@ -1258,23 +1258,12 @@ const PageAbsensi = (() => {
       MugenUI.el("option", { value: "disetujui" }, "Disetujui"),
       MugenUI.el("option", { value: "ditolak" }, "Ditolak"),
     ]);
-    // PERMINTAAN OWNER: hapus riwayat koreksi yang SUDAH diputuskan
-    // (Disetujui/Ditolak) sekaligus -- Pending TIDAK ikut terhapus
-    // (backend menolak hapus Pending lewat endpoint ini, lihat
-    // attendance_db.py::hapus_semua_riwayat_koreksi()).
-    const btnHapusSemuaKoreksi = MugenUI.el("button", { class: "btn-danger" }, "Hapus Semua Riwayat");
-    btnHapusSemuaKoreksi.addEventListener("click", async () => {
-      if (!confirm("Hapus SEMUA riwayat koreksi yang sudah Disetujui/Ditolak secara permanen? Pengajuan yang masih Pending TIDAK ikut terhapus. Tindakan ini TIDAK BISA dibatalkan.")) return;
-      try {
-        const hasil = await MugenUI.withButtonLoading(btnHapusSemuaKoreksi, () => MugenApi.del("/api/attendance/koreksi-riwayat"));
-        MugenUI.toast(`${hasil.jumlah_dihapus} riwayat koreksi dihapus.`, "success");
-        loadKoreksi();
-      } catch (e) {
-        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-      }
-    });
+    // PERMINTAAN OWNER (FITUR Pembersihan Data Bulanan Otomatis): tombol
+    // manual "Hapus Semua Riwayat" di sini sudah DIHAPUS SELURUHNYA --
+    // riwayat koreksi yang sudah diputuskan sekarang dibersihkan otomatis
+    // setiap tanggal 10 (lihat data_purge_db.py).
     koreksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:8px;margin-bottom:10px;" },
-      [kFilStatus, btnHapusSemuaKoreksi]));
+      [kFilStatus]));
     const koreksiListBody = MugenUI.el("div");
     koreksiCard.appendChild(koreksiListBody);
 
@@ -1362,23 +1351,10 @@ const PageAbsensi = (() => {
     auditCard.appendChild(MugenUI.el("h2", {}, "Log Audit Percobaan Check In/Out"));
     auditCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Rekam SEMUA percobaan Check In/Check Out (berhasil maupun gagal) untuk investigasi -- termasuk alasan penolakan, akurasi GPS, browser, device, dan IP Address."));
-    // Hapus PERMANEN (sampai ke database) -- KHUSUS Owner (backend
-    // require_admin, TIDAK bisa didelegasikan ke staff lewat Hak Akses
-    // Admin), karena log ini sendiri adalah bukti investigasi Fake GPS.
-    if (isOwnerAktif) {
-      const btnHapusAudit = MugenUI.el("button", { class: "btn-danger", style: "margin-bottom:10px;" }, "Hapus Semua Log Audit");
-      btnHapusAudit.addEventListener("click", async () => {
-        if (!confirm("Hapus SEMUA Log Audit Percobaan Check In/Out secara permanen? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database).")) return;
-        try {
-          const hasil = await MugenUI.withButtonLoading(btnHapusAudit, () => MugenApi.del("/api/attendance/audit"));
-          MugenUI.toast(`${hasil.jumlah_dihapus} baris Log Audit dihapus.`, "success");
-          loadAudit();
-        } catch (e) {
-          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-        }
-      });
-      auditCard.appendChild(btnHapusAudit);
-    }
+    // PERMINTAAN OWNER (FITUR Pembersihan Data Bulanan Otomatis): tombol
+    // manual "Hapus Semua Log Audit" di sini sudah DIHAPUS SELURUHNYA --
+    // Log Audit sekarang dibersihkan otomatis setiap tanggal 10 (lihat
+    // data_purge_db.py).
     const auditBody = MugenUI.el("div");
     auditCard.appendChild(auditBody);
 
@@ -1407,41 +1383,13 @@ const PageAbsensi = (() => {
 
     // ---- Hapus Riwayat Absensi Karyawan (mengantisipasi data menumpuk) ----
     // BEDA dari Hapus Log Audit di atas: ini menghapus attendance_logs
-    // (riwayat Check In/Out sungguhan), bukan sekadar log investigasi --
-    // TAPI Owner ATAU Admin (staff) SAMA-SAMA boleh (backend
-    // require_owner_or_staff, TANPA delegasi permission terpisah), sesuai
-    // permintaan Owner. DIGABUNG ke tab Dashboard (bukan tab sendiri lagi)
-    // + kata "Reset" dihapus dari judul card (tetap "Hapus Riwayat Absensi
-    // Karyawan", tombolnya sendiri sudah bernama "Hapus Riwayat Absensi"
-    // sejak awal, tidak pernah memakai kata "Reset") -- permintaan Owner.
-    const resetCard = MugenUI.el("div", { class: "card" });
-    panels.dashboard.appendChild(resetCard);
-    resetCard.appendChild(MugenUI.el("h2", {}, "Hapus Riwayat Absensi Karyawan"));
-    resetCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
-      "Hapus PERMANEN riwayat Check In/Out (Daftar Absensi, Sisa Limit, Keterangan) untuk mengantisipasi data yang menumpuk. Pilih satu barber, atau \"Semua Barber\" untuk menghapus riwayat SELURUH karyawan. Tindakan ini TIDAK BISA dibatalkan -- Uang Harian & Keterlambatan/Pulang Cepat yang sudah pernah dihitung TETAP SAMA (dibekukan otomatis sebelum riwayat mentahnya dihapus), tidak ikut hilang/reset."));
-    const selResetBarber = MugenUI.el("select");
-    selResetBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
-    for (const b of barbers) selResetBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    const btnResetRiwayat = MugenUI.el("button", { class: "btn-danger" }, "Hapus Riwayat Absensi");
-    resetCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:10px;" },
-      [selResetBarber, btnResetRiwayat]));
-
-    btnResetRiwayat.addEventListener("click", async () => {
-      const namaBarberDipilih = selResetBarber.value
-        ? (barbers.find((b) => String(b.id) === selResetBarber.value) || {}).nama
-        : "SEMUA barber";
-      if (!confirm(`Hapus PERMANEN riwayat Check In/Out milik ${namaBarberDipilih}? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database).`)) return;
-      try {
-        const qs = selResetBarber.value ? `?barber_id=${selResetBarber.value}` : "";
-        const hasil = await MugenUI.withButtonLoading(btnResetRiwayat, () => MugenApi.del(`/api/attendance/riwayat${qs}`));
-        MugenUI.toast(`${hasil.jumlah_dihapus} baris riwayat absensi dihapus.`, "success");
-        loadDashboard();
-        loadLimit();
-        loadList();
-      } catch (e) {
-        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-      }
-    });
+    // PERMINTAAN OWNER (FITUR Pembersihan Data Bulanan Otomatis): card
+    // "Hapus Riwayat Absensi Karyawan" (tombol "Hapus Riwayat Absensi") di
+    // sini sudah DIHAPUS SELURUHNYA -- riwayat Check In/Out sekarang
+    // dibersihkan otomatis setiap tanggal 10 (lihat data_purge_db.py),
+    // Uang Harian & Keterlambatan/Pulang Cepat yang sudah pernah dihitung
+    // tetap dibekukan otomatis sebelum riwayat mentahnya dihapus, sama
+    // seperti sebelumnya.
   }
 
   async function render(root) {

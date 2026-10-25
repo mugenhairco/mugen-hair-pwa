@@ -1479,24 +1479,34 @@ def buat_pdf_uang_kas_list(tahun: int | None, bulan: int | None, dicetak_oleh: s
 # Tipe/Jumlah/Sisa Stok/Catatan (SAMA PERSIS kolom yang tampil di layar,
 # lihat produk.js loadRiwayat()).
 _LEBAR_KOLOM_MUTASI_PRODUK = [22 * mm, 40 * mm, 20 * mm, 20 * mm, 22 * mm, 70 * mm]
-_MUTASI_TIPE_LABEL = {"restock": "Restock", "jual": "Jual", "tester": "Tester"}
+_MUTASI_TIPE_LABEL = {"restock": "Restock", "jual": "Jual", "tester": "Tester", "saldo_awal": "Saldo Awal"}
 
 
 def buat_pdf_mutasi_produk(produk_id: int | None, tipe: str | None, tahun: int | None, bulan: int | None,
-                            dicetak_oleh: str, tenant_id: int | None = None) -> bytes:
+                            dicetak_oleh: str, tenant_id: int | None = None,
+                            tanggal_mulai: str | None = None, tanggal_selesai: str | None = None) -> bytes:
     """Cetak PDF Riwayat Mutasi Produk -- kolom dan datanya SENGAJA sumbernya
     SAMA PERSIS dengan tabel di layar (db.get_mutasi_produk_list(), lihat
     docstring-nya untuk arti kolom `sisa_stok`), memakai filter yang sama
     (produk/tipe/tahun/bulan, tahun/bulan OPSIONAL -- sama seperti
     GET /mutasi -- meski tombol Cetak PDF di produk.js selalu mengisi
     keduanya) supaya PDF yang dicetak selalu identik dengan apa yang sedang
-    tampil di halaman Produk saat tombol itu ditekan."""
-    data = db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan, tenant_id=tenant_id)
+    tampil di halaman Produk saat tombol itu ditekan.
+
+    FITUR Pembersihan Data Bulanan Otomatis: `tanggal_mulai`/`tanggal_selesai`
+    (opsional, pola SAMA seperti buat_pdf_rekap_transaksi()) MENGGANTIKAN
+    tahun/bulan kalau diisi -- dipakai data_purge_db.py untuk arsip rentang
+    arbitrer (bisa lebih dari satu bulan kalender)."""
+    data = db.get_mutasi_produk_list(produk_id=produk_id, tipe=tipe, tahun=tahun, bulan=bulan, tenant_id=tenant_id,
+                                      tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai)
     header = ["Tanggal", "Produk", "Tipe", "Jumlah", "Sisa Stok", "Catatan"]
     baris = [[
         _sel(m["tanggal"]), _sel(m["nama_produk"]), _sel(_MUTASI_TIPE_LABEL.get(m["tipe"], m["tipe"])),
         _sel(m["jumlah"]), _sel(m["sisa_stok"]), _sel(m.get("catatan") or "-"),
     ] for m in data]
-    periode = _periode_text_opsional(tahun, bulan)
+    if tanggal_mulai and tanggal_selesai:
+        periode = _periode_text_rentang(tanggal_mulai, tanggal_selesai)
+    else:
+        periode = _periode_text_opsional(tahun, bulan)
     return _bangun_pdf("Riwayat Mutasi Produk", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_MUTASI_PRODUK, tenant_id=tenant_id)
