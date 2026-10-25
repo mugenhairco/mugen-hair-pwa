@@ -152,9 +152,13 @@ def get_reimburse_list(barber_id: int = None, status: str = None, tahun: int = N
         q += " AND r.barber_id = ?"; params.append(barber_id)
     if status is not None:
         q += " AND r.status = ?"; params.append(status)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND r.tanggal >= ? AND r.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND r.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND r.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if kategori:
         q += " AND r.kategori = ?"; params.append(kategori)
@@ -188,9 +192,13 @@ def get_reimburse_list_disetujui(tahun: int = None, bulan: int = None, barber_id
         q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
         q += " AND r.barber_id = ?"; params.append(barber_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND r.tanggal_approval >= ? AND r.tanggal_approval <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND r.tanggal_approval LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND r.tanggal_approval LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND r.tanggal_approval >= ?"; params.append(tanggal_mulai)

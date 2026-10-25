@@ -576,9 +576,13 @@ def hapus_semua_closed_slot(tenant_id: int, tahun: int = None, bulan: int = None
     supaya router bisa membalas pesan yang informatif."""
     q = "DELETE FROM closed_slot WHERE tenant_id = ?"
     params = [tenant_id]
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND tanggal >= ? AND tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     with get_conn() as conn:
         return conn.execute(q, params).rowcount
@@ -602,9 +606,13 @@ def get_closed_slot_list(barber_id: int = None, tahun: int = None, bulan: int = 
         q += " AND cs.barber_id = ?"; params.append(barber_id)
     if tenant_id is not None:
         q += " AND cs.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND cs.tanggal >= ? AND cs.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND cs.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND cs.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY cs.tanggal DESC, cs.jam_mulai"
     with get_conn() as conn:
@@ -753,9 +761,13 @@ def get_toko_libur_list(tahun: int = None, bulan: int = None, tenant_id: int = N
     params = []
     if tenant_id is not None:
         q += " AND tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND tanggal >= ? AND tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY tanggal DESC"
     with get_conn() as conn:
@@ -1258,9 +1270,13 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         q += " AND bk.barber_id = ?"; params.append(barber_id)
     if tenant_id is not None:
         q += " AND bk.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND bk.tanggal >= ? AND bk.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND bk.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND bk.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND bk.tanggal = ?"; params.append(tanggal)

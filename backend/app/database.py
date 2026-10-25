@@ -928,9 +928,21 @@ def get_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = No
     SEMUA barber sekaligus, mis. Rekap tanpa filter Barber)."""
     q = "SELECT t.*, b.nama AS nama_barber FROM transaksi t JOIN barbers b ON b.id = t.barber_id WHERE 1=1"
     params = []
-    if tahun is not None:
+    # BUGFIX PERFORMA (dilaporkan Owner -- Rekap lambat untuk tenant dengan
+    # banyak transaksi): kombinasi tahun+bulan (kasus PALING UMUM -- tampilan
+    # Rekap SELALU satu bulan tertentu) sekarang satu kondisi RANGE (bisa
+    # pakai index idx_transaksi_tanggal), bukan dua LIKE terpisah -- LIKE
+    # dengan wildcard di AWAL pola ("%-MM-%") TIDAK BISA pakai index sama
+    # sekali, memaksa full table scan yang makin lambat seiring total baris
+    # transaksi bertambah (persis gejala yang dilaporkan). Upper bound
+    # "-31" aman dipakai string comparison walau bulan itu < 31 hari --
+    # pola SAMA seperti get_uang_harian_beku_rentang() di atas.
+    if tahun is not None and bulan is not None:
+        q += " AND t.tanggal >= ? AND t.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND t.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND t.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if barber_id is not None:
         q += " AND t.barber_id = ?"; params.append(barber_id)
@@ -1327,6 +1339,73 @@ def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai
                              if tanggal not in abaikan_tanggal and jumlah >= target)
 
 
+def hitung_uang_harian_per_hari_batch(barber: dict, tanggal_mulai: str, tanggal_selesai: str) -> dict:
+    """BUGFIX PERFORMA (N+1, dilaporkan Owner -- Rekap Transaksi lambat untuk
+    tenant dengan banyak transaksi): versi batch dari
+    hitung_uang_harian_per_hari() -- mengembalikan {tanggal: nominal} untuk
+    SELURUH tanggal dalam rentang lewat SATU query (pola SAMA seperti
+    hitung_uang_harian_bulan()/_rentang() di atas, tapi mengembalikan
+    breakdown PER HARI, bukan total terjumlah) -- dipakai
+    get_rekap_transaksi_list() di bawah yang sebelumnya memanggil
+    hitung_uang_harian_per_hari() per (barber,tanggal) UNIK, masing-masing
+    melakukan beberapa query terpisah (get_uang_harian_beku, acuan_ids,
+    target, JOIN transaksi_detail) -- untuk tenant dengan puluhan hari
+    transaksi dalam satu bulan, ini berarti ratusan round-trip database
+    tambahan dibanding tenant baru yang datanya masih sedikit (gejala
+    persis yang dilaporkan: rekap lambat HANYA untuk tenant yang sudah
+    banyak input data).
+
+    Tanggal yang TIDAK memenuhi syarat (atau tidak punya transaksi sama
+    sekali) SENGAJA tidak ada di dict hasil -- pemanggil pakai .get(tgl, 0),
+    sama seperti nilai balik 0 di hitung_uang_harian_per_hari()."""
+    tenant_id = barber.get("tenant_id")
+    beku_map = get_uang_harian_beku_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
+    hasil = dict(beku_map)
+
+    if _uang_harian_dinamis_aktif(tenant_id):
+        # FITUR Uang Harian Dinamis belum punya versi batch per-hari (beda
+        # dari jalur di bawah) -- fallback ke breakdown_hari() per tanggal
+        # transaksi yang BENAR-BENAR ada di rentang ini (bukan per tanggal
+        # dari pemanggil yang bisa saja mencakup hari tanpa transaksi sama
+        # sekali) -- TETAP lebih baik dari sebelumnya untuk mayoritas
+        # tenant yang belum opt-in (lihat percabangan ini TIDAK dieksekusi
+        # buat mereka sama sekali), populasi tenant yang sudah opt-in saat
+        # ini kecil.
+        import uang_harian_dinamis_db
+        with get_conn() as conn:
+            tanggal_rows = conn.execute(
+                "SELECT DISTINCT tanggal FROM transaksi WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ?",
+                (barber["id"], tanggal_mulai, tanggal_selesai),
+            ).fetchall()
+        for r in tanggal_rows:
+            tgl = r["tanggal"]
+            if tgl in hasil:
+                continue
+            hasil[tgl] = uang_harian_dinamis_db.breakdown_hari(barber, tgl)["uang_harian_final"]
+        return hasil
+
+    acuan_ids = set(get_uang_harian_acuan_ids(tenant_id=tenant_id))
+    target = target_uang_harian_per_hari(tenant_id=tenant_id)
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT t.tanggal AS tanggal, td.service_id AS service_id, td.jumlah AS jumlah
+               FROM transaksi_detail td JOIN transaksi t ON t.id = td.transaksi_id
+               WHERE t.barber_id = ? AND t.tanggal >= ? AND t.tanggal <= ?""",
+            (barber["id"], tanggal_mulai, tanggal_selesai),
+        ).fetchall()
+
+    jumlah_per_hari = {}
+    for r in rows:
+        if r["service_id"] in acuan_ids:
+            jumlah_per_hari[r["tanggal"]] = jumlah_per_hari.get(r["tanggal"], 0) + r["jumlah"]
+
+    nominal = int(barber["uang_harian"] or 0)
+    for tanggal, jumlah in jumlah_per_hari.items():
+        if tanggal not in hasil and jumlah >= target:
+            hasil[tanggal] = nominal
+    return hasil
+
+
 # ---------------------------------------------------------------------------
 # BONUS CUSTOMER / TARGET BONUS SERVICE (bulanan)
 # Syarat dapat Bonus Customer:
@@ -1425,9 +1504,21 @@ def get_rincian_service_periode(tahun: int = None, bulan: int = None, barber_id:
         q += " AND t.barber_id = ?"; params.append(barber_id)
     if tenant_id is not None:
         q += " AND b.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA (dilaporkan Owner -- Rekap lambat untuk tenant dengan
+    # banyak transaksi): kombinasi tahun+bulan (kasus PALING UMUM -- tampilan
+    # Rekap SELALU satu bulan tertentu) sekarang satu kondisi RANGE (bisa
+    # pakai index idx_transaksi_tanggal), bukan dua LIKE terpisah -- LIKE
+    # dengan wildcard di AWAL pola ("%-MM-%") TIDAK BISA pakai index sama
+    # sekali, memaksa full table scan yang makin lambat seiring total baris
+    # transaksi bertambah (persis gejala yang dilaporkan). Upper bound
+    # "-31" aman dipakai string comparison walau bulan itu < 31 hari --
+    # pola SAMA seperti get_uang_harian_beku_rentang() di atas.
+    if tahun is not None and bulan is not None:
+        q += " AND t.tanggal >= ? AND t.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND t.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND t.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND t.tanggal >= ?"; params.append(tanggal_mulai)
@@ -1909,9 +2000,14 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
         q += " AND al.barber_id = ?"; params.append(barber_id)
     if tenant_id is not None:
         q += " AND b.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di get_transaksi_list() --
+    # pola SAMA (range bisa pakai index, bukan LIKE wildcard-di-awal).
+    if tahun is not None and bulan is not None:
+        q += " AND al.tanggal >= ? AND al.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND al.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND al.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND al.tanggal = ?"; params.append(tanggal)
@@ -1963,12 +2059,24 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
             barber_cache[bid] = get_barber(bid)
         return barber_cache[bid]
 
-    uang_harian_cache = {}
+    # BUGFIX PERFORMA (N+1, dilaporkan Owner): SEBELUMNYA uang_harian_cache
+    # di sini cuma menghindari query ULANG untuk (barber,tanggal) yang
+    # PERSIS sama -- tanggal berbeda tetap masing-masing memanggil
+    # hitung_uang_harian_per_hari() sendiri (beberapa query per panggilan).
+    # Diganti SATU panggilan hitung_uang_harian_per_hari_batch() PER BARBER
+    # (mencakup rentang tanggal transaksi barber itu di hasil ini), bukan
+    # per (barber,tanggal) -- lihat catatan performa lengkap di fungsi itu.
+    tanggal_per_barber = {}
+    for t in transaksi_list:
+        tanggal_per_barber.setdefault(t["barber_id"], []).append(t["tanggal"])
+
+    uang_harian_batch_cache = {}
     def _uang_harian(bid, tgl):
-        key = (bid, tgl)
-        if key not in uang_harian_cache:
-            uang_harian_cache[key] = hitung_uang_harian_per_hari(_barber(bid), tgl)
-        return uang_harian_cache[key]
+        if bid not in uang_harian_batch_cache:
+            tanggal_list = tanggal_per_barber.get(bid, [tgl])
+            uang_harian_batch_cache[bid] = hitung_uang_harian_per_hari_batch(
+                _barber(bid), min(tanggal_list), max(tanggal_list))
+        return uang_harian_batch_cache[bid].get(tgl, 0)
 
     hasil = []
     hari_dengan_transaksi = set()
@@ -2167,9 +2275,14 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
     routers/dashboard.py::dashboard_owner_periode())."""
     q = "SELECT * FROM pengeluaran WHERE 1=1"
     params = []
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di get_transaksi_list() --
+    # pola SAMA (range bisa pakai index, bukan LIKE wildcard-di-awal).
+    if tahun is not None and bulan is not None:
+        q += " AND tanggal >= ? AND tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND tanggal = ?"; params.append(tanggal)
@@ -2546,9 +2659,14 @@ def get_mutasi_produk_list(produk_id: int = None, tipe: str = None,
         q += " AND p.tenant_id = ?"; params.append(tenant_id)
     if tipe is not None:
         q += " AND pm.tipe = ?"; params.append(tipe)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di get_transaksi_list() --
+    # pola SAMA (range bisa pakai index, bukan LIKE wildcard-di-awal).
+    if tahun is not None and bulan is not None:
+        q += " AND pm.tanggal >= ? AND pm.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND pm.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY pm.tanggal DESC, pm.id DESC"
     with get_conn() as conn:
@@ -2585,9 +2703,14 @@ def get_omzet_penjualan_produk(tahun: int = None, bulan: int = None, tanggal_mul
     params = []
     if tenant_id is not None:
         q += " AND p.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di get_transaksi_list() --
+    # pola SAMA (range bisa pakai index, bukan LIKE wildcard-di-awal).
+    if tahun is not None and bulan is not None:
+        q += " AND pm.tanggal >= ? AND pm.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND pm.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND pm.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND pm.tanggal >= ?"; params.append(tanggal_mulai)

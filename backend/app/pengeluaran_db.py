@@ -250,9 +250,13 @@ def get_pengeluaran_list(tahun: int = None, bulan: int = None, tanggal: str = No
     params = []
     if tenant_id is not None:
         q += " AND p.tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND p.tanggal >= ? AND p.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += " AND p.tanggal = ?"; params.append(tanggal)
