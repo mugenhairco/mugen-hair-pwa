@@ -331,7 +331,21 @@ const MugenRouter = (() => {
     // sama sekali (Owner-only), jadi kalau tenant mereka terlanjur
     // ter-suspend, #/perpanjangan tetap jadi satu-satunya jalan bagi
     // mereka untuk membantu Owner membayar tanpa harus login sebagai Owner.
-    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")) {
+    // #/pengaturan (BARU, diminta Owner) ikut dikecualikan juga -- tenant
+    // suspended yang pemakaiannya (barber/user/layanan aktif) melebihi
+    // limit paket tujuan TIDAK BISA downgrade sama sekali (ditolak
+    // billing_limits.evaluasi_downgrade(), lihat routers/billing.py::
+    // downgrade()), dan SEBELUM pengecualian ini, satu-satunya cara
+    // mengurangi pemakaian (Setting > Karyawan/User/Layanan) justru ikut
+    // terkunci -- jalan buntu total, satu-satunya keluar HARUS bayar paket
+    // yang cukup dulu. Tab lain di Setting (Branding/Backup/dst) TIDAK bisa
+    // dikecualikan terpisah (tab-nya TIDAK tercermin di hash, selalu
+    // "#/pengaturan" polos, lihat pages/pengaturan.js) -- ikut terbuka,
+    // TAPI semuanya murni pengaturan milik tenant sendiri (bukan data
+    // customer/transaksi baru), risikonya sepadan dibanding jalan buntu di
+    // atas.
+    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")
+        && !hash.startsWith("#/pengaturan")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;

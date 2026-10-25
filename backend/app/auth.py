@@ -72,7 +72,17 @@ _bearer = HTTPBearer(auto_error=False)
 # diblokir HARUS tetap bisa melihat status/tagihannya & membayar untuk
 # memulihkan akses (sama seperti pengecualian "#/billing" di router.js
 # frontend), dan logout/ganti kata sandi tidak boleh ikut terkunci.
-_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = ("/api/billing", "/api/subscription", "/api/auth")
+# "/api/pengaturan" (BARU, diminta Owner): tenant suspended yang pemakaian
+# barber/user/layanan aktifnya MELEBIHI limit paket tujuan TIDAK BISA
+# downgrade (billing_limits.evaluasi_downgrade() menolak), dan SEBELUM
+# pengecualian ini, satu-satunya cara mengurangi pemakaian (Setting >
+# Karyawan/User/Layanan) justru ikut terkunci di sini juga -- jalan buntu
+# total. Dikecualikan di SINI JUGA (bukan cuma router.js frontend) --
+# tanpa ini, Owner bisa MASUK ke halaman Setting (router.js sudah
+# dikecualikan) tapi SETIAP aksi nonaktifkan barber/user/layanan tetap
+# ditolak 403 oleh gerbang backend ini, membuat pengecualian frontend-nya
+# percuma.
+_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = ("/api/billing", "/api/subscription", "/api/auth", "/api/pengaturan")
 
 
 def buat_token(user_id: int) -> str:
