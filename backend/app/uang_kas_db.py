@@ -191,9 +191,13 @@ def get_penyesuaian_list(tahun: int = None, bulan: int = None, tenant_id: int = 
     params = []
     if tenant_id is not None:
         q += " AND tenant_id = ?"; params.append(tenant_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND tanggal >= ? AND tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY tanggal DESC, id DESC"
     with get_conn() as conn:

@@ -124,9 +124,15 @@ def ada_kelebihan_kuota_bulan_ini_sekarang(barber_id: int) -> bool:
 
 def _tanggal_filter(q: str, params: list, kolom_tanggal: str, tahun: int, bulan: int,
                      tanggal: str, tanggal_mulai: str, tanggal_selesai: str) -> str:
-    if tahun is not None:
+    # BUGFIX PERFORMA (dilaporkan Owner -- Rekap lambat untuk tenant dengan
+    # banyak data): range bisa pakai index biasa, LIKE wildcard-di-awal
+    # TIDAK BISA -- lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += f" AND {kolom_tanggal} >= ? AND {kolom_tanggal} <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += f" AND {kolom_tanggal} LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += f" AND {kolom_tanggal} LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal is not None:
         q += f" AND {kolom_tanggal} = ?"; params.append(tanggal)

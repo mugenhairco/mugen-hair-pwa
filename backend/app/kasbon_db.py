@@ -135,9 +135,13 @@ def get_kasbon_list(barber_id: int = None, status: str = None, tahun: int = None
         q += " AND k.barber_id = ?"; params.append(barber_id)
     if status is not None:
         q += " AND k.status = ?"; params.append(status)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND k.tanggal >= ? AND k.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND k.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND k.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND k.tanggal >= ?"; params.append(tanggal_mulai)
@@ -410,9 +414,13 @@ def get_pembayaran_list_periode(tahun: int = None, bulan: int = None, barber_id:
         q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
         q += " AND k.barber_id = ?"; params.append(barber_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND p.tanggal >= ? AND p.tanggal <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND p.tanggal LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND p.tanggal >= ?"; params.append(tanggal_mulai)

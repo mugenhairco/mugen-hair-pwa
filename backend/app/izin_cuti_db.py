@@ -575,9 +575,13 @@ def get_pengajuan_list(barber_id: int = None, status: str = None, jenis: str = N
         q += " AND i.status = ?"; params.append(status)
     if jenis is not None:
         q += " AND i.jenis = ?"; params.append(jenis)
-    if tahun is not None:
+    # BUGFIX PERFORMA: lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND i.tanggal_mulai >= ? AND i.tanggal_mulai <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND i.tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND i.tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
     q += " ORDER BY i.tanggal_mulai DESC, i.id DESC"
     with get_conn() as conn:

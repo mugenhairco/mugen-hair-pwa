@@ -97,9 +97,15 @@ def get_data_non_barber_list(barber_id: int = None, tahun: int = None, bulan: in
         q += " AND b.tenant_id = ?"; params.append(tenant_id)
     if barber_id is not None:
         q += " AND d.barber_id = ?"; params.append(barber_id)
-    if tahun is not None:
+    # BUGFIX PERFORMA (dilaporkan Owner -- Rekap lambat untuk tenant dengan
+    # banyak data): range bisa pakai index idx biasa, LIKE wildcard-di-awal
+    # TIDAK BISA -- lihat catatan lengkap di database.py::get_transaksi_list().
+    if tahun is not None and bulan is not None:
+        q += " AND d.tanggal_mulai >= ? AND d.tanggal_mulai <= ?"
+        params.append(f"{tahun:04d}-{bulan:02d}-01"); params.append(f"{tahun:04d}-{bulan:02d}-31")
+    elif tahun is not None:
         q += " AND d.tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
-    if bulan is not None:
+    elif bulan is not None:
         q += " AND d.tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
     if tanggal_mulai is not None:
         q += " AND d.tanggal_mulai >= ?"; params.append(tanggal_mulai)
