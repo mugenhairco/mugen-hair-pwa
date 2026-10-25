@@ -417,6 +417,40 @@ def test_pengaturan_barber_user_service_tetap_bisa_diakses_saat_diblokir(app_cli
     assert app_client.get("/api/pengaturan/whatsapp", headers=headers).status_code == 403
 
 
+def test_booking_list_dan_batalkan_tetap_bisa_diakses_saat_diblokir(app_client):
+    """FITUR Jalan Buntu Limit Booking (diminta Owner): GET /api/booking
+    (daftar) dan POST /api/booking/{id}/batalkan SENGAJA dikecualikan dari
+    blokir subscription -- satu-satunya cara Owner mengurangi booking
+    aktif bulan ini supaya downgrade/checkout yang diblokir billing_limits.
+    evaluasi_downgrade() (field max_booking) bisa lolos. Endpoint booking
+    LAIN (payment-settings dst, lihat test di bawah) SENGAJA TIDAK ikut
+    dikecualikan -- pola SAMA PERSIS seperti /api/pengaturan/barber|
+    service|user vs whatsapp (lihat auth.py::_booking_bebas_blokir())."""
+    import booking_db
+
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    barber_id = db.add_barber("Barber Booking", tenant_id=tenant["id"])
+    service_id = db.add_service("Potong Rambut", 50000, tenant_id=tenant["id"])
+    from datetime import timedelta
+    from booking_db import _hari_ini_wib
+    tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
+    booking = booking_db.buat_booking(
+        barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00", service_ids=[service_id],
+        customer_nama="Budi", customer_whatsapp="081234567890", metode_pembayaran="transfer",
+        tenant_id=tenant["id"],
+    )
+
+    auth_db.tambah_user("owner3", "password123", role="admin", tenant_id=tenant["id"])
+    headers = _login(app_client, "owner3", "password123")
+    subscription_db.update_status(tenant["id"], "suspended")
+
+    assert app_client.get("/api/booking", headers=headers).status_code == 200
+    r_batal = app_client.post(f"/api/booking/{booking['id']}/batalkan", headers=headers)
+    assert r_batal.status_code == 200, r_batal.text
+    # endpoint booking LAIN tetap 403 (bukan seluruh /api/booking yang dikecualikan).
+    assert app_client.get("/api/booking/payment-settings", headers=headers).status_code == 403
+
+
 def test_tenants_status_nonaktif_tidak_terpengaruh_subscription_aktif(app_client):
     """Regresi kebalikannya -- kill-switch tenants.status ('aktif'/
     'nonaktif', SUDAH ADA sejak Phase 1) tetap 401 TOTAL walau

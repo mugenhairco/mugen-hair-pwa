@@ -344,8 +344,17 @@ const MugenRouter = (() => {
     // TAPI semuanya murni pengaturan milik tenant sendiri (bukan data
     // customer/transaksi baru), risikonya sepadan dibanding jalan buntu di
     // atas.
+    // #/booking (FITUR Jalan Buntu Limit Booking, lanjutan diminta Owner):
+    // tenant suspended yang booking aktif bulan ini melebihi limit paket
+    // tujuan tidak bisa downgrade/checkout (billing_limits.
+    // evaluasi_downgrade(), field max_booking) -- satu-satunya cara
+    // mengurangi pemakaian (batalkan booking) ada di halaman ini, jadi
+    // ikut dikecualikan sama seperti #/pengaturan di atas (lihat auth.py::
+    // _booking_bebas_blokir() untuk sisi backend-nya -- hanya GET list &
+    // POST batalkan yang benar-benar dikecualikan di sana, endpoint
+    // booking lain seperti payment-settings/qris tetap 403).
     if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")
-        && !hash.startsWith("#/pengaturan")) {
+        && !hash.startsWith("#/pengaturan") && !hash.startsWith("#/booking")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;

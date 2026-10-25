@@ -96,6 +96,30 @@ _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = (
     "/api/pengaturan/barber", "/api/pengaturan/service", "/api/pengaturan/user",
 )
 
+# FITUR Jalan Buntu Limit Booking (diminta Owner, lanjutan dari PR #200
+# "/api/pengaturan/barber|service|user"): tenant suspended yang booking
+# aktif BULAN INI melebihi limit paket tujuan TIDAK BISA downgrade/
+# checkout (billing_limits.evaluasi_downgrade(), field "max_booking"),
+# dan SEBELUM pengecualian ini, satu-satunya cara mengurangi pemakaian
+# (batalkan booking lewat halaman Booking) justru ikut terkunci -- jalan
+# buntu yang sama persis seperti barber/user/layanan.
+#
+# BUKAN prefix biasa seperti PR #200 -- SELURUH router booking.py dipasang
+# di prefix "/api/booking" (termasuk payment-settings/qris/closed-slot/
+# toko-libur/booking-slug/dst yang SENGAJA TETAP harus 403 saat diblokir,
+# sama seperti whatsapp/branding di /api/pengaturan), jadi exact-path/
+# shape match di _booking_bebas_blokir() di bawah, BUKAN startswith tuple
+# seperti _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION -- hanya GET /api/booking
+# (daftar booking, untuk melihat apa yang perlu dibatalkan) dan
+# POST /api/booking/{id}/batalkan (satu-satunya aksi yang MENGURANGI
+# hitungan booking_db.batalkan_booking() mengubah status_booking, TIDAK
+# PERNAH menghapus baris booking -- sama seperti prinsip "tidak pernah
+# hapus data" di seluruh billing_limits.py).
+def _booking_bebas_blokir(path: str) -> bool:
+    if path == "/api/booking":
+        return True
+    return path.startswith("/api/booking/") and path.endswith("/batalkan")
+
 
 def buat_token(user_id: int) -> str:
     return _serializer.dumps({"user_id": user_id})
@@ -178,7 +202,7 @@ def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials
         # _PREFIX_BEBAS_BLOKIR_SUBSCRIPTION di atas -- status subscription
         # (expired/suspended/cancelled) sekarang ditegakkan DI SINI untuk
         # SELURUH endpoint ber-login, bukan cuma booking publik/frontend.
-        if not request.url.path.startswith(_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION):
+        if not request.url.path.startswith(_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION) and not _booking_bebas_blokir(request.url.path):
             import subscription_db  # import lokal: hindari import siklik
             if subscription_db.akses_diblokir(user["tenant_id"]):
                 raise HTTPException(
