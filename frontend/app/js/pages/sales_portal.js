@@ -18,7 +18,7 @@ const PageSalesPortal = (() => {
 
   const LABEL_JENIS = { baru: "Pendaftaran Baru", repeat: "Perpanjangan", lifetime: "Lisensi Lifetime" };
   const LABEL_STATUS_SUB = {
-    trial: "Trial", active: "Aktif", grace_period: "Grace Period", expired: "Kedaluwarsa",
+    trial: "Trial", active: "Aktif", expired: "Kedaluwarsa",
     suspended: "Ditangguhkan", cancelled: "Dibatalkan", lifetime: "Lifetime",
   };
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };

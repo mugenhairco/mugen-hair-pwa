@@ -22,7 +22,7 @@ Selama trial, tenant TIDAK diblokir (status 'trial' BUKAN anggota
 STATUS_AKSES_DIBLOKIR) -- Owner bisa langsung memakai seluruh fitur begitu
 email terverifikasi, TANPA membayar dulu. Begitu trial_end lewat, Super
 Admin (manual, ATAU proses batch terpisah di masa depan -- TIDAK ADA di
-cakupan task ini) mengubah status jadi 'expired'/'grace_period', barulah
+cakupan task ini) mengubah status jadi 'expired', barulah
 akses_diblokir() (TIDAK DIUBAH sejak Phase 3) mulai berlaku -- Owner
 memilih paket & membayar lewat alur checkout Phase 4 yang SUDAH ADA
 (billing.py::checkout(), TIDAK DIUBAH selain penambahan siklus 6 bulan)

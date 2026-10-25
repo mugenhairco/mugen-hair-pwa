@@ -5,7 +5,7 @@
 // subscription-nya Expired/Suspended/Cancelled (lihat subscription.js,
 // MugenSubscription.aksesDiblokir()).
 //
-// Owner (role 'admin') melihat detail package/status/trial/grace (GET
+// Owner (role 'admin') melihat detail package/status/trial (GET
 // /api/subscription/me, read-only -- SAMA PERSIS data yang ditampilkan di
 // Setting > Subscription, lihat pages/pengaturan.js) sesuai cakupan Phase 3
 // "Owner hanya dapat melihat informasi subscription (read-only)". Akun
@@ -76,7 +76,7 @@ const PageSubscriptionBlocked = (() => {
         if (sub.periode_selesai) {
           baris.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
             MugenUI.el("span", { class: "subtitle" }, "Periode Aktif Berakhir"),
-            MugenUI.el("span", {}, formatWaktu(sub.periode_selesai)),
+            MugenUI.el("span", {}, MugenUI.formatTanggal(sub.periode_selesai.split("T")[0])),
           ]));
         }
         baris.push(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [

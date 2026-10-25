@@ -2,8 +2,8 @@
 subscription_db.py — FONDASI Multi-Tenant Phase 3: Subscription & Tenant Lifecycle
 =============================================================================
 Struktur database + backend untuk langganan (subscription) tiap tenant --
-package (Free/Basic/Pro/Enterprise), status lifecycle (Trial/Active/Grace
-Period/Expired/Suspended/Cancelled), dan catatan pembayaran Virtual Account
+package (Free/Basic/Pro/Enterprise), status lifecycle (Trial/Active/Expired/
+Suspended/Cancelled/Lifetime), dan catatan pembayaran Virtual Account
 (VA). SESUAI CAKUPAN PHASE 3: hanya struktur data + CRUD, TIDAK ADA integrasi
 payment gateway sungguhan (tidak ada yang membuat VA baru ke provider mana
 pun, atau menerima webhook pembayaran) -- pencatatan pembayaran di sini
@@ -14,7 +14,7 @@ Terpisah TOTAL dari `tenants.status` ('aktif'/'nonaktif', lihat tenant_db.py)
 yang SUDAH ADA sejak Phase 1 sebagai kill-switch keras Super Admin (401 total
 lewat auth.py::get_current_user(), TIDAK disentuh sama sekali di sini) --
 subscription.status di modul ini adalah lapisan validasi TERPISAH:
-- trial / active / grace_period -> akses normal.
+- trial / active / lifetime -> akses normal.
 - expired / suspended / cancelled -> akses DIBLOKIR (dashboard internal
   menampilkan halaman status subscription read-only, halaman publik /book
   diblokir total) -- lihat akses_diblokir() di bawah, dipakai
@@ -23,7 +23,7 @@ subscription.status di modul ini adalah lapisan validasi TERPISAH:
 
 Satu tenant = SATU baris `tenant_subscriptions` (tenant_id UNIQUE) -- bukan
 riwayat, kolom-kolomnya ditimpa langsung tiap kali Super Admin mengubah
-package/status/trial/grace (riwayat perubahan tercatat terpisah lewat
+package/status/trial (riwayat perubahan tercatat terpisah lewat
 superadmin_audit_db.py, lihat routers/subscription.py).
 
 Tabel baru murni milik modul ini (pola sama seperti kasbon_db.py/
@@ -40,12 +40,22 @@ data lama sebelum migrasi backfill sempat jalan, maupun tenant hasil
 pemanggilan langsung tenant_db.buat_tenant() di luar Dashboard Super Admin)
 tidak tiba-tiba terkunci tanpa sebab yang jelas."""
 
+import math
 from datetime import datetime, timedelta
 
 from database import get_conn, get_setting, set_setting
 
 PACKAGE_VALID = {"free", "basic", "pro", "enterprise"}
-STATUS_VALID = {"trial", "active", "grace_period", "expired", "suspended", "cancelled", "lifetime"}
+# REVISI (diminta Owner): status 'grace_period' DIHAPUS TOTAL dari sini --
+# dulu dua mekanisme toleransi berjalan paralel (grace_period manual Super
+# Admin, DAN SUSPEND_GRACE_HARI 7 hari otomatis setelah periode_selesai
+# lewat, lihat _auto_suspend_jika_lewat() di bawah) yang sekarang
+# diganti SATU pendekatan: peringatan H-7 SEBELUM periode_selesai (lihat
+# routers/subscription.py::subscription_status()), BUKAN toleransi
+# SESUDAHNYA. Baris lama yang kebetulan masih berstatus 'grace_period'
+# dikonversi ke 'active' oleh migrasi sekali-jalan, lihat
+# migrasi_hapus_grace_period() di bawah.
+STATUS_VALID = {"trial", "active", "expired", "suspended", "cancelled", "lifetime"}
 STATUS_AKSES_DIBLOKIR = {"expired", "suspended", "cancelled"}
 # FITUR Program Afiliasi Sales (sales_db.py) -- Lisensi Beli Putus: status
 # BARU 'lifetime' SENGAJA tidak dimasukkan ke STATUS_AKSES_DIBLOKIR (akses
@@ -65,13 +75,17 @@ PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed"}
 # STATUS_VALID/dst di bawah) SAMA SEKALI TIDAK disentuh. Super Admin tetap
 # bebas mengubah nilai ini kapan pun lewat Dashboard-nya.
 DEFAULT_TRIAL_HARI = 30
-DEFAULT_GRACE_HARI = 7
 
 # Kunci `settings` PLATFORM-WIDE (tenant_id=None, TIDAK diprefix per-tenant --
 # lihat database.py::_kunci_tenant()) -- satu nilai berlaku untuk SELURUH
 # tenant baru, bukan per-toko.
 _KUNCI_TRIAL_HARI = "subscription_trial_hari"
-_KUNCI_GRACE_HARI = "subscription_grace_hari"
+
+# Peringatan H-7 sebelum periode_selesai (pengganti grace_period/
+# SUSPEND_GRACE_HARI yang dihapus) -- lihat subscription_status() di
+# routers/subscription.py. BUKAN kunci `settings` yang bisa diatur Super
+# Admin (diminta Owner: cukup angka tetap, tidak perlu UI konfigurasi).
+PERINGATAN_KADALUARSA_HARI = 7
 
 
 def init_subscription_db():
@@ -151,19 +165,14 @@ def _sekarang() -> datetime:
 def get_platform_config() -> dict:
     return {
         "trial_hari": int(get_setting(_KUNCI_TRIAL_HARI, str(DEFAULT_TRIAL_HARI), tenant_id=None)),
-        "grace_hari": int(get_setting(_KUNCI_GRACE_HARI, str(DEFAULT_GRACE_HARI), tenant_id=None)),
     }
 
 
-def set_platform_config(trial_hari: int = None, grace_hari: int = None) -> dict:
+def set_platform_config(trial_hari: int = None) -> dict:
     if trial_hari is not None:
         if trial_hari < 1:
             raise ValueError("Durasi Trial minimal 1 hari.")
         set_setting(_KUNCI_TRIAL_HARI, str(trial_hari), tenant_id=None)
-    if grace_hari is not None:
-        if grace_hari < 1:
-            raise ValueError("Durasi Grace Period minimal 1 hari.")
-        set_setting(_KUNCI_GRACE_HARI, str(grace_hari), tenant_id=None)
     return get_platform_config()
 
 
@@ -185,15 +194,15 @@ def akses_diblokir(tenant_id: int) -> bool:
     """False (TIDAK diblokir) kalau tenant belum punya baris subscription
     sama sekali -- lihat penjelasan fail-open di docstring modul ini.
 
-    requirement Owner Billing/Subscription poin 8/9: sebelum memeriksa
-    status tersimpan, cek dulu apakah periode_selesai sudah lewat lebih
-    dari SUSPEND_GRACE_HARI hari -- kalau iya, _auto_suspend_jika_lewat()
-    menulis status jadi 'suspended' di sini juga (opportunistic, tanpa
-    cron/background job terpisah, konsisten dengan filosofi "gerbang di
-    satu titik" -- fungsi ini SUDAH dipanggil di setiap request lewat
-    auth.py). Selama masih dalam 7 hari (poin 8), status TETAP 'active' --
-    akses TIDAK diblokir, halaman Billing cukup menampilkan pesan periode
-    berakhir secara terpisah (lihat routers/subscription.py)."""
+    REVISI (diminta Owner, hapus toleransi grace): sebelum memeriksa status
+    tersimpan, cek dulu apakah periode_selesai sudah lewat -- kalau iya,
+    _auto_suspend_jika_lewat() LANGSUNG menulis status jadi 'suspended' di
+    sini juga (opportunistic, tanpa cron/background job terpisah, konsisten
+    dengan filosofi "gerbang di satu titik" -- fungsi ini SUDAH dipanggil
+    di setiap request lewat auth.py). TIDAK ADA LAGI toleransi hari
+    (SUSPEND_GRACE_HARI dihapus total) -- sebagai gantinya, Owner diberi
+    peringatan H-7 SEBELUM tanggal ini (lihat routers/subscription.py::
+    subscription_status())."""
     sub = get_subscription(tenant_id)
     if sub is None:
         return False
@@ -304,33 +313,58 @@ def reset_subscription(tenant_id: int, package: str, periode_mulai: str, periode
     return get_subscription(tenant_id)
 
 
-SUSPEND_GRACE_HARI = 7  # requirement Owner Billing/Subscription poin 9: 7 hari
-                        # setelah periode_selesai lewat tanpa pembayaran sukses
-                        # berikutnya -> tenant otomatis "suspended".
-
-
 def _auto_suspend_jika_lewat(sub: dict) -> dict:
     """Opportunistic, dijalankan di SETIAP panggilan akses_diblokir() --
     HANYA berlaku untuk subscription berstatus 'active' yang punya
-    periode_selesai (kolom baru di atas) DAN sudah lewat SUSPEND_GRACE_HARI
-    hari tanpa pembayaran sukses berikutnya (pembayaran sukses menulis
-    ulang periode_selesai ke masa depan lewat
+    periode_selesai (kolom baru di atas). REVISI (diminta Owner, hapus
+    toleransi grace): dulu ada SUSPEND_GRACE_HARI (7 hari) sebelum status
+    berubah -- SEKARANG begitu periode_selesai lewat, status LANGSUNG
+    'suspended' pada panggilan berikutnya, tanpa toleransi sama sekali.
+    Pembayaran sukses menulis ulang periode_selesai ke masa depan lewat
     billing_webhook._aktifkan_subscription() -> set_periode() DAN
     mengembalikan status ke 'active' lewat update_status(), jadi begitu
     tenant bayar, kondisi suspend ini otomatis tidak lagi terpenuhi --
-    requirement poin 12/13 TIDAK butuh kode "un-suspend" terpisah).
+    requirement poin 12/13 TIDAK butuh kode "un-suspend" terpisah.
 
-    TIDAK PERNAH menyentuh status 'trial'/'grace_period'/'cancelled'/
-    'suspended' yang sudah ada -- mekanisme trial/grace Fase 3 dan
-    override manual Super Admin (mis. 'cancelled') SAMA SEKALI TIDAK
-    disentuh di sini, sesuai batasan Owner "jangan mengubah requirement
-    sebelumnya"."""
+    TIDAK PERNAH menyentuh status 'trial'/'cancelled'/'suspended' yang
+    sudah ada -- mekanisme trial Fase 3 dan override manual Super Admin
+    (mis. 'cancelled') SAMA SEKALI TIDAK disentuh di sini."""
     if sub["status"] != "active" or not sub.get("periode_selesai"):
         return sub
-    batas = datetime.fromisoformat(sub["periode_selesai"]) + timedelta(days=SUSPEND_GRACE_HARI)
+    batas = datetime.fromisoformat(sub["periode_selesai"])
     if _sekarang() < batas:
         return sub
     return update_status(sub["tenant_id"], "suspended")
+
+
+def hari_tersisa_dari_tanggal(tanggal_iso: str | None) -> int | None:
+    """Jumlah hari (bisa negatif kalau sudah lewat) sampai `tanggal_iso` --
+    None kalau kosong. Dipakai hari_tersisa_periode() (periode_selesai,
+    status 'active') DAN langsung oleh subscription_status()
+    (routers/subscription.py, trial_end, status 'trial') untuk peringatan
+    H-7 (diminta Owner: "perluas juga ke masa trial") -- pengganti
+    grace_period lama.
+
+    DIBULATKAN KE ATAS (bukan timedelta.days polos yang membulatkan ke
+    bawah/nol) -- periode_selesai/trial_end disimpan jam 23:59:59-an, jadi
+    "5 hari lagi" yang dihitung beberapa detik setelah set_periode()/
+    set_trial() dipanggil (mis. H-5 pukul 00:00:01) TIDAK BOLEH keliru
+    terbaca "4 hari lagi" hanya karena belum genap 5x24 jam -- yang relevan
+    buat Owner adalah tanggal kalender, bukan jam presisi."""
+    if not tanggal_iso:
+        return None
+    selisih_detik = (datetime.fromisoformat(tanggal_iso) - _sekarang()).total_seconds()
+    if selisih_detik >= 0:
+        return math.ceil(selisih_detik / 86400)
+    return -math.ceil(-selisih_detik / 86400)
+
+
+def hari_tersisa_periode(sub: dict) -> int | None:
+    """Jumlah hari (bisa negatif kalau sudah lewat) sampai periode_selesai --
+    None kalau tenant tidak punya periode_selesai sama sekali (mis. paket
+    'free'/trial yang belum pernah bayar, atau status 'lifetime' yang
+    memang tidak pernah diberi periode_selesai)."""
+    return hari_tersisa_dari_tanggal(sub.get("periode_selesai"))
 
 
 def set_trial(tenant_id: int, trial_start: str = None, trial_end: str = None, hari: int = None) -> dict:
@@ -354,20 +388,32 @@ def set_trial(tenant_id: int, trial_start: str = None, trial_end: str = None, ha
     return get_subscription(tenant_id)
 
 
-def set_grace(tenant_id: int, grace_start: str = None, grace_end: str = None, hari: int = None) -> dict:
-    """Sama polanya dengan set_trial() -- lihat catatan di sana."""
-    _wajib_ada(tenant_id)
-    if grace_start is None:
-        grace_start = _now()
-    if grace_end is None:
-        hari = hari if hari is not None else get_platform_config()["grace_hari"]
-        grace_end = (datetime.fromisoformat(grace_start) + timedelta(days=hari)).isoformat(timespec="seconds")
+_KUNCI_HAPUS_GRACE_PERIOD = "subscription_hapus_grace_period_selesai"
+
+
+def migrasi_hapus_grace_period():
+    """SEKALI SAJA sepanjang umur database (pola sama persis seperti
+    billing_db.py::seed_default_package_features(), ditandai lewat
+    `settings`) -- REVISI (diminta Owner): status 'grace_period' manual
+    Super Admin dihapus total dari sistem (lihat STATUS_VALID di atas),
+    diganti peringatan H-7 SEBELUM periode_selesai. Baris tenant_subscriptions
+    yang KEBETULAN sedang berstatus 'grace_period' pada saat migrasi ini
+    jalan (dibuat sebelum revisi ini) dikonversi ke 'active' -- SAMA PERSIS
+    semantik lama 'grace_period' ("akses normal, belum diblokir"), jadi
+    tenant yang terdampak TIDAK tiba-tiba kehilangan akses. Setelah ini,
+    _auto_suspend_jika_lewat() yang mengambil alih berdasarkan
+    periode_selesai tenant itu sendiri, sama seperti tenant 'active' lain.
+    Kolom grace_start/grace_end TIDAK dihapus dari skema (proyek ini tidak
+    punya migrasi destruktif, lihat tests/test_migration.py) -- sekadar
+    berhenti ditulis/dibaca kode mana pun lagi."""
+    if get_setting(_KUNCI_HAPUS_GRACE_PERIOD, default=None) == "1":
+        return
     with get_conn() as conn:
         conn.execute(
-            "UPDATE tenant_subscriptions SET grace_start = ?, grace_end = ?, updated_at = ? WHERE tenant_id = ?",
-            (grace_start, grace_end, _now(), tenant_id),
+            "UPDATE tenant_subscriptions SET status = 'active', updated_at = ? WHERE status = 'grace_period'",
+            (_now(),),
         )
-    return get_subscription(tenant_id)
+    set_setting(_KUNCI_HAPUS_GRACE_PERIOD, "1", tenant_id=None)
 
 
 # ============================= Payments (VA) =============================

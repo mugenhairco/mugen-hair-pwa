@@ -1563,16 +1563,16 @@ const PagePengaturan = (() => {
 
     // ================= TAB: SUBSCRIPTION (FONDASI Multi-Tenant Phase 3) =================
     // Owner-murni, READ-ONLY total (TIDAK ADA endpoint PUT/POST di sini --
-    // lihat routers/subscription.py) -- package/status/trial/grace HANYA
+    // lihat routers/subscription.py) -- package/status/trial HANYA
     // bisa diubah Super Admin lewat Dashboard Super Admin-nya sendiri
     // (pages/superadmin.js), sesuai cakupan Phase 3.
     const LABEL_PACKAGE_SUBSCRIPTION = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
     const LABEL_STATUS_SUBSCRIPTION = {
-      trial: "Trial", active: "Active", grace_period: "Grace Period",
+      trial: "Trial", active: "Active",
       expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
     };
     const BADGE_STATUS_SUBSCRIPTION = {
-      trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
+      trial: "badge-libur", active: "badge-success",
       expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
     };
 
@@ -1625,10 +1625,6 @@ const PagePengaturan = (() => {
         MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
           MugenUI.el("span", { class: "subtitle" }, "Masa Trial"),
           MugenUI.el("span", {}, sub.trial_start ? `${formatWaktuSubscription(sub.trial_start)} s/d ${formatWaktuSubscription(sub.trial_end)}` : "-"),
-        ]),
-        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
-          MugenUI.el("span", { class: "subtitle" }, "Grace Period"),
-          MugenUI.el("span", {}, sub.grace_start ? `${formatWaktuSubscription(sub.grace_start)} s/d ${formatWaktuSubscription(sub.grace_end)}` : "-"),
         ]),
         MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [
           MugenUI.el("span", { class: "subtitle" }, "Terakhir Diperbarui"),

@@ -300,6 +300,37 @@ const MugenNav = (() => {
     sidebar.appendChild(brandBox);
     MugenBrand.applyToDom();
 
+    // FITUR Notifikasi H-7 & Perpanjangan Cepat (diminta Owner): tulisan
+    // merah di bawah nama tenant, persisten di SEMUA halaman (render() ini
+    // dipanggil ulang tiap pindah menu, lihat router.js::shell()) --
+    // dibaca dari cache MugenSubscription (GET /api/subscription/status,
+    // SELALU tersedia untuk SEMUA role tenant, lihat routers/subscription.py)
+    // SINKRON, TANPA fetch di sini (render() ini harus tetap sinkron, pola
+    // sama seperti seluruh file ini). HANYA role 'barber' yang TIDAK lihat
+    // ini (dikonfirmasi eksplisit Owner) -- Owner/Staff/role custom apa pun
+    // (SEMUANYA kolom role='staff', lihat auth_db.py::custom_role_id) tetap
+    // melihatnya. Diklik -> #/perpanjangan (BUKAN #/billing, Owner-only --
+    // lihat router.js untuk alasan lengkap).
+    if (user.role !== "superadmin" && user.role !== "sales" && user.role !== "barber") {
+      const sub = typeof MugenSubscription !== "undefined" ? MugenSubscription.get() : null;
+      if (sub && sub.peringatan_kadaluarsa) {
+        // REVISI (diminta Owner, "perluas juga ke masa trial"): teks
+        // menyesuaikan status -- 'trial' (tenant baru mendaftar) pakai
+        // "Masa trial", selain itu (periode berbayar, status 'active')
+        // tetap "Langganan" seperti sebelumnya.
+        const subjek = sub.status === "trial" ? "Masa trial" : "Langganan";
+        const teks = sub.hari_tersisa <= 0
+          ? `${subjek} berakhir hari ini -- segera perpanjang`
+          : `${subjek} berakhir ${sub.hari_tersisa} hari lagi -- segera perpanjang`;
+        const peringatan = MugenUI.el("a", {
+          href: "#/perpanjangan",
+          class: "brand-peringatan-kadaluarsa",
+          style: "display:block;color:#ef4444;font-size:12px;font-weight:600;margin-top:2px;cursor:pointer;",
+        }, teks);
+        brandBox.appendChild(peringatan);
+      }
+    }
+
     // REVISI UI/UX Premium: tombol collapse/expand sidebar (desktop) --
     // disembunyikan lewat CSS di layar sempit (lihat @media 860px di
     // style.css, mekanisme mobile TETAP hamburger seperti sebelumnya).

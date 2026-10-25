@@ -94,6 +94,7 @@ import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permi
 from user_roles_migrasi import migrasi_user_roles  # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
 from subscription_migrasi import migrasi_subscription
 from subscription_db import migrasi_periode_subscription  # Perbaikan Billing/Subscription: kolom periode_mulai/periode_selesai di tenant_subscriptions (idempotent, jalur SQLite) -- anchor otoritatif perpanjangan langganan
+from subscription_db import migrasi_hapus_grace_period  # REVISI (diminta Owner): status 'grace_period' manual dihapus total, baris lama dikonversi ke 'active' (idempotent, SQLite & Postgres -- murni flag settings)
 import billing_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages (idempotent)
 import billing_gateway_db  # Payment Gateway Billing SaaS (platform-wide): bootstrap dari env var MIDTRANS_* lama, sekali saja (idempotent)
 import billing_invoice_db  # FONDASI Multi-Tenant Phase 4: tabel subscription_invoices + subscription_invoice_status_log (idempotent)
@@ -486,6 +487,7 @@ async def on_startup():
         user_roles_db.migrasi_role_staff_default()  # REVISI Hak Akses (hapus Role "Admin" bawaan): pindahkan staff lama ke Role "Staff" per tenant, SEKALI SAJA (idempotent) -- WAJIB setelah migrasi_tenant() (butuh tabel tenants)
         migrasi_subscription()  # FONDASI Multi-Tenant Phase 3: tabel tenant_subscriptions + backfill (idempotent, WAJIB setelah migrasi_tenant())
         migrasi_periode_subscription()  # Perbaikan Billing/Subscription: kolom periode_mulai/periode_selesai di tenant_subscriptions (idempotent, WAJIB setelah migrasi_subscription())
+        migrasi_hapus_grace_period()  # REVISI (diminta Owner): konversi baris status='grace_period' lama ke 'active', SEKALI SAJA (idempotent)
         billing_db.init_billing_db()  # FONDASI Multi-Tenant Phase 4: tabel subscription_packages + katalog fitur (idempotent)
         billing_db.seed_default_packages()  # seed 4 baris (free/basic/pro/enterprise) kalau belum ada (idempotent)
         billing_db.seed_default_features()  # seed katalog fitur contoh (Booking Online, Export PDF, dst) kalau belum ada (idempotent)

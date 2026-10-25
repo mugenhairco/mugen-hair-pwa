@@ -1068,7 +1068,7 @@
 // pengaman localStorage; tombol "Setujui"/"Tolak" (sisi Admin/Owner) tidak
 // lagi blokir tombol menunggu server (refresh kartu Limit/Kuota/Absensi
 // tetap menunggu hasil ASLI, tidak ditebak) -- absensi.js.
-const ASSET_VERSION = "196";
+const ASSET_VERSION = "199";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1139,6 +1139,12 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/absensi.js",
   "/app/js/pages/pengaturan.js",
   "/app/js/pages/billing.js",
+  // FITUR Notifikasi H-7 & Perpanjangan Cepat: alur checkout dipakai
+  // BERSAMA pages/billing.js & pages/perpanjangan.js -- file baru, harus
+  // terdaftar di sini juga (lihat catatan page_loader.js soal file
+  // lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/billing_checkout_shared.js",
+  "/app/js/pages/perpanjangan.js",
   "/app/js/pages/produk.js",
   "/app/js/pages/booking.js",
   // REVISI (feedback Owner): tab WhatsApp di Setting dipindah jadi menu

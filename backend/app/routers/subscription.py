@@ -8,15 +8,22 @@ Dua router dalam SATU file ini (pola sama seperti routers/booking.py):
    (read-only)", akun 'staff' TIDAK ikut melihat). Read-only total -- TIDAK
    ADA endpoint PUT/POST di router ini. Kekecualian: GET /status (di bawah
    GET /me) SENGAJA terbuka untuk SEMUA role tenant (Owner/Admin/Barber,
-   get_current_user polos) -- BUKAN "informasi subscription" (package/
-   trial/grace/dst, tetap Owner-murni lewat /me), hanya SATU boolean
-   akses_diblokir supaya frontend (router.js) bisa mengalihkan SELURUH
-   akun toko yang diblokir ke halaman status, bukan cuma Owner.
+   get_current_user polos) -- BUKAN "informasi subscription" lengkap
+   (trial/dst, tetap Owner-murni lewat /me), hanya `akses_diblokir` supaya
+   frontend (router.js) bisa mengalihkan SELURUH akun toko yang diblokir ke
+   halaman status (bukan cuma Owner), PLUS `periode_selesai`/`hari_tersisa`/
+   `peringatan_kadaluarsa` (FITUR Notifikasi H-7, lihat subscription_status()
+   di bawah) supaya nav.js bisa menampilkan peringatan untuk SEMUA role juga.
 2. `superadmin_router` (prefix `/api/superadmin/subscriptions`) — KHUSUS
    role 'superadmin' (require_superadmin), mengelola package/status/trial/
-   grace/config platform/pembayaran VA SELURUH tenant. SETIAP aksi tercatat
+   config platform/pembayaran VA SELURUH tenant. SETIAP aksi tercatat
    ke superadmin_audit_log (lihat superadmin_audit_db.py), pola SAMA PERSIS
-   dengan routers/superadmin.py (buat_tenant/ubah_status_tenant)."""
+   dengan routers/superadmin.py (buat_tenant/ubah_status_tenant).
+
+REVISI (diminta Owner): fitur "Grace Period" manual (set_grace(), endpoint
+PUT /{tenant_id}/grace, field grace_hari di config) DIHAPUS TOTAL dari sini
+-- lihat subscription_db.py untuk penjelasan lengkap penggantinya
+(peringatan H-7 di subscription_status() di bawah)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -67,13 +74,31 @@ def subscription_status(user: dict = Depends(get_current_user)):
     MugenSubscription.get().features tersedia SINKRON di seluruh halaman
     tanpa perlu endpoint/refresh terpisah. Upgrade/downgrade paket (lewat
     Superadmin atau webhook Payment Gateway) langsung berlaku di panggilan
-    berikutnya -- tidak ada apa pun yang di-cache di sisi server."""
+    berikutnya -- tidak ada apa pun yang di-cache di sisi server.
+
+    REVISI (peringatan H-7, pengganti grace_period/SUSPEND_GRACE_HARI yang
+    dihapus): `hari_tersisa`/`peringatan_kadaluarsa`/`periode_selesai`/
+    `status` diikutkan di sini (BUKAN cuma di /me yang Owner-only) supaya
+    nav.js bisa menampilkan tulisan merah di bawah nama tenant untuk SEMUA
+    role tenant (kecuali 'barber', digerbang di frontend) -- lihat
+    subscription_db.hari_tersisa_dari_tanggal()/PERINGATAN_KADALUARSA_HARI.
+    REVISI (diminta Owner, "perluas juga ke masa trial"): peringatan ini
+    SEKARANG berlaku untuk status 'trial' juga (dihitung dari trial_end),
+    TIDAK HANYA 'active' (periode_selesai) -- `status` dikirim di respons
+    supaya nav.js tahu teks mana yang dipakai ("Masa trial" vs
+    "Langganan")."""
     if user.get("tenant_id") is None:
-        return {"akses_diblokir": False, "package": None, "features": [], "izin_paket": []}
+        return {
+            "akses_diblokir": False, "package": None, "features": [], "izin_paket": [],
+            "periode_selesai": None, "hari_tersisa": None, "peringatan_kadaluarsa": False,
+            "status": None,
+        }
     tenant_id = user["tenant_id"]
     sub = subscription_db.get_subscription(tenant_id)
     fitur = []
     izin_paket = []
+    hari_tersisa = None
+    periode_selesai = None
     if sub is not None:
         paket = billing_db.get_package_by_kode(sub["package"])
         if paket is not None:
@@ -85,11 +110,28 @@ def subscription_status(user: dict = Depends(get_current_user)):
             # MugenFeature.hasIzin()) bisa mengunci menu/sub-menu di sidebar
             # (nav.js) & halaman tujuan TANPA endpoint/refresh terpisah.
             izin_paket = list(billing_db.get_package_permission_keys(paket["id"]))
+        periode_selesai = sub.get("periode_selesai")
+        # Peringatan H-7: 'active' dihitung dari periode_selesai (periode
+        # berbayar), 'trial' dari trial_end -- status LAIN ('lifetime' tidak
+        # pernah punya tanggal berakhir, 'expired'/'suspended'/'cancelled'
+        # sudah ditolak akses_diblokir() duluan lewat STATUS_AKSES_DIBLOKIR,
+        # jadi peringatan "akan berakhir" tidak relevan lagi buat mereka).
+        if sub["status"] == "active":
+            hari_tersisa = subscription_db.hari_tersisa_periode(sub)
+        elif sub["status"] == "trial":
+            hari_tersisa = subscription_db.hari_tersisa_dari_tanggal(sub.get("trial_end"))
+    peringatan_kadaluarsa = (
+        hari_tersisa is not None and 0 <= hari_tersisa <= subscription_db.PERINGATAN_KADALUARSA_HARI
+    )
     return {
         "akses_diblokir": subscription_db.akses_diblokir(tenant_id),
         "package": sub["package"] if sub else None,
         "features": fitur,
         "izin_paket": izin_paket,
+        "status": sub["status"] if sub else None,
+        "periode_selesai": periode_selesai,
+        "hari_tersisa": hari_tersisa,
+        "peringatan_kadaluarsa": peringatan_kadaluarsa,
     }
 
 
@@ -125,17 +167,16 @@ def ambil_config(user: dict = Depends(require_superadmin)):
 
 class ConfigBody(BaseModel):
     trial_hari: int | None = None
-    grace_hari: int | None = None
 
 
 @superadmin_router.put("/config")
 def ubah_config(body: ConfigBody, user: dict = Depends(require_superadmin)):
     try:
-        hasil = subscription_db.set_platform_config(trial_hari=body.trial_hari, grace_hari=body.grace_hari)
+        hasil = subscription_db.set_platform_config(trial_hari=body.trial_hari)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     superadmin_audit_db.catat(user["username"], "ubah_config_subscription",
-                               detail=f"trial_hari={hasil['trial_hari']}, grace_hari={hasil['grace_hari']}")
+                               detail=f"trial_hari={hasil['trial_hari']}")
     return hasil
 
 
@@ -200,12 +241,6 @@ def ubah_trial(tenant_id: int, body: TrialBody, user: dict = Depends(require_sup
     return hasil
 
 
-class GraceBody(BaseModel):
-    grace_start: str | None = None
-    grace_end: str | None = None
-    hari: int | None = None
-
-
 class ResetBody(BaseModel):
     package: str
     tanggal_mulai: str     # "YYYY-MM-DD"
@@ -246,20 +281,6 @@ def reset_subscription(tenant_id: int, body: ResetBody, user: dict = Depends(req
             f"status: {sebelum['status']} -> {body.status}"
         ),
     )
-    return hasil
-
-
-@superadmin_router.put("/{tenant_id}/grace")
-def ubah_grace(tenant_id: int, body: GraceBody, user: dict = Depends(require_superadmin)):
-    t = _tenant_wajib_ada(tenant_id)
-    try:
-        hasil = subscription_db.set_grace(tenant_id, grace_start=body.grace_start,
-                                           grace_end=body.grace_end, hari=body.hari)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    superadmin_audit_db.catat(user["username"], "ubah_grace_subscription", tenant_id=tenant_id,
-                               tenant_slug=t["slug"],
-                               detail=f"grace_start={hasil['grace_start']}, grace_end={hasil['grace_end']}")
     return hasil
 
 

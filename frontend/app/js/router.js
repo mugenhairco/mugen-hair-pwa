@@ -71,9 +71,18 @@ const MugenRouter = (() => {
   // `Promise.resolve(renderResult).then(...)` yang sudah ada di akhir
   // handle() (pola itu SUDAH menerima renderResult sinkron ATAU async
   // sebelum revisi ini, tidak perlu diubah).
-  function _renderLazy(content, globalName, src) {
+  // `depsExtra` (BARU, FITUR Notifikasi H-7 & Perpanjangan Cepat, opsional):
+  // daftar [globalName, src] TAMBAHAN yang harus selesai dimuat LEBIH DULU
+  // (mis. js/billing_checkout_shared.js, dipakai BERSAMA PageBilling &
+  // PagePerpanjangan) -- default array kosong, TIDAK mengubah perilaku
+  // pemanggil lama yang belum butuh dependency tambahan.
+  function _renderLazy(content, globalName, src, depsExtra = []) {
     content.appendChild(MugenUI.skeleton("card", { lines: 4 }));
-    return MugenPageLoader.ensure(globalName, src)
+    let p = Promise.resolve();
+    for (const [depGlobalName, depSrc] of depsExtra) {
+      p = p.then(() => MugenPageLoader.ensure(depGlobalName, depSrc));
+    }
+    return p.then(() => MugenPageLoader.ensure(globalName, src))
       .then(() => window[globalName].render(content))
       .catch((err) => {
         content.innerHTML = "";
@@ -317,7 +326,12 @@ const MugenRouter = (() => {
     // mengaktifkan manual dulu. HASH lain APA PUN selain ini tetap
     // dipaksa ke halaman blocked persis seperti sebelumnya (self-correcting:
     // begitu user pindah ke menu lain, blokir langsung berlaku lagi).
-    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing")) {
+    // #/perpanjangan (FITUR Notifikasi H-7 & Perpanjangan Cepat) ikut
+    // dikecualikan -- Staff/role custom TIDAK PERNAH bisa buka #/billing
+    // sama sekali (Owner-only), jadi kalau tenant mereka terlanjur
+    // ter-suspend, #/perpanjangan tetap jadi satu-satunya jalan bagi
+    // mereka untuk membantu Owner membayar tanpa harus login sebagai Owner.
+    if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;
@@ -494,7 +508,21 @@ const MugenRouter = (() => {
         location.hash = "#/dashboard";
         return;
       }
-      renderResult = _renderLazy(content, "PageBilling", "js/pages/billing.js");
+      renderResult = _renderLazy(content, "PageBilling", "js/pages/billing.js",
+        [["MugenBillingCheckout", "js/billing_checkout_shared.js"]]);
+    } else if (hash.startsWith("#/perpanjangan")) {
+      // FITUR Notifikasi H-7 & Perpanjangan Cepat (diminta Owner): tulisan
+      // merah di bawah nama tenant (nav.js, dibaca dari peringatan_kadaluarsa
+      // GET /api/subscription/status) diklik -> KE SINI, BUKAN #/billing
+      // (Owner-only di atas) -- Owner ATAU Staff/role custom BOLEH, KECUALI
+      // 'barber' (backend juga menolak lewat require_owner_or_staff, lihat
+      // routers/billing.py::renewal_options()/renewal_checkout()).
+      if (user.role === "barber") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = _renderLazy(content, "PagePerpanjangan", "js/pages/perpanjangan.js",
+        [["MugenBillingCheckout", "js/billing_checkout_shared.js"]]);
     } else if (hash.startsWith("#/pengaturan")) {
       // Tahap 10 + REVISI Hak Akses Admin: Owner selalu boleh; 'staff' (Admin)
       // boleh MASUK menu Setting (tab yang tampil difilter di dalam

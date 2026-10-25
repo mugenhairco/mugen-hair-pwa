@@ -13,7 +13,7 @@ dari environment variable SUBSCRIPTION_SEED_DEFAULT_PACKAGE/
 SUBSCRIPTION_SEED_DEFAULT_STATUS (fallback 'free'/'active' kalau kosong,
 supaya migrasi ini AMAN dijalankan tanpa konfigurasi tambahan -- tidak
 pernah mengunci/memutus akses tenant yang sudah ada) -- Super Admin BEBAS
-mengubah package/status/trial/grace tiap tenant kapan pun lewat Dashboard
+mengubah package/status/trial tiap tenant kapan pun lewat Dashboard
 Super Admin SETELAH baris ini dibuat, sama seperti tenant lain mana pun,
 TIDAK ADA perlakuan khusus untuk tenant tertentu di kode ini."""
 

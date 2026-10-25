@@ -149,7 +149,10 @@ def test_status_endpoint_superadmin_tidak_diblokir(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     r = app_client.get("/api/subscription/status", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"akses_diblokir": False, "package": None, "features": [], "izin_paket": []}
+    assert r.json() == {
+        "akses_diblokir": False, "package": None, "features": [], "izin_paket": [],
+        "status": None, "periode_selesai": None, "hari_tersisa": None, "peringatan_kadaluarsa": False,
+    }
 
 
 def test_status_endpoint_izin_paket_cerminkan_package_permission_tree(app_client):
@@ -211,9 +214,9 @@ def test_superadmin_ubah_package_dan_status(app_client):
     assert r.json()["package"] == "enterprise"
 
     r2 = app_client.put(f"/api/superadmin/subscriptions/{tenant['id']}/status",
-                         headers=headers, json={"status": "grace_period"})
+                         headers=headers, json={"status": "suspended"})
     assert r2.status_code == 200, r2.text
-    assert r2.json()["status"] == "grace_period"
+    assert r2.json()["status"] == "suspended"
 
 
 def test_superadmin_package_tidak_valid_ditolak(app_client):
@@ -232,7 +235,7 @@ def test_superadmin_status_tidak_valid_ditolak(app_client):
     assert r.status_code == 422
 
 
-def test_superadmin_atur_trial_dan_grace(app_client):
+def test_superadmin_atur_trial(app_client):
     headers = _buat_superadmin_dan_login(app_client)
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
 
@@ -246,12 +249,15 @@ def test_superadmin_atur_trial_dan_grace(app_client):
     delta = datetime.fromisoformat(data["trial_end"]) - datetime.fromisoformat(data["trial_start"])
     assert delta.days == 30
 
-    r2 = app_client.put(f"/api/superadmin/subscriptions/{tenant['id']}/grace",
-                         headers=headers, json={"hari": 5})
-    assert r2.status_code == 200, r2.text
-    data2 = r2.json()
-    delta2 = datetime.fromisoformat(data2["grace_end"]) - datetime.fromisoformat(data2["grace_start"])
-    assert delta2.days == 5
+
+def test_superadmin_endpoint_grace_period_sudah_dihapus(app_client):
+    """REVISI (diminta Owner): fitur Grace Period manual dihapus total --
+    endpoint PUT /{tenant_id}/grace TIDAK ADA lagi sama sekali."""
+    headers = _buat_superadmin_dan_login(app_client)
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    r = app_client.put(f"/api/superadmin/subscriptions/{tenant['id']}/grace",
+                        headers=headers, json={"hari": 5})
+    assert r.status_code == 404
 
 
 def test_superadmin_ubah_subscription_tenant_tidak_ada_404(app_client):
@@ -266,15 +272,15 @@ def test_superadmin_config_platform(app_client):
     assert r.status_code == 200
     # FITUR Landing Page & Pricing (Free Trial 30 Hari): default trial_hari
     # dinaikkan 14 -> 30 (subscription_db.DEFAULT_TRIAL_HARI).
-    assert r.json() == {"trial_hari": 30, "grace_hari": 7}
+    assert r.json() == {"trial_hari": 30}
 
     r2 = app_client.put("/api/superadmin/subscriptions/config", headers=headers,
-                         json={"trial_hari": 21, "grace_hari": 3})
+                         json={"trial_hari": 21})
     assert r2.status_code == 200, r2.text
-    assert r2.json() == {"trial_hari": 21, "grace_hari": 3}
+    assert r2.json() == {"trial_hari": 21}
 
     r3 = app_client.get("/api/superadmin/subscriptions/config", headers=headers)
-    assert r3.json() == {"trial_hari": 21, "grace_hari": 3}
+    assert r3.json() == {"trial_hari": 21}
 
 
 def test_superadmin_config_durasi_kurang_dari_1_ditolak(app_client):
@@ -405,11 +411,11 @@ def test_tenants_status_nonaktif_tidak_terpengaruh_subscription_aktif(app_client
 
 # ============================= Penegakan akses: /book publik =============================
 
-def test_book_publik_normal_saat_trial_active_grace(app_client):
+def test_book_publik_normal_saat_trial_active(app_client):
     # HOTFIX Migrasi Subdomain: endpoint publik TIDAK LAGI diam-diam jatuh
     # ke tenant default kalau ?tenant= kosong -- WAJIB eksplisit.
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
-    for status in ("trial", "active", "grace_period"):
+    for status in ("trial", "active"):
         subscription_db.update_status(tenant["id"], status)
         r = app_client.get(f"/api/public/booking/barbers?tenant={tenant['slug']}")
         assert r.status_code == 200, f"status={status}: {r.text}"
@@ -504,33 +510,35 @@ def test_status_aktif_dengan_periode_selesai_masa_depan_tidak_diblokir(app_clien
     assert subscription_db.get_subscription(tenant["id"])["status"] == "active"
 
 
-def test_status_aktif_periode_lewat_dalam_7_hari_belum_disuspend(app_client):
-    """requirement poin 8: periode sudah berakhir TAPI belum lewat 7 hari --
-    akses TETAP terbuka, status TETAP 'active' (belum auto-suspend)."""
+def test_status_aktif_periode_belum_lewat_tidak_disuspend(app_client):
+    """periode_selesai masih di masa depan (hari ini sendiri, belum lewat
+    detik sekarang) -- akses TETAP terbuka, status TETAP 'active'."""
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
-    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=3)
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=-1)
     assert subscription_db.akses_diblokir(tenant["id"]) is False
     assert subscription_db.get_subscription(tenant["id"])["status"] == "active"
 
 
-def test_status_aktif_periode_lewat_lebih_dari_7_hari_otomatis_suspended(app_client):
-    """requirement poin 9: lewat lebih dari 7 hari tanpa pembayaran sukses
-    -> status OTOMATIS jadi 'suspended', akses diblokir."""
+def test_status_aktif_periode_lewat_langsung_suspended_tanpa_toleransi(app_client):
+    """REVISI (diminta Owner, hapus toleransi grace 7 hari): begitu
+    periode_selesai lewat -- SEKALIPUN baru lewat 1 hari -- status LANGSUNG
+    OTOMATIS jadi 'suspended', akses diblokir. TIDAK ADA LAGI jeda hari
+    apa pun (dulu SUSPEND_GRACE_HARI=7, sekarang dihapus total)."""
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
-    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=1)
     assert subscription_db.akses_diblokir(tenant["id"]) is True
     assert subscription_db.get_subscription(tenant["id"])["status"] == "suspended"
 
 
 def test_auto_suspend_tidak_menghapus_tenant_atau_invoice_atau_riwayat(app_client):
-    """requirement poin 9: auto-suspend TIDAK PERNAH menghapus tenant/
-    database/invoice/riwayat pembayaran -- murni mengubah kolom status."""
+    """auto-suspend TIDAK PERNAH menghapus tenant/database/invoice/riwayat
+    pembayaran -- murni mengubah kolom status."""
     tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
     paket = billing_db.get_package_by_kode("pro")
     order_id = billing_invoice_db.buat_order_id(tenant["id"])
     invoice = billing_invoice_db.buat_invoice(order_id, tenant["id"], paket)
 
-    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=8)
+    _sub_aktif_dengan_periode(tenant["id"], hari_lewat=1)
     subscription_db.akses_diblokir(tenant["id"])  # memicu auto-suspend
 
     assert tenant_db.get_tenant(tenant["id"]) is not None
@@ -546,17 +554,6 @@ def test_status_trial_tidak_terpengaruh_auto_suspend(app_client):
 
     assert subscription_db.akses_diblokir(tenant["id"]) is False
     assert subscription_db.get_subscription(tenant["id"])["status"] == "trial"
-
-
-def test_status_grace_period_tidak_terpengaruh_auto_suspend(app_client):
-    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
-    from datetime import datetime, timedelta
-    periode_selesai = (datetime.now() - timedelta(days=30)).isoformat(timespec="seconds")
-    subscription_db.set_periode(tenant["id"], periode_selesai, periode_selesai)
-    subscription_db.update_status(tenant["id"], "grace_period")
-
-    assert subscription_db.akses_diblokir(tenant["id"]) is False
-    assert subscription_db.get_subscription(tenant["id"])["status"] == "grace_period"
 
 
 def test_status_cancelled_manual_tidak_diubah_oleh_auto_suspend(app_client):

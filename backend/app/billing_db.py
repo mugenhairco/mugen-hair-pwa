@@ -19,7 +19,7 @@ EMPAT kode yang sama itu (satu baris per kode, terhubung lewat
 `subscription_packages.kode = tenant_subscriptions.package`, TANPA foreign
 key -- lihat catatan panjang di postgres_schema.py soal kenapa tenant_id
 dan kolom serupa di proyek ini sengaja tidak pernah pakai FK ke tabel
-lain). tenant_subscriptions ITU SENDIRI (status/trial/grace/dst) SAMA
+lain). tenant_subscriptions ITU SENDIRI (status/trial/dst) SAMA
 SEKALI TIDAK disentuh di sini.
 
 Tabel baru murni milik modul ini (pola sama seperti subscription_db.py) --
@@ -704,6 +704,46 @@ def get_package_permission_keys(package_id: int) -> set:
             "SELECT izin_key FROM subscription_package_permissions WHERE package_id = ?", (package_id,)
         ).fetchall()
         return {r["izin_key"] for r in rows}
+
+
+def fitur_hilang_saat_downgrade(current_package_id: int, target_package_id: int) -> list[str]:
+    """FITUR Peringatan Downgrade (diminta Owner): daftar label manusiawi
+    untuk SEMUA yang akan hilang kalau tenant pindah dari current_package_id
+    ke target_package_id -- dipakai routers/billing.py::downgrade_preview()
+    untuk popup konfirmasi di billing.js SEBELUM downgrade sungguhan
+    dieksekusi (diff ini TIDAK menentukan boleh/tidaknya downgrade --
+    pemakaian melebihi limit tetap diblokir terpisah lewat
+    billing_limits.evaluasi_downgrade()).
+
+    Gabungan DUA sumber "fitur" yang ada di sistem ini (lihat docstring
+    modul billing_db.py di atas untuk audit lengkap kenapa dua-duanya ada):
+    1. Katalog fitur checkbox (subscription_package_features) -- hal kecil
+       yang benar-benar digerbang di kode (Export PDF, Export Excel, dst).
+    2. Package Permission Tree (subscription_package_permissions, Work #2)
+       -- MENU/TAB SELURUHNYA yang hilang dari sidebar (nav.js), dampaknya
+       jauh lebih besar daripada poin 1. HANYA node TERATAS (parent=None
+       ATAU parent-nya TIDAK ikut hilang) yang dimasukkan ke daftar --
+       kalau menu "Dashboard" hilang, sub-item "Nilai Service" dst di
+       bawahnya TIDAK ikut disebut satu-satu (sudah terwakili labelnya oleh
+       induknya), supaya daftar peringatan tidak kepanjangan."""
+    import permissions  # import lokal: hindari import siklik (sama seperti pemanggil lain di file ini)
+
+    hilang = []
+    fitur_current = {f["kode"]: f["nama"] for f in get_package_features(current_package_id)}
+    fitur_target = {f["kode"] for f in get_package_features(target_package_id)}
+    for kode, nama in fitur_current.items():
+        if kode not in fitur_target:
+            hilang.append(nama)
+
+    izin_current = get_package_permission_keys(current_package_id)
+    izin_target = get_package_permission_keys(target_package_id)
+    izin_hilang = izin_current - izin_target
+    for key in sorted(izin_hilang):
+        label, parent = permissions.PERMISSION_TREE.get(key, (key, None))
+        if parent is None or parent not in izin_hilang:
+            hilang.append(label)
+
+    return hilang
 
 
 def set_package_permission_keys(package_id: int, keys: set):

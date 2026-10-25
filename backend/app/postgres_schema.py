@@ -1989,7 +1989,9 @@ def _migrasi_subscription(conn):
     if package not in {"free", "basic", "pro", "enterprise"}:
         package = "free"
     status = os.environ.get("SUBSCRIPTION_SEED_DEFAULT_STATUS", "active").strip().lower()
-    if status not in {"trial", "active", "grace_period", "expired", "suspended", "cancelled"}:
+    # REVISI (diminta Owner): "grace_period" dihapus dari sini juga -- status
+    # ini sudah tidak valid lagi, lihat subscription_db.STATUS_VALID.
+    if status not in {"trial", "active", "expired", "suspended", "cancelled", "lifetime"}:
         status = "active"
     now = datetime.now().isoformat(timespec="seconds")
     trial_start = trial_end = None

@@ -20,7 +20,7 @@
 const PageBilling = (() => {
   const LABEL_PACKAGE = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
   const LABEL_STATUS_SUB = {
-    trial: "Trial", active: "Aktif", grace_period: "Grace Period",
+    trial: "Trial", active: "Aktif",
     expired: "Kedaluwarsa", suspended: "Ditangguhkan", cancelled: "Dibatalkan",
     // FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli
     // Putus): status permanen, akses TIDAK PERNAH diblokir lagi (lihat
@@ -28,98 +28,19 @@ const PageBilling = (() => {
     lifetime: "Lifetime",
   };
   const BADGE_STATUS_SUB = {
-    trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
+    trial: "badge-libur", active: "badge-success",
     expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
     lifetime: "badge-success",
   };
-  function formatWaktu(iso) {
+  // REVISI: "Periode Aktif Berakhir" cukup tanggal, tanpa jam (sebelumnya
+  // ikut menampilkan jam mentah dari periode_selesai).
+  function formatTanggalSaja(iso) {
     if (!iso) return "-";
-    const [tanggal, jam] = iso.split("T");
-    return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
-  }
-
-  let _snapLoadPromise = null;
-  function muatSnapJs(src, clientKey) {
-    if (window.snap) return Promise.resolve();
-    if (_snapLoadPromise) return _snapLoadPromise;
-    _snapLoadPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = src;
-      script.setAttribute("data-client-key", clientKey);
-      script.onload = () => resolve();
-      script.onerror = () => {
-        _snapLoadPromise = null;
-        reject(new Error("Gagal memuat modul pembayaran. Periksa koneksi internet Anda."));
-      };
-      document.head.appendChild(script);
-    });
-    return _snapLoadPromise;
+    return MugenUI.formatTanggal(iso.split("T")[0]);
   }
 
   function pesanError(e) {
     return (e && e.detail && e.detail.detail) ? e.detail.detail : (e.message || "Terjadi kesalahan.");
-  }
-
-  // Migrasi Faspay SNAP Advance: billing SEBELUMNYA tidak pernah butuh
-  // pilihan metode (Xpress v4 = satu jalur checkout hosted tunggal) --
-  // SNAP butuh channel (VA/QRIS) dipilih di muka, TIDAK ADA modal generik
-  // multi-pilihan di ui.js (hanya confirmModal ya/tidak) jadi dibangun
-  // lokal di sini, pola overlay/box SAMA PERSIS MugenUI.confirmModal()
-  // supaya tetap konsisten secara visual. Return Promise<{channel,bankCode}|null>
-  // -- null kalau Owner batal/klik di luar kotak. Auto-resolve TANPA
-  // menampilkan modal kalau opsinya cuma satu.
-  //
-  // Fitur multi-bank VA: `vaBankAktif` ({channelCode: label}) DIRATAKAN
-  // jadi satu opsi PER BANK (bukan satu opsi "Virtual Account" generik) --
-  // Owner langsung memilih bank tujuan di modal yang sama, tidak ada langkah
-  // terpisah sesudahnya (beda dari book_public.js yang dua langkah karena
-  // ruang tampilan wizard-nya sudah sempit).
-  function pilihChannelModal(channelAktif, vaBankAktif) {
-    const kodeBankList = Object.keys(vaBankAktif || {});
-    const adaQris = channelAktif.includes("qris");
-    // Auto-resolve TANPA modal kalau opsinya cuma satu total (satu bank VA
-    // saja tanpa QRIS, atau QRIS saja tanpa VA).
-    if (channelAktif.includes("va") && kodeBankList.length === 1 && !adaQris) {
-      return Promise.resolve({ channel: "va", bankCode: kodeBankList[0] });
-    }
-    if (adaQris && !channelAktif.includes("va") && channelAktif.length === 1) {
-      return Promise.resolve({ channel: "qris", bankCode: null });
-    }
-    return new Promise((resolve) => {
-      const overlay = MugenUI.el("div", { class: "modal-overlay" });
-      const box = MugenUI.el("div", { class: "modal-box" });
-      box.appendChild(MugenUI.el("h3", {}, "Pilih Metode Pembayaran"));
-      overlay.appendChild(box);
-      function tutup(hasil) {
-        overlay.classList.add("closing");
-        setTimeout(() => { overlay.remove(); resolve(hasil); }, 120);
-      }
-      // Fitur multi-bank VA: grid kartu ber-logo (SAMA seperti book_public.js)
-      // -- BUKAN lagi satu tombol memanjang per bank, lebih rapi & profesional
-      // walau bank aktifnya banyak.
-      if (channelAktif.includes("va") && kodeBankList.length) {
-        box.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, "Virtual Account"));
-        const grid = MugenUI.el("div", { class: "bank-grid" });
-        for (const kode of kodeBankList) {
-          const card = MugenUI.el("button", { type: "button", class: "bank-card" },
-            [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(kode, vaBankAktif[kode]))]);
-          card.addEventListener("click", () => tutup({ channel: "va", bankCode: kode }));
-          grid.appendChild(card);
-        }
-        box.appendChild(grid);
-      }
-      if (adaQris) {
-        box.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:14px;" }, "E-Wallet"));
-        const btnQris = MugenUI.el("button", { type: "button", class: "book-metode-btn", style: "margin-top:6px;" }, "QRIS");
-        btnQris.addEventListener("click", () => tutup({ channel: "qris", bankCode: null }));
-        box.appendChild(btnQris);
-      }
-      const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
-      btnBatal.addEventListener("click", () => tutup(null));
-      box.appendChild(MugenUI.el("div", { class: "modal-actions", style: "margin-top:14px;" }, [btnBatal]));
-      document.body.appendChild(overlay);
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(null); });
-    });
   }
 
   function renderStatusCard(root, sub, packages, config) {
@@ -132,11 +53,14 @@ const PageBilling = (() => {
         `Akses toko ini sedang dibatasi karena status subscription "${LABEL_STATUS_SUB[sub.status] || sub.status}". ` +
         "Selesaikan pembayaran di bawah untuk mengaktifkan kembali."));
     }
-    // Perbaikan Billing/Subscription (requirement Owner poin 8): periode
-    // sudah lewat TAPI belum sampai batas auto-suspend (masih dalam masa
-    // 7 hari, lihat subscription_db.py::SUSPEND_GRACE_HARI) -- akses TIDAK
-    // diblokir (sub.akses_diblokir masih false), tapi Owner tetap perlu
-    // tahu periode sudah berakhir supaya segera memperpanjang.
+    // REVISI (diminta Owner, hapus toleransi grace): auto-suspend SEKARANG
+    // langsung begitu periode_selesai lewat (TIDAK ADA LAGI jeda 7 hari,
+    // lihat subscription_db.py::_auto_suspend_jika_lewat()) -- kondisi
+    // "periode sudah lewat TAPI akses_diblokir masih false" di bawah ini
+    // jadi jendela SANGAT SEMPIT (GET /me tidak memicu ulang pengecekan
+    // auto-suspend, murni baca status tersimpan -- lihat routers/
+    // subscription.py::subscription_saya()), tapi tetap dipertahankan
+    // sebagai jaring pengaman tampilan, bukan dihapus.
     const now = new Date().toISOString();
     if (!sub.akses_diblokir && sub.periode_selesai && sub.periode_selesai < now) {
       card.appendChild(MugenUI.el("div", { class: "login-error", style: "margin-bottom:12px;" },
@@ -157,10 +81,24 @@ const PageBilling = (() => {
         MugenUI.el("span", { class: "badge " + (BADGE_STATUS_SUB[sub.status] || "") },
           LABEL_STATUS_SUB[sub.status] || sub.status),
       ]),
-      MugenUI.el("div", {}, [
-        MugenUI.el("div", { class: "subtitle" }, "Periode Aktif Berakhir"),
-        MugenUI.el("div", { style: "font-weight:700;" }, sub.periode_selesai ? formatWaktu(sub.periode_selesai) : "-"),
-      ]),
+      (() => {
+        // BUGFIX (dilaporkan Owner): tenant BARU mendaftar (status 'trial')
+        // belum pernah punya periode_selesai sama sekali (kolom itu KHUSUS
+        // periode BERBAYAR, ditulis set_periode() setelah pembayaran
+        // pertama sukses -- lihat subscription_db.py::
+        // create_default_subscription()) -- field ini dulu selalu tampil
+        // "-" untuk tenant trial, padahal trial_end SUDAH ADA sejak
+        // pendaftaran. SEKARANG: pakai periode_selesai kalau sudah ada
+        // (tenant sudah pernah bayar), fallback ke trial_end selama masih
+        // 'trial', label ikut menyesuaikan supaya tidak disangka periode
+        // berbayar.
+        const tanggalBerakhir = sub.periode_selesai || (sub.status === "trial" ? sub.trial_end : null);
+        const labelBerakhir = sub.periode_selesai ? "Periode Aktif Berakhir" : "Masa Trial Berakhir";
+        return MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "subtitle" }, labelBerakhir),
+          MugenUI.el("div", { style: "font-weight:700;" }, tanggalBerakhir ? formatTanggalSaja(tanggalBerakhir) : "-"),
+        ]);
+      })(),
     ]);
     card.appendChild(ringkasan);
   }
@@ -206,207 +144,40 @@ const PageBilling = (() => {
     } catch (e) { /* abaikan */ }
   }
 
-  // FITUR Landing Page & Pricing (paket 6 bulan): siklus "bulanan" (default,
-  // TIDAK mengubah perilaku lama) atau "6bulan" -- diteruskan APA ADANYA ke
-  // body checkout, backend (routers/billing.py) yang menghitung harga/durasi
-  // efektifnya (lihat komentar di sana), di sini murni meneruskan pilihan.
-  async function mulaiCheckout(packageId, siklus, config, onSelesai, btnPemicu) {
+  // REVISI (FITUR Notifikasi H-7 & Perpanjangan Cepat): alur checkout
+  // SNAP Advance (pilih channel -> POST checkout -> modal VA/QR + countdown
+  // + polling) DIPINDAH ke js/billing_checkout_shared.js (dipakai bersama
+  // pages/perpanjangan.js yang baru) -- TIDAK ADA perubahan logika sama
+  // sekali, murni dipanggil lewat modul itu sekarang.
+  function mulaiCheckout(packageId, siklus, config, onSelesai, btnPemicu) {
     _bersihkanPendingKode();
-    // Migrasi Faspay SNAP Advance: channel (VA/QRIS) WAJIB dipilih SEBELUM
-    // memanggil checkout (SNAP tidak punya halaman hosted yang menawarkan
-    // semua channel sekaligus seperti Xpress v4 dulu) -- lihat pilihChannelModal().
-    const pilihan = await pilihChannelModal(config.channel_aktif || [], config.va_bank_aktif || {});
-    if (!pilihan) return;
-    const { channel, bankCode } = pilihan;
-    let invoice;
-    try {
-      invoice = await MugenUI.withLoading(
-        () => MugenApi.post("/api/billing/checkout", {
-          package_id: packageId, siklus: siklus || "bulanan", channel, bank_code: bankCode,
-        }),
-        { message: "Menyiapkan pembayaran…" },
-      );
-    } catch (e) {
-      MugenUI.toast(pesanError(e), "error");
-      return;
-    }
-
-    // BUGFIX: MugenSubscription.refresh() WAJIB di-await SEBELUM onSelesai()
-    // di jalur sukses/pending -- tanpa ini, cache localStorage akses_diblokir
-    // (dipakai router.js::handle() untuk SETIAP perpindahan menu, lihat
-    // subscription.js) tetap "diblokir" walau pembayaran sudah berhasil dan
-    // webhook sudah mengaktifkan subscription-nya di backend, sehingga Owner
-    // yang baru saja bayar masih dilempar ke halaman blocked begitu klik
-    // menu lain -- padahal seharusnya langsung bisa masuk dashboard.
-    async function segarkanLaluSelesai() {
-      await MugenSubscription.refresh();
-      onSelesai();
-    }
-
-    // PROVIDER RESMI: Faspay Xpress v4 -- checkout HANYA hosted redirect
-    // (config.checkout_script_url selalu null, TIDAK ADA script/token
-    // seperti Snap), jadi cabang window.snap.pay() di bawah TIDAK PERNAH
-    // dipakai untuk Faspay -- dipertahankan sebagai jalur adapter generik
-    // kalau provider lain (yang punya script checkout) dipasang nanti,
-    // SAMA seperti pola bukaCheckoutGateway() di pages/book_public.js.
-    if (config.checkout_script_url && config.client_key) {
-      try {
-        await muatSnapJs(config.checkout_script_url, config.client_key);
-      } catch (e) {
-        MugenUI.toast(e.message, "error");
-        return;
-      }
-      window.snap.pay(invoice.snap_token, {
-        onSuccess: () => {
-          MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-          setTimeout(segarkanLaluSelesai, 2000);
-        },
-        onPending: () => {
-          MugenUI.toast("Pembayaran sedang diproses -- paket akan aktif otomatis setelah dikonfirmasi.", "info", { force: true });
-          segarkanLaluSelesai();
-        },
-        onError: () => {
-          MugenUI.toast("Pembayaran gagal. Silakan coba lagi.", "error");
-          onSelesai();
-        },
-        onClose: onSelesai,
-      });
-      return;
-    }
-
-    // Migrasi Faspay SNAP Advance: VA/QRIS TIDAK PUNYA halaman hosted
-    // seperti Xpress v4 dulu (window.open(snap_redirect_url)) -- nomor VA/
-    // kode QR ditampilkan LANGSUNG lewat modal (MugenUI.infoModal(), pola
-    // SAMA seperti isiKontenSnapWaiting() di pages/book_public.js).
-    const kontenModal = [];
-    if (invoice.channel === "va") {
-      kontenModal.push(MugenUI.el("div", { class: "subtitle" },
-        invoice.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(invoice.channel_code, invoice.va_bank_label)}` : "Virtual Account"));
-      kontenModal.push(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;margin-top:4px;" }, invoice.va_number || "-"));
-      kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
-        "Transfer PERSIS sejumlah tagihan ini ke nomor Virtual Account di atas lewat m-banking/ATM."));
-    } else if (invoice.channel === "qris" && invoice.qr_url) {
-      kontenModal.push(MugenUI.el("img", { src: invoice.qr_url, alt: "QRIS", style: "max-width:240px;width:100%;" }));
-      kontenModal.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
-        "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
-    }
-
-    // Verifikasi Pembayaran Tanpa Menunggu Admin: countdown (MURNI tampilan/
-    // estimasi, pola SAMA PERSIS book_public.js -- status sungguhan TETAP
-    // dari polling/webhook di bawah) + tombol "Saya Sudah Bayar", TRIGGER
-    // pengecekan ULANG ke provider (endpoint yang SAMA dengan "Cek Ulang ke
-    // Provider" milik Owner di renderInvoiceCard() di atas), BUKAN klaim
-    // status dari Owner sendiri. Tombol TANPA .btn-primary (bobot visual
-    // sekunder, proporsional) supaya tidak bersaing dengan info VA/QR di
-    // atasnya, tapi tetap mudah ditemukan (langsung di bawah countdown).
-    const countdownEl = MugenUI.el("div", { class: "book-countdown", style: "margin:12px auto 0;" }, "15:00");
-    const statusLabelEl = MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;min-height:18px;" }, "");
-    const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:6px;" }, "Saya Sudah Bayar");
-    kontenModal.push(MugenUI.el("div", { style: "margin-top:6px;" }, [countdownEl, statusLabelEl, btnSudahBayar]));
-
-    const modalRef = MugenUI.infoModal({ title: "Selesaikan Pembayaran", body: MugenUI.el("div", { style: "text-align:center;" }, kontenModal) });
-    MugenUI.toast("Status langganan akan diperbarui otomatis di sini setelah pembayaran dikonfirmasi.", "info", { force: true });
-
-    // Countdown 15 menit MURNI tampilan (estimasi batas waktu umum provider,
-    // pola SAMA PERSIS book_public.js::renderFaseWaiting()) -- TIDAK PERNAH
-    // mengubah status sendiri begitu habis, self-clear begitu modal ditutup
-    // (countdownEl lepas dari DOM).
-    const deadlineCountdown = Date.now() + 15 * 60 * 1000;
-    const countdownTimer = setInterval(() => {
-      if (!document.body.contains(countdownEl)) { clearInterval(countdownTimer); return; }
-      const sisaMs = deadlineCountdown - Date.now();
-      if (sisaMs <= 0) { clearInterval(countdownTimer); countdownEl.textContent = "00:00"; return; }
-      const sisaDetik = Math.floor(sisaMs / 1000);
-      const mm = String(Math.floor(sisaDetik / 60)).padStart(2, "0");
-      const ss = String(sisaDetik % 60).padStart(2, "0");
-      countdownEl.textContent = `${mm}:${ss}`;
-      countdownEl.classList.toggle("book-countdown-urgent", sisaDetik < 60);
-    }, 1000);
-
-    // Satu titik penerap status SATU-SATUNYA -- dipakai polling otomatis DI
-    // BAWAH DAN tombol "Saya Sudah Bayar" di atas, supaya perilaku
-    // (toast+segarkanLaluSelesai()/onSelesai()+tutup modal) PERSIS sama dari
-    // kedua jalur. Return true kalau statusnya final (pemanggil TIDAK perlu
-    // berbuat apa-apa lagi setelah ini).
-    function terapkanStatusInvoice(statusInvoice) {
-      if (statusInvoice === "paid") {
-        clearInterval(pollTimer);
-        clearInterval(countdownTimer);
-        modalRef.close();
-        MugenUI.toast("Pembayaran berhasil, memperbarui status langganan…", "info", { force: true });
-        segarkanLaluSelesai();
-        return true;
-      }
-      if (["denied", "cancelled", "expired"].includes(statusInvoice)) {
-        clearInterval(pollTimer);
-        clearInterval(countdownTimer);
-        modalRef.close();
-        MugenUI.toast("Pembayaran tidak berhasil. Silakan coba lagi.", "error");
-        onSelesai();
-        return true;
-      }
-      return false; // masih "pending" -- belum ada perubahan
-    }
-
-    // Verifikasi Pembayaran Tanpa Menunggu Admin: tombol "Saya Sudah Bayar"
-    // -- SAMA SEKALI TIDAK mengubah status sendiri, murni memicu server
-    // memanggil ULANG API provider (endpoint yang SAMA dengan "Cek Ulang ke
-    // Provider" Owner di renderInvoiceCard()) lalu mengambil status invoice
-    // TERBARU dan menerapkannya lewat terapkanStatusInvoice() di atas. Kalau
-    // provider belum melihat pembayaran, countdown TETAP berjalan (TIDAK
-    // dianggap gagal) -- Owner boleh menekan tombol ini berkali-kali.
-    btnSudahBayar.addEventListener("click", async () => {
-      if (!document.body.contains(btnSudahBayar)) return;
-      try {
-        await MugenUI.withButtonLoading(btnSudahBayar,
-          () => MugenApi.post(`/api/billing/invoices/${invoice.id}/cek-ulang`));
-      } catch (e) {
-        MugenUI.toast(pesanError(e), "error");
-        return;
-      }
-      let terbaru;
-      try {
-        terbaru = await MugenApi.get(`/api/billing/invoices/${invoice.id}`);
-      } catch (e) {
-        return; // hiccup jaringan sesaat -- status tetap seperti sebelumnya
-      }
-      if (!terapkanStatusInvoice(terbaru.status)) {
-        statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah Anda menyelesaikan pembayaran.";
-      }
-    });
-
-    // Polling status invoice (READ-ONLY, sama pola dengan gateway-status di
-    // book_public.js) -- status pembayaran SUNGGUHAN hanya pernah berubah
-    // lewat webhook di backend, polling ini murni menunggu itu lalu
-    // menyegarkan tampilan halaman ini. AUDIT (pre-merge): #app dibongkar
-    // total (innerHTML="") setiap kali Owner pindah menu (lihat router.js::
-    // shell()) -- TANPA guard ini, timer tetap menyala di background sampai
-    // 10 menit walau Owner sudah meninggalkan halaman Billing, membuat
-    // polling sia-sia (dan onSelesai() akhirnya me-render ULANG ke DOM
-    // yatim yang sudah tidak terlihat). btnPemicu (tombol yang diklik) jadi
-    // penanda "masih di halaman ini" -- begitu #app dibongkar, tombol itu
-    // ikut lepas dari document, pola SAMA PERSIS dengan
-    // document.body.contains(countdownEl) di book_public.js.
-    let sisaPercobaan = 150; // ~150 x 4 detik = 10 menit
-    const pollTimer = setInterval(async () => {
-      if (btnPemicu && !document.body.contains(btnPemicu)) { clearInterval(pollTimer); return; }
-      sisaPercobaan -= 1;
-      if (sisaPercobaan <= 0) { clearInterval(pollTimer); return; }
-      let terbaru;
-      try {
-        terbaru = await MugenApi.get(`/api/billing/invoices/${invoice.id}`);
-      } catch (e) {
-        return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
-      }
-      terapkanStatusInvoice(terbaru.status);
-    }, 4000);
+    return MugenBillingCheckout.jalankanCheckout({ packageId, siklus, config, onSelesai, btnPemicu });
   }
 
+  // REVISI (FITUR Peringatan Downgrade, diminta Owner): popup konfirmasi
+  // SEKARANG menyebutkan fitur/menu spesifik apa saja yang akan hilang
+  // (GET /api/billing/downgrade-preview/{id}, lihat billing_db.
+  // fitur_hilang_saat_downgrade()) -- SEBELUMNYA cuma teks generik. Kalau
+  // preview gagal dimuat (jaringan dsb), popup TETAP tampil dengan pesan
+  // generik lama (fail-open informatif, BUKAN memblokir downgrade yang
+  // sah hanya karena satu panggilan GET gagal).
   async function mulaiDowngrade(btn, paket, onSelesai) {
+    let fiturHilang = [];
+    try {
+      const preview = await MugenApi.get(`/api/billing/downgrade-preview/${paket.id}`);
+      fiturHilang = preview.fitur_hilang || [];
+    } catch (e) { /* lanjut dengan pesan generik, lihat catatan di atas */ }
+
+    const pesan = [`Pindah ke paket "${paket.nama}" sekarang? Perubahan berlaku langsung tanpa pembayaran.`];
+    if (fiturHilang.length) {
+      pesan.push("Fitur/menu berikut akan HILANG dari toko ini setelah downgrade:");
+      for (const f of fiturHilang) pesan.push(`• ${f}`);
+    }
     const ok = await MugenUI.confirmModal({
       title: "Downgrade Paket",
-      message: `Pindah ke paket "${paket.nama}" sekarang? Perubahan berlaku langsung tanpa pembayaran.`,
+      message: pesan,
       confirmText: "Ya, Downgrade",
+      danger: fiturHilang.length > 0,
     });
     if (!ok) return;
     _bersihkanPendingKode();

@@ -40,7 +40,7 @@ import snap_webhook
 import subscription_db
 import superadmin_audit_db
 import tenant_db
-from auth import require_admin, require_superadmin
+from auth import require_admin, require_owner_or_staff, require_superadmin
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 superadmin_router = APIRouter(prefix="/api/superadmin/billing", tags=["billing-superadmin"])
@@ -62,7 +62,7 @@ def daftar_paket_aktif(user: dict = Depends(require_admin)):
 
 
 @router.get("/config")
-def config_billing_gateway(user: dict = Depends(require_admin)):
+def config_billing_gateway(user: dict = Depends(require_owner_or_staff)):
     """Info PUBLIK Payment Gateway langganan SaaS (Client Key MEMANG
     dirancang dipakai di frontend, beda dengan Server Key yang tidak
     pernah dikirim ke client sama sekali) -- dipakai frontend memutuskan
@@ -70,7 +70,14 @@ def config_billing_gateway(user: dict = Depends(require_admin)):
     `enabled=False` dipakai menampilkan pesan "Billing belum aktif"
     alih-alih tombol checkout yang pasti gagal kalau Super Admin belum
     mengisi kredensial (lihat GET/PUT /api/superadmin/billing/gateway-config
-    di bawah)."""
+    di bawah).
+
+    REVISI (FITUR Notifikasi H-7 & Perpanjangan Cepat): gerbang dilonggarkan
+    dari require_admin ke require_owner_or_staff -- dipanggil JUGA oleh
+    pages/perpanjangan.js (Staff/role custom BOLEH checkout, lihat
+    routers/billing.py::renewal_checkout()), isinya TETAP murni info publik
+    gateway (channel/bank aktif, TIDAK ADA server key apa pun), jadi aman
+    diperluas."""
     return {
         # Migrasi Faspay SNAP Advance: checkout langganan SaaS sekarang
         # lewat SNAP (VA/QRIS), BUKAN lagi Xpress v4 -- `enabled` HARUS
@@ -115,8 +122,14 @@ class CheckoutBody(BaseModel):
     bank_code: str | None = None
 
 
-@router.post("/checkout")
-def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
+def _proses_checkout(user: dict, body: CheckoutBody) -> dict:
+    """Isi checkout() ASLI, dipindah ke fungsi tersendiri (TIDAK ada
+    perubahan logika sama sekali) supaya bisa dipakai bersama dua endpoint:
+    /checkout (Owner murni, require_admin, paket APA PUN -- perilaku lama
+    tidak berubah) dan /renewal-checkout di bawah (Owner ATAU Staff/role
+    custom, require_owner_or_staff -- TAPI dengan guard tambahan di
+    pemanggilnya: paket tujuan tidak boleh di bawah paket sekarang, lihat
+    FITUR Notifikasi H-7 & Perpanjangan Cepat)."""
     if not payment_provider_client.is_enabled():
         raise HTTPException(status_code=503,
                              detail="Pembayaran online belum aktif -- hubungi penyedia layanan.")
@@ -213,6 +226,56 @@ def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
     }
 
 
+@router.post("/checkout")
+def checkout(body: CheckoutBody, user: dict = Depends(require_admin)):
+    return _proses_checkout(user, body)
+
+
+# ============================= FITUR Notifikasi H-7 & Perpanjangan Cepat =============================
+# Diminta Owner: tulisan merah H-7 sebelum periode_selesai (lihat
+# routers/subscription.py::subscription_status(), nav.js) -- begitu
+# diklik, BUKAN diarahkan ke halaman Billing penuh (Owner-only, lihat
+# nav.js roles: ["admin"]) karena Staff/role custom (kecuali 'barber')
+# JUGA harus bisa menuntaskan pembayaran perpanjangan/upgrade sendiri
+# (dikonfirmasi eksplisit Owner). Dua endpoint di bawah SENGAJA terpisah
+# dari /packages & /checkout di atas (TETAP require_admin, TIDAK diubah):
+# - HANYA menampilkan paket sekarang + paket DI ATASNYA (urutan >=
+#   current) -- TIDAK PERNAH downgrade, baik dari daftar yang dikembalikan
+#   maupun ditegakkan ulang di /renewal-checkout (pertahanan kalau
+#   frontend entah bagaimana mengirim package_id di bawah urutan sekarang).
+# - Downgrade TETAP HANYA lewat halaman Billing penuh (/downgrade di atas,
+#   require_admin, tidak disentuh sama sekali di sini).
+@router.get("/renewal-options")
+def renewal_options(user: dict = Depends(require_owner_or_staff)):
+    sub = subscription_db.get_subscription(user["tenant_id"])
+    current = billing_db.get_package_by_kode(sub["package"]) if sub else None
+    urutan_current = current["urutan"] if current else 0
+    hasil = []
+    for paket in billing_db.list_packages(hanya_aktif=True):
+        if paket["urutan"] >= urutan_current:
+            baris = dict(paket)
+            # Sama seperti GET /packages di atas -- fitur checkbox disertakan
+            # supaya pages/perpanjangan.js tidak perlu query terpisah per paket.
+            baris["fitur"] = billing_db.get_package_features(paket["id"])
+            hasil.append(baris)
+    return {"package_sekarang": current, "pilihan": hasil}
+
+
+@router.post("/renewal-checkout")
+def renewal_checkout(body: CheckoutBody, user: dict = Depends(require_owner_or_staff)):
+    paket = billing_db.get_package(body.package_id)
+    if paket is None or not paket["aktif"]:
+        raise HTTPException(status_code=422, detail="Paket tidak ditemukan atau tidak aktif.")
+    sub = subscription_db.get_subscription(user["tenant_id"])
+    current = billing_db.get_package_by_kode(sub["package"]) if sub else None
+    if current is not None and paket["urutan"] < current["urutan"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Ini downgrade paket -- hanya Owner yang bisa melakukannya, lewat menu Billing.",
+        )
+    return _proses_checkout(user, body)
+
+
 @router.get("/lifetime-pending")
 def lifetime_pending_saya(user: dict = Depends(require_admin)):
     """FITUR Program Afiliasi Sales/Marketing: tampilkan transaksi Lisensi
@@ -239,6 +302,24 @@ def lifetime_pending_saya(user: dict = Depends(require_admin)):
         "qr_content": transaksi["qr_content"] if transaksi else None,
         "expired_at": transaksi["expired_at"] if transaksi else None,
     }
+
+
+@router.get("/downgrade-preview/{package_id}")
+def downgrade_preview(package_id: int, user: dict = Depends(require_admin)):
+    """FITUR Peringatan Downgrade (diminta Owner): dipanggil billing.js
+    SEBELUM popup konfirmasi downgrade ditampilkan -- daftar label fitur/
+    menu yang akan HILANG kalau Owner jadi pindah ke package_id ini (lihat
+    billing_db.fitur_hilang_saat_downgrade()). Murni informatif, TIDAK
+    memblokir apa pun -- pemakaian melebihi limit tetap dicek terpisah di
+    POST /downgrade (billing_limits.evaluasi_downgrade())."""
+    target = billing_db.get_package(package_id)
+    if target is None or not target["aktif"]:
+        raise HTTPException(status_code=422, detail="Paket tidak ditemukan atau tidak aktif.")
+    sub = subscription_db.get_subscription(user["tenant_id"])
+    current = billing_db.get_package_by_kode(sub["package"]) if sub else None
+    if current is None:
+        return {"fitur_hilang": []}
+    return {"fitur_hilang": billing_db.fitur_hilang_saat_downgrade(current["id"], target["id"])}
 
 
 class DowngradeBody(BaseModel):

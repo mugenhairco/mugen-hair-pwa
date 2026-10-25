@@ -14,6 +14,7 @@ menghitung ulang satu angka pun sendiri.
 
 from datetime import datetime
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -35,6 +36,12 @@ import uang_kas_db
 import data_non_barber_db
 import rekap_ringkasan
 import attendance_db
+
+# BUGFIX: "Dicetak: ..." di footer tiap halaman & stempel waktu di nama file
+# sebelumnya memakai datetime.now() polos -- waktu SERVER (default UTC di
+# Render), bukan WIB, jadi tampil mundur 7 jam dari jam dinding Indonesia.
+# Sama seperti catatan WIB di booking_db.py -- SELALU pakai datetime.now(WIB).
+WIB = ZoneInfo("Asia/Jakarta")
 
 _NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
                "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
@@ -216,7 +223,7 @@ def _header_footer_factory(judul: str, periode: str, dicetak_oleh: str, tenant_i
     identitas = pengaturan_identitas.get_identitas(tenant_id=tenant_id)
     nama_barbershop = identitas.get("nama_barbershop") or "Rivoir"
     logo_data, _ = pengaturan_identitas.get_logo_data(tenant_id=tenant_id)
-    tanggal_cetak = datetime.now().strftime("%d/%m/%Y %H:%M")
+    tanggal_cetak = datetime.now(WIB).strftime("%d/%m/%Y %H:%M")
 
     def _on_page(canvas, doc):
         canvas.saveState()
@@ -650,7 +657,7 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
 
     judul = _judul(jenis)
     konten = _bangun_pdf(judul, periode, dicetak_oleh, header, baris, col_widths, ringkasan_tambahan, tenant_id=tenant_id)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(WIB).strftime("%Y%m%d-%H%M%S")
     filename = f"laporan_{jenis}_{stamp}.pdf"
     return konten, filename
 
@@ -670,7 +677,7 @@ def buat_laporan(jenis: str, barber_id: int | None, dicetak_oleh: str,
 
 
 def buat_nama_file(prefix: str) -> str:
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(WIB).strftime("%Y%m%d-%H%M%S")
     return f"{prefix}_{stamp}.pdf"
 
 

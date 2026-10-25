@@ -135,11 +135,11 @@ const PageSuperadmin = (() => {
 
   const LABEL_PACKAGE_SUBS = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
   const LABEL_STATUS_SUBS = {
-    trial: "Trial", active: "Active", grace_period: "Grace Period",
+    trial: "Trial", active: "Active",
     expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
   };
   const BADGE_STATUS_SUBS = {
-    trial: "badge-libur", active: "badge-success", grace_period: "badge-warning",
+    trial: "badge-libur", active: "badge-success",
     expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
   };
   const LABEL_PAYMENT_STATUS = { pending: "Pending", paid: "Lunas", expired: "Kedaluwarsa", failed: "Gagal" };
@@ -615,15 +615,12 @@ const PageSuperadmin = (() => {
     // ---------------------------------------------------------------
     subsConfigCard.appendChild(MugenUI.el("h2", {}, "Konfigurasi Subscription"));
     subsConfigCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Durasi default (hari) dipakai saat Trial/Grace Period BARU diatur ke tenant mana pun tanpa mengisi jumlah hari secara eksplisit."));
+      "Durasi default (hari) dipakai saat Trial BARU diatur ke tenant mana pun tanpa mengisi jumlah hari secara eksplisit."));
     const inputTrialHari = MugenUI.el("input", { type: "number", min: "1" });
-    const inputGraceHari = MugenUI.el("input", { type: "number", min: "1" });
     const btnSimpanConfig = MugenUI.el("button", { class: "btn-primary" }, "Simpan Konfigurasi");
     const configError = MugenUI.el("div", { class: "login-error" });
     subsConfigCard.appendChild(MugenUI.el("label", {}, "Durasi Trial Default (hari)"));
     subsConfigCard.appendChild(inputTrialHari);
-    subsConfigCard.appendChild(MugenUI.el("label", {}, "Durasi Grace Period Default (hari)"));
-    subsConfigCard.appendChild(inputGraceHari);
     subsConfigCard.appendChild(configError);
     subsConfigCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanConfig));
 
@@ -631,7 +628,6 @@ const PageSuperadmin = (() => {
       try {
         const cfg = await MugenApi.get("/api/superadmin/subscriptions/config");
         inputTrialHari.value = cfg.trial_hari;
-        inputGraceHari.value = cfg.grace_hari;
       } catch (e) { configError.textContent = e.message; }
     }
     btnSimpanConfig.addEventListener("click", async () => {
@@ -640,7 +636,6 @@ const PageSuperadmin = (() => {
         // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
         await MugenUI.withButtonLoading(btnSimpanConfig, () => MugenApi.put("/api/superadmin/subscriptions/config", {
           trial_hari: parseInt(inputTrialHari.value, 10) || null,
-          grace_hari: parseInt(inputGraceHari.value, 10) || null,
         }));
         MugenUI.toast("Konfigurasi Subscription disimpan.", "success");
         loadAuditLog();
@@ -726,42 +721,28 @@ const PageSuperadmin = (() => {
       subsManagerBody.appendChild(btnResetSubs);
       btnResetSubs.addEventListener("click", () => bukaModalResetSubscription(tenant, sub));
 
-      // --- Trial & Grace ---
+      // --- Trial --- (REVISI, diminta Owner: Grace Period manual dihapus
+      // total dari sini -- lihat subscription_db.py untuk penggantinya,
+      // peringatan H-7 otomatis sebelum periode_selesai.)
       const infoTrial = sub.trial_start ? `${formatWaktu(sub.trial_start)} s/d ${formatWaktu(sub.trial_end)}` : "belum diatur";
-      const infoGrace = sub.grace_start ? `${formatWaktu(sub.grace_start)} s/d ${formatWaktu(sub.grace_end)}` : "belum diatur";
       const inputTrialHariTenant = MugenUI.el("input", { type: "number", min: "1", placeholder: "hari" });
       const btnSetTrial = MugenUI.el("button", {}, "Set Trial (mulai sekarang)");
-      const inputGraceHariTenant = MugenUI.el("input", { type: "number", min: "1", placeholder: "hari" });
-      const btnSetGrace = MugenUI.el("button", {}, "Set Grace Period (mulai sekarang)");
-      const errTrialGrace = MugenUI.el("div", { class: "login-error" });
+      const errTrial = MugenUI.el("div", { class: "login-error" });
 
       subsManagerBody.appendChild(MugenUI.el("div", { style: "margin-top:16px;" }, [
         MugenUI.el("div", { class: "subtitle" }, `Masa Trial saat ini: ${infoTrial}`),
         MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:4px;" }, [inputTrialHariTenant, btnSetTrial]),
       ]));
-      subsManagerBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, [
-        MugenUI.el("div", { class: "subtitle" }, `Grace Period saat ini: ${infoGrace}`),
-        MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:4px;" }, [inputGraceHariTenant, btnSetGrace]),
-      ]));
-      subsManagerBody.appendChild(errTrialGrace);
+      subsManagerBody.appendChild(errTrial);
 
       btnSetTrial.addEventListener("click", async () => {
-        errTrialGrace.textContent = "";
+        errTrial.textContent = "";
         try {
           await MugenUI.withButtonLoading(btnSetTrial, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/trial`,
             { hari: inputTrialHariTenant.value ? parseInt(inputTrialHariTenant.value, 10) : null }));
           MugenUI.toast("Trial disimpan.", "success", { force: true });
           loadAuditLog(); renderSubscriptionManager(tenant);
-        } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-      });
-      btnSetGrace.addEventListener("click", async () => {
-        errTrialGrace.textContent = "";
-        try {
-          await MugenUI.withButtonLoading(btnSetGrace, () => MugenApi.put(`/api/superadmin/subscriptions/${tenant.id}/grace`,
-            { hari: inputGraceHariTenant.value ? parseInt(inputGraceHariTenant.value, 10) : null }));
-          MugenUI.toast("Grace Period disimpan.", "success", { force: true });
-          loadAuditLog(); renderSubscriptionManager(tenant);
-        } catch (e) { errTrialGrace.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+        } catch (e) { errTrial.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
       });
 
       // --- Pembayaran (VA) -- struktur saja, TANPA payment gateway ---
