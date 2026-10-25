@@ -158,3 +158,7 @@ const PagePerpanjangan = (() => {
 
   return { render };
 })();
+// BUGFIX (halaman Billing/Perpanjangan gagal dimuat produksi): expose
+// eksplisit ke window -- pola WAJIB sama persis seperti akhir pages/
+// billing.js dst, lihat catatan lengkap di billing_checkout_shared.js.
+window.PagePerpanjangan = PagePerpanjangan;

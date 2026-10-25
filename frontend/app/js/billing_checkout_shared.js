@@ -216,3 +216,9 @@ const MugenBillingCheckout = (() => {
 
   return { pesanError, pilihChannelModal, jalankanCheckout };
 })();
+// BUGFIX (Billing/Perpanjangan gagal dimuat produksi): expose eksplisit ke
+// window -- top-level `const` di script biasa (BUKAN module) TIDAK membuat
+// properti di window, padahal page_loader.js::ensure() mengecek
+// window[globalName] untuk memastikan modul benar-benar sudah dimuat
+// sebelum dipakai (lihat pola SAMA PERSIS di akhir pages/billing.js dst).
+window.MugenBillingCheckout = MugenBillingCheckout;
