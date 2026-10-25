@@ -15,6 +15,22 @@ const PageAbsensi = (() => {
   };
   const LABEL_KETEPATAN = { tepat_waktu: "Tepat Waktu", terlambat: "Terlambat" };
 
+  // BUGFIX PERFORMA (diminta Owner): pindah ke menu lain lalu kembali ke
+  // Absensi TIDAK PERLU loading ulang -- DOM admin view yang sudah
+  // dibangun (termasuk seluruh data yang sudah dimuat) disimpan di sini
+  // dan dipasang ulang apa adanya, BUKAN dibangun dari nol lagi. Modul ini
+  // (seperti modul halaman lain) hanya dimuat SEKALI oleh page_loader.js
+  // seumur hidup tab browser (lihat ensure() di sana -- window[globalName]
+  // dicek lebih dulu), jadi variabel di sini otomatis bertahan selintas
+  // navigasi apa pun SELAMA tab browser ini belum ditutup/di-refresh (F5).
+  // _cacheUserId dicek supaya kalau user LAIN login di tab yang sama
+  // setelah logout (logout TIDAK me-reload halaman, lihat nav.js --
+  // hanya location.hash = "#/login"), cache otomatis dianggap basi dan
+  // dibangun ulang -- TIDAK butuh nav.js/state.js tahu soal modul ini
+  // sama sekali.
+  let _cacheAdminDom = null;
+  let _cacheUserId = null;
+
   function badgeStatus(row) {
     const status = row.status;
     let cls = "badge";
@@ -938,13 +954,41 @@ const PageAbsensi = (() => {
         bolehAturSettings = false;
       }
     }
+    // ---- Tab menu (diminta Owner -- sebelumnya SEMUA card ditumpuk satu
+    // halaman panjang): 6 kelompok terpisah, TIDAK saling memuat ulang data
+    // saat pindah tab (semua dimuat SEKALI di awal seperti sebelumnya, tab
+    // tinggal menyembunyikan/menampilkan panel via display:none -- murni
+    // perubahan TATA LETAK, bukan logika pemuatan data). "Pengaturan" HANYA
+    // muncul untuk yang boleh (bolehAturSettings, sama seperti sebelumnya).
+    const tabItems = [
+      { key: "dashboard", label: "Dashboard" },
+      { key: "daftar", label: "Daftar Absensi" },
+      { key: "limit-kuota", label: "Sisa Limit & Kuota" },
+      { key: "koreksi", label: "Pengajuan Koreksi" },
+      { key: "audit", label: "Log Audit" },
+    ];
+    if (bolehAturSettings) tabItems.push({ key: "pengaturan", label: "Pengaturan" });
+
+    const panels = {};
+    for (const item of tabItems) {
+      panels[item.key] = MugenUI.el("div", { style: item.key === tabItems[0].key ? "" : "display:none;" });
+    }
+    const tabsWidget = MugenUI.tabs(tabItems, {
+      onChange: (key) => {
+        for (const k in panels) panels[k].style.display = k === key ? "" : "none";
+      },
+    });
+    root.appendChild(tabsWidget.bar);
+    for (const item of tabItems) root.appendChild(panels[item.key]);
+    tabsWidget.moveIndicator();
+
     if (bolehAturSettings) {
-      await renderPengaturanAbsensi(root);
+      await renderPengaturanAbsensi(panels.pengaturan);
     }
 
     // ---- Dashboard ringkasan ----
     const dashCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(dashCard);
+    panels.dashboard.appendChild(dashCard);
     dashCard.appendChild(MugenUI.el("h2", {}, "Dashboard Absensi Hari Ini"));
     const dashGrid = MugenUI.el("div", { class: "grid-cards" });
     dashCard.appendChild(dashGrid);
@@ -977,7 +1021,7 @@ const PageAbsensi = (() => {
 
     // ---- Sisa Limit Keterlambatan & Pulang Lebih Awal (bulan berjalan) ----
     const limitCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(limitCard);
+    panels["limit-kuota"].appendChild(limitCard);
     limitCard.appendChild(MugenUI.el("h2", {}, "Sisa Limit Bulan Ini"));
     const limitSubtitle = MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Keterlambatan & Pulang Lebih Awal masing-masing punya limit menit/bulan per barber (diatur Owner/Admin di kartu Pengaturan Absensi), otomatis reset tiap tanggal 1. Limit habis TIDAK menghalangi Check In/Out, hanya tercatat di Keterangan.");
@@ -1011,7 +1055,7 @@ const PageAbsensi = (() => {
     // sudah habis (field `kuota_habis`, lihat routers/izin_cuti.py::
     // ambil_sisa_kuota_semua_barber()). ----
     const kuotaCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(kuotaCard);
+    panels["limit-kuota"].appendChild(kuotaCard);
     kuotaCard.appendChild(MugenUI.el("h2", {}, "Sisa Kuota Izin, Cuti & Libur"));
     kuotaCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Izin & Cuti berbagi SATU saldo (periode diatur Owner di Pengaturan Izin & Cuti). Kuota Libur reset " +
@@ -1041,8 +1085,8 @@ const PageAbsensi = (() => {
     // ---- Filter & Daftar Absensi ----
     const filterCard = MugenUI.el("div", { class: "card" });
     const listCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(filterCard);
-    root.appendChild(listCard);
+    panels.daftar.appendChild(filterCard);
+    panels.daftar.appendChild(listCard);
 
     filterCard.appendChild(MugenUI.el("h2", {}, "Filter"));
     const filBarber = MugenUI.el("select");
@@ -1204,7 +1248,7 @@ const PageAbsensi = (() => {
 
     // ---- Pengajuan Koreksi Absensi (barber lupa Check In/Check Out) ----
     const koreksiCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(koreksiCard);
+    panels.koreksi.appendChild(koreksiCard);
     koreksiCard.appendChild(MugenUI.el("h2", {}, "Pengajuan Koreksi Absensi"));
     koreksiCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Koreksi diajukan barber saat lupa Check In/Check Out -- Setujui untuk menerapkan jam yang diajukan ke data Absensi, atau Tolak."));
@@ -1314,7 +1358,7 @@ const PageAbsensi = (() => {
 
     // ---- Log Audit (investigasi Fake GPS/Mock Location) ----
     const auditCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(auditCard);
+    panels.audit.appendChild(auditCard);
     auditCard.appendChild(MugenUI.el("h2", {}, "Log Audit Percobaan Check In/Out"));
     auditCard.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Rekam SEMUA percobaan Check In/Check Out (berhasil maupun gagal) untuk investigasi -- termasuk alasan penolakan, akurasi GPS, browser, device, dan IP Address."));
@@ -1361,15 +1405,18 @@ const PageAbsensi = (() => {
     }
     loadAudit();
 
-    // ---- Reset Riwayat Absensi Karyawan (mengantisipasi data menumpuk) ----
+    // ---- Hapus Riwayat Absensi Karyawan (mengantisipasi data menumpuk) ----
     // BEDA dari Hapus Log Audit di atas: ini menghapus attendance_logs
     // (riwayat Check In/Out sungguhan), bukan sekadar log investigasi --
     // TAPI Owner ATAU Admin (staff) SAMA-SAMA boleh (backend
     // require_owner_or_staff, TANPA delegasi permission terpisah), sesuai
-    // permintaan Owner.
+    // permintaan Owner. DIGABUNG ke tab Dashboard (bukan tab sendiri lagi)
+    // + kata "Reset" dihapus dari judul card (tetap "Hapus Riwayat Absensi
+    // Karyawan", tombolnya sendiri sudah bernama "Hapus Riwayat Absensi"
+    // sejak awal, tidak pernah memakai kata "Reset") -- permintaan Owner.
     const resetCard = MugenUI.el("div", { class: "card" });
-    root.appendChild(resetCard);
-    resetCard.appendChild(MugenUI.el("h2", {}, "Reset Riwayat Absensi Karyawan"));
+    panels.dashboard.appendChild(resetCard);
+    resetCard.appendChild(MugenUI.el("h2", {}, "Hapus Riwayat Absensi Karyawan"));
     resetCard.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Hapus PERMANEN riwayat Check In/Out (Daftar Absensi, Sisa Limit, Keterangan) untuk mengantisipasi data yang menumpuk. Pilih satu barber, atau \"Semua Barber\" untuk menghapus riwayat SELURUH karyawan. Tindakan ini TIDAK BISA dibatalkan -- Uang Harian & Keterlambatan/Pulang Cepat yang sudah pernah dihitung TETAP SAMA (dibekukan otomatis sebelum riwayat mentahnya dihapus), tidak ikut hilang/reset."));
     const selResetBarber = MugenUI.el("select");
@@ -1428,9 +1475,22 @@ const PageAbsensi = (() => {
 
     if (user.role === "barber") {
       await renderBarberView(root);
-    } else {
-      await renderAdminView(root);
+      return;
     }
+
+    // BUGFIX PERFORMA (diminta Owner): lihat catatan lengkap di
+    // _cacheAdminDom di atas -- pasang ulang DOM yang sudah pernah
+    // dibangun (data sudah dimuat) kalau user yang login masih SAMA,
+    // jangan dibangun ulang dari nol.
+    if (_cacheAdminDom && _cacheUserId === user.id) {
+      root.appendChild(_cacheAdminDom);
+      return;
+    }
+    const adminRoot = MugenUI.el("div");
+    await renderAdminView(adminRoot);
+    root.appendChild(adminRoot);
+    _cacheAdminDom = adminRoot;
+    _cacheUserId = user.id;
   }
 
   return { render };
