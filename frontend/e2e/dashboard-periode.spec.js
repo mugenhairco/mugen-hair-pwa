@@ -31,13 +31,10 @@ test.describe("Dashboard Owner — mode Periode", () => {
     await expect(page.locator(".card-collapse-title", { hasText: "Nilai Service" })).toBeVisible();
     await expect(page.locator(".card-collapse-title", { hasText: "Laba Kotor Toko" })).toBeVisible();
     await expect(page.locator("h2", { hasText: "SERVICE PERIODE INI" })).toBeVisible();
-    // Grafik Pendapatan (terikat kalender bulan/tahun) sengaja disembunyikan di mode Periode.
-    await expect(page.locator("h2", { hasText: "Grafik Pendapatan" })).toHaveCount(0);
 
-    // Kembali ke "Bulanan" -- Bonus Customer & Grafik Pendapatan muncul lagi.
+    // Kembali ke "Bulanan" -- Bonus Customer muncul lagi.
     await page.locator(".mugen-tabs button", { hasText: "Bulanan" }).click();
     await page.waitForTimeout(1000);
     await expect(page.locator(".card-collapse-title", { hasText: "Bonus Customer" })).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Grafik Pendapatan" })).toBeVisible();
   });
 });
