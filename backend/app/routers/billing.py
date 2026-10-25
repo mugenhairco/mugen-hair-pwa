@@ -145,6 +145,27 @@ def _proses_checkout(user: dict, body: CheckoutBody) -> dict:
     if paket["harga"] <= 0:
         raise HTTPException(status_code=422, detail="Paket ini tidak memerlukan pembayaran.")
 
+    # BUGFIX (diminta Owner): sebelumnya HANYA /downgrade yang mengecek
+    # pemakaian vs limit paket tujuan (billing_limits.evaluasi_downgrade())
+    # -- checkout/upgrade TIDAK PERNAH dicek sama sekali. Ini jadi masalah
+    # nyata karena limit paket "free" (trial) SENGAJA dibuat lebih longgar
+    # dari "basic" (mis. max_barber free=6 vs basic=3) supaya tenant baru
+    # bebas eksplor dulu -- tenant trial dengan 5 barber aktif yang
+    # "upgrade" (urutan lebih tinggi, harga lebih mahal) ke Basic akan
+    # SUKSES BAYAR tapi langsung melebihi limit paket barunya begitu
+    # checkout ini selesai, tanpa peringatan apa pun sebelumnya. Dicek di
+    # SINI (bukan hanya endpoint terpisah) supaya /checkout DAN
+    # /renewal-checkout (keduanya memanggil fungsi ini) sama-sama
+    # terlindungi -- evaluasi_downgrade() murni "pemakaian vs limit target",
+    # TIDAK spesifik arah downgrade, jadi aman dipakai ulang apa adanya.
+    pelanggaran = billing_limits.evaluasi_downgrade(user["tenant_id"], paket)
+    if pelanggaran:
+        raise HTTPException(
+            status_code=422,
+            detail="Pemakaian saat ini melebihi batas paket tujuan -- kurangi dulu: "
+                   + "; ".join(pelanggaran),
+        )
+
     # FITUR Landing Page & Pricing (paket 6 bulan, DAN paket Tahunan): siklus
     # "6bulan"/"tahunan" mengganti harga/durasi EFEKTIF yang dipakai checkout
     # ini (harga_6bulan/harga_tahunan, durasi SELALU durasi_hari*6 atau *12 --

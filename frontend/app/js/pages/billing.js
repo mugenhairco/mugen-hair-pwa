@@ -170,8 +170,14 @@ const PageBilling = (() => {
 
     const pesan = [`Pindah ke paket "${paket.nama}" sekarang? Perubahan berlaku langsung tanpa pembayaran.`];
     if (fiturHilang.length) {
-      pesan.push("Fitur/menu berikut akan HILANG dari toko ini setelah downgrade:");
+      pesan.push("Menu/fitur berikut akan TERKUNCI (tidak bisa diakses) setelah downgrade:");
       for (const f of fiturHilang) pesan.push(`• ${f}`);
+      // Diminta Owner: tegaskan data TIDAK dihapus -- biar tidak disalah-
+      // artikan sebagai "data hilang". Lihat subscription_db.update_package()
+      // (hanya ganti kolom package, tidak ada DELETE apa pun terhadap data
+      // tenant) -- menu/fitur cuma dikunci akses (403), data lama tetap
+      // tersimpan dan akan muncul lagi kalau upgrade balik nanti.
+      pesan.push("Data yang sudah ada (riwayat, dst) TIDAK akan dihapus -- hanya akses menunya yang dikunci selama paket ini aktif.");
     }
     const ok = await MugenUI.confirmModal({
       title: "Downgrade Paket",

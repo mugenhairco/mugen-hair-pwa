@@ -346,3 +346,56 @@ def test_downgrade_preview_staff_ditolak(app_client):
 
     r = app_client.get(f"/api/billing/downgrade-preview/{free['id']}", headers=headers_staff)
     assert r.status_code == 403
+
+
+# ============================= Pengecekan limit saat checkout/upgrade (BARU) =============================
+# Diminta Owner: SEBELUMNYA hanya /downgrade yang mengecek pemakaian vs
+# limit paket tujuan -- checkout/upgrade bisa SUKSES BAYAR lalu langsung
+# melebihi limit paket barunya (limit "free" SENGAJA lebih longgar dari
+# "basic", lihat routers/billing.py::_proses_checkout()). Dicek lewat
+# /checkout (Owner murni) DAN /renewal-checkout (Owner/Staff) karena
+# keduanya memanggil _proses_checkout() yang sama.
+
+def test_checkout_diblokir_saat_pemakaian_melebihi_limit_paket_tujuan(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    for i in range(3):
+        db.add_barber(f"Barber {i}", tenant_id=tenant["id"])
+
+    basic = billing_db.get_package_by_kode("basic")
+    billing_db.update_package(basic["id"], max_barber=2)
+    _aktifkan_snap_billing(monkeypatch)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": basic["id"], "siklus": "bulanan", "channel": "va", "bank_code": "702"})
+    assert r.status_code == 422
+    assert "melebihi batas paket tujuan" in r.json()["detail"]
+    assert "barber aktif" in r.json()["detail"]
+
+
+def test_checkout_boleh_kalau_pemakaian_masih_dalam_limit(app_client, monkeypatch):
+    tenant, headers = _owner_login(app_client)
+    basic = billing_db.get_package_by_kode("basic")
+    billing_db.update_package(basic["id"], max_barber=2)
+    _aktifkan_snap_billing(monkeypatch)
+
+    r = app_client.post("/api/billing/checkout", headers=headers,
+                         json={"package_id": basic["id"], "siklus": "bulanan", "channel": "va", "bank_code": "702"})
+    assert r.status_code == 200, r.text
+
+
+def test_renewal_checkout_upgrade_juga_diblokir_saat_melebihi_limit(app_client, monkeypatch):
+    """Guard yang sama di _proses_checkout() otomatis ikut melindungi
+    /renewal-checkout (Staff/role custom) -- tidak perlu duplikasi kode."""
+    tenant, _ = _owner_login(app_client)
+    for i in range(3):
+        db.add_barber(f"Barber {i}", tenant_id=tenant["id"])
+
+    basic = billing_db.get_package_by_kode("basic")
+    billing_db.update_package(basic["id"], max_barber=2)
+    headers_staff = _staff_login(app_client, tenant)
+    _aktifkan_snap_billing(monkeypatch)
+
+    r = app_client.post("/api/billing/renewal-checkout", headers=headers_staff,
+                         json={"package_id": basic["id"], "siklus": "bulanan", "channel": "va", "bank_code": "702"})
+    assert r.status_code == 422
+    assert "melebihi batas paket tujuan" in r.json()["detail"]
