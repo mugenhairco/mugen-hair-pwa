@@ -73,6 +73,26 @@ if _paket_free is not None:
     _fitur_sudah_ada = {f["id"] for f in billing_db.get_package_features(_paket_free["id"])}
     billing_db.set_package_features(_paket_free["id"], list(_fitur_sudah_ada | _fitur_ids))
 
+    # BUGFIX (E2E absensi.spec.js gagal: tombol Check In TIDAK PERNAH ada):
+    # "absensi" SUDAH DIPINDAH dari katalog fitur di atas ke Package
+    # Permission Tree (Work #2, lihat billing_db.hapus_fitur_absorbed_ke_tree())
+    # -- kode fiturnya SUDAH DIHAPUS dari katalog SEBELUM baris di atas
+    # sempat jalan (dihapus saat main.on_startup() di atas), jadi
+    # get_feature_by_kode("absensi") SELALU None dan set_package_features()
+    # di atas diam-diam TIDAK PERNAH benar-benar mengaktifkan Absensi --
+    # gerbang yang SUNGGUHAN dipakai frontend sekarang adalah
+    # izin_absensi_lihat (subscription_package_permissions, dibaca lewat
+    # izin_paket di GET /api/subscription/status, lihat pages/absensi.js::
+    # render()). Granted LANGSUNG di tree di sini, SAMA seperti
+    # billing_db.migrasi_grandfather_package_permissions() SEHARUSNYA
+    # melakukannya kalau "absensi" sempat tercentang sebelum migrasi itu
+    # jalan (keduanya jalan di main.on_startup() yang SAMA, SEBELUM baris
+    # ini punya kesempatan mencentangnya).
+    import permissions  # noqa: E402  -- import lokal, pola sama seperti billing_db.py
+    _kunci_absensi_e2e = {"izin_absensi_lihat"} | permissions._descendants("izin_absensi_lihat")
+    _izin_sudah_ada = billing_db.get_package_permission_keys(_paket_free["id"])
+    billing_db.set_package_permission_keys(_paket_free["id"], _izin_sudah_ada | _kunci_absensi_e2e)
+
 BARBER_ID = database.add_barber("E2E Barber", tenant_id=TENANT_ID)
 SERVICE_ID = database.add_service("E2E Haircut", 50000, tenant_id=TENANT_ID)
 booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=TENANT_ID)
