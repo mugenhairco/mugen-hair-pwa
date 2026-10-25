@@ -1068,7 +1068,7 @@
 // pengaman localStorage; tombol "Setujui"/"Tolak" (sisi Admin/Owner) tidak
 // lagi blokir tombol menunggu server (refresh kartu Limit/Kuota/Absensi
 // tetap menunggu hasil ASLI, tidak ditebak) -- absensi.js.
-const ASSET_VERSION = "201";
+const ASSET_VERSION = "202";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
