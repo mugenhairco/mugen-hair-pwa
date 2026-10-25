@@ -395,6 +395,28 @@ def test_login_owner_tetap_berhasil_walau_subscription_diblokir(app_client):
     assert r4.status_code == 403
 
 
+def test_pengaturan_barber_user_service_tetap_bisa_diakses_saat_diblokir(app_client):
+    """FITUR Jalan Buntu Downgrade (diminta Owner): /api/pengaturan/barber,
+    /service, /user SENGAJA dikecualikan dari blokir subscription -- ini
+    satu-satunya cara Owner mengurangi pemakaian (nonaktifkan barber/user/
+    layanan) supaya downgrade yang sebelumnya diblokir billing_limits.
+    evaluasi_downgrade() bisa lolos. Endpoint Setting LAIN (whatsapp dst,
+    lihat test di atas) SENGAJA TIDAK ikut dikecualikan -- regresi
+    langsung dari bug nyata (CI PR #200): percobaan pertama mengecualikan
+    SELURUH "/api/pengaturan" membuat test di atas gagal."""
+    tenant = tenant_db.get_tenant_by_slug("mugen-hair-co")
+    auth_db.tambah_user("owner2", "password123", role="admin", tenant_id=tenant["id"])
+    headers = _login(app_client, "owner2", "password123")
+    subscription_db.update_status(tenant["id"], "suspended")
+
+    assert app_client.get("/api/pengaturan/barber", headers=headers).status_code == 200
+    assert app_client.get("/api/pengaturan/service", headers=headers).status_code == 200
+    assert app_client.get("/api/pengaturan/user", headers=headers).status_code == 200
+    # whatsapp (dan endpoint Setting lain) TETAP 403 -- regresi yang sama
+    # seperti test_login_owner_tetap_berhasil_walau_subscription_diblokir.
+    assert app_client.get("/api/pengaturan/whatsapp", headers=headers).status_code == 403
+
+
 def test_booking_list_dan_batalkan_tetap_bisa_diakses_saat_diblokir(app_client):
     """FITUR Jalan Buntu Limit Booking (diminta Owner): GET /api/booking
     (daftar) dan POST /api/booking/{id}/batalkan SENGAJA dikecualikan dari

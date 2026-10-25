@@ -331,17 +331,30 @@ const MugenRouter = (() => {
     // sama sekali (Owner-only), jadi kalau tenant mereka terlanjur
     // ter-suspend, #/perpanjangan tetap jadi satu-satunya jalan bagi
     // mereka untuk membantu Owner membayar tanpa harus login sebagai Owner.
-    // #/booking (FITUR Jalan Buntu Limit Booking, diminta Owner): tenant
-    // suspended yang booking aktif bulan ini melebihi limit paket tujuan
-    // tidak bisa downgrade/checkout (billing_limits.evaluasi_downgrade(),
-    // field max_booking) -- satu-satunya cara mengurangi pemakaian
-    // (batalkan booking) ada di halaman ini, jadi ikut dikecualikan sama
-    // seperti #/pengaturan untuk kasus barber/user/layanan (lihat auth.py::
+    // #/pengaturan (BARU, diminta Owner) ikut dikecualikan juga -- tenant
+    // suspended yang pemakaiannya (barber/user/layanan aktif) melebihi
+    // limit paket tujuan TIDAK BISA downgrade sama sekali (ditolak
+    // billing_limits.evaluasi_downgrade(), lihat routers/billing.py::
+    // downgrade()), dan SEBELUM pengecualian ini, satu-satunya cara
+    // mengurangi pemakaian (Setting > Karyawan/User/Layanan) justru ikut
+    // terkunci -- jalan buntu total, satu-satunya keluar HARUS bayar paket
+    // yang cukup dulu. Tab lain di Setting (Branding/Backup/dst) TIDAK bisa
+    // dikecualikan terpisah (tab-nya TIDAK tercermin di hash, selalu
+    // "#/pengaturan" polos, lihat pages/pengaturan.js) -- ikut terbuka,
+    // TAPI semuanya murni pengaturan milik tenant sendiri (bukan data
+    // customer/transaksi baru), risikonya sepadan dibanding jalan buntu di
+    // atas.
+    // #/booking (FITUR Jalan Buntu Limit Booking, lanjutan diminta Owner):
+    // tenant suspended yang booking aktif bulan ini melebihi limit paket
+    // tujuan tidak bisa downgrade/checkout (billing_limits.
+    // evaluasi_downgrade(), field max_booking) -- satu-satunya cara
+    // mengurangi pemakaian (batalkan booking) ada di halaman ini, jadi
+    // ikut dikecualikan sama seperti #/pengaturan di atas (lihat auth.py::
     // _booking_bebas_blokir() untuk sisi backend-nya -- hanya GET list &
     // POST batalkan yang benar-benar dikecualikan di sana, endpoint
     // booking lain seperti payment-settings/qris tetap 403).
     if (MugenSubscription.aksesDiblokir() && !hash.startsWith("#/billing") && !hash.startsWith("#/perpanjangan")
-        && !hash.startsWith("#/booking")) {
+        && !hash.startsWith("#/pengaturan") && !hash.startsWith("#/booking")) {
       appRoot.innerHTML = "";
       PageSubscriptionBlocked.render(appRoot);
       return;

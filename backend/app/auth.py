@@ -72,7 +72,29 @@ _bearer = HTTPBearer(auto_error=False)
 # diblokir HARUS tetap bisa melihat status/tagihannya & membayar untuk
 # memulihkan akses (sama seperti pengecualian "#/billing" di router.js
 # frontend), dan logout/ganti kata sandi tidak boleh ikut terkunci.
-_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = ("/api/billing", "/api/subscription", "/api/auth")
+# "/api/pengaturan/barber", "/api/pengaturan/service", "/api/pengaturan/user"
+# (BARU, diminta Owner): tenant suspended yang pemakaian barber/user/
+# layanan aktifnya MELEBIHI limit paket tujuan TIDAK BISA downgrade
+# (billing_limits.evaluasi_downgrade() menolak), dan SEBELUM pengecualian
+# ini, satu-satunya cara mengurangi pemakaian (Setting > Karyawan/User/
+# Layanan) justru ikut terkunci di sini juga -- jalan buntu total.
+# Dikecualikan di SINI JUGA (bukan cuma router.js frontend) -- tanpa ini,
+# Owner bisa MASUK ke halaman Setting (router.js sudah dikecualikan) tapi
+# SETIAP aksi nonaktifkan barber/user/layanan tetap ditolak 403 oleh
+# gerbang backend ini, membuat pengecualian frontend-nya percuma.
+#
+# SENGAJA HANYA TIGA SUB-PATH INI, BUKAN SELURUH "/api/pengaturan" --
+# regresi CI (lihat test_login_owner_tetap_berhasil_walau_subscription_
+# diblokir di test_subscription.py) menangkap percobaan pertama yang
+# mengecualikan seluruh prefix: endpoint Setting lain (whatsapp/branding/
+# backup/komisi/dst) SENGAJA harus TETAP 403 saat diblokir (keputusan
+# audit sebelumnya, bukan bagian dari perbaikan jalan buntu downgrade
+# ini) -- hanya tiga resource yang benar-benar dipakai untuk mengurangi
+# pemakaian limit yang dikecualikan.
+_PREFIX_BEBAS_BLOKIR_SUBSCRIPTION = (
+    "/api/billing", "/api/subscription", "/api/auth",
+    "/api/pengaturan/barber", "/api/pengaturan/service", "/api/pengaturan/user",
+)
 
 # FITUR Jalan Buntu Limit Booking (diminta Owner, lanjutan dari PR #200
 # "/api/pengaturan/barber|service|user"): tenant suspended yang booking
