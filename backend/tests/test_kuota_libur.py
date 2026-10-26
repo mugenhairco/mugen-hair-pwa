@@ -695,3 +695,57 @@ def test_libur_mingguan_sudah_tercatat_tidak_berubah_saat_jadwal_diganti(single_
             (barber_id, "2026-08-04"),
         ).fetchone()
     assert row_lama["sumber"] == kld.SUMBER_LIBUR_MINGGUAN  # baris lama tidak diubah/ditimpa
+
+
+# ---------------------------------------------------------------------------
+# FITUR Pembersihan Data Bulanan Otomatis -- anti-"kebangkitan" baris Libur
+# Mingguan yang sudah dipurge (lihat kuota_libur_db.hapus_riwayat_libur_sebelum()
+# & data_purge_db.py). Celah ditemukan Owner lewat Rekap production: baris
+# "Libur" untuk periode yang Transaksi-nya sudah dihapus permanen tetap
+# muncul (bahkan terus dibuat ulang) karena pastikan_libur_mingguan_tercatat()
+# dipanggil OPORTUNISTIK setiap periode itu dibaca, tanpa tahu periode itu
+# sudah "sengaja dikosongkan".
+# ---------------------------------------------------------------------------
+
+def test_pastikan_libur_mingguan_tercatat_tidak_backfill_sebelum_cutoff_purge(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    # Simulasikan siklus purge yang SUDAH berjalan sampai cutoff 2026-09-01
+    # (bulan Agustus & sebelumnya sudah dibersihkan permanen).
+    kld.hapus_riwayat_libur_sebelum(tenant_id, "2026-09-01")
+    _patch_hari_ini(monkeypatch, "2026-09-15")  # "hari ini" SUDAH lewat periode lama itu
+
+    # Rekap periode LAMA (Agustus, sudah dipurge) dilihat lagi -> TIDAK
+    # boleh membuat baris baru untuk tanggal yang sudah dihapus permanen.
+    kld.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-01", "2026-08-31")
+    assert db.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-31") == 0
+
+
+def test_pastikan_libur_mingguan_tercatat_clamp_rentang_sebagian_sebelum_cutoff(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    kld.hapus_riwayat_libur_sebelum(tenant_id, "2026-09-01")  # cutoff: Agustus & sebelumnya sudah dipurge
+    _patch_hari_ini(monkeypatch, "2026-09-15")
+
+    # Rentang MENJOROK dari sebelum cutoff (Agustus) sampai SETELAH cutoff
+    # (September) -- hanya bagian >= cutoff yang boleh ikut dimaterialisasi.
+    kld.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-25", "2026-09-08")
+
+    baris = db.get_libur_list(barber_id=barber_id, tanggal_mulai="2026-08-25", tanggal_selesai="2026-09-08")
+    tanggal_libur = {b["tanggal"] for b in baris}
+    assert tanggal_libur == {"2026-09-01", "2026-09-08"}  # kedua Selasa SETELAH cutoff saja
+
+
+def test_pastikan_libur_mingguan_tercatat_tanpa_riwayat_purge_berjalan_seperti_biasa(single_tenant, monkeypatch):
+    """Tenant yang BELUM PERNAH dipurge (tidak ada baris setting cutoff
+    tercapai sama sekali) -- perilaku backfill TIDAK berubah sedikit pun
+    (regresi balik ke perilaku sebelum fitur anti-kebangkitan ini)."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+    _patch_hari_ini(monkeypatch, "2026-08-11")
+
+    kld.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-01", "2026-08-11")
+    assert db.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-11") == 2
