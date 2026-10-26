@@ -218,6 +218,26 @@ def hapus_data_non_barber(entry_id: int):
         conn.execute("DELETE FROM data_non_barber WHERE id = ?", (entry_id,))
 
 
+def hapus_riwayat_non_barber(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN baris data_non_barber (Kasir/OB/Kru) milik tenant ini
+    yang SELURUH periodenya (tanggal_mulai s/d tanggal_selesai) sudah
+    lewat -- disaring lewat `tanggal_selesai < sebelum_tanggal` (BUKAN
+    tanggal_mulai), supaya periode yang menjorok ke bulan berjalan TIDAK
+    ikut terhapus (sama hati-hatinya seperti kategori lain di fitur ini).
+    Baris ini SUDAH ikut diarsipkan ke PDF Rekap Transaksi Ringkasan
+    (lihat gabung_ke_rekap_transaksi(), dipanggil laporan_pdf.py::
+    buat_pdf_rekap_transaksi_ringkasan()) SEBELUM fungsi ini dipanggil --
+    data_purge_db.py yang menjamin urutan itu. Mengembalikan jumlah baris
+    yang terhapus."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM data_non_barber WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?) "
+            "AND tanggal_selesai < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
+
+
 # ---------------------------------------------------------------------------
 # Integrasi Rekap Transaksi -- lihat catatan di docstring modul ini kenapa
 # Non-Barber TIDAK dicampur ke tabel `transaksi` Barber. Baris di sini

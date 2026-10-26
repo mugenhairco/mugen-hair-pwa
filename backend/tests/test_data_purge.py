@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import attendance_db
+import data_non_barber_db
 import data_purge_db
 import database
 import kasbon_db
@@ -94,6 +95,63 @@ def test_arsipkan_dan_hapus_mutasi_lama_saldo_awal_diperlakukan_seperti_restock(
 # ---------------------------------------------------------------------------
 # Slip Gaji -- hapus TANPA PANDANG STATUS (slip_gaji_db.hapus_slip_gaji_sebelum)
 # ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_non_barber_saring_tanggal_selesai_bukan_tanggal_mulai(single_tenant):
+    """Regresi (ditemukan Owner lewat Rekap production -- data Karyawan
+    Non-Barber ternyata sama sekali terlewat dari purge pertama kali):
+    data_non_barber (Kasir/OB/Kru) difilter lewat `tanggal_selesai <
+    cutoff` (BUKAN tanggal_mulai) -- periode yang MULAI sebelum cutoff
+    tapi SELESAI setelahnya (masih menjorok ke bulan berjalan) TIDAK
+    boleh ikut terhapus."""
+    tenant_id = single_tenant["tenant_id"]
+    staff_id = database.add_barber("Kasir Purge", jabatan="kasir", tenant_id=tenant_id)
+    lama = data_non_barber_db.tambah_data_non_barber(
+        staff_id, "2026-08-01", "2026-08-10", gaji_per_hari=100000, hari_masuk=8, tenant_id=tenant_id)
+    menjorok = data_non_barber_db.tambah_data_non_barber(
+        staff_id, "2026-09-25", "2026-10-05", gaji_per_hari=100000, hari_masuk=8, tenant_id=tenant_id)
+    baru = data_non_barber_db.tambah_data_non_barber(
+        staff_id, "2026-10-10", "2026-10-15", gaji_per_hari=100000, hari_masuk=5, tenant_id=tenant_id)
+
+    jumlah = data_non_barber_db.hapus_riwayat_non_barber(tenant_id, "2026-10-01")
+    assert jumlah == 1
+    assert data_non_barber_db.get_data_non_barber(lama["id"]) is None
+    assert data_non_barber_db.get_data_non_barber(menjorok["id"]) is not None  # masih menjorok -- TIDAK terhapus
+    assert data_non_barber_db.get_data_non_barber(baru["id"]) is not None
+
+
+def test_jalankan_pembersihan_hapus_non_barber_walau_tanpa_transaksi_barber(single_tenant, monkeypatch):
+    """Regresi KRITIS: tenant dengan data Karyawan Non-Barber lama tapi
+    TANPA transaksi barber sama sekali di periode itu HARUS tetap
+    diarsipkan (PDF Ringkasan) dan dihapus -- sebelum fix ini, PDF
+    Ringkasan hanya dibuat kalau `ada_transaksi` True, jadi data
+    Non-Barber yang sendirian (tanpa transaksi barber) tidak pernah
+    terarsip MAUPUN terhapus sama sekali."""
+    tenant_id = single_tenant["tenant_id"]
+    _set_created_at(tenant_id, "2026-01-01")
+    _set_email(tenant_id, "owner@non-barber.test")
+    staff_id = database.add_barber("Kasir Purge E2E", jabatan="kasir", tenant_id=tenant_id)
+    entry_lama = data_non_barber_db.tambah_data_non_barber(
+        staff_id, "2026-07-01", "2026-07-10", gaji_per_hari=100000, hari_masuk=8, tenant_id=tenant_id)
+
+    captured = {}
+
+    def _fake_kirim_email(to, subject, html, attachments=None):
+        captured["attachments"] = attachments
+        return True
+
+    monkeypatch.setattr(data_purge_db, "kirim_email", _fake_kirim_email)
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+
+    hasil = data_purge_db.jalankan_pembersihan()
+    per = hasil["per_tenant"][str(tenant_id)]
+    assert per["email_terkirim"] is True
+    assert per["non_barber_dihapus"] == 1
+    assert per["transaksi_dihapus"] == 0  # memang tidak ada transaksi barber sama sekali
+
+    nama_lampiran = [nama for nama, _ in captured["attachments"]]
+    assert any("Ringkasan-Semua-Barber" in n for n in nama_lampiran)
+    assert data_non_barber_db.get_data_non_barber(entry_lama["id"]) is None
+
 
 def test_hapus_slip_gaji_sebelum_hapus_semua_status_sisakan_baru(single_tenant):
     tenant_id = single_tenant["tenant_id"]

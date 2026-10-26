@@ -15,7 +15,12 @@ Tujuh kategori, DUA kelompok:
 1. PERLU ARSIP PDF dulu (dikirim ke email tenant SEBELUM dihapus):
    - Rekap Transaksi Barber -- 1 PDF Detail PER barber (termasuk yang
      sudah nonaktif, lihat get_barbers(hanya_aktif=False)) + 1 PDF
-     Ringkasan gabungan SEMUA barber.
+     Ringkasan gabungan SEMUA barber. Data Karyawan Non-Barber (Kasir/OB/
+     Kru, lihat data_non_barber_db.py -- tabel TERPISAH dari `transaksi`,
+     tapi muncul di laporan "Rekap Transaksi" yang SAMA lewat
+     gabung_ke_rekap_transaksi()) IKUT dihapus di sini juga, terarsip
+     lewat PDF Ringkasan yang SAMA (TIDAK muncul di PDF Detail per
+     barber -- itu khusus barber asli).
    - Riwayat Absensi (attendance_logs) -- 1 PDF gabungan semua barber
      (pola SAMA seperti tombol "Cetak PDF" yang sudah ada di tab Daftar
      Absensi).
@@ -65,6 +70,7 @@ from zoneinfo import ZoneInfo
 
 import attendance_db
 import booking_db
+import data_non_barber_db
 import database as db
 import laporan_pdf
 import slip_gaji_db
@@ -121,7 +127,8 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     tenant_id = tenant["id"]
     tanggal_mulai = _tanggal_mulai_arsip(tenant)
     tanggal_selesai = _sehari_sebelum(cutoff)
-    hasil = {"email_terkirim": None, "transaksi_dihapus": 0, "absensi_dihapus": 0, "produk_diarsipkan": 0}
+    hasil = {"email_terkirim": None, "transaksi_dihapus": 0, "absensi_dihapus": 0, "produk_diarsipkan": 0,
+             "non_barber_dihapus": 0}
 
     lampiran = []
 
@@ -139,7 +146,19 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         )
         nama_file = f"Rekap-Transaksi-{barber['nama']}.pdf".replace(" ", "-")
         lampiran.append((nama_file, pdf_bytes))
-    if ada_transaksi:
+
+    # Karyawan Non-Barber (Kasir/OB/Kru, lihat data_non_barber_db.py) -- SATU
+    # tabel terpisah (BUKAN tabel transaksi), tapi tergabung ke PDF Ringkasan
+    # yang SAMA (buat_pdf_rekap_transaksi_ringkasan() di bawah memanggil
+    # data_non_barber_db.gabung_ke_rekap_transaksi() juga) -- jadi PDF Detail
+    # PER barber di atas TIDAK pernah memuatnya (field barber_id di sana
+    # selalu barber ASLI), tapi Ringkasan gabungan HARUS tetap dibuat kalau
+    # ADA data non-barber walau TIDAK ADA transaksi barber sama sekali.
+    data_non_barber = data_non_barber_db.get_data_non_barber_list(
+        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+    ada_non_barber = bool(data_non_barber)
+
+    if ada_transaksi or ada_non_barber:
         ringkasan_bytes = laporan_pdf.buat_pdf_rekap_transaksi_ringkasan(
             None, None, None, DICETAK_OLEH, tanggal_mulai=tanggal_mulai,
             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id,
@@ -163,7 +182,7 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         lampiran.append(("Riwayat-Mutasi-Produk.pdf", pdf_bytes))
 
     if not lampiran:
-        # Tidak ada data sama sekali di ketiga kategori ini pada rentang
+        # Tidak ada data sama sekali di keempat kategori ini pada rentang
         # itu -- tidak ada yang perlu diarsipkan MAUPUN dihapus, lewati
         # langsung (tidak terhitung gagal, cukup "tidak ada kerjaan").
         return hasil
@@ -171,8 +190,8 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     email_tenant = (tenant.get("email") or "").strip()
     if not email_tenant:
         logger.warning(
-            "Pembersihan Data: tenant_id=%s TIDAK punya email terdaftar -- Rekap Transaksi/Absensi/"
-            "Mutasi Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
+            "Pembersihan Data: tenant_id=%s TIDAK punya email terdaftar -- Rekap Transaksi/Non-Barber/"
+            "Absensi/Mutasi Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
         )
         hasil["email_terkirim"] = False
         return hasil
@@ -191,8 +210,8 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     hasil["email_terkirim"] = terkirim
     if not terkirim:
         logger.warning(
-            "Pembersihan Data: tenant_id=%s GAGAL kirim email arsip -- Rekap Transaksi/Absensi/Mutasi "
-            "Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
+            "Pembersihan Data: tenant_id=%s GAGAL kirim email arsip -- Rekap Transaksi/Non-Barber/Absensi/"
+            "Mutasi Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
         )
         return hasil
 
@@ -209,6 +228,8 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         hasil["absensi_dihapus"] = attendance_db.hapus_riwayat_absensi(tenant_id, sebelum_tanggal=cutoff)
     if ada_transaksi:
         hasil["transaksi_dihapus"] = db.hapus_riwayat_transaksi(tenant_id, cutoff)
+    if ada_non_barber:
+        hasil["non_barber_dihapus"] = data_non_barber_db.hapus_riwayat_non_barber(tenant_id, cutoff)
     if data_produk:
         produk_list = db.get_produk_list(hanya_aktif=False, tenant_id=tenant_id)
         for produk in produk_list:
