@@ -3,6 +3,27 @@
 // Mengikuti pola tab seperti pages/rekap.js.
 
 const PagePengaturan = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti produk.js/whatsapp.js -- simpan
+  // hasil fetch TERAKHIR per tab (key = nama tab, atau nama tab + sub-
+  // bagian untuk tab yang punya lebih dari satu fetch) di LUAR render()
+  // supaya bertahan lintas navigasi menu. Kalau Setting dibuka lagi TANPA
+  // ada simpan/tambah/edit/hapus apa pun sejak terakhir kali TAB itu
+  // berhasil dimuat (lihat state.js::halamanPerluRefresh("pengaturan")),
+  // tampilkan ulang tab itu TANPA fetch ulang. Ganti tab secara manual
+  // SELALU fetch ulang (opts.bisaDariCache hanya dipakai pada pemuatan
+  // AWAL render(), lihat renderBody() di bawah).
+  let _cacheTerakhir = {}; // { [bagian]: { userId, data } }
+
+  function _ambilDariCache(bagian, userId) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, data) {
+    _cacheTerakhir[bagian] = { userId, data };
+  }
+
   // REVISI BESAR Hak Akses (hapus Role "Admin" bawaan, lihat backend
   // permissions.py::PERMISSION_TREE): SEMUA tab Setting (KECUALI "Hak
   // Akses User", tetap permanen Owner-only -- lihat docstring
@@ -60,26 +81,26 @@ const PagePengaturan = (() => {
     // menggantikan tabBar/renderTabs manual.
     const tabItems = tabs.map((t) => ({ key: t, label: t }));
     const body = MugenUI.el("div");
-    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: () => renderBody() });
     root.appendChild(tabsCtl.bar);
     root.appendChild(body);
     requestAnimationFrame(tabsCtl.moveIndicator);
 
-    async function renderBody() {
+    async function renderBody(opts = {}) {
       body.innerHTML = "";
       const activeTab = tabsCtl.active;
-      if (activeTab === "Branding") await renderBranding();
-      else if (activeTab === "Tampilan") await renderTampilan();
-      else if (activeTab === "Komisi") await renderKomisi();
-      else if (activeTab === "Bonus Service") await renderBonusService();
-      else if (activeTab === "Uang Harian") await renderUangHarian();
-      else if (activeTab === "Karyawan") await renderBarber();
-      else if (activeTab === "Layanan") await renderLayanan();
-      else if (activeTab === "Subscription") await renderSubscription();
-      else if (activeTab === "User") await renderUser();
-      else if (activeTab === "Backup") await renderBackup();
-      else if (activeTab === "Profil") await renderProfil();
-      else await renderHakAksesAdmin();
+      if (activeTab === "Branding") await renderBranding(opts);
+      else if (activeTab === "Tampilan") await renderTampilan(opts);
+      else if (activeTab === "Komisi") await renderKomisi(opts);
+      else if (activeTab === "Bonus Service") await renderBonusService(opts);
+      else if (activeTab === "Uang Harian") await renderUangHarian(opts);
+      else if (activeTab === "Karyawan") await renderBarber(opts);
+      else if (activeTab === "Layanan") await renderLayanan(opts);
+      else if (activeTab === "Subscription") await renderSubscription(opts);
+      else if (activeTab === "User") await renderUser(opts);
+      else if (activeTab === "Backup") await renderBackup(opts);
+      else if (activeTab === "Profil") await renderProfil(opts);
+      else await renderHakAksesAdmin(opts);
     }
 
     // ================= BONUS SERVICE / UANG HARIAN (checklist acuan service) =================
@@ -90,21 +111,30 @@ const PagePengaturan = (() => {
     // tab menambahkan bagian lain SETELAH checklist ini (tier bonus untuk
     // Bonus Service, target harian untuk Uang Harian -- lihat renderBonusService/
     // renderUangHarian di bawah).
-    async function renderAcuanServiceChecklist(judul, endpoint, penjelasan) {
+    async function renderAcuanServiceChecklist(judul, endpoint, penjelasan, bagian, opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, judul));
       card.appendChild(MugenUI.el("div", { class: "subtitle" }, penjelasan));
 
       let services, acuan;
-      try {
-        [services, acuan] = await Promise.all([
-          MugenApi.get("/api/pengaturan/service"),
-          MugenApi.get(endpoint),
-        ]);
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.message));
-        return;
+      const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache(bagian, MugenState.getUser().id)
+        : null;
+      if (cached) {
+        [services, acuan] = cached;
+      } else {
+        try {
+          [services, acuan] = await Promise.all([
+            MugenApi.get("/api/pengaturan/service"),
+            MugenApi.get(endpoint),
+          ]);
+          _simpanKeCache(bagian, MugenState.getUser().id, [services, acuan]);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          card.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
       }
 
       const idAktif = new Set(acuan.service_ids || []);
@@ -144,7 +174,7 @@ const PagePengaturan = (() => {
     // Barbershop/Email/Logo (tab "Identitas Barbershop" yang dulu terpisah
     // sudah DIHAPUS -- BOOKING UI/UX #1 -- semua fieldnya adalah subset dari
     // tab ini, tidak ada data yang hilang).
-    async function renderBranding() {
+    async function renderBranding(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Branding"));
@@ -153,11 +183,20 @@ const PagePengaturan = (() => {
         "Tampil di halaman Login, sidebar, judul tab browser, dan laporan PDF."));
 
       let data;
-      try {
-        data = await MugenApi.get("/api/tenant/branding");
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.message));
-        return;
+      const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("branding", MugenState.getUser().id)
+        : null;
+      if (cached) {
+        data = cached;
+      } else {
+        try {
+          data = await MugenApi.get("/api/tenant/branding");
+          _simpanKeCache("branding", MugenState.getUser().id, data);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          card.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
       }
 
       // ---- Logo ----
@@ -301,7 +340,7 @@ const PagePengaturan = (() => {
     // Layanan). Target Bonus Service (tier bertingkat) DIPINDAH ke tab
     // Bonus Service (lihat renderBonusService di bawah) -- tab ini sekarang
     // murni tiga angka global.
-    async function renderKomisi() {
+    async function renderKomisi(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Pengaturan Komisi"));
@@ -309,11 +348,20 @@ const PagePengaturan = (() => {
         "Nilai ini langsung dipakai oleh rumus komisi/bonus yang sudah berjalan — tidak ada perubahan rumus, hanya nilainya jadi bisa diubah tanpa edit kode."));
 
       let s;
+      const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("komisi", MugenState.getUser().id)
+        : null;
+      if (cached) {
+        s = cached;
+      } else {
       try {
         s = await MugenApi.get("/api/pengaturan/komisi");
+        _simpanKeCache("komisi", MugenState.getUser().id, s);
+        MugenState.tandaiHalamanBersih("pengaturan");
       } catch (e) {
         card.appendChild(MugenUI.errorState(e.message));
         return;
+      }
       }
 
       const field = (label, key, satuan) => {
@@ -356,10 +404,10 @@ const PagePengaturan = (() => {
     // service (sudah ada sebelumnya) DAN Target Bonus Service/tier bertingkat
     // (dipindah dari tab Komisi). Teks hardcoded "Dry Cut + Cut & Wash"
     // dihilangkan -- seluruh aturan sudah bisa dikonfigurasi Owner sendiri.
-    async function renderBonusService() {
+    async function renderBonusService(opts = {}) {
       await renderAcuanServiceChecklist("Bonus Service", "/api/pengaturan/bonus-service-acuan",
         "Pilih service mana saja yang jadi acuan Target Bonus Service (tier bulanan, diatur di bawah). " +
-        "Bonus HANYA menghitung service yang dicentang di sini.");
+        "Bonus HANYA menghitung service yang dicentang di sini.", "bonus_service_acuan", opts);
 
       const tierCard = MugenUI.el("div", { class: "card" });
       body.appendChild(tierCard);
@@ -398,50 +446,64 @@ const PagePengaturan = (() => {
       }
       btnTierBatal.addEventListener("click", resetTierForm);
 
-      async function loadTiers() {
+      function tabelTiers(tiers) {
+        return MugenUI.buildTable(
+          [
+            { key: "target", label: "Target (service)" },
+            { key: "bonus", label: "Nominal Bonus", format: MugenUI.formatRupiah },
+            {
+              key: "aksi", label: "Aksi", format: (_, tier) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnEdit = MugenUI.el("button", {}, "Edit");
+                btnEdit.addEventListener("click", () => {
+                  editingTarget = tier.target;
+                  tierFormTitle.textContent = `Edit Tier — ${tier.target} service`;
+                  btnTierSimpan.textContent = "Simpan Perubahan";
+                  btnTierBatal.style.display = "";
+                  inTierTarget.value = String(tier.target);
+                  inTierBonus.value = String(tier.bonus);
+                  tierFormError.textContent = "";
+                  tierCard.scrollIntoView({ behavior: "smooth" });
+                });
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus tier ${tier.target} service?`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`));
+                    MugenUI.toast("Tier dihapus.", "success");
+                    loadTiers();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnEdit);
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          tiers,
+          { emptyText: "Belum ada target bonus diatur." },
+        );
+      }
+
+      async function loadTiers(loadOpts = {}) {
+        if (loadOpts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")) {
+          const cached = _ambilDariCache("bonus_tiers", MugenState.getUser().id);
+          if (cached) {
+            tierListBody.innerHTML = "";
+            tierListBody.appendChild(tabelTiers(cached));
+            return;
+          }
+        }
         tierListBody.innerHTML = "";
         tierListBody.appendChild(MugenUI.skeleton("table", { cols: 3, rows: 3 }));
         try {
           const tiers = await MugenApi.get("/api/pengaturan/bonus-tiers");
+          _simpanKeCache("bonus_tiers", MugenState.getUser().id, tiers);
+          MugenState.tandaiHalamanBersih("pengaturan");
           tierListBody.innerHTML = "";
-          tierListBody.appendChild(MugenUI.buildTable(
-            [
-              { key: "target", label: "Target (service)" },
-              { key: "bonus", label: "Nominal Bonus", format: MugenUI.formatRupiah },
-              {
-                key: "aksi", label: "Aksi", format: (_, tier) => {
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => {
-                    editingTarget = tier.target;
-                    tierFormTitle.textContent = `Edit Tier — ${tier.target} service`;
-                    btnTierSimpan.textContent = "Simpan Perubahan";
-                    btnTierBatal.style.display = "";
-                    inTierTarget.value = String(tier.target);
-                    inTierBonus.value = String(tier.bonus);
-                    tierFormError.textContent = "";
-                    tierCard.scrollIntoView({ behavior: "smooth" });
-                  });
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus tier ${tier.target} service?`)) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`));
-                      MugenUI.toast("Tier dihapus.", "success");
-                      loadTiers();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnEdit);
-                  wrap.appendChild(btnHapus);
-                  return wrap;
-                },
-              },
-            ],
-            tiers,
-            { emptyText: "Belum ada target bonus diatur." },
-          ));
+          tierListBody.appendChild(tabelTiers(tiers));
         } catch (e) {
           tierListBody.innerHTML = "";
           tierListBody.appendChild(MugenUI.errorState(e.message));
@@ -471,7 +533,7 @@ const PagePengaturan = (() => {
         }
       });
 
-      loadTiers();
+      loadTiers(opts);
     }
 
     // ================= TAB: UANG HARIAN =================
@@ -480,10 +542,10 @@ const PagePengaturan = (() => {
     // /api/pengaturan/uang-harian-target -- lihat database.py
     // target_uang_harian_per_hari()), di bawah checklist acuan service yang
     // sudah ada.
-    async function renderUangHarian() {
+    async function renderUangHarian(opts = {}) {
       await renderAcuanServiceChecklist("Uang Harian", "/api/pengaturan/uang-harian-acuan",
         "Pilih service mana saja yang jadi acuan syarat cair Uang Harian (cair kalau total service acuan ini " +
-        "pada satu hari yang sama mencapai target di bawah).");
+        "pada satu hari yang sama mencapai target di bawah).", "uang_harian_acuan", opts);
 
       const targetCard = MugenUI.el("div", { class: "card" });
       body.appendChild(targetCard);
@@ -493,12 +555,21 @@ const PagePengaturan = (() => {
         "target ini. Atur bebas sesuai kebijakan toko."));
 
       let targetSaatIni = 3;
-      try {
-        const t = await MugenApi.get("/api/pengaturan/uang-harian-target");
-        targetSaatIni = t.target;
-      } catch (e) {
-        targetCard.appendChild(MugenUI.errorState(e.message));
-        return;
+      const cachedTarget = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("uang_harian_target", MugenState.getUser().id)
+        : null;
+      if (cachedTarget) {
+        targetSaatIni = cachedTarget.target;
+      } else {
+        try {
+          const t = await MugenApi.get("/api/pengaturan/uang-harian-target");
+          targetSaatIni = t.target;
+          _simpanKeCache("uang_harian_target", MugenState.getUser().id, t);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          targetCard.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
       }
 
       const inTarget = MugenUI.el("input", { type: "number", min: "1", value: String(targetSaatIni) });
@@ -521,7 +592,7 @@ const PagePengaturan = (() => {
         }
       });
 
-      await renderUangHarianDinamis();
+      await renderUangHarianDinamis(opts);
     }
 
     // FITUR Uang Harian Dinamis Berdasarkan Absensi: KHUSUS opt-in (default
@@ -534,7 +605,7 @@ const PagePengaturan = (() => {
     // dipakai APA ADANYA dari kartu Pengaturan Absensi (menu Absensi) --
     // SATU sumber kebenaran, TIDAK diduplikasi di sini, hanya ditampilkan
     // read-only sebagai konteks.
-    async function renderUangHarianDinamis() {
+    async function renderUangHarianDinamis(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Uang Harian Dinamis Berdasarkan Absensi"));
@@ -545,14 +616,23 @@ const PagePengaturan = (() => {
         "(Acuan Service + Target di atas) tanpa perubahan apa pun."));
 
       let cfg, attSettings;
-      try {
-        [cfg, attSettings] = await Promise.all([
-          MugenApi.get("/api/uang-harian-dinamis/config"),
-          MugenApi.get("/api/attendance/settings"),
-        ]);
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
-        return;
+      const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("uang_harian_dinamis", MugenState.getUser().id)
+        : null;
+      if (cached) {
+        [cfg, attSettings] = cached;
+      } else {
+        try {
+          [cfg, attSettings] = await Promise.all([
+            MugenApi.get("/api/uang-harian-dinamis/config"),
+            MugenApi.get("/api/attendance/settings"),
+          ]);
+          _simpanKeCache("uang_harian_dinamis", MugenState.getUser().id, [cfg, attSettings]);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+          return;
+        }
       }
 
       function checkboxBaris(input, teks) {
@@ -662,7 +742,7 @@ const PagePengaturan = (() => {
     }
 
     // ================= TAB: BARBER =================
-    async function renderBarber() {
+    async function renderBarber(opts = {}) {
       const formCard = MugenUI.el("div", { class: "card" });
       const listCard = MugenUI.el("div", { class: "card" });
       body.appendChild(formCard);
@@ -803,14 +883,8 @@ const PagePengaturan = (() => {
       const listBody = MugenUI.el("div");
       listCard.appendChild(listBody);
 
-      async function loadList() {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.skeleton("table", { cols: 8, rows: 4 }));
-        try {
-          const rows = await MugenApi.get("/api/pengaturan/barber");
-          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
-          listBody.innerHTML = "";
-          listBody.appendChild(MugenUI.buildTable(
+      function tabelKaryawan(rows) {
+          return MugenUI.buildTable(
             [
               {
                 key: "foto_filename", label: "Foto", format: (v, r) => v
@@ -945,17 +1019,37 @@ const PagePengaturan = (() => {
               },
             ],
             rows,
-          ));
+          );
+      }
+
+      async function loadList(opts = {}) {
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")) {
+          const cached = _ambilDariCache("barber", MugenState.getUser().id);
+          if (cached) {
+            listBody.innerHTML = "";
+            listBody.appendChild(tabelKaryawan(cached));
+            return;
+          }
+        }
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 8, rows: 4 }));
+        try {
+          const rows = await MugenApi.get("/api/pengaturan/barber");
+          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
+          _simpanKeCache("barber", MugenState.getUser().id, rows);
+          MugenState.tandaiHalamanBersih("pengaturan");
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelKaryawan(rows));
         } catch (e) {
           listBody.innerHTML = "";
           listBody.appendChild(MugenUI.errorState(e.message));
         }
       }
-      loadList();
+      loadList(opts);
 
       // FITUR Kebijakan Cuti Dinamis (feedback Owner): kartu terpisah di
       // BAWAH daftar karyawan -- "Pengaturan > Karyawan > Izin & Cuti".
-      await renderPengaturanCuti();
+      await renderPengaturanCuti(opts);
     }
 
     // FITUR Kebijakan Cuti Dinamis: opsional per tenant -- default 0/off
@@ -965,7 +1059,7 @@ const PagePengaturan = (() => {
     // Izin & Cuti) SELALU melewati kebijakan ini -- HANYA barber sendiri
     // (self-service) yang tunduk penuh, lihat izin_cuti_db.py::
     // _validasi_kebijakan_cuti().
-    async function renderPengaturanCuti() {
+    async function renderPengaturanCuti(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Pengaturan Izin & Cuti"));
@@ -978,11 +1072,20 @@ const PagePengaturan = (() => {
         "karyawan sendiri -- Owner/Admin/Staff tetap bebas membuat pengajuan atas nama karyawan kapan pun."));
 
       let settings;
-      try {
-        settings = await MugenApi.get("/api/izin-cuti/pengaturan");
-      } catch (e) {
-        card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
-        return;
+      const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("pengaturan_cuti", MugenState.getUser().id)
+        : null;
+      if (cached) {
+        settings = cached;
+      } else {
+        try {
+          settings = await MugenApi.get("/api/izin-cuti/pengaturan");
+          _simpanKeCache("pengaturan_cuti", MugenState.getUser().id, settings);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+          return;
+        }
       }
 
       function checkboxBaris(input, teks) {
@@ -1092,7 +1195,7 @@ const PagePengaturan = (() => {
     // Komisi Barber" (READ-ONLY, dihitung (Harga - Harga Modal) x Persentase
     // Komisi) supaya Owner bisa langsung lihat komisi tiap layanan tanpa
     // hitung manual -- murni tampilan, tidak mengubah data apa pun.
-    async function renderLayanan() {
+    async function renderLayanan(opts = {}) {
       const formCard = MugenUI.el("div", { class: "card" });
       const listCard = MugenUI.el("div", { class: "card" });
       body.appendChild(formCard);
@@ -1180,14 +1283,8 @@ const PagePengaturan = (() => {
       const listBody = MugenUI.el("div");
       listCard.appendChild(listBody);
 
-      async function loadList() {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
-        try {
-          const rows = await MugenApi.get("/api/pengaturan/service");
-          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
-          listBody.innerHTML = "";
-          listBody.appendChild(MugenUI.buildTable(
+      function tabelLayanan(rows) {
+          return MugenUI.buildTable(
             [
               { key: "nama", label: "Nama" },
               { key: "harga", label: "Harga", format: MugenUI.formatRupiah },
@@ -1266,17 +1363,37 @@ const PagePengaturan = (() => {
               },
             ],
             rows,
-          ));
+          );
+      }
+
+      async function loadList(loadOpts = {}) {
+        if (loadOpts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")) {
+          const cached = _ambilDariCache("layanan", MugenState.getUser().id);
+          if (cached) {
+            listBody.innerHTML = "";
+            listBody.appendChild(tabelLayanan(cached));
+            return;
+          }
+        }
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
+        try {
+          const rows = await MugenApi.get("/api/pengaturan/service");
+          rows.sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || a.nama.localeCompare(b.nama));
+          _simpanKeCache("layanan", MugenState.getUser().id, rows);
+          MugenState.tandaiHalamanBersih("pengaturan");
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelLayanan(rows));
         } catch (e) {
           listBody.innerHTML = "";
           listBody.appendChild(MugenUI.errorState(e.message));
         }
       }
-      loadList();
+      loadList(opts);
     }
 
     // ================= TAB: USER =================
-    async function renderUser() {
+    async function renderUser(opts = {}) {
       // REVISI Hak Akses Admin: role 'admin' (Owner) dan 'staff' (Admin,
       // BARU) sekarang dua peran berbeda -- lihat backend/permissions.py.
       // Akun ber-role 'staff' HANYA boleh mengelola user ber-role 'barber'
@@ -1306,7 +1423,17 @@ const PagePengaturan = (() => {
       // ber-role Admin, lihat guard selRole) -- daftar ini di sini HANYA
       // dipakai staff untuk lookup nama, bukan untuk memilih Role.
       let roles = [];
-      try { roles = await MugenApi.get("/api/pengaturan/user-roles"); } catch (e) { /* opsional */ }
+      const cachedRoles = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("user_roles", MugenState.getUser().id)
+        : null;
+      if (cachedRoles) {
+        roles = cachedRoles;
+      } else {
+        try {
+          roles = await MugenApi.get("/api/pengaturan/user-roles");
+          _simpanKeCache("user_roles", MugenState.getUser().id, roles);
+        } catch (e) { /* opsional */ }
+      }
       const NAMA_ROLE = Object.fromEntries(roles.map((r) => [r.id, r.nama]));
 
       // Decode/encode nilai <option> tunggal <-> {role, custom_role_id} --
@@ -1401,13 +1528,8 @@ const PagePengaturan = (() => {
       const listBody = MugenUI.el("div");
       listCard.appendChild(listBody);
 
-      async function loadList() {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 4 }));
-        try {
-          const rows = await MugenApi.get("/api/pengaturan/user");
-          listBody.innerHTML = "";
-          listBody.appendChild(MugenUI.buildTable(
+      function tabelUser(rows) {
+          return MugenUI.buildTable(
             [
               { key: "username", label: "Username" },
               {
@@ -1552,13 +1674,32 @@ const PagePengaturan = (() => {
               },
             ],
             rows,
-          ));
+          );
+      }
+
+      async function loadList(loadOpts = {}) {
+        if (loadOpts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")) {
+          const cached = _ambilDariCache("user_list", MugenState.getUser().id);
+          if (cached) {
+            listBody.innerHTML = "";
+            listBody.appendChild(tabelUser(cached));
+            return;
+          }
+        }
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 4 }));
+        try {
+          const rows = await MugenApi.get("/api/pengaturan/user");
+          _simpanKeCache("user_list", MugenState.getUser().id, rows);
+          MugenState.tandaiHalamanBersih("pengaturan");
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelUser(rows));
         } catch (e) {
           listBody.innerHTML = "";
           listBody.appendChild(MugenUI.errorState(e.message));
         }
       }
-      loadList();
+      loadList(opts);
     }
 
     // ================= TAB: SUBSCRIPTION (FONDASI Multi-Tenant Phase 3) =================
@@ -1582,6 +1723,10 @@ const PagePengaturan = (() => {
       return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
     }
 
+    // PERMINTAAN OWNER (menu tanpa jeda loading): tab ini SENGAJA TIDAK
+    // ikut pola cache -- status subscription dikelola Super Admin lewat
+    // Dashboard-nya sendiri (bukan aksi akun yang login di sini), sama
+    // seperti pages/billing.js. Fetch ulang tetap jalan seperti biasa.
     async function renderSubscription() {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
@@ -1814,7 +1959,7 @@ const PagePengaturan = (() => {
     // sendiri, tidak memakai katalog izin_* ini sama sekali) SENGAJA tidak
     // muncul di tabel Role ini. Role baru mulai KOSONG (fail-closed) --
     // Owner men-checklist sendiri dari nol.
-    async function renderHakAksesAdmin() {
+    async function renderHakAksesAdmin(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Hak Akses User"));
@@ -1851,23 +1996,9 @@ const PagePengaturan = (() => {
         }).catch((e) => MugenUI.toast(e.message, "error"));
       }
 
-      async function loadRoles() {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.skeleton("table", { cols: 2, rows: 2 }));
-        let roles;
-        try {
-          roles = await MugenApi.get("/api/pengaturan/user-roles");
-        } catch (e) {
-          listBody.innerHTML = "";
-          listBody.appendChild(MugenUI.errorState(e.message));
-          return;
-        }
-        listBody.innerHTML = "";
-        if (!roles.length) {
-          listBody.appendChild(MugenUI.emptyState("Belum ada Role. Tambahkan Role pertama di bawah."));
-          return;
-        }
-        listBody.appendChild(MugenUI.buildTable(
+      function tabelRoles(roles) {
+        if (!roles.length) return MugenUI.emptyState("Belum ada Role. Tambahkan Role pertama di bawah.");
+        return MugenUI.buildTable(
           [
             { key: "nama", label: "Role" },
             {
@@ -1903,7 +2034,32 @@ const PagePengaturan = (() => {
             },
           ],
           roles,
-        ));
+        );
+      }
+
+      async function loadRoles(loadOpts = {}) {
+        if (loadOpts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")) {
+          const cached = _ambilDariCache("hak_akses_roles", MugenState.getUser().id);
+          if (cached) {
+            listBody.innerHTML = "";
+            listBody.appendChild(tabelRoles(cached));
+            return;
+          }
+        }
+        listBody.innerHTML = "";
+        listBody.appendChild(MugenUI.skeleton("table", { cols: 2, rows: 2 }));
+        let roles;
+        try {
+          roles = await MugenApi.get("/api/pengaturan/user-roles");
+        } catch (e) {
+          listBody.innerHTML = "";
+          listBody.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
+        _simpanKeCache("hak_akses_roles", MugenState.getUser().id, roles);
+        MugenState.tandaiHalamanBersih("pengaturan");
+        listBody.innerHTML = "";
+        listBody.appendChild(tabelRoles(roles));
       }
 
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama Role (mis. Staff, Kasir)" });
@@ -1927,7 +2083,7 @@ const PagePengaturan = (() => {
         }
       });
 
-      await loadRoles();
+      await loadRoles(opts);
     }
 
     // ================= TAB: PROFIL (email akun Owner sendiri) =================
@@ -1936,7 +2092,7 @@ const PagePengaturan = (() => {
     // email di sini, TIDAK PERNAH memblokir login Owner-nya sendiri
     // (routers/pengaturan.py::ubah_email_profil() TIDAK PERNAH menyetel
     // blokir_sampai_verifikasi -- itu murni milik alur Registrasi mandiri).
-    async function renderProfil() {
+    async function renderProfil(opts = {}) {
       const card = MugenUI.el("div", { class: "card" });
       body.appendChild(card);
       card.appendChild(MugenUI.el("h2", {}, "Profil Saya"));
@@ -1954,15 +2110,25 @@ const PagePengaturan = (() => {
       card.appendChild(errorBox);
       card.appendChild(MugenUI.el("div", { style: "margin-top:10px;" }, btnSimpan));
 
-      async function muatUlang() {
-        infoBox.innerHTML = "";
+      async function muatUlang(loadOpts = {}) {
         let akun;
-        try {
-          akun = await MugenApi.get("/api/auth/me");
-        } catch (e) {
-          infoBox.appendChild(MugenUI.errorState(e.message));
-          return;
+        const cached = loadOpts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+          ? _ambilDariCache("profil", MugenState.getUser().id)
+          : null;
+        if (cached) {
+          akun = cached;
+        } else {
+          try {
+            akun = await MugenApi.get("/api/auth/me");
+            _simpanKeCache("profil", MugenState.getUser().id, akun);
+            MugenState.tandaiHalamanBersih("pengaturan");
+          } catch (e) {
+            infoBox.innerHTML = "";
+            infoBox.appendChild(MugenUI.errorState(e.message));
+            return;
+          }
         }
+        infoBox.innerHTML = "";
         inputEmail.value = akun.email || "";
         if (!akun.email) {
           infoBox.appendChild(MugenUI.el("span", { class: "subtitle" }, "Belum ada email tersimpan."));
@@ -2002,7 +2168,7 @@ const PagePengaturan = (() => {
         }
       });
 
-      await muatUlang();
+      await muatUlang(opts);
 
       // FITUR Notifikasi Push: kartu terpisah, gagal diam-diam/tidak
       // ditampilkan sama sekali kalau backend belum enabled (VAPID_*
@@ -2011,7 +2177,7 @@ const PagePengaturan = (() => {
       if (typeof MugenPushNotif !== "undefined") await MugenPushNotif.renderCard(body);
     }
 
-    renderBody();
+    renderBody({ bisaDariCache: true });
   }
 
   return { render };

@@ -1106,7 +1106,15 @@
 // TIDAK ikut -- status subscription/pembayaran berubah lewat webhook
 // payment gateway, sama seperti Riwayat Transaksi/Settlement Faspay
 // (lihat catatan di billing.js).
-const ASSET_VERSION = "208";
+// v208 -> v209: PERMINTAAN Owner (lanjutan v205-v208, TERAKHIR) -- menu
+// Setting (Branding, Komisi, Bonus Service, Uang Harian [termasuk mode
+// Dinamis], Karyawan/Barber, Pengaturan Izin & Cuti, Layanan, User, Hak
+// Akses User, Profil) sekarang ikut pola cache tanpa-jeda yang sama,
+// per-tab -- ganti tab manual tetap fetch ulang. Tampilan & Backup tidak
+// butuh cache (tidak ada fetch GET apa pun di tab itu). Subscription
+// SENGAJA TIDAK ikut -- status dikelola Super Admin dari luar, sama
+// seperti Billing.
+const ASSET_VERSION = "209";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
