@@ -510,3 +510,67 @@ def test_jalankan_pembersihan_cegah_kebangkitan_libur_mingguan_setelah_dipurge(s
     baris = database.get_libur_list(barber_id=barber_id, tenant_id=tenant_id, tahun=2026, bulan=8)
     assert baris == []
     assert database.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-31") == 0
+
+
+# ---------------------------------------------------------------------------
+# Riwayat Pembayaran Kasbon -- kasbon_db.hapus_riwayat_pembayaran_sebelum().
+# Celah ditemukan Owner lewat Rekap production: baris "Kasbon Dibayar" tetap
+# tampil walau Transaksi periode yang sama sudah dihapus, karena kategori
+# ini tidak pernah masuk desain awal fitur ini.
+# ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_pembayaran_kasbon_sebelum_hapus_sesuai_cutoff_sisakan_baru(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = database.add_barber("Barber Kasbon Purge", tenant_id=tenant_id)
+    kasbon = kasbon_db.buat_kasbon(barber_id, "2026-07-01", 1000000, dibuat_oleh="tester", tenant_id=tenant_id)
+    kasbon_db.bayar_kasbon(kasbon["id"], "2026-07-15", 400000, dibuat_oleh="tester")  # SEBELUM cutoff
+    kasbon_db.bayar_kasbon(kasbon["id"], "2026-09-05", 200000, dibuat_oleh="tester")  # SETELAH cutoff
+
+    jumlah = kasbon_db.hapus_riwayat_pembayaran_sebelum(tenant_id, "2026-09-01")
+    assert jumlah == 1
+    riwayat_tersisa = kasbon_db.get_riwayat_pembayaran(kasbon["id"])
+    assert len(riwayat_tersisa) == 1
+    assert riwayat_tersisa[0]["tanggal"] == "2026-09-05"
+
+    # Saldo "sisa" TIDAK berubah sama sekali -- kolom tersimpan, bukan
+    # dihitung ulang dari riwayat pembayaran (utang yang sudah dibayar
+    # TIDAK tampak aktif lagi hanya karena riwayatnya dihapus).
+    assert kasbon_db.get_kasbon(kasbon["id"])["sisa"] == 400000  # 1jt - 400rb - 200rb
+
+    # Baris kasbon (pinjaman) itu SENDIRI TIDAK ikut terhapus.
+    assert kasbon_db.get_kasbon(kasbon["id"]) is not None
+
+    # Idempotent: tidak ada lagi baris < cutoff -> 0.
+    assert kasbon_db.hapus_riwayat_pembayaran_sebelum(tenant_id, "2026-09-01") == 0
+
+
+def test_hapus_riwayat_pembayaran_kasbon_sebelum_tenant_scoped(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = database.add_barber("Barber Kasbon A", tenant_id=tenant_a)
+    barber_b = database.add_barber("Barber Kasbon B", tenant_id=tenant_b)
+    kasbon_a = kasbon_db.buat_kasbon(barber_a, "2026-07-01", 500000, dibuat_oleh="tester", tenant_id=tenant_a)
+    kasbon_db.bayar_kasbon(kasbon_a["id"], "2026-07-10", 500000, dibuat_oleh="tester")
+    kasbon_b = kasbon_db.buat_kasbon(barber_b, "2026-07-01", 500000, dibuat_oleh="tester", tenant_id=tenant_b)
+    kasbon_db.bayar_kasbon(kasbon_b["id"], "2026-07-10", 500000, dibuat_oleh="tester")
+
+    jumlah = kasbon_db.hapus_riwayat_pembayaran_sebelum(tenant_a, "2026-09-01")
+    assert jumlah == 1
+    assert kasbon_db.get_riwayat_pembayaran(kasbon_a["id"]) == []
+    assert len(kasbon_db.get_riwayat_pembayaran(kasbon_b["id"])) == 1  # tenant lain TIDAK ikut tersentuh
+
+
+def test_jalankan_pembersihan_hapus_riwayat_pembayaran_kasbon_tanpa_pandang_status_email(single_tenant, monkeypatch):
+    """Kelompok 2 (hapus langsung) -- TETAP terhapus walau tenant belum
+    punya email terdaftar, sama seperti Log Audit/Koreksi/Slip Gaji/Libur."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = database.add_barber("Barber Kasbon Orkestrator", tenant_id=tenant_id)
+    kasbon = kasbon_db.buat_kasbon(barber_id, "2026-07-01", 500000, dibuat_oleh="tester", tenant_id=tenant_id)
+    kasbon_db.bayar_kasbon(kasbon["id"], "2026-07-15", 500000, dibuat_oleh="tester")
+
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan()
+    per = hasil["per_tenant"][str(tenant_id)]
+    assert per["email_terkirim"] is None  # tidak ada kerjaan Kelompok 1 sama sekali
+    assert per["kasbon_pembayaran_dihapus"] == 1
+    assert kasbon_db.get_riwayat_pembayaran(kasbon["id"]) == []
+    assert kasbon_db.get_kasbon(kasbon["id"])["sisa"] == 0  # saldo tidak berubah
