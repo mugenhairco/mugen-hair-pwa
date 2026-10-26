@@ -1081,7 +1081,17 @@
 // saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
 // reload tanpa aksi user yang bisa menghilangkan data form yang belum
 // tersimpan.
-// v204 -> v205: PERMINTAAN Owner ("menu terasa ada jeda loading") -- Input
+// v204 -> v205: PERMINTAAN Owner -- menu Absensi (status Check In/Out hari
+// ini, Daftar Absensi, dkk, sisi barber -- lihat renderBarberView()) dan
+// Izin & Cuti (SEMUA role) sekarang ikut pola cache DOM tanpa-jeda yang
+// SAMA PERSIS seperti yang sudah ada untuk Absensi sisi Admin/Owner
+// (_cacheAdminDom) -- pindah ke menu lain lalu kembali TIDAK dibangun
+// ulang dari nol. Data terbaru (termasuk perubahan dari perangkat/sesi
+// LAIN -- barber lain Check In, pengajuan Izin/Cuti baru, dst) HANYA
+// muncul kalau halaman di-refresh (F5) -- trade-off yang SENGAJA diminta
+// Owner. Aksi di sesi INI SENDIRI tetap langsung ter-update saat itu juga
+// (elemen DOM yang di-cache adalah elemen LIVE yang sama, bukan salinan).
+// v205 -> v206: PERMINTAAN Owner ("menu terasa ada jeda loading") -- Input
 // Data sekarang ikut pola cache tanpa-jeda yang sama seperti Dashboard/
 // Rekap/Produk sebelumnya (lihat input_data.js::_cacheTerakhir -- Daftar
 // Transaksi, Data Gaji Non-Barber, Status & Daftar Manual Customer).
@@ -1089,24 +1099,24 @@
 // dipilih) juga tidak lagi memblokir render() halaman menunggu fetch-nya
 // -- lihat api.js untuk daftar lengkap menu lain yang akan menyusul
 // didaftarkan ke hook dirty-marking yang sama.
-// v205 -> v206: PERMINTAAN Owner (lanjutan v205) -- menu Karyawan (Slip
+// v206 -> v207: PERMINTAAN Owner (lanjutan v206) -- menu Karyawan (Slip
 // Gaji, Kasbon, Komisi, Reimburse, barber maupun admin) sekarang ikut
 // pola cache tanpa-jeda yang sama. Hanya berlaku untuk pemuatan AWAL --
 // generate/tambah/edit/hapus/bayar/setujui/tolak/upload bukti/ganti
 // filter tetap fetch ulang seperti biasa.
-// v206 -> v207: PERMINTAAN Owner (lanjutan v205/v206) -- menu Keuangan
+// v207 -> v208: PERMINTAAN Owner (lanjutan v206/v207) -- menu Keuangan
 // (Pemasukan, Pengeluaran, Uang Kas) sekarang ikut pola cache tanpa-jeda
 // yang sama. Riwayat Transaksi (Payment Gateway) & Settlement Faspay
 // SENGAJA TETAP fetch ulang setiap dibuka (status berubah lewat webhook
 // bank/gateway, bukan aksi akun ini -- lihat catatan di masing-masing
 // file).
-// v207 -> v208: PERMINTAAN Owner (lanjutan v205-v207) -- menu WhatsApp
+// v208 -> v209: PERMINTAAN Owner (lanjutan v206-v208) -- menu WhatsApp
 // (Notifikasi Booking & Reminder Absensi, murni form setting, tidak ada
 // log real-time) sekarang ikut pola cache tanpa-jeda. Billing SENGAJA
 // TIDAK ikut -- status subscription/pembayaran berubah lewat webhook
 // payment gateway, sama seperti Riwayat Transaksi/Settlement Faspay
 // (lihat catatan di billing.js).
-// v208 -> v209: PERMINTAAN Owner (lanjutan v205-v208, TERAKHIR) -- menu
+// v209 -> v210: PERMINTAAN Owner (lanjutan v206-v209, TERAKHIR) -- menu
 // Setting (Branding, Komisi, Bonus Service, Uang Harian [termasuk mode
 // Dinamis], Karyawan/Barber, Pengaturan Izin & Cuti, Layanan, User, Hak
 // Akses User, Profil) sekarang ikut pola cache tanpa-jeda yang sama,
@@ -1114,7 +1124,7 @@
 // butuh cache (tidak ada fetch GET apa pun di tab itu). Subscription
 // SENGAJA TIDAK ikut -- status dikelola Super Admin dari luar, sama
 // seperti Billing.
-const ASSET_VERSION = "209";
+const ASSET_VERSION = "210";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

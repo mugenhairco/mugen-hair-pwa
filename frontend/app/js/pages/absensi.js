@@ -31,6 +31,20 @@ const PageAbsensi = (() => {
   let _cacheAdminDom = null;
   let _cacheUserId = null;
 
+  // PERMINTAAN OWNER (REVISI): pola SAMA PERSIS seperti _cacheAdminDom di
+  // atas, tapi untuk role barber -- status Check In/Out hari ini, riwayat,
+  // ringkasan bulan, dkk (lihat renderBarberView()) TIDAK dibangun ulang
+  // tiap pindah menu lalu kembali ke Absensi. Data terbaru (mis. status
+  // Check In barber ITU SENDIRI setelah benar-benar Check In) tetap
+  // langsung ter-update SAAT aksinya sendiri (lihat renderBarberView() --
+  // tombol Check In/Out memanggil load() ulang secara eksplisit setelah
+  // sukses, memperbarui _cacheBarberDom yang SAMA di tempat karena itu
+  // elemen DOM live yang sama, bukan salinan) -- yang TIDAK lagi otomatis
+  // ter-update HANYA perubahan dari LUAR aksi barber ini sendiri (jarang
+  // terjadi untuk data milik satu barber), sampai halaman di-refresh (F5).
+  let _cacheBarberDom = null;
+  let _cacheBarberUserId = null;
+
   function badgeStatus(row) {
     const status = row.status;
     let cls = "badge";
@@ -1422,7 +1436,17 @@ const PageAbsensi = (() => {
     }
 
     if (user.role === "barber") {
-      await renderBarberView(root);
+      // BUGFIX PERFORMA (diminta Owner): pola SAMA PERSIS seperti
+      // _cacheAdminDom di bawah -- lihat catatan lengkap di _cacheBarberDom.
+      if (_cacheBarberDom && _cacheBarberUserId === user.id) {
+        root.appendChild(_cacheBarberDom);
+        return;
+      }
+      const barberRoot = MugenUI.el("div");
+      await renderBarberView(barberRoot);
+      root.appendChild(barberRoot);
+      _cacheBarberDom = barberRoot;
+      _cacheBarberUserId = user.id;
       return;
     }
 
