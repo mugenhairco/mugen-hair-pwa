@@ -727,11 +727,21 @@ def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None, sebelu
     Uang Harian per tanggal DAN ringkasan Keterlambatan/Pulang Cepat per
     bulan yang masih bergantung ke data yang akan hilang, supaya Rekap/
     Dashboard/Slip Gaji/Laporan PDF/WA Bot tetap menampilkan angka yang
-    SAMA setelah riwayat mentahnya dihapus. Uang Harian HANYA dibekukan
-    untuk tenant yang sudah opt-in Uang Harian Dinamis (tenant yang belum
-    opt-in tidak pernah bergantung attendance_logs sama sekali, lihat
-    database._uang_harian_dinamis_aktif()) -- Keterlambatan/Pulang Cepat
-    SELALU dibekukan (fitur Absensi biasa, tidak terikat opt-in itu).
+    SAMA setelah riwayat mentahnya dihapus.
+
+    PERBAIKAN BUG (regresi payroll historis -- sebelumnya Uang Harian
+    HANYA dibekukan untuk tenant yang sudah opt-in Uang Harian Dinamis,
+    dengan cakupan tanggal dibatasi ke baris attendance_logs saja): tenant
+    sistem LAMA (Acuan Service/Target, mayoritas tenant) maupun saklar
+    "Syarat Uang Harian" OFF (lihat database.py::uang_harian_syarat_aktif())
+    SAMA-SAMA bisa bergantung ke transaksi_detail (dihapus
+    database.hapus_riwayat_transaksi() tepat setelah fungsi ini, lihat
+    hapus_riwayat_absensi() di bawah) DAN/ATAU attendance_logs -- jadi
+    Uang Harian SEKARANG dibekukan untuk SEMUA tenant, dengan cakupan
+    tanggal per barber = UNION tanggal attendance_logs DAN tanggal
+    transaksi (bukan cuma attendance_logs). Keterlambatan/Pulang Cepat
+    TETAP murni berbasis attendance_logs saja (fitur Absensi biasa, tidak
+    pernah bergantung transaksi).
 
     FITUR Pembersihan Data Bulanan Otomatis: `sebelum_tanggal` opsional
     ("YYYY-MM-DD") -- diisi data_purge_db.py supaya HANYA baris lebih lama
@@ -746,25 +756,44 @@ def _bekukan_sebelum_hapus_riwayat(tenant_id: int, barber_id: int = None, sebelu
         if sebelum_tanggal is not None:
             q += " AND tanggal < ?"
             params.append(sebelum_tanggal)
-        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
-    if not rows:
+        attendance_rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+
+        q_trx = ("SELECT DISTINCT t.barber_id, t.tanggal FROM transaksi t "
+                 "JOIN barbers b ON b.id = t.barber_id WHERE b.tenant_id = ?")
+        params_trx = [tenant_id]
+        if barber_id is not None:
+            q_trx += " AND t.barber_id = ?"
+            params_trx.append(barber_id)
+        if sebelum_tanggal is not None:
+            q_trx += " AND t.tanggal < ?"
+            params_trx.append(sebelum_tanggal)
+        transaksi_rows = [dict(r) for r in conn.execute(q_trx, params_trx).fetchall()]
+
+    if not attendance_rows and not transaksi_rows:
         return
 
     tanggal_per_barber: dict[int, list[str]] = {}
-    for r in rows:
+    for r in attendance_rows:
         tanggal_per_barber.setdefault(r["barber_id"], []).append(r["tanggal"])
 
-    import uang_harian_dinamis_db  # local: hindari circular import (lihat puncak modul)
-    uang_harian_aktif = uang_harian_dinamis_db.get_config(tenant_id)["aktif"]
+    uang_harian_tanggal_per_barber: dict[int, set] = {}
+    for r in attendance_rows:
+        uang_harian_tanggal_per_barber.setdefault(r["barber_id"], set()).add(r["tanggal"])
+    for r in transaksi_rows:
+        uang_harian_tanggal_per_barber.setdefault(r["barber_id"], set()).add(r["tanggal"])
+
+    for b_id, daftar_tanggal_uh in uang_harian_tanggal_per_barber.items():
+        barber = get_barber(b_id)
+        if barber is None:
+            continue
+        for tanggal in daftar_tanggal_uh:
+            nominal = database.hitung_uang_harian_per_hari(barber, tanggal)
+            database.simpan_uang_harian_beku(tenant_id, b_id, tanggal, nominal)
 
     for b_id, daftar_tanggal in tanggal_per_barber.items():
         barber = get_barber(b_id)
         if barber is None:
             continue
-        if uang_harian_aktif:
-            for tanggal in daftar_tanggal:
-                nominal = database.hitung_uang_harian_per_hari(barber, tanggal)
-                database.simpan_uang_harian_beku(tenant_id, b_id, tanggal, nominal)
         for tahun, bulan in {(int(t[:4]), int(t[5:7])) for t in daftar_tanggal}:
             ringkasan = hitung_ringkasan_bulan(b_id, tenant_id, tahun, bulan)
             database.simpan_keterlambatan_beku(
