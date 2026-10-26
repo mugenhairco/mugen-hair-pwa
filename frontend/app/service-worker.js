@@ -1081,7 +1081,17 @@
 // saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
 // reload tanpa aksi user yang bisa menghilangkan data form yang belum
 // tersimpan.
-// v204 -> v205: PERBAIKAN PERFORMA (keluhan Owner: menu Rekap terasa ada
+// v204 -> v205: PERMINTAAN Owner -- menu Absensi (status Check In/Out hari
+// ini, Daftar Absensi, dkk, sisi barber -- lihat renderBarberView()) dan
+// Izin & Cuti (SEMUA role) sekarang ikut pola cache DOM tanpa-jeda yang
+// SAMA PERSIS seperti yang sudah ada untuk Absensi sisi Admin/Owner
+// (_cacheAdminDom) -- pindah ke menu lain lalu kembali TIDAK dibangun
+// ulang dari nol. Data terbaru (termasuk perubahan dari perangkat/sesi
+// LAIN -- barber lain Check In, pengajuan Izin/Cuti baru, dst) HANYA
+// muncul kalau halaman di-refresh (F5) -- trade-off yang SENGAJA diminta
+// Owner. Aksi di sesi INI SENDIRI tetap langsung ter-update saat itu juga
+// (elemen DOM yang di-cache adalah elemen LIVE yang sama, bukan salinan).
+// v205 -> v206: PERBAIKAN PERFORMA (keluhan Owner: menu Rekap terasa ada
 // jeda) -- rekap.js::render() SEBELUMNYA meng-await fetch daftar Barber+
 // Karyawan (buat opsi dropdown filter) DULU sebelum renderBody() dipanggil
 // sama sekali, BERURUTAN (serial) dengan fetch data tabel -- padahal
@@ -1092,7 +1102,7 @@
 // Karyawan sekarang TIDAK di-await lagi -- jalan di belakang layar,
 // opsi dropdown disisipi begitu selesai, TIDAK PERNAH lagi menghalangi
 // tabel yang sudah siap dari cache.
-const ASSET_VERSION = "205";
+const ASSET_VERSION = "206";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
