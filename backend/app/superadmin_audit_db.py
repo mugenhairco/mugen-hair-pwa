@@ -70,6 +70,10 @@ AKSI_VALID = {
     # whatsapp_bot_db.py/routers/whatsapp_bot.py, EKSKLUSIF Superadmin.
     "ubah_config_whatsapp_bot", "ubah_status_whatsapp_bot", "hapus_config_whatsapp_bot",
     "ubah_tampilkan_potongan_keterlambatan_whatsapp_bot",
+    # FITUR Pembersihan Data Bulanan Otomatis -- jalankan manual (paksa=True)
+    # untuk testing/verifikasi, lihat routers/superadmin.py::
+    # jalankan_pembersihan_data_manual().
+    "jalankan_pembersihan_data_manual",
 }
 
 
