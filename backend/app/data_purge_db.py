@@ -180,12 +180,13 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     nama_toko = tenant.get("nama_barbershop") or tenant.get("slug") or "Toko Anda"
     html = (
         f"<p>Halo,</p>"
-        f"<p>Sistem telah membersihkan data operasional {nama_toko} yang lebih lama dari "
-        f"<b>{tanggal_mulai}</b> s/d <b>{tanggal_selesai}</b> (otomatis, setiap tanggal {TANGGAL_JALAN}).</p>"
-        f"<p>Arsip lengkap data tersebut (sebelum dihapus) terlampir dalam bentuk PDF.</p>"
+        f"<p>Berikut arsip data operasional {nama_toko} periode "
+        f"<b>{tanggal_mulai}</b> s/d <b>{tanggal_selesai}</b>, dikirim otomatis setiap tanggal {TANGGAL_JALAN} "
+        f"sebagai bagian dari pengarsipan rutin sistem.</p>"
+        f"<p>Arsip lengkap data tersebut terlampir dalam bentuk PDF.</p>"
         f"<p>Email ini dikirim otomatis, tidak perlu dibalas.</p>"
     )
-    terkirim = kirim_email(email_tenant, f"Arsip Pembersihan Data Otomatis - {nama_toko}", html,
+    terkirim = kirim_email(email_tenant, f"Arsip Data Bulanan - {nama_toko}", html,
                             attachments=lampiran)
     hasil["email_terkirim"] = terkirim
     if not terkirim:
