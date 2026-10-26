@@ -1089,7 +1089,12 @@
 // dipilih) juga tidak lagi memblokir render() halaman menunggu fetch-nya
 // -- lihat api.js untuk daftar lengkap menu lain yang akan menyusul
 // didaftarkan ke hook dirty-marking yang sama.
-const ASSET_VERSION = "205";
+// v205 -> v206: PERMINTAAN Owner (lanjutan v205) -- menu Karyawan (Slip
+// Gaji, Kasbon, Komisi, Reimburse, barber maupun admin) sekarang ikut
+// pola cache tanpa-jeda yang sama. Hanya berlaku untuk pemuatan AWAL --
+// generate/tambah/edit/hapus/bayar/setujui/tolak/upload bukti/ganti
+// filter tetap fetch ulang seperti biasa.
+const ASSET_VERSION = "206";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

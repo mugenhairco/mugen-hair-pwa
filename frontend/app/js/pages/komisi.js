@@ -15,6 +15,25 @@
 // Sudah Dibayar -- lihat field `terkunci` yang dikembalikan API.
 
 const PageKomisi = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti kasbon.js/produk.js -- simpan hasil
+  // fetch TERAKHIR (Riwayat Komisi Dasar & Daftar Penyesuaian, key
+  // dibedakan lewat `bagian` + `url`) di LUAR render() supaya bertahan
+  // lintas navigasi menu. Kalau Komisi dibuka lagi TANPA ada tambah/edit/
+  // hapus apa pun sejak terakhir kali BAGIAN itu berhasil dimuat (lihat
+  // state.js::halamanPerluRefresh("komisi")) DAN filter (url) yang aktif
+  // sama persis, tampilkan ulang data ini TANPA fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function badgeJenis(jenis) {
     return MugenUI.el("span", { class: "badge" + (jenis === "bonus" ? "" : " badge-libur") },
       jenis === "bonus" ? "Bonus" : "Potongan");
@@ -38,28 +57,47 @@ const PageKomisi = (() => {
     return btn;
   }
 
+  function tabelRiwayatKomisi(rows) {
+    return MugenUI.buildTable(
+      [
+        { key: "nama_barber", label: "Barber" },
+        { key: "jumlah_service", label: "Jumlah Service" },
+        { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
+        { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+        { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
+        { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
+        { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },
+      ],
+      rows,
+      { emptyText: "Tidak ada data untuk periode ini." },
+    );
+  }
+
   // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
   // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-  async function tampilkanRiwayatKomisi(riwayatBody, barberId, tahun, bulan) {
+  async function tampilkanRiwayatKomisi(riwayatBody, barberId, tahun, bulan, opts = {}) {
+    const qs = new URLSearchParams({ tahun: String(tahun), bulan: String(bulan) });
+    if (barberId) qs.set("barber_id", String(barberId));
+    const url = `/api/rekap/bulanan?${qs.toString()}`;
+
+    // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+    // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+    if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("komisi")) {
+      const cached = _ambilDariCache("riwayat", MugenState.getUser().id, url);
+      if (cached) {
+        riwayatBody.innerHTML = "";
+        riwayatBody.appendChild(tabelRiwayatKomisi(cached));
+        return;
+      }
+    }
+
     await MugenUI.refreshInto(riwayatBody, async () => {
       try {
-        const qs = new URLSearchParams({ tahun: String(tahun), bulan: String(bulan) });
-        if (barberId) qs.set("barber_id", String(barberId));
-        const data = await MugenApi.get(`/api/rekap/bulanan?${qs.toString()}`);
+        const data = await MugenApi.get(url);
         const rows = Array.isArray(data) ? data : [];
-        return MugenUI.buildTable(
-          [
-            { key: "nama_barber", label: "Barber" },
-            { key: "jumlah_service", label: "Jumlah Service" },
-            { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-            { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
-            { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },
-          ],
-          rows,
-          { emptyText: "Tidak ada data untuk periode ini." },
-        );
+        _simpanKeCache("riwayat", MugenState.getUser().id, url, rows);
+        MugenState.tandaiHalamanBersih("komisi");
+        return tabelRiwayatKomisi(rows);
       } catch (e) {
         return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
       }
@@ -101,33 +139,51 @@ const PageKomisi = (() => {
 
     const user = MugenState.getUser();
 
-    async function muat() {
-      tampilkanRiwayatKomisi(riwayatBody, user.barber_id, selTahun.value, selBulan.value);
+    function tabelPenyesuaianBarber(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "jenis", label: "Jenis", format: badgeJenis },
+          { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+          { key: "keterangan", label: "Keterangan" },
+        ],
+        rows,
+        { emptyText: "Tidak ada penyesuaian komisi untuk periode ini." },
+      );
+    }
+
+    async function muat(opts = {}) {
+      tampilkanRiwayatKomisi(riwayatBody, user.barber_id, selTahun.value, selBulan.value, opts);
+
+      const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+      const url = `/api/komisi/penyesuaian?${qs.toString()}`;
+
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("komisi")) {
+        const cached = _ambilDariCache("penyesuaian", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelPenyesuaianBarber(cached));
+          return;
+        }
+      }
+
       // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
       // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
       await MugenUI.refreshInto(listBody, async () => {
         try {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          const data = await MugenApi.get(`/api/komisi/penyesuaian?${qs.toString()}`);
+          const data = await MugenApi.get(url);
           const rows = Array.isArray(data) ? data : [];
-          return MugenUI.buildTable(
-            [
-              { key: "jenis", label: "Jenis", format: badgeJenis },
-              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-              { key: "keterangan", label: "Keterangan" },
-            ],
-            rows,
-            { emptyText: "Tidak ada penyesuaian komisi untuk periode ini." },
-          );
+          _simpanKeCache("penyesuaian", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("komisi");
+          return tabelPenyesuaianBarber(rows);
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
       }, { skeleton: { kind: "table", cols: 3, rows: 4 } });
     }
 
-    selBulan.addEventListener("change", muat);
-    selTahun.addEventListener("change", muat);
-    muat();
+    selBulan.addEventListener("change", () => muat());
+    selTahun.addEventListener("change", () => muat());
+    muat({ bisaDariCache: true });
   }
 
   // ================= OWNER/ADMIN: kelola penyesuaian komisi =================
@@ -306,65 +362,82 @@ const PageKomisi = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
-    async function loadList() {
-      tampilkanRiwayatKomisi(riwayatBody, filBarber.value || null, filTahun.value, filBulan.value);
+    function tabelPenyesuaianAdmin(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "nama_barber", label: "Barber" },
+          { key: "jenis", label: "Jenis", format: badgeJenis },
+          { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+          { key: "keterangan", label: "Keterangan" },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              if (r.terkunci) return MugenUI.el("span", { class: "subtitle" }, "Terkunci (Slip Sudah Dibayar)");
+              if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              const btnEdit = MugenUI.el("button", {}, "Edit");
+              btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+              if (!bolehHapus) { wrap.appendChild(btnEdit); return wrap; }
+              const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+              btnHapus.addEventListener("click", async () => {
+                if (!confirm(`Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`)) return;
+                try {
+                  await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/komisi/penyesuaian/${r.id}`));
+                  MugenUI.toast("Penyesuaian komisi dihapus.", "success");
+                  loadList();
+                } catch (e) {
+                  MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                }
+              });
+              wrap.appendChild(btnEdit);
+              wrap.appendChild(btnHapus);
+              return wrap;
+            },
+          },
+        ],
+        rows,
+        { emptyText: "Belum ada penyesuaian komisi untuk filter ini." },
+      );
+    }
+
+    async function loadList(opts = {}) {
+      tampilkanRiwayatKomisi(riwayatBody, filBarber.value || null, filTahun.value, filBulan.value, opts);
+
+      const qs = new URLSearchParams({ tahun: filTahun.value, bulan: filBulan.value });
+      if (filBarber.value) qs.set("barber_id", filBarber.value);
+      if (filJenis.value) qs.set("jenis", filJenis.value);
+      const url = `/api/komisi/penyesuaian?${qs.toString()}`;
+
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("komisi")) {
+        const cached = _ambilDariCache("penyesuaian", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelPenyesuaianAdmin(cached));
+          return;
+        }
+      }
 
       listBody.innerHTML = "";
       listBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
       try {
-        const qs = new URLSearchParams({ tahun: filTahun.value, bulan: filBulan.value });
-        if (filBarber.value) qs.set("barber_id", filBarber.value);
-        if (filJenis.value) qs.set("jenis", filJenis.value);
-        const data = await MugenApi.get(`/api/komisi/penyesuaian?${qs.toString()}`);
+        const data = await MugenApi.get(url);
         const rows = Array.isArray(data) ? data : [];
+        _simpanKeCache("penyesuaian", MugenState.getUser().id, url, rows);
+        MugenState.tandaiHalamanBersih("komisi");
         listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "nama_barber", label: "Barber" },
-            { key: "jenis", label: "Jenis", format: badgeJenis },
-            { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-            { key: "keterangan", label: "Keterangan" },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                if (r.terkunci) return MugenUI.el("span", { class: "subtitle" }, "Terkunci (Slip Sudah Dibayar)");
-                if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnEdit = MugenUI.el("button", {}, "Edit");
-                btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                if (!bolehHapus) { wrap.appendChild(btnEdit); return wrap; }
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`)) return;
-                  try {
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/komisi/penyesuaian/${r.id}`));
-                    MugenUI.toast("Penyesuaian komisi dihapus.", "success");
-                    loadList();
-                  } catch (e) {
-                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnEdit);
-                wrap.appendChild(btnHapus);
-                return wrap;
-              },
-            },
-          ],
-          rows,
-          { emptyText: "Belum ada penyesuaian komisi untuk filter ini." },
-        ));
+        listBody.appendChild(tabelPenyesuaianAdmin(rows));
       } catch (e) {
         listBody.innerHTML = "";
         listBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
       }
     }
 
-    filBarber.addEventListener("change", loadList);
-    filJenis.addEventListener("change", loadList);
-    filBulan.addEventListener("change", loadList);
-    filTahun.addEventListener("change", loadList);
+    filBarber.addEventListener("change", () => loadList());
+    filJenis.addEventListener("change", () => loadList());
+    filBulan.addEventListener("change", () => loadList());
+    filTahun.addEventListener("change", () => loadList());
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   async function render(root) {

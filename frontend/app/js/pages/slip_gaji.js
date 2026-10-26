@@ -14,6 +14,26 @@
 // berstatus Sudah Dibayar akan menghitung ulang komponen income-nya.
 
 const PageSlipGaji = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti produk.js/rekap.js/input_data.js --
+  // simpan hasil fetch TERAKHIR (Daftar Slip Gaji, barber maupun admin --
+  // dibedakan otomatis lewat `url`, lihat loadListInto() di bawah) di LUAR
+  // render() supaya bertahan lintas navigasi menu. Kalau Slip Gaji dibuka
+  // lagi TANPA ada generate/status/hapus apa pun sejak terakhir kali
+  // berhasil dimuat (lihat state.js::halamanPerluRefresh("slip_gaji")) DAN
+  // filter (url) yang aktif sama persis, tampilkan ulang data ini TANPA
+  // fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   // Tahap 13: Periode rentang tanggal bebas untuk Kasir/OB/Kru (r.tanggal_mulai
   // terisi) -- BEDA dari Barber yang tetap satu bulan kalender penuh
   // (r.tanggal_mulai NULL, dari r.bulan/r.tahun seperti sebelumnya).
@@ -51,13 +71,11 @@ const PageSlipGaji = (() => {
 
   // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
   // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-  async function loadListInto(listBody, params, isAdmin, onBerubah, bolehHapus = false) {
-    await MugenUI.refreshInto(listBody, async () => {
-      try {
-        const qs = new URLSearchParams(params);
-        const data = await MugenApi.get(`/api/slip-gaji?${qs.toString()}`);
-        const rows = Array.isArray(data) ? data : [];
+  async function loadListInto(listBody, params, isAdmin, onBerubah, bolehHapus = false, opts = {}) {
+    const qs = new URLSearchParams(params);
+    const url = `/api/slip-gaji?${qs.toString()}`;
 
+    function tabelDariRows(rows) {
         const kolom = [
           { key: "periode", label: "Periode", format: (_, r) => periodeText(r) },
         ];
@@ -123,6 +141,26 @@ const PageSlipGaji = (() => {
         );
 
         return MugenUI.buildTable(kolom, rows, { emptyText: "Belum ada Slip Gaji." });
+    }
+
+    // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+    // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL (opts.bisaDariCache).
+    if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("slip_gaji")) {
+      const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+      if (cached) {
+        listBody.innerHTML = "";
+        listBody.appendChild(tabelDariRows(cached));
+        return;
+      }
+    }
+
+    await MugenUI.refreshInto(listBody, async () => {
+      try {
+        const data = await MugenApi.get(url);
+        const rows = Array.isArray(data) ? data : [];
+        _simpanKeCache("daftar", MugenState.getUser().id, url, rows);
+        MugenState.tandaiHalamanBersih("slip_gaji");
+        return tabelDariRows(rows);
       } catch (e) {
         return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
       }
@@ -138,8 +176,8 @@ const PageSlipGaji = (() => {
     listCard.appendChild(tombolDownloadPdfDaftar(() => ({}), () => "Daftar Slip Gaji Saya.pdf"));
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
-    const muat = () => loadListInto(listBody, {}, false, muat);
-    muat();
+    const muat = (opts = {}) => loadListInto(listBody, {}, false, muat, false, opts);
+    muat({ bisaDariCache: true });
   }
 
   // ================= OWNER/ADMIN: generate + kelola semua barber =================
@@ -431,15 +469,15 @@ const PageSlipGaji = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
-    function loadList() {
-      loadListInto(listBody, paramsFilterAktif(), true, loadList, bolehHapus);
+    function loadList(opts = {}) {
+      loadListInto(listBody, paramsFilterAktif(), true, () => loadList(), bolehHapus, opts);
     }
 
-    filBarber.addEventListener("change", loadList);
-    filBulan.addEventListener("change", loadList);
-    filTahun.addEventListener("change", loadList);
+    filBarber.addEventListener("change", () => loadList());
+    filBulan.addEventListener("change", () => loadList());
+    filTahun.addEventListener("change", () => loadList());
 
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   async function render(root) {

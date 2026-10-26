@@ -8,6 +8,26 @@
 // error kalau ditolak server.
 
 const PageReimburse = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti kasbon.js/produk.js -- simpan hasil
+  // fetch TERAKHIR (Daftar Klaim Reimburse, barber maupun admin --
+  // dibedakan otomatis lewat `url`) di LUAR render() supaya bertahan
+  // lintas navigasi menu. Kalau Reimburse dibuka lagi TANPA ada ajukan/
+  // edit/hapus/setujui/tolak/upload bukti apa pun sejak terakhir kali
+  // berhasil dimuat (lihat state.js::halamanPerluRefresh("reimburse")) DAN
+  // filter (url) yang aktif sama persis, tampilkan ulang data ini TANPA
+  // fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function todayIso() {
     // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
     return MugenUI.isoHariIniWib();
@@ -159,57 +179,76 @@ const PageReimburse = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    function tabelDariRowsBarber(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "kategori", label: "Kategori" },
+          { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
+          { key: "status", label: "Status", format: badgeStatus },
+          { key: "catatan_approval", label: "Catatan", format: (v) => v || "-" },
+          { key: "bukti", label: "Bukti", format: (_, r) => kolomBukti(r) },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              if (r.status !== "pending") return MugenUI.el("span", { class: "subtitle" }, "-");
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              wrap.appendChild(buatTombolUploadBukti(r, loadList));
+              const btnEdit = MugenUI.el("button", {}, "Edit");
+              btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+              wrap.appendChild(btnEdit);
+              const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+              btnHapus.addEventListener("click", async () => {
+                if (!confirm(`Hapus klaim reimburse tanggal ${r.tanggal}?`)) return;
+                try {
+                  await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
+                  MugenUI.toast("Klaim reimburse dihapus.", "success");
+                  loadList();
+                } catch (e) {
+                  MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                }
+              });
+              wrap.appendChild(btnHapus);
+              return wrap;
+            },
+          },
+        ],
+        rows,
+        { emptyText: "Belum ada klaim reimburse." },
+      );
+    }
+
     // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
     // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-    async function loadList() {
+    async function loadList(opts = {}) {
+      const url = "/api/reimburse";
+
+      // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+      // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("reimburse")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelDariRowsBarber(cached));
+          return;
+        }
+      }
+
       await MugenUI.refreshInto(listBody, async () => {
         let rows;
         try {
-          const data = await MugenApi.get("/api/reimburse");
+          const data = await MugenApi.get(url);
           rows = Array.isArray(data) ? data : [];
+          _simpanKeCache("daftar", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("reimburse");
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
-        return MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "kategori", label: "Kategori" },
-            { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
-            { key: "status", label: "Status", format: badgeStatus },
-            { key: "catatan_approval", label: "Catatan", format: (v) => v || "-" },
-            { key: "bukti", label: "Bukti", format: (_, r) => kolomBukti(r) },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                if (r.status !== "pending") return MugenUI.el("span", { class: "subtitle" }, "-");
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                wrap.appendChild(buatTombolUploadBukti(r, loadList));
-                const btnEdit = MugenUI.el("button", {}, "Edit");
-                btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                wrap.appendChild(btnEdit);
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus klaim reimburse tanggal ${r.tanggal}?`)) return;
-                  try {
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
-                    MugenUI.toast("Klaim reimburse dihapus.", "success");
-                    loadList();
-                  } catch (e) {
-                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnHapus);
-                return wrap;
-              },
-            },
-          ],
-          rows,
-          { emptyText: "Belum ada klaim reimburse." },
-        );
+        return tabelDariRowsBarber(rows);
       }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
     }
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   // ================= OWNER/ADMIN: kelola & approve semua klaim =================
@@ -401,80 +440,99 @@ const PageReimburse = (() => {
       }
     }
 
+    function tabelDariRowsAdmin(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "nama_barber", label: "Karyawan" },
+          { key: "kategori", label: "Kategori" },
+          { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
+          { key: "status", label: "Status", format: badgeStatus },
+          { key: "bukti", label: "Bukti", format: (_, r) => kolomBukti(r) },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              // Hak Akses Menu: level "Baca" -- sembunyikan Setujui/Tolak/
+              // Edit/Hapus (data tetap tampil).
+              if (!bolehEdit) return MugenUI.el("span", {}, "-");
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              if (r.status === "pending") {
+                const btnSetujui = MugenUI.el("button", {}, "Setujui");
+                btnSetujui.addEventListener("click", () => ubahStatus(btnSetujui, r.id, "disetujui"));
+                const btnTolak = MugenUI.el("button", { class: "btn-danger" }, "Tolak");
+                btnTolak.addEventListener("click", () => ubahStatus(btnTolak, r.id, "ditolak"));
+                wrap.appendChild(btnSetujui);
+                wrap.appendChild(btnTolak);
+                wrap.appendChild(buatTombolUploadBukti(r, loadList));
+                const btnEdit = MugenUI.el("button", {}, "Edit");
+                btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+                wrap.appendChild(btnEdit);
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus klaim reimburse ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
+                    MugenUI.toast("Klaim reimburse dihapus.", "success");
+                    loadList();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnHapus);
+              } else {
+                wrap.appendChild(MugenUI.el("span", { class: "subtitle" },
+                  r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-"));
+              }
+              return wrap;
+            },
+          },
+        ],
+        rows,
+        { emptyText: "Belum ada klaim reimburse." },
+      );
+    }
+
     // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
     // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-    async function loadList() {
+    async function loadList(opts = {}) {
+      const qs = new URLSearchParams();
+      if (filBarber.value) qs.set("barber_id", filBarber.value);
+      if (filStatus.value) qs.set("status", filStatus.value);
+      if (filBulan.value) qs.set("bulan", filBulan.value);
+      if (filTahun.value) qs.set("tahun", filTahun.value);
+      const url = `/api/reimburse?${qs.toString()}`;
+
+      // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+      // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("reimburse")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelDariRowsAdmin(cached));
+          return;
+        }
+      }
+
       await MugenUI.refreshInto(listBody, async () => {
-        const qs = new URLSearchParams();
-        if (filBarber.value) qs.set("barber_id", filBarber.value);
-        if (filStatus.value) qs.set("status", filStatus.value);
-        if (filBulan.value) qs.set("bulan", filBulan.value);
-        if (filTahun.value) qs.set("tahun", filTahun.value);
         let rows;
         try {
-          const data = await MugenApi.get(`/api/reimburse?${qs.toString()}`);
+          const data = await MugenApi.get(url);
           rows = Array.isArray(data) ? data : [];
+          _simpanKeCache("daftar", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("reimburse");
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
-        return MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            { key: "nama_barber", label: "Karyawan" },
-            { key: "kategori", label: "Kategori" },
-            { key: "nominal", label: "Nominal", format: MugenUI.formatRupiah },
-            { key: "status", label: "Status", format: badgeStatus },
-            { key: "bukti", label: "Bukti", format: (_, r) => kolomBukti(r) },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                // Hak Akses Menu: level "Baca" -- sembunyikan Setujui/Tolak/
-                // Edit/Hapus (data tetap tampil).
-                if (!bolehEdit) return MugenUI.el("span", {}, "-");
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                if (r.status === "pending") {
-                  const btnSetujui = MugenUI.el("button", {}, "Setujui");
-                  btnSetujui.addEventListener("click", () => ubahStatus(btnSetujui, r.id, "disetujui"));
-                  const btnTolak = MugenUI.el("button", { class: "btn-danger" }, "Tolak");
-                  btnTolak.addEventListener("click", () => ubahStatus(btnTolak, r.id, "ditolak"));
-                  wrap.appendChild(btnSetujui);
-                  wrap.appendChild(btnTolak);
-                  wrap.appendChild(buatTombolUploadBukti(r, loadList));
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                  wrap.appendChild(btnEdit);
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus klaim reimburse ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
-                      MugenUI.toast("Klaim reimburse dihapus.", "success");
-                      loadList();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnHapus);
-                } else {
-                  wrap.appendChild(MugenUI.el("span", { class: "subtitle" },
-                    r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-"));
-                }
-                return wrap;
-              },
-            },
-          ],
-          rows,
-          { emptyText: "Belum ada klaim reimburse." },
-        );
+        return tabelDariRowsAdmin(rows);
       }, { skeleton: { kind: "table", cols: 6, rows: 4 } });
     }
 
-    filBarber.addEventListener("change", loadList);
-    filStatus.addEventListener("change", loadList);
-    filBulan.addEventListener("change", loadList);
-    filTahun.addEventListener("change", loadList);
+    filBarber.addEventListener("change", () => loadList());
+    filStatus.addEventListener("change", () => loadList());
+    filBulan.addEventListener("change", () => loadList());
+    filTahun.addEventListener("change", () => loadList());
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   async function render(root) {
