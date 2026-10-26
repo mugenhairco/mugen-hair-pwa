@@ -149,6 +149,45 @@ def test_jalankan_pembersihan_tenant_id_hanya_proses_satu_tenant(two_tenants, mo
 # Orkestrator -- jalur penuh (email arsip sukses -> SEMUA kategori terhapus)
 # ---------------------------------------------------------------------------
 
+def test_jalankan_pembersihan_hapus_absensi_sebelum_transaksi_jaga_uang_harian(single_tenant, monkeypatch):
+    """Regresi KRITIS: attendance_db.hapus_riwayat_absensi() (yang
+    membekukan Uang Harian hari itu SEBELUM attendance_logs dihapus, lihat
+    _bekukan_sebelum_hapus_riwayat()) HARUS dipanggil SEBELUM
+    database.hapus_riwayat_transaksi() -- pembekuan Uang Harian (sistem
+    lama MAUPUN Uang Harian Dinamis) membaca transaksi_detail hari itu
+    LANGSUNG dari database, jadi baris Transaksi-nya HARUS masih ada saat
+    pembekuan terjadi. Urutan terbalik akan membekukan Uang Harian jadi 0
+    padahal barber ini sungguhan berhak dapat nominalnya -- riwayat
+    historis jadi rusak permanen (TIDAK bisa dihitung ulang lagi setelah
+    attendance_logs-nya hilang)."""
+    tenant_id = single_tenant["tenant_id"]
+    _set_created_at(tenant_id, "2026-01-01")
+    _set_email(tenant_id, "owner@uang-harian.test")
+    barber_id = database.add_barber("Barber Uang Harian Purge", uang_harian=50000, tenant_id=tenant_id)
+    service_id = database.add_service("Service Uang Harian Purge", 20000, tenant_id=tenant_id)
+    database.set_uang_harian_acuan_ids([service_id], tenant_id=tenant_id)
+    # target_uang_harian_per_hari() default = 3 -- jumlah 3 MEMENUHI target.
+    database.tambah_transaksi("2026-07-20", barber_id, [{"service_id": service_id, "jumlah": 3}])
+
+    attendance_db.set_settings(tenant_id, jam_masuk="09:00", toleransi_menit=15, jam_pulang="20:00",
+                                radius_meter=500, lokasi_nama="Toko Purge UH",
+                                lokasi_latitude=-6.1, lokasi_longitude=106.8)
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 20, 9, 0, tzinfo=WIB))
+    attendance_db.check_in(tenant_id, barber_id, -6.1, 106.8, accuracy=15)
+
+    monkeypatch.setattr(data_purge_db, "kirim_email", lambda *a, **kw: True)
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan()
+    per = hasil["per_tenant"][str(tenant_id)]
+    assert per["absensi_dihapus"] == 1
+    assert per["transaksi_dihapus"] == 1
+
+    # Uang Harian hari itu HARUS tetap 50000 (dibekukan dengan benar dari
+    # Transaksi yang MASIH ADA saat Absensi dihapus) -- BUKAN 0.
+    barber = database.get_barber(barber_id)
+    assert database.hitung_uang_harian_per_hari(barber, "2026-07-20") == 50000
+
+
 def _siapkan_data_lengkap(tenant_id):
     """Satu barber dengan data di SEMUA 7 kategori, sebagian < cutoff
     (2026-07/08, harus terhapus) dan sebagian >= cutoff (2026-09, harus

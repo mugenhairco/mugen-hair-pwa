@@ -196,10 +196,19 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         )
         return hasil
 
-    if ada_transaksi:
-        hasil["transaksi_dihapus"] = db.hapus_riwayat_transaksi(tenant_id, cutoff)
+    # URUTAN WAJIB: Absensi dihapus SEBELUM Transaksi -- hapus_riwayat_absensi()
+    # membekukan Uang Harian/Keterlambatan (lihat attendance_db.py::
+    # _bekukan_sebelum_hapus_riwayat()) SEBELUM baris attendance_logs
+    # dihapus, dan perhitungan itu (baik sistem lama maupun Uang Harian
+    # Dinamis, lihat database.py::hitung_uang_harian_per_hari()/
+    # uang_harian_dinamis_db.py) MASIH MEMBACA transaksi_detail hari itu.
+    # Kalau Transaksi sudah duluan dihapus, angka yang dibekukan akan SALAH
+    # (baris transaksi kosong -> Uang Harian ikut terhitung 0, padahal
+    # seharusnya ada nilainya) -- riwayat historisnya jadi rusak permanen.
     if data_absensi:
         hasil["absensi_dihapus"] = attendance_db.hapus_riwayat_absensi(tenant_id, sebelum_tanggal=cutoff)
+    if ada_transaksi:
+        hasil["transaksi_dihapus"] = db.hapus_riwayat_transaksi(tenant_id, cutoff)
     if data_produk:
         produk_list = db.get_produk_list(hanya_aktif=False, tenant_id=tenant_id)
         for produk in produk_list:
