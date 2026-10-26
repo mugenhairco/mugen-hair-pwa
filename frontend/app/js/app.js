@@ -18,30 +18,23 @@
 // walau sebenarnya sudah di-deploy ulang). Update dicek lebih sering
 // (tiap 1 jam + tiap tab kembali terlihat), bukan cuma sekali saat app
 // dibuka -- banyak user PWA membiarkan tab/app terbuka berhari-hari.
-// Begitu Service Worker baru TERDETEKSI (bukan instalasi pertama kali,
-// lihat pwa_update.js), tampilkan banner "Muat Ulang" -- TIDAK PERNAH
-// reload otomatis tanpa aksi user (aplikasi ini penuh form input yang
-// belum tentu sudah tersimpan).
+// REVISI (PERMINTAAN Owner, v204): banner "Versi baru tersedia" + tombol
+// "Muat Ulang" manual (pwa_update.js) DIHAPUS total -- update sekarang
+// BENAR-BENAR DIAM-DIAM, TIDAK ADA pemberitahuan apa pun ke user. service-
+// worker.js SUDAH (dan TETAP) memanggil skipWaiting()/clients.claim() begitu
+// Service Worker baru selesai install, jadi versi barunya SUDAH aktif &
+// cache-nya SUDAH siap di belakang layar -- user otomatis mendapat versi
+// terbaru pada kunjungan BERIKUTNYA (tab baru/reopen PWA/refresh manual utk
+// alasan lain), TANPA perlu kode apa pun di sini untuk memaksanya. Prinsip
+// lama TETAP dipertahankan: TIDAK PERNAH reload paksa di tengah sesi yang
+// sedang berjalan (aplikasi ini penuh form input yang belum tentu sudah
+// tersimpan) -- yang berubah HANYA sisi "memberi tahu user", bukan sisi
+// keamanan datanya.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
       .then((reg) => {
         reg.update().catch(() => {});
-
-        reg.addEventListener("updatefound", () => {
-          const workerBaru = reg.installing;
-          if (!workerBaru) return;
-          workerBaru.addEventListener("statechange", () => {
-            // 'installed' + SUDAH ADA controller aktif = ini benar-benar
-            // UPDATE (ganti versi) -- BUKAN instalasi pertama kali PWA ini
-            // di perangkat user (saat itu navigator.serviceWorker.controller
-            // masih null), yang tidak perlu diberi tahu apa-apa.
-            if (workerBaru.state === "installed" && navigator.serviceWorker.controller) {
-              MugenPwaUpdate.tampilkanNotifikasi();
-            }
-          });
-        });
-
         setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "visible") reg.update().catch(() => {});

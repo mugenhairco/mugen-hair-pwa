@@ -286,10 +286,11 @@
 //    browser SELALU network-check byte service-worker.js INI SENDIRI,
 //    tidak pernah dari HTTP cache -- ini file paling kritis untuk selalu
 //    fresh, karena SELURUH mekanisme deteksi update bergantung padanya),
-//    mengecek update tiap 1 jam + tiap tab kembali terlihat, dan
-//    menampilkan banner "Muat Ulang" (pwa_update.js, TIDAK PERNAH reload
-//    otomatis tanpa aksi user -- aplikasi ini penuh form, reload paksa
-//    berisiko menghilangkan data yang belum tersimpan).
+//    mengecek update tiap 1 jam + tiap tab kembali terlihat. REVISI v204:
+//    update sekarang DIAM-DIAM (tidak ada banner/notifikasi apa pun lagi,
+//    lihat catatan v203 -> v204 di dekat ASSET_VERSION di bawah) -- TETAP
+//    TIDAK PERNAH reload otomatis di tengah sesi (prinsipnya tidak berubah,
+//    cuma caranya memberi tahu user yang dihapus).
 // v57 -> v58: FONDASI Multi-Tenant Phase 4 (Billing & Payment Midtrans) --
 // pages/billing.js baru (halaman Owner: paket & status langganan, katalog
 // paket upgrade/downgrade/perpanjang, checkout Snap Midtrans dimuat
@@ -1068,7 +1069,19 @@
 // pengaman localStorage; tombol "Setujui"/"Tolak" (sisi Admin/Owner) tidak
 // lagi blokir tombol menunggu server (refresh kartu Limit/Kuota/Absensi
 // tetap menunggu hasil ASLI, tidak ditebak) -- absensi.js.
-const ASSET_VERSION = "203";
+// v203 -> v204: PERMINTAAN Owner -- hapus banner "Versi baru tersedia" +
+// tombol "Muat Ulang" manual (pwa_update.js, DIHAPUS total dari sini, app.js
+// & index.html). Update sekarang BENAR-BENAR DIAM-DIAM: skipWaiting()/
+// clients.claim() di bawah SUDAH membuat Service Worker baru aktif begitu
+// selesai install (tidak diubah) -- yang diubah HANYA sisi app.js, tidak lagi
+// memberi tahu user sama sekali. User otomatis mendapat versi terbaru pada
+// kunjungan BERIKUTNYA (buka tab baru/reopen PWA/refresh manual untuk alasan
+// lain) karena Service Worker & cache barunya sudah siap sejak kunjungan
+// sebelumnya -- SENGAJA TIDAK menambah reload paksa di tengah sesi (mis.
+// saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
+// reload tanpa aksi user yang bisa menghilangkan data form yang belum
+// tersimpan.
+const ASSET_VERSION = "204";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1110,7 +1123,6 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/brand.js",
   "/app/js/subscription.js",
   "/app/js/menu_access.js",
-  "/app/js/pwa_update.js",
   "/app/js/nav.js",
   "/app/js/booking_notif.js",
   "/app/js/izin_notif.js",
