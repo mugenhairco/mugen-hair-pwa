@@ -14,9 +14,11 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import attendance_db
+import booking_db
 import data_purge_db
 import database
 import kasbon_db
+import kuota_libur_db
 import slip_gaji_db
 import tenant_db
 
@@ -131,6 +133,52 @@ def test_hapus_slip_gaji_sebelum_lepas_rujukan_kasbon_tanpa_membalikkan_saldo(si
         row = conn.execute("SELECT slip_gaji_id FROM kasbon_pembayaran WHERE kasbon_id = ?",
                             (kasbon["id"],)).fetchone()
         assert row["slip_gaji_id"] is None  # rujukan dilepas, BUKAN baris kasbon_pembayaran-nya yang dihapus
+
+
+# ---------------------------------------------------------------------------
+# Riwayat Libur (absensi_libur) -- kuota_libur_db.hapus_riwayat_libur_sebelum()
+# Celah ditemukan Owner lewat Rekap production: tabel ini SEBELUMNYA tidak
+# pernah ikut dibersihkan sama sekali.
+# ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_libur_sebelum_hapus_sesuai_cutoff_sisakan_baru(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = database.add_barber("Barber Libur Purge", tenant_id=tenant_id)
+    database.tandai_libur(barber_id, "2026-07-15")
+    database.tandai_libur(barber_id, "2026-08-20")
+    database.tandai_libur(barber_id, "2026-09-05")  # SETELAH cutoff -- harus tetap ada
+
+    jumlah = kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_id, "2026-09-01")
+    assert jumlah == 2
+    tanggal_tersisa = {b["tanggal"] for b in database.get_libur_list(barber_id=barber_id)}
+    assert tanggal_tersisa == {"2026-09-05"}
+
+    # Idempotent: tidak ada lagi baris < cutoff -> 0, tidak ada efek samping.
+    assert kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_id, "2026-09-01") == 0
+
+
+def test_hapus_riwayat_libur_sebelum_tenant_scoped(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = database.add_barber("Barber Libur A", tenant_id=tenant_a)
+    barber_b = database.add_barber("Barber Libur B", tenant_id=tenant_b)
+    database.tandai_libur(barber_a, "2026-07-10")
+    database.tandai_libur(barber_b, "2026-07-10")
+
+    jumlah = kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_a, "2026-09-01")
+    assert jumlah == 1
+    assert database.get_libur_list(barber_id=barber_a) == []
+    # Tenant lain TIDAK ikut tersentuh sama sekali.
+    assert len(database.get_libur_list(barber_id=barber_b)) == 1
+
+
+def test_hapus_riwayat_libur_sebelum_catat_cutoff_tercapai_walau_tidak_ada_baris(single_tenant):
+    """WAJIB mencatat cutoff tercapai SETIAP kali dipanggil (dibaca
+    kuota_libur_db.pastikan_libur_mingguan_tercatat()) -- bahkan kalau
+    tidak ada baris lama untuk dihapus sama sekali di tenant ini."""
+    tenant_id = single_tenant["tenant_id"]
+    assert kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_id, "2026-09-01") == 0
+    assert database.get_setting(kuota_libur_db._SETTING_CUTOFF_LIBUR_TERCAPAI,
+                                 tenant_id=tenant_id) == "2026-09-01"
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +389,66 @@ def test_jalankan_pembersihan_tanpa_email_tenant_lewati_kategori_pdf_saja(single
     assert attendance_db.get_audit_list(tenant_id) == []
     assert attendance_db.get_koreksi(koreksi["id"]) is None
     assert slip_gaji_db.get_slip_gaji(slip["id"]) is None
+
+
+# ---------------------------------------------------------------------------
+# Orkestrator -- Riwayat Libur (absensi_libur) & anti-"kebangkitan" baris
+# Libur Mingguan setelah dipurge (lihat kuota_libur_db.hapus_riwayat_libur_sebelum()).
+# ---------------------------------------------------------------------------
+
+def test_jalankan_pembersihan_hapus_riwayat_libur_tanpa_pandang_status_email(single_tenant, monkeypatch):
+    """Riwayat Libur termasuk Kelompok 2 (hapus langsung) -- TETAP terhapus
+    walau tenant belum punya email terdaftar (jaring pengaman PDF tidak
+    berlaku untuk kategori ini, sama seperti Log Audit/Koreksi/Slip Gaji).
+    SENGAJA tambah 1 Transaksi lama supaya Kelompok 1 (PDF) punya sesuatu
+    untuk diproses & gagal terkirim (email_terkirim=False, BUKAN None/
+    "tidak ada kerjaan") -- membuktikan Riwayat Libur sungguh TIDAK
+    bergantung pada hasil itu."""
+    tenant_id = single_tenant["tenant_id"]
+    _set_created_at(tenant_id, "2026-01-01")
+    barber_id = database.add_barber("Barber Libur Orkestrator", tenant_id=tenant_id)
+    service_id = database.add_service("Potong Libur Orkestrator", 30000, tenant_id=tenant_id)
+    database.tambah_transaksi("2026-07-10", barber_id, [{"service_id": service_id, "jumlah": 1}])
+    database.tandai_libur(barber_id, "2026-07-15")
+    database.tandai_libur(barber_id, "2026-09-05")  # SETELAH cutoff -- harus tetap ada
+
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan()
+    per = hasil["per_tenant"][str(tenant_id)]
+    assert per["email_terkirim"] is False  # tenant ini belum punya email
+    assert per["transaksi_dihapus"] == 0  # jaring pengaman PDF: TIDAK terhapus
+    assert per["libur_dihapus"] == 1
+    tanggal_tersisa = {b["tanggal"] for b in database.get_libur_list(barber_id=barber_id)}
+    assert tanggal_tersisa == {"2026-09-05"}
+
+
+def test_jalankan_pembersihan_cegah_kebangkitan_libur_mingguan_setelah_dipurge(single_tenant, monkeypatch):
+    """Regresi KRITIS (bug ditemukan Owner lewat Rekap production): barber
+    dengan jadwal Libur Mingguan yang periode lamanya SUDAH dipurge --
+    melihat Rekap periode lama itu LAGI (lewat get_libur_list(), yang
+    memicu kuota_libur_db.pastikan_libur_mingguan_tercatat() secara
+    oportunistik) TIDAK BOLEH membuat baris absensi_libur baru untuk
+    tanggal yang sudah dihapus permanen itu."""
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = database.add_barber("Barber Libur Mingguan Purge", tenant_id=tenant_id)
+    booking_db.set_hari_libur_mingguan(barber_id, ["selasa"])
+
+    # "Hari ini" = pertengahan Agustus -> jadwal mingguan Agustus tercatat
+    # dulu (sama seperti yang terjadi sungguhan sebelum siklus purge jalan).
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 11, 12, 0, tzinfo=WIB))
+    kuota_libur_db.pastikan_libur_mingguan_tercatat(barber_id, tenant_id, "2026-08-01", "2026-08-11")
+    assert database.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-11") == 2  # 4 & 11 Agustus
+
+    # Siklus purge bulan September berjalan -- cutoff "2026-09-01".
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan()
+    assert hasil["per_tenant"][str(tenant_id)]["libur_dihapus"] == 2
+    assert database.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-31") == 0
+
+    # Owner membuka Rekap periode Agustus LAGI (sudah dipurge) -- ini
+    # memicu pastikan_libur_mingguan_tercatat() yang SAMA seperti sebelum
+    # purge berjalan. TANPA fix, baris 4 & 11 Agustus akan dibuat ULANG.
+    monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 9, 20, 12, 0, tzinfo=WIB))
+    baris = database.get_libur_list(barber_id=barber_id, tenant_id=tenant_id, tahun=2026, bulan=8)
+    assert baris == []
+    assert database.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-31") == 0
