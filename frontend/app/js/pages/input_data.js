@@ -3,6 +3,26 @@
 // Owner: wajib pilih barber di form.
 
 const PageInputData = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti produk.js/rekap.js -- simpan hasil
+  // fetch TERAKHIR (Transaksi, Data Gaji Non-Barber, Status & Daftar Manual
+  // Customer -- key dibedakan lewat `bagian` di bawah) di LUAR render()
+  // (modul-level) supaya bertahan lintas navigasi menu. Kalau Input Data
+  // dibuka lagi TANPA ada simpan/edit/hapus apa pun sejak terakhir kali
+  // BAGIAN itu berhasil dimuat (lihat state.js::halamanPerluRefresh()) DAN
+  // filter (url) yang aktif sama persis, tampilkan ulang data ini TANPA
+  // fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function todayIso() {
     // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib()
     // (dulu toISOString().slice(0,10) di sini salah satu hari antara jam
@@ -339,12 +359,66 @@ const PageInputData = (() => {
     const listBody = MugenUI.el("div");
     listCard.appendChild(listBody);
 
+    function renderDenganDataList(data) {
+      listBody.innerHTML = "";
+      if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      const rows = Array.isArray(data) ? data : data.data || [];
+      listBody.appendChild(MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
+          { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
+          { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
+          { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              const btnEdit = MugenUI.el("button", {}, "Koreksi");
+              btnEdit.addEventListener("click", () => isiFormUntukKoreksi(r));
+              const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+              btnHapus.addEventListener("click", async () => {
+                if (!confirm(`Hapus transaksi #${r.id} tanggal ${r.tanggal}?`)) return;
+                try {
+                  // REVISI UI/UX Premium: spinner inline di tombol Hapus.
+                  await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/input-data/transaksi/${r.id}`));
+                  MugenUI.toast("Transaksi dihapus.", "success");
+                  loadList();
+                } catch (e) {
+                  MugenUI.toast(e.message, "error");
+                }
+              });
+              wrap.appendChild(btnEdit);
+              wrap.appendChild(btnHapus);
+              return wrap;
+            },
+          },
+        ],
+        rows,
+      ));
+    }
+
     async function loadList(opts = {}) {
       // `silent`: dipakai refresh di belakang layar setelah transaksi
       // (yang sudah ditampilkan optimis) terkonfirmasi sukses -- tabel
       // yang sudah tampil TIDAK diganti skeleton dulu (supaya tidak kedip),
       // baris lama tetap kelihatan sampai baris baru (dari server) datang.
       const silent = !!opts.silent;
+      const now = new Date();
+      const url = `/api/input-data/transaksi?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`;
+
+      // PERMINTAAN OWNER: pola SAMA seperti Dashboard/Rekap/Produk -- lihat
+      // catatan panjang di produk.js::loadProdukList(). Hanya dicek untuk
+      // pemuatan AWAL (opts.bisaDariCache, dipanggil sekali di akhir
+      // render() di bawah) -- refresh setelah simpan/koreksi/hapus (call
+      // site lain di file ini) SELALU fetch ulang seperti biasa.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("input_data")) {
+        const cached = _ambilDariCache("transaksi", MugenState.getUser().id, url);
+        if (cached) {
+          renderDenganDataList(cached);
+          return;
+        }
+      }
+
       // REVISI UI/UX Premium: skeleton tabel menggantikan teks "Memuat..." --
       // ada banner offline yang bisa ikut tampil di atas tabel, jadi TIDAK
       // dipindah ke refreshInto() (lihat contoh sama di dashboard_owner.js).
@@ -353,46 +427,12 @@ const PageInputData = (() => {
         listBody.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 6 : 5, rows: 4 }));
       }
       try {
-        const now = new Date();
-        const data = await MugenApi.get(
-          `/api/input-data/transaksi?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`,
-          { useCache: true },
-        );
-        listBody.innerHTML = "";
-        if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        const rows = Array.isArray(data) ? data : data.data || [];
-        listBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-            ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
-            { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
-            { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-            {
-              key: "aksi", label: "Aksi", format: (_, r) => {
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnEdit = MugenUI.el("button", {}, "Koreksi");
-                btnEdit.addEventListener("click", () => isiFormUntukKoreksi(r));
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus transaksi #${r.id} tanggal ${r.tanggal}?`)) return;
-                  try {
-                    // REVISI UI/UX Premium: spinner inline di tombol Hapus.
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/input-data/transaksi/${r.id}`));
-                    MugenUI.toast("Transaksi dihapus.", "success");
-                    loadList();
-                  } catch (e) {
-                    MugenUI.toast(e.message, "error");
-                  }
-                });
-                wrap.appendChild(btnEdit);
-                wrap.appendChild(btnHapus);
-                return wrap;
-              },
-            },
-          ],
-          rows,
-        ));
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) {
+          _simpanKeCache("transaksi", MugenState.getUser().id, url, data);
+          MugenState.tandaiHalamanBersih("input_data");
+        }
+        renderDenganDataList(data);
       } catch (e) {
         // Refresh diam-diam gagal (mis. koneksi putus sesaat) -- baris
         // lama yang sudah tampil TIDAK dihapus/diganti pesan error, data
@@ -452,15 +492,20 @@ const PageInputData = (() => {
     });
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
 
     // --- INPUT DATA NON-BARBER (Kasir/OB/Kru/role lainnya) ---
     // Tabel & endpoint baru, TIDAK terhubung ke `transaksi`/Slip Gaji Barber
     // sama sekali (lihat data_non_barber_db.py) -- murni tambahan, bagian
     // ini di-skip total untuk Barber (dropdown mode di atas juga tidak
     // pernah muncul untuknya).
-    if (isAdmin) await renderManualCustomer();
-    if (isAdmin) await renderNonBarber();
+    // PERBAIKAN PERFORMA (keluhan Owner: menu terasa ada jeda): KEDUANYA
+    // sengaja TIDAK di-await lagi -- seksi Manual Customer & Non-Barber
+    // sama-sama TERSEMBUNYI (display:none) sampai Owner/Admin pilih
+    // dropdown modenya, jadi fetch-nya tidak boleh menahan render() Input
+    // Data (seksi Barber yang langsung terlihat) selesai lebih dulu.
+    if (isAdmin) renderManualCustomer();
+    if (isAdmin) renderNonBarber();
 
     // --- INPUT DATA MANUAL CUSTOMER (Waiting List / Booking) ---
     // Metode input KEDUA untuk Input Barber, sejajar (bukan sub-mode) --
@@ -630,12 +675,28 @@ const PageInputData = (() => {
       });
 
       // --- STATUS HARI (mode/OPEN/CLOSED) ---
-      async function loadMcStatus() {
-        try {
-          mcStatus = await MugenApi.get(`/api/manual-customer/status?tanggal=${mcTanggal.value}`);
-        } catch (e) {
-          mcStatus = { mode: null, status: null };
+      async function loadMcStatus(opts = {}) {
+        const url = `/api/manual-customer/status?tanggal=${mcTanggal.value}`;
+
+        // PERMINTAAN OWNER: pola SAMA seperti loadList()/loadProdukList() --
+        // lihat catatan panjang di produk.js::loadProdukList(). Hanya
+        // berlaku untuk pemuatan AWAL (tanggal default = hari ini) --
+        // ganti tanggal/tutup/reset/submit SELALU fetch ulang.
+        const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("input_data")
+          ? _ambilDariCache("mc_status", MugenState.getUser().id, url)
+          : null;
+        if (cached) {
+          mcStatus = cached;
+        } else {
+          try {
+            mcStatus = await MugenApi.get(url);
+            _simpanKeCache("mc_status", MugenState.getUser().id, url, mcStatus);
+            MugenState.tandaiHalamanBersih("input_data");
+          } catch (e) {
+            mcStatus = { mode: null, status: null };
+          }
         }
+
         if (mcStatus.mode === null) {
           mcStatusBadge.textContent = "Tanggal ini belum dipakai -- mode bebas dipilih.";
         } else if (mcStatus.mode === "barber") {
@@ -688,48 +749,68 @@ const PageInputData = (() => {
       const mcListBody = MugenUI.el("div");
       mcListCard.appendChild(mcListBody);
 
-      async function loadMcList() {
+      function renderDenganDataMc(rows) {
+        mcListBody.innerHTML = "";
+        mcListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "jam", label: "Jam" },
+            {
+              key: "nama_customer", label: "Nama Customer", format: (v, r) => (
+                r.jenis === "booking" ? MugenUI.el("span", { class: "mc-nama-booking" }, v) : v
+              ),
+            },
+            { key: "jenis", label: "Jenis", format: (v) => (v === "booking" ? "Booking" : "Waiting List") },
+            { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
+            { key: "daftar_service", label: "Service", format: (v) => (v && v.length ? v.map((s) => s.nama).join(", ") : "-") },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            {
+              key: "aksi", label: "Aksi", format: (_, r) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnEdit = MugenUI.el("button", {}, "Koreksi");
+                btnEdit.addEventListener("click", () => isiMcFormUntukKoreksi(r));
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus data customer "${r.nama_customer}"?`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/manual-customer/transaksi/${r.id}`));
+                    MugenUI.toast("Data customer dihapus.", "success");
+                    await loadMcStatus();
+                    loadMcList();
+                  } catch (e) {
+                    MugenUI.toast((e.detail && e.detail.detail) ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnEdit);
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          rows,
+        ));
+      }
+
+      async function loadMcList(opts = {}) {
+        const url = `/api/manual-customer/transaksi?tanggal=${mcTanggal.value}`;
+
+        // PERMINTAAN OWNER: pola SAMA seperti loadMcStatus() di atas --
+        // hanya berlaku untuk pemuatan AWAL, ganti tanggal/tutup/reset/
+        // submit/hapus SELALU fetch ulang.
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("input_data")) {
+          const cached = _ambilDariCache("mc_list", MugenState.getUser().id, url);
+          if (cached) {
+            renderDenganDataMc(cached);
+            return;
+          }
+        }
+
+        mcListBody.innerHTML = "";
+        mcListBody.appendChild(MugenUI.skeleton("table", { cols: 7, rows: 4 }));
         try {
-          await MugenUI.refreshInto(mcListBody, async () => {
-            const rows = await MugenApi.get(`/api/manual-customer/transaksi?tanggal=${mcTanggal.value}`);
-            return MugenUI.buildTable(
-              [
-                { key: "jam", label: "Jam" },
-                {
-                  key: "nama_customer", label: "Nama Customer", format: (v, r) => (
-                    r.jenis === "booking" ? MugenUI.el("span", { class: "mc-nama-booking" }, v) : v
-                  ),
-                },
-                { key: "jenis", label: "Jenis", format: (v) => (v === "booking" ? "Booking" : "Waiting List") },
-                { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
-                { key: "daftar_service", label: "Service", format: (v) => (v && v.length ? v.map((s) => s.nama).join(", ") : "-") },
-                { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-                {
-                  key: "aksi", label: "Aksi", format: (_, r) => {
-                    const wrap = MugenUI.el("div", { class: "actions-cell" });
-                    const btnEdit = MugenUI.el("button", {}, "Koreksi");
-                    btnEdit.addEventListener("click", () => isiMcFormUntukKoreksi(r));
-                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                    btnHapus.addEventListener("click", async () => {
-                      if (!confirm(`Hapus data customer "${r.nama_customer}"?`)) return;
-                      try {
-                        await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/manual-customer/transaksi/${r.id}`));
-                        MugenUI.toast("Data customer dihapus.", "success");
-                        await loadMcStatus();
-                        loadMcList();
-                      } catch (e) {
-                        MugenUI.toast((e.detail && e.detail.detail) ? e.detail.detail : e.message, "error");
-                      }
-                    });
-                    wrap.appendChild(btnEdit);
-                    wrap.appendChild(btnHapus);
-                    return wrap;
-                  },
-                },
-              ],
-              rows,
-            );
-          }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
+          const rows = await MugenApi.get(url);
+          _simpanKeCache("mc_list", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("input_data");
+          renderDenganDataMc(rows);
         } catch (e) {
           mcListBody.innerHTML = "";
           mcListBody.appendChild(MugenUI.errorState(e.message));
@@ -737,8 +818,8 @@ const PageInputData = (() => {
       }
 
       resetMcForm();
-      await loadMcStatus();
-      await loadMcList();
+      await loadMcStatus({ bisaDariCache: true });
+      await loadMcList({ bisaDariCache: true });
     }
 
     async function renderNonBarber() {
@@ -902,55 +983,70 @@ const PageInputData = (() => {
       const nbListBody = MugenUI.el("div");
       nbListCard.appendChild(nbListBody);
 
-      async function loadNbList() {
-        // REVISI UI/UX Premium: refreshInto() -- satu container, satu tabel
-        // hasil, crossfade halus tanpa "flash" kosong (menggantikan
-        // innerHTML="Memuat...").
+      function renderDenganDataNb(rows) {
+        nbListBody.innerHTML = "";
+        const daftar = Array.isArray(rows) ? rows : rows.data || [];
+        nbListBody.appendChild(MugenUI.buildTable(
+          [
+            { key: "tanggal_mulai", label: "Periode", format: (v, r) => `${MugenUI.formatTanggal(r.tanggal_mulai)} s/d ${MugenUI.formatTanggal(r.tanggal_selesai)}` },
+            { key: "nama_barber", label: "Nama" },
+            { key: "jabatan", label: "Role", format: (v) => labelJabatan(v) },
+            { key: "gaji_per_hari", label: "Gaji/Hari", format: MugenUI.formatRupiah },
+            { key: "hari_masuk", label: "Hari Masuk" },
+            { key: "hari_libur", label: "Hari Libur" },
+            { key: "bonus", label: "Bonus", format: MugenUI.formatRupiah },
+            { key: "potongan", label: "Potongan", format: MugenUI.formatRupiah },
+            { key: "total_gaji", label: "Total Gaji", format: MugenUI.formatRupiah },
+            { key: "catatan", label: "Catatan", format: (v) => v || "-" },
+            {
+              key: "aksi", label: "Aksi", format: (_, r) => {
+                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const btnEdit = MugenUI.el("button", {}, "Koreksi");
+                btnEdit.addEventListener("click", () => isiNbFormUntukKoreksi(r));
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus data gaji "${r.nama_barber}" periode ${r.tanggal_mulai} s/d ${r.tanggal_selesai}?`)) return;
+                  try {
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/data-non-barber/${r.id}`));
+                    MugenUI.toast("Data gaji dihapus.", "success");
+                    loadNbList();
+                  } catch (e) {
+                    MugenUI.toast(e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnEdit);
+                wrap.appendChild(btnHapus);
+                return wrap;
+              },
+            },
+          ],
+          daftar,
+        ));
+      }
+
+      async function loadNbList(opts = {}) {
+        const now = new Date();
+        const url = `/api/data-non-barber?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`;
+
+        // PERMINTAAN OWNER: pola SAMA seperti loadList()/loadProdukList() --
+        // lihat catatan panjang di produk.js::loadProdukList().
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("input_data")) {
+          const cached = _ambilDariCache("non_barber", MugenState.getUser().id, url);
+          if (cached) {
+            renderDenganDataNb(cached);
+            return;
+          }
+        }
+
+        nbListBody.innerHTML = "";
+        nbListBody.appendChild(MugenUI.skeleton("table", { cols: 11, rows: 4 }));
         try {
-          await MugenUI.refreshInto(nbListBody, async () => {
-            const now = new Date();
-            const rows = await MugenApi.get(
-              `/api/data-non-barber?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`,
-              { useCache: true },
-            );
-            const daftar = Array.isArray(rows) ? rows : rows.data || [];
-            return MugenUI.buildTable(
-              [
-                { key: "tanggal_mulai", label: "Periode", format: (v, r) => `${MugenUI.formatTanggal(r.tanggal_mulai)} s/d ${MugenUI.formatTanggal(r.tanggal_selesai)}` },
-                { key: "nama_barber", label: "Nama" },
-                { key: "jabatan", label: "Role", format: (v) => labelJabatan(v) },
-                { key: "gaji_per_hari", label: "Gaji/Hari", format: MugenUI.formatRupiah },
-                { key: "hari_masuk", label: "Hari Masuk" },
-                { key: "hari_libur", label: "Hari Libur" },
-                { key: "bonus", label: "Bonus", format: MugenUI.formatRupiah },
-                { key: "potongan", label: "Potongan", format: MugenUI.formatRupiah },
-                { key: "total_gaji", label: "Total Gaji", format: MugenUI.formatRupiah },
-                { key: "catatan", label: "Catatan", format: (v) => v || "-" },
-                {
-                  key: "aksi", label: "Aksi", format: (_, r) => {
-                    const wrap = MugenUI.el("div", { class: "actions-cell" });
-                    const btnEdit = MugenUI.el("button", {}, "Koreksi");
-                    btnEdit.addEventListener("click", () => isiNbFormUntukKoreksi(r));
-                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                    btnHapus.addEventListener("click", async () => {
-                      if (!confirm(`Hapus data gaji "${r.nama_barber}" periode ${r.tanggal_mulai} s/d ${r.tanggal_selesai}?`)) return;
-                      try {
-                        await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/data-non-barber/${r.id}`));
-                        MugenUI.toast("Data gaji dihapus.", "success");
-                        loadNbList();
-                      } catch (e) {
-                        MugenUI.toast(e.message, "error");
-                      }
-                    });
-                    wrap.appendChild(btnEdit);
-                    wrap.appendChild(btnHapus);
-                    return wrap;
-                  },
-                },
-              ],
-              daftar,
-            );
-          }, { skeleton: { kind: "table", cols: 11, rows: 4 } });
+          const rows = await MugenApi.get(url, { useCache: true });
+          if (!rows.__offline) {
+            _simpanKeCache("non_barber", MugenState.getUser().id, url, rows);
+            MugenState.tandaiHalamanBersih("input_data");
+          }
+          renderDenganDataNb(rows);
         } catch (e) {
           nbListBody.innerHTML = "";
           nbListBody.appendChild(MugenUI.errorState(e.message));
@@ -958,7 +1054,7 @@ const PageInputData = (() => {
       }
 
       resetNbForm();
-      loadNbList();
+      loadNbList({ bisaDariCache: true });
     }
   }
 

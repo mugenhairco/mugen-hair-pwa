@@ -1081,7 +1081,15 @@
 // saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
 // reload tanpa aksi user yang bisa menghilangkan data form yang belum
 // tersimpan.
-const ASSET_VERSION = "204";
+// v204 -> v205: PERMINTAAN Owner ("menu terasa ada jeda loading") -- Input
+// Data sekarang ikut pola cache tanpa-jeda yang sama seperti Dashboard/
+// Rekap/Produk sebelumnya (lihat input_data.js::_cacheTerakhir -- Daftar
+// Transaksi, Data Gaji Non-Barber, Status & Daftar Manual Customer).
+// Seksi Manual Customer & Non-Barber (tersembunyi sampai dropdown mode
+// dipilih) juga tidak lagi memblokir render() halaman menunggu fetch-nya
+// -- lihat api.js untuk daftar lengkap menu lain yang akan menyusul
+// didaftarkan ke hook dirty-marking yang sama.
+const ASSET_VERSION = "205";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
