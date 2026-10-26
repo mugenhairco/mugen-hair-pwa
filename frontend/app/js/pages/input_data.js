@@ -371,24 +371,14 @@ const PageInputData = (() => {
           { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
           { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
           {
+            // PERMINTAAN OWNER: tombol Hapus Transaksi dihapus dari sini --
+            // redundan dengan Rekap > Transaksi (lihat rekap.js, kolom Aksi
+            // "Hapus Transaksi") yang sudah menyediakan aksi yang sama.
             key: "aksi", label: "Aksi", format: (_, r) => {
               const wrap = MugenUI.el("div", { class: "actions-cell" });
               const btnEdit = MugenUI.el("button", {}, "Koreksi");
               btnEdit.addEventListener("click", () => isiFormUntukKoreksi(r));
-              const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-              btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Hapus transaksi #${r.id} tanggal ${r.tanggal}?`)) return;
-                try {
-                  // REVISI UI/UX Premium: spinner inline di tombol Hapus.
-                  await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/input-data/transaksi/${r.id}`));
-                  MugenUI.toast("Transaksi dihapus.", "success");
-                  loadList();
-                } catch (e) {
-                  MugenUI.toast(e.message, "error");
-                }
-              });
               wrap.appendChild(btnEdit);
-              wrap.appendChild(btnHapus);
               return wrap;
             },
           },
@@ -999,23 +989,14 @@ const PageInputData = (() => {
             { key: "total_gaji", label: "Total Gaji", format: MugenUI.formatRupiah },
             { key: "catatan", label: "Catatan", format: (v) => v || "-" },
             {
+              // PERMINTAAN OWNER: tombol Hapus Data Gaji Non-Barber dihapus
+              // dari sini -- redundan dengan Rekap > Transaksi (lihat
+              // rekap.js, kolom Aksi "Hapus Data Gaji Non-Barber").
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
                 const btnEdit = MugenUI.el("button", {}, "Koreksi");
                 btnEdit.addEventListener("click", () => isiNbFormUntukKoreksi(r));
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus data gaji "${r.nama_barber}" periode ${r.tanggal_mulai} s/d ${r.tanggal_selesai}?`)) return;
-                  try {
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/data-non-barber/${r.id}`));
-                    MugenUI.toast("Data gaji dihapus.", "success");
-                    loadNbList();
-                  } catch (e) {
-                    MugenUI.toast(e.message, "error");
-                  }
-                });
                 wrap.appendChild(btnEdit);
-                wrap.appendChild(btnHapus);
                 return wrap;
               },
             },

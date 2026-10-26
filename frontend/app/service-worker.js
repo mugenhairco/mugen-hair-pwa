@@ -1135,7 +1135,14 @@
 // butuh cache (tidak ada fetch GET apa pun di tab itu). Subscription
 // SENGAJA TIDAK ikut -- status dikelola Super Admin dari luar, sama
 // seperti Billing.
-const ASSET_VERSION = "211";
+// v211 -> v212: PERMINTAAN Owner -- tombol Hapus untuk Transaksi & Data
+// Gaji Non-Barber di menu Input Data DIHAPUS (lihat input_data.js) --
+// redundan dengan Rekap > Transaksi yang sudah punya aksi Hapus yang
+// sama untuk kedua jenis baris ini. Tombol Koreksi TETAP ada. Tombol
+// Hapus di bagian Manual Customer (sebelum "Tutup & Simpan") SENGAJA
+// TIDAK ikut dihapus -- baris itu belum jadi transaksi, tidak ada
+// padanannya di Rekap.
+const ASSET_VERSION = "212";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
