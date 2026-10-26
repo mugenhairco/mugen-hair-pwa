@@ -49,6 +49,12 @@ SUMBER_KELEBIHAN_KUOTA = "kelebihan_kuota"
 SUMBER_LIBUR_MINGGUAN = "libur_mingguan"
 DIAJUKAN_OLEH_KUOTA_LIBUR = "Sistem (Kuota Libur Habis)"
 
+# FITUR Pembersihan Data Bulanan Otomatis: kunci setting (per tenant) yang
+# menyimpan cutoff TERAKHIR berhasil dibersihkan dari hapus_riwayat_libur_sebelum()
+# di bawah -- lihat catatan lengkap di fungsi itu dan di
+# pastikan_libur_mingguan_tercatat().
+_SETTING_CUTOFF_LIBUR_TERCAPAI = "purge_libur_cutoff_tercapai"
+
 
 def migrasi_absensi_libur_sumber():
     """JALUR SQLITE SAJA (dipanggil dari main.py::on_startup() bersama
@@ -396,6 +402,20 @@ def pastikan_libur_mingguan_tercatat(barber_id: int, tenant_id: int, tanggal_mul
     if akhir_efektif < tanggal_mulai:
         return
 
+    # FITUR Pembersihan Data Bulanan Otomatis: `tanggal_mulai` TIDAK boleh
+    # mundur sampai sebelum cutoff TERAKHIR yang sudah berhasil dibersihkan
+    # (lihat hapus_riwayat_libur_sebelum() di bawah) -- tanpa penjagaan ini,
+    # melihat Rekap periode LAMA yang SUDAH dipurge akan membuat baris
+    # absensi_libur baru lagi untuk tanggal yang sama (fungsi ini dipanggil
+    # OPORTUNISTIK setiap kali periode itu dibaca, tidak tahu periode itu
+    # sudah "sengaja dikosongkan" oleh Owner), sehingga baris yang sudah
+    # dihapus permanen seperti "muncul lagi" di Rekap.
+    cutoff_tercapai = db.get_setting(_SETTING_CUTOFF_LIBUR_TERCAPAI, None, tenant_id=tenant_id)
+    if cutoff_tercapai and tanggal_mulai < cutoff_tercapai:
+        tanggal_mulai = cutoff_tercapai
+    if akhir_efektif < tanggal_mulai:
+        return
+
     d = date.fromisoformat(tanggal_mulai)
     akhir = date.fromisoformat(akhir_efektif)
     while d <= akhir:
@@ -409,3 +429,35 @@ def pastikan_libur_mingguan_tercatat(barber_id: int, tenant_id: int, tanggal_mul
             if sudah_ada is None and izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, iso) is None:
                 _terapkan_kuota_libur(barber_id, tenant_id, iso, sumber_libur=SUMBER_LIBUR_MINGGUAN)
         d += timedelta(days=1)
+
+
+def hapus_riwayat_libur_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN baris absensi_libur (Tandai Libur manual MAUPUN Libur
+    Mingguan, lihat SUMBER_LIBUR_MINGGUAN) milik tenant ini bertanggal
+    lebih lama dari `sebelum_tanggal` ("YYYY-MM-01") -- tabel ini SEBELUMNYA
+    TIDAK PERNAH ikut dibersihkan sama sekali (celah ditemukan Owner lewat
+    Rekap production: baris "Libur" tetap tampil untuk periode yang
+    Transaksi-nya sudah dihapus, lihat riwayat git).
+
+    TIDAK butuh arsip PDF (sama seperti Booking/Log Audit/Pengajuan Koreksi
+    -- hanya barber_id/tanggal/sumber, tidak ada nilai uang apa pun, dan
+    jumlah "Hari Libur" bulan-bulan lama itu SUDAH ikut tercetak di PDF
+    Rekap Transaksi yang dibangun SEBELUM baris ini dihapus, lihat
+    laporan_pdf.py). Kuota Libur bulanan (get_sisa_kuota_libur_bulan_ini())
+    SELALU menghitung bulan KALENDER BERJALAN saja, jadi menghapus baris
+    bulan-bulan lalu tidak mengubah kuota yang sedang aktif.
+
+    WAJIB mencatat `sebelum_tanggal` sebagai cutoff tercapai (dibaca
+    pastikan_libur_mingguan_tercatat() di atas) SETIAP kali dipanggil --
+    bahkan kalau tidak ada baris yang terhapus -- supaya baris Libur
+    Mingguan yang sudah dipurge TIDAK dibuat ulang saat periode itu dilihat
+    lagi di Rekap. Mengembalikan jumlah baris yang terhapus."""
+    with get_conn() as conn:
+        jumlah = conn.execute(
+            "DELETE FROM absensi_libur WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?) "
+            "AND tanggal < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
+    db.set_setting(_SETTING_CUTOFF_LIBUR_TERCAPAI, sebelum_tanggal, tenant_id=tenant_id)
+    return jumlah

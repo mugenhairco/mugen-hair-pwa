@@ -10,7 +10,7 @@ spesial. Dipicu EKSTERNAL lewat routers/cron_purge_data.py (pola SAMA PERSIS
 absensi_reminder_db.py/routers/cron_reminder.py) -- TIDAK ada proses latar
 belakang di dalam aplikasi.
 
-Tujuh kategori, DUA kelompok:
+Delapan kategori, DUA kelompok:
 
 1. PERLU ARSIP PDF dulu (dikirim ke email tenant SEBELUM dihapus):
    - Rekap Transaksi Barber -- 1 PDF Detail PER barber (termasuk yang
@@ -45,6 +45,13 @@ Tujuh kategori, DUA kelompok:
      eksplisit Owner, BEDA dari hapus_slip_gaji() manual yang menolak
      status 'sudah_dibayar') -- lihat slip_gaji_db.hapus_slip_gaji_sebelum()
      untuk penjelasan lengkap penanganan FK kasbon_pembayaran.
+   - Riwayat Libur (absensi_libur -- Tandai Libur manual MAUPUN Libur
+     Mingguan) -- lihat kuota_libur_db.hapus_riwayat_libur_sebelum() untuk
+     alasan tidak butuh PDF dan penjagaan anti-"kebangkitan" baris yang
+     sudah dihapus (fungsi itu JUGA mencatat cutoff tercapai supaya
+     pastikan_libur_mingguan_tercatat() tidak membuat ulang baris untuk
+     periode yang sudah dipurge, hanya karena periode itu dilihat lagi di
+     Rekap).
 
 Riwayat Mutasi Produk PERLU langkah tambahan SEBELUM dihapus: saldo stok
 dihitung ulang dari SELURUH riwayat produk_mutasi (TIDAK ada kolom stok
@@ -72,6 +79,7 @@ import attendance_db
 import booking_db
 import data_non_barber_db
 import database as db
+import kuota_libur_db
 import laporan_pdf
 import slip_gaji_db
 import tenant_db
@@ -248,6 +256,7 @@ def _hapus_kategori_tanpa_pdf(tenant_id: int, cutoff: str) -> dict:
         "audit_log_dihapus": attendance_db.hapus_audit_log_sebelum(tenant_id, cutoff),
         "koreksi_dihapus": attendance_db.hapus_koreksi_terputuskan_sebelum(tenant_id, cutoff),
         "slip_gaji_dihapus": slip_gaji_db.hapus_slip_gaji_sebelum(tenant_id, cutoff),
+        "libur_dihapus": kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_id, cutoff),
     }
 
 
