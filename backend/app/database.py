@@ -1148,6 +1148,43 @@ def target_uang_harian_per_hari(tenant_id=None) -> int:
     return int(_setting_float("uang_harian_target_service_harian", tenant_id=tenant_id) or 3)
 
 
+def uang_harian_syarat_aktif(tenant_id=None) -> bool:
+    """PERMINTAAN OWNER: saklar UTAMA tab Setting > Uang Harian (gaya switch
+    sama seperti Dark Mode). Default "1" (ON) supaya tenant yang SUDAH ADA
+    TIDAK terpengaruh sama sekali sampai Owner sengaja mematikannya sendiri.
+
+    ON (default) -- perilaku SAMA PERSIS seperti sebelum saklar ini ada:
+    Uang Harian cair berdasarkan Acuan Service/Target (lihat
+    get_uang_harian_acuan_ids()/target_uang_harian_per_hari() di atas) ATAU
+    Uang Harian Dinamis (lihat _uang_harian_dinamis_aktif() di bawah, kalau
+    Tenant sudah opt-in terpisah) -- BUKAN keduanya sekaligus.
+
+    OFF -- SELURUH syarat di atas (Acuan Service/Target MAUPUN Uang Harian
+    Dinamis) diabaikan total, pengaturannya pun disembunyikan dari UI (lihat
+    pages/pengaturan.js::renderUangHarian()). Uang Harian cair PENUH (kolom
+    barbers.uang_harian apa adanya) untuk SETIAP hari barber tercatat Check
+    In (hadir) -- lihat _tanggal_hadir_barber() di bawah -- tidak peduli
+    jumlah service, telat, atau pulang cepat sama sekali."""
+    return get_setting("uang_harian_syarat_aktif", "1", tenant_id=tenant_id) == "1"
+
+
+def set_uang_harian_syarat_aktif(aktif: bool, tenant_id=None) -> None:
+    set_setting("uang_harian_syarat_aktif", "1" if aktif else "0", tenant_id=tenant_id)
+
+
+def _tanggal_hadir_barber(barber_id: int, tanggal_mulai: str, tanggal_selesai: str) -> set:
+    """Dipakai KHUSUS saat uang_harian_syarat_aktif() == False (lihat
+    komentar di sana) -- kumpulan tanggal barber ini tercatat Check In
+    (hadir) dalam rentang, satu-satunya syarat cair Uang Harian saat itu."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT tanggal FROM attendance_logs
+               WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ? AND check_in_at IS NOT NULL""",
+            (barber_id, tanggal_mulai, tanggal_selesai),
+        ).fetchall()
+    return {r["tanggal"] for r in rows}
+
+
 def _uang_harian_dinamis_aktif(tenant_id) -> bool:
     """FITUR Uang Harian Dinamis: import LOKAL (bukan di puncak file) supaya
     tidak circular import -- uang_harian_dinamis_db.py sendiri mengimpor
@@ -1260,6 +1297,9 @@ def hitung_uang_harian_per_hari(barber: dict, tanggal: str) -> int:
     if beku is not None:
         return beku
     tenant_id = barber.get("tenant_id")
+    if not uang_harian_syarat_aktif(tenant_id=tenant_id):
+        hadir = tanggal in _tanggal_hadir_barber(barber["id"], tanggal, tanggal)
+        return int(barber["uang_harian"] or 0) if hadir else 0
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
         return uang_harian_dinamis_db.breakdown_hari(barber, tanggal)["uang_harian_final"]
@@ -1299,6 +1339,10 @@ def hitung_uang_harian_bulan(barber: dict, tahun: int, bulan: int) -> int:
                                              f"{tahun:04d}-{bulan:02d}-31")
     total_beku = sum(beku_map.values())
     abaikan_tanggal = set(beku_map.keys())
+    if not uang_harian_syarat_aktif(tenant_id=tenant_id):
+        hadir_set = _tanggal_hadir_barber(barber["id"], f"{tahun:04d}-{bulan:02d}-01", f"{tahun:04d}-{bulan:02d}-31")
+        nominal = int(barber["uang_harian"] or 0)
+        return total_beku + nominal * len(hadir_set - abaikan_tanggal)
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
         return total_beku + uang_harian_dinamis_db.hitung_uang_harian_dinamis_bulan(
@@ -1333,6 +1377,10 @@ def hitung_uang_harian_rentang(barber: dict, tanggal_mulai: str, tanggal_selesai
     beku_map = get_uang_harian_beku_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
     total_beku = sum(beku_map.values())
     abaikan_tanggal = set(beku_map.keys())
+    if not uang_harian_syarat_aktif(tenant_id=tenant_id):
+        hadir_set = _tanggal_hadir_barber(barber["id"], tanggal_mulai, tanggal_selesai)
+        nominal = int(barber["uang_harian"] or 0)
+        return total_beku + nominal * len(hadir_set - abaikan_tanggal)
     if _uang_harian_dinamis_aktif(tenant_id):
         import uang_harian_dinamis_db
         return total_beku + uang_harian_dinamis_db.hitung_uang_harian_dinamis_rentang(
@@ -1379,6 +1427,13 @@ def hitung_uang_harian_per_hari_batch(barber: dict, tanggal_mulai: str, tanggal_
     tenant_id = barber.get("tenant_id")
     beku_map = get_uang_harian_beku_rentang(barber["id"], tanggal_mulai, tanggal_selesai)
     hasil = dict(beku_map)
+
+    if not uang_harian_syarat_aktif(tenant_id=tenant_id):
+        nominal = int(barber["uang_harian"] or 0)
+        for tgl in _tanggal_hadir_barber(barber["id"], tanggal_mulai, tanggal_selesai):
+            if tgl not in hasil:
+                hasil[tgl] = nominal
+        return hasil
 
     if _uang_harian_dinamis_aktif(tenant_id):
         # FITUR Uang Harian Dinamis belum punya versi batch per-hari (beda

@@ -1142,7 +1142,22 @@
 // Hapus di bagian Manual Customer (sebelum "Tutup & Simpan") SENGAJA
 // TIDAK ikut dihapus -- baris itu belum jadi transaksi, tidak ada
 // padanannya di Rekap.
-const ASSET_VERSION = "212";
+// v212 -> v213: PERMINTAAN Owner -- (1) tab Setting > Uang Harian dapat
+// saklar ON/OFF utama (lihat pengaturan.js::renderUangHarian() +
+// database.py::uang_harian_syarat_aktif()) -- default ON (tidak mengubah
+// tenant lama), OFF menyembunyikan total checklist Acuan Service/Target
+// & kartu Uang Harian Dinamis, Uang Harian langsung cair penuh per hari
+// barber tercatat Check In; (2) tab Subscription DIHAPUS dari Setting
+// (sudah ada menu Billing, endpoint /api/subscription/me TETAP ada); (3)
+// tab User + Hak Akses User digabung jadi "User & Hak Akses" (bagian Hak
+// Akses TETAP Owner-only); (4) tab Tampilan + Profil digabung jadi
+// "Tampilan & Profil" (Profil tetap tampil tanpa syarat izin apa pun);
+// (5) tab Website Content (menu Booking) disederhanakan -- Hero Video,
+// kartu Choose Barber (Foto Barber), Foto About, Gallery, Opening Hours,
+// dan Contact (termasuk Nomor Telepon) dihapus dari admin (lihat
+// booking.js::renderWebsiteContent()) -- halaman publik /book TAMPILAN-
+// nya TIDAK berubah, murni simplifikasi form admin.
+const ASSET_VERSION = "213";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

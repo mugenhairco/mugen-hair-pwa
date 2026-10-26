@@ -33,14 +33,12 @@ const PagePengaturan = (() => {
   // Setting-nya:
   const TAB_KE_IZIN_SETTING = {
     "Branding": "izin_setting_branding",
-    "Tampilan": "izin_setting_tampilan",
     "Komisi": "izin_setting_komisi",
     "Bonus Service": "izin_setting_bonus_service",
     "Uang Harian": "izin_setting_uang_harian",
     "Karyawan": "izin_setting_karyawan",
     "Layanan": "izin_setting_layanan",
-    "Subscription": "izin_setting_subscription",
-    "User": "izin_setting_user",
+    "User & Hak Akses": "izin_setting_user",
     "Backup": "izin_setting_backup",
   };
   // REVISI (feedback Owner): form Pengaturan Absensi (Jam Masuk/Pulang,
@@ -67,15 +65,25 @@ const PagePengaturan = (() => {
       }
     }
 
+    // REVISI (permintaan Owner): tab "Subscription" dihapus total (sudah
+    // ada menu Billing yang mencakup status subscription -- endpoint
+    // /api/subscription/me TETAP ada, dipakai Billing, hanya tab Setting
+    // ini yang dihapus). Tab "Tampilan" + "Profil" digabung jadi "Tampilan
+    // & Profil", dan "User" + "Hak Akses User" digabung jadi "User & Hak
+    // Akses" (lihat renderTampilanProfil()/renderUserHakAkses() di bawah).
+    //
     // REVISI Hak Akses (permintaan Owner): "Profil" BUKAN sesuatu yang
     // "diberikan" lewat checklist Role -- setiap akun (Owner MAUPUN
-    // Admin/staff) otomatis punya akses ke profilnya sendiri, jadi
-    // SELALU ditambahkan di luar TAB_KE_IZIN_SETTING/izin apa pun.
-    // "Hak Akses User" TETAP permanen Owner-only (lihat docstring
-    // renderHakAksesAdmin() di bawah -- privilege-escalation risk).
+    // Admin/staff) otomatis punya akses ke profilnya sendiri, jadi tab
+    // gabungan "Tampilan & Profil" SELALU ditambahkan di luar
+    // TAB_KE_IZIN_SETTING/izin apa pun (bagian Tampilan di dalamnya tetap
+    // digerbangi izin_setting_tampilan, lihat renderTampilanProfil()).
+    // Bagian "Hak Akses" di dalam tab gabungan "User & Hak Akses" TETAP
+    // permanen Owner-only (lihat docstring renderHakAksesAdmin() di bawah
+    // -- privilege-escalation risk).
     const tabs = isOwner
-      ? ["Branding", "Tampilan", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "Subscription", "User", "Backup", "Hak Akses User", "Profil"]
-      : [...Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]), "Profil"];
+      ? ["Branding", "Tampilan & Profil", "Komisi", "Bonus Service", "Uang Harian", "Karyawan", "Layanan", "User & Hak Akses", "Backup"]
+      : [...Object.keys(TAB_KE_IZIN_SETTING).filter((t) => izinAdmin[TAB_KE_IZIN_SETTING[t]]), "Tampilan & Profil"];
 
     // REVISI UI/UX Premium: MugenUI.tabs() (indikator geser halus otomatis)
     // menggantikan tabBar/renderTabs manual.
@@ -90,17 +98,33 @@ const PagePengaturan = (() => {
       body.innerHTML = "";
       const activeTab = tabsCtl.active;
       if (activeTab === "Branding") await renderBranding(opts);
-      else if (activeTab === "Tampilan") await renderTampilan(opts);
+      else if (activeTab === "Tampilan & Profil") await renderTampilanProfil(opts);
       else if (activeTab === "Komisi") await renderKomisi(opts);
       else if (activeTab === "Bonus Service") await renderBonusService(opts);
       else if (activeTab === "Uang Harian") await renderUangHarian(opts);
       else if (activeTab === "Karyawan") await renderBarber(opts);
       else if (activeTab === "Layanan") await renderLayanan(opts);
-      else if (activeTab === "Subscription") await renderSubscription(opts);
-      else if (activeTab === "User") await renderUser(opts);
-      else if (activeTab === "Backup") await renderBackup(opts);
-      else if (activeTab === "Profil") await renderProfil(opts);
-      else await renderHakAksesAdmin(opts);
+      else if (activeTab === "User & Hak Akses") await renderUserHakAkses(opts);
+      else await renderBackup(opts);
+    }
+
+    // PERMINTAAN OWNER: tab "Tampilan" + "Profil" digabung jadi satu --
+    // "Profil" TETAP tampil utuh tanpa syarat izin apa pun (lihat komentar
+    // di atas tabs[] soal ini), hanya bagian "Tampilan" (Dark Mode) di
+    // tab gabungan ini yang digerbangi izin_setting_tampilan untuk staff.
+    async function renderTampilanProfil(opts = {}) {
+      if (isOwner || izinAdmin.izin_setting_tampilan) await renderTampilan();
+      await renderProfil(opts);
+    }
+
+    // PERMINTAAN OWNER: tab "User" + "Hak Akses User" digabung jadi satu
+    // -- bagian "Hak Akses" TETAP permanen Owner-only (lihat docstring
+    // renderHakAksesAdmin() di bawah -- privilege-escalation risk), staff
+    // ber-izin_setting_user HANYA melihat bagian User, sama seperti
+    // sebelum digabung.
+    async function renderUserHakAkses(opts = {}) {
+      await renderUser(opts);
+      if (isOwner) await renderHakAksesAdmin(opts);
     }
 
     // ================= BONUS SERVICE / UANG HARIAN (checklist acuan service) =================
@@ -542,7 +566,69 @@ const PagePengaturan = (() => {
     // /api/pengaturan/uang-harian-target -- lihat database.py
     // target_uang_harian_per_hari()), di bawah checklist acuan service yang
     // sudah ada.
+    // PERMINTAAN OWNER: saklar utama "Syarat Uang Harian" -- lihat docstring
+    // database.py::uang_harian_syarat_aktif() untuk konsep lengkap. Default
+    // AKTIF (tidak mengubah tenant lama mana pun). Saat dimatikan, SELURUH
+    // pengaturan di bawah (checklist Acuan Service, Target Jumlah Service
+    // Harian, kartu Uang Harian Dinamis) disembunyikan TOTAL dari tab ini --
+    // bukan cuma disabled -- karena sudah tidak relevan sama sekali (Uang
+    // Harian langsung cair penuh berdasar kehadiran/Check-In).
     async function renderUangHarian(opts = {}) {
+      const toggleCard = MugenUI.el("div", { class: "card" });
+      body.appendChild(toggleCard);
+      toggleCard.appendChild(MugenUI.el("h2", {}, "Uang Harian"));
+      toggleCard.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Default AKTIF -- Uang Harian memakai syarat di bawah (Acuan Service/Target, dan opsional Uang Harian " +
+        "Dinamis). Matikan untuk Uang Harian cair PENUH (nominal per-barber di Setting > Karyawan) setiap hari " +
+        "barber tercatat Check In (masuk) -- tanpa syarat jumlah service, keterlambatan, atau pulang awal apa pun."));
+
+      let syarat;
+      const cachedSyarat = opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengaturan")
+        ? _ambilDariCache("uang_harian_syarat", MugenState.getUser().id)
+        : null;
+      if (cachedSyarat) {
+        syarat = cachedSyarat;
+      } else {
+        try {
+          syarat = await MugenApi.get("/api/pengaturan/uang-harian-syarat");
+          _simpanKeCache("uang_harian_syarat", MugenState.getUser().id, syarat);
+          MugenState.tandaiHalamanBersih("pengaturan");
+        } catch (e) {
+          toggleCard.appendChild(MugenUI.errorState(e.message));
+          return;
+        }
+      }
+
+      const inToggle = MugenUI.el("input", { type: "checkbox" });
+      inToggle.checked = !!syarat.aktif;
+      const toggleLabel = MugenUI.el("label", { class: "theme-switch" }, [
+        inToggle,
+        MugenUI.el("span", { class: "theme-switch-track" }),
+        MugenUI.el("span", { class: "theme-switch-thumb" }),
+      ]);
+      toggleCard.appendChild(MugenUI.el("div", { class: "theme-switch-row", style: "margin-top:14px;" }, [
+        MugenUI.el("span", {}, "Syarat Uang Harian"),
+        toggleLabel,
+      ]));
+
+      inToggle.addEventListener("change", async () => {
+        const aktifBaru = inToggle.checked;
+        try {
+          const r = await MugenApi.put("/api/pengaturan/uang-harian-syarat", { aktif: aktifBaru });
+          _simpanKeCache("uang_harian_syarat", MugenState.getUser().id, r);
+          MugenUI.toast(r.aktif
+            ? "Syarat Uang Harian diaktifkan."
+            : "Syarat Uang Harian dimatikan -- Uang Harian cair penuh berdasar kehadiran.", "success", { force: true });
+          body.innerHTML = "";
+          await renderUangHarian({ bisaDariCache: true });
+        } catch (e) {
+          inToggle.checked = !aktifBaru;
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error", { force: true });
+        }
+      });
+
+      if (!syarat.aktif) return;
+
       await renderAcuanServiceChecklist("Uang Harian", "/api/pengaturan/uang-harian-acuan",
         "Pilih service mana saja yang jadi acuan syarat cair Uang Harian (cair kalau total service acuan ini " +
         "pada satu hari yang sama mencapai target di bawah).", "uang_harian_acuan", opts);
@@ -1700,83 +1786,6 @@ const PagePengaturan = (() => {
         }
       }
       loadList(opts);
-    }
-
-    // ================= TAB: SUBSCRIPTION (FONDASI Multi-Tenant Phase 3) =================
-    // Owner-murni, READ-ONLY total (TIDAK ADA endpoint PUT/POST di sini --
-    // lihat routers/subscription.py) -- package/status/trial HANYA
-    // bisa diubah Super Admin lewat Dashboard Super Admin-nya sendiri
-    // (pages/superadmin.js), sesuai cakupan Phase 3.
-    const LABEL_PACKAGE_SUBSCRIPTION = { free: "Free", basic: "Basic", pro: "Pro", enterprise: "Enterprise" };
-    const LABEL_STATUS_SUBSCRIPTION = {
-      trial: "Trial", active: "Active",
-      expired: "Expired", suspended: "Suspended", cancelled: "Cancelled",
-    };
-    const BADGE_STATUS_SUBSCRIPTION = {
-      trial: "badge-libur", active: "badge-success",
-      expired: "badge-danger", suspended: "badge-danger", cancelled: "badge-danger",
-    };
-
-    function formatWaktuSubscription(iso) {
-      if (!iso) return "-";
-      const [tanggal, jam] = iso.split("T");
-      return `${MugenUI.formatTanggal(tanggal)} ${jam || ""}`.trim();
-    }
-
-    // PERMINTAAN OWNER (menu tanpa jeda loading): tab ini SENGAJA TIDAK
-    // ikut pola cache -- status subscription dikelola Super Admin lewat
-    // Dashboard-nya sendiri (bukan aksi akun yang login di sini), sama
-    // seperti pages/billing.js. Fetch ulang tetap jalan seperti biasa.
-    async function renderSubscription() {
-      const card = MugenUI.el("div", { class: "card" });
-      body.appendChild(card);
-      card.appendChild(MugenUI.el("h2", {}, "Subscription"));
-      card.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Informasi paket & status langganan toko ini, dikelola Super Admin. Halaman ini read-only -- hubungi penyedia layanan untuk perubahan paket atau pembayaran."));
-
-      let sub;
-      try {
-        sub = await MugenApi.get("/api/subscription/me");
-      } catch (e) {
-        if (e.status === 404) {
-          card.appendChild(MugenUI.el("div", {}, "Data subscription belum tersedia untuk toko ini."));
-        } else {
-          card.appendChild(MugenUI.el("div", {}, e.detail && e.detail.detail ? e.detail.detail : e.message));
-        }
-        return;
-      }
-
-      if (sub.akses_diblokir) {
-        const peringatan = MugenUI.el("div", { class: "login-error", style: "margin-bottom:12px;" },
-          "Akses toko ini sedang dibatasi karena status subscription " +
-          `"${LABEL_STATUS_SUBSCRIPTION[sub.status] || sub.status}". Hubungi penyedia layanan untuk mengaktifkan kembali.`);
-        card.appendChild(peringatan);
-      }
-
-      const ringkasan = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:24px;margin-bottom:8px;" }, [
-        MugenUI.el("div", {}, [
-          MugenUI.el("div", { class: "subtitle" }, "Package"),
-          MugenUI.el("div", { style: "font-weight:700;font-size:16px;" }, LABEL_PACKAGE_SUBSCRIPTION[sub.package] || sub.package),
-        ]),
-        MugenUI.el("div", {}, [
-          MugenUI.el("div", { class: "subtitle" }, "Status"),
-          MugenUI.el("span", { class: "badge " + (BADGE_STATUS_SUBSCRIPTION[sub.status] || "") },
-            LABEL_STATUS_SUBSCRIPTION[sub.status] || sub.status),
-        ]),
-      ]);
-      card.appendChild(ringkasan);
-
-      const tabelInfo = MugenUI.el("div", { style: "margin-top:16px;" }, [
-        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);" }, [
-          MugenUI.el("span", { class: "subtitle" }, "Masa Trial"),
-          MugenUI.el("span", {}, sub.trial_start ? `${formatWaktuSubscription(sub.trial_start)} s/d ${formatWaktuSubscription(sub.trial_end)}` : "-"),
-        ]),
-        MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);" }, [
-          MugenUI.el("span", { class: "subtitle" }, "Terakhir Diperbarui"),
-          MugenUI.el("span", {}, formatWaktuSubscription(sub.updated_at)),
-        ]),
-      ]);
-      card.appendChild(tabelInfo);
     }
 
     // ================= TAB: BACKUP =================
