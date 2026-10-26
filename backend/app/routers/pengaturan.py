@@ -444,6 +444,23 @@ def simpan_uang_harian_target(body: UangHarianTargetBody, user: dict = Depends(r
     return {"target": db.target_uang_harian_per_hari(tenant_id=user["tenant_id"])}
 
 
+# PERMINTAAN OWNER: saklar UTAMA tab Setting > Uang Harian -- lihat
+# docstring lengkap di database.py::uang_harian_syarat_aktif().
+class UangHarianSyaratBody(BaseModel):
+    aktif: bool
+
+
+@router.get("/uang-harian-syarat")
+def ambil_uang_harian_syarat(user: dict = Depends(require_permission("izin_setting_uang_harian"))):
+    return {"aktif": db.uang_harian_syarat_aktif(tenant_id=user["tenant_id"])}
+
+
+@router.put("/uang-harian-syarat")
+def simpan_uang_harian_syarat(body: UangHarianSyaratBody, user: dict = Depends(require_permission("izin_setting_uang_harian"))):
+    db.set_uang_harian_syarat_aktif(body.aktif, tenant_id=user["tenant_id"])
+    return {"aktif": db.uang_harian_syarat_aktif(tenant_id=user["tenant_id"])}
+
+
 # ================= MANAJEMEN KARYAWAN (Barber + Kasir/OB/Kru) =================
 # Tabel `barbers` digeneralisasi lewat kolom `jabatan` (lihat
 # karyawan_migrasi.py) -- endpoint di sini KHUSUS Setting, jadi WAJIB

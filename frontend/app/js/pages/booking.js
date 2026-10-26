@@ -1551,21 +1551,26 @@ const PageBooking = (() => {
   // SEO/Branding warna/Favicon/Splash Screen/link CTA eksternal/Footer
   // legal SUDAH DIHAPUS TOTAL -- tidak ada pengaturan untuk itu lagi.
   async function renderWebsiteContent(body) {
-    let content, gallery;
+    let content;
     try {
-      [content, gallery] = await Promise.all([
-        MugenApi.get("/api/website/content"),
-        MugenApi.get("/api/website/gallery"),
-      ]);
+      content = await MugenApi.get("/api/website/content");
     } catch (e) {
       body.appendChild(MugenUI.el("div", {}, e.message));
       return;
     }
 
+    // PERMINTAAN OWNER (simplifikasi admin Website Content): Hero Video,
+    // Choose Barber, Foto About, Gallery, Opening Hours, dan Contact
+    // dihapus dari tab ini (masing-masing sudah diatur/dikelola dari
+    // tab/menu lain, atau memang dianggap tidak perlu) -- TAMPILAN halaman
+    // publik /book TIDAK berubah, ini murni simplifikasi UI admin. Field
+    // hero_tipe SELALU dikirim "image" (pilihan video sudah dihapus dari
+    // sini) dan telepon tetap dikirim apa adanya (dibekukan di nilai
+    // terakhirnya, tidak lagi ada field untuk mengubahnya).
     async function simpanContent(patch) {
       Object.assign(content, patch);
       await MugenApi.put("/api/website/content", {
-        hero_tipe: content.hero_tipe, tagline: content.tagline,
+        hero_tipe: "image", tagline: content.tagline,
         about_judul: content.about_judul, about_deskripsi: content.about_deskripsi,
         alamat: content.alamat, visit_maps_embed_url: content.visit_maps_embed_url, visit_maps_link: content.visit_maps_link,
         instagram: content.instagram, tiktok: content.tiktok, whatsapp: content.whatsapp,
@@ -1583,13 +1588,6 @@ const PageBooking = (() => {
     body.appendChild(heroCard);
     heroCard.appendChild(MugenUI.el("h2", {}, "Hero"));
     heroCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Nama Brand & Logo dikelola di Setting → Identitas Barbershop."));
-
-    const selHeroTipe = MugenUI.el("select");
-    selHeroTipe.appendChild(MugenUI.el("option", { value: "image" }, "Gambar (Hero Image di bawah)"));
-    selHeroTipe.appendChild(MugenUI.el("option", { value: "video" }, "Video (Hero Video di bawah)"));
-    selHeroTipe.value = content.hero_tipe || "image";
-    heroCard.appendChild(MugenUI.el("label", {}, "Yang Ditampilkan di Hero"));
-    heroCard.appendChild(selHeroTipe);
 
     // Hero Image
     const heroImagePreview = MugenUI.el("img", { class: "logo-preview", style: content.hero_image_url ? "" : "display:none;", alt: "Hero Image" });
@@ -1627,45 +1625,6 @@ const PageBooking = (() => {
       } catch (e) { MugenUI.toast(e.message, "error"); }
     });
 
-    // Hero Video -- format fleksibel selama didukung browser modern
-    const heroVideoPreview = MugenUI.el("video", {
-      controls: "controls",
-      style: content.hero_video_url ? "max-width:320px;display:block;margin:8px 0;border-radius:10px;" : "display:none;",
-    });
-    if (content.hero_video_url) heroVideoPreview.src = MUGEN_API_BASE + content.hero_video_url;
-    const inHeroVideoFile = MugenUI.el("input", { type: "file", accept: "video/mp4,video/webm,video/quicktime,video/x-m4v,video/ogg,.mov" });
-    const btnUploadHeroVideo = MugenUI.el("button", { type: "button" }, "Upload / Ganti Hero Video");
-    const btnHapusHeroVideo = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus Hero Video");
-    const errorHeroVideo = MugenUI.el("div", { class: "login-error" });
-    heroCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Hero Video (MP4/MOV/WEBM/dst, maks 50MB)"));
-    heroCard.appendChild(heroVideoPreview);
-    heroCard.appendChild(inHeroVideoFile);
-    heroCard.appendChild(errorHeroVideo);
-    heroCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadHeroVideo, btnHapusHeroVideo]));
-
-    btnUploadHeroVideo.addEventListener("click", async () => {
-      errorHeroVideo.textContent = "";
-      if (!inHeroVideoFile.files || !inHeroVideoFile.files[0]) { errorHeroVideo.textContent = "Pilih file video dulu."; return; }
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        const hasil = await MugenUI.withButtonLoading(btnUploadHeroVideo,
-          () => MugenApi.uploadFile("/api/website/hero-video", inHeroVideoFile.files[0]));
-        content.hero_video_url = hasil.hero_video_url;
-        heroVideoPreview.src = MUGEN_API_BASE + hasil.hero_video_url + "&t=" + Date.now();
-        heroVideoPreview.style.display = "block";
-        MugenUI.toast("Hero Video disimpan.", "success");
-      } catch (e) { errorHeroVideo.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-    btnHapusHeroVideo.addEventListener("click", async () => {
-      if (!confirm("Hapus Hero Video yang sedang aktif?")) return;
-      try {
-        await MugenUI.withButtonLoading(btnHapusHeroVideo, () => MugenApi.del("/api/website/hero-video"));
-        content.hero_video_url = null;
-        heroVideoPreview.style.display = "none";
-        MugenUI.toast("Hero Video dihapus.", "success");
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
-
     const inTagline = MugenUI.el("input", { type: "text", value: content.tagline || "", placeholder: "mis. We don't fix hair. We fix egos." });
     heroCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tagline"));
     heroCard.appendChild(inTagline);
@@ -1679,20 +1638,11 @@ const PageBooking = (() => {
       try {
         // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
         await MugenUI.withButtonLoading(btnSimpanHero, () => simpanContent({
-          hero_tipe: selHeroTipe.value, tagline: inTagline.value.trim(),
+          hero_tipe: "image", tagline: inTagline.value.trim(),
         }));
         MugenUI.toast("Hero disimpan.", "success");
       } catch (e) { errorHero.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
-
-    // --- Choose Barber (foto barber tampil di step "Pilih Barber" wizard
-    // booking publik) -- foto dikelola di Setting > Karyawan supaya satu
-    // tempat yang sama dipakai untuk data barber di seluruh aplikasi. ---
-    const barberCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(barberCard);
-    barberCard.appendChild(MugenUI.el("h2", {}, "Choose Barber (Foto Barber)"));
-    barberCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Foto tiap barber yang tampil di step \"Pilih Barber\" halaman booking publik dikelola di Setting → Karyawan (tombol \"Foto\" pada tiap baris barber)."));
 
     // --- About ---
     const aboutCard = MugenUI.el("div", { class: "card" });
@@ -1704,39 +1654,6 @@ const PageBooking = (() => {
     aboutCard.appendChild(inAboutJudul);
     aboutCard.appendChild(MugenUI.el("label", {}, "Deskripsi"));
     aboutCard.appendChild(inAboutDeskripsi);
-
-    const aboutFotoPreview = MugenUI.el("img", { class: "logo-preview", style: content.about_foto_url ? "" : "display:none;", alt: "Foto About" });
-    if (content.about_foto_url) aboutFotoPreview.src = MUGEN_API_BASE + content.about_foto_url;
-    const inAboutFotoFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-    const btnUploadAboutFoto = MugenUI.el("button", { type: "button" }, "Upload / Ganti Foto");
-    const btnHapusAboutFoto = MugenUI.el("button", { type: "button", class: "btn-danger" }, "Hapus Foto");
-    const errorAboutFoto = MugenUI.el("div", { class: "login-error" });
-    aboutCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Foto About"));
-    aboutCard.appendChild(aboutFotoPreview);
-    aboutCard.appendChild(inAboutFotoFile);
-    aboutCard.appendChild(errorAboutFoto);
-    aboutCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin:8px 0;" }, [btnUploadAboutFoto, btnHapusAboutFoto]));
-
-    btnUploadAboutFoto.addEventListener("click", async () => {
-      errorAboutFoto.textContent = "";
-      if (!inAboutFotoFile.files || !inAboutFotoFile.files[0]) { errorAboutFoto.textContent = "Pilih file foto dulu."; return; }
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        const hasil = await MugenUI.withButtonLoading(btnUploadAboutFoto,
-          () => MugenApi.uploadFile("/api/website/about-foto", inAboutFotoFile.files[0]));
-        aboutFotoPreview.src = MUGEN_API_BASE + hasil.about_foto_url + "&t=" + Date.now();
-        aboutFotoPreview.style.display = "";
-        MugenUI.toast("Foto About disimpan.", "success");
-      } catch (e) { errorAboutFoto.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-    btnHapusAboutFoto.addEventListener("click", async () => {
-      if (!confirm("Hapus Foto About yang sedang aktif?")) return;
-      try {
-        await MugenUI.withButtonLoading(btnHapusAboutFoto, () => MugenApi.del("/api/website/about-foto"));
-        aboutFotoPreview.style.display = "none";
-        MugenUI.toast("Foto About dihapus.", "success");
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
 
     const errorAbout = MugenUI.el("div", { class: "login-error" });
     const btnSimpanAbout = MugenUI.el("button", { class: "btn-primary" }, "Simpan About");
@@ -1750,107 +1667,6 @@ const PageBooking = (() => {
           () => simpanContent({ about_judul: inAboutJudul.value.trim(), about_deskripsi: inAboutDeskripsi.value.trim() }));
         MugenUI.toast("About disimpan.", "success");
       } catch (e) { errorAbout.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- Gallery ---
-    const galleryCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(galleryCard);
-    galleryCard.appendChild(MugenUI.el("h2", {}, "Gallery"));
-    galleryCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Bisa foto maupun video (format apa saja yang didukung browser). Seret (drag) untuk mengubah urutan, atau pakai tombol ↑/↓ (lebih andal di layar sentuh)."));
-    const galleryGrid = MugenUI.el("div", { class: "website-gallery-grid" });
-    galleryCard.appendChild(galleryGrid);
-
-    // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
-    // -- dipicu drag-drop ATAU tombol ↑/↓ per item (tidak ada satu tombol
-    // tunggal untuk withButtonLoading), grid yang re-render ulang begitu
-    // selesai sudah jadi feedback yang cukup untuk aksi reorder ini.
-    async function simpanUrutanGallery(disusun) {
-      try {
-        gallery = await MugenApi.put("/api/website/gallery/reorder", { ordered_ids: disusun.map((f) => f.id) });
-        renderGalleryGrid();
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    }
-
-    function renderGalleryGrid() {
-      galleryGrid.innerHTML = "";
-      gallery.forEach((foto, idx) => {
-        const item = MugenUI.el("div", { class: "website-gallery-item", draggable: "true" });
-        item.appendChild(
-          foto.tipe === "video"
-            ? MugenUI.el("video", { src: MUGEN_API_BASE + foto.foto_url, controls: "controls", muted: "muted" })
-            : MugenUI.el("img", { src: MUGEN_API_BASE + foto.foto_url, alt: "Gallery" }),
-        );
-        const btnNaik = MugenUI.el("button", { type: "button", title: "Naikkan urutan" }, "↑");
-        if (idx === 0) btnNaik.disabled = true;
-        btnNaik.addEventListener("click", () => {
-          const disusun = gallery.slice();
-          [disusun[idx - 1], disusun[idx]] = [disusun[idx], disusun[idx - 1]];
-          simpanUrutanGallery(disusun);
-        });
-        const btnTurun = MugenUI.el("button", { type: "button", title: "Turunkan urutan" }, "↓");
-        if (idx === gallery.length - 1) btnTurun.disabled = true;
-        btnTurun.addEventListener("click", () => {
-          const disusun = gallery.slice();
-          [disusun[idx], disusun[idx + 1]] = [disusun[idx + 1], disusun[idx]];
-          simpanUrutanGallery(disusun);
-        });
-        const btnHapus = MugenUI.el("button", { type: "button", class: "btn-danger", title: "Hapus item" }, "✕");
-        btnHapus.addEventListener("click", async () => {
-          if (!confirm("Hapus item ini dari Gallery?")) return;
-          try {
-            // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-            gallery = await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/website/gallery/${foto.id}`));
-            renderGalleryGrid();
-            MugenUI.toast("Item Gallery dihapus.", "success");
-          } catch (e) { MugenUI.toast(e.message, "error"); }
-        });
-        item.appendChild(MugenUI.el("div", { class: "website-gallery-item-aksi" }, [btnNaik, btnTurun, btnHapus]));
-
-        item.addEventListener("dragstart", (e) => {
-          e.dataTransfer.setData("text/plain", String(idx));
-          e.dataTransfer.effectAllowed = "move";
-        });
-        item.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
-        item.addEventListener("drop", (e) => {
-          e.preventDefault();
-          const dariIdx = Number(e.dataTransfer.getData("text/plain"));
-          if (Number.isNaN(dariIdx) || dariIdx === idx) return;
-          const disusun = gallery.slice();
-          const [dipindah] = disusun.splice(dariIdx, 1);
-          disusun.splice(idx, 0, dipindah);
-          simpanUrutanGallery(disusun);
-        });
-
-        galleryGrid.appendChild(item);
-      });
-    }
-    renderGalleryGrid();
-
-    const inGalleryFiles = MugenUI.el("input", {
-      type: "file",
-      accept: "image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,video/ogg,.mov",
-      multiple: "multiple",
-    });
-    const btnUploadGallery = MugenUI.el("button", { class: "btn-primary" }, "Upload Foto/Video");
-    const errorGallery = MugenUI.el("div", { class: "login-error" });
-    galleryCard.appendChild(MugenUI.el("label", { style: "margin-top:10px;" }, "Tambah Foto/Video (bisa pilih banyak sekaligus, video maks 50MB)"));
-    galleryCard.appendChild(inGalleryFiles);
-    galleryCard.appendChild(errorGallery);
-    galleryCard.appendChild(MugenUI.el("div", { style: "margin-top:8px;" }, btnUploadGallery));
-    btnUploadGallery.addEventListener("click", async () => {
-      errorGallery.textContent = "";
-      if (!inGalleryFiles.files || !inGalleryFiles.files.length) { errorGallery.textContent = "Pilih minimal satu foto/video dulu."; return; }
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btnUploadGallery, async () => {
-          for (const file of inGalleryFiles.files) {
-            gallery = await MugenApi.uploadFile("/api/website/gallery", file);
-          }
-        });
-        inGalleryFiles.value = "";
-        renderGalleryGrid();
-        MugenUI.toast("Gallery ditambahkan.", "success");
-      } catch (e) { errorGallery.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
     // --- Visit Us ---
@@ -1881,15 +1697,6 @@ const PageBooking = (() => {
       } catch (e) { errorVisit.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
-    // --- Opening Hours (pointer -- edit tetap di tab Operating Hours,
-    // SATU sumber kebenaran yang sama dipakai slot booking, tidak
-    // diduplikasi jadi form kedua di sini) ---
-    const hoursCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(hoursCard);
-    hoursCard.appendChild(MugenUI.el("h2", {}, "Opening Hours"));
-    hoursCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Jam & hari operasional (dipakai juga untuk ketersediaan slot booking) dikelola di tab Operating Hours di atas."));
-
     // --- Social Media ---
     const socialCard = MugenUI.el("div", { class: "card" });
     body.appendChild(socialCard);
@@ -1917,27 +1724,6 @@ const PageBooking = (() => {
         }));
         MugenUI.toast("Social Media disimpan.", "success");
       } catch (e) { errorSocial.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- Contact ---
-    const contactCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(contactCard);
-    contactCard.appendChild(MugenUI.el("h2", {}, "Contact"));
-    contactCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Email dikelola di Setting → Identitas Barbershop."));
-    const inTelepon = MugenUI.el("input", { type: "text", value: content.telepon || "" });
-    contactCard.appendChild(MugenUI.el("label", {}, "Nomor Telepon"));
-    contactCard.appendChild(inTelepon);
-    const errorContact = MugenUI.el("div", { class: "login-error" });
-    const btnSimpanContact = MugenUI.el("button", { class: "btn-primary" }, "Simpan Contact");
-    contactCard.appendChild(errorContact);
-    contactCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanContact));
-    btnSimpanContact.addEventListener("click", async () => {
-      errorContact.textContent = "";
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btnSimpanContact, () => simpanContent({ telepon: inTelepon.value.trim() }));
-        MugenUI.toast("Contact disimpan.", "success");
-      } catch (e) { errorContact.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
 
     // --- Book Appointment (satu-satunya tombol CTA di halaman, SELALU
