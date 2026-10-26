@@ -221,7 +221,7 @@ def _hapus_kategori_tanpa_pdf(tenant_id: int, cutoff: str) -> dict:
     }
 
 
-def jalankan_pembersihan(paksa: bool = False) -> dict:
+def jalankan_pembersihan(paksa: bool = False, tenant_id: int = None) -> dict:
     """Loop SELURUH tenant (lihat catatan modul -- TIDAK disaring status
     'aktif', berbeda dari absensi_reminder_db.py, karena ini pembersihan
     data murni, bukan fitur berbayar, dan tenant suspended pun tetap
@@ -231,7 +231,13 @@ def jalankan_pembersihan(paksa: bool = False) -> dict:
     `paksa` (dipakai Superadmin/debug, BUKAN jalur cron) -- True
     melewati penjagaan TANGGAL_JALAN, berguna untuk menjalankan ulang
     manual kalau cron sempat terlewat. Jalur cron EKSTERNAL (routers/
-    cron_purge_data.py) SELALU memanggil tanpa `paksa` (default False)."""
+    cron_purge_data.py) SELALU memanggil tanpa `paksa` (default False).
+
+    `tenant_id` (opsional, dipakai Superadmin/debug juga, lihat
+    routers/superadmin.py::jalankan_pembersihan_data_manual()) -- diisi
+    -> HANYA tenant itu yang diproses (aman dipakai untuk tes satu toko
+    tanpa menyentuh tenant lain di platform); kosong -> SEMUA tenant,
+    sama seperti jalur cron normal."""
     sekarang = _sekarang_wib()
     if not paksa and sekarang.day != TANGGAL_JALAN:
         return {"dijalankan": False, "alasan": f"bukan tanggal {TANGGAL_JALAN}"}
@@ -240,14 +246,16 @@ def jalankan_pembersihan(paksa: bool = False) -> dict:
     ringkasan = {"dijalankan": True, "cutoff": cutoff, "tenant_diperiksa": 0, "tenant_gagal": 0, "per_tenant": {}}
 
     for tenant in tenant_db.list_tenants():
-        tenant_id = tenant["id"]
+        if tenant_id is not None and tenant["id"] != tenant_id:
+            continue
+        current_tenant_id = tenant["id"]
         ringkasan["tenant_diperiksa"] += 1
         try:
             hasil_pdf = _kirim_arsip_dan_hapus_kategori_pdf(tenant, cutoff)
-            hasil_langsung = _hapus_kategori_tanpa_pdf(tenant_id, cutoff)
-            ringkasan["per_tenant"][str(tenant_id)] = {**hasil_pdf, **hasil_langsung}
+            hasil_langsung = _hapus_kategori_tanpa_pdf(current_tenant_id, cutoff)
+            ringkasan["per_tenant"][str(current_tenant_id)] = {**hasil_pdf, **hasil_langsung}
         except Exception as e:
             ringkasan["tenant_gagal"] += 1
-            logger.error("Pembersihan Data GAGAL untuk tenant_id=%s: %s: %s", tenant_id, type(e).__name__, e)
+            logger.error("Pembersihan Data GAGAL untuk tenant_id=%s: %s: %s", current_tenant_id, type(e).__name__, e)
 
     return ringkasan

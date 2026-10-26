@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import auth_db
+import data_purge_db
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -198,3 +199,29 @@ def hapus_tenant(tenant_id: int, body: HapusTenantBody, user: dict = Depends(req
 @router.get("/audit-log")
 def audit_log(user: dict = Depends(require_superadmin)):
     return superadmin_audit_db.list_log()
+
+
+@router.post("/jalankan-pembersihan-data")
+def jalankan_pembersihan_data_manual(tenant_id: int = None, user: dict = Depends(require_superadmin)):
+    """FITUR Pembersihan Data Bulanan Otomatis: jalankan SEKALI secara
+    manual (paksa=True, melewati penjagaan "hanya tanggal 10" -- lihat
+    data_purge_db.py::jalankan_pembersihan()) -- KHUSUS testing/verifikasi
+    oleh Super Admin. Jalur NORMAL fitur ini TETAP cron eksternal lewat
+    routers/cron_purge_data.py yang dipanggil berkala, baru benar-benar
+    bertindak di tanggal 10 -- endpoint ini TIDAK menggantikannya.
+
+    `tenant_id` SANGAT DISARANKAN diisi (satu toko saja) supaya tes TIDAK
+    menyentuh tenant lain di platform -- kosong = SEMUA tenant diproses
+    sekaligus (operasi PERMANEN & TIDAK BISA dibatalkan, pakai dengan
+    SANGAT hati-hati).
+
+    PENGECUALIAN SENGAJA terhadap batas "endpoint di modul ini tidak
+    menyentuh data bisnis tenant" (lihat docstring modul) -- ini memicu
+    operasi PEMELIHARAAN SISTEM yang identik dengan yang dijalankan cron,
+    BUKAN Super Admin membaca/mengubah data bisnis satu tenant tertentu."""
+    hasil = data_purge_db.jalankan_pembersihan(paksa=True, tenant_id=tenant_id)
+    superadmin_audit_db.catat(
+        user["username"], "jalankan_pembersihan_data_manual", tenant_id=tenant_id,
+        detail=f"cutoff={hasil.get('cutoff')!r} tenant_diperiksa={hasil.get('tenant_diperiksa')}",
+    )
+    return hasil

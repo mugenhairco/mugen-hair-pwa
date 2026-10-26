@@ -132,6 +132,19 @@ def test_jalankan_pembersihan_paksa_lewati_penjaga_tanggal(monkeypatch):
     assert hasil["cutoff"] == "2026-10-01"
 
 
+def test_jalankan_pembersihan_tenant_id_hanya_proses_satu_tenant(two_tenants, monkeypatch):
+    """FITUR test manual Superadmin (routers/superadmin.py::
+    jalankan_pembersihan_data_manual()): `tenant_id` diisi -> HANYA tenant
+    itu yang diproses, tenant lain di platform TIDAK ikut tersentuh sama
+    sekali (bahkan tidak muncul di `per_tenant`/`tenant_diperiksa`)."""
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 10, 15, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan(paksa=True, tenant_id=tenant_a)
+    assert hasil["tenant_diperiksa"] == 1
+    assert str(tenant_a) in hasil["per_tenant"]
+    assert str(tenant_b) not in hasil["per_tenant"]
+
+
 # ---------------------------------------------------------------------------
 # Orkestrator -- jalur penuh (email arsip sukses -> SEMUA kategori terhapus)
 # ---------------------------------------------------------------------------
