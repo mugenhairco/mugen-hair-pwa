@@ -164,8 +164,10 @@ def test_jalankan_pembersihan_jalur_sukses_hapus_semua_kategori(single_tenant, m
     barber_id, service_id, produk_id = _siapkan_data_lengkap(tenant_id)
 
     monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 7, 20, 9, 0, tzinfo=WIB))
+    # check_in() sendiri SUDAH mencatat 1 baris Log Audit otomatis (lihat
+    # attendance_db.py::check_in() -> catat_audit()) -- TIDAK perlu
+    # catat_audit() manual tambahan di sini.
     attendance_db.check_in(tenant_id, barber_id, -6.1, 106.8, accuracy=15)
-    attendance_db.catat_audit(barber_id, "check_in", True, tenant_id=tenant_id)
     koreksi = attendance_db.buat_pengajuan_koreksi(barber_id, "2026-07-20", "check_out", "20:05", "Lupa",
                                                      tenant_id=tenant_id)
     attendance_db.set_status_koreksi(koreksi["id"], "disetujui")
@@ -209,7 +211,11 @@ def test_jalankan_pembersihan_jalur_sukses_hapus_semua_kategori(single_tenant, m
     # Data lama benar-benar hilang...
     assert database.get_transaksi_list(tahun=2026, bulan=7, barber_id=barber_id, tenant_id=tenant_id) == []
     assert attendance_db.get_log_list(tenant_id, tanggal="2026-07-20", barber_id=barber_id) == []
-    assert attendance_db.get_audit_list(tenant_id) == []
+    # Log Audit bulan Juli hilang, TAPI baris September (dari check_in()
+    # kedua di atas, SETELAH cutoff) tetap ada -- bukan [] kosong total.
+    audit_tersisa = attendance_db.get_audit_list(tenant_id)
+    assert len(audit_tersisa) == 1
+    assert audit_tersisa[0]["waktu_server"].startswith("2026-09-20")
     assert attendance_db.get_koreksi(koreksi["id"]) is None
     assert slip_gaji_db.get_slip_gaji(slip["id"]) is None
     # ...tapi stok produk & data bulan September (setelah cutoff) tetap aman.
