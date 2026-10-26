@@ -6,6 +6,24 @@
 // ada di dua lapis, bukan cuma disembunyikan di frontend.
 
 const PagePengeluaran = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti pemasukan.js/produk.js -- simpan
+  // hasil fetch TERAKHIR (Daftar Pengeluaran) di LUAR render() supaya
+  // bertahan lintas navigasi menu. Kalau Pengeluaran dibuka lagi TANPA ada
+  // tambah/edit/hapus apa pun sejak terakhir kali berhasil dimuat (lihat
+  // state.js::halamanPerluRefresh("pengeluaran")) DAN filter (url) yang
+  // aktif sama persis, tampilkan ulang data ini TANPA fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function todayIso() {
     // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
     return MugenUI.isoHariIniWib();
@@ -234,64 +252,85 @@ const PagePengeluaran = (() => {
     let urutanTerkini = 0;
     const _RESPON_BASI = Symbol("respon-basi");
 
-    async function loadList() {
+    function boxDariData(data) {
+      const rows = Array.isArray(data) ? data : [];
+      const box = MugenUI.el("div");
+      if (data.__offline) box.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      box.appendChild(MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "kategori", label: "Kategori" },
+          { key: "keterangan", label: "Keterangan" },
+          {
+            key: "sumber_dana", label: "Sumber Dana",
+            format: (v, r) => v === "karyawan" ? `Uang Karyawan (${r.nama_barber || "-"})` : "Uang Kas",
+          },
+          { key: "jumlah", label: "Nominal", format: MugenUI.formatRupiah },
+          {
+            key: "aktif", label: "Status",
+            format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif"),
+          },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              if (r.terkunci) {
+                return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
+              }
+              if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              const btnEdit = MugenUI.el("button", {}, "Edit");
+              btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+              const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+              btnHapus.addEventListener("click", async () => {
+                if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
+                try {
+                  // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
+                  await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));
+                  MugenUI.toast("Pengeluaran dihapus.", "success");
+                  loadList();
+                } catch (e) {
+                  MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                }
+              });
+              wrap.appendChild(btnEdit);
+              wrap.appendChild(btnHapus);
+              return wrap;
+            },
+          },
+        ],
+        rows,
+      ));
+      return box;
+    }
+
+    async function loadList(opts = {}) {
+      const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+      if (selKategori.value) qs.set("kategori", selKategori.value);
+      if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
+      const url = `/api/pengeluaran?${qs}`;
+
+      // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+      // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("pengeluaran")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(boxDariData(cached));
+          return;
+        }
+      }
+
       const urutanSaya = ++urutanTerkini;
       // REVISI UI/UX Premium: skeleton tabel + crossfade lewat refreshInto(),
       // menggantikan teks "Memuat..." dan penggantian innerHTML manual.
       try {
         await MugenUI.refreshInto(listBody, async () => {
-          const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-          if (selKategori.value) qs.set("kategori", selKategori.value);
-          if (inputCari.value.trim()) qs.set("cari", inputCari.value.trim());
-          const data = await MugenApi.get(`/api/pengeluaran?${qs}`, { useCache: true });
+          const data = await MugenApi.get(url, { useCache: true });
           if (urutanSaya !== urutanTerkini) throw _RESPON_BASI;
-          const rows = Array.isArray(data) ? data : [];
-          const box = MugenUI.el("div");
-          if (data.__offline) box.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-          box.appendChild(MugenUI.buildTable(
-            [
-              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "kategori", label: "Kategori" },
-              { key: "keterangan", label: "Keterangan" },
-              {
-                key: "sumber_dana", label: "Sumber Dana",
-                format: (v, r) => v === "karyawan" ? `Uang Karyawan (${r.nama_barber || "-"})` : "Uang Kas",
-              },
-              { key: "jumlah", label: "Nominal", format: MugenUI.formatRupiah },
-              {
-                key: "aktif", label: "Status",
-                format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif"),
-              },
-              {
-                key: "aksi", label: "Aksi", format: (_, r) => {
-                  if (r.terkunci) {
-                    return MugenUI.el("span", { class: "subtitle", title: "Reimburse terkait sudah dibayar lewat Slip Gaji -- tidak bisa diubah/dihapus." }, "Terkunci");
-                  }
-                  if (!bolehEdit) return MugenUI.el("span", {}, "-"); // Hak Akses Menu: level "Baca"
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
-                    try {
-                      // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
-                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));
-                      MugenUI.toast("Pengeluaran dihapus.", "success");
-                      loadList();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnEdit);
-                  wrap.appendChild(btnHapus);
-                  return wrap;
-                },
-              },
-            ],
-            rows,
-          ));
-          return box;
+          if (!data.__offline) {
+            _simpanKeCache("daftar", MugenState.getUser().id, url, data);
+            MugenState.tandaiHalamanBersih("pengeluaran");
+          }
+          return boxDariData(data);
         }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
       } catch (e) {
         if (e === _RESPON_BASI) return;
@@ -303,13 +342,13 @@ const PagePengeluaran = (() => {
     // REVISI UI/UX Premium: MugenUI.withLoading(...) dihapus di sini --
     // skeleton tabel di dalam loadList()/refreshInto() (lihat atas) sudah
     // jadi feedback loading yang cukup untuk ganti filter.
-    selBulan.addEventListener("change", loadList);
-    selTahun.addEventListener("change", loadList);
-    selKategori.addEventListener("change", loadList);
+    selBulan.addEventListener("change", () => loadList());
+    selTahun.addEventListener("change", () => loadList());
+    selKategori.addEventListener("change", () => loadList());
     inputCari.addEventListener("input", loadListDebounced);
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   return { render };

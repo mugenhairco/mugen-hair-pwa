@@ -15,6 +15,25 @@
 // bayar langsung).
 
 const PageKasbon = (() => {
+  // PERMINTAAN OWNER: pola SAMA seperti slip_gaji.js/produk.js -- simpan
+  // hasil fetch TERAKHIR (Daftar Kasbon, barber maupun admin -- dibedakan
+  // otomatis lewat `url`) di LUAR render() supaya bertahan lintas navigasi
+  // menu. Kalau Kasbon dibuka lagi TANPA ada tambah/edit/hapus/bayar apa
+  // pun sejak terakhir kali berhasil dimuat (lihat
+  // state.js::halamanPerluRefresh("kasbon")) DAN filter (url) yang aktif
+  // sama persis, tampilkan ulang data ini TANPA fetch/skeleton.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCache(bagian, userId, url) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, url, data) {
+    _cacheTerakhir[bagian] = { userId, url, data };
+  }
+
   function todayIso() {
     // BUGFIX (audit): lihat catatan lengkap di MugenUI.isoHariIniWib().
     return MugenUI.isoHariIniWib();
@@ -103,37 +122,56 @@ const PageKasbon = (() => {
     const riwayatBody = MugenUI.el("div", {}, "Klik \"Riwayat\" pada salah satu kasbon di atas untuk melihat riwayat pembayarannya.");
     riwayatCard.appendChild(riwayatBody);
 
+    function tabelDariRowsBarber(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+          { key: "sisa", label: "Sisa", format: MugenUI.formatRupiah },
+          { key: "status", label: "Status", format: badgeStatus },
+          { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              const btnRiwayat = MugenUI.el("button", {}, "Riwayat");
+              btnRiwayat.addEventListener("click", () => tampilkanRiwayat(riwayatCard, riwayatBody, r));
+              return btnRiwayat;
+            },
+          },
+        ],
+        rows,
+        { emptyText: "Belum ada Kasbon." },
+      );
+    }
+
     // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
     // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-    async function muat() {
+    async function muat(opts = {}) {
+      const url = "/api/kasbon";
+
+      // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+      // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("kasbon")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelDariRowsBarber(cached));
+          return;
+        }
+      }
+
       await MugenUI.refreshInto(listBody, async () => {
         try {
-          const data = await MugenApi.get("/api/kasbon");
+          const data = await MugenApi.get(url);
           const rows = Array.isArray(data) ? data : [];
-          return MugenUI.buildTable(
-            [
-              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-              { key: "sisa", label: "Sisa", format: MugenUI.formatRupiah },
-              { key: "status", label: "Status", format: badgeStatus },
-              { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
-              {
-                key: "aksi", label: "Aksi", format: (_, r) => {
-                  const btnRiwayat = MugenUI.el("button", {}, "Riwayat");
-                  btnRiwayat.addEventListener("click", () => tampilkanRiwayat(riwayatCard, riwayatBody, r));
-                  return btnRiwayat;
-                },
-              },
-            ],
-            rows,
-            { emptyText: "Belum ada Kasbon." },
-          );
+          _simpanKeCache("daftar", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("kasbon");
+          return tabelDariRowsBarber(rows);
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
       }, { skeleton: { kind: "table", cols: 6, rows: 4 } });
     }
-    muat();
+    muat({ bisaDariCache: true });
   }
 
   // ================= OWNER/ADMIN: kelola semua kasbon =================
@@ -358,82 +396,101 @@ const PageKasbon = (() => {
     const riwayatBody = MugenUI.el("div", {}, "Klik \"Riwayat\" pada salah satu kasbon di atas untuk melihat riwayat pembayarannya.");
     riwayatCard.appendChild(riwayatBody);
 
+    function tabelDariRowsAdmin(rows) {
+      return MugenUI.buildTable(
+        [
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
+          { key: "nama_barber", label: "Karyawan" },
+          { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
+          { key: "sisa", label: "Sisa", format: MugenUI.formatRupiah },
+          { key: "status", label: "Status", format: badgeStatus },
+          { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              const wrap = MugenUI.el("div", { class: "actions-cell" });
+              const btnRiwayat = MugenUI.el("button", {}, "Riwayat");
+              btnRiwayat.addEventListener("click", () => tampilkanRiwayat(riwayatCard, riwayatBody, r));
+              wrap.appendChild(btnRiwayat);
+
+              // Hak Akses Menu: level "Baca" -- sembunyikan Bayar/Edit/
+              // Hapus (aksi yang mengubah data), Riwayat (baca) tetap ada.
+              if (!bolehEdit) return wrap;
+
+              if (r.status !== "lunas") {
+                const btnBayarRow = MugenUI.el("button", {}, "Bayar");
+                btnBayarRow.addEventListener("click", () => pilihKasbonUntukBayar(r));
+                wrap.appendChild(btnBayarRow);
+              }
+
+              const btnEdit = MugenUI.el("button", {}, "Edit");
+              btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
+              wrap.appendChild(btnEdit);
+
+              if (bolehHapus && r.sisa >= r.jumlah) { // belum ada pembayaran sama sekali
+                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
+                btnHapus.addEventListener("click", async () => {
+                  if (!confirm(`Hapus kasbon ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
+                  try {
+                    // REVISI UI/UX Premium: spinner inline di tombol Hapus.
+                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/kasbon/${r.id}`));
+                    MugenUI.toast("Kasbon dihapus.", "success");
+                    loadList();
+                  } catch (e) {
+                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                  }
+                });
+                wrap.appendChild(btnHapus);
+              }
+              return wrap;
+            },
+          },
+        ],
+        rows,
+        { emptyText: "Belum ada Kasbon." },
+      );
+    }
+
     // REVISI UI/UX Premium: refreshInto() (skeleton tabel + crossfade)
     // menggantikan pola innerHTML="Memuat..." manual -- lihat catatan di ui.js.
-    async function loadList() {
+    async function loadList(opts = {}) {
+      const qs = new URLSearchParams();
+      if (filBarber.value) qs.set("barber_id", filBarber.value);
+      if (filStatus.value) qs.set("status", filStatus.value);
+      if (filBulan.value) qs.set("bulan", filBulan.value);
+      if (filTahun.value) qs.set("tahun", filTahun.value);
+      const url = `/api/kasbon?${qs.toString()}`;
+
+      // PERMINTAAN OWNER: lihat catatan panjang di produk.js::loadProdukList()
+      // -- pola SAMA PERSIS. Hanya dicek untuk pemuatan AWAL.
+      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("kasbon")) {
+        const cached = _ambilDariCache("daftar", MugenState.getUser().id, url);
+        if (cached) {
+          listBody.innerHTML = "";
+          listBody.appendChild(tabelDariRowsAdmin(cached));
+          return;
+        }
+      }
+
       await MugenUI.refreshInto(listBody, async () => {
         try {
-          const qs = new URLSearchParams();
-          if (filBarber.value) qs.set("barber_id", filBarber.value);
-          if (filStatus.value) qs.set("status", filStatus.value);
-          if (filBulan.value) qs.set("bulan", filBulan.value);
-          if (filTahun.value) qs.set("tahun", filTahun.value);
-          const data = await MugenApi.get(`/api/kasbon?${qs.toString()}`);
+          const data = await MugenApi.get(url);
           const rows = Array.isArray(data) ? data : [];
-          return MugenUI.buildTable(
-            [
-              { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-              { key: "nama_barber", label: "Karyawan" },
-              { key: "jumlah", label: "Jumlah", format: MugenUI.formatRupiah },
-              { key: "sisa", label: "Sisa", format: MugenUI.formatRupiah },
-              { key: "status", label: "Status", format: badgeStatus },
-              { key: "keterangan", label: "Keterangan", format: (v) => v || "-" },
-              {
-                key: "aksi", label: "Aksi", format: (_, r) => {
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnRiwayat = MugenUI.el("button", {}, "Riwayat");
-                  btnRiwayat.addEventListener("click", () => tampilkanRiwayat(riwayatCard, riwayatBody, r));
-                  wrap.appendChild(btnRiwayat);
-
-                  // Hak Akses Menu: level "Baca" -- sembunyikan Bayar/Edit/
-                  // Hapus (aksi yang mengubah data), Riwayat (baca) tetap ada.
-                  if (!bolehEdit) return wrap;
-
-                  if (r.status !== "lunas") {
-                    const btnBayarRow = MugenUI.el("button", {}, "Bayar");
-                    btnBayarRow.addEventListener("click", () => pilihKasbonUntukBayar(r));
-                    wrap.appendChild(btnBayarRow);
-                  }
-
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
-                  wrap.appendChild(btnEdit);
-
-                  if (bolehHapus && r.sisa >= r.jumlah) { // belum ada pembayaran sama sekali
-                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                    btnHapus.addEventListener("click", async () => {
-                      if (!confirm(`Hapus kasbon ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
-                      try {
-                        // REVISI UI/UX Premium: spinner inline di tombol Hapus.
-                        await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/kasbon/${r.id}`));
-                        MugenUI.toast("Kasbon dihapus.", "success");
-                        loadList();
-                      } catch (e) {
-                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                      }
-                    });
-                    wrap.appendChild(btnHapus);
-                  }
-                  return wrap;
-                },
-              },
-            ],
-            rows,
-            { emptyText: "Belum ada Kasbon." },
-          );
+          _simpanKeCache("daftar", MugenState.getUser().id, url, rows);
+          MugenState.tandaiHalamanBersih("kasbon");
+          return tabelDariRowsAdmin(rows);
         } catch (e) {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
       }, { skeleton: { kind: "table", cols: 7, rows: 4 } });
     }
 
-    filBarber.addEventListener("change", loadList);
-    filStatus.addEventListener("change", loadList);
-    filBulan.addEventListener("change", loadList);
-    filTahun.addEventListener("change", loadList);
+    filBarber.addEventListener("change", () => loadList());
+    filStatus.addEventListener("change", () => loadList());
+    filBulan.addEventListener("change", () => loadList());
+    filTahun.addEventListener("change", () => loadList());
 
     resetForm();
-    loadList();
+    loadList({ bisaDariCache: true });
   }
 
   async function render(root) {

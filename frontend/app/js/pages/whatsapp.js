@@ -16,7 +16,26 @@
 // cuma punya salah satu fitur tetap bisa memakai tab yang relevan.
 
 const PageWhatsapp = (() => {
-  async function renderNotifikasiBooking(body) {
+  // PERMINTAAN OWNER: pola SAMA seperti produk.js/pengaturan lain -- simpan
+  // hasil fetch TERAKHIR (setting per tab) di LUAR render() supaya
+  // bertahan lintas navigasi menu. Kalau WhatsApp dibuka lagi (bukan ganti
+  // tab manual) TANPA ada simpan apa pun sejak terakhir kali TAB itu
+  // berhasil dimuat (lihat state.js::halamanPerluRefresh("whatsapp")),
+  // tampilkan ulang setting ini TANPA fetch. Tidak ada log/riwayat kirim
+  // real-time di halaman ini -- murni form setting, aman untuk cache.
+  let _cacheTerakhir = {}; // { [bagian]: { userId, data } }
+
+  function _ambilDariCache(bagian, userId) {
+    const c = _cacheTerakhir[bagian];
+    if (!c || c.userId !== userId) return null;
+    return c.data;
+  }
+
+  function _simpanKeCache(bagian, userId, data) {
+    _cacheTerakhir[bagian] = { userId, data };
+  }
+
+  async function renderNotifikasiBooking(body, opts = {}) {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Notifikasi WhatsApp Booking"));
@@ -27,11 +46,20 @@ const PageWhatsapp = (() => {
     // BUKAN lagi dicek/ditampilkan sebagai kartu upgrade terpisah di sini.
 
     let s;
-    try {
-      s = await MugenApi.get("/api/pengaturan/whatsapp");
-    } catch (e) {
-      card.appendChild(MugenUI.errorState(e.message));
-      return;
+    const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("whatsapp")
+      ? _ambilDariCache("notifikasi_booking", MugenState.getUser().id)
+      : null;
+    if (cached) {
+      s = cached;
+    } else {
+      try {
+        s = await MugenApi.get("/api/pengaturan/whatsapp");
+        _simpanKeCache("notifikasi_booking", MugenState.getUser().id, s);
+        MugenState.tandaiHalamanBersih("whatsapp");
+      } catch (e) {
+        card.appendChild(MugenUI.errorState(e.message));
+        return;
+      }
     }
 
     card.appendChild(MugenUI.el("div", { class: "badge " + (s.aktif ? "badge-success" : "badge-libur"),
@@ -126,7 +154,7 @@ const PageWhatsapp = (() => {
   // sungguhannya dipicu endpoint cron TERPISAH dari luar aplikasi (lihat
   // routers/cron_reminder.py) -- tab ini HANYA mengatur aktif/nonaktif +
   // isi pesan, TIDAK ada tombol "kirim sekarang" di sini.
-  async function renderReminderAbsensi(body) {
+  async function renderReminderAbsensi(body, opts = {}) {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Reminder Absensi"));
@@ -140,11 +168,20 @@ const PageWhatsapp = (() => {
     // reminder_absensi), BUKAN lagi kartu upgrade terpisah di sini.
 
     let s;
-    try {
-      s = await MugenApi.get("/api/pengaturan/absensi-reminder");
-    } catch (e) {
-      card.appendChild(MugenUI.errorState(e.message));
-      return;
+    const cached = opts.bisaDariCache && !MugenState.halamanPerluRefresh("whatsapp")
+      ? _ambilDariCache("reminder_absensi", MugenState.getUser().id)
+      : null;
+    if (cached) {
+      s = cached;
+    } else {
+      try {
+        s = await MugenApi.get("/api/pengaturan/absensi-reminder");
+        _simpanKeCache("reminder_absensi", MugenState.getUser().id, s);
+        MugenState.tandaiHalamanBersih("whatsapp");
+      } catch (e) {
+        card.appendChild(MugenUI.errorState(e.message));
+        return;
+      }
     }
 
     const chkAktif = MugenUI.el("input", { type: "checkbox" });
@@ -231,18 +268,18 @@ const PageWhatsapp = (() => {
     const tabItems = tabsLolos.map((t) => ({ key: t, label: t }));
     const body = MugenUI.el("div");
 
-    async function renderBody(activeTab) {
+    async function renderBody(activeTab, opts = {}) {
       body.innerHTML = "";
-      if (activeTab === "Notifikasi Booking") await renderNotifikasiBooking(body);
-      else if (activeTab === "Reminder Absensi") await renderReminderAbsensi(body);
+      if (activeTab === "Notifikasi Booking") await renderNotifikasiBooking(body, opts);
+      else if (activeTab === "Reminder Absensi") await renderReminderAbsensi(body, opts);
     }
 
-    const tabsCtl = MugenUI.tabs(tabItems, { onChange: renderBody });
+    const tabsCtl = MugenUI.tabs(tabItems, { onChange: (tab) => renderBody(tab) });
     root.appendChild(tabsCtl.bar);
     root.appendChild(body);
     requestAnimationFrame(tabsCtl.moveIndicator);
 
-    renderBody(tabsCtl.active);
+    renderBody(tabsCtl.active, { bisaDariCache: true });
   }
 
   return { render };

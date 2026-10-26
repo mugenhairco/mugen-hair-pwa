@@ -132,14 +132,37 @@ const MugenApi = (() => {
     // tiap halaman) supaya tidak ada jalur simpan/edit/hapus yang terlewat.
     if (method !== "GET") {
       MugenState.tandaiDashboardKotor();
-      // PERMINTAAN OWNER: sama seperti Dashboard di atas -- Rekap & Produk
-      // juga tidak perlu fetch ulang tiap dibuka lagi kalau tidak ada
-      // perubahan (lihat state.js::tandaiHalamanKotor()). Booking SENGAJA
-      // TIDAK didaftarkan di sini -- booking baru bisa masuk dari pelanggan
-      // langsung (halaman booking publik), bukan cuma dari aksi akun ini,
-      // jadi tetap fetch ulang seperti biasa setiap dibuka.
+      // PERMINTAAN OWNER: sama seperti Dashboard di atas -- halaman-halaman
+      // ini juga tidak perlu fetch ulang tiap dibuka lagi kalau tidak ada
+      // perubahan (lihat state.js::tandaiHalamanKotor()). PERLUASAN
+      // (keluhan Owner: "menu terasa ada jeda loading") -- hampir SEMUA
+      // menu internal sekarang ikut didaftarkan di sini, KECUALI yang
+      // isinya bisa berubah dari AKSI PIHAK LAIN (bukan dari akun yang
+      // sedang login ini), karena hook ini (sama seperti Dashboard/Rekap/
+      // Produk sebelumnya) HANYA tahu "akun ini sendiri baru mengubah
+      // sesuatu" -- TIDAK bisa tahu perubahan dari perangkat/sesi lain:
+      //   - Booking: booking baru bisa masuk dari pelanggan langsung
+      //     (halaman booking publik).
+      //   - Absensi & Izin & Cuti: sudah pakai pola cache DOM penuh
+      //     tersendiri (lihat absensi.js/izin_cuti.js -- _cacheAdminDom/
+      //     _cacheBarberDom/_cacheDom), tidak lewat hook generik ini.
+      //   - Riwayat Transaksi (Payment Gateway)/Settlement Faspay/Billing:
+      //     status berubah lewat webhook bank/payment gateway (lihat
+      //     snap_webhook.py), bukan aksi akun ini.
+      // Keempatnya SENGAJA TIDAK didaftarkan di sini -- tetap fetch ulang
+      // seperti biasa setiap dibuka.
       MugenState.tandaiHalamanKotor("rekap");
       MugenState.tandaiHalamanKotor("produk");
+      MugenState.tandaiHalamanKotor("input_data");
+      MugenState.tandaiHalamanKotor("slip_gaji");
+      MugenState.tandaiHalamanKotor("kasbon");
+      MugenState.tandaiHalamanKotor("komisi");
+      MugenState.tandaiHalamanKotor("reimburse");
+      MugenState.tandaiHalamanKotor("pemasukan");
+      MugenState.tandaiHalamanKotor("pengeluaran");
+      MugenState.tandaiHalamanKotor("uang_kas");
+      MugenState.tandaiHalamanKotor("whatsapp");
+      MugenState.tandaiHalamanKotor("pengaturan");
     }
     return payload;
   }
@@ -169,6 +192,8 @@ const MugenApi = (() => {
       throw new ApiError(pesan, response.status, _normalisasiPayload(payload));
     }
     MugenState.tandaiDashboardKotor(); // lihat catatan di request() di atas
+    MugenState.tandaiHalamanKotor("reimburse");
+    MugenState.tandaiHalamanKotor("pengaturan");
     return payload;
   }
 

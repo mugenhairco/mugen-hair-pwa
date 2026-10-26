@@ -385,6 +385,17 @@ const PageBilling = (() => {
     gambarUlangGrid();
   }
 
+  // PERMINTAAN OWNER (menu tanpa jeda loading): halaman ini SENGAJA TIDAK
+  // diikutkan ke pola cache halamanKotor (lihat produk.js/input_data.js,
+  // dst) -- status subscription (`sub`) & pembayaran Lifetime pending
+  // (`lifetimePending`) berubah lewat WEBHOOK payment gateway (lihat
+  // snap_webhook.py::_cascade_lifetime_license()/_auto_suspend_jika_
+  // lewat()), bukan dari aksi akun yang sedang login ini secara langsung
+  // -- hook dirty-marking generik di api.js tidak bisa diandalkan di sini,
+  // dan menampilkan status pembayaran/akses yang basi berisiko salah
+  // mengarahkan Owner (mis. terlihat "akses dibatasi" padahal pembayaran
+  // sudah dikonfirmasi, atau sebaliknya). Fetch ulang setiap dibuka tetap
+  // jalan seperti biasa.
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Billing & Pembayaran"));

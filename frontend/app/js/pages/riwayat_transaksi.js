@@ -5,6 +5,15 @@
 // men-scope tenant_id dari akun login -- endpoint ini TIDAK PERNAH
 // menerima tenant_id dari parameter apa pun, jadi toko lain tidak pernah
 // bisa terlihat di sini apa pun yang dikirim dari sisi frontend.
+//
+// PERMINTAAN OWNER (menu tanpa jeda loading): halaman ini SENGAJA TIDAK
+// diikutkan ke pola cache halamanKotor (lihat produk.js/input_data.js,
+// dst) -- statusnya berubah lewat WEBHOOK dari payment gateway/bank
+// (lihat snap_webhook.py), bukan dari aksi akun yang sedang login ini,
+// jadi hook dirty-marking generik di api.js (yang hanya tahu "akun ini
+// sendiri baru mengubah sesuatu") tidak bisa diandalkan di sini. Fetch
+// ulang setiap dibuka tetap jalan seperti biasa supaya status pembayaran
+// yang ditampilkan selalu yang terbaru.
 
 const PageRiwayatTransaksi = (() => {
   const STATUS_LABEL = {
