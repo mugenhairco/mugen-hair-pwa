@@ -146,9 +146,10 @@ const MugenApi = (() => {
       //   - Absensi & Izin & Cuti: sudah pakai pola cache DOM penuh
       //     tersendiri (lihat absensi.js/izin_cuti.js -- _cacheAdminDom/
       //     _cacheBarberDom/_cacheDom), tidak lewat hook generik ini.
-      //   - Riwayat Transaksi (Payment Gateway)/Settlement Faspay: status
-      //     berubah lewat webhook bank/payment gateway, bukan aksi akun ini.
-      // Ketiganya SENGAJA TIDAK didaftarkan di sini -- tetap fetch ulang
+      //   - Riwayat Transaksi (Payment Gateway)/Settlement Faspay/Billing:
+      //     status berubah lewat webhook bank/payment gateway (lihat
+      //     snap_webhook.py), bukan aksi akun ini.
+      // Keempatnya SENGAJA TIDAK didaftarkan di sini -- tetap fetch ulang
       // seperti biasa setiap dibuka.
       MugenState.tandaiHalamanKotor("rekap");
       MugenState.tandaiHalamanKotor("produk");
@@ -161,7 +162,6 @@ const MugenApi = (() => {
       MugenState.tandaiHalamanKotor("pengeluaran");
       MugenState.tandaiHalamanKotor("uang_kas");
       MugenState.tandaiHalamanKotor("whatsapp");
-      MugenState.tandaiHalamanKotor("billing");
       MugenState.tandaiHalamanKotor("pengaturan");
     }
     return payload;

@@ -1100,7 +1100,13 @@
 // SENGAJA TETAP fetch ulang setiap dibuka (status berubah lewat webhook
 // bank/gateway, bukan aksi akun ini -- lihat catatan di masing-masing
 // file).
-const ASSET_VERSION = "207";
+// v207 -> v208: PERMINTAAN Owner (lanjutan v205-v207) -- menu WhatsApp
+// (Notifikasi Booking & Reminder Absensi, murni form setting, tidak ada
+// log real-time) sekarang ikut pola cache tanpa-jeda. Billing SENGAJA
+// TIDAK ikut -- status subscription/pembayaran berubah lewat webhook
+// payment gateway, sama seperti Riwayat Transaksi/Settlement Faspay
+// (lihat catatan di billing.js).
+const ASSET_VERSION = "208";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
