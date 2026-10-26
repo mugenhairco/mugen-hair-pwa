@@ -222,6 +222,35 @@ def hapus_kasbon(kasbon_id: int):
         conn.execute("DELETE FROM kasbon WHERE id = ?", (kasbon_id,))
 
 
+def hapus_riwayat_pembayaran_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN baris kasbon_pembayaran (riwayat pelunasan, manual
+    MAUPUN potong_gaji) milik tenant ini bertanggal lebih lama dari
+    `sebelum_tanggal` -- celah ditemukan Owner lewat Rekap production:
+    baris "Kasbon Dibayar" (gabung_ke_rekap_transaksi() di bawah) tetap
+    tampil walau Transaksi periode yang sama sudah dihapus, karena
+    kategori ini tidak pernah masuk desain awal fitur ini.
+
+    TIDAK butuh PDF (sama seperti Booking/Log Audit/Riwayat Libur -- hanya
+    nilai yang SUDAH DIBAYAR, bukan kewajiban yang masih outstanding).
+    AMAN: `kasbon.sisa` adalah KOLOM TERSIMPAN (bukan dihitung ulang dari
+    SUM(kasbon_pembayaran) tiap dibaca, lihat buat_kasbon()/bayar_kasbon())
+    -- menghapus baris riwayat pembayaran lama TIDAK membuat utang yang
+    sudah lunas tampak aktif lagi (pola sama persis
+    slip_gaji_db.hapus_slip_gaji_sebelum(), yang juga TIDAK membalikkan
+    saldo kasbon saat melepas rujukannya). Baris kasbon (pinjaman) itu
+    sendiri TIDAK ikut terhapus -- hanya riwayat pembayarannya, sama
+    seperti slip_gaji_db yang hanya melepas rujukan tanpa menyentuh
+    kasbon-nya. Mengembalikan jumlah baris yang terhapus."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM kasbon_pembayaran WHERE kasbon_id IN "
+            "(SELECT k.id FROM kasbon k JOIN barbers b ON b.id = k.barber_id WHERE b.tenant_id = ?) "
+            "AND tanggal < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
+
+
 def get_riwayat_pembayaran(kasbon_id: int) -> list:
     with get_conn() as conn:
         rows = conn.execute(
