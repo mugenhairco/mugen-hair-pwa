@@ -23,6 +23,7 @@ diteruskan ke Gmail) TIDAK melibatkan modul ini sama sekali -- itu murni
 konfigurasi DNS/Cloudflare, terpisah total dari jalur KIRIM email (Resend)
 yang diurus di sini. Lihat catatan konfigurasi lengkap di ringkasan PR."""
 
+import base64
 import logging
 import os
 
@@ -63,7 +64,7 @@ def link_reset_password(token: str) -> str:
     return f"{FRONTEND_BASE_URL}/app/#/reset-password?token={token}"
 
 
-def kirim_email(to: str, subject: str, html: str) -> bool:
+def kirim_email(to: str, subject: str, html: str, attachments: list[tuple[str, bytes]] | None = None) -> bool:
     """Kirim SATU email HTML lewat Resend. SELALU aman dipanggil -- TIDAK
     PERNAH melempar exception ke pemanggil (ditangkap & dicatat log di
     sini), dan mengembalikan False (bukan crash) kalau IS_ENABLED False
@@ -72,14 +73,28 @@ def kirim_email(to: str, subject: str, html: str) -> bool:
     email_auth.py) TIDAK PERNAH boleh membiarkan hasil False di sini
     menggagalkan operasi utamanya (bikin akun, ganti password, dst) --
     email HANYA "best effort", pengguna tetap punya jalur "Kirim Ulang"
-    kalau memang gagal terkirim."""
+    kalau memang gagal terkirim.
+
+    FITUR Pembersihan Data Bulanan Otomatis: `attachments` (BARU, opsional
+    -- SELURUH pemanggil lama tetap jalan apa adanya tanpa parameter ini)
+    -- list of (filename, isi_bytes), mis. PDF arsip Rekap Transaksi/
+    Absensi/Mutasi Produk SEBELUM datanya dihapus. Resend menerima lampiran
+    lewat field "attachments": [{filename, content}] di body JSON yang
+    SAMA (content di-encode base64 di sini, bukan di pemanggil) -- TIDAK
+    perlu endpoint/request terpisah."""
     if not IS_ENABLED:
         logger.warning("Email KE %s ('%s') TIDAK dikirim -- RESEND_API_KEY belum dikonfigurasi.", to, subject)
         return False
     try:
+        payload = {"from": _FROM_HEADER, "to": [to], "subject": subject, "html": html}
+        if attachments:
+            payload["attachments"] = [
+                {"filename": nama, "content": base64.b64encode(isi).decode("ascii")}
+                for nama, isi in attachments
+            ]
         resp = requests.post(
             _RESEND_URL,
-            json={"from": _FROM_HEADER, "to": [to], "subject": subject, "html": html},
+            json=payload,
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             timeout=_TIMEOUT_DETIK,
         )

@@ -421,3 +421,38 @@ def hapus_slip_gaji(slip_id: int):
         raise ValueError("Slip Gaji yang sudah berstatus Sudah Dibayar tidak bisa dihapus.")
     with get_conn() as conn:
         conn.execute("DELETE FROM slip_gaji WHERE id = ?", (slip_id,))
+
+
+def hapus_slip_gaji_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN SEMUA slip_gaji milik tenant ini ber-(tahun, bulan)
+    lebih lama dari `sebelum_tanggal` ("YYYY-MM-DD") -- BEDA dari
+    hapus_slip_gaji() di atas (satu slip, MENOLAK yang 'sudah_dibayar'):
+    permintaan eksplisit Owner, slip di sini dihapus TANPA PANDANG STATUS
+    (baik 'belum_dibayar' maupun 'sudah_dibayar') -- TIDAK ADA PDF yang
+    dikirim untuk kategori ini (Owner sudah menerima/mencetak slipnya
+    sendiri saat payroll berjalan bulan itu).
+
+    Slip 'sudah_dibayar' yang potongan kasbonnya sudah diterapkan
+    (kasbon_pembayaran.slip_gaji_id, lihat kasbon_db.py::
+    terapkan_potongan_slip_gaji()) TIDAK dibatalkan potongannya di sini --
+    saldo kasbon TETAP seperti sudah dibayar (membatalkannya akan membuat
+    utang yang sudah lunas tampak aktif lagi, SALAH secara finansial).
+    Cukup lepas rujukannya (slip_gaji_id -> NULL) SEBELUM delete supaya
+    FK constraint (kasbon_pembayaran.slip_gaji_id REFERENCES slip_gaji)
+    tidak menolak DELETE ini -- riwayat jumlah/tanggal potongan di
+    kasbon_pembayaran sendiri tetap utuh, hanya rujukan ke slip asalnya
+    yang hilang. Mengembalikan jumlah slip yang terhapus."""
+    with get_conn() as conn:
+        tahun, bulan = (int(sebelum_tanggal[:4]), int(sebelum_tanggal[5:7]))
+        ids = [r["id"] for r in conn.execute(
+            """SELECT s.id FROM slip_gaji s JOIN barbers b ON b.id = s.barber_id
+               WHERE b.tenant_id = ? AND (s.tahun < ? OR (s.tahun = ? AND s.bulan < ?))""",
+            (tenant_id, tahun, tahun, bulan),
+        ).fetchall()]
+        if not ids:
+            return 0
+        placeholder = ", ".join("?" for _ in ids)
+        conn.execute(f"UPDATE kasbon_pembayaran SET slip_gaji_id = NULL WHERE slip_gaji_id IN ({placeholder})", ids)
+        conn.execute(f"DELETE FROM slip_gaji WHERE id IN ({placeholder})", ids)
+        return len(ids)
