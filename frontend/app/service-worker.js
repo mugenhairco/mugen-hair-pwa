@@ -1081,7 +1081,17 @@
 // saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
 // reload tanpa aksi user yang bisa menghilangkan data form yang belum
 // tersimpan.
-const ASSET_VERSION = "204";
+// v204 -> v205: PERMINTAAN Owner -- menu Absensi (status Check In/Out hari
+// ini, Daftar Absensi, dkk, sisi barber -- lihat renderBarberView()) dan
+// Izin & Cuti (SEMUA role) sekarang ikut pola cache DOM tanpa-jeda yang
+// SAMA PERSIS seperti yang sudah ada untuk Absensi sisi Admin/Owner
+// (_cacheAdminDom) -- pindah ke menu lain lalu kembali TIDAK dibangun
+// ulang dari nol. Data terbaru (termasuk perubahan dari perangkat/sesi
+// LAIN -- barber lain Check In, pengajuan Izin/Cuti baru, dst) HANYA
+// muncul kalau halaman di-refresh (F5) -- trade-off yang SENGAJA diminta
+// Owner. Aksi di sesi INI SENDIRI tetap langsung ter-update saat itu juga
+// (elemen DOM yang di-cache adalah elemen LIVE yang sama, bukan salinan).
+const ASSET_VERSION = "205";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

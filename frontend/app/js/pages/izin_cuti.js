@@ -7,6 +7,22 @@
 // (Owner/Admin) lewat izin_notif.js -- lihat nav.js.
 
 const PageIzinCuti = (() => {
+  // PERMINTAAN OWNER: pola SAMA PERSIS seperti absensi.js::_cacheAdminDom/
+  // _cacheBarberDom -- pindah ke menu lain lalu kembali ke Izin & Cuti
+  // TIDAK PERLU loading ulang (DOM yang sudah dibangun, termasuk seluruh
+  // data yang sudah dimuat, dipasang ulang apa adanya). Data terbaru
+  // (pengajuan baru dari barber lain, approve/tolak dari sesi lain, dst)
+  // HANYA muncul kalau halaman di-refresh (F5) -- trade-off yang SENGAJA
+  // diminta Owner, sama seperti Absensi. Aksi di sesi INI SENDIRI (ajukan/
+  // edit/hapus/setujui/tolak) tetap langsung ter-update SAAT itu juga lewat
+  // manipulasi DOM/refresh lokal yang sudah ada (elemen yang di-cache di
+  // sini adalah elemen DOM LIVE yang sama, bukan salinan). Key beda per
+  // role (barber vs admin/staff) supaya tidak tertukar kalau akun yang
+  // sama somehow berganti role di sesi yang sama (tidak terjadi di
+  // praktiknya, murni jaga-jaga).
+  let _cacheDom = null;
+  let _cacheKey = null;
+
   function badgeStatus(status) {
     const label = status === "disetujui" ? "Disetujui" : status === "ditolak" ? "Ditolak" : "Pending";
     return MugenUI.el("span", { class: "badge" + (status === "disetujui" ? "" : " badge-libur") }, label);
@@ -415,11 +431,20 @@ const PageIzinCuti = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Izin & Cuti"));
 
-    if (user.role === "barber") {
-      await renderBarberView(root);
-    } else {
-      await renderAdminView(root);
+    const key = `${user.id}:${user.role}`;
+    if (_cacheDom && _cacheKey === key) {
+      root.appendChild(_cacheDom);
+      return;
     }
+    const bodyRoot = MugenUI.el("div");
+    if (user.role === "barber") {
+      await renderBarberView(bodyRoot);
+    } else {
+      await renderAdminView(bodyRoot);
+    }
+    root.appendChild(bodyRoot);
+    _cacheDom = bodyRoot;
+    _cacheKey = key;
   }
 
   return { render };
