@@ -60,6 +60,24 @@ def test_arsipkan_dan_hapus_mutasi_lama_carry_forward_saldo(single_tenant):
     assert database.arsipkan_dan_hapus_mutasi_lama(produk_id, "2026-09-01") is None
 
 
+def test_arsipkan_dan_hapus_mutasi_lama_carry_forward_termasuk_tester(single_tenant):
+    """database.tester_produk() PERLAKUANNYA IDENTIK jual_produk() (sama-
+    sama mengurangi stok lewat _catat_keluar_produk(), bedanya cuma tidak
+    dihitung ke omzet) -- pastikan saldo yang dibawa maju memperhitungkan
+    'tester' dengan benar, bukan cuma restock/jual."""
+    tenant_id = single_tenant["tenant_id"]
+    produk_id = database.tambah_produk("Parfum Tester Test", harga_modal=8000, harga_jual=25000,
+                                        tenant_id=tenant_id)
+    database.restock_produk(produk_id, "2026-07-01", 40)
+    database.jual_produk(produk_id, "2026-07-10", 10)
+    database.tester_produk(produk_id, "2026-07-12", 5)
+    assert database.get_stok_produk(produk_id) == 25  # 40-10-5
+
+    saldo = database.arsipkan_dan_hapus_mutasi_lama(produk_id, "2026-08-01")
+    assert saldo == 25
+    assert database.get_stok_produk(produk_id) == 25  # stok akhir TIDAK berubah
+
+
 def test_arsipkan_dan_hapus_mutasi_lama_saldo_awal_diperlakukan_seperti_restock(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     produk_id = database.tambah_produk("Minyak Test", harga_modal=5000, harga_jual=15000, tenant_id=tenant_id)
