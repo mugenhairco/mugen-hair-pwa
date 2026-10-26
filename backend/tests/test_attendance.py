@@ -955,16 +955,49 @@ def test_hapus_riwayat_absensi_membekukan_uang_harian_jika_dinamis_aktif(single_
     assert database.hitung_uang_harian_per_hari(barber, "2026-08-13") == 60000
 
 
-def test_hapus_riwayat_absensi_tidak_bekukan_uang_harian_kalau_belum_opt_in(single_tenant, monkeypatch):
-    """Tenant yang BELUM opt-in Uang Harian Dinamis tidak pernah bergantung
-    attendance_logs sama sekali -- tidak perlu dibekukan (tabel beku tetap
-    kosong untuk tanggal ini)."""
+def test_hapus_riwayat_absensi_membekukan_uang_harian_walau_belum_opt_in_dinamis(single_tenant, monkeypatch):
+    """PERBAIKAN BUG (regresi payroll historis): sebelumnya Uang Harian
+    HANYA dibekukan untuk tenant yang sudah opt-in Uang Harian Dinamis --
+    padahal tenant sistem LAMA (Acuan Service/Target, mayoritas tenant)
+    SAMA-SAMA bergantung ke transaksi_detail yang akan dihapus
+    data_purge_db.py di cutoff yang sama (lihat
+    test_data_purge.py::test_jalankan_pembersihan_hapus_absensi_sebelum_transaksi_jaga_uang_harian
+    untuk regresi end-to-end-nya). SEKARANG dibekukan juga, selama barber
+    tercatat Check In (attendance_logs) pada tanggal itu."""
     import database
     tenant_id = single_tenant["tenant_id"]
     _atur_lokasi_toko(tenant_id)
     barber_id = _barber(tenant_id, "Barber Tanpa Opt In")
+    database.update_barber(barber_id, uang_harian=45000)
+    service_id = database.add_service("Service Tanpa Opt In", 20000, tenant_id=tenant_id)
+    database.set_uang_harian_acuan_ids([service_id], tenant_id=tenant_id)
+    # target_uang_harian_per_hari() default = 3 -- jumlah 3 MEMENUHI target.
+    database.tambah_transaksi("2026-08-13", barber_id, [{"service_id": service_id, "jumlah": 3}])
+
     monkeypatch.setattr(attendance_db, "_sekarang_wib", lambda: datetime(2026, 8, 13, 9, 0, tzinfo=WIB))
     attendance_db.check_in(tenant_id, barber_id, TOKO_LAT, TOKO_LNG, accuracy=15)
 
+    barber = database.get_barber(barber_id)
+    assert database.hitung_uang_harian_per_hari(barber, "2026-08-13") == 45000
+
     attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_id)
-    assert database.get_uang_harian_beku(barber_id, "2026-08-13") is None
+    assert database.get_uang_harian_beku(barber_id, "2026-08-13") == 45000
+
+
+def test_hapus_riwayat_absensi_membekukan_uang_harian_dari_tanggal_transaksi_tanpa_check_in(single_tenant):
+    """Lanjutan perbaikan bug di atas: cakupan tanggal yang dibekukan
+    sekarang UNION tanggal attendance_logs DAN tanggal transaksi, bukan
+    cuma attendance_logs -- tanggal yang PUNYA Transaksi tapi TIDAK PERNAH
+    ada Check In sama sekali (barber_id ini tidak pernah check_in()) TETAP
+    ikut dibekukan."""
+    import database
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = _barber(tenant_id, "Barber Transaksi Tanpa CheckIn")
+    database.update_barber(barber_id, uang_harian=30000)
+    service_id = database.add_service("Service Tanpa CheckIn", 20000, tenant_id=tenant_id)
+    database.set_uang_harian_acuan_ids([service_id], tenant_id=tenant_id)
+    database.tambah_transaksi("2026-08-14", barber_id, [{"service_id": service_id, "jumlah": 3}])
+
+    assert database.get_uang_harian_beku(barber_id, "2026-08-14") is None
+    attendance_db.hapus_riwayat_absensi(tenant_id, barber_id=barber_id)
+    assert database.get_uang_harian_beku(barber_id, "2026-08-14") == 30000
