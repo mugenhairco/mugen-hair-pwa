@@ -1081,7 +1081,18 @@
 // saat tab disembunyikan) supaya prinsip lama TETAP terjaga: tidak pernah
 // reload tanpa aksi user yang bisa menghilangkan data form yang belum
 // tersimpan.
-const ASSET_VERSION = "204";
+// v204 -> v205: PERBAIKAN PERFORMA (keluhan Owner: menu Rekap terasa ada
+// jeda) -- rekap.js::render() SEBELUMNYA meng-await fetch daftar Barber+
+// Karyawan (buat opsi dropdown filter) DULU sebelum renderBody() dipanggil
+// sama sekali, BERURUTAN (serial) dengan fetch data tabel -- padahal
+// dropdown itu TIDAK PERNAH jadi prasyarat data tabel, dan data tabel
+// sendiri sudah punya mekanisme cache sendiri (_cacheTerakhir/
+// halamanPerluRefresh, pola sama Dashboard) yang seharusnya bisa tampil
+// INSTAN tanpa fetch sama sekali kalau belum ada perubahan. Fetch Barber+
+// Karyawan sekarang TIDAK di-await lagi -- jalan di belakang layar,
+// opsi dropdown disisipi begitu selesai, TIDAK PERNAH lagi menghalangi
+// tabel yang sudah siap dari cache.
+const ASSET_VERSION = "205";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

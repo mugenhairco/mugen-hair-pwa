@@ -144,16 +144,35 @@ const PageRekap = (() => {
     // jadi filter itu valid, hanya hasilnya kosong.
     let barbersOnly = [];
     let karyawanAll = [];
-    if (isAdmin) {
-      try {
-        [barbersOnly, karyawanAll] = await Promise.all([
+    // PERBAIKAN PERFORMA (keluhan Owner: menu Rekap terasa ada jeda):
+    // SEBELUMNYA fetch Barber+Karyawan ini di-await DULU di sini, SEBELUM
+    // renderBody() (akhir fungsi ini) sempat dipanggil sama sekali --
+    // artinya WALAU data tabel Transaksi/Bulanan/Pengeluaran-nya sendiri
+    // sudah bisa tampil INSTAN dari cache (_cacheTerakhir/
+    // halamanPerluRefresh di atas), halaman tetap menunggu SATU round-trip
+    // jaringan tambahan (fetch dropdown filter ini) lebih dulu -- BERURUTAN
+    // (serial) dengan fetch data tabel, padahal daftar ini TIDAK PERNAH jadi
+    // prasyarat data tabel (filter default "Semua Barber/Karyawan" tidak
+    // butuh daftar namanya sudah siap). Sekarang fetch-nya TIDAK di-await di
+    // sini -- dibiarkan jalan di belakang layar (Promise disimpan di
+    // `karyawanPromise`), renderBody() langsung dipanggil tanpa menunggu
+    // (lihat akhir fungsi ini) -- begitu Promise ini selesai, opsi dropdown
+    // yang SUDAH terlanjur dirender (lihat filterBar() di bawah) disisipi
+    // opsi barunya DI TEMPAT (select yang sudah ada, tanpa render ulang).
+    const karyawanPromise = isAdmin
+      ? Promise.all([
           MugenApi.get("/api/input-data/barbers", { useCache: true }),
           MugenApi.get("/api/input-data/karyawan", { useCache: true }),
-        ]);
-      } catch (e) { /* filter tetap opsional kalau gagal dimuat */ }
-    }
+        ])
+          .then(([b, k]) => {
+            barbersOnly = b;
+            karyawanAll = k;
+            return { barbersOnly: b, karyawanAll: k };
+          })
+          .catch(() => ({ barbersOnly: [], karyawanAll: [] })) // filter tetap opsional kalau gagal dimuat
+      : Promise.resolve({ barbersOnly: [], karyawanAll: [] });
 
-    function filterBar({ withBarber = true, daftarKaryawan = barbersOnly, labelSemua = "Semua Barber" } = {}) {
+    function filterBar({ withBarber = true, ambilDaftarDari = (hasil) => hasil.barbersOnly, labelSemua = "Semua Barber" } = {}) {
       const selBulan = MugenUI.el("select");
       for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
       selBulan.value = String(today.getMonth() + 1);
@@ -163,7 +182,13 @@ const PageRekap = (() => {
       const selBarber = withBarber && isAdmin ? MugenUI.el("select") : null;
       if (selBarber) {
         selBarber.appendChild(MugenUI.el("option", { value: "" }, labelSemua));
-        for (const b of daftarKaryawan) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+        // Opsi barber/karyawan disisipi ASINKRON begitu karyawanPromise
+        // selesai -- tabel di atas TIDAK PERNAH menunggu ini.
+        karyawanPromise.then((hasil) => {
+          for (const b of ambilDaftarDari(hasil)) {
+            selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+          }
+        });
       }
       const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
         [selBulan, selTahun, ...(selBarber ? [selBarber] : [])]);
@@ -178,7 +203,7 @@ const PageRekap = (() => {
     }
 
     async function renderTransaksi() {
-      const { row, selBulan, selTahun, selBarber } = filterBar({ daftarKaryawan: karyawanAll, labelSemua: "Semua Karyawan" });
+      const { row, selBulan, selTahun, selBarber } = filterBar({ ambilDaftarDari: (hasil) => hasil.karyawanAll, labelSemua: "Semua Karyawan" });
 
       // Periode tanggal TAMBAHAN khusus untuk cetak PDF (filter Bulan+Tahun
       // di atas untuk tampilan layar TIDAK berubah) -- kalau diisi,
