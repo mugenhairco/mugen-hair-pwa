@@ -10,7 +10,7 @@ spesial. Dipicu EKSTERNAL lewat routers/cron_purge_data.py (pola SAMA PERSIS
 absensi_reminder_db.py/routers/cron_reminder.py) -- TIDAK ada proses latar
 belakang di dalam aplikasi.
 
-Delapan kategori, DUA kelompok:
+Sembilan kategori, DUA kelompok:
 
 1. PERLU ARSIP PDF dulu (dikirim ke email tenant SEBELUM dihapus):
    - Rekap Transaksi Barber -- 1 PDF Detail PER barber (termasuk yang
@@ -27,10 +27,22 @@ Delapan kategori, DUA kelompok:
    - Riwayat Mutasi Produk (restock/jual/tester) -- 1 PDF gabungan semua
      produk (pola SAMA seperti tombol "Cetak PDF" yang sudah ada di menu
      Produk).
-   KETIGANYA dikirim lewat SATU email (satu lampiran per PDF) -- supaya
+   - Riwayat Izin & Cuti (yang SUDAH diputuskan, status != 'pending') --
+     1 PDF gabungan (pola SAMA seperti tombol "Cetak PDF" yang sudah ada
+     di halaman Izin & Cuti). Celah ditemukan Owner lewat Rekap production:
+     baris Cuti otomatis "Libur ⚠️" (dicatat sistem di izin_cuti, BUKAN
+     absensi_libur, saat kuota Libur bulanan habis -- lihat
+     kuota_libur_db.tandai_rekap_transaksi_kuota()) tetap tampil di Rekap
+     Transaksi walau Transaksi/Absensi periode yang sama sudah dihapus,
+     karena kategori ini memang tidak pernah masuk ke desain awal fitur
+     ini. Cutoff-nya BISA LEBIH AWAL dari cutoff seragam di atas (lihat
+     izin_cuti_db.cutoff_aman_purge() -- kuota Gabungan Izin&Cuti
+     Owner-editable BISA periode lebih dari 1 bulan, TIDAK boleh menghapus
+     baris yang masih masuk periode kuota yang sedang aktif).
+   KEEMPATNYA dikirim lewat SATU email (satu lampiran per PDF) -- supaya
    "sudah terkirim" berarti SATU keputusan all-or-nothing: kalau emailnya
    GAGAL terkirim (Resend belum dikonfigurasi/API error/tenant belum punya
-   email terdaftar), KETIGA kategori ini TIDAK dihapus siklus ini --
+   email terdaftar), KEEMPAT kategori ini TIDAK dihapus siklus ini --
    dicoba lagi bulan depan dengan cutoff yang lebih baru (backlog makin
    besar, bukan hilang). Prinsip: PDF adalah jaring pengaman, menghapus
    data tanpa jaring pengaman itu terkirim MELANGGAR tujuan fitur ini.
@@ -79,6 +91,7 @@ import attendance_db
 import booking_db
 import data_non_barber_db
 import database as db
+import izin_cuti_db
 import kuota_libur_db
 import laporan_pdf
 import slip_gaji_db
@@ -135,8 +148,17 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     tenant_id = tenant["id"]
     tanggal_mulai = _tanggal_mulai_arsip(tenant)
     tanggal_selesai = _sehari_sebelum(cutoff)
+    # Kuota Gabungan Izin&Cuti Owner-editable bisa LEBIH LAMA dari 1 bulan
+    # (kuota_periode_bulan) -- cutoff Izin&Cuti BISA LEBIH AWAL dari cutoff
+    # seragam di atas supaya periode kuota yang SEDANG AKTIF tidak ikut
+    # terhapus (lihat izin_cuti_db.cutoff_aman_purge()). Dihitung SEKALI di
+    # sini, dipakai PERSIS SAMA untuk rentang PDF arsip di bawah MAUPUN
+    # argumen hapus_riwayat_izin_cuti_sebelum() nanti -- keduanya WAJIB
+    # konsisten (apa yang diarsipkan harus sama dengan apa yang dihapus).
+    cutoff_izin_cuti = izin_cuti_db.cutoff_aman_purge(tenant_id, cutoff)
+    tanggal_selesai_izin_cuti = _sehari_sebelum(cutoff_izin_cuti)
     hasil = {"email_terkirim": None, "transaksi_dihapus": 0, "absensi_dihapus": 0, "produk_diarsipkan": 0,
-             "non_barber_dihapus": 0}
+             "non_barber_dihapus": 0, "izin_cuti_dihapus": 0}
 
     lampiran = []
 
@@ -189,6 +211,24 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         )
         lampiran.append(("Riwayat-Mutasi-Produk.pdf", pdf_bytes))
 
+    # Riwayat Izin & Cuti (termasuk Cuti otomatis "Libur ⚠️" saat kuota
+    # Libur habis, lihat kuota_libur_db.tandai_rekap_transaksi_kuota() --
+    # celah ditemukan Owner lewat Rekap production: baris itu TIDAK pernah
+    # hilang dari Rekap Transaksi walau Transaksi/Absensi periode yang sama
+    # sudah dihapus, karena sumbernya izin_cuti, BUKAN absensi_libur).
+    # Rentangnya pakai cutoff_izin_cuti (bisa LEBIH AWAL dari cutoff
+    # seragam di atas, lihat catatan di awal fungsi ini).
+    data_izin_cuti = izin_cuti_db.get_pengajuan_list(
+        status=None, tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai_izin_cuti, tenant_id=tenant_id,
+    )
+    data_izin_cuti = [r for r in data_izin_cuti if r["status"] != "pending"]
+    if data_izin_cuti:
+        pdf_bytes = laporan_pdf.buat_pdf_izin_cuti_list(
+            None, None, None, DICETAK_OLEH, tenant_id=tenant_id,
+            tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai_izin_cuti,
+        )
+        lampiran.append(("Riwayat-Izin-Cuti.pdf", pdf_bytes))
+
     if not lampiran:
         # Tidak ada data sama sekali di keempat kategori ini pada rentang
         # itu -- tidak ada yang perlu diarsipkan MAUPUN dihapus, lewati
@@ -199,7 +239,7 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     if not email_tenant:
         logger.warning(
             "Pembersihan Data: tenant_id=%s TIDAK punya email terdaftar -- Rekap Transaksi/Non-Barber/"
-            "Absensi/Mutasi Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
+            "Absensi/Mutasi Produk/Izin & Cuti TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
         )
         hasil["email_terkirim"] = False
         return hasil
@@ -219,7 +259,7 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
     if not terkirim:
         logger.warning(
             "Pembersihan Data: tenant_id=%s GAGAL kirim email arsip -- Rekap Transaksi/Non-Barber/Absensi/"
-            "Mutasi Produk TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
+            "Mutasi Produk/Izin & Cuti TIDAK dihapus siklus ini (dicoba lagi bulan depan).", tenant_id,
         )
         return hasil
 
@@ -243,6 +283,8 @@ def _kirim_arsip_dan_hapus_kategori_pdf(tenant: dict, cutoff: str) -> dict:
         for produk in produk_list:
             if db.arsipkan_dan_hapus_mutasi_lama(produk["id"], cutoff) is not None:
                 hasil["produk_diarsipkan"] += 1
+    if data_izin_cuti:
+        hasil["izin_cuti_dihapus"] = izin_cuti_db.hapus_riwayat_izin_cuti_sebelum(tenant_id, cutoff_izin_cuti)
 
     return hasil
 
