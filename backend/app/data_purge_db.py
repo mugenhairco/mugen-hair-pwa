@@ -10,7 +10,7 @@ spesial. Dipicu EKSTERNAL lewat routers/cron_purge_data.py (pola SAMA PERSIS
 absensi_reminder_db.py/routers/cron_reminder.py) -- TIDAK ada proses latar
 belakang di dalam aplikasi.
 
-Delapan kategori, DUA kelompok:
+Sembilan kategori, DUA kelompok:
 
 1. PERLU ARSIP PDF dulu (dikirim ke email tenant SEBELUM dihapus):
    - Rekap Transaksi Barber -- 1 PDF Detail PER barber (termasuk yang
@@ -52,6 +52,12 @@ Delapan kategori, DUA kelompok:
      pastikan_libur_mingguan_tercatat() tidak membuat ulang baris untuk
      periode yang sudah dipurge, hanya karena periode itu dilihat lagi di
      Rekap).
+   - Riwayat Pembayaran Kasbon (kasbon_pembayaran -- manual MAUPUN
+     potong_gaji) -- lihat kasbon_db.hapus_riwayat_pembayaran_sebelum()
+     untuk alasan tidak butuh PDF (hanya nilai yang SUDAH DIBAYAR) dan
+     kenapa aman (kasbon.sisa kolom tersimpan, TIDAK dihitung ulang dari
+     riwayat pembayarannya). Baris kasbon (pinjaman) itu sendiri TIDAK
+     ikut terhapus, HANYA riwayat pembayarannya.
 
 Riwayat Mutasi Produk PERLU langkah tambahan SEBELUM dihapus: saldo stok
 dihitung ulang dari SELURUH riwayat produk_mutasi (TIDAK ada kolom stok
@@ -79,6 +85,7 @@ import attendance_db
 import booking_db
 import data_non_barber_db
 import database as db
+import kasbon_db
 import kuota_libur_db
 import laporan_pdf
 import slip_gaji_db
@@ -257,6 +264,7 @@ def _hapus_kategori_tanpa_pdf(tenant_id: int, cutoff: str) -> dict:
         "koreksi_dihapus": attendance_db.hapus_koreksi_terputuskan_sebelum(tenant_id, cutoff),
         "slip_gaji_dihapus": slip_gaji_db.hapus_slip_gaji_sebelum(tenant_id, cutoff),
         "libur_dihapus": kuota_libur_db.hapus_riwayat_libur_sebelum(tenant_id, cutoff),
+        "kasbon_pembayaran_dihapus": kasbon_db.hapus_riwayat_pembayaran_sebelum(tenant_id, cutoff),
     }
 
 
