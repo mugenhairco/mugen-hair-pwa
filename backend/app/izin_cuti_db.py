@@ -558,10 +558,14 @@ def get_pengajuan(pengajuan_id: int):
 
 
 def get_pengajuan_list(barber_id: int = None, status: str = None, jenis: str = None,
-                        tahun: int = None, bulan: int = None, tenant_id: int = None) -> list:
+                        tahun: int = None, bulan: int = None, tanggal_mulai: str = None,
+                        tanggal_selesai: str = None, tenant_id: int = None) -> list:
     """FONDASI Multi-Tenant Phase 1.1: `tenant_id` opsional, JOIN tambahan
     ke barbers HANYA ditambahkan kalau diisi (endpoint ber-login WAJIB
-    mengisi ini)."""
+    mengisi ini). `tanggal_mulai`/`tanggal_selesai` (rentang bebas, dipakai
+    FITUR Pembersihan Data Bulanan Otomatis untuk PDF arsip -- lihat
+    data_purge_db.py) BEDA dari tahun/bulan (satu bulan kalender, dipakai
+    tampilan layar) -- pola sama persis database.py::get_transaksi_list()."""
     q = "SELECT i.* FROM izin_cuti i"
     if tenant_id is not None:
         q += " JOIN barbers b ON b.id = i.barber_id"
@@ -583,10 +587,67 @@ def get_pengajuan_list(barber_id: int = None, status: str = None, jenis: str = N
         q += " AND i.tanggal_mulai LIKE ?"; params.append(f"{tahun:04d}-%")
     elif bulan is not None:
         q += " AND i.tanggal_mulai LIKE ?"; params.append(f"%-{bulan:02d}-%")
+    if tanggal_mulai is not None:
+        q += " AND i.tanggal_mulai >= ?"; params.append(tanggal_mulai)
+    if tanggal_selesai is not None:
+        q += " AND i.tanggal_mulai <= ?"; params.append(tanggal_selesai)
     q += " ORDER BY i.tanggal_mulai DESC, i.id DESC"
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
     return [_lengkapi(r) for r in rows]
+
+
+def cutoff_aman_purge(tenant_id: int, cutoff_diminta: str) -> str:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hitung cutoff AMAN untuk tenant ini -- TIDAK BOLEH lebih baru dari
+    `cutoff_diminta` (aturan seragam "tanggal < awal bulan berjalan" yang
+    sama seperti kategori lain), TAPI JUGA tidak boleh menghapus baris yang
+    MASIH masuk periode Kuota Gabungan Izin&Cuti yang SEDANG AKTIF
+    (mencakup hari ini) -- kalau baris itu ikut terhapus, get_sisa_kuota()
+    akan menghitung sisa LEBIH BESAR dari yang sebenarnya (baris yang
+    sudah "terpakai" hilang dari hitungan _kuota_terpakai_hari(), kuota
+    jadi tampak belum terpakai padahal sudah).
+
+    BEDA dari Kuota Libur (kuota_libur_db.py, SELALU 1 bulan kalender):
+    periode kuota di sini Owner-editable (kuota_periode_bulan bisa
+    3/6/12 dst, lihat _periode_kuota()) -- BISA LEBIH LAMA dari 1 bulan,
+    jadi TIDAK bisa pakai cutoff seragam "awal bulan ini" begitu saja.
+    Kalau kuota belum/tidak diaktifkan (kuota_periode_bulan=0 ATAU
+    periode_mulai_dasar kosong ATAU kuota_gabungan_hari<=0 ATAU hari ini
+    masih sebelum periode_mulai_dasar), TIDAK ada periode aktif untuk
+    dilindungi -- `cutoff_diminta` dipakai apa adanya (byte-for-byte sama
+    seperti kategori lain)."""
+    settings = get_cuti_settings(tenant_id)
+    hari_ini = _hari_ini_wib()
+    if not (settings["kuota_periode_bulan"] > 0 and settings["periode_mulai_dasar"]
+            and settings["kuota_gabungan_hari"] > 0 and hari_ini >= settings["periode_mulai_dasar"]):
+        return cutoff_diminta
+    periode_awal, _ = _periode_kuota(hari_ini, settings["kuota_periode_bulan"], settings["periode_mulai_dasar"])
+    return min(cutoff_diminta, periode_awal)
+
+
+def hapus_riwayat_izin_cuti_sebelum(tenant_id: int, sebelum_tanggal: str) -> int:
+    """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
+    hapus PERMANEN baris izin_cuti milik tenant ini yang SUDAH DIPUTUSKAN
+    (status != 'pending' -- yang masih pending TIDAK PERNAH ikut terhapus,
+    pola sama persis attendance_db.hapus_koreksi_terputuskan_sebelum())
+    dan SELURUH periodenya (tanggal_selesai) sudah lewat `sebelum_tanggal`
+    -- disaring lewat `tanggal_selesai` (BUKAN tanggal_mulai), supaya
+    Cuti/Izin yang masih menjorok ke bulan berjalan TIDAK ikut terhapus
+    (pola sama data_non_barber_db.hapus_riwayat_non_barber()).
+
+    `sebelum_tanggal` WAJIB sudah dihitung lewat cutoff_aman_purge() di
+    atas SEBELUM memanggil fungsi ini -- fungsi ini sendiri TIDAK mengecek
+    ulang kuota aktif (pemanggil, data_purge_db.py, sudah memakai cutoff
+    yang SAMA untuk membangun PDF arsip DAN memanggil fungsi ini, supaya
+    keduanya selalu konsisten persis). Mengembalikan jumlah baris yang
+    terhapus."""
+    with get_conn() as conn:
+        return conn.execute(
+            "DELETE FROM izin_cuti WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?) "
+            "AND status != 'pending' AND tanggal_selesai < ?",
+            (tenant_id, sebelum_tanggal),
+        ).rowcount
 
 
 def get_info_cuti_marquee(tenant_id: int) -> list:

@@ -18,6 +18,7 @@ import booking_db
 import data_non_barber_db
 import data_purge_db
 import database
+import izin_cuti_db
 import kasbon_db
 import kuota_libur_db
 import slip_gaji_db
@@ -510,6 +511,147 @@ def test_jalankan_pembersihan_cegah_kebangkitan_libur_mingguan_setelah_dipurge(s
     baris = database.get_libur_list(barber_id=barber_id, tenant_id=tenant_id, tahun=2026, bulan=8)
     assert baris == []
     assert database.get_hari_libur_rentang(barber_id, "2026-08-01", "2026-08-31") == 0
+
+
+# ---------------------------------------------------------------------------
+# Riwayat Izin & Cuti -- izin_cuti_db.hapus_riwayat_izin_cuti_sebelum() &
+# cutoff_aman_purge(). Celah ditemukan Owner lewat Rekap production: baris
+# Cuti OTOMATIS "Libur ⚠️" (dicatat sistem di izin_cuti saat kuota Libur
+# bulanan habis, lihat kuota_libur_db.tandai_rekap_transaksi_kuota()) tetap
+# tampil di Rekap Transaksi walau Transaksi/Absensi periode yang sama sudah
+# dihapus -- tabel izin_cuti tidak pernah masuk desain Pembersihan Data.
+# ---------------------------------------------------------------------------
+
+def test_hapus_riwayat_izin_cuti_sebelum_hapus_sesuai_cutoff_sisakan_pending_dan_baru(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    barber_id = database.add_barber("Barber Izin Cuti Purge", tenant_id=tenant_id)
+    lama = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-07-10", "2026-07-11", "Acara keluarga",
+                                        tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(lama["id"], "disetujui", disetujui_oleh="Owner")
+    pending_lama = izin_cuti_db.buat_pengajuan(barber_id, "izin", "2026-07-15", "2026-07-15", "Sakit",
+                                                tenant_id=tenant_id, override=True)  # TETAP pending
+    baru = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-09-05", "2026-09-06", "Acara lain",
+                                        tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(baru["id"], "disetujui", disetujui_oleh="Owner")
+
+    jumlah = izin_cuti_db.hapus_riwayat_izin_cuti_sebelum(tenant_id, "2026-09-01")
+    assert jumlah == 1
+    assert izin_cuti_db.get_pengajuan(lama["id"]) is None
+    assert izin_cuti_db.get_pengajuan(pending_lama["id"]) is not None  # pending TIDAK PERNAH terhapus
+    assert izin_cuti_db.get_pengajuan(baru["id"]) is not None  # setelah cutoff tetap ada
+
+    # Idempotent: tidak ada lagi baris < cutoff -> 0.
+    assert izin_cuti_db.hapus_riwayat_izin_cuti_sebelum(tenant_id, "2026-09-01") == 0
+
+
+def test_hapus_riwayat_izin_cuti_sebelum_tenant_scoped(two_tenants):
+    tenant_a, tenant_b = two_tenants["tenant_a"], two_tenants["tenant_b"]
+    barber_a = database.add_barber("Barber Cuti A", tenant_id=tenant_a)
+    barber_b = database.add_barber("Barber Cuti B", tenant_id=tenant_b)
+    p_a = izin_cuti_db.buat_pengajuan(barber_a, "cuti", "2026-07-10", "2026-07-11", "A",
+                                       tenant_id=tenant_a, override=True)
+    izin_cuti_db.set_status_pengajuan(p_a["id"], "disetujui", disetujui_oleh="Owner")
+    p_b = izin_cuti_db.buat_pengajuan(barber_b, "cuti", "2026-07-10", "2026-07-11", "B",
+                                       tenant_id=tenant_b, override=True)
+    izin_cuti_db.set_status_pengajuan(p_b["id"], "disetujui", disetujui_oleh="Owner")
+
+    jumlah = izin_cuti_db.hapus_riwayat_izin_cuti_sebelum(tenant_a, "2026-09-01")
+    assert jumlah == 1
+    assert izin_cuti_db.get_pengajuan(p_a["id"]) is None
+    assert izin_cuti_db.get_pengajuan(p_b["id"]) is not None  # tenant lain TIDAK ikut tersentuh
+
+
+def test_cutoff_aman_purge_tanpa_kuota_diatur_pakai_cutoff_apa_adanya(single_tenant):
+    tenant_id = single_tenant["tenant_id"]
+    assert izin_cuti_db.cutoff_aman_purge(tenant_id, "2026-09-01") == "2026-09-01"
+
+
+def test_cutoff_aman_purge_lindungi_periode_kuota_aktif_lebih_dari_sebulan(single_tenant, monkeypatch):
+    """Regresi KRITIS: kuota Gabungan Izin&Cuti Owner-editable BISA periode
+    LEBIH LAMA dari 1 bulan (di sini: 3 bulan, anchor 1 Juli) -- cutoff
+    seragam "awal bulan ini" (2026-09-01) TIDAK BOLEH dipakai apa adanya,
+    karena periode aktif yang mencakup hari ini (2026-09-15) sebenarnya
+    dimulai 2026-07-01 -- menghapus baris Juli/Agustus akan membuat
+    get_sisa_kuota() menghitung sisa LEBIH BESAR dari seharusnya."""
+    tenant_id = single_tenant["tenant_id"]
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, periode_mulai_dasar="2026-07-01",
+                                    kuota_gabungan_hari=10)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-15")
+    assert izin_cuti_db.cutoff_aman_purge(tenant_id, "2026-09-01") == "2026-07-01"
+
+
+def test_cutoff_aman_purge_belum_capai_anchor_pakai_cutoff_apa_adanya(single_tenant, monkeypatch):
+    tenant_id = single_tenant["tenant_id"]
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, periode_mulai_dasar="2026-12-01",
+                                    kuota_gabungan_hari=10)
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-15")
+    assert izin_cuti_db.cutoff_aman_purge(tenant_id, "2026-09-01") == "2026-09-01"
+
+
+def test_jalankan_pembersihan_hapus_riwayat_izin_cuti_lindungi_periode_kuota_aktif(single_tenant, monkeypatch):
+    """E2E: baris Cuti lama (status disetujui) di LUAR periode kuota aktif
+    ikut terhapus (via PDF arsip), TAPI baris di DALAM periode kuota aktif
+    (walau tanggalnya < cutoff seragam "awal bulan ini") TETAP ADA."""
+    tenant_id = single_tenant["tenant_id"]
+    _set_created_at(tenant_id, "2026-01-01")
+    _set_email(tenant_id, "owner@izin-cuti-purge.test")
+    barber_id = database.add_barber("Barber Izin Cuti E2E", tenant_id=tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_periode_bulan=3, periode_mulai_dasar="2026-07-01",
+                                    kuota_gabungan_hari=10)
+
+    di_luar_periode = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-06-10", "2026-06-11", "Sebelum periode",
+                                                   tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(di_luar_periode["id"], "disetujui", disetujui_oleh="Owner")
+    di_dalam_periode = izin_cuti_db.buat_pengajuan(barber_id, "cuti", "2026-07-20", "2026-07-21", "Dalam periode",
+                                                    tenant_id=tenant_id, override=True)
+    izin_cuti_db.set_status_pengajuan(di_dalam_periode["id"], "disetujui", disetujui_oleh="Owner")
+
+    monkeypatch.setattr(izin_cuti_db, "_hari_ini_wib", lambda: "2026-09-10")
+    monkeypatch.setattr(data_purge_db, "kirim_email", lambda *a, **kw: True)
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+
+    hasil = data_purge_db.jalankan_pembersihan()
+    per = hasil["per_tenant"][str(tenant_id)]
+    assert per["izin_cuti_dihapus"] == 1
+    assert izin_cuti_db.get_pengajuan(di_luar_periode["id"]) is None
+    assert izin_cuti_db.get_pengajuan(di_dalam_periode["id"]) is not None  # masih periode kuota aktif
+
+
+def test_jalankan_pembersihan_hapus_cuti_otomatis_kuota_libur_habis_hilang_dari_rekap(single_tenant, monkeypatch):
+    """Regresi KRITIS -- reproduksi PERSIS bug yang ditemukan Owner lewat
+    Rekap production: barber yang kuota Libur bulanannya habis membuat
+    Tandai Libur berikutnya OTOMATIS tercatat sebagai Cuti (izin_cuti,
+    diajukan_oleh=DIAJUKAN_OLEH_KUOTA_LIBUR) -- baris ini ditandai
+    "Libur ⚠️" di Rekap Transaksi (kuota_libur_db.tandai_rekap_transaksi_kuota())
+    TANPA PERNAH ikut terhapus walau Transaksi/Absensi periode yang sama
+    sudah dibersihkan, karena sumbernya izin_cuti, BUKAN absensi_libur."""
+    tenant_id = single_tenant["tenant_id"]
+    _set_created_at(tenant_id, "2026-01-01")
+    _set_email(tenant_id, "owner@cuti-otomatis-purge.test")
+    barber_id = database.add_barber("Barber Cuti Otomatis E2E", tenant_id=tenant_id)
+    izin_cuti_db.set_cuti_settings(tenant_id, kuota_libur_bulanan=1, kuota_periode_bulan=1,
+                                    periode_mulai_dasar="2026-07-01", kuota_gabungan_hari=5)
+
+    database.tandai_libur(barber_id, "2026-07-03")  # habiskan kuota Libur (1) lewat baris manual lain
+    hasil_kedua = kuota_libur_db.tandai_libur_dengan_kuota(barber_id, tenant_id, "2026-07-10")
+    assert hasil_kedua == "cuti"  # kuota Libur sudah habis -> otomatis jadi Cuti (izin_cuti)
+
+    # Sebelum purge: baris "Libur ⚠️" MEMANG tampil di Rekap Transaksi.
+    data_sebelum = database.get_rekap_transaksi_list(tahun=2026, bulan=7, barber_id=barber_id, tenant_id=tenant_id)
+    data_sebelum = kuota_libur_db.tandai_rekap_transaksi_kuota(data_sebelum, tahun=2026, bulan=7,
+                                                                 barber_id=barber_id, tenant_id=tenant_id)
+    assert any("Libur ⚠️" in (r.get("keterangan") or "") for r in data_sebelum)
+
+    monkeypatch.setattr(data_purge_db, "kirim_email", lambda *a, **kw: True)
+    monkeypatch.setattr(data_purge_db, "_sekarang_wib", lambda: datetime(2026, 9, 10, 8, 0, tzinfo=WIB))
+    hasil = data_purge_db.jalankan_pembersihan()
+    assert hasil["per_tenant"][str(tenant_id)]["izin_cuti_dihapus"] == 1
+
+    # Setelah purge: baris "Libur ⚠️" itu HARUS SUDAH HILANG dari Rekap.
+    data_sesudah = database.get_rekap_transaksi_list(tahun=2026, bulan=7, barber_id=barber_id, tenant_id=tenant_id)
+    data_sesudah = kuota_libur_db.tandai_rekap_transaksi_kuota(data_sesudah, tahun=2026, bulan=7,
+                                                                 barber_id=barber_id, tenant_id=tenant_id)
+    assert not any("Libur ⚠️" in (r.get("keterangan") or "") for r in data_sesudah)
 
 
 # ---------------------------------------------------------------------------

@@ -1312,10 +1312,16 @@ _LEBAR_KOLOM_IZIN_CUTI = [30 * mm, 16 * mm, 20 * mm, 20 * mm, 84 * mm, 24 * mm]
 
 
 def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: str | None, dicetak_oleh: str,
-                             tenant_id: int | None = None) -> bytes:
-    """Halaman Izin & Cuti TIDAK punya filter tanggal/bulan/tahun sama
-    sekali (lihat pages/izin_cuti.js) -- Periode selalu "Semua Periode"."""
-    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis, tenant_id=tenant_id)
+                             tenant_id: int | None = None, tanggal_mulai: str | None = None,
+                             tanggal_selesai: str | None = None) -> bytes:
+    """Halaman Izin & Cuti (pages/izin_cuti.js) TIDAK punya filter tanggal/
+    bulan/tahun sama sekali -- Periode "Semua Periode" kalau `tanggal_mulai`/
+    `tanggal_selesai` tidak diisi. KEDUA parameter itu (rentang bebas)
+    KHUSUS dipakai FITUR Pembersihan Data Bulanan Otomatis untuk PDF arsip
+    SEBELUM baris lama dihapus (lihat data_purge_db.py)."""
+    data = izin_cuti_db.get_pengajuan_list(barber_id=barber_id, status=status, jenis=jenis,
+                                            tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
+                                            tenant_id=tenant_id)
     label_status = {"pending": "Pending", "disetujui": "Disetujui", "ditolak": "Ditolak"}
     header = ["Barber", "Jenis", "Mulai", "Selesai", "Alasan", "Status"]
     baris = [[
@@ -1330,7 +1336,8 @@ def buat_pdf_izin_cuti_list(barber_id: int | None, jenis: str | None, status: st
         f"<b>Total Pengajuan: {len(data)}</b> "
         f"(Disetujui: {jumlah_disetujui}, Pending: {jumlah_pending}, Ditolak: {jumlah_ditolak})",
     ]
-    return _bangun_pdf("Laporan Izin & Cuti", "Semua Periode", dicetak_oleh, header, baris,
+    periode = f"{tanggal_mulai} s/d {tanggal_selesai}" if tanggal_mulai and tanggal_selesai else "Semua Periode"
+    return _bangun_pdf("Laporan Izin & Cuti", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_IZIN_CUTI, ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
 
 
