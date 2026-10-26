@@ -1094,7 +1094,13 @@
 // pola cache tanpa-jeda yang sama. Hanya berlaku untuk pemuatan AWAL --
 // generate/tambah/edit/hapus/bayar/setujui/tolak/upload bukti/ganti
 // filter tetap fetch ulang seperti biasa.
-const ASSET_VERSION = "206";
+// v206 -> v207: PERMINTAAN Owner (lanjutan v205/v206) -- menu Keuangan
+// (Pemasukan, Pengeluaran, Uang Kas) sekarang ikut pola cache tanpa-jeda
+// yang sama. Riwayat Transaksi (Payment Gateway) & Settlement Faspay
+// SENGAJA TETAP fetch ulang setiap dibuka (status berubah lewat webhook
+// bank/gateway, bukan aksi akun ini -- lihat catatan di masing-masing
+// file).
+const ASSET_VERSION = "207";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

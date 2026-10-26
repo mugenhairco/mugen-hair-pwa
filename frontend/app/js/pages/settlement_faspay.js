@@ -3,6 +3,13 @@
 // HANYA transaksi Faspay SNAP Advance -- backend (routers/faspay_settlement.py)
 // SELALU men-scope tenant_id dari akun login, TIDAK PERNAH menerima
 // tenant_id dari parameter apa pun di sini.
+//
+// PERMINTAAN OWNER (menu tanpa jeda loading): sama seperti
+// riwayat_transaksi.js -- halaman ini SENGAJA TIDAK diikutkan ke pola
+// cache halamanKotor, karena status rekonsiliasi (RECONCILED/WARNING/
+// FINAL_MISMATCH) berubah lewat proses settlement/webhook Faspay, bukan
+// dari aksi akun yang sedang login ini. Fetch ulang setiap dibuka tetap
+// jalan seperti biasa.
 
 const PageSettlementFaspay = (() => {
   const STATUS_LABEL = { RECONCILED: "Reconciled", WARNING: "Warning", FINAL_MISMATCH: "Final Mismatch" };
