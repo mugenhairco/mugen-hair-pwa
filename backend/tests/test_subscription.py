@@ -436,7 +436,7 @@ def test_booking_list_dan_batalkan_tetap_bisa_diakses_saat_diblokir(app_client):
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     booking = booking_db.buat_booking(
         barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00", service_ids=[service_id],
-        customer_nama="Budi", customer_whatsapp="081234567890", metode_pembayaran="transfer",
+        customer_nama="Budi", customer_whatsapp="081234567890", metode_pembayaran="qris",
         tenant_id=tenant["id"],
     )
 
@@ -447,8 +447,11 @@ def test_booking_list_dan_batalkan_tetap_bisa_diakses_saat_diblokir(app_client):
     assert app_client.get("/api/booking", headers=headers).status_code == 200
     r_batal = app_client.post(f"/api/booking/{booking['id']}/batalkan", headers=headers)
     assert r_batal.status_code == 200, r_batal.text
-    # endpoint booking LAIN tetap 403 (bukan seluruh /api/booking yang dikecualikan).
-    assert app_client.get("/api/booking/payment-settings", headers=headers).status_code == 403
+    # endpoint booking LAIN tetap 403 (bukan seluruh /api/booking yang
+    # dikecualikan) -- payment-settings sudah dihapus dari router ini
+    # (dipindah ke Superadmin), closed-slot dipakai sebagai contoh lain
+    # yang SENGAJA TETAP 403 saat diblokir.
+    assert app_client.get("/api/booking/closed-slot", headers=headers).status_code == 403
 
 
 def test_tenants_status_nonaktif_tidak_terpengaruh_subscription_aktif(app_client):
@@ -502,7 +505,7 @@ def test_book_publik_buat_booking_diblokir_saat_suspended(app_client):
     r = app_client.post(f"/api/public/booking?tenant={tenant['slug']}", json={
         "barber_id": 1, "tanggal": "2026-01-01", "jam_mulai": "10:00",
         "service_ids": [1], "customer_nama": "Test", "customer_whatsapp": "0800",
-        "metode_pembayaran": "transfer",
+        "metode_pembayaran": "qris",
     })
     assert r.status_code == 403
 

@@ -97,17 +97,15 @@ def test_booking_hapus_tanpa_izin_403(single_tenant):
     assert r2.status_code == 200, r2.text
 
 
-def test_booking_payment_settings_tanpa_izin_403(single_tenant):
-    client, headers = single_tenant["client"], single_tenant["headers"]
-    tenant_id = single_tenant["tenant_id"]
-    role_id, headers_staff = _buat_role_dan_staff(client, headers, tenant_id)
-
-    r = client.put("/api/booking/payment-settings", json={"metode_aktif": ["transfer"]}, headers=headers_staff)
-    assert r.status_code == 403
-
-    _beri_izin(client, headers, role_id, "izin_booking_payment_settings")
-    r2 = client.put("/api/booking/payment-settings", json={"metode_aktif": ["transfer"]}, headers=headers_staff)
-    assert r2.status_code == 200, r2.text
+# test_booking_payment_settings_tanpa_izin_403 DIHAPUS -- endpoint
+# PUT /api/booking/payment-settings (Owner-side) sudah dihapus total dari
+# routers/booking.py (PERMINTAAN Owner: payment settings sekarang dikelola
+# PENUH oleh Superadmin per tenant, lihat routers/superadmin.py). Key izin
+# "izin_booking_payment_settings" DIBIARKAN apa adanya di permissions.py
+# (sekarang tidak menggerbang endpoint apa pun -- orphaned, bukan bug, lihat
+# user_roles_db.py::migrasi_role_staff_default() yang masih mewarisi key
+# ini untuk tenant lama) -- tidak dihapus di sini supaya tidak menyentuh
+# migrasi itu di luar cakupan perbaikan test ini.
 
 
 # ============================= Produk =============================

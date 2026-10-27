@@ -37,9 +37,9 @@ def _siapkan_barber_dan_service(tenant_id, nominal=100000, nama_prefix="NoTrx"):
     return barber_id, service_id
 
 
-def _buat_booking(tenant_id, metode_pembayaran="transfer", nominal=100000, hari_offset=1,
+def _buat_booking(tenant_id, metode_pembayaran="qris", nominal=100000, hari_offset=1,
                    jam_mulai="13:00", barber_id=None, service_id=None):
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     if barber_id is None or service_id is None:
         barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
@@ -145,7 +145,7 @@ def test_gateway_transaksi_reuse_nomor_booking(app_client, monkeypatch):
         sandbox_private_key="-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----",
         channel_aktif=["va", "qris"],
     )
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant["id"])
     barber_id, service_id = _siapkan_barber_dan_service(tenant["id"])
     monkeypatch.setattr(payment_provider_client, "buat_transaksi",
                          lambda *a, **kw: {"va_number": "70212345678901", "provider_transaction_id": "trx-x"})
@@ -177,9 +177,9 @@ def test_gateway_transaksi_tabrakan_nomor_dapat_sufiks_bukan_gagal(single_tenant
     tenant_id = single_tenant["tenant_id"]
     tenant = tenant_db.get_tenant(tenant_id)
     barber_id, service_id = _siapkan_barber_dan_service(tenant_id)
-    b1 = _buat_booking(tenant_id, metode_pembayaran="transfer", barber_id=barber_id, service_id=service_id, hari_offset=1)
+    b1 = _buat_booking(tenant_id, metode_pembayaran="qris", barber_id=barber_id, service_id=service_id, hari_offset=1)
     barber_id2, service_id2 = _siapkan_barber_dan_service(tenant_id)
-    b2 = _buat_booking(tenant_id, metode_pembayaran="transfer", barber_id=barber_id2, service_id=service_id2, hari_offset=2)
+    b2 = _buat_booking(tenant_id, metode_pembayaran="qris", barber_id=barber_id2, service_id=service_id2, hari_offset=2)
 
     nomor_sama = "1705071313XX"
     order_id_1 = booking_gateway_db.buat_order_id(tenant_id, b1["id"])

@@ -93,7 +93,7 @@ def _siapkan_barber_dan_service(tenant_id, nominal=100000):
     tenant, tidak diubah di sini) -- sertakan tenant_id + counter unik di
     nama supaya test yang memanggil helper ini berkali-kali (dua tenant,
     atau berkali-kali dalam satu tenant) tidak bentrok UNIQUE constraint."""
-    booking_db.update_payment_settings(metode_aktif=["transfer", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     n = next(_urutan_unik)
     barber_id = db.add_barber(f"Barber Gateway T{tenant_id}-{n}", tenant_id=tenant_id)
     service_id = db.add_service(f"Potong Rambut T{tenant_id}-{n}", nominal, tenant_id=tenant_id)
@@ -198,7 +198,7 @@ def test_checkout_gateway_gagal_membatalkan_booking_otomatis(app_client, monkeyp
     assert r.status_code == 502
 
     # Slot bebas lagi -- booking baru di jam/tanggal yang sama (metode lain) harus berhasil.
-    body2 = dict(body, metode_pembayaran="transfer")
+    body2 = dict(body, metode_pembayaran="qris")
     r2 = app_client.post("/api/public/booking", params={"tenant": "mugen-hair-co"}, json=body2)
     assert r2.status_code == 200, r2.text
 
