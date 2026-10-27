@@ -208,6 +208,11 @@ def public_pengaturan(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     audit lengkapnya -- kode "qris" DIHAPUS TOTAL dari katalog fitur."""
     if not feature_access.tenant_has_feature(tenant_id, "booking_online"):
         return {"booking_online": False}
+    # PERMINTAAN OWNER (lihat booking_db.py::batalkan_booking_gateway_kedaluwarsa()):
+    # titik pemicu kedua -- SIAPA PUN buka halaman booking publik toko ini
+    # ikut membersihkan booking Payment Gateway yang sudah lewat 15 menit &
+    # belum bayar. Lazy, tanpa cron.
+    booking_db.batalkan_booking_gateway_kedaluwarsa(tenant_id=tenant_id)
     # PERBAIKAN PERFORMA (permintaan Owner): get_booking_settings() dan
     # get_payment_settings() DI BAWAH sebelumnya masing-masing memanggil
     # db.get_all_settings(tenant_id) SENDIRI -- dua round-trip DB untuk
@@ -366,7 +371,7 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
         booking_db.batalkan_booking(booking["id"])
         raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
-    snap_payment_db.catat_hasil_create_transaction(
+    transaksi_setelah = snap_payment_db.catat_hasil_create_transaction(
         row["id"], provider_transaction_id=hasil.get("provider_transaction_id"),
         va_number=hasil.get("va_number"), qr_content=hasil.get("qr_content"), qr_url=hasil.get("qr_url"),
         expired_at=hasil.get("expired_at"), provider_response=hasil.get("provider_response"), status="PENDING",
@@ -385,6 +390,11 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
     booking["qr_url"] = hasil.get("qr_url")
     booking["qr_content"] = hasil.get("qr_content")
     booking["expired_at"] = hasil.get("expired_at")
+    # PERMINTAAN OWNER: countdown 15 menit TAMPILAN, dihitung dari waktu
+    # transaksi INI dibuat (created_at) -- lihat booking_db.py::
+    # _gateway_detik_tersisa() untuk alasan kenapa durasi (bukan timestamp
+    # mentah) yang dikirim ke frontend.
+    booking["gateway_detik_tersisa"] = booking_db._gateway_detik_tersisa(transaksi_setelah["created_at"])
     return booking
 
 
@@ -418,6 +428,13 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None or transaksi["tenant_id"] != tenant_id:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    # PERMINTAAN OWNER (lihat booking_db.py::batalkan_booking_gateway_kedaluwarsa()):
+    # titik pemicu ketiga -- endpoint ini SUDAH di-poll otomatis tiap 3
+    # detik SELAMA tab customer masih terbuka, jadi cukup ditempeli di sini
+    # (scoped SATU payment_reference ini saja) -- TIDAK perlu endpoint/aksi
+    # terpisah saat countdown di layar habis.
+    booking_db.batalkan_booking_gateway_kedaluwarsa(payment_reference=payment_reference)
+    transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     return {
         "status": transaksi["status"],
         "channel": transaksi["channel"],
@@ -434,6 +451,7 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
         "qr_url": transaksi["qr_url"],
         "qr_content": transaksi["qr_content"],
         "expired_at": transaksi["expired_at"],
+        "gateway_detik_tersisa": booking_db._gateway_detik_tersisa(transaksi["created_at"]),
     }
 
 
@@ -453,6 +471,19 @@ def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resol
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None or transaksi["tenant_id"] != tenant_id:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    # PERMINTAAN OWNER: kalau sudah lewat 15 menit, KITA tidak lagi
+    # menghormati transaksi ini -- dibatalkan di sini SEBELUM repot
+    # menghubungi Faspay sama sekali (hemat satu panggilan API eksternal).
+    if booking_db.batalkan_booking_gateway_kedaluwarsa(payment_reference=payment_reference):
+        transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
+        return {
+            "status": transaksi["status"], "channel": transaksi["channel"], "amount": transaksi["amount"],
+            "va_number": transaksi["va_number"], "channel_code": transaksi["channel_code"],
+            "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]),
+            "qr_url": transaksi["qr_url"], "qr_content": transaksi["qr_content"],
+            "expired_at": transaksi["expired_at"],
+            "gateway_detik_tersisa": 0,
+        }
     try:
         hasil = snap_webhook.rekonsiliasi_manual(transaksi["id"], tenant_id=tenant_id)
     except ValueError as e:
@@ -469,7 +500,79 @@ def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resol
         "qr_url": hasil["qr_url"],
         "qr_content": hasil["qr_content"],
         "expired_at": hasil["expired_at"],
+        "gateway_detik_tersisa": booking_db._gateway_detik_tersisa(hasil["created_at"]),
     }
+
+
+class CekStatusBody(BaseModel):
+    whatsapp: str
+
+
+@public_router.post("/cek-status")
+def public_cek_status(body: CekStatusBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    """FITUR "Sudah Booking?" (permintaan Owner): customer tidak sengaja
+    menutup tab saat pembayaran -- masukkan nomor WA yang dipakai saat
+    booking, dapat kembali status TERKINI booking TERBARU miliknya (bukan
+    riwayat lengkap). `fase` yang dikembalikan:
+      - "dibatalkan": tampilkan pesan dibatalkan, tawarkan booking ulang.
+      - "lewat": tanggal+jam appointment sudah lewat, tawarkan booking baru.
+      - "menunggu_gateway": tampilkan ulang QR/VA + countdown (SAMA seperti
+        baru booking) -- hanya kalau belum lewat GATEWAY_EXPIRE_MENIT
+        (lihat batalkan_booking_gateway_kedaluwarsa() yang dipanggil di
+        sini juga, titik pemicu ke-4 secara alami lewat fitur ini).
+      - "menunggu_manual": metode QRIS (foto manual) belum diverifikasi
+        Admin -- tampilkan ulang foto QRIS + instruksi.
+      - "selesai": sudah lunas/terverifikasi (metode apa pun, TERMASUK
+        cash yang memang SELALU langsung terverifikasi) -- tampilkan
+        Bukti Booking."""
+    booking = booking_db.cari_booking_terbaru_whatsapp(body.whatsapp, tenant_id)
+    if booking is None:
+        return {"ditemukan": False}
+
+    ringkas = {
+        "ditemukan": True, "nomor_transaksi": booking.get("nomor_transaksi"),
+        "nama_barber": booking["nama_barber"], "tanggal": booking["tanggal"], "jam_mulai": booking["jam_mulai"],
+        "daftar_service": booking["daftar_service"], "total_harga": booking["total_harga"],
+        "customer_nama": booking["customer_nama"],
+    }
+
+    if booking["status_booking"] == "dibatalkan":
+        return {**ringkas, "fase": "dibatalkan"}
+
+    hari_ini = booking_db._hari_ini_wib().isoformat()
+    sekarang_jam = booking_db._sekarang_wib().strftime("%H:%M")
+    lewat = booking["tanggal"] < hari_ini or (booking["tanggal"] == hari_ini and booking["jam_selesai"] < sekarang_jam)
+    if lewat:
+        return {**ringkas, "fase": "lewat"}
+
+    if booking["metode_pembayaran"] == "gateway" and booking["status_pembayaran"] != "terverifikasi":
+        booking_db.batalkan_booking_gateway_kedaluwarsa(
+            tenant_id=tenant_id, barber_id=booking["barber_id"], tanggal=booking["tanggal"])
+        booking = booking_db.get_booking(booking["id"])
+        if booking["status_booking"] == "dibatalkan":
+            return {**ringkas, "fase": "dibatalkan"}
+        transaksi = snap_payment_db.get_transaksi_terkini_untuk_booking(booking["id"])
+        if transaksi is not None and transaksi["status"] in (snap_payment_db.STATUS_CREATED, snap_payment_db.STATUS_PENDING):
+            return {
+                **ringkas, "fase": "menunggu_gateway",
+                "payment_reference": transaksi["payment_reference"], "channel": transaksi["channel"],
+                "channel_code": transaksi["channel_code"],
+                "va_bank_label": snap_advance_db.VA_CHANNEL_CODE_LABEL.get(transaksi["channel_code"]),
+                "va_number": transaksi["va_number"], "qr_url": transaksi["qr_url"],
+                "qr_content": transaksi["qr_content"],
+                "gateway_detik_tersisa": booking_db._gateway_detik_tersisa(transaksi["created_at"]),
+            }
+        # PAID -- jatuh ke "selesai" di bawah.
+
+    if booking["metode_pembayaran"] == "qris" and booking["status_pembayaran"] != "terverifikasi":
+        payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id)
+        return {
+            **ringkas, "fase": "menunggu_manual",
+            "qris_url": payment_settings["qris_url"], "qris_merchant_nama": payment_settings["qris_merchant_nama"],
+            "metode_instruksi": payment_settings["metode_instruksi"].get("qris"),
+        }
+
+    return {**ringkas, "fase": "selesai"}
 
 
 # =====================================================================
@@ -838,69 +941,10 @@ def ubah_booking_slug(body: BookingSlugBody, user: dict = Depends(require_permis
     return _booking_slug_hasil(user["tenant_id"])
 
 
-class PaymentSettingsBody(BaseModel):
-    metode_aktif: list[str] | None = None
-    qris_merchant_nama: str | None = None
-    bank_nama: str | None = None
-    bank_nomor_rekening: str | None = None
-    bank_nama_pemilik: str | None = None
-    metode_nama: dict[str, str] | None = None
-    metode_instruksi: dict[str, str] | None = None
-
-
-@router.get("/payment-settings")
-def ambil_payment_settings(user: dict = Depends(require_menu_read("booking"))):
-    return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
-
-
-@router.put("/payment-settings")
-def simpan_payment_settings(body: PaymentSettingsBody, user: dict = Depends(require_permission("izin_booking_payment_settings"))):
-    try:
-        booking_db.update_payment_settings(**body.model_dump(), tenant_id=user["tenant_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
-
-
-def _cek_izin_qris(user: dict):
-    """REVISI (diminta Owner, lihat catatan panjang di public_qris() di
-    atas): QRIS adalah metode pembayaran INTI yang harus tersedia untuk
-    SEMUA paket tanpa kecuali -- endpoint Owner-side ini (upload/hapus)
-    SENGAJA TIDAK memakai require_permission() biasa (yang SEKARANG, sejak
-    Work #2, JUGA menegakkan gerbang package-level lewat feature_access.
-    tenant_has_menu_access() -- akan menolak tenant TANPA baris subscription
-    sama sekali, bertentangan dengan keputusan "QRIS selalu tersedia").
-    Role tetap ditegakkan manual di sini (izin_booking_payment_settings,
-    key SAMA PERSIS dipakai Payment Settings tab -- role boleh kelola salah
-    satu berarti boleh kelola QRIS juga), HANYA gerbang package yang
-    sengaja dilewati."""
-    if user["role"] == "admin":
-        return
-    import permissions  # import lokal: hindari import siklik
-    if not permissions.has("izin_booking_payment_settings", tenant_id=user.get("tenant_id"),
-                            role_id=user.get("custom_role_id")):
-        raise HTTPException(status_code=403, detail="Admin tidak punya izin untuk aksi ini. Hubungi Owner.")
-
-
-@router.post("/qris")
-async def upload_qris(file: UploadFile = File(...), user: dict = Depends(require_owner_or_staff)):
-    _cek_izin_qris(user)
-    konten = await file.read()
-    try:
-        booking_db.simpan_qris(file.filename, konten, tenant_id=user["tenant_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except r2_storage.R2Error as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
-
-
-@router.delete("/qris")
-def hapus_qris_endpoint(user: dict = Depends(require_owner_or_staff)):
-    _cek_izin_qris(user)
-    booking_db.hapus_qris(tenant_id=user["tenant_id"])
-    return booking_db.get_payment_settings(tenant_id=user["tenant_id"])
-
+# PERMINTAAN OWNER: Payment Settings (metode aktif, label/instruksi, upload
+# foto QRIS) DIPINDAH TOTAL ke Super Admin -- lihat routers/superadmin.py.
+# Owner tenant TIDAK PUNYA LAGI endpoint apa pun ke sini (dulu
+# /payment-settings GET/PUT + /qris POST/DELETE ada di sini).
 
 # BUGFIX (routing shadow): endpoint generik `/{booking_id}` di bawah ini
 # SENGAJA ditaruh SETELAH semua path literal single-segment lain di router

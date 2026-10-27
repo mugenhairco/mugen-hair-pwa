@@ -1,7 +1,8 @@
 // pages/booking.js — Menu "Booking" internal (BUKAN halaman publik /book,
 // lihat book_public.js untuk itu). Owner/Admin: full access lewat tab
 // (Booking List, Calendar, Operating Hours, Barber Holiday, Closed Slot,
-// Payment Settings, Booking Settings). Barber: HANYA daftar booking
+// Booking Settings). Payment Settings DIHAPUS dari sini -- pindah penuh ke
+// Superadmin, lihat superadmin.js. Barber: HANYA daftar booking
 // miliknya sendiri (tanpa tab, backend /api/booking/mine sudah membatasi
 // lewat barber_id dari akun login -- bukan dari parameter apa pun yang
 // dikirim, jadi frontend TIDAK BISA membocorkan booking barber lain
@@ -15,16 +16,15 @@
 const PageBooking = (() => {
   const STATUS_BAYAR_LABEL = { menunggu_verifikasi: "Menunggu Verifikasi", terverifikasi: "Terverifikasi" };
   const STATUS_BOOKING_LABEL = { aktif: "Aktif", dibatalkan: "Dibatalkan" };
-  // METODE_LABEL: "cash" SENGAJA dipertahankan di sini walau metode ini
-  // sudah dihapus total dari sistem (lihat METODE_AKTIF_OPTIONS di bawah) --
-  // murni supaya booking LAMA yang metode_pembayaran-nya masih "cash"
-  // (data historis, tidak pernah diubah retroaktif) tetap tampil dengan
-  // label yang benar di kolom "Metode" Booking List (lihat pemakaian
-  // METODE_LABEL[v] di bawah), bukan string mentah "cash".
-  const METODE_LABEL = { cash: "Cash", transfer: "Transfer Bank", qris: "QRIS", gateway: "Payment Gateway" };
-  // Metode yang BENAR-BENAR bisa dipilih Owner (Payment Settings) & customer
-  // (halaman booking) sekarang -- Cash sudah dihapus total dari flow booking.
-  const METODE_AKTIF_OPTIONS = ["transfer", "qris", "gateway"];
+  // PERMINTAAN OWNER: "transfer" dihapus total dari sistem (Payment Settings
+  // SEKALIGUS pindah penuh ke Superadmin, lihat superadmin.js -- tab ini
+  // tidak ada lagi di Setting Owor). "cash" (Bayar di Toko) DITAMBAHKAN
+  // kembali sebagai metode nyata (bukan cuma label historis seperti
+  // sebelumnya) -- label "transfer" TETAP dipertahankan di bawah murni
+  // untuk booking LAMA yang metode_pembayaran-nya masih "transfer" (data
+  // historis, tidak diubah retroaktif) supaya tetap tampil benar di kolom
+  // "Metode" Booking List, bukan string mentah.
+  const METODE_LABEL = { cash: "Cash (Bayar di Toko)", transfer: "Transfer Bank", qris: "QRIS", gateway: "Payment Gateway" };
 
   // Vocabulary status Payment Gateway (7 state) -- HANYA dipakai untuk booking
   // dengan metode_pembayaran === "gateway". Status ini SELALU berasal dari
@@ -191,7 +191,6 @@ const PageBooking = (() => {
       "Operating Hours": "izin_booking_operating_hours",
       "Barber Holiday": "izin_booking_barber_holiday",
       "Closed Slot": "izin_booking_closed_slot",
-      "Payment Settings": "izin_booking_payment_settings",
       "Booking Settings": "izin_booking_settings",
       "Website Content": "izin_booking_website_content",
     };
@@ -223,7 +222,6 @@ const PageBooking = (() => {
       else if (activeTab === "Operating Hours") await renderOperatingHours(body);
       else if (activeTab === "Barber Holiday") await renderBarberHoliday(body, barbers);
       else if (activeTab === "Closed Slot") await renderClosedSlot(body, barbers);
-      else if (activeTab === "Payment Settings") await renderPaymentSettings(body);
       else if (activeTab === "Booking Settings") await renderBookingSettings(body);
       else if (activeTab === "Website Content") await renderWebsiteContent(body);
     }
@@ -1201,165 +1199,6 @@ const PageBooking = (() => {
     });
 
     loadList();
-  }
-
-  // ================= TAB: PAYMENT SETTINGS =================
-  async function renderPaymentSettings(body) {
-    const card = MugenUI.el("div", { class: "card" });
-    body.appendChild(card);
-    card.appendChild(MugenUI.el("h2", {}, "Metode Pembayaran"));
-    card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Hanya metode yang aktif yang ditampilkan ke customer di halaman booking. Semua booking pakai Full Payment (tidak ada DP)."));
-
-    let s;
-    try { s = await MugenApi.get("/api/booking/payment-settings"); } catch (e) { card.appendChild(MugenUI.el("div", {}, e.message)); return; }
-
-    const checkboxes = {};
-    for (const key of METODE_AKTIF_OPTIONS) {
-      const label = METODE_LABEL[key];
-      const cb = MugenUI.el("input", { type: "checkbox" });
-      cb.checked = s.metode_aktif.includes(key);
-      checkboxes[key] = cb;
-      card.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" }, [cb, label]));
-    }
-
-    const errorBox1 = MugenUI.el("div", { class: "login-error" });
-    const btnSimpanMetode = MugenUI.el("button", { class: "btn-primary" }, "Simpan Metode Aktif");
-    card.appendChild(errorBox1);
-    card.appendChild(MugenUI.el("div", { style: "margin:12px 0;" }, btnSimpanMetode));
-    btnSimpanMetode.addEventListener("click", async () => {
-      errorBox1.textContent = "";
-      const metode_aktif = Object.entries(checkboxes).filter(([, cb]) => cb.checked).map(([k]) => k);
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btnSimpanMetode, () => MugenApi.put("/api/booking/payment-settings", { metode_aktif }));
-        MugenUI.toast("Metode pembayaran disimpan.", "success");
-      } catch (e) { errorBox1.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- Label & Instruksi per Metode (tampil di halaman booking Step 6) ---
-    const labelCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(labelCard);
-    labelCard.appendChild(MugenUI.el("h2", {}, "Label & Instruksi Metode Pembayaran"));
-    labelCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Nama tombol & pesan yang dilihat customer per metode di halaman booking. Kosongkan untuk pakai default."));
-    const inNama = {}, inInstruksi = {};
-    for (const key of METODE_AKTIF_OPTIONS) {
-      const label = METODE_LABEL[key];
-      inNama[key] = MugenUI.el("input", { type: "text", value: (s.metode_nama && s.metode_nama[key]) || "" });
-      inInstruksi[key] = MugenUI.el("textarea", {}, (s.metode_instruksi && s.metode_instruksi[key]) || "");
-      labelCard.appendChild(MugenUI.el("label", {}, `Nama Tampilan — ${label}`));
-      labelCard.appendChild(inNama[key]);
-      labelCard.appendChild(MugenUI.el("label", {}, `Instruksi — ${label}`));
-      labelCard.appendChild(inInstruksi[key]);
-    }
-    const errorBoxLabel = MugenUI.el("div", { class: "login-error" });
-    const btnSimpanLabel = MugenUI.el("button", { class: "btn-primary" }, "Simpan Label & Instruksi");
-    labelCard.appendChild(errorBoxLabel);
-    labelCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanLabel));
-    btnSimpanLabel.addEventListener("click", async () => {
-      errorBoxLabel.textContent = "";
-      const metode_nama = {}, metode_instruksi = {};
-      for (const key of METODE_AKTIF_OPTIONS) {
-        if (inNama[key].value.trim()) metode_nama[key] = inNama[key].value.trim();
-        if (inInstruksi[key].value.trim()) metode_instruksi[key] = inInstruksi[key].value.trim();
-      }
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btnSimpanLabel,
-          () => MugenApi.put("/api/booking/payment-settings", { metode_nama, metode_instruksi }));
-        MugenUI.toast("Label & instruksi metode pembayaran disimpan.", "success");
-      } catch (e) { errorBoxLabel.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- Transfer Bank ---
-    const bankCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(bankCard);
-    bankCard.appendChild(MugenUI.el("h2", {}, "Info Transfer Bank"));
-    const inBankNama = MugenUI.el("input", { type: "text", value: s.bank_nama || "" });
-    const inBankRek = MugenUI.el("input", { type: "text", value: s.bank_nomor_rekening || "" });
-    const inBankAtasNama = MugenUI.el("input", { type: "text", value: s.bank_nama_pemilik || "" });
-    bankCard.appendChild(MugenUI.el("label", {}, "Nama Bank"));
-    bankCard.appendChild(inBankNama);
-    bankCard.appendChild(MugenUI.el("label", {}, "Nomor Rekening"));
-    bankCard.appendChild(inBankRek);
-    bankCard.appendChild(MugenUI.el("label", {}, "Atas Nama"));
-    bankCard.appendChild(inBankAtasNama);
-    const errorBox2 = MugenUI.el("div", { class: "login-error" });
-    const btnSimpanBank = MugenUI.el("button", { class: "btn-primary" }, "Simpan Info Bank");
-    bankCard.appendChild(errorBox2);
-    bankCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanBank));
-    btnSimpanBank.addEventListener("click", async () => {
-      errorBox2.textContent = "";
-      try {
-        // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btnSimpanBank, () => MugenApi.put("/api/booking/payment-settings", {
-          bank_nama: inBankNama.value, bank_nomor_rekening: inBankRek.value, bank_nama_pemilik: inBankAtasNama.value,
-        }));
-        MugenUI.toast("Info transfer bank disimpan.", "success");
-      } catch (e) { errorBox2.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-
-    // --- QRIS ---
-    const qrisCard = MugenUI.el("div", { class: "card" });
-    body.appendChild(qrisCard);
-    qrisCard.appendChild(MugenUI.el("h2", {}, "QRIS"));
-    qrisCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Upload gambar QRIS statis. Desain modular -- nanti mudah diganti ke QRIS Dynamic/API."));
-    const qrisPreview = MugenUI.el("img", { class: "book-qris-img", style: s.qris_url ? "" : "display:none;", alt: "QRIS" });
-    if (s.qris_url) qrisPreview.src = MUGEN_API_BASE + s.qris_url;
-    const inQrisFile = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp" });
-    const inMerchant = MugenUI.el("input", { type: "text", value: s.qris_merchant_nama || "", placeholder: "Nama Merchant" });
-    const btnUploadQris = MugenUI.el("button", {}, "Upload / Ganti QRIS");
-    const btnHapusQris = MugenUI.el("button", { class: "btn-danger" }, "Hapus QRIS");
-    const errorBox3 = MugenUI.el("div", { class: "login-error" });
-
-    qrisCard.appendChild(qrisPreview);
-    qrisCard.appendChild(MugenUI.el("label", {}, "Nama Merchant"));
-    qrisCard.appendChild(inMerchant);
-    qrisCard.appendChild(MugenUI.el("label", {}, "File QRIS (JPG/PNG/WEBP)"));
-    qrisCard.appendChild(inQrisFile);
-    qrisCard.appendChild(errorBox3);
-    qrisCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnUploadQris, btnHapusQris]));
-
-    // AUDIT (enforcement paket/subscription): kode fitur "qris" SUDAH
-    // DIHAPUS TOTAL dari katalog fitur (billing_db.py::hapus_gerbang_qris()
-    // -- QRIS sekarang metode INTI, bukan lagi opsional per paket, lihat
-    // catatan lengkap di sana) -- backend TIDAK PERNAH lagi menggerbang
-    // POST/DELETE /api/booking/qris dengan fitur apa pun. Gerbang
-    // MugenFeature.has("qris") di sini SEBELUMNYA ikut basi (kode "qris"
-    // tidak pernah bisa muncul lagi di features[] tenant manapun) --
-    // akibatnya SEMUA tenant, di paket manapun, permanen melihat form QRIS
-    // terkunci + kartu "Upgrade Paket" palsu. DIHAPUS TOTAL, bukan
-    // diperbaiki jadi kode lain -- tidak ada pengganti karena memang tidak
-    // ada gerbang paket untuk QRIS lagi.
-
-    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading()
-    // untuk kedua tombol QRIS (upload/ganti butuh progress upload file yang
-    // bisa memakan waktu, hapus adalah aksi tunggal cepat -- keduanya cukup
-    // spinner inline, tanpa overlay layar penuh).
-    btnUploadQris.addEventListener("click", async () => {
-      errorBox3.textContent = "";
-      try {
-        await MugenUI.withButtonLoading(btnUploadQris, async () => {
-          if (inMerchant.value !== (s.qris_merchant_nama || "")) {
-            await MugenApi.put("/api/booking/payment-settings", { qris_merchant_nama: inMerchant.value });
-          }
-          if (inQrisFile.files && inQrisFile.files[0]) {
-            const hasil = await MugenApi.uploadFile("/api/booking/qris", inQrisFile.files[0]);
-            qrisPreview.src = MUGEN_API_BASE + hasil.qris_url + "&t=" + Date.now();
-            qrisPreview.style.display = "";
-          }
-        });
-        MugenUI.toast("QRIS disimpan.", "success");
-      } catch (e) { errorBox3.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-    });
-    btnHapusQris.addEventListener("click", async () => {
-      if (!confirm("Hapus QRIS yang sedang aktif?")) return;
-      try {
-        await MugenUI.withButtonLoading(btnHapusQris, () => MugenApi.del("/api/booking/qris"));
-        qrisPreview.style.display = "none";
-        MugenUI.toast("QRIS dihapus.", "success");
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
   }
 
   // ================= TAB: BOOKING SETTINGS =================

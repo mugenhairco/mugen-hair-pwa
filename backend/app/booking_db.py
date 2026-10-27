@@ -156,9 +156,20 @@ BOOKING_SETTINGS_KEYS = [
 ]
 PAYMENT_SETTINGS_KEYS = [
     "booking_metode_aktif", "booking_qris_merchant_nama",
-    "booking_bank_nama", "booking_bank_nomor_rekening", "booking_bank_nama_pemilik",
 ]
-METODE_VALID = {"transfer", "qris", "gateway"}
+# PERMINTAAN OWNER: metode "transfer" dihapus total (termasuk field info
+# rekening bank_nama/bank_nomor_rekening/bank_nama_pemilik, lihat
+# get_payment_settings()/update_payment_settings() di bawah). Metode baru
+# "cash" (Bayar di Toko) ditambahkan -- TIDAK PERNAH butuh verifikasi
+# Admin sama sekali (lihat status_pembayaran_awal di buat_booking()).
+METODE_VALID = {"qris", "gateway", "cash"}
+# PERMINTAAN OWNER: batas waktu TAMPILAN (bukan pembatalan sungguhan di
+# sisi Faspay -- QR/VA TETAP berlaku penuh di sana, tidak ada endpoint
+# cancel/void yang tersedia) untuk Payment Gateway (QRIS/VA) -- setelah
+# ini, KITA sendiri berhenti menghormati transaksi itu: booking dibatalkan
+# & slot dibebaskan, QR disembunyikan total dari layar. Lihat
+# batalkan_booking_gateway_kedaluwarsa()/_gateway_detik_tersisa() di bawah.
+GATEWAY_EXPIRE_MENIT = 15
 
 # PENYEMPURNAAN FORM BOOKING: hari dalam seminggu (index Python-style,
 # senin=0 .. minggu=6, sama seperti datetime.weekday()) yang toko buka.
@@ -374,12 +385,12 @@ def update_booking_settings(jam_buka: str = None, jam_tutup: str = None,
 # ini SAMA PERSIS dengan teks yang sebelumnya hardcode di frontend, supaya
 # tampilan tidak berubah sampai Owner sengaja menggantinya).
 DEFAULT_METODE_NAMA = {
-    "transfer": "Transfer Bank", "qris": "QRIS", "gateway": "Payment Gateway",
+    "qris": "QRIS", "gateway": "Payment Gateway", "cash": "Cash (Bayar di Toko)",
 }
 DEFAULT_METODE_INSTRUKSI = {
-    "transfer": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi transfer Anda.",
     "qris": "Booking akan berstatus \"Menunggu Verifikasi\" sampai staff mengonfirmasi pembayaran Anda.",
     "gateway": "Selesaikan pembayaran lewat channel yang Anda pilih. Booking otomatis terkonfirmasi begitu pembayaran berhasil.",
+    "cash": "Booking Anda sudah terkonfirmasi. Silakan bayar langsung di toko saat kedatangan.",
 }
 
 
@@ -387,13 +398,25 @@ def get_payment_settings(tenant_id: int = None, semua_settings: dict = None) -> 
     """PERBAIKAN PERFORMA (lihat catatan lengkap di get_booking_settings()
     di atas): SATU db.get_all_settings() menggantikan 7 panggilan
     db.get_setting() terpisah yang sebelumnya ada di sini. `semua_settings`
-    opsional -- lihat catatan parameter yang sama di get_booking_settings()."""
+    opsional -- lihat catatan parameter yang sama di get_booking_settings().
+
+    PERMINTAAN OWNER: seluruh pengaturan metode pembayaran (termasuk foto
+    QRIS) SEKARANG dikelola PENUH oleh Super Admin per tenant (lihat
+    routers/superadmin.py) -- fungsi ini TETAP dipakai APA ADANYA (dibaca
+    publik & oleh Super Admin), hanya update_payment_settings() di bawah
+    yang pemanggilnya berubah (dulu Owner lewat routers/booking.py,
+    sekarang Super Admin lewat routers/superadmin.py)."""
     semua = semua_settings if semua_settings is not None else db.get_all_settings(tenant_id=tenant_id)
     s = {k: semua.get(k) for k in PAYMENT_SETTINGS_KEYS}
     try:
         metode_aktif = json.loads(s["booking_metode_aktif"] or "[]")
     except (TypeError, ValueError):
         metode_aktif = []
+    # PERMINTAAN OWNER: "transfer" dihapus total dari METODE_VALID -- tenant
+    # LAMA yang masih menyimpan "transfer" di dalam daftar ini (dari
+    # sebelum perubahan ini) disaring di sini supaya tidak pernah muncul
+    # lagi ke customer, TANPA perlu migrasi data apa pun.
+    metode_aktif = [m for m in metode_aktif if m in METODE_VALID]
     try:
         metode_nama_custom = json.loads(semua.get("booking_metode_nama") or _DEFAULT_METODE_NAMA)
     except (TypeError, ValueError):
@@ -417,16 +440,16 @@ def get_payment_settings(tenant_id: int = None, semua_settings: dict = None) -> 
         "metode_instruksi": {**DEFAULT_METODE_INSTRUKSI, **metode_instruksi_custom},
         "qris_merchant_nama": s["booking_qris_merchant_nama"],
         "qris_url": qris_url,
-        "bank_nama": s["booking_bank_nama"],
-        "bank_nomor_rekening": s["booking_bank_nomor_rekening"],
-        "bank_nama_pemilik": s["booking_bank_nama_pemilik"],
     }
 
 
 def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str = None,
-                             bank_nama: str = None, bank_nomor_rekening: str = None,
-                             bank_nama_pemilik: str = None, metode_nama: dict = None,
+                             metode_nama: dict = None,
                              metode_instruksi: dict = None, tenant_id: int = None):
+    """PERMINTAAN OWNER: SEKARANG dipanggil HANYA dari routers/superadmin.py
+    (Super Admin mengatur per tenant) -- `tenant_id` WAJIB diisi eksplisit
+    oleh pemanggil (BUKAN lagi diambil dari user["tenant_id"] milik Owner
+    tenant itu sendiri, Owner sudah tidak punya endpoint apa pun ke sini)."""
     data = {}
     if metode_aktif is not None:
         tidak_valid = [m for m in metode_aktif if m not in METODE_VALID]
@@ -435,12 +458,6 @@ def update_payment_settings(metode_aktif: list = None, qris_merchant_nama: str =
         data["booking_metode_aktif"] = json.dumps(metode_aktif)
     if qris_merchant_nama is not None:
         data["booking_qris_merchant_nama"] = qris_merchant_nama.strip()
-    if bank_nama is not None:
-        data["booking_bank_nama"] = bank_nama.strip()
-    if bank_nomor_rekening is not None:
-        data["booking_bank_nomor_rekening"] = bank_nomor_rekening.strip()
-    if bank_nama_pemilik is not None:
-        data["booking_bank_nama_pemilik"] = bank_nama_pemilik.strip()
     if metode_nama is not None:
         tidak_valid = [m for m in metode_nama if m not in METODE_VALID]
         if tidak_valid:
@@ -813,6 +830,12 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None, tenant_i
     if barber is None or (tenant_id is not None and barber.get("tenant_id") != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
 
+    # PERMINTAAN OWNER (lihat batalkan_booking_gateway_kedaluwarsa()): titik
+    # pemicu pertama -- SIAPA PUN cek jadwal kosong barber/tanggal ini ikut
+    # membersihkan booking Payment Gateway yang sudah lewat 15 menit & belum
+    # bayar, SEBELUM slot dihitung terisi. Lazy, tanpa cron.
+    batalkan_booking_gateway_kedaluwarsa(tenant_id=tenant_id, barber_id=barber_id, tanggal=tanggal)
+
     pengaturan = get_booking_settings(tenant_id=tenant_id)
     interval = pengaturan["interval_menit"]
     jam_buka_menit = _ke_menit(pengaturan["jam_buka"])
@@ -1138,7 +1161,13 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # klaim customer/frontend -- lihat routers/booking.py::public_buat_booking()
     # untuk alur checkout gateway (buat transaksi provider SETELAH baris
     # ini dibuat).
-    status_pembayaran_awal = "menunggu_verifikasi"
+    # PERMINTAAN OWNER: metode "cash" (Bayar di Toko) TIDAK PERNAH butuh
+    # verifikasi Admin -- tidak ada apa pun untuk diverifikasi (pembayaran
+    # dilakukan fisik di toko, dicatat lewat Transaksi biasa saat itu,
+    # terpisah total dari status booking ini). Langsung 'terverifikasi'
+    # begitu booking dibuat, SATU-SATUNYA pengecualian dari aturan "SEMUA
+    # metode mulai menunggu_verifikasi" di atas.
+    status_pembayaran_awal = "terverifikasi" if metode_pembayaran == "cash" else "menunggu_verifikasi"
 
     # BUGFIX (audit, race condition): validasi ketersediaan slot + INSERT
     # booking dikunci BERSAMA per (barber_id, tanggal) -- lihat catatan
@@ -1368,6 +1397,106 @@ def batalkan_booking(booking_id: int):
         conn.execute("UPDATE bookings SET status_booking = 'dibatalkan' WHERE id = ?", (booking_id,))
     if not sudah_dibatalkan:
         _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "pembatalan")
+
+
+def _gateway_detik_tersisa(transaksi_created_at: str) -> int:
+    """PERMINTAAN OWNER: countdown 15 menit TAMPILAN (bukan expired_at asli
+    Faspay, yang bisa berjam-jam/sampai akhir hari -- lihat GATEWAY_EXPIRE_MENIT
+    di atas) dihitung dari SAAT TRANSAKSI DIBUAT (created_at), BUKAN dari
+    saat halaman dibuka/di-refresh/dibuka ulang lewat "Sudah Booking?" --
+    supaya tidak pernah reset. Dikembalikan sebagai DURASI (detik), bukan
+    timestamp mentah -- frontend tinggal `Date.now() + detik*1000` SEKALI,
+    menghindari masalah parsing timezone string lintas client/server (lihat
+    audit WIB sebelumnya di proyek ini)."""
+    dibuat = datetime.fromisoformat(transaksi_created_at)
+    berlalu_detik = (datetime.now() - dibuat).total_seconds()
+    return max(0, int(GATEWAY_EXPIRE_MENIT * 60 - berlalu_detik))
+
+
+def batalkan_booking_gateway_kedaluwarsa(tenant_id: int = None, barber_id: int = None,
+                                          tanggal: str = None, payment_reference: str = None) -> int:
+    """PERMINTAAN OWNER: QR/VA Payment Gateway TETAP berlaku penuh di sisi
+    Faspay (tidak ada endpoint cancel/void yang tersedia) -- TAPI setelah
+    GATEWAY_EXPIRE_MENIT, KITA SENDIRI berhenti menghormatinya: booking
+    dibatalkan (slot dibebaskan) lewat cascade SAMA PERSIS seperti webhook
+    EXPIRED resmi (snap_webhook.terapkan_status_transaksi()), TIDAK ada
+    jalur kedua yang berperilaku beda. Kalau customer tetap nekat membayar
+    pakai QR/VA lama itu SETELAH dibatalkan di sini, notifikasi PAID dari
+    Faspay akan tetap masuk tapi diabaikan guard status final (booking
+    SUDAH 'dibatalkan') -- butuh penanganan manual Admin, diterima sebagai
+    konsekuensi (keputusan Owner).
+
+    SENGAJA TANPA cron/proses latar belakang apa pun (permintaan eksplisit
+    Owner) -- dipanggil lazy dari TIGA titik nyata SAJA:
+      1. hitung_slot() -- scoped barber_id+tanggal, setiap kali SIAPA PUN
+         cek jadwal kosong barber itu (termasuk Admin/customer lain).
+      2. routers/booking.py::public_pengaturan() -- scoped tenant_id,
+         setiap kunjungan ke halaman booking publik toko itu (apa pun
+         yang dilakukan pengunjungnya setelah itu).
+      3. Endpoint publik khusus saat countdown di layar customer SENDIRI
+         habis -- scoped SATU payment_reference saja (paling presisi)."""
+    import snap_webhook  # import lokal: hindari import siklik (snap_webhook -> booking_db)
+    batas = (datetime.now() - timedelta(minutes=GATEWAY_EXPIRE_MENIT)).isoformat(timespec="seconds")
+    q = ("SELECT s.id AS snap_id FROM snap_payment_transactions s "
+         "JOIN bookings b ON b.id = s.booking_id "
+         "WHERE s.transaction_type = ? AND s.status IN (?, ?) AND s.created_at < ? "
+         "AND b.status_booking = 'aktif'")
+    params = [snap_payment_db.TRANSACTION_TYPE_BOOKING, snap_payment_db.STATUS_CREATED,
+              snap_payment_db.STATUS_PENDING, batas]
+    if tenant_id is not None:
+        q += " AND s.tenant_id = ?"; params.append(tenant_id)
+    if barber_id is not None:
+        q += " AND b.barber_id = ?"; params.append(barber_id)
+    if tanggal is not None:
+        q += " AND b.tanggal = ?"; params.append(tanggal)
+    if payment_reference is not None:
+        q += " AND s.payment_reference = ?"; params.append(payment_reference)
+    with get_conn() as conn:
+        snap_ids = [r["snap_id"] for r in conn.execute(q, params).fetchall()]
+    jumlah = 0
+    for snap_id in snap_ids:
+        transaksi = snap_payment_db.get_transaksi(snap_id)
+        if transaksi is not None:
+            snap_webhook.terapkan_status_transaksi(
+                transaksi, snap_payment_db.STATUS_EXPIRED, sumber="auto_15menit_lazy")
+            jumlah += 1
+    return jumlah
+
+
+def cari_booking_terbaru_whatsapp(nomor_whatsapp: str, tenant_id: int) -> dict | None:
+    """FITUR "Sudah Booking?" (permintaan Owner, customer tidak sengaja
+    menutup tab saat pembayaran) -- cari booking PALING BARU (created_at
+    DESC) milik nomor WA ini di tenant ini, nomor dinormalisasi dulu
+    (08xx/+62xx/62xx dianggap SAMA, format penyimpanan customer_whatsapp
+    bisa beda-beda tergantung cara ketik customer) supaya tetap ketemu.
+    HANYA booking TERBARU -- bukan riwayat lengkap (di luar cakupan fitur
+    ini, lihat pembahasan Owner)."""
+    target = _normalisasi_whatsapp(nomor_whatsapp)
+    if not target:
+        return None
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, customer_whatsapp FROM bookings WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 300",
+            (tenant_id,),
+        ).fetchall()
+    for r in rows:
+        if _normalisasi_whatsapp(r["customer_whatsapp"]) == target:
+            return get_booking(r["id"])
+    return None
+
+
+def _normalisasi_whatsapp(nomor: str) -> str:
+    """08xx/+62xx/62xx -> "62xxxxxxxxxx" SAJA (dipakai PERBANDINGAN lookup
+    "Sudah Booking?" di atas, BUKAN dikirim ke provider manapun -- beda
+    konteks dari snap_advance_client.py::_format_msisdn_62(), sengaja tidak
+    diimpor dari sana untuk hindari ketergantungan silang modul booking <->
+    payment gateway yang tidak perlu)."""
+    digit = re.sub(r"\D", "", nomor or "")
+    if digit.startswith("0"):
+        digit = "62" + digit[1:]
+    elif not digit.startswith("62"):
+        digit = "62" + digit
+    return digit
 
 
 def verifikasi_pembayaran(booking_id: int, oleh: str = None):
