@@ -1167,7 +1167,25 @@
 // QR/link apa pun sama sekali, booking QRIS tidak bisa diselesaikan.
 // Sekarang fallback ke tombol/link "Buka Halaman QRIS" (window.open ke
 // qr_content) kalau qr_url kosong, di keempat tempat itu.
-const ASSET_VERSION = "214";
+// v214 -> v215: PERMINTAAN Owner -- payment settings (metode aktif, label/
+// instruksi, upload foto QRIS) dipindah TOTAL dari Setting > Booking Owner
+// ke Superadmin per tenant (lihat routers/superadmin.py, tab baru di
+// renderSubscriptionManager() superadmin.js) -- tab "Payment Settings" di
+// booking.js DIHAPUS. Metode "Transfer Bank" dihapus total dari booking
+// publik, metode baru "Cash (Bayar di Toko)" ditambahkan (TIDAK butuh
+// verifikasi Admin, langsung "terverifikasi" saat booking dibuat). Countdown
+// 15 menit Payment Gateway SEKARANG akurat (dihitung dari created_at
+// transaksi di server, bukan Date.now() saat render -- lihat
+// booking_db.py::_gateway_detik_tersisa()), TIDAK reset lagi kalau customer
+// kembali lewat fitur baru "Sudah Booking?" (link di landing page, cari
+// booking TERBARU lewat nomor WA -- POST /api/public/booking/cek-status).
+// Booking Payment Gateway yang telat bayar >15 menit SEKARANG benar-benar
+// dibatalkan & slotnya dibuka lagi, TANPA cron/proses latar belakang --
+// dipicu lazy oleh kunjungan nyata ke halaman booking publik/cek slot (lihat
+// booking_db.py::batalkan_booking_gateway_kedaluwarsa()). QRIS fallback
+// (qr_content) sekarang auto-terbuka di tab baru di klik Confirm yang sama
+// (tombol manual tetap ada sebagai fallback kalau popup diblokir browser).
+const ASSET_VERSION = "215";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -12,11 +12,13 @@ TIDAK ADA endpoint di sini yang membaca/mengubah data BISNIS tenant mana pun
 masing toko lewat router lain, sesuai batas tanggung jawab Super Admin yang
 sudah disepakati (identitas & lifecycle tenant, bukan operasional harian)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 import auth_db
+import booking_db
 import data_purge_db
+import r2_storage
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -225,3 +227,72 @@ def jalankan_pembersihan_data_manual(tenant_id: int = None, user: dict = Depends
         detail=f"cutoff={hasil.get('cutoff')!r} tenant_diperiksa={hasil.get('tenant_diperiksa')}",
     )
     return hasil
+
+
+# =====================================================================
+# PAYMENT SETTINGS per tenant (PERMINTAAN OWNER)
+# =====================================================================
+# PENGECUALIAN SENGAJA terhadap batas "endpoint di modul ini tidak
+# menyentuh data bisnis tenant" (lihat docstring modul) -- Owner tenant
+# TIDAK LAGI punya endpoint apa pun untuk ini (dulu Setting > Booking >
+# Payment Settings, SEKARANG dihapus total dari sana, lihat booking.js).
+# Metode mana yang aktif (QRIS/Payment Gateway/Cash) + konten QRIS (foto +
+# nama merchant) toko tertentu SEKARANG murni keputusan Super Admin per
+# tenant -- tenant kirim foto QRIS mereka ke Super Admin di luar sistem
+# (WA/email), Super Admin yang upload-kan di sini.
+
+
+def _pastikan_tenant_ada(tenant_id: int):
+    if tenant_db.get_tenant(tenant_id) is None:
+        raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
+
+
+@router.get("/tenants/{tenant_id}/payment-settings")
+def ambil_payment_settings_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
+    _pastikan_tenant_ada(tenant_id)
+    return booking_db.get_payment_settings(tenant_id=tenant_id)
+
+
+class PaymentSettingsTenantBody(BaseModel):
+    metode_aktif: list[str] | None = None
+    qris_merchant_nama: str | None = None
+    metode_nama: dict[str, str] | None = None
+    metode_instruksi: dict[str, str] | None = None
+
+
+@router.put("/tenants/{tenant_id}/payment-settings")
+def simpan_payment_settings_tenant(tenant_id: int, body: PaymentSettingsTenantBody,
+                                    user: dict = Depends(require_superadmin)):
+    _pastikan_tenant_ada(tenant_id)
+    try:
+        booking_db.update_payment_settings(**body.model_dump(), tenant_id=tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    superadmin_audit_db.catat(
+        user["username"], "ubah_payment_settings", tenant_id=tenant_id,
+        detail=f"metode_aktif={body.metode_aktif!r}" if body.metode_aktif is not None else None,
+    )
+    return booking_db.get_payment_settings(tenant_id=tenant_id)
+
+
+@router.post("/tenants/{tenant_id}/qris-foto")
+async def upload_qris_foto_tenant(tenant_id: int, file: UploadFile = File(...),
+                                   user: dict = Depends(require_superadmin)):
+    _pastikan_tenant_ada(tenant_id)
+    konten = await file.read()
+    try:
+        booking_db.simpan_qris(file.filename, konten, tenant_id=tenant_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except r2_storage.R2Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    superadmin_audit_db.catat(user["username"], "upload_qris_foto", tenant_id=tenant_id)
+    return booking_db.get_payment_settings(tenant_id=tenant_id)
+
+
+@router.delete("/tenants/{tenant_id}/qris-foto")
+def hapus_qris_foto_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
+    _pastikan_tenant_ada(tenant_id)
+    booking_db.hapus_qris(tenant_id=tenant_id)
+    superadmin_audit_db.catat(user["username"], "hapus_qris_foto", tenant_id=tenant_id)
+    return booking_db.get_payment_settings(tenant_id=tenant_id)

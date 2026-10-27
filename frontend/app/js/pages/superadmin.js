@@ -814,6 +814,116 @@ const PageSuperadmin = (() => {
       });
 
       await loadPayments();
+
+      // --- Payment Settings (PENGECUALIAN SENGAJA -- lihat komentar
+      // "PENGECUALIAN SENGAJA" di routers/superadmin.py: SATU-SATUNYA
+      // endpoint di modul Super Admin yang membaca/mengubah data bisnis
+      // tenant, karena PERMINTAAN OWNER seluruh konfigurasi metode
+      // pembayaran (termasuk upload foto QRIS) sekarang dikelola PENUH
+      // oleh Super Admin per tenant, bukan lagi Owner sendiri.) ---
+      subsManagerBody.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Payment Settings"));
+      const paymentSettingsBody = MugenUI.el("div");
+      subsManagerBody.appendChild(paymentSettingsBody);
+
+      const METODE_LABEL_PS = { qris: "QRIS (Foto Manual)", gateway: "Payment Gateway", cash: "Cash (Bayar di Toko)" };
+
+      async function loadPaymentSettings() {
+        paymentSettingsBody.innerHTML = "";
+        paymentSettingsBody.appendChild(MugenUI.skeleton("card", { lines: 3 }));
+        let ps;
+        try {
+          ps = await MugenApi.get(`/api/superadmin/tenants/${tenant.id}/payment-settings`);
+        } catch (e) {
+          paymentSettingsBody.innerHTML = "";
+          paymentSettingsBody.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+          return;
+        }
+        paymentSettingsBody.innerHTML = "";
+
+        const checkboxes = {};
+        const metodeBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" });
+        for (const m of Object.keys(METODE_LABEL_PS)) {
+          const cb = MugenUI.el("input", { type: "checkbox" });
+          cb.checked = ps.metode_aktif.includes(m);
+          checkboxes[m] = cb;
+          metodeBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;" }, [cb, METODE_LABEL_PS[m]]));
+        }
+        paymentSettingsBody.appendChild(MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Aktif"), metodeBox]));
+
+        const inputMerchantNama = MugenUI.el("input", { type: "text", value: ps.qris_merchant_nama || "", placeholder: "Nama merchant di QRIS" });
+        paymentSettingsBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, [
+          MugenUI.el("label", {}, "Nama Merchant QRIS"), inputMerchantNama,
+        ]));
+
+        const labelInputs = {}, instruksiInputs = {};
+        for (const m of Object.keys(METODE_LABEL_PS)) {
+          const inpLabel = MugenUI.el("input", { type: "text", value: ps.metode_nama[m] || "" });
+          const inpInstruksi = MugenUI.el("textarea", { rows: "2" }, ps.metode_instruksi[m] || "");
+          labelInputs[m] = inpLabel; instruksiInputs[m] = inpInstruksi;
+          paymentSettingsBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, [
+            MugenUI.el("label", {}, `Label "${METODE_LABEL_PS[m]}"`), inpLabel,
+            MugenUI.el("label", { style: "margin-top:6px;" }, "Instruksi"), inpInstruksi,
+          ]));
+        }
+
+        const errSimpanPs = MugenUI.el("div", { class: "login-error" });
+        paymentSettingsBody.appendChild(errSimpanPs);
+        const btnSimpanPs = MugenUI.el("button", { type: "button", class: "btn-primary", style: "margin-top:12px;" }, "Simpan Payment Settings");
+        paymentSettingsBody.appendChild(btnSimpanPs);
+        btnSimpanPs.addEventListener("click", async () => {
+          errSimpanPs.textContent = "";
+          try {
+            await MugenUI.withButtonLoading(btnSimpanPs, () => MugenApi.put(`/api/superadmin/tenants/${tenant.id}/payment-settings`, {
+              metode_aktif: Object.keys(checkboxes).filter((m) => checkboxes[m].checked),
+              qris_merchant_nama: inputMerchantNama.value.trim(),
+              metode_nama: Object.fromEntries(Object.keys(labelInputs).map((m) => [m, labelInputs[m].value])),
+              metode_instruksi: Object.fromEntries(Object.keys(instruksiInputs).map((m) => [m, instruksiInputs[m].value])),
+            }));
+            MugenUI.toast("Payment Settings disimpan.", "success", { force: true });
+            loadAuditLog(); loadPaymentSettings();
+          } catch (e) { errSimpanPs.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+        });
+
+        // --- Foto QRIS (slot tunggal per tenant, pola sama seperti logo) ---
+        paymentSettingsBody.appendChild(MugenUI.el("div", { style: "margin-top:20px;padding-top:12px;border-top:1px solid var(--border);" }, [
+          MugenUI.el("label", {}, "Foto QRIS"),
+        ]));
+        if (ps.qris_url) {
+          paymentSettingsBody.appendChild(MugenUI.el("img", {
+            src: MUGEN_API_BASE + ps.qris_url, style: "max-width:220px;display:block;margin-top:8px;border-radius:8px;",
+          }));
+          const btnHapusQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Hapus Foto QRIS");
+          paymentSettingsBody.appendChild(btnHapusQris);
+          btnHapusQris.addEventListener("click", async () => {
+            if (!confirm("Hapus foto QRIS tenant ini?")) return;
+            try {
+              await MugenUI.withButtonLoading(btnHapusQris, () => MugenApi.del(`/api/superadmin/tenants/${tenant.id}/qris-foto`));
+              MugenUI.toast("Foto QRIS dihapus.", "success");
+              loadAuditLog(); loadPaymentSettings();
+            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+          });
+        } else {
+          paymentSettingsBody.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada foto QRIS untuk tenant ini."));
+        }
+        const inputFileQris = MugenUI.el("input", { type: "file", accept: "image/png,image/jpeg,image/webp", style: "margin-top:10px;display:block;" });
+        const btnUploadQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Upload Foto QRIS");
+        const errQris = MugenUI.el("div", { class: "login-error" });
+        paymentSettingsBody.appendChild(inputFileQris);
+        paymentSettingsBody.appendChild(btnUploadQris);
+        paymentSettingsBody.appendChild(errQris);
+        btnUploadQris.addEventListener("click", async () => {
+          errQris.textContent = "";
+          if (!inputFileQris.files[0]) { errQris.textContent = "Pilih file foto QRIS terlebih dahulu."; return; }
+          try {
+            await MugenUI.withButtonLoading(btnUploadQris,
+              () => MugenApi.uploadFile(`/api/superadmin/tenants/${tenant.id}/qris-foto`, inputFileQris.files[0]));
+            MugenUI.toast("Foto QRIS diunggah.", "success", { force: true });
+            loadAuditLog(); loadPaymentSettings();
+          } catch (e) { errQris.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+        });
+      }
+
+      await loadPaymentSettings();
     }
 
     // Perbaikan Billing/Subscription (requirement Owner poin 3-6, 15): modal

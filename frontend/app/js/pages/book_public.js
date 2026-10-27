@@ -579,6 +579,16 @@ const PageBookPublic = (() => {
     btnCta.addEventListener("click", bukaWizard);
     tambahkanEfekRipple(btnCta);
     bookCta.appendChild(btnCta);
+    // FITUR resiliensi "Sudah Booking?": link kecil di bawah tombol utama --
+    // customer yang tidak sengaja menutup tab saat proses bayar bisa kembali
+    // lewat sini (lihat renderSudahBooking() di atas).
+    const linkSudahBooking = MugenUI.el("a", { href: "#", class: "book-sudah-booking-link" }, "Sudah booking? Cek status di sini");
+    linkSudahBooking.addEventListener("click", (e) => {
+      e.preventDefault();
+      root.innerHTML = "";
+      renderSudahBooking(root);
+    });
+    bookCta.appendChild(linkSudahBooking);
     page.appendChild(bookCta);
 
     // ---- Connect With Us -- section kecil (heading lebih kecil, layout
@@ -612,6 +622,268 @@ const PageBookPublic = (() => {
     // TERAKHIR, setelah SEMUA section (yang datanya ada) sudah ter-append,
     // supaya observer melihat posisi akhir elemen yang sebenarnya.
     bookRevealObserve(page.querySelectorAll(".book-reveal"));
+  }
+
+  // ================= "SUDAH BOOKING?" (cek status via nomor WA) =================
+  // FITUR resiliensi: customer yang tidak sengaja menutup tab saat proses
+  // bayar bisa kembali lewat sini, masukkan nomor WA yang sama dipakai saat
+  // booking -- SATU-SATUNYA key pencarian (konsisten dengan model trust yang
+  // sudah ada: nomor WA SUDAH jadi identitas de facto booking selama ini).
+  // Server (POST /api/public/booking/cek-status, routers/booking.py) HANYA
+  // mencari booking TERBARU milik nomor itu (bukan riwayat penuh), dan
+  // mengembalikan field berbeda tergantung fase (lihat ringkasan di bawah).
+  async function renderSudahBooking(root) {
+    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    document.body.classList.add("book-public-active");
+    const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
+    root.appendChild(page);
+    let body = MugenUI.el("div", { class: "book-body" });
+    page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
+
+    function kembaliKeBeranda() {
+      root.innerHTML = "";
+      render(root);
+    }
+
+    function salinTeksLokal(teks, btn) {
+      try {
+        navigator.clipboard.writeText(teks);
+        MugenUI.toast("Disalin.", "success");
+      } catch (e) {
+        MugenUI.toast("Gagal menyalin -- salin manual.", "error");
+      }
+    }
+
+    function tombolKembali(tawarkanBookingBaru) {
+      const actions = MugenUI.el("div", { class: "book-selesai-actions" });
+      if (tawarkanBookingBaru) {
+        const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Booking Baru");
+        tambahkanEfekRipple(btnBaru);
+        btnBaru.addEventListener("click", kembaliKeBeranda);
+        actions.appendChild(btnBaru);
+      }
+      const btnBeranda = MugenUI.el("button", { type: "button" }, "Back to Home");
+      tambahkanEfekRipple(btnBeranda);
+      btnBeranda.addEventListener("click", kembaliKeBeranda);
+      actions.appendChild(btnBeranda);
+      body.appendChild(actions);
+    }
+
+    function renderForm() {
+      body.innerHTML = "";
+      body.appendChild(MugenUI.el("h2", {}, "Cek Status Booking"));
+      body.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Masukkan nomor WhatsApp yang Anda gunakan saat booking."));
+      const inputWa = MugenUI.el("input", { type: "tel", placeholder: "+62 8xx-xxxx-xxxx" });
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      body.appendChild(MugenUI.el("label", {}, "WhatsApp Number"));
+      body.appendChild(inputWa);
+      body.appendChild(errorBox);
+      const btnCek = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Cek Status");
+      tambahkanEfekRipple(btnCek);
+      btnCek.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        if (!inputWa.value.trim()) { errorBox.textContent = "Nomor WhatsApp wajib diisi."; return; }
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnCek,
+            () => MugenApi.post("/api/public/booking/cek-status", { whatsapp: inputWa.value.trim() }));
+          renderHasil(hasil);
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      body.appendChild(btnCek);
+      const btnBatal = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:8px;" }, "< Back to Home");
+      btnBatal.addEventListener("click", kembaliKeBeranda);
+      body.appendChild(btnBatal);
+    }
+
+    function renderHasil(hasil) {
+      body.innerHTML = "";
+      if (!hasil.ditemukan) {
+        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+          MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "?"),
+          MugenUI.el("h2", {}, "Booking Tidak Ditemukan"),
+          MugenUI.el("div", { class: "subtitle" }, "Tidak ada booking dengan nomor WhatsApp tersebut."),
+        ]));
+        tombolKembali();
+        return;
+      }
+      if (hasil.fase === "dibatalkan") {
+        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+          MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "✕"),
+          MugenUI.el("h2", {}, "Booking Dibatalkan"),
+          MugenUI.el("div", { class: "subtitle" }, "Booking ini sudah dibatalkan. Silakan booking ulang."),
+        ]));
+        tombolKembali(true);
+        return;
+      }
+      if (hasil.fase === "lewat") {
+        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+          MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
+          MugenUI.el("h2", {}, "Appointment Sudah Selesai"),
+          MugenUI.el("div", { class: "subtitle" }, "Jadwal booking ini sudah lewat. Ingin booking baru?"),
+        ]));
+        tombolKembali(true);
+        return;
+      }
+      if (hasil.fase === "menunggu_manual") {
+        const kontenItems = [];
+        if (hasil.qris_url) {
+          kontenItems.push(MugenUI.el("img", { src: MUGEN_API_BASE + hasil.qris_url, class: "book-qris-img", alt: "QRIS" }));
+        }
+        kontenItems.push(MugenUI.el("div", { style: "margin-top:8px;" }, hasil.qris_merchant_nama || ""));
+        kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, hasil.metode_instruksi || ""));
+        body.appendChild(MugenUI.el("h2", {}, "Menunggu Verifikasi Pembayaran"));
+        body.appendChild(MugenUI.el("div", { class: "card" }, [
+          fieldRow("Transaction Number", hasil.nomor_transaksi),
+          fieldRow("Barber", hasil.nama_barber),
+          fieldRow("Date", MugenUI.formatTanggal(hasil.tanggal)),
+          fieldRow("Time", hasil.jam_mulai),
+          fieldRow("Service", hasil.daftar_service),
+          MugenUI.el("hr"),
+          fieldRow("Total Payment", MugenUI.formatRupiah(hasil.total_harga), true),
+          MugenUI.el("hr"),
+          MugenUI.el("div", { style: "text-align:center;" }, kontenItems),
+        ]));
+        tombolKembali();
+        return;
+      }
+      if (hasil.fase === "menunggu_gateway") {
+        renderGatewayWaiting(hasil);
+        return;
+      }
+      // fase === "selesai" (sudah diverifikasi/dibayar, metode apa pun)
+      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+        MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
+        MugenUI.el("h2", {}, "Booking Confirmed"),
+        MugenUI.el("div", { class: "book-selesai-detail" }, [
+          fieldRow("Transaction Number", hasil.nomor_transaksi),
+          fieldRow("Barber", hasil.nama_barber),
+          fieldRow("Date", MugenUI.formatTanggal(hasil.tanggal)),
+          fieldRow("Time", hasil.jam_mulai),
+          fieldRow("Service", hasil.daftar_service),
+          MugenUI.el("hr"),
+          fieldRow("Total", MugenUI.formatRupiah(hasil.total_harga), true),
+        ]),
+      ]));
+      tombolKembali();
+    }
+
+    // Menunggu Payment Gateway (VA/QRIS) -- SAMA PERSIS alur polling/countdown
+    // akurat di renderFaseWaiting() wizard booking baru (lihat di bawah),
+    // supaya countdown TIDAK reset walau customer baru kembali lewat sini.
+    function renderGatewayWaiting(hasil) {
+      body.innerHTML = "";
+      body.appendChild(MugenUI.el("h2", {}, "Menunggu Konfirmasi Pembayaran"));
+      const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran memakai info di bawah.");
+      const sisaAwal = Math.max(0, hasil.gateway_detik_tersisa || 0);
+      const countdownEl = MugenUI.el("div", { class: "book-countdown" },
+        `${String(Math.floor(sisaAwal / 60)).padStart(2, "0")}:${String(sisaAwal % 60).padStart(2, "0")}`);
+      const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+      tambahkanEfekRipple(btnSudahBayar);
+
+      const kontenItems = [];
+      if (hasil.channel === "va") {
+        kontenItems.push(MugenUI.el("div", { class: "subtitle" },
+          hasil.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(hasil.channel_code, hasil.va_bank_label)}` : "Virtual Account"));
+        const nomorRow = MugenUI.el("div", { style: "display:flex;align-items:center;gap:8px;justify-content:center;margin-top:4px;" }, [
+          MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;" }, hasil.va_number || "-"),
+        ]);
+        const btnSalin = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Salin Nomor");
+        tambahkanEfekRipple(btnSalin);
+        btnSalin.addEventListener("click", () => salinTeksLokal(hasil.va_number || "", btnSalin));
+        nomorRow.appendChild(btnSalin);
+        kontenItems.push(nomorRow);
+        kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+          "Transfer PERSIS sejumlah Total Payment di bawah ke nomor Virtual Account ini lewat m-banking/ATM."));
+      } else if (hasil.channel === "qris") {
+        if (hasil.qr_url) {
+          kontenItems.push(MugenUI.el("img", { src: hasil.qr_url, class: "book-qris-img", alt: "QRIS" }));
+          kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+            "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
+        } else if (hasil.qr_content) {
+          const btnBukaQris = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Buka Halaman QRIS");
+          tambahkanEfekRipple(btnBukaQris);
+          btnBukaQris.addEventListener("click", () => window.open(hasil.qr_content, "_blank"));
+          kontenItems.push(btnBukaQris);
+          kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+            "Klik tombol di atas untuk membuka halaman pembayaran QRIS dari provider, lalu scan kode QR-nya lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
+        }
+      }
+
+      body.appendChild(MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, countdownEl, MugenUI.el("div", {}, [btnSudahBayar])]),
+        MugenUI.el("hr"),
+        MugenUI.el("div", { style: "text-align:center;" }, kontenItems),
+        MugenUI.el("hr"),
+        fieldRow("Transaction Number", hasil.nomor_transaksi),
+        fieldRow("Barber", hasil.nama_barber),
+        fieldRow("Service", hasil.daftar_service),
+        MugenUI.el("hr"),
+        fieldRow("Total Payment", MugenUI.formatRupiah(hasil.total_harga), true),
+      ]));
+
+      function terapkanStatusTerbaru(status) {
+        if (status.status === "PAID") {
+          clearInterval(pollTimer); clearInterval(countdownTimer);
+          MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
+          renderHasil({ ...hasil, fase: "selesai" });
+          return true;
+        }
+        if (["FAILED", "CANCELLED", "EXPIRED"].includes(status.status)) {
+          clearInterval(pollTimer); clearInterval(countdownTimer);
+          renderHasil({ ...hasil, fase: "dibatalkan" });
+          return true;
+        }
+        return false;
+      }
+
+      const pollTimer = setInterval(async () => {
+        if (!document.body.contains(countdownEl)) { clearInterval(pollTimer); return; }
+        let status;
+        try {
+          status = await MugenApi.get(`/api/public/booking/snap-status/${hasil.payment_reference}`);
+        } catch (e) {
+          return;
+        }
+        if (!terapkanStatusTerbaru(status) && status.status === "PENDING") {
+          statusLabelEl.textContent = "Pembayaran sedang diproses provider…";
+        }
+      }, 3000);
+
+      btnSudahBayar.addEventListener("click", async () => {
+        if (!document.body.contains(countdownEl)) return;
+        try {
+          const status = await MugenUI.withButtonLoading(btnSudahBayar,
+            () => MugenApi.post(`/api/public/booking/snap-cek-ulang/${hasil.payment_reference}`));
+          if (!terapkanStatusTerbaru(status)) {
+            statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah Anda menyelesaikan pembayaran.";
+          }
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+
+      const deadline = Date.now() + sisaAwal * 1000;
+      const countdownTimer = setInterval(() => {
+        if (!document.body.contains(countdownEl)) { clearInterval(countdownTimer); return; }
+        const sisaMs = deadline - Date.now();
+        if (sisaMs <= 0) {
+          clearInterval(countdownTimer);
+          countdownEl.textContent = "00:00";
+          MugenApi.get(`/api/public/booking/snap-status/${hasil.payment_reference}`).then(terapkanStatusTerbaru).catch(() => {});
+          return;
+        }
+        const sisaDetik = Math.floor(sisaMs / 1000);
+        const mm = String(Math.floor(sisaDetik / 60)).padStart(2, "0");
+        const ss = String(sisaDetik % 60).padStart(2, "0");
+        countdownEl.textContent = `${mm}:${ss}`;
+        countdownEl.classList.toggle("book-countdown-urgent", sisaDetik < 60);
+      }, 1000);
+    }
+
+    renderForm();
   }
 
   // ================= WIZARD BOOKING =================
@@ -1161,12 +1433,9 @@ const PageBookPublic = (() => {
 
       function isiKontenMetode() {
         const items = [];
-        if (state.metode === "transfer") {
+        if (state.metode === "cash") {
           items.push(
-            MugenUI.el("div", {}, `Bank: ${pengaturan.bank_nama || "-"}`),
-            MugenUI.el("div", {}, `Account No.: ${pengaturan.bank_nomor_rekening || "-"}`),
-            MugenUI.el("div", {}, `Account Name: ${pengaturan.bank_nama_pemilik || "-"}`),
-            MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, metodeInstruksi.transfer || ""),
+            MugenUI.el("div", { class: "subtitle" }, metodeInstruksi.cash || ""),
           );
         } else if (state.metode === "qris") {
           if (pengaturan.qris_url) {
@@ -1335,6 +1604,17 @@ const PageBookPublic = (() => {
             const hasil = await MugenUI.withButtonLoading(btnKonfirmasi, () => MugenApi.post("/api/public/booking", buatPayloadBooking(state.metode)));
             state.bookingResult = hasil;
             if (state.metode === "gateway") {
+              // REVISI UX: akun Faspay non-"direct merchant" (qr_content,
+              // BUKAN qr_url -- lihat isiKontenSnapWaiting()) langsung
+              // dibuka di tab baru di SINI, SATU klik yang sama dengan
+              // Confirm -- customer TIDAK perlu klik tombol "Buka Halaman
+              // QRIS" secara terpisah lagi. Tombol itu tetap ada sebagai
+              // fallback kalau browser memblokir popup (klik langsung dari
+              // handler ini seharusnya tetap dianggap user-gesture oleh
+              // browser, tapi tidak semua browser/situasi konsisten).
+              if (hasil.channel === "qris" && !hasil.qr_url && hasil.qr_content) {
+                window.open(hasil.qr_content, "_blank");
+              }
               fase = "waiting";
               gantiFase();
               return;
@@ -1439,7 +1719,9 @@ const PageBookPublic = (() => {
         const paymentReference = state.bookingResult.payment_reference;
         body.appendChild(MugenUI.el("h2", {}, "Menunggu Konfirmasi Pembayaran"));
         const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran memakai info di bawah.");
-        const countdownEl = MugenUI.el("div", { class: "book-countdown" }, "15:00");
+        const sisaAwal = Math.max(0, state.bookingResult.gateway_detik_tersisa || 0);
+        const countdownEl = MugenUI.el("div", { class: "book-countdown" },
+          `${String(Math.floor(sisaAwal / 60)).padStart(2, "0")}:${String(sisaAwal % 60).padStart(2, "0")}`);
         // Verifikasi Pembayaran Tanpa Menunggu Admin: tombol "Saya Sudah
         // Bayar" -- TRIGGER pengecekan ULANG ke provider (endpoint publik
         // POST snap-cek-ulang, FUNGSI PERSIS SAMA dengan tombol admin "Cek
@@ -1532,16 +1814,25 @@ const PageBookPublic = (() => {
           }
         });
 
-        // Countdown MURNI tampilan (estimasi batas waktu umum provider) --
-        // TIDAK PERNAH mengubah fase sendiri begitu habis (status
-        // "kedaluwarsa" sungguhan hanya datang dari polling di atas/webhook).
-        const deadline = Date.now() + DURASI_ESTIMASI_MS;
-        const countdownTimer = setInterval(() => {
+        // Countdown AKURAT: dihitung dari waktu transaksi sungguhan dibuat
+        // di server (gateway_detik_tersisa, lihat booking_db::
+        // _gateway_detik_tersisa()), BUKAN dari Date.now() saat halaman ini
+        // render -- supaya tidak reset kalau customer kembali lewat "Sudah
+        // Booking?" (lihat renderFaseSudahBookingGateway()). Begitu habis,
+        // panggil snap-status SEKALI LAGI (server-lah yang benar-benar
+        // membatalkan booking via batalkan_booking_gateway_kedaluwarsa()) --
+        // fase baru pindah setelah server mengonfirmasi, TIDAK langsung di sini.
+        const deadline = Date.now() + (state.bookingResult.gateway_detik_tersisa || 0) * 1000;
+        const countdownTimer = setInterval(async () => {
           if (!document.body.contains(countdownEl)) { clearInterval(countdownTimer); return; }
           const sisaMs = deadline - Date.now();
           if (sisaMs <= 0) {
             clearInterval(countdownTimer);
             countdownEl.textContent = "00:00";
+            try {
+              const status = await MugenApi.get(`/api/public/booking/snap-status/${paymentReference}`);
+              terapkanStatusTerbaru(status);
+            } catch (e) { /* diam -- polling tick berikutnya (sudah berhenti) atau tombol "Saya Sudah Bayar" akan coba lagi */ }
             return;
           }
           const sisaDetik = Math.floor(sisaMs / 1000);
