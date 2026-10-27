@@ -568,6 +568,17 @@ const MugenRouter = (() => {
         return;
       }
       renderResult = _renderLazy(content, "PageProduk", "js/pages/produk.js");
+    } else if (hash.startsWith("#/pos")) {
+      // FITUR BARU Point of Sale (Kasir walk-in): halaman internal Owner/
+      // Admin (hak akses granular izin_pos_lihat/izin_pos_kelola, dicek DI
+      // DALAM pos.js lewat MugenMenuAccess -- sama pola seperti
+      // Booking/Produk). Perlindungan sebenarnya tetap di backend
+      // (require_menu_read/require_permission di setiap endpoint /api/pos/*).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = _renderLazy(content, "PagePos", "js/pages/pos.js");
     } else if (hash.startsWith("#/booking")) {
       // BOOKING: halaman internal (Owner/Admin/Barber). Owner dan 'staff'
       // (Admin) full access SAMA PERSIS (Booking List, Calendar, Operating

@@ -62,7 +62,7 @@ from database import get_conn, get_barber, get_service, tambah_transaksi, hapus_
 WIB = ZoneInfo("Asia/Jakarta")
 
 JENIS_VALID = {"waiting_list", "booking"}
-MODE_VALID = {"barber", "manual_customer"}
+MODE_VALID = {"barber", "manual_customer", "pos"}
 STATUS_HARI_VALID = {"open", "closed"}
 
 
@@ -178,7 +178,7 @@ def pastikan_mode(tenant_id: int, tanggal: str, mode: str) -> None:
             )
         return
     if existing["mode"] != mode:
-        label = {"barber": "Input Barber", "manual_customer": "Manual Customer"}
+        label = {"barber": "Input Barber", "manual_customer": "Manual Customer", "pos": "Point of Sale"}
         raise ValueError(
             f"Tanggal {tanggal} sudah memakai metode \"{label.get(existing['mode'], existing['mode'])}\" -- "
             f"satu tanggal hanya boleh menggunakan satu metode input. Hapus/reset seluruh transaksi tanggal "
@@ -210,6 +210,9 @@ def reset_hari(tenant_id: int, tanggal: str) -> None:
             ).fetchall()
         for r in baris:
             hapus_transaksi(r["id"])
+    elif status["mode"] == "pos":
+        import pos_db  # import lokal: hindari import siklik (pos_db.py -> manual_customer_db.py)
+        pos_db.reset_hari_pos(tenant_id, tanggal)
     else:
         entri = get_manual_customer_list(tenant_id, tanggal)
         # dedup: sejak REVISI penggabungan (_buat_transaksi_gabungan), beberapa

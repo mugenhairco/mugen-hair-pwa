@@ -52,8 +52,8 @@ def _buat_superadmin_dan_login(client, username=None, password="rahasia123"):
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-def _siapkan_booking(tenant_id, metode="transfer", nominal=100000):
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+def _siapkan_booking(tenant_id, metode="qris", nominal=100000):
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     n = next(_urutan_unik)
     barber_id = db.add_barber(f"Barber Snap T{tenant_id}-{n}", tenant_id=tenant_id)
     service_id = db.add_service(f"Service Snap T{tenant_id}-{n}", nominal, tenant_id=tenant_id)
@@ -229,7 +229,7 @@ def test_update_status_tidak_dikenal_ditolak(single_tenant):
 
 def test_cascade_booking_paid_memverifikasi_pembayaran_booking(single_tenant):
     tenant_id = single_tenant["tenant_id"]
-    booking = _siapkan_booking(tenant_id, metode="transfer")
+    booking = _siapkan_booking(tenant_id, metode="qris")
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"], booking_id=booking["id"])
     assert booking_db.get_booking(booking["id"])["status_pembayaran"] == "menunggu_verifikasi"
 
@@ -262,7 +262,7 @@ def test_cascade_booking_idempoten_webhook_dobel_hanya_satu_efek_bisnis(single_t
     waktu) TETAP hanya terjadi SEKALI -- dibuktikan lewat pembayaran_diterima_at
     yang TIDAK berubah antar panggilan berulang."""
     tenant_id = single_tenant["tenant_id"]
-    booking = _siapkan_booking(tenant_id, metode="transfer")
+    booking = _siapkan_booking(tenant_id, metode="qris")
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"], booking_id=booking["id"])
 
     panggilan_wa = []
@@ -356,7 +356,7 @@ def test_cross_domain_isolation_booking_tidak_pernah_sentuh_invoice(single_tenan
     """SESUAI instruksi migrasi #14: "Booking payment tidak pernah dapat
     mengubah SaaS invoice"."""
     tenant_id = single_tenant["tenant_id"]
-    booking = _siapkan_booking(tenant_id, metode="transfer")
+    booking = _siapkan_booking(tenant_id, metode="qris")
     invoice = _siapkan_invoice(tenant_id)
     transaksi_booking = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                          booking_id=booking["id"])
@@ -370,7 +370,7 @@ def test_cross_domain_isolation_saas_billing_tidak_pernah_sentuh_booking(single_
     """SESUAI instruksi migrasi #14: "SaaS payment tidak pernah dapat
     mengubah booking"."""
     tenant_id = single_tenant["tenant_id"]
-    booking = _siapkan_booking(tenant_id, metode="transfer")
+    booking = _siapkan_booking(tenant_id, metode="qris")
     invoice = _siapkan_invoice(tenant_id)
     transaksi_billing = snap_payment_db.buat_transaksi("SAAS_BILLING", tenant_id, invoice["jumlah"],
                                                          subscription_invoice_id=invoice["id"])
@@ -1156,7 +1156,7 @@ def test_proses_notifikasi_idempoten_signature_valid_dikirim_dua_kali(single_ten
     """SESUAI instruksi migrasi #6 -- webhook dobel (walau signature-nya
     valid tiap kali) TETAP hanya satu transisi status sungguhan."""
     tenant_id = single_tenant["tenant_id"]
-    booking = _siapkan_booking(tenant_id, metode="transfer")
+    booking = _siapkan_booking(tenant_id, metode="qris")
     transaksi = snap_payment_db.buat_transaksi("BOOKING", tenant_id, booking["total_harga"],
                                                 booking_id=booking["id"], channel="va")
     private_faspay, public_faspay = _buat_keypair_rsa()
@@ -1380,7 +1380,7 @@ def test_orkestrasi_booking_qris_tanpa_whatsapp_ditolak_422_sebelum_panggil_prov
     _aktifkan_snap_orkestrasi()
     barber_id = db.add_barber("Barber QRIS Guard", tenant_id=tenant["id"])
     service_id = db.add_service("Service QRIS Guard", 100000, tenant_id=tenant["id"])
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant["id"])
     dipanggil = {"n": 0}
     monkeypatch.setattr(payment_provider_client, "buat_transaksi", lambda *a, **kw: dipanggil.__setitem__("n", dipanggil["n"] + 1))
 
@@ -1402,7 +1402,7 @@ def test_orkestrasi_booking_channel_tidak_aktif_ditolak_422(app_client):
     _aktifkan_snap_orkestrasi(channel_aktif=["va"])  # qris SENGAJA tidak diaktifkan
     barber_id = db.add_barber("Barber Channel Guard", tenant_id=tenant["id"])
     service_id = db.add_service("Service Channel Guard", 100000, tenant_id=tenant["id"])
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant["id"])
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant["id"])
 
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
     body = {
@@ -1487,7 +1487,7 @@ def _checkout_va_publik(app_client, monkeypatch, tenant_id, barber_id=None, serv
     _aktifkan_snap_orkestrasi()
     barber_id = barber_id or db.add_barber("Barber Cek Ulang Publik", tenant_id=tenant_id)
     service_id = service_id or db.add_service("Service Cek Ulang Publik", 100000, tenant_id=tenant_id)
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     monkeypatch.setattr(payment_provider_client, "buat_transaksi",
                          lambda *a, **kw: {"va_number": "70212345678901", "channel_code": "702"})
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()
@@ -1604,7 +1604,7 @@ def test_list_transaksi_gateway_menggabung_xpress_dan_snap(app_client, monkeypat
     _aktifkan_snap_orkestrasi()
     barber_id = db.add_barber("Barber Merge", tenant_id=tenant_id)
     service_id = db.add_service("Service Merge", 100000, tenant_id=tenant_id)
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     monkeypatch.setattr(payment_provider_client, "buat_transaksi",
                          lambda *a, **kw: {"va_number": "70212345678901"})
     tanggal = (_hari_ini_wib() + timedelta(days=1)).isoformat()

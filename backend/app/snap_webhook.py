@@ -50,6 +50,7 @@ import json
 import billing_invoice_db
 import billing_webhook
 import booking_db
+import pos_db
 import sales_db
 import snap_advance_client
 import snap_advance_db
@@ -123,6 +124,8 @@ def terapkan_status_transaksi(transaksi: dict, status_baru: str, sumber: str,
         _cascade_saas_billing(transaksi["subscription_invoice_id"], status_baru, sumber)
     elif transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_LIFETIME_LICENSE:
         _cascade_lifetime_license(transaksi["lifetime_purchase_id"], status_baru)
+    elif transaksi["transaction_type"] == snap_payment_db.TRANSACTION_TYPE_POS:
+        _cascade_pos(transaksi["pos_transaksi_id"], status_baru)
 
     return snap_payment_db.get_transaksi(transaksi["id"])
 
@@ -143,6 +146,23 @@ def _cascade_booking(booking_id: int, status_baru: str):
             booking_db.batalkan_booking(booking_id)
         except ValueError:
             pass  # booking sudah tidak ada/sudah dibatalkan -- abaikan, transaksi tetap tercatat
+
+
+def _cascade_pos(pos_transaksi_id: int, status_baru: str):
+    """Domain POS (Point of Sale, Kasir walk-in) -- reuse TOTAL pos_db.py,
+    TIDAK ada logika bisnis POS baru ditulis di sini, pola SAMA PERSIS
+    _cascade_booking() di atas. `oleh=None` -- tidak ada admin manusia di
+    jalur webhook."""
+    if status_baru == snap_payment_db.STATUS_PAID:
+        try:
+            pos_db.tandai_lunas_dari_gateway(pos_transaksi_id)
+        except ValueError:
+            pass  # transaksi POS sudah dibatalkan/diproses duluan -- transaksi SNAP tetap tercatat PAID apa adanya
+    elif status_baru in (snap_payment_db.STATUS_FAILED, snap_payment_db.STATUS_EXPIRED, snap_payment_db.STATUS_CANCELLED):
+        try:
+            pos_db.batalkan_pos(pos_transaksi_id)
+        except ValueError:
+            pass  # transaksi POS sudah tidak ada/sudah diproses -- abaikan, transaksi tetap tercatat
 
 
 def _cascade_saas_billing(subscription_invoice_id: int, status_baru: str, sumber: str):

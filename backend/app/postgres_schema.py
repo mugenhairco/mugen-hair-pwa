@@ -709,6 +709,48 @@ CREATE TABLE IF NOT EXISTS manual_customer_transaksi_service (
     service_id                   INTEGER NOT NULL
 );
 
+-- FITUR Point of Sale (Kasir walk-in) -- versi PostgreSQL, SAMA PERSIS
+-- skemanya dengan pos_db.py (jalur SQLite), lihat modul itu untuk
+-- penjelasan arsitektur lengkap (mode "pos" di input_data_hari untuk
+-- Service, Produk reuse TOTAL produk_mutasi yang sudah ada).
+CREATE TABLE IF NOT EXISTS pos_transaksi (
+    id                 SERIAL PRIMARY KEY,
+    tenant_id          INTEGER NOT NULL,
+    tanggal            TEXT NOT NULL,
+    jam                TEXT NOT NULL,
+    barber_id          INTEGER,
+    metode_pembayaran  TEXT NOT NULL,
+    channel            TEXT,
+    status             TEXT NOT NULL DEFAULT 'menunggu',
+    total_harga        INTEGER NOT NULL,
+    payment_reference  TEXT,
+    transaksi_id       INTEGER,
+    dibuat_oleh        TEXT,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT,
+    paid_at            TEXT
+);
+
+-- `service_id` SENGAJA TANPA "REFERENCES services(id)" -- pola sama
+-- persis manual_customer_transaksi_service di atas (tabel `services`
+-- produksi punya riwayat korupsi, lihat catatan panjang di
+-- email_verification_tokens). `pos_transaksi_id` TETAP memakai REFERENCES +
+-- CASCADE karena merujuk tabel BARU di migrasi ini sendiri.
+CREATE TABLE IF NOT EXISTS pos_transaksi_service (
+    id                SERIAL PRIMARY KEY,
+    pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
+    service_id        INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pos_transaksi_produk (
+    id                SERIAL PRIMARY KEY,
+    pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
+    produk_id         INTEGER NOT NULL,
+    jumlah            INTEGER NOT NULL,
+    harga_satuan      INTEGER NOT NULL,
+    mutasi_id         INTEGER
+);
+
 -- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK
 -- menyentuh data lama) yang menyimpan OBJECT KEY R2 -- lihat r2_storage.py
 -- untuk arsitektur lengkap & r2_storage_migrasi.py untuk pasangan jalur
@@ -1186,6 +1228,11 @@ ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS channel_code TEXT
 -- tenant_lifetime_purchases (sales_db.py) untuk cascade status via webhook,
 -- lihat snap_webhook.py::_cascade_lifetime_license().
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS lifetime_purchase_id INTEGER;
+
+-- FITUR Point of Sale (Kasir walk-in) -- menautkan transaksi SNAP ke baris
+-- pos_transaksi (pos_db.py) untuk cascade status via webhook, lihat
+-- snap_webhook.py::_cascade_pos().
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS pos_transaksi_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     id              SERIAL PRIMARY KEY,

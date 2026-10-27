@@ -1185,7 +1185,21 @@
 // booking_db.py::batalkan_booking_gateway_kedaluwarsa()). QRIS fallback
 // (qr_content) sekarang auto-terbuka di tab baru di klik Confirm yang sama
 // (tombol manual tetap ada sebagai fallback kalau popup diblokir browser).
-const ASSET_VERSION = "215";
+// v215 -> v216: FITUR BARU menu "Point of Sale" (Kasir walk-in) -- dua tab:
+// "Kasir" (pilih Barber dan/atau Produk -> Service -> Payment, metode QRIS
+// manual/Payment Gateway reuse TOTAL konfigurasi booking publik, satu kali
+// scan/pembayaran bisa mencakup Service + Produk sekaligus) dan "Transaksi
+// Hari Ini" (gabungan booking online yang lunas + transaksi Kasir hari itu,
+// dipecah tab Service/Produk). Begitu transaksi Kasir (bagian Service)
+// lunas, backend merekonstruksi ULANG baris Rekap Transaksi barber+hari itu
+// (pos_db.py::_rebuild_transaksi_barber_hari()) supaya tetap 1 baris per
+// barber per hari walau banyak customer walk-in berbeda dibayar sepanjang
+// hari -- PERMINTAAN Owner eksplisit. Bagian Produk reuse TOTAL
+// database.jual_produk() (1 baris mutasi per produk per penjualan, TIDAK
+// diagregasi). Hak akses baru (izin_pos_lihat/izin_pos_kelola) -- Superadmin
+// perlu mengaktifkan menu ini dulu di Package Permission Tree paket yang
+// sesuai (key baru, belum ada paket mana pun yang menyertakannya).
+const ASSET_VERSION = "216";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1263,6 +1277,10 @@ const _APP_SHELL_BER_VERSI = [
   "/app/js/pages/perpanjangan.js",
   "/app/js/pages/produk.js",
   "/app/js/pages/booking.js",
+  // FITUR BARU Point of Sale (Kasir walk-in): file baru, harus terdaftar
+  // di sini juga (lihat catatan page_loader.js soal file lazy-load tetap
+  // wajib masuk APP_SHELL).
+  "/app/js/pages/pos.js",
   // REVISI (feedback Owner): tab WhatsApp di Setting dipindah jadi menu
   // sidebar sendiri -- file baru, harus terdaftar di sini juga (lihat
   // catatan page_loader.js soal file lazy-load tetap wajib masuk APP_SHELL).
