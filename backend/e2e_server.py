@@ -95,7 +95,7 @@ if _paket_free is not None:
 
 BARBER_ID = database.add_barber("E2E Barber", tenant_id=TENANT_ID)
 SERVICE_ID = database.add_service("E2E Haircut", 50000, tenant_id=TENANT_ID)
-booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=TENANT_ID)
+booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=TENANT_ID)
 auth_db.tambah_user("e2ebarber", "e2epassword123", role="barber", barber_id=BARBER_ID, tenant_id=TENANT_ID)
 
 # Pengaturan Absensi: lokasi toko di Monas Jakarta (titik yang SAMA dipakai
@@ -122,12 +122,12 @@ _kemarin_iso = (_now.date() - datetime.timedelta(days=1)).isoformat()
 booking_db.buat_booking(
     barber_id=BARBER_ID, tanggal=_masa_depan_iso, jam_mulai="10:00", service_ids=[SERVICE_ID],
     customer_nama="E2E Customer Masa Depan", customer_whatsapp="081234567890",
-    metode_pembayaran="transfer", tenant_id=TENANT_ID,
+    metode_pembayaran="qris", tenant_id=TENANT_ID,
 )
 booking_db.buat_booking(
     barber_id=BARBER_ID, tanggal=_masa_depan_iso, jam_mulai="11:00", service_ids=[SERVICE_ID],
     customer_nama="E2E Customer Sudah Lewat", customer_whatsapp="081234567890",
-    metode_pembayaran="transfer", tenant_id=TENANT_ID,
+    metode_pembayaran="qris", tenant_id=TENANT_ID,
 )
 with database.get_conn() as conn:
     conn.execute(
