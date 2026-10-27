@@ -1403,9 +1403,24 @@ const PageBookPublic = (() => {
         } else if (r.channel === "qris") {
           if (r.qr_url) {
             items.push(MugenUI.el("img", { src: r.qr_url, class: "book-qris-img", alt: "QRIS" }));
+            items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+              "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
+          } else if (r.qr_content) {
+            // PERBAIKAN BUG: akun Faspay SNAP Advance non-"direct merchant"
+            // TIDAK PERNAH mengisi qrUrl (lihat snap_advance_client.py::
+            // buat_transaksi_qris()) -- qrImageUrl (qr_content, link ke
+            // halaman Faspay yang menampilkan QR) SELALU ada sebagai
+            // gantinya, dulu TIDAK PERNAH dipakai sama sekali di sini
+            // sehingga customer tenant non-direct-merchant tidak pernah
+            // melihat cara bayar QRIS apa pun (halaman kosong, cuma teks
+            // instruksi tanpa QR/link apa-apa).
+            const btnBukaQris = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Buka Halaman QRIS");
+            tambahkanEfekRipple(btnBukaQris);
+            btnBukaQris.addEventListener("click", () => window.open(r.qr_content, "_blank"));
+            items.push(btnBukaQris);
+            items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
+              "Klik tombol di atas untuk membuka halaman pembayaran QRIS dari provider, lalu scan kode QR-nya lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
           }
-          items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
-            "Scan kode QR di atas lewat app e-wallet/m-banking mana pun yang mendukung QRIS."));
         }
         return items;
       }

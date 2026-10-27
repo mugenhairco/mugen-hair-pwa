@@ -2769,8 +2769,13 @@ const PageSuperadmin = (() => {
                     MugenUI.el("div", { style: "font-weight:700;" }, p.va_number),
                   ]);
                 }
-                if (p.channel === "qris" && p.qr_url) {
-                  return MugenUI.el("a", { href: p.qr_url, target: "_blank" }, "Lihat QRIS");
+                // PERBAIKAN BUG: akun Faspay SNAP Advance non-"direct merchant"
+                // TIDAK PERNAH mengisi qrUrl (lihat snap_advance_client.py::
+                // buat_transaksi_qris()) -- qrImageUrl (qr_content, link ke
+                // halaman Faspay yang menampilkan QR) SELALU ada sebagai
+                // gantinya, dulu TIDAK PERNAH dipakai sama sekali di sini.
+                if (p.channel === "qris" && (p.qr_url || p.qr_content)) {
+                  return MugenUI.el("a", { href: p.qr_url || p.qr_content, target: "_blank" }, "Lihat QRIS");
                 }
                 return "-";
               },

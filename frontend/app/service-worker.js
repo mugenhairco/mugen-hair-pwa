@@ -1157,7 +1157,17 @@
 // dan Contact (termasuk Nomor Telepon) dihapus dari admin (lihat
 // booking.js::renderWebsiteContent()) -- halaman publik /book TAMPILAN-
 // nya TIDAK berubah, murni simplifikasi form admin.
-const ASSET_VERSION = "213";
+// v213 -> v214: PERBAIKAN BUG KRITIS pembayaran -- QRIS Faspay SNAP Advance
+// untuk akun non-"direct merchant" TIDAK PERNAH mengisi field qrUrl (lihat
+// snap_advance_client.py::buat_transaksi_qris()), hanya qrImageUrl
+// (disimpan sebagai qr_content). Sebelumnya book_public.js/billing.js/
+// billing_checkout_shared.js/superadmin.js HANYA menampilkan qr_url,
+// TIDAK PERNAH fallback ke qr_content -- customer tenant non-direct-
+// merchant melihat halaman "Menunggu Konfirmasi Pembayaran" KOSONG tanpa
+// QR/link apa pun sama sekali, booking QRIS tidak bisa diselesaikan.
+// Sekarang fallback ke tombol/link "Buka Halaman QRIS" (window.open ke
+// qr_content) kalau qr_url kosong, di keempat tempat itu.
+const ASSET_VERSION = "214";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
