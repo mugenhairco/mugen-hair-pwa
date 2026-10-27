@@ -68,7 +68,7 @@ DEFAULT_BOOKING_SETTINGS = {
     "booking_jam_tutup": "20:00",
     "booking_interval_menit": "60",
     "booking_maksimal_hari_kedepan": "30",
-    "booking_metode_aktif": '["transfer"]',
+    "booking_metode_aktif": '["qris"]',
     "booking_qris_merchant_nama": "",
     "booking_qris_filename": "",
     "booking_bank_nama": "",
@@ -1957,6 +1957,37 @@ def create_all():
                 conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                              (_kunci_tenant(tid, key), value))
         _logger.info("[postgres_schema] create_all(): backfill DEFAULT_SETTINGS per-tenant selesai (%.2fs).",
+                     time.monotonic() - _mulai)
+
+        # PERMINTAAN Owner (REVISI payment): "transfer" (Transfer Bank)
+        # dihapus total dari booking_db.METODE_VALID -- HOTFIX DEPLOY: nilai
+        # default LAMA DEFAULT_BOOKING_SETTINGS["booking_metode_aktif"] di
+        # atas SEMPAT berupa '["transfer"]' (sebelum fix ini), jadi SETIAP
+        # tenant yang pernah ter-seed dari nilai itu (baru/lama yang belum
+        # pernah mengubah default) kini tersimpan dengan metode_aktif berisi
+        # HANYA entri yang sudah tidak valid -- booking_db.get_payment_settings()
+        # menyaringnya habis (defensive filter) sehingga tenant itu TIDAK
+        # PUNYA metode pembayaran aktif SAMA SEKALI sampai Superadmin
+        # mengatur ulang manual. Baris di bawah memperbaiki data LAMA yang
+        # SUDAH tersimpan seperti itu -- HANYA tenant yang metode_aktif-nya
+        # SETELAH disaring menjadi KOSONG TOTAL yang disentuh (tenant yang
+        # sudah punya minimal satu metode valid, apa pun isinya, TIDAK diubah).
+        _metode_valid_saat_ini = {"qris", "gateway", "cash"}
+        baris_metode_aktif = conn.execute(
+            "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
+            "OR key LIKE '%:booking_metode_aktif'"
+        ).fetchall()
+        for baris in baris_metode_aktif:
+            try:
+                metode_aktif = json.loads(baris["value"])
+            except (TypeError, ValueError):
+                continue  # data korup/tidak terduga -- jangan sentuh
+            if not isinstance(metode_aktif, list):
+                continue
+            if [m for m in metode_aktif if m in _metode_valid_saat_ini]:
+                continue  # masih punya minimal satu metode valid -- jangan sentuh
+            conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(["qris"]), baris["key"]))
+        _logger.info("[postgres_schema] create_all(): perbaikan booking_metode_aktif kosong selesai (%.2fs).",
                      time.monotonic() - _mulai)
 
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
