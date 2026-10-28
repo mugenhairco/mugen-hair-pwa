@@ -1251,7 +1251,11 @@
 // tertutup lagi setelah ENTER atau tap di luar keypad (nilai TIDAK
 // dihapus). Laptop/desktop (pointer halus/mouse) sama sekali tidak kena
 // -- perilaku input native (klik, keyboard fisik) tidak berubah.
-const ASSET_VERSION = "222";
+//
+// v222 -> v223: Keypad custom (v222 di atas) sekarang dipasang juga di
+// input Qty Produk POS -- SATU set perilaku yang sama (touch-only, tutup
+// keyboard bawaan, dsb) di SELURUH input angka di wizard Kasir.
+const ASSET_VERSION = "223";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -249,6 +249,7 @@ const PagePos = (() => {
           if (qty > 0) state.produk[p.id] = qty; else delete state.produk[p.id];
           renderTotal();
         });
+        MugenUI.attachNumericKeypad(inputQty);
         produkBox.appendChild(MugenUI.el("div", { class: "row", style: "align-items:center;gap:10px;" }, [
           MugenUI.el("div", { style: "flex:1;" }, `${p.nama} (${MugenUI.formatRupiah(p.harga_jual)}/pcs, stok ${p.stok})`),
           inputQty,
