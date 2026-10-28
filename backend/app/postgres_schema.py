@@ -1972,10 +1972,17 @@ def create_all():
         # SUDAH tersimpan seperti itu -- HANYA tenant yang metode_aktif-nya
         # SETELAH disaring menjadi KOSONG TOTAL yang disentuh (tenant yang
         # sudah punya minimal satu metode valid, apa pun isinya, TIDAK diubah).
+        # CATATAN psycopg2: '%' literal di SQL text HARUS ditulis '%%' di sini
+        # -- db_compat.py::_PGCursor.execute() selalu memanggil cursor.execute()
+        # psycopg2 dengan params (default tuple kosong, BUKAN None), yang
+        # membuat psycopg2 tetap mem-parsing string SQL lewat %-style string
+        # formatting-nya sendiri walau tidak ada placeholder yang dipakai --
+        # '%' tunggal yang tidak di-escape memicu "IndexError: tuple index
+        # out of range" (regresi ditemukan lewat test_backup_postgres.py).
         _metode_valid_saat_ini = {"qris", "gateway", "cash"}
         baris_metode_aktif = conn.execute(
             "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
-            "OR key LIKE '%:booking_metode_aktif'"
+            "OR key LIKE '%%:booking_metode_aktif'"
         ).fetchall()
         for baris in baris_metode_aktif:
             try:
