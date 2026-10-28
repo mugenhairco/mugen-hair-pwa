@@ -74,6 +74,16 @@ AKSI_VALID = {
     # untuk testing/verifikasi, lihat routers/superadmin.py::
     # jalankan_pembersihan_data_manual().
     "jalankan_pembersihan_data_manual",
+    # BUGFIX (ditemukan dari laporan Owner: Simpan Payment Settings selalu
+    # gagal 500 walau datanya sendiri sudah tersimpan): Payment Settings
+    # (metode aktif, label/instruksi, upload/hapus foto QRIS) dipindah
+    # TOTAL ke Superadmin (lihat routers/superadmin.py::
+    # simpan_payment_settings_tenant()/upload_qris_foto_tenant()/
+    # hapus_qris_foto_tenant()) tapi ketiga nama aksi di bawah ini lupa
+    # ditambahkan ke sini -- catat() melempar ValueError "Aksi audit tidak
+    # dikenal" SETELAH perubahan datanya sendiri sukses di-commit, jadi
+    # request selalu berakhir 500 walau datanya sudah berubah.
+    "ubah_payment_settings", "upload_qris_foto", "hapus_qris_foto",
 }
 
 

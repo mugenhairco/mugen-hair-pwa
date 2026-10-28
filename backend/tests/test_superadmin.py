@@ -697,3 +697,59 @@ def test_endpoint_ubah_slug_akun_biasa_ditolak(two_tenants):
     assert r.status_code == 403
     import tenant_db
     assert tenant_db.get_tenant(two_tenants["tenant_b"])["slug"] == "test-toko-b"
+
+
+# BUGFIX (laporan Owner: "Simpan Payment Settings" di Superadmin selalu
+# balas 500 walau datanya sendiri sudah tersimpan): ketiga endpoint Payment
+# Settings tenant (PUT .../payment-settings, POST/DELETE .../qris-foto)
+# masing-masing memanggil superadmin_audit_db.catat() SETELAH perubahan
+# datanya sukses di-commit -- tapi nama aksinya ("ubah_payment_settings",
+# "upload_qris_foto", "hapus_qris_foto") lupa ditambahkan ke AKSI_VALID
+# (superadmin_audit_db.py), jadi catat() melempar ValueError yang TIDAK
+# tertangkap di router, membuat SETIAP panggilan selalu berakhir 500
+# Internal Server Error. Tidak ada test sebelumnya yang memanggil ketiga
+# endpoint ini dengan auth superadmin SUNGGUHAN (hanya endpoint owner-side
+# yang sudah dihapus yang diuji, lihat test_perluasan_hak_akses_admin.py/
+# test_subscription.py) -- itu sebabnya bug ini lolos sampai dilaporkan.
+def test_endpoint_payment_settings_tenant_superadmin_tidak_500(single_tenant):
+    headers = _buat_superadmin_dan_login(single_tenant["client"])
+    tenant_id = single_tenant["tenant_id"]
+
+    r_put = single_tenant["client"].put(
+        f"/api/superadmin/tenants/{tenant_id}/payment-settings",
+        headers=headers,
+        json={
+            "metode_aktif": ["qris"],
+            "qris_merchant_nama": "Toko Uji",
+            "metode_nama": {"qris": "QRIS"},
+            "metode_instruksi": {"qris": "Scan lalu bayar."},
+        },
+    )
+    assert r_put.status_code == 200, r_put.text
+    assert r_put.json()["qris_merchant_nama"] == "Toko Uji"
+
+    r_upload = single_tenant["client"].post(
+        f"/api/superadmin/tenants/{tenant_id}/qris-foto",
+        headers=headers,
+        files={"file": ("qris.png", _png_1x1(), "image/png")},
+    )
+    assert r_upload.status_code == 200, r_upload.text
+    assert r_upload.json()["qris_url"]
+
+    r_hapus = single_tenant["client"].delete(
+        f"/api/superadmin/tenants/{tenant_id}/qris-foto", headers=headers,
+    )
+    assert r_hapus.status_code == 200, r_hapus.text
+    assert r_hapus.json()["qris_url"] is None
+
+    import superadmin_audit_db
+    log = superadmin_audit_db.list_log(limit=10)
+    aksi_tercatat = {row["aksi"] for row in log}
+    assert {"ubah_payment_settings", "upload_qris_foto", "hapus_qris_foto"} <= aksi_tercatat
+
+
+def _png_1x1():
+    import base64
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
