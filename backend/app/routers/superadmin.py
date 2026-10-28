@@ -18,6 +18,7 @@ from pydantic import BaseModel
 import auth_db
 import booking_db
 import data_purge_db
+import pos_db
 import r2_storage
 import subscription_db
 import superadmin_audit_db
@@ -247,10 +248,21 @@ def _pastikan_tenant_ada(tenant_id: int):
         raise HTTPException(status_code=404, detail="Tenant tidak ditemukan.")
 
 
+def _payment_settings_response(tenant_id: int) -> dict:
+    hasil = booking_db.get_payment_settings(tenant_id=tenant_id)
+    # PERMINTAAN Owner: Cash untuk POS adalah toggle TERPISAH dari Cash
+    # untuk Booking (lihat pos_db.get_pos_cash_aktif()) -- disertakan di
+    # sini (BUKAN di booking_db.get_payment_settings() yang juga dipakai
+    # booking publik) supaya Super Admin melihat & mengatur keduanya di
+    # satu halaman Payment Settings yang sama.
+    hasil["pos_cash_aktif"] = pos_db.get_pos_cash_aktif(tenant_id)
+    return hasil
+
+
 @router.get("/tenants/{tenant_id}/payment-settings")
 def ambil_payment_settings_tenant(tenant_id: int, user: dict = Depends(require_superadmin)):
     _pastikan_tenant_ada(tenant_id)
-    return booking_db.get_payment_settings(tenant_id=tenant_id)
+    return _payment_settings_response(tenant_id)
 
 
 class PaymentSettingsTenantBody(BaseModel):
@@ -258,21 +270,31 @@ class PaymentSettingsTenantBody(BaseModel):
     qris_merchant_nama: str | None = None
     metode_nama: dict[str, str] | None = None
     metode_instruksi: dict[str, str] | None = None
+    pos_cash_aktif: bool | None = None
 
 
 @router.put("/tenants/{tenant_id}/payment-settings")
 def simpan_payment_settings_tenant(tenant_id: int, body: PaymentSettingsTenantBody,
                                     user: dict = Depends(require_superadmin)):
     _pastikan_tenant_ada(tenant_id)
+    body_dict = body.model_dump()
+    pos_cash_aktif = body_dict.pop("pos_cash_aktif")
     try:
-        booking_db.update_payment_settings(**body.model_dump(), tenant_id=tenant_id)
+        booking_db.update_payment_settings(**body_dict, tenant_id=tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if pos_cash_aktif is not None:
+        pos_db.set_pos_cash_aktif(tenant_id, pos_cash_aktif)
+    detail_bagian = []
+    if body.metode_aktif is not None:
+        detail_bagian.append(f"metode_aktif={body.metode_aktif!r}")
+    if pos_cash_aktif is not None:
+        detail_bagian.append(f"pos_cash_aktif={pos_cash_aktif!r}")
     superadmin_audit_db.catat(
         user["username"], "ubah_payment_settings", tenant_id=tenant_id,
-        detail=f"metode_aktif={body.metode_aktif!r}" if body.metode_aktif is not None else None,
+        detail=" ".join(detail_bagian) if detail_bagian else None,
     )
-    return booking_db.get_payment_settings(tenant_id=tenant_id)
+    return _payment_settings_response(tenant_id)
 
 
 @router.post("/tenants/{tenant_id}/qris-foto")

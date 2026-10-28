@@ -48,8 +48,8 @@ import gateway_client_base
 import manual_customer_db
 import payment_provider_client
 import snap_payment_db
-from database import (get_barber, get_conn, get_produk, get_service, get_stok_produk, hapus_mutasi_produk,
-                       hapus_transaksi, jual_produk, tambah_transaksi)
+from database import (get_barber, get_conn, get_produk, get_service, get_setting, get_stok_produk,
+                       hapus_mutasi_produk, hapus_transaksi, jual_produk, set_setting, tambah_transaksi)
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -140,6 +140,25 @@ def init_pos_db():
                 FOREIGN KEY (pos_transaksi_id) REFERENCES pos_transaksi(id) ON DELETE CASCADE
             )
         """)
+
+
+# ---------------------------------------------------------------------------
+# Toggle Cash khusus POS (PERMINTAAN Owner: "apakah bisa mengaktifkan
+# metode cash hanya untuk pos ini, jika diaktifkan yang cash untuk
+# booking tidak otomatis aktif?") -- setting TERPISAH dari
+# `booking_metode_aktif` (booking_db.py), jadi mengaktifkan Cash untuk
+# POS TIDAK PERNAH ikut mengaktifkan Cash untuk Booking publik, atau
+# sebaliknya. Disimpan lewat tabel `settings` generik yang sudah ada
+# (pola SAMA PERSIS database.py::uang_harian_syarat_aktif_tenant()),
+# TIDAK butuh tabel/kolom baru sama sekali.
+# ---------------------------------------------------------------------------
+
+def get_pos_cash_aktif(tenant_id: int) -> bool:
+    return get_setting("pos_cash_aktif", "0", tenant_id=tenant_id) == "1"
+
+
+def set_pos_cash_aktif(tenant_id: int, aktif: bool) -> None:
+    set_setting("pos_cash_aktif", "1" if aktif else "0", tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------

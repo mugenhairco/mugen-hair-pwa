@@ -850,6 +850,19 @@ const PageSuperadmin = (() => {
         }
         paymentSettingsBody.appendChild(MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Aktif"), metodeBox]));
 
+        // PERMINTAAN Owner: Cash untuk Point of Sale (kasir walk-in) adalah
+        // toggle TERPISAH dari "Cash (Bayar di Toko)" milik Booking publik
+        // di atas -- mengaktifkan salah satu TIDAK PERNAH otomatis
+        // mengaktifkan yang lain (lihat routers/pos.py::ambil_pengaturan()/
+        // pos_db.get_pos_cash_aktif()). Label di POS sendiri cukup "Cash"
+        // (backend yang menyederhanakannya, bukan field label booking di
+        // atas).
+        const cbPosCash = MugenUI.el("input", { type: "checkbox" });
+        cbPosCash.checked = !!ps.pos_cash_aktif;
+        paymentSettingsBody.appendChild(MugenUI.el("div", { style: "margin-top:10px;" }, [
+          MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;" }, [cbPosCash, "Cash untuk Point of Sale (terpisah dari Booking di atas)"]),
+        ]));
+
         const inputMerchantNama = MugenUI.el("input", { type: "text", value: ps.qris_merchant_nama || "", placeholder: "Nama merchant di QRIS" });
         paymentSettingsBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, [
           MugenUI.el("label", {}, "Nama Merchant QRIS"), inputMerchantNama,
@@ -878,6 +891,7 @@ const PageSuperadmin = (() => {
               qris_merchant_nama: inputMerchantNama.value.trim(),
               metode_nama: Object.fromEntries(Object.keys(labelInputs).map((m) => [m, labelInputs[m].value])),
               metode_instruksi: Object.fromEntries(Object.keys(instruksiInputs).map((m) => [m, instruksiInputs[m].value])),
+              pos_cash_aktif: cbPosCash.checked,
             }));
             MugenUI.toast("Payment Settings disimpan.", "success", { force: true });
             loadAuditLog(); loadPaymentSettings();
