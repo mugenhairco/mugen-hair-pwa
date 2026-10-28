@@ -1199,7 +1199,14 @@
 // diagregasi). Hak akses baru (izin_pos_lihat/izin_pos_kelola) -- Superadmin
 // perlu mengaktifkan menu ini dulu di Package Permission Tree paket yang
 // sesuai (key baru, belum ada paket mana pun yang menyertakannya).
-const ASSET_VERSION = "216";
+//
+// v216 -> v217: bugfix -- link "Sudah booking? Cek status di sini" di
+// landing page publik (book_public.js) SELALU turun ke baris baru di bawah
+// tombol "Book Appointment", di layar manapun (sebelumnya nempel sebaris
+// di layar lebar/tablet-laptop karena display:inline-block, cuma turun
+// baris sendiri di layar sempit/iPhone karena tombolnya baru penuh 100%
+// lebar di situ -- lihat .book-sudah-booking-link di style.css).
+const ASSET_VERSION = "217";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
