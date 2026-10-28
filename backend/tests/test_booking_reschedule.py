@@ -28,8 +28,8 @@ def _siapkan_barber_dan_service(tenant_id, nominal=100000, nama_prefix="Reschedu
     return barber_id, service_id
 
 
-def _buat_booking(tenant_id, metode_pembayaran="transfer", nominal=100000, hari_offset=1, barber_id=None, service_id=None):
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+def _buat_booking(tenant_id, metode_pembayaran="qris", nominal=100000, hari_offset=1, barber_id=None, service_id=None):
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     if barber_id is None or service_id is None:
         barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
@@ -96,7 +96,7 @@ def test_reschedule_slot_bentrok_dengan_booking_lain_ditolak(single_tenant, monk
     tanggal = booking_a["tanggal"]
     booking_b = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="16:00",
                                          service_ids=[service_id], customer_nama="Andi",
-                                         customer_whatsapp="081234567892", metode_pembayaran="transfer",
+                                         customer_whatsapp="081234567892", metode_pembayaran="qris",
                                          tenant_id=tenant_id)
     booking_db.verifikasi_pembayaran(booking_b["id"], oleh="admin1")
 
@@ -192,7 +192,7 @@ def test_endpoint_reschedule_slot_bentrok_422(single_tenant, monkeypatch):
     tanggal = booking_a["tanggal"]
     booking_b = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="18:00",
                                          service_ids=[service_id], customer_nama="Sari",
-                                         customer_whatsapp="081234567893", metode_pembayaran="transfer",
+                                         customer_whatsapp="081234567893", metode_pembayaran="qris",
                                          tenant_id=tenant_id)
     client.post(f"/api/booking/{booking_b['id']}/verifikasi", headers=headers)
 

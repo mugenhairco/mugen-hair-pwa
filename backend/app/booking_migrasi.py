@@ -31,7 +31,7 @@ DEFAULT_BOOKING_SETTINGS = {
     "booking_jam_tutup": "20:00",
     "booking_interval_menit": "60",
     "booking_maksimal_hari_kedepan": "30",
-    "booking_metode_aktif": '["transfer"]',
+    "booking_metode_aktif": '["qris"]',
     "booking_qris_merchant_nama": "",
     "booking_qris_filename": "",
     "booking_bank_nama": "",
@@ -45,6 +45,7 @@ def migrasi_booking():
         _migrasi_durasi_service(conn)
         _seed_booking_settings(conn)
         _hapus_metode_cash(conn)
+        _perbaiki_metode_aktif_kosong_setelah_hapus_transfer(conn)
 
 
 def _migrasi_durasi_service(conn):
@@ -86,3 +87,37 @@ def _hapus_metode_cash(conn):
             continue
         baru = [m for m in metode_aktif if m != "cash"]
         conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(baru), row["key"]))
+
+
+# PERMINTAAN Owner (REVISI payment): "transfer" (Transfer Bank) dihapus
+# total dari booking_db.METODE_VALID -- HOTFIX DEPLOY: nilai default lama
+# `DEFAULT_BOOKING_SETTINGS["booking_metode_aktif"]` di atas SEMPAT berupa
+# '["transfer"]' (sebelum fix ini), jadi SETIAP tenant yang pernah ter-seed
+# dari nilai itu (tenant baru yang belum pernah mengatur metode pembayaran
+# SAMA SEKALI, atau tenant lama yang belum pernah mengubah default) kini
+# tersimpan dengan metode_aktif berisi HANYA entri yang sudah tidak valid
+# -- booking_db.get_payment_settings() menyaringnya habis (defensive
+# filter) sehingga tenant itu TIDAK PUNYA metode pembayaran aktif SAMA
+# SEKALI sampai Superadmin mengatur ulang secara manual. Baris di bawah
+# memperbaiki data LAMA yang SUDAH tersimpan seperti itu (pola SAMA
+# PERSIS _hapus_metode_cash() di atas) -- HANYA tenant yang metode_aktif-
+# nya SETELAH disaring menjadi KOSONG TOTAL yang disentuh (tenant yang
+# sudah punya minimal satu metode valid, apa pun isinya, TIDAK diubah).
+_METODE_VALID_SAAT_INI = {"qris", "gateway", "cash"}
+
+
+def _perbaiki_metode_aktif_kosong_setelah_hapus_transfer(conn):
+    rows = conn.execute(
+        "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
+        "OR key LIKE '%:booking_metode_aktif'"
+    ).fetchall()
+    for row in rows:
+        try:
+            metode_aktif = json.loads(row["value"])
+        except (TypeError, ValueError):
+            continue  # data korup/tidak terduga -- jangan sentuh, bukan tanggung jawab migrasi ini
+        if not isinstance(metode_aktif, list):
+            continue
+        if [m for m in metode_aktif if m in _METODE_VALID_SAAT_INI]:
+            continue  # masih punya minimal satu metode valid -- jangan sentuh
+        conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(["qris"]), row["key"]))

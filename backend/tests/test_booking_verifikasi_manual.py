@@ -43,7 +43,7 @@ def _siapkan_barber_dan_service(tenant_id, nominal=100000):
 
 
 def _buat_booking(tenant_id, metode_pembayaran, nominal=100000, hari_offset=1):
-    booking_db.update_payment_settings(metode_aktif=["transfer", "qris", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     barber_id, service_id = _siapkan_barber_dan_service(tenant_id, nominal)
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
     return booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
@@ -101,14 +101,19 @@ def test_terima_booking_qris_idempoten_klik_dobel_tidak_kirim_wa_lagi_dan_tidak_
     assert hasil["verifikasi_booking_at"] == tercatat_pertama
 
 
-def test_terima_booking_transfer_tidak_mengirim_wa_tapi_tetap_mencatat(single_tenant, monkeypatch):
-    """Metode "transfer" TIDAK punya template "cara bayar" yang relevan
-    (reminder_qris eksplisit menyebut QRIS) -- terima_booking() tetap
-    mencatat verifikasi_booking_at/oleh, TAPI tidak mencoba kirim WA sama
-    sekali."""
+def test_terima_booking_gateway_tidak_mengirim_wa_tapi_tetap_mencatat(single_tenant, monkeypatch):
+    """PERMINTAAN Owner (REVISI payment): metode "transfer" dihapus total
+    dari aplikasi -- test ini dulu memakainya sebagai contoh metode NON-qris
+    yang masih "menunggu_verifikasi" (TANPA template "cara bayar" yang
+    relevan, reminder_qris eksplisit menyebut QRIS). "gateway" dipakai di
+    sini sebagai penggantinya (SAMA PERSIS non-qris + belum terverifikasi
+    begitu booking baru dibuat, lihat buat_booking() -- beda dari "cash"
+    yang SEKARANG otomatis langsung "terverifikasi" saat dibuat, jadi tidak
+    lagi cocok mereproduksi skenario ini). terima_booking() tetap mencatat
+    verifikasi_booking_at/oleh, TAPI tidak mencoba kirim WA sama sekali."""
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "gateway")
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
     booking_db.terima_booking(booking["id"], oleh="admin1")
@@ -173,7 +178,7 @@ def test_payment_diterima_tanpa_verifikasi_booking_dulu(single_tenant, monkeypat
 def test_payment_diterima_idempoten_tidak_timpa_catatan_pertama(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "qris")
     booking_db.verifikasi_pembayaran(booking["id"], oleh="admin1")
     tercatat_pertama = booking_db.get_booking(booking["id"])["pembayaran_diterima_at"]
     panggilan = _pasang_penangkap_wa(monkeypatch)
@@ -249,7 +254,7 @@ def test_endpoint_verifikasi_pembayaran_mencatat_username(single_tenant, monkeyp
     client, headers = single_tenant["client"], single_tenant["headers"]
     tenant_id = single_tenant["tenant_id"]
     monkeypatch.setattr("booking_db.whatsapp_service.kirim_whatsapp", lambda *a, **kw: True)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "qris")
 
     r = client.post(f"/api/booking/{booking['id']}/verifikasi", headers=headers)
     assert r.status_code == 200, r.text

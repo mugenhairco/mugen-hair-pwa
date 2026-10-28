@@ -26,6 +26,10 @@ TRANSACTION_TYPE_SAAS_BILLING = "SAAS_BILLING"
 # dibayar lewat gateway SNAP Advance yang SAMA, SATU tabel ini tetap
 # dipakai (bukan tabel baru) -- lihat sales_db.py untuk tenant_lifetime_purchases.
 TRANSACTION_TYPE_LIFETIME_LICENSE = "LIFETIME_LICENSE"
+# FITUR Point of Sale (Kasir walk-in): dibayar lewat gateway SNAP Advance
+# yang SAMA, SATU tabel ini tetap dipakai (bukan tabel baru) -- lihat
+# pos_db.py untuk pos_transaksi.
+TRANSACTION_TYPE_POS = "POS"
 
 # Prefix deterministic -- dikirim ke Faspay sebagai bagian dari referensi
 # transaksi (nama field SISI FASPAY persis PENDING FASPAY, lihat
@@ -41,6 +45,7 @@ TRANSACTION_TYPE_LIFETIME_LICENSE = "LIFETIME_LICENSE"
 PREFIX_BOOKING = "BOOKING-"
 PREFIX_SAAS_BILLING = "SUBSCRIPTION-"
 PREFIX_LIFETIME_LICENSE = "LIFETIME-"
+PREFIX_POS = "POS-"
 
 STATUS_CREATED = "CREATED"
 STATUS_PENDING = "PENDING"
@@ -76,6 +81,8 @@ def buat_payment_reference(transaction_type: str, tenant_id: int, entity_id: int
         prefix = PREFIX_SAAS_BILLING
     elif transaction_type == TRANSACTION_TYPE_LIFETIME_LICENSE:
         prefix = PREFIX_LIFETIME_LICENSE
+    elif transaction_type == TRANSACTION_TYPE_POS:
+        prefix = PREFIX_POS
     else:
         raise ValueError(f"transaction_type tidak dikenal: {transaction_type}")
     return f"{prefix}{tenant_id}-{entity_id}-{uuid.uuid4().hex[:12]}"
@@ -93,12 +100,14 @@ def tentukan_tipe_transaksi(payment_reference: str) -> str:
         return TRANSACTION_TYPE_SAAS_BILLING
     if payment_reference.startswith(PREFIX_LIFETIME_LICENSE):
         return TRANSACTION_TYPE_LIFETIME_LICENSE
-    raise ValueError(f"payment_reference tidak dikenali sebagai transaksi BOOKING, SAAS_BILLING, maupun LIFETIME_LICENSE: {payment_reference}")
+    if payment_reference.startswith(PREFIX_POS):
+        return TRANSACTION_TYPE_POS
+    raise ValueError(f"payment_reference tidak dikenali sebagai transaksi BOOKING, SAAS_BILLING, LIFETIME_LICENSE, maupun POS: {payment_reference}")
 
 
 def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
                     booking_id: int = None, subscription_invoice_id: int = None,
-                    lifetime_purchase_id: int = None,
+                    lifetime_purchase_id: int = None, pos_transaksi_id: int = None,
                     channel: str = None, channel_code: str = None, ewallet_provider: str = None,
                     binding_id: int = None, provider: str = "snap_advance") -> dict:
     """Buat baris transaksi baru berstatus CREATED -- MURNI pencatatan
@@ -131,17 +140,21 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
     routers/booking.py & routers/billing.py) TANPA perlu mengubah modul ini
     lagi kalau providernya berganti."""
     if transaction_type == TRANSACTION_TYPE_BOOKING:
-        if not booking_id or subscription_invoice_id is not None or lifetime_purchase_id is not None:
-            raise ValueError("Transaksi BOOKING wajib mengisi booking_id, TIDAK boleh mengisi subscription_invoice_id/lifetime_purchase_id.")
+        if not booking_id or subscription_invoice_id is not None or lifetime_purchase_id is not None or pos_transaksi_id is not None:
+            raise ValueError("Transaksi BOOKING wajib mengisi booking_id, TIDAK boleh mengisi subscription_invoice_id/lifetime_purchase_id/pos_transaksi_id.")
         entity_id = booking_id
     elif transaction_type == TRANSACTION_TYPE_SAAS_BILLING:
-        if not subscription_invoice_id or booking_id is not None or lifetime_purchase_id is not None:
-            raise ValueError("Transaksi SAAS_BILLING wajib mengisi subscription_invoice_id, TIDAK boleh mengisi booking_id/lifetime_purchase_id.")
+        if not subscription_invoice_id or booking_id is not None or lifetime_purchase_id is not None or pos_transaksi_id is not None:
+            raise ValueError("Transaksi SAAS_BILLING wajib mengisi subscription_invoice_id, TIDAK boleh mengisi booking_id/lifetime_purchase_id/pos_transaksi_id.")
         entity_id = subscription_invoice_id
     elif transaction_type == TRANSACTION_TYPE_LIFETIME_LICENSE:
-        if not lifetime_purchase_id or booking_id is not None or subscription_invoice_id is not None:
-            raise ValueError("Transaksi LIFETIME_LICENSE wajib mengisi lifetime_purchase_id, TIDAK boleh mengisi booking_id/subscription_invoice_id.")
+        if not lifetime_purchase_id or booking_id is not None or subscription_invoice_id is not None or pos_transaksi_id is not None:
+            raise ValueError("Transaksi LIFETIME_LICENSE wajib mengisi lifetime_purchase_id, TIDAK boleh mengisi booking_id/subscription_invoice_id/pos_transaksi_id.")
         entity_id = lifetime_purchase_id
+    elif transaction_type == TRANSACTION_TYPE_POS:
+        if not pos_transaksi_id or booking_id is not None or subscription_invoice_id is not None or lifetime_purchase_id is not None:
+            raise ValueError("Transaksi POS wajib mengisi pos_transaksi_id, TIDAK boleh mengisi booking_id/subscription_invoice_id/lifetime_purchase_id.")
+        entity_id = pos_transaksi_id
     else:
         raise ValueError(f"transaction_type tidak dikenal: {transaction_type}")
     if channel is not None and channel not in CHANNEL_VALID:
@@ -154,12 +167,12 @@ def buat_transaksi(transaction_type: str, tenant_id: int, amount: int, *,
         conn.execute(
             "INSERT INTO snap_payment_transactions "
             "(internal_transaction_id, provider, payment_reference, transaction_type, tenant_id, "
-            "booking_id, subscription_invoice_id, lifetime_purchase_id, channel, channel_code, ewallet_provider, binding_id, "
-            "amount, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
+            "booking_id, subscription_invoice_id, lifetime_purchase_id, pos_transaksi_id, channel, channel_code, "
+            "ewallet_provider, binding_id, amount, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)",
             (internal_transaction_id, provider, payment_reference, transaction_type, tenant_id,
-             booking_id, subscription_invoice_id, lifetime_purchase_id, channel, channel_code, ewallet_provider, binding_id,
-             amount, now, now),
+             booking_id, subscription_invoice_id, lifetime_purchase_id, pos_transaksi_id, channel, channel_code,
+             ewallet_provider, binding_id, amount, now, now),
         )
     return get_transaksi_by_reference(payment_reference)
 
@@ -236,6 +249,19 @@ def get_transaksi_terkini_untuk_booking_batch(booking_ids: list) -> dict:
     for r in rows:
         hasil[r["booking_id"]] = dict(r)  # baris TERAKHIR per booking_id menang (ORDER BY id ASC)
     return hasil
+
+
+def get_transaksi_terkini_untuk_pos(pos_transaksi_id: int) -> dict | None:
+    """Baris SNAP Advance TERBARU untuk satu transaksi Point of Sale -- pola
+    SAMA PERSIS get_transaksi_terkini_untuk_booking(), dipakai routers/pos.py
+    untuk polling status & "Cek Ulang ke Provider"."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM snap_payment_transactions WHERE pos_transaksi_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (pos_transaksi_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_transaksi_terkini_untuk_subscription_invoice(subscription_invoice_id: int) -> dict | None:

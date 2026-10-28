@@ -65,7 +65,7 @@ _urutan_unik = itertools.count(1)
 
 
 def _siapkan_barber_dan_service(tenant_id, nominal=100000, metode_aktif=None):
-    booking_db.update_payment_settings(metode_aktif=metode_aktif or ["transfer", "qris", "gateway"],
+    booking_db.update_payment_settings(metode_aktif=metode_aktif or ["qris", "gateway"],
                                         tenant_id=tenant_id)
     n = next(_urutan_unik)
     barber_id = db.add_barber(f"Barber WA T{tenant_id}-{n}", tenant_id=tenant_id)
@@ -249,7 +249,7 @@ def test_buat_booking_luar_jam_operasional_mengirim_pesan_wa(single_tenant, monk
     _beri_fitur_whatsapp_reminder(tenant_id)
     _patch_sekarang(monkeypatch, 21, 0)  # default jam operasional 10:00-20:00 -- 21:00 sudah tutup
     panggilan = _pasang_penangkap_wa(monkeypatch)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "gateway")
     assert len(panggilan) == 1
     assert panggilan[0]["nomor"] == booking["customer_whatsapp"]
     assert "di luar jam operasional" in panggilan[0]["pesan"].lower()
@@ -261,7 +261,7 @@ def test_buat_booking_dalam_jam_operasional_tidak_mengirim_pesan_luar_jam(single
     _beri_fitur_whatsapp_reminder(tenant_id)
     _patch_sekarang(monkeypatch, 12, 0)  # dalam jam operasional default
     panggilan = _pasang_penangkap_wa(monkeypatch)
-    _buat_booking(tenant_id, "transfer")  # metode "transfer" TIDAK punya pesan otomatis apa pun kalau dalam jam
+    _buat_booking(tenant_id, "gateway")  # metode "gateway" TIDAK punya pesan otomatis apa pun kalau dalam jam
     assert len(panggilan) == 0
 
 
@@ -284,7 +284,7 @@ def test_buat_booking_luar_jam_operasional_tanpa_fitur_whatsapp_reminder_tidak_m
     tenant_id = single_tenant["tenant_id"]
     _patch_sekarang(monkeypatch, 21, 0)
     panggilan = _pasang_penangkap_wa(monkeypatch)
-    _buat_booking(tenant_id, "transfer")
+    _buat_booking(tenant_id, "gateway")
     assert len(panggilan) == 0
 
 
@@ -297,7 +297,7 @@ def test_template_booking_luar_jam_operasional_bisa_diedit_owner(single_tenant, 
     )
     _patch_sekarang(monkeypatch, 21, 0)
     panggilan = _pasang_penangkap_wa(monkeypatch)
-    _buat_booking(tenant_id, "transfer")
+    _buat_booking(tenant_id, "gateway")
     assert panggilan[0]["pesan"] == "Toko tutup ya Budi, nanti dihubungi mulai 10:00."
 
 
@@ -308,10 +308,16 @@ def test_jenis_pesan_booking_luar_jam_operasional_terdaftar_di_katalog():
     assert "{jam_buka}" in whatsapp_templates.DEFAULT_TEMPLATES["booking_luar_jam_operasional"]
 
 
-def test_buat_booking_transfer_tidak_mengirim_reminder(single_tenant, monkeypatch):
+def test_buat_booking_gateway_tidak_mengirim_reminder(single_tenant, monkeypatch):
+    """PERMINTAAN Owner (REVISI payment): metode "transfer" dihapus total
+    dari aplikasi -- test ini dulu memakainya sebagai contoh metode selain
+    "qris" yang tidak memicu reminder_qris saat booking dibuat. "gateway"
+    dipakai sebagai penggantinya (SAMA PERSIS tidak memicu reminder_qris,
+    lihat komentar booking_db.py::buat_booking() -- "gateway" dapat
+    pesannya sendiri lewat verifikasi_pembayaran(), bukan di titik ini)."""
     tenant_id = single_tenant["tenant_id"]
     panggilan = _pasang_penangkap_wa(monkeypatch)
-    _buat_booking(tenant_id, "transfer")
+    _buat_booking(tenant_id, "gateway")
     assert len(panggilan) == 0
 
 
@@ -348,7 +354,7 @@ def test_kirim_notifikasi_wa_booking_tenant_id_none_tidak_mengirim(monkeypatch):
 def test_verifikasi_pembayaran_mengirim_konfirmasi_dan_idempoten(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
-    booking = _buat_booking(tenant_id, "transfer")  # metode selain qris -- tidak ada pesan reminder duluan
+    booking = _buat_booking(tenant_id, "gateway")  # metode selain qris -- tidak ada pesan reminder duluan
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
     booking_db.verifikasi_pembayaran(booking["id"])
@@ -363,7 +369,7 @@ def test_verifikasi_pembayaran_mengirim_konfirmasi_dan_idempoten(single_tenant, 
 def test_batalkan_booking_mengirim_pembatalan_dan_idempoten(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     _beri_fitur_whatsapp_reminder(tenant_id)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "gateway")
     panggilan = _pasang_penangkap_wa(monkeypatch)
 
     booking_db.batalkan_booking(booking["id"])
@@ -445,7 +451,7 @@ def test_booking_pakai_template_custom_kalau_sudah_diatur(single_tenant, monkeyp
     _beri_fitur_whatsapp_reminder(tenant_id)
     whatsapp_service.set_templates({"pembatalan": "Maaf {nama}, booking {layanan} dibatalkan ya."},
                                     tenant_id=tenant_id)
-    booking = _buat_booking(tenant_id, "transfer")
+    booking = _buat_booking(tenant_id, "gateway")
     panggilan = _pasang_penangkap_wa(monkeypatch)
     booking_db.batalkan_booking(booking["id"])
     assert panggilan[0]["pesan"] == f"Maaf Budi, booking {booking['daftar_service']} dibatalkan ya."

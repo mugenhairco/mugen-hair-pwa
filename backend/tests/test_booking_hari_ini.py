@@ -26,7 +26,7 @@ from booking_db import _hari_ini_wib
 
 
 def _siapkan_barber(client, tenant_id, username):
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber(f"Barber {username}", tenant_id=tenant_id)
     service_id = db.add_service(f"Service {username}", 50000, tenant_id=tenant_id)
     auth_db.tambah_user(username, "password123", role="barber", barber_id=barber_id, tenant_id=tenant_id)
@@ -40,7 +40,7 @@ def _booking(tenant_id, barber_id, service_id, hari_offset, jam_mulai="10:00", n
     tanggal = (_hari_ini_wib() + timedelta(days=hari_offset)).isoformat()
     return booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai=jam_mulai,
                                     service_ids=[service_id], customer_nama=nama,
-                                    customer_whatsapp="081234567890", metode_pembayaran="transfer",
+                                    customer_whatsapp="081234567890", metode_pembayaran="qris",
                                     tenant_id=tenant_id)
 
 

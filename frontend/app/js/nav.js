@@ -117,6 +117,9 @@ const MugenNav = (() => {
       // Faspay SNAP Advance toko ini sendiri (lihat pages/settlement_faspay.js).
       { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"], izin: "izin_settlement_faspay_lihat" },
     ]},
+    // FITUR BARU Point of Sale (Kasir walk-in): dua tab (Kasir/Transaksi
+    // Hari Ini), hak akses sendiri (izin_pos_lihat/izin_pos_kelola).
+    { hash: "#/pos", label: "Point of Sale", roles: ["admin", "staff"], izin: "izin_pos_lihat" },
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"], izin: "izin_produk_lihat" },
     // REVISI Hak Akses (hapus menu Owner-only hardcoded -- lihat
     // permissions.py): WhatsApp SEKARANG grantable Owner ke Role manapun

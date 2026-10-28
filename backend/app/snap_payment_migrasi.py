@@ -89,6 +89,11 @@ def migrasi_snap_payment():
         # snap_webhook.py::_cascade_lifetime_license().
         if "lifetime_purchase_id" not in kolom:
             conn.execute("ALTER TABLE snap_payment_transactions ADD COLUMN lifetime_purchase_id INTEGER")
+        # FITUR Point of Sale (Kasir walk-in) -- menautkan transaksi SNAP ke
+        # baris pos_transaksi (pos_db.py), pola SAMA PERSIS lifetime_purchase_id
+        # di atas, lihat snap_webhook.py::_cascade_pos().
+        if "pos_transaksi_id" not in kolom:
+            conn.execute("ALTER TABLE snap_payment_transactions ADD COLUMN pos_transaksi_id INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS snap_payment_status_log (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,

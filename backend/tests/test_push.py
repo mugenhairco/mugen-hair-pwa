@@ -156,7 +156,7 @@ def test_kirim_service_gagal_tidak_melempar_exception(single_tenant, monkeypatch
 
 def test_buat_booking_sukses_walau_push_meledak(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber("Barber Booking Push", tenant_id=tenant_id)
     service_id = db.add_service("Cukur Booking Push", 50000, tenant_id=tenant_id)
 
@@ -168,7 +168,7 @@ def test_buat_booking_sukses_walau_push_meledak(single_tenant, monkeypatch):
     tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
     hasil = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="10:00",
                                      service_ids=[service_id], customer_nama="Budi",
-                                     customer_whatsapp="081234567890", metode_pembayaran="transfer",
+                                     customer_whatsapp="081234567890", metode_pembayaran="qris",
                                      tenant_id=tenant_id)
     assert hasil["id"] is not None
     assert hasil["customer_nama"] == "Budi"
@@ -176,7 +176,7 @@ def test_buat_booking_sukses_walau_push_meledak(single_tenant, monkeypatch):
 
 def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber("Barber Booking Push2", tenant_id=tenant_id)
     service_id = db.add_service("Cukur Booking Push2", 50000, tenant_id=tenant_id)
 
@@ -193,7 +193,7 @@ def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypa
     tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="11:00",
                              service_ids=[service_id], customer_nama="Sari",
-                             customer_whatsapp="081234567891", metode_pembayaran="transfer",
+                             customer_whatsapp="081234567891", metode_pembayaran="qris",
                              tenant_id=tenant_id)
     assert panggilan["tenant_id"] == tenant_id
     assert set(panggilan["roles"]) == {"admin", "staff"}
@@ -209,7 +209,7 @@ def test_buat_booking_memanggil_push_ke_barber_ybs(single_tenant, monkeypatch):
     lewat akun login barber-nya sendiri (kirim_ke_barber()), TERPISAH dari
     push ke role admin/staff di atas."""
     tenant_id = single_tenant["tenant_id"]
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber("Barber Booking Push3", tenant_id=tenant_id)
     service_id = db.add_service("Cukur Booking Push3", 50000, tenant_id=tenant_id)
     monkeypatch.setattr(push_service, "kirim_ke_role", lambda *a, **kw: 1)
@@ -223,7 +223,7 @@ def test_buat_booking_memanggil_push_ke_barber_ybs(single_tenant, monkeypatch):
     tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="12:00",
                              service_ids=[service_id], customer_nama="Dewi",
-                             customer_whatsapp="081234567892", metode_pembayaran="transfer",
+                             customer_whatsapp="081234567892", metode_pembayaran="qris",
                              tenant_id=tenant_id)
     assert panggilan["barber_id"] == barber_id
     assert "Booking Baru" in panggilan["title"]
@@ -232,7 +232,7 @@ def test_buat_booking_memanggil_push_ke_barber_ybs(single_tenant, monkeypatch):
 
 def test_buat_booking_sukses_walau_push_ke_barber_meledak(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber("Barber Booking Push4", tenant_id=tenant_id)
     service_id = db.add_service("Cukur Booking Push4", 50000, tenant_id=tenant_id)
     monkeypatch.setattr(push_service, "kirim_ke_role", lambda *a, **kw: 1)
@@ -245,7 +245,7 @@ def test_buat_booking_sukses_walau_push_ke_barber_meledak(single_tenant, monkeyp
     tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
     hasil = booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="13:00",
                                      service_ids=[service_id], customer_nama="Rio",
-                                     customer_whatsapp="081234567893", metode_pembayaran="transfer",
+                                     customer_whatsapp="081234567893", metode_pembayaran="qris",
                                      tenant_id=tenant_id)
     assert hasil["id"] is not None
     assert hasil["customer_nama"] == "Rio"

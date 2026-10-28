@@ -29,6 +29,7 @@ SEMUA paket, bukan checkbox opsional)."""
 import pytest
 
 import billing_db
+import booking_db
 import feature_access
 import permissions
 import subscription_db
@@ -324,12 +325,19 @@ def test_public_buat_booking_403_tanpa_fitur_booking_online(single_tenant):
 def test_qris_endpoints_bekerja_tanpa_subscription_atau_fitur_apa_pun(single_tenant):
     """REVISI (diminta Owner): "qris" DIHAPUS dari katalog Feature Gating --
     QRIS adalah metode pembayaran INTI yang harus tersedia untuk SEMUA
-    paket tanpa kecuali, bukan checkbox opsional. Endpoint QRIS (publik
-    maupun Owner) sekarang HARUS tetap bekerja normal walau tenant TIDAK
-    PUNYA baris subscription sama sekali (fail-closed feature lain, mis.
-    booking_online, TIDAK berlaku untuk qris lagi)."""
-    r_hapus = single_tenant["client"].delete("/api/booking/qris", headers=single_tenant["headers"])
-    assert r_hapus.status_code == 200, r_hapus.text
+    paket tanpa kecuali, bukan checkbox opsional. Endpoint QRIS publik
+    sekarang HARUS tetap bekerja normal walau tenant TIDAK PUNYA baris
+    subscription sama sekali (fail-closed feature lain, mis. booking_online,
+    TIDAK berlaku untuk qris lagi).
+
+    CATATAN: endpoint Owner POST/DELETE /api/booking/qris sudah dihapus
+    total -- upload/hapus foto QRIS kini eksklusif lewat Super Admin
+    (routers/superadmin.py::upload_qris_foto_tenant()/hapus_qris_foto_tenant(),
+    digerbang require_superadmin yang sama sekali tidak mengecek subscription
+    tenant), jadi bagian "Owner" dari skenario ini sudah tidak relevan lagi --
+    diganti memanggil booking_db.hapus_qris() langsung untuk memastikan state
+    kosong sebelum menguji endpoint publik di bawah."""
+    booking_db.hapus_qris(tenant_id=single_tenant["tenant_id"])
 
     r_publik = single_tenant["client"].get("/api/public/booking/qris", params={"tenant": "test-toko"})
     # 404 di sini murni "QRIS belum diunggah" (data kosong) -- BUKAN gate

@@ -11,6 +11,7 @@ tidak ada perubahan perilaku untuk kasus itu."""
 
 import io
 
+import booking_db
 import database as db
 import subscription_db
 
@@ -121,10 +122,13 @@ def test_barber_foto_publik_dengan_v_immutable_cacheable(single_tenant):
 
 def test_qris_publik_dengan_v_immutable_cacheable(single_tenant):
     client = single_tenant["client"]
-    headers = single_tenant["headers"]
     subscription_db.create_default_subscription(single_tenant["tenant_id"], package="free", status="active")
-    r_upload = client.post("/api/booking/qris", headers=headers, files=_files())
-    assert r_upload.status_code == 200, r_upload.text
+    # Endpoint Owner POST /api/booking/qris sudah dihapus total -- upload foto
+    # QRIS kini eksklusif lewat Super Admin (routers/superadmin.py::
+    # upload_qris_foto_tenant()). Panggil booking_db.simpan_qris() langsung
+    # (pola sama seperti test_booking_qris_perkecil.py) supaya test ini tetap
+    # fokus ke yang diuji: header cache file QRIS yang disajikan publik.
+    booking_db.simpan_qris("foto.png", _png_1x1(), tenant_id=single_tenant["tenant_id"])
 
     r_pengaturan = client.get("/api/public/booking/pengaturan", params={"tenant": "test-toko"})
     assert r_pengaturan.status_code == 200, r_pengaturan.text

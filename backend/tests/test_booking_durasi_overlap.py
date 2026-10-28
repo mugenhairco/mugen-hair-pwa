@@ -14,7 +14,7 @@ from booking_db import _hari_ini_wib
 
 
 def _siapkan(tenant_id, username="durasi1"):
-    booking_db.update_payment_settings(metode_aktif=["transfer"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
     barber_id = db.add_barber(f"Barber {username}", tenant_id=tenant_id)
     return barber_id
 
@@ -38,7 +38,7 @@ def test_hitung_slot_service_2_jam_tumpang_tindih_booking_1_jam_pertama(single_t
 
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="11:00", service_ids=[dry_cut],
                              customer_nama="Customer A", customer_whatsapp="081234567890",
-                             metode_pembayaran="transfer", tenant_id=tenant_id)
+                             metode_pembayaran="qris", tenant_id=tenant_id)
 
     hasil = booking_db.hitung_slot(barber_id, tanggal, [perm], tenant_id=tenant_id)
     status_per_jam = {s["jam"]: s["status"] for s in hasil["slots"]}
@@ -81,7 +81,7 @@ def test_hitung_slot_durasi_ganjil_tidak_kelipatan_interval(single_tenant):
     service_60 = db.add_service("Dry Cut Ganjil", 30000, tenant_id=tenant_id)
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="13:00", service_ids=[service_60],
                              customer_nama="Customer B", customer_whatsapp="081234567890",
-                             metode_pembayaran="transfer", tenant_id=tenant_id)
+                             metode_pembayaran="qris", tenant_id=tenant_id)
 
     hasil = booking_db.hitung_slot(barber_id, tanggal, [service_90], tenant_id=tenant_id)
     status_per_jam = {s["jam"]: s["status"] for s in hasil["slots"]}
@@ -101,7 +101,7 @@ def test_validasi_slot_tersedia_menolak_span_penuh_bukan_hanya_jam_mulai(single_
     tanggal = _besok()
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="11:00", service_ids=[dry_cut],
                              customer_nama="Customer C", customer_whatsapp="081234567890",
-                             metode_pembayaran="transfer", tenant_id=tenant_id)
+                             metode_pembayaran="qris", tenant_id=tenant_id)
 
     import pytest
     # Jam mulai 10:00 TIDAK sama persis dengan booking yang ada (11:00),
@@ -121,10 +121,10 @@ def test_hitung_slot_beberapa_booking_tumpang_tindih_kandidat_yang_sama(single_t
 
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="11:00", service_ids=[dry_cut],
                              customer_nama="Customer D", customer_whatsapp="081234567890",
-                             metode_pembayaran="transfer", tenant_id=tenant_id)
+                             metode_pembayaran="qris", tenant_id=tenant_id)
     booking_db.buat_booking(barber_id=barber_id, tanggal=tanggal, jam_mulai="13:00", service_ids=[dry_cut],
                              customer_nama="Customer E", customer_whatsapp="081234567890",
-                             metode_pembayaran="transfer", tenant_id=tenant_id)
+                             metode_pembayaran="qris", tenant_id=tenant_id)
 
     # Perm 3 jam mulai 10:00 (span 10:00-13:00) overlap KEDUA booking di atas.
     hasil = booking_db.hitung_slot(barber_id, tanggal, [perm], tenant_id=tenant_id)

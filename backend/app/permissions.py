@@ -88,6 +88,10 @@ PERMISSION_TREE = {
     "izin_absensi_koreksi": ("Approve/Reject Koreksi Absensi", "izin_absensi_lihat"),
     "izin_absensi_export_excel": ("Export Excel Riwayat Absensi", "izin_absensi_lihat"),
 
+    # ---- Point of Sale (Kasir walk-in) ----
+    "izin_pos_lihat": ("Point of Sale", None),
+    "izin_pos_kelola": ("Buat Transaksi Kasir / Verifikasi Pembayaran", "izin_pos_lihat"),
+
     # ---- Produk ----
     "izin_produk_lihat": ("Produk", None),
     "izin_produk_kelola": ("Tambah & Kelola Daftar Produk", "izin_produk_lihat"),

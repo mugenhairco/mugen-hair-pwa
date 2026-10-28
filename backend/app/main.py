@@ -85,6 +85,7 @@ import pemasukan_db
 import uang_kas_db
 import data_non_barber_db
 import manual_customer_db  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service, berdiri sendiri dari transaksi Barber (idempotent)
+import pos_db  # FITUR BARU Point of Sale (Kasir walk-in): tabel pos_transaksi/pos_transaksi_service/pos_transaksi_produk (idempotent)
 import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
 import absensi_reminder_db  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
@@ -104,7 +105,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, whatsapp_bot, sales
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, pos, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, whatsapp_bot, sales
 import whatsapp_bot_db  # FITUR WA Bot (Input Data & Rekap via WhatsApp): tabel whatsapp_bot_config/whatsapp_bot_pesan_log (idempotent, berdiri sendiri)
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
@@ -351,6 +352,7 @@ app.include_router(pemasukan.router)
 app.include_router(uang_kas.router)
 app.include_router(data_non_barber.router)
 app.include_router(manual_customer.router)
+app.include_router(pos.router)
 app.include_router(superadmin.router)
 app.include_router(branding.router)
 app.include_router(subscription.router)
@@ -459,6 +461,7 @@ async def on_startup():
         uang_kas_db.init_uang_kas_db()  # Modul Keuangan Fase 2 (pengganti Transfer Kas/Bank): tabel kas_saldo_awal + kas_penyesuaian (idempotent)
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)
         manual_customer_db.init_manual_customer_db()  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service (idempotent)
+        pos_db.init_pos_db()  # FITUR BARU Point of Sale (Kasir walk-in): tabel pos_transaksi/pos_transaksi_service/pos_transaksi_produk (idempotent)
         superadmin_audit_db.init_superadmin_audit_db()  # FONDASI Multi-Tenant Phase 2.1: tabel superadmin_audit_log (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)

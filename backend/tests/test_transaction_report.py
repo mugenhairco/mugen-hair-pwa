@@ -86,7 +86,7 @@ def _hitung_signature_pgw(bill_no, payment_status_code, user_id=PGW_USER_ID, pas
 def _siapkan_barber_dan_service(tenant_id, nominal=100000):
     """`barbers.nama`/`services.nama` UNIQUE GLOBAL -- sertakan tenant_id +
     counter unik supaya beberapa panggilan/tenant tidak bentrok."""
-    booking_db.update_payment_settings(metode_aktif=["transfer", "gateway"], tenant_id=tenant_id)
+    booking_db.update_payment_settings(metode_aktif=["qris", "gateway"], tenant_id=tenant_id)
     n = next(_urutan_unik)
     barber_id = db.add_barber(f"Barber Trx T{tenant_id}-{n}", tenant_id=tenant_id)
     service_id = db.add_service(f"Layanan Trx T{tenant_id}-{n}", nominal, tenant_id=tenant_id)

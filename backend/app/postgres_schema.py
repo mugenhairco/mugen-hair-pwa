@@ -68,7 +68,7 @@ DEFAULT_BOOKING_SETTINGS = {
     "booking_jam_tutup": "20:00",
     "booking_interval_menit": "60",
     "booking_maksimal_hari_kedepan": "30",
-    "booking_metode_aktif": '["transfer"]',
+    "booking_metode_aktif": '["qris"]',
     "booking_qris_merchant_nama": "",
     "booking_qris_filename": "",
     "booking_bank_nama": "",
@@ -709,6 +709,48 @@ CREATE TABLE IF NOT EXISTS manual_customer_transaksi_service (
     service_id                   INTEGER NOT NULL
 );
 
+-- FITUR Point of Sale (Kasir walk-in) -- versi PostgreSQL, SAMA PERSIS
+-- skemanya dengan pos_db.py (jalur SQLite), lihat modul itu untuk
+-- penjelasan arsitektur lengkap (mode "pos" di input_data_hari untuk
+-- Service, Produk reuse TOTAL produk_mutasi yang sudah ada).
+CREATE TABLE IF NOT EXISTS pos_transaksi (
+    id                 SERIAL PRIMARY KEY,
+    tenant_id          INTEGER NOT NULL,
+    tanggal            TEXT NOT NULL,
+    jam                TEXT NOT NULL,
+    barber_id          INTEGER,
+    metode_pembayaran  TEXT NOT NULL,
+    channel            TEXT,
+    status             TEXT NOT NULL DEFAULT 'menunggu',
+    total_harga        INTEGER NOT NULL,
+    payment_reference  TEXT,
+    transaksi_id       INTEGER,
+    dibuat_oleh        TEXT,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT,
+    paid_at            TEXT
+);
+
+-- `service_id` SENGAJA TANPA "REFERENCES services(id)" -- pola sama
+-- persis manual_customer_transaksi_service di atas (tabel `services`
+-- produksi punya riwayat korupsi, lihat catatan panjang di
+-- email_verification_tokens). `pos_transaksi_id` TETAP memakai REFERENCES +
+-- CASCADE karena merujuk tabel BARU di migrasi ini sendiri.
+CREATE TABLE IF NOT EXISTS pos_transaksi_service (
+    id                SERIAL PRIMARY KEY,
+    pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
+    service_id        INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pos_transaksi_produk (
+    id                SERIAL PRIMARY KEY,
+    pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
+    produk_id         INTEGER NOT NULL,
+    jumlah            INTEGER NOT NULL,
+    harga_satuan      INTEGER NOT NULL,
+    mutasi_id         INTEGER
+);
+
 -- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK
 -- menyentuh data lama) yang menyimpan OBJECT KEY R2 -- lihat r2_storage.py
 -- untuk arsitektur lengkap & r2_storage_migrasi.py untuk pasangan jalur
@@ -1186,6 +1228,11 @@ ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS channel_code TEXT
 -- tenant_lifetime_purchases (sales_db.py) untuk cascade status via webhook,
 -- lihat snap_webhook.py::_cascade_lifetime_license().
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS lifetime_purchase_id INTEGER;
+
+-- FITUR Point of Sale (Kasir walk-in) -- menautkan transaksi SNAP ke baris
+-- pos_transaksi (pos_db.py) untuk cascade status via webhook, lihat
+-- snap_webhook.py::_cascade_pos().
+ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS pos_transaksi_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS snap_payment_status_log (
     id              SERIAL PRIMARY KEY,
@@ -1910,6 +1957,44 @@ def create_all():
                 conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING",
                              (_kunci_tenant(tid, key), value))
         _logger.info("[postgres_schema] create_all(): backfill DEFAULT_SETTINGS per-tenant selesai (%.2fs).",
+                     time.monotonic() - _mulai)
+
+        # PERMINTAAN Owner (REVISI payment): "transfer" (Transfer Bank)
+        # dihapus total dari booking_db.METODE_VALID -- HOTFIX DEPLOY: nilai
+        # default LAMA DEFAULT_BOOKING_SETTINGS["booking_metode_aktif"] di
+        # atas SEMPAT berupa '["transfer"]' (sebelum fix ini), jadi SETIAP
+        # tenant yang pernah ter-seed dari nilai itu (baru/lama yang belum
+        # pernah mengubah default) kini tersimpan dengan metode_aktif berisi
+        # HANYA entri yang sudah tidak valid -- booking_db.get_payment_settings()
+        # menyaringnya habis (defensive filter) sehingga tenant itu TIDAK
+        # PUNYA metode pembayaran aktif SAMA SEKALI sampai Superadmin
+        # mengatur ulang manual. Baris di bawah memperbaiki data LAMA yang
+        # SUDAH tersimpan seperti itu -- HANYA tenant yang metode_aktif-nya
+        # SETELAH disaring menjadi KOSONG TOTAL yang disentuh (tenant yang
+        # sudah punya minimal satu metode valid, apa pun isinya, TIDAK diubah).
+        # CATATAN psycopg2: '%' literal di SQL text HARUS ditulis '%%' di sini
+        # -- db_compat.py::_PGCursor.execute() selalu memanggil cursor.execute()
+        # psycopg2 dengan params (default tuple kosong, BUKAN None), yang
+        # membuat psycopg2 tetap mem-parsing string SQL lewat %-style string
+        # formatting-nya sendiri walau tidak ada placeholder yang dipakai --
+        # '%' tunggal yang tidak di-escape memicu "IndexError: tuple index
+        # out of range" (regresi ditemukan lewat test_backup_postgres.py).
+        _metode_valid_saat_ini = {"qris", "gateway", "cash"}
+        baris_metode_aktif = conn.execute(
+            "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
+            "OR key LIKE '%%:booking_metode_aktif'"
+        ).fetchall()
+        for baris in baris_metode_aktif:
+            try:
+                metode_aktif = json.loads(baris["value"])
+            except (TypeError, ValueError):
+                continue  # data korup/tidak terduga -- jangan sentuh
+            if not isinstance(metode_aktif, list):
+                continue
+            if [m for m in metode_aktif if m in _metode_valid_saat_ini]:
+                continue  # masih punya minimal satu metode valid -- jangan sentuh
+            conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(["qris"]), baris["key"]))
+        _logger.info("[postgres_schema] create_all(): perbaikan booking_metode_aktif kosong selesai (%.2fs).",
                      time.monotonic() - _mulai)
 
         jumlah_service = conn.execute("SELECT COUNT(*) AS n FROM services WHERE tenant_id = ?",
