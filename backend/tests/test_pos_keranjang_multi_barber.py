@@ -100,6 +100,34 @@ def test_hapus_transaksi_lunas_rebuild_rekap_dan_kembalikan_stok(single_tenant):
     assert len(hari_ini["produk"]) == 0
 
 
+def test_endpoint_batalkan_pos_antisipasi_kasir_salah_input(single_tenant):
+    client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    barber_a = db.add_barber("Barber E", tenant_id=tenant_id)
+    svc = db.add_service("Dry Cut Smoke 4", 50000, tenant_id=tenant_id)
+
+    r_buat = client.post("/api/pos/transaksi", headers=headers, json={
+        "jasa_items": [{"barber_id": barber_a, "service_ids": [svc], "tips": 0}],
+        "produk_items": [], "metode_pembayaran": "qris",
+    })
+    assert r_buat.status_code == 200, r_buat.text
+    pos_id = r_buat.json()["id"]
+    assert r_buat.json()["status"] == "menunggu"
+
+    r_batal = client.post(f"/api/pos/transaksi/{pos_id}/batalkan", headers=headers)
+    assert r_batal.status_code == 200, r_batal.text
+    assert r_batal.json()["status"] == "batal"
+
+    # No-op kalau dipanggil lagi (sudah 'batal', bukan 'menunggu')
+    r_batal2 = client.post(f"/api/pos/transaksi/{pos_id}/batalkan", headers=headers)
+    assert r_batal2.status_code == 200, r_batal2.text
+    assert r_batal2.json()["status"] == "batal"
+
+    # Transaksi yang dibatalkan TIDAK PERNAH ikut Rekap sama sekali
+    tanggal = r_buat.json()["tanggal"]
+    rekap = db.get_transaksi_list(tahun=int(tanggal[:4]), bulan=int(tanggal[5:7]), barber_id=barber_a, tenant_id=tenant_id)
+    assert len(rekap) == 0
+
+
 def test_hapus_transaksi_lunas_tolak_yang_belum_lunas(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     barber_a = db.add_barber("Barber D", tenant_id=tenant_id)

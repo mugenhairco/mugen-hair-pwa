@@ -440,8 +440,14 @@ const PagePos = (() => {
       }
 
       const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+      // PERMINTAAN Owner (antisipasi Kasir salah input sebelum customer
+      // sempat scan & bayar): tombol Batalkan -- TIDAK ada di booking
+      // publik (customer bisa ditinggal, ada countdown 15 menit terpisah),
+      // tapi di Kasir kasusnya beda: kasir berdiri di situ, kalau sadar
+      // salah input harus bisa langsung batalkan tanpa menunggu kedaluwarsa.
+      const btnBatalkan = MugenUI.el("button", { type: "button", style: "margin-top:12px;margin-left:8px;" }, "Batalkan");
       body.appendChild(MugenUI.el("div", { class: "card" }, [
-        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar])]),
+        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar, btnBatalkan])]),
         MugenUI.el("hr"),
         MugenUI.el("div", { style: "text-align:center;" }, items),
         MugenUI.el("hr"),
@@ -485,6 +491,32 @@ const PagePos = (() => {
           if (!terapkanStatus(status)) {
             statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah selesai bayar.";
           }
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+
+      btnBatalkan.addEventListener("click", async () => {
+        if (!document.body.contains(statusLabelEl)) return;
+        if (!confirm("Batalkan transaksi ini? Kalau customer terlanjur membayar, pembayaran TETAP akan terdeteksi lunas, TIDAK akan ikut terbatalkan.")) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnBatalkan,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/batalkan`));
+          clearInterval(pollTimer);
+          if (hasil.status === "lunas") {
+            // Race jarang: customer sempat bayar tepat sebelum Kasir klik
+            // Batalkan -- pembayaran TETAP sah, TIDAK dibatalkan.
+            MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
+            state.transaksi = hasil;
+            fase = "selesai"; gantiFase();
+            return;
+          }
+          MugenUI.toast("Transaksi dibatalkan.", "success", { force: true });
+          // Keranjang/Produk SENGAJA TIDAK direset (BUKAN resetState()) --
+          // kasir biasanya mau LANGSUNG memperbaiki input yang salah lalu
+          // coba bayar lagi, bukan mengetik ulang semuanya dari awal.
+          state.transaksi = null; state.metode = null; state.channel = null; state.bankCode = null;
+          fase = "pilih"; gantiFase();
         } catch (e) {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }

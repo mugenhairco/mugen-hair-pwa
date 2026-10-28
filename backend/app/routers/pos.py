@@ -102,6 +102,20 @@ def ambil_transaksi(pos_id: int, user: dict = Depends(require_permission("izin_p
     return pos
 
 
+@router.post("/transaksi/{pos_id}/batalkan")
+def batalkan_pos(pos_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol "Batalkan" di layar Menunggu Konfirmasi Pembayaran (Payment
+    Gateway) -- antisipasi Kasir salah input (salah Barber/Service/total)
+    SEBELUM customer sempat scan & bayar. Reuse TOTAL pos_db.batalkan_pos()
+    (SAMA PERSIS fungsi yang sudah ada untuk cascade webhook gagal/
+    kedaluwarsa) -- no-op (balas apa adanya) kalau transaksi ini TERNYATA
+    sudah lunas/batal duluan (race jarang: customer sempat bayar tepat
+    sebelum Kasir klik Batalkan), bukan dianggap error."""
+    pos = pos_db.get_pos_transaksi(pos_id)
+    _pastikan_pos_tenant_sama(user, pos)
+    return pos_db.batalkan_pos(pos_id)
+
+
 @router.post("/transaksi/{pos_id}/verifikasi")
 def verifikasi_manual(pos_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
     """Tombol "Payment Diterima" (metode QRIS manual) -- Kasir sendiri yang

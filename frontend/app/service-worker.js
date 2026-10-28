@@ -1223,7 +1223,14 @@
 // terisi otomatis ikut saat "Lanjut ke Payment"). Tab "Transaksi Hari
 // Ini": tombol Hapus per baris (sumber Kasir saja) -- restock produk +
 // rebuild Rekap otomatis, spinner di tombol, tanpa reload halaman.
-const ASSET_VERSION = "219";
+//
+// v219 -> v220: FITUR tombol "Batalkan" di layar "Menunggu Konfirmasi
+// Pembayaran" (Payment Gateway POS) -- antisipasi Kasir salah input
+// sebelum customer sempat scan & bayar (PERMINTAAN Owner). Endpoint baru
+// POST /api/pos/transaksi/{id}/batalkan (reuse pos_db.batalkan_pos()).
+// Keranjang/Produk SENGAJA tidak direset setelah batal -- kasir biasanya
+// mau langsung memperbaiki input yang salah, bukan ketik ulang semuanya.
+const ASSET_VERSION = "220";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
