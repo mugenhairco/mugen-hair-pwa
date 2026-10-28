@@ -222,6 +222,7 @@ const PagePos = (() => {
         state.formTips = Math.max(0, parseInt(inputTips.value, 10) || 0);
         renderTotal();
       });
+      MugenUI.attachNumericKeypad(inputTips);
       body.appendChild(inputTips);
 
       const btnTambah = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "+ Tambah ke Keranjang");
@@ -248,6 +249,7 @@ const PagePos = (() => {
           if (qty > 0) state.produk[p.id] = qty; else delete state.produk[p.id];
           renderTotal();
         });
+        MugenUI.attachNumericKeypad(inputQty);
         produkBox.appendChild(MugenUI.el("div", { class: "row", style: "align-items:center;gap:10px;" }, [
           MugenUI.el("div", { style: "flex:1;" }, `${p.nama} (${MugenUI.formatRupiah(p.harga_jual)}/pcs, stok ${p.stok})`),
           inputQty,
@@ -546,6 +548,7 @@ const PagePos = (() => {
 
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Uang Diterima"));
       const inputUang = MugenUI.el("input", { type: "number", min: "0", style: "width:100%;font-size:18px;" });
+      MugenUI.attachNumericKeypad(inputUang);
       body.appendChild(inputUang);
 
       const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });
