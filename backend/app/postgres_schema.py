@@ -728,19 +728,29 @@ CREATE TABLE IF NOT EXISTS pos_transaksi (
     dibuat_oleh        TEXT,
     created_at         TEXT NOT NULL,
     updated_at         TEXT,
-    paid_at            TEXT
+    paid_at            TEXT,
+    uang_diterima      INTEGER,
+    kembalian          INTEGER
 );
+ALTER TABLE pos_transaksi ADD COLUMN IF NOT EXISTS uang_diterima INTEGER;
+ALTER TABLE pos_transaksi ADD COLUMN IF NOT EXISTS kembalian INTEGER;
 
 -- `service_id` SENGAJA TANPA "REFERENCES services(id)" -- pola sama
 -- persis manual_customer_transaksi_service di atas (tabel `services`
 -- produksi punya riwayat korupsi, lihat catatan panjang di
 -- email_verification_tokens). `pos_transaksi_id` TETAP memakai REFERENCES +
--- CASCADE karena merujuk tabel BARU di migrasi ini sendiri.
+-- CASCADE karena merujuk tabel BARU di migrasi ini sendiri. `barber_id`
+-- (FITUR Keranjang Multi-Barber, PERMINTAAN Owner): barber per BARIS
+-- service, bukan lagi header pos_transaksi.barber_id -- satu checkout/
+-- satu pembayaran sekarang bisa mencakup BEBERAPA barber sekaligus,
+-- lihat pos_db.py::_lengkapi()/buat_transaksi().
 CREATE TABLE IF NOT EXISTS pos_transaksi_service (
     id                SERIAL PRIMARY KEY,
     pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
-    service_id        INTEGER NOT NULL
+    service_id        INTEGER NOT NULL,
+    barber_id         INTEGER
 );
+ALTER TABLE pos_transaksi_service ADD COLUMN IF NOT EXISTS barber_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS pos_transaksi_produk (
     id                SERIAL PRIMARY KEY,
@@ -749,6 +759,16 @@ CREATE TABLE IF NOT EXISTS pos_transaksi_produk (
     jumlah            INTEGER NOT NULL,
     harga_satuan      INTEGER NOT NULL,
     mutasi_id         INTEGER
+);
+
+-- Tips manual per barber (PERMINTAAN Owner: kasir yang isi manual, BUKAN
+-- dihitung/dibagi otomatis sistem) -- satu baris per barber yang dikasih
+-- tips di checkout ini (barber tanpa tips TIDAK punya baris sama sekali).
+CREATE TABLE IF NOT EXISTS pos_transaksi_barber_tips (
+    id                SERIAL PRIMARY KEY,
+    pos_transaksi_id  INTEGER NOT NULL REFERENCES pos_transaksi(id) ON DELETE CASCADE,
+    barber_id         INTEGER NOT NULL,
+    tips              INTEGER NOT NULL DEFAULT 0
 );
 
 -- Migrasi Cloudflare R2 (Storage File): empat kolom baru (nullable, TIDAK

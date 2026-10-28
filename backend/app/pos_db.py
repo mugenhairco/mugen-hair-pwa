@@ -48,13 +48,16 @@ import gateway_client_base
 import manual_customer_db
 import payment_provider_client
 import snap_payment_db
-from database import (get_barber, get_conn, get_produk, get_service, get_stok_produk, hapus_transaksi,
-                       jual_produk, tambah_transaksi)
+from database import (get_barber, get_conn, get_produk, get_service, get_stok_produk, hapus_mutasi_produk,
+                       hapus_transaksi, jual_produk, tambah_transaksi)
 
 WIB = ZoneInfo("Asia/Jakarta")
 
 STATUS_VALID = {"menunggu", "lunas", "batal"}
-METODE_VALID = {"qris", "gateway"}
+# PERMINTAAN Owner: "Cash" sekarang ditawarkan juga di Point of Sale (kasir
+# input nominal uang diterima, sistem hitung kembalian -- lihat
+# bayar_cash() di bawah), BUKAN hanya qris/gateway seperti sebelumnya.
+METODE_VALID = {"qris", "gateway", "cash"}
 
 _logger = logging.getLogger("mugen.pos")
 
@@ -84,6 +87,16 @@ def init_pos_db():
                 paid_at            TEXT
             )
         """)
+        # FITUR Cash di POS (PERMINTAAN Owner): nominal uang yang diterima
+        # Kasir dari customer + kembalian yang dihitung sistem (uang_diterima
+        # - total_harga), lihat bayar_cash(). Nullable (NULL untuk transaksi
+        # metode lain), ALTER TABLE guard supaya aman dijalankan berkali-kali
+        # terhadap database yang sudah ada.
+        kolom_pt = [r["name"] for r in conn.execute("PRAGMA table_info(pos_transaksi)").fetchall()]
+        if "uang_diterima" not in kolom_pt:
+            conn.execute("ALTER TABLE pos_transaksi ADD COLUMN uang_diterima INTEGER")
+        if "kembalian" not in kolom_pt:
+            conn.execute("ALTER TABLE pos_transaksi ADD COLUMN kembalian INTEGER")
         # `service_id`/`produk_id` SENGAJA TANPA "FOREIGN KEY ... REFERENCES"
         # (pola sama seperti manual_customer_transaksi_service, lihat catatan
         # lengkap "HOTFIX DEPLOY" di manual_customer_db.py -- tabel
@@ -108,6 +121,25 @@ def init_pos_db():
                 FOREIGN KEY (pos_transaksi_id) REFERENCES pos_transaksi(id) ON DELETE CASCADE
             )
         """)
+        # FITUR Keranjang Multi-Barber (PERMINTAAN Owner: "anak cukur Barber
+        # A, bapak cukur Barber B, mau 1 kali scan" & "tips manual per
+        # barber") -- `barber_id` di sini (BUKAN lagi header pos_transaksi)
+        # yang menentukan baris service ini milik barber mana, supaya satu
+        # checkout/satu pembayaran bisa mencakup BEBERAPA barber sekaligus.
+        # Nullable murni supaya ALTER TABLE ini aman dijalankan berkali-kali
+        # tanpa backfill (fitur ini baru, belum ada data produksi lama).
+        kolom_pts = [r["name"] for r in conn.execute("PRAGMA table_info(pos_transaksi_service)").fetchall()]
+        if "barber_id" not in kolom_pts:
+            conn.execute("ALTER TABLE pos_transaksi_service ADD COLUMN barber_id INTEGER")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pos_transaksi_barber_tips (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                pos_transaksi_id  INTEGER NOT NULL,
+                barber_id         INTEGER NOT NULL,
+                tips              INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (pos_transaksi_id) REFERENCES pos_transaksi(id) ON DELETE CASCADE
+            )
+        """)
 
 
 # ---------------------------------------------------------------------------
@@ -121,20 +153,55 @@ def _pastikan_barber_tenant_sama(barber_id: int, tenant_id: int) -> None:
 
 
 def _lengkapi(row: dict) -> dict:
+    """PERUBAHAN Keranjang Multi-Barber: `daftar_barber` adalah struktur
+    UTAMA sekarang -- list {barber_id, nama, daftar_service, tips}, satu
+    entri per barber yang ada di checkout ini (biasanya cuma 1, bisa lebih
+    kalau kasir gabung beberapa orang beda barber jadi satu pembayaran).
+    `daftar_service`/`nama_barber` di level atas TETAP ada (diratakan dari
+    daftar_barber) supaya caller lama (mis. get_transaksi_hari_ini()) tidak
+    perlu tahu strukturnya berubah."""
     with get_conn() as conn:
-        service_ids = [r["service_id"] for r in conn.execute(
-            "SELECT service_id FROM pos_transaksi_service WHERE pos_transaksi_id = ? ORDER BY id ASC",
+        service_rows = [dict(r) for r in conn.execute(
+            "SELECT service_id, barber_id FROM pos_transaksi_service WHERE pos_transaksi_id = ? ORDER BY id ASC",
             (row["id"],),
         ).fetchall()]
         produk_rows = [dict(r) for r in conn.execute(
             "SELECT * FROM pos_transaksi_produk WHERE pos_transaksi_id = ? ORDER BY id ASC",
             (row["id"],),
         ).fetchall()]
-    row["daftar_service"] = []
-    for sid in service_ids:
-        s = get_service(sid)
+        tips_rows = [dict(r) for r in conn.execute(
+            "SELECT barber_id, tips FROM pos_transaksi_barber_tips WHERE pos_transaksi_id = ?",
+            (row["id"],),
+        ).fetchall()]
+    tips_per_barber = {t["barber_id"]: t["tips"] for t in tips_rows}
+
+    # Fallback untuk baris LAMA (sebelum fitur ini ada): service_id tanpa
+    # barber_id tersimpan (NULL) -- anggap milik header barber_id lama,
+    # supaya riwayat yang sudah ada tidak tiba-tiba kosong.
+    barber_urutan = []  # jaga urutan kemunculan, bukan sorted
+    kelompok = {}  # barber_id -> list service dict
+    for r in service_rows:
+        bid = r["barber_id"] if r["barber_id"] is not None else row.get("barber_id")
+        if bid not in kelompok:
+            kelompok[bid] = []
+            barber_urutan.append(bid)
+        s = get_service(r["service_id"])
         if s is not None:
-            row["daftar_service"].append({"id": s["id"], "nama": s["nama"], "harga": s["harga"]})
+            kelompok[bid].append({"id": s["id"], "nama": s["nama"], "harga": s["harga"]})
+
+    row["daftar_barber"] = []
+    row["daftar_service"] = []
+    for bid in barber_urutan:
+        barber = get_barber(bid) if bid is not None else None
+        row["daftar_barber"].append({
+            "barber_id": bid,
+            "nama": barber["nama"] if barber else "(barber terhapus)",
+            "daftar_service": kelompok[bid],
+            "tips": tips_per_barber.get(bid, 0),
+        })
+        row["daftar_service"].extend(kelompok[bid])
+    row["total_tips"] = sum(tips_per_barber.values())
+
     row["daftar_produk"] = []
     for p in produk_rows:
         produk = get_produk(p["produk_id"])
@@ -142,11 +209,7 @@ def _lengkapi(row: dict) -> dict:
             "id": p["produk_id"], "nama": produk["nama"] if produk else "(produk terhapus)",
             "jumlah": p["jumlah"], "harga_satuan": p["harga_satuan"], "mutasi_id": p.get("mutasi_id"),
         })
-    if row.get("barber_id") is not None:
-        barber = get_barber(row["barber_id"])
-        row["nama_barber"] = barber["nama"] if barber else "(barber terhapus)"
-    else:
-        row["nama_barber"] = None
+    row["nama_barber"] = ", ".join(b["nama"] for b in row["daftar_barber"]) if row["daftar_barber"] else None
     return row
 
 
@@ -156,33 +219,55 @@ def get_pos_transaksi(pos_id: int) -> dict | None:
         return _lengkapi(dict(row)) if row else None
 
 
-def buat_transaksi(tenant_id: int, barber_id: int = None, service_ids: list = None,
-                    produk_items: list = None, metode_pembayaran: str = None,
-                    channel: str = None, bank_code: str = None, dibuat_oleh: str = None) -> dict:
-    """`produk_items` = list of {"produk_id": int, "jumlah": int}. Validasi
-    stok di sini MURNI pre-check (snapshot saat checkout dibuat) -- cek
-    OTORITATIF sesungguhnya tetap di database.jual_produk() saat pembayaran
-    lunas (lihat _proses_setelah_lunas()), supaya race jarang (stok berubah
-    di antara checkout dibuat & lunas) tidak pernah membuat stok negatif."""
+def buat_transaksi(tenant_id: int, jasa_items: list = None, produk_items: list = None,
+                    metode_pembayaran: str = None, channel: str = None, bank_code: str = None,
+                    dibuat_oleh: str = None) -> dict:
+    """FITUR Keranjang Multi-Barber (PERMINTAAN Owner -- "anak cukur Barber
+    A, bapak cukur Barber B, mau 1 kali scan" & "tips manual per barber"):
+    `jasa_items` = list of {"barber_id": int, "service_ids": list[int],
+    "tips": int (opsional, default 0)} -- SATU entri per barber yang
+    dipakai di checkout ini (kasir ulang entri ini di keranjang kalau ada
+    lebih dari satu customer/barber dalam satu kali pembayaran). `tips`
+    MASUK ke total yang ditagihkan (satu kali scan mencakup service +
+    tips sekaligus, PERMINTAAN Owner eksplisit: tips manual kasir, bukan
+    dihitung/dibagi otomatis sistem).
+
+    `produk_items` = list of {"produk_id": int, "jumlah": int}, TETAP
+    tenant-wide (tidak terikat barber manapun, lihat docstring modul).
+    Validasi stok di sini MURNI pre-check (snapshot saat checkout dibuat)
+    -- cek OTORITATIF sesungguhnya tetap di database.jual_produk() saat
+    pembayaran lunas (lihat _proses_setelah_lunas()), supaya race jarang
+    (stok berubah di antara checkout dibuat & lunas) tidak pernah membuat
+    stok negatif."""
     if metode_pembayaran not in METODE_VALID:
         raise ValueError(f"Metode pembayaran Point of Sale tidak dikenal: {metode_pembayaran}")
     if metode_pembayaran == "gateway" and not channel:
         raise ValueError("Channel (VA/QRIS) wajib diisi untuk metode gateway.")
-    service_ids = service_ids or []
+    jasa_items = jasa_items or []
     produk_items = produk_items or []
-    if not service_ids and not produk_items:
+    if not jasa_items and not produk_items:
         raise ValueError("Pilih minimal satu Service atau Produk.")
-    if service_ids and barber_id is None:
-        raise ValueError("Barber wajib dipilih kalau ada Service.")
-    if barber_id is not None:
-        _pastikan_barber_tenant_sama(barber_id, tenant_id)
 
     total = 0
-    for sid in service_ids:
-        s = get_service(sid)
-        if s is None or (s.get("tenant_id") is not None and s.get("tenant_id") != tenant_id):
-            raise ValueError(f"Service #{sid} tidak ditemukan.")
-        total += s["harga"]
+    jasa_bersih = []  # [{"barber_id": int, "service_ids": [...], "tips": int}]
+    for item in jasa_items:
+        bid = item.get("barber_id")
+        sids = item.get("service_ids") or []
+        tips = int(item.get("tips") or 0)
+        if bid is None:
+            raise ValueError("Barber wajib dipilih untuk setiap entri di keranjang.")
+        if not sids:
+            raise ValueError("Pilih minimal satu Service untuk setiap barber di keranjang.")
+        if tips < 0:
+            raise ValueError("Tips tidak boleh negatif.")
+        _pastikan_barber_tenant_sama(bid, tenant_id)
+        for sid in sids:
+            s = get_service(sid)
+            if s is None or (s.get("tenant_id") is not None and s.get("tenant_id") != tenant_id):
+                raise ValueError(f"Service #{sid} tidak ditemukan.")
+            total += s["harga"]
+        total += tips
+        jasa_bersih.append({"barber_id": bid, "service_ids": sids, "tips": tips})
 
     produk_bersih = []
     for item in produk_items:
@@ -208,8 +293,16 @@ def buat_transaksi(tenant_id: int, barber_id: int = None, service_ids: list = No
     # konflik mode (tanggal ini sudah dipakai Input Barber/Manual Customer)
     # ketahuan & ditolak SEBELUM customer membayar, bukan sesudahnya saat
     # tidak bisa dibatalkan lagi. Produk TIDAK ikut (lihat docstring modul).
-    if service_ids:
+    if jasa_bersih:
         manual_customer_db.pastikan_mode(tenant_id, tanggal, "pos")
+
+    # Header `barber_id` (legacy, murni kemudahan tampilan): diisi HANYA
+    # kalau checkout ini cuma mencakup SATU barber (kasus paling umum) --
+    # NULL kalau lintas-barber, supaya tidak menyesatkan (lihat
+    # _lengkapi(), sumber kebenaran sesungguhnya SEKARANG daftar_barber,
+    # dibangun dari pos_transaksi_service.barber_id per baris).
+    barber_unik = {it["barber_id"] for it in jasa_bersih}
+    header_barber_id = next(iter(barber_unik)) if len(barber_unik) == 1 else None
 
     now = datetime.now().isoformat(timespec="seconds")
     jam = _sekarang_wib().strftime("%H:%M")
@@ -217,14 +310,20 @@ def buat_transaksi(tenant_id: int, barber_id: int = None, service_ids: list = No
         cur = conn.execute(
             "INSERT INTO pos_transaksi (tenant_id, tanggal, jam, barber_id, metode_pembayaran, channel, "
             "status, total_harga, dibuat_oleh, created_at) VALUES (?, ?, ?, ?, ?, ?, 'menunggu', ?, ?, ?)",
-            (tenant_id, tanggal, jam, barber_id, metode_pembayaran, channel, total, dibuat_oleh, now),
+            (tenant_id, tanggal, jam, header_barber_id, metode_pembayaran, channel, total, dibuat_oleh, now),
         )
         pos_id = cur.lastrowid
-        for sid in service_ids:
-            conn.execute(
-                "INSERT INTO pos_transaksi_service (pos_transaksi_id, service_id) VALUES (?, ?)",
-                (pos_id, sid),
-            )
+        for item in jasa_bersih:
+            for sid in item["service_ids"]:
+                conn.execute(
+                    "INSERT INTO pos_transaksi_service (pos_transaksi_id, service_id, barber_id) VALUES (?, ?, ?)",
+                    (pos_id, sid, item["barber_id"]),
+                )
+            if item["tips"] > 0:
+                conn.execute(
+                    "INSERT INTO pos_transaksi_barber_tips (pos_transaksi_id, barber_id, tips) VALUES (?, ?, ?)",
+                    (pos_id, item["barber_id"], item["tips"]),
+                )
         for p, jumlah in produk_bersih:
             conn.execute(
                 "INSERT INTO pos_transaksi_produk (pos_transaksi_id, produk_id, jumlah, harga_satuan) "
@@ -292,6 +391,31 @@ def verifikasi_manual(pos_id: int, tenant_id: int) -> dict:
     return _tandai_lunas(pos_id)
 
 
+def bayar_cash(pos_id: int, tenant_id: int, uang_diterima: int) -> dict:
+    """Tombol "Selesaikan Transaksi" di layar Kasir (metode Cash) -- Kasir
+    input nominal uang yang benar-benar diterima dari customer, sistem
+    menghitung kembalian (uang_diterima - total_harga) lalu transaksi
+    LANGSUNG lunas (TIDAK ada status menunggu konfirmasi provider/kasir
+    lain, uang tunai sudah diterima di tempat SAAT itu juga)."""
+    pos = get_pos_transaksi(pos_id)
+    if pos is None or pos["tenant_id"] != tenant_id:
+        raise ValueError("Transaksi Point of Sale tidak ditemukan.")
+    if pos["metode_pembayaran"] != "cash":
+        raise ValueError("Pembayaran Cash hanya berlaku untuk transaksi metode Cash.")
+    if pos["status"] != "menunggu":
+        raise ValueError("Transaksi ini sudah diproses sebelumnya.")
+    uang_diterima = int(uang_diterima or 0)
+    if uang_diterima < pos["total_harga"]:
+        raise ValueError("Uang diterima kurang dari total pembayaran.")
+    kembalian = uang_diterima - pos["total_harga"]
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE pos_transaksi SET uang_diterima = ?, kembalian = ? WHERE id = ?",
+            (uang_diterima, kembalian, pos_id),
+        )
+    return _tandai_lunas(pos_id)
+
+
 def tandai_lunas_dari_gateway(pos_id: int) -> dict:
     """Dipanggil snap_webhook.py::_cascade_pos() saat status PAID -- TIDAK
     ADA admin manusia di jalur webhook (pola sama persis _cascade_booking())."""
@@ -343,8 +467,9 @@ def _proses_setelah_lunas(pos: dict) -> None:
     hari (lihat _rebuild_transaksi_barber_hari()), Produk -> reuse TOTAL
     database.jual_produk() per item (TIDAK diagregasi, lihat docstring
     modul)."""
-    if pos["daftar_service"] and pos["barber_id"] is not None:
-        _rebuild_transaksi_barber_hari(pos["tenant_id"], pos["barber_id"], pos["tanggal"])
+    for b in pos["daftar_barber"]:
+        if b["barber_id"] is not None:
+            _rebuild_transaksi_barber_hari(pos["tenant_id"], b["barber_id"], pos["tanggal"])
     for item in pos["daftar_produk"]:
         try:
             mutasi_id = jual_produk(
@@ -370,70 +495,116 @@ def _proses_setelah_lunas(pos: dict) -> None:
             )
 
 
+def _transaksi_lama_pos(barber_id: int, tanggal: str):
+    """Cari baris `transaksi` (Rekap) hasil rebuild POS SEBELUMNYA untuk
+    barber+tanggal ini -- dicari langsung lewat barber_id+tanggal+sumber='pos'
+    (BUKAN lagi lewat pos_transaksi.transaksi_id, kolom header itu sudah
+    tidak punya arti tunggal sejak satu pos_transaksi bisa mencakup
+    BEBERAPA barber sekaligus -- lihat FITUR Keranjang Multi-Barber)."""
+    with get_conn() as conn:
+        return [r["id"] for r in conn.execute(
+            "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ? AND sumber = 'pos'",
+            (barber_id, tanggal),
+        ).fetchall()]
+
+
 def _rebuild_transaksi_barber_hari(tenant_id: int, barber_id: int, tanggal: str) -> None:
     """REUSE pola manual_customer_db._buat_transaksi_gabungan()/
     _sinkronkan_transaksi_hari() (ditulis ulang di sini karena sumber
     datanya tabel pos_transaksi, bukan manual_customer_transaksi) --
     hapus baris `transaksi` lama (kalau ada) untuk barber+tanggal ini yang
     berasal dari POS, lalu bangun ULANG dari SELURUH transaksi POS lunas
-    hari itu (qty service dijumlahkan lintas customer) -- hasilnya SELALU 1
-    baris transaksi per barber per hari, PERMINTAAN Owner eksplisit."""
+    hari itu (qty service dijumlahkan lintas customer, tips dijumlahkan
+    lintas customer) -- hasilnya SELALU 1 baris transaksi per barber per
+    hari, PERMINTAAN Owner eksplisit. Dipanggil per-barber (BUKAN per
+    pos_transaksi) -- satu pos_transaksi lintas-barber memicu ini
+    SEKALI untuk SETIAP barber yang terlibat (lihat _proses_setelah_lunas())."""
     with get_conn() as conn:
-        rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM pos_transaksi WHERE tenant_id = ? AND barber_id = ? AND tanggal = ? AND status = 'lunas'",
-            (tenant_id, barber_id, tanggal),
+        service_rows = [dict(r) for r in conn.execute(
+            "SELECT pts.service_id FROM pos_transaksi_service pts "
+            "JOIN pos_transaksi pt ON pt.id = pts.pos_transaksi_id "
+            "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pt.status = 'lunas' AND pts.barber_id = ?",
+            (tenant_id, tanggal, barber_id),
         ).fetchall()]
-    transaksi_lama = {r["transaksi_id"] for r in rows if r.get("transaksi_id") is not None}
+        total_tips = conn.execute(
+            "SELECT COALESCE(SUM(ptbt.tips), 0) AS total FROM pos_transaksi_barber_tips ptbt "
+            "JOIN pos_transaksi pt ON pt.id = ptbt.pos_transaksi_id "
+            "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pt.status = 'lunas' AND ptbt.barber_id = ?",
+            (tenant_id, tanggal, barber_id),
+        ).fetchone()["total"]
 
     agregat = {}
-    for r in rows:
-        with get_conn() as conn:
-            service_ids = [x["service_id"] for x in conn.execute(
-                "SELECT service_id FROM pos_transaksi_service WHERE pos_transaksi_id = ?", (r["id"],),
-            ).fetchall()]
-        for sid in service_ids:
-            agregat[sid] = agregat.get(sid, 0) + 1
+    for r in service_rows:
+        agregat[r["service_id"]] = agregat.get(r["service_id"], 0) + 1
 
-    for tid in transaksi_lama:
+    for tid in _transaksi_lama_pos(barber_id, tanggal):
         hapus_transaksi(tid)
 
     if not agregat:
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE pos_transaksi SET transaksi_id = NULL WHERE tenant_id = ? AND barber_id = ? AND tanggal = ?",
-                (tenant_id, barber_id, tanggal),
-            )
         return
 
     items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
-    transaksi_id = tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, sumber="pos")
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE pos_transaksi SET transaksi_id = ? "
-            "WHERE tenant_id = ? AND barber_id = ? AND tanggal = ? AND status = 'lunas'",
-            (transaksi_id, tenant_id, barber_id, tanggal),
-        )
+    tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=total_tips, sumber="pos")
 
 
 def reset_hari_pos(tenant_id: int, tanggal: str) -> None:
     """Dipanggil manual_customer_db.reset_hari() (tombol "Reset Semua
     Transaksi Hari Ini") kalau mode tanggal ini == "pos" -- hapus baris
-    `transaksi` hasil rebuild (kalau ada) + SELURUH baris pos_transaksi
-    tanggal ini. Mutasi stok produk yang SUDAH tercatat (database.
+    `transaksi` hasil rebuild (kalau ada, untuk SETIAP barber yang pernah
+    muncul di pos_transaksi_service tanggal ini) + SELURUH baris
+    pos_transaksi tanggal ini (cascade otomatis menghapus service/produk/
+    tips anaknya). Mutasi stok produk yang SUDAH tercatat (database.
     produk_mutasi) SENGAJA TIDAK ikut dibalik di sini -- TIDAK pernah jadi
     bagian mode Input Data (lihat docstring modul), Admin membalikkannya
     sendiri lewat Produk > Riwayat Mutasi kalau memang perlu (tombol Hapus
     Mutasi yang sudah ada, konsisten dengan cara produk dikelola di seluruh
     aplikasi ini)."""
     with get_conn() as conn:
-        rows = [dict(r) for r in conn.execute(
-            "SELECT id, transaksi_id FROM pos_transaksi WHERE tenant_id = ? AND tanggal = ?",
+        barber_ids = [r["barber_id"] for r in conn.execute(
+            "SELECT DISTINCT pts.barber_id FROM pos_transaksi_service pts "
+            "JOIN pos_transaksi pt ON pt.id = pts.pos_transaksi_id "
+            "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pts.barber_id IS NOT NULL",
             (tenant_id, tanggal),
         ).fetchall()]
-    for tid in {r["transaksi_id"] for r in rows if r.get("transaksi_id") is not None}:
-        hapus_transaksi(tid)
+    for bid in barber_ids:
+        for tid in _transaksi_lama_pos(bid, tanggal):
+            hapus_transaksi(tid)
     with get_conn() as conn:
         conn.execute("DELETE FROM pos_transaksi WHERE tenant_id = ? AND tanggal = ?", (tenant_id, tanggal))
+
+
+def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
+    """Tombol Hapus per baris di tab "Transaksi Hari Ini" (PERMINTAAN
+    Owner: transaksi yang terlanjur salah input bisa langsung dihapus baris
+    itu saja, TANPA perlu "Reset Semua Transaksi Hari Ini") -- HANYA
+    berlaku untuk transaksi POS yang SUDAH 'lunas' (satu-satunya status
+    yang tampil di tab itu, lihat get_transaksi_hari_ini()). Membalikkan
+    SEMUA efek lunas:
+    - Produk: reuse TOTAL database.hapus_mutasi_produk() per item (SAMA
+      PERSIS cara Admin membalikkan mutasi lewat Produk > Riwayat Mutasi)
+      -- bisa DITOLAK (ValueError) kalau stoknya sudah terlanjur kepakai
+      di mutasi berikutnya, lihat docstring fungsi itu. Dijalankan
+      SEBELUM pos_transaksi dihapus supaya penolakan ini tidak meninggalkan
+      state setengah jalan (pos_transaksi UTUH kalau ValueError dilempar).
+    - Service: Rekap barber+hari di-hitung ULANG untuk SETIAP barber yang
+      terlibat transaksi ini (lihat _rebuild_transaksi_barber_hari()),
+      TANPA transaksi yang baru dihapus."""
+    pos = get_pos_transaksi(pos_id)
+    if pos is None or pos["tenant_id"] != tenant_id:
+        raise ValueError("Transaksi Point of Sale tidak ditemukan.")
+    if pos["status"] != "lunas":
+        raise ValueError("Hanya transaksi yang sudah lunas yang bisa dihapus dari sini.")
+
+    for item in pos["daftar_produk"]:
+        if item.get("mutasi_id") is not None:
+            hapus_mutasi_produk(item["mutasi_id"])
+
+    with get_conn() as conn:
+        conn.execute("DELETE FROM pos_transaksi WHERE id = ?", (pos_id,))
+
+    for b in pos["daftar_barber"]:
+        if b["barber_id"] is not None:
+            _rebuild_transaksi_barber_hari(tenant_id, b["barber_id"], pos["tanggal"])
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +620,11 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
 
     service_items = []
     produk_items = []
+    # Rincian total per metode pembayaran (PERMINTAAN Owner) -- dihitung
+    # dari total_harga MENTAH tiap transaksi (service + tips + produk
+    # SEKALIGUS, bukan dari service_items/produk_items yang di bawah sudah
+    # dipecah per baris tampilan & SENGAJA tidak menyertakan tips).
+    rincian_metode = {"gateway": 0, "qris": 0, "cash": 0}
 
     with get_conn() as conn:
         pos_rows = [dict(r) for r in conn.execute(
@@ -456,22 +632,35 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
             (tenant_id, tanggal),
         ).fetchall()]
     for r in pos_rows:
+        rincian_metode[r["metode_pembayaran"]] = rincian_metode.get(r["metode_pembayaran"], 0) + r["total_harga"]
         pos = _lengkapi(r)
-        if pos["daftar_service"]:
+        # Satu BARIS per BARBER (bukan lagi per pos_transaksi) -- checkout
+        # lintas-barber (FITUR Keranjang Multi-Barber) ditampilkan terpisah
+        # per barber supaya "Barber"/"Service" tetap jelas siapa mengerjakan
+        # apa, walau satu pembayaran/satu scan mencakup semuanya sekaligus.
+        # `pos_id` disertakan (HANYA utk sumber="pos") supaya tombol Hapus
+        # tahu transaksi POS mana yang mau dihapus -- menghapus salah SATU
+        # barisnya (service ATAU produk) menghapus SELURUH transaksi POS
+        # itu (satu kesatuan satu pembayaran, lihat hapus_transaksi_lunas()).
+        for b in pos["daftar_barber"]:
+            if not b["daftar_service"]:
+                continue
             service_items.append({
-                "sumber": "pos", "jam": pos["jam"], "nama_barber": pos["nama_barber"],
-                "daftar_service": ", ".join(s["nama"] for s in pos["daftar_service"]),
-                "nominal": sum(s["harga"] for s in pos["daftar_service"]),
+                "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"], "nama_barber": b["nama"],
+                "daftar_service": ", ".join(s["nama"] for s in b["daftar_service"]),
+                "nominal": sum(s["harga"] for s in b["daftar_service"]),
             })
         for p in pos["daftar_produk"]:
             produk_items.append({
-                "sumber": "pos", "jam": pos["jam"], "nama_produk": p["nama"],
+                "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"], "nama_produk": p["nama"],
                 "jumlah": p["jumlah"], "nominal": p["harga_satuan"] * p["jumlah"],
             })
 
     for b in booking_db.get_booking_list(tenant_id=tenant_id, tanggal=tanggal, status_booking="aktif"):
         if b.get("status_pembayaran") != "terverifikasi":
             continue
+        metode_b = b.get("metode_pembayaran")
+        rincian_metode[metode_b] = rincian_metode.get(metode_b, 0) + (b.get("total_harga") or 0)
         service_items.append({
             "sumber": "booking", "jam": b["jam_mulai"], "nama_barber": b["nama_barber"],
             "daftar_service": b["daftar_service"], "nominal": b["total_harga"],
@@ -479,4 +668,8 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
 
     service_items.sort(key=lambda x: x["jam"])
     produk_items.sort(key=lambda x: x["jam"])
-    return {"service": service_items, "produk": produk_items}
+    return {
+        "service": service_items, "produk": produk_items,
+        "rincian_metode": rincian_metode,
+        "total_keseluruhan": sum(rincian_metode.values()),
+    }

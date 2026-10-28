@@ -1212,7 +1212,36 @@
 // Bulan Ini" (tabelnya sendiri) -- sebelumnya satu halaman memanjang,
 // tombol Tandai Libur susah dijangkau kalau tabel transaksi bulan itu
 // panjang (laporan Owner).
-const ASSET_VERSION = "218";
+//
+// v218 -> v219: FITUR POS Keranjang Multi-Barber (PERMINTAAN Owner) --
+// wizard Kasir sekarang keranjang (barber+service+tips per entri, "+
+// Tambah ke Keranjang"), satu checkout/satu pembayaran bisa mencakup
+// BEBERAPA barber sekaligus (anak cukur Barber A, bapak cukur Barber B,
+// 1x scan), 1 barber bisa dapat >1 customer service sama (ulang entri),
+// tips manual kasir PER BARBER (ikut masuk total ditagihkan). Jalur cepat
+// 1 customer TETAP tanpa klik "Tambah ke Keranjang" (form yang masih
+// terisi otomatis ikut saat "Lanjut ke Payment"). Tab "Transaksi Hari
+// Ini": tombol Hapus per baris (sumber Kasir saja) -- restock produk +
+// rebuild Rekap otomatis, spinner di tombol, tanpa reload halaman.
+//
+// v219 -> v220: FITUR tombol "Batalkan" di layar "Menunggu Konfirmasi
+// Pembayaran" (Payment Gateway POS) -- antisipasi Kasir salah input
+// sebelum customer sempat scan & bayar (PERMINTAAN Owner). Endpoint baru
+// POST /api/pos/transaksi/{id}/batalkan (reuse pos_db.batalkan_pos()).
+// Keranjang/Produk SENGAJA tidak direset setelah batal -- kasir biasanya
+// mau langsung memperbaiki input yang salah, bukan ketik ulang semuanya.
+//
+// v220 -> v221: FITUR Cash di POS (PERMINTAAN Owner) -- kasir input
+// nominal uang diterima, sistem hitung kembalian otomatis (endpoint baru
+// POST /api/pos/transaksi/{id}/bayar-cash, reuse pola pos_db.verifikasi_
+// manual()/_tandai_lunas()). Kalau cuma SATU metode pembayaran aktif,
+// Kasir TIDAK dipaksa memilih lagi (langsung dipakai). Tab "Transaksi
+// Hari Ini": rincian total per metode (Payment Gateway/QRIS Manual/Cash,
+// termasuk tips & produk) + total keseluruhan. Bugfix: migrasi lama
+// _hapus_metode_cash() (booking_migrasi.py) yang diam-diam menghapus
+// "cash" dari metode aktif tiap startup aplikasi -- dihapus, sudah tidak
+// relevan sejak Cash dikembalikan ke booking_db.METODE_VALID.
+const ASSET_VERSION = "221";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -4,10 +4,12 @@
 // data pengaturan di-fetch SEKALI di awal, pola SAMA PERSIS wizard booking
 // publik di book_public.js) dan "Transaksi Hari Ini" (gabungan booking
 // online yang sudah lunas + transaksi Kasir hari itu, lihat routers/pos.py::
-// transaksi_hari_ini()). Metode pembayaran (QRIS manual/Payment Gateway)
-// reuse TOTAL konfigurasi yang sama dipakai booking publik (lihat
-// booking_db.get_payment_settings()) -- "Cash" TIDAK ditawarkan di sini
-// (bukan skenario walk-in, lihat routers/pos.py::METODE_POS_VALID).
+// transaksi_hari_ini()). Metode pembayaran (QRIS manual/Payment Gateway/
+// Cash) reuse TOTAL konfigurasi yang sama dipakai booking publik (lihat
+// booking_db.get_payment_settings()) -- SATU toggle metode_aktif dibagi
+// bersama Booking & POS, lihat routers/pos.py::METODE_POS_VALID. Kalau
+// cuma SATU metode yang aktif, Kasir TIDAK dipaksa memilih (langsung
+// dipakai, lihat renderPayment()).
 
 const PagePos = (() => {
   async function render(root) {
@@ -72,15 +74,47 @@ const PagePos = (() => {
     const metodeAktif = pengaturan.metode_aktif || [];
     const metodeNama = pengaturan.metode_nama || {};
     const metodeInstruksi = pengaturan.metode_instruksi || {};
+    // FITUR Keranjang Multi-Barber (PERMINTAAN Owner -- "anak cukur Barber
+    // A, bapak cukur Barber B, mau 1 kali scan" & "tips manual per
+    // barber"): `keranjang` = baris yang SUDAH ditambahkan lewat "+ Tambah
+    // ke Keranjang" ({barberId, serviceIds: Set, tips}), `form*` = entri
+    // yang SEDANG diisi tapi BELUM ditambahkan -- supaya kasus paling
+    // umum (1 customer saja) tetap secepat alur lama: langsung "Lanjut ke
+    // Payment" TANPA klik "Tambah ke Keranjang" dulu (form yang masih
+    // terisi otomatis dianggap baris terakhir, lihat kumpulkanJasaItems()).
     const state = {
-      barberId: null, serviceIds: new Set(), produk: {},
+      keranjang: [], formBarberId: null, formServiceIds: new Set(), formTips: 0,
+      produk: {},
       metode: null, channel: null, bankCode: null, transaksi: null,
     };
     let fase = "pilih";
 
+    function formTerisi() {
+      return state.formBarberId !== null && state.formServiceIds.size > 0;
+    }
+
+    // Keranjang + (form yang masih terisi, kalau ada) -- INI yang akan
+    // benar-benar dikirim/ditagihkan kalau "Lanjut ke Payment" diklik
+    // sekarang.
+    function kumpulkanJasaItems() {
+      const items = state.keranjang.map((k) => ({
+        barberId: k.barberId, serviceIds: Array.from(k.serviceIds), tips: k.tips,
+      }));
+      if (formTerisi()) {
+        items.push({ barberId: state.formBarberId, serviceIds: Array.from(state.formServiceIds), tips: state.formTips });
+      }
+      return items;
+    }
+
     function totalHarga() {
       let total = 0;
-      for (const s of pengaturan.services) if (state.serviceIds.has(s.id)) total += s.harga;
+      for (const item of kumpulkanJasaItems()) {
+        for (const sid of item.serviceIds) {
+          const s = pengaturan.services.find((x) => x.id === sid);
+          if (s) total += s.harga;
+        }
+        total += item.tips || 0;
+      }
       for (const pid of Object.keys(state.produk)) {
         const qty = state.produk[pid];
         if (qty > 0) {
@@ -98,7 +132,8 @@ const PagePos = (() => {
     }
 
     function resetState() {
-      state.barberId = null; state.serviceIds = new Set(); state.produk = {};
+      state.keranjang = []; state.formBarberId = null; state.formServiceIds = new Set(); state.formTips = 0;
+      state.produk = {};
       state.metode = null; state.channel = null; state.bankCode = null; state.transaksi = null;
       fase = "pilih";
     }
@@ -109,23 +144,58 @@ const PagePos = (() => {
       else if (fase === "payment") renderPayment();
       else if (fase === "menunggu_manual") renderMenungguManual();
       else if (fase === "waiting") renderWaitingGateway();
+      else if (fase === "bayar_cash") renderBayarCash();
       else renderSelesai();
     }
 
-    // ---- fase "pilih": Barber + Service + Produk (satu checkout bisa
-    // mencampur keduanya -- PERMINTAAN Owner "satu kali scan untuk Service
-    // + Produk") ----
+    // ---- fase "pilih": Keranjang multi-barber (Barber+Service+Tips per
+    // entri) + Produk (tetap tenant-wide, TIDAK terikat barber manapun,
+    // satu checkout bisa mencampur Service + Produk -- PERMINTAAN Owner
+    // "satu kali scan untuk Service + Produk") ----
     function renderPilih() {
       body.appendChild(MugenUI.el("h2", {}, "Pilih Barber, Service & Produk"));
       const errorBox = MugenUI.el("div", { class: "login-error" });
 
-      body.appendChild(MugenUI.el("label", {}, "Barber (wajib kalau memilih Service)"));
+      // --- Keranjang (baris yang sudah ditambahkan) ---
+      const keranjangBox = MugenUI.el("div");
+      body.appendChild(keranjangBox);
+      function renderKeranjang() {
+        keranjangBox.innerHTML = "";
+        if (!state.keranjang.length) return;
+        keranjangBox.appendChild(MugenUI.el("label", {}, "Keranjang"));
+        for (let i = 0; i < state.keranjang.length; i++) {
+          const k = state.keranjang[i];
+          const barber = pengaturan.barbers.find((b) => b.id === k.barberId);
+          const namaService = Array.from(k.serviceIds)
+            .map((sid) => pengaturan.services.find((s) => s.id === sid))
+            .filter(Boolean).map((s) => s.nama).join(", ");
+          const btnHapus = MugenUI.el("button", { type: "button" }, "Hapus");
+          btnHapus.addEventListener("click", () => {
+            state.keranjang.splice(i, 1);
+            renderKeranjang(); renderTotal();
+          });
+          keranjangBox.appendChild(MugenUI.el("div", {
+            class: "card", style: "display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;",
+          }, [
+            MugenUI.el("div", {}, [
+              MugenUI.el("div", { style: "font-weight:700;" }, barber ? barber.nama : "(barber terhapus)"),
+              MugenUI.el("div", { class: "subtitle" }, namaService + (k.tips > 0 ? ` — Tips ${MugenUI.formatRupiah(k.tips)}` : "")),
+            ]),
+            btnHapus,
+          ]));
+        }
+      }
+      renderKeranjang();
+
+      // --- Form entri (barber+service+tips yang SEDANG diisi) ---
+      body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Barber"));
       const selBarber = MugenUI.el("select");
       selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- Pilih Barber --"));
       for (const b of pengaturan.barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-      if (state.barberId) selBarber.value = String(state.barberId);
+      if (state.formBarberId) selBarber.value = String(state.formBarberId);
       selBarber.addEventListener("change", () => {
-        state.barberId = selBarber.value ? Number(selBarber.value) : null;
+        state.formBarberId = selBarber.value ? Number(selBarber.value) : null;
+        renderTotal();
       });
       body.appendChild(selBarber);
 
@@ -133,9 +203,9 @@ const PagePos = (() => {
       const serviceBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:12px;" });
       for (const s of pengaturan.services) {
         const cb = MugenUI.el("input", { type: "checkbox" });
-        cb.checked = state.serviceIds.has(s.id);
+        cb.checked = state.formServiceIds.has(s.id);
         cb.addEventListener("change", () => {
-          if (cb.checked) state.serviceIds.add(s.id); else state.serviceIds.delete(s.id);
+          if (cb.checked) state.formServiceIds.add(s.id); else state.formServiceIds.delete(s.id);
           renderTotal();
         });
         serviceBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;" },
@@ -144,7 +214,29 @@ const PagePos = (() => {
       body.appendChild(serviceBox);
       if (!pengaturan.services.length) body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
 
-      body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Produk"));
+      // Tips: manual oleh kasir, PER BARBER (PERMINTAAN Owner -- kasir
+      // yang isi sendiri, BUKAN dihitung/dibagi otomatis sistem).
+      body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tips untuk barber ini (opsional)"));
+      const inputTips = MugenUI.el("input", { type: "number", min: "0", value: String(state.formTips || 0), style: "max-width:160px;" });
+      inputTips.addEventListener("input", () => {
+        state.formTips = Math.max(0, parseInt(inputTips.value, 10) || 0);
+        renderTotal();
+      });
+      body.appendChild(inputTips);
+
+      const btnTambah = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "+ Tambah ke Keranjang");
+      btnTambah.addEventListener("click", () => {
+        errorBox.textContent = "";
+        if (!state.formBarberId) { errorBox.textContent = "Pilih Barber terlebih dahulu."; return; }
+        if (!state.formServiceIds.size) { errorBox.textContent = "Pilih minimal satu Service terlebih dahulu."; return; }
+        state.keranjang.push({ barberId: state.formBarberId, serviceIds: new Set(state.formServiceIds), tips: state.formTips });
+        state.formBarberId = null; state.formServiceIds = new Set(); state.formTips = 0;
+        fase = "pilih"; gantiFase(); // render ulang penuh -- form & select perlu kembali kosong
+      });
+      body.appendChild(btnTambah);
+
+      // --- Produk (terpisah, tenant-wide, TIDAK terikat barber manapun) ---
+      body.appendChild(MugenUI.el("label", { style: "margin-top:20px;" }, "Produk"));
       const produkBox = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:8px;" });
       for (const p of pengaturan.produk) {
         const inputQty = MugenUI.el("input", {
@@ -177,12 +269,18 @@ const PagePos = (() => {
         "Lanjut ke Payment");
       btnLanjut.addEventListener("click", () => {
         errorBox.textContent = "";
-        if (!state.serviceIds.size && !Object.keys(state.produk).length) {
+        const jasaItems = kumpulkanJasaItems();
+        if (!jasaItems.length && !Object.keys(state.produk).length) {
           errorBox.textContent = "Pilih minimal satu Service atau Produk."; return;
         }
-        if (state.serviceIds.size && !state.barberId) {
-          errorBox.textContent = "Barber wajib dipilih kalau ada Service yang dipilih."; return;
+        // Form terisi SEBAGIAN (barber tanpa service, atau sebaliknya) --
+        // bukan baris lengkap untuk diikutkan otomatis, tapi juga bukan
+        // niat kosong -- minta kasir selesaikan/hapus dulu supaya tidak
+        // diam-diam terlewat dari pembayaran.
+        if ((state.formBarberId && !state.formServiceIds.size) || (!state.formBarberId && state.formServiceIds.size)) {
+          errorBox.textContent = "Lengkapi dulu Barber & Service yang sedang diisi (atau kosongkan keduanya)."; return;
         }
+        state.jasaItemsFinal = jasaItems;
         fase = "payment"; gantiFase();
       });
       body.appendChild(btnLanjut);
@@ -226,9 +324,18 @@ const PagePos = (() => {
           opsi.push({ metode: m, channel: null, label: metodeNama[m] || m });
         }
       }
+      // PERMINTAAN Owner: kalau cuma SATU opsi pembayaran yang tersedia
+      // (satu-satunya metode aktif, dengan paling banyak satu channel),
+      // JANGAN paksa Kasir memilih -- langsung pakai opsi itu, tampilkan
+      // sebagai info saja (tombol Back masih bisa kembali ke "pilih").
+      const satuOpsi = opsi.length === 1;
       if (!opsi.length) {
         body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" },
           "Belum ada metode pembayaran aktif untuk Point of Sale. Hubungi Superadmin."));
+      } else if (satuOpsi) {
+        state.metode = opsi[0].metode; state.channel = opsi[0].channel;
+        metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, `Metode pembayaran: ${opsi[0].label}`));
+        renderBankBox();
       } else {
         for (const o of opsi) {
           const dipilih = state.metode === o.metode && state.channel === o.channel;
@@ -263,7 +370,9 @@ const PagePos = (() => {
         }
         try {
           const payload = {
-            barber_id: state.barberId, service_ids: Array.from(state.serviceIds),
+            jasa_items: (state.jasaItemsFinal || []).map((it) => ({
+              barber_id: it.barberId, service_ids: it.serviceIds, tips: it.tips || 0,
+            })),
             produk_items: Object.keys(state.produk).map((pid) => ({ produk_id: Number(pid), jumlah: state.produk[pid] })),
             metode_pembayaran: state.metode,
             channel: state.metode === "gateway" ? state.channel : undefined,
@@ -271,7 +380,7 @@ const PagePos = (() => {
           };
           const hasil = await MugenUI.withButtonLoading(btnBuat, () => MugenApi.post("/api/pos/transaksi", payload));
           state.transaksi = hasil;
-          fase = state.metode === "gateway" ? "waiting" : "menunggu_manual";
+          fase = state.metode === "gateway" ? "waiting" : (state.metode === "cash" ? "bayar_cash" : "menunggu_manual");
           gantiFase();
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -343,8 +452,14 @@ const PagePos = (() => {
       }
 
       const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+      // PERMINTAAN Owner (antisipasi Kasir salah input sebelum customer
+      // sempat scan & bayar): tombol Batalkan -- TIDAK ada di booking
+      // publik (customer bisa ditinggal, ada countdown 15 menit terpisah),
+      // tapi di Kasir kasusnya beda: kasir berdiri di situ, kalau sadar
+      // salah input harus bisa langsung batalkan tanpa menunggu kedaluwarsa.
+      const btnBatalkan = MugenUI.el("button", { type: "button", style: "margin-top:12px;margin-left:8px;" }, "Batalkan");
       body.appendChild(MugenUI.el("div", { class: "card" }, [
-        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar])]),
+        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar, btnBatalkan])]),
         MugenUI.el("hr"),
         MugenUI.el("div", { style: "text-align:center;" }, items),
         MugenUI.el("hr"),
@@ -392,15 +507,95 @@ const PagePos = (() => {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }
       });
+
+      btnBatalkan.addEventListener("click", async () => {
+        if (!document.body.contains(statusLabelEl)) return;
+        if (!confirm("Batalkan transaksi ini? Kalau customer terlanjur membayar, pembayaran TETAP akan terdeteksi lunas, TIDAK akan ikut terbatalkan.")) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnBatalkan,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/batalkan`));
+          clearInterval(pollTimer);
+          if (hasil.status === "lunas") {
+            // Race jarang: customer sempat bayar tepat sebelum Kasir klik
+            // Batalkan -- pembayaran TETAP sah, TIDAK dibatalkan.
+            MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
+            state.transaksi = hasil;
+            fase = "selesai"; gantiFase();
+            return;
+          }
+          MugenUI.toast("Transaksi dibatalkan.", "success", { force: true });
+          // Keranjang/Produk SENGAJA TIDAK direset (BUKAN resetState()) --
+          // kasir biasanya mau LANGSUNG memperbaiki input yang salah lalu
+          // coba bayar lagi, bukan mengetik ulang semuanya dari awal.
+          state.transaksi = null; state.metode = null; state.channel = null; state.bankCode = null;
+          fase = "pilih"; gantiFase();
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+    }
+
+    // ---- fase "bayar_cash": Kasir input nominal uang diterima dari
+    // customer, sistem hitung kembalian LIVE sambil mengetik -- transaksi
+    // LANGSUNG lunas begitu "Selesaikan Transaksi" diklik (uang tunai
+    // diterima di tempat SAAT itu juga, TIDAK ada status menunggu). ----
+    function renderBayarCash() {
+      const r = state.transaksi;
+      body.appendChild(MugenUI.el("h2", {}, "Pembayaran Cash"));
+      body.appendChild(MugenUI.el("div", { class: "card" }, [barisTotal()]));
+
+      body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Uang Diterima"));
+      const inputUang = MugenUI.el("input", { type: "number", min: "0", style: "width:100%;font-size:18px;" });
+      body.appendChild(inputUang);
+
+      const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });
+      body.appendChild(kembalianBox);
+      function renderKembalian() {
+        const diterima = parseInt(inputUang.value, 10) || 0;
+        const sisa = diterima - totalHarga();
+        kembalianBox.className = sisa >= 0 ? "subtitle" : "login-error";
+        kembalianBox.textContent = sisa >= 0
+          ? `Kembalian: ${MugenUI.formatRupiah(sisa)}`
+          : `Kurang ${MugenUI.formatRupiah(-sisa)}`;
+      }
+      inputUang.addEventListener("input", renderKembalian);
+      renderKembalian();
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      body.appendChild(errorBox);
+
+      const btnSelesai = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
+        "Selesaikan Transaksi");
+      btnSelesai.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const diterima = parseInt(inputUang.value, 10) || 0;
+        if (diterima < totalHarga()) { errorBox.textContent = "Uang diterima kurang dari total pembayaran."; return; }
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnSelesai,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
+          state.transaksi = hasil;
+          MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
+          fase = "selesai"; gantiFase();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      body.appendChild(btnSelesai);
     }
 
     // ---- fase "selesai" ----
     function renderSelesai() {
-      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+      const r = state.transaksi;
+      const isi = [
         MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
         MugenUI.el("h2", {}, "Pembayaran Berhasil"),
         MugenUI.el("div", { class: "subtitle" }, `Total: ${MugenUI.formatRupiah(totalHarga())}`),
-      ]));
+      ];
+      if (r && r.metode_pembayaran === "cash") {
+        isi.push(MugenUI.el("div", { class: "subtitle" }, `Uang Diterima: ${MugenUI.formatRupiah(r.uang_diterima || 0)}`));
+        isi.push(MugenUI.el("div", { style: "font-weight:700;margin-top:4px;" }, `Kembalian: ${MugenUI.formatRupiah(r.kembalian || 0)}`));
+      }
+      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, isi));
       const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
         "Transaksi Baru");
       btnBaru.addEventListener("click", () => { resetState(); gantiFase(); });
@@ -416,40 +611,87 @@ const PagePos = (() => {
   // nominal, jam), TANPA komisi/tips (PERMINTAAN Owner).
   async function renderTransaksiHariIniTab(body) {
     body.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 3 }));
-    let hasil;
-    try {
-      hasil = await MugenApi.get("/api/pos/transaksi-hari-ini");
-    } catch (e) {
-      body.innerHTML = "";
-      body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
-      return;
+
+    // Tombol Hapus (PERMINTAAN Owner: baris yang terlanjur salah input di
+    // POS bisa langsung dihapus dari sini) -- HANYA untuk baris sumber
+    // "pos" (booking online TIDAK dihapus dari sini sama sekali). Spinner
+    // di tombolnya sendiri (MugenUI.withButtonLoading(), pola SAMA PERSIS
+    // halaman lain), lalu muat ulang HANYA isi tab ini (muatUlang()) --
+    // TANPA reload 1 halaman penuh.
+    function kolomAksi(posId) {
+      if (!posId) return "-";
+      const btn = MugenUI.el("button", { type: "button" }, "Hapus");
+      btn.addEventListener("click", async () => {
+        if (!confirm("Hapus transaksi POS ini? Stok produk (kalau ada) dikembalikan & Rekap barber terkait dihitung ulang.")) return;
+        try {
+          await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/pos/transaksi/${posId}`));
+          MugenUI.toast("Transaksi dihapus.", "success", { force: true });
+          await muatUlang();
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+      return btn;
     }
-    body.innerHTML = "";
 
-    body.appendChild(MugenUI.el("h2", {}, "Service"));
-    body.appendChild(MugenUI.buildTable(
-      [
-        { key: "jam", label: "Jam" },
-        { key: "nama_barber", label: "Barber" },
-        { key: "daftar_service", label: "Service" },
-        { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
-        { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
-      ],
-      hasil.service,
-      { emptyText: "Belum ada transaksi service hari ini." },
-    ));
+    async function muatUlang() {
+      let hasil;
+      try {
+        hasil = await MugenApi.get("/api/pos/transaksi-hari-ini");
+      } catch (e) {
+        body.innerHTML = "";
+        body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+      body.innerHTML = "";
 
-    body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
-    body.appendChild(MugenUI.buildTable(
-      [
-        { key: "jam", label: "Jam" },
-        { key: "nama_produk", label: "Produk" },
-        { key: "jumlah", label: "Jumlah" },
-        { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
-      ],
-      hasil.produk,
-      { emptyText: "Belum ada transaksi produk hari ini." },
-    ));
+      // Rincian total per metode pembayaran (PERMINTAAN Owner) --
+      // termasuk tips & produk (dihitung dari total mentah tiap
+      // transaksi di backend, lihat pos_db.get_transaksi_hari_ini()).
+      const rincian = hasil.rincian_metode || {};
+      function barisRincian(label, nominal, tebal) {
+        return MugenUI.el("div", {
+          style: `display:flex;justify-content:space-between;${tebal ? "font-weight:700;" : ""}`,
+        }, [MugenUI.el("span", {}, label), MugenUI.el("span", {}, MugenUI.formatRupiah(nominal || 0))]);
+      }
+      body.appendChild(MugenUI.el("div", { class: "card", style: "margin-bottom:16px;" }, [
+        MugenUI.el("div", { style: "font-weight:700;margin-bottom:8px;" }, "Rincian Pembayaran Hari Ini"),
+        barisRincian("Payment Gateway", rincian.gateway),
+        barisRincian("QRIS Manual", rincian.qris),
+        barisRincian("Cash", rincian.cash),
+        MugenUI.el("hr"),
+        barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
+      ]));
+
+      body.appendChild(MugenUI.el("h2", {}, "Service"));
+      body.appendChild(MugenUI.buildTable(
+        [
+          { key: "jam", label: "Jam" },
+          { key: "nama_barber", label: "Barber" },
+          { key: "daftar_service", label: "Service" },
+          { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+          { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
+          { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
+        ],
+        hasil.service,
+        { emptyText: "Belum ada transaksi service hari ini." },
+      ));
+
+      body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
+      body.appendChild(MugenUI.buildTable(
+        [
+          { key: "jam", label: "Jam" },
+          { key: "nama_produk", label: "Produk" },
+          { key: "jumlah", label: "Jumlah" },
+          { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+          { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
+        ],
+        hasil.produk,
+        { emptyText: "Belum ada transaksi produk hari ini." },
+      ));
+    }
+
+    await muatUlang();
   }
 
   return { render };

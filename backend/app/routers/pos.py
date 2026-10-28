@@ -25,7 +25,10 @@ from auth import require_menu_read, require_permission
 router = APIRouter(prefix="/api/pos", tags=["pos"])
 
 WIB = ZoneInfo("Asia/Jakarta")
-METODE_POS_VALID = {"qris", "gateway"}
+# PERMINTAAN Owner: "cash" sekarang ditawarkan juga di Point of Sale (lihat
+# pos_db.bayar_cash()) -- memakai toggle metode_aktif YANG SAMA dengan
+# Booking publik (booking_db.get_payment_settings()), BUKAN toggle terpisah.
+METODE_POS_VALID = {"qris", "gateway", "cash"}
 
 
 def _hari_ini_wib() -> str:
@@ -61,9 +64,16 @@ class ProdukItemBody(BaseModel):
     jumlah: int
 
 
-class BuatTransaksiBody(BaseModel):
-    barber_id: int | None = None
+class JasaItemBody(BaseModel):
+    """FITUR Keranjang Multi-Barber (PERMINTAAN Owner) -- satu entri per
+    barber yang dipakai di checkout ini, lihat pos_db.buat_transaksi()."""
+    barber_id: int
     service_ids: list[int] = []
+    tips: int = 0
+
+
+class BuatTransaksiBody(BaseModel):
+    jasa_items: list[JasaItemBody] = []
     produk_items: list[ProdukItemBody] = []
     metode_pembayaran: str
     channel: str | None = None
@@ -74,7 +84,7 @@ class BuatTransaksiBody(BaseModel):
 def buat_transaksi(body: BuatTransaksiBody, user: dict = Depends(require_permission("izin_pos_kelola"))):
     try:
         return pos_db.buat_transaksi(
-            user["tenant_id"], barber_id=body.barber_id, service_ids=body.service_ids,
+            user["tenant_id"], jasa_items=[item.model_dump() for item in body.jasa_items],
             produk_items=[item.model_dump() for item in body.produk_items],
             metode_pembayaran=body.metode_pembayaran, channel=body.channel, bank_code=body.bank_code,
             dibuat_oleh=user["username"],
@@ -93,6 +103,35 @@ def ambil_transaksi(pos_id: int, user: dict = Depends(require_permission("izin_p
     pos = pos_db.get_pos_transaksi(pos_id)
     _pastikan_pos_tenant_sama(user, pos)
     return pos
+
+
+@router.post("/transaksi/{pos_id}/batalkan")
+def batalkan_pos(pos_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol "Batalkan" di layar Menunggu Konfirmasi Pembayaran (Payment
+    Gateway) -- antisipasi Kasir salah input (salah Barber/Service/total)
+    SEBELUM customer sempat scan & bayar. Reuse TOTAL pos_db.batalkan_pos()
+    (SAMA PERSIS fungsi yang sudah ada untuk cascade webhook gagal/
+    kedaluwarsa) -- no-op (balas apa adanya) kalau transaksi ini TERNYATA
+    sudah lunas/batal duluan (race jarang: customer sempat bayar tepat
+    sebelum Kasir klik Batalkan), bukan dianggap error."""
+    pos = pos_db.get_pos_transaksi(pos_id)
+    _pastikan_pos_tenant_sama(user, pos)
+    return pos_db.batalkan_pos(pos_id)
+
+
+class BayarCashBody(BaseModel):
+    uang_diterima: int
+
+
+@router.post("/transaksi/{pos_id}/bayar-cash")
+def bayar_cash_pos(pos_id: int, body: BayarCashBody, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol "Selesaikan Transaksi" di layar Kasir (metode Cash) -- lihat
+    pos_db.bayar_cash()."""
+    _pastikan_pos_tenant_sama(user, pos_db.get_pos_transaksi(pos_id))
+    try:
+        return pos_db.bayar_cash(pos_id, user["tenant_id"], body.uang_diterima)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/transaksi/{pos_id}/verifikasi")
@@ -139,6 +178,17 @@ def cek_ulang(pos_id: int, user: dict = Depends(require_permission("izin_pos_kel
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"status": hasil["status"], "pos_status": pos_db.get_pos_transaksi(pos_id)["status"]}
+
+
+@router.delete("/transaksi/{pos_id}")
+def hapus_transaksi_lunas(pos_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol Hapus per baris di tab "Transaksi Hari Ini" (PERMINTAAN
+    Owner) -- lihat pos_db.hapus_transaksi_lunas()."""
+    try:
+        pos_db.hapus_transaksi_lunas(pos_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
 
 
 @router.get("/transaksi-hari-ini")
