@@ -222,6 +222,7 @@ const PagePos = (() => {
         state.formTips = Math.max(0, parseInt(inputTips.value, 10) || 0);
         renderTotal();
       });
+      MugenUI.attachNumericKeypad(inputTips);
       body.appendChild(inputTips);
 
       const btnTambah = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "+ Tambah ke Keranjang");
@@ -546,6 +547,7 @@ const PagePos = (() => {
 
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Uang Diterima"));
       const inputUang = MugenUI.el("input", { type: "number", min: "0", style: "width:100%;font-size:18px;" });
+      MugenUI.attachNumericKeypad(inputUang);
       body.appendChild(inputUang);
 
       const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });

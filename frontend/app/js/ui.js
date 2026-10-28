@@ -666,6 +666,96 @@ const MugenUI = (() => {
   // Tampilan untuk Owner/Admin, dan di atas tombol Keluar untuk user
   // lain -- lihat nav.js/pengaturan.js), satu builder di sini supaya
   // markup & perilakunya SAMA PERSIS di kedua tempat.
+  // ============ Custom Numeric Keypad (PERMINTAAN Owner, khusus input
+  // Tips & Uang Cash Diterima di POS) ============
+  // HANYA aktif di perangkat touch (pointer kasar -- HP/tablet): input
+  // dibuat `readonly` (mencegah keyboard virtual bawaan perangkat muncul
+  // sama sekali) lalu diisi lewat keypad custom (7 8 9 / 4 5 6 / 1 2 3 /
+  // 0 00 ⌫ / ENTER, lihat mockup Owner) yang muncul sebagai overlay fixed
+  // di bawah layar begitu input difokus/diklik. Di laptop/desktop (pointer
+  // halus, ada mouse) fungsi ini TIDAK melakukan apa pun -- perilaku input
+  // native (klik, ketik lewat keyboard fisik) sama sekali tidak disentuh.
+  function _keypadPerangkatTouch() {
+    return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  }
+
+  let _keypadAktif = null; // { overlay, input } -- cuma SATU keypad terbuka sekaligus
+  let _keypadHashListenerTerpasang = false;
+
+  function _tutupKeypad() {
+    if (!_keypadAktif) return;
+    _keypadAktif.overlay.remove();
+    document.removeEventListener("pointerdown", _keypadAktif.pointerdownLuar, true);
+    _keypadAktif = null;
+  }
+
+  function _bukaKeypad(input, { onEnter } = {}) {
+    if (_keypadAktif && _keypadAktif.input === input) return;
+    _tutupKeypad();
+
+    function setNilai(baru) {
+      input.value = baru;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    const TOMBOL = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", "00", "⌫"];
+    const grid = el("div", { class: "numkeypad-grid" });
+    for (const label of TOMBOL) {
+      const btn = el("button", { type: "button", class: "numkeypad-btn" }, label);
+      btn.addEventListener("pointerdown", () => btn.classList.add("pressed"));
+      btn.addEventListener("pointerup", () => btn.classList.remove("pressed"));
+      btn.addEventListener("pointerleave", () => btn.classList.remove("pressed"));
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (label === "⌫") setNilai(input.value.slice(0, -1));
+        else setNilai((input.value === "0" ? "" : input.value) + label);
+      });
+      grid.appendChild(btn);
+    }
+    const btnEnter = el("button", {
+      type: "button", class: "numkeypad-btn numkeypad-enter",
+      style: "grid-column:4;grid-row:1 / span 4;",
+    }, "ENTER");
+    btnEnter.addEventListener("pointerdown", () => btnEnter.classList.add("pressed"));
+    btnEnter.addEventListener("pointerup", () => btnEnter.classList.remove("pressed"));
+    btnEnter.addEventListener("pointerleave", () => btnEnter.classList.remove("pressed"));
+    btnEnter.addEventListener("click", (e) => {
+      e.preventDefault();
+      _tutupKeypad();
+      if (typeof onEnter === "function") onEnter(input.value);
+    });
+    grid.appendChild(btnEnter);
+
+    const overlay = el("div", { class: "numkeypad-overlay" }, [grid]);
+    document.body.appendChild(overlay);
+
+    // Klik/tap DI LUAR keypad: tutup TANPA menghapus nilai yang sudah
+    // diisi (PERMINTAAN Owner). `capture: true` + ditunda ke microtask
+    // berikutnya supaya event pointerdown yang MEMBUKA keypad ini sendiri
+    // (dari focus/click di `input`) tidak langsung menutupnya lagi.
+    const pointerdownLuar = (e) => {
+      if (!overlay.contains(e.target) && e.target !== input) _tutupKeypad();
+    };
+    setTimeout(() => document.addEventListener("pointerdown", pointerdownLuar, true), 0);
+
+    _keypadAktif = { overlay, input, pointerdownLuar };
+  }
+
+  function attachNumericKeypad(input, opts = {}) {
+    if (!_keypadPerangkatTouch()) return; // laptop/desktop: tidak disentuh sama sekali
+    input.setAttribute("readonly", "readonly");
+    input.setAttribute("inputmode", "none");
+    input.addEventListener("focus", () => _bukaKeypad(input, opts));
+    input.addEventListener("click", () => _bukaKeypad(input, opts));
+    if (!_keypadHashListenerTerpasang) {
+      // Navigasi hash-router (ganti halaman) -- keypad HARUS ikut tertutup,
+      // overlay-nya nempel di document.body (bukan di bawah #app) supaya
+      // position:fixed tidak terpengaruh ancestor mana pun.
+      window.addEventListener("hashchange", _tutupKeypad);
+      _keypadHashListenerTerpasang = true;
+    }
+  }
+
   function themeSwitch() {
     const input = el("input", { type: "checkbox" });
     input.checked = MugenTheme.current() === "gelap";
@@ -686,5 +776,6 @@ const MugenUI = (() => {
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
+    attachNumericKeypad,
   };
 })();

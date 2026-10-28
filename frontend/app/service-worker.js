@@ -1241,7 +1241,17 @@
 // _hapus_metode_cash() (booking_migrasi.py) yang diam-diam menghapus
 // "cash" dari metode aktif tiap startup aplikasi -- dihapus, sudah tidak
 // relevan sejak Cash dikembalikan ke booking_db.METODE_VALID.
-const ASSET_VERSION = "221";
+//
+// v221 -> v222: FITUR Custom Numeric Keypad (PERMINTAAN Owner, khusus
+// input Tips & Uang Cash Diterima di POS) -- lihat MugenUI.
+// attachNumericKeypad() (ui.js). HANYA di perangkat touch (pointer kasar
+// -- HP/tablet): input dibuat readonly (keyboard virtual bawaan perangkat
+// TIDAK PERNAH muncul), keypad custom overlay (7 8 9 / 4 5 6 / 1 2 3 / 0
+// 00 backspace / ENTER) muncul di bawah layar saat input difokus/diklik,
+// tertutup lagi setelah ENTER atau tap di luar keypad (nilai TIDAK
+// dihapus). Laptop/desktop (pointer halus/mouse) sama sekali tidak kena
+// -- perilaku input native (klik, keyboard fisik) tidak berubah.
+const ASSET_VERSION = "222";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
