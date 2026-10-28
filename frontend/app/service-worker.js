@@ -1212,7 +1212,18 @@
 // Bulan Ini" (tabelnya sendiri) -- sebelumnya satu halaman memanjang,
 // tombol Tandai Libur susah dijangkau kalau tabel transaksi bulan itu
 // panjang (laporan Owner).
-const ASSET_VERSION = "218";
+//
+// v218 -> v219: FITUR POS Keranjang Multi-Barber (PERMINTAAN Owner) --
+// wizard Kasir sekarang keranjang (barber+service+tips per entri, "+
+// Tambah ke Keranjang"), satu checkout/satu pembayaran bisa mencakup
+// BEBERAPA barber sekaligus (anak cukur Barber A, bapak cukur Barber B,
+// 1x scan), 1 barber bisa dapat >1 customer service sama (ulang entri),
+// tips manual kasir PER BARBER (ikut masuk total ditagihkan). Jalur cepat
+// 1 customer TETAP tanpa klik "Tambah ke Keranjang" (form yang masih
+// terisi otomatis ikut saat "Lanjut ke Payment"). Tab "Transaksi Hari
+// Ini": tombol Hapus per baris (sumber Kasir saja) -- restock produk +
+// rebuild Rekap otomatis, spinner di tombol, tanpa reload halaman.
+const ASSET_VERSION = "219";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

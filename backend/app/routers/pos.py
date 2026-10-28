@@ -61,9 +61,16 @@ class ProdukItemBody(BaseModel):
     jumlah: int
 
 
-class BuatTransaksiBody(BaseModel):
-    barber_id: int | None = None
+class JasaItemBody(BaseModel):
+    """FITUR Keranjang Multi-Barber (PERMINTAAN Owner) -- satu entri per
+    barber yang dipakai di checkout ini, lihat pos_db.buat_transaksi()."""
+    barber_id: int
     service_ids: list[int] = []
+    tips: int = 0
+
+
+class BuatTransaksiBody(BaseModel):
+    jasa_items: list[JasaItemBody] = []
     produk_items: list[ProdukItemBody] = []
     metode_pembayaran: str
     channel: str | None = None
@@ -74,7 +81,7 @@ class BuatTransaksiBody(BaseModel):
 def buat_transaksi(body: BuatTransaksiBody, user: dict = Depends(require_permission("izin_pos_kelola"))):
     try:
         return pos_db.buat_transaksi(
-            user["tenant_id"], barber_id=body.barber_id, service_ids=body.service_ids,
+            user["tenant_id"], jasa_items=[item.model_dump() for item in body.jasa_items],
             produk_items=[item.model_dump() for item in body.produk_items],
             metode_pembayaran=body.metode_pembayaran, channel=body.channel, bank_code=body.bank_code,
             dibuat_oleh=user["username"],
@@ -139,6 +146,17 @@ def cek_ulang(pos_id: int, user: dict = Depends(require_permission("izin_pos_kel
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"status": hasil["status"], "pos_status": pos_db.get_pos_transaksi(pos_id)["status"]}
+
+
+@router.delete("/transaksi/{pos_id}")
+def hapus_transaksi_lunas(pos_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol Hapus per baris di tab "Transaksi Hari Ini" (PERMINTAAN
+    Owner) -- lihat pos_db.hapus_transaksi_lunas()."""
+    try:
+        pos_db.hapus_transaksi_lunas(pos_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
 
 
 @router.get("/transaksi-hari-ini")
