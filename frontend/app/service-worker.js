@@ -1255,7 +1255,14 @@
 // v222 -> v223: Keypad custom (v222 di atas) sekarang dipasang juga di
 // input Qty Produk POS -- SATU set perilaku yang sama (touch-only, tutup
 // keyboard bawaan, dsb) di SELURUH input angka di wizard Kasir.
-const ASSET_VERSION = "223";
+//
+// v223 -> v224: FITUR Cash POS terpisah dari Cash Booking (PERMINTAAN
+// Owner): toggle baru "Cash untuk Point of Sale" di Superadmin > Payment
+// Settings (pos_cash_aktif, lihat pos_db.get/set_pos_cash_aktif()) --
+// TERPISAH TOTAL dari checkbox "Cash (Bayar di Toko)" milik Booking
+// publik, mengaktifkan salah satu TIDAK PERNAH otomatis mengaktifkan
+// yang lain. Label Cash di POS cukup "Cash" (tanpa "(Bayar di Toko)").
+const ASSET_VERSION = "224";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

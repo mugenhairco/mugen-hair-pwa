@@ -42,13 +42,22 @@ def ambil_pengaturan(user: dict = Depends(require_menu_read("pos"))):
     pilih Barber/Service/Produk, pola SAMA PERSIS wizard booking publik)."""
     tenant_id = user["tenant_id"]
     payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id)
-    metode_aktif = [m for m in payment_settings["metode_aktif"] if m in METODE_POS_VALID]
+    # PERMINTAAN Owner: Cash untuk POS adalah toggle TERPISAH dari Cash
+    # untuk Booking publik (lihat pos_db.get_pos_cash_aktif()) -- qris/
+    # gateway TETAP ikut toggle metode_aktif yang sama dipakai Booking
+    # (tidak diminta dipisah), hanya "cash" yang sumbernya beda sama
+    # sekali. Label di POS cukup "Cash" (TANPA "(Bayar di Toko)" seperti
+    # di Booking -- walk-in jelas sudah di toko).
+    metode_aktif = [m for m in payment_settings["metode_aktif"] if m in METODE_POS_VALID and m != "cash"]
+    if pos_db.get_pos_cash_aktif(tenant_id):
+        metode_aktif.append("cash")
+    metode_nama = {**payment_settings["metode_nama"], "cash": "Cash"}
     return {
         "barbers": db.get_barbers(hanya_aktif=True, tenant_id=tenant_id),
         "services": db.get_services(hanya_aktif=True, tenant_id=tenant_id),
         "produk": db.get_produk_list(hanya_aktif=True, tenant_id=tenant_id),
         "metode_aktif": metode_aktif,
-        "metode_nama": payment_settings["metode_nama"],
+        "metode_nama": metode_nama,
         "metode_instruksi": payment_settings["metode_instruksi"],
         "qris_merchant_nama": payment_settings["qris_merchant_nama"],
         "qris_url": payment_settings["qris_url"],
