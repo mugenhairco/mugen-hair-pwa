@@ -1206,7 +1206,13 @@
 // di layar lebar/tablet-laptop karena display:inline-block, cuma turun
 // baris sendiri di layar sempit/iPhone karena tombolnya baru penuh 100%
 // lebar di situ -- lihat .book-sudah-booking-link di style.css).
-const ASSET_VERSION = "217";
+//
+// v217 -> v218: UX -- menu Input Data (mode Barber) dipecah jadi 2 tab:
+// "Input & Libur" (form Tambah Transaksi + Tandai Libur) dan "Transaksi
+// Bulan Ini" (tabelnya sendiri) -- sebelumnya satu halaman memanjang,
+// tombol Tandai Libur susah dijangkau kalau tabel transaksi bulan itu
+// panjang (laporan Owner).
+const ASSET_VERSION = "218";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

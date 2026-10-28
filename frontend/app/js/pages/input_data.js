@@ -124,14 +124,37 @@ const PageInputData = (() => {
     // bacaPendingTransaksi() di atas) -- biasanya kosong/tersembunyi, cuma
     // muncul kalau sesi SEBELUMNYA ditutup sebelum server sempat menjawab.
     const pendingBanner = MugenUI.el("div", { style: "display:none;" });
-    if (bolehEditInputData) barberSection.appendChild(pendingBanner);
-
     const formCard = MugenUI.el("div", { class: "card" });
-    if (bolehEditInputData) barberSection.appendChild(formCard);
     const listCard = MugenUI.el("div", { class: "card" });
-    barberSection.appendChild(listCard);
     const liburCard = MugenUI.el("div", { class: "card" });
-    barberSection.appendChild(liburCard);
+
+    // PERMINTAAN OWNER: "Transaksi Bulan Ini" (listCard) dipisah jadi tab
+    // SENDIRI -- tabelnya bisa sangat panjang ke bawah, membuat tombol
+    // "Tandai Libur" (liburCard) susah dijangkau tanpa scroll jauh. Form +
+    // Tandai Libur tetap satu tab bersama (keduanya pendek, dipakai
+    // berurutan), tab kedua KHUSUS tabel panjang itu saja.
+    const paneInputLibur = MugenUI.el("div");
+    if (bolehEditInputData) {
+      paneInputLibur.appendChild(pendingBanner);
+      paneInputLibur.appendChild(formCard);
+    }
+    paneInputLibur.appendChild(liburCard);
+    const paneTransaksi = MugenUI.el("div", { style: "display:none;" });
+    paneTransaksi.appendChild(listCard);
+
+    const barberTabs = MugenUI.tabs(
+      [{ key: "input", label: "Input & Libur" }, { key: "transaksi", label: "Transaksi Bulan Ini" }],
+      {
+        onChange: (key) => {
+          paneInputLibur.style.display = key === "input" ? "" : "none";
+          paneTransaksi.style.display = key === "transaksi" ? "" : "none";
+        },
+      }
+    );
+    barberSection.appendChild(barberTabs.bar);
+    barberSection.appendChild(paneInputLibur);
+    barberSection.appendChild(paneTransaksi);
+    requestAnimationFrame(barberTabs.moveIndicator);
 
     try {
       [services, barbers] = await Promise.all([
