@@ -728,8 +728,12 @@ CREATE TABLE IF NOT EXISTS pos_transaksi (
     dibuat_oleh        TEXT,
     created_at         TEXT NOT NULL,
     updated_at         TEXT,
-    paid_at            TEXT
+    paid_at            TEXT,
+    uang_diterima      INTEGER,
+    kembalian          INTEGER
 );
+ALTER TABLE pos_transaksi ADD COLUMN IF NOT EXISTS uang_diterima INTEGER;
+ALTER TABLE pos_transaksi ADD COLUMN IF NOT EXISTS kembalian INTEGER;
 
 -- `service_id` SENGAJA TANPA "REFERENCES services(id)" -- pola sama
 -- persis manual_customer_transaksi_service di atas (tabel `services`

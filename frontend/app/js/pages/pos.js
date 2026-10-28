@@ -4,10 +4,12 @@
 // data pengaturan di-fetch SEKALI di awal, pola SAMA PERSIS wizard booking
 // publik di book_public.js) dan "Transaksi Hari Ini" (gabungan booking
 // online yang sudah lunas + transaksi Kasir hari itu, lihat routers/pos.py::
-// transaksi_hari_ini()). Metode pembayaran (QRIS manual/Payment Gateway)
-// reuse TOTAL konfigurasi yang sama dipakai booking publik (lihat
-// booking_db.get_payment_settings()) -- "Cash" TIDAK ditawarkan di sini
-// (bukan skenario walk-in, lihat routers/pos.py::METODE_POS_VALID).
+// transaksi_hari_ini()). Metode pembayaran (QRIS manual/Payment Gateway/
+// Cash) reuse TOTAL konfigurasi yang sama dipakai booking publik (lihat
+// booking_db.get_payment_settings()) -- SATU toggle metode_aktif dibagi
+// bersama Booking & POS, lihat routers/pos.py::METODE_POS_VALID. Kalau
+// cuma SATU metode yang aktif, Kasir TIDAK dipaksa memilih (langsung
+// dipakai, lihat renderPayment()).
 
 const PagePos = (() => {
   async function render(root) {
@@ -142,6 +144,7 @@ const PagePos = (() => {
       else if (fase === "payment") renderPayment();
       else if (fase === "menunggu_manual") renderMenungguManual();
       else if (fase === "waiting") renderWaitingGateway();
+      else if (fase === "bayar_cash") renderBayarCash();
       else renderSelesai();
     }
 
@@ -321,9 +324,18 @@ const PagePos = (() => {
           opsi.push({ metode: m, channel: null, label: metodeNama[m] || m });
         }
       }
+      // PERMINTAAN Owner: kalau cuma SATU opsi pembayaran yang tersedia
+      // (satu-satunya metode aktif, dengan paling banyak satu channel),
+      // JANGAN paksa Kasir memilih -- langsung pakai opsi itu, tampilkan
+      // sebagai info saja (tombol Back masih bisa kembali ke "pilih").
+      const satuOpsi = opsi.length === 1;
       if (!opsi.length) {
         body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" },
           "Belum ada metode pembayaran aktif untuk Point of Sale. Hubungi Superadmin."));
+      } else if (satuOpsi) {
+        state.metode = opsi[0].metode; state.channel = opsi[0].channel;
+        metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, `Metode pembayaran: ${opsi[0].label}`));
+        renderBankBox();
       } else {
         for (const o of opsi) {
           const dipilih = state.metode === o.metode && state.channel === o.channel;
@@ -368,7 +380,7 @@ const PagePos = (() => {
           };
           const hasil = await MugenUI.withButtonLoading(btnBuat, () => MugenApi.post("/api/pos/transaksi", payload));
           state.transaksi = hasil;
-          fase = state.metode === "gateway" ? "waiting" : "menunggu_manual";
+          fase = state.metode === "gateway" ? "waiting" : (state.metode === "cash" ? "bayar_cash" : "menunggu_manual");
           gantiFase();
         } catch (e) {
           errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -523,13 +535,67 @@ const PagePos = (() => {
       });
     }
 
+    // ---- fase "bayar_cash": Kasir input nominal uang diterima dari
+    // customer, sistem hitung kembalian LIVE sambil mengetik -- transaksi
+    // LANGSUNG lunas begitu "Selesaikan Transaksi" diklik (uang tunai
+    // diterima di tempat SAAT itu juga, TIDAK ada status menunggu). ----
+    function renderBayarCash() {
+      const r = state.transaksi;
+      body.appendChild(MugenUI.el("h2", {}, "Pembayaran Cash"));
+      body.appendChild(MugenUI.el("div", { class: "card" }, [barisTotal()]));
+
+      body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Uang Diterima"));
+      const inputUang = MugenUI.el("input", { type: "number", min: "0", style: "width:100%;font-size:18px;" });
+      body.appendChild(inputUang);
+
+      const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });
+      body.appendChild(kembalianBox);
+      function renderKembalian() {
+        const diterima = parseInt(inputUang.value, 10) || 0;
+        const sisa = diterima - totalHarga();
+        kembalianBox.className = sisa >= 0 ? "subtitle" : "login-error";
+        kembalianBox.textContent = sisa >= 0
+          ? `Kembalian: ${MugenUI.formatRupiah(sisa)}`
+          : `Kurang ${MugenUI.formatRupiah(-sisa)}`;
+      }
+      inputUang.addEventListener("input", renderKembalian);
+      renderKembalian();
+
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      body.appendChild(errorBox);
+
+      const btnSelesai = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
+        "Selesaikan Transaksi");
+      btnSelesai.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const diterima = parseInt(inputUang.value, 10) || 0;
+        if (diterima < totalHarga()) { errorBox.textContent = "Uang diterima kurang dari total pembayaran."; return; }
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnSelesai,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
+          state.transaksi = hasil;
+          MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
+          fase = "selesai"; gantiFase();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      body.appendChild(btnSelesai);
+    }
+
     // ---- fase "selesai" ----
     function renderSelesai() {
-      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
+      const r = state.transaksi;
+      const isi = [
         MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
         MugenUI.el("h2", {}, "Pembayaran Berhasil"),
         MugenUI.el("div", { class: "subtitle" }, `Total: ${MugenUI.formatRupiah(totalHarga())}`),
-      ]));
+      ];
+      if (r && r.metode_pembayaran === "cash") {
+        isi.push(MugenUI.el("div", { class: "subtitle" }, `Uang Diterima: ${MugenUI.formatRupiah(r.uang_diterima || 0)}`));
+        isi.push(MugenUI.el("div", { style: "font-weight:700;margin-top:4px;" }, `Kembalian: ${MugenUI.formatRupiah(r.kembalian || 0)}`));
+      }
+      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, isi));
       const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
         "Transaksi Baru");
       btnBaru.addEventListener("click", () => { resetState(); gantiFase(); });
@@ -578,6 +644,24 @@ const PagePos = (() => {
         return;
       }
       body.innerHTML = "";
+
+      // Rincian total per metode pembayaran (PERMINTAAN Owner) --
+      // termasuk tips & produk (dihitung dari total mentah tiap
+      // transaksi di backend, lihat pos_db.get_transaksi_hari_ini()).
+      const rincian = hasil.rincian_metode || {};
+      function barisRincian(label, nominal, tebal) {
+        return MugenUI.el("div", {
+          style: `display:flex;justify-content:space-between;${tebal ? "font-weight:700;" : ""}`,
+        }, [MugenUI.el("span", {}, label), MugenUI.el("span", {}, MugenUI.formatRupiah(nominal || 0))]);
+      }
+      body.appendChild(MugenUI.el("div", { class: "card", style: "margin-bottom:16px;" }, [
+        MugenUI.el("div", { style: "font-weight:700;margin-bottom:8px;" }, "Rincian Pembayaran Hari Ini"),
+        barisRincian("Payment Gateway", rincian.gateway),
+        barisRincian("QRIS Manual", rincian.qris),
+        barisRincian("Cash", rincian.cash),
+        MugenUI.el("hr"),
+        barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
+      ]));
 
       body.appendChild(MugenUI.el("h2", {}, "Service"));
       body.appendChild(MugenUI.buildTable(

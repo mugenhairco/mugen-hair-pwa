@@ -44,7 +44,6 @@ def migrasi_booking():
     with get_conn() as conn:
         _migrasi_durasi_service(conn)
         _seed_booking_settings(conn)
-        _hapus_metode_cash(conn)
         _perbaiki_metode_aktif_kosong_setelah_hapus_transfer(conn)
 
 
@@ -63,32 +62,6 @@ def _seed_booking_settings(conn):
         conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, default_value))
 
 
-def _hapus_metode_cash(conn):
-    """HAPUS METODE CASH: strip "cash" dari `booking_metode_aktif` milik
-    SEMUA tenant yang sudah pernah menyimpannya (key `settings` berpola
-    `{tenant_id}:booking_metode_aktif` -- lihat `_kunci_tenant()` di
-    database.py -- atau key polos `booking_metode_aktif` untuk instalasi
-    single-tenant lama). Cash sudah dihapus total dari METODE_VALID
-    (booking_db.py) -- baris ini murni membersihkan data LAMA yang
-    mungkin masih menyebut "cash" supaya daftar metode aktif yang
-    ditampilkan ke customer tidak pernah lagi berisi metode yang sudah
-    tidak ada kode-nya sama sekali. Idempotent: hanya menulis ulang baris
-    yang benar-benar berubah, aman dipanggil berkali-kali."""
-    rows = conn.execute(
-        "SELECT key, value FROM settings WHERE key = 'booking_metode_aktif' "
-        "OR key LIKE '%:booking_metode_aktif'"
-    ).fetchall()
-    for row in rows:
-        try:
-            metode_aktif = json.loads(row["value"])
-        except (TypeError, ValueError):
-            continue  # data korup/tidak terduga -- jangan sentuh, bukan tanggung jawab migrasi ini
-        if not isinstance(metode_aktif, list) or "cash" not in metode_aktif:
-            continue
-        baru = [m for m in metode_aktif if m != "cash"]
-        conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(baru), row["key"]))
-
-
 # PERMINTAAN Owner (REVISI payment): "transfer" (Transfer Bank) dihapus
 # total dari booking_db.METODE_VALID -- HOTFIX DEPLOY: nilai default lama
 # `DEFAULT_BOOKING_SETTINGS["booking_metode_aktif"]` di atas SEMPAT berupa
@@ -99,10 +72,10 @@ def _hapus_metode_cash(conn):
 # -- booking_db.get_payment_settings() menyaringnya habis (defensive
 # filter) sehingga tenant itu TIDAK PUNYA metode pembayaran aktif SAMA
 # SEKALI sampai Superadmin mengatur ulang secara manual. Baris di bawah
-# memperbaiki data LAMA yang SUDAH tersimpan seperti itu (pola SAMA
-# PERSIS _hapus_metode_cash() di atas) -- HANYA tenant yang metode_aktif-
-# nya SETELAH disaring menjadi KOSONG TOTAL yang disentuh (tenant yang
-# sudah punya minimal satu metode valid, apa pun isinya, TIDAK diubah).
+# memperbaiki data LAMA yang SUDAH tersimpan seperti itu -- HANYA tenant
+# yang metode_aktif-nya SETELAH disaring menjadi KOSONG TOTAL yang
+# disentuh (tenant yang sudah punya minimal satu metode valid, apa pun
+# isinya, TIDAK diubah).
 _METODE_VALID_SAAT_INI = {"qris", "gateway", "cash"}
 
 

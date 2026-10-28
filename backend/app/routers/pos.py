@@ -25,7 +25,10 @@ from auth import require_menu_read, require_permission
 router = APIRouter(prefix="/api/pos", tags=["pos"])
 
 WIB = ZoneInfo("Asia/Jakarta")
-METODE_POS_VALID = {"qris", "gateway"}
+# PERMINTAAN Owner: "cash" sekarang ditawarkan juga di Point of Sale (lihat
+# pos_db.bayar_cash()) -- memakai toggle metode_aktif YANG SAMA dengan
+# Booking publik (booking_db.get_payment_settings()), BUKAN toggle terpisah.
+METODE_POS_VALID = {"qris", "gateway", "cash"}
 
 
 def _hari_ini_wib() -> str:
@@ -114,6 +117,21 @@ def batalkan_pos(pos_id: int, user: dict = Depends(require_permission("izin_pos_
     pos = pos_db.get_pos_transaksi(pos_id)
     _pastikan_pos_tenant_sama(user, pos)
     return pos_db.batalkan_pos(pos_id)
+
+
+class BayarCashBody(BaseModel):
+    uang_diterima: int
+
+
+@router.post("/transaksi/{pos_id}/bayar-cash")
+def bayar_cash_pos(pos_id: int, body: BayarCashBody, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    """Tombol "Selesaikan Transaksi" di layar Kasir (metode Cash) -- lihat
+    pos_db.bayar_cash()."""
+    _pastikan_pos_tenant_sama(user, pos_db.get_pos_transaksi(pos_id))
+    try:
+        return pos_db.bayar_cash(pos_id, user["tenant_id"], body.uang_diterima)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/transaksi/{pos_id}/verifikasi")

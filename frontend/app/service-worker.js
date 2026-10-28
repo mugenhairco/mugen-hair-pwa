@@ -1230,7 +1230,18 @@
 // POST /api/pos/transaksi/{id}/batalkan (reuse pos_db.batalkan_pos()).
 // Keranjang/Produk SENGAJA tidak direset setelah batal -- kasir biasanya
 // mau langsung memperbaiki input yang salah, bukan ketik ulang semuanya.
-const ASSET_VERSION = "220";
+//
+// v220 -> v221: FITUR Cash di POS (PERMINTAAN Owner) -- kasir input
+// nominal uang diterima, sistem hitung kembalian otomatis (endpoint baru
+// POST /api/pos/transaksi/{id}/bayar-cash, reuse pola pos_db.verifikasi_
+// manual()/_tandai_lunas()). Kalau cuma SATU metode pembayaran aktif,
+// Kasir TIDAK dipaksa memilih lagi (langsung dipakai). Tab "Transaksi
+// Hari Ini": rincian total per metode (Payment Gateway/QRIS Manual/Cash,
+// termasuk tips & produk) + total keseluruhan. Bugfix: migrasi lama
+// _hapus_metode_cash() (booking_migrasi.py) yang diam-diam menghapus
+// "cash" dari metode aktif tiap startup aplikasi -- dihapus, sudah tidak
+// relevan sejak Cash dikembalikan ke booking_db.METODE_VALID.
+const ASSET_VERSION = "221";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -54,7 +54,10 @@ from database import (get_barber, get_conn, get_produk, get_service, get_stok_pr
 WIB = ZoneInfo("Asia/Jakarta")
 
 STATUS_VALID = {"menunggu", "lunas", "batal"}
-METODE_VALID = {"qris", "gateway"}
+# PERMINTAAN Owner: "Cash" sekarang ditawarkan juga di Point of Sale (kasir
+# input nominal uang diterima, sistem hitung kembalian -- lihat
+# bayar_cash() di bawah), BUKAN hanya qris/gateway seperti sebelumnya.
+METODE_VALID = {"qris", "gateway", "cash"}
 
 _logger = logging.getLogger("mugen.pos")
 
@@ -84,6 +87,16 @@ def init_pos_db():
                 paid_at            TEXT
             )
         """)
+        # FITUR Cash di POS (PERMINTAAN Owner): nominal uang yang diterima
+        # Kasir dari customer + kembalian yang dihitung sistem (uang_diterima
+        # - total_harga), lihat bayar_cash(). Nullable (NULL untuk transaksi
+        # metode lain), ALTER TABLE guard supaya aman dijalankan berkali-kali
+        # terhadap database yang sudah ada.
+        kolom_pt = [r["name"] for r in conn.execute("PRAGMA table_info(pos_transaksi)").fetchall()]
+        if "uang_diterima" not in kolom_pt:
+            conn.execute("ALTER TABLE pos_transaksi ADD COLUMN uang_diterima INTEGER")
+        if "kembalian" not in kolom_pt:
+            conn.execute("ALTER TABLE pos_transaksi ADD COLUMN kembalian INTEGER")
         # `service_id`/`produk_id` SENGAJA TANPA "FOREIGN KEY ... REFERENCES"
         # (pola sama seperti manual_customer_transaksi_service, lihat catatan
         # lengkap "HOTFIX DEPLOY" di manual_customer_db.py -- tabel
@@ -378,6 +391,31 @@ def verifikasi_manual(pos_id: int, tenant_id: int) -> dict:
     return _tandai_lunas(pos_id)
 
 
+def bayar_cash(pos_id: int, tenant_id: int, uang_diterima: int) -> dict:
+    """Tombol "Selesaikan Transaksi" di layar Kasir (metode Cash) -- Kasir
+    input nominal uang yang benar-benar diterima dari customer, sistem
+    menghitung kembalian (uang_diterima - total_harga) lalu transaksi
+    LANGSUNG lunas (TIDAK ada status menunggu konfirmasi provider/kasir
+    lain, uang tunai sudah diterima di tempat SAAT itu juga)."""
+    pos = get_pos_transaksi(pos_id)
+    if pos is None or pos["tenant_id"] != tenant_id:
+        raise ValueError("Transaksi Point of Sale tidak ditemukan.")
+    if pos["metode_pembayaran"] != "cash":
+        raise ValueError("Pembayaran Cash hanya berlaku untuk transaksi metode Cash.")
+    if pos["status"] != "menunggu":
+        raise ValueError("Transaksi ini sudah diproses sebelumnya.")
+    uang_diterima = int(uang_diterima or 0)
+    if uang_diterima < pos["total_harga"]:
+        raise ValueError("Uang diterima kurang dari total pembayaran.")
+    kembalian = uang_diterima - pos["total_harga"]
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE pos_transaksi SET uang_diterima = ?, kembalian = ? WHERE id = ?",
+            (uang_diterima, kembalian, pos_id),
+        )
+    return _tandai_lunas(pos_id)
+
+
 def tandai_lunas_dari_gateway(pos_id: int) -> dict:
     """Dipanggil snap_webhook.py::_cascade_pos() saat status PAID -- TIDAK
     ADA admin manusia di jalur webhook (pola sama persis _cascade_booking())."""
@@ -582,6 +620,11 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
 
     service_items = []
     produk_items = []
+    # Rincian total per metode pembayaran (PERMINTAAN Owner) -- dihitung
+    # dari total_harga MENTAH tiap transaksi (service + tips + produk
+    # SEKALIGUS, bukan dari service_items/produk_items yang di bawah sudah
+    # dipecah per baris tampilan & SENGAJA tidak menyertakan tips).
+    rincian_metode = {"gateway": 0, "qris": 0, "cash": 0}
 
     with get_conn() as conn:
         pos_rows = [dict(r) for r in conn.execute(
@@ -589,6 +632,7 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
             (tenant_id, tanggal),
         ).fetchall()]
     for r in pos_rows:
+        rincian_metode[r["metode_pembayaran"]] = rincian_metode.get(r["metode_pembayaran"], 0) + r["total_harga"]
         pos = _lengkapi(r)
         # Satu BARIS per BARBER (bukan lagi per pos_transaksi) -- checkout
         # lintas-barber (FITUR Keranjang Multi-Barber) ditampilkan terpisah
@@ -615,6 +659,8 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     for b in booking_db.get_booking_list(tenant_id=tenant_id, tanggal=tanggal, status_booking="aktif"):
         if b.get("status_pembayaran") != "terverifikasi":
             continue
+        metode_b = b.get("metode_pembayaran")
+        rincian_metode[metode_b] = rincian_metode.get(metode_b, 0) + (b.get("total_harga") or 0)
         service_items.append({
             "sumber": "booking", "jam": b["jam_mulai"], "nama_barber": b["nama_barber"],
             "daftar_service": b["daftar_service"], "nominal": b["total_harga"],
@@ -622,4 +668,8 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
 
     service_items.sort(key=lambda x: x["jam"])
     produk_items.sort(key=lambda x: x["jam"])
-    return {"service": service_items, "produk": produk_items}
+    return {
+        "service": service_items, "produk": produk_items,
+        "rincian_metode": rincian_metode,
+        "total_keseluruhan": sum(rincian_metode.values()),
+    }
