@@ -163,6 +163,15 @@ const MugenApi = (() => {
       MugenState.tandaiHalamanKotor("uang_kas");
       MugenState.tandaiHalamanKotor("whatsapp");
       MugenState.tandaiHalamanKotor("pengaturan");
+      // "pos_kasir"/"pos_transaksi" (menu Point of Sale, lihat
+      // pages/pos.js) SENGAJA TIDAK didaftarkan di sini -- endpoint POS
+      // sendiri (buat transaksi/bayar/batalkan) JUGA mutasi (method !==
+      // "GET"), jadi kalau ikut daftar ini, SATU kali checkout akan
+      // langsung menandai cache "pos_kasir" kotor lagi & memaksa loading
+      // di checkout BERIKUTNYA -- justru menggagalkan tujuan "tidak ada
+      // loading" untuk pemakaian kasir yang paling umum (banyak checkout
+      // berturut-turut). Kedua cache itu diinvalidasi lewat mekanismenya
+      // sendiri (lihat catatan panjang di pages/pos.js).
     }
     return payload;
   }

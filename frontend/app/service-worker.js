@@ -1262,7 +1262,14 @@
 // TERPISAH TOTAL dari checkbox "Cash (Bayar di Toko)" milik Booking
 // publik, mengaktifkan salah satu TIDAK PERNAH otomatis mengaktifkan
 // yang lain. Label Cash di POS cukup "Cash" (tanpa "(Bayar di Toko)").
-const ASSET_VERSION = "224";
+//
+// v224 -> v225: Tab Kasir & Transaksi Hari Ini (POS) TIDAK PERNAH loading
+// lagi setelah pemuatan pertama di satu sesi -- cache module-level (lihat
+// pages/pos.js: _cachePengaturan/_cacheTransaksiHariIni). Begitu SATU
+// transaksi POS lunas, barisnya langsung disuntikkan ke cache Transaksi
+// Hari Ini (_suntikTransaksiBaru(), optimistic update TANPA fetch ulang)
+// supaya pindah ke tab itu langsung tampil, bukan fetch+skeleton lagi.
+const ASSET_VERSION = "225";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
