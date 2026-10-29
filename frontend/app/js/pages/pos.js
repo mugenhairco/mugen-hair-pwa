@@ -10,8 +10,67 @@
 // bersama Booking & POS, lihat routers/pos.py::METODE_POS_VALID. Kalau
 // cuma SATU metode yang aktif, Kasir TIDAK dipaksa memilih (langsung
 // dipakai, lihat renderPayment()).
+//
+// PERMINTAAN Owner: KEDUA tab TIDAK PERNAH loading lagi setelah pemuatan
+// PERTAMA di satu sesi -- lihat cache module-level (_cachePengaturan/
+// _cacheTransaksiHariIni) & _suntikTransaksiBaru() di bawah ini untuk
+// arsitektur lengkapnya (Transaksi Hari Ini diupdate LANGSUNG begitu satu
+// transaksi POS lunas, TANPA fetch ulang ke server sama sekali).
 
 const PagePos = (() => {
+  // PERMINTAAN Owner: tab "Kasir" & "Transaksi Hari Ini" TIDAK boleh
+  // menunggu loading tiap dibuka/pindah tab -- cache di LUAR render()
+  // (module-level, bertahan lintas pindah tab/menu SELAMA SPA tidak
+  // reload, pola SAMA seperti produk.js/rekap.js::_cacheTerakhir).
+  //
+  // "pos_kasir" (pengaturan: barber/service/produk/payment settings) pakai
+  // flag "halamanKotor" (lihat state.js) HANYA secara LOKAL di sini --
+  // SENGAJA TIDAK didaftarkan di hook mutasi generik api.js (endpoint POS
+  // sendiri -- buat transaksi/bayar/batalkan -- JUGA mutasi; kalau ikut
+  // terdaftar di sana, SATU checkout akan langsung menandai cache ini
+  // kotor lagi & memaksa loading di checkout berikutnya, menggagalkan
+  // tujuan "tidak ada loading" untuk pemakaian paling umum). Praktisnya:
+  // dimuat SEKALI per sesi (default "kotor" sebelum pernah dimuat, lalu
+  // ditandai "bersih" & TIDAK PERNAH kotor lagi sampai SPA reload total).
+  //
+  // "pos_transaksi" (Transaksi Hari Ini) TIDAK pakai flag "kotor" sama
+  // sekali -- daftar ini berubah TIAP SATU transaksi POS lunas (jalur
+  // paling sering dipakai di menu ini), begitu lunas barisnya langsung
+  // DISUNTIKKAN ke cache ini (_suntikTransaksiBaru(), optimistic update,
+  // TANPA fetch ulang apa pun) -- kalau tab ini belum pernah dibuka sesi
+  // ini (cache masih null), tidak ada yang perlu disuntik (nanti fetch
+  // fresh begitu pertama kali dibuka, otomatis sudah termasuk transaksi
+  // barunya). Hapus baris (kolomAksi()) TETAP fetch ulang penuh (butuh
+  // angka stok/Rekap yang benar-benar baru dari server, tidak bisa
+  // dihitung sendiri di frontend).
+  let _cachePengaturan = null; // { userId, data }
+  let _cacheTransaksiHariIni = null; // { userId, tanggal, data }
+
+  function _suntikTransaksiBaru(pos) {
+    if (!_cacheTransaksiHariIni || !pos) return;
+    if (pos.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal (jaga2 lewat tengah malam) -- biarkan, nanti fetch fresh saat tab dibuka utk tanggal itu
+    const data = _cacheTransaksiHariIni.data;
+    for (const b of pos.daftar_barber || []) {
+      if (!b.daftar_service || !b.daftar_service.length) continue;
+      data.service.push({
+        sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_barber: b.nama,
+        daftar_service: b.daftar_service.map((s) => s.nama).join(", "),
+        nominal: b.daftar_service.reduce((sum, s) => sum + s.harga, 0),
+      });
+    }
+    for (const p of pos.daftar_produk || []) {
+      data.produk.push({
+        sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_produk: p.nama,
+        jumlah: p.jumlah, nominal: p.harga_satuan * p.jumlah,
+      });
+    }
+    data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
+    data.produk.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
+    data.rincian_metode = data.rincian_metode || {};
+    data.rincian_metode[pos.metode_pembayaran] = (data.rincian_metode[pos.metode_pembayaran] || 0) + pos.total_harga;
+    data.total_keseluruhan = (data.total_keseluruhan || 0) + pos.total_harga;
+  }
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Point of Sale"));
@@ -52,6 +111,11 @@ const PagePos = (() => {
 
   // ================= TAB: KASIR =================
   async function renderKasirTab(body) {
+    const userId = MugenState.getUser().id;
+    if (_cachePengaturan && _cachePengaturan.userId === userId && !MugenState.halamanPerluRefresh("pos_kasir")) {
+      jalankanWizardKasir(body, _cachePengaturan.data);
+      return;
+    }
     body.appendChild(MugenUI.skeleton("card", { lines: 4 }));
     let pengaturan;
     try {
@@ -62,6 +126,8 @@ const PagePos = (() => {
       return;
     }
     body.innerHTML = "";
+    _cachePengaturan = { userId, data: pengaturan };
+    MugenState.tandaiHalamanBersih("pos_kasir");
     jalankanWizardKasir(body, pengaturan);
   }
 
@@ -419,7 +485,9 @@ const PagePos = (() => {
       btnTerima.addEventListener("click", async () => {
         errorBox.textContent = "";
         try {
-          await MugenUI.withButtonLoading(btnTerima, () => MugenApi.post(`/api/pos/transaksi/${state.transaksi.id}/verifikasi`));
+          const hasil = await MugenUI.withButtonLoading(btnTerima, () => MugenApi.post(`/api/pos/transaksi/${state.transaksi.id}/verifikasi`));
+          state.transaksi = hasil;
+          _suntikTransaksiBaru(hasil);
           MugenUI.toast("Pembayaran dikonfirmasi.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {
@@ -471,6 +539,7 @@ const PagePos = (() => {
       function terapkanStatus(status) {
         if (status.status === "PAID") {
           clearInterval(pollTimer);
+          _suntikTransaksiBaru(r);
           MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
           fase = "selesai"; gantiFase();
           return true;
@@ -522,6 +591,7 @@ const PagePos = (() => {
             // Batalkan -- pembayaran TETAP sah, TIDAK dibatalkan.
             MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
             state.transaksi = hasil;
+            _suntikTransaksiBaru(hasil);
             fase = "selesai"; gantiFase();
             return;
           }
@@ -577,6 +647,7 @@ const PagePos = (() => {
           const hasil = await MugenUI.withButtonLoading(btnSelesai,
             () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
           state.transaksi = hasil;
+          _suntikTransaksiBaru(hasil);
           MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {
@@ -613,14 +684,16 @@ const PagePos = (() => {
   // (lunas) hari ini -- field ringkas saja (nama barber/service/produk,
   // nominal, jam), TANPA komisi/tips (PERMINTAAN Owner).
   async function renderTransaksiHariIniTab(body) {
-    body.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 3 }));
+    const userId = MugenState.getUser().id;
+    const tanggalHariIni = MugenUI.isoHariIniWib();
 
     // Tombol Hapus (PERMINTAAN Owner: baris yang terlanjur salah input di
     // POS bisa langsung dihapus dari sini) -- HANYA untuk baris sumber
     // "pos" (booking online TIDAK dihapus dari sini sama sekali). Spinner
     // di tombolnya sendiri (MugenUI.withButtonLoading(), pola SAMA PERSIS
-    // halaman lain), lalu muat ulang HANYA isi tab ini (muatUlang()) --
-    // TANPA reload 1 halaman penuh.
+    // halaman lain), lalu muat ulang PAKSA (fetch fresh -- butuh angka
+    // stok/Rekap yang benar-benar baru dari server, TIDAK bisa dihitung
+    // sendiri di frontend seperti _suntikTransaksiBaru()).
     function kolomAksi(posId) {
       if (!posId) return "-";
       const btn = MugenUI.el("button", { type: "button" }, "Hapus");
@@ -629,7 +702,7 @@ const PagePos = (() => {
         try {
           await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/pos/transaksi/${posId}`));
           MugenUI.toast("Transaksi dihapus.", "success", { force: true });
-          await muatUlang();
+          await muatUlangPaksa();
         } catch (e) {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }
@@ -637,15 +710,7 @@ const PagePos = (() => {
       return btn;
     }
 
-    async function muatUlang() {
-      let hasil;
-      try {
-        hasil = await MugenApi.get("/api/pos/transaksi-hari-ini");
-      } catch (e) {
-        body.innerHTML = "";
-        body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
-        return;
-      }
+    function tampilkanData(hasil) {
       body.innerHTML = "";
 
       // Rincian total per metode pembayaran (PERMINTAAN Owner) --
@@ -694,7 +759,29 @@ const PagePos = (() => {
       ));
     }
 
-    await muatUlang();
+    async function muatUlangPaksa() {
+      let hasil;
+      try {
+        hasil = await MugenApi.get("/api/pos/transaksi-hari-ini");
+      } catch (e) {
+        body.innerHTML = "";
+        body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+      _cacheTransaksiHariIni = { userId, tanggal: tanggalHariIni, data: hasil };
+      tampilkanData(hasil);
+    }
+
+    // PERMINTAAN Owner: tab ini TIDAK PERNAH loading kalau sudah pernah
+    // dibuka sesi ini untuk tanggal yang sama -- baris baru masuk lewat
+    // _suntikTransaksiBaru() (dipanggil begitu SATU transaksi POS lunas,
+    // lihat jalankanWizardKasir()), BUKAN fetch ulang di sini.
+    if (_cacheTransaksiHariIni && _cacheTransaksiHariIni.userId === userId && _cacheTransaksiHariIni.tanggal === tanggalHariIni) {
+      tampilkanData(_cacheTransaksiHariIni.data);
+      return;
+    }
+    body.appendChild(MugenUI.skeleton("table", { cols: 4, rows: 3 }));
+    await muatUlangPaksa();
   }
 
   return { render };
