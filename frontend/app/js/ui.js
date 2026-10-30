@@ -682,10 +682,73 @@ const MugenUI = (() => {
   let _keypadAktif = null; // { overlay, input } -- cuma SATU keypad terbuka sekaligus
   let _keypadHashListenerTerpasang = false;
 
+  // PERMINTAAN Owner: keypad custom (fixed di bawah layar) TIDAK BOLEH
+  // menutupi input yang sedang diisi -- cari scroll container TERDEKAT
+  // (BUKAN selalu <body>/window: shell aplikasi ini scroll lewat
+  // `.content`/`.sidebar` masing-masing, lihat style.css, dan suatu saat
+  // input bisa juga ada di dalam modal/overlay ber-scroll sendiri) supaya
+  // tidak terjadi konflik "scroll yang salah" antara halaman & container.
+  function _cariScrollContainer(node) {
+    let cur = node.parentElement;
+    while (cur && cur !== document.body) {
+      const gaya = window.getComputedStyle(cur);
+      if (/(auto|scroll)/.test(gaya.overflowY) && cur.scrollHeight > cur.clientHeight + 1) return cur;
+      cur = cur.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function _koreksiScrollSekali(input, keypadEl, smooth) {
+    if (!_keypadAktif || _keypadAktif.input !== input) return false; // keypad sudah ganti/tertutup duluan
+    const tinggiKeypad = keypadEl.getBoundingClientRect().height;
+    const container = _cariScrollContainer(input);
+    const isViewport = container === document.scrollingElement || container === document.documentElement;
+    const containerRect = isViewport ? { top: 0, bottom: window.innerHeight } : container.getBoundingClientRect();
+    const margin = 12;
+    const batasBawah = containerRect.bottom - tinggiKeypad - margin;
+    const rect = input.getBoundingClientRect();
+    let delta = 0;
+    if (rect.bottom > batasBawah) delta = rect.bottom - batasBawah;
+    else if (rect.top < containerRect.top + margin) delta = rect.top - containerRect.top - margin;
+    if (Math.abs(delta) > 1) container.scrollBy({ top: delta, behavior: smooth ? "smooth" : "auto" });
+    return Math.abs(delta) > 1;
+  }
+
+  function _gulungAgarInputTerlihat(input, keypadEl) {
+    // PERMINTAAN Owner: "pastikan tidak terjadi konflik antara scrolling
+    // halaman dan scrolling modal/container" -- beberapa browser (terutama
+    // mobile) MELAKUKAN SENDIRI "scroll elemen fokus ke tampilan" begitu
+    // input ini difokus (TIDAK bisa dicegah dari sini, fokusnya berasal
+    // dari tap/klik asli pengguna, bukan dari pemanggilan .focus() kita
+    // sendiri) -- scroll native itu bisa terjadi di frame MANA PUN selama
+    // transisi fokus, membuat koreksi kita basi lagi. Koreksi diulang di
+    // SETIAP animation frame selama jendela singkat (~500ms, lebih dari
+    // cukup untuk transisi fokus selesai) -- idempotent (delta ~0 begitu
+    // sudah pas, tidak ada scroll baru), jadi hasil akhirnya SELALU
+    // koreksi KITA yang menang siapa pun yang menggeser duluan. Hanya
+    // percobaan PERTAMA pakai animasi halus (behavior:"smooth") --
+    // susulan sesudahnya instan (behavior:"auto") supaya tidak membuat
+    // banyak animasi scroll saling tumpuk/menyentak.
+    const mulai = performance.now();
+    function tick(smooth) {
+      if (!_keypadAktif || _keypadAktif.input !== input) return;
+      _koreksiScrollSekali(input, keypadEl, smooth);
+      if (performance.now() - mulai < 500) requestAnimationFrame(() => tick(false));
+    }
+    requestAnimationFrame(() => tick(true));
+  }
+
   function _tutupKeypad() {
     if (!_keypadAktif) return;
     _keypadAktif.overlay.remove();
+    _keypadAktif.input.classList.remove("numkeypad-caret-aktif");
     document.removeEventListener("pointerdown", _keypadAktif.pointerdownLuar, true);
+    // PERMINTAAN Owner: "kembalikan posisi scroll secara natural tanpa
+    // menyebabkan layout meloncat" -- cukup hapus spacer-nya (overlay yang
+    // menutupi juga baru dihapus di baris atas tadi), browser otomatis
+    // meng-clamp scroll ke batas baru yang lebih pendek tanpa lompatan
+    // yang terlihat karena terjadi bersamaan dengan keypad hilang.
+    if (_keypadAktif.spacer) _keypadAktif.spacer.remove();
     _keypadAktif = null;
   }
 
@@ -728,6 +791,24 @@ const MugenUI = (() => {
 
     const overlay = el("div", { class: "numkeypad-overlay" }, [grid]);
     document.body.appendChild(overlay);
+    input.classList.add("numkeypad-caret-aktif");
+
+    // PERMINTAAN Owner: keypad ini `position:fixed` -- menumpuk DI ATAS
+    // konten, tidak pernah menambah tinggi dokumen/container secara
+    // alami. Kalau input yang difokus kebetulan dekat BAWAH halaman,
+    // scroll tidak punya "ruang" untuk membawa input itu naik sampai
+    // benar-benar bebas dari keypad (mentok di scrollHeight-clientHeight
+    // milik browser) -- walau logika koreksi scroll di bawah sudah benar.
+    // Tambahkan spacer sementara setinggi keypad di akhir container
+    // scroll yang relevan supaya ruang itu betul-betul ADA.
+    const tinggiKeypad = overlay.getBoundingClientRect().height;
+    const container = _cariScrollContainer(input);
+    const isViewport = container === document.scrollingElement || container === document.documentElement;
+    const spacer = el("div", { "aria-hidden": "true", style: `height:${tinggiKeypad}px;flex:none;` });
+    (isViewport ? document.body : container).appendChild(spacer);
+
+    _keypadAktif = { overlay, input, pointerdownLuar: null, spacer };
+    _gulungAgarInputTerlihat(input, overlay);
 
     // Klik/tap DI LUAR keypad: tutup TANPA menghapus nilai yang sudah
     // diisi (PERMINTAAN Owner). `capture: true` + ditunda ke microtask
@@ -737,8 +818,7 @@ const MugenUI = (() => {
       if (!overlay.contains(e.target) && e.target !== input) _tutupKeypad();
     };
     setTimeout(() => document.addEventListener("pointerdown", pointerdownLuar, true), 0);
-
-    _keypadAktif = { overlay, input, pointerdownLuar };
+    _keypadAktif.pointerdownLuar = pointerdownLuar;
   }
 
   function attachNumericKeypad(input, opts = {}) {
@@ -754,6 +834,87 @@ const MugenUI = (() => {
       window.addEventListener("hashchange", _tutupKeypad);
       _keypadHashListenerTerpasang = true;
     }
+  }
+
+  // ============ Dropdown Modern (PERMINTAAN Owner, dipakai POS untuk
+  // pilih Barber) ============ Single-select, daftar pilihan langsung
+  // terlihat begitu dibuka (bukan native <select>), item aktif ditandai
+  // highlight + ikon centang, tertutup otomatis setelah satu pilihan
+  // diklik (dengan transisi), atau saat klik di luar panel. Posisi/ukuran
+  // menyesuaikan sendiri lewat CSS (lihat .mugen-dropdown-* di
+  // style.css) -- SAMA PERSIS prinsip layout numkeypad di atas (lebar
+  // konsisten, tidak dipaksa breakpoint per perangkat).
+  function dropdownSelect(daftarOpsi, { value = null, placeholder = "-- Pilih --", onChange } = {}) {
+    let opsi = daftarOpsi;
+    let current = value;
+    let terbuka = false;
+    let pointerdownLuar = null;
+
+    const labelEl = el("span", { class: "mugen-dropdown-trigger-label" }, placeholder);
+    const trigger = el("button", { type: "button", class: "mugen-dropdown-trigger" }, [
+      labelEl, el("span", { class: "mugen-dropdown-chevron" }, "⌄"),
+    ]);
+    const panel = el("div", { class: "mugen-dropdown-panel" });
+    const wrap = el("div", { class: "mugen-dropdown" }, [trigger, panel]);
+
+    function labelUntuk(v) {
+      const found = opsi.find((o) => o.value === v);
+      return found ? found.label : placeholder;
+    }
+
+    function renderTrigger() {
+      labelEl.textContent = current == null ? placeholder : labelUntuk(current);
+      trigger.classList.toggle("has-value", current != null);
+    }
+
+    function renderPanel() {
+      panel.innerHTML = "";
+      if (!opsi.length) {
+        panel.appendChild(el("div", { class: "mugen-dropdown-empty" }, "Tidak ada pilihan."));
+        return;
+      }
+      for (const o of opsi) {
+        const aktif = o.value === current;
+        const item = el("button", {
+          type: "button", class: "mugen-dropdown-option" + (aktif ? " selected" : ""),
+        }, [
+          el("span", {}, o.label),
+          el("span", { class: "mugen-dropdown-check" }, "✓"),
+        ]);
+        item.addEventListener("click", () => {
+          current = o.value;
+          renderTrigger();
+          tutup();
+          if (typeof onChange === "function") onChange(current);
+        });
+        panel.appendChild(item);
+      }
+    }
+
+    function buka() {
+      if (terbuka) return;
+      terbuka = true;
+      renderPanel();
+      wrap.classList.add("open");
+      pointerdownLuar = (e) => { if (!wrap.contains(e.target)) tutup(); };
+      setTimeout(() => document.addEventListener("pointerdown", pointerdownLuar, true), 0);
+    }
+    function tutup() {
+      if (!terbuka) return;
+      terbuka = false;
+      wrap.classList.remove("open");
+      if (pointerdownLuar) document.removeEventListener("pointerdown", pointerdownLuar, true);
+      pointerdownLuar = null;
+    }
+    trigger.addEventListener("click", () => (terbuka ? tutup() : buka()));
+    renderTrigger();
+
+    return {
+      el: wrap,
+      getValue: () => current,
+      setValue(v) { current = v; renderTrigger(); if (terbuka) renderPanel(); },
+      setOptions(baru) { opsi = baru; renderTrigger(); if (terbuka) renderPanel(); },
+    };
   }
 
   function themeSwitch() {
@@ -776,6 +937,6 @@ const MugenUI = (() => {
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
-    attachNumericKeypad,
+    attachNumericKeypad, dropdownSelect,
   };
 })();
