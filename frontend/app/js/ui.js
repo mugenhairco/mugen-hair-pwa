@@ -8,6 +8,13 @@ const MugenUI = (() => {
     return "Rp " + n.toLocaleString("id-ID");
   }
 
+  // Lawan dari formatRupiah -- ambil angka mentah dari string apapun
+  // (termasuk yang sudah berisi "Rp", titik pemisah ribuan, dll).
+  function parseAngka(str) {
+    const digit = String(str || "").replace(/[^0-9]/g, "");
+    return digit ? parseInt(digit, 10) : 0;
+  }
+
   function formatTanggal(iso) {
     if (!iso) return "-";
     const [y, m, d] = iso.split("-");
@@ -822,7 +829,27 @@ const MugenUI = (() => {
   }
 
   function attachNumericKeypad(input, opts = {}) {
-    if (!_keypadPerangkatTouch()) return; // laptop/desktop: tidak disentuh sama sekali
+    // PERMINTAAN Owner: nominal (Tips, Uang Cash Diterima) tampil berformat
+    // Rupiah ("Rp 100.000") -- berlaku di SEMUA device, bukan cuma yang
+    // pakai keypad custom, jadi diproses SEBELUM gate touch-only di bawah.
+    // type="number" native tidak bisa menampilkan "Rp"/titik, jadi dipaksa
+    // jadi text input biasa (logika +/-/backspace keypad TETAP string-ops
+    // pada input.value seperti sebelumnya -- itu tetap benar walau sudah
+    // berformat, karena digit terakhir string berformat SELALU sama
+    // dengan digit terakhir angka aslinya; pemanggil WAJIB membaca
+    // nilainya lewat MugenUI.parseAngka(), bukan parseInt() langsung).
+    if (opts.rupiah) {
+      input.setAttribute("type", "text");
+      input.value = formatRupiah(parseAngka(input.value));
+      input.addEventListener("input", () => {
+        input.value = formatRupiah(parseAngka(input.value));
+        try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* abaikan, cuma kosmetik */ }
+      });
+    }
+    if (!_keypadPerangkatTouch()) {
+      if (opts.rupiah) input.setAttribute("inputmode", "numeric"); // laptop/desktop/HP keyboard fisik/OS
+      return; // overlay keypad custom: tidak disentuh sama sekali
+    }
     input.setAttribute("readonly", "readonly");
     input.setAttribute("inputmode", "none");
     input.addEventListener("focus", () => _bukaKeypad(input, opts));
@@ -932,7 +959,7 @@ const MugenUI = (() => {
   }
 
   return {
-    formatRupiah, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
+    formatRupiah, parseAngka, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
