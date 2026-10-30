@@ -1269,7 +1269,7 @@
 // transaksi POS lunas, barisnya langsung disuntikkan ke cache Transaksi
 // Hari Ini (_suntikTransaksiBaru(), optimistic update TANPA fetch ulang)
 // supaya pindah ke tab itu langsung tampil, bukan fetch+skeleton lagi.
-const ASSET_VERSION = "226";
+const ASSET_VERSION = "227";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

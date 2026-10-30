@@ -2090,6 +2090,91 @@ input.numkeypad-caret-aktif { caret-color: var(--accent); }
 }
 .mugen-dropdown-close:hover { color: var(--text); border-color: var(--accent); }
 
+/* ============ Rincian Pesanan ala Nota/Struk (PERMINTAAN Owner,
+   tampil begitu "Lanjut ke Payment" diklik -- pages/pos.js
+   buatRincianNota()) ============ Per barber (nama + tiap service +
+   harganya + tips), lalu produk -- TETAP lengkap walau jumlahnya banyak
+   (tidak ada logika "ringkas kalau >2", semua baris selalu dirender). */
+.pos-nota { margin-top: 12px; }
+.pos-nota-judul {
+  font-weight: 700; font-size: 15px;
+  margin-bottom: 10px; padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.pos-nota-barber {
+  font-weight: 700; font-size: 13px; color: var(--accent);
+  margin-top: 12px;
+}
+.pos-nota-barber:first-of-type { margin-top: 0; }
+.pos-nota-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 3px 0 3px 10px;
+  font-size: 13px; color: var(--text);
+}
+.pos-nota-row span:first-child { overflow-wrap: anywhere; }
+.pos-nota-row span:last-child { flex: none; font-weight: 500; color: var(--text-dim); }
+.pos-nota-tips span:first-child { font-style: italic; color: var(--text-dim); }
+
+/* ============ Modal Pilih Produk (PERMINTAAN Owner -- sebelumnya
+   dropdown panel yang menempel di bawah tombol "+ Tambah Produk", sering
+   terpotong batas layar karena ruang scroll-nya sempit. Diganti jadi
+   modal/floating panel di TENGAH layar, tinggi ~70-80% viewport supaya
+   daftar produk -- bisa banyak -- selalu punya ruang scroll yang luas &
+   nyaman, di HP maupun tablet/desktop. z-index SAMA dengan .modal-overlay
+   (9500) -- kategori "modal" yang sama, tidak pernah tampil bersamaan). */
+.pos-produk-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9500;
+  padding: 20px;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.pos-produk-modal-overlay.open { opacity: 1; pointer-events: auto; }
+.pos-produk-modal {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  width: 100%;
+  max-width: 480px;
+  height: 78vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transform: translateY(10px) scale(0.97);
+  transition: transform var(--dur-base) var(--ease-emphasized);
+}
+.pos-produk-modal-overlay.open .pos-produk-modal { transform: translateY(0) scale(1); }
+.pos-produk-modal-header {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.pos-produk-modal-header h3 { margin: 0; font-size: 16px; }
+.pos-produk-modal-close {
+  flex: none;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-dim); font-size: 14px; cursor: pointer;
+  min-height: auto; box-shadow: none; padding: 0;
+  transition: color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.pos-produk-modal-close:hover { color: var(--text); border-color: var(--accent); }
+.pos-produk-modal-search-wrap { flex: none; padding: 12px 18px 8px; }
+.pos-produk-modal-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 14px 16px;
+}
+@media (max-width: 480px) {
+  .pos-produk-modal-overlay { padding: 10px; }
+  .pos-produk-modal { height: 82vh; }
+}
+
 /* ============ Service: Clickable Selection Card (PERMINTAAN Owner,
    menggantikan checkbox) ============ auto-fill -- kolom menyesuaikan
    sendiri ke lebar layar (banyak kolom di desktop/tablet, sedikit di HP)

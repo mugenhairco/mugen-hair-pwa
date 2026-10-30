@@ -197,6 +197,48 @@ const PagePos = (() => {
       ]);
     }
 
+    // PERMINTAAN Owner: begitu "Lanjut ke Payment" diklik, tampilkan
+    // rincian lengkap ala nota/struk -- per barber (nama + tiap service +
+    // harganya + tips-nya), lalu produk -- TETAP lengkap walau barber
+    // atau service-nya lebih dari 2 (tidak diringkas/dipotong).
+    function buatRincianNota() {
+      const baris = [];
+      for (const item of (state.jasaItemsFinal || [])) {
+        const barber = pengaturan.barbers.find((b) => b.id === item.barberId);
+        const namaBarber = barber ? barber.nama : "(barber terhapus)";
+        baris.push(MugenUI.el("div", { class: "pos-nota-barber" }, namaBarber));
+        for (const sid of item.serviceIds) {
+          const s = pengaturan.services.find((x) => x.id === sid);
+          if (!s) continue;
+          baris.push(MugenUI.el("div", { class: "pos-nota-row" }, [
+            MugenUI.el("span", {}, s.nama), MugenUI.el("span", {}, MugenUI.formatRupiah(s.harga)),
+          ]));
+        }
+        if (item.tips > 0) {
+          baris.push(MugenUI.el("div", { class: "pos-nota-row pos-nota-tips" }, [
+            MugenUI.el("span", {}, `Tips untuk ${namaBarber}`), MugenUI.el("span", {}, MugenUI.formatRupiah(item.tips)),
+          ]));
+        }
+      }
+      const idsProduk = Object.keys(state.produk).map(Number).filter((id) => state.produk[id] > 0);
+      if (idsProduk.length) {
+        baris.push(MugenUI.el("div", { class: "pos-nota-barber" }, "Produk"));
+        for (const pid of idsProduk) {
+          const p = pengaturan.produk.find((x) => x.id === pid);
+          if (!p) continue;
+          const qty = state.produk[pid];
+          baris.push(MugenUI.el("div", { class: "pos-nota-row" }, [
+            MugenUI.el("span", {}, `${p.nama} ×${qty}`), MugenUI.el("span", {}, MugenUI.formatRupiah(p.harga_jual * qty)),
+          ]));
+        }
+      }
+      if (!baris.length) return null;
+      return MugenUI.el("div", { class: "pos-nota card" }, [
+        MugenUI.el("div", { class: "pos-nota-judul" }, "Rincian Pesanan"),
+        ...baris,
+      ]);
+    }
+
     function resetState() {
       state.keranjang = []; state.formBarberId = null; state.formServiceIds = new Set(); state.formTips = 0;
       state.produk = {};
@@ -289,12 +331,12 @@ const PagePos = (() => {
       // Tips: manual oleh kasir, PER BARBER (PERMINTAAN Owner -- kasir
       // yang isi sendiri, BUKAN dihitung/dibagi otomatis sistem).
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tips untuk barber ini (opsional)"));
-      const inputTips = MugenUI.el("input", { type: "number", min: "0", value: String(state.formTips || 0), style: "max-width:160px;" });
+      const inputTips = MugenUI.el("input", { type: "text", value: String(state.formTips || 0), style: "max-width:160px;" });
       inputTips.addEventListener("input", () => {
-        state.formTips = Math.max(0, parseInt(inputTips.value, 10) || 0);
+        state.formTips = Math.max(0, MugenUI.parseAngka(inputTips.value));
         renderTotal();
       });
-      MugenUI.attachNumericKeypad(inputTips);
+      MugenUI.attachNumericKeypad(inputTips, { rupiah: true });
       body.appendChild(inputTips);
 
       const btnTambah = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "+ Tambah ke Keranjang");
@@ -381,7 +423,7 @@ const PagePos = (() => {
         const qtyBaru = Math.max(0, Math.min(p.stok, (state.produk[p.id] || 0) + delta));
         if (qtyBaru > 0) state.produk[p.id] = qtyBaru; else delete state.produk[p.id];
         renderProdukTerpilih();
-        if (dropdownProdukWrap.classList.contains("open")) renderDaftarProdukDropdown(searchProdukInput.value);
+        if (modalOverlayProduk.classList.contains("open")) renderDaftarProdukDropdown(searchProdukInput.value);
         renderTotal();
       }
 
@@ -389,40 +431,56 @@ const PagePos = (() => {
         type: "text", class: "mugen-dropdown-search", placeholder: "Cari produk…",
       });
       searchProdukInput.addEventListener("input", () => renderDaftarProdukDropdown(searchProdukInput.value));
-      const btnTutupDropdownProduk = MugenUI.el("button", { type: "button", class: "mugen-dropdown-close" }, "Tutup");
-      const panelProduk = MugenUI.el("div", { class: "mugen-dropdown-panel" }, [
-        MugenUI.el("div", { class: "mugen-dropdown-search-wrap" }, [searchProdukInput]),
-        produkListEl,
-        btnTutupDropdownProduk,
-      ]);
-      const triggerProduk = MugenUI.el("button", { type: "button", class: "mugen-dropdown-trigger" }, [
+      const triggerProduk = MugenUI.el("button", { type: "button", class: "mugen-dropdown-trigger", style: "margin-top:10px;" }, [
         MugenUI.el("span", { class: "mugen-dropdown-trigger-label" }, "+ Tambah Produk"),
         MugenUI.el("span", { class: "mugen-dropdown-chevron" }, "⌄"),
       ]);
-      const dropdownProdukWrap = MugenUI.el("div", { class: "mugen-dropdown", style: "margin-top:10px;" }, [triggerProduk, panelProduk]);
 
-      let pointerdownLuarProduk = null;
-      function bukaDropdownProduk() {
-        if (dropdownProdukWrap.classList.contains("open")) return;
-        dropdownProdukWrap.classList.add("open");
+      // PERMINTAAN Owner: dropdown yang nempel di bawah tombol terpotong
+      // batas layar (ruang scroll terlalu sempit) -- ganti jadi modal
+      // floating di TENGAH layar (tinggi ~70-80% viewport) supaya daftar
+      // produk (bisa banyak) punya ruang scroll yang luas & nyaman di HP
+      // maupun tablet/desktop. Nempel ke document.body (BUKAN di bawah
+      // #app), pola SAMA dengan overlay keypad custom, supaya position:
+      // fixed benar2 tidak terpengaruh ancestor manapun. Render ulang
+      // "pilih" (lihat gantiFase()) membuat instance BARU setiap kali --
+      // bersihkan instance lama dulu supaya tidak menumpuk di body.
+      document.querySelectorAll(".pos-produk-modal-overlay").forEach((n) => n.remove());
+      const btnTutupModalProduk = MugenUI.el("button", {
+        type: "button", class: "pos-produk-modal-close", "aria-label": "Tutup",
+      }, "✕");
+      const modalBoxProduk = MugenUI.el("div", { class: "pos-produk-modal" }, [
+        MugenUI.el("div", { class: "pos-produk-modal-header" }, [
+          MugenUI.el("h3", {}, "Pilih Produk"),
+          btnTutupModalProduk,
+        ]),
+        MugenUI.el("div", { class: "pos-produk-modal-search-wrap" }, [searchProdukInput]),
+        MugenUI.el("div", { class: "pos-produk-modal-list" }, [produkListEl]),
+      ]);
+      const modalOverlayProduk = MugenUI.el("div", { class: "pos-produk-modal-overlay" }, [modalBoxProduk]);
+      document.body.appendChild(modalOverlayProduk);
+
+      function bukaModalProduk() {
+        modalOverlayProduk.classList.add("open");
         searchProdukInput.value = "";
         renderDaftarProdukDropdown("");
-        pointerdownLuarProduk = (e) => { if (!dropdownProdukWrap.contains(e.target)) tutupDropdownProduk(); };
-        setTimeout(() => document.addEventListener("pointerdown", pointerdownLuarProduk, true), 0);
       }
-      function tutupDropdownProduk() {
-        if (!dropdownProdukWrap.classList.contains("open")) return;
-        dropdownProdukWrap.classList.remove("open");
-        if (pointerdownLuarProduk) document.removeEventListener("pointerdown", pointerdownLuarProduk, true);
-        pointerdownLuarProduk = null;
+      function tutupModalProduk() {
+        modalOverlayProduk.classList.remove("open");
       }
-      triggerProduk.addEventListener("click", () => (
-        dropdownProdukWrap.classList.contains("open") ? tutupDropdownProduk() : bukaDropdownProduk()
-      ));
-      btnTutupDropdownProduk.addEventListener("click", tutupDropdownProduk);
+      triggerProduk.addEventListener("click", bukaModalProduk);
+      btnTutupModalProduk.addEventListener("click", tutupModalProduk);
+      // Klik di overlay gelap (BUKAN di kotak modal-nya) = tutup juga --
+      // perilaku standar modal, setara "klik luar" pada dropdown lama.
+      modalOverlayProduk.addEventListener("pointerdown", (e) => {
+        if (e.target === modalOverlayProduk) tutupModalProduk();
+      });
+      // Navigasi hash-router (ganti halaman) -- modal HARUS ikut hilang
+      // walau nempel di body, bukan di bawah #app (pola sama dgn keypad).
+      window.addEventListener("hashchange", () => modalOverlayProduk.remove(), { once: true });
 
       if (pengaturan.produk.length) {
-        body.appendChild(dropdownProdukWrap);
+        body.appendChild(triggerProduk);
         body.appendChild(produkTerpilihBox);
         renderProdukTerpilih();
       } else {
@@ -462,6 +520,8 @@ const PagePos = (() => {
     // ---- fase "payment": pilih metode (QRIS manual/Payment Gateway) ----
     function renderPayment() {
       body.appendChild(MugenUI.el("h2", {}, "Payment"));
+      const nota = buatRincianNota();
+      if (nota) body.appendChild(nota);
       body.appendChild(MugenUI.el("div", { class: "card" }, [barisTotal()]));
 
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -722,14 +782,14 @@ const PagePos = (() => {
       body.appendChild(MugenUI.el("div", { class: "card" }, [barisTotal()]));
 
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Uang Diterima"));
-      const inputUang = MugenUI.el("input", { type: "number", min: "0", style: "width:100%;font-size:18px;" });
-      MugenUI.attachNumericKeypad(inputUang);
+      const inputUang = MugenUI.el("input", { type: "text", style: "width:100%;font-size:18px;" });
+      MugenUI.attachNumericKeypad(inputUang, { rupiah: true });
       body.appendChild(inputUang);
 
       const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });
       body.appendChild(kembalianBox);
       function renderKembalian() {
-        const diterima = parseInt(inputUang.value, 10) || 0;
+        const diterima = MugenUI.parseAngka(inputUang.value);
         const sisa = diterima - totalHarga();
         kembalianBox.className = sisa >= 0 ? "subtitle" : "login-error";
         kembalianBox.textContent = sisa >= 0
@@ -746,7 +806,7 @@ const PagePos = (() => {
         "Selesaikan Transaksi");
       btnSelesai.addEventListener("click", async () => {
         errorBox.textContent = "";
-        const diterima = parseInt(inputUang.value, 10) || 0;
+        const diterima = MugenUI.parseAngka(inputUang.value);
         if (diterima < totalHarga()) { errorBox.textContent = "Uang diterima kurang dari total pembayaran."; return; }
         try {
           const hasil = await MugenUI.withButtonLoading(btnSelesai,
