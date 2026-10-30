@@ -254,30 +254,36 @@ const PagePos = (() => {
       renderKeranjang();
 
       // --- Form entri (barber+service+tips yang SEDANG diisi) ---
+      // PERMINTAAN Owner: Barber jadi dropdown modern (MugenUI.
+      // dropdownSelect(), lihat ui.js), Service jadi card yang bisa
+      // diklik seluruh areanya (menggantikan checkbox kecil).
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Barber"));
-      const selBarber = MugenUI.el("select");
-      selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- Pilih Barber --"));
-      for (const b of pengaturan.barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-      if (state.formBarberId) selBarber.value = String(state.formBarberId);
-      selBarber.addEventListener("change", () => {
-        state.formBarberId = selBarber.value ? Number(selBarber.value) : null;
-        renderTotal();
+      const barberOpsi = pengaturan.barbers.map((b) => ({ value: b.id, label: b.nama }));
+      const dropdownBarber = MugenUI.dropdownSelect(barberOpsi, {
+        value: state.formBarberId, placeholder: "-- Pilih Barber --",
+        onChange: (v) => { state.formBarberId = v; renderTotal(); },
       });
-      body.appendChild(selBarber);
+      body.appendChild(dropdownBarber.el);
 
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Service"));
-      const serviceBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:12px;" });
+      const serviceGrid = MugenUI.el("div", { class: "pos-service-grid" });
       for (const s of pengaturan.services) {
-        const cb = MugenUI.el("input", { type: "checkbox" });
-        cb.checked = state.formServiceIds.has(s.id);
-        cb.addEventListener("change", () => {
-          if (cb.checked) state.formServiceIds.add(s.id); else state.formServiceIds.delete(s.id);
+        const card = MugenUI.el("button", {
+          type: "button", class: "pos-service-card" + (state.formServiceIds.has(s.id) ? " selected" : ""),
+        }, [
+          MugenUI.el("div", { class: "pos-service-card-nama" }, s.nama),
+          MugenUI.el("div", { class: "pos-service-card-harga" }, MugenUI.formatRupiah(s.harga)),
+          MugenUI.el("div", { class: "pos-service-card-check" }, "✓"),
+        ]);
+        card.addEventListener("click", () => {
+          if (state.formServiceIds.has(s.id)) state.formServiceIds.delete(s.id);
+          else state.formServiceIds.add(s.id);
+          card.classList.toggle("selected");
           renderTotal();
         });
-        serviceBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;" },
-          [cb, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`]));
+        serviceGrid.appendChild(card);
       }
-      body.appendChild(serviceBox);
+      body.appendChild(serviceGrid);
       if (!pengaturan.services.length) body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
 
       // Tips: manual oleh kasir, PER BARBER (PERMINTAAN Owner -- kasir
@@ -303,26 +309,125 @@ const PagePos = (() => {
       body.appendChild(btnTambah);
 
       // --- Produk (terpisah, tenant-wide, TIDAK terikat barber manapun) ---
+      // PERMINTAAN Owner: dropdown pencarian multi-pilih (bukan daftar qty
+      // satu-satu) -- tombol +/- di dalamnya mengatur kuantitas TANPA
+      // memicu keyboard apa pun, dropdown TIDAK tertutup tiap satu produk
+      // dipilih (tutup hanya lewat klik luar/tombol Tutup). Ringkasan
+      // produk yang sudah terpilih tetap tampil di luar dropdown supaya
+      // kasir bisa lihat/ubah qty tanpa membuka dropdown lagi.
       body.appendChild(MugenUI.el("label", { style: "margin-top:20px;" }, "Produk"));
-      const produkBox = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:8px;" });
-      for (const p of pengaturan.produk) {
-        const inputQty = MugenUI.el("input", {
-          type: "number", min: "0", max: String(p.stok),
-          value: String(state.produk[p.id] || 0), style: "width:70px;",
-        });
-        inputQty.addEventListener("input", () => {
-          const qty = Math.max(0, Math.min(p.stok, parseInt(inputQty.value, 10) || 0));
-          if (qty > 0) state.produk[p.id] = qty; else delete state.produk[p.id];
-          renderTotal();
-        });
-        MugenUI.attachNumericKeypad(inputQty);
-        produkBox.appendChild(MugenUI.el("div", { class: "row", style: "align-items:center;gap:10px;" }, [
-          MugenUI.el("div", { style: "flex:1;" }, `${p.nama} (${MugenUI.formatRupiah(p.harga_jual)}/pcs, stok ${p.stok})`),
-          inputQty,
-        ]));
+
+      function buatQtyStepper(p) {
+        const qty = state.produk[p.id] || 0;
+        const btnMinus = MugenUI.el("button", { type: "button", class: "pos-qty-btn" }, "−");
+        const nilai = MugenUI.el("span", { class: "pos-qty-value" }, String(qty));
+        const btnPlus = MugenUI.el("button", { type: "button", class: "pos-qty-btn" }, "+");
+        btnMinus.disabled = qty <= 0;
+        btnPlus.disabled = qty >= p.stok;
+        btnMinus.addEventListener("click", (e) => { e.stopPropagation(); ubahQtyProduk(p, -1); });
+        btnPlus.addEventListener("click", (e) => { e.stopPropagation(); ubahQtyProduk(p, 1); });
+        return MugenUI.el("div", { class: "pos-qty-stepper" }, [btnMinus, nilai, btnPlus]);
       }
-      body.appendChild(produkBox);
-      if (!pengaturan.produk.length) body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada produk aktif."));
+
+      const produkTerpilihBox = MugenUI.el("div", { class: "pos-produk-terpilih", style: "margin-top:8px;" });
+      function renderProdukTerpilih() {
+        produkTerpilihBox.innerHTML = "";
+        const idsTerpilih = Object.keys(state.produk).map(Number).filter((id) => state.produk[id] > 0);
+        for (const pid of idsTerpilih) {
+          const p = pengaturan.produk.find((x) => x.id === pid);
+          if (!p) continue;
+          produkTerpilihBox.appendChild(MugenUI.el("div", { class: "pos-produk-terpilih-row" }, [
+            MugenUI.el("div", {}, [
+              MugenUI.el("div", { class: "pos-produk-terpilih-nama" }, p.nama),
+              MugenUI.el("div", { class: "pos-produk-terpilih-harga" }, `${MugenUI.formatRupiah(p.harga_jual)}/pcs`),
+            ]),
+            buatQtyStepper(p),
+          ]));
+        }
+      }
+
+      const produkListEl = MugenUI.el("div");
+      function renderDaftarProdukDropdown(query) {
+        produkListEl.innerHTML = "";
+        const q = (query || "").trim().toLowerCase();
+        // Pencarian substring fleksibel -- cocok di MANA PUN dalam nama
+        // (bukan cuma awalan), tidak peka huruf besar/kecil.
+        const hasil = pengaturan.produk.filter((p) => !q || p.nama.toLowerCase().includes(q));
+        if (!hasil.length) {
+          produkListEl.appendChild(MugenUI.el("div", { class: "mugen-dropdown-empty" }, "Produk tidak ditemukan."));
+          return;
+        }
+        for (const p of hasil) {
+          const terpilih = (state.produk[p.id] || 0) > 0;
+          const row = MugenUI.el("div", { class: "pos-produk-option" + (terpilih ? " selected" : "") }, [
+            MugenUI.el("div", { class: "pos-produk-option-check" }, "✓"),
+            MugenUI.el("div", { class: "pos-produk-option-info" }, [
+              MugenUI.el("div", { class: "pos-produk-option-nama" }, p.nama),
+              MugenUI.el("div", { class: "pos-produk-option-meta" }, `${MugenUI.formatRupiah(p.harga_jual)}/pcs · stok ${p.stok}`),
+            ]),
+            buatQtyStepper(p),
+          ]);
+          row.addEventListener("click", (e) => {
+            if (e.target.closest(".pos-qty-btn")) return; // tombol +/- menangani sendiri
+            if (p.stok <= 0) return;
+            ubahQtyProduk(p, 1); // klik baris = tambah 1 (pilih baru ATAU tambah qty kalau sudah terpilih)
+            renderDaftarProdukDropdown(searchProdukInput.value);
+          });
+          produkListEl.appendChild(row);
+        }
+      }
+
+      function ubahQtyProduk(p, delta) {
+        const qtyBaru = Math.max(0, Math.min(p.stok, (state.produk[p.id] || 0) + delta));
+        if (qtyBaru > 0) state.produk[p.id] = qtyBaru; else delete state.produk[p.id];
+        renderProdukTerpilih();
+        if (dropdownProdukWrap.classList.contains("open")) renderDaftarProdukDropdown(searchProdukInput.value);
+        renderTotal();
+      }
+
+      const searchProdukInput = MugenUI.el("input", {
+        type: "text", class: "mugen-dropdown-search", placeholder: "Cari produk…",
+      });
+      searchProdukInput.addEventListener("input", () => renderDaftarProdukDropdown(searchProdukInput.value));
+      const btnTutupDropdownProduk = MugenUI.el("button", { type: "button", class: "mugen-dropdown-close" }, "Tutup");
+      const panelProduk = MugenUI.el("div", { class: "mugen-dropdown-panel" }, [
+        MugenUI.el("div", { class: "mugen-dropdown-search-wrap" }, [searchProdukInput]),
+        produkListEl,
+        btnTutupDropdownProduk,
+      ]);
+      const triggerProduk = MugenUI.el("button", { type: "button", class: "mugen-dropdown-trigger" }, [
+        MugenUI.el("span", { class: "mugen-dropdown-trigger-label" }, "+ Tambah Produk"),
+        MugenUI.el("span", { class: "mugen-dropdown-chevron" }, "⌄"),
+      ]);
+      const dropdownProdukWrap = MugenUI.el("div", { class: "mugen-dropdown", style: "margin-top:10px;" }, [triggerProduk, panelProduk]);
+
+      let pointerdownLuarProduk = null;
+      function bukaDropdownProduk() {
+        if (dropdownProdukWrap.classList.contains("open")) return;
+        dropdownProdukWrap.classList.add("open");
+        searchProdukInput.value = "";
+        renderDaftarProdukDropdown("");
+        pointerdownLuarProduk = (e) => { if (!dropdownProdukWrap.contains(e.target)) tutupDropdownProduk(); };
+        setTimeout(() => document.addEventListener("pointerdown", pointerdownLuarProduk, true), 0);
+      }
+      function tutupDropdownProduk() {
+        if (!dropdownProdukWrap.classList.contains("open")) return;
+        dropdownProdukWrap.classList.remove("open");
+        if (pointerdownLuarProduk) document.removeEventListener("pointerdown", pointerdownLuarProduk, true);
+        pointerdownLuarProduk = null;
+      }
+      triggerProduk.addEventListener("click", () => (
+        dropdownProdukWrap.classList.contains("open") ? tutupDropdownProduk() : bukaDropdownProduk()
+      ));
+      btnTutupDropdownProduk.addEventListener("click", tutupDropdownProduk);
+
+      if (pengaturan.produk.length) {
+        body.appendChild(dropdownProdukWrap);
+        body.appendChild(produkTerpilihBox);
+        renderProdukTerpilih();
+      } else {
+        body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada produk aktif."));
+      }
 
       const totalBox = MugenUI.el("div", { class: "card", style: "margin-top:12px;" });
       body.appendChild(totalBox);

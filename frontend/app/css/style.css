@@ -1994,3 +1994,187 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   letter-spacing: 0.4px;
   color: var(--accent);
 }
+/* PERMINTAAN Owner: caret/text cursor terlihat di input yang sedang
+   diisi lewat keypad custom -- input TETAP `:focus` selama keypad
+   terbuka (tidak pernah di-blur()), jadi ring focus bawaan (lihat
+   `input:focus` di atas) sudah otomatis ikut muncul; ini HANYA
+   menambahkan warna caret, TIDAK mengubah border/padding/ukuran input
+   sama sekali. */
+input.numkeypad-caret-aktif { caret-color: var(--accent); }
+
+/* ============ Dropdown Modern (PERMINTAAN Owner -- MugenUI.
+   dropdownSelect(), dipakai pilih Barber & Produk di POS) ============
+   Lebar/posisi SELALU mengikuti trigger-nya (left:0;right:0, relative ke
+   .mugen-dropdown) -- responsif otomatis di HP/tablet/desktop TANPA
+   breakpoint terpisah. */
+.mugen-dropdown { position: relative; }
+.mugen-dropdown-trigger {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  min-height: auto;
+  box-shadow: none;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.mugen-dropdown-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mugen-dropdown-trigger.has-value { color: var(--text); font-weight: 600; }
+.mugen-dropdown-trigger:hover { border-color: var(--accent); }
+.mugen-dropdown.open .mugen-dropdown-trigger { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(51,65,85,0.12); }
+:root[data-theme="dark"] .mugen-dropdown.open .mugen-dropdown-trigger { box-shadow: 0 0 0 3px rgba(148,163,184,0.20); }
+.mugen-dropdown-chevron {
+  flex: none; font-size: 15px; color: var(--text-dim); line-height: 1;
+  transition: transform var(--dur-base) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.mugen-dropdown.open .mugen-dropdown-chevron { transform: rotate(180deg); color: var(--accent); }
+
+.mugen-dropdown-panel {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+  z-index: 400;
+  display: flex; flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-elevated);
+  padding: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  opacity: 0; transform: translateY(-6px) scale(0.98);
+  pointer-events: none;
+  transform-origin: top center;
+  transition: opacity var(--dur-base) var(--ease-emphasized), transform var(--dur-base) var(--ease-emphasized);
+}
+.mugen-dropdown.open .mugen-dropdown-panel { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+.mugen-dropdown-option {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 12px;
+  background: transparent; border: none; border-radius: 10px;
+  color: var(--text); font-size: 14px; font-family: inherit;
+  text-align: left; cursor: pointer;
+  min-height: auto; box-shadow: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.mugen-dropdown-option:hover { background: var(--bg-input); }
+.mugen-dropdown-option.selected { background: rgba(51,65,85,0.08); color: var(--accent); font-weight: 600; }
+:root[data-theme="dark"] .mugen-dropdown-option.selected { background: rgba(148,163,184,0.16); }
+.mugen-dropdown-check {
+  flex: none; opacity: 0; transform: scale(0.6); color: var(--accent); font-size: 13px;
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-emphasized);
+}
+.mugen-dropdown-option.selected .mugen-dropdown-check { opacity: 1; transform: scale(1); }
+.mugen-dropdown-empty { padding: 18px 12px; color: var(--text-dim); font-size: 13px; text-align: center; }
+
+/* Kolom pencarian (dropdown Produk, lihat pages/pos.js) -- sticky di atas
+   panel supaya tetap terlihat walau daftar hasil di-scroll. */
+.mugen-dropdown-search-wrap { position: sticky; top: 0; background: var(--bg-card); padding: 2px 2px 6px; z-index: 1; }
+.mugen-dropdown-search {
+  width: 100%; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text); font-size: 13px; font-family: inherit;
+}
+.mugen-dropdown-close {
+  width: 100%; margin-top: 4px; padding: 9px 12px;
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text-dim); font-size: 13px; font-weight: 600; cursor: pointer;
+  min-height: auto; box-shadow: none;
+}
+.mugen-dropdown-close:hover { color: var(--text); border-color: var(--accent); }
+
+/* ============ Service: Clickable Selection Card (PERMINTAAN Owner,
+   menggantikan checkbox) ============ auto-fill -- kolom menyesuaikan
+   sendiri ke lebar layar (banyak kolom di desktop/tablet, sedikit di HP)
+   TANPA breakpoint per perangkat terpisah; container scroll sendiri kalau
+   service > yang muat di tinggi yang dialokasikan. */
+.pos-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+}
+.pos-service-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-card);
+  cursor: pointer; text-align: left;
+  min-height: auto; box-shadow: var(--shadow-card);
+  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard);
+}
+.pos-service-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-elevated); }
+.pos-service-card.selected { border-color: var(--accent); background: rgba(51,65,85,0.07); box-shadow: 0 0 0 2px var(--accent) inset; }
+:root[data-theme="dark"] .pos-service-card.selected { background: rgba(148,163,184,0.12); }
+.pos-service-card-nama { font-weight: 700; font-size: 14px; color: var(--text); padding-right: 22px; line-height: 1.3; }
+.pos-service-card-harga { font-size: 15px; font-weight: 700; color: var(--text-dim); }
+.pos-service-card.selected .pos-service-card-harga { color: var(--accent); }
+.pos-service-card-check {
+  position: absolute; top: 10px; right: 10px;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--accent); font-size: 11px;
+  opacity: 0; transform: scale(0.5);
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-emphasized);
+}
+.pos-service-card.selected .pos-service-card-check { opacity: 1; transform: scale(1); }
+
+/* ============ Produk: baris di dalam dropdown pencarian + ringkasan
+   produk terpilih (PERMINTAAN Owner) ============ */
+.pos-produk-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.pos-produk-option:hover { background: var(--bg-input); }
+.pos-produk-option.selected { background: rgba(51,65,85,0.08); }
+:root[data-theme="dark"] .pos-produk-option.selected { background: rgba(148,163,184,0.14); }
+.pos-produk-option-info { flex: 1; min-width: 0; }
+.pos-produk-option-nama { font-size: 14px; font-weight: 600; color: var(--text); }
+.pos-produk-option-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.pos-produk-option-check {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--accent); font-size: 11px;
+  opacity: 0; transform: scale(0.5);
+  transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-emphasized);
+}
+.pos-produk-option.selected .pos-produk-option-check { opacity: 1; transform: scale(1); }
+
+/* Tombol +/- qty -- dipakai dalam dropdown Produk MAUPUN ringkasan produk
+   terpilih di bawah form, SELALU tombol langsung (TIDAK memicu keyboard
+   apa pun, custom maupun bawaan perangkat). */
+.pos-qty-stepper { display: flex; align-items: center; gap: 8px; flex: none; }
+.pos-qty-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text); font-size: 15px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; min-height: auto; box-shadow: none; padding: 0;
+  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.pos-qty-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pos-qty-btn:disabled { opacity: 0.35; cursor: default; }
+.pos-qty-value { min-width: 20px; text-align: center; font-weight: 700; font-size: 14px; }
+
+.pos-produk-terpilih-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 2px; border-bottom: 1px solid var(--border);
+}
+.pos-produk-terpilih-row:last-child { border-bottom: none; }
+.pos-produk-terpilih-nama { font-weight: 600; font-size: 14px; color: var(--text); }
+.pos-produk-terpilih-harga { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
