@@ -344,32 +344,47 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
 
     if body.metode_pembayaran != "gateway":
         return booking
+    try:
+        return _checkout_gateway_booking(booking, body.channel, body.bank_code, tenant_id)
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
-    # Migrasi Faspay SNAP Advance: booking SUDAH tersimpan
-    # (status_pembayaran='menunggu_verifikasi', slot TERISI) -- sekarang
-    # buat transaksi SNAP SUNGGUHAN (VA/QRIS) ke Faspay lewat seam
-    # payment_provider_client.py (BUKAN memanggil snap_advance_client.py
-    # langsung -- lihat catatan modul payment_provider_client.py soal kenapa).
-    # Urutan 3 langkah (catat lokal CREATED -> panggil provider -> catat
-    # hasilnya) pola SAMA seperti dulu Xpress v4 (booking_gateway_db.buat_transaksi()
-    # dipanggil SETELAH payment_gateway_client.buat_transaksi() sukses),
-    # hanya tabelnya sekarang snap_payment_transactions (SATU tabel yang
-    # sudah dipakai webhook cascade -- lihat snap_webhook.py).
+
+def _checkout_gateway_booking(booking: dict, channel: str, bank_code: str | None, tenant_id: int) -> dict:
+    """Migrasi Faspay SNAP Advance: booking SUDAH tersimpan
+    (status_pembayaran='menunggu_verifikasi', slot TERISI) -- sekarang
+    buat transaksi SNAP SUNGGUHAN (VA/QRIS) ke Faspay lewat seam
+    payment_provider_client.py (BUKAN memanggil snap_advance_client.py
+    langsung -- lihat catatan modul payment_provider_client.py soal kenapa).
+    Urutan 3 langkah (catat lokal CREATED -> panggil provider -> catat
+    hasilnya) pola SAMA seperti dulu Xpress v4 (booking_gateway_db.buat_transaksi()
+    dipanggil SETELAH payment_gateway_client.buat_transaksi() sukses),
+    hanya tabelnya sekarang snap_payment_transactions (SATU tabel yang
+    sudah dipakai webhook cascade -- lihat snap_webhook.py).
+
+    DIEKSTRAK (FITUR Booking Mandiri) jadi helper TERPISAH supaya
+    public_buat_booking() (customer lewat wizard publik) DAN
+    buat_booking_mandiri() (kasir, di bawah) memanggil SATU implementasi
+    yang sama -- checkout gateway (termasuk guard rollback kalau provider
+    menolak) TIDAK PERNAH boleh ada dua versi yang bisa drift. Melempar
+    gateway_client_base.GatewayError ke atas kalau provider gagal
+    (pemanggil WAJIB membalas 502 dengan pesan jelas, lihat kedua
+    endpoint)."""
     row = snap_payment_db.buat_transaksi(
         snap_payment_db.TRANSACTION_TYPE_BOOKING, tenant_id, booking["total_harga"],
-        booking_id=booking["id"], channel=body.channel,
-        channel_code=body.bank_code if body.channel == "va" else None,
+        booking_id=booking["id"], channel=channel,
+        channel_code=bank_code if channel == "va" else None,
     )
     customer_details = {"nama": booking["customer_nama"][:128], "whatsapp": booking["customer_whatsapp"]}
     try:
         hasil = payment_provider_client.buat_transaksi(
-            body.channel, row["payment_reference"], booking["total_harga"], customer_details,
-            channel_code=body.bank_code if body.channel == "va" else None,
+            channel, row["payment_reference"], booking["total_harga"], customer_details,
+            channel_code=bank_code if channel == "va" else None,
         )
-    except gateway_client_base.GatewayError as e:
+    except gateway_client_base.GatewayError:
         snap_payment_db.update_status(row["id"], "FAILED", sumber="create_gagal")
         booking_db.batalkan_booking(booking["id"])
-        raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
+        raise
 
     transaksi_setelah = snap_payment_db.catat_hasil_create_transaction(
         row["id"], provider_transaction_id=hasil.get("provider_transaction_id"),
@@ -377,7 +392,7 @@ def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolv
         expired_at=hasil.get("expired_at"), provider_response=hasil.get("provider_response"), status="PENDING",
     )
     booking["payment_reference"] = row["payment_reference"]
-    booking["channel"] = body.channel
+    booking["channel"] = channel
     booking["va_number"] = hasil.get("va_number")
     # REVISI tampilan (diminta Owner): channel_code disertakan APA ADANYA
     # supaya frontend bisa memetakan ke nama bank lengkap sendiri (bukan
@@ -628,6 +643,119 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
     yang sama per tanggal di frontend, tidak perlu endpoint terpisah)."""
     return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
                                         status_booking=status_booking, tenant_id=user["tenant_id"])
+
+
+@router.get("/{booking_id}")
+def detail_booking(booking_id: int, user: dict = Depends(require_menu_read("booking"))):
+    """FITUR Booking Mandiri: dipakai layar tunggu Payment Gateway (poll
+    status_pembayaran sampai 'terverifikasi', SAMA pola seperti
+    book_public.js poll /gateway-status, versi staff login)."""
+    booking = booking_db.get_booking(booking_id)
+    _pastikan_booking_tenant_sama(user, booking)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking tidak ditemukan.")
+    return booking
+
+
+# =============================================================================
+# FITUR Booking Mandiri (PERMINTAAN Owner): kasir mencatat customer WALK-IN
+# langsung dari menu Booking (tab "Booking Mandiri", lihat pages/booking.js)
+# -- BUKAN wizard publik customer, SELALU staff yang sudah login (sama akses
+# dengan tab Booking List: izin_booking_mandiri). Tiga endpoint:
+# /mandiri/pengaturan (shell form: barber/service/metode aktif + kalender,
+# cache "sekali per sesi" pola pos.js), /mandiri/slot (ketersediaan jam per
+# Barber+tanggal, SELALU fresh TIDAK di-cache), /mandiri (POST, buat booking).
+# =============================================================================
+@router.get("/mandiri/pengaturan")
+def ambil_pengaturan_booking_mandiri(user: dict = Depends(require_permission("izin_booking_mandiri"))):
+    tenant_id = user["tenant_id"]
+    semua_settings = db.get_all_settings(tenant_id=tenant_id)
+    booking_settings = booking_db.get_booking_settings(tenant_id=tenant_id, semua_settings=semua_settings)
+    payment_settings = booking_db.get_payment_settings(tenant_id=tenant_id, semua_settings=semua_settings)
+    hari_ini = _hari_ini_wib()
+    batas = hari_ini + timedelta(days=booking_settings["maksimal_hari_kedepan"])
+    toko_libur_tanggal = [
+        tl["tanggal"] for tl in booking_db.get_toko_libur_list(tenant_id=tenant_id)
+        if hari_ini.isoformat() <= tl["tanggal"] <= batas.isoformat()
+    ]
+    barbers = sorted(db.get_barbers(hanya_aktif=True, tenant_id=tenant_id), key=lambda b: (b.get("urutan") or 0, b["nama"]))
+    services = sorted(db.get_services(hanya_aktif=True, tenant_id=tenant_id), key=lambda s: (s.get("urutan") or 0, s["nama"]))
+    return {
+        **booking_settings, **payment_settings,
+        "barbers": [{"id": b["id"], "nama": b["nama"]} for b in barbers],
+        "services": [
+            {"id": s["id"], "nama": s["nama"], "harga": s["harga"], "durasi_menit": s.get("durasi_menit") or 60}
+            for s in services
+        ],
+        "snap_gateway_enabled": payment_provider_client.is_enabled(),
+        "snap_channel_aktif": payment_provider_client.channel_aktif() if payment_provider_client.is_enabled() else [],
+        "snap_va_bank_aktif": payment_provider_client.va_bank_aktif(),
+        "toko_libur_tanggal": toko_libur_tanggal,
+    }
+
+
+@router.get("/mandiri/slot")
+def ambil_slot_booking_mandiri(barber_id: int, tanggal: str, service_ids: str = None,
+                                user: dict = Depends(require_permission("izin_booking_mandiri"))):
+    """Mirror public_slot() -- logika SAMA PERSIS (booking_db.hitung_slot()),
+    hanya lewat sesi staff yang sudah login (tenant_id dari akun, BUKAN
+    slug). PERMINTAAN Owner: endpoint ini SELALU dipanggil fresh begitu
+    kasir ganti Barber/tanggal di tab Booking Mandiri, TIDAK PERNAH
+    di-cache (beda dari shell form di /mandiri/pengaturan di atas)."""
+    try:
+        return booking_db.hitung_slot(barber_id, tanggal, _parse_service_ids(service_ids), tenant_id=user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+class BookingMandiriBody(BaseModel):
+    barber_id: int
+    tanggal: str
+    jam_mulai: str
+    service_ids: list[int]
+    customer_nama: str
+    customer_whatsapp: str | None = None
+    metode_pembayaran: str
+    channel: str | None = None
+    bank_code: str | None = None
+    catatan: str | None = None
+
+
+@router.post("/mandiri")
+def buat_booking_mandiri(body: BookingMandiriBody, user: dict = Depends(require_permission("izin_booking_mandiri"))):
+    """Nama WAJIB, WhatsApp OPSIONAL (lihat booking_db.buat_booking()
+    param `sumber="kasir_mandiri"`). `metode_pembayaran` boleh "bayar_nanti"
+    (baru) ATAU salah satu metode aktif Superadmin (qris/gateway/cash) --
+    validasi channel/bank_code utk "gateway" SAMA PERSIS public_buat_booking()
+    di atas. "gateway" langsung buat transaksi SUNGGUHAN (VA/QRIS) begitu
+    booking tersimpan, lewat _checkout_gateway_booking() (SATU implementasi
+    yang sama dipakai booking publik, lihat docstring-nya)."""
+    tenant_id = user["tenant_id"]
+    if body.metode_pembayaran == "gateway":
+        if not payment_provider_client.is_enabled():
+            raise HTTPException(status_code=503, detail="Payment Gateway belum aktif -- silakan pilih metode pembayaran lain.")
+        if body.channel not in payment_provider_client.channel_aktif():
+            raise HTTPException(status_code=422, detail="Channel pembayaran tidak tersedia -- silakan pilih channel lain.")
+        if body.channel == "va" and body.bank_code not in payment_provider_client.va_bank_aktif():
+            raise HTTPException(status_code=422, detail="Bank VA tidak tersedia -- silakan pilih bank lain.")
+        if body.channel == "qris" and not (body.customer_whatsapp or "").strip():
+            raise HTTPException(status_code=422, detail="Nomor WhatsApp wajib diisi untuk pembayaran QRIS.")
+    try:
+        billing_limits.pastikan_boleh_tambah_booking(tenant_id)
+        booking = booking_db.buat_booking(
+            barber_id=body.barber_id, tanggal=body.tanggal, jam_mulai=body.jam_mulai,
+            service_ids=body.service_ids, customer_nama=body.customer_nama,
+            customer_whatsapp=body.customer_whatsapp or "", metode_pembayaran=body.metode_pembayaran,
+            catatan=body.catatan, tenant_id=tenant_id, sumber="kasir_mandiri",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if body.metode_pembayaran != "gateway":
+        return booking
+    try:
+        return _checkout_gateway_booking(booking, body.channel, body.bank_code, tenant_id)
+    except gateway_client_base.GatewayError as e:
+        raise HTTPException(status_code=502, detail=f"Gagal membuat transaksi pembayaran: {e}")
 
 
 @router.get("/transactions")

@@ -1019,6 +1019,15 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     dalamnya) supaya tenant tanpa fitur ini TIDAK tercatat sebagai
     "percobaan gagal" di mana pun -- murni tidak pernah mencoba sama sekali,
     sama seperti token Fonnte kosong."""
+    # FITUR Booking Mandiri (PERMINTAAN Owner): "untuk pesan WhatsApp
+    # Fonte, tidak berlaku untuk booking mandiri baik kasir input WA
+    # maupun tidak" -- SATU titik blokir (bukan ditempel di tiap
+    # pemanggil: buat_booking()/verifikasi_pembayaran()/batalkan_booking()/
+    # terima_booking(), total 4 jalur) supaya booking sumber="kasir_mandiri"
+    # TIDAK PERNAH memicu Fonte di jalur apa pun, sekarang maupun jalur
+    # baru di masa depan yang lupa menambahkan guard sendiri-sendiri.
+    if booking.get("sumber") == "kasir_mandiri":
+        return
     tenant_id = booking.get("tenant_id")
     import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
     # REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
@@ -1085,26 +1094,52 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
 
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
-                  catatan: str = None, tenant_id: int = None) -> dict:
+                  catatan: str = None, tenant_id: int = None, sumber: str = "publik") -> dict:
     """FONDASI Multi-Tenant Phase 1: `tenant_id` (resolusi tenant publik,
     lihat routers/booking.py::resolve_tenant_publik()) diverifikasi TEGAS
     terhadap barber_id/service_ids yang dikirim customer -- SATU-SATUNYA
     cara memastikan "customer TIDAK PERNAH bisa booking ke barber/service
     milik toko lain" (persyaratan eksplisit Phase 1), bukan cuma dipercaya
     dari parameter. Baris `bookings` yang tersimpan ikut membawa tenant_id
-    ini (kolom langsung, lihat tenant_migrasi.py)."""
+    ini (kolom langsung, lihat tenant_migrasi.py).
+
+    FITUR Booking Mandiri (PERMINTAAN Owner -- kasir mencatat customer
+    walk-in langsung dari menu Booking): `sumber="kasir_mandiri"` (dipanggil
+    routers/booking.py::buat_booking_mandiri(), SELALU staff yang sudah
+    login, BUKAN endpoint publik) mengubah 2 aturan dibanding sumber
+    "publik" default:
+    1. Nomor WhatsApp BOLEH kosong (opsional -- kasir yang menangani
+       langsung/lewat telepon, TIDAK wajib dicatat) -- TETAP divalidasi
+       formatnya kalau DIISI (bukan lolos apa adanya).
+    2. `metode_pembayaran` boleh juga "bayar_nanti" (status_pembayaran
+       mulai 'menunggu_verifikasi', SAMA seperti qris -- tombol aksinya
+       di-relabel "Sudah Bayar" di UI, lihat booking.js, tapi fungsi yang
+       dipanggil TETAP verifikasi_pembayaran() yang sama) -- SATU-SATUNYA
+       metode yang TIDAK dicek terhadap metode_aktif Superadmin (bukan
+       metode pembayaran sungguhan, murni "belum pilih, bayar nanti").
+
+    `sumber` ikut disimpan ke kolom `bookings.sumber` (lihat
+    booking_sumber_migrasi.py) -- dibaca _kirim_notifikasi_wa_booking()
+    untuk blokir SEMUA notifikasi WhatsApp Fonte milik booking
+    kasir_mandiri (baik WA diisi maupun tidak, lihat docstring fungsi
+    itu)."""
     pesan = get_booking_settings(tenant_id=tenant_id)
     if not service_ids:
         raise ValueError("Pilih minimal satu service.")
     if not (customer_nama or "").strip():
         raise ValueError(pesan["pesan_nama_kosong"])
-    if not _whatsapp_valid(customer_whatsapp):
+    if sumber == "kasir_mandiri":
+        if customer_whatsapp and not _whatsapp_valid(customer_whatsapp):
+            raise ValueError(pesan["pesan_whatsapp_invalid"])
+    elif not _whatsapp_valid(customer_whatsapp):
         raise ValueError(pesan["pesan_whatsapp_invalid"])
-    if metode_pembayaran not in METODE_VALID:
+    metode_valid_untuk_sumber = METODE_VALID | ({"bayar_nanti"} if sumber == "kasir_mandiri" else set())
+    if metode_pembayaran not in metode_valid_untuk_sumber:
         raise ValueError("Metode pembayaran tidak dikenal.")
-    metode_aktif = get_payment_settings(tenant_id=tenant_id)["metode_aktif"]
-    if metode_pembayaran not in metode_aktif:
-        raise ValueError("Metode pembayaran itu sedang tidak aktif.")
+    if metode_pembayaran != "bayar_nanti":
+        metode_aktif = get_payment_settings(tenant_id=tenant_id)["metode_aktif"]
+        if metode_pembayaran not in metode_aktif:
+            raise ValueError("Metode pembayaran itu sedang tidak aktif.")
     _validasi_tanggal(tanggal)
     _validasi_jam(jam_mulai)
 
@@ -1180,11 +1215,11 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
             cur = conn.execute(
                 "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
                 "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
-                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?)",
+                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi, sumber) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?, ?)",
                 (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
-                 customer_whatsapp.strip(), total_harga, total_durasi, metode_pembayaran,
-                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi),
+                 (customer_whatsapp or "").strip(), total_harga, total_durasi, metode_pembayaran,
+                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi, sumber),
             )
             booking_id = cur.lastrowid
             for s in items:
