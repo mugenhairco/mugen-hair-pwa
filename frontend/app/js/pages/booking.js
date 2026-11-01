@@ -486,28 +486,28 @@ const PageBooking = (() => {
   }
 
   // PERMINTAAN Owner: begitu booking (sumber apa pun -- Booking Mandiri
-  // ATAU Booking List yang sudah ada) jadi LUNAS, tab "Transaksi Hari Ini"
-  // POS (dan Rekap/Dashboard) langsung disuntik SATU baris baru diam-diam
-  // (TANPA refresh/skeleton) KALAU halaman itu sedang/sudah pernah dimuat
-  // sesi ini -- module page lain (PagePos/PageRekap/PageDashboardOwner/
-  // PageDashboardBarber) lazy-loaded (lihat page_loader.js), jadi guard
-  // `typeof X !== "undefined"` WAJIB (pola SAMA seperti app.js memanggil
-  // MugenBookingNotif) -- no-op aman kalau modul itu belum pernah dibuka
-  // sesi ini.
+  // ATAU Booking List yang sudah ada) jadi LUNAS:
+  // 1. Tab "Transaksi Hari Ini" POS disuntik SATU baris baru diam-diam
+  //    (TANPA refresh/skeleton) KALAU sedang/sudah pernah dimuat sesi ini.
+  // 2. Dashboard (Owner & Barber) disegarkan di LATAR BELAKANG (bukan
+  //    suntik satu baris -- Dashboard isinya angka AGREGAT/komisi yang
+  //    HARUS dihitung backend, bukan dijumlah sendiri di JS) supaya begitu
+  //    nanti BENAR-BENAR dibuka, angkanya sudah mutakhir TANPA skeleton.
+  // Rekap > Transaksi SENGAJA TIDAK ikut di sini -- tabel itu murni dari
+  // Input Data (lihat input_data.js), SAMA SEKALI tidak terkait booking/POS
+  // (lihat database.py::tambah_transaksi(), satu-satunya penulis tabel
+  // `transaksi`), jadi tidak ada apa pun untuk disuntik/disegarkan.
+  // Module page lain (PagePos/PageDashboardOwner/PageDashboardBarber)
+  // lazy-loaded (lihat page_loader.js), jadi guard `typeof X !== "undefined"`
+  // WAJIB (pola SAMA seperti app.js memanggil MugenBookingNotif) -- no-op
+  // aman kalau modul itu belum pernah dibuka sesi ini.
   function _suntikBookingLunasKeHalamanLain(booking) {
     if (!booking || booking.status_pembayaran !== "terverifikasi") return;
     if (typeof PagePos !== "undefined" && typeof PagePos.suntikBookingLunas === "function") {
       PagePos.suntikBookingLunas(booking);
     }
-    if (typeof PageRekap !== "undefined" && typeof PageRekap.suntikBookingLunas === "function") {
-      PageRekap.suntikBookingLunas(booking);
-    }
-    if (typeof PageDashboardOwner !== "undefined" && typeof PageDashboardOwner.suntikBookingLunas === "function") {
-      PageDashboardOwner.suntikBookingLunas(booking);
-    }
-    if (typeof PageDashboardBarber !== "undefined" && typeof PageDashboardBarber.suntikBookingLunas === "function") {
-      PageDashboardBarber.suntikBookingLunas(booking);
-    }
+    if (typeof PageDashboardOwner !== "undefined") PageDashboardOwner.refreshDiamDiam();
+    if (typeof PageDashboardBarber !== "undefined") PageDashboardBarber.refreshDiamDiam();
   }
 
   // ================= TAB: Booking Mandiri (PERMINTAAN Owner -- kasir

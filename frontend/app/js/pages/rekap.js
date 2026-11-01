@@ -20,6 +20,42 @@ const PageRekap = (() => {
     _cacheTerakhir[tab] = { userId, url, data };
   }
 
+  // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+  // Owner, pola sama Transaksi Hari Ini POS/Booking Mandiri): dipanggil
+  // pages/input_data.js SETELAH simpan transaksi sukses. HANYA mengubah
+  // cache tab "Transaksi" (kalau PERNAH dimuat sesi ini & filter tahun/
+  // bulan/barber yang di-cache cocok dengan baris baru ini) -- TIDAK PERNAH
+  // memicu fetch/re-render DOM apa pun di sini. Ini SENGAJA cukup: SPA satu-
+  // halaman-aktif-sekaligus (hash router), jadi kalau Rekap sedang tidak
+  // dilihat (yang hampir selalu benar -- pemicu datang dari menu Input Data
+  // yang berbeda), baris baru ini otomatis "sudah ada" begitu user pindah
+  // ke Rekap berikutnya (cache hit, TANPA skeleton/fetch) -- tujuan "tidak
+  // refresh sama sekali" tercapai tanpa perlu menyentuh DOM yang sedang
+  // tidak tampil.
+  function suntikBarisTransaksi(baris) {
+    const c = _cacheTerakhir["transaksi"];
+    if (!c || !baris || !Array.isArray(c.data)) return;
+    if (c.userId !== MugenState.getUser().id) return;
+    const params = new URLSearchParams((c.url.split("?")[1] || ""));
+    const tahunCache = Number(params.get("tahun"));
+    const bulanCache = Number(params.get("bulan"));
+    const barberCache = params.get("barber_id");
+    const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
+    if (tahunBaris !== tahunCache || bulanBaris !== bulanCache) return; // filter bulan/tahun tidak cocok
+    if (barberCache && String(baris.barber_id) !== barberCache) return; // filter barber tidak cocok
+    // Upsert (bukan skip-kalau-sudah-ada) -- "Koreksi" transaksi yang SUDAH
+    // tampil di cache juga lewat jalur ini (id-nya sama, nilainya beda),
+    // baris lama WAJIB diganti, bukan dibiarkan basi sampai refresh manual.
+    const idxLama = c.data.findIndex((r) => r.tipe === "transaksi" && r.id === baris.id);
+    if (idxLama >= 0) c.data[idxLama] = baris;
+    else c.data.push(baris);
+    // Urutan SAMA PERSIS get_rekap_transaksi_list() (database.py): nama_barber
+    // ASC dulu (sort stabil), baru tanggal DESC -- hasil akhirnya "tanggal
+    // terbaru dulu, nama_barber A-Z per tanggal yang sama".
+    c.data.sort((a, b) => (a.nama_barber < b.nama_barber ? -1 : a.nama_barber > b.nama_barber ? 1 : 0));
+    c.data.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0));
+  }
+
   // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
   // mengunduh -- PDF dibuat lalu ditampilkan dulu lewat MugenPdfPreview
   // (Preview PDF di dalam aplikasi, dengan Zoom/Nomor Halaman/Download
@@ -659,7 +695,7 @@ const PageRekap = (() => {
     renderBody();
   }
 
-  return { render };
+  return { render, suntikBarisTransaksi };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js

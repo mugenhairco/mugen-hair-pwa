@@ -315,11 +315,35 @@ const PageInputData = (() => {
         ? MugenApi.put(`/api/input-data/transaksi/${entry.editId}`, entry.body)
         : MugenApi.post("/api/input-data/transaksi", entry.body);
       (btnEl ? MugenUI.withButtonLoading(btnEl, kirim) : kirim())
-        .then(() => {
+        .then((hasil) => {
           pendingList = pendingList.filter((e) => e.tempId !== entry.tempId);
           tulisPendingTransaksi(user.id, pendingList);
           renderPendingBanner();
           loadList({ silent: true });
+          // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam"
+          // (PERMINTAAN Owner, pola sama Transaksi Hari Ini POS/Booking
+          // Mandiri): suntik baris baru/terkoreksi ke cache Rekap >
+          // Transaksi (kalau sedang/sudah pernah dibuka sesi ini) TANPA
+          // pernah menghitung komisi/uang-harian sendiri di JS -- ambil
+          // baris siap-pakai dari endpoint khusus (SATU-SATUNYA sumber
+          // kebenaran rumus itu, lihat database.py::get_rekap_transaksi_
+          // baris()). Best-effort -- gagal diam-diam, baris baru TETAP
+          // kelihatan begitu Rekap dibuka/di-refresh biasa. PageRekap
+          // lazy-loaded (lihat page_loader.js) -- guard typeof WAJIB.
+          const transaksiId = entry.editId || (hasil && hasil.id);
+          if (transaksiId && typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisTransaksi === "function") {
+            MugenApi.get(`/api/rekap/transaksi/baris/${transaksiId}`)
+              .then((baris) => PageRekap.suntikBarisTransaksi(baris))
+              .catch(() => {});
+          }
+          // FITUR "Dashboard tidak perlu refresh semua, cukup data yang
+          // berubah saja" (PERMINTAAN Owner): transaksi baru/dikoreksi ikut
+          // mengubah angka Total Pendapatan/Komisi/Jumlah Service Dashboard
+          // -- segarkan cache-nya di latar belakang (lihat dashboard_owner.js/
+          // dashboard_barber.js::refreshDiamDiam(), TIDAK PERNAH menyentuh
+          // DOM, no-op kalau Dashboard belum pernah dibuka sesi ini).
+          if (typeof PageDashboardOwner !== "undefined") PageDashboardOwner.refreshDiamDiam();
+          if (typeof PageDashboardBarber !== "undefined") PageDashboardBarber.refreshDiamDiam();
         })
         .catch((e) => {
           renderPendingBanner();

@@ -79,6 +79,30 @@ def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
     return data
 
 
+@router.get("/transaksi/baris/{transaksi_id}")
+def rekap_transaksi_baris(transaksi_id: int, user: dict = Depends(get_current_user)):
+    """FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+    Owner, pola sama Transaksi Hari Ini POS/Booking Mandiri): SATU baris
+    siap-pakai untuk transaksi yang BARU SAJA disimpan lewat Input Data --
+    dipanggil input_data.js SETELAH POST /api/input-data/transaksi sukses,
+    supaya baris baru bisa disuntik langsung ke tabel Rekap Transaksi (kalau
+    sedang terbuka sesi ini) TANPA fetch ulang seluruh daftar DAN tanpa
+    menghitung komisi/uang-harian apa pun di JS (rumusnya SAMA PERSIS
+    GET /transaksi biasa, lihat database.py::get_rekap_transaksi_baris()).
+
+    HANYA baris "transaksi" murni dari Input Data -- Reimburse/Kasbon/Gaji
+    Non-Barber/tanda kuota libur (digabung di endpoint /transaksi di atas)
+    SENGAJA tidak ikut di sini (jalur/trigger terpisah, jauh lebih jarang
+    dipakai) -- nanti tetap kelihatan begitu tab Rekap di-refresh biasa."""
+    _cek_akses_rekap(user, "izin_rekap_transaksi")
+    baris = db.get_rekap_transaksi_baris(transaksi_id, tenant_id=user["tenant_id"])
+    if baris is None:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    if user["role"] == "barber" and baris["barber_id"] != user.get("barber_id"):
+        raise HTTPException(status_code=403, detail="Bukan transaksi milik Anda.")
+    return baris
+
+
 @router.get("/transaksi/pdf")
 def rekap_transaksi_pdf(tahun: int = None, bulan: int = None, barber_id: int = None,
                          tanggal_mulai: str = None, tanggal_selesai: str = None, jenis: str = "detail",
