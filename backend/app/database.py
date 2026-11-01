@@ -2100,6 +2100,73 @@ def get_libur_list(barber_id: int = None, tahun: int = None, bulan: int = None,
 # Bonus Customer (lihat hitung_bonus_customer di atas).
 # ---------------------------------------------------------------------------
 
+def _baris_rekap_dari_transaksi(t: dict, ada_libur_hari_sama: bool, uang_harian: int) -> dict:
+    """SATU baris tabel Rekap Transaksi dari SATU `transaksi` (hasil
+    get_transaksi()/get_transaksi_list()) -- diekstrak dari
+    get_rekap_transaksi_list() (dipakai lagi oleh fungsi itu per baris)
+    SUPAYA get_rekap_transaksi_baris() di bawah (SATU baris untuk SATU
+    transaksi yang baru dibuat, dipakai input_data.js menyuntik baris baru
+    ke Rekap Transaksi TANPA refresh penuh, PERMINTAAN Owner) memakai rumus
+    komisi/pendapatan/uang-harian yang SAMA PERSIS -- TIDAK PERNAH dihitung
+    ulang terpisah di dua tempat (apalagi di JS)."""
+    bagian_ket = []
+    if (t.get("catatan") or "").strip():
+        bagian_ket.append(t["catatan"].strip())
+    if ada_libur_hari_sama:
+        bagian_ket.append("Libur")
+    return {
+        "tipe": "transaksi",
+        "id": t["id"],
+        "tanggal": t["tanggal"],
+        "barber_id": t["barber_id"],
+        "nama_barber": t["nama_barber"],
+        "daftar_service": t["daftar_service"],
+        "jumlah_service": sum(it["jumlah"] for it in t["items"]),
+        "tips": t["tips"],
+        "uang_harian": uang_harian,
+        # REVISI Rekap Transaksi (Barber): "komisi" field TERPISAH dari
+        # "pendapatan" (yang tetap komisi+tips apa adanya, TIDAK diubah --
+        # dipakai layar Owner/Admin & PDF lama tanpa perubahan sama
+        # sekali) supaya kolom Komisi baru khusus tampilan Barber bisa
+        # ditampilkan tanpa menghitung ulang apa pun di frontend.
+        "komisi": t["total_komisi"],
+        "pendapatan": get_pendapatan_transaksi(t),
+        "keterangan": "; ".join(bagian_ket),
+    }
+
+
+def get_rekap_transaksi_baris(transaksi_id: int, tenant_id: int = None) -> dict | None:
+    """FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+    Owner, pola sama Transaksi Hari Ini POS/Booking Mandiri): SATU baris
+    Rekap Transaksi untuk SATU transaksi yang BARU SAJA dibuat (lihat
+    routers/input_data.py::tambah_transaksi()) -- rumus komisi/pendapatan/
+    uang-harian SAMA PERSIS get_rekap_transaksi_list() (lewat
+    _baris_rekap_dari_transaksi() bersama di atas), dipanggil input_data.js
+    SETELAH simpan sukses supaya baris yang disuntik ke tabel Rekap Transaksi
+    (kalau sedang/sudah terbuka sesi ini) akurat TANPA perlu menghitung
+    komisi/bonus/uang-harian apa pun di JS. Return None kalau transaksi_id
+    tidak ditemukan atau beda tenant (pemanggil cukup diam, bukan error --
+    baris baru memang tidak WAJIB berhasil disuntik, nanti tetap kelihatan
+    saat tab Rekap di-refresh biasa)."""
+    t = get_transaksi(transaksi_id)
+    if t is None:
+        return None
+    # `transaksi` TIDAK punya kolom tenant_id langsung (lihat CREATE TABLE) --
+    # tenant ditentukan lewat barber_id -> barbers.tenant_id, SAMA seperti
+    # pola isolasi tenant lain di modul ini untuk tabel tanpa kolom sendiri.
+    barber = get_barber(t["barber_id"])
+    if barber is None or (tenant_id is not None and barber.get("tenant_id") != tenant_id):
+        return None
+    # get_transaksi() (beda dari get_transaksi_list()) TIDAK JOIN ke barbers
+    # -- "nama_barber" harus ditempel manual di sini (lihat get_transaksi_list()
+    # "SELECT t.*, b.nama AS nama_barber ... JOIN barbers").
+    t["nama_barber"] = barber["nama"]
+    uang_harian_map = hitung_uang_harian_per_hari_batch(barber, t["tanggal"], t["tanggal"])
+    libur_list = get_libur_list(barber_id=t["barber_id"], tanggal=t["tanggal"], tenant_id=tenant_id)
+    ada_libur = any(l["barber_id"] == t["barber_id"] and l["tanggal"] == t["tanggal"] for l in libur_list)
+    return _baris_rekap_dari_transaksi(t, ada_libur, uang_harian_map.get(t["tanggal"], 0))
+
+
 def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: int = None,
                               tanggal: str = None, tanggal_mulai: str = None,
                               tanggal_selesai: str = None, tenant_id: int = None) -> list:
@@ -2156,34 +2223,7 @@ def get_rekap_transaksi_list(tahun: int = None, bulan: int = None, barber_id: in
     for t in transaksi_list:
         key = (t["barber_id"], t["tanggal"])
         hari_dengan_transaksi.add(key)
-        # Keterangan: catatan manual (Input Data) + "Libur" (kalau hari yang
-        # sama juga ditandai libur, kasus jarang tapi mungkin) digabung --
-        # sebelumnya catatan TIDAK PERNAH muncul di Rekap Transaksi sama
-        # sekali (field ini kosong terus kecuali "Libur").
-        bagian_ket = []
-        if (t.get("catatan") or "").strip():
-            bagian_ket.append(t["catatan"].strip())
-        if key in libur_set:
-            bagian_ket.append("Libur")
-        hasil.append({
-            "tipe": "transaksi",
-            "id": t["id"],
-            "tanggal": t["tanggal"],
-            "barber_id": t["barber_id"],
-            "nama_barber": t["nama_barber"],
-            "daftar_service": t["daftar_service"],
-            "jumlah_service": sum(it["jumlah"] for it in t["items"]),
-            "tips": t["tips"],
-            "uang_harian": _uang_harian(t["barber_id"], t["tanggal"]),
-            # REVISI Rekap Transaksi (Barber): "komisi" field TERPISAH dari
-            # "pendapatan" (yang tetap komisi+tips apa adanya, TIDAK diubah --
-            # dipakai layar Owner/Admin & PDF lama tanpa perubahan sama
-            # sekali) supaya kolom Komisi baru khusus tampilan Barber bisa
-            # ditampilkan tanpa menghitung ulang apa pun di frontend.
-            "komisi": t["total_komisi"],
-            "pendapatan": get_pendapatan_transaksi(t),
-            "keterangan": "; ".join(bagian_ket),
-        })
+        hasil.append(_baris_rekap_dari_transaksi(t, key in libur_set, _uang_harian(t["barber_id"], t["tanggal"])))
 
     for l in libur_list:
         key = (l["barber_id"], l["tanggal"])

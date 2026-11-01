@@ -36,6 +36,34 @@ const PageDashboardOwner = (() => {
     return _cacheTerakhir.data;
   }
 
+  // FITUR "Dashboard tidak perlu refresh semua, cukup data yang berubah
+  // saja" (PERMINTAAN Owner): dipanggil dari halaman lain (booking.js/
+  // input_data.js, lazy-loaded via page_loader.js -- guard typeof WAJIB di
+  // pemanggil) begitu ada data baru yang memengaruhi angka Dashboard (booking
+  // lunas, transaksi Input Data baru/dikoreksi). HANYA menyegarkan
+  // _cacheTerakhir di LATAR BELAKANG (fetch ulang url yang SAMA terakhir
+  // kali Dashboard dimuat) -- TIDAK PERNAH menyentuh DOM (Dashboard, kalau
+  // sedang dilihat, PASTI bukan halaman yang memicu ini -- SPA satu-halaman-
+  // aktif-sekaligus, trigger-nya datang dari menu LAIN). Begitu selesai,
+  // ditandai "bersih" (MugenState.tandaiDashboardBersih()) supaya next
+  // kali user BENAR-BENAR membuka Dashboard, cache-hit yang SUDAH ADA
+  // (lihat load() di bawah) langsung menampilkan angka terbaru INSTAN
+  // TANPA skeleton -- bukan skeleton+fetch penuh seperti sebelumnya begitu
+  // ada data baru di tempat lain. Belum pernah dibuka sesi ini (_cacheTerakhir
+  // null) -> no-op aman, tidak ada apa pun yang perlu disegarkan.
+  async function refreshDiamDiam() {
+    if (!_cacheTerakhir) return;
+    try {
+      const data = await MugenApi.get(_cacheTerakhir.url);
+      if (data.__offline) return; // bukan data sungguhan, jangan timpa cache yang valid
+      _cacheTerakhir = { userId: _cacheTerakhir.userId, url: _cacheTerakhir.url, data };
+      MugenState.tandaiDashboardBersih();
+    } catch (e) {
+      // best-effort -- diam saja, Dashboard tetap benar begitu dibuka manual
+      // (dirty flag TIDAK ditandai bersih kalau refresh diam-diam ini gagal).
+    }
+  }
+
   function _loadCollapseState() {
     try {
       return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
@@ -368,7 +396,7 @@ const PageDashboardOwner = (() => {
     load({ bisaDariCache: true });
   }
 
-  return { render };
+  return { render, refreshDiamDiam };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js

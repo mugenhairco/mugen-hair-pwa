@@ -15,6 +15,23 @@ const PageDashboardBarber = (() => {
     return _cacheTerakhir.data;
   }
 
+  // FITUR "Dashboard tidak perlu refresh semua, cukup data yang berubah
+  // saja" (PERMINTAAN Owner) -- lihat catatan lengkap pola yang sama persis
+  // di dashboard_owner.js::refreshDiamDiam(). Dua url (dashboard + rekap
+  // transaksi barber ybs) disegarkan bersamaan, sama seperti load() di bawah.
+  async function refreshDiamDiam() {
+    if (!_cacheTerakhir) return;
+    const { userId, urlA, urlB } = _cacheTerakhir;
+    try {
+      const [r, rekapRows] = await Promise.all([MugenApi.get(urlA), MugenApi.get(urlB)]);
+      if (r.__offline || rekapRows.__offline) return;
+      _cacheTerakhir = { userId, urlA, urlB, data: [r, rekapRows] };
+      MugenState.tandaiDashboardBersih();
+    } catch (e) {
+      // best-effort -- diam saja, Dashboard tetap benar begitu dibuka manual.
+    }
+  }
+
   function render(root) {
     const today = new Date();
     let tahun = today.getFullYear();
@@ -258,7 +275,7 @@ const PageDashboardBarber = (() => {
     load({ bisaDariCache: true });
   }
 
-  return { render };
+  return { render, refreshDiamDiam };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js
