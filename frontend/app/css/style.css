@@ -1264,7 +1264,13 @@ body.book-public-active {
 .book-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 9px; }
 .book-slot-btn {
   min-height: auto; box-shadow: none;
-  padding: 11px 4px; border-radius: var(--book-radius-sm); border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+  /* BUGFIX (Booking Mandiri, pages/booking.js, reuse class ini LUAR
+     scope `.book-public`): fallback eksplisit di var() di bawah -- kalau
+     --book-radius-sm/--book-shadow-soft TIDAK terdefinisi (dipakai di
+     halaman admin, bukan Web Booking publik), fallback DIPAKAI; kalau
+     terdefinisi (Web Booking publik), fallback DIABAIKAN -- tidak
+     mengubah tampilan di sana sama sekali. */
+  padding: 11px 4px; border-radius: var(--book-radius-sm, 10px); border: 1px solid var(--border); font-size: 13px; font-weight: 600;
   transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard),
     border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
 }
@@ -1272,7 +1278,7 @@ body.book-public-active {
    warnanya dengan tombol Date yang belum dipilih (.book-calendar-cell) --
    warna aktif/selected TETAP hijau (--success) seperti sebelumnya. */
 .book-slot-available { background: var(--bg-input); color: var(--text); border-color: var(--border); cursor: pointer; }
-.book-slot-available:hover:not(:disabled) { border-color: var(--success); transform: translateY(-2px); box-shadow: var(--book-shadow-soft); }
+.book-slot-available:hover:not(:disabled) { border-color: var(--success); transform: translateY(-2px); box-shadow: var(--book-shadow-soft, 0 2px 10px rgba(15,23,42,0.08)); }
 .book-slot-available.selected { background: var(--success); color: #fff; border-color: var(--success); box-shadow: 0 0 0 4px rgba(22,163,74,0.14); }
 .book-slot-booked { background: rgba(220,38,38,0.08); color: var(--danger); border-color: var(--danger); opacity: 0.7; cursor: not-allowed; }
 .book-slot-closed { background: var(--bg-input); color: var(--text-dim); opacity: 0.6; cursor: not-allowed; }
@@ -2216,6 +2222,36 @@ input.numkeypad-caret-aktif { caret-color: var(--accent); }
   transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-emphasized);
 }
 .pos-service-card.selected .pos-service-card-check { opacity: 1; transform: scale(1); }
+
+/* ============ Booking Mandiri: kalender tanggal KOMPAK sendiri
+   (laporan Owner dari device tablet) ============ SENGAJA TIDAK reuse
+   .book-calendar* milik Web Booking publik -- token --book-radius-lg/
+   --book-shadow-soft/--book-grad-primary/--book-shadow-glow di atas
+   SENGAJA cuma didefinisikan di scope `.book-public` (lihat komentar di
+   sana), jadi dipakai TANPA wrapper itu bikin var(--book-grad-primary)
+   dkk UNDEFINED -- akibatnya sel tanggal "selected" background jadi
+   transparent + teks putih (hilang, laporan "tampilan tanggal jadi
+   hilang jika dipilih"). Kalender ini juga perlu lebih ringkas dari
+   wizard publik (konteks sidebar admin yang lebih sempit, bukan halaman
+   penuh) -- permintaan "kotak tanggalnya terlalu besar, kecilkan". */
+.bm-calendar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 10px; max-width: 280px; }
+.bm-calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 700; font-size: 13px; }
+.bm-calendar-nav button {
+  background: var(--bg-input); border: 1px solid var(--border); box-shadow: none; min-height: auto;
+  color: var(--accent); font-size: 14px; padding: 3px 9px; border-radius: 8px;
+}
+.bm-calendar-nav button:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+.bm-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.bm-calendar-dow { text-align: center; font-size: 10px; font-weight: 700; color: var(--text-dim); padding: 2px 0; text-transform: uppercase; }
+.bm-calendar-cell {
+  aspect-ratio: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 7px;
+  min-height: auto; box-shadow: none; padding: 0; min-width: 0;
+  color: var(--text); cursor: pointer; font-size: 11px; font-weight: 600;
+}
+.bm-calendar-cell.empty { background: transparent; border: none; }
+.bm-calendar-cell.disabled { opacity: 0.3; cursor: not-allowed; }
+.bm-calendar-cell.selected { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+.bm-calendar-cell:hover:not(.disabled):not(.selected) { border-color: var(--accent); background: var(--bg-card); }
 
 /* ============ Produk: baris di dalam dropdown pencarian + ringkasan
    produk terpilih (PERMINTAAN Owner) ============ */

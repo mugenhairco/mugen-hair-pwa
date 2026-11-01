@@ -126,9 +126,24 @@ def test_fonte_tidak_pernah_terkirim_untuk_booking_mandiri_walau_wa_diisi(single
 
 def test_fonte_tetap_terkirim_untuk_booking_publik_biasa(single_tenant, monkeypatch):
     """Kontrol negatif -- pastikan guard baru TIDAK diam-diam mematikan WA
-    untuk booking publik biasa (sumber default)."""
+    untuk booking publik biasa (sumber default).
+
+    BUGFIX FLAKY (CI, ketahuan lewat PR #233): sebelumnya TIDAK memaksa
+    booking_db._sekarang_wib() ke jam tertentu -- kalau CI kebetulan
+    jalan di luar jam operasional default (10:00-20:00 WIB, lihat
+    get_booking_settings()), booking_db.buat_booking() ikut mengirim WA
+    KEDUA ("booking_luar_jam_operasional", lihat dibuat_di_luar_jam_
+    operasional di buat_booking()) -- bukan regresi dari fitur Booking
+    Mandiri, murni waktu nyata saat test dijalankan. Dikunci ke jam 12:00
+    WIB (pasti di dalam jam operasional default) supaya deterministik."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     tenant_id = single_tenant["tenant_id"]
     panggilan = _pasang_penangkap_wa(monkeypatch)
+    monkeypatch.setattr(
+        "booking_db._sekarang_wib",
+        lambda: datetime.now(ZoneInfo("Asia/Jakarta")).replace(hour=12, minute=0, second=0, microsecond=0),
+    )
     import subscription_db
     subscription_db.create_default_subscription(tenant_id, package="free", status="active")
     booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
@@ -227,6 +242,33 @@ def test_endpoint_buat_booking_mandiri_gateway_qris_wajib_wa(single_tenant, monk
         "customer_nama": "Walk In Gateway", "metode_pembayaran": "gateway", "channel": "qris",
     }, headers=headers)
     assert r.status_code == 422
+
+
+def test_endpoint_libur_mandiri_mengembalikan_tanggal_manual(single_tenant):
+    """BUGFIX (laporan Owner, device tablet): kalender Booking Mandiri harus
+    bisa menonaktifkan tanggal Barber Holiday -- endpoint ini sumber
+    datanya."""
+    client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    barber_id, _ = _siapkan_barber_dan_service(tenant_id)
+    tanggal = _hari_ini_wib() + timedelta(days=3)
+    db.tandai_libur(barber_id, tanggal.isoformat())
+    r = client.get(f"/api/booking/mandiri/libur?barber_id={barber_id}&tahun={tanggal.year}&bulan={tanggal.month}",
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["cuti"] is False
+    assert tanggal.isoformat() in data["tanggal_libur"]
+
+
+def test_endpoint_libur_mandiri_flag_cuti(single_tenant):
+    client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    barber_id, _ = _siapkan_barber_dan_service(tenant_id)
+    booking_db.set_status_booking_barber(barber_id, "cuti")
+    hari_ini = _hari_ini_wib()
+    r = client.get(f"/api/booking/mandiri/libur?barber_id={barber_id}&tahun={hari_ini.year}&bulan={hari_ini.month}",
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["cuti"] is True
 
 
 def test_get_booking_id_tidak_membayangi_route_satu_segmen_lain(single_tenant):
