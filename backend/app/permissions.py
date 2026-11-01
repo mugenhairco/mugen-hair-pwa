@@ -153,6 +153,7 @@ PERMISSION_TREE = {
     "izin_booking_lihat": ("Booking", None),
     "izin_booking_list": ("Booking List", "izin_booking_lihat"),
     "izin_booking_hapus": ("Hapus Booking Permanen", "izin_booking_list"),
+    "izin_booking_mandiri": ("Booking Mandiri", "izin_booking_lihat"),
     "izin_booking_calendar": ("Calendar", "izin_booking_lihat"),
     "izin_booking_operating_hours": ("Operating Hours", "izin_booking_lihat"),
     "izin_booking_barber_holiday": ("Barber Holiday", "izin_booking_lihat"),

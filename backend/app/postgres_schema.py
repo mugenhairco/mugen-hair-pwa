@@ -283,7 +283,8 @@ CREATE TABLE IF NOT EXISTS bookings (
     verifikasi_booking_at    TEXT,
     verifikasi_booking_oleh  TEXT,
     pembayaran_diterima_at   TEXT,
-    pembayaran_diterima_oleh TEXT
+    pembayaran_diterima_oleh TEXT,
+    sumber                   TEXT NOT NULL DEFAULT 'publik'
 );
 
 CREATE TABLE IF NOT EXISTS booking_items (
@@ -830,6 +831,12 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS verifikasi_booking_at TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS verifikasi_booking_oleh TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_at TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_oleh TEXT;
+-- FITUR Booking Mandiri (kasir mencatat walk-in): 'publik' (booking lewat
+-- wizard publik customer, nilai default) vs 'kasir_mandiri' (kasir input
+-- langsung di menu Booking > Booking Mandiri) -- dipakai booking_db.py
+-- untuk: (1) WA opsional khusus kasir_mandiri, (2) blokir SEMUA notifikasi
+-- WhatsApp Fonte untuk booking kasir_mandiri (lihat _kirim_notifikasi_wa_booking()).
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS sumber TEXT NOT NULL DEFAULT 'publik';
 
 -- Format Baru Nomor Transaksi Booking (lihat nomor_transaksi_booking_migrasi.py
 -- jalur SQLite untuk penjelasan lengkap) -- nullable, TANPA backfill, NULL

@@ -57,6 +57,7 @@ from booking_migrasi import migrasi_booking
 from booking_form_migrasi import migrasi_booking_form
 from booking_verifikasi_migrasi import migrasi_booking_verifikasi
 from nomor_transaksi_booking_migrasi import migrasi_nomor_transaksi_booking
+from booking_sumber_migrasi import migrasi_booking_sumber  # FITUR Booking Mandiri: kolom sumber di bookings (idempotent)
 from produk_migrasi import migrasi_produk
 from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
@@ -470,6 +471,7 @@ async def on_startup():
         migrasi_booking_form() # PENYEMPURNAAN FORM BOOKING: status_booking/foto/urutan barber, urutan service (idempotent)
         migrasi_booking_verifikasi()  # Pembayaran Manual QRIS Tenant + Notifikasi WhatsApp: kolom verifikasi_booking_at/oleh + pembayaran_diterima_at/oleh di bookings (idempotent)
         migrasi_nomor_transaksi_booking()  # Format Baru Nomor Transaksi Booking: kolom nomor_transaksi di bookings (idempotent)
+        migrasi_booking_sumber()  # FITUR Booking Mandiri: kolom sumber di bookings (idempotent)
         migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
         migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)

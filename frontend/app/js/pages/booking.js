@@ -16,6 +16,15 @@
 const PageBooking = (() => {
   const STATUS_BAYAR_LABEL = { menunggu_verifikasi: "Menunggu Verifikasi", terverifikasi: "Terverifikasi" };
   const STATUS_BOOKING_LABEL = { aktif: "Aktif", dibatalkan: "Dibatalkan" };
+
+  // FITUR Booking Mandiri (PERMINTAAN Owner): shell form (barber/service/
+  // metode aktif/jam operasional) cache "sekali per sesi" -- pola SAMA
+  // PERSIS pos.js::_cachePengaturan (TIDAK didaftarkan ke hook dirty-
+  // marking generik apa pun, TIDAK PERNAH kotor lagi sampai SPA reload
+  // total). Ketersediaan slot jam (beda cache, lihat renderBookingMandiri())
+  // SENGAJA TIDAK ikut cache ini -- SELALU fetch fresh tiap kasir ganti
+  // Barber/tanggal/service.
+  let _cacheMandiriPengaturan = null; // { userId, data }
   // PERMINTAAN OWNER: "transfer" dihapus total dari sistem (Payment Settings
   // SEKALIGUS pindah penuh ke Superadmin, lihat superadmin.js -- tab ini
   // tidak ada lagi di Setting Owor). "cash" (Bayar di Toko) DITAMBAHKAN
@@ -187,6 +196,7 @@ const PageBooking = (() => {
     const isOwner = user.role === "admin";
     const TAB_IZIN = {
       "Booking List": "izin_booking_list",
+      "Booking Mandiri": "izin_booking_mandiri",
       "Calendar": "izin_booking_calendar",
       "Operating Hours": "izin_booking_operating_hours",
       "Barber Holiday": "izin_booking_barber_holiday",
@@ -218,6 +228,7 @@ const PageBooking = (() => {
     async function renderBody(activeTab) {
       body.innerHTML = "";
       if (activeTab === "Booking List") await renderBookingList(body, barbers, services, bolehEditBooking);
+      else if (activeTab === "Booking Mandiri") await renderBookingMandiri(body);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
       else if (activeTab === "Operating Hours") await renderOperatingHours(body);
       else if (activeTab === "Barber Holiday") await renderBarberHoliday(body, barbers);
@@ -474,6 +485,322 @@ const PageBooking = (() => {
     renderBody(tabsCtl.active);
   }
 
+  // PERMINTAAN Owner: begitu booking (sumber apa pun -- Booking Mandiri
+  // ATAU Booking List yang sudah ada) jadi LUNAS, tab "Transaksi Hari Ini"
+  // POS (dan Rekap/Dashboard) langsung disuntik SATU baris baru diam-diam
+  // (TANPA refresh/skeleton) KALAU halaman itu sedang/sudah pernah dimuat
+  // sesi ini -- module page lain (PagePos/PageRekap/PageDashboardOwner/
+  // PageDashboardBarber) lazy-loaded (lihat page_loader.js), jadi guard
+  // `typeof X !== "undefined"` WAJIB (pola SAMA seperti app.js memanggil
+  // MugenBookingNotif) -- no-op aman kalau modul itu belum pernah dibuka
+  // sesi ini.
+  function _suntikBookingLunasKeHalamanLain(booking) {
+    if (!booking || booking.status_pembayaran !== "terverifikasi") return;
+    if (typeof PagePos !== "undefined" && typeof PagePos.suntikBookingLunas === "function") {
+      PagePos.suntikBookingLunas(booking);
+    }
+    if (typeof PageRekap !== "undefined" && typeof PageRekap.suntikBookingLunas === "function") {
+      PageRekap.suntikBookingLunas(booking);
+    }
+    if (typeof PageDashboardOwner !== "undefined" && typeof PageDashboardOwner.suntikBookingLunas === "function") {
+      PageDashboardOwner.suntikBookingLunas(booking);
+    }
+    if (typeof PageDashboardBarber !== "undefined" && typeof PageDashboardBarber.suntikBookingLunas === "function") {
+      PageDashboardBarber.suntikBookingLunas(booking);
+    }
+  }
+
+  // ================= TAB: Booking Mandiri (PERMINTAAN Owner -- kasir
+  // mencatat customer WALK-IN langsung, bukan lewat wizard publik) =================
+  async function renderBookingMandiri(body) {
+    const userId = MugenState.getUser().id;
+    let pengaturan;
+    if (_cacheMandiriPengaturan && _cacheMandiriPengaturan.userId === userId) {
+      pengaturan = _cacheMandiriPengaturan.data;
+    } else {
+      body.appendChild(MugenUI.skeleton("card", { lines: 6 }));
+      try {
+        pengaturan = await MugenApi.get("/api/booking/mandiri/pengaturan");
+      } catch (e) {
+        body.innerHTML = "";
+        body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+      body.innerHTML = "";
+      _cacheMandiriPengaturan = { userId, data: pengaturan };
+    }
+    _jalankanFormMandiri(body, pengaturan);
+  }
+
+  const _HARI_KEY_MANDIRI = ["minggu", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"]; // index = Date.getDay()
+  const _HARI_LABEL_MANDIRI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+
+  function _jalankanFormMandiri(body, pengaturan) {
+    const metodeAktif = pengaturan.metode_aktif || [];
+    const metodeNama = pengaturan.metode_nama || {};
+    const hariOperasional = pengaturan.hari_operasional || _HARI_KEY_MANDIRI;
+    const minDate = MugenUI.isoHariIniWib();
+    const maxDate = MugenUI.tambahHariWib(minDate, pengaturan.maksimal_hari_kedepan || 30);
+    const tokoLiburSet = new Set(pengaturan.toko_libur_tanggal || []);
+
+    const state = {
+      barberId: null, serviceIds: new Set(), tanggal: null, jam: null,
+      metode: null, channel: null, bankCode: null,
+    };
+
+    body.appendChild(MugenUI.el("h2", {}, "Booking Mandiri"));
+    body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Catat customer walk-in langsung -- slot otomatis tertutup begitu booking ini dibuat."));
+
+    const errorBox = MugenUI.el("div", { class: "login-error" });
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Nama Customer"));
+    const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama customer" });
+    body.appendChild(inputNama);
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "No. WhatsApp (opsional)"));
+    const inputWa = MugenUI.el("input", { type: "text", placeholder: "08xxxxxxxxxx (boleh kosong)" });
+    body.appendChild(inputWa);
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Barber"));
+    const barberOpsi = (pengaturan.barbers || []).map((b) => ({ value: b.id, label: b.nama }));
+    const dropdownBarber = MugenUI.dropdownSelect(barberOpsi, {
+      value: null, placeholder: "-- Pilih Barber --",
+      onChange: (v) => { state.barberId = v; renderSlotBox(); },
+    });
+    body.appendChild(dropdownBarber.el);
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Service"));
+    const serviceGrid = MugenUI.el("div", { class: "pos-service-grid" });
+    for (const s of (pengaturan.services || [])) {
+      const card = MugenUI.el("button", { type: "button", class: "pos-service-card" }, [
+        MugenUI.el("div", { class: "pos-service-card-nama" }, s.nama),
+        MugenUI.el("div", { class: "pos-service-card-harga" }, MugenUI.formatRupiah(s.harga)),
+        MugenUI.el("div", { class: "pos-service-card-check" }, "✓"),
+      ]);
+      card.addEventListener("click", () => {
+        if (state.serviceIds.has(s.id)) state.serviceIds.delete(s.id); else state.serviceIds.add(s.id);
+        card.classList.toggle("selected");
+        renderSlotBox();
+      });
+      serviceGrid.appendChild(card);
+    }
+    body.appendChild(serviceGrid);
+    if (!(pengaturan.services || []).length) body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tanggal"));
+    const calCard = MugenUI.el("div", { class: "card" });
+    body.appendChild(calCard);
+    let calendarShown = new Date();
+    function renderKalender() {
+      calCard.innerHTML = "";
+      const y = calendarShown.getFullYear(), m = calendarShown.getMonth();
+      const nav = MugenUI.el("div", { class: "book-calendar-nav" });
+      const btnPrev = MugenUI.el("button", { type: "button" }, "‹");
+      const btnNext = MugenUI.el("button", { type: "button" }, "›");
+      btnPrev.addEventListener("click", () => { calendarShown = new Date(y, m - 1, 1); renderKalender(); });
+      btnNext.addEventListener("click", () => { calendarShown = new Date(y, m + 1, 1); renderKalender(); });
+      nav.appendChild(btnPrev);
+      nav.appendChild(MugenUI.el("div", {}, `${MugenUI.namaBulan(m + 1)} ${y}`));
+      nav.appendChild(btnNext);
+      calCard.appendChild(nav);
+      const grid = MugenUI.el("div", { class: "book-calendar-grid" });
+      for (const h of _HARI_LABEL_MANDIRI) grid.appendChild(MugenUI.el("div", { class: "book-calendar-dow" }, h));
+      const firstDay = new Date(y, m, 1);
+      const startOffset = firstDay.getDay();
+      const jumlahHari = new Date(y, m + 1, 0).getDate();
+      for (let i = 0; i < startOffset; i++) grid.appendChild(MugenUI.el("div", { class: "book-calendar-cell empty" }));
+      for (let d = 1; d <= jumlahHari; d++) {
+        const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const diluarRentang = iso < minDate || iso > maxDate;
+        const hariIni = _HARI_KEY_MANDIRI[new Date(y, m, d).getDay()];
+        const bukanHariOperasional = !hariOperasional.includes(hariIni);
+        const tokoLibur = tokoLiburSet.has(iso);
+        const nonaktif = diluarRentang || bukanHariOperasional || tokoLibur;
+        const cell = MugenUI.el("button", {
+          type: "button", class: "book-calendar-cell" + (nonaktif ? " disabled" : "") + (iso === state.tanggal ? " selected" : ""),
+        }, String(d));
+        if (nonaktif) cell.disabled = true;
+        else cell.addEventListener("click", () => { state.tanggal = iso; state.jam = null; renderKalender(); renderSlotBox(); });
+        grid.appendChild(cell);
+      }
+      calCard.appendChild(grid);
+    }
+    renderKalender();
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Jam"));
+    const slotBox = MugenUI.el("div");
+    body.appendChild(slotBox);
+    // PERMINTAAN Owner: ketersediaan slot jam SELALU fetch fresh (TIDAK
+    // di-cache) tiap kali Barber/tanggal/Service berubah -- beda dari
+    // shell form (_cacheMandiriPengaturan) di atas.
+    async function renderSlotBox() {
+      slotBox.innerHTML = "";
+      state.jam = null;
+      if (!state.barberId || !state.tanggal || !state.serviceIds.size) {
+        slotBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Pilih Barber, Service, dan tanggal terlebih dahulu."));
+        return;
+      }
+      slotBox.appendChild(MugenUI.skeleton("line", { width: "60%" }));
+      let data;
+      try {
+        data = await MugenApi.get(
+          `/api/booking/mandiri/slot?barber_id=${state.barberId}&tanggal=${state.tanggal}&service_ids=${Array.from(state.serviceIds).join(",")}`,
+        );
+      } catch (e) {
+        slotBox.innerHTML = "";
+        slotBox.appendChild(MugenUI.el("div", { class: "login-error" }, e.detail && e.detail.detail ? e.detail.detail : e.message));
+        return;
+      }
+      slotBox.innerHTML = "";
+      if (data.barber_libur) {
+        slotBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Barber libur di tanggal ini -- pilih tanggal/barber lain."));
+        return;
+      }
+      const daftarJam = data.slot || data.daftar_jam || [];
+      if (!daftarJam.length) {
+        slotBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Tidak ada jam tersedia di tanggal ini."));
+        return;
+      }
+      const jamGrid = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;" });
+      for (const s of daftarJam) {
+        const jamTeks = typeof s === "string" ? s : s.jam;
+        const tersedia = typeof s === "string" ? true : s.tersedia !== false;
+        const btn = MugenUI.el("button", { type: "button", disabled: tersedia ? undefined : "disabled" }, jamTeks);
+        if (jamTeks === state.jam) btn.classList.add("selected");
+        if (tersedia) {
+          btn.addEventListener("click", () => {
+            state.jam = jamTeks;
+            for (const el of jamGrid.children) el.classList.remove("selected");
+            btn.classList.add("selected");
+          });
+        }
+        jamGrid.appendChild(btn);
+      }
+      slotBox.appendChild(jamGrid);
+    }
+    renderSlotBox();
+
+    body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Metode Pembayaran"));
+    const metodeBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;" });
+    const channelBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:8px;" });
+    const bankBox = MugenUI.el("div", { class: "bank-grid" });
+    body.appendChild(metodeBox);
+    body.appendChild(channelBox);
+    body.appendChild(bankBox);
+
+    function renderChannelBox() {
+      channelBox.innerHTML = ""; bankBox.innerHTML = "";
+      if (state.metode !== "gateway") return;
+      for (const c of (pengaturan.snap_channel_aktif || [])) {
+        const btn = MugenUI.el("button", { type: "button" }, c === "va" ? "Virtual Account" : "QRIS");
+        if (c === state.channel) btn.classList.add("selected");
+        btn.addEventListener("click", () => { state.channel = c; state.bankCode = null; renderChannelBox(); });
+        channelBox.appendChild(btn);
+      }
+      if (state.channel !== "va") return;
+      const bankAktif = pengaturan.snap_va_bank_aktif || {};
+      for (const kode of Object.keys(bankAktif)) {
+        const card = MugenUI.el("button", { type: "button", class: "bank-card" + (state.bankCode === kode ? " selected" : "") },
+          [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(kode, bankAktif[kode]))]);
+        card.addEventListener("click", () => {
+          state.bankCode = kode;
+          for (const el of bankBox.children) el.classList.remove("selected");
+          card.classList.add("selected");
+        });
+        bankBox.appendChild(card);
+      }
+    }
+
+    const opsiMetode = [{ metode: "bayar_nanti", label: "Bayar Nanti" }];
+    for (const m of metodeAktif) opsiMetode.push({ metode: m, label: metodeNama[m] || m });
+    for (const opsi of opsiMetode) {
+      const btn = MugenUI.el("button", { type: "button" }, opsi.label);
+      btn.addEventListener("click", () => {
+        state.metode = opsi.metode; state.channel = null; state.bankCode = null;
+        for (const el of metodeBox.children) el.classList.remove("selected");
+        btn.classList.add("selected");
+        renderChannelBox();
+      });
+      metodeBox.appendChild(btn);
+    }
+
+    body.appendChild(errorBox);
+    const btnSubmit = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" }, "Buat Booking");
+    body.appendChild(btnSubmit);
+    const hasilBox = MugenUI.el("div", { style: "margin-top:16px;" });
+    body.appendChild(hasilBox);
+
+    btnSubmit.addEventListener("click", async () => {
+      errorBox.textContent = "";
+      if (!(inputNama.value || "").trim()) { errorBox.textContent = "Nama customer wajib diisi."; return; }
+      if (!state.barberId) { errorBox.textContent = "Pilih Barber terlebih dahulu."; return; }
+      if (!state.serviceIds.size) { errorBox.textContent = "Pilih minimal satu Service."; return; }
+      if (!state.tanggal || !state.jam) { errorBox.textContent = "Pilih tanggal & jam booking."; return; }
+      if (!state.metode) { errorBox.textContent = "Pilih metode pembayaran."; return; }
+      if (state.metode === "gateway" && !state.channel) { errorBox.textContent = "Pilih channel pembayaran (QRIS/VA)."; return; }
+      if (state.metode === "gateway" && state.channel === "va" && !state.bankCode) { errorBox.textContent = "Pilih bank VA."; return; }
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/booking/mandiri", {
+          barber_id: state.barberId, tanggal: state.tanggal, jam_mulai: state.jam,
+          service_ids: Array.from(state.serviceIds), customer_nama: inputNama.value.trim(),
+          customer_whatsapp: (inputWa.value || "").trim(), metode_pembayaran: state.metode,
+          channel: state.channel, bank_code: state.bankCode,
+        }));
+        MugenUI.toast("Booking Mandiri dibuat.", "success", { force: true });
+        _suntikBookingLunasKeHalamanLain(hasil);
+        _tampilkanHasilMandiri(hasilBox, hasil);
+      } catch (e) {
+        errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+  }
+
+  // Hasil "Buat Booking" -- metode cash/bayar_nanti/qris cukup ringkasan,
+  // metode gateway tampilkan QR/VA + poll status sampai lunas (PERMINTAAN
+  // Owner: "perlu generate" QR/VA SAAT ITU JUGA, kasir tunjukkan ke
+  // customer di tempat).
+  function _tampilkanHasilMandiri(hasilBox, booking) {
+    hasilBox.innerHTML = "";
+    const nomor = booking.nomor_transaksi || "-";
+    hasilBox.appendChild(MugenUI.el("div", { class: "card" }, [
+      MugenUI.el("div", { style: "font-weight:700;" }, `Booking #${nomor}`),
+      MugenUI.el("div", { class: "subtitle" }, `${booking.customer_nama} -- ${booking.tanggal} ${booking.jam_mulai}`),
+    ]));
+    if (booking.metode_pembayaran !== "gateway") return;
+    const qrisBox = MugenUI.el("div", { class: "card", style: "margin-top:10px;text-align:center;" });
+    hasilBox.appendChild(qrisBox);
+    function renderQris() {
+      qrisBox.innerHTML = "";
+      if (booking.channel === "va") {
+        qrisBox.appendChild(MugenUI.el("div", { class: "subtitle" }, booking.va_bank_label || "Virtual Account"));
+        qrisBox.appendChild(MugenUI.el("div", { style: "font-size:22px;font-weight:700;letter-spacing:1px;" }, booking.va_number || "-"));
+      } else if (booking.qr_url) {
+        qrisBox.appendChild(MugenUI.el("img", { src: booking.qr_url, class: "book-qris-img", alt: "QRIS" }));
+      } else if (booking.qr_content) {
+        const btnBuka = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Buka Halaman QRIS");
+        btnBuka.addEventListener("click", () => window.open(booking.qr_content, "_blank"));
+        qrisBox.appendChild(btnBuka);
+      }
+      qrisBox.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, "Tunjukkan ke customer untuk scan/transfer -- status diperbarui otomatis."));
+    }
+    renderQris();
+    const pollTimer = setInterval(async () => {
+      try {
+        const terbaru = await MugenApi.get(`/api/booking/${booking.id}`);
+        if (terbaru.status_pembayaran === "terverifikasi") {
+          clearInterval(pollTimer);
+          qrisBox.innerHTML = "";
+          qrisBox.appendChild(MugenUI.el("div", { style: "font-weight:700;color:var(--accent);" }, "Pembayaran diterima."));
+          _suntikBookingLunasKeHalamanLain(terbaru);
+        } else if (terbaru.status_booking !== "aktif") {
+          clearInterval(pollTimer);
+          qrisBox.innerHTML = "";
+          qrisBox.appendChild(MugenUI.el("div", { class: "login-error" }, "Booking ini dibatalkan (kedaluwarsa/dibatalkan)."));
+        }
+      } catch (e) { /* abaikan, coba lagi di polling berikutnya */ }
+    }, 4000);
+  }
+
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
   function bookingTable(rows, { withBarber = true, withWhatsapp = true, onVerifikasi = null, onBatalkan = null, onReschedule = null, onHapus = null } = {}) {
     // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
@@ -547,7 +874,12 @@ const PageBooking = (() => {
           // routers/booking.py::verifikasi_booking()), jadi tombol ini
           // disembunyikan untuk metode itu.
           if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
-            const btn = MugenUI.el("button", {}, "Verifikasi");
+            // FITUR Booking Mandiri: metode "bayar_nanti" (kasir pilih
+            // "Bayar Nanti" saat input walk-in) dilabel "Sudah Bayar" --
+            // FUNGSI yang dipanggil klik TETAP SAMA (onVerifikasi ->
+            // verifikasi_pembayaran()), hanya labelnya beda biar jelas
+            // maksudnya buat kasir.
+            const btn = MugenUI.el("button", {}, r.metode_pembayaran === "bayar_nanti" ? "Sudah Bayar" : "Verifikasi");
             // REVISI UI/UX (permintaan Owner): sebelumnya onVerifikasi()
             // memanggil load() yang mengganti SELURUH tabel dengan skeleton
             // (tabel "reset" sesaat) -- sekarang HANYA tombol yang diklik
@@ -754,12 +1086,16 @@ const PageBooking = (() => {
         tableWrap.appendChild(bookingTable(rows, {
           onVerifikasi: !bolehEdit ? null : async (r) => {
             try {
-              await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
+              const hasil = await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
               // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
               // pembayaran booking) SENGAJA memakai force:true -- satu dari
               // sedikit titik toast sukses yang tetap ditampilkan di seluruh
               // aplikasi (lihat daftar whitelist di ui.js::toast()).
               MugenUI.toast("Pembayaran diterima, booking dikonfirmasi.", "success", { force: true });
+              // FITUR Booking Mandiri: "sudah lunas, baik dari Booking Mandiri
+              // MAUPUN dari List Booking" -- suntik diam-diam ke Transaksi
+              // Hari Ini POS/Rekap/Dashboard KALAU sedang terbuka sesi ini.
+              _suntikBookingLunasKeHalamanLain(hasil);
               load({ silent: true });
               MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }

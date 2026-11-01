@@ -71,6 +71,33 @@ const PagePos = (() => {
     data.total_keseluruhan = (data.total_keseluruhan || 0) + pos.total_harga;
   }
 
+  // FITUR Booking Mandiri (PERMINTAAN Owner): booking (sumber apa pun --
+  // Booking Mandiri MAUPUN List Booking yang sudah ada) yang baru jadi
+  // LUNAS ikut disuntik ke cache ini, bentuk baris SAMA PERSIS yang
+  // dihasilkan backend (pos_db.get_transaksi_hari_ini() -- UNION booking
+  // "terverifikasi" + pos_transaksi "lunas", lihat catatan modul), supaya
+  // tidak ada cabang render terpisah di tampilan untuk baris "sumber:
+  // booking" yang disuntik vs yang datang dari fetch biasa. Dipanggil
+  // pages/booking.js (BUKAN dari sini -- method PUBLIC, page lain lazy-
+  // loaded lihat page_loader.js) begitu booking jadi lunas.
+  function suntikBookingLunas(booking) {
+    if (!_cacheTransaksiHariIni || !booking) return;
+    if (booking.status_pembayaran !== "terverifikasi") return;
+    if (booking.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal -- biarkan, fetch fresh nanti saat tab dibuka utk tanggal itu
+    const data = _cacheTransaksiHariIni.data;
+    // Guard idempoten -- hindari baris dobel kalau (jarang) dipanggil 2x
+    // untuk booking yang sama (mis. klik dobel tombol Verifikasi/Sudah Bayar).
+    if (data.service.some((s) => s.sumber === "booking" && s.booking_id === booking.id)) return;
+    data.service.push({
+      sumber: "booking", booking_id: booking.id, jam: booking.jam_mulai, nama_barber: booking.nama_barber,
+      daftar_service: booking.daftar_service, nominal: booking.total_harga,
+    });
+    data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
+    data.rincian_metode = data.rincian_metode || {};
+    data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) + booking.total_harga;
+    data.total_keseluruhan = (data.total_keseluruhan || 0) + booking.total_harga;
+  }
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.el("h1", {}, "Point of Sale"));
@@ -949,7 +976,7 @@ const PagePos = (() => {
     await muatUlangPaksa();
   }
 
-  return { render };
+  return { render, suntikBookingLunas };
 })();
 
 window.PagePos = PagePos;
