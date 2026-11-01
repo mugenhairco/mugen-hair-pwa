@@ -645,18 +645,6 @@ def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
                                         status_booking=status_booking, tenant_id=user["tenant_id"])
 
 
-@router.get("/{booking_id}")
-def detail_booking(booking_id: int, user: dict = Depends(require_menu_read("booking"))):
-    """FITUR Booking Mandiri: dipakai layar tunggu Payment Gateway (poll
-    status_pembayaran sampai 'terverifikasi', SAMA pola seperti
-    book_public.js poll /gateway-status, versi staff login)."""
-    booking = booking_db.get_booking(booking_id)
-    _pastikan_booking_tenant_sama(user, booking)
-    if booking is None:
-        raise HTTPException(status_code=404, detail="Booking tidak ditemukan.")
-    return booking
-
-
 # =============================================================================
 # FITUR Booking Mandiri (PERMINTAAN Owner): kasir mencatat customer WALK-IN
 # langsung dari menu Booking (tab "Booking Mandiri", lihat pages/booking.js)
@@ -1289,3 +1277,27 @@ def booking_saya(tahun: int = None, bulan: int = None, tanggal: str = None, dari
     for b in daftar:
         b.pop("customer_whatsapp", None)
     return daftar
+
+
+# BUGFIX CI (FITUR Booking Mandiri -- regresi ditemukan lewat e2e/booking-
+# barber.spec.js merah di PR): FastAPI/Starlette mencocokkan route berurutan
+# SESUAI urutan didaftarkan -- "/{booking_id}" (satu segmen path, sembarang
+# nilai) awalnya ditaruh tepat setelah list_booking() di atas, SEBELUM
+# banyak path literal satu-segmen lain (/belum-dikonfirmasi, /transactions,
+# /pengaturan, /booking-slug, /toko-libur, DAN /mine milik Barber) -- semua
+# itu juga "cocok" ke pola "/{booking_id}", lalu gagal dikonversi ke int,
+# balas 422 -- bukan 404 ke endpoint literalnya. WAJIB didaftarkan PALING
+# AKHIR (SETELAH seluruh path GET satu-segmen lain di router ini) supaya
+# tidak pernah membayangi yang lain lagi -- JANGAN dipindah ke dekat
+# list_booking() lagi, dan endpoint GET satu-segmen BARU di masa depan WAJIB
+# didaftarkan SEBELUM baris ini, bukan sesudahnya.
+@router.get("/{booking_id}")
+def detail_booking(booking_id: int, user: dict = Depends(require_menu_read("booking"))):
+    """FITUR Booking Mandiri: dipakai layar tunggu Payment Gateway (poll
+    status_pembayaran sampai 'terverifikasi', SAMA pola seperti
+    book_public.js poll /gateway-status, versi staff login)."""
+    booking = booking_db.get_booking(booking_id)
+    _pastikan_booking_tenant_sama(user, booking)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking tidak ditemukan.")
+    return booking

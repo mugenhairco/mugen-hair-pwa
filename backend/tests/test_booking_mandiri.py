@@ -227,3 +227,22 @@ def test_endpoint_buat_booking_mandiri_gateway_qris_wajib_wa(single_tenant, monk
         "customer_nama": "Walk In Gateway", "metode_pembayaran": "gateway", "channel": "qris",
     }, headers=headers)
     assert r.status_code == 422
+
+
+def test_get_booking_id_tidak_membayangi_route_satu_segmen_lain(single_tenant):
+    """REGRESSION LOCK (bug nyata yang pernah lolos ke CI): GET /{booking_id}
+    (ditambahkan untuk poll status gateway Booking Mandiri) WAJIB didaftarkan
+    PALING AKHIR di routers/booking.py -- FastAPI/Starlette mencocokkan route
+    berurutan sesuai pendaftaran, jadi kalau /{booking_id} didaftarkan lebih
+    awal, path literal satu-segmen seperti /belum-dikonfirmasi, /transactions,
+    /pengaturan, /booking-slug, /toko-libur, DAN /mine (dipakai akun Barber)
+    ikut "cocok" ke pola itu, gagal dikonversi ke int, balas 422 -- BUKAN
+    menjalankan endpoint literalnya sama sekali. Test ini memanggil semua
+    path tersebut sekaligus dan memastikan TIDAK SATU PUN membalas 422
+    (kode spesifik tiap endpoint boleh beda -- 200/404/dst -- yang penting
+    bukan 422 "tidak bisa konversi ke int")."""
+    client, headers = single_tenant["client"], single_tenant["headers"]
+    for path in ["/belum-dikonfirmasi", "/transactions", "/pengaturan", "/booking-slug",
+                 "/toko-libur", "/mine", "/closed-slot"]:
+        r = client.get(f"/api/booking{path}", headers=headers)
+        assert r.status_code != 422, f"{path} tertimpa route /{{booking_id}} (dapat 422): {r.text}"
