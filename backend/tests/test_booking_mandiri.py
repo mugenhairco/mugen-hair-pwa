@@ -229,6 +229,33 @@ def test_endpoint_buat_booking_mandiri_gateway_qris_wajib_wa(single_tenant, monk
     assert r.status_code == 422
 
 
+def test_endpoint_libur_mandiri_mengembalikan_tanggal_manual(single_tenant):
+    """BUGFIX (laporan Owner, device tablet): kalender Booking Mandiri harus
+    bisa menonaktifkan tanggal Barber Holiday -- endpoint ini sumber
+    datanya."""
+    client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    barber_id, _ = _siapkan_barber_dan_service(tenant_id)
+    tanggal = _hari_ini_wib() + timedelta(days=3)
+    db.tandai_libur(barber_id, tanggal.isoformat())
+    r = client.get(f"/api/booking/mandiri/libur?barber_id={barber_id}&tahun={tanggal.year}&bulan={tanggal.month}",
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["cuti"] is False
+    assert tanggal.isoformat() in data["tanggal_libur"]
+
+
+def test_endpoint_libur_mandiri_flag_cuti(single_tenant):
+    client, headers, tenant_id = single_tenant["client"], single_tenant["headers"], single_tenant["tenant_id"]
+    barber_id, _ = _siapkan_barber_dan_service(tenant_id)
+    booking_db.set_status_booking_barber(barber_id, "cuti")
+    hari_ini = _hari_ini_wib()
+    r = client.get(f"/api/booking/mandiri/libur?barber_id={barber_id}&tahun={hari_ini.year}&bulan={hari_ini.month}",
+                    headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["cuti"] is True
+
+
 def test_get_booking_id_tidak_membayangi_route_satu_segmen_lain(single_tenant):
     """REGRESSION LOCK (bug nyata yang pernah lolos ke CI): GET /{booking_id}
     (ditambahkan untuk poll status gateway Booking Mandiri) WAJIB didaftarkan

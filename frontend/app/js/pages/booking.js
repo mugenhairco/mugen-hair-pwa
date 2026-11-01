@@ -547,6 +547,22 @@ const PageBooking = (() => {
       barberId: null, serviceIds: new Set(), tanggal: null, jam: null,
       metode: null, channel: null, bankCode: null,
     };
+    // PERMINTAAN Owner (laporan device tablet): tanggal Barber Holiday
+    // TIDAK boleh bisa dipilih di kalender (bukan cuma pesan belakangan
+    // di langkah jam) -- di-fetch ulang tiap kali Barber/bulan ganti.
+    let liburBarber = { cuti: false, tanggal_libur: [] };
+    let liburFetchKey = null;
+    async function muatLiburBarber(y, m) {
+      if (!state.barberId) { liburBarber = { cuti: false, tanggal_libur: [] }; liburFetchKey = null; return; }
+      const key = `${state.barberId}|${y}-${m}`;
+      if (key === liburFetchKey) return;
+      liburFetchKey = key;
+      try {
+        liburBarber = await MugenApi.get(`/api/booking/mandiri/libur?barber_id=${state.barberId}&tahun=${y}&bulan=${m + 1}`);
+      } catch (e) {
+        liburBarber = { cuti: false, tanggal_libur: [] };
+      }
+    }
 
     body.appendChild(MugenUI.el("h2", {}, "Booking Mandiri"));
     body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Catat customer walk-in langsung -- slot otomatis tertutup begitu booking ini dibuat."));
@@ -565,7 +581,11 @@ const PageBooking = (() => {
     const barberOpsi = (pengaturan.barbers || []).map((b) => ({ value: b.id, label: b.nama }));
     const dropdownBarber = MugenUI.dropdownSelect(barberOpsi, {
       value: null, placeholder: "-- Pilih Barber --",
-      onChange: (v) => { state.barberId = v; renderSlotBox(); },
+      onChange: async (v) => {
+        state.barberId = v; state.tanggal = null; state.jam = null;
+        await muatLiburBarber(calendarShown.getFullYear(), calendarShown.getMonth());
+        renderKalender(); renderSlotBox();
+      },
     });
     body.appendChild(dropdownBarber.el);
 
@@ -588,36 +608,50 @@ const PageBooking = (() => {
     if (!(pengaturan.services || []).length) body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
 
     body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tanggal"));
-    const calCard = MugenUI.el("div", { class: "card" });
+    const calCard = MugenUI.el("div", { class: "bm-calendar" });
     body.appendChild(calCard);
     let calendarShown = new Date();
     function renderKalender() {
       calCard.innerHTML = "";
       const y = calendarShown.getFullYear(), m = calendarShown.getMonth();
-      const nav = MugenUI.el("div", { class: "book-calendar-nav" });
+      const nav = MugenUI.el("div", { class: "bm-calendar-nav" });
       const btnPrev = MugenUI.el("button", { type: "button" }, "‹");
       const btnNext = MugenUI.el("button", { type: "button" }, "›");
-      btnPrev.addEventListener("click", () => { calendarShown = new Date(y, m - 1, 1); renderKalender(); });
-      btnNext.addEventListener("click", () => { calendarShown = new Date(y, m + 1, 1); renderKalender(); });
+      btnPrev.addEventListener("click", async () => {
+        calendarShown = new Date(y, m - 1, 1);
+        await muatLiburBarber(calendarShown.getFullYear(), calendarShown.getMonth());
+        renderKalender();
+      });
+      btnNext.addEventListener("click", async () => {
+        calendarShown = new Date(y, m + 1, 1);
+        await muatLiburBarber(calendarShown.getFullYear(), calendarShown.getMonth());
+        renderKalender();
+      });
       nav.appendChild(btnPrev);
       nav.appendChild(MugenUI.el("div", {}, `${MugenUI.namaBulan(m + 1)} ${y}`));
       nav.appendChild(btnNext);
       calCard.appendChild(nav);
-      const grid = MugenUI.el("div", { class: "book-calendar-grid" });
-      for (const h of _HARI_LABEL_MANDIRI) grid.appendChild(MugenUI.el("div", { class: "book-calendar-dow" }, h));
+      if (state.barberId && liburBarber.cuti) {
+        calCard.appendChild(MugenUI.el("div", { class: "subtitle" }, "Barber ini sedang Cuti -- pilih Barber lain."));
+        return;
+      }
+      const tanggalLiburSet = new Set(liburBarber.tanggal_libur || []);
+      const grid = MugenUI.el("div", { class: "bm-calendar-grid" });
+      for (const h of _HARI_LABEL_MANDIRI) grid.appendChild(MugenUI.el("div", { class: "bm-calendar-dow" }, h));
       const firstDay = new Date(y, m, 1);
       const startOffset = firstDay.getDay();
       const jumlahHari = new Date(y, m + 1, 0).getDate();
-      for (let i = 0; i < startOffset; i++) grid.appendChild(MugenUI.el("div", { class: "book-calendar-cell empty" }));
+      for (let i = 0; i < startOffset; i++) grid.appendChild(MugenUI.el("div", { class: "bm-calendar-cell empty" }));
       for (let d = 1; d <= jumlahHari; d++) {
         const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
         const diluarRentang = iso < minDate || iso > maxDate;
         const hariIni = _HARI_KEY_MANDIRI[new Date(y, m, d).getDay()];
         const bukanHariOperasional = !hariOperasional.includes(hariIni);
         const tokoLibur = tokoLiburSet.has(iso);
-        const nonaktif = diluarRentang || bukanHariOperasional || tokoLibur;
+        const barberLibur = tanggalLiburSet.has(iso);
+        const nonaktif = diluarRentang || bukanHariOperasional || tokoLibur || barberLibur;
         const cell = MugenUI.el("button", {
-          type: "button", class: "book-calendar-cell" + (nonaktif ? " disabled" : "") + (iso === state.tanggal ? " selected" : ""),
+          type: "button", class: "bm-calendar-cell" + (nonaktif ? " disabled" : "") + (iso === state.tanggal ? " selected" : ""),
         }, String(d));
         if (nonaktif) cell.disabled = true;
         else cell.addEventListener("click", () => { state.tanggal = iso; state.jam = null; renderKalender(); renderSlotBox(); });
@@ -656,20 +690,21 @@ const PageBooking = (() => {
         slotBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Barber libur di tanggal ini -- pilih tanggal/barber lain."));
         return;
       }
-      const daftarJam = data.slot || data.daftar_jam || [];
+      const daftarJam = data.slots || [];
       if (!daftarJam.length) {
         slotBox.appendChild(MugenUI.el("div", { class: "subtitle" }, "Tidak ada jam tersedia di tanggal ini."));
         return;
       }
-      const jamGrid = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;" });
+      const jamGrid = MugenUI.el("div", { class: "book-slot-grid" });
       for (const s of daftarJam) {
-        const jamTeks = typeof s === "string" ? s : s.jam;
-        const tersedia = typeof s === "string" ? true : s.tersedia !== false;
-        const btn = MugenUI.el("button", { type: "button", disabled: tersedia ? undefined : "disabled" }, jamTeks);
-        if (jamTeks === state.jam) btn.classList.add("selected");
+        const tersedia = s.status === "available";
+        const btn = MugenUI.el("button", {
+          type: "button", class: "book-slot-btn book-slot-" + s.status + (s.jam === state.jam ? " selected" : ""),
+          disabled: tersedia ? undefined : "disabled",
+        }, s.jam);
         if (tersedia) {
           btn.addEventListener("click", () => {
-            state.jam = jamTeks;
+            state.jam = s.jam;
             for (const el of jamGrid.children) el.classList.remove("selected");
             btn.classList.add("selected");
           });
