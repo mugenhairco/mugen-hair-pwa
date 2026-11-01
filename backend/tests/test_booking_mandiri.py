@@ -126,9 +126,24 @@ def test_fonte_tidak_pernah_terkirim_untuk_booking_mandiri_walau_wa_diisi(single
 
 def test_fonte_tetap_terkirim_untuk_booking_publik_biasa(single_tenant, monkeypatch):
     """Kontrol negatif -- pastikan guard baru TIDAK diam-diam mematikan WA
-    untuk booking publik biasa (sumber default)."""
+    untuk booking publik biasa (sumber default).
+
+    BUGFIX FLAKY (CI, ketahuan lewat PR #233): sebelumnya TIDAK memaksa
+    booking_db._sekarang_wib() ke jam tertentu -- kalau CI kebetulan
+    jalan di luar jam operasional default (10:00-20:00 WIB, lihat
+    get_booking_settings()), booking_db.buat_booking() ikut mengirim WA
+    KEDUA ("booking_luar_jam_operasional", lihat dibuat_di_luar_jam_
+    operasional di buat_booking()) -- bukan regresi dari fitur Booking
+    Mandiri, murni waktu nyata saat test dijalankan. Dikunci ke jam 12:00
+    WIB (pasti di dalam jam operasional default) supaya deterministik."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     tenant_id = single_tenant["tenant_id"]
     panggilan = _pasang_penangkap_wa(monkeypatch)
+    monkeypatch.setattr(
+        "booking_db._sekarang_wib",
+        lambda: datetime.now(ZoneInfo("Asia/Jakarta")).replace(hour=12, minute=0, second=0, microsecond=0),
+    )
     import subscription_db
     subscription_db.create_default_subscription(tenant_id, package="free", status="active")
     booking_db.update_payment_settings(metode_aktif=["qris"], tenant_id=tenant_id)
