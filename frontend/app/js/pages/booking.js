@@ -698,10 +698,20 @@ const PageBooking = (() => {
       const jamGrid = MugenUI.el("div", { class: "book-slot-grid" });
       for (const s of daftarJam) {
         const tersedia = s.status === "available";
-        const btn = MugenUI.el("button", {
-          type: "button", class: "book-slot-btn book-slot-" + s.status + (s.jam === state.jam ? " selected" : ""),
-          disabled: tersedia ? undefined : "disabled",
-        }, s.jam);
+        // BUGFIX (laporan Owner, device tablet, tenant mugen -- jam tidak
+        // bisa dipilih SAMA SEKALI): MugenUI.el() memanggil
+        // node.setAttribute(k, v) TANPA PANDANG BULU untuk tiap key di
+        // attrs -- `disabled: undefined` (versi sebelumnya) tetap jadi
+        // setAttribute("disabled", undefined) = atribut disabled="undefined"
+        // TERPASANG (kehadiran atribut disabled, apa pun isinya, membuat
+        // <button> disabled) -- SEMUA tombol jam ikut ter-disable, bukan
+        // cuma yang tidak tersedia. Attrs di bawah TIDAK PERNAH menyertakan
+        // key "disabled" kalau tersedia (bukan assign undefined ke-nya) --
+        // pola SAMA PERSIS book_public.js (TIDAK pernah set atribut
+        // disabled sama sekali, cukup tidak pasang click listener).
+        const attrs = { type: "button", class: "book-slot-btn book-slot-" + s.status + (s.jam === state.jam ? " selected" : "") };
+        if (!tersedia) attrs.disabled = "disabled";
+        const btn = MugenUI.el("button", attrs, s.jam);
         if (tersedia) {
           btn.addEventListener("click", () => {
             state.jam = s.jam;
