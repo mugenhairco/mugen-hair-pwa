@@ -81,7 +81,7 @@ const PagePemasukan = (() => {
     const selBarber = MugenUI.el("select");
     selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- tidak terkait barber (opsional) --"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    const inputAktif = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+    const inputAktif = MugenUI.el("input", { type: "checkbox" });
     inputAktif.checked = true;
 
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");

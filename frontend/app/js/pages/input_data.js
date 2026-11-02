@@ -588,7 +588,7 @@ const PageInputData = (() => {
       const mcServiceChecks = {}; // service_id -> checkbox
       const mcServiceList = MugenUI.el("div", { class: "checklist-service" });
       for (const s of services) {
-        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        const cb = MugenUI.el("input", { type: "checkbox" });
         mcServiceChecks[s.id] = cb;
         mcServiceList.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" },
           [cb, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`]));

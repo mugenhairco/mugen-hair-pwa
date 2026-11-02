@@ -1025,7 +1025,7 @@ const PageBooking = (() => {
         style: "display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;border:1px solid var(--border,#ddd);padding:8px;border-radius:6px;",
       });
       for (const s of services.filter((s) => s.aktif)) {
-        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        const cb = MugenUI.el("input", { type: "checkbox" });
         cb.checked = serviceIdAktif.has(s.id);
         checkboxes.push({ cb, id: s.id });
         serviceBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;width:auto;" },
@@ -1299,7 +1299,7 @@ const PageBooking = (() => {
     const hariChecks = {};
     const hariBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:14px;" });
     for (const [key, label] of Object.entries(HARI_OPERASIONAL_LABEL)) {
-      const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+      const cb = MugenUI.el("input", { type: "checkbox" });
       cb.checked = hariAktif.has(key);
       hariChecks[key] = cb;
       hariBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:6px;width:auto;" }, [cb, label]));

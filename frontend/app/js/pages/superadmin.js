@@ -42,7 +42,7 @@ const PageSuperadmin = (() => {
 
     function buildNode(node, target) {
       const row = MugenUI.el("label", { class: "perm-tree-row" });
-      const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+      const cb = MugenUI.el("input", { type: "checkbox" });
       cb.checked = !!izinData[node.key];
       checkboxes[node.key] = cb;
       row.appendChild(cb);

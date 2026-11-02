@@ -91,7 +91,7 @@ const PagePengeluaran = (() => {
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     wrapKaryawan.appendChild(MugenUI.el("label", {}, "Karyawan (barber/kasir/ob/kru)"));
     wrapKaryawan.appendChild(selBarber);
-    const inputAktif = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+    const inputAktif = MugenUI.el("input", { type: "checkbox" });
     inputAktif.checked = true;
 
     function terapkanTampilanSumberDana() {
