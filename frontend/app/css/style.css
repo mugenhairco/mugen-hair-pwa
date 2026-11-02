@@ -476,13 +476,41 @@ input, select, textarea {
    dibuat kompak -- beda dari input teks lain yang full-width. */
 input[type="color"] { width: 64px; height: 42px; padding: 4px; cursor: pointer; }
 
-/* BUGFIX (tampilan tidak rapi -- checkbox/radio ikut ketimpa aturan
-   width:100%/padding/border di atas, sengaja dikecualikan di sini):
-   tanpa ini, checkbox melebar penuh selebar baris flex-nya (mis. label
-   "Transfer Bank"/QRIS/Payment Gateway di tab Payment Settings), mendorong
-   teks label di sebelahnya jauh terpisah alih-alih menempel rapi ke kotak
-   checkbox-nya -- checkbox/radio harus tetap ukuran kotak kecil natural. */
-input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; border: none; }
+/* BUGFIX (laporan Owner: "checklist box di setiap menu berantakan",
+   terutama Barber Holiday) -- SEBELUMNYA checkbox cuma dikecualikan dari
+   aturan width:100%/padding/border di atas (width:auto;padding:0;border:
+   none;), sisanya TETAP kotak checkbox bawaan browser polos (ukuran/
+   tampilan beda-beda tiap OS/browser, kontras janggal dengan desain
+   aplikasi) -- GLOBAL untuk SEMUA <input type="checkbox"> di seluruh
+   halaman (Barber Holiday, Payment Settings, Hak Akses User, dst), TIDAK
+   perlu ubah satu pun kode JS per halaman. Gaya diambil PERSIS dari
+   .book-service-row input[type="checkbox"] (Web Booking publik, sudah
+   terbukti rapi) -- appearance:none + restyle total, checkmark custom
+   lewat ::after, TETAP <input type="checkbox"> asli (aksesibilitas/
+   keyboard/logika utuh). Selector lebih spesifik (mis. .book-service-row
+   di atas) otomatis tetap menang kalau butuh varian beda. input[type=
+   "radio"] TETAP cuma dikecilkan seperti sebelumnya (tidak dilaporkan
+   berantakan, tidak perlu restyle total). */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 20px; height: 20px; flex-shrink: 0; margin: 0; padding: 0;
+  border: 2px solid var(--border); border-radius: 6px; background: var(--bg-card);
+  display: inline-flex; align-items: center; justify-content: center;
+  position: relative; vertical-align: middle; cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+input[type="checkbox"]:hover:not(:disabled) { border-color: var(--accent); }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px;
+  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+input[type="checkbox"]:disabled { opacity: 0.5; cursor: not-allowed; }
+input[type="radio"] { width: auto; padding: 0; border: none; }
+/* Barisan checkbox+label (Barber Holiday dkk, pola label{display:flex;
+   align-items:center;gap:...}) -- jarak kotak-ke-teks konsisten & label
+   ikut terasa bisa diklik, bukan cuma kotaknya. */
+label:has(> input[type="checkbox"]) { cursor: pointer; }
 
 input:focus, select:focus, textarea:focus {
   outline: none;

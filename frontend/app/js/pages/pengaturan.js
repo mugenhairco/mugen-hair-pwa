@@ -165,7 +165,7 @@ const PagePengaturan = (() => {
       const checkboxes = {};
       const listBox = MugenUI.el("div", { class: "checklist-service" });
       for (const s of services) {
-        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        const cb = MugenUI.el("input", { type: "checkbox" });
         cb.checked = idAktif.has(s.id);
         checkboxes[s.id] = cb;
         listBox.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" },
@@ -1928,7 +1928,7 @@ const PagePengaturan = (() => {
 
       function buildNode(node, target) {
         const row = MugenUI.el("label", { class: "perm-tree-row" });
-        const cb = MugenUI.el("input", { type: "checkbox", style: "width:auto;" });
+        const cb = MugenUI.el("input", { type: "checkbox" });
         cb.checked = !!izinData[node.key];
         checkboxes[node.key] = cb;
         row.appendChild(cb);
