@@ -627,7 +627,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   display: flex; align-items: center; gap: 8px;
   padding: 4px 0; cursor: pointer;
 }
-.perm-tree-row input { width: auto; flex-shrink: 0; }
+/* BUGFIX (laporan Owner: checkbox di modal "Kelola Izin" jadi garis
+   tipis): rule ini DULU perlu (mencegah checkbox melebar 100% di baris
+   flex) -- SEKARANG bentrok dengan restyle checkbox global di atas
+   (input[type="checkbox"] { width:20px; appearance:none; ... }), karena
+   spesifisitas KEDUANYA sama (0,1,1) dan rule ini posisinya lebih akhir
+   di file, jadi width:auto menang -- checkbox custom (appearance:none,
+   tanpa ukuran intrinsik) menyusut jadi cuma garis tepi 2px. Restyle
+   global sudah menangani width/flex-shrink checkbox di SEMUA halaman
+   termasuk di sini, rule lama ini jadi berbahaya & tidak perlu lagi. */
 .perm-tree-children {
   border-left: 2px solid var(--border); padding-left: 10px; margin-bottom: 4px;
 }

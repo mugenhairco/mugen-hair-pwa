@@ -25,6 +25,28 @@ const PageBooking = (() => {
   // SENGAJA TIDAK ikut cache ini -- SELALU fetch fresh tiap kasir ganti
   // Barber/tanggal/service.
   let _cacheMandiriPengaturan = null; // { userId, data }
+
+  // PERMINTAAN OWNER: pola SAMA PERSIS komisi.js/rekap.js -- tab Barber
+  // ("Hari Ini"/"Akan Datang"/"Semua Booking") TIDAK pernah instan
+  // (skeleton+fetch tiap kali dibuka), beda dari halaman lain yang sudah
+  // dapat pola "cache tanpa jeda" di sesi sebelumnya. Barber TIDAK pernah
+  // mengubah data booking sendiri (buat/batal/verifikasi hanya lewat
+  // Owner/Admin/kasir) -- registrasi "booking" di hook dirty-marking
+  // generik (api.js) sudah cukup: begitu akun ini melakukan AKSI APA PUN
+  // (Check-In, Ajukan Reimburse, dst), cache 3 tab ini ditandai kotor,
+  // tab berikutnya fetch ulang seperti biasa -- trade-off blunt-instrument
+  // yang SAMA dipakai semua halaman lain yang sudah pakai pola ini.
+  let _cacheBarberTab = {}; // { [bagian]: { userId, url, data } }
+
+  function _ambilDariCacheBarberTab(bagian, userId, url) {
+    const c = _cacheBarberTab[bagian];
+    if (!c || c.userId !== userId || c.url !== url) return null;
+    return c.data;
+  }
+
+  function _simpanKeCacheBarberTab(bagian, userId, url, data) {
+    _cacheBarberTab[bagian] = { userId, url, data };
+  }
   // PERMINTAAN OWNER: "transfer" dihapus total dari sistem (Payment Settings
   // SEKALIGUS pindah penuh ke Superadmin, lihat superadmin.js -- tab ini
   // tidak ada lagi di Setting Owor). "cash" (Bayar di Toko) DITAMBAHKAN
@@ -332,13 +354,27 @@ const PageBooking = (() => {
   }
 
   // ================= Tab "Hari Ini" =================
+  // PERMINTAAN OWNER ("menu Barber dibuat sama -- tanpa loading, data baru
+  // masuk diam-diam, tidak perlu refresh"): pola stale-while-revalidate,
+  // BUKAN pola _cacheTerakhir+hook dirty-marking generik yang dipakai
+  // halaman lain (komisi.js dkk) -- SENGAJA beda, lihat catatan panjang di
+  // api.js kenapa "booking" TIDAK didaftarkan ke hook itu (booking baru
+  // bisa masuk dari pelanggan langsung di halaman publik, ATAU dari Owner/
+  // kasir di perangkat LAIN -- hook dirty-marking di sini HANYA tahu aksi
+  // akun Barber ini sendiri, jadi kalau dipakai, barber bisa saja melihat
+  // jadwal yang sudah basi tanpa tanda apa pun). Stale-while-revalidate
+  // dapat KEDUANYA: cache ditampilkan INSTAN (tidak ada skeleton kalau
+  // sudah pernah dimuat sesi ini) DAN tiap kali tab ini dibuka tetap fetch
+  // ulang diam-diam di belakang layar lalu menimpa tampilan kalau datanya
+  // berubah -- tidak pernah berisiko basi seperti pola hook di atas.
   async function renderBarberHariIni(body) {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
-    card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
     const todayIso = isoHariIniWib();
-    try {
-      const data = await MugenApi.get(`/api/booking/mine?tanggal=${todayIso}`, { useCache: true });
+    const url = `/api/booking/mine?tanggal=${todayIso}`;
+    const userId = MugenState.getUser().id;
+
+    function renderData(data) {
       card.innerHTML = "";
       // AUDIT SINKRONISASI: lihat catatan __offline di renderBarberSemuaBooking().
       if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -369,9 +405,17 @@ const PageBooking = (() => {
         list.appendChild(bookingCard(r, status));
       });
       card.appendChild(list);
+    }
+
+    const cached = _ambilDariCacheBarberTab("hari_ini", userId, url);
+    if (cached) renderData(cached);
+    else card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+    try {
+      const data = await MugenApi.get(url, { useCache: true });
+      if (!data.__offline) _simpanKeCacheBarberTab("hari_ini", userId, url, data);
+      renderData(data);
     } catch (e) {
-      card.innerHTML = "";
-      card.appendChild(MugenUI.errorState(e.message));
+      if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
     }
   }
 
@@ -379,13 +423,15 @@ const PageBooking = (() => {
   // Seluruh booking aktif MULAI BESOK, tanpa batas atas (dikelompokkan per
   // tanggal) -- "Hari Ini" sudah punya tab sendiri, jadi tab ini SENGAJA
   // tidak mengulang tanggal hari ini supaya tidak duplikat antar tab.
+  // Pola stale-while-revalidate -- lihat catatan panjang di renderBarberHariIni().
   async function renderBarberAkanDatang(body) {
     const card = MugenUI.el("div", { class: "card" });
     body.appendChild(card);
-    card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
     const besokIso = tambahHari(isoHariIniWib(), 1);
-    try {
-      const data = await MugenApi.get(`/api/booking/mine?dari_tanggal=${besokIso}`, { useCache: true });
+    const url = `/api/booking/mine?dari_tanggal=${besokIso}`;
+    const userId = MugenState.getUser().id;
+
+    function renderData(data) {
       card.innerHTML = "";
       if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
       // BUGFIX (laporan Owner): sama seperti renderBarberHariIni() di atas --
@@ -409,13 +455,21 @@ const PageBooking = (() => {
         }
         card.appendChild(bookingCard(r, null));
       });
+    }
+
+    const cached = _ambilDariCacheBarberTab("akan_datang", userId, url);
+    if (cached) renderData(cached);
+    else card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+    try {
+      const data = await MugenApi.get(url, { useCache: true });
+      if (!data.__offline) _simpanKeCacheBarberTab("akan_datang", userId, url, data);
+      renderData(data);
     } catch (e) {
-      card.innerHTML = "";
-      card.appendChild(MugenUI.errorState(e.message));
+      if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
     }
   }
 
-  // ================= Tab "Semua Booking" (TIDAK diubah) =================
+  // ================= Tab "Semua Booking" =================
   async function renderBarberSemuaBooking(root) {
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
@@ -427,34 +481,43 @@ const PageBooking = (() => {
     for (let y = today.getFullYear() - 1; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
     root.insertBefore(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [selBulan, selTahun]), card);
+    const userId = MugenState.getUser().id;
 
-    // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...", filter
-    // tanpa overlay layar penuh -- lihat catatan di ui.js.
-    async function load() {
+    function renderData(data) {
       card.innerHTML = "";
-      card.appendChild(MugenUI.skeleton("table", { cols: 9, rows: 4 }));
+      // AUDIT SINKRONISASI: sebelumnya __offline TIDAK pernah dicek di
+      // seluruh halaman ini walau semua fetch memakai useCache:true --
+      // kalau jaringan sempat putus sesaat, halaman diam-diam menampilkan
+      // data cache lokal LAMA tanpa tanda apa pun, persis gejala "kadang
+      // sinkron kadang tidak" yang dilaporkan. Sekarang tiap fetch di
+      // halaman ini menampilkan offlineBanner kalau datanya bukan dari
+      // server yang baru saja dipanggil.
+      if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
+      // PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke
+      // akun Barber -- tab ini ("Semua Booking") satu-satunya pemakai
+      // bookingTable() yang EKSKLUSIF Barber, jadi withWhatsapp:false
+      // HANYA di sini (Booking List/Calendar milik Owner/Admin di bawah
+      // tetap default true). Backend /api/booking/mine juga sudah tidak
+      // mengirim field ini sama sekali (lihat routers/booking.py::
+      // booking_saya()) -- ini lapis tampilan kedua.
+      card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false, withWhatsapp: false }));
+    }
+
+    // Pola stale-while-revalidate -- lihat catatan panjang di
+    // renderBarberHariIni(). Cache dikunci per kombinasi bulan/tahun lewat
+    // `url` (ganti filter = cache miss = skeleton SEKALI untuk kombinasi
+    // itu, balik ke kombinasi yang sudah pernah dibuka = instan lagi).
+    async function load() {
+      const url = `/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`;
+      const cached = _ambilDariCacheBarberTab("semua_booking", userId, url);
+      if (cached) renderData(cached);
+      else { card.innerHTML = ""; card.appendChild(MugenUI.skeleton("table", { cols: 9, rows: 4 })); }
       try {
-        const data = await MugenApi.get(`/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`, { useCache: true });
-        card.innerHTML = "";
-        // AUDIT SINKRONISASI: sebelumnya __offline TIDAK pernah dicek di
-        // seluruh halaman ini walau semua fetch memakai useCache:true --
-        // kalau jaringan sempat putus sesaat, halaman diam-diam menampilkan
-        // data cache lokal LAMA tanpa tanda apa pun, persis gejala "kadang
-        // sinkron kadang tidak" yang dilaporkan. Sekarang tiap fetch di
-        // halaman ini menampilkan offlineBanner kalau datanya bukan dari
-        // server yang baru saja dipanggil.
-        if (data.__offline) card.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        // PERMINTAAN Owner: nomor WhatsApp customer TIDAK ditampilkan ke
-        // akun Barber -- tab ini ("Semua Booking") satu-satunya pemakai
-        // bookingTable() yang EKSKLUSIF Barber, jadi withWhatsapp:false
-        // HANYA di sini (Booking List/Calendar milik Owner/Admin di bawah
-        // tetap default true). Backend /api/booking/mine juga sudah tidak
-        // mengirim field ini sama sekali (lihat routers/booking.py::
-        // booking_saya()) -- ini lapis tampilan kedua.
-        card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false, withWhatsapp: false }));
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) _simpanKeCacheBarberTab("semua_booking", userId, url, data);
+        renderData(data);
       } catch (e) {
-        card.innerHTML = "";
-        card.appendChild(MugenUI.errorState(e.message));
+        if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
       }
     }
     selBulan.addEventListener("change", load);
