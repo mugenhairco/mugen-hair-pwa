@@ -1209,7 +1209,7 @@ const PageBooking = (() => {
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
           },
           onBatalkan: !bolehEdit ? null : async (r) => {
-            if (!confirm(`Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`)) return;
+            if (!(await MugenUI.confirmModal({ message: `Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`, danger: true }))) return;
             try {
               await MugenApi.post(`/api/booking/${r.id}/batalkan`);
               MugenUI.toast("Booking dibatalkan.", "success");
@@ -1434,7 +1434,7 @@ const PageBooking = (() => {
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btn.addEventListener("click", async () => {
-                  if (!confirm(`Hapus libur toko ${r.tanggal}?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus libur toko ${r.tanggal}?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/booking/toko-libur/${r.id}`));
                     MugenUI.toast("Libur toko dihapus.", "success");
@@ -1594,7 +1594,7 @@ const PageBooking = (() => {
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btn.addEventListener("click", async () => {
-                  if (!confirm(`Hapus tutup slot ${r.tanggal} ${r.jam_mulai}-${r.jam_selesai}?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus tutup slot ${r.tanggal} ${r.jam_mulai}-${r.jam_selesai}?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/booking/closed-slot/${r.id}`));
                     MugenUI.toast("Slot dibuka kembali.", "success");
@@ -1617,7 +1617,7 @@ const PageBooking = (() => {
 
     btnHapusSemua.addEventListener("click", async () => {
       const today = new Date();
-      if (!confirm("Hapus SEMUA slot ditutup bulan ini? Tindakan ini tidak bisa dibatalkan.")) return;
+      if (!(await MugenUI.confirmModal({ message: "Hapus SEMUA slot ditutup bulan ini? Tindakan ini tidak bisa dibatalkan.", danger: true }))) return;
       try {
         const hasil = await MugenUI.withButtonLoading(btnHapusSemua, () => MugenApi.del(
           `/api/booking/closed-slot?tahun=${today.getFullYear()}&bulan=${today.getMonth() + 1}`));
@@ -1812,7 +1812,7 @@ const PageBooking = (() => {
       const cakupan = inResetSebelum.value
         ? `SEBELUM ${MugenUI.namaTanggalIndo(inResetSebelum.value)}`
         : "SEMUA (tanpa batas tanggal)";
-      if (!confirm(`Hapus PERMANEN riwayat Booking ${cakupan}? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database, termasuk riwayat transaksi Payment Gateway terkait).`)) return;
+      if (!(await MugenUI.confirmModal({ message: `Hapus PERMANEN riwayat Booking ${cakupan}? Tindakan ini TIDAK BISA dibatalkan (data terhapus sampai ke database, termasuk riwayat transaksi Payment Gateway terkait).`, danger: true }))) return;
       try {
         const qs = inResetSebelum.value ? `?sebelum_tanggal=${inResetSebelum.value}` : "";
         const hasil = await MugenUI.withButtonLoading(btnResetRiwayat, () => MugenApi.del(`/api/booking/riwayat${qs}`));
@@ -1899,7 +1899,7 @@ const PageBooking = (() => {
       } catch (e) { errorHeroImage.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
     });
     btnHapusHeroImage.addEventListener("click", async () => {
-      if (!confirm("Hapus Hero Image yang sedang aktif?")) return;
+      if (!(await MugenUI.confirmModal({ message: "Hapus Hero Image yang sedang aktif?", danger: true }))) return;
       try {
         await MugenUI.withButtonLoading(btnHapusHeroImage, () => MugenApi.del("/api/website/hero-image"));
         content.hero_image_url = null;

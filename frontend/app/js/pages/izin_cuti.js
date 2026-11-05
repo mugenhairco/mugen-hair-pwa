@@ -222,7 +222,7 @@ const PageIzinCuti = (() => {
                 btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Batalkan pengajuan ${labelJenis(r.jenis)} tanggal ${r.tanggal_mulai}?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Batalkan pengajuan ${labelJenis(r.jenis)} tanggal ${r.tanggal_mulai}?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/izin-cuti/${r.id}`));
                     MugenUI.toast("Pengajuan dibatalkan.", "success");

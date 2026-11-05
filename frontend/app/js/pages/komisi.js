@@ -379,7 +379,7 @@ const PageKomisi = (() => {
               if (!bolehHapus) { wrap.appendChild(btnEdit); return wrap; }
               const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
               btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`)) return;
+                if (!(await MugenUI.confirmModal({ message: `Hapus penyesuaian ${r.jenis} untuk ${r.nama_barber}?`, danger: true }))) return;
                 try {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/komisi/penyesuaian/${r.id}`));
                   MugenUI.toast("Penyesuaian komisi dihapus.", "success");

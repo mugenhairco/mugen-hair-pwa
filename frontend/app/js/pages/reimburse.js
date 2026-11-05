@@ -198,7 +198,7 @@ const PageReimburse = (() => {
               wrap.appendChild(btnEdit);
               const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
               btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Hapus klaim reimburse tanggal ${r.tanggal}?`)) return;
+                if (!(await MugenUI.confirmModal({ message: `Hapus klaim reimburse tanggal ${r.tanggal}?`, danger: true }))) return;
                 try {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
                   MugenUI.toast("Klaim reimburse dihapus.", "success");
@@ -468,7 +468,7 @@ const PageReimburse = (() => {
                 wrap.appendChild(btnEdit);
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus klaim reimburse ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus klaim reimburse ${r.nama_barber} tanggal ${r.tanggal}?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/reimburse/${r.id}`));
                     MugenUI.toast("Klaim reimburse dihapus.", "success");

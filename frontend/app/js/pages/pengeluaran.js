@@ -281,7 +281,7 @@ const PagePengeluaran = (() => {
               btnEdit.addEventListener("click", () => isiFormUntukEdit(r));
               const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
               btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`)) return;
+                if (!(await MugenUI.confirmModal({ message: `Hapus pengeluaran "${r.keterangan}" tanggal ${r.tanggal}?`, danger: true }))) return;
                 try {
                   // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));

@@ -123,7 +123,7 @@ const PageSlipGaji = (() => {
                 if (bolehHapus && r.status !== "sudah_dibayar") {
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `Hapus Slip Gaji ${r.nama_barber} periode ${periodeText(r)}?`, danger: true }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/slip-gaji/${r.id}`));
                       MugenUI.toast("Slip Gaji dihapus.", "success");

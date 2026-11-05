@@ -258,7 +258,7 @@ const PageUangKas = (() => {
               });
               const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
               btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Hapus penyesuaian kas tanggal ${r.tanggal}?`)) return;
+                if (!(await MugenUI.confirmModal({ message: `Hapus penyesuaian kas tanggal ${r.tanggal}?`, danger: true }))) return;
                 try {
                   // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/uang-kas/${r.id}`));

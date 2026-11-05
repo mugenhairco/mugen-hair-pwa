@@ -475,7 +475,7 @@ const PageSuperadmin = (() => {
                 );
                 btnToggle.addEventListener("click", async () => {
                   const statusBaru = menujuAktif ? "aktif" : "nonaktif";
-                  if (!confirm(`${menujuAktif ? "Aktifkan" : "Nonaktifkan"} toko "${t.nama_barbershop}"?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `${menujuAktif ? "Aktifkan" : "Nonaktifkan"} toko "${t.nama_barbershop}"?`, danger: !menujuAktif }))) return;
                   try {
                     // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
                     await MugenUI.withButtonLoading(btnToggle,
@@ -768,7 +768,7 @@ const PageSuperadmin = (() => {
                   if (p.payment_status !== "pending") return "";
                   const btn = MugenUI.el("button", {}, "Tandai Lunas");
                   btn.addEventListener("click", async () => {
-                    if (!confirm("Tandai pembayaran ini sebagai Lunas?")) return;
+                    if (!(await MugenUI.confirmModal({ message: "Tandai pembayaran ini sebagai Lunas?" }))) return;
                     try {
                       await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/superadmin/subscriptions/payments/${p.id}/status`,
                         { payment_status: "paid" }));
@@ -909,7 +909,7 @@ const PageSuperadmin = (() => {
           const btnHapusQris = MugenUI.el("button", { type: "button", style: "margin-top:8px;" }, "Hapus Foto QRIS");
           paymentSettingsBody.appendChild(btnHapusQris);
           btnHapusQris.addEventListener("click", async () => {
-            if (!confirm("Hapus foto QRIS tenant ini?")) return;
+            if (!(await MugenUI.confirmModal({ message: "Hapus foto QRIS tenant ini?", danger: true }))) return;
             try {
               await MugenUI.withButtonLoading(btnHapusQris, () => MugenApi.del(`/api/superadmin/tenants/${tenant.id}/qris-foto`));
               MugenUI.toast("Foto QRIS dihapus.", "success");
@@ -1256,7 +1256,7 @@ const PageSuperadmin = (() => {
                 wrap.appendChild(btnToggle);
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus fitur "${f.nama}" dari katalog? Fitur ini otomatis lepas dari SEMUA paket yang sudah mencentangnya.`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus fitur "${f.nama}" dari katalog? Fitur ini otomatis lepas dari SEMUA paket yang sudah mencentangnya.`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/superadmin/billing/features/${f.id}`));
                     MugenUI.toast("Fitur dihapus.", "success");
@@ -1432,7 +1432,7 @@ const PageSuperadmin = (() => {
                 wrap.appendChild(btnToggle);
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm("Hapus FAQ ini?")) return;
+                  if (!(await MugenUI.confirmModal({ message: "Hapus FAQ ini?", danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/superadmin/landing/faq/${f.id}`));
                     MugenUI.toast("FAQ dihapus.", "success");
@@ -2422,7 +2422,7 @@ const PageSuperadmin = (() => {
                   const btnToggle = MugenUI.el("button", { class: menujuAktif ? "" : "btn-danger" },
                     menujuAktif ? "Aktifkan" : "Nonaktifkan");
                   btnToggle.addEventListener("click", async () => {
-                    if (!confirm(`${menujuAktif ? "Aktifkan" : "Nonaktifkan"} WA Bot untuk "${b.nama_barbershop}"?`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `${menujuAktif ? "Aktifkan" : "Nonaktifkan"} WA Bot untuk "${b.nama_barbershop}"?`, danger: !menujuAktif }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnToggle,
                         () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}/status`, { aktif: menujuAktif }));
@@ -2443,7 +2443,7 @@ const PageSuperadmin = (() => {
                   const btnTogglePotongan = MugenUI.el("button", {},
                     menujuTampilkanPotongan ? "Tampilkan Potongan Telat" : "Sembunyikan Potongan Telat");
                   btnTogglePotongan.addEventListener("click", async () => {
-                    if (!confirm(`${menujuTampilkanPotongan ? "Tampilkan" : "Sembunyikan"} potongan keterlambatan di Uang Harian pesan WA Bot untuk "${b.nama_barbershop}"?`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `${menujuTampilkanPotongan ? "Tampilkan" : "Sembunyikan"} potongan keterlambatan di Uang Harian pesan WA Bot untuk "${b.nama_barbershop}"?` }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnTogglePotongan,
                         () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}/tampilkan-potongan-keterlambatan`,
@@ -2458,7 +2458,7 @@ const PageSuperadmin = (() => {
                   wrap.appendChild(btnTogglePotongan);
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus konfigurasi WA Bot "${b.nama_barbershop}"? Nomor & token akan dilepas dari tenant ini.`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `Hapus konfigurasi WA Bot "${b.nama_barbershop}"? Nomor & token akan dilepas dari tenant ini.`, danger: true }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnHapus,
                         () => MugenApi.del(`/api/superadmin/whatsapp-bot/${b.tenant_id}`));
@@ -2688,7 +2688,7 @@ const PageSuperadmin = (() => {
                 const btnToggle = MugenUI.el("button", { class: menujuAktif ? "" : "btn-danger" },
                   menujuAktif ? "Aktifkan" : "Nonaktifkan");
                 btnToggle.addEventListener("click", async () => {
-                  if (!confirm(`${menujuAktif ? "Aktifkan" : "Nonaktifkan"} kode "${k.kode}"?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `${menujuAktif ? "Aktifkan" : "Nonaktifkan"} kode "${k.kode}"?`, danger: !menujuAktif }))) return;
                   try {
                     await MugenApi.put(`/api/superadmin/sales/kode-referral/${k.id}`, { aktif: menujuAktif });
                     MugenUI.toast("Status kode diperbarui.", "success");
@@ -2917,7 +2917,7 @@ const PageSuperadmin = (() => {
                 if (p.payment_status !== "pending") return "-";
                 const btnLunas = MugenUI.el("button", {}, "Tandai Lunas Manual");
                 btnLunas.addEventListener("click", async () => {
-                  if (!confirm(`Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS secara manual? Normalnya ini otomatis begitu pembayaran dikonfirmasi gateway -- hanya pakai ini kalau tenant membayar lewat jalur lain di luar aplikasi. Tenant akan langsung mendapat akses permanen.`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Tandai transaksi Lifetime "${p.nama_tenant}" LUNAS secara manual? Normalnya ini otomatis begitu pembayaran dikonfirmasi gateway -- hanya pakai ini kalau tenant membayar lewat jalur lain di luar aplikasi. Tenant akan langsung mendapat akses permanen.` }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnLunas,
                       () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "paid" }));
@@ -2939,7 +2939,7 @@ const PageSuperadmin = (() => {
                 // confirm() di bawah).
                 const btnBatal = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
                 btnBatal.addEventListener("click", async () => {
-                  if (!confirm(`Batalkan transaksi Lifetime "${p.nama_tenant}"? VA/QR-nya akan berhenti ditampilkan di halaman Billing tenant. PERHATIAN: ini TIDAK membatalkan transfer bank yang mungkin SUDAH terlanjur dilakukan tenant ke VA tersebut -- pastikan dulu belum ada pembayaran masuk sebelum membatalkan.`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Batalkan transaksi Lifetime "${p.nama_tenant}"? VA/QR-nya akan berhenti ditampilkan di halaman Billing tenant. PERHATIAN: ini TIDAK membatalkan transfer bank yang mungkin SUDAH terlanjur dilakukan tenant ke VA tersebut -- pastikan dulu belum ada pembayaran masuk sebelum membatalkan.`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnBatal,
                       () => MugenApi.put(`/api/superadmin/sales/lifetime/${p.id}/status`, { payment_status: "cancelled" }));

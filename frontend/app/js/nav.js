@@ -398,7 +398,7 @@ const MugenNav = (() => {
     const btnLogout = MugenUI.el("button", { class: "btn-logout", "data-tooltip": "Keluar", "aria-label": "Keluar" },
       MugenUI.el("span", {}, "Keluar"));
     btnLogout.addEventListener("click", async () => {
-      if (!confirm("Yakin ingin keluar?")) return;
+      if (!(await MugenUI.confirmModal({ message: "Yakin ingin keluar?" }))) return;
       // REVISI: setelah konfirmasi, tampilkan loading animation + teks
       // "Sedang keluar dari aplikasi…" (jeda ~1 detik, dalam rentang
       // 800-1200ms yang diminta -- LEBIH PENDEK dari jeda minimal 1,5 detik
