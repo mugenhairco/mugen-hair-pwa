@@ -1185,6 +1185,17 @@ body.book-public-active {
 @media (prefers-reduced-motion: reduce) {
   .book-dot-page.active { animation: none !important; }
 }
+/* PERMINTAAN Owner: label step ("Barber"/"Service"/dst, lihat
+   WIZARD_STEP_LABELS di book_public.js) -- dot saja tidak kasih tahu arah
+   alur. HANYA ditampilkan di layar lebar (>=720px, breakpoint SAMA dipakai
+   .book-barber-grid di bawah) -- di HP tetap dot polos seperti sebelumnya
+   supaya 6 label tidak sempit/wrap dalam satu baris. */
+.book-step-dot-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.book-step-label { display: none; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.book-step-label.active { color: var(--accent); font-weight: 700; }
+@media (min-width: 720px) {
+  .book-step-label { display: block; }
+}
 
 /* Header ringkas di dalam wizard (logo/nama + link kembali ke landing page)
    -- Hero besar sudah ditampilkan di landing page, tidak diulang di sini.
@@ -1241,6 +1252,26 @@ body.book-public-active {
 }
 .book-barber-nama { font-weight: 700; }
 .book-barber-status { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+/* PERMINTAAN Owner: jalan pintas 7 hari ke depan di atas kalender bulan
+   penuh (lihat renderSelectDate() di book_public.js) -- baris horizontal
+   scroll-kalau-perlu, chip lebih kecil/ringkas dari sel kalender penuh. */
+.book-date-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; margin-bottom: 4px; }
+.book-date-strip-chip {
+  flex: 0 0 auto; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--book-radius-sm);
+  padding: 8px 4px; min-height: auto; box-shadow: none; cursor: pointer; color: var(--text);
+  transition: transform var(--dur-fast) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.book-date-strip-chip:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--book-shadow-soft); }
+.book-date-strip-chip.selected { background: var(--book-grad-primary); border-color: var(--accent); box-shadow: var(--book-shadow-glow); }
+.book-date-strip-chip.selected .book-date-strip-dow,
+.book-date-strip-chip.selected .book-date-strip-day { color: #fff; }
+.book-date-strip-chip.disabled { opacity: 0.35; cursor: not-allowed; }
+.book-date-strip-dow { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; }
+.book-date-strip-day { font-size: 16px; font-weight: 700; }
+.book-date-strip-label { font-size: 12px; color: var(--text-dim); margin: 2px 0 8px; }
 
 .book-calendar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--book-radius-lg); box-shadow: var(--book-shadow-soft); padding: 18px; }
 .book-calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-weight: 700; }
@@ -1344,7 +1375,22 @@ body.book-public-active {
 }
 .book-empty-action { margin-top: 14px; }
 
-.book-service-list { display: flex; flex-direction: column; gap: 10px; }
+/* BUGFIX (laporan Owner: "layanan banyak, scroll jauh banget sampe
+   bawah"): daftar service DULU satu kolom tanpa batas tinggi, ikut
+   memanjangkan SELURUH halaman kalau service-nya banyak -- sekarang kotak
+   tinggi terbatas dengan scroll SENDIRI (pola sama persis .pos-service-grid
+   punya aplikasi admin, lihat style.css), DAN grid 2 kolom begitu muat
+   supaya lebih pendek untuk jumlah service yang sama. minmax 200px
+   (bukan 136px seperti .pos-service-grid) karena .book-service-row baris
+   horizontal (checkbox+teks), butuh lebih lebar dari kartu vertikal admin
+   -- CATATAN: .book-public SENGAJA dibatasi max-width:480px (mobile-first
+   satu kolom, lihat komentarnya) jadi lebar konten efektif ~448px, maksimal
+   CUMA 2 kolom yang pernah muat di sini (bukan 3+), berapa pun lebar layar
+   sungguhannya. */
+.book-service-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;
+  max-height: 400px; overflow-y: auto; overscroll-behavior: contain; padding: 3px;
+}
 .book-service-row {
   display: flex; align-items: center; gap: 12px; background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--book-radius-sm); padding: 14px 16px; cursor: pointer;
@@ -1370,10 +1416,30 @@ body.book-public-active {
   border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 .book-service-total {
-  margin-top: 4px; font-weight: 700; padding: 12px 16px; border-radius: var(--book-radius-sm);
+  margin-top: 0; font-weight: 700; padding: 12px 16px; border-radius: var(--book-radius-sm);
   background: rgba(51,65,85,0.06); border: 1px solid var(--border); color: var(--accent);
   animation: mugen-content-fade-in var(--dur-base) var(--ease-standard) both;
 }
+/* PERMINTAAN Owner: ringkasan total + tombol Continue digabung jadi satu
+   bar yang nempel (sticky) di DASAR LAYAR (bukan dasar halaman) -- selalu
+   kelihatan tanpa perlu scroll cari tombolnya, dipakai Step 2 "Choose
+   Service" (lihat renderChooseService() di book_public.js) begitu
+   .book-service-list punya scroll sendiri. .book-public TIDAK set
+   overflow apa pun (lihat definisinya) jadi "nearest scrolling ancestor"
+   untuk position:sticky ini adalah VIEWPORT/dokumen itu sendiri -- pas
+   untuk bar yang nempel di dasar layar. Margin negatif menembus padding
+   .book-public supaya bar-nya rata sisi-ke-sisi kolom, bukan terlihat
+   "mengambang terjorok" di dalam padding. */
+.book-sticky-bar {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 12px -16px calc(-24px - env(safe-area-inset-bottom));
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg); border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 20px rgba(15,23,42,0.07);
+}
+.book-sticky-bar .book-service-total:empty { display: none; }
+.book-sticky-bar .login-error:empty { display: none; }
 
 .book-metode-list { display: flex; flex-direction: column; gap: 10px; }
 .book-metode-btn {
@@ -1510,6 +1576,42 @@ body.book-public-active {
 .book-summary-field:last-of-type { border-bottom: none; }
 .book-summary-label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .book-summary-value { font-weight: 700; margin-top: 3px; word-break: break-word; }
+
+/* PERMINTAAN Owner ("Booking Summary dan Appointment Confirmed jelek"):
+   dipakai BERSAMA renderFaseCheckout() (Booking Summary) DAN
+   renderConfirmed() (Appointment Confirmed, lihat apptCard() di
+   book_public.js) -- dua halaman yang isinya mirip (jadwal+service+total)
+   sekarang satu bahasa visual: info dikelompokkan per blok berjudul
+   (Schedule/Service/dst) alih-alih satu daftar rata tanpa hirarki, dan
+   total jadi badge pil warna aksen sebagai titik fokus di akhir. TIDAK
+   mengubah .book-summary-field/.book-field-row di atas -- keduanya
+   MASIH dipakai layar lain (renderFaseMetode()/renderFaseBayar()/
+   renderSudahBooking(), di luar scope permintaan ini). */
+.book-appt-card { text-align: left; }
+.book-appt-section { padding: 12px 0; }
+.book-appt-section + .book-appt-section { border-top: 1px solid var(--border); }
+.book-appt-section-title {
+  font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase;
+  letter-spacing: 0.05em; margin: 0 0 8px;
+}
+.book-appt-row { margin-top: 8px; }
+.book-appt-row:first-of-type { margin-top: 0; }
+.book-appt-row-label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.book-appt-row-value { font-weight: 700; margin-top: 2px; word-break: break-word; }
+.book-appt-total {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding: 14px 18px; border-radius: 999px;
+  background: var(--book-grad-primary); color: #fff;
+}
+.book-appt-total-value { font-weight: 800; font-size: 19px; }
+/* Nomor transaksi/referensi di Appointment Confirmed (lihat renderConfirmed())
+   -- teks kecil di bawah judul, sebelum apptCard(), bukan ikut jadi salah
+   satu baris dalam blok (terasa seperti nomor resi, bukan "field data"). */
+.book-appt-ref { font-size: 13px; color: var(--text-dim); margin: -4px 0 4px; }
+/* Ikon inline generik (dipakai tombol "Add to Calendar", lihat
+   IKON_KALENDER_SVG) -- SAMA PERSIS .book-download-qris-icon, cuma
+   namanya digeneralkan supaya tidak menyesatkan dipakai di luar QRIS. */
+.book-icon-inline { display: inline-flex; line-height: 0; }
 
 /* ---- Animasi perpindahan step: SAMA PERSIS dengan transisi antar menu
    aplikasi -- reuse token mugen-content-fade-in (lihat definisinya di
