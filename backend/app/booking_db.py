@@ -1203,6 +1203,14 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # begitu booking dibuat, SATU-SATUNYA pengecualian dari aturan "SEMUA
     # metode mulai menunggu_verifikasi" di atas.
     status_pembayaran_awal = "terverifikasi" if metode_pembayaran == "cash" else "menunggu_verifikasi"
+    # FITUR Unread Row Highlight (List Booking Owner/Admin, lihat
+    # booking_dilihat_migrasi.py): sumber="kasir_mandiri" DIANGGAP sudah
+    # dilihat SEJAK DIBUAT -- staff sendiri yang menginputnya saat itu
+    # juga (PERMINTAAN Owner: booking Booking Mandiri tidak perlu
+    # di-highlight). sumber="publik" (customer self-booking, TERMASUK
+    # metode "gateway") mulai dari 0/belum dilihat, ditandai dilihat lewat
+    # tandai_booking_dilihat() di bawah.
+    dilihat_awal = 1 if sumber == "kasir_mandiri" else 0
 
     # BUGFIX (audit, race condition): validasi ketersediaan slot + INSERT
     # booking dikunci BERSAMA per (barber_id, tanggal) -- lihat catatan
@@ -1215,11 +1223,12 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
             cur = conn.execute(
                 "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
                 "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
-                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi, sumber) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?, ?)",
+                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi, sumber, dilihat) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?, ?, ?)",
                 (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
                  (customer_whatsapp or "").strip(), total_harga, total_durasi, metode_pembayaran,
-                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi, sumber),
+                 status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi, sumber,
+                 dilihat_awal),
             )
             booking_id = cur.lastrowid
             for s in items:
@@ -1322,6 +1331,20 @@ def get_booking(booking_id: int):
         booking["is_advance_booking"] = _is_advance_booking(booking["created_at"], booking["tanggal"])
         _perkaya_status_gateway(booking)
         return booking
+
+
+def tandai_booking_dilihat(booking_id: int) -> dict:
+    """FITUR Unread Row Highlight (List Booking Owner/Admin, lihat
+    booking_dilihat_migrasi.py): dipanggil endpoint POST /{id}/tandai-dilihat
+    -- frontend (pages/booking.js) memanggilnya begitu staff klik salah satu
+    tombol aksi (Verifikasi/Batalkan/Reschedule) ATAU klik barisnya langsung
+    (KHUSUS booking metode "gateway", tidak ada tombol Verifikasi untuk
+    ditekan). Status "dilihat" BERSAMA untuk semua staff/Owner (bukan per
+    akun) -- lihat catatan lengkap di migrasi. UPDATE idempotent (aman
+    dipanggil berkali-kali walau sudah dilihat sebelumnya)."""
+    with get_conn() as conn:
+        conn.execute("UPDATE bookings SET dilihat = 1 WHERE id = ?", (booking_id,))
+    return get_booking(booking_id)
 
 
 def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None,

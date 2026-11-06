@@ -47,6 +47,45 @@ const PageBooking = (() => {
   function _simpanKeCacheBarberTab(bagian, userId, url, data) {
     _cacheBarberTab[bagian] = { userId, url, data };
   }
+
+  // PERMINTAAN Owner: "bookingan terbaru selalu di atas" + "hilangkan tombol
+  // Muat Ulang, ganti diam-diam kalau ada booking baru masuk, tanpa refresh
+  // 1 halaman". Dipakai BERSAMA oleh tab "Booking List" (Owner/Admin/Staff)
+  // DAN tab "Hari Ini"/"Akan Datang"/"Semua Booking" (Barber) -- hanya SATU
+  // dari keduanya pernah aktif per sesi (render() di bawah cabang isAdmin vs
+  // renderBarberTabs() di awal, tidak pernah dua-duanya), jadi aman berbagi
+  // satu referensi. Diisi fungsi "muat ulang diam-diam" (TANPA skeleton,
+  // baris lama tetap tampil sampai data baru siap) oleh tab booking yang
+  // SEDANG terbuka, null kalau tab aktif sekarang bukan salah satu dari tab
+  // di atas (mis. Calendar/Operating Hours). app.js memanggil
+  // PageBooking.refreshDiamDiam() ini setiap kali push "booking_baru" masuk
+  // SAAT #/booking sedang terbuka -- menggantikan MugenRouter.handle() (yang
+  // me-render ulang SELURUH halaman, flash skeleton + reset filter/tab).
+  let _bookingQuietReload = null;
+
+  function refreshDiamDiam() {
+    if (_bookingQuietReload) _bookingQuietReload({ silent: true });
+  }
+
+  // PERMINTAAN Owner: "bookingan terbaru itu selalu di atas" -- backend
+  // (booking_db.py::get_booking_list()) mengurutkan berdasarkan JADWAL
+  // booking (tanggal+jam_mulai kunjungan), BUKAN kapan booking itu DIBUAT,
+  // jadi booking yang baru saja masuk untuk jadwal besok bisa tenggelam di
+  // bawah booking lama yang jadwalnya minggu depan. Diurutkan ULANG di sini
+  // (hanya untuk tab Booking List Owner/Admin + Semua Booking Barber --
+  // DUA-DUANYA tabel riwayat datar; tab Hari Ini/Akan Datang Barber SENGAJA
+  // TIDAK ikut, urutan jam kunjungan di situ justru yang benar supaya
+  // Barber tahu urutan kerja hari ini) berdasarkan created_at (kapan baris
+  // itu masuk ke sistem), terbaru paling atas. id dipakai fallback kalau
+  // created_at kosong/sama (data lama sebelum kolom ini ada).
+  function _urutkanTerbaruDiAtas(rows) {
+    return rows.slice().sort((a, b) => {
+      const ca = a.created_at || "", cb = b.created_at || "";
+      if (ca !== cb) return cb < ca ? -1 : 1;
+      return (b.id || 0) - (a.id || 0);
+    });
+  }
+
   // PERMINTAAN OWNER: "transfer" dihapus total dari sistem (Payment Settings
   // SEKALIGUS pindah penuh ke Superadmin, lihat superadmin.js -- tab ini
   // tidak ada lagi di Setting Owor). "cash" (Bayar di Toko) DITAMBAHKAN
@@ -249,6 +288,7 @@ const PageBooking = (() => {
 
     async function renderBody(activeTab) {
       body.innerHTML = "";
+      _bookingQuietReload = null; // reset -- tab lama (kalau ada) tidak lagi aktif
       if (activeTab === "Booking List") await renderBookingList(body, barbers, services, bolehEditBooking);
       else if (activeTab === "Booking Mandiri") await renderBookingMandiri(body);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
@@ -409,14 +449,27 @@ const PageBooking = (() => {
 
     const cached = _ambilDariCacheBarberTab("hari_ini", userId, url);
     if (cached) renderData(cached);
-    else card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
-    try {
-      const data = await MugenApi.get(url, { useCache: true });
-      if (!data.__offline) _simpanKeCacheBarberTab("hari_ini", userId, url, data);
-      renderData(data);
-    } catch (e) {
-      if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
+
+    // PERMINTAAN Owner ("diam-diam kalau ada booking baru masuk, tanpa
+    // refresh 1 halaman"): muatUlang() dipakai untuk load pertama (skeleton
+    // HANYA kalau card masih kosong/belum ada cache) MAUPUN dipanggil ulang
+    // oleh refreshDiamDiam() (lihat _bookingQuietReload di atas) saat push
+    // "booking_baru" masuk SELAGI tab ini terbuka -- {silent:true} berarti
+    // TIDAK PERNAH menampilkan skeleton, baris lama tetap tampil sampai
+    // data baru siap (konsisten dengan load({silent}) di renderBookingList()
+    // Owner/Admin di bawah).
+    async function muatUlang({ silent = false } = {}) {
+      if (!silent && !card.children.length) card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+      try {
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) _simpanKeCacheBarberTab("hari_ini", userId, url, data);
+        renderData(data);
+      } catch (e) {
+        if (!card.children.length) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
+      }
     }
+    _bookingQuietReload = muatUlang;
+    muatUlang({ silent: !!cached });
   }
 
   // ================= Tab "Akan Datang" =================
@@ -459,14 +512,20 @@ const PageBooking = (() => {
 
     const cached = _ambilDariCacheBarberTab("akan_datang", userId, url);
     if (cached) renderData(cached);
-    else card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
-    try {
-      const data = await MugenApi.get(url, { useCache: true });
-      if (!data.__offline) _simpanKeCacheBarberTab("akan_datang", userId, url, data);
-      renderData(data);
-    } catch (e) {
-      if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
+
+    // Pola sama persis renderBarberHariIni() di atas.
+    async function muatUlang({ silent = false } = {}) {
+      if (!silent && !card.children.length) card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
+      try {
+        const data = await MugenApi.get(url, { useCache: true });
+        if (!data.__offline) _simpanKeCacheBarberTab("akan_datang", userId, url, data);
+        renderData(data);
+      } catch (e) {
+        if (!card.children.length) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
+      }
     }
+    _bookingQuietReload = muatUlang;
+    muatUlang({ silent: !!cached });
   }
 
   // ================= Tab "Semua Booking" =================
@@ -500,28 +559,31 @@ const PageBooking = (() => {
       // tetap default true). Backend /api/booking/mine juga sudah tidak
       // mengirim field ini sama sekali (lihat routers/booking.py::
       // booking_saya()) -- ini lapis tampilan kedua.
-      card.appendChild(bookingTable(Array.isArray(data) ? data : [], { withBarber: false, withWhatsapp: false }));
+      card.appendChild(bookingTable(_urutkanTerbaruDiAtas(Array.isArray(data) ? data : []), { withBarber: false, withWhatsapp: false }));
     }
 
     // Pola stale-while-revalidate -- lihat catatan panjang di
     // renderBarberHariIni(). Cache dikunci per kombinasi bulan/tahun lewat
     // `url` (ganti filter = cache miss = skeleton SEKALI untuk kombinasi
     // itu, balik ke kombinasi yang sudah pernah dibuka = instan lagi).
-    async function load() {
+    // {silent:true} (dipanggil refreshDiamDiam() saat push "booking_baru"
+    // masuk) TIDAK PERNAH menampilkan skeleton -- lihat _bookingQuietReload.
+    async function load({ silent = false } = {}) {
       const url = `/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`;
       const cached = _ambilDariCacheBarberTab("semua_booking", userId, url);
       if (cached) renderData(cached);
-      else { card.innerHTML = ""; card.appendChild(MugenUI.skeleton("table", { cols: 9, rows: 4 })); }
+      else if (!silent) { card.innerHTML = ""; card.appendChild(MugenUI.skeleton("table", { cols: 9, rows: 4 })); }
       try {
         const data = await MugenApi.get(url, { useCache: true });
         if (!data.__offline) _simpanKeCacheBarberTab("semua_booking", userId, url, data);
         renderData(data);
       } catch (e) {
-        if (!cached) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
+        if (!cached && !silent) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
       }
     }
-    selBulan.addEventListener("change", load);
-    selTahun.addEventListener("change", load);
+    selBulan.addEventListener("change", () => load());
+    selTahun.addEventListener("change", () => load());
+    _bookingQuietReload = load;
     load();
   }
 
@@ -535,6 +597,7 @@ const PageBooking = (() => {
 
     async function renderBody(activeTab) {
       body.innerHTML = "";
+      _bookingQuietReload = null; // reset -- tab lama (kalau ada) tidak lagi aktif
       if (activeTab === "Hari Ini") await renderBarberHariIni(body);
       else if (activeTab === "Akan Datang") await renderBarberAkanDatang(body);
       else if (activeTab === "Semua Booking") await renderBarberSemuaBooking(body);
@@ -910,7 +973,10 @@ const PageBooking = (() => {
   }
 
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
-  function bookingTable(rows, { withBarber = true, withWhatsapp = true, onVerifikasi = null, onBatalkan = null, onReschedule = null, onHapus = null } = {}) {
+  function bookingTable(rows, {
+    withBarber = true, withWhatsapp = true, onVerifikasi = null, onBatalkan = null,
+    onReschedule = null, onHapus = null, onTandaiDilihat = null,
+  } = {}) {
     // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
     // r.nomor_transaksi tersimpan dari server (booking_db.py::
     // _buat_nomor_transaksi_booking(), format [JAM KONFIRMASI][MENIT
@@ -1044,7 +1110,32 @@ const PageBooking = (() => {
         },
       });
     }
-    return MugenUI.buildTable(columns, rows, { emptyText: "Belum ada booking." });
+    // FITUR Unread Row Highlight (PERMINTAAN Owner, HANYA tab Booking List
+    // Owner/Admin -- onTandaiDilihat null untuk pemakai lain bookingTable()
+    // seperti renderBarberSemuaBooking(), jadi baris "row-unread"/klik tidak
+    // pernah aktif di sana): baris dengan `dilihat=0` (lihat
+    // booking_dilihat_migrasi.py) DAN BUKAN sumber kasir_mandiri (staff
+    // sendiri yang input, tidak perlu ditandai) diberi latar lembut.
+    // Tombol aksi (Verifikasi/Batalkan/Reschedule, lihat
+    // renderBookingList()) sudah menandai dilihat sendiri begitu diklik --
+    // di sini HANYA menangani klik baris langsung, KHUSUS metode "gateway"
+    // (tidak punya tombol Verifikasi sama sekali, lihat kondisi di atas).
+    // classList dilepas OPTIMISTIK di sini (tanpa menunggu respons server)
+    // supaya highlight hilang seketika saat diklik.
+    return MugenUI.buildTable(columns, rows, {
+      emptyText: "Belum ada booking.",
+      rowClass: (r) => {
+        const belumDilihat = !!onTandaiDilihat && !r.dilihat && r.sumber !== "kasir_mandiri";
+        if (!belumDilihat) return "";
+        return r.metode_pembayaran === "gateway" ? "row-unread row-clickable" : "row-unread";
+      },
+      onRowClick: onTandaiDilihat ? (r, tr) => {
+        if (r.metode_pembayaran === "gateway" && !r.dilihat && r.sumber !== "kasir_mandiri") {
+          tr.classList.remove("row-unread", "row-clickable");
+          onTandaiDilihat(r);
+        }
+      } : undefined,
+    });
   }
 
   function barberFilterRow(barbers, today, { withStatus = true } = {}) {
@@ -1144,17 +1235,17 @@ const PageBooking = (() => {
   async function renderBookingList(body, barbers, services, bolehEdit = true) {
     const today = new Date();
     const { row, selBulan, selTahun, selBarber, selStatus } = barberFilterRow(barbers, today);
-    // Item #5 spek Booking: tombol Refresh -- booking baru yang masuk lewat
-    // customer/webhook TIDAK PERNAH muncul di tabel ini sampai admin
-    // reload browser manual (load() di bawah HANYA terpanggil sekali saat
-    // tab dibuka + saat filter berubah, TIDAK ADA polling/auto-refresh
-    // tabelnya). OPTIMASI BANDWIDTH: badge notifikasi MugenBookingNotif
-    // SEKARANG JUGA murni manual/event-driven (tidak lagi polling sendiri,
-    // lihat booking_notif.js) -- tombol ini SEKARANG JUGA memicu
-    // refreshNow()-nya (di bawah), supaya "Muat Ulang" booking dan "Muat
-    // Ulang" badge terjadi bersamaan dalam satu klik, sesuai permintaan Owner.
-    const btnRefresh = MugenUI.el("button", { type: "button", title: "Muat Ulang Booking" }, "↻ Muat Ulang");
-    row.appendChild(btnRefresh);
+    // REVISI (PERMINTAAN Owner -- "hilangkan tombol Muat Ulang, ganti diam-
+    // diam kalau ada booking baru masuk, tanpa refresh 1 halaman"): tombol
+    // "↻ Muat Ulang" manual DIHAPUS -- SEBELUMNYA perlu karena booking baru
+    // dari customer/webhook tidak pernah muncul sampai direfresh manual.
+    // Sekarang load({silent:true}) (lihat di bawah) didaftarkan ke
+    // _bookingQuietReload, dipanggil refreshDiamDiam() dari app.js setiap
+    // kali push "booking_baru" masuk SELAGI tab ini terbuka -- tabel
+    // diperbarui di latar belakang TANPA skeleton/flash, menggantikan
+    // MugenRouter.handle() (render ulang SELURUH halaman) yang dipakai
+    // sebelumnya. Badge MugenBookingNotif TETAP diperbarui oleh listener
+    // push itu sendiri di app.js, tidak lagi lewat klik tombol ini.
     const tableWrap = MugenUI.el("div");
     body.appendChild(row);
     body.appendChild(tableWrap);
@@ -1170,9 +1261,10 @@ const PageBooking = (() => {
     // callback-callback itu supaya tabel TIDAK diganti skeleton/"direset"
     // lagi, baris lama tetap tampil sampai data baru siap (pola sama
     // seperti loadList({silent}) di pages/input_data.js). Filter
-    // (bulan/tahun/barber/status) & tombol "Muat Ulang" TETAP pakai
-    // skeleton penuh (silent=false, default) -- itu memang pergantian
-    // konten besar, bukan aksi satu baris.
+    // (bulan/tahun/barber/status) TETAP pakai skeleton penuh (silent=false,
+    // default) -- itu memang pergantian konten besar, bukan aksi satu
+    // baris; auto-refresh dari push "booking_baru" (_bookingQuietReload,
+    // lihat di bawah) SELALU silent:true.
     async function load({ silent = false } = {}) {
       if (!silent) {
         tableWrap.innerHTML = "";
@@ -1186,13 +1278,27 @@ const PageBooking = (() => {
         tableWrap.innerHTML = "";
         // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-        const rows = Array.isArray(data) ? data : [];
+        // PERMINTAAN Owner: "bookingan terbaru itu selalu di atas" -- lihat
+        // _urutkanTerbaruDiAtas() di atas.
+        const rows = _urutkanTerbaruDiAtas(Array.isArray(data) ? data : []);
         // Hak Akses Menu: level "Baca" (bolehEdit=false) -- tombol
         // Verifikasi/Batalkan/Reschedule TIDAK dikirim ke bookingTable()
         // sama sekali (null = disembunyikan, lihat bookingTable() di atas),
         // data booking TETAP tampil apa adanya.
         tableWrap.appendChild(bookingTable(rows, {
+          // PERMINTAAN Owner (Unread Row Highlight): dipanggil onVerifikasi/
+          // onBatalkan/onReschedule di bawah (fire-and-forget, TIDAK
+          // menunggu/menggagalkan aksi utamanya kalau ini gagal) begitu
+          // tombol aksi diklik, DAN oleh bookingTable() sendiri saat baris
+          // metode "gateway" diklik langsung (lihat onRowClick di
+          // bookingTable()). load({silent:true}) yang sudah dipanggil tiap
+          // handler akan membawa dilihat=1 terbaru dari server, highlight
+          // hilang otomatis tanpa kode tambahan di sini.
+          onTandaiDilihat: !bolehEdit ? null : (r) => {
+            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
+          },
           onVerifikasi: !bolehEdit ? null : async (r) => {
+            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
             try {
               const hasil = await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
               // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
@@ -1210,6 +1316,7 @@ const PageBooking = (() => {
           },
           onBatalkan: !bolehEdit ? null : async (r) => {
             if (!(await MugenUI.confirmModal({ message: `Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`, danger: true }))) return;
+            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
             try {
               await MugenApi.post(`/api/booking/${r.id}/batalkan`);
               MugenUI.toast("Booking dibatalkan.", "success");
@@ -1218,6 +1325,7 @@ const PageBooking = (() => {
             } catch (e) { MugenUI.toast(e.message, "error"); }
           },
           onReschedule: !bolehEdit ? null : async (r) => {
+            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
             const berhasil = await bukaRescheduleModal(r, barbers, services || []);
             if (berhasil) {
               MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
@@ -1240,18 +1348,21 @@ const PageBooking = (() => {
           },
         }));
       } catch (e) {
-        tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.errorState(e.message));
+        // REVISI: refresh diam-diam (silent, lihat atas) yang gagal karena
+        // jaringan sesaat TIDAK BOLEH menghapus tabel yang sedang tampil --
+        // baris lama tetap ditampilkan, gagalnya cukup diam-diam diabaikan
+        // (konsisten dengan muatUlang() tab Barber di atas).
+        if (!silent) {
+          tableWrap.innerHTML = "";
+          tableWrap.appendChild(MugenUI.errorState(e.message));
+        }
       }
     }
     selBulan.addEventListener("change", load);
     selTahun.addEventListener("change", load);
     selBarber.addEventListener("change", load);
     selStatus.addEventListener("change", load);
-    btnRefresh.addEventListener("click", () => MugenUI.withButtonLoading(btnRefresh, async () => {
-      await load();
-      if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
-    }));
+    _bookingQuietReload = load;
     load();
   }
 
@@ -2042,7 +2153,7 @@ const PageBooking = (() => {
     });
   }
 
-  return { render };
+  return { render, refreshDiamDiam };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js

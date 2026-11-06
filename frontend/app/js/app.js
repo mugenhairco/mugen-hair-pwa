@@ -50,16 +50,23 @@ if ("serviceWorker" in navigator) {
   // push baru diterima (lihat listener "push" di sana) -- HANYA bereaksi
   // pada push jenis "booking_baru" (push jenis lain, mis. izin_cuti,
   // diabaikan di sini). Reaksinya: refresh badge+chime booking SEKETIKA
-  // (bukan menunggu reminder 60 detik), dan kalau Admin SEDANG membuka
-  // menu Booking, render ulang halamannya supaya daftar booking baru
-  // langsung tampil tanpa klik "Muat Ulang" manual. TIDAK menambah
-  // aktivitas jaringan saat idle -- listener ini sama sekali tidak
-  // memicu apa pun kalau tidak ada push yang masuk.
+  // (bukan menunggu reminder 60 detik), dan kalau tab Booking (List
+  // Owner/Admin ATAU Hari Ini/Akan Datang/Semua Booking milik Barber)
+  // SEDANG terbuka, data tabel/kartu itu diperbarui DIAM-DIAM di latar
+  // belakang (lihat PageBooking.refreshDiamDiam()/_bookingQuietReload di
+  // pages/booking.js) -- booking baru langsung tampil TANPA tombol "Muat
+  // Ulang" manual (SUDAH DIHAPUS, permintaan Owner) DAN tanpa flash/reset
+  // seluruh halaman seperti MugenRouter.handle() SEBELUMNYA. TIDAK
+  // menambah aktivitas jaringan saat idle -- listener ini sama sekali
+  // tidak memicu apa pun kalau tidak ada push yang masuk.
   navigator.serviceWorker.addEventListener("message", (event) => {
     const data = event.data || {};
     if (data.type !== "push-notifikasi" || data.jenis !== "booking_baru") return;
     if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
-    if (location.hash.startsWith("#/booking")) MugenRouter.handle();
+    if (location.hash.startsWith("#/booking") && typeof PageBooking !== "undefined"
+        && typeof PageBooking.refreshDiamDiam === "function") {
+      PageBooking.refreshDiamDiam();
+    }
   });
 }
 

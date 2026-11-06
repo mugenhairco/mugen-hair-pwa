@@ -838,6 +838,13 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pembayaran_diterima_oleh TEXT;
 -- WhatsApp Fonte untuk booking kasir_mandiri (lihat _kirim_notifikasi_wa_booking()).
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS sumber TEXT NOT NULL DEFAULT 'publik';
 
+-- FITUR Unread Row Highlight (List Booking Owner/Admin, lihat
+-- booking_dilihat_migrasi.py jalur SQLite untuk penjelasan lengkap):
+-- DEFAULT 1 ("sudah dilihat") supaya booking LAMA tidak ter-highlight
+-- massal begitu fitur ini rilis -- buat_booking() mengisi EKSPLISIT untuk
+-- baris BARU (0 untuk sumber publik, 1 untuk kasir_mandiri).
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS dilihat INTEGER NOT NULL DEFAULT 1;
+
 -- Format Baru Nomor Transaksi Booking (lihat nomor_transaksi_booking_migrasi.py
 -- jalur SQLite untuk penjelasan lengkap) -- nullable, TANPA backfill, NULL
 -- berarti booking LAMA (frontend jatuh ke rumus lama berbasis nama service

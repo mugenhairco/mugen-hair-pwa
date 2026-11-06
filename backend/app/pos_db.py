@@ -683,6 +683,15 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         service_items.append({
             "sumber": "booking", "jam": b["jam_mulai"], "nama_barber": b["nama_barber"],
             "daftar_service": b["daftar_service"], "nominal": b["total_harga"],
+            # PERMINTAAN Owner: tampilkan nama customer di Transaksi Hari Ini
+            # -- HANYA baris sumber="booking" (online maupun kasir_mandiri,
+            # keduanya sama-sama tabel `bookings` jadi customer_nama SELALU
+            # ada) yang dapat field ini. Baris sumber="pos" (Kasir walk-in,
+            # lihat loop pos_rows di atas) SENGAJA TIDAK dapat field ini --
+            # form checkout Kasir tidak pernah menanyakan nama customer sama
+            # sekali, kolomnya tidak ada di tabel pos_transaksi (beda topik
+            # dari permintaan ini, lihat percakapan Owner).
+            "nama_customer": b.get("customer_nama"),
         })
 
     service_items.sort(key=lambda x: x["jam"])

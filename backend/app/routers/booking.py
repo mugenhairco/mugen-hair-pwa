@@ -956,6 +956,19 @@ def batalkan_booking(booking_id: int, user: dict = Depends(require_permission("i
     return booking_db.get_booking(booking_id)
 
 
+@router.post("/{booking_id}/tandai-dilihat")
+def tandai_booking_dilihat(booking_id: int, user: dict = Depends(require_permission("izin_booking_list"))):
+    """FITUR Unread Row Highlight (List Booking Owner/Admin, lihat
+    booking_db.tandai_booking_dilihat()): dipanggil pages/booking.js begitu
+    staff klik tombol aksi apa pun (Verifikasi/Batalkan/Reschedule) ATAU
+    klik barisnya langsung (khusus booking metode gateway, lihat
+    bookingTable() di frontend). TIDAK memvalidasi status_booking/metode
+    apa pun -- murni penanda "sudah dilihat", aman dipanggil untuk booking
+    status apa pun, berkali-kali."""
+    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
+    return booking_db.tandai_booking_dilihat(booking_id)
+
+
 class ClosedSlotBody(BaseModel):
     barber_id: int
     tanggal: str
