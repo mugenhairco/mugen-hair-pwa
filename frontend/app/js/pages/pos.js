@@ -773,7 +773,7 @@ const PagePos = (() => {
 
       btnBatalkan.addEventListener("click", async () => {
         if (!document.body.contains(statusLabelEl)) return;
-        if (!confirm("Batalkan transaksi ini? Kalau customer terlanjur membayar, pembayaran TETAP akan terdeteksi lunas, TIDAK akan ikut terbatalkan.")) return;
+        if (!(await MugenUI.confirmModal({ message: "Batalkan transaksi ini? Kalau customer terlanjur membayar, pembayaran TETAP akan terdeteksi lunas, TIDAK akan ikut terbatalkan.", danger: true }))) return;
         try {
           const hasil = await MugenUI.withButtonLoading(btnBatalkan,
             () => MugenApi.post(`/api/pos/transaksi/${r.id}/batalkan`));
@@ -890,7 +890,7 @@ const PagePos = (() => {
       if (!posId) return "-";
       const btn = MugenUI.el("button", { type: "button" }, "Hapus");
       btn.addEventListener("click", async () => {
-        if (!confirm("Hapus transaksi POS ini? Stok produk (kalau ada) dikembalikan & Rekap barber terkait dihitung ulang.")) return;
+        if (!(await MugenUI.confirmModal({ message: "Hapus transaksi POS ini? Stok produk (kalau ada) dikembalikan & Rekap barber terkait dihitung ulang.", danger: true }))) return;
         try {
           await MugenUI.withButtonLoading(btn, () => MugenApi.del(`/api/pos/transaksi/${posId}`));
           MugenUI.toast("Transaksi dihapus.", "success", { force: true });

@@ -677,7 +677,7 @@ const PageAbsensi = (() => {
               if (r.status !== "pending") return MugenUI.el("span", { class: "subtitle" }, "-");
               const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
               btnHapus.addEventListener("click", async () => {
-                if (!confirm(`Batalkan pengajuan koreksi ${LABEL_JENIS_KOREKSI[r.jenis] || r.jenis} tanggal ${r.tanggal}?`)) return;
+                if (!(await MugenUI.confirmModal({ message: `Batalkan pengajuan koreksi ${LABEL_JENIS_KOREKSI[r.jenis] || r.jenis} tanggal ${r.tanggal}?`, danger: true }))) return;
                 try {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/attendance/koreksi/${r.id}`));
                   MugenUI.toast("Pengajuan koreksi dibatalkan.", "success");
@@ -1328,7 +1328,7 @@ const PageAbsensi = (() => {
                 wrap.appendChild(MugenUI.el("span", { class: "subtitle" }, r.catatan_approval ? `Catatan: ${r.catatan_approval}` : "-"));
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus riwayat koreksi ${LABEL_JENIS_KOREKSI[r.jenis] || r.jenis} tanggal ${r.tanggal} (${r.nama_barber})? Tindakan ini TIDAK BISA dibatalkan.`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus riwayat koreksi ${LABEL_JENIS_KOREKSI[r.jenis] || r.jenis} tanggal ${r.tanggal} (${r.nama_barber})? Tindakan ini TIDAK BISA dibatalkan.`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/attendance/koreksi-riwayat/${r.id}`));
                     MugenUI.toast("Riwayat koreksi dihapus.", "success");

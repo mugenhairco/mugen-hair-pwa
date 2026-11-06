@@ -272,7 +272,7 @@ const PagePengaturan = (() => {
       });
 
       btnHapusFavicon.addEventListener("click", async () => {
-        if (!confirm("Kembalikan ke favicon platform (hapus favicon toko ini)?")) return;
+        if (!(await MugenUI.confirmModal({ message: "Kembalikan ke favicon platform (hapus favicon toko ini)?", danger: true }))) return;
         faviconError.textContent = "";
         try {
           await MugenUI.withButtonLoading(btnHapusFavicon, () => MugenApi.del("/api/pengaturan/favicon"));
@@ -491,7 +491,7 @@ const PagePengaturan = (() => {
                 });
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus tier ${tier.target} service?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus tier ${tier.target} service?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/bonus-tiers/${tier.target}`));
                     MugenUI.toast("Tier dihapus.", "success");
@@ -1048,7 +1048,7 @@ const PagePengaturan = (() => {
                   });
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus karyawan "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `Hapus karyawan "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`, danger: true }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/barber/${r.id}`));
                       MugenUI.toast("Karyawan dihapus.", "success");
@@ -1405,7 +1405,7 @@ const PagePengaturan = (() => {
                   });
                   const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                   btnHapus.addEventListener("click", async () => {
-                    if (!confirm(`Hapus layanan "${r.nama}"? Hanya bisa dihapus kalau belum pernah dipakai transaksi.`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `Hapus layanan "${r.nama}"? Hanya bisa dihapus kalau belum pernah dipakai transaksi.`, danger: true }))) return;
                     try {
                       await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/service/${r.id}`));
                       MugenUI.toast("Layanan dihapus.", "success");
@@ -1744,7 +1744,7 @@ const PagePengaturan = (() => {
                   if (r.id !== user.id) {
                     const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                     btnHapus.addEventListener("click", async () => {
-                      if (!confirm(`Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+                      if (!(await MugenUI.confirmModal({ message: `Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
                       try {
                         await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/user/${r.id}`));
                         MugenUI.toast("User dihapus.", "success");
@@ -1856,7 +1856,7 @@ const PagePengaturan = (() => {
       btnImport.addEventListener("click", async () => {
         importError.textContent = "";
         if (!inputImport.files || !inputImport.files[0]) { importError.textContent = "Pilih file .db dulu."; return; }
-        if (!confirm("Yakin ingin mengganti seluruh database yang sedang berjalan dengan file ini? Tindakan ini tidak mudah dibatalkan.")) return;
+        if (!(await MugenUI.confirmModal({ message: "Yakin ingin mengganti seluruh database yang sedang berjalan dengan file ini? Tindakan ini tidak mudah dibatalkan.", danger: true }))) return;
         btnImport.disabled = true;
         try {
           // REVISI UI/UX Premium: withLoading() (overlay layar penuh) SENGAJA
@@ -2030,7 +2030,7 @@ const PagePengaturan = (() => {
                 wrap.appendChild(btnGanti);
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus role "${r.nama}"? Hanya bisa dihapus kalau sudah tidak ada akun yang memakainya.`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus role "${r.nama}"? Hanya bisa dihapus kalau sudah tidak ada akun yang memakainya.`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/user-roles/${r.id}`));
                     MugenUI.toast("Role dihapus.", "success");

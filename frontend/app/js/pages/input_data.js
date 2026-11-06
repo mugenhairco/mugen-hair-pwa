@@ -751,7 +751,7 @@ const PageInputData = (() => {
       }
 
       btnTutupHari.addEventListener("click", async () => {
-        if (!confirm(`Tutup & simpan transaksi Manual Customer tanggal ${mcTanggal.value}? Baris yang sudah punya Barber+Service akan masuk ke Rekap.`)) return;
+        if (!(await MugenUI.confirmModal({ message: `Tutup & simpan transaksi Manual Customer tanggal ${mcTanggal.value}? Baris yang sudah punya Barber+Service akan masuk ke Rekap.` }))) return;
         try {
           const hasil = await MugenUI.withButtonLoading(btnTutupHari, () => MugenApi.post(`/api/manual-customer/close?tanggal=${mcTanggal.value}`, {}));
           MugenUI.toast(`Hari ditutup: ${hasil.diproses} masuk Rekap, ${hasil.dilewati} tetap histori (belum lengkap).`, "success", { force: true });
@@ -763,7 +763,7 @@ const PageInputData = (() => {
       });
 
       btnResetHari.addEventListener("click", async () => {
-        if (!confirm(`Hapus SELURUH transaksi tanggal ${mcTanggal.value} (Input Barber maupun Manual Customer) supaya metode bisa dipilih ulang? Tindakan ini tidak bisa dibatalkan.`)) return;
+        if (!(await MugenUI.confirmModal({ message: `Hapus SELURUH transaksi tanggal ${mcTanggal.value} (Input Barber maupun Manual Customer) supaya metode bisa dipilih ulang? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
         try {
           await MugenUI.withButtonLoading(btnResetHari, () => MugenApi.post(`/api/manual-customer/reset?tanggal=${mcTanggal.value}`, {}));
           MugenUI.toast("Seluruh transaksi tanggal ini direset.", "success", { force: true });
@@ -807,7 +807,7 @@ const PageInputData = (() => {
                 btnEdit.addEventListener("click", () => isiMcFormUntukKoreksi(r));
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus data customer "${r.nama_customer}"?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus data customer "${r.nama_customer}"?`, danger: true }))) return;
                   try {
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/manual-customer/transaksi/${r.id}`));
                     MugenUI.toast("Data customer dihapus.", "success");

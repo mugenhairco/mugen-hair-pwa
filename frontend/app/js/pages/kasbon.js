@@ -429,7 +429,7 @@ const PageKasbon = (() => {
               if (bolehHapus && r.sisa >= r.jumlah) { // belum ada pembayaran sama sekali
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus kasbon ${r.nama_barber} tanggal ${r.tanggal}?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus kasbon ${r.nama_barber} tanggal ${r.tanggal}?`, danger: true }))) return;
                   try {
                     // REVISI UI/UX Premium: spinner inline di tombol Hapus.
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/kasbon/${r.id}`));

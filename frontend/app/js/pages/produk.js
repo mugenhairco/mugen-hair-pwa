@@ -294,7 +294,7 @@ const PageProduk = (() => {
                 if (bolehHapusProduk) {
                   const btnNonaktif = MugenUI.el("button", { class: "btn-danger" }, "Nonaktifkan");
                   btnNonaktif.addEventListener("click", async () => {
-                    if (!confirm(`Nonaktifkan produk "${p.nama}"?`)) return;
+                    if (!(await MugenUI.confirmModal({ message: `Nonaktifkan produk "${p.nama}"?`, danger: true }))) return;
                     try {
                       // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
                       await MugenUI.withButtonLoading(btnNonaktif, () => MugenApi.del(`/api/produk/${p.id}`));
@@ -531,7 +531,7 @@ const PageProduk = (() => {
                 if (!bolehHapusProduk) return wrap;
                 const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
                 btnHapus.addEventListener("click", async () => {
-                  if (!confirm(`Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`)) return;
+                  if (!(await MugenUI.confirmModal({ message: `Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`, danger: true }))) return;
                   try {
                     // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
                     await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/produk/mutasi/${m.id}`));
