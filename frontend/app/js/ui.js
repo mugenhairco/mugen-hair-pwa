@@ -249,7 +249,7 @@ const MugenUI = (() => {
   // lihat pages/absensi.js (tabel ringkasan kuota Owner). Default
   // undefined (tidak ada perubahan) supaya SELURUH pemanggil buildTable()
   // yang sudah ada tidak terpengaruh sama sekali.
-  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass } = {}) {
+  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass, onRowClick } = {}) {
     const wrap = el("div", { class: "table-wrap" });
     const table = el("table", { class: "data-table" });
     const thead = el("thead", {}, el("tr", {}, columns.map((c) => el("th", {}, c.label))));
@@ -266,6 +266,12 @@ const MugenUI = (() => {
           if (val instanceof Node) tr.appendChild(el("td", {}, val));
           else tr.appendChild(el("td", {}, String(val)));
         }
+        // FITUR Unread Row Highlight (List Booking, lihat pages/booking.js)
+        // -- `onRowClick` opsional, dipanggil dengan (row, elemen <tr> itu
+        // sendiri, event) tiap kali baris ini diklik di mana pun (termasuk
+        // tombol aksi di dalamnya, event bubbling biasa -- pemanggil yang
+        // menentukan apakah itu relevan atau tidak per baris).
+        if (onRowClick) tr.addEventListener("click", (e) => onRowClick(row, tr, e));
         tbody.appendChild(tr);
       }
     }
@@ -286,23 +292,31 @@ const MugenUI = (() => {
   // booking.js/rekap.js/pengaturan.js), emptyState()/errorState() (satu
   // pola tampilan, bukan string ad hoc per halaman). ======================
 
-  // Placeholder skeleton sebelum data asli datang -- bentuknya menyerupai
-  // data asli (jumlah kolom/baris sama) supaya TIDAK ada layout shift saat
-  // ditukar. `kind`: "table" ({cols, rows=4}), "card" ({lines=3}), atau
-  // "line" (satu baris teks, opsional {width}).
+  // Placeholder sebelum data asli datang. SEMULA shimmer bar abu-abu
+  // (meniru bentuk data asli) -- laporan Owner: "loading seperti ini saya
+  // tidak suka, ganti circular progress di semua jenis loading (hapus,
+  // input data, pindah tab menu)". Nama fungsi/parameter (`kind`: "table"
+  // {cols,rows=4}, "card" {lines=3}, "line" {width}) DIPERTAHANKAN supaya
+  // ~90 titik panggilan di seluruh halaman (refreshInto's skeleton:, tab
+  // switch, load awal) tidak perlu diubah satu-satu -- cukup isinya diganti
+  // jadi spinner bundar terpusat, otomatis berlaku di semua jenis loading
+  // itu sekaligus. `rows`/`lines` dipakai untuk perkiraan tinggi saja
+  // (supaya tidak ada lonjakan layout terlalu jauh saat data asli masuk).
   function skeleton(kind, opts = {}) {
+    const spinner = () => el("div", { class: "content-spinner" });
     if (kind === "table") {
       const { cols = 4, rows = 4 } = opts;
       const wrap = el("div", { class: "table-wrap" });
       const table = el("table", { class: "data-table" });
       const tbody = el("tbody");
-      for (let r = 0; r < rows; r++) {
-        const tr = el("tr", { class: "skeleton-row" });
-        for (let c = 0; c < cols; c++) {
-          tr.appendChild(el("td", {}, el("div", { class: "skeleton-block" })));
-        }
-        tbody.appendChild(tr);
-      }
+      const tr = el("tr");
+      const td = el(
+        "td",
+        { colspan: String(cols) },
+        el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(rows, 2) * 38}px;` }, spinner()),
+      );
+      tr.appendChild(td);
+      tbody.appendChild(tr);
       table.appendChild(tbody);
       wrap.appendChild(table);
       return wrap;
@@ -310,10 +324,10 @@ const MugenUI = (() => {
     if (kind === "card") {
       const { lines = 3 } = opts;
       const card = el("div", { class: "card" });
-      for (let i = 0; i < lines; i++) card.appendChild(el("div", { class: "skeleton-card-block" }));
+      card.appendChild(el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(lines, 1) * 22 + 20}px;` }, spinner()));
       return card;
     }
-    return el("div", { class: "skeleton-line", style: opts.width ? `width:${opts.width};` : "" });
+    return el("div", { class: "content-spinner-wrap content-spinner-wrap-inline" }, el("div", { class: "content-spinner content-spinner-sm" }));
   }
 
   // Ganti isi `container` dengan hasil `asyncRenderFn()` (harus resolve ke

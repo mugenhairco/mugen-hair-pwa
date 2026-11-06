@@ -6,8 +6,12 @@ pos_db.bayar_cash()), dan tab "Transaksi Hari Ini" menampilkan rincian
 total per metode pembayaran (Payment Gateway/QRIS manual/Cash, termasuk
 tips & produk) + total keseluruhan -- lihat pos_db.get_transaksi_hari_ini()."""
 
+from datetime import datetime
+
 import database as db
 import pos_db
+import booking_db
+from booking_db import WIB
 
 
 def test_bayar_cash_hitung_kembalian_dan_rekap_tetap_benar(single_tenant):
@@ -94,6 +98,49 @@ def test_rincian_metode_dan_total_keseluruhan_transaksi_hari_ini(single_tenant):
     assert hasil["rincian_metode"]["cash"] == pos_cash["total_harga"]
     assert hasil["rincian_metode"]["gateway"] == 0
     assert hasil["total_keseluruhan"] == pos_qris["total_harga"] + pos_cash["total_harga"]
+
+
+def test_nama_customer_hanya_terisi_untuk_baris_sumber_booking(single_tenant, monkeypatch):
+    """PERMINTAAN Owner: tab Transaksi Hari Ini tampilkan nama customer --
+    HANYA untuk baris sumber="booking" (online maupun kasir_mandiri, lihat
+    pos_db.get_transaksi_hari_ini()). Baris sumber="pos" (Kasir walk-in)
+    TIDAK PERNAH punya nama customer (form checkout Kasir tidak
+    menanyakannya sama sekali).
+
+    BUGFIX (test flaky): jam_mulai="15:00" di bawah SEBELUMNYA hardcoded --
+    gagal dengan ValueError "Jam yang dipilih sudah lewat" begitu test ini
+    kebetulan dijalankan setelah jam 15:00 WIB (buat_booking() menolak jam
+    booking HARI INI yang sudah lewat waktu sekarang, lihat booking_db.py).
+    _sekarang_wib() di-monkeypatch ke jam tetap (pola SAMA seperti
+    test_nomor_transaksi_dan_jam_operasional.py::_patch_sekarang()) supaya
+    test ini deterministik, tidak tergantung jam real berapa pun dijalankan.
+    """
+    monkeypatch.setattr(booking_db, "_sekarang_wib",
+                         lambda: datetime.now(WIB).replace(hour=12, minute=0, second=0, microsecond=0))
+    tenant_id = single_tenant["tenant_id"]
+    barber_a = db.add_barber("Barber Nama Customer", tenant_id=tenant_id)
+    svc = db.add_service("Dry Cut Nama Customer", 50000, tenant_id=tenant_id)
+
+    pos_cash = pos_db.buat_transaksi(
+        tenant_id, jasa_items=[{"barber_id": barber_a, "service_ids": [svc]}],
+        produk_items=[], metode_pembayaran="cash", dibuat_oleh="smoke",
+    )
+    pos_cash = pos_db.bayar_cash(pos_cash["id"], tenant_id, 50000)
+    tanggal = pos_cash["tanggal"]
+
+    booking_db.update_payment_settings(metode_aktif=["cash"], tenant_id=tenant_id)
+    booking = booking_db.buat_booking(
+        barber_id=barber_a, tanggal=tanggal, jam_mulai="15:00", service_ids=[svc],
+        customer_nama="Rudi Pelanggan", customer_whatsapp="081234567890",
+        metode_pembayaran="cash", tenant_id=tenant_id, sumber="kasir_mandiri",
+    )
+    assert booking["status_pembayaran"] == "terverifikasi"
+
+    hasil = pos_db.get_transaksi_hari_ini(tenant_id, tanggal)
+    baris_pos = next(s for s in hasil["service"] if s["sumber"] == "pos")
+    baris_booking = next(s for s in hasil["service"] if s["sumber"] == "booking")
+    assert baris_pos.get("nama_customer") is None
+    assert baris_booking["nama_customer"] == "Rudi Pelanggan"
 
 
 def test_endpoint_bayar_cash_pos(single_tenant):

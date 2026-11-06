@@ -416,6 +416,18 @@ tr.row-danger td { background: rgba(220,38,38,0.06); }
 :root[data-theme="dark"] .card-danger { background: rgba(248,113,113,0.10); }
 :root[data-theme="dark"] tr.row-danger td { background: rgba(248,113,113,0.10); }
 
+/* FITUR Unread Row Highlight (PERMINTAAN Owner, List Booking Owner/Admin --
+   lihat pages/booking.js::bookingTable()): baris booking baru/belum
+   dilihat staff -- warna biru lembut (token --info, SAMA dipakai
+   .badge-tester, dipilih supaya beda jelas dari .row-danger merah di
+   atas), hilang begitu tombol aksi diklik atau (khusus metode gateway)
+   barisnya sendiri diklik. .row-clickable HANYA ditambahkan untuk baris
+   gateway itu (satu-satunya yang responsif terhadap klik baris, bukan
+   tombol) -- kursor pointer sebagai isyarat visual baris itu bisa diklik. */
+tr.row-unread td { background: rgba(37,99,235,0.07); }
+:root[data-theme="dark"] tr.row-unread td { background: rgba(96,165,250,0.12); }
+tr.row-clickable { cursor: pointer; }
+
 /* Dashboard: kartu collapse/expand -- lihat pages/dashboard_owner.js */
 .card-collapse-title {
   margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em;
@@ -1593,9 +1605,13 @@ body.book-public-active {
    renderConfirmed() (Appointment Confirmed, lihat apptCard() di
    book_public.js) -- dua halaman yang isinya mirip (jadwal+service+total)
    sekarang satu bahasa visual: info dikelompokkan per blok berjudul
-   (Schedule/Service/dst) alih-alih satu daftar rata tanpa hirarki, dan
-   total jadi badge pil warna aksen sebagai titik fokus di akhir. TIDAK
-   mengubah .book-summary-field/.book-field-row di atas -- keduanya
+   (Schedule/Service/dst) alih-alih satu daftar rata tanpa hirarki. Total
+   (lihat .book-appt-total di bawah) SEMPAT berupa badge pil warna aksen
+   (kebaca sebagai tombol), lalu kotak bertekstur lembut -- Owner minta
+   dikembalikan ke teks polos saja ("cukup huruf, tidak perlu desain
+   kotak"), cuma garis pembatas tipis di atasnya (konsisten dengan
+   pembatas antar section lain) + huruf label/nilai sejajar satu baris.
+   TIDAK mengubah .book-summary-field/.book-field-row di atas -- keduanya
    MASIH dipakai layar lain (renderFaseMetode()/renderFaseBayar()/
    renderSudahBooking(), di luar scope permintaan ini). */
 .book-appt-card { text-align: left; }
@@ -1609,12 +1625,20 @@ body.book-public-active {
 .book-appt-row:first-of-type { margin-top: 0; }
 .book-appt-row-label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .book-appt-row-value { font-weight: 700; margin-top: 2px; word-break: break-word; }
+/* REVISI (laporan Owner): dua percobaan sebelumnya (badge pil gradient,
+   lalu kotak tint lembut) SAMA-SAMA ditolak -- "cukup huruf saja seperti
+   sekarang, tidak perlu ada desain kotak atau apalah", "huruf posisinya
+   sejajarkan saja". Jadi teks polos TANPA background/border-radius/box,
+   cuma garis pembatas tipis di atas (SAMA seperti pembatas antar section
+   lain, .book-appt-section + .book-appt-section di atas -- bukan "kotak"
+   baru, konsisten dengan yang sudah ada) + align-items:baseline supaya
+   label & nilai (beda ukuran font) sejajar rapi di satu baris. */
 .book-appt-total {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin-top: 14px; padding: 14px 18px; border-radius: 999px;
-  background: var(--book-grad-primary); color: #fff;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-weight: 700;
 }
-.book-appt-total-value { font-weight: 800; font-size: 19px; }
+.book-appt-total-value { font-weight: 800; font-size: 20px; color: var(--accent); }
 /* Nomor transaksi/referensi di Appointment Confirmed (lihat renderConfirmed())
    -- teks kecil di bawah judul, sebelum apptCard(), bukan ikut jadi salah
    satu baris dalam blok (terasa seperti nomor resi, bukan "field data"). */
@@ -1705,26 +1729,27 @@ body.book-public-active {
    SEMUA baru di sini menghormati prefers-reduced-motion sama seperti
    animasi lama di atas. */
 
-/* ---- Skeleton loading (baru total -- sebelumnya cuma teks "Memuat...") ---- */
-@keyframes mugen-skeleton-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
+/* ---- Loading placeholder (MugenUI.skeleton(), lihat ui.js) -- SEMULA
+   shimmer bar abu-abu, diganti circular progress polos per laporan Owner
+   ("loading seperti ini saya tidak suka") -- satu style ini otomatis
+   berlaku di semua jenis loading (hapus/refresh, input data, pindah tab
+   menu, load awal halaman) karena semua titik panggil lewat satu fungsi
+   terpusat. Reuse keyframe mugen-spin yang sama dengan .loading-spinner/
+   .btn-inline-spinner supaya gerakannya konsisten di seluruh aplikasi. ---- */
+.content-spinner-wrap {
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px 0; width: 100%;
 }
-.skeleton-line, .skeleton-row td > .skeleton-block, .skeleton-card-block {
-  background: linear-gradient(90deg, var(--border) 25%, var(--bg) 37%, var(--border) 63%);
-  background-size: 400px 100%;
-  animation: mugen-skeleton-shimmer 1.4s ease-in-out infinite;
-  border-radius: 6px;
+.content-spinner-wrap-inline { padding: 4px 0; justify-content: flex-start; }
+.content-spinner {
+  width: 26px; height: 26px;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mugen-spin 0.7s linear infinite;
 }
-.skeleton-line { height: 14px; margin: 6px 0; }
-.skeleton-card-block { height: 20px; width: 60%; margin-bottom: 10px; }
-.skeleton-card-block:last-child { width: 40%; margin-bottom: 0; }
-.skeleton-row td > .skeleton-block { height: 13px; width: 100%; }
+.content-spinner-sm { width: 16px; height: 16px; border-width: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-line, .skeleton-row td > .skeleton-block, .skeleton-card-block {
-    animation: none !important;
-    background: var(--border);
-  }
+  .content-spinner { animation-duration: 1.4s; }
 }
 
 /* ---- refreshInto(): crossfade isi container tanpa jeda kosong ---- */

@@ -91,6 +91,7 @@ const PagePos = (() => {
     data.service.push({
       sumber: "booking", booking_id: booking.id, jam: booking.jam_mulai, nama_barber: booking.nama_barber,
       daftar_service: booking.daftar_service, nominal: booking.total_harga,
+      nama_customer: booking.customer_nama,
     });
     data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
     data.rincian_metode = data.rincian_metode || {};
@@ -927,6 +928,12 @@ const PagePos = (() => {
       body.appendChild(MugenUI.buildTable(
         [
           { key: "jam", label: "Jam" },
+          // PERMINTAAN Owner: nama customer -- HANYA terisi untuk baris
+          // sumber="booking" (online maupun Booking Mandiri, lihat catatan
+          // pos_db.py::get_transaksi_hari_ini()). Baris sumber="pos" (Kasir
+          // walk-in) TIDAK PERNAH punya field ini (form checkout Kasir
+          // tidak menanyakan nama customer sama sekali) -- tampil strip.
+          { key: "nama_customer", label: "Nama Customer", format: (v) => v || "-" },
           { key: "nama_barber", label: "Barber" },
           { key: "daftar_service", label: "Service" },
           { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
