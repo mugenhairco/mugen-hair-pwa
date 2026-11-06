@@ -68,8 +68,13 @@ test.describe("Input Data — Manual Customer", () => {
     await expect(page.locator(".mc-nama-booking")).toHaveText("Andi Booking");
 
     // --- Tutup & Simpan Hari Ini ---
-    page.once("dialog", (dialog) => dialog.accept());
+    // BUGFIX (regresi tes, bukan regresi aplikasi): konfirmasi ini DULU
+    // window.confirm() bawaan browser (ditangani lewat page.once("dialog",
+    // ...)), sekarang MugenUI.confirmModal() -- modal custom di DOM, BUKAN
+    // dialog native, jadi event "dialog" Playwright tidak pernah lagi
+    // terpicu untuk aksi ini. Klik tombol "Ya" di modal-nya langsung.
     await page.locator("button", { hasText: "Tutup & Simpan Hari Ini" }).click();
+    await page.locator(".modal-actions button", { hasText: /^Ya$/ }).click();
     await page.waitForTimeout(1500);
 
     await expect(page.locator("text=sudah DITUTUP")).toBeVisible({ timeout: 10000 });
