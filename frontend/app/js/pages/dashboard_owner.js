@@ -15,8 +15,11 @@
 //   role ini, dan mengosongkan `per_barber` sama sekali. Kartu dengan
 //   nilai `null` TIDAK dirender sama sekali (bukan ditampilkan sebagai
 //   "Rp 0", supaya tidak menyesatkan), dan bagian "SERVICE BULAN INI"/
-//   "Per Barber"/"Grafik Pendapatan" (di luar cakupan Dashboard Admin,
-//   lihat spesifikasi) hanya dirender untuk role 'admin' (Owner).
+//   "Grafik Pendapatan" (di luar cakupan Dashboard Admin, lihat
+//   spesifikasi) hanya dirender untuk role 'admin' (Owner).
+// REVISI (PERMINTAAN Owner): tabel "Per Barber" (ringkasan Komisi/Tips/
+//   Uang Harian/Bonus Customer/Total per baris barber) DIHAPUS PERMANEN --
+//   lihat catatan lengkap di dekat bagian "SERVICE BULAN INI" di bawah.
 
 const PageDashboardOwner = (() => {
   const COLLAPSE_KEY = "mugen_dashboard_owner_collapse_v1";
@@ -308,10 +311,10 @@ const PageDashboardOwner = (() => {
         }
 
         // ================= BAGIAN KHUSUS OWNER =================
-        // SERVICE BULAN INI (rincian per barber), Per Barber, dan Grafik
-        // Pendapatan BUKAN bagian dari Dashboard Admin (lihat spesifikasi
-        // Hak Akses Admin -- hanya 4 kartu ringkasan toko yang bisa
-        // diizinkan Owner), jadi tidak pernah dirender untuk role 'staff'.
+        // SERVICE BULAN INI (rincian per barber) dan Grafik Pendapatan
+        // BUKAN bagian dari Dashboard Admin (lihat spesifikasi Hak Akses
+        // Admin -- hanya 4 kartu ringkasan toko yang bisa diizinkan Owner),
+        // jadi tidak pernah dirender untuk role 'staff'.
         if (!isOwner) return;
 
         // ================= SERVICE BULAN INI / PERIODE INI =================
@@ -356,23 +359,15 @@ const PageDashboardOwner = (() => {
         }
         selBarberFilter.addEventListener("change", renderRincianService);
         renderRincianService();
-
-        body.appendChild(MugenUI.el("h2", {}, "Per Barber"));
-        body.appendChild(MugenUI.buildTable(
-          [
-            { key: "barber", label: "Barber", format: (_, r) => r.barber.nama },
-            { key: "jumlah_customer", label: "Service" },
-            { key: "komisi", label: "Komisi", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
-            { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-            // Bonus Customer null di mode Periode (lihat komentar mode di
-            // atas) -- "-" (BUKAN "Rp 0", MugenUI.formatRupiah(null) akan
-            // salah menampilkan "Rp 0" seolah barber tidak dapat bonus).
-            { key: "bonus_customer", label: "Bonus Customer", format: (v) => (v === null ? "-" : MugenUI.formatRupiah(v)) },
-            { key: "total_pendapatan", label: "Total", format: MugenUI.formatRupiah },
-          ],
-          data.per_barber,
-        ));
+        // PERMINTAAN Owner: tabel "Per Barber" (ringkasan Komisi/Tips/Uang
+        // Harian/Bonus Customer/Total per baris barber) DIHAPUS PERMANEN
+        // dari sini -- bukan disembunyikan lewat CSS. `data.per_barber`
+        // TETAP dikirim backend & TETAP dipakai di atas (dropdown filter +
+        // rincian service per barber di kartu "Service Bulan Ini", SENGAJA
+        // TIDAK ikut dihapus) dan untuk menghitung kartu ringkasan "Total
+        // Komisi Barber"/"Total Tips"/dst di atas (lihat total_toko di
+        // routers/dashboard.py) -- field-field itu TIDAK bisa dihapus dari
+        // payload API tanpa merusak keduanya, hanya tabel ini yang dihapus.
     }
 
     btnCollapseAll.addEventListener("click", () => {
