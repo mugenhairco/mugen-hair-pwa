@@ -421,11 +421,36 @@ const MugenUI = (() => {
   // Satu pola tampilan untuk state kosong/error -- menggantikan string ad
   // hoc ("Belum ada data.", pesan error berbeda-beda) per halaman, supaya
   // SEMUA state kosong/error terlihat & beranimasi sama persis.
+  // PERMINTAAN Owner ("desain kurang ikon/ilustrasi"): ikon kotak kosong
+  // di atas teks -- supaya "belum ada data" terasa seperti memang belum
+  // ada apa-apa, bukan seperti tampilan rusak/error. errorState() di
+  // bawah SENGAJA TIDAK ikut diberi ikon (beda sinyal -- teks merahnya
+  // sendiri sudah cukup jadi penanda, menambah ikon di situ berisiko
+  // terbaca sebagai "data kosong" alih-alih "terjadi masalah").
   function emptyState(text) {
-    return el("div", { class: "mugen-state" }, text);
+    return el("div", { class: "mugen-state mugen-state-empty" }, [
+      el("div", { class: "mugen-state-icon", html: MugenIcons.emptyBox }),
+      el("div", {}, text),
+    ]);
   }
   function errorState(text) {
     return el("div", { class: "mugen-state mugen-state-error" }, text);
+  }
+
+  // PERMINTAAN Owner ("judul menu seharusnya ada ikonnya juga" -- setelah
+  // menu dipilih di sidebar): satu pola terpusat untuk <h1> judul halaman
+  // dengan ikon chip di depan, menggantikan `MugenUI.el("h1", {}, "Label")`
+  // polos yang dipakai tiap halaman sebelumnya. `icon`/`warna` SENGAJA
+  // disamakan persis dengan entri menu terkait di nav.js::MENU (child
+  // modul Karyawan/Keuangan pakai ikon+warna GRUP-nya, bukan ikon sendiri
+  // -- sama seperti menu sidebar-nya sendiri TIDAK punya ikon per-child).
+  // `icon` opsional -- dipanggil tanpa icon (mis. halaman yang bukan menu
+  // sidebar) hasilnya identik h1 polos seperti sebelumnya.
+  function pageTitle(text, icon, warna) {
+    const children = [];
+    if (icon) children.push(el("span", { class: "page-title-icon icon-chip--" + (warna || "indigo"), html: icon }));
+    children.push(el("span", {}, text));
+    return el("h1", {}, children);
   }
 
   // Dialog konfirmasi modern (menggantikan confirm() bawaan browser yang
@@ -976,7 +1001,7 @@ const MugenUI = (() => {
     formatRupiah, parseAngka, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
-    skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, ambilQueryHash,
+    skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
     attachNumericKeypad, dropdownSelect,
   };

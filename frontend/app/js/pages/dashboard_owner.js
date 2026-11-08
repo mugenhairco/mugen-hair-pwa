@@ -8,7 +8,11 @@
 // - Setiap kartu sekarang bisa di-collapse/expand (klik judulnya), status
 //   collapse/expand per kartu TERSIMPAN di localStorage (bertahan lintas
 //   refresh/login ulang) -- lihat COLLAPSE_KEY/_loadCollapseState di bawah.
-//   Tombol "Collapse All"/"Expand All" mengatur semua kartu sekaligus.
+//   PERMINTAAN Owner ("bagian atas berantakan"): tombol "Collapse All"/
+//   "Expand All" (dulu di sini, mengatur semua kartu sekaligus) DIHAPUS --
+//   dianggap berantakan/tidak diperlukan, collapse/expand sekarang HANYA
+//   per kartu (klik judulnya sendiri-sendiri), seperti sebelum fitur ini
+//   ada.
 // - Halaman ini SEKARANG JUGA dipakai untuk role 'staff' (Admin, lihat
 //   router.js::resolveDashboardPage) -- backend (routers/dashboard.py)
 //   sudah memfilter field yang tidak diizinkan Owner jadi `null` untuk
@@ -93,7 +97,7 @@ const PageDashboardOwner = (() => {
     // bawahnya menggerbang kartu MANA yang tampil.
     if ((await MugenMenuAccess.get("dashboard")) === "none") {
       root.innerHTML = "";
-      root.appendChild(MugenUI.el("h1", {}, "Dashboard"));
+      root.appendChild(MugenUI.pageTitle("Dashboard", MugenIcons.dashboard, "indigo"));
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
@@ -102,7 +106,6 @@ const PageDashboardOwner = (() => {
     let bulan = today.getMonth() + 1;
     const isOwner = MugenState.getUser().role === "admin";
     const collapseState = _loadCollapseState();
-    const cardKeys = []; // diisi ulang tiap render() body -- dipakai tombol Collapse/Expand All
 
     // FITUR BARU (diminta Owner): mode "Periode" -- rentang tanggal bebas
     // (mis. 1-10 Agustus), berdampingan dengan mode "Bulanan" yang sudah
@@ -120,7 +123,7 @@ const PageDashboardOwner = (() => {
 
     root.innerHTML = "";
     const header = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
-    header.appendChild(MugenUI.el("h1", {}, isOwner ? "Dashboard Owner" : "Dashboard Admin"));
+    header.appendChild(MugenUI.pageTitle(isOwner ? "Dashboard Owner" : "Dashboard Admin", MugenIcons.dashboard, "indigo"));
 
     const selBulan = MugenUI.el("select");
     for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
@@ -158,28 +161,23 @@ const PageDashboardOwner = (() => {
     root.appendChild(header);
     modeTabs.moveIndicator();
 
-    const toolbar = MugenUI.el("div", { class: "row", style: "flex:none;margin:10px 0;gap:8px;" });
-    const btnCollapseAll = MugenUI.el("button", {}, "Collapse All");
-    const btnExpandAll = MugenUI.el("button", {}, "Expand All");
-    toolbar.appendChild(btnCollapseAll);
-    toolbar.appendChild(btnExpandAll);
-    root.appendChild(toolbar);
-
     const body = MugenUI.el("div");
     root.appendChild(body);
 
-    const cardToggleFns = {}; // key -> function(collapsed) untuk dipanggil tombol Collapse/Expand All
-
-    function card(key, label, value) {
+    function card(key, label, value, icon, warna) {
       if (value === null || value === undefined) return null; // staff tanpa izin untuk kartu ini
-      cardKeys.push(key);
       const collapsed = collapseState[key] === true;
       const valueBox = MugenUI.el("div", { class: "big-number", style: collapsed ? "display:none;" : "" }, MugenUI.formatRupiah(value));
       const arrow = MugenUI.el("span", { class: "card-collapse-arrow" }, collapsed ? "▸" : "▾");
-      const titleRow = MugenUI.el("h2", { class: "card-collapse-title" }, [
-        MugenUI.el("span", {}, label),
-        arrow,
-      ]);
+      // PERMINTAAN Owner ("desain kurang ikon"): ikon kecil per kartu (lihat
+      // icons.js) supaya sekilas lihat sudah bisa bedakan kartunya, bukan
+      // cuma teks label semua sama ukuran/warna. PERMINTAAN Owner susulan
+      // ("lebih berwarna tapi elegan, jewel tone"): `warna` memilih chip
+      // --jewel-* (lihat style.css::.icon-chip--*) per kategori kartu.
+      const titleChildren = [];
+      if (icon) titleChildren.push(MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna, html: icon }));
+      titleChildren.push(MugenUI.el("span", {}, label), arrow);
+      const titleRow = MugenUI.el("h2", { class: "card-collapse-title" }, titleChildren);
       function setCollapsed(next) {
         collapseState[key] = next;
         valueBox.style.display = next ? "none" : "";
@@ -189,7 +187,6 @@ const PageDashboardOwner = (() => {
         setCollapsed(!collapseState[key]);
         _saveCollapseState(collapseState);
       });
-      cardToggleFns[key] = setCollapsed;
       return MugenUI.el("div", { class: "card" }, [titleRow, valueBox]);
     }
 
@@ -200,7 +197,6 @@ const PageDashboardOwner = (() => {
     // seperti kartu lain di baris ini yang semuanya total toko.
     function cardJumlahService(key, rincian) {
       if (rincian === null || rincian === undefined) return null;
-      cardKeys.push(key);
       const collapsed = collapseState[key] === true;
       const listBox = MugenUI.el("div", { style: collapsed ? "display:none;" : "" });
       if (!rincian || rincian.length === 0) {
@@ -215,6 +211,7 @@ const PageDashboardOwner = (() => {
       }
       const arrow = MugenUI.el("span", { class: "card-collapse-arrow" }, collapsed ? "▸" : "▾");
       const titleRow = MugenUI.el("h2", { class: "card-collapse-title" }, [
+        MugenUI.el("span", { class: "card-collapse-icon icon-chip--indigo", html: MugenIcons.service }),
         MugenUI.el("span", {}, "Jumlah Service"),
         arrow,
       ]);
@@ -227,7 +224,6 @@ const PageDashboardOwner = (() => {
         setCollapsed(!collapseState[key]);
         _saveCollapseState(collapseState);
       });
-      cardToggleFns[key] = setCollapsed;
       return MugenUI.el("div", { class: "card" }, [titleRow, listBox]);
     }
 
@@ -289,18 +285,17 @@ const PageDashboardOwner = (() => {
         body.innerHTML = "";
         if (data.__offline) body.appendChild(MugenUI.offlineBanner(data.__cachedAt));
 
-        cardKeys.length = 0;
         const t = data.total_toko;
         const kartu = [
-          card("nilai_service", "Nilai Service", t.nilai_service),
-          card("total_komisi", "Total Komisi Barber", t.komisi),
-          card("total_tips", "Total Tips", t.tips),
-          card("uang_harian", "Uang Harian", t.uang_harian),
-          card("bonus_customer", "Bonus Customer", t.bonus_customer),
+          card("nilai_service", "Nilai Service", t.nilai_service, MugenIcons.service, "indigo"),
+          card("total_komisi", "Total Komisi Barber", t.komisi, MugenIcons.komisi, "blue"),
+          card("total_tips", "Total Tips", t.tips, MugenIcons.tips, "amber"),
+          card("uang_harian", "Uang Harian", t.uang_harian, MugenIcons.uangHarian, "teal"),
+          card("bonus_customer", "Bonus Customer", t.bonus_customer, MugenIcons.bonusCustomer, "rose"),
           cardJumlahService("jumlah_service", data.rincian_service_semua_barber),
-          card("pengeluaran_toko", "Pengeluaran Toko", data.total_pengeluaran),
-          card("penjualan_produk", "Penjualan Produk", data.penjualan_produk),
-          card("laba_kotor", "Laba Kotor Toko", data.laba_kotor),
+          card("pengeluaran_toko", "Pengeluaran Toko", data.total_pengeluaran, MugenIcons.pengeluaran, "blue"),
+          card("penjualan_produk", "Penjualan Produk", data.penjualan_produk, MugenIcons.penjualanProduk, "violet"),
+          card("laba_kotor", "Laba Kotor Toko", data.laba_kotor, MugenIcons.labaKotor, "emerald"),
         ].filter((el) => el !== null);
 
         if (kartu.length === 0) {
@@ -369,15 +364,6 @@ const PageDashboardOwner = (() => {
         // routers/dashboard.py) -- field-field itu TIDAK bisa dihapus dari
         // payload API tanpa merusak keduanya, hanya tabel ini yang dihapus.
     }
-
-    btnCollapseAll.addEventListener("click", () => {
-      for (const key of cardKeys) { collapseState[key] = true; cardToggleFns[key] && cardToggleFns[key](true); }
-      _saveCollapseState(collapseState);
-    });
-    btnExpandAll.addEventListener("click", () => {
-      for (const key of cardKeys) { collapseState[key] = false; cardToggleFns[key] && cardToggleFns[key](false); }
-      _saveCollapseState(collapseState);
-    });
 
     // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
     // -- skeleton di dalam body sendiri (lihat load() di atas) sudah jadi

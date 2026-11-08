@@ -73,7 +73,7 @@ const PageSettlementFaspay = (() => {
 
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Settlement Faspay"));
+    root.appendChild(MugenUI.pageTitle("Settlement Faspay", MugenIcons.keuangan, "emerald"));
     root.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Closing harian transaksi Faspay toko ini. Setelah disubmit, settlement dikunci dan tidak bisa diubah -- rekonsiliasi final (H+1) dijalankan Super Admin begitu data hari berikutnya tersedia."));
 

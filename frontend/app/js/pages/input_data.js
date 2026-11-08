@@ -69,7 +69,7 @@ const PageInputData = (() => {
     const isAdmin = user.role === "admin" || user.role === "staff";
 
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Input Data"));
+    root.appendChild(MugenUI.pageTitle("Input Data", MugenIcons.inputData, "blue"));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa form/data apa pun (mencakup ketiga mode: Barber/

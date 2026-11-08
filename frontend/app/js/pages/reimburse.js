@@ -538,7 +538,7 @@ const PageReimburse = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Reimburse"));
+    root.appendChild(MugenUI.pageTitle("Reimburse", MugenIcons.karyawan, "teal"));
 
     if (user.role === "barber") {
       await renderBarberView(root);

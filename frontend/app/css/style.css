@@ -13,20 +13,56 @@
   --border: #E2E8F0;
   --text: #0F172A;
   --text-dim: #64748B;
-  --accent: #334155;         /* Primary */
-  --accent-hover: #1E293B;   /* Hover */
-  --accent-pressed: #0F172A; /* Pressed */
+  /* PERMINTAAN Owner ("lebih berwarna tapi elegan, canggih, jewel tone"):
+     Primary digeser dari slate netral ke indigo jewel-tone pekat -- SATU
+     token ini dipakai 60+ tempat (sidebar active, tombol, focus ring, link),
+     jadi perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain.
+     Tenant yang mengatur Primary Color sendiri lewat Setting > Branding
+     TETAP menimpa nilai ini (brand.js, prioritas tertinggi) -- hanya
+     tenant yang BELUM kustomisasi yang melihat default baru ini. */
+  --accent: #4F46E5;         /* Primary (indigo-600) */
+  --accent-hover: #4338CA;   /* Hover (indigo-700, lebih gelap) */
+  --accent-pressed: #3730A3; /* Pressed (indigo-800, lebih gelap lagi) */
+  /* PERMINTAAN Owner ("warna font jangan diubah"): .big-number (angka besar
+     kartu statistik) SEBELUMNYA ikut var(--accent) -- begitu --accent di
+     atas diganti indigo, semua angka ikut jadi indigo, TIDAK diinginkan.
+     Token terpisah ini SENGAJA disamakan persis dengan nilai --accent LAMA
+     (slate) supaya warna angka tetap seperti semula, lepas dari perubahan
+     --accent di atas maupun warna custom tenant (brand.js TIDAK menyentuh
+     token ini sama sekali). */
+  --text-number: #334155;
   /* FONDASI Multi-Tenant Phase 2.2 (Tenant Branding): Secondary Color --
      token TERPISAH dari --accent (Primary), dipakai elemen yang perlu
      dibedakan dari aksi utama (link hover, badge sekunder). Tenant yang
      mengatur Secondary Color lewat Setting > Branding menimpa nilai ini
      lewat inline style di :root (lihat frontend/js/brand.js), prioritas
      TERTINGGI, berlaku sama di tema Terang maupun Gelap. */
-  --accent-secondary: #0891B2;
+  --accent-secondary: #0E7490;
   --danger: #DC2626;
   --success: #16A34A;
   --warning: #EA580C;
   --info: #2563EB;
+  /* PERMINTAAN Owner (ikon berwarna, jewel tone gelap-pekat): palet
+     terkurasi dipakai .icon-chip (lihat css di bawah) untuk mewarnai
+     ikon navigasi/kartu statistik per kategori semantik -- SENGAJA
+     dibatasi 7 warna (bukan satu warna acak per ikon) supaya tetap
+     terasa satu sistem desain yang kohesif, bukan pelangi berantakan.
+     Pasangan <warna>-soft dipakai sebagai background chip (opacity
+     rendah), <warna> polos dipakai sebagai warna stroke SVG (currentColor). */
+  --jewel-indigo: #4F46E5;
+  --jewel-indigo-soft: rgba(79, 70, 229, 0.12);
+  --jewel-violet: #7C3AED;
+  --jewel-violet-soft: rgba(124, 58, 237, 0.12);
+  --jewel-emerald: #059669;
+  --jewel-emerald-soft: rgba(5, 150, 105, 0.12);
+  --jewel-teal: #0D9488;
+  --jewel-teal-soft: rgba(13, 148, 136, 0.12);
+  --jewel-amber: #B45309;
+  --jewel-amber-soft: rgba(180, 83, 9, 0.12);
+  --jewel-rose: #BE123C;
+  --jewel-rose-soft: rgba(190, 18, 60, 0.12);
+  --jewel-blue: #1D4ED8;
+  --jewel-blue-soft: rgba(29, 78, 216, 0.12);
   --radius-card: 16px;
   --radius-btn: 14px;
   --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
@@ -63,14 +99,33 @@
   --border: #334155;
   --text: #F1F5F9;
   --text-dim: #94A3B8;
-  --accent: #475569;         /* Primary (dark) */
-  --accent-hover: #64748B;   /* Hover (dark, lebih terang) */
-  --accent-pressed: #334155; /* Pressed (dark, lebih gelap) */
+  --accent: #818CF8;         /* Primary (dark, indigo-400 -- dinaikkan terangnya utk kontras) */
+  --accent-hover: #A5B4FC;   /* Hover (dark, lebih terang) */
+  --accent-pressed: #6366F1; /* Pressed (dark, lebih gelap dari accent) */
+  --text-number: #475569;    /* .big-number (dark) -- nilai LAMA --accent dark, lihat catatan di :root */
   --accent-secondary: #22D3EE; /* Secondary (dark, dinaikkan terangnya untuk kontras) */
   --danger: #F87171;
   --success: #4ADE80;
   --warning: #FB923C;
   --info: #60A5FA;
+  /* PERMINTAAN Owner (ikon berwarna): varian dark -- stroke dinaikkan
+     terangnya (sama alasannya seperti --accent di atas) + background chip
+     dinaikkan sedikit opacity-nya (0.12 -> 0.16) supaya tetap kelihatan
+     jelas di atas --bg-card gelap (#1E293B), bukan cuma dari kontras teks. */
+  --jewel-indigo: #A5B4FC;
+  --jewel-indigo-soft: rgba(165, 180, 252, 0.16);
+  --jewel-violet: #C4B5FD;
+  --jewel-violet-soft: rgba(196, 181, 253, 0.16);
+  --jewel-emerald: #6EE7B7;
+  --jewel-emerald-soft: rgba(110, 231, 183, 0.16);
+  --jewel-teal: #5EEAD4;
+  --jewel-teal-soft: rgba(94, 234, 212, 0.16);
+  --jewel-amber: #FCD34D;
+  --jewel-amber-soft: rgba(252, 211, 77, 0.16);
+  --jewel-rose: #FDA4AF;
+  --jewel-rose-soft: rgba(253, 164, 175, 0.16);
+  --jewel-blue: #93C5FD;
+  --jewel-blue-soft: rgba(147, 197, 253, 0.16);
   --shadow-card: 0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.24);
   --shadow-elevated: 0 8px 24px rgba(0,0,0,0.40);
 }
@@ -226,7 +281,14 @@ a:hover { color: var(--accent-secondary); }
 .sidebar nav a {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* PERMINTAAN Owner (ikon menu): BUKAN lagi space-between -- dengan ikon
+     sekarang jadi item flex ke-3 (icon, label, badge/lock opsional),
+     space-between akan menjauhkan ikon dari labelnya sendiri alih-alih
+     cuma mendorong badge/lock ke kanan. flex-start + margin-left:auto
+     KHUSUS .nav-badge/.nav-lock-icon (lihat di bawah) mencapai hasil yang
+     SAMA PERSIS seperti sebelumnya (label rapat ke ikon di kiri, badge/
+     gembok mentok kanan) tanpa bergantung jumlah item di antaranya. */
+  justify-content: flex-start;
   gap: 8px;
   margin: 2px 10px;
   padding: 11px 14px;
@@ -240,9 +302,22 @@ a:hover { color: var(--accent-secondary); }
 
 .sidebar nav a:hover { color: var(--text); background: var(--bg); }
 
+/* PERMINTAAN Owner ("warna setelah diklik kurang disukai" -- awalnya latar
+   solid indigo pekat + teks putih): diganti tint lembut -- latar warna
+   --accent SANGAT tipis (color-mix, bukan solid fill), teks/ikon tetap
+   warna --accent itu sendiri. color-mix() dipakai (bukan token --jewel-
+   indigo-soft yang statis) supaya warna tenant kustom (brand.js override
+   --accent lewat Setting > Branding) ikut otomatis -- tint SELALU senada
+   dengan --accent yang berlaku saat itu, tidak pernah bentrok. */
 .sidebar nav a.active {
-  color: #fff;
-  background: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+:root[data-theme="dark"] .sidebar nav a.active {
+  /* Dark mode: persentase dinaikkan (12% -> 20%) -- tint SAMA PERSIS di
+     light mode nyaris tidak kelihatan di atas --bg-sidebar gelap. */
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* AUDIT (enforcement paket/subscription -- REVISI feedback Owner): menu
@@ -250,7 +325,42 @@ a:hover { color: var(--accent-secondary); }
    diredupkan + ikon gembok -- lihat nav.js::_elLink()/_terkunciFitur(). */
 .sidebar nav a.nav-locked { opacity: .55; }
 .sidebar nav a.nav-locked:hover { opacity: .85; }
-.nav-lock-icon { font-size: 12px; flex-shrink: 0; }
+.nav-lock-icon { font-size: 12px; flex-shrink: 0; margin-left: auto; }
+
+/* PERMINTAAN Owner ("desain kurang ikon"): ikon SVG outline per item menu
+   (lihat icons.js/nav.js) -- tampil HANYA saat sidebar TIDAK collapsed
+   (sudah otomatis lewat aturan .sidebar.collapsed nav a span:not(...) yang
+   sudah ada, .nav-icon bukan .nav-badge/.nav-initial jadi ikut tersembunyi
+   saat collapsed, letak lingkaran inisial tetap dipakai di mode itu --
+   TIDAK diubah). Warna ikut currentColor (warna teks link saat ini),
+   otomatis berubah saat hover/active/dark mode tanpa CSS warna terpisah. */
+.nav-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex-shrink: 0;
+  border-radius: 8px;
+  transition: background-color 150ms var(--ease-press), color 150ms var(--ease-press);
+}
+.nav-icon svg { width: 16px; height: 16px; }
+
+/* PERMINTAAN Owner ("lebih berwarna tapi elegan, jewel tone"): chip warna
+   terkurasi per kategori menu -- lihat palet --jewel-* di :root dan
+   pemetaan warna di nav.js::MENU/dashboard_owner.js/dashboard_barber.js.
+   .icon-chip SENDIRI cuma bentuk (radius+flex), modifier --warna di bawah
+   yang mengisi background+currentColor -- dipisah supaya bisa dipakai
+   ulang di .nav-icon MAUPUN .card-collapse-icon tanpa duplikasi. */
+.icon-chip--indigo { background: var(--jewel-indigo-soft); color: var(--jewel-indigo); }
+.icon-chip--violet { background: var(--jewel-violet-soft); color: var(--jewel-violet); }
+.icon-chip--emerald { background: var(--jewel-emerald-soft); color: var(--jewel-emerald); }
+.icon-chip--teal { background: var(--jewel-teal-soft); color: var(--jewel-teal); }
+.icon-chip--amber { background: var(--jewel-amber-soft); color: var(--jewel-amber); }
+.icon-chip--rose { background: var(--jewel-rose-soft); color: var(--jewel-rose); }
+.icon-chip--blue { background: var(--jewel-blue-soft); color: var(--jewel-blue); }
+.icon-chip--neutral { background: rgba(100,116,139,0.10); color: var(--text-dim); }
+
+/* REVISI (latar menu aktif sekarang tint lembut, bukan solid pekat --
+   lihat .sidebar nav a.active di atas): chip ikon TIDAK perlu lagi
+   dipaksa putih, warna kategori aslinya (.icon-chip--xxx) tetap kontras
+   baik di atas tint tipis itu, jadi override putih yang dulu DIHAPUS. */
 
 /* REVISI: badge jumlah booking belum dikonfirmasi (menu Booking, khusus
    admin) -- lihat nav.js/booking_notif.js. */
@@ -268,6 +378,7 @@ a:hover { color: var(--accent-secondary); }
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* Modul Karyawan (Fase 1): grup/submenu sidebar -- mekanisme BARU (sebelumnya
@@ -277,7 +388,9 @@ a:hover { color: var(--accent-secondary); }
 .nav-group-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* PERMINTAAN Owner (ikon menu): sama seperti .sidebar nav a di atas --
+     flex-start + margin-left:auto khusus .nav-group-chevron. */
+  justify-content: flex-start;
   gap: 8px;
   width: calc(100% - 20px);
   margin: 2px 10px;
@@ -297,6 +410,8 @@ a:hover { color: var(--accent-secondary); }
 .nav-group-chevron {
   transition: transform 150ms var(--ease-press);
   color: var(--text-dim);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .nav-group.open .nav-group-chevron { transform: rotate(90deg); }
 .nav-submenu {
@@ -347,7 +462,22 @@ a:hover { color: var(--accent-secondary); }
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  /* PERMINTAAN Owner ("judul menu seharusnya ada ikonnya juga" -- setelah
+     menu dipilih di sidebar): judul halaman (lihat MugenUI.pageTitle() di
+     ui.js) sekarang bisa diawali ikon chip yang SAMA PERSIS dengan ikon
+     menu sidebar-nya (lihat nav.js::MENU) -- flex selalu diaktifkan di
+     sini (bukan cuma saat ada ikon) supaya tidak perlu selector terpisah,
+     h1 TANPA ikon (satu text node) tidak terpengaruh sama sekali. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
+.page-title-icon {
+  width: 34px; height: 34px; flex-shrink: 0;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.page-title-icon svg { width: 19px; height: 19px; }
 
 .hamburger {
   display: none;
@@ -403,7 +533,7 @@ a:hover { color: var(--accent-secondary); }
 }
 
 .card h2 { margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
-.card .big-number { font-size: 28px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em; }
+.card .big-number { font-size: 28px; font-weight: 700; color: var(--text-number); letter-spacing: -0.01em; }
 
 /* KOREKSI Owner (Kuota Libur/Cuti&Izin habis): kartu/baris tabel berubah
    merah kalau kuota sudah habis -- dipakai pages/absensi.js (kartu Sisa
@@ -431,9 +561,26 @@ tr.row-clickable { cursor: pointer; }
 /* Dashboard: kartu collapse/expand -- lihat pages/dashboard_owner.js */
 .card-collapse-title {
   margin-top: 0; font-size: 14px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em;
-  display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;
+  /* PERMINTAAN Owner (ikon kartu statistik): flex-start + margin-left:auto
+     di panah (bukan space-between) -- sama alasannya seperti .sidebar nav
+     a di atas, ikon sekarang jadi item flex tambahan di depan label. */
+  display: flex; justify-content: flex-start; align-items: center; gap: 8px; cursor: pointer; user-select: none;
 }
-.card-collapse-arrow { color: var(--text-dim); font-size: 12px; margin-left: 8px; }
+.card-collapse-icon {
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  /* PERBAIKAN: warna TIDAK didefinisikan di sini (dulu var(--text-dim)) --
+     setiap pemakai .card-collapse-icon SELALU menyertakan modifier
+     .icon-chip--xxx (lihat dashboard_owner.js/dashboard_barber.js/
+     booking.js) yang mengisi warnanya; kalau color diisi di sini juga,
+     spesifisitas SAMA PERSIS dengan .icon-chip--xxx (sama-sama satu
+     class), jadi urutan di file ini yang menentukan menang -- karena
+     aturan ini letaknya SETELAH .icon-chip--xxx, warnanya akan SELALU
+     menimpa balik ke abu-abu, bikin semua ikon kartu kelihatan pudar. */
+}
+.card-collapse-icon svg { width: 17px; height: 17px; }
+.card-collapse-arrow { color: var(--text-dim); font-size: 12px; margin-left: auto; }
 
 .grid-cards {
   display: grid;
@@ -1844,6 +1991,14 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    errorState(), ui.js) menggantikan string ad hoc per halaman. ---- */
 .mugen-state { padding: 20px 4px; color: var(--text-dim); animation: mugen-refresh-fade-in var(--dur-base) var(--ease-emphasized) both; }
 .mugen-state.mugen-state-error { color: var(--danger); }
+/* PERMINTAAN Owner: ikon kotak kosong di atas teks emptyState() (lihat
+   ui.js) -- terpusat (satu titik ubah di sini + ui.js), otomatis berlaku
+   di SEMUA pemakai emptyState() di seluruh aplikasi, tidak perlu disentuh
+   per halaman. */
+.mugen-state-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 28px 4px; }
+.mugen-state-icon { width: 40px; height: 40px; color: var(--border); }
+:root[data-theme="dark"] .mugen-state-icon { color: var(--text-dim); opacity: 0.5; }
+.mugen-state-icon svg { width: 100%; height: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .mugen-state { animation: none !important; }
 }
@@ -1899,7 +2054,7 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .sidebar.collapsed .nav-group-chevron,
   .sidebar.collapsed .user-box > div:not(.theme-switch-row),
   .sidebar.collapsed .btn-logout span { display: revert; }
-  .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: space-between; }
+  .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: flex-start; }
   .sidebar.collapsed .nav-initial { display: none; }
   .sidebar.collapsed .btn-logout { font-size: 14px; }
   .sidebar.collapsed .btn-logout::after { content: none; }

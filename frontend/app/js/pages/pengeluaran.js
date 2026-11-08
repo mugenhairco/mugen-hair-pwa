@@ -36,7 +36,7 @@ const PagePengeluaran = (() => {
     let kategoriOptions = [];
 
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Pengeluaran"));
+    root.appendChild(MugenUI.pageTitle("Pengeluaran", MugenIcons.keuangan, "emerald"));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa form/data apa pun.
