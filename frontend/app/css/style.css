@@ -37,12 +37,10 @@
   --success: #16A34A;
   --warning: #EA580C;
   --info: #2563EB;
-  /* REVISI Owner ("warna ikon buat satu warna saja, jgn warna-warni", lalu
-     "warna kartu semua sama putih tidak warna-warni"): palet jewel-tone
-     7-lalu-6-warna yang SEMPAT dipakai di sini (ikon per kategori + latar
-     kartu per kategori) DIHAPUS TOTAL -- ikon & kartu sekarang netral,
-     cuma var(--accent) yang dipakai (chip ikon ".icon-chip--accent", latar
-     kartu "andalan" ".card--hero", lihat keduanya di bawah). */
+  /* Ikon menu/judul halaman non-kartu statistik tetap SATU warna var(--accent)
+     (chip ".icon-chip--accent") -- kartu statistik dashboard kembali
+     berwarna per kategori (".card--blue/green/orange/purple", lihat
+     bagian "Kartu statistik berwarna" di bawah). */
   --radius-card: 16px;
   --radius-btn: 14px;
   --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
@@ -283,22 +281,26 @@ a:hover { color: var(--accent-secondary); }
 
 .sidebar nav a:hover { color: var(--text); background: var(--bg); }
 
-/* PERMINTAAN Owner ("warna setelah diklik kurang disukai" -- awalnya latar
-   solid indigo pekat + teks putih): diganti tint lembut -- latar warna
-   --accent SANGAT tipis (color-mix, bukan solid fill), teks/ikon tetap
-   warna --accent itu sendiri. color-mix() dipakai (bukan token --jewel-
-   indigo-soft yang statis) supaya warna tenant kustom (brand.js override
-   --accent lewat Setting > Branding) ikut otomatis -- tint SELALU senada
-   dengan --accent yang berlaku saat itu, tidak pernah bentrok. */
-.sidebar nav a.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  font-weight: 600;
+/* PERMINTAAN Owner: sidebar navy gelap PERMANEN (lepas dari tema Terang/
+   Gelap aplikasi) -- warna literal di scope .sidebar, BUKAN var(--text)/
+   var(--bg)/var(--bg-sidebar) yang ikut tema, supaya kontras tetap benar
+   di kedua tema sekaligus (sidebar tidak lagi ikut toggle Dark Mode).
+   Menu terpilih: biru muted #3E5C87 (SENGAJA bukan solid --accent cerah --
+   permintaan "warna jangan terlalu terang"), BUKAN lagi tint tipis
+   var(--accent) seperti sebelumnya. */
+.sidebar, .hamburger { background: #0F1B33; }
+.sidebar .brand { color: #fff; border-bottom-color: rgba(255,255,255,0.14); }
+.sidebar nav a, .nav-group-toggle, .nav-group-chevron, .sidebar-collapse-btn, .sidebar .user-box {
+  color: #94A3B8;
 }
-:root[data-theme="dark"] .sidebar nav a.active {
-  /* Dark mode: persentase dinaikkan (12% -> 20%) -- tint SAMA PERSIS di
-     light mode nyaris tidak kelihatan di atas --bg-sidebar gelap. */
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+.sidebar nav a:hover, .nav-group-toggle:hover, .sidebar-collapse-btn:hover {
+  background: rgba(255,255,255,0.08); color: #fff;
+}
+.sidebar .nav-icon { background: none; color: inherit; }
+.sidebar nav a.active {
+  color: #fff;
+  background: #3E5C87;
+  font-weight: 600;
 }
 
 /* AUDIT (enforcement paket/subscription -- REVISI feedback Owner): menu
@@ -323,49 +325,35 @@ a:hover { color: var(--accent-secondary); }
 }
 .nav-icon svg { width: 16px; height: 16px; }
 
-/* REVISI Owner ("warna ikon buat satu warna saja, jgn warna-warni", lalu
-   "warna kartu semua sama putih tidak warna-warni" -- referensi dashboard
-   "Donezo"): SEBELUMNYA ikon MAUPUN latar kartu dipetakan ke 6 warna
-   jewel-tone berbeda per kategori -- SEKARANG seluruhnya netral. Ikon
-   (nav, kartu statistik, judul halaman, metode pembayaran) SATU warna
-   saja: var(--accent) (otomatis ikut warna branding kustom tenant juga,
-   lihat brand.js) lewat ".icon-chip--accent" di bawah (".icon-chip"
-   sendiri cuma bentuk, radius+flex). Kartu statistik KEMBALI netral
-   (putih/gelap polos) KECUALI SATU kartu "andalan" per dashboard (class
-   "card--hero", lihat dashboard_owner.js/dashboard_barber.js::card())
-   yang latarnya --accent SOLID + teks putih -- meniru kartu "Total
-   Projects" di referensi yang menonjol sendirian di antara kartu lain
-   yang tetap putih bersih. */
+/* PERMINTAAN Owner (referensi dashboard "navy sidebar + kartu pastel"):
+   kartu statistik kembali berwarna per kategori -- 4 warna pastel SOLID
+   (biru/hijau/oranye/ungu) dipakai bergilir di seluruh kartu dashboard
+   (lihat dashboard_owner.js/dashboard_barber.js::card()), menggantikan
+   skema netral+1-kartu-hero sebelumnya. Dark mode: tint translucent dari
+   warna yang sama (bukan pastel terang polos) supaya tetap nyaman di
+   latar gelap, teks kartu TETAP ikut var(--text)/var(--text-number) biasa
+   (kontras otomatis benar di kedua tema, tidak perlu override putih
+   seperti skema hero lama). */
 .icon-chip--accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 :root[data-theme="dark"] .icon-chip--accent { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
-.card.card--hero { background: var(--accent); border-color: var(--accent); }
-/* BUGFIX kontras (dark mode): --accent di tema gelap SENGAJA diterangkan
-   (green-400, lihat :root[data-theme="dark"]) supaya kebaca di sidebar/
-   tombol kecil -- tapi dipakai SOLID sebagai latar kartu BESAR + teks
-   putih di atasnya, hasilnya kontras rendah (hijau terang + putih nyaris
-   tidak kebaca). Kartu hero SECARA KHUSUS pakai hijau gelap tetap (SAMA
-   persis nilai light mode) di kedua tema -- --accent lain (sidebar,
-   tombol, dll) TIDAK terpengaruh, cuma kartu hero ini. */
-:root[data-theme="dark"] .card.card--hero { background: #166534; border-color: #166534; }
-/* `h2` (bukan `.card-collapse-title`) SENGAJA dipakai di sini -- kartu
-   Dashboard Barber (dashboard_barber.js) pakai <h2> polos tanpa class itu,
-   jadi selector ini menjangkau KEDUA struktur kartu Owner MAUPUN Barber
-   sekaligus. PERMINTAAN Owner ("warna fontnya kenapa tidak putih"): label
-   judul SEBELUMNYA rgba(255,255,255,0.85) (putih 85%) -- dinaikkan jadi
-   putih PENUH (#fff) supaya benar-benar putih seperti diminta, bukan
-   putih pudar. */
-/* BUGFIX spesifisitas (pola SAMA PERSIS seperti ".card.card--hero" latar
-   di atas): ".card--hero h2"/".card--hero .big-number" versi 1-class
-   SEMPAT ditulis di sini, tapi spesifisitasnya SAMA PERSIS dengan ".card
-   h2"/".card .big-number" (base, lihat "Komponen umum" di bawah) yang
-   letaknya BELAKANGAN di file -- base SELALU menang, teks kartu hero
-   balik abu-abu/text-number, BUKAN putih (dicek via getComputedStyle,
-   terbukti rgb(100,116,139) alih-alih putih). ".card.card--hero" (2
-   class) dipakai di sini supaya PASTI menang lepas dari urutan. */
-.card.card--hero h2 { color: #fff; }
-.card--hero .card-collapse-icon { background: rgba(255,255,255,0.2); color: #fff; }
-.card.card--hero .big-number { color: #fff; }
+.card--blue   { background: #DBEAFE; border-color: #BFDBFE; }
+.card--green  { background: #D1FAE5; border-color: #A7F3D0; }
+.card--orange { background: #FFE4CC; border-color: #FED7AA; }
+.card--purple { background: #EDE4FF; border-color: #DDD0FE; }
+.icon-chip--blue2   { background: #BFDBFE; color: #1D4ED8; }
+.icon-chip--green2  { background: #A7F3D0; color: #047857; }
+.icon-chip--orange2 { background: #FED7AA; color: #C2410C; }
+.icon-chip--purple2 { background: #DDD0FE; color: #6D28D9; }
+
+:root[data-theme="dark"] .card--blue   { background: rgba(37,99,235,0.16); border-color: rgba(37,99,235,0.35); }
+:root[data-theme="dark"] .card--green  { background: rgba(5,150,105,0.16); border-color: rgba(5,150,105,0.35); }
+:root[data-theme="dark"] .card--orange { background: rgba(194,65,12,0.16); border-color: rgba(194,65,12,0.35); }
+:root[data-theme="dark"] .card--purple { background: rgba(109,40,217,0.16); border-color: rgba(109,40,217,0.35); }
+:root[data-theme="dark"] .icon-chip--blue2   { background: rgba(37,99,235,0.28); color: #93C5FD; }
+:root[data-theme="dark"] .icon-chip--green2  { background: rgba(5,150,105,0.28); color: #6EE7B7; }
+:root[data-theme="dark"] .icon-chip--orange2 { background: rgba(194,65,12,0.28); color: #FDBA74; }
+:root[data-theme="dark"] .icon-chip--purple2 { background: rgba(109,40,217,0.28); color: #D8B4FE; }
 
 /* REVISI (latar menu aktif sekarang tint lembut, bukan solid pekat --
    lihat .sidebar nav a.active di atas): chip ikon TIDAK perlu lagi
@@ -416,7 +404,7 @@ a:hover { color: var(--accent-secondary); }
   border-radius: 10px;
   transition: background-color 150ms var(--ease-press), color 150ms var(--ease-press);
 }
-.nav-group-toggle:hover { color: var(--text); background: var(--bg); }
+.nav-group-toggle:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .nav-group-chevron {
   transition: transform 150ms var(--ease-press);
   color: var(--text-dim);
@@ -447,7 +435,7 @@ a:hover { color: var(--accent-secondary); }
 .sidebar .user-box {
   margin-top: auto;
   padding: 16px 20px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255,255,255,0.14);
   font-size: 13px;
   color: var(--text-dim);
 }
@@ -1084,9 +1072,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .hamburger {
     display: block;
     position: fixed; top: env(safe-area-inset-top); left: 0; z-index: 60;
-    background: var(--bg-sidebar);
-    border-bottom: 1px solid var(--border);
-    border-right: 1px solid var(--border);
+    background: #0F1B33;
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.14);
+    border-right: 1px solid rgba(255,255,255,0.14);
     border-radius: 0 0 8px 0;
   }
   .sidebar {
@@ -2044,7 +2033,7 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   border-radius: 8px; align-self: flex-end;
   transition: background-color var(--dur-fast) var(--ease-standard), transform var(--dur-base) var(--ease-standard);
 }
-.sidebar-collapse-btn:hover { background: var(--bg); }
+.sidebar-collapse-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .sidebar.collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
 /* PERMINTAAN Owner ("saat disembunyikan harusnya tampil ikon menu, bukan
    inisial huruf"): sidebar collapsed SEKARANG menampilkan ikon menu
