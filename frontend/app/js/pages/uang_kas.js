@@ -148,7 +148,7 @@ const PageUangKas = (() => {
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     formCard.appendChild(inputTanggal);
     formCard.appendChild(MugenUI.el("label", {}, "Jenis"));
-    formCard.appendChild(selJenis);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, selJenis));
     formCard.appendChild(MugenUI.el("label", {}, "Jumlah (Rp)"));
     formCard.appendChild(inputJumlah);
     formCard.appendChild(MugenUI.el("label", {}, "Keterangan"));
@@ -204,7 +204,7 @@ const PageUangKas = (() => {
     const selTahun = MugenUI.el("select");
     selTahun.appendChild(MugenUI.el("option", { value: "" }, "Semua Tahun"));
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.calendar, selBulan), MugenUI.selectIcon(MugenIcons.calendar, selTahun)]));
 
     // Perbaikan Alur Cetak PDF: Preview PDF dulu, TIDAK langsung mengunduh
     // -- lihat pdf_preview.js.

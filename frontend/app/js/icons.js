@@ -46,6 +46,14 @@ const MugenIcons = (() => {
     cash: `<svg ${S}><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 10v4M18 10v4"/></svg>`,
     gateway: `<svg ${S}><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9.5h20"/><path d="M6 14h4"/></svg>`,
     bayarNanti: `<svg ${S}><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3.3 1.8"/></svg>`,
+
+    // ---- PERMINTAAN Owner ("ikon di tiap dropdown sesuai artinya"):
+    // dipakai MugenUI.selectIcon() (ui.js) untuk ikon prefix di dalam
+    // <select> (Bulan/Tahun/filter status/jenis/metode dkk) di seluruh app.
+    calendar: `<svg ${S}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
+    filter: `<svg ${S}><path d="M4 5h16"/><path d="M7 12h10"/><path d="M10.5 19h3"/></svg>`,
+    tag: `<svg ${S}><path d="M12.4 3h6.1A1.5 1.5 0 0 1 20 4.5v6.1a1.5 1.5 0 0 1-.44 1.06l-8 8a1.5 1.5 0 0 1-2.12 0l-6-6a1.5 1.5 0 0 1 0-2.12l8-8A1.5 1.5 0 0 1 12.4 3Z"/><circle cx="16" cy="7" r="1.3"/></svg>`,
+    statusCheck: `<svg ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>`,
   };
 })();
 

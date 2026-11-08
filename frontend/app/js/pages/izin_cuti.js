@@ -129,7 +129,7 @@ const PageIzinCuti = (() => {
 
     formCard.appendChild(formTitle);
     formCard.appendChild(MugenUI.el("label", {}, "Jenis"));
-    formCard.appendChild(selJenis);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, selJenis));
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal Mulai"));
     formCard.appendChild(inputMulai);
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal Selesai"));
@@ -297,7 +297,7 @@ const PageIzinCuti = (() => {
       MugenUI.el("option", { value: "disetujui" }, "Disetujui"),
       MugenUI.el("option", { value: "ditolak" }, "Ditolak"),
     ]);
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filJenis, filStatus]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.karyawan, filBarber), MugenUI.selectIcon(MugenIcons.tag, filJenis), MugenUI.selectIcon(MugenIcons.statusCheck, filStatus)]));
     // REVISI Sistem Dinamis Cuti & Izin: sisa kuota karyawan yang dipilih
     // di filter -- HANYA muncul kalau satu karyawan spesifik dipilih (bukan
     // "Semua Karyawan", saldo per-orang tidak bermakna digabung banyak orang).

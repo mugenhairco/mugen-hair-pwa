@@ -202,6 +202,26 @@ const MugenUI = (() => {
     return node;
   }
 
+  // PERMINTAAN Owner ("semua dropdown pakai ikon sesuai artinya", lanjutan
+  // dari redesain pill tanpa panah di style.css::select): bungkus elemen
+  // <select> yang SUDAH ADA (dibuat via el("select", ...) seperti biasa,
+  // TIDAK berubah) dengan ikon prefix -- dipanggil SETIAP KALI sebuah
+  // select dibuat di seluruh halaman, menggantikan `body.appendChild(sel)`
+  // polos dengan `body.appendChild(MugenUI.selectIcon(MugenIcons.xxx, sel))`.
+  // `selectEl` TETAP elemen yang sama (referensinya tidak berubah) --
+  // kode lain yang baca .value/addEventListener ke variabel select aslinya
+  // TIDAK perlu diubah sama sekali, hanya elemen yang di-append ke DOM yang
+  // beda (wrapper ini, bukan select itu sendiri). Kalau select-nya punya
+  // inline style (mis. "max-width:220px"), style itu TETAP di selectnya
+  // sendiri -- wrapper otomatis mengikuti lebar select di dalamnya
+  // (display:inline-flex, lihat style.css) jadi tidak perlu dipindah.
+  function selectIcon(icon, selectEl) {
+    const wrap = el("div", { class: "select-icon-wrap" });
+    wrap.appendChild(el("span", { class: "select-icon", html: icon }));
+    wrap.appendChild(selectEl);
+    return wrap;
+  }
+
   // Kolom "Service" (daftar "Nama xN" dipisah ", ") -- kalau lebih dari
   // satu jenis service, tampilkan tiap jenis di baris/div terpisah (bukan
   // digabung koma dalam satu baris) supaya konsisten dengan tampilan PDF
@@ -1006,6 +1026,6 @@ const MugenUI = (() => {
     themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
-    attachNumericKeypad, dropdownSelect,
+    attachNumericKeypad, dropdownSelect, selectIcon,
   };
 })();

@@ -104,7 +104,7 @@ const PageInputData = (() => {
         manualCustomerSection.style.display = selMode.value === "manual_customer" ? "" : "none";
         nonBarberSection.style.display = selMode.value === "non_barber" ? "" : "none";
       });
-      root.appendChild(selMode);
+      root.appendChild(MugenUI.selectIcon(MugenIcons.filter, selMode));
     }
     root.appendChild(barberSection);
     root.appendChild(manualCustomerSection);
@@ -197,7 +197,7 @@ const PageInputData = (() => {
     formCard.appendChild(inputTanggal);
     if (isAdmin) {
       formCard.appendChild(MugenUI.el("label", {}, "Barber"));
-      formCard.appendChild(selBarber);
+      formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     }
     formCard.appendChild(MugenUI.el("label", {}, "Service & Jumlah"));
     for (const row of serviceRows) formCard.appendChild(row);
@@ -495,7 +495,7 @@ const PageInputData = (() => {
     liburCard.appendChild(liburTanggal);
     if (isAdmin) {
       liburCard.appendChild(MugenUI.el("label", {}, "Barber"));
-      liburCard.appendChild(liburBarberSel);
+      liburCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, liburBarberSel));
     }
     liburCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnTandaiLibur, btnBatalkanLibur]));
 
@@ -597,7 +597,7 @@ const PageInputData = (() => {
       bookingFields.appendChild(MugenUI.el("label", {}, "Jam Booking"));
       bookingFields.appendChild(inputJamBooking);
       bookingFields.appendChild(MugenUI.el("label", {}, "Barber"));
-      bookingFields.appendChild(selBarberMc);
+      bookingFields.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarberMc));
       bookingFields.appendChild(MugenUI.el("label", {}, "Service"));
       bookingFields.appendChild(mcServiceList);
       bookingFields.appendChild(MugenUI.el("label", {}, "Tips (Rp, Opsional)"));
@@ -621,7 +621,7 @@ const PageInputData = (() => {
       mcFormCard.appendChild(MugenUI.el("label", {}, "Nama Customer"));
       mcFormCard.appendChild(inputNamaCustomer);
       mcFormCard.appendChild(MugenUI.el("label", {}, "Jenis"));
-      mcFormCard.appendChild(selJenis);
+      mcFormCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, selJenis));
       mcFormCard.appendChild(mcJamJenisInfo);
       mcFormCard.appendChild(bookingFields);
       mcFormCard.appendChild(mcFormError);
@@ -919,7 +919,7 @@ const PageInputData = (() => {
 
       nbFormCard.appendChild(nbFormTitle);
       nbFormCard.appendChild(MugenUI.el("label", {}, "Nama Karyawan"));
-      nbFormCard.appendChild(selKaryawan);
+      nbFormCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selKaryawan));
       nbFormCard.appendChild(roleTerpilih);
       nbFormCard.appendChild(MugenUI.el("label", {}, "Periode: Tanggal Mulai"));
       nbFormCard.appendChild(inputTglMulai);

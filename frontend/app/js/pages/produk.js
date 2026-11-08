@@ -444,7 +444,7 @@ const PageProduk = (() => {
     selTahunFilter.value = String(today.getFullYear());
 
     riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
-      [selProdukFilter, selTipeFilter, selBulanFilter, selTahunFilter]));
+      [MugenUI.selectIcon(MugenIcons.produk, selProdukFilter), MugenUI.selectIcon(MugenIcons.filter, selTipeFilter), MugenUI.selectIcon(MugenIcons.calendar, selBulanFilter), MugenUI.selectIcon(MugenIcons.calendar, selTahunFilter)]));
 
     // Cetak PDF: filter yang dipakai SAMA PERSIS dengan yang sedang aktif
     // di layar (produk/tipe/tahun/bulan) -- lihat laporan_pdf.py

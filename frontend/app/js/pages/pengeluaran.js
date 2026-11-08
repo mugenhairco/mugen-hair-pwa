@@ -90,7 +90,7 @@ const PagePengeluaran = (() => {
     selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- pilih karyawan --"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     wrapKaryawan.appendChild(MugenUI.el("label", {}, "Karyawan (barber/kasir/ob/kru)"));
-    wrapKaryawan.appendChild(selBarber);
+    wrapKaryawan.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     const inputAktif = MugenUI.el("input", { type: "checkbox" });
     inputAktif.checked = true;
 
@@ -113,7 +113,7 @@ const PagePengeluaran = (() => {
     formCard.appendChild(MugenUI.el("label", {}, "Nominal (Rp)"));
     formCard.appendChild(inputNominal);
     formCard.appendChild(MugenUI.el("label", {}, "Sumber Dana"));
-    formCard.appendChild(selSumberDana);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.keuangan, selSumberDana));
     formCard.appendChild(wrapKaryawan);
     formCard.appendChild(MugenUI.el("label", {}, [inputAktif, " Status Aktif"]));
     formCard.appendChild(formError);
@@ -210,7 +210,7 @@ const PagePengeluaran = (() => {
     for (const k of kategoriOptions) selKategori.appendChild(MugenUI.el("option", { value: k }, k));
     const inputCari = MugenUI.el("input", { type: "text", placeholder: "Cari keterangan/kategori..." });
 
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun, selKategori, inputCari]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.calendar, selBulan), MugenUI.selectIcon(MugenIcons.calendar, selTahun), MugenUI.selectIcon(MugenIcons.tag, selKategori), inputCari]));
     // Perbaikan Alur Cetak PDF: Preview PDF dulu, TIDAK langsung mengunduh
     // -- lihat pdf_preview.js.
     const btnDownloadPdf = MugenUI.el("button", {}, "Cetak PDF");

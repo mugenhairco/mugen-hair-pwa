@@ -102,7 +102,10 @@ const PageDashboardOwner = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(tahun);
-    const pickerBulanan = MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]);
+    const pickerBulanan = MugenUI.el("div", { class: "row", style: "flex:none;" }, [
+      MugenUI.selectIcon(MugenIcons.calendar, selBulan),
+      MugenUI.selectIcon(MugenIcons.calendar, selTahun),
+    ]);
 
     const inputTanggalMulai = MugenUI.el("input", { type: "date", value: tanggalMulai, style: "max-width:150px;" });
     const inputTanggalSelesai = MugenUI.el("input", { type: "date", value: tanggalSelesai, style: "max-width:150px;" });
@@ -274,7 +277,8 @@ const PageDashboardOwner = (() => {
         for (const r of data.per_barber) {
           selBarberFilter.appendChild(MugenUI.el("option", { value: String(r.barber.id) }, r.barber.nama));
         }
-        serviceCard.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:flex-end;margin-top:8px;" }, selBarberFilter));
+        serviceCard.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:flex-end;margin-top:8px;" },
+          MugenUI.selectIcon(MugenIcons.karyawan, selBarberFilter)));
 
         const serviceBox = MugenUI.el("div", { class: "sp-wrap" });
         serviceCard.appendChild(serviceBox);
