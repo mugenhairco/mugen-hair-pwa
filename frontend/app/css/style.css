@@ -685,6 +685,21 @@ input, select, textarea {
   transition: border-color 150ms var(--ease-press), box-shadow 150ms var(--ease-press);
 }
 
+/* PERMINTAAN Owner ("semua tampilan dropdown desainnya baru", pilih "Opsi
+   A" dari contoh mockup -- pill bulat, tanpa ikon panah bawaan browser):
+   berlaku GLOBAL untuk SELURUH <select> di aplikasi (appearance:none
+   menghapus panah native semua browser), lebar & posisi TETAP mengikuti
+   aturan input/textarea di atas (width:100% default, override per halaman
+   lewat style="max-width:..." tetap berlaku seperti sebelumnya) supaya
+   tidak mengacaukan layout form vertikal yang sudah ada. */
+select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  border-radius: 999px;
+  padding: 11px 18px;
+  cursor: pointer;
+  background-image: none;
+}
+
 /* Website Content > Branding: color picker HANYA di admin (Booking Panel),
    dibuat kompak -- beda dari input teks lain yang full-width. */
 input[type="color"] { width: 64px; height: 42px; padding: 4px; cursor: pointer; }
