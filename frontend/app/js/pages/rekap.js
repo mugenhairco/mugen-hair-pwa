@@ -71,7 +71,11 @@ const PageRekap = (() => {
     if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
       return MugenFeature.upgradeBlock("Export PDF");
     }
-    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    // PERMINTAAN Owner ("tombol Cetak PDF ikutin warna yang sudah ada di
+    // pengaturan aplikasi"): class "btn-primary" -- warna aksen yang SAMA
+    // dipakai tombol utama lain di seluruh app (Simpan, dst), bukan warna
+    // biru-ungu di gambar referensi (itu cuma contoh layout, bukan warna).
+    const btn = MugenUI.el("button", { class: "btn-primary" }, "Cetak PDF");
     btn.addEventListener("click", () => {
       const { generate, filename } = computeOptions();
       MugenPdfPreview.open({ generate, filename });
@@ -387,28 +391,25 @@ const PageRekap = (() => {
             },
             kolomKet,
           ];
-          tableWrap.appendChild(MugenUI.buildTable(
-            [
-              ...(isAdmin ? kolomAdmin : kolomBarber),
-              // Kolom Hapus -- Owner selalu lihat semua, Staff dicek per
-              // jenis baris lewat bolehHapusTransaksi/bolehHapusReimburse/
-              // bolehBatalKasbon/bolehHapusNonBarber (lihat deklarasinya di
-              // atas). Lima jenis baris punya aksi berbeda: "transaksi"
-              // (hapus transaksi asli), "reimburse" (hapus klaim yang sudah
-              // disetujui, dengan peringatan lebih kuat karena ini uang yang
-              // sudah cair), "kasbon" (batalkan SATU pembayaran manual saja
-              // -- pembayaran hasil potong otomatis Slip Gaji, sumber=
-              // "potong_gaji", sengaja TIDAK bisa dihapus dari sini supaya
-              // tidak bentrok dengan status Slip Gaji terkait, harus lewat
-              // pembatalan status Slip Gaji itu sendiri), "non_barber"
-              // (hapus entri Gaji Non-Barber, Input Data Non-Barber),
-              // "libur" (hapus Keterangan Libur -- REVISI: sebelumnya
-              // SELALU dash karena baris ini tidak punya "id" sama sekali,
-              // dicek TERPISAH dari baris lain SEBELUM gerbang `r.id == null`
-              // di bawah supaya tidak ikut ke-skip; dihapus lewat kombinasi
-              // barber_id+tanggal, bukan id, lihat tombolAksi()/DELETE
-              // /api/input-data/libur).
-              ...(bolehLihatKolomAksi ? [{
+          // Kolom Hapus -- Owner selalu lihat semua, Staff dicek per
+          // jenis baris lewat bolehHapusTransaksi/bolehHapusReimburse/
+          // bolehBatalKasbon/bolehHapusNonBarber (lihat deklarasinya di
+          // atas). Lima jenis baris punya aksi berbeda: "transaksi"
+          // (hapus transaksi asli), "reimburse" (hapus klaim yang sudah
+          // disetujui, dengan peringatan lebih kuat karena ini uang yang
+          // sudah cair), "kasbon" (batalkan SATU pembayaran manual saja
+          // -- pembayaran hasil potong otomatis Slip Gaji, sumber=
+          // "potong_gaji", sengaja TIDAK bisa dihapus dari sini supaya
+          // tidak bentrok dengan status Slip Gaji terkait, harus lewat
+          // pembatalan status Slip Gaji itu sendiri), "non_barber"
+          // (hapus entri Gaji Non-Barber, Input Data Non-Barber),
+          // "libur" (hapus Keterangan Libur -- REVISI: sebelumnya
+          // SELALU dash karena baris ini tidak punya "id" sama sekali,
+          // dicek TERPISAH dari baris lain SEBELUM gerbang `r.id == null`
+          // di bawah supaya tidak ikut ke-skip; dihapus lewat kombinasi
+          // barber_id+tanggal, bukan id, lihat tombolAksi()/DELETE
+          // /api/input-data/libur).
+          const kolomAksi = bolehLihatKolomAksi ? [{
                 key: "aksi", label: "Aksi", format: (_, r) => {
                   if (r.tipe === "libur") {
                     if (!bolehHapusTransaksi) return "-";
@@ -487,10 +488,74 @@ const PageRekap = (() => {
                   }
                   return "-";
                 },
-              }] : []),
-            ],
-            rows,
-          ));
+          }] : [];
+          const columns = [...(isAdmin ? kolomAdmin : kolomBarber), ...kolomAksi];
+
+          if (!isAdmin) {
+            tableWrap.appendChild(MugenUI.buildTable(columns, rows));
+            return;
+          }
+
+          // PERMINTAAN Owner (referensi gambar "Daftar Transaksi"): tampilan
+          // LAYAR Rekap Transaksi (KHUSUS Owner/Admin -- Barber di atas TETAP
+          // tabel polos seperti sebelumnya, tidak berubah) sekarang dikelompokkan
+          // PER TANGGAL -- satu "slide" cuma baris-baris SATU tanggal, tombol
+          // Sebelumnya/Berikutnya pindah ke tanggal lain. Dropdown Bulan/
+          // Tahun/Karyawan, Periode PDF, Jenis Laporan TETAP persis seperti
+          // sebelumnya (TIDAK diubah) -- cuma cara tabelnya ditampilkan di
+          // layar yang berubah. Tanggal tanpa data sama sekali otomatis
+          // tidak pernah jadi slide (backend hanya mengirim baris yang
+          // benar-benar ada, bukan representasi 1-31 hari kalender).
+          const tanggalUnik = [];
+          const baganTanggal = new Map();
+          for (const r of rows) {
+            if (!baganTanggal.has(r.tanggal)) {
+              baganTanggal.set(r.tanggal, []);
+              tanggalUnik.push(r.tanggal);
+            }
+            baganTanggal.get(r.tanggal).push(r);
+          }
+
+          const cardHeader = MugenUI.el("div", { class: "rekap-card-header" }, [
+            MugenUI.el("h2", { style: "margin:0;" }, "Daftar Transaksi"),
+            MugenUI.el("span", { class: "badge badge-period" }, `${rows.length} Data`),
+          ]);
+          const navRow = MugenUI.el("div", { class: "rekap-slide-nav" });
+          const slideTableBox = MugenUI.el("div");
+          tableWrap.appendChild(cardHeader);
+          tableWrap.appendChild(navRow);
+          tableWrap.appendChild(slideTableBox);
+
+          let slideIndex = 0;
+
+          function renderSlide() {
+            navRow.innerHTML = "";
+            slideTableBox.innerHTML = "";
+
+            if (tanggalUnik.length === 0) {
+              slideTableBox.appendChild(MugenUI.buildTable(columns, []));
+              return;
+            }
+
+            const btnSebelumnya = MugenUI.el("button", { type: "button" }, "‹ Sebelumnya");
+            btnSebelumnya.disabled = slideIndex <= 0;
+            btnSebelumnya.addEventListener("click", () => { slideIndex -= 1; renderSlide(); });
+
+            const btnBerikutnya = MugenUI.el("button", { type: "button" }, "Berikutnya ›");
+            btnBerikutnya.disabled = slideIndex >= tanggalUnik.length - 1;
+            btnBerikutnya.addEventListener("click", () => { slideIndex += 1; renderSlide(); });
+
+            const tanggalAktif = tanggalUnik[slideIndex];
+            navRow.appendChild(btnSebelumnya);
+            navRow.appendChild(MugenUI.el("div", { class: "rekap-slide-label" }, [
+              MugenUI.el("strong", {}, MugenUI.namaTanggalIndo(tanggalAktif)),
+              MugenUI.el("span", {}, `Tanggal ${slideIndex + 1} dari ${tanggalUnik.length}`),
+            ]));
+            navRow.appendChild(btnBerikutnya);
+
+            slideTableBox.appendChild(MugenUI.buildTable(columns, baganTanggal.get(tanggalAktif)));
+          }
+          renderSlide();
       }
 
       async function load(opts = {}) {
