@@ -1052,7 +1052,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 .login-card h1 {
   text-align: center;
-  color: var(--accent);
+  color: var(--text);
   font-size: 21px;
   font-weight: 700;
   margin-bottom: 4px;
