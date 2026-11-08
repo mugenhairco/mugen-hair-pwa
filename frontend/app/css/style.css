@@ -614,15 +614,48 @@ table.data-table tr:hover td { background: var(--bg); }
 
 .table-wrap { overflow-x: auto; }
 
-/* Dashboard Owner: tabel ringkas "Service Bulan Ini/Periode Ini" (2 kolom
-   Service/Jumlah) -- dibatasi lebarnya + kolom angka rata-kanan supaya
-   tampil senada daftar ringkas, bukan tabel lebar dengan jarak kosong
-   besar di tengah (lihat catatan di dashboard_owner.js). */
-.rincian-service-wrap { max-width: 420px; }
-.rincian-service-wrap table.data-table th:last-child,
-.rincian-service-wrap table.data-table td:last-child {
-  text-align: right;
-  width: 80px;
+/* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
+   referensi kartu "Service Performance") -- badge periode di header,
+   2 kartu ringkasan (Total Service/Best Seller, reuse .card--blue/
+   .card--green yang sudah ada), daftar "Service Terpopuler" dengan
+   progress bar per item (lebar proporsional thd service terlaris,
+   warna bergilir 5 variasi), ditutup baris total. Lihat
+   dashboard_owner.js::renderRincianService(). */
+.badge-period { background: #DBEAFE; color: #1D4ED8; font-weight: 700; }
+
+.sp-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0 22px; }
+/* border-width/style terpisah (BUKAN shorthand "border: 1px solid") --
+   shorthand diam-diam reset border-color ke currentColor, menimpa
+   border-color dari .card--blue/.card--green (spesifisitas sama,
+   urutan file menang) yang justru dibutuhkan di sini. */
+.sp-stat-tile { border-radius: var(--radius-card); padding: 16px 18px; border-width: 1px; border-style: solid; }
+.sp-stat-label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
+.sp-stat-value { font-size: 26px; font-weight: 800; color: var(--text); line-height: 1.2; }
+.sp-stat-value--best { font-size: 19px; color: #166534; }
+.sp-stat-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 4px; }
+
+.sp-subtitle { font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 14px; }
+
+.sp-list { display: flex; flex-direction: column; gap: 16px; }
+.sp-row-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 14.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; gap: 10px; }
+.sp-row-count { font-weight: 700; flex-shrink: 0; }
+.sp-bar-track { height: 9px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.sp-bar-fill { height: 100%; border-radius: 999px; transition: width var(--dur-base) var(--ease-standard); }
+.sp-bar--1 { background: #2563EB; }
+.sp-bar--2 { background: #059669; }
+.sp-bar--3 { background: #F59E0B; }
+.sp-bar--4 { background: #7C3AED; }
+.sp-bar--5 { background: #DB2777; }
+
+.sp-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border);
+  font-size: 13.5px; color: var(--text-dim);
+}
+.sp-footer strong { font-size: 15px; color: var(--text); }
+
+@media (max-width: 520px) {
+  .sp-stats { grid-template-columns: 1fr; }
 }
 
 label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }

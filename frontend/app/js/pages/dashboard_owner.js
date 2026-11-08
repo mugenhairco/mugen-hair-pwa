@@ -255,52 +255,84 @@ const PageDashboardOwner = (() => {
         if (!isOwner) return;
 
         // ================= SERVICE BULAN INI / PERIODE INI =================
+        // PERMINTAAN Owner ("saya ingin dashboard data service bulan ini
+        // dibuat seperti gambar yang saya kirim" -- referensi kartu "Service
+        // Performance": badge periode, 2 kartu ringkasan Total Service/Best
+        // Seller, daftar "Service Terpopuler" dengan progress bar per item,
+        // ditutup baris total): menggantikan tabel 2-kolom polos sebelumnya.
         const serviceCard = MugenUI.el("div", { class: "card" });
         const serviceHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
         serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, mode === "periode" ? "SERVICE PERIODE INI" : "SERVICE BULAN INI"));
+        const periodeLabel = mode === "periode"
+          ? `${MugenUI.formatTanggal(tanggalMulai)} s/d ${MugenUI.formatTanggal(tanggalSelesai)}`
+          : `${MugenUI.namaBulan(bulan)} ${tahun}`;
+        serviceHeader.appendChild(MugenUI.el("span", { class: "badge badge-period" }, periodeLabel));
+        serviceCard.appendChild(serviceHeader);
+
         const selBarberFilter = MugenUI.el("select", { style: "max-width:220px;" });
         selBarberFilter.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
         for (const r of data.per_barber) {
           selBarberFilter.appendChild(MugenUI.el("option", { value: String(r.barber.id) }, r.barber.nama));
         }
-        serviceHeader.appendChild(selBarberFilter);
-        serviceCard.appendChild(serviceHeader);
+        serviceCard.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:flex-end;margin-top:8px;" }, selBarberFilter));
 
-        // PERMINTAAN Owner ("tabel ini kurang profesional"): tabel 2-kolom
-        // (Service/Jumlah) SEBELUMNYA ikut lebar penuh kartu (`.data-table`
-        // generik, width:100%) -- dengan kartu ini selebar dashboard, auto
-        // table-layout browser membagi 2 kolom nyaris 50/50, membuat angka
-        // "Jumlah" terdampar jauh dari labelnya dengan jarak kosong besar
-        // di tengah. Class "rincian-service-wrap" (lihat style.css)
-        // membatasi lebar wrapper + rata-kanan kolom angka supaya tampil
-        // ringkas senada daftar/leaderboard, bukan tabel lebar kosong.
-        const serviceTableBox = MugenUI.el("div", { class: "rincian-service-wrap" });
-        serviceCard.appendChild(serviceTableBox);
+        const serviceBox = MugenUI.el("div", { class: "sp-wrap" });
+        serviceCard.appendChild(serviceBox);
         body.appendChild(serviceCard);
 
         function renderRincianService() {
-          serviceTableBox.innerHTML = "";
-          if (!selBarberFilter.value) {
-            serviceTableBox.appendChild(MugenUI.buildTable(
-              [
-                { key: "nama_service", label: "Service" },
-                { key: "jumlah", label: "Jumlah" },
-              ],
-              data.rincian_service_semua_barber,
-              { emptyText: "Belum ada service pada periode ini." },
-            ));
-          } else {
-            const r = data.per_barber.find((x) => String(x.barber.id) === selBarberFilter.value);
-            if (!r) return;
-            serviceTableBox.appendChild(MugenUI.buildTable(
-              [
-                { key: "nama_service", label: "Service" },
-                { key: "jumlah", label: "Jumlah" },
-              ],
-              r.rincian_service,
-              { emptyText: "Belum ada service pada periode ini." },
-            ));
+          const rincian = !selBarberFilter.value
+            ? data.rincian_service_semua_barber
+            : (data.per_barber.find((x) => String(x.barber.id) === selBarberFilter.value) || {}).rincian_service;
+
+          serviceBox.innerHTML = "";
+          if (!rincian || rincian.length === 0) {
+            serviceBox.appendChild(MugenUI.emptyState("Belum ada service pada periode ini."));
+            return;
           }
+
+          const terurut = [...rincian].sort((a, b) => b.jumlah - a.jumlah);
+          const totalTransaksi = terurut.reduce((jumlah, s) => jumlah + s.jumlah, 0);
+          const terlaris = terurut[0];
+          const maxJumlah = terlaris.jumlah || 1;
+          const subPeriode = mode === "periode" ? "periode ini" : "bulan ini";
+
+          const stats = MugenUI.el("div", { class: "sp-stats" }, [
+            MugenUI.el("div", { class: "sp-stat-tile card--blue" }, [
+              MugenUI.el("div", { class: "sp-stat-label" }, "Total Service"),
+              MugenUI.el("div", { class: "sp-stat-value" }, String(totalTransaksi)),
+              MugenUI.el("div", { class: "sp-stat-sub" }, `Transaksi ${subPeriode}`),
+            ]),
+            MugenUI.el("div", { class: "sp-stat-tile card--green" }, [
+              MugenUI.el("div", { class: "sp-stat-label" }, "Best Seller"),
+              MugenUI.el("div", { class: "sp-stat-value sp-stat-value--best" }, terlaris.nama_service),
+              MugenUI.el("div", { class: "sp-stat-sub" }, `${terlaris.jumlah} transaksi`),
+            ]),
+          ]);
+          serviceBox.appendChild(stats);
+
+          serviceBox.appendChild(MugenUI.el("h3", { class: "sp-subtitle" }, "Service Terpopuler"));
+
+          const list = MugenUI.el("div", { class: "sp-list" });
+          terurut.forEach((s, i) => {
+            const warnaBar = (i % 5) + 1;
+            const persen = Math.max((s.jumlah / maxJumlah) * 100, 3);
+            list.appendChild(MugenUI.el("div", { class: "sp-row" }, [
+              MugenUI.el("div", { class: "sp-row-label" }, [
+                MugenUI.el("span", {}, `${i + 1}. ${s.nama_service}`),
+                MugenUI.el("span", { class: "sp-row-count" }, `${s.jumlah}x`),
+              ]),
+              MugenUI.el("div", { class: "sp-bar-track" }, [
+                MugenUI.el("div", { class: "sp-bar-fill sp-bar--" + warnaBar, style: `width:${persen}%;` }),
+              ]),
+            ]));
+          });
+          serviceBox.appendChild(list);
+
+          serviceBox.appendChild(MugenUI.el("div", { class: "sp-footer" }, [
+            MugenUI.el("span", {}, "Total seluruh service"),
+            MugenUI.el("strong", {}, `${totalTransaksi} transaksi`),
+          ]));
         }
         selBarberFilter.addEventListener("change", renderRincianService);
         renderRincianService();
