@@ -100,6 +100,25 @@
 
 * { box-sizing: border-box; }
 
+/* PERMINTAAN Owner ("hilangkan semua gambar/desain scroll bar baik
+   horizontal maupun vertikal, di laptop ataupun hp tablet"): scrollbar
+   bawaan browser/OS disembunyikan di SELURUH elemen (sidebar, konten
+   utama, tabel dengan overflow horizontal, modal, dropdown, dst) --
+   konten tetap bisa discroll seperti biasa (mouse wheel/drag/touch/
+   keyboard), cuma TRACK/THUMB visualnya yang hilang. Tiga baris dipakai
+   sekaligus supaya konsisten di semua browser: scrollbar-width (Firefox),
+   -ms-overflow-style (Edge/IE lama), ::-webkit-scrollbar (Chrome/Safari/
+   Edge Chromium -- browser utama HP/tablet Android & iOS). */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -1154,6 +1173,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    memakai stylesheet yang sama -- redesign ini scoped 100% ke Web Booking.
    ========================================================================= */
 .book-public {
+  /* PERMINTAAN Owner ("untuk web booking kembalikan seperti awal warnanya,
+     sebelum ada perubahan warna apapun"): --accent/--accent-hover/
+     --accent-pressed/--accent-secondary APLIKASI INTERNAL sudah beberapa
+     kali diganti sesi ini (slate -> indigo -> hijau, lihat riwayat
+     komentar di :root) -- Web Booking SENGAJA dikecualikan, dikembalikan
+     PERSIS ke nilai ASLI sebelum revisi warna apa pun dimulai. Override
+     di sini (bukan ganti :root lagi) supaya aplikasi internal TETAP pakai
+     warna terbaru, HANYA halaman ini yang beku ke warna lama -- otomatis
+     berlaku untuk SEMUA turunannya (--book-grad-primary dkk di bawah,
+     serta --accent dipakai lusinan tempat lain di bawah) tanpa sentuh
+     rule lain satu per satu. Web Booking SELALU dipaksa tema Terang
+     (MugenTheme.forceLight(), lihat router.js) jadi cukup satu set nilai
+     di sini, tidak perlu varian dark mode. */
+  --accent: #334155;
+  --accent-hover: #1E293B;
+  --accent-pressed: #0F172A;
+  --accent-secondary: #0891B2;
   --book-radius-lg: 22px;
   --book-radius-md: 16px;
   --book-radius-sm: 12px;
@@ -1999,11 +2035,12 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .mugen-state { animation: none !important; }
 }
 
-/* ---- Sidebar collapse (desktop) -- BARU TOTAL, sebelumnya cuma hamburger
-   mobile (buka/tutup, TIDAK disentuh). Persist via localStorage (nav.js).
-   Tidak ada ikon per menu di codebase ini -- label disingkat jadi 2 huruf
-   inisial dalam lingkaran kecil saat collapsed, BUKAN ikon custom baru,
-   supaya tidak menambah aset gambar/SVG di luar cakupan animasi. ---- */
+/* ---- Sidebar collapse (desktop) -- Persist via localStorage (nav.js).
+   REVISI Owner ("saat disembunyikan harusnya tampil ikon menu, bukan
+   inisial huruf"): collapsed menampilkan ikon menu (.nav-icon) -- dulu
+   (sebelum ada ikon per menu) label disingkat jadi 2 huruf inisial dalam
+   lingkaran kecil (.nav-initial), sekarang elemen itu SELALU disembunyikan
+   (lihat aturan ".nav-initial { display: none; }" di bawah). ---- */
 .sidebar { transition: width var(--dur-slow) var(--ease-standard); }
 .sidebar.collapsed { width: 72px; }
 .sidebar-collapse-btn {
@@ -2015,9 +2052,16 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 }
 .sidebar-collapse-btn:hover { background: var(--bg); }
 .sidebar.collapsed .sidebar-collapse-btn { transform: rotate(180deg); }
+/* PERMINTAAN Owner ("saat disembunyikan harusnya tampil ikon menu, bukan
+   inisial huruf"): sidebar collapsed SEKARANG menampilkan ikon menu
+   (.nav-icon, sudah ada sejak fitur ikon ditambahkan) -- BUKAN lagi
+   lingkaran inisial 2-huruf (.nav-initial, dipakai SEBELUM aplikasi punya
+   ikon). ".nav-initial" dibiarkan tetap ada di nav.js (dihapus dari DOM
+   berisiko lebih besar daripada perlu) tapi SELALU disembunyikan lewat
+   CSS di bawah, baik collapsed maupun tidak. */
 .sidebar.collapsed .brand-name,
-.sidebar.collapsed nav a span:not(.nav-badge):not(.nav-initial),
-.sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-initial),
+.sidebar.collapsed nav a span:not(.nav-badge):not(.nav-icon),
+.sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-icon),
 .sidebar.collapsed .nav-group-chevron,
 .sidebar.collapsed .nav-submenu,
 .sidebar.collapsed .user-box > div:not(.theme-switch-row),
@@ -2027,12 +2071,7 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle {
   justify-content: center; margin: 2px 10px; position: relative;
 }
-.sidebar.collapsed .nav-initial {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 50%; background: var(--bg);
-  font-size: 12px; font-weight: 700; flex-shrink: 0;
-}
-.sidebar:not(.collapsed) .nav-initial { display: none; }
+.nav-initial { display: none; }
 .sidebar.collapsed .btn-logout { font-size: 0; }
 .sidebar.collapsed .btn-logout::after { content: "⏻"; font-size: 16px; }
 @media (prefers-reduced-motion: reduce) {
@@ -2045,13 +2084,12 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .sidebar-collapse-btn { display: none; }
   .sidebar.collapsed { width: 220px; }
   .sidebar.collapsed .brand-name,
-  .sidebar.collapsed nav a span:not(.nav-badge):not(.nav-initial),
-  .sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-initial),
+  .sidebar.collapsed nav a span:not(.nav-badge):not(.nav-icon),
+  .sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-icon),
   .sidebar.collapsed .nav-group-chevron,
   .sidebar.collapsed .user-box > div:not(.theme-switch-row),
   .sidebar.collapsed .btn-logout span { display: revert; }
   .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: flex-start; }
-  .sidebar.collapsed .nav-initial { display: none; }
   .sidebar.collapsed .btn-logout { font-size: 14px; }
   .sidebar.collapsed .btn-logout::after { content: none; }
 }
