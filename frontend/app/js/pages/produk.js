@@ -78,7 +78,7 @@ const PageProduk = (() => {
   async function render(root) {
     const today = new Date();
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Produk", MugenIcons.produk, "violet"));
+    root.appendChild(MugenUI.pageTitle("Produk", MugenIcons.produk));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa form/data apa pun.

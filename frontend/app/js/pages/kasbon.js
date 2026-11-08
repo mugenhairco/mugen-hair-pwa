@@ -496,7 +496,7 @@ const PageKasbon = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Kasbon Karyawan", MugenIcons.karyawan, "teal"));
+    root.appendChild(MugenUI.pageTitle("Kasbon Karyawan", MugenIcons.karyawan));
 
     if (user.role === "barber") {
       await renderBarberView(root);

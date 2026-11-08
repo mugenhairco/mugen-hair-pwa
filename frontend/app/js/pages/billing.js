@@ -409,7 +409,7 @@ const PageBilling = (() => {
   // jalan seperti biasa.
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Billing & Pembayaran", MugenIcons.billing, "rose"));
+    root.appendChild(MugenUI.pageTitle("Billing & Pembayaran", MugenIcons.billing));
 
     // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat data billing…".
     const loadingCard = MugenUI.skeleton("card", { lines: 3 });

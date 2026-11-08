@@ -1416,7 +1416,7 @@ const PageAbsensi = (() => {
       // tampilan role lain, renderAdminView(), sama sekali tidak disentuh).
       await renderCutiMarquee(root);
     }
-    root.appendChild(MugenUI.pageTitle("Absensi", MugenIcons.absensi, "amber"));
+    root.appendChild(MugenUI.pageTitle("Absensi", MugenIcons.absensi));
 
     // REVISI Work #2 (Superadmin Package Permission Tree): kode fitur
     // "absensi" tersendiri DIHAPUS -- gate paket ditegakkan backend

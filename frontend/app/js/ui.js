@@ -440,15 +440,18 @@ const MugenUI = (() => {
   // PERMINTAAN Owner ("judul menu seharusnya ada ikonnya juga" -- setelah
   // menu dipilih di sidebar): satu pola terpusat untuk <h1> judul halaman
   // dengan ikon chip di depan, menggantikan `MugenUI.el("h1", {}, "Label")`
-  // polos yang dipakai tiap halaman sebelumnya. `icon`/`warna` SENGAJA
-  // disamakan persis dengan entri menu terkait di nav.js::MENU (child
-  // modul Karyawan/Keuangan pakai ikon+warna GRUP-nya, bukan ikon sendiri
-  // -- sama seperti menu sidebar-nya sendiri TIDAK punya ikon per-child).
-  // `icon` opsional -- dipanggil tanpa icon (mis. halaman yang bukan menu
+  // polos yang dipakai tiap halaman sebelumnya. `icon` SENGAJA disamakan
+  // persis dengan entri menu terkait di nav.js::MENU (child modul
+  // Karyawan/Keuangan pakai ikon GRUP-nya, bukan ikon sendiri -- sama
+  // seperti menu sidebar-nya sendiri TIDAK punya ikon per-child). `icon`
+  // opsional -- dipanggil tanpa icon (mis. halaman yang bukan menu
   // sidebar) hasilnya identik h1 polos seperti sebelumnya.
-  function pageTitle(text, icon, warna) {
+  // REVISI ("warna ikon buat satu warna saja, jgn warna-warni"): parameter
+  // `warna` DIHAPUS -- chip SELALU "icon-chip--accent" (lihat style.css),
+  // tidak lagi bisa dipilih per halaman.
+  function pageTitle(text, icon) {
     const children = [];
-    if (icon) children.push(el("span", { class: "page-title-icon icon-chip--" + (warna || "indigo"), html: icon }));
+    if (icon) children.push(el("span", { class: "page-title-icon icon-chip--accent", html: icon }));
     children.push(el("span", {}, text));
     return el("h1", {}, children);
   }
