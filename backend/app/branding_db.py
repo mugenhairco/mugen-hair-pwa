@@ -10,9 +10,9 @@ modul:
 
 Field BENAR-BENAR BARU dari Phase 2.2 dimiliki LANGSUNG oleh modul ini:
 - favicon (slot file_asset, pola identik logo)
-- primary_color, secondary_color, website_url (baris `settings` baru,
-  TIDAK butuh ALTER TABLE apa pun -- `settings` sudah generik key-value
-  sejak awal, lihat database.py::_kunci_tenant()).
+- website_url (baris `settings` baru, TIDAK butuh ALTER TABLE apa pun --
+  `settings` sudah generik key-value sejak awal, lihat
+  database.py::_kunci_tenant()).
 
 Endpoint publik GET /api/tenant/branding (routers/branding.py) memakai
 get_branding() di sini sebagai satu-satunya sumber; endpoint tulis Setting >
@@ -41,21 +41,7 @@ FAVICON_EXT_KE_CONTENT_TYPE = {
 
 # Field milik LANGSUNG modul ini (bukan delegasi) -- baris settings baru,
 # generik seperti IDENTITAS_KEYS/WEBSITE_CONTENT_KEYS.
-BRANDING_KEYS = ["primary_color", "secondary_color", "website_url"]
-
-_HEX_WARNA = frozenset("0123456789abcdefABCDEF")
-
-
-def _validasi_warna_hex(nilai: str, label: str) -> str:
-    """Format `#RRGGBB` saja (dipakai langsung sebagai nilai CSS custom
-    property di frontend, lihat brand.js) -- validasi ketat di sini
-    mencegah nilai yang bisa menyuntik CSS/JS aneh-aneh tersimpan."""
-    nilai = (nilai or "").strip()
-    if not nilai:
-        return ""
-    if len(nilai) != 7 or nilai[0] != "#" or any(c not in _HEX_WARNA for c in nilai[1:]):
-        raise ValueError(f"{label} harus format warna heksadesimal, contoh: #334155.")
-    return nilai.upper()
+BRANDING_KEYS = ["website_url"]
 
 
 def get_branding(tenant_id: int = None) -> dict:
@@ -81,8 +67,6 @@ def get_branding(tenant_id: int = None) -> dict:
         "tagline": konten.get("tagline", ""),
         "alamat": konten.get("alamat", ""),
         "whatsapp": konten.get("whatsapp", ""),
-        "primary_color": db.get_setting("primary_color", "", tenant_id=tenant_id),
-        "secondary_color": db.get_setting("secondary_color", "", tenant_id=tenant_id),
         "website_url": db.get_setting("website_url", "", tenant_id=tenant_id),
     }
 
@@ -101,10 +85,6 @@ def update_branding(data: dict, tenant_id: int = None):
         website_content.update_content(konten_data, tenant_id=tenant_id)
 
     branding_data = {}
-    if "primary_color" in data:
-        branding_data["primary_color"] = _validasi_warna_hex(data["primary_color"], "Primary Color")
-    if "secondary_color" in data:
-        branding_data["secondary_color"] = _validasi_warna_hex(data["secondary_color"], "Secondary Color")
     if "website_url" in data:
         branding_data["website_url"] = (data["website_url"] or "").strip()
     if branding_data:

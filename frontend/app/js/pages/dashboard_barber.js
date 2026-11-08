@@ -56,16 +56,14 @@ const PageDashboardBarber = (() => {
     // PERMINTAAN Owner ("desain kurang ikon"): ikon kecil per kartu, pola
     // sama seperti dashboard_owner.js::card() (.card-collapse-icon di-reuse
     // di sini walau kartu ini TIDAK collapsible, cuma perlu ukuran/warnanya).
-    function card(label, value, icon, hero) {
+    // Kartu berwarna per kategori ("blue"/"green"/"orange"/"purple", class
+    // "card--<warna>" + "icon-chip--<warna>2"), sama seperti
+    // dashboard_owner.js::card().
+    function card(label, value, icon, warna) {
       const titleChildren = [];
-      if (icon) titleChildren.push(MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: icon }));
+      if (icon) titleChildren.push(MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna + "2", html: icon }));
       titleChildren.push(MugenUI.el("span", {}, label));
-      // REVISI ("warna kartu semua sama putih tidak warna-warni" --
-      // referensi dashboard "Donezo"): kartu SELALU netral KECUALI kartu
-      // "andalan" (`hero`, cuma TRUE untuk "Total Pendapatan") yang dapat
-      // class "card--hero" (latar --accent solid + teks putih), sama
-      // seperti dashboard_owner.js::card().
-      return MugenUI.el("div", { class: "card" + (hero ? " card--hero" : "") }, [
+      return MugenUI.el("div", { class: "card card--" + warna }, [
         MugenUI.el("h2", { style: "display:flex;align-items:center;gap:8px;" }, titleChildren),
         MugenUI.el("div", { class: "big-number" }, MugenUI.formatRupiah(value)),
       ]);
@@ -75,11 +73,11 @@ const PageDashboardBarber = (() => {
     // saja"): SEBELUMNYA kartu ini berisi rincian per jenis service milik
     // barber ini sendiri (mis. "Dry Cut" = 7, "Cut & Wash" = 3, dst) --
     // SEKARANG cuma satu angka total, sama gayanya seperti card() di atas.
-    function cardJumlahService(rincian) {
+    function cardJumlahService(rincian, warna) {
       const total = (rincian || []).reduce((jumlah, item) => jumlah + item.jumlah, 0);
-      return MugenUI.el("div", { class: "card" }, [
+      return MugenUI.el("div", { class: "card card--" + warna }, [
         MugenUI.el("h2", { style: "display:flex;align-items:center;gap:8px;" }, [
-          MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: MugenIcons.service }),
+          MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna + "2", html: MugenIcons.service }),
           MugenUI.el("span", {}, "Jumlah Service"),
         ]),
         MugenUI.el("div", { class: "big-number" }, String(total)),
@@ -208,11 +206,11 @@ const PageDashboardBarber = (() => {
         // REVISI: kartu "Bonus Kehadiran" dihapus total (fitur dihapus);
         // kartu "Jumlah Customer" diganti kartu rincian "Jumlah Service".
         body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
-          card("Total Pendapatan", r.total_pendapatan, MugenIcons.labaKotor, true),
-          card("Komisi", r.komisi, MugenIcons.komisi),
-          card("Tips", r.tips, MugenIcons.tips),
-          card("Uang Harian", r.uang_harian, MugenIcons.uangHarian),
-          cardJumlahService(r.rincian_service),
+          card("Total Pendapatan", r.total_pendapatan, MugenIcons.labaKotor, "blue"),
+          card("Komisi", r.komisi, MugenIcons.komisi, "green"),
+          card("Tips", r.tips, MugenIcons.tips, "orange"),
+          card("Uang Harian", r.uang_harian, MugenIcons.uangHarian, "purple"),
+          cardJumlahService(r.rincian_service, "blue"),
         ]));
 
         // REVISI: Target Bonus Service sekarang bertingkat (banyak tier,

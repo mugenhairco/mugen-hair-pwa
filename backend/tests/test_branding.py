@@ -4,8 +4,8 @@ test_branding.py — FONDASI Multi-Tenant Phase 2.2: Tenant & Platform Branding
 Cakupan: fallback branding platform ("Rivoir") saat tenant belum
 dikenali, isolasi branding dua tenant, resolusi sesi vs query string,
 superadmin selalu platform branding, upload/hapus favicon + validasi,
-validasi warna, dan bugfix header/logo PDF (Phase 2.2 juga memperbaiki
-laporan_pdf.py -- lihat test_pdf_header_ikut_tenant_yang_benar)."""
+dan bugfix header/logo PDF (Phase 2.2 juga memperbaiki laporan_pdf.py --
+lihat test_pdf_header_ikut_tenant_yang_benar)."""
 
 import io
 
@@ -51,19 +51,15 @@ def test_branding_slug_tidak_dikenal_atau_nonaktif_jatuh_ke_platform(two_tenants
 def test_branding_isolasi_dua_tenant(two_tenants):
     client = two_tenants["client"]
     client.put("/api/pengaturan/branding", headers=two_tenants["headers_a"],
-                json={"nama_barbershop": "Barbershop Alpha", "primary_color": "#FF0000",
-                      "tagline": "Tagline Alpha"})
+                json={"nama_barbershop": "Barbershop Alpha", "tagline": "Tagline Alpha"})
     client.put("/api/pengaturan/branding", headers=two_tenants["headers_b"],
-                json={"nama_barbershop": "Barbershop Beta", "primary_color": "#00FF00",
-                      "tagline": "Tagline Beta"})
+                json={"nama_barbershop": "Barbershop Beta", "tagline": "Tagline Beta"})
 
     branding_a = client.get("/api/tenant/branding?tenant=test-toko-a").json()
     branding_b = client.get("/api/tenant/branding?tenant=test-toko-b").json()
     assert branding_a["nama_barbershop"] == "Barbershop Alpha"
-    assert branding_a["primary_color"] == "#FF0000"
     assert branding_a["tagline"] == "Tagline Alpha"
     assert branding_b["nama_barbershop"] == "Barbershop Beta"
-    assert branding_b["primary_color"] == "#00FF00"
     assert branding_b["tagline"] == "Tagline Beta"
     # Isolasi: tidak ada bocoran silang.
     assert branding_a["nama_barbershop"] != branding_b["nama_barbershop"]
@@ -168,13 +164,6 @@ def test_branding_staff_dengan_izin_bisa_ubah(two_tenants):
     r2 = client.put("/api/pengaturan/branding", headers=headers_staff, json={"nama_barbershop": "Diubah Staff"})
     assert r2.status_code == 200, r2.text
     assert r2.json()["nama_barbershop"] == "Diubah Staff"
-
-
-def test_branding_warna_tidak_valid_ditolak(two_tenants):
-    client = two_tenants["client"]
-    r = client.put("/api/pengaturan/branding", headers=two_tenants["headers_a"],
-                    json={"primary_color": "bukan-warna"})
-    assert r.status_code == 422
 
 
 def _png_1x1() -> bytes:

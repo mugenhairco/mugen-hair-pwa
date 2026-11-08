@@ -32,8 +32,6 @@ PLATFORM_BRANDING = {
     "tagline": "",
     "alamat": "",
     "whatsapp": "",
-    "primary_color": "",
-    "secondary_color": "",
     "website_url": "",
     "is_platform_default": True,
 }
