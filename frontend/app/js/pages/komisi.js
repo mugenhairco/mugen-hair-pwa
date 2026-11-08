@@ -443,7 +443,7 @@ const PageKomisi = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Komisi"));
+    root.appendChild(MugenUI.pageTitle("Komisi", MugenIcons.karyawan, "teal"));
 
     if (user.role === "barber") {
       await renderBarberView(root);

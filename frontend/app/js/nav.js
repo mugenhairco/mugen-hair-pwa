@@ -42,10 +42,10 @@ const MugenNav = (() => {
   // sendiri sudah diatur DI DALAM halamannya masing-masing, lihat
   // menu_access.js) tetap tampil untuk SEMUA role di `roles`.
   const MENU = [
-    { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"] },
+    { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"], icon: MugenIcons.dashboard, warna: "indigo" },
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
-    { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"], izin: "izin_input_data_lihat" },
-    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"], izin: "izin_rekap_lihat" },
+    { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"], izin: "izin_input_data_lihat", icon: MugenIcons.inputData, warna: "blue" },
+    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"], izin: "izin_rekap_lihat", icon: MugenIcons.rekap, warna: "violet" },
     // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi,
     // Fase 4: Reimburse, Fase 5: Izin & Cuti. `children` dirender sebagai
     // grup expand/collapse KALAU child yang lolos filter role >= 2 (kondisi
@@ -54,7 +54,7 @@ const MugenNav = (() => {
     // satu-item yang janggal. `badgeId`/`badgeRoles` (Izin & Cuti) dipakai
     // izin_notif.js untuk badge jumlah pengajuan pending, pola sama seperti
     // badge Booking di bawah (lihat _bangunItemNav()).
-    { label: "Karyawan", roles: ["admin", "staff", "barber"], children: [
+    { label: "Karyawan", roles: ["admin", "staff", "barber"], icon: MugenIcons.karyawan, warna: "teal", children: [
       { hash: "#/karyawan/slip-gaji", label: "Slip Gaji", roles: ["admin", "staff", "barber"] },
       { hash: "#/karyawan/kasbon", label: "Kasbon", roles: ["admin", "staff", "barber"] },
       { hash: "#/karyawan/komisi", label: "Komisi", roles: ["admin", "staff", "barber"] },
@@ -91,11 +91,11 @@ const MugenNav = (() => {
     // (Package Permission Tree) tetap satu root tunggal -- `izinPaket`
     // dicek TERPISAH khusus untuk itu (lihat _terkunciPaket()/
     // cariIzinUntukHash() di bawah, fallback ke `izin` kalau tidak diisi).
-    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"], izinPaket: "izin_absensi_lihat" },
+    { hash: "#/absensi", label: "Absensi", roles: ["admin", "staff", "barber"], izinPaket: "izin_absensi_lihat", icon: MugenIcons.absensi, warna: "amber" },
     // BOOKING: Owner/Admin full access; Barber hanya lihat booking
     // miliknya sendiri (dibedakan DI DALAM booking.js sendiri lewat user.role).
     { hash: "#/booking", label: "Booking", roles: ["admin", "staff", "barber"], izin: "izin_booking_lihat",
-      badgeId: "booking-badge", badgeRoles: ["admin", "staff"] },
+      badgeId: "booking-badge", badgeRoles: ["admin", "staff"], icon: MugenIcons.booking, warna: "indigo" },
     // Modul Keuangan -- Fase 1: Pemasukan, Fase 2 (semula Transfer Kas/Bank,
     // dihapus & diganti Uang Kas -- lihat uang_kas_db.py): Uang Kas.
     // Pengeluaran (Tahap 9, sudah ada sejak lama) DIPINDAH ke sini sebagai
@@ -103,7 +103,7 @@ const MugenNav = (() => {
     // #/pengeluaran, tetap PagePengeluaran), murni penataan ulang lokasi di
     // sidebar sesuai pengelompokan modul di spesifikasi, BUKAN perubahan
     // fitur.
-    { label: "Keuangan", roles: ["admin", "staff"], children: [
+    { label: "Keuangan", roles: ["admin", "staff"], icon: MugenIcons.keuangan, warna: "emerald", children: [
       { hash: "#/keuangan/pemasukan", label: "Pemasukan", roles: ["admin", "staff"], izin: "izin_pemasukan_lihat" },
       { hash: "#/pengeluaran", label: "Pengeluaran", roles: ["admin", "staff"], izin: "izin_pengeluaran_lihat" },
       { hash: "#/keuangan/uang-kas", label: "Uang Kas", roles: ["admin", "staff"], izin: "izin_uang_kas_lihat" },
@@ -119,8 +119,8 @@ const MugenNav = (() => {
     ]},
     // FITUR BARU Point of Sale (Kasir walk-in): dua tab (Kasir/Transaksi
     // Hari Ini), hak akses sendiri (izin_pos_lihat/izin_pos_kelola).
-    { hash: "#/pos", label: "Point of Sale", roles: ["admin", "staff"], izin: "izin_pos_lihat" },
-    { hash: "#/produk", label: "Produk", roles: ["admin", "staff"], izin: "izin_produk_lihat" },
+    { hash: "#/pos", label: "Point of Sale", roles: ["admin", "staff"], izin: "izin_pos_lihat", icon: MugenIcons.pos, warna: "amber" },
+    { hash: "#/produk", label: "Produk", roles: ["admin", "staff"], izin: "izin_produk_lihat", icon: MugenIcons.produk, warna: "violet" },
     // REVISI Hak Akses (hapus menu Owner-only hardcoded -- lihat
     // permissions.py): WhatsApp SEKARANG grantable Owner ke Role manapun
     // (dulu KHUSUS Owner murni, token Fonnte kredensial pihak ketiga,
@@ -130,13 +130,13 @@ const MugenNav = (() => {
     // (redup+gembok) kalau paket tenant belum menyertakan "whatsapp_reminder".
     // `feature: "whatsapp_reminder"` DIHAPUS (lihat catatan Absensi di
     // atas, alasan sama persis).
-    { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin", "staff"], izin: "izin_whatsapp_lihat" },
+    { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin", "staff"], izin: "izin_whatsapp_lihat", icon: MugenIcons.whatsapp, warna: "emerald" },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di
     // routers/billing.py) -- 'staff' TIDAK ikut, sama seperti tab
     // Subscription Phase 3 (pages/pengaturan.js), yang TIDAK diubah/
     // digabung ke sini sama sekali.
-    { hash: "#/billing", label: "Billing", roles: ["admin"] },
-    { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"] },
+    { hash: "#/billing", label: "Billing", roles: ["admin"], icon: MugenIcons.billing, warna: "rose" },
+    { hash: "#/pengaturan", label: "Setting", roles: ["admin", "staff"], icon: MugenIcons.setting, warna: "neutral" },
   ];
   const MENU_SEGERA = [];
 
@@ -147,15 +147,23 @@ const MugenNav = (() => {
   // terkait (booking_notif.js/izin_notif.js) tiap polling -- sengaja
   // dibuat ulang di sini (bukan disimpan sekali) karena seluruh sidebar
   // di-render ULANG tiap pindah menu.
-  function _elLink(hash, label, activeHash, user, badge, locked) {
+  function _elLink(hash, label, activeHash, user, badge, locked, icon, warna) {
     // .nav-initial (span lingkaran 2 huruf) HANYA terlihat saat
     // .sidebar.collapsed (lihat style.css) -- selalu dibuat supaya tidak
     // perlu render ulang saat collapse/expand, murni ditampilkan/
     // disembunyikan lewat CSS.
-    const linkChildren = [
+    // PERMINTAAN Owner ("desain kurang ikon"): `icon` (opsional, SVG dari
+    // icons.js) ditaruh PALING DEPAN -- hanya tampil saat sidebar TIDAK
+    // collapsed (span biasa, otomatis ikut tersembunyi lewat aturan CSS
+    // yang sudah ada untuk span selain .nav-badge/.nav-initial), mode
+    // collapsed TETAP pakai lingkaran inisial seperti sebelumnya (TIDAK
+    // diubah) supaya tidak ada risiko merusak perilaku yang sudah teruji.
+    const linkChildren = [];
+    if (icon) linkChildren.push(MugenUI.el("span", { class: "nav-icon icon-chip--" + (warna || "indigo"), html: icon }));
+    linkChildren.push(
       MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(label)),
       MugenUI.el("span", {}, label),
-    ];
+    );
     // AUDIT (enforcement paket/subscription -- REVISI feedback Owner): menu
     // yang fiturnya TIDAK termasuk paket tenant TETAP tampil (BUKAN
     // disembunyikan seperti sebelumnya) -- ikon gembok kecil + gaya redup
@@ -222,7 +230,7 @@ const MugenNav = (() => {
     if (!item.children) {
       if (!item.roles.includes(user.role) || !_lolosIzin(item)) return null;
       const badge = item.badgeId ? { id: item.badgeId, roles: item.badgeRoles || [] } : null;
-      return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item) || _terkunciPaket(item));
+      return _elLink(item.hash, item.label, activeHash, user, badge, _terkunciFitur(item) || _terkunciPaket(item), item.icon, item.warna);
     }
 
     const childrenLolos = item.children.filter((c) => c.roles.includes(user.role) && _lolosIzin(c));
@@ -230,7 +238,11 @@ const MugenNav = (() => {
     if (childrenLolos.length === 1) {
       const only = childrenLolos[0];
       const badge = only.badgeId ? { id: only.badgeId, roles: only.badgeRoles || [] } : null;
-      return _elLink(only.hash, only.label, activeHash, user, badge, _terkunciFitur(only) || _terkunciPaket(only));
+      // `item.icon` (ikon GRUP, mis. Karyawan/Keuangan) dipakai di sini,
+      // BUKAN `only.icon` (child tidak punya ikon sendiri) -- grup yang
+      // cuma py 1 child lolos filter tetap dirender flat (lihat komentar
+      // di atas fungsi ini), jadi ikon grupnya yang paling masuk akal.
+      return _elLink(only.hash, only.label, activeHash, user, badge, _terkunciFitur(only) || _terkunciPaket(only), item.icon, item.warna);
     }
 
     const grupAktif = childrenLolos.some((c) => activeHash.startsWith(c.hash));
@@ -239,13 +251,16 @@ const MugenNav = (() => {
     // .sidebar.collapsed .nav-submenu) -- toggle di sini murni jadi
     // penanda visual (inisial) saat collapsed, Owner perlu expand sidebar
     // dulu untuk membuka grup Karyawan/Keuangan.
-    const toggle = MugenUI.el("button", {
-      type: "button", class: "nav-group-toggle", "data-tooltip": item.label, "aria-label": item.label,
-    }, [
+    const toggleChildren = [];
+    if (item.icon) toggleChildren.push(MugenUI.el("span", { class: "nav-icon icon-chip--" + (item.warna || "indigo"), html: item.icon }));
+    toggleChildren.push(
       MugenUI.el("span", { class: "nav-initial" }, _inisialLabel(item.label)),
       MugenUI.el("span", {}, item.label),
       MugenUI.el("span", { class: "nav-group-chevron" }, "›"),
-    ]);
+    );
+    const toggle = MugenUI.el("button", {
+      type: "button", class: "nav-group-toggle", "data-tooltip": item.label, "aria-label": item.label,
+    }, toggleChildren);
     const submenu = MugenUI.el("div", { class: "nav-submenu" });
     for (const child of childrenLolos) {
       const badge = child.badgeId ? { id: child.badgeId, roles: child.badgeRoles || [] } : null;

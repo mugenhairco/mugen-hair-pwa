@@ -125,7 +125,7 @@ const PageRiwayatTransaksi = (() => {
 
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Riwayat Transaksi"));
+    root.appendChild(MugenUI.pageTitle("Riwayat Transaksi", MugenIcons.keuangan, "emerald"));
     root.appendChild(MugenUI.el("div", { class: "subtitle" },
       "Riwayat transaksi Payment Gateway booking customer. Status pembayaran HANYA diperbarui otomatis begitu dikonfirmasi resmi oleh provider (webhook), tidak bisa diubah manual."));
 

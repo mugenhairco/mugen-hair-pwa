@@ -229,7 +229,7 @@ const PageBooking = (() => {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Booking"));
+    root.appendChild(MugenUI.pageTitle("Booking", MugenIcons.booking, "indigo"));
 
     if (!isAdmin) {
       await renderBarberTabs(root);
@@ -1012,7 +1012,23 @@ const PageBooking = (() => {
       ...(withWhatsapp ? [{ key: "customer_whatsapp", label: "WhatsApp", format: (v) => waLinkCell(v) }] : []),
       { key: "daftar_service", label: "Service" },
       { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
-      { key: "metode_pembayaran", label: "Metode", format: (v) => METODE_LABEL[v] || v },
+      {
+        // PERMINTAAN Owner ("desain kurang ikon"): ikon kecil pembeda per
+        // metode -- "transfer" (data historis lama, lihat METODE_LABEL di
+        // atas) SENGAJA tidak diberi ikon, sudah jarang muncul.
+        key: "metode_pembayaran", label: "Metode", format: (v) => {
+          const ikon = { cash: MugenIcons.cash, qris: MugenIcons.qris, gateway: MugenIcons.gateway, bayar_nanti: MugenIcons.bayarNanti }[v];
+          // PERMINTAAN Owner ("lebih berwarna tapi elegan"): warna chip per
+          // metode, sama palet --jewel-* dipakai nav/kartu statistik.
+          const warna = { cash: "emerald", qris: "indigo", gateway: "blue", bayar_nanti: "amber" }[v];
+          const teks = METODE_LABEL[v] || v;
+          if (!ikon) return teks;
+          return MugenUI.el("span", { style: "display:flex;align-items:center;gap:6px;white-space:nowrap;" }, [
+            MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna, style: "width:16px;height:16px;", html: ikon }),
+            teks,
+          ]);
+        },
+      },
       {
         // Booking metode "gateway": status pembayaran HANYA boleh berubah lewat
         // webhook resmi provider (lihat routers/booking.py::verifikasi_booking()),

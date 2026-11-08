@@ -248,7 +248,7 @@ const PageWhatsapp = (() => {
 
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "WhatsApp"));
+    root.appendChild(MugenUI.pageTitle("WhatsApp", MugenIcons.whatsapp, "emerald"));
 
     // REVISI Hak Akses (sub-item per tab terpisah, lihat permissions.py::
     // PERMISSION_TREE): dulu DUA tab ini Owner-only murni -- SEKARANG

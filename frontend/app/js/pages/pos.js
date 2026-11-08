@@ -101,7 +101,7 @@ const PagePos = (() => {
 
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("h1", {}, "Point of Sale"));
+    root.appendChild(MugenUI.pageTitle("Point of Sale", MugenIcons.pos, "amber"));
 
     const levelPos = await MugenMenuAccess.get("pos");
     if (levelPos === "none") {
