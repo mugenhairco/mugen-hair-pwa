@@ -266,7 +266,15 @@ const PageDashboardOwner = (() => {
         serviceHeader.appendChild(selBarberFilter);
         serviceCard.appendChild(serviceHeader);
 
-        const serviceTableBox = MugenUI.el("div");
+        // PERMINTAAN Owner ("tabel ini kurang profesional"): tabel 2-kolom
+        // (Service/Jumlah) SEBELUMNYA ikut lebar penuh kartu (`.data-table`
+        // generik, width:100%) -- dengan kartu ini selebar dashboard, auto
+        // table-layout browser membagi 2 kolom nyaris 50/50, membuat angka
+        // "Jumlah" terdampar jauh dari labelnya dengan jarak kosong besar
+        // di tengah. Class "rincian-service-wrap" (lihat style.css)
+        // membatasi lebar wrapper + rata-kanan kolom angka supaya tampil
+        // ringkas senada daftar/leaderboard, bukan tabel lebar kosong.
+        const serviceTableBox = MugenUI.el("div", { class: "rincian-service-wrap" });
         serviceCard.appendChild(serviceTableBox);
         body.appendChild(serviceCard);
 

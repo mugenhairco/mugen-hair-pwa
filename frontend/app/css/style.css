@@ -614,6 +614,17 @@ table.data-table tr:hover td { background: var(--bg); }
 
 .table-wrap { overflow-x: auto; }
 
+/* Dashboard Owner: tabel ringkas "Service Bulan Ini/Periode Ini" (2 kolom
+   Service/Jumlah) -- dibatasi lebarnya + kolom angka rata-kanan supaya
+   tampil senada daftar ringkas, bukan tabel lebar dengan jarak kosong
+   besar di tengah (lihat catatan di dashboard_owner.js). */
+.rincian-service-wrap { max-width: 420px; }
+.rincian-service-wrap table.data-table th:last-child,
+.rincian-service-wrap table.data-table td:last-child {
+  text-align: right;
+  width: 80px;
+}
+
 label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
 
 input, select, textarea {
