@@ -145,7 +145,7 @@ def ambil_logo(v: str | None = None, tenant_id: int = Depends(resolve_tenant_hib
 # ================= BRANDING (Phase 2.2: Tenant & Platform Branding) =================
 # Field GABUNGAN dari Identitas (nama_barbershop, email) + Website Content
 # (tagline, alamat, whatsapp) + field BARU milik branding_db.py sendiri
-# (primary_color, secondary_color, website_url, favicon) -- lihat docstring
+# (website_url, favicon) -- lihat docstring
 # branding_db.py untuk kenapa TIDAK diduplikasi/dipindah dari modul asalnya.
 # GET publik ada di routers/branding.py (/api/tenant/branding, dipakai
 # halaman Login juga) -- di sini HANYA endpoint TULIS + serve file favicon.
@@ -156,8 +156,6 @@ class BrandingBody(BaseModel):
     tagline: str | None = None
     alamat: str | None = None
     whatsapp: str | None = None
-    primary_color: str | None = None
-    secondary_color: str | None = None
     website_url: str | None = None
 
 

@@ -17,10 +17,8 @@
      lalu revisi "saya pengen kayak gini" + referensi dashboard "Donezo"):
      Primary SEKARANG hijau tua pekat (bukan indigo lagi) -- SATU token ini
      dipakai 60+ tempat (sidebar active, tombol, focus ring, link), jadi
-     perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain.
-     Tenant yang mengatur Primary Color sendiri lewat Setting > Branding
-     TETAP menimpa nilai ini (brand.js, prioritas tertinggi) -- hanya
-     tenant yang BELUM kustomisasi yang melihat default baru ini. */
+     perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain,
+     SAMA untuk seluruh tenant (tidak ada override warna per-tenant). */
   --accent: #166534;         /* Primary (green-800) */
   --accent-hover: #14532D;   /* Hover (green-900, lebih gelap) */
   --accent-pressed: #0F3D23; /* Pressed (lebih gelap lagi) */
@@ -32,12 +30,8 @@
      --accent di atas maupun warna custom tenant (brand.js TIDAK menyentuh
      token ini sama sekali). */
   --text-number: #334155;
-  /* FONDASI Multi-Tenant Phase 2.2 (Tenant Branding): Secondary Color --
-     token TERPISAH dari --accent (Primary), dipakai elemen yang perlu
-     dibedakan dari aksi utama (link hover, badge sekunder). Tenant yang
-     mengatur Secondary Color lewat Setting > Branding menimpa nilai ini
-     lewat inline style di :root (lihat frontend/js/brand.js), prioritas
-     TERTINGGI, berlaku sama di tema Terang maupun Gelap. */
+  /* Secondary -- token TERPISAH dari --accent (Primary), dipakai elemen
+     yang perlu dibedakan dari aksi utama (link hover, badge sekunder). */
   --accent-secondary: #0E7490;
   --danger: #DC2626;
   --success: #16A34A;

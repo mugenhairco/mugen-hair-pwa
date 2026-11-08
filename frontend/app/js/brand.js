@@ -3,11 +3,7 @@
 // branding dari backend (/api/tenant/branding, endpoint publik -- tidak
 // perlu login, karena halaman Login pun perlu menampilkannya) dan
 // menerapkannya ke: <title>, elemen ".brand-name"/".brand-logo" di halaman
-// manapun, favicon (<link rel="icon">/apple-touch-icon), dan warna
-// Primary/Secondary (CSS custom properties --accent/--accent-hover/
-// --accent-pressed/--accent-secondary di :root, lihat css/style.css --
-// SELURUH komponen yang sudah memakai var(--accent) otomatis ikut berubah
-// tanpa perlu sentuh CSS lain sama sekali).
+// manapun, dan favicon (<link rel="icon">/apple-touch-icon).
 //
 // FONDASI Multi-Tenant Phase 2.2 (Platform Branding): kalau tenant belum
 // dikenali sama sekali (browser baru, tidak ada sesi login, tidak ada
@@ -32,8 +28,6 @@ const MugenBrand = (() => {
     nama_barbershop: "Rivoir",
     logo_url: null,
     favicon_url: null,
-    primary_color: "",
-    secondary_color: "",
     is_platform_default: true,
   };
 
@@ -142,40 +136,6 @@ const MugenBrand = (() => {
     });
   }
 
-  // FONDASI Multi-Tenant Phase 2.2: Primary/Secondary Color -- diterapkan
-  // sebagai CSS custom property di :root (inline style, prioritas TERTINGGI,
-  // menang atas :root maupun :root[data-theme="dark"] di style.css) supaya
-  // SATU warna tenant berlaku konsisten di kedua tema Terang/Gelap, sama
-  // seperti pola var(--accent) yang sudah dipakai di puluhan tempat (lihat
-  // komentar di style.css) -- TIDAK PERNAH menyentuh file CSS itu sendiri.
-  function _shade(hex, persenGelap) {
-    // Menggelapkan warna heksadesimal `hex` sebesar `persenGelap` (0..1)
-    // -- dipakai turunan --accent-hover/--accent-pressed dari Primary
-    // Color, konsisten dengan arah token bawaan (hover LEBIH GELAP dari
-    // accent dasar, lihat --accent-hover/--accent-pressed di style.css).
-    const n = parseInt(hex.slice(1), 16);
-    const bagi = (shift) => Math.round(((n >> shift) & 0xff) * (1 - persenGelap));
-    return "#" + [16, 8, 0].map((shift) => bagi(shift).toString(16).padStart(2, "0")).join("");
-  }
-
-  function applyTheme(primaryColor, secondaryColor) {
-    const root = document.documentElement.style;
-    if (primaryColor) {
-      root.setProperty("--accent", primaryColor);
-      root.setProperty("--accent-hover", _shade(primaryColor, 0.15));
-      root.setProperty("--accent-pressed", _shade(primaryColor, 0.3));
-    } else {
-      root.removeProperty("--accent");
-      root.removeProperty("--accent-hover");
-      root.removeProperty("--accent-pressed");
-    }
-    if (secondaryColor) {
-      root.setProperty("--accent-secondary", secondaryColor);
-    } else {
-      root.removeProperty("--accent-secondary");
-    }
-  }
-
   // REVISI Register (Landing Page SaaS): diekstrak dari applyToDom() supaya
   // bisa dipakai ULANG oleh refreshPlatformOnly() di bawah TANPA menyentuh
   // `current`/cache localStorage sama sekali -- lihat catatan lengkap di
@@ -205,7 +165,6 @@ const MugenBrand = (() => {
       }
     });
     applyFavicon(data.favicon_url);
-    applyTheme(data.primary_color, data.secondary_color);
   }
 
   function applyToDom() {
