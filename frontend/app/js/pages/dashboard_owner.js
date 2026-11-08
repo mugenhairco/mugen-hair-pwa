@@ -5,14 +5,12 @@
 // REVISI Hak Akses Admin:
 // - Kartu "Total Pendapatan Barber" DIHAPUS (nilainya sama persis dengan
 //   "Total Komisi Barber" -- dua kartu untuk satu angka yang sama).
-// - Setiap kartu sekarang bisa di-collapse/expand (klik judulnya), status
-//   collapse/expand per kartu TERSIMPAN di localStorage (bertahan lintas
-//   refresh/login ulang) -- lihat COLLAPSE_KEY/_loadCollapseState di bawah.
-//   PERMINTAAN Owner ("bagian atas berantakan"): tombol "Collapse All"/
-//   "Expand All" (dulu di sini, mengatur semua kartu sekaligus) DIHAPUS --
-//   dianggap berantakan/tidak diperlukan, collapse/expand sekarang HANYA
-//   per kartu (klik judulnya sendiri-sendiri), seperti sebelum fitur ini
-//   ada.
+// - REVISI ("hilangkan fitur untuk menyembunyikan nilai kartu"): fitur
+//   collapse/expand per kartu (klik judul untuk sembunyikan nilainya,
+//   status tersimpan di localStorage) DIHAPUS TOTAL -- nilai kartu SELALU
+//   tampil, tidak ada lagi panah/klik untuk sembunyikan. Tombol "Collapse
+//   All"/"Expand All" (pengatur semua kartu sekaligus) SUDAH LEBIH DULU
+//   dihapus (permintaan Owner terpisah, "bagian atas berantakan").
 // - Halaman ini SEKARANG JUGA dipakai untuk role 'staff' (Admin, lihat
 //   router.js::resolveDashboardPage) -- backend (routers/dashboard.py)
 //   sudah memfilter field yang tidak diizinkan Owner jadi `null` untuk
@@ -26,8 +24,6 @@
 //   lihat catatan lengkap di dekat bagian "SERVICE BULAN INI" di bawah.
 
 const PageDashboardOwner = (() => {
-  const COLLAPSE_KEY = "mugen_dashboard_owner_collapse_v1";
-
   // PERMINTAAN OWNER: simpan hasil fetch TERAKHIR (in-memory, hilang kalau
   // app di-reload) supaya kalau Dashboard dibuka lagi tanpa ada data baru
   // (lihat MugenState.dashboardPerluRefresh()), halaman bisa langsung
@@ -71,23 +67,6 @@ const PageDashboardOwner = (() => {
     }
   }
 
-  function _loadCollapseState() {
-    try {
-      return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
-    } catch (e) {
-      return {};
-    }
-  }
-
-  function _saveCollapseState(state) {
-    try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state));
-    } catch (e) {
-      // localStorage penuh/tidak tersedia -- status collapse memang best-effort,
-      // tidak menghalangi tampilan kartu itu sendiri.
-    }
-  }
-
   async function render(root) {
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" ke menu
     // Dashboard -- tampilkan HANYA pesan kosong, tidak fetch/tampilkan
@@ -97,7 +76,7 @@ const PageDashboardOwner = (() => {
     // bawahnya menggerbang kartu MANA yang tampil.
     if ((await MugenMenuAccess.get("dashboard")) === "none") {
       root.innerHTML = "";
-      root.appendChild(MugenUI.pageTitle("Dashboard", MugenIcons.dashboard, "indigo"));
+      root.appendChild(MugenUI.pageTitle("Dashboard", MugenIcons.dashboard));
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
@@ -105,25 +84,17 @@ const PageDashboardOwner = (() => {
     let tahun = today.getFullYear();
     let bulan = today.getMonth() + 1;
     const isOwner = MugenState.getUser().role === "admin";
-    const collapseState = _loadCollapseState();
 
     // FITUR BARU (diminta Owner): mode "Periode" -- rentang tanggal bebas
     // (mis. 1-10 Agustus), berdampingan dengan mode "Bulanan" yang sudah
-    // ada (satu bulan kalender penuh, TIDAK diubah sama sekali). Bonus
-    // Customer SENGAJA tidak pernah muncul di mode Periode (backend selalu
-    // mengembalikan null untuk field itu, lihat routers/dashboard.py::
-    // dashboard_owner_periode()) -- nominalnya berdasar tier target jumlah
-    // service SATU BULAN KALENDER PENUH, tidak berarti untuk rentang bebas.
-    // card()/cardJumlahService() di bawah SUDAH otomatis melewatkan kartu
-    // dengan value null (lihat "staff tanpa izin" di komentarnya), jadi
-    // Bonus Customer otomatis hilang dari grid tanpa kode tambahan apa pun.
+    // ada (satu bulan kalender penuh, TIDAK diubah sama sekali).
     let mode = "bulanan"; // "bulanan" | "periode"
     let tanggalMulai = MugenUI.awalBulanWib(MugenUI.isoHariIniWib());
     let tanggalSelesai = MugenUI.isoHariIniWib();
 
     root.innerHTML = "";
     const header = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
-    header.appendChild(MugenUI.pageTitle(isOwner ? "Dashboard Owner" : "Dashboard Admin", MugenIcons.dashboard, "indigo"));
+    header.appendChild(MugenUI.pageTitle(isOwner ? "Dashboard Owner" : "Dashboard Admin", MugenIcons.dashboard));
 
     const selBulan = MugenUI.el("select");
     for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
@@ -164,67 +135,45 @@ const PageDashboardOwner = (() => {
     const body = MugenUI.el("div");
     root.appendChild(body);
 
-    function card(key, label, value, icon, warna) {
+    // REVISI ("hilangkan fitur untuk menyembunyikan nilai kartu"): nilai
+    // kartu SELALU tampil, tidak ada lagi panah/klik collapse per kartu
+    // (dulu di sini, lihat riwayat komentar/COLLAPSE_KEY).
+    function card(label, value, icon, hero) {
       if (value === null || value === undefined) return null; // staff tanpa izin untuk kartu ini
-      const collapsed = collapseState[key] === true;
-      const valueBox = MugenUI.el("div", { class: "big-number", style: collapsed ? "display:none;" : "" }, MugenUI.formatRupiah(value));
-      const arrow = MugenUI.el("span", { class: "card-collapse-arrow" }, collapsed ? "▸" : "▾");
+      const valueBox = MugenUI.el("div", { class: "big-number" }, MugenUI.formatRupiah(value));
       // PERMINTAAN Owner ("desain kurang ikon"): ikon kecil per kartu (lihat
       // icons.js) supaya sekilas lihat sudah bisa bedakan kartunya, bukan
-      // cuma teks label semua sama ukuran/warna. PERMINTAAN Owner susulan
-      // ("lebih berwarna tapi elegan, jewel tone"): `warna` memilih chip
-      // --jewel-* (lihat style.css::.icon-chip--*) per kategori kartu.
+      // cuma teks label semua sama ukuran/warna.
+      // REVISI ("coba kamu perhatikan contoh yg saya kirim... warna kartu
+      // semua sama putih tidak warna-warni" -- referensi dashboard
+      // "Donezo"): latar kartu per kategori (dulu class "card--<warna>")
+      // DIHAPUS -- kartu SELALU netral (putih/gelap polos) KECUALI kartu
+      // "andalan" (`hero`, cuma TRUE untuk kartu pertama, lihat pemanggilan
+      // di bawah) yang menambah class "card--hero" (latar --accent SOLID +
+      // teks putih), persis seperti referensi: cuma SATU kartu berwarna,
+      // sisanya putih bersih.
       const titleChildren = [];
-      if (icon) titleChildren.push(MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna, html: icon }));
-      titleChildren.push(MugenUI.el("span", {}, label), arrow);
+      if (icon) titleChildren.push(MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: icon }));
+      titleChildren.push(MugenUI.el("span", {}, label));
       const titleRow = MugenUI.el("h2", { class: "card-collapse-title" }, titleChildren);
-      function setCollapsed(next) {
-        collapseState[key] = next;
-        valueBox.style.display = next ? "none" : "";
-        arrow.textContent = next ? "▸" : "▾";
-      }
-      titleRow.addEventListener("click", () => {
-        setCollapsed(!collapseState[key]);
-        _saveCollapseState(collapseState);
-      });
-      return MugenUI.el("div", { class: "card" }, [titleRow, valueBox]);
+      return MugenUI.el("div", { class: "card" + (hero ? " card--hero" : "") }, [titleRow, valueBox]);
     }
 
-    // REVISI: kartu "Total Customer" diganti kartu "Jumlah Service" berisi
-    // rincian per jenis service (mis. "Dry Cut" = 7, "Cut & Wash" = 3, dst),
-    // service dengan jumlah 0 tidak ditampilkan (backend sudah memfilternya
-    // lewat rincian_service_semua_barber). Gabungan seluruh barber, sama
-    // seperti kartu lain di baris ini yang semuanya total toko.
-    function cardJumlahService(key, rincian) {
+    // REVISI ("Jumlah Service tampilkan nilai total keseluruhan service
+    // saja"): SEBELUMNYA kartu ini berisi rincian per jenis service (mis.
+    // "Dry Cut" = 7, "Cut & Wash" = 3, dst) -- SEKARANG cuma satu angka
+    // total (jumlah seluruh service digabung), sama gayanya seperti
+    // card() di atas. Gabungan seluruh barber, sama seperti kartu lain di
+    // baris ini yang semuanya total toko.
+    function cardJumlahService(rincian) {
       if (rincian === null || rincian === undefined) return null;
-      const collapsed = collapseState[key] === true;
-      const listBox = MugenUI.el("div", { style: collapsed ? "display:none;" : "" });
-      if (!rincian || rincian.length === 0) {
-        listBox.appendChild(MugenUI.el("div", { style: "color:var(--text-dim);" }, "Belum ada service bulan ini."));
-      } else {
-        for (const item of rincian) {
-          listBox.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:space-between;padding:2px 0;" }, [
-            MugenUI.el("span", {}, item.nama_service),
-            MugenUI.el("span", { style: "font-weight:600;" }, String(item.jumlah)),
-          ]));
-        }
-      }
-      const arrow = MugenUI.el("span", { class: "card-collapse-arrow" }, collapsed ? "▸" : "▾");
+      const total = rincian.reduce((jumlah, item) => jumlah + item.jumlah, 0);
       const titleRow = MugenUI.el("h2", { class: "card-collapse-title" }, [
-        MugenUI.el("span", { class: "card-collapse-icon icon-chip--indigo", html: MugenIcons.service }),
+        MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: MugenIcons.service }),
         MugenUI.el("span", {}, "Jumlah Service"),
-        arrow,
       ]);
-      function setCollapsed(next) {
-        collapseState[key] = next;
-        listBox.style.display = next ? "none" : "";
-        arrow.textContent = next ? "▸" : "▾";
-      }
-      titleRow.addEventListener("click", () => {
-        setCollapsed(!collapseState[key]);
-        _saveCollapseState(collapseState);
-      });
-      return MugenUI.el("div", { class: "card" }, [titleRow, listBox]);
+      const valueBox = MugenUI.el("div", { class: "big-number" }, String(total));
+      return MugenUI.el("div", { class: "card" }, [titleRow, valueBox]);
     }
 
     // BUGFIX (audit, race condition): dulu tidak ada penjagaan urutan
@@ -287,15 +236,14 @@ const PageDashboardOwner = (() => {
 
         const t = data.total_toko;
         const kartu = [
-          card("nilai_service", "Nilai Service", t.nilai_service, MugenIcons.service, "indigo"),
-          card("total_komisi", "Total Komisi Barber", t.komisi, MugenIcons.komisi, "blue"),
-          card("total_tips", "Total Tips", t.tips, MugenIcons.tips, "amber"),
-          card("uang_harian", "Uang Harian", t.uang_harian, MugenIcons.uangHarian, "teal"),
-          card("bonus_customer", "Bonus Customer", t.bonus_customer, MugenIcons.bonusCustomer, "rose"),
-          cardJumlahService("jumlah_service", data.rincian_service_semua_barber),
-          card("pengeluaran_toko", "Pengeluaran Toko", data.total_pengeluaran, MugenIcons.pengeluaran, "blue"),
-          card("penjualan_produk", "Penjualan Produk", data.penjualan_produk, MugenIcons.penjualanProduk, "violet"),
-          card("laba_kotor", "Laba Kotor Toko", data.laba_kotor, MugenIcons.labaKotor, "emerald"),
+          card("Nilai Service", t.nilai_service, MugenIcons.service, true),
+          card("Total Komisi Barber", t.komisi, MugenIcons.komisi),
+          card("Total Tips", t.tips, MugenIcons.tips),
+          card("Uang Harian", t.uang_harian, MugenIcons.uangHarian),
+          cardJumlahService(data.rincian_service_semua_barber),
+          card("Pengeluaran Toko", data.total_pengeluaran, MugenIcons.pengeluaran),
+          card("Penjualan Produk", data.penjualan_produk, MugenIcons.penjualanProduk),
+          card("Laba Kotor Toko", data.laba_kotor, MugenIcons.labaKotor),
         ].filter((el) => el !== null);
 
         if (kartu.length === 0) {

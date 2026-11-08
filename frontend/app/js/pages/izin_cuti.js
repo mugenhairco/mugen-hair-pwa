@@ -429,7 +429,7 @@ const PageIzinCuti = (() => {
   async function render(root) {
     const user = MugenState.getUser();
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Izin & Cuti", MugenIcons.karyawan, "teal"));
+    root.appendChild(MugenUI.pageTitle("Izin & Cuti", MugenIcons.karyawan));
 
     const key = `${user.id}:${user.role}`;
     if (_cacheDom && _cacheKey === key) {

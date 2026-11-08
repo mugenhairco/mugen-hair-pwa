@@ -147,7 +147,7 @@ const PageRekap = (() => {
     const bolehLihatKolomAksi = isAdmin;
 
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Rekap", MugenIcons.rekap, "violet"));
+    root.appendChild(MugenUI.pageTitle("Rekap", MugenIcons.rekap));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa tab/data apa pun (MugenMenuAccess.get() selalu

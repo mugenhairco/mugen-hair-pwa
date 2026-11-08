@@ -13,16 +13,17 @@
   --border: #E2E8F0;
   --text: #0F172A;
   --text-dim: #64748B;
-  /* PERMINTAAN Owner ("lebih berwarna tapi elegan, canggih, jewel tone"):
-     Primary digeser dari slate netral ke indigo jewel-tone pekat -- SATU
-     token ini dipakai 60+ tempat (sidebar active, tombol, focus ring, link),
-     jadi perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain.
+  /* PERMINTAAN Owner ("lebih berwarna tapi elegan, canggih, jewel tone" --
+     lalu revisi "saya pengen kayak gini" + referensi dashboard "Donezo"):
+     Primary SEKARANG hijau tua pekat (bukan indigo lagi) -- SATU token ini
+     dipakai 60+ tempat (sidebar active, tombol, focus ring, link), jadi
+     perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain.
      Tenant yang mengatur Primary Color sendiri lewat Setting > Branding
      TETAP menimpa nilai ini (brand.js, prioritas tertinggi) -- hanya
      tenant yang BELUM kustomisasi yang melihat default baru ini. */
-  --accent: #4F46E5;         /* Primary (indigo-600) */
-  --accent-hover: #4338CA;   /* Hover (indigo-700, lebih gelap) */
-  --accent-pressed: #3730A3; /* Pressed (indigo-800, lebih gelap lagi) */
+  --accent: #166534;         /* Primary (green-800) */
+  --accent-hover: #14532D;   /* Hover (green-900, lebih gelap) */
+  --accent-pressed: #0F3D23; /* Pressed (lebih gelap lagi) */
   /* PERMINTAAN Owner ("warna font jangan diubah"): .big-number (angka besar
      kartu statistik) SEBELUMNYA ikut var(--accent) -- begitu --accent di
      atas diganti indigo, semua angka ikut jadi indigo, TIDAK diinginkan.
@@ -42,27 +43,12 @@
   --success: #16A34A;
   --warning: #EA580C;
   --info: #2563EB;
-  /* PERMINTAAN Owner (ikon berwarna, jewel tone gelap-pekat): palet
-     terkurasi dipakai .icon-chip (lihat css di bawah) untuk mewarnai
-     ikon navigasi/kartu statistik per kategori semantik -- SENGAJA
-     dibatasi 7 warna (bukan satu warna acak per ikon) supaya tetap
-     terasa satu sistem desain yang kohesif, bukan pelangi berantakan.
-     Pasangan <warna>-soft dipakai sebagai background chip (opacity
-     rendah), <warna> polos dipakai sebagai warna stroke SVG (currentColor). */
-  --jewel-indigo: #4F46E5;
-  --jewel-indigo-soft: rgba(79, 70, 229, 0.12);
-  --jewel-violet: #7C3AED;
-  --jewel-violet-soft: rgba(124, 58, 237, 0.12);
-  --jewel-emerald: #059669;
-  --jewel-emerald-soft: rgba(5, 150, 105, 0.12);
-  --jewel-teal: #0D9488;
-  --jewel-teal-soft: rgba(13, 148, 136, 0.12);
-  --jewel-amber: #B45309;
-  --jewel-amber-soft: rgba(180, 83, 9, 0.12);
-  --jewel-rose: #BE123C;
-  --jewel-rose-soft: rgba(190, 18, 60, 0.12);
-  --jewel-blue: #1D4ED8;
-  --jewel-blue-soft: rgba(29, 78, 216, 0.12);
+  /* REVISI Owner ("warna ikon buat satu warna saja, jgn warna-warni", lalu
+     "warna kartu semua sama putih tidak warna-warni"): palet jewel-tone
+     7-lalu-6-warna yang SEMPAT dipakai di sini (ikon per kategori + latar
+     kartu per kategori) DIHAPUS TOTAL -- ikon & kartu sekarang netral,
+     cuma var(--accent) yang dipakai (chip ikon ".icon-chip--accent", latar
+     kartu "andalan" ".card--hero", lihat keduanya di bawah). */
   --radius-card: 16px;
   --radius-btn: 14px;
   --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
@@ -99,33 +85,15 @@
   --border: #334155;
   --text: #F1F5F9;
   --text-dim: #94A3B8;
-  --accent: #818CF8;         /* Primary (dark, indigo-400 -- dinaikkan terangnya utk kontras) */
-  --accent-hover: #A5B4FC;   /* Hover (dark, lebih terang) */
-  --accent-pressed: #6366F1; /* Pressed (dark, lebih gelap dari accent) */
+  --accent: #4ADE80;         /* Primary (dark, green-400 -- dinaikkan terangnya utk kontras) */
+  --accent-hover: #86EFAC;   /* Hover (dark, lebih terang) */
+  --accent-pressed: #22C55E; /* Pressed (dark, lebih gelap dari accent) */
   --text-number: #475569;    /* .big-number (dark) -- nilai LAMA --accent dark, lihat catatan di :root */
   --accent-secondary: #22D3EE; /* Secondary (dark, dinaikkan terangnya untuk kontras) */
   --danger: #F87171;
   --success: #4ADE80;
   --warning: #FB923C;
   --info: #60A5FA;
-  /* PERMINTAAN Owner (ikon berwarna): varian dark -- stroke dinaikkan
-     terangnya (sama alasannya seperti --accent di atas) + background chip
-     dinaikkan sedikit opacity-nya (0.12 -> 0.16) supaya tetap kelihatan
-     jelas di atas --bg-card gelap (#1E293B), bukan cuma dari kontras teks. */
-  --jewel-indigo: #A5B4FC;
-  --jewel-indigo-soft: rgba(165, 180, 252, 0.16);
-  --jewel-violet: #C4B5FD;
-  --jewel-violet-soft: rgba(196, 181, 253, 0.16);
-  --jewel-emerald: #6EE7B7;
-  --jewel-emerald-soft: rgba(110, 231, 183, 0.16);
-  --jewel-teal: #5EEAD4;
-  --jewel-teal-soft: rgba(94, 234, 212, 0.16);
-  --jewel-amber: #FCD34D;
-  --jewel-amber-soft: rgba(252, 211, 77, 0.16);
-  --jewel-rose: #FDA4AF;
-  --jewel-rose-soft: rgba(253, 164, 175, 0.16);
-  --jewel-blue: #93C5FD;
-  --jewel-blue-soft: rgba(147, 197, 253, 0.16);
   --shadow-card: 0 1px 2px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.24);
   --shadow-elevated: 0 8px 24px rgba(0,0,0,0.40);
 }
@@ -342,20 +310,49 @@ a:hover { color: var(--accent-secondary); }
 }
 .nav-icon svg { width: 16px; height: 16px; }
 
-/* PERMINTAAN Owner ("lebih berwarna tapi elegan, jewel tone"): chip warna
-   terkurasi per kategori menu -- lihat palet --jewel-* di :root dan
-   pemetaan warna di nav.js::MENU/dashboard_owner.js/dashboard_barber.js.
-   .icon-chip SENDIRI cuma bentuk (radius+flex), modifier --warna di bawah
-   yang mengisi background+currentColor -- dipisah supaya bisa dipakai
-   ulang di .nav-icon MAUPUN .card-collapse-icon tanpa duplikasi. */
-.icon-chip--indigo { background: var(--jewel-indigo-soft); color: var(--jewel-indigo); }
-.icon-chip--violet { background: var(--jewel-violet-soft); color: var(--jewel-violet); }
-.icon-chip--emerald { background: var(--jewel-emerald-soft); color: var(--jewel-emerald); }
-.icon-chip--teal { background: var(--jewel-teal-soft); color: var(--jewel-teal); }
-.icon-chip--amber { background: var(--jewel-amber-soft); color: var(--jewel-amber); }
-.icon-chip--rose { background: var(--jewel-rose-soft); color: var(--jewel-rose); }
-.icon-chip--blue { background: var(--jewel-blue-soft); color: var(--jewel-blue); }
-.icon-chip--neutral { background: rgba(100,116,139,0.10); color: var(--text-dim); }
+/* REVISI Owner ("warna ikon buat satu warna saja, jgn warna-warni", lalu
+   "warna kartu semua sama putih tidak warna-warni" -- referensi dashboard
+   "Donezo"): SEBELUMNYA ikon MAUPUN latar kartu dipetakan ke 6 warna
+   jewel-tone berbeda per kategori -- SEKARANG seluruhnya netral. Ikon
+   (nav, kartu statistik, judul halaman, metode pembayaran) SATU warna
+   saja: var(--accent) (otomatis ikut warna branding kustom tenant juga,
+   lihat brand.js) lewat ".icon-chip--accent" di bawah (".icon-chip"
+   sendiri cuma bentuk, radius+flex). Kartu statistik KEMBALI netral
+   (putih/gelap polos) KECUALI SATU kartu "andalan" per dashboard (class
+   "card--hero", lihat dashboard_owner.js/dashboard_barber.js::card())
+   yang latarnya --accent SOLID + teks putih -- meniru kartu "Total
+   Projects" di referensi yang menonjol sendirian di antara kartu lain
+   yang tetap putih bersih. */
+.icon-chip--accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+:root[data-theme="dark"] .icon-chip--accent { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+.card.card--hero { background: var(--accent); border-color: var(--accent); }
+/* BUGFIX kontras (dark mode): --accent di tema gelap SENGAJA diterangkan
+   (green-400, lihat :root[data-theme="dark"]) supaya kebaca di sidebar/
+   tombol kecil -- tapi dipakai SOLID sebagai latar kartu BESAR + teks
+   putih di atasnya, hasilnya kontras rendah (hijau terang + putih nyaris
+   tidak kebaca). Kartu hero SECARA KHUSUS pakai hijau gelap tetap (SAMA
+   persis nilai light mode) di kedua tema -- --accent lain (sidebar,
+   tombol, dll) TIDAK terpengaruh, cuma kartu hero ini. */
+:root[data-theme="dark"] .card.card--hero { background: #166534; border-color: #166534; }
+/* `h2` (bukan `.card-collapse-title`) SENGAJA dipakai di sini -- kartu
+   Dashboard Barber (dashboard_barber.js) pakai <h2> polos tanpa class itu,
+   jadi selector ini menjangkau KEDUA struktur kartu Owner MAUPUN Barber
+   sekaligus. PERMINTAAN Owner ("warna fontnya kenapa tidak putih"): label
+   judul SEBELUMNYA rgba(255,255,255,0.85) (putih 85%) -- dinaikkan jadi
+   putih PENUH (#fff) supaya benar-benar putih seperti diminta, bukan
+   putih pudar. */
+/* BUGFIX spesifisitas (pola SAMA PERSIS seperti ".card.card--hero" latar
+   di atas): ".card--hero h2"/".card--hero .big-number" versi 1-class
+   SEMPAT ditulis di sini, tapi spesifisitasnya SAMA PERSIS dengan ".card
+   h2"/".card .big-number" (base, lihat "Komponen umum" di bawah) yang
+   letaknya BELAKANGAN di file -- base SELALU menang, teks kartu hero
+   balik abu-abu/text-number, BUKAN putih (dicek via getComputedStyle,
+   terbukti rgb(100,116,139) alih-alih putih). ".card.card--hero" (2
+   class) dipakai di sini supaya PASTI menang lepas dari urutan. */
+.card.card--hero h2 { color: #fff; }
+.card--hero .card-collapse-icon { background: rgba(255,255,255,0.2); color: #fff; }
+.card.card--hero .big-number { color: #fff; }
 
 /* REVISI (latar menu aktif sekarang tint lembut, bukan solid pekat --
    lihat .sidebar nav a.active di atas): chip ikon TIDAK perlu lagi
@@ -580,7 +577,6 @@ tr.row-clickable { cursor: pointer; }
      menimpa balik ke abu-abu, bikin semua ikon kartu kelihatan pudar. */
 }
 .card-collapse-icon svg { width: 17px; height: 17px; }
-.card-collapse-arrow { color: var(--text-dim); font-size: 12px; margin-left: auto; }
 
 .grid-cards {
   display: grid;

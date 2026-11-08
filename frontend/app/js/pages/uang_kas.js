@@ -40,7 +40,7 @@ const PageUangKas = (() => {
     let editingId = null;
 
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Uang Kas", MugenIcons.keuangan, "emerald"));
+    root.appendChild(MugenUI.pageTitle("Uang Kas", MugenIcons.keuangan));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa saldo/form/data apa pun.

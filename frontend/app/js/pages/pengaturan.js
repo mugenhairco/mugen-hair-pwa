@@ -51,7 +51,7 @@ const PagePengaturan = (() => {
 
   async function render(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Setting", MugenIcons.setting, "neutral"));
+    root.appendChild(MugenUI.pageTitle("Setting", MugenIcons.setting));
 
     const user = MugenState.getUser();
     const isOwner = user.role === "admin";

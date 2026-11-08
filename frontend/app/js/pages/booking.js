@@ -229,7 +229,7 @@ const PageBooking = (() => {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Booking", MugenIcons.booking, "indigo"));
+    root.appendChild(MugenUI.pageTitle("Booking", MugenIcons.booking));
 
     if (!isAdmin) {
       await renderBarberTabs(root);
@@ -1018,13 +1018,10 @@ const PageBooking = (() => {
         // atas) SENGAJA tidak diberi ikon, sudah jarang muncul.
         key: "metode_pembayaran", label: "Metode", format: (v) => {
           const ikon = { cash: MugenIcons.cash, qris: MugenIcons.qris, gateway: MugenIcons.gateway, bayar_nanti: MugenIcons.bayarNanti }[v];
-          // PERMINTAAN Owner ("lebih berwarna tapi elegan"): warna chip per
-          // metode, sama palet --jewel-* dipakai nav/kartu statistik.
-          const warna = { cash: "emerald", qris: "indigo", gateway: "blue", bayar_nanti: "amber" }[v];
           const teks = METODE_LABEL[v] || v;
           if (!ikon) return teks;
           return MugenUI.el("span", { style: "display:flex;align-items:center;gap:6px;white-space:nowrap;" }, [
-            MugenUI.el("span", { class: "card-collapse-icon icon-chip--" + warna, style: "width:16px;height:16px;", html: ikon }),
+            MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", style: "width:16px;height:16px;", html: ikon }),
             teks,
           ]);
         },
