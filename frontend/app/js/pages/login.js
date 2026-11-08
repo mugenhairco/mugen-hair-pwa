@@ -87,7 +87,11 @@ const PageLogin = (() => {
     const belumVerifikasiBox = MugenUI.el("div", { style: "display:none;margin-top:8px;" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Masuk");
 
-    const linkLupaPassword = MugenUI.el("a", { href: "#/lupa-password", style: "display:block;text-align:right;font-size:13px;margin-top:6px;" }, "Lupa Kata Sandi?");
+    // PERMINTAAN Owner: warna link ini disamakan dengan link "Sudah booking?"
+    // di Web Booking publik (.book-sudah-booking-link, lihat style.css) --
+    // abu-abu muted bergaris bawah, bukan hijau var(--accent) seperti link
+    // pada umumnya di app ini.
+    const linkLupaPassword = MugenUI.el("a", { href: "#/lupa-password", class: "book-sudah-booking-link", style: "display:block;text-align:right;font-size:13px;margin-top:6px;" }, "Lupa Kata Sandi?");
 
     const form = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Username"), inputUsername,
