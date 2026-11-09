@@ -99,18 +99,18 @@ const PageProduk = (() => {
     let produkList = [];
 
     const produkPendingBanner = MugenUI.el("div", { style: "display:none;" });
-    const produkFormCard = MugenUI.el("div", { class: "card" });
     const produkListCard = MugenUI.el("div", { class: "card" });
     const riwayatCard = MugenUI.el("div", { class: "card" });
-    // Hak Akses: form Tambah Produk (izin_produk_kelola) & aksi Mutasi
-    // (izin_produk_mutasi) masing-masing punya saklar sendiri; daftar
-    // produk & riwayat tetap tampil. PERMINTAAN Owner ("aksi per-baris
-    // jadi menu titik tiga, langsung modal di tengah layar -- jangan
-    // perlu scroll"): Ubah Produk & Restock/Jual/Tester SEKARANG modal
-    // (lihat bukaModalUbahProduk()/bukaModalMutasi() di bawah), form di
-    // sini HANYA untuk Tambah Produk baru (tidak lagi dipakai untuk edit).
+    // Hak Akses: Tambah Produk (izin_produk_kelola) & aksi Mutasi (izin_
+    // produk_mutasi) masing-masing punya saklar sendiri; daftar produk &
+    // riwayat tetap tampil. PERMINTAAN Owner ("aksi per-baris jadi menu
+    // titik tiga, langsung modal di tengah layar -- jangan perlu scroll",
+    // lanjut "form Tambah Produk jadi tombol juga, taruh dekat Daftar
+    // Produk"): Tambah/Ubah Produk & Restock/Jual/Tester SEKARANG semua
+    // modal (bukaModalTambahProduk()/bukaModalUbahProduk()/bukaModalMutasi()
+    // di bawah) -- TIDAK ADA LAGI form besar yang selalu terbuka di atas
+    // halaman, tombolnya nempel di header card "Daftar Produk".
     if (bolehKelolaProduk) root.appendChild(produkPendingBanner);
-    if (bolehKelolaProduk) root.appendChild(produkFormCard);
     root.appendChild(produkListCard);
     root.appendChild(riwayatCard);
 
@@ -176,67 +176,76 @@ const PageProduk = (() => {
     }
 
     // ---------------------------------------------------------------
-    // 1. TAMBAH PRODUK (Ubah Produk sekarang modal, lihat
-    //    bukaModalUbahProduk() di bagian Daftar Produk di bawah)
+    // 1. TAMBAH PRODUK -- PERMINTAAN Owner: tombol "+ Tambah Produk" di
+    //    header card Daftar Produk, klik langsung buka modal (konsisten
+    //    dengan bukaModalUbahProduk()/bukaModalMutasi() di bawah -- TIDAK
+    //    ADA LAGI form besar yang selalu terbuka di atas halaman).
     // ---------------------------------------------------------------
-    const produkFormTitle = MugenUI.el("h2", {}, "Tambah Produk");
-    const inputNamaProduk = MugenUI.el("input", { type: "text", placeholder: "Nama produk" });
-    const inputHargaModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-    const inputHargaJual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-    const btnSimpanProduk = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
-    const produkFormError = MugenUI.el("div", { class: "login-error" });
+    function bukaModalTambahProduk() {
+      const inpNama = MugenUI.el("input", { type: "text", placeholder: "Nama produk" });
+      const inpModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inpJual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const err = MugenUI.el("div", { class: "login-error" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
 
-    produkFormCard.appendChild(produkFormTitle);
-    produkFormCard.appendChild(MugenUI.el("label", {}, "Nama Produk"));
-    produkFormCard.appendChild(inputNamaProduk);
-    produkFormCard.appendChild(MugenUI.el("label", {}, "Harga Modal (Rp)"));
-    produkFormCard.appendChild(inputHargaModal);
-    produkFormCard.appendChild(MugenUI.el("label", {}, "Harga Jual (Rp)"));
-    produkFormCard.appendChild(inputHargaJual);
-    produkFormCard.appendChild(produkFormError);
-    produkFormCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" },
-      [btnSimpanProduk]));
+      const modal = MugenUI.infoModal({
+        title: "Tambah Produk",
+        body: [
+          MugenUI.el("label", {}, "Nama Produk"), inpNama,
+          MugenUI.el("label", {}, "Harga Modal (Rp)"), inpModal,
+          MugenUI.el("label", {}, "Harga Jual (Rp)"), inpJual,
+          err,
+          MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan),
+        ],
+      });
 
-    function resetProdukForm() {
-      inputNamaProduk.value = "";
-      inputHargaModal.value = "0";
-      inputHargaJual.value = "0";
-      produkFormError.textContent = "";
+      btnSimpan.addEventListener("click", () => {
+        err.textContent = "";
+        const nama = inpNama.value.trim();
+        const hargaModal = Number(inpModal.value);
+        const hargaJual = Number(inpJual.value);
+        if (!nama) {
+          err.textContent = "Nama produk tidak boleh kosong.";
+          return;
+        }
+        if (Number.isNaN(hargaModal) || hargaModal < 0 || Number.isNaN(hargaJual) || hargaJual < 0) {
+          err.textContent = "Harga Modal/Harga Jual tidak valid.";
+          return;
+        }
+        // PERMINTAAN OWNER: jangan tunggu server -- langsung tampil sukses,
+        // kirim diam-diam di belakang (jaring pengaman localStorage di atas).
+        const entry = {
+          tempId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          jenis: "produk",
+          editId: null,
+          body: { nama, harga_modal: hargaModal, harga_jual: hargaJual },
+          label: `Tambah Produk -- ${nama}`,
+        };
+        produkPendingList = [...produkPendingList, entry];
+        tulisPendingProduk(user.id, produkPendingList);
+        MugenUI.toast("Produk ditambahkan.", "success");
+        modal.close();
+        kirimProdukPending(entry);
+      });
     }
-
-    btnSimpanProduk.addEventListener("click", () => {
-      produkFormError.textContent = "";
-      const nama = inputNamaProduk.value.trim();
-      const hargaModal = Number(inputHargaModal.value);
-      const hargaJual = Number(inputHargaJual.value);
-      if (!nama) {
-        produkFormError.textContent = "Nama produk tidak boleh kosong.";
-        return;
-      }
-      if (Number.isNaN(hargaModal) || hargaModal < 0 || Number.isNaN(hargaJual) || hargaJual < 0) {
-        produkFormError.textContent = "Harga Modal/Harga Jual tidak valid.";
-        return;
-      }
-      // PERMINTAAN OWNER: jangan tunggu server -- langsung tampil sukses,
-      // kirim diam-diam di belakang (jaring pengaman localStorage di atas).
-      const entry = {
-        tempId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        jenis: "produk",
-        editId: null,
-        body: { nama, harga_modal: hargaModal, harga_jual: hargaJual },
-        label: `Tambah Produk -- ${nama}`,
-      };
-      produkPendingList = [...produkPendingList, entry];
-      tulisPendingProduk(user.id, produkPendingList);
-      MugenUI.toast("Produk ditambahkan.", "success");
-      resetProdukForm();
-      kirimProdukPending(entry);
-    });
 
     // ---------------------------------------------------------------
     // 2. DAFTAR PRODUK
     // ---------------------------------------------------------------
-    produkListCard.appendChild(MugenUI.el("h2", {}, "Daftar Produk"));
+    const produkListHeader = MugenUI.el("div", { class: "card-header-row" }, [
+      MugenUI.el("h2", { style: "margin:0;" }, "Daftar Produk"),
+    ]);
+    if (bolehKelolaProduk) {
+      const btnTambahProduk = MugenUI.el("button", {
+        type: "button", class: "btn-primary", style: "display:inline-flex;align-items:center;gap:8px;",
+      }, [
+        MugenUI.el("span", { class: "btn-icon-inline", html: MugenIcons.plus }),
+        "Tambah Produk",
+      ]);
+      btnTambahProduk.addEventListener("click", () => bukaModalTambahProduk());
+      produkListHeader.appendChild(btnTambahProduk);
+    }
+    produkListCard.appendChild(produkListHeader);
     const produkListBody = MugenUI.el("div");
     produkListCard.appendChild(produkListBody);
 
@@ -601,7 +610,6 @@ const PageProduk = (() => {
     selBulanFilter.addEventListener("change", () => loadRiwayat());
     selTahunFilter.addEventListener("change", loadRiwayat);
 
-    resetProdukForm();
     if (bolehKelolaProduk || bolehMutasi) renderProdukPendingBanner();
     await loadProdukList({ bisaDariCache: true });
     isiOpsiProdukFilter();

@@ -65,6 +65,11 @@ const MugenIcons = (() => {
     // isi solid (BUKAN outline seperti ikon lain -- fill/stroke di-override
     // langsung di tiap <circle> supaya tetap pakai currentColor).
     moreVertical: `<svg ${S}><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>`,
+
+    // PERMINTAAN Owner (tombol "Tambah Produk" di header "Daftar Produk"
+    // -- form pindah jadi modal): plus polos, dipakai jadi ikon prefix
+    // tombol tambah/buat baru.
+    plus: `<svg ${S}><path d="M12 5v14M5 12h14"/></svg>`,
   };
 })();
 
