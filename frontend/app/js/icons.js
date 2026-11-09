@@ -54,6 +54,11 @@ const MugenIcons = (() => {
     filter: `<svg ${S}><path d="M4 5h16"/><path d="M7 12h10"/><path d="M10.5 19h3"/></svg>`,
     tag: `<svg ${S}><path d="M12.4 3h6.1A1.5 1.5 0 0 1 20 4.5v6.1a1.5 1.5 0 0 1-.44 1.06l-8 8a1.5 1.5 0 0 1-2.12 0l-6-6a1.5 1.5 0 0 1 0-2.12l8-8A1.5 1.5 0 0 1 12.4 3Z"/><circle cx="16" cy="7" r="1.3"/></svg>`,
     statusCheck: `<svg ${S}><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>`,
+
+    // PERMINTAAN Owner (tombol "Keluar" sidebar jadi ikon polos, bukan
+    // tombol lebar): pintu + panah keluar -- dipakai nav.js::btnLogout
+    // untuk SEMUA role (satu implementasi dipakai bersama).
+    logout: `<svg ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
   };
 })();
 

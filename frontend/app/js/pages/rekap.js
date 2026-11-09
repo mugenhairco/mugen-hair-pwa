@@ -502,22 +502,25 @@ const PageRekap = (() => {
           // PERMINTAAN Owner (referensi gambar "Daftar Transaksi"): tampilan
           // LAYAR Rekap Transaksi (KHUSUS Owner/Admin -- Barber di atas TETAP
           // tabel polos seperti sebelumnya, tidak berubah) sekarang dikelompokkan
-          // PER TANGGAL -- satu "slide" cuma baris-baris SATU tanggal, tombol
-          // Sebelumnya/Berikutnya pindah ke tanggal lain. Dropdown Bulan/
-          // Tahun/Karyawan, Periode PDF, Jenis Laporan TETAP persis seperti
-          // sebelumnya (TIDAK diubah) -- cuma cara tabelnya ditampilkan di
-          // layar yang berubah. Tanggal tanpa data sama sekali otomatis
-          // tidak pernah jadi slide (backend hanya mengirim baris yang
-          // benar-benar ada, bukan representasi 1-31 hari kalender).
-          const tanggalUnik = [];
+          // PER TANGGAL -- satu "slide" cuma baris-baris SATU tanggal, navigasi
+          // pindah ke tanggal lain. Dropdown Bulan/Tahun/Karyawan, Periode PDF,
+          // Jenis Laporan TETAP persis seperti sebelumnya (TIDAK diubah) --
+          // cuma cara tabelnya ditampilkan di layar yang berubah. Tanggal
+          // tanpa data sama sekali otomatis tidak pernah jadi slide (backend
+          // hanya mengirim baris yang benar-benar ada, bukan representasi
+          // 1-31 hari kalender).
           const baganTanggal = new Map();
           for (const r of rows) {
-            if (!baganTanggal.has(r.tanggal)) {
-              baganTanggal.set(r.tanggal, []);
-              tanggalUnik.push(r.tanggal);
-            }
+            if (!baganTanggal.has(r.tanggal)) baganTanggal.set(r.tanggal, []);
             baganTanggal.get(r.tanggal).push(r);
           }
+          // Backend mengirim baris terurut TERBARU dulu (ORDER BY tanggal
+          // DESC) -- dibalik di sini supaya Halaman 1 = tanggal PALING LAMA,
+          // Halaman terakhir = tanggal PALING BARU (PERMINTAAN Owner: "kalau
+          // dimundurin itu tanggal sebelumnya, kalau dimajuin itu tanggal
+          // yang terbaru" -- bukan kebalik). Format "YYYY-MM-DD" ASC = urut
+          // kronologis yang benar lewat sort string biasa.
+          const tanggalUnik = [...baganTanggal.keys()].sort();
 
           const cardHeader = MugenUI.el("div", { class: "rekap-card-header" }, [
             MugenUI.el("h2", { style: "margin:0;" }, "Daftar Transaksi"),
@@ -526,10 +529,32 @@ const PageRekap = (() => {
           const navRow = MugenUI.el("div", { class: "rekap-slide-nav" });
           const slideTableBox = MugenUI.el("div");
           tableWrap.appendChild(cardHeader);
-          tableWrap.appendChild(navRow);
           tableWrap.appendChild(slideTableBox);
+          // PERMINTAAN Owner: pagination di BAWAH tabel, rata kanan (bukan
+          // di atas tabel seperti sebelumnya) -- lihat .rekap-slide-nav.
+          tableWrap.appendChild(navRow);
 
           let slideIndex = 0;
+
+          // PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen
+          // pagination, ada nomor 1 2 3 4 5 ... sampai nomor terakhir"):
+          // daftar nomor halaman yang ditampilkan -- selalu halaman
+          // pertama+terakhir, halaman aktif +/-1 tetangganya, sisanya
+          // dipadatkan jadi "..." kalau jumlah tanggal terlalu banyak
+          // (pola pagination standar, bukan menampilkan SEMUA nomor kalau
+          // tanggalnya puluhan dalam satu bulan).
+          function _daftarHalamanPaginasi(aktif, total) {
+            const AMBANG = 7; // total tanggal <= ini -> tampilkan semua, tanpa "..."
+            if (total <= AMBANG) return Array.from({ length: total }, (_, i) => i);
+            const kiri = Math.max(aktif - 1, 1);
+            const kanan = Math.min(aktif + 1, total - 2);
+            const hasil = [0];
+            if (kiri > 1) hasil.push("...");
+            for (let i = kiri; i <= kanan; i++) hasil.push(i);
+            if (kanan < total - 2) hasil.push("...");
+            hasil.push(total - 1);
+            return hasil;
+          }
 
           function renderSlide() {
             navRow.innerHTML = "";
@@ -540,21 +565,43 @@ const PageRekap = (() => {
               return;
             }
 
-            const btnSebelumnya = MugenUI.el("button", { type: "button" }, "‹ Sebelumnya");
+            const totalHalaman = tanggalUnik.length;
+            const tanggalAktif = tanggalUnik[slideIndex];
+
+            const labelBox = MugenUI.el("div", { class: "rekap-slide-label" }, [
+              MugenUI.el("strong", {}, MugenUI.namaTanggalIndo(tanggalAktif)),
+              MugenUI.el("span", {}, `Tanggal ${slideIndex + 1} dari ${totalHalaman}`),
+            ]);
+
+            const pager = MugenUI.el("div", { class: "rekap-pagination" });
+
+            const btnSebelumnya = MugenUI.el("button", { type: "button", class: "rekap-page-arrow", "aria-label": "Tanggal sebelumnya" }, "‹");
             btnSebelumnya.disabled = slideIndex <= 0;
             btnSebelumnya.addEventListener("click", () => { slideIndex -= 1; renderSlide(); });
+            pager.appendChild(btnSebelumnya);
 
-            const btnBerikutnya = MugenUI.el("button", { type: "button" }, "Berikutnya ›");
-            btnBerikutnya.disabled = slideIndex >= tanggalUnik.length - 1;
+            for (const p of _daftarHalamanPaginasi(slideIndex, totalHalaman)) {
+              if (p === "...") {
+                pager.appendChild(MugenUI.el("span", { class: "rekap-page-ellipsis" }, "…"));
+                continue;
+              }
+              const btnNomor = MugenUI.el("button", {
+                type: "button",
+                class: "rekap-page-num" + (p === slideIndex ? " active" : ""),
+                "aria-label": `Tanggal ${MugenUI.namaTanggalIndo(tanggalUnik[p])}`,
+                ...(p === slideIndex ? { "aria-current": "page" } : {}),
+              }, String(p + 1));
+              btnNomor.addEventListener("click", () => { slideIndex = p; renderSlide(); });
+              pager.appendChild(btnNomor);
+            }
+
+            const btnBerikutnya = MugenUI.el("button", { type: "button", class: "rekap-page-arrow", "aria-label": "Tanggal berikutnya" }, "›");
+            btnBerikutnya.disabled = slideIndex >= totalHalaman - 1;
             btnBerikutnya.addEventListener("click", () => { slideIndex += 1; renderSlide(); });
+            pager.appendChild(btnBerikutnya);
 
-            const tanggalAktif = tanggalUnik[slideIndex];
-            navRow.appendChild(btnSebelumnya);
-            navRow.appendChild(MugenUI.el("div", { class: "rekap-slide-label" }, [
-              MugenUI.el("strong", {}, MugenUI.namaTanggalIndo(tanggalAktif)),
-              MugenUI.el("span", {}, `Tanggal ${slideIndex + 1} dari ${tanggalUnik.length}`),
-            ]));
-            navRow.appendChild(btnBerikutnya);
+            navRow.appendChild(labelBox);
+            navRow.appendChild(pager);
 
             slideTableBox.appendChild(MugenUI.buildTable(columns, baganTanggal.get(tanggalAktif)));
           }
