@@ -407,11 +407,13 @@ const MugenNav = (() => {
       ]));
     }
 
-    // REVISI UI/UX Premium: data-tooltip (bukan title) -- teks "Keluar"
-    // ikut hilang saat sidebar collapsed (lihat style.css, cuma ikon "⏻"
-    // yang tersisa), sama seperti nav link di atas.
-    const btnLogout = MugenUI.el("button", { class: "btn-logout", "data-tooltip": "Keluar", "aria-label": "Keluar" },
-      MugenUI.el("span", {}, "Keluar"));
+    // PERMINTAAN Owner: tombol "Keluar" sekarang ikon pintu+panah keluar
+    // polos (tanpa border/latar kotak) -- TIDAK ADA teks "Keluar" yang
+    // tampil sama sekali, baik diam maupun saat hover (tanpa tooltip).
+    // aria-label TETAP ada (hanya untuk pembaca layar/aksesibilitas, tidak
+    // pernah tampil visual) supaya tombol tetap bermakna tanpa teks.
+    const btnLogout = MugenUI.el("button", { class: "btn-logout", "aria-label": "Keluar" },
+      MugenUI.el("span", { class: "nav-icon", html: MugenIcons.logout }));
     btnLogout.addEventListener("click", async () => {
       if (!(await MugenUI.confirmModal({ message: "Yakin ingin keluar?" }))) return;
       // REVISI: setelah konfirmasi, tampilkan loading animation + teks

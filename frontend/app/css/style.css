@@ -440,10 +440,31 @@ a:hover { color: var(--accent-secondary); }
   color: var(--text-dim);
 }
 
+/* PERMINTAAN Owner: tombol "Keluar" bukan lagi tombol lebar penuh -- cuma
+   ikon pintu+panah keluar polos (tanpa border/latar kotak), netral abu-abu
+   senada ikon menu lain, baru berubah merah saat hover/focus supaya sinyal
+   "aksi keluar" tetap jelas tanpa mengganggu visual sidebar sehari-hari.
+   Berlaku untuk SEMUA role (satu implementasi nav.js dipakai bersama). */
 .sidebar .btn-logout {
-  margin-top: 8px;
-  width: 100%;
+  margin-top: 10px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
 }
+.sidebar .btn-logout:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  color: #F87171;
+}
+.sidebar .btn-logout:active:not(:disabled) { background: rgba(255,255,255,0.12); }
 
 .content {
   flex: 1;
@@ -659,17 +680,40 @@ table.data-table tr:hover td { background: var(--bg); }
 }
 
 /* Rekap > Transaksi (Owner/Admin): header kartu "Daftar Transaksi" + badge
-   jumlah data, dan navigasi slide per-tanggal (Sebelumnya/Berikutnya) --
-   lihat rekap.js::renderTransaksi(). */
+   jumlah data, dan navigasi pagination per-tanggal DI BAWAH tabel, rata
+   kanan (PERMINTAAN Owner, referensi gambar -- bukan di atas tabel/center)
+   -- lihat rekap.js::renderTransaksi(). */
 .rekap-card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .rekap-slide-nav {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  margin-bottom: 14px; padding: 10px 14px; background: var(--bg); border-radius: var(--radius-card);
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px; padding: 14px; background: var(--bg); border-radius: var(--radius-card);
 }
-.rekap-slide-nav button { min-height: 38px; padding: 8px 16px; font-size: 13.5px; flex-shrink: 0; }
-.rekap-slide-label { text-align: center; flex: 1; min-width: 0; }
+.rekap-slide-label { text-align: left; }
 .rekap-slide-label strong { display: block; font-size: 14.5px; color: var(--text); }
 .rekap-slide-label span { display: block; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen pagination
+   bernomor, 1 2 3 4 5 ... sampai nomor terakhir, titik-titik kalau
+   tanggalnya banyak, letaknya di bawah sebelah kanan") -- menggantikan
+   sepasang tombol "‹ Sebelumnya" / "Berikutnya ›" polos. Arah: nomor 1 =
+   tanggal PALING LAMA, nomor terbesar = tanggal PALING BARU, maju ke
+   kanan = makin baru (lihat rekap.js::renderTransaksi() untuk urutan
+   tanggalUnik-nya). Nomor halaman aktif diberi warna aksen solid, sama
+   seperti pola active state lain di app (mis. .sidebar nav a.active). */
+.rekap-pagination {
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; margin-left: auto;
+}
+.rekap-page-arrow, .rekap-page-num {
+  min-height: 34px; padding: 0 10px; font-size: 13.5px; border-radius: 999px; flex-shrink: 0;
+}
+.rekap-page-arrow { width: 34px; padding: 0; font-size: 16px; font-weight: 700; }
+.rekap-page-num { min-width: 34px; }
+.rekap-page-num.active {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+}
+.rekap-page-ellipsis {
+  padding: 0 4px; color: var(--text-dim); font-size: 13.5px; flex-shrink: 0; user-select: none;
+}
 
 label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
 
@@ -2161,16 +2205,13 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 .sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-icon),
 .sidebar.collapsed .nav-group-chevron,
 .sidebar.collapsed .nav-submenu,
-.sidebar.collapsed .user-box > div:not(.theme-switch-row),
-.sidebar.collapsed .btn-logout span {
+.sidebar.collapsed .user-box > div:not(.theme-switch-row) {
   display: none;
 }
 .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle {
   justify-content: center; margin: 2px 10px; position: relative;
 }
 .nav-initial { display: none; }
-.sidebar.collapsed .btn-logout { font-size: 0; }
-.sidebar.collapsed .btn-logout::after { content: "⏻"; font-size: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .sidebar-collapse-btn { transition: none !important; }
 }
@@ -2184,11 +2225,8 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .sidebar.collapsed nav a span:not(.nav-badge):not(.nav-icon),
   .sidebar.collapsed .nav-group-toggle span:not(.nav-group-chevron):not(.nav-icon),
   .sidebar.collapsed .nav-group-chevron,
-  .sidebar.collapsed .user-box > div:not(.theme-switch-row),
-  .sidebar.collapsed .btn-logout span { display: revert; }
+  .sidebar.collapsed .user-box > div:not(.theme-switch-row) { display: revert; }
   .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: flex-start; }
-  .sidebar.collapsed .btn-logout { font-size: 14px; }
-  .sidebar.collapsed .btn-logout::after { content: none; }
 }
 
 /* ---- Konten halaman: fade-out singkat SEBELUM diganti (sebelumnya hard
@@ -2259,7 +2297,9 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    keputusan "sesuai kebutuhan" -- elemen lain yang labelnya SUDAH
    terlihat di layar tidak diberi tooltip sama sekali). Menggantikan
    tooltip native browser (title, lambat + gaya tidak konsisten) yang
-   sebelumnya dipakai di elemen yang sama. ---- */
+   sebelumnya dipakai di elemen yang sama. btn-logout (ikon polos) SENGAJA
+   TIDAK diberi tooltip ini -- PERMINTAAN Owner: tidak perlu ada tulisan
+   "Keluar" tampil sama sekali, diam maupun saat hover. ---- */
 .sidebar.collapsed [data-tooltip] { position: relative; }
 .sidebar.collapsed [data-tooltip]::after {
   content: attr(data-tooltip);
