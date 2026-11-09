@@ -11,6 +11,7 @@ Cakupan:
    test_maintenance_pdf_dan_urutan.py)."""
 
 import io
+from datetime import datetime
 
 import database as db
 
@@ -21,12 +22,27 @@ def _teks_pdf(konten: bytes) -> str:
     return "\n".join(p.extract_text() for p in reader.pages)
 
 
+def _mutasi_lama(produk_id, tanggal, tipe, jumlah, catatan=None):
+    """Insert mutasi produk LANGSUNG ke tabel (lewat validasi tanggal
+    2-hari di restock_produk()/jual_produk()/tester_produk(), lihat
+    _validasi_tanggal_mutasi_produk() di database.py) -- test di file ini
+    cuma butuh DATA mutasi tersusun rapi di bulan Juli 2026, tanggal
+    sungguhannya tidak relevan."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, catatan, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (produk_id, tanggal, tipe, jumlah, catatan, now),
+        )
+
+
 def test_mutasi_produk_list_sisa_stok_stok_terkini(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     produk_id = db.tambah_produk("MT Sampo", 10000, 20000, tenant_id=tenant_id)
 
-    db.restock_produk(produk_id, "2026-07-01", 50, None)
-    db.jual_produk(produk_id, "2026-07-05", 10, "Jual eceran")
+    _mutasi_lama(produk_id, "2026-07-01", "restock", 50)
+    _mutasi_lama(produk_id, "2026-07-05", "jual", 10, "Jual eceran")
 
     mutasi = db.get_mutasi_produk_list(produk_id=produk_id, tenant_id=tenant_id)
     stok_terkini = db.get_stok_produk(produk_id)
@@ -42,8 +58,8 @@ def test_mutasi_produk_list_sisa_stok_per_produk_terpisah(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     id_a = db.tambah_produk("MT Sampo A", 10000, 20000, tenant_id=tenant_id)
     id_b = db.tambah_produk("MT Sampo B", 10000, 20000, tenant_id=tenant_id)
-    db.restock_produk(id_a, "2026-07-01", 30, None)
-    db.restock_produk(id_b, "2026-07-01", 99, None)
+    _mutasi_lama(id_a, "2026-07-01", "restock", 30)
+    _mutasi_lama(id_b, "2026-07-01", "restock", 99)
 
     mutasi = db.get_mutasi_produk_list(tenant_id=tenant_id)
     sisa = {m["produk_id"]: m["sisa_stok"] for m in mutasi}
@@ -61,9 +77,9 @@ def test_pdf_mutasi_produk_kolom_dan_data_sama_dengan_tabel(single_tenant):
     import subscription_db
     subscription_db.create_default_subscription(tenant_id)
     produk_id = db.tambah_produk("MT Pomade", 15000, 35000, tenant_id=tenant_id)
-    db.restock_produk(produk_id, "2026-07-02", 20, "Restock awal")
-    db.jual_produk(produk_id, "2026-07-10", 3, "Jual ke pelanggan")
-    db.tester_produk(produk_id, "2026-07-11", 1, None)
+    _mutasi_lama(produk_id, "2026-07-02", "restock", 20, "Restock awal")
+    _mutasi_lama(produk_id, "2026-07-10", "jual", 3, "Jual ke pelanggan")
+    _mutasi_lama(produk_id, "2026-07-11", "tester", 1)
 
     # Data tabel (endpoint yang sama dipakai layar).
     tabel = client.get("/api/produk/mutasi?tahun=2026&bulan=7", headers=headers).json()
@@ -99,9 +115,9 @@ def test_pdf_mutasi_produk_filter_tipe_dan_produk(single_tenant):
     subscription_db.create_default_subscription(tenant_id)
     id_a = db.tambah_produk("MT Shampoo Only", 10000, 20000, tenant_id=tenant_id)
     id_b = db.tambah_produk("MT Wax Excluded", 10000, 20000, tenant_id=tenant_id)
-    db.restock_produk(id_a, "2026-07-01", 10, None)
-    db.restock_produk(id_b, "2026-07-01", 10, None)
-    db.jual_produk(id_a, "2026-07-02", 2, None)
+    _mutasi_lama(id_a, "2026-07-01", "restock", 10)
+    _mutasi_lama(id_b, "2026-07-01", "restock", 10)
+    _mutasi_lama(id_a, "2026-07-02", "jual", 2)
 
     r = client.get(f"/api/produk/mutasi/pdf?tahun=2026&bulan=7&produk_id={id_a}&tipe=jual", headers=headers)
     assert r.status_code == 200, r.text

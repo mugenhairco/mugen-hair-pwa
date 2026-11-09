@@ -48,9 +48,38 @@ def _service(tenant_id, nama, harga, modal=0):
     return sid
 
 
+def _mutasi_lama(produk_id, tanggal, tipe, jumlah):
+    """Insert mutasi produk LANGSUNG ke tabel (lewat validasi tanggal 2-hari
+    di restock_produk()/jual_produk()/tester_produk(), lihat
+    _validasi_tanggal_mutasi_produk() di database.py) -- dipakai utk setup
+    data historis yang tanggalnya TIDAK sedang diuji di sini. Ikut snapshot
+    harga_modal/harga_jual SAAT INI (SAMA seperti _catat_keluar_produk())
+    supaya get_omzet_penjualan_produk() -- yang menjumlahkan
+    jumlah * harga_jual_saat_itu -- tidak baca 0."""
+    produk = db.get_produk(produk_id)
+    now = datetime.now().isoformat(timespec="seconds")
+    with db.get_conn() as conn:
+        conn.execute(
+            """INSERT INTO produk_mutasi
+               (produk_id, tanggal, tipe, jumlah, created_at, harga_modal_saat_itu, harga_jual_saat_itu)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (produk_id, tanggal, tipe, jumlah, now, produk["harga_modal"], produk["harga_jual"]),
+        )
+
+
+def _bekukan_sekarang(monkeypatch, tanggal_iso):
+    """Bekukan db._sekarang() ke tanggal tertentu -- dipakai tes yang
+    menguji ALUR ASLI Restock/Tester/Produk via WA Bot dengan tanggal
+    tertentu di pesannya (BUKAN cuma setup data historis via _mutasi_lama),
+    supaya validasi 2-hari (_validasi_tanggal_mutasi_produk) menilainya
+    relatif ke tanggal fiktif pesan itu, bukan ke jam dinding asli."""
+    y, m, d = map(int, tanggal_iso.split("-"))
+    monkeypatch.setattr(db, "_sekarang", lambda: datetime(y, m, d, 12, 0))
+
+
 def _produk(tenant_id, nama, harga_jual, stok=100):
     pid = db.tambah_produk(nama, harga_modal=0, harga_jual=harga_jual, tenant_id=tenant_id)
-    db.restock_produk(pid, "2026-01-01", stok)
+    _mutasi_lama(pid, "2026-01-01", "restock", stok)
     return pid
 
 
@@ -327,10 +356,11 @@ def test_daftar_produk_tampilkan_sisa_stok(single_tenant):
     assert "Sisa: 7" in balasan
 
 
-def test_restock_produk_pakai_nomor(single_tenant):
+def test_restock_produk_pakai_nomor(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     p1 = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=5)
+    _bekukan_sekarang(monkeypatch, "2026-10-11")
 
     preview = wbp.proses_pesan(tenant_id, config, "628110000000", "Restock 11 oktober 2026\n1 10")
     assert "Konfirmasi Restock Produk" in preview
@@ -350,10 +380,11 @@ def test_restock_produk_ditolak_untuk_barber(single_tenant):
     assert "khusus" in balasan.lower() or "Owner" in balasan
 
 
-def test_tester_produk_pakai_nama_mengurangi_stok_tanpa_omzet(single_tenant):
+def test_tester_produk_pakai_nama_mengurangi_stok_tanpa_omzet(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     p1 = _produk(tenant_id, "Captain Clay 30gr", 45000, stok=5)
+    _bekukan_sekarang(monkeypatch, "2026-10-11")
 
     preview = wbp.proses_pesan(tenant_id, config, "628110000000",
                                 "Tester 11 oktober 2026\nCaptain Clay 30 2")
@@ -370,10 +401,11 @@ def test_tester_produk_pakai_nama_mengurangi_stok_tanpa_omzet(single_tenant):
     assert omzet == 0  # tester TIDAK ikut omzet
 
 
-def test_tester_produk_stok_tidak_cukup_gagal(single_tenant):
+def test_tester_produk_stok_tidak_cukup_gagal(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     _produk(tenant_id, "Captain Clay 30gr", 45000, stok=1)
+    _bekukan_sekarang(monkeypatch, "2026-10-11")
 
     wbp.proses_pesan(tenant_id, config, "628110000000", "Tester 11 oktober 2026\nCaptain Clay 30 5")
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "YA")
@@ -389,11 +421,12 @@ def test_tester_produk_ditolak_untuk_barber(single_tenant):
     assert "khusus" in balasan.lower() or "Owner" in balasan
 
 
-def test_input_produk_pakai_nama_dan_nomor(single_tenant):
+def test_input_produk_pakai_nama_dan_nomor(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     p1 = _produk(tenant_id, "Captain Clay 30gr", 45000)
     _produk(tenant_id, "Chief Shampo 400ml", 110000)
+    _bekukan_sekarang(monkeypatch, "2026-10-11")
 
     preview = wbp.proses_pesan(tenant_id, config, "628110000000",
                                 "Produk 11 oktober 2026\nCaptain Clay 30 1\n2 2")
@@ -429,7 +462,7 @@ def test_rekap_produk_bulan(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
-    db.jual_produk(pid, "2026-10-05", 3)
+    _mutasi_lama(pid, "2026-10-05", "jual", 3)
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk Oktober 2026")
     assert "*Terjual*" in balasan
     assert "5 Okt: Captain Clay 30gr x3 = Rp135.000" in balasan
@@ -443,9 +476,9 @@ def test_rekap_produk_detail_tanggal_jual_tester_restock(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
-    db.restock_produk(pid, "2026-10-01", 20)
-    db.jual_produk(pid, "2026-10-05", 3)
-    db.tester_produk(pid, "2026-10-10", 1)
+    _mutasi_lama(pid, "2026-10-01", "restock", 20)
+    _mutasi_lama(pid, "2026-10-05", "jual", 3)
+    _mutasi_lama(pid, "2026-10-10", "tester", 1)
 
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk Oktober 2026")
 
@@ -480,8 +513,8 @@ def test_rekap_produk_tanggal_spesifik_hanya_tanggal_itu(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
-    db.jual_produk(pid, "2026-10-05", 3)
-    db.jual_produk(pid, "2026-10-11", 2)  # tanggal lain, bulan sama -- TIDAK boleh ikut
+    _mutasi_lama(pid, "2026-10-05", "jual", 3)
+    _mutasi_lama(pid, "2026-10-11", "jual", 2)  # tanggal lain, bulan sama -- TIDAK boleh ikut
 
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk 11 oktober 2026")
     assert "*Rekap Produk - 11 Okt 2026*" in balasan
@@ -494,7 +527,7 @@ def test_rekap_produk_tanggal_spesifik_tanpa_mutasi(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     pid = _produk(tenant_id, "Captain Clay 30gr", 45000)
-    db.jual_produk(pid, "2026-10-05", 3)
+    _mutasi_lama(pid, "2026-10-05", "jual", 3)
 
     balasan = wbp.proses_pesan(tenant_id, config, "628110000000", "Rekap Produk 11 oktober 2026")
     assert "Tidak ada mutasi produk pada periode ini." in balasan
@@ -891,7 +924,7 @@ def test_webhook_pesan_duplikat_diproses_sekali_saja(single_tenant, monkeypatch)
 # INPUT HARIAN (gabungan banyak barber + Libur + Produk, koreksi interaktif)
 # ---------------------------------------------------------------------------
 
-def test_input_harian_lengkap_tanpa_koreksi_lalu_ya(single_tenant):
+def test_input_harian_lengkap_tanpa_koreksi_lalu_ya(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     romen = _barber(tenant_id, "Romen")
@@ -901,6 +934,7 @@ def test_input_harian_lengkap_tanpa_koreksi_lalu_ya(single_tenant):
     _service(tenant_id, "Hebat Wangi", 150000, modal=20000)
     _produk(tenant_id, "Wax Pomade", 50000)
     db.set_setting("persentase_komisi", "50", tenant_id=tenant_id)
+    _bekukan_sekarang(monkeypatch, "2026-10-20")
 
     pesan = (
         "Input Harian 20 oktober 2026\n"
@@ -986,12 +1020,13 @@ def test_input_harian_koreksi_nama_barber_lalu_lanjut(single_tenant):
     assert len(db.get_transaksi_list(barber_id=romen, tenant_id=tenant_id)) == 1
 
 
-def test_input_harian_koreksi_nama_produk_lalu_lanjut(single_tenant):
+def test_input_harian_koreksi_nama_produk_lalu_lanjut(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     _barber(tenant_id, "Romen")
     _service(tenant_id, "Dandan Cepat", 100000)
     pid = _produk(tenant_id, "Wax Pomade", 50000)
+    _bekukan_sekarang(monkeypatch, "2026-10-20")
 
     pesan = "Input Harian 20 oktober 2026\nRomen\nDc 1\nTips 0\nProduk:\nWex Pomade 2"
     tanya = wbp.proses_pesan(tenant_id, config, "628110000000", pesan)
@@ -1238,12 +1273,13 @@ def test_tester_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_te
     assert db.get_stok_produk(produk_id) == 8  # HANYA terpotong sekali (bukan 6)
 
 
-def test_input_harian_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant):
+def test_input_harian_produk_konfirmasi_race_dengan_pending_sama_tidak_dobel(single_tenant, monkeypatch):
     tenant_id = single_tenant["tenant_id"]
     config = _config(tenant_id, nomor_owner="628110000000")
     romen = _barber(tenant_id, "Romen")
     _service(tenant_id, "Dandan Cepat", 100000, modal=10000)
     produk_id = _produk(tenant_id, "Wax Pomade", 50000, stok=10)
+    _bekukan_sekarang(monkeypatch, "2026-10-20")
 
     pesan = "Input Harian 20 oktober 2026\nRomen\nDc 1\nTips 0\nProduk:\nWax Pomade 2"
     wbp.proses_pesan(tenant_id, config, "628110000000", pesan)

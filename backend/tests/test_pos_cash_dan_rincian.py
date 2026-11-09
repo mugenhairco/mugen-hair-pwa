@@ -76,7 +76,15 @@ def test_rincian_metode_dan_total_keseluruhan_transaksi_hari_ini(single_tenant):
     barber_a = db.add_barber("Barber Cash C", tenant_id=tenant_id)
     svc = db.add_service("Dry Cut Cash 3", 50000, tenant_id=tenant_id)
     produk_id = db.tambah_produk("Pomade Cash", 10000, 20000, tenant_id=tenant_id)
-    db.restock_produk(produk_id, "2020-01-01", 10)
+    # Insert langsung (BUKAN db.restock_produk()) -- fungsi itu sekarang
+    # menolak tanggal > 2 hari ke belakang (PERMINTAAN Owner, lihat
+    # _validasi_tanggal_mutasi_produk() di database.py), sedangkan di sini
+    # tanggal restocknya SENGAJA lampau, cuma utk setup stok awal.
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, created_at) VALUES (?, ?, 'restock', ?, ?)",
+            (produk_id, "2020-01-01", 10, datetime.now().isoformat(timespec="seconds")),
+        )
 
     pos_qris = pos_db.buat_transaksi(
         tenant_id, jasa_items=[{"barber_id": barber_a, "service_ids": [svc], "tips": 5000}],

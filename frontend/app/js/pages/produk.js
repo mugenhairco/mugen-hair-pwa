@@ -368,7 +368,14 @@ const PageProduk = (() => {
     const MUTASI_TIPE_LABEL = { restock: "Restock", jual: "Jual", tester: "Tester" };
 
     function bukaModalMutasi(produk, tipe) {
-      const inpTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
+      // PERMINTAAN Owner (tutup celah kasir backdating mutasi Jual ke bulan
+      // lalu supaya lolos dari filter default "Riwayat Mutasi" -- lihat
+      // batas yang SAMA PERSIS di backend: _validasi_tanggal_mutasi_produk()
+      // di database.py): picker tanggal dibatasi maks 2 hari ke belakang,
+      // ini cuma UX (pencegahan beneran ada di backend).
+      const ini = todayIso();
+      const batasMundur = MugenUI.tambahHariWib(ini, -2);
+      const inpTanggal = MugenUI.el("input", { type: "date", value: ini, min: batasMundur, max: ini });
       const inpJumlah = MugenUI.el("input", { type: "number", min: "1", value: "1" });
       const inpCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
       const err = MugenUI.el("div", { class: "login-error" });

@@ -5,6 +5,10 @@ setelah seluruh perubahan tenant-aware. Satu alur end-to-end panjang
 (bukan banyak test kecil) supaya urutan realistis (barber -> service ->
 transaksi -> rekap -> dst) tetap terlihat jelas kalau ada yang gagal."""
 
+from datetime import datetime
+
+HARI_INI = datetime.now().strftime("%Y-%m-%d")
+
 
 def test_alur_lengkap_satu_tenant(single_tenant):
     client, headers = single_tenant["client"], single_tenant["headers"]
@@ -78,9 +82,9 @@ def test_alur_lengkap_satu_tenant(single_tenant):
                      headers=headers)
     assert r.status_code == 200, r.text
     produk_id = r.json()["id"]
-    assert client.post(f"/api/produk/{produk_id}/restock", json={"tanggal": "2026-07-15", "jumlah": 10},
+    assert client.post(f"/api/produk/{produk_id}/restock", json={"tanggal": HARI_INI, "jumlah": 10},
                         headers=headers).status_code == 200
-    assert client.post(f"/api/produk/{produk_id}/jual", json={"tanggal": "2026-07-16", "jumlah": 2},
+    assert client.post(f"/api/produk/{produk_id}/jual", json={"tanggal": HARI_INI, "jumlah": 2},
                         headers=headers).status_code == 200
     assert len(client.get("/api/produk", headers=headers).json()) == 1
 
