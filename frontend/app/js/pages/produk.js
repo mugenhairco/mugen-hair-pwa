@@ -254,10 +254,11 @@ const PageProduk = (() => {
               // PERMINTAAN Owner ("daftar produk banyak, aksi jadi titik
               // tiga saja -- klik langsung modal di tengah, tidak perlu
               // scroll"): Restock/Jual/Tester/Ubah/Nonaktifkan sekarang
-              // SATU tombol menu "⋮" per baris (bukaMenuAksi() di bawah),
-              // menggantikan 5 tombol sejajar. Hak akses per aksi (izin_
-              // produk_mutasi/kelola/hapus) TETAP sama seperti sebelumnya
-              // -- cuma menentukan item mana yang masuk daftar menu.
+              // SATU tombol menu "⋮" per baris (MugenUI.bukaMenuAksi(),
+              // helper generik di ui.js -- dipakai juga booking.js), ganti
+              // 5 tombol sejajar. Hak akses per aksi (izin_produk_mutasi/
+              // kelola/hapus) TETAP sama seperti sebelumnya -- cuma
+              // menentukan item mana yang masuk daftar menu.
               key: "aksi", label: "Aksi", format: (_, p) => {
                 const items = [];
                 if (bolehMutasi) {
@@ -273,11 +274,11 @@ const PageProduk = (() => {
                 }
                 if (items.length === 0) return MugenUI.el("span", {}, "-");
                 const btnAksi = MugenUI.el("button", {
-                  type: "button", class: "produk-aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
+                  type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
                 });
                 btnAksi.addEventListener("click", (e) => {
                   e.stopPropagation();
-                  bukaMenuAksi(btnAksi, items);
+                  MugenUI.bukaMenuAksi(btnAksi, items);
                 });
                 return btnAksi;
               },
@@ -330,55 +331,6 @@ const PageProduk = (() => {
     //    lain halaman.
     // ---------------------------------------------------------------
     const MUTASI_TIPE_LABEL = { restock: "Restock", jual: "Jual", tester: "Tester" };
-
-    // Menu dropdown generik (dipakai tombol "⋮" tiap baris) -- dirender
-    // ke document.body (BUKAN di dalam tabel) supaya tidak kepotong oleh
-    // overflow-x:auto milik .table-wrap (overflow-x selain "visible"
-    // otomatis membuat overflow-y ikut "auto" juga, lihat spesifikasi CSS
-    // -- menu yang nempel di dalam tabel akan kepotong/tersembunyi kalau
-    // tidak di-"portal"-kan begini). Posisi dihitung dari getBoundingClientRect()
-    // tombol pemicu, nempel ke KIRI-BAWAH (rata kanan ke tombol), geser ke
-    // ATAS kalau mepet tepi bawah layar.
-    function bukaMenuAksi(anchorBtn, items) {
-      document.querySelectorAll(".produk-aksi-menu").forEach((m) => m.remove());
-
-      const menu = MugenUI.el("div", { class: "produk-aksi-menu" });
-      for (const item of items) {
-        const btnItem = MugenUI.el("button", {
-          type: "button", class: "produk-aksi-menu-item" + (item.danger ? " danger" : ""),
-        }, item.label);
-        btnItem.addEventListener("click", () => {
-          tutupMenu();
-          item.onClick();
-        });
-        menu.appendChild(btnItem);
-      }
-      document.body.appendChild(menu);
-
-      const rect = anchorBtn.getBoundingClientRect();
-      let left = rect.right - menu.offsetWidth;
-      if (left < 8) left = 8;
-      let top = rect.bottom + 4;
-      if (top + menu.offsetHeight > window.innerHeight - 8) top = rect.top - menu.offsetHeight - 4;
-      menu.style.left = `${left}px`;
-      menu.style.top = `${top}px`;
-
-      function tutupMenu() {
-        menu.remove();
-        document.removeEventListener("click", tutupSaatKlikLuar);
-        window.removeEventListener("scroll", tutupMenu, true);
-      }
-      function tutupSaatKlikLuar(e) {
-        if (!menu.contains(e.target)) tutupMenu();
-      }
-      // setTimeout 0: klik yang MEMBUKA menu ini masih "in-flight" ke
-      // document saat baris ini jalan -- kalau listener dipasang langsung,
-      // menu ini bisa langsung tertutup oleh klik pembukanya sendiri.
-      setTimeout(() => {
-        document.addEventListener("click", tutupSaatKlikLuar);
-        window.addEventListener("scroll", tutupMenu, true);
-      }, 0);
-    }
 
     function bukaModalMutasi(produk, tipe) {
       const inpTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
