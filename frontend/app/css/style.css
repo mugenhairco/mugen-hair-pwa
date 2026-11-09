@@ -13,15 +13,18 @@
   --border: #E2E8F0;
   --text: #0F172A;
   --text-dim: #64748B;
-  /* PERMINTAAN Owner ("lebih berwarna tapi elegan, canggih, jewel tone" --
-     lalu revisi "saya pengen kayak gini" + referensi dashboard "Donezo"):
-     Primary SEKARANG hijau tua pekat (bukan indigo lagi) -- SATU token ini
-     dipakai 60+ tempat (sidebar active, tombol, focus ring, link), jadi
-     perubahan di sini otomatis menjalar app-wide tanpa sentuh file lain,
-     SAMA untuk seluruh tenant (tidak ada override warna per-tenant). */
-  --accent: #166534;         /* Primary (green-800) */
-  --accent-hover: #14532D;   /* Hover (green-900, lebih gelap) */
-  --accent-pressed: #0F3D23; /* Pressed (lebih gelap lagi) */
+  /* PERMINTAAN Owner ("kembalikan warna tombol seperti semula, contoh
+     tombol di web booking"): Primary dikembalikan ke slate netral ASLI
+     (sebelum revisi slate -> indigo -> hijau sesi-sesi sebelumnya) --
+     nilai PERSIS sama dengan yang sudah dipertahankan di .book-public/
+     .login-card (Web Booking TIDAK PERNAH ikut revisi warna apa pun,
+     jadi acuan "warna asli" yang benar). SATU token ini dipakai 60+
+     tempat (sidebar active, tombol, focus ring, link), jadi perubahan di
+     sini otomatis menjalar app-wide tanpa sentuh file lain, SAMA untuk
+     seluruh tenant (tidak ada override warna per-tenant). */
+  --accent: #334155;         /* Primary (slate-700, warna ASLI) */
+  --accent-hover: #1E293B;   /* Hover (slate-800) */
+  --accent-pressed: #0F172A; /* Pressed (slate-900) */
   /* PERMINTAAN Owner ("warna font jangan diubah"): .big-number (angka besar
      kartu statistik) SEBELUMNYA ikut var(--accent) -- begitu --accent di
      atas diganti indigo, semua angka ikut jadi indigo, TIDAK diinginkan.
@@ -32,7 +35,7 @@
   --text-number: #334155;
   /* Secondary -- token TERPISAH dari --accent (Primary), dipakai elemen
      yang perlu dibedakan dari aksi utama (link hover, badge sekunder). */
-  --accent-secondary: #0E7490;
+  --accent-secondary: #0891B2; /* Secondary (warna ASLI, lihat catatan --accent di atas) */
   --danger: #DC2626;
   --success: #16A34A;
   --warning: #EA580C;
@@ -77,9 +80,9 @@
   --border: #334155;
   --text: #F1F5F9;
   --text-dim: #94A3B8;
-  --accent: #4ADE80;         /* Primary (dark, green-400 -- dinaikkan terangnya utk kontras) */
-  --accent-hover: #86EFAC;   /* Hover (dark, lebih terang) */
-  --accent-pressed: #22C55E; /* Pressed (dark, lebih gelap dari accent) */
+  --accent: #475569;         /* Primary (dark, slate ASLI -- lihat catatan --accent light di atas) */
+  --accent-hover: #64748B;   /* Hover (dark, lebih terang) */
+  --accent-pressed: #334155; /* Pressed (dark, lebih gelap) */
   --text-number: #475569;    /* .big-number (dark) -- nilai LAMA --accent dark, lihat catatan di :root */
   --accent-secondary: #22D3EE; /* Secondary (dark, dinaikkan terangnya untuk kontras) */
   --danger: #F87171;
