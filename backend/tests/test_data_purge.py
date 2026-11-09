@@ -37,6 +37,25 @@ def _set_email(tenant_id, email):
         conn.execute("UPDATE tenants SET email = ? WHERE id = ?", (email, tenant_id))
 
 
+def _mutasi_lama(produk_id, tanggal, tipe, jumlah):
+    """Insert mutasi produk LANGSUNG ke tabel, TIDAK lewat
+    restock_produk()/jual_produk()/tester_produk() -- fungsi-fungsi itu
+    sekarang menolak tanggal lebih dari 2 hari ke belakang (PERMINTAAN
+    Owner, lihat _validasi_tanggal_mutasi_produk() di database.py), tapi
+    test di file ini menyimulasikan data LAMA yang SUDAH ADA di tabel
+    sebelum purge jalan -- jadi validasi "jangan backdate" (yang cuma
+    berlaku saat kasir INPUT data baru) tidak relevan di sini."""
+    now = datetime.now().isoformat(timespec="seconds")
+    with database.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, created_at) VALUES (?, ?, ?, ?, ?)",
+            (produk_id, tanggal, tipe, jumlah, now),
+        )
+
+
+HARI_INI = datetime.now().strftime("%Y-%m-%d")
+
+
 # ---------------------------------------------------------------------------
 # Carry-forward saldo Produk (database.py::arsipkan_dan_hapus_mutasi_lama)
 # ---------------------------------------------------------------------------
@@ -44,13 +63,13 @@ def _set_email(tenant_id, email):
 def test_arsipkan_dan_hapus_mutasi_lama_carry_forward_saldo(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     produk_id = database.tambah_produk("Pomade Test", harga_modal=10000, harga_jual=20000, tenant_id=tenant_id)
-    database.restock_produk(produk_id, "2026-07-01", 50)
-    database.jual_produk(produk_id, "2026-07-10", 10)
-    database.restock_produk(produk_id, "2026-08-05", 20)
-    database.jual_produk(produk_id, "2026-08-15", 5)
+    _mutasi_lama(produk_id, "2026-07-01", "restock", 50)
+    _mutasi_lama(produk_id, "2026-07-10", "jual", 10)
+    _mutasi_lama(produk_id, "2026-08-05", "restock", 20)
+    _mutasi_lama(produk_id, "2026-08-15", "jual", 5)
     assert database.get_stok_produk(produk_id) == 55  # 50-10+20-5
 
-    database.jual_produk(produk_id, "2026-09-02", 3)  # SETELAH cutoff -- harus tetap ada
+    _mutasi_lama(produk_id, "2026-09-02", "jual", 3)  # SETELAH cutoff -- harus tetap ada
     assert database.get_stok_produk(produk_id) == 52
 
     saldo = database.arsipkan_dan_hapus_mutasi_lama(produk_id, "2026-09-01")
@@ -72,9 +91,9 @@ def test_arsipkan_dan_hapus_mutasi_lama_carry_forward_termasuk_tester(single_ten
     tenant_id = single_tenant["tenant_id"]
     produk_id = database.tambah_produk("Parfum Tester Test", harga_modal=8000, harga_jual=25000,
                                         tenant_id=tenant_id)
-    database.restock_produk(produk_id, "2026-07-01", 40)
-    database.jual_produk(produk_id, "2026-07-10", 10)
-    database.tester_produk(produk_id, "2026-07-12", 5)
+    _mutasi_lama(produk_id, "2026-07-01", "restock", 40)
+    _mutasi_lama(produk_id, "2026-07-10", "jual", 10)
+    _mutasi_lama(produk_id, "2026-07-12", "tester", 5)
     assert database.get_stok_produk(produk_id) == 25  # 40-10-5
 
     saldo = database.arsipkan_dan_hapus_mutasi_lama(produk_id, "2026-08-01")
@@ -85,13 +104,13 @@ def test_arsipkan_dan_hapus_mutasi_lama_carry_forward_termasuk_tester(single_ten
 def test_arsipkan_dan_hapus_mutasi_lama_saldo_awal_diperlakukan_seperti_restock(single_tenant):
     tenant_id = single_tenant["tenant_id"]
     produk_id = database.tambah_produk("Minyak Test", harga_modal=5000, harga_jual=15000, tenant_id=tenant_id)
-    database.restock_produk(produk_id, "2026-07-01", 10)
+    _mutasi_lama(produk_id, "2026-07-01", "restock", 10)
     database.arsipkan_dan_hapus_mutasi_lama(produk_id, "2026-08-01")
     assert database.get_stok_produk(produk_id) == 10
 
     with pytest.raises(ValueError):
-        database.jual_produk(produk_id, "2026-08-05", 15)  # melebihi saldo_awal (10) -- ditolak
-    database.jual_produk(produk_id, "2026-08-05", 10)  # pas, boleh
+        database.jual_produk(produk_id, HARI_INI, 15)  # melebihi saldo_awal (10) -- ditolak
+    database.jual_produk(produk_id, HARI_INI, 10)  # pas, boleh
     assert database.get_stok_produk(produk_id) == 0
 
 
@@ -325,8 +344,8 @@ def _siapkan_data_lengkap(tenant_id):
 
     produk_id = database.tambah_produk(f"Produk Purge E2E T{tenant_id}", harga_modal=5000, harga_jual=10000,
                                         tenant_id=tenant_id)
-    database.restock_produk(produk_id, "2026-07-01", 30)
-    database.jual_produk(produk_id, "2026-09-02", 2)
+    _mutasi_lama(produk_id, "2026-07-01", "restock", 30)
+    _mutasi_lama(produk_id, "2026-09-02", "jual", 2)
 
     attendance_db.set_settings(tenant_id, jam_masuk="09:00", toleransi_menit=15, jam_pulang="20:00",
                                 radius_meter=500, lokasi_nama="Toko Purge",

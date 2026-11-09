@@ -9,6 +9,8 @@ BARBER (bukan dihitung/dibagi otomatis sistem), ikut masuk total yang
 ditagihkan. Lihat pos_db.py::buat_transaksi()/_lengkapi() untuk desain
 lengkapnya."""
 
+from datetime import datetime
+
 import database as db
 import pos_db
 
@@ -66,7 +68,15 @@ def test_hapus_transaksi_lunas_rebuild_rekap_dan_kembalikan_stok(single_tenant):
     barber_a = db.add_barber("Barber C", tenant_id=tenant_id)
     svc_dry = db.add_service("Dry Cut Smoke 2", 50000, tenant_id=tenant_id)
     produk_id = db.tambah_produk("Pomade Smoke", 10000, 20000, tenant_id=tenant_id)
-    db.restock_produk(produk_id, "2020-01-01", 50)
+    # Insert langsung (BUKAN db.restock_produk()) -- fungsi itu sekarang
+    # menolak tanggal > 2 hari ke belakang (PERMINTAAN Owner, lihat
+    # _validasi_tanggal_mutasi_produk() di database.py), sedangkan di sini
+    # tanggal restocknya SENGAJA lampau, cuma utk setup stok awal.
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO produk_mutasi (produk_id, tanggal, tipe, jumlah, created_at) VALUES (?, ?, 'restock', ?, ?)",
+            (produk_id, "2020-01-01", 50, datetime.now().isoformat(timespec="seconds")),
+        )
 
     stok_awal = db.get_stok_produk(produk_id)
 

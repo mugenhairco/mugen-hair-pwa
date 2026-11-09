@@ -674,6 +674,28 @@ def _validasi_tanggal(tanggal: str):
     datetime.strptime(tanggal, "%Y-%m-%d")  # akan raise ValueError jika format salah
 
 
+def _sekarang() -> datetime:
+    """Dipisah jadi fungsi sendiri (BUKAN datetime.now() inline) supaya test
+    bisa monkeypatch waktu "sekarang" palsu -- pola yang SAMA seperti
+    _sekarang_wib() di attendance_db.py/booking_db.py/pos_db.py/dkk."""
+    return datetime.now()
+
+
+def _validasi_tanggal_mutasi_produk(tanggal: str):
+    """Restock/Jual/Tester HANYA boleh tanggal hari ini atau maks 2 hari ke
+    belakang (PERMINTAAN Owner: menutup celah kasir backdating mutasi "Jual"
+    ke bulan lalu supaya lolos dari filter default "Riwayat Mutasi" yang
+    defaultnya bulan ini -- lihat produk.js::selBulanFilter). Tidak dipakai
+    di _validasi_tanggal() generik karena itu juga dipakai tambah_transaksi/
+    kasbon/dll yang memang butuh bebas pilih tanggal."""
+    _validasi_tanggal(tanggal)
+    batas_mundur = (_sekarang() - timedelta(days=2)).date()
+    if datetime.strptime(tanggal, "%Y-%m-%d").date() < batas_mundur:
+        raise ValueError(
+            f"Tanggal maksimal {batas_mundur.strftime('%d-%m-%Y')} (2 hari ke belakang)."
+        )
+
+
 def _bersihkan_items(items):
     """Ambil hanya item dengan jumlah > 0 dari daftar {'service_id':.., 'jumlah':..}."""
     hasil = []
@@ -2651,7 +2673,7 @@ def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = Non
     `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
     pola yang SAMA PERSIS seperti tambah_transaksi()/_catat_keluar_produk()
     di bawah, dipakai WA Bot (Restock Produk, lihat whatsapp_bot_parser.py)."""
-    _validasi_tanggal(tanggal)
+    _validasi_tanggal_mutasi_produk(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah restock harus lebih dari 0.")
     now = datetime.now().isoformat(timespec="seconds")
@@ -2688,7 +2710,7 @@ def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
     idx_produk_mutasi_idempotency), mutasi yang SUDAH ADA dikembalikan apa
     adanya (BUKAN baris baru -- menutup celah race condition/webhook WA
     Bot terkirim ulang, lihat whatsapp_bot_parser.py)."""
-    _validasi_tanggal(tanggal)
+    _validasi_tanggal_mutasi_produk(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")
     produk = get_produk(produk_id)

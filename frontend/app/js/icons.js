@@ -70,6 +70,11 @@ const MugenIcons = (() => {
     // -- form pindah jadi modal): plus polos, dipakai jadi ikon prefix
     // tombol tambah/buat baru.
     plus: `<svg ${S}><path d="M12 5v14M5 12h14"/></svg>`,
+
+    // PERMINTAAN Owner (pencarian produk di Daftar Produk, pakai ikon):
+    // kaca pembesar -- dipakai MugenUI.selectIcon() sebagai prefix input
+    // teks pencarian (fungsinya generik, bukan cuma untuk <select>).
+    search: `<svg ${S}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`,
   };
 })();
 
