@@ -540,7 +540,13 @@ const PageRekap = (() => {
           // di atas tabel seperti sebelumnya) -- lihat .rekap-slide-nav.
           tableWrap.appendChild(navRow);
 
-          let slideIndex = 0;
+          // PERMINTAAN Owner ("default-nya harusnya tampilkan halaman
+          // pagination yang TERAKHIR, bukan yang pertama"): tanggalUnik
+          // terurut ASC (lama -> baru, lihat komentar di atas), jadi
+          // index terakhir = tanggal PALING BARU -- itu yang pertama
+          // kali dilihat saat Rekap Transaksi dibuka, bukan tanggal
+          // paling lama.
+          let slideIndex = Math.max(tanggalUnik.length - 1, 0);
 
           // PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen
           // pagination, ada nomor 1 2 3 4 5 ... sampai nomor terakhir"):
