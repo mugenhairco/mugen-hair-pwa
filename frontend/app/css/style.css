@@ -682,11 +682,11 @@ table.data-table tr:hover td { background: var(--bg); }
   .sp-stats { grid-template-columns: 1fr; }
 }
 
-/* Rekap > Transaksi (Owner/Admin): header kartu "Daftar Transaksi" + badge
-   jumlah data, dan navigasi pagination per-tanggal DI BAWAH tabel, rata
-   kanan (PERMINTAAN Owner, referensi gambar -- bukan di atas tabel/center)
-   -- lihat rekap.js::renderTransaksi(). */
-.rekap-card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+/* Header kartu generik: judul di kiri + elemen lain (badge/tombol aksi)
+   rata kanan dalam satu baris -- dipakai card "Daftar Transaksi" (Rekap,
+   badge jumlah data) dan "Daftar Produk" (Produk, tombol "+ Tambah
+   Produk") -- lihat rekap.js::renderTransaksi()/produk.js. */
+.card-header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 /* PERMINTAAN Owner ("posisi pagination tidak konsisten, naik turun kalau
    data 4 baris vs 5 baris"): min-height cukup untuk ~6 baris + header
    (diukur: header ~36px, satu baris ~55px) -- tabel dengan sedikit data
@@ -1276,6 +1276,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .aksi-menu-item:hover { background: var(--bg); }
 .aksi-menu-item.danger { color: var(--danger); }
 .aksi-menu-item.danger:hover { background: rgba(220,38,38,0.08); }
+
+/* PERMINTAAN Owner (tombol "+ Tambah Produk" di header "Daftar Produk"):
+   ikon prefix inline di dalam tombol teks biasa -- generik, bisa dipakai
+   tombol lain yang butuh ikon+label serupa. */
+.btn-icon-inline { display: inline-flex; align-items: center; }
+.btn-icon-inline svg { width: 16px; height: 16px; }
 
 .sidebar-backdrop { display: none; }
 

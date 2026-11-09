@@ -522,7 +522,7 @@ const PageRekap = (() => {
           // kronologis yang benar lewat sort string biasa.
           const tanggalUnik = [...baganTanggal.keys()].sort();
 
-          const cardHeader = MugenUI.el("div", { class: "rekap-card-header" }, [
+          const cardHeader = MugenUI.el("div", { class: "card-header-row" }, [
             MugenUI.el("h2", { style: "margin:0;" }, "Daftar Transaksi"),
             MugenUI.el("span", { class: "badge badge-period" }, `${rows.length} Data`),
           ]);
