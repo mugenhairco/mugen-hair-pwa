@@ -646,7 +646,7 @@ const PageAbsensi = (() => {
     koreksiCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     koreksiCard.appendChild(kTanggal);
     koreksiCard.appendChild(MugenUI.el("label", {}, "Jenis"));
-    koreksiCard.appendChild(kJenis);
+    koreksiCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, kJenis));
     koreksiCard.appendChild(MugenUI.el("label", {}, "Jam yang Seharusnya"));
     koreksiCard.appendChild(kJam);
     koreksiCard.appendChild(MugenUI.el("label", {}, "Alasan"));
@@ -827,7 +827,7 @@ const PageAbsensi = (() => {
     card.appendChild(MugenUI.el("label", {}, "Jam Pulang"));
     card.appendChild(inputJamPulang);
     card.appendChild(MugenUI.el("label", {}, "Radius Absensi"));
-    card.appendChild(selRadius);
+    card.appendChild(MugenUI.selectIcon(MugenIcons.filter, selRadius));
 
     // FITUR Toleransi Absen Lebih Awal (feedback Owner): SEBELUMNYA Check In
     // SELALU ditolak keras sebelum Jam Masuk PERSIS -- field ini menggeser
@@ -1124,7 +1124,7 @@ const PageAbsensi = (() => {
     const inputDari = MugenUI.el("input", { type: "date", value: today, style: "display:none;" });
     const inputSampai = MugenUI.el("input", { type: "date", value: today, style: "display:none;" });
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:10px;" },
-      [filBarber, filStatus, filPeriode, inputDari, inputSampai]));
+      [MugenUI.selectIcon(MugenIcons.karyawan, filBarber), MugenUI.selectIcon(MugenIcons.statusCheck, filStatus), MugenUI.selectIcon(MugenIcons.calendar, filPeriode), inputDari, inputSampai]));
 
     function rentangPeriode() {
       // BUGFIX (audit): dulu `new Date()` (waktu lokal BROWSER, belum tentu
@@ -1277,7 +1277,7 @@ const PageAbsensi = (() => {
     // riwayat koreksi yang sudah diputuskan sekarang dibersihkan otomatis
     // setiap tanggal 10 (lihat data_purge_db.py).
     koreksiCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;flex:none;gap:8px;margin-bottom:10px;" },
-      [kFilStatus]));
+      [MugenUI.selectIcon(MugenIcons.statusCheck, kFilStatus)]));
     const koreksiListBody = MugenUI.el("div");
     koreksiCard.appendChild(koreksiListBody);
 

@@ -47,7 +47,10 @@ const PageDashboardBarber = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(tahun);
-    header.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
+    header.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [
+      MugenUI.selectIcon(MugenIcons.calendar, selBulan),
+      MugenUI.selectIcon(MugenIcons.calendar, selTahun),
+    ]));
     root.appendChild(header);
 
     const body = MugenUI.el("div");

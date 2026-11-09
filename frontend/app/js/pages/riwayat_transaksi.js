@@ -153,7 +153,7 @@ const PageRiwayatTransaksi = (() => {
     filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), inputMulai]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), inputSelesai]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), MugenUI.selectIcon(MugenIcons.statusCheck, selStatus)]),
       btnFilter,
     ]));
 

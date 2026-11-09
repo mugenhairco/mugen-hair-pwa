@@ -315,7 +315,7 @@ const PageReimburse = (() => {
 
     formCard.appendChild(formTitle);
     formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
-    formCard.appendChild(selBarber);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     formCard.appendChild(inputTanggal);
     formCard.appendChild(MugenUI.el("label", {}, "Kategori"));
@@ -402,7 +402,7 @@ const PageReimburse = (() => {
     const filTahun = MugenUI.el("select");
     filTahun.appendChild(MugenUI.el("option", { value: "" }, "Semua Tahun"));
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) filTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filStatus, filBulan, filTahun]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.karyawan, filBarber), MugenUI.selectIcon(MugenIcons.statusCheck, filStatus), MugenUI.selectIcon(MugenIcons.calendar, filBulan), MugenUI.selectIcon(MugenIcons.calendar, filTahun)]));
     filterCard.appendChild(tombolDownloadPdf(() => {
       const params = {};
       if (filBarber.value) params.barber_id = filBarber.value;

@@ -123,7 +123,7 @@ const PageKomisi = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [selBulan, selTahun]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.calendar, selBulan), MugenUI.selectIcon(MugenIcons.calendar, selTahun)]));
     filterCard.appendChild(tombolDownloadPdf(
       () => ({ tahun: selTahun.value, bulan: selBulan.value }),
       () => `Laporan Komisi Saya ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`,
@@ -241,13 +241,13 @@ const PageKomisi = (() => {
 
     formCard.appendChild(formTitle);
     formCard.appendChild(MugenUI.el("label", {}, "Barber"));
-    formCard.appendChild(selBarber);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     formCard.appendChild(MugenUI.el("label", {}, "Bulan"));
-    formCard.appendChild(selBulan);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.calendar, selBulan));
     formCard.appendChild(MugenUI.el("label", {}, "Tahun"));
-    formCard.appendChild(selTahun);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.calendar, selTahun));
     formCard.appendChild(MugenUI.el("label", {}, "Jenis"));
-    formCard.appendChild(selJenis);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, selJenis));
     formCard.appendChild(MugenUI.el("label", {}, "Jumlah (Rp)"));
     formCard.appendChild(inputJumlah);
     formCard.appendChild(MugenUI.el("label", {}, "Keterangan"));
@@ -338,7 +338,7 @@ const PageKomisi = (() => {
     const filTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) filTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     filTahun.value = String(today.getFullYear());
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filJenis, filBulan, filTahun]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.karyawan, filBarber), MugenUI.selectIcon(MugenIcons.tag, filJenis), MugenUI.selectIcon(MugenIcons.calendar, filBulan), MugenUI.selectIcon(MugenIcons.calendar, filTahun)]));
     filterCard.appendChild(tombolDownloadPdf(() => {
       const params = { tahun: filTahun.value, bulan: filBulan.value };
       if (filBarber.value) params.barber_id = filBarber.value;

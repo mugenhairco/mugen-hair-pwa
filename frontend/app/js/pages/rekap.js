@@ -230,8 +230,11 @@ const PageRekap = (() => {
           }
         });
       }
-      const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
-        [selBulan, selTahun, ...(selBarber ? [selBarber] : [])]);
+      const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [
+        MugenUI.selectIcon(MugenIcons.calendar, selBulan),
+        MugenUI.selectIcon(MugenIcons.calendar, selTahun),
+        ...(selBarber ? [MugenUI.selectIcon(MugenIcons.karyawan, selBarber)] : []),
+      ]);
       return { row, selBulan, selTahun, selBarber };
     }
 
@@ -264,7 +267,7 @@ const PageRekap = (() => {
         MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Periode PDF (opsional):"),
         inputDariTanggal, inputSampaiTanggal,
         MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Jenis Laporan:"),
-        selJenisLaporan,
+        MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan),
       ]);
 
       // Periode efektif yang dipakai NAMA FILE (murni tampilan nama file --

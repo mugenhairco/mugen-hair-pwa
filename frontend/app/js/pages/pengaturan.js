@@ -776,7 +776,7 @@ const PagePengaturan = (() => {
         MugenUI.el("option", { value: "AND" }, "AND (harus keduanya dilanggar)"),
       ]);
       selKombinasi.value = cfg.kombinasi_metode || "OR";
-      baris("Metode Kombinasi", selKombinasi);
+      baris("Metode Kombinasi", MugenUI.selectIcon(MugenIcons.filter, selKombinasi));
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Service Rule"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle" },
@@ -790,7 +790,7 @@ const PagePengaturan = (() => {
         MugenUI.el("option", { value: "POTONGAN" }, "Sebagai Potongan"),
       ]);
       selServiceMode.value = cfg.service_rule_mode || "TIDAK_DIGUNAKAN";
-      baris("Mode", selServiceMode);
+      baris("Mode", MugenUI.selectIcon(MugenIcons.filter, selServiceMode));
       const inServiceMinimal = MugenUI.el("input", { type: "number", min: "0",
         value: String(cfg.service_rule_minimal ?? 0) });
       baris("Minimal Service/Hari", inServiceMinimal);
@@ -898,7 +898,7 @@ const PagePengaturan = (() => {
       formCard.appendChild(MugenUI.el("label", {}, "Nama Karyawan"));
       formCard.appendChild(inputNama);
       formCard.appendChild(MugenUI.el("label", {}, "Jabatan"));
-      formCard.appendChild(selJabatan);
+      formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selJabatan));
       formCard.appendChild(wrapJabatanKustom);
       formCard.appendChild(wrapUangHarian);
       formCard.appendChild(wrapGajiPerHari);
@@ -1009,7 +1009,9 @@ const PagePengaturan = (() => {
                       sel.disabled = false;
                     }
                   });
-                  return sel;
+                  const wrap = MugenUI.selectIcon(MugenIcons.statusCheck, sel);
+                  wrap.style.width = "auto";
+                  return wrap;
                 },
               },
               { key: "urutan", label: "Urutan" },
@@ -1555,11 +1557,13 @@ const PagePengaturan = (() => {
       }
       selRole.appendChild(MugenUI.el("option", { value: "barber" }, "Barber"));
       if (isStaffActor) selRole.value = "barber";
-      const selBarberAkun = MugenUI.el("select", { style: isStaffActor ? "" : "display:none;" });
+      const selBarberAkun = MugenUI.el("select");
       selBarberAkun.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
       for (const b of barbers) selBarberAkun.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+      const wrapBarberAkun = MugenUI.selectIcon(MugenIcons.karyawan, selBarberAkun);
+      wrapBarberAkun.style.display = isStaffActor ? "" : "none";
       selRole.addEventListener("change", () => {
-        selBarberAkun.style.display = selRole.value === "barber" ? "" : "none";
+        wrapBarberAkun.style.display = selRole.value === "barber" ? "" : "none";
       });
 
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Tambah User");
@@ -1572,7 +1576,7 @@ const PagePengaturan = (() => {
       formCard.appendChild(MugenUI.el("label", {}, "Email (opsional)"));
       formCard.appendChild(inputEmail);
       formCard.appendChild(MugenUI.el("label", {}, "Role"));
-      formCard.appendChild(selRole);
+      formCard.appendChild(MugenUI.selectIcon(MugenIcons.tag, selRole));
       // REVISI Hak Akses (hapus Role "Admin" bawaan): kalau belum ada Role
       // SAMA SEKALI, Owner belum bisa membuat akun Admin baru -- arahkan ke
       // tab Hak Akses User dulu, supaya tidak bingung dropdown Role di atas
@@ -1582,7 +1586,7 @@ const PagePengaturan = (() => {
           "Belum ada Role Admin. Buat Role dulu di tab \"Hak Akses User\" sebelum membuat akun Admin baru."));
       }
       formCard.appendChild(MugenUI.el("label", {}, "Terhubung ke Barber (khusus role Barber)"));
-      formCard.appendChild(selBarberAkun);
+      formCard.appendChild(wrapBarberAkun);
       formCard.appendChild(formError);
       formCard.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSubmit));
 
@@ -1707,7 +1711,7 @@ const PagePengaturan = (() => {
                       });
                       const modal = MugenUI.infoModal({
                         title: `Ganti Role -- ${r.username}`,
-                        body: [MugenUI.el("label", {}, "Role"), sel, err, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanRole)],
+                        body: [MugenUI.el("label", {}, "Role"), MugenUI.selectIcon(MugenIcons.tag, sel), err, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanRole)],
                       });
                     });
                     wrap.appendChild(btnGantiRole);

@@ -229,9 +229,9 @@ const PageSlipGaji = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
     wrapBulanTahun.appendChild(MugenUI.el("label", {}, "Bulan"));
-    wrapBulanTahun.appendChild(selBulan);
+    wrapBulanTahun.appendChild(MugenUI.selectIcon(MugenIcons.calendar, selBulan));
     wrapBulanTahun.appendChild(MugenUI.el("label", {}, "Tahun"));
-    wrapBulanTahun.appendChild(selTahun);
+    wrapBulanTahun.appendChild(MugenUI.selectIcon(MugenIcons.calendar, selTahun));
 
     const wrapTanggalRentang = MugenUI.el("div");
     const inputTanggalMulai = MugenUI.el("input", { type: "date" });
@@ -369,7 +369,7 @@ const PageSlipGaji = (() => {
     isiReimburseDariPeriode();
 
     formCard.appendChild(MugenUI.el("label", {}, "Karyawan"));
-    formCard.appendChild(selBarber);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     formCard.appendChild(wrapBulanTahun);
     formCard.appendChild(wrapTanggalRentang);
     formCard.appendChild(wrapGajiPokok);
@@ -449,7 +449,7 @@ const PageSlipGaji = (() => {
     const filTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) filTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     filTahun.value = String(today.getFullYear());
-    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [filBarber, filBulan, filTahun]));
+    filterCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;" }, [MugenUI.selectIcon(MugenIcons.karyawan, filBarber), MugenUI.selectIcon(MugenIcons.calendar, filBulan), MugenUI.selectIcon(MugenIcons.calendar, filTahun)]));
 
     // ---- Daftar ----
     listCard.appendChild(MugenUI.el("h2", {}, "Daftar Slip Gaji"));

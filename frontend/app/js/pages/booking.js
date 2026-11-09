@@ -539,7 +539,7 @@ const PageBooking = (() => {
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 1; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(today.getFullYear());
-    root.insertBefore(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [selBulan, selTahun]), card);
+    root.insertBefore(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [MugenUI.selectIcon(MugenIcons.calendar, selBulan), MugenUI.selectIcon(MugenIcons.calendar, selTahun)]), card);
     const userId = MugenState.getUser().id;
 
     function renderData(data) {
@@ -1168,7 +1168,7 @@ const PageBooking = (() => {
       selStatus.appendChild(MugenUI.el("option", { value: "dibatalkan" }, "Dibatalkan"));
     }
     const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;flex-wrap:wrap;" },
-      [selBulan, selTahun, selBarber, ...(selStatus ? [selStatus] : [])]);
+      [MugenUI.selectIcon(MugenIcons.calendar, selBulan), MugenUI.selectIcon(MugenIcons.calendar, selTahun), MugenUI.selectIcon(MugenIcons.karyawan, selBarber), ...(selStatus ? [MugenUI.selectIcon(MugenIcons.statusCheck, selStatus)] : [])]);
     return { row, selBulan, selTahun, selBarber, selStatus };
   }
 
@@ -1203,7 +1203,7 @@ const PageBooking = (() => {
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Jadwal Ulang");
 
       const form = MugenUI.el("div", {}, [
-        MugenUI.el("label", {}, "Barber"), selBarber,
+        MugenUI.el("label", {}, "Barber"), MugenUI.selectIcon(MugenIcons.karyawan, selBarber),
         MugenUI.el("label", {}, "Tanggal"), inpTanggal,
         MugenUI.el("label", {}, "Jam Mulai"), inpJam,
         MugenUI.el("label", {}, "Service"), serviceBox,
@@ -1388,7 +1388,7 @@ const PageBooking = (() => {
     const selBarber = MugenUI.el("select");
     selBarber.appendChild(MugenUI.el("option", { value: "" }, "Semua Barber"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [selBarber]));
+    body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [MugenUI.selectIcon(MugenIcons.karyawan, selBarber)]));
 
     const calOfflineBox = MugenUI.el("div"); // AUDIT SINKRONISASI: lihat komentar renderBarberList()
     const calBox = MugenUI.el("div", { class: "book-calendar", style: "max-width:520px;" });
@@ -1677,7 +1677,7 @@ const PageBooking = (() => {
     const errorBox = MugenUI.el("div", { class: "login-error" });
 
     formCard.appendChild(MugenUI.el("label", {}, "Barber"));
-    formCard.appendChild(selBarber);
+    formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
     formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
     formCard.appendChild(inputTanggal);
     formCard.appendChild(MugenUI.el("label", {}, "Jam Mulai"));

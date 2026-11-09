@@ -678,9 +678,9 @@ const PageSuperadmin = (() => {
       const errPackageStatus = MugenUI.el("div", { class: "login-error" });
 
       subsManagerBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;align-items:flex-end;margin-top:8px;" }, [
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Package"), selPackage]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Package"), MugenUI.selectIcon(MugenIcons.tag, selPackage)]),
         btnSimpanPackage,
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), MugenUI.selectIcon(MugenIcons.statusCheck, selStatus)]),
         btnSimpanStatus,
       ]));
       subsManagerBody.appendChild(errPackageStatus);
@@ -967,10 +967,10 @@ const PageSuperadmin = (() => {
       selStatus.value = sub.status;
 
       box.appendChild(MugenUI.el("div", { style: "text-align:left;margin-top:12px;display:flex;flex-direction:column;gap:10px;" }, [
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), selPackage]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), MugenUI.selectIcon(MugenIcons.tag, selPackage)]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tanggal Mulai"), inputMulai]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tanggal Aktif Sampai"), inputSelesai]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), MugenUI.selectIcon(MugenIcons.statusCheck, selStatus)]),
       ]));
 
       const errReset = MugenUI.el("div", { class: "login-error" });
@@ -1337,7 +1337,7 @@ const PageSuperadmin = (() => {
     const inBillingWebhookUrl = MugenUI.el("input", { type: "text", placeholder: "https://api.rivoirsett.com/api/..." });
 
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
-    billingGatewayCard.appendChild(inBillingEnv);
+    billingGatewayCard.appendChild(MugenUI.selectIcon(MugenIcons.filter, inBillingEnv));
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "API Key (tidak dipakai Faspay)"));
     billingGatewayCard.appendChild(inBillingApiKey);
     billingGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key (Faspay: User ID)"));
@@ -1591,7 +1591,7 @@ const PageSuperadmin = (() => {
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Provider"));
     paymentGatewayCard.appendChild(inPgwProvider);
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Environment"));
-    paymentGatewayCard.appendChild(selPgwEnv);
+    paymentGatewayCard.appendChild(MugenUI.selectIcon(MugenIcons.filter, selPgwEnv));
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "API Key (tidak dipakai Faspay)"));
     paymentGatewayCard.appendChild(inPgwApiKey);
     paymentGatewayCard.appendChild(MugenUI.el("label", {}, "Server Key (Faspay: User ID)"));
@@ -1748,7 +1748,7 @@ const PageSuperadmin = (() => {
     const inSnapRetryMax = MugenUI.el("input", { type: "number", min: "0" });
 
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Environment"));
-    snapAdvanceCard.appendChild(inSnapEnv);
+    snapAdvanceCard.appendChild(MugenUI.selectIcon(MugenIcons.filter, inSnapEnv));
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Sandbox Base URL"));
     snapAdvanceCard.appendChild(inSnapSandboxUrl);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Production Base URL"));
@@ -1785,7 +1785,7 @@ const PageSuperadmin = (() => {
     const snapVaBankList = MugenUI.el("div", { style: "display:flex;flex-direction:column;gap:6px;margin:8px 0;" });
     snapAdvanceCard.appendChild(snapVaBankList);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "E-Wallet QRIS Default (channelCode Generate QRIS)"));
-    snapAdvanceCard.appendChild(inSnapQrisChannelCode);
+    snapAdvanceCard.appendChild(MugenUI.selectIcon(MugenIcons.qris, inSnapQrisChannelCode));
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Timeout (detik)"));
     snapAdvanceCard.appendChild(inSnapTimeout);
     snapAdvanceCard.appendChild(MugenUI.el("label", {}, "Retry Max"));
@@ -2056,10 +2056,10 @@ const PageSuperadmin = (() => {
       const btnExport = MugenUI.el("button", {}, "Export CSV");
 
       listCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), selTenant]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), MugenUI.selectIcon(MugenIcons.filter, selTenant)]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), inputMulai]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), inputSelesai]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), selStatus]),
+        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), MugenUI.selectIcon(MugenIcons.statusCheck, selStatus)]),
         MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Pembayaran"), inputMetode]),
         MugenUI.el("div", { style: "flex:1;min-width:240px;" }, [MugenUI.el("label", {}, "Cari"), inputCari]),
         btnFilter,
@@ -2230,8 +2230,8 @@ const PageSuperadmin = (() => {
     const stlInputSelesai = MugenUI.el("input", { type: "date" });
     const stlBtnFilter = MugenUI.el("button", { class: "btn-primary" }, "Terapkan Filter");
     settlementCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;align-items:flex-end;" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), stlSelTenant]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), stlSelStatus]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Toko"), MugenUI.selectIcon(MugenIcons.filter, stlSelTenant)]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Status"), MugenUI.selectIcon(MugenIcons.statusCheck, stlSelStatus)]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Dari Tanggal"), stlInputMulai]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Sampai Tanggal"), stlInputSelesai]),
       stlBtnFilter,
@@ -2748,15 +2748,15 @@ const PageSuperadmin = (() => {
     const ltBankCode = MugenUI.el("select", {}, [
       MugenUI.el("option", { value: "" }, "-- pilih bank VA --"),
     ]);
-    const ltBankCodeWrap = MugenUI.el("div", {}, [MugenUI.el("label", {}, "Bank VA"), ltBankCode]);
+    const ltBankCodeWrap = MugenUI.el("div", {}, [MugenUI.el("label", {}, "Bank VA"), MugenUI.selectIcon(MugenIcons.keuangan, ltBankCode)]);
     const ltKodeReferral = MugenUI.el("input", { type: "text", placeholder: "Kode Referral (opsional)" });
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tenant"), ltTenantSelect]),
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), ltPackage]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Tenant"), MugenUI.selectIcon(MugenIcons.filter, ltTenantSelect)]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Paket"), MugenUI.selectIcon(MugenIcons.tag, ltPackage)]),
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nominal"), ltAmount]),
     ]));
     salesLifetimeCard.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;margin-top:8px;" }, [
-      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Pembayaran"), ltChannel]),
+      MugenUI.el("div", {}, [MugenUI.el("label", {}, "Metode Pembayaran"), MugenUI.selectIcon(MugenIcons.keuangan, ltChannel)]),
       ltBankCodeWrap,
       MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kode Referral"), ltKodeReferral]),
     ]));
