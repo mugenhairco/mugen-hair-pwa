@@ -527,7 +527,13 @@ const PageRekap = (() => {
             MugenUI.el("span", { class: "badge badge-period" }, `${rows.length} Data`),
           ]);
           const navRow = MugenUI.el("div", { class: "rekap-slide-nav" });
-          const slideTableBox = MugenUI.el("div");
+          // PERMINTAAN Owner ("posisi pagination jangan berpindah-pindah
+          // naik turun kalau data 4 baris vs 5 baris"): min-height di
+          // sini (lihat style.css::.rekap-slide-table) supaya tabel
+          // dengan sedikit baris tetap menyisakan ruang kosong di bawahnya
+          // -- pagination tetap di posisi yang sama -- baru ikut turun
+          // kalau datanya benar-benar lebih banyak dari itu.
+          const slideTableBox = MugenUI.el("div", { class: "rekap-slide-table" });
           tableWrap.appendChild(cardHeader);
           tableWrap.appendChild(slideTableBox);
           // PERMINTAAN Owner: pagination di BAWAH tabel, rata kanan (bukan
