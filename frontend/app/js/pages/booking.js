@@ -1048,8 +1048,20 @@ const PageBooking = (() => {
     ];
     if (onVerifikasi || onBatalkan || onReschedule || onHapus) {
       columns.push({
+        // PERMINTAAN Owner ("Booking List, aksi jadi titik tiga juga" --
+        // lanjutan dari Daftar Produk): sampai 4 tombol sejajar
+        // (Verifikasi/Detail/Jadwal Ulang-Batalkan/Hapus) sekarang satu
+        // tombol menu "⋮" (MugenUI.bukaMenuAksi(), helper sama dipakai
+        // produk.js). Kondisi tiap item TETAP PERSIS seperti tombol lama
+        // di bawah -- cuma bentuk tampilannya yang berubah. Jadwal Ulang
+        // sudah modal (bukaRescheduleModal(), tidak berubah); Verifikasi/
+        // Batalkan/Hapus tetap toast/confirmModal seperti sebelumnya,
+        // HANYA spinner inline per-tombol (withButtonLoading) dilepas --
+        // menu sudah tertutup duluan begitu item diklik, tidak ada lagi
+        // tombol yang bisa ditempeli spinner (pola sama seperti
+        // produk.js::nonaktifkanProduk()).
         key: "aksi", label: "Aksi", format: (_, r) => {
-          const wrap = MugenUI.el("div", { class: "actions-cell" });
+          const items = [];
           // AUDIT tombol Verifikasi (permintaan Owner): tombol "Verifikasi
           // Booking" (kirim ulang WA "silakan bayar" -- Fonnte SUDAH
           // mengirimnya sekali otomatis saat booking dibuat, lihat
@@ -1066,33 +1078,28 @@ const PageBooking = (() => {
             // FUNGSI yang dipanggil klik TETAP SAMA (onVerifikasi ->
             // verifikasi_pembayaran()), hanya labelnya beda biar jelas
             // maksudnya buat kasir.
-            const btn = MugenUI.el("button", {}, r.metode_pembayaran === "bayar_nanti" ? "Sudah Bayar" : "Verifikasi");
-            // REVISI UI/UX (permintaan Owner): sebelumnya onVerifikasi()
-            // memanggil load() yang mengganti SELURUH tabel dengan skeleton
-            // (tabel "reset" sesaat) -- sekarang HANYA tombol yang diklik
-            // yang tampil loading (spinner inline, lihat withButtonLoading()
-            // di ui.js), caller (renderBookingList()) memanggil load()
-            // dengan {silent:true} jadi baris lama tetap tampil sampai data
-            // baru siap, tanpa skeleton berkedip.
-            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onVerifikasi(r)));
-            wrap.appendChild(btn);
+            items.push({
+              label: r.metode_pembayaran === "bayar_nanti" ? "Sudah Bayar" : "Verifikasi",
+              onClick: () => onVerifikasi(r),
+            });
           }
           if (r.metode_pembayaran === "gateway" && r.gateway_transaksi_id) {
-            const btn = MugenUI.el("button", {}, "Detail");
-            btn.addEventListener("click", async () => {
-              try {
-                // Migrasi Faspay SNAP Advance: dua tabel/endpoint TERPISAH
-                // -- `r.gateway_provider` sudah diperkaya backend (lihat
-                // booking_db.py::_perkaya_status_gateway()).
-                const url = r.gateway_provider === "snap_advance"
-                  ? `/api/booking/transactions/snap/${r.gateway_transaksi_id}` : `/api/booking/transactions/${r.gateway_transaksi_id}`;
-                const detail = await MugenUI.withButtonLoading(btn, () => MugenApi.get(url));
-                bukaDetailGateway(detail, r.gateway_provider);
-              } catch (e) {
-                MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-              }
+            items.push({
+              label: "Detail",
+              onClick: async () => {
+                try {
+                  // Migrasi Faspay SNAP Advance: dua tabel/endpoint TERPISAH
+                  // -- `r.gateway_provider` sudah diperkaya backend (lihat
+                  // booking_db.py::_perkaya_status_gateway()).
+                  const url = r.gateway_provider === "snap_advance"
+                    ? `/api/booking/transactions/snap/${r.gateway_transaksi_id}` : `/api/booking/transactions/${r.gateway_transaksi_id}`;
+                  const detail = await MugenApi.get(url);
+                  bukaDetailGateway(detail, r.gateway_provider);
+                } catch (e) {
+                  MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                }
+              },
             });
-            wrap.appendChild(btn);
           }
           // Item #2 spek Booking: begitu pembayaran terverifikasi (dan
           // metode BUKAN gateway -- payment gateway tidak boleh disentuh),
@@ -1101,13 +1108,9 @@ const PageBooking = (() => {
           // (cabang else di bawah, tidak diubah sama sekali).
           if (r.status_booking === "aktif" && r.status_pembayaran === "terverifikasi"
               && r.metode_pembayaran !== "gateway" && onReschedule) {
-            const btn = MugenUI.el("button", {}, "Jadwal Ulang");
-            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onReschedule(r)));
-            wrap.appendChild(btn);
+            items.push({ label: "Jadwal Ulang", onClick: () => onReschedule(r) });
           } else if (onBatalkan && r.status_booking === "aktif") {
-            const btn = MugenUI.el("button", { class: "btn-danger" }, "Batalkan");
-            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onBatalkan(r)));
-            wrap.appendChild(btn);
+            items.push({ label: "Batalkan", danger: true, onClick: () => onBatalkan(r) });
           }
           // Requirement Owner: tombol Hapus PERMANEN -- SELALU muncul,
           // TERLEPAS dari status_booking/status_pembayaran apa pun
@@ -1115,11 +1118,17 @@ const PageBooking = (() => {
           // terpisah dari logika Verifikasi/Reschedule/Batalkan di atas,
           // BUKAN pengganti tombol-tombol itu).
           if (onHapus) {
-            const btn = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-            btn.addEventListener("click", () => MugenUI.withButtonLoading(btn, () => onHapus(r)));
-            wrap.appendChild(btn);
+            items.push({ label: "Hapus", danger: true, onClick: () => onHapus(r) });
           }
-          return wrap;
+          if (items.length === 0) return MugenUI.el("span", {}, "-");
+          const btnAksi = MugenUI.el("button", {
+            type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
+          });
+          btnAksi.addEventListener("click", (e) => {
+            e.stopPropagation();
+            MugenUI.bukaMenuAksi(btnAksi, items);
+          });
+          return btnAksi;
         },
       });
     }

@@ -537,6 +537,57 @@ const MugenUI = (() => {
     return { close: tutup };
   }
 
+  // PERMINTAAN Owner (Daftar Produk, lanjut dipakai Booking List: "aksi
+  // per-baris jadi titik tiga saja"): menu dropdown generik dipicu tombol
+  // "⋮" (lihat .aksi-btn/MugenIcons.moreVertical) -- `items`: [{ label,
+  // onClick, danger? }]. Dirender ke document.body (BUKAN child di dalam
+  // tabel) supaya tidak kepotong overflow-x:auto milik .table-wrap
+  // (overflow-x selain "visible" otomatis membuat overflow-y ikut "auto"
+  // juga, lihat spesifikasi CSS -- menu yang nempel di dalam tabel akan
+  // kepotong/tersembunyi kalau tidak di-"portal"-kan begini). Posisi
+  // dihitung dari getBoundingClientRect() tombol pemicu, rata kanan ke
+  // tombol, geser ke ATAS kalau mepet tepi bawah layar.
+  function bukaMenuAksi(anchorBtn, items) {
+    document.querySelectorAll(".aksi-menu").forEach((m) => m.remove());
+
+    const menu = el("div", { class: "aksi-menu" });
+    for (const item of items) {
+      const btnItem = el("button", {
+        type: "button", class: "aksi-menu-item" + (item.danger ? " danger" : ""),
+      }, item.label);
+      btnItem.addEventListener("click", () => {
+        tutupMenu();
+        item.onClick();
+      });
+      menu.appendChild(btnItem);
+    }
+    document.body.appendChild(menu);
+
+    const rect = anchorBtn.getBoundingClientRect();
+    let left = rect.right - menu.offsetWidth;
+    if (left < 8) left = 8;
+    let top = rect.bottom + 4;
+    if (top + menu.offsetHeight > window.innerHeight - 8) top = rect.top - menu.offsetHeight - 4;
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    function tutupMenu() {
+      menu.remove();
+      document.removeEventListener("click", tutupSaatKlikLuar);
+      window.removeEventListener("scroll", tutupMenu, true);
+    }
+    function tutupSaatKlikLuar(e) {
+      if (!menu.contains(e.target)) tutupMenu();
+    }
+    // setTimeout 0: klik yang MEMBUKA menu ini masih "in-flight" ke
+    // document saat baris ini jalan -- kalau listener dipasang langsung,
+    // menu ini bisa langsung tertutup oleh klik pembukanya sendiri.
+    setTimeout(() => {
+      document.addEventListener("click", tutupSaatKlikLuar);
+      window.addEventListener("scroll", tutupMenu, true);
+    }, 0);
+  }
+
   function offlineBanner(cachedAt) {
     const waktu = new Date(cachedAt).toLocaleString("id-ID");
     return el("div", { class: "offline-banner" },
@@ -1023,7 +1074,7 @@ const MugenUI = (() => {
   return {
     formatRupiah, parseAngka, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
-    themeSwitch, confirmModal, infoModal, buatNomorTransaksi,
+    themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
     attachNumericKeypad, dropdownSelect, selectIcon,
