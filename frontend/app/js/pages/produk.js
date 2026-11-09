@@ -246,56 +246,82 @@ const PageProduk = (() => {
       produkListHeader.appendChild(btnTambahProduk);
     }
     produkListCard.appendChild(produkListHeader);
+
+    // PERMINTAAN Owner ("pencarian untuk produk, tampilannya pakai ikon"):
+    // cari NAMA produk, client-side saja (daftar produk sudah penuh di
+    // memori lewat produkList, tidak perlu round-trip API baru) -- ikon
+    // kaca pembesar lewat MugenUI.selectIcon() (fungsinya generik, bukan
+    // cuma untuk <select>, lihat catatan di style.css::.select-icon-wrap).
+    let produkSearchQuery = "";
+    const inputCariProduk = MugenUI.el("input", { type: "text", placeholder: "Cari produk..." });
+    produkListCard.appendChild(MugenUI.el("div", { style: "max-width:320px;margin-bottom:14px;" },
+      [MugenUI.selectIcon(MugenIcons.search, inputCariProduk)]));
+    inputCariProduk.addEventListener("input", () => {
+      produkSearchQuery = inputCariProduk.value;
+      renderTabelProduk();
+    });
+
     const produkListBody = MugenUI.el("div");
     produkListCard.appendChild(produkListBody);
+    const produkTableBox = MugenUI.el("div");
+
+    function kolomProduk() {
+      return [
+        { key: "nama", label: "Nama Produk" },
+        { key: "harga_modal", label: "Harga Modal", format: MugenUI.formatRupiah },
+        { key: "harga_jual", label: "Harga Jual", format: MugenUI.formatRupiah },
+        { key: "stok", label: "Sisa Stok" },
+        {
+          // PERMINTAAN Owner ("daftar produk banyak, aksi jadi titik
+          // tiga saja -- klik langsung modal di tengah, tidak perlu
+          // scroll"): Restock/Jual/Tester/Ubah/Nonaktifkan sekarang
+          // SATU tombol menu "⋮" per baris (MugenUI.bukaMenuAksi(),
+          // helper generik di ui.js -- dipakai juga booking.js), ganti
+          // 5 tombol sejajar. Hak akses per aksi (izin_produk_mutasi/
+          // kelola/hapus) TETAP sama seperti sebelumnya -- cuma
+          // menentukan item mana yang masuk daftar menu.
+          key: "aksi", label: "Aksi", format: (_, p) => {
+            const items = [];
+            if (bolehMutasi) {
+              items.push({ label: "Restock", onClick: () => bukaModalMutasi(p, "restock") });
+              items.push({ label: "Jual", onClick: () => bukaModalMutasi(p, "jual") });
+              items.push({ label: "Tester", onClick: () => bukaModalMutasi(p, "tester") });
+            }
+            if (bolehKelolaProduk) {
+              items.push({ label: "Ubah", onClick: () => bukaModalUbahProduk(p) });
+            }
+            if (bolehHapusProduk) {
+              items.push({ label: "Nonaktifkan", danger: true, onClick: () => nonaktifkanProduk(p) });
+            }
+            if (items.length === 0) return MugenUI.el("span", {}, "-");
+            const btnAksi = MugenUI.el("button", {
+              type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
+            });
+            btnAksi.addEventListener("click", (e) => {
+              e.stopPropagation();
+              MugenUI.bukaMenuAksi(btnAksi, items);
+            });
+            return btnAksi;
+          },
+        },
+      ];
+    }
+
+    function renderTabelProduk() {
+      produkTableBox.innerHTML = "";
+      const q = produkSearchQuery.trim().toLowerCase();
+      const rows = q ? produkList.filter((p) => p.nama.toLowerCase().includes(q)) : produkList;
+      produkTableBox.appendChild(MugenUI.buildTable(kolomProduk(), rows, {
+        emptyText: q ? "Tidak ada produk yang cocok." : "Belum ada produk.",
+      }));
+    }
 
     function renderDenganDataProduk(data) {
       produkList = Array.isArray(data) ? data : [];
       produkListBody.innerHTML = "";
       if (data.__offline) produkListBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-      produkListBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "nama", label: "Nama Produk" },
-            { key: "harga_modal", label: "Harga Modal", format: MugenUI.formatRupiah },
-            { key: "harga_jual", label: "Harga Jual", format: MugenUI.formatRupiah },
-            { key: "stok", label: "Sisa Stok" },
-            {
-              // PERMINTAAN Owner ("daftar produk banyak, aksi jadi titik
-              // tiga saja -- klik langsung modal di tengah, tidak perlu
-              // scroll"): Restock/Jual/Tester/Ubah/Nonaktifkan sekarang
-              // SATU tombol menu "⋮" per baris (MugenUI.bukaMenuAksi(),
-              // helper generik di ui.js -- dipakai juga booking.js), ganti
-              // 5 tombol sejajar. Hak akses per aksi (izin_produk_mutasi/
-              // kelola/hapus) TETAP sama seperti sebelumnya -- cuma
-              // menentukan item mana yang masuk daftar menu.
-              key: "aksi", label: "Aksi", format: (_, p) => {
-                const items = [];
-                if (bolehMutasi) {
-                  items.push({ label: "Restock", onClick: () => bukaModalMutasi(p, "restock") });
-                  items.push({ label: "Jual", onClick: () => bukaModalMutasi(p, "jual") });
-                  items.push({ label: "Tester", onClick: () => bukaModalMutasi(p, "tester") });
-                }
-                if (bolehKelolaProduk) {
-                  items.push({ label: "Ubah", onClick: () => bukaModalUbahProduk(p) });
-                }
-                if (bolehHapusProduk) {
-                  items.push({ label: "Nonaktifkan", danger: true, onClick: () => nonaktifkanProduk(p) });
-                }
-                if (items.length === 0) return MugenUI.el("span", {}, "-");
-                const btnAksi = MugenUI.el("button", {
-                  type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
-                });
-                btnAksi.addEventListener("click", (e) => {
-                  e.stopPropagation();
-                  MugenUI.bukaMenuAksi(btnAksi, items);
-                });
-                return btnAksi;
-              },
-            },
-          ],
-          produkList,
-          { emptyText: "Belum ada produk." },
-        ));
+      produkListBody.appendChild(produkTableBox);
+      renderTabelProduk();
     }
 
     async function loadProdukList(opts = {}) {

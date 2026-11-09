@@ -762,9 +762,12 @@ select {
    posisi (tidak punya border/background sendiri -- select di dalamnya
    TETAP yang tampil sebagai pill), width:100% supaya perilaku lebarnya
    SAMA PERSIS seperti <select> polos sebelumnya (baik di baris filter
-   flex maupun form vertikal). */
+   flex maupun form vertikal). FUNGSI-nya sendiri generik (tidak
+   bergantung tag), jadi dipakai juga untuk <input> pencarian (mis.
+   "Cari Produk" -- lihat produk.js) -- selector di bawah SENGAJA
+   mencakup kedua tag. */
 .select-icon-wrap { position: relative; display: inline-flex; align-items: center; width: 100%; }
-.select-icon-wrap select { flex: 1; min-width: 0; padding-left: 38px; }
+.select-icon-wrap select, .select-icon-wrap input { flex: 1; min-width: 0; padding-left: 38px; }
 .select-icon {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
   color: var(--accent); pointer-events: none; display: flex; z-index: 1;
