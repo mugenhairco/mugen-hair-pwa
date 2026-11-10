@@ -173,6 +173,168 @@ const PageDashboardOwner = (() => {
       return MugenUI.el("div", { class: "card card--" + warna }, [titleRow, valueBox]);
     }
 
+    // PERMINTAAN Owner: "Grafik Pendapatan Harian" -- smooth gradient area
+    // chart (ungu->biru), tanpa library eksternal (SVG + animasi CSS
+    // murni, konsisten dengan filosofi app ini -- lihat icons.js), filter
+    // 7/30 Hari, tooltip sentuh/hover, animasi reveal kiri->kanan saat
+    // dimuat. Data dari GET /api/dashboard/owner/pendapatan-harian.
+    function formatTanggalPendekGp(iso) {
+      const [, m, d] = iso.split("-").map(Number);
+      const bulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+      return `${d} ${bulan[m - 1]}`;
+    }
+
+    // Kurva halus lewat Catmull-Rom -> Bezier kubik (dikonversi per segmen)
+    // -- pola umum utk smooth line chart tanpa library, titik kontrol
+    // dihitung dari tetangga kiri/kanan tiap titik supaya transisinya mulus.
+    function kurvaMulusGp(points) {
+      let d = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i - 1] || points[i];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] || p2;
+        const cp1x = p1.x + (p2.x - p0.x) / 6, cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
+        d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+      }
+      return d;
+    }
+
+    function renderGrafikPendapatan() {
+      const section = MugenUI.el("div", { class: "grafik-pendapatan" });
+      const btn7 = MugenUI.el("button", { type: "button", class: "gp-filter-btn active" }, "7 Hari");
+      const btn30 = MugenUI.el("button", { type: "button", class: "gp-filter-btn" }, "30 Hari");
+      section.appendChild(MugenUI.el("div", { class: "gp-head" }, [
+        MugenUI.el("h2", {}, "Pendapatan Harian"),
+        MugenUI.el("div", { class: "gp-filter" }, [btn7, btn30]),
+      ]));
+      const totalValue = MugenUI.el("span", { class: "gp-total-value" }, "Rp 0");
+      const totalLabel = MugenUI.el("span", { class: "gp-total-label" }, "");
+      section.appendChild(MugenUI.el("div", { class: "gp-total-row" }, [totalValue, totalLabel]));
+      const chartWrap = MugenUI.el("div", { class: "gp-chart-wrap" });
+      section.appendChild(chartWrap);
+
+      function gambar(data, hari) {
+        const total = data.reduce((s, d) => s + d.nilai, 0);
+        totalValue.textContent = MugenUI.formatRupiah(total);
+        totalLabel.textContent = `total ${hari} hari terakhir`;
+
+        const W = 720, H = 220, padL = 10, padR = 10, padT = 18, padB = 28;
+        const innerW = W - padL - padR, innerH = H - padT - padB;
+        const maxVal = Math.max(...data.map((d) => d.nilai), 0) * 1.15 || 1;
+
+        const points = data.map((d, i) => ({
+          x: padL + (data.length === 1 ? innerW / 2 : (i / (data.length - 1)) * innerW),
+          y: padT + innerH - (d.nilai / maxVal) * innerH,
+          ...d,
+        }));
+
+        const linePath = kurvaMulusGp(points);
+        const areaPath = `${linePath} L ${points[points.length - 1].x} ${padT + innerH} L ${points[0].x} ${padT + innerH} Z`;
+
+        const everyNth = Math.max(1, Math.ceil(data.length / 7));
+        const axisLabels = points
+          .map((p, i) => (i % everyNth === 0 || i === points.length - 1)
+            ? `<text class="gp-axis-label" x="${p.x}" y="${H - 6}" text-anchor="middle">${formatTanggalPendekGp(p.tanggal)}</text>`
+            : "")
+          .join("");
+        const dots = points
+          .map((p, i) => `<circle class="gp-dot" style="animation-delay:${1 + i * 0.03}s" cx="${p.x}" cy="${p.y}" r="3.2" fill="#ffffff" stroke="#7C5CFC" stroke-width="2"></circle>`)
+          .join("");
+
+        chartWrap.innerHTML = `
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="gp-svg">
+            <defs>
+              <linearGradient id="gpAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.38" />
+                <stop offset="55%" stop-color="#6D7CF7" stop-opacity="0.16" />
+                <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient id="gpLineGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#8B5CF6" />
+                <stop offset="100%" stop-color="#3B82F6" />
+              </linearGradient>
+              <clipPath id="gpRevealClip"><rect x="0" y="0" width="${W}" height="${H}" /></clipPath>
+            </defs>
+            <g class="gp-reveal-clip"><rect x="0" y="0" width="${W}" height="${H}" fill="transparent" /></g>
+            <g clip-path="url(#gpRevealClip)">
+              <path d="${areaPath}" fill="url(#gpAreaGrad)"></path>
+              <path class="gp-line-path" d="${linePath}" fill="none" stroke="url(#gpLineGrad)" stroke-width="3" stroke-linecap="round"></path>
+              ${dots}
+            </g>
+            <line class="gp-guide-line" x1="0" y1="${padT}" x2="0" y2="${padT + innerH}"></line>
+            ${axisLabels}
+            <rect class="gp-hover-catcher" x="0" y="0" width="${W}" height="${H}" fill="transparent"></rect>
+          </svg>
+        `;
+
+        const svg = chartWrap.querySelector(".gp-svg");
+        const guide = chartWrap.querySelector(".gp-guide-line");
+        const catcher = chartWrap.querySelector(".gp-hover-catcher");
+        const tooltip = MugenUI.el("div", { class: "gp-tooltip" }, [
+          MugenUI.el("div", { class: "gp-tt-date" }),
+          MugenUI.el("div", { class: "gp-tt-val" }),
+        ]);
+        chartWrap.style.position = "relative";
+        chartWrap.appendChild(tooltip);
+
+        function tampilkanDi(clientX) {
+          const rect = svg.getBoundingClientRect();
+          const svgX = ((clientX - rect.left) / rect.width) * W;
+          let nearest = points[0], jarakTerdekat = Infinity;
+          for (const p of points) {
+            const jarak = Math.abs(p.x - svgX);
+            if (jarak < jarakTerdekat) { jarakTerdekat = jarak; nearest = p; }
+          }
+          const px = (nearest.x / W) * rect.width + rect.left;
+          const py = (nearest.y / H) * rect.height + rect.top;
+          const wrapRect = chartWrap.getBoundingClientRect();
+          tooltip.style.left = (px - wrapRect.left) + "px";
+          tooltip.style.top = (py - wrapRect.top) + "px";
+          tooltip.querySelector(".gp-tt-date").textContent = `${formatTanggalPendekGp(nearest.tanggal)} ${nearest.tanggal.slice(0, 4)}`;
+          tooltip.querySelector(".gp-tt-val").textContent = MugenUI.formatRupiah(nearest.nilai);
+          tooltip.classList.add("show");
+          guide.setAttribute("x1", nearest.x);
+          guide.setAttribute("x2", nearest.x);
+          guide.classList.add("show");
+        }
+        function sembunyikanGp() {
+          tooltip.classList.remove("show");
+          guide.classList.remove("show");
+        }
+        catcher.addEventListener("mousemove", (e) => tampilkanDi(e.clientX));
+        catcher.addEventListener("mouseleave", sembunyikanGp);
+        catcher.addEventListener("touchstart", (e) => { tampilkanDi(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+        catcher.addEventListener("touchmove", (e) => { tampilkanDi(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+        catcher.addEventListener("touchend", sembunyikanGp);
+      }
+
+      async function muatGp(hari) {
+        chartWrap.innerHTML = "";
+        chartWrap.appendChild(MugenUI.skeleton("card", { lines: 2 }));
+        try {
+          const data = await MugenApi.get(`/api/dashboard/owner/pendapatan-harian?hari=${hari}`, { useCache: true });
+          gambar(data, hari);
+        } catch (e) {
+          chartWrap.innerHTML = "";
+          chartWrap.appendChild(MugenUI.errorState(e.message));
+        }
+      }
+
+      btn7.addEventListener("click", () => {
+        btn7.classList.add("active"); btn30.classList.remove("active");
+        muatGp(7);
+      });
+      btn30.addEventListener("click", () => {
+        btn30.classList.add("active"); btn7.classList.remove("active");
+        muatGp(30);
+      });
+
+      muatGp(7);
+      return section;
+    }
+
     // BUGFIX (audit, race condition): dulu tidak ada penjagaan urutan
     // request -- membalik bulan/tahun dengan cepat bisa membuat dua
     // fetch tumpang tindih selesai TIDAK berurutan, data bulan yang
@@ -256,6 +418,19 @@ const PageDashboardOwner = (() => {
         // Admin -- hanya 4 kartu ringkasan toko yang bisa diizinkan Owner),
         // jadi tidak pernah dirender untuk role 'staff'.
         if (!isOwner) return;
+
+        // ================= GRAFIK PENDAPATAN HARIAN =================
+        // PERMINTAAN Owner (smooth gradient area chart, ungu->biru, card
+        // lavender TANPA bingkai/shadow -- "menyatu" langsung dengan
+        // halaman, lihat .grafik-pendapatan di style.css): filter 7/30
+        // Hari, tooltip saat disentuh/hover, animasi reveal kiri->kanan
+        // saat pertama dimuat. Data NYATA dari backend (GET
+        // /api/dashboard/owner/pendapatan-harian, rumus sama persis
+        // dengan kartu "Nilai Service" di atas) -- BUKAN data dummy.
+        // Animasi/tooltip MURNI lokal (CSS/SVG) setelah data diambil,
+        // TIDAK ada panggilan server berulang -- satu fetch per load
+        // halaman atau per klik ganti filter 7/30 Hari.
+        body.appendChild(renderGrafikPendapatan());
 
         // ================= SERVICE BULAN INI / PERIODE INI =================
         // PERMINTAAN Owner ("saya ingin dashboard data service bulan ini
