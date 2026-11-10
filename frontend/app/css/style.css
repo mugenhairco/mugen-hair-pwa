@@ -682,6 +682,67 @@ table.data-table tr:hover td { background: var(--bg); }
   .sp-stats { grid-template-columns: 1fr; }
 }
 
+/* Dashboard Owner: "Grafik Pendapatan Harian" (PERMINTAAN Owner, smooth
+   gradient area chart) -- SENGAJA BUKAN ".card" (tanpa border/shadow,
+   "menyatu" langsung dengan halaman, PERMINTAAN Owner eksplisit), hanya
+   area lavender muda yang membedakannya dari background halaman. Teks di
+   dalamnya SELALU hitam (--gp-text), TIDAK ikut var(--text) yang berubah
+   di dark mode -- background lavender-nya pun SENGAJA tetap terang di
+   dark mode (bukan diadaptasi var(--bg-card)), supaya kontras teks hitam
+   tetap aman di kedua mode, sesuai spesifikasi warna yang diminta. Semua
+   animasi (reveal kiri->kanan, tooltip) murni CSS/SVG lokal -- SATU fetch
+   API per load/ganti filter, TIDAK ada polling/panggilan berulang.
+   Lihat dashboard_owner.js::renderGrafikPendapatan(). */
+.grafik-pendapatan {
+  --gp-text: #111111;
+  background: #F2EEFC;
+  border-radius: var(--radius-card);
+  padding: 20px 20px 8px;
+  margin-bottom: 18px;
+  animation: mugen-fade-slide-in 220ms ease-out both;
+}
+:root[data-theme="dark"] .grafik-pendapatan { background: #F2EEFC; }
+
+.gp-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+.gp-head h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--gp-text); }
+
+.gp-filter { display: flex; background: rgba(255,255,255,0.7); border: 1px solid #E3D9F7; border-radius: 10px; padding: 3px; gap: 2px; }
+.gp-filter-btn { border: none; background: transparent; color: var(--gp-text); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 7px; cursor: pointer; transition: background var(--dur-base) var(--ease-standard); }
+.gp-filter-btn.active { background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+
+.gp-total-row { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 14px; flex-wrap: wrap; }
+.gp-total-value { font-size: 24px; font-weight: 800; color: var(--gp-text); }
+.gp-total-label { font-size: 12.5px; color: var(--gp-text); opacity: 0.75; }
+
+.gp-chart-wrap { position: relative; width: 100%; }
+.gp-chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gp-axis-label { font-size: 10.5px; fill: var(--gp-text); font-weight: 600; }
+
+.gp-reveal-clip rect { animation: gp-reveal 1.1s cubic-bezier(.22,.9,.3,1) forwards; }
+@keyframes gp-reveal { from { width: 0; } to { width: 100%; } }
+.gp-line-path { stroke-dasharray: 2000; stroke-dashoffset: 2000; animation: gp-draw 1.1s cubic-bezier(.22,.9,.3,1) forwards; }
+@keyframes gp-draw { to { stroke-dashoffset: 0; } }
+.gp-dot { opacity: 0; animation: gp-fade-dot 0.3s ease forwards; }
+@keyframes gp-fade-dot { to { opacity: 1; } }
+
+.gp-tooltip {
+  position: absolute; pointer-events: none; background: #ffffff; border: 1px solid #E3D9F7;
+  border-radius: 10px; padding: 8px 12px; font-size: 12.5px; color: var(--gp-text);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.16); transform: translate(-50%, -115%); white-space: nowrap;
+  opacity: 0; transition: opacity 0.1s ease; z-index: 5;
+}
+.gp-tooltip.show { opacity: 1; }
+.gp-tooltip .gp-tt-date { font-weight: 600; margin-bottom: 2px; }
+.gp-tooltip .gp-tt-val { font-weight: 800; }
+.gp-guide-line { stroke: #6B5FBF; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+.gp-guide-line.show { opacity: 0.6; }
+
+@media (max-width: 480px) {
+  .grafik-pendapatan { padding: 16px 14px 6px; }
+  .gp-total-value { font-size: 20px; }
+  .gp-head h2 { font-size: 14px; }
+}
+
 /* Header kartu generik: judul di kiri + elemen lain (badge/tombol aksi)
    rata kanan dalam satu baris -- dipakai card "Daftar Transaksi" (Rekap,
    badge jumlah data) dan "Daftar Produk" (Produk, tombol "+ Tambah
@@ -1947,6 +2008,26 @@ body.book-public-active {
 .book-selesai-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .book-selesai-icon { animation: none !important; }
+}
+
+/* PERMINTAAN Owner (animasi checkout POS selesai -- lihat
+   pos.js::renderSelesai()/ledakanKonfetiPos()): confetti/partikel kecil
+   meledak dari tengah centang sukses, KHUSUS POS (.pos-selesai-icon,
+   TIDAK memengaruhi .book-selesai-icon polos yang dipakai wizard booking
+   publik). Tiap partikel diberi --tx/--ty/--rot sendiri lewat JS (arah &
+   jarak acak merata melingkar) -- murni CSS, tanpa canvas/library. */
+.pos-selesai-icon { position: relative; }
+.pos-confetti-piece {
+  position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 2px;
+  margin: -3.5px 0 0 -3.5px; opacity: 0; pointer-events: none;
+  animation: pos-confetti-burst 850ms cubic-bezier(.17,.89,.32,1.1) forwards;
+}
+@keyframes pos-confetti-burst {
+  0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.3); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pos-confetti-piece { display: none; }
 }
 
 /* Payment Gateway (Menunggu Pembayaran/Payment Failed/Payment Expired) --

@@ -1824,6 +1824,29 @@ def get_ringkasan_barber_bulan(barber_id: int, tahun: int, bulan: int) -> dict:
     }
 
 
+def get_pendapatan_harian(tanggal_mulai: str, tanggal_selesai: str, tenant_id=None) -> list:
+    """PERMINTAAN Owner (Grafik Pendapatan Harian di Dashboard, area chart):
+    total "Nilai Service" (SAMA PERSIS rumus di get_ringkasan_semua_barber_bulan/
+    _periode: sum(t["total_harga"] for t in transaksi)) dikelompokkan per
+    tanggal dalam rentang [tanggal_mulai, tanggal_selesai] inklusif. SETIAP
+    tanggal dalam rentang selalu muncul di hasil (nilai 0 kalau tidak ada
+    transaksi hari itu) supaya garis grafik tetap kontinu, bukan cuma
+    tanggal yang kebetulan ada transaksi."""
+    transaksi = get_transaksi_list(tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
+    per_tanggal = {}
+    for t in transaksi:
+        per_tanggal[t["tanggal"]] = per_tanggal.get(t["tanggal"], 0) + t["total_harga"]
+
+    hasil = []
+    hari = date.fromisoformat(tanggal_mulai)
+    akhir = date.fromisoformat(tanggal_selesai)
+    while hari <= akhir:
+        iso = hari.isoformat()
+        hasil.append({"tanggal": iso, "nilai": per_tanggal.get(iso, 0)})
+        hari += timedelta(days=1)
+    return hasil
+
+
 def get_ringkasan_semua_barber_bulan(barbers: list, tahun: int, bulan: int, tenant_id=None) -> list:
     """AUDIT KONEKSI (produksi: psycopg2.pool.PoolError "connection pool
     exhausted" di Dashboard Owner): versi BATCH dari get_ringkasan_barber_bulan()

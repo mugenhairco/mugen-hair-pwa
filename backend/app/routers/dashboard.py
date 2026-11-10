@@ -4,7 +4,7 @@ Barber: HANYA bisa lihat ringkasan miliknya sendiri (barber_id diambil dari
 akun login-nya di tabel users, bukan dari parameter request — supaya Barber
 tidak bisa mengintip data barber lain hanya dengan mengubah query string)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -195,6 +195,22 @@ def dashboard_owner_periode(tanggal_mulai: str, tanggal_selesai: str, user: dict
     if user["role"] == "staff":
         hasil = _filter_dashboard_untuk_staff(hasil, user)
     return hasil
+
+
+@router.get("/owner/pendapatan-harian")
+def dashboard_owner_pendapatan_harian(hari: int = 7, user: dict = Depends(require_admin)):
+    """PERMINTAAN Owner (Grafik Pendapatan Harian, area chart di Dashboard):
+    total "Nilai Service" per tanggal untuk `hari` hari terakhir (termasuk
+    hari ini) -- KHUSUS Owner, sama seperti "SERVICE BULAN INI"/Grafik
+    Pendapatan lain di bagian ini (TIDAK PERNAH jadi bagian Dashboard
+    Admin/staff, lihat _filter_dashboard_untuk_staff() -- tidak perlu
+    izin_dashboard_* apa pun, cukup require_admin langsung).
+    `hari` dibatasi 1-90 supaya tidak ada yang iseng minta rentang raksasa."""
+    hari = max(1, min(hari, 90))
+    hari_ini = datetime.now(_WIB).date()
+    tanggal_mulai = (hari_ini - timedelta(days=hari - 1)).isoformat()
+    tanggal_selesai = hari_ini.isoformat()
+    return db.get_pendapatan_harian(tanggal_mulai, tanggal_selesai, tenant_id=user["tenant_id"])
 
 
 @router.get("/barber")
