@@ -851,10 +851,16 @@ const PagePos = (() => {
     }
 
     // ---- fase "selesai" ----
+    // PERMINTAAN Owner (animasi lagi di app ini -- "checkout POS selesai"):
+    // tambahan confetti/partikel di sekitar centang sukses, KHUSUS POS
+    // (class .pos-selesai-icon baru, TERPISAH dari .book-selesai-icon
+    // polos yang dipakai bersama di wizard booking publik -- supaya
+    // perubahan ini tidak ikut memengaruhi layar sukses booking customer).
     function renderSelesai() {
       const r = state.transaksi;
+      const iconBox = MugenUI.el("div", { class: "book-selesai-icon pos-selesai-icon" }, "✓");
       const isi = [
-        MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
+        iconBox,
         MugenUI.el("h2", {}, "Pembayaran Berhasil"),
         MugenUI.el("div", { class: "subtitle" }, `Total: ${MugenUI.formatRupiah(totalHarga())}`),
       ];
@@ -863,10 +869,36 @@ const PagePos = (() => {
         isi.push(MugenUI.el("div", { style: "font-weight:700;margin-top:4px;" }, `Kembalian: ${MugenUI.formatRupiah(r.kembalian || 0)}`));
       }
       body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, isi));
+      ledakanKonfetiPos(iconBox);
       const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
         "Transaksi Baru");
       btnBaru.addEventListener("click", () => { resetState(); gantiFase(); });
       body.appendChild(btnBaru);
+    }
+
+    // Ledakan partikel kecil dari tengah centang -- murni CSS (translate
+    // custom property per partikel), tidak ada library eksternal, otomatis
+    // dilewati kalau browser/OS minta prefers-reduced-motion.
+    function ledakanKonfetiPos(iconBox) {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const warna = ["#8B5CF6", "#3B82F6", "#22C55E", "#F59E0B", "#EC4899"];
+      const jumlah = 18;
+      for (let i = 0; i < jumlah; i++) {
+        const sudut = (Math.PI * 2 * i) / jumlah + (Math.random() * 0.5 - 0.25);
+        const jarak = 55 + Math.random() * 45;
+        const tx = Math.cos(sudut) * jarak;
+        const ty = Math.sin(sudut) * jarak - 15; // bias sedikit ke atas
+        const piece = MugenUI.el("span", { class: "pos-confetti-piece" });
+        piece.style.setProperty("--tx", `${tx}px`);
+        piece.style.setProperty("--ty", `${ty}px`);
+        piece.style.setProperty("--rot", `${Math.round(Math.random() * 540 - 270)}deg`);
+        piece.style.background = warna[i % warna.length];
+        piece.style.animationDelay = `${Math.round(Math.random() * 80)}ms`;
+        iconBox.appendChild(piece);
+      }
+      setTimeout(() => {
+        iconBox.querySelectorAll(".pos-confetti-piece").forEach((p) => p.remove());
+      }, 1100);
     }
 
     gantiFase();
