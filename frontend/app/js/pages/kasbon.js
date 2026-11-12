@@ -214,7 +214,7 @@ const PageKasbon = (() => {
     const selBarber = MugenUI.el("select");
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso(), max: todayIso() });
-    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
     const lockedNote = MugenUI.el("div", { class: "subtitle", style: "display:none;" },
       "Kasbon ini sudah punya riwayat pembayaran -- Tanggal dan Jumlah terkunci, hanya Keterangan yang bisa diubah.");
@@ -244,7 +244,7 @@ const PageKasbon = (() => {
       inputTanggal.disabled = false;
       inputJumlah.disabled = false;
       inputTanggal.value = todayIso();
-      inputJumlah.value = "0";
+      inputJumlah.value = "";
       inputKeterangan.value = "";
       lockedNote.style.display = "none";
       formError.textContent = "";
@@ -260,7 +260,7 @@ const PageKasbon = (() => {
       selBarber.disabled = true; // barber kasbon tidak bisa dipindah lewat form edit
       inputTanggal.value = k.tanggal;
       inputTanggal.disabled = locked;
-      inputJumlah.value = String(k.jumlah);
+      inputJumlah.value = MugenUI.nilaiTampilAngka(k.jumlah);
       inputJumlah.disabled = locked;
       inputKeterangan.value = k.keterangan || "";
       lockedNote.style.display = locked ? "" : "none";
@@ -273,14 +273,20 @@ const PageKasbon = (() => {
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
       if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
-      if (!editingId && (!inputJumlah.value || Number(inputJumlah.value) <= 0)) {
-        formError.textContent = "Jumlah harus lebih dari 0."; return;
+      // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+      // bacaAngkaWajib() -> null kalau field dikosongkan -- field ini
+      // cuma relevan kalau sedang BISA diedit (baru, atau edit tanpa
+      // terkunci riwayat pembayaran).
+      const jumlah = MugenUI.bacaAngkaWajib(inputJumlah);
+      if (!inputJumlah.disabled) {
+        if (jumlah === null) { formError.textContent = "Jumlah wajib diisi."; return; }
+        if (jumlah <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       }
       try {
         if (editingId) {
           const body = { keterangan: inputKeterangan.value.trim() };
           if (!inputTanggal.disabled) body.tanggal = inputTanggal.value;
-          if (!inputJumlah.disabled) body.jumlah = Number(inputJumlah.value) || 0;
+          if (!inputJumlah.disabled) body.jumlah = jumlah;
           // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
           // tombol) menggantikan withLoading() (overlay layar penuh) untuk
           // aksi CRUD rutin -- lihat catatan di ui.js.
@@ -289,7 +295,7 @@ const PageKasbon = (() => {
         } else {
           await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/kasbon", {
             barber_id: Number(selBarber.value), tanggal: inputTanggal.value,
-            jumlah: Number(inputJumlah.value) || 0, keterangan: inputKeterangan.value.trim(),
+            jumlah, keterangan: inputKeterangan.value.trim(),
           }));
           MugenUI.toast("Kasbon disimpan.", "success");
         }
@@ -306,7 +312,7 @@ const PageKasbon = (() => {
       "Klik \"Bayar\" pada salah satu kasbon di daftar bawah untuk mengisi form ini.");
     bayarCard.appendChild(baySubtitle);
     const inputBayarTanggal = MugenUI.el("input", { type: "date", value: todayIso(), max: todayIso() });
-    const inputBayarJumlah = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputBayarJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputBayarKeterangan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
     const btnBayar = MugenUI.el("button", { class: "btn-primary" }, "Simpan Pembayaran");
     btnBayar.disabled = true;
@@ -325,7 +331,7 @@ const PageKasbon = (() => {
       bayarKasbonId = k.id;
       baySubtitle.textContent = `Bayar kasbon ${k.nama_barber} tanggal ${k.tanggal} — sisa ${MugenUI.formatRupiah(k.sisa)}`;
       inputBayarTanggal.value = todayIso();
-      inputBayarJumlah.value = String(k.sisa);
+      inputBayarJumlah.value = MugenUI.nilaiTampilAngka(k.sisa);
       inputBayarKeterangan.value = "";
       bayarError.textContent = "";
       btnBayar.disabled = false;
@@ -335,14 +341,14 @@ const PageKasbon = (() => {
     btnBayar.addEventListener("click", async () => {
       bayarError.textContent = "";
       if (!bayarKasbonId) return;
-      if (!inputBayarJumlah.value || Number(inputBayarJumlah.value) <= 0) {
-        bayarError.textContent = "Jumlah harus lebih dari 0."; return;
-      }
+      const jumlahBayar = MugenUI.bacaAngkaWajib(inputBayarJumlah);
+      if (jumlahBayar === null) { bayarError.textContent = "Jumlah wajib diisi."; return; }
+      if (jumlahBayar <= 0) { bayarError.textContent = "Jumlah harus lebih dari 0."; return; }
       try {
         // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
         // tombol) menggantikan withLoading() (overlay layar penuh).
         await MugenUI.withButtonLoading(btnBayar, () => MugenApi.post(`/api/kasbon/${bayarKasbonId}/pembayaran`, {
-          tanggal: inputBayarTanggal.value, jumlah: Number(inputBayarJumlah.value) || 0,
+          tanggal: inputBayarTanggal.value, jumlah: jumlahBayar,
           keterangan: inputBayarKeterangan.value.trim(),
         }));
         MugenUI.toast("Pembayaran kasbon disimpan.", "success");

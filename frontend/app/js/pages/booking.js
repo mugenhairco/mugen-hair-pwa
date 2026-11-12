@@ -1866,8 +1866,8 @@ const PageBooking = (() => {
     let s;
     try { s = await MugenApi.get("/api/booking/pengaturan"); } catch (e) { card.appendChild(MugenUI.el("div", {}, e.message)); return; }
 
-    const inInterval = MugenUI.el("input", { type: "number", min: "5", step: "5", value: String(s.interval_menit) });
-    const inMaksHari = MugenUI.el("input", { type: "number", min: "1", value: String(s.maksimal_hari_kedepan) });
+    const inInterval = MugenUI.el("input", { type: "number", min: "5", step: "5", placeholder: "—", value: MugenUI.nilaiTampilAngka(s.interval_menit) });
+    const inMaksHari = MugenUI.el("input", { type: "number", min: "1", placeholder: "—", value: MugenUI.nilaiTampilAngka(s.maksimal_hari_kedepan) });
     const errorBox = MugenUI.el("div", { class: "login-error" });
     const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
 
@@ -1880,10 +1880,17 @@ const PageBooking = (() => {
 
     btnSimpan.addEventListener("click", async () => {
       errorBox.textContent = "";
+      // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+      // kedua field ini wajib diisi -- interval 0 menit/maks hari 0 tidak
+      // masuk akal, DITOLAK kalau dikosongkan, bukan diam-diam jadi 0.
+      const interval = MugenUI.bacaAngkaWajib(inInterval);
+      const maksHari = MugenUI.bacaAngkaWajib(inMaksHari);
+      if (interval === null || interval < 5) { errorBox.textContent = "Interval Slot wajib diisi, minimal 5 menit."; return; }
+      if (maksHari === null || maksHari < 1) { errorBox.textContent = "Maksimal Booking ke Depan wajib diisi, minimal 1 hari."; return; }
       try {
         // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
         await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/booking/pengaturan", {
-          interval_menit: Number(inInterval.value), maksimal_hari_kedepan: Number(inMaksHari.value),
+          interval_menit: interval, maksimal_hari_kedepan: maksHari,
         }));
         MugenUI.toast("Pengaturan booking disimpan.", "success");
       } catch (e) { errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }

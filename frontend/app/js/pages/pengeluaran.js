@@ -76,7 +76,7 @@ const PagePengeluaran = (() => {
     const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Operasional" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Untuk apa pengeluaran ini" });
-    const inputNominal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     // Sumber Dana (Tahap 12): Uang Kas -> otomatis mengurangi saldo Uang
     // Kas. Uang Karyawan -> otomatis membuat klaim Reimburse tersambung
     // (cair lewat Slip Gaji periode terkait). selBarber jadi WAJIB hanya
@@ -127,7 +127,7 @@ const PagePengeluaran = (() => {
       inputTanggal.value = todayIso();
       inputKategori.value = "";
       inputKeterangan.value = "";
-      inputNominal.value = "0";
+      inputNominal.value = "";
       selSumberDana.value = "kas";
       selBarber.value = "";
       inputAktif.checked = true;
@@ -143,7 +143,7 @@ const PagePengeluaran = (() => {
       inputTanggal.value = p.tanggal;
       inputKategori.value = p.kategori || "";
       inputKeterangan.value = p.keterangan || "";
-      inputNominal.value = String(p.jumlah);
+      inputNominal.value = MugenUI.nilaiTampilAngka(p.jumlah);
       selSumberDana.value = p.sumber_dana || "kas";
       selBarber.value = p.barber_id ? String(p.barber_id) : "";
       inputAktif.checked = !!p.aktif;
@@ -156,18 +156,23 @@ const PagePengeluaran = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
+      // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+      // bacaAngkaWajib() mengembalikan null kalau field dikosongkan --
+      // DITOLAK di bawah, bukan diam-diam terkirim sebagai 0.
+      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
       const body = {
         tanggal: inputTanggal.value,
         kategori: inputKategori.value.trim(),
         keterangan: inputKeterangan.value.trim(),
-        jumlah: Number(inputNominal.value) || 0,
+        jumlah: nominal,
         sumber_dana: selSumberDana.value,
         barber_id: selSumberDana.value === "karyawan" && selBarber.value ? Number(selBarber.value) : null,
         aktif: inputAktif.checked,
       };
       if (!body.kategori) { formError.textContent = "Kategori tidak boleh kosong."; return; }
       if (!body.keterangan) { formError.textContent = "Keterangan tidak boleh kosong."; return; }
-      if (!body.jumlah || body.jumlah <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
+      if (nominal === null) { formError.textContent = "Nominal wajib diisi."; return; }
+      if (nominal <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
       if (body.sumber_dana === "karyawan" && !body.barber_id) { formError.textContent = "Pilih karyawan dulu."; return; }
 
       btnSubmit.disabled = true;

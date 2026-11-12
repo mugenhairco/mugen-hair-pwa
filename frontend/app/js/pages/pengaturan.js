@@ -389,7 +389,7 @@ const PagePengaturan = (() => {
       }
 
       const field = (label, key, satuan) => {
-        const input = MugenUI.el("input", { type: "number", min: "0", step: "any", value: String(s[key] ?? 0) });
+        const input = MugenUI.el("input", { type: "number", min: "0", step: "any", placeholder: "—", value: MugenUI.nilaiTampilAngka(s[key]) });
         card.appendChild(MugenUI.el("label", {}, `${label}${satuan ? ` (${satuan})` : ""}`));
         card.appendChild(input);
         return input;
@@ -406,13 +406,17 @@ const PagePengaturan = (() => {
 
       btnSimpan.addEventListener("click", async () => {
         formError.textContent = "";
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // bacaAngkaWajib() per field -- field yang dikosongkan DITOLAK,
+        // bukan diam-diam tersimpan sebagai 0.
         const body2 = {
-          persentase_komisi: Number(inPersen.value),
-          maksimal_hari_libur_bonus_customer: Number(inMaksLiburBonus.value),
-          potongan_bonus_customer_persen: Number(inPotonganBonus.value),
+          persentase_komisi: MugenUI.bacaAngkaWajib(inPersen),
+          maksimal_hari_libur_bonus_customer: MugenUI.bacaAngkaWajib(inMaksLiburBonus),
+          potongan_bonus_customer_persen: MugenUI.bacaAngkaWajib(inPotonganBonus),
         };
         for (const [k, v] of Object.entries(body2)) {
-          if (Number.isNaN(v) || v < 0) { formError.textContent = `Nilai untuk "${k}" tidak valid (harus angka >= 0).`; return; }
+          if (v === null) { formError.textContent = `Nilai untuk "${k}" wajib diisi.`; return; }
+          if (v < 0) { formError.textContent = `Nilai untuk "${k}" tidak valid (harus angka >= 0).`; return; }
         }
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/komisi", body2));
@@ -484,8 +488,8 @@ const PagePengaturan = (() => {
                   tierFormTitle.textContent = `Edit Tier — ${tier.target} service`;
                   btnTierSimpan.textContent = "Simpan Perubahan";
                   btnTierBatal.style.display = "";
-                  inTierTarget.value = String(tier.target);
-                  inTierBonus.value = String(tier.bonus);
+                  inTierTarget.value = MugenUI.nilaiTampilAngka(tier.target);
+                  inTierBonus.value = MugenUI.nilaiTampilAngka(tier.bonus);
                   tierFormError.textContent = "";
                   tierCard.scrollIntoView({ behavior: "smooth" });
                 });
@@ -536,10 +540,10 @@ const PagePengaturan = (() => {
 
       btnTierSimpan.addEventListener("click", async () => {
         tierFormError.textContent = "";
-        const target = Number(inTierTarget.value);
-        const bonusNilai = Number(inTierBonus.value);
-        if (!target || target <= 0) { tierFormError.textContent = "Target service harus lebih dari 0."; return; }
-        if (Number.isNaN(bonusNilai) || bonusNilai < 0) { tierFormError.textContent = "Nominal bonus tidak valid."; return; }
+        const target = MugenUI.bacaAngkaWajib(inTierTarget);
+        const bonusNilai = MugenUI.bacaAngkaWajib(inTierBonus);
+        if (target === null || target <= 0) { tierFormError.textContent = "Target service harus lebih dari 0."; return; }
+        if (bonusNilai === null || bonusNilai < 0) { tierFormError.textContent = "Nominal bonus wajib diisi dan tidak boleh negatif."; return; }
         try {
           await MugenUI.withButtonLoading(btnTierSimpan, async () => {
             if (editingTarget !== null) {
@@ -658,7 +662,7 @@ const PagePengaturan = (() => {
         }
       }
 
-      const inTarget = MugenUI.el("input", { type: "number", min: "1", value: String(targetSaatIni) });
+      const inTarget = MugenUI.el("input", { type: "number", min: "1", placeholder: "—", value: MugenUI.nilaiTampilAngka(targetSaatIni) });
       targetCard.appendChild(MugenUI.el("label", {}, "Target (jumlah service/hari)"));
       targetCard.appendChild(inTarget);
       const targetError = MugenUI.el("div", { class: "login-error" });
@@ -668,8 +672,8 @@ const PagePengaturan = (() => {
 
       btnSimpanTarget.addEventListener("click", async () => {
         targetError.textContent = "";
-        const target = Number(inTarget.value);
-        if (!target || target <= 0) { targetError.textContent = "Target harus lebih dari 0."; return; }
+        const target = MugenUI.bacaAngkaWajib(inTarget);
+        if (target === null || target <= 0) { targetError.textContent = "Target harus lebih dari 0."; return; }
         try {
           await MugenUI.withButtonLoading(btnSimpanTarget, () => MugenApi.put("/api/pengaturan/uang-harian-target", { target }));
           MugenUI.toast("Target Uang Harian disimpan.", "success", { force: true });
@@ -749,8 +753,8 @@ const PagePengaturan = (() => {
       const inKetGunakanLimit = MugenUI.el("input", { type: "checkbox" });
       inKetGunakanLimit.checked = !!cfg.keterlambatan_gunakan_limit;
       isian.appendChild(checkboxBaris(inKetGunakanLimit, "Gunakan Limit Bulanan"));
-      const inKetPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
-        value: String(cfg.keterlambatan_potongan_persen ?? 0) });
+      const inKetPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(cfg.keterlambatan_potongan_persen) });
       baris("Potongan Uang Harian kalau terpicu (%)", inKetPotongan);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Pulang Lebih Awal"));
@@ -763,8 +767,8 @@ const PagePengaturan = (() => {
       const inPaGunakanLimit = MugenUI.el("input", { type: "checkbox" });
       inPaGunakanLimit.checked = !!cfg.pulang_awal_gunakan_limit;
       isian.appendChild(checkboxBaris(inPaGunakanLimit, "Gunakan Limit Bulanan"));
-      const inPaPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
-        value: String(cfg.pulang_awal_potongan_persen ?? 0) });
+      const inPaPotongan = MugenUI.el("input", { type: "number", min: "0", max: "100", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(cfg.pulang_awal_potongan_persen) });
       baris("Potongan Uang Harian kalau terpicu (%)", inPaPotongan);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Kombinasi Toleransi + Limit"));
@@ -791,11 +795,11 @@ const PagePengaturan = (() => {
       ]);
       selServiceMode.value = cfg.service_rule_mode || "TIDAK_DIGUNAKAN";
       baris("Mode", MugenUI.selectIcon(MugenIcons.filter, selServiceMode));
-      const inServiceMinimal = MugenUI.el("input", { type: "number", min: "0",
-        value: String(cfg.service_rule_minimal ?? 0) });
+      const inServiceMinimal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(cfg.service_rule_minimal) });
       baris("Minimal Service/Hari", inServiceMinimal);
-      const inServicePotongan = MugenUI.el("input", { type: "number", min: "0", max: "100",
-        value: String(cfg.service_rule_potongan_persen ?? 0) });
+      const inServicePotongan = MugenUI.el("input", { type: "number", min: "0", max: "100", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(cfg.service_rule_potongan_persen) });
       baris("Potongan kalau Service Rule Mode = Sebagai Potongan (%)", inServicePotongan);
 
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -805,18 +809,29 @@ const PagePengaturan = (() => {
 
       btnSimpan.addEventListener("click", async () => {
         errorBox.textContent = "";
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // tolak submit kalau salah satu field persen/minimal dikosongkan,
+        // bukan diam-diam terkirim sebagai 0.
+        const ketPotongan = MugenUI.bacaAngkaWajib(inKetPotongan);
+        const paPotongan = MugenUI.bacaAngkaWajib(inPaPotongan);
+        const serviceMinimal = MugenUI.bacaAngkaWajib(inServiceMinimal);
+        const servicePotongan = MugenUI.bacaAngkaWajib(inServicePotongan);
+        if (ketPotongan === null || paPotongan === null || serviceMinimal === null || servicePotongan === null) {
+          errorBox.textContent = "Semua field persen/minimal wajib diisi.";
+          return;
+        }
         const payload = {
           aktif: inAktif.checked,
           keterlambatan_gunakan_toleransi: inKetGunakanToleransi.checked,
           keterlambatan_gunakan_limit: inKetGunakanLimit.checked,
-          keterlambatan_potongan_persen: Number(inKetPotongan.value),
+          keterlambatan_potongan_persen: ketPotongan,
           pulang_awal_gunakan_toleransi: inPaGunakanToleransi.checked,
           pulang_awal_gunakan_limit: inPaGunakanLimit.checked,
-          pulang_awal_potongan_persen: Number(inPaPotongan.value),
+          pulang_awal_potongan_persen: paPotongan,
           kombinasi_metode: selKombinasi.value,
           service_rule_mode: selServiceMode.value,
-          service_rule_minimal: Number(inServiceMinimal.value),
-          service_rule_potongan_persen: Number(inServicePotongan.value),
+          service_rule_minimal: serviceMinimal,
+          service_rule_potongan_persen: servicePotongan,
         };
         try {
           await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/uang-harian-dinamis/config", payload));
@@ -865,12 +880,12 @@ const PagePengaturan = (() => {
       // Gaji, lihat pages/slip_gaji.js) -- kedua field ditampilkan bergantian
       // sesuai Jabatan yang dipilih, TIDAK PERNAH bersamaan.
       const wrapUangHarian = MugenUI.el("div");
-      const inputUangHarian = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputUangHarian = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       wrapUangHarian.appendChild(MugenUI.el("label", {}, "Uang Harian"));
       wrapUangHarian.appendChild(inputUangHarian);
 
       const wrapGajiPerHari = MugenUI.el("div");
-      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       wrapGajiPerHari.appendChild(MugenUI.el("label", {}, "Gaji per Hari (Rp)"));
       wrapGajiPerHari.appendChild(inputGajiPerHari);
 
@@ -916,8 +931,8 @@ const PagePengaturan = (() => {
         selJabatan.value = "barber";
         inputJabatanKustom.value = "";
         wrapJabatanKustom.style.display = "none";
-        inputUangHarian.value = "0";
-        inputGajiPerHari.value = "0";
+        inputUangHarian.value = "";
+        inputGajiPerHari.value = "";
         inputNomorWhatsapp.value = "";
         terapkanTampilanJabatan();
         formError.textContent = "";
@@ -933,10 +948,19 @@ const PagePengaturan = (() => {
           jabatanDikirim = inputJabatanKustom.value.trim();
           if (!jabatanDikirim) { formError.textContent = "Nama role kustom tidak boleh kosong."; return; }
         }
-        const uangHarian = Number(inputUangHarian.value);
-        if (Number.isNaN(uangHarian) || uangHarian < 0) { formError.textContent = "Uang harian tidak valid."; return; }
-        const gajiPerHari = Number(inputGajiPerHari.value);
-        if (Number.isNaN(gajiPerHari) || gajiPerHari < 0) { formError.textContent = "Gaji per hari tidak valid."; return; }
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // hanya field yang SEDANG TAMPIL (sesuai Jabatan) yang wajib diisi
+        // -- field yang disembunyikan (display:none, lihat
+        // terapkanTampilanJabatan()) tidak pernah disentuh user, jadi
+        // dibiarkan 0 apa adanya (backend tetap menerima keduanya SELALU
+        // terkirim bersamaan, lihat body2 di bawah -- tidak berubah).
+        const barberMode = selJabatan.value === "barber";
+        const uangHarianMentah = MugenUI.bacaAngkaWajib(inputUangHarian);
+        if (barberMode && (uangHarianMentah === null || uangHarianMentah < 0)) { formError.textContent = "Uang harian wajib diisi dan tidak boleh negatif."; return; }
+        const gajiPerHariMentah = MugenUI.bacaAngkaWajib(inputGajiPerHari);
+        if (!barberMode && (gajiPerHariMentah === null || gajiPerHariMentah < 0)) { formError.textContent = "Gaji per hari wajib diisi dan tidak boleh negatif."; return; }
+        const uangHarian = uangHarianMentah ?? 0;
+        const gajiPerHari = gajiPerHariMentah ?? 0;
         try {
           // REVISI UI/UX: field is_rafiq SENGAJA tidak dikirim lagi dari form
           // ini (label RAFIQ dihapus dari tampilan) -- backend tetap
@@ -1033,8 +1057,8 @@ const PagePengaturan = (() => {
                       selJabatan.value = "__lainnya__";
                       inputJabatanKustom.value = jabatanKaryawan;
                     }
-                    inputUangHarian.value = String(r.uang_harian || 0);
-                    inputGajiPerHari.value = String(r.gaji_per_hari || 0);
+                    inputUangHarian.value = MugenUI.nilaiTampilAngka(r.uang_harian);
+                    inputGajiPerHari.value = MugenUI.nilaiTampilAngka(r.gaji_per_hari);
                     inputNomorWhatsapp.value = r.nomor_whatsapp || "";
                     terapkanTampilanJabatan();
                     formError.textContent = "";
@@ -1195,8 +1219,8 @@ const PagePengaturan = (() => {
         "berikutnya otomatis lanjut dari situ (mis. mulai 1 September, 3 bulan -> Sep-Nov, lalu Des-Feb, " +
         "dst). Sisa kuota TIDAK PERNAH terbawa ke periode berikutnya -- periode baru selalu kuota penuh " +
         "sesuai pengaturan di bawah. Kosongkan/0 Periode Kuota untuk mematikan kuota sama sekali."));
-      const inputKuotaPeriode = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_periode_bulan ?? 0) });
+      const inputKuotaPeriode = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(settings.kuota_periode_bulan) });
       baris("Durasi Periode (bulan, mis. 3 atau 12) -- 0 = mati", inputKuotaPeriode);
       const inputPeriodeMulaiDasar = MugenUI.el("input", { type: "date",
         value: settings.periode_mulai_dasar || "" });
@@ -1209,8 +1233,8 @@ const PagePengaturan = (() => {
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "SATU saldo bersama untuk Izin + Cuti -- pengajuan Izin maupun Cuti sama-sama mengurangi saldo " +
         "yang sama (bukan jatah terpisah per jenis)."));
-      const inputKuotaGabungan = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_gabungan_hari ?? 0) });
+      const inputKuotaGabungan = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(settings.kuota_gabungan_hari) });
       baris("Maksimal Izin + Cuti per Periode (hari)", inputKuotaGabungan);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Aturan Pengajuan Izin"));
@@ -1223,16 +1247,16 @@ const PagePengaturan = (() => {
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Karyawan wajib mengajukan Cuti minimal sekian hari sebelum tanggal mulai. Kosongkan/0 = boleh " +
         "mengajukan Cuti mendadak (tanpa batas hari sebelumnya). TIDAK berlaku untuk Izin (lihat di atas)."));
-      const inputHMin = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.h_min_pengajuan ?? 0) });
+      const inputHMin = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(settings.h_min_pengajuan) });
       baris("Minimal H- Cuti (hari) -- 0 = tidak ada batas", inputHMin);
 
       isian.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Maksimal Cuti Bersamaan"));
       isian.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
         "Jumlah maksimal karyawan yang boleh Cuti pada tanggal yang sama. Kosongkan/0 = tidak dibatasi. " +
         "HANYA berlaku untuk Cuti (bukan Izin)."));
-      const inputMaksimalBersamaan = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.maksimal_bersamaan ?? 0) });
+      const inputMaksimalBersamaan = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(settings.maksimal_bersamaan) });
       baris("Maksimal Karyawan Cuti Bersamaan (orang) -- 0 = tidak dibatasi", inputMaksimalBersamaan);
 
       // PERMINTAAN OWNER: jatah "Kuota Libur/bulan" untuk Tandai Libur
@@ -1246,8 +1270,8 @@ const PagePengaturan = (() => {
         "Libur selanjutnya di bulan itu otomatis dicatat sebagai Cuti (mengurangi Kuota Izin & Cuti di atas). " +
         "Kalau KEDUA kuota itu sama-sama habis, tanggal tetap dicatat Libur tapi baris Hari Libur bulan itu " +
         "di Rekap Bulanan distabilo merah. Kosongkan/0 = tidak dibatasi, tidak ada cascade sama sekali."));
-      const inputKuotaLibur = MugenUI.el("input", { type: "number", min: "0",
-        value: String(settings.kuota_libur_bulanan ?? 0) });
+      const inputKuotaLibur = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+        value: MugenUI.nilaiTampilAngka(settings.kuota_libur_bulanan) });
       baris("Kuota Libur per Bulan (hari) -- 0 = tidak dibatasi", inputKuotaLibur);
 
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -1304,8 +1328,8 @@ const PagePengaturan = (() => {
       const formTitle = MugenUI.el("h2", {}, "Tambah Layanan");
       formCard.appendChild(formTitle);
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama layanan" });
-      const inputHarga = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inputModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputHarga = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inputModal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       const inputDurasi = MugenUI.el("input", { type: "number", min: "1", value: "60" });
       const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
       const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -1333,8 +1357,8 @@ const PagePengaturan = (() => {
         btnSubmit.textContent = "Simpan";
         btnBatal.style.display = "none";
         inputNama.value = "";
-        inputHarga.value = "0";
-        inputModal.value = "0";
+        inputHarga.value = "";
+        inputModal.value = "";
         inputDurasi.value = "60";
         formError.textContent = "";
       }
@@ -1343,11 +1367,11 @@ const PagePengaturan = (() => {
       btnSubmit.addEventListener("click", async () => {
         formError.textContent = "";
         if (!inputNama.value.trim()) { formError.textContent = "Nama layanan tidak boleh kosong."; return; }
-        const harga = Number(inputHarga.value);
-        const modal = Number(inputModal.value);
+        const harga = MugenUI.bacaAngkaWajib(inputHarga);
+        const modal = MugenUI.bacaAngkaWajib(inputModal);
         const durasi_menit = Number(inputDurasi.value);
-        if (Number.isNaN(harga) || harga < 0) { formError.textContent = "Harga tidak valid."; return; }
-        if (Number.isNaN(modal) || modal < 0) { formError.textContent = "Harga Modal tidak valid."; return; }
+        if (harga === null || harga < 0) { formError.textContent = "Harga wajib diisi dan tidak boleh negatif."; return; }
+        if (modal === null || modal < 0) { formError.textContent = "Harga Modal wajib diisi dan tidak boleh negatif."; return; }
         if (Number.isNaN(durasi_menit) || durasi_menit <= 0) { formError.textContent = "Durasi tidak valid."; return; }
         try {
           const body2 = { nama: inputNama.value.trim(), harga, modal, durasi_menit };
@@ -1391,8 +1415,8 @@ const PagePengaturan = (() => {
                     btnSubmit.textContent = "Simpan Perubahan";
                     btnBatal.style.display = "";
                     inputNama.value = r.nama;
-                    inputHarga.value = String(r.harga);
-                    inputModal.value = String(r.modal || 0);
+                    inputHarga.value = MugenUI.nilaiTampilAngka(r.harga);
+                    inputModal.value = MugenUI.nilaiTampilAngka(r.modal);
                     inputDurasi.value = String(r.durasi_menit || 60);
                     formError.textContent = "";
                     formCard.scrollIntoView({ behavior: "smooth" });

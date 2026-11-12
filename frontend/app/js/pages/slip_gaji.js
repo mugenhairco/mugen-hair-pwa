@@ -249,22 +249,22 @@ const PageSlipGaji = (() => {
     // mana yang tampil bergantung Jabatan karyawan yang sedang dipilih di
     // selBarber, lihat terapkanTampilanJabatan() di bawah.
     const wrapGajiPokok = MugenUI.el("div");
-    const inputGajiPokok = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputGajiPokok = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     wrapGajiPokok.appendChild(MugenUI.el("label", {}, "Gaji Pokok (Rp, opsional)"));
     wrapGajiPokok.appendChild(inputGajiPokok);
 
     const wrapHariMasuk = MugenUI.el("div");
-    const inputJumlahHariMasuk = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputJumlahHariMasuk = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const infoGajiPerHari = MugenUI.el("div", { class: "subtitle" }, "");
     wrapHariMasuk.appendChild(MugenUI.el("label", {}, "Jumlah Hari Masuk"));
     wrapHariMasuk.appendChild(inputJumlahHariMasuk);
     wrapHariMasuk.appendChild(infoGajiPerHari);
 
-    const inputPotonganKasbon = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-    const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", value: "0" }); // boleh negatif -- tanpa atribut min
-    const inputReimburse = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-    const inputBonusManual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-    const inputPotonganLain = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputPotonganKasbon = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", placeholder: "—" }); // boleh negatif -- tanpa atribut min
+    const inputReimburse = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    const inputBonusManual = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    const inputPotonganLain = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputCatatanPotongan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. keterlambatan" });
     const btnGenerate = MugenUI.el("button", { class: "btn-primary" }, "Generate Slip Gaji");
     const formError = MugenUI.el("div", { class: "login-error" });
@@ -290,8 +290,8 @@ const PageSlipGaji = (() => {
     // hanya menampilkan info Gaji per Hari karyawan itu sebagai referensi.
     function isiGajiPokokDariBarber() {
       const b = barbers.find((x) => String(x.id) === selBarber.value);
-      inputGajiPokok.value = String((b && b.gaji_pokok) || 0);
-      inputJumlahHariMasuk.value = "0";
+      inputGajiPokok.value = MugenUI.nilaiTampilAngka(b && b.gaji_pokok);
+      inputJumlahHariMasuk.value = "";
       infoGajiPerHari.textContent = b ? `Gaji per Hari: ${MugenUI.formatRupiah(b.gaji_per_hari || 0)}` : "";
       terapkanTampilanJabatan();
     }
@@ -301,10 +301,10 @@ const PageSlipGaji = (() => {
     // ini HANYA saran awal, tidak disimpan ke mana pun sampai slip benar-
     // benar ditandai Sudah Dibayar (lihat slip_gaji_db.tandai_status()).
     async function isiPotonganKasbonDariBarber() {
-      if (!selBarber.value) { inputPotonganKasbon.value = "0"; return; }
+      if (!selBarber.value) { inputPotonganKasbon.value = ""; return; }
       try {
         const saldo = await MugenApi.get(`/api/kasbon/saldo/${selBarber.value}`);
-        inputPotonganKasbon.value = String(saldo.saldo || 0);
+        inputPotonganKasbon.value = MugenUI.nilaiTampilAngka(saldo.saldo);
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     // Modul Karyawan Fase 3 (Komisi): Penyesuaian Komisi otomatis terisi dari
@@ -317,11 +317,11 @@ const PageSlipGaji = (() => {
       // Komisi murni barber-only (Kasir/OB/Kru tidak pernah punya baris
       // penyesuaian komisi -- dropdown Komisi sudah /api/input-data/barbers,
       // lihat komisi_penyesuaian_db.py) -- tidak perlu fetch sama sekali.
-      if (!selBarber.value || jabatanTerpilih() !== "barber") { inputPenyesuaianKomisi.value = "0"; return; }
+      if (!selBarber.value || jabatanTerpilih() !== "barber") { inputPenyesuaianKomisi.value = ""; return; }
       try {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         const saldo = await MugenApi.get(`/api/komisi/saldo/${selBarber.value}?${qs.toString()}`);
-        inputPenyesuaianKomisi.value = String(saldo.saldo || 0);
+        inputPenyesuaianKomisi.value = MugenUI.nilaiTampilAngka(saldo.saldo);
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     // Modul Karyawan Fase 4 (Reimburse): Reimburse otomatis terisi dari
@@ -333,18 +333,18 @@ const PageSlipGaji = (() => {
     // penambahan, tidak pernah negatif), HANYA saran awal, tetap bebas
     // diedit manual sebelum Generate.
     async function isiReimburseDariPeriode() {
-      if (!selBarber.value) { inputReimburse.value = "0"; return; }
+      if (!selBarber.value) { inputReimburse.value = ""; return; }
       try {
         let saldo;
         if (jabatanTerpilih() === "barber") {
           const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
           saldo = await MugenApi.get(`/api/reimburse/saldo/${selBarber.value}?${qs.toString()}`);
         } else {
-          if (!inputTanggalMulai.value || !inputTanggalSelesai.value) { inputReimburse.value = "0"; return; }
+          if (!inputTanggalMulai.value || !inputTanggalSelesai.value) { inputReimburse.value = ""; return; }
           const qs = new URLSearchParams({ tanggal_mulai: inputTanggalMulai.value, tanggal_selesai: inputTanggalSelesai.value });
           saldo = await MugenApi.get(`/api/reimburse/saldo-rentang/${selBarber.value}?${qs.toString()}`);
         }
-        inputReimburse.value = String(saldo.saldo || 0);
+        inputReimburse.value = MugenUI.nilaiTampilAngka(saldo.saldo);
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     selBarber.addEventListener("change", () => {
@@ -393,7 +393,8 @@ const PageSlipGaji = (() => {
       formError.textContent = "";
       if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
       const barberMode = jabatanTerpilih() === "barber";
-      if (!barberMode && (!inputJumlahHariMasuk.value || Number(inputJumlahHariMasuk.value) < 0)) {
+      const hariMasuk = MugenUI.bacaAngkaWajib(inputJumlahHariMasuk);
+      if (!barberMode && (hariMasuk === null || hariMasuk < 0)) {
         formError.textContent = "Jumlah Hari Masuk harus diisi (0 atau lebih)."; return;
       }
       if (!barberMode && (!inputTanggalMulai.value || !inputTanggalSelesai.value)) {
@@ -419,7 +420,7 @@ const PageSlipGaji = (() => {
         } else {
           body.tanggal_mulai = inputTanggalMulai.value;
           body.tanggal_selesai = inputTanggalSelesai.value;
-          body.jumlah_hari_masuk = Number(inputJumlahHariMasuk.value) || 0;
+          body.jumlah_hari_masuk = hariMasuk;
         }
         // REVISI UI/UX Premium: withButtonLoading() (spinner inline di tombol)
         // menggantikan withLoading() (overlay layar penuh) untuk aksi CRUD

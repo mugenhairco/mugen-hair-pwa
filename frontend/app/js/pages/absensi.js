@@ -814,7 +814,7 @@ const PageAbsensi = (() => {
     }
 
     const inputJamMasuk = MugenUI.el("input", { type: "time", value: settings.jam_masuk || "09:00" });
-    const inputToleransi = MugenUI.el("input", { type: "number", min: "0", value: String(settings.toleransi_menit ?? 15) });
+    const inputToleransi = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(settings.toleransi_menit) });
     const inputJamPulang = MugenUI.el("input", { type: "time", value: settings.jam_pulang || "20:00" });
     const selRadius = MugenUI.el("select", {}, [100, 250, 500, 750, 1000].map((r) =>
       MugenUI.el("option", { value: String(r) }, `${r} meter`)));
@@ -839,16 +839,16 @@ const PageAbsensi = (() => {
       "Izinkan Barber Check In beberapa menit SEBELUM Jam Masuk (mis. untuk bersiap-siap sebelum toko buka) " +
       "-- tidak mengubah Jam Masuk atau status tepat waktu/terlambat, hanya menggeser batas paling awal Check In " +
       "diizinkan. Kosongkan/0 kalau tidak ingin mengizinkan Check In lebih awal sama sekali."));
-    const inputToleransiAbsenAwal = MugenUI.el("input", { type: "number", min: "0",
-      value: String(settings.toleransi_absen_awal_menit ?? 0) });
+    const inputToleransiAbsenAwal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+      value: MugenUI.nilaiTampilAngka(settings.toleransi_absen_awal_menit) });
     card.appendChild(MugenUI.el("label", {}, "Toleransi Absen Lebih Awal (menit)"));
     card.appendChild(inputToleransiAbsenAwal);
 
     card.appendChild(MugenUI.el("h3", { style: "margin-top:20px;" }, "Limit Keterlambatan & Pulang Lebih Awal"));
     card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "Setiap barber punya anggaran menit/bulan (otomatis reset tiap tanggal 1) untuk keterlambatan Check In dan untuk pulang lebih awal saat Check Out -- dua anggaran ini TERPISAH. Limit habis TIDAK memblokir Check In/Check Out, hanya dicatat di Keterangan (dengan tanda merah)."));
-    const inputBatasTerlambat = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_terlambat ?? 120) });
-    const inputBatasPulangAwal = MugenUI.el("input", { type: "number", min: "0", value: String(settings.batas_menit_pulang_awal ?? 120) });
+    const inputBatasTerlambat = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(settings.batas_menit_terlambat) });
+    const inputBatasPulangAwal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(settings.batas_menit_pulang_awal) });
     card.appendChild(MugenUI.el("label", {}, "Limit Keterlambatan (menit/bulan)"));
     card.appendChild(inputBatasTerlambat);
     card.appendChild(MugenUI.el("label", {}, "Limit Pulang Lebih Awal (menit/bulan)"));
@@ -862,8 +862,8 @@ const PageAbsensi = (() => {
     card.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:10px;" },
       "KHUSUS dipakai fitur Uang Harian Dinamis (menu Pengaturan > Uang Harian) sebagai pasangan Toleransi " +
       "Masuk di atas -- TIDAK mengubah status/catatan Absensi di halaman ini sama sekali."));
-    const inputToleransiPulangAwal = MugenUI.el("input", { type: "number", min: "0",
-      value: String(settings.toleransi_pulang_awal_menit ?? 0) });
+    const inputToleransiPulangAwal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—",
+      value: MugenUI.nilaiTampilAngka(settings.toleransi_pulang_awal_menit) });
     card.appendChild(MugenUI.el("label", {}, "Toleransi Pulang Awal (menit)"));
     card.appendChild(inputToleransiPulangAwal);
 

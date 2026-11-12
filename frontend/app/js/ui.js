@@ -15,6 +15,35 @@ const MugenUI = (() => {
     return digit ? parseInt(digit, 10) : 0;
   }
 
+  // PERMINTAAN Owner ("semua form input angka tampil kosong secara
+  // default, jangan menampilkan angka 0"): dipakai sebagai `value` saat
+  // membuat <input type="number"> -- kalau nilainya 0/null/undefined/NaN,
+  // kembalikan string kosong (field tampil KOSONG, placeholder "--" yang
+  // mengisi visualnya, lihat style.css input[type=number]::placeholder),
+  // BUKAN literal "0". Nilai 0 yang SUNGGUHAN tersimpan (mis. Toleransi
+  // Menit memang 0) TETAP tidak ditampilkan sebagai "0" -- SENGAJA,
+  // permintaan Owner eksplisit mencakup field Setting juga.
+  function nilaiTampilAngka(n) {
+    const angka = Number(n);
+    return (n === null || n === undefined || n === "" || !angka) ? "" : String(angka);
+  }
+
+  // Lawan dari nilaiTampilAngka() -- baca <input type="number"> yang
+  // dibuat lewatnya. Mengembalikan `null` (BUKAN 0) kalau field
+  // dikosongkan/bukan angka, supaya pemanggil WAJIB menangani kasus itu
+  // sendiri (tolak submit dgn pesan error, atau pertahankan nilai lama) --
+  // TIDAK PERNAH diam-diam memperlakukan kosong sebagai 0 (PERMINTAAN
+  // Owner eksplisit: "pastikan nilai kosong tidak otomatis dianggap
+  // sebagai angka 0"). Dipakai di titik SUBMIT/SIMPAN, bukan saat
+  // mengetik -- kalkulasi live (mis. preview sebelum simpan) boleh
+  // tetap pakai `Number(input.value) || 0` seperti biasa.
+  function bacaAngkaWajib(inputEl) {
+    const teks = (inputEl.value || "").trim();
+    if (teks === "") return null;
+    const angka = Number(teks);
+    return Number.isFinite(angka) ? angka : null;
+  }
+
   function formatTanggal(iso) {
     if (!iso) return "-";
     const [y, m, d] = iso.split("-");
@@ -953,8 +982,17 @@ const MugenUI = (() => {
     // nilainya lewat MugenUI.parseAngka(), bukan parseInt() langsung).
     if (opts.rupiah) {
       input.setAttribute("type", "text");
-      input.value = formatRupiah(parseAngka(input.value));
+      // PERMINTAAN Owner ("semua form input angka tampil kosong secara
+      // default, jangan menampilkan angka 0"): SEBELUMNYA baris ini SELALU
+      // memformat ulang jadi "Rp 0" walau field baru dibuat kosong
+      // (parseAngka("")=0) -- sekarang dibiarkan kosong (placeholder yang
+      // menunjukkan belum diisi), HANYA diformat kalau memang sudah ada
+      // isinya. Berlaku juga saat mengetik: kalau user menghapus semua
+      // karakter, field dibiarkan kosong lagi (BUKAN dipaksa balik ke "Rp 0").
+      if (input.value.trim() !== "") input.value = formatRupiah(parseAngka(input.value));
+      if (!input.placeholder) input.placeholder = "Rp —";
       input.addEventListener("input", () => {
+        if (input.value.trim() === "") return;
         input.value = formatRupiah(parseAngka(input.value));
         try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* abaikan, cuma kosmetik */ }
       });
@@ -1072,7 +1110,7 @@ const MugenUI = (() => {
   }
 
   return {
-    formatRupiah, parseAngka, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
+    formatRupiah, parseAngka, nilaiTampilAngka, bacaAngkaWajib, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
