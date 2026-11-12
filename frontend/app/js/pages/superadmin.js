@@ -1105,9 +1105,9 @@ const PageSuperadmin = (() => {
       billingPackageEditBody.appendChild(MugenUI.el("h3", {}, `Edit Paket: ${paket.nama} (${paket.kode})`));
 
       const inputNama = MugenUI.el("input", { type: "text", value: paket.nama });
-      const inputHarga = MugenUI.el("input", { type: "number", min: "0", value: String(paket.harga) });
-      const inputDurasi = MugenUI.el("input", { type: "number", min: "1", value: String(paket.durasi_hari) });
-      const inputUrutan = MugenUI.el("input", { type: "number", min: "0", value: String(paket.urutan) });
+      const inputHarga = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(paket.harga) });
+      const inputDurasi = MugenUI.el("input", { type: "number", min: "1", placeholder: "—", value: MugenUI.nilaiTampilAngka(paket.durasi_hari) });
+      const inputUrutan = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(paket.urutan) });
       const inputAktif = MugenUI.el("input", { type: "checkbox" });
       inputAktif.checked = !!paket.aktif;
       const inputDeskripsi = MugenUI.el("textarea", { rows: "2" }, paket.deskripsi || "");
@@ -1141,7 +1141,7 @@ const PageSuperadmin = (() => {
       const limitRow = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" });
       for (const [key, label] of LIMIT_FIELDS) {
         const input = MugenUI.el("input", { type: "number", min: "0", placeholder: "tidak dibatasi" });
-        if (paket[key] !== null && paket[key] !== undefined) input.value = String(paket[key]);
+        input.value = MugenUI.nilaiTampilAngka(paket[key]);
         inputLimit[key] = input;
         limitRow.appendChild(MugenUI.el("div", {}, [MugenUI.el("label", {}, label), input]));
       }
@@ -1181,10 +1181,17 @@ const PageSuperadmin = (() => {
 
       btnSimpan.addEventListener("click", async () => {
         errEdit.textContent = "";
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // Harga/Durasi wajib diisi -- Urutan TETAP lenient (0 posisi
+        // pertama memang nilai sah, bukan "belum diisi").
+        const harga = MugenUI.bacaAngkaWajib(inputHarga);
+        const durasi = MugenUI.bacaAngkaWajib(inputDurasi);
+        if (harga === null || harga < 0) { errEdit.textContent = "Harga wajib diisi dan tidak boleh negatif."; return; }
+        if (durasi === null || durasi < 1) { errEdit.textContent = "Durasi wajib diisi, minimal 1 hari."; return; }
         const body = {
           nama: inputNama.value.trim(),
-          harga: parseInt(inputHarga.value, 10) || 0,
-          durasi_hari: parseInt(inputDurasi.value, 10) || 1,
+          harga,
+          durasi_hari: durasi,
           urutan: parseInt(inputUrutan.value, 10) || 0,
           aktif: inputAktif.checked,
           deskripsi: inputDeskripsi.value,
@@ -2492,7 +2499,7 @@ const PageSuperadmin = (() => {
       const inputNomor = MugenUI.el("input", { type: "text", placeholder: "Nomor device Fonnte, mis. 628xxxxxxxxxx", value: b.config ? b.config.phone_number_id : "" });
       const inputToken = MugenUI.el("input", { type: "password", autocomplete: "off", placeholder: "Device Token (dashboard Fonnte -> device list)", value: b.config ? b.config.device_token || "" : "" });
       const inputNama = MugenUI.el("input", { type: "text", placeholder: "Label nomor (opsional)", value: b.config ? b.config.nama_nomor || "" : "" });
-      const inputKuota = MugenUI.el("input", { type: "number", min: "0", placeholder: String(50), value: b.config ? String(b.config.kuota_pesan_bulanan) : "" });
+      const inputKuota = MugenUI.el("input", { type: "number", min: "0", placeholder: "50", value: b.config ? MugenUI.nilaiTampilAngka(b.config.kuota_pesan_bulanan) : "" });
       // FITUR WA Bot (Input Data & Rekap via WhatsApp): nomor yang setara
       // akses Owner PENUH lewat bot (input data siapa saja + rekap siapa
       // saja) -- OPSIONAL, beda dari Nomor Device Fonnte di atas (nomor

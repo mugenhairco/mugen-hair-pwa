@@ -63,7 +63,7 @@ const PageKomisi = (() => {
         { key: "nama_barber", label: "Barber" },
         { key: "jumlah_service", label: "Jumlah Service" },
         { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
-        { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+        { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
         { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
         { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
         { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },
@@ -231,7 +231,7 @@ const PageKomisi = (() => {
       MugenUI.el("option", { value: "bonus" }, "Bonus Tambahan"),
       MugenUI.el("option", { value: "potongan" }, "Potongan Komisi"),
     ]);
-    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Wajib diisi -- alasan penyesuaian" });
     const lockedNote = MugenUI.el("div", { class: "subtitle", style: "display:none;" },
       "Slip Gaji periode ini sudah Sudah Dibayar dan terkunci -- batalkan statusnya dulu di halaman Slip Gaji kalau perlu mengubah ini.");
@@ -264,7 +264,7 @@ const PageKomisi = (() => {
       selBarber.disabled = false;
       selBulan.disabled = false;
       selTahun.disabled = false;
-      inputJumlah.value = "0";
+      inputJumlah.value = "";
       selJenis.value = "bonus";
       inputKeterangan.value = "";
       lockedNote.style.display = "none";
@@ -283,7 +283,7 @@ const PageKomisi = (() => {
       selTahun.value = String(p.tahun);
       selTahun.disabled = true;
       selJenis.value = p.jenis;
-      inputJumlah.value = String(p.jumlah);
+      inputJumlah.value = MugenUI.nilaiTampilAngka(p.jumlah);
       inputKeterangan.value = p.keterangan || "";
       lockedNote.style.display = "none";
       formError.textContent = "";
@@ -295,7 +295,9 @@ const PageKomisi = (() => {
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
       if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
-      if (!inputJumlah.value || Number(inputJumlah.value) <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
+      const jumlah = MugenUI.bacaAngkaWajib(inputJumlah);
+      if (jumlah === null) { formError.textContent = "Jumlah wajib diisi."; return; }
+      if (jumlah <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       if (!inputKeterangan.value.trim()) { formError.textContent = "Keterangan wajib diisi."; return; }
       try {
         // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
@@ -303,14 +305,14 @@ const PageKomisi = (() => {
         // aksi CRUD rutin -- lihat catatan di ui.js.
         if (editingId) {
           await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.put(`/api/komisi/penyesuaian/${editingId}`, {
-            jenis: selJenis.value, jumlah: Number(inputJumlah.value) || 0,
+            jenis: selJenis.value, jumlah,
             keterangan: inputKeterangan.value.trim(),
           }));
           MugenUI.toast("Penyesuaian komisi diperbarui.", "success");
         } else {
           await MugenUI.withButtonLoading(btnSubmit, () => MugenApi.post("/api/komisi/penyesuaian", {
             barber_id: Number(selBarber.value), tahun: Number(selTahun.value), bulan: Number(selBulan.value),
-            jenis: selJenis.value, jumlah: Number(inputJumlah.value) || 0,
+            jenis: selJenis.value, jumlah,
             keterangan: inputKeterangan.value.trim(),
           }));
           MugenUI.toast("Penyesuaian komisi disimpan.", "success");

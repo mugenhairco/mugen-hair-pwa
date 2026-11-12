@@ -77,7 +77,7 @@ const PagePemasukan = (() => {
     const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Modal Tambahan" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Untuk apa pemasukan ini" });
-    const inputNominal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const selBarber = MugenUI.el("select");
     selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- tidak terkait barber (opsional) --"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
@@ -111,7 +111,7 @@ const PagePemasukan = (() => {
       inputTanggal.value = todayIso();
       inputKategori.value = "";
       inputKeterangan.value = "";
-      inputNominal.value = "0";
+      inputNominal.value = "";
       selBarber.value = "";
       inputAktif.checked = true;
       formError.textContent = "";
@@ -125,7 +125,7 @@ const PagePemasukan = (() => {
       inputTanggal.value = p.tanggal;
       inputKategori.value = p.kategori || "";
       inputKeterangan.value = p.keterangan || "";
-      inputNominal.value = String(p.jumlah);
+      inputNominal.value = MugenUI.nilaiTampilAngka(p.jumlah);
       selBarber.value = p.barber_id ? String(p.barber_id) : "";
       inputAktif.checked = !!p.aktif;
       formError.textContent = "";
@@ -136,17 +136,19 @@ const PagePemasukan = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
+      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
       const body = {
         tanggal: inputTanggal.value,
         kategori: inputKategori.value.trim(),
         keterangan: inputKeterangan.value.trim(),
-        jumlah: Number(inputNominal.value) || 0,
+        jumlah: nominal,
         barber_id: selBarber.value ? Number(selBarber.value) : null,
         aktif: inputAktif.checked,
       };
       if (!body.kategori) { formError.textContent = "Kategori tidak boleh kosong."; return; }
       if (!body.keterangan) { formError.textContent = "Keterangan tidak boleh kosong."; return; }
-      if (!body.jumlah || body.jumlah <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
+      if (nominal === null) { formError.textContent = "Nominal wajib diisi."; return; }
+      if (nominal <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
 
       btnSubmit.disabled = true;
       try {

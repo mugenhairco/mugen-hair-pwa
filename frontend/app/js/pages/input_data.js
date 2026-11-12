@@ -174,12 +174,12 @@ const PageInputData = (() => {
       selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
       for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
     }
-    const inputTips = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
 
     const itemInputs = {}; // service_id -> input jumlah
     const serviceRows = services.map((s) => {
-      const inp = MugenUI.el("input", { type: "number", min: "0", value: "0", style: "max-width:90px;" });
+      const inp = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", style: "max-width:90px;" });
       itemInputs[s.id] = inp;
       return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
         MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
@@ -237,9 +237,9 @@ const PageInputData = (() => {
       btnBatalKoreksi.style.display = "none";
       inputTanggal.value = todayIso();
       if (isAdmin) selBarber.value = "";
-      inputTips.value = "0";
+      inputTips.value = "";
       inputCatatan.value = "";
-      for (const inp of Object.values(itemInputs)) inp.value = "0";
+      for (const inp of Object.values(itemInputs)) inp.value = "";
       updatePreview();
     }
 
@@ -250,10 +250,10 @@ const PageInputData = (() => {
       btnBatalKoreksi.style.display = "";
       inputTanggal.value = t.tanggal;
       if (isAdmin) selBarber.value = String(t.barber_id);
-      inputTips.value = String(t.tips);
+      inputTips.value = MugenUI.nilaiTampilAngka(t.tips);
       inputCatatan.value = t.catatan || "";
-      for (const inp of Object.values(itemInputs)) inp.value = "0";
-      for (const it of t.items) if (itemInputs[it.service_id]) itemInputs[it.service_id].value = String(it.jumlah);
+      for (const inp of Object.values(itemInputs)) inp.value = "";
+      for (const it of t.items) if (itemInputs[it.service_id]) itemInputs[it.service_id].value = MugenUI.nilaiTampilAngka(it.jumlah);
       updatePreview();
       formCard.scrollIntoView({ behavior: "smooth" });
     }
@@ -416,7 +416,7 @@ const PageInputData = (() => {
           ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
           { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
           { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
-          { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+          { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
           {
             // PERMINTAAN OWNER: tombol Hapus Transaksi dihapus dari sini --
             // redundan dengan Rekap > Transaksi (lihat rekap.js, kolom Aksi
@@ -593,7 +593,7 @@ const PageInputData = (() => {
         mcServiceList.appendChild(MugenUI.el("label", { style: "display:flex;align-items:center;gap:8px;" },
           [cb, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`]));
       }
-      const inputTipsMc = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputTipsMc = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       bookingFields.appendChild(MugenUI.el("label", {}, "Jam Booking"));
       bookingFields.appendChild(inputJamBooking);
       bookingFields.appendChild(MugenUI.el("label", {}, "Barber"));
@@ -644,7 +644,7 @@ const PageInputData = (() => {
         inputJamBooking.value = "";
         selBarberMc.value = "";
         for (const cb of Object.values(mcServiceChecks)) cb.checked = false;
-        inputTipsMc.value = "0";
+        inputTipsMc.value = "";
         mcFormError.textContent = "";
       }
 
@@ -663,7 +663,7 @@ const PageInputData = (() => {
         inputJamBooking.value = e.jam || "";
         selBarberMc.value = e.barber_id != null ? String(e.barber_id) : "";
         for (const [id, cb] of Object.entries(mcServiceChecks)) cb.checked = (e.service_ids || []).includes(Number(id));
-        inputTipsMc.value = String(e.tips || 0);
+        inputTipsMc.value = MugenUI.nilaiTampilAngka(e.tips);
         mcFormError.textContent = "";
         mcFormCard.scrollIntoView({ behavior: "smooth" });
       }
@@ -799,7 +799,7 @@ const PageInputData = (() => {
             { key: "jenis", label: "Jenis", format: (v) => (v === "booking" ? "Booking" : "Waiting List") },
             { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
             { key: "daftar_service", label: "Service", format: (v) => (v && v.length ? v.map((s) => s.nama).join(", ") : "-") },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
@@ -887,11 +887,11 @@ const PageInputData = (() => {
 
       const inputTglMulai = MugenUI.el("input", { type: "date", value: todayIso() });
       const inputTglSelesai = MugenUI.el("input", { type: "date", value: todayIso() });
-      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inputHariMasuk = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inputHariLibur = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inputBonus = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inputPotongan = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inputGajiPerHari = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inputHariMasuk = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inputHariLibur = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inputBonus = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inputPotongan = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       const inputCatatanNb = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
       const totalGajiBox = MugenUI.el("div", { class: "card", style: "background:var(--bg-input);" }, "Total Gaji: Rp 0");
 
@@ -908,7 +908,7 @@ const PageInputData = (() => {
         const k = karyawanNonBarber.find((x) => String(x.id) === selKaryawan.value);
         roleTerpilih.textContent = `Role: ${k ? labelJabatan(k.jabatan) : "-"}`;
         if (k && !nbEditingId) {
-          inputGajiPerHari.value = String(k.gaji_per_hari || 0);
+          inputGajiPerHari.value = MugenUI.nilaiTampilAngka(k.gaji_per_hari);
           hitungTotalGaji();
         }
       });
@@ -950,11 +950,11 @@ const PageInputData = (() => {
         roleTerpilih.textContent = "Role: -";
         inputTglMulai.value = todayIso();
         inputTglSelesai.value = todayIso();
-        inputGajiPerHari.value = "0";
-        inputHariMasuk.value = "0";
-        inputHariLibur.value = "0";
-        inputBonus.value = "0";
-        inputPotongan.value = "0";
+        inputGajiPerHari.value = "";
+        inputHariMasuk.value = "";
+        inputHariLibur.value = "";
+        inputBonus.value = "";
+        inputPotongan.value = "";
         inputCatatanNb.value = "";
         hitungTotalGaji();
         nbFormError.textContent = "";
@@ -969,11 +969,11 @@ const PageInputData = (() => {
         roleTerpilih.textContent = `Role: ${labelJabatan(e.jabatan)}`;
         inputTglMulai.value = e.tanggal_mulai;
         inputTglSelesai.value = e.tanggal_selesai;
-        inputGajiPerHari.value = String(e.gaji_per_hari);
-        inputHariMasuk.value = String(e.hari_masuk);
-        inputHariLibur.value = String(e.hari_libur);
-        inputBonus.value = String(e.bonus);
-        inputPotongan.value = String(e.potongan);
+        inputGajiPerHari.value = MugenUI.nilaiTampilAngka(e.gaji_per_hari);
+        inputHariMasuk.value = MugenUI.nilaiTampilAngka(e.hari_masuk);
+        inputHariLibur.value = MugenUI.nilaiTampilAngka(e.hari_libur);
+        inputBonus.value = MugenUI.nilaiTampilAngka(e.bonus);
+        inputPotongan.value = MugenUI.nilaiTampilAngka(e.potongan);
         inputCatatanNb.value = e.catatan || "";
         hitungTotalGaji();
         nbFormError.textContent = "";
@@ -986,13 +986,23 @@ const PageInputData = (() => {
         nbFormError.textContent = "";
         if (!selKaryawan.value) { nbFormError.textContent = "Pilih karyawan terlebih dahulu."; return; }
         if (!inputTglMulai.value || !inputTglSelesai.value) { nbFormError.textContent = "Periode wajib diisi."; return; }
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // Gaji per Hari/Hari Masuk/Hari Libur WAJIB diisi (bukan opsional
+        // seperti Bonus/Potongan yang labelnya sendiri sudah bilang
+        // "Opsional" -- itu TETAP boleh lenient, 0 kalau kosong).
+        const gajiPerHari = MugenUI.bacaAngkaWajib(inputGajiPerHari);
+        const hariMasuk = MugenUI.bacaAngkaWajib(inputHariMasuk);
+        const hariLibur = MugenUI.bacaAngkaWajib(inputHariLibur);
+        if (gajiPerHari === null) { nbFormError.textContent = "Gaji per Hari wajib diisi."; return; }
+        if (hariMasuk === null) { nbFormError.textContent = "Jumlah Hari Masuk wajib diisi."; return; }
+        if (hariLibur === null) { nbFormError.textContent = "Jumlah Hari Libur wajib diisi."; return; }
         const body = {
           barber_id: Number(selKaryawan.value),
           tanggal_mulai: inputTglMulai.value,
           tanggal_selesai: inputTglSelesai.value,
-          gaji_per_hari: Number(inputGajiPerHari.value) || 0,
-          hari_masuk: Number(inputHariMasuk.value) || 0,
-          hari_libur: Number(inputHariLibur.value) || 0,
+          gaji_per_hari: gajiPerHari,
+          hari_masuk: hariMasuk,
+          hari_libur: hariLibur,
           bonus: Number(inputBonus.value) || 0,
           potongan: Number(inputPotongan.value) || 0,
           catatan: inputCatatanNb.value || "",

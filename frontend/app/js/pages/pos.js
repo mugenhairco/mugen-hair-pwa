@@ -359,7 +359,7 @@ const PagePos = (() => {
       // Tips: manual oleh kasir, PER BARBER (PERMINTAAN Owner -- kasir
       // yang isi sendiri, BUKAN dihitung/dibagi otomatis sistem).
       body.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tips untuk barber ini (opsional)"));
-      const inputTips = MugenUI.el("input", { type: "text", value: String(state.formTips || 0), style: "max-width:160px;" });
+      const inputTips = MugenUI.el("input", { type: "text", value: MugenUI.nilaiTampilAngka(state.formTips), style: "max-width:160px;" });
       inputTips.addEventListener("input", () => {
         state.formTips = Math.max(0, MugenUI.parseAngka(inputTips.value));
         renderTotal();

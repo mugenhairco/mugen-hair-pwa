@@ -68,7 +68,7 @@ const PageUangKas = (() => {
     saldoCard.appendChild(saldoSaatIniText);
     saldoSaatIniText.appendChild(MugenUI.skeleton("line", { width: "140px" }));
 
-    const inputSaldoAwal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputSaldoAwal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const btnSimpanSaldoAwal = MugenUI.el("button", {}, "Simpan Saldo Kas Awal");
     const saldoAwalError = MugenUI.el("div", { class: "login-error" });
     const saldoAwalInfo = MugenUI.el("div", { class: "subtitle" }, "");
@@ -83,7 +83,7 @@ const PageUangKas = (() => {
     }
 
     function terapkanSaldo({ awal, saatIni }) {
-      inputSaldoAwal.value = String(awal.saldo || 0);
+      inputSaldoAwal.value = MugenUI.nilaiTampilAngka(awal.saldo);
       saldoAwalInfo.textContent = awal.diubah_oleh ? `Terakhir diubah oleh ${awal.diubah_oleh} (${awal.updated_at || "-"})` : "";
       saldoSaatIniText.textContent = MugenUI.formatRupiah(saatIni.saldo);
     }
@@ -116,8 +116,8 @@ const PageUangKas = (() => {
 
     btnSimpanSaldoAwal.addEventListener("click", async () => {
       saldoAwalError.textContent = "";
-      const saldo = Number(inputSaldoAwal.value);
-      if (Number.isNaN(saldo) || saldo < 0) { saldoAwalError.textContent = "Saldo Kas Awal tidak valid."; return; }
+      const saldo = MugenUI.bacaAngkaWajib(inputSaldoAwal);
+      if (saldo === null || saldo < 0) { saldoAwalError.textContent = "Saldo Kas Awal wajib diisi dan tidak boleh negatif."; return; }
       btnSimpanSaldoAwal.disabled = true;
       try {
         // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
@@ -138,7 +138,7 @@ const PageUangKas = (() => {
       MugenUI.el("option", { value: "tambah" }, "Tambah"),
       MugenUI.el("option", { value: "kurang" }, "Kurang"),
     ]);
-    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+    const inputJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "mis. Koreksi selisih hitung fisik" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -163,7 +163,7 @@ const PageUangKas = (() => {
       btnBatal.style.display = "none";
       inputTanggal.value = todayIso();
       selJenis.value = "tambah";
-      inputJumlah.value = "0";
+      inputJumlah.value = "";
       inputKeterangan.value = "";
       formError.textContent = "";
     }
@@ -171,12 +171,13 @@ const PageUangKas = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
-      if (!inputJumlah.value || Number(inputJumlah.value) <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
+      const jumlah = MugenUI.bacaAngkaWajib(inputJumlah);
+      if (jumlah === null || jumlah <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       btnSubmit.disabled = true;
       try {
         const body = {
           tanggal: inputTanggal.value, jenis: selJenis.value,
-          jumlah: Number(inputJumlah.value) || 0, keterangan: inputKeterangan.value.trim(),
+          jumlah, keterangan: inputKeterangan.value.trim(),
         };
         // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
         if (editingId) {
@@ -251,7 +252,7 @@ const PageUangKas = (() => {
                 btnBatal.style.display = "";
                 inputTanggal.value = r.tanggal;
                 selJenis.value = r.jenis;
-                inputJumlah.value = String(r.jumlah);
+                inputJumlah.value = MugenUI.nilaiTampilAngka(r.jumlah);
                 inputKeterangan.value = r.keterangan || "";
                 formError.textContent = "";
                 formCard.scrollIntoView({ behavior: "smooth" });

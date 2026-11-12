@@ -362,7 +362,7 @@ const PageRekap = (() => {
             { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
             { key: "jumlah_service", label: "Jml Service" },
             { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
             { key: "pendapatan", label: "Pendapatan", format: MugenUI.formatRupiah },
             kolomKet,
           ];
@@ -384,7 +384,7 @@ const PageRekap = (() => {
             { key: "jumlah_service", label: "Jml Service" },
             { key: "komisi", label: "Komisi", format: (v, r) => r.tipe === "transaksi" ? MugenUI.formatRupiah(v || 0) : "-" },
             { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
             { key: "pendapatan", label: "Reimburse", format: (v, r) => r.tipe === "reimburse" ? MugenUI.formatRupiah(v) : "-" },
             { key: "pendapatan", label: "Kasbon Dibayar", format: (v, r) => r.tipe === "kasbon" ? MugenUI.formatRupiah(-v) : "-" },
             {
@@ -693,7 +693,7 @@ const PageRekap = (() => {
             { key: "nama_barber", label: "Barber" },
             { key: "jumlah_service", label: "Jml Service" },
             { key: "total_komisi", label: "Komisi", format: MugenUI.formatRupiah },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
             { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
             // PERMINTAAN OWNER: stabilo merah kalau bulan ini ADA tanggal
             // yang Kuota Libur DAN kuota Izin&Cuti-nya sama-sama sudah

@@ -183,8 +183,8 @@ const PageProduk = (() => {
     // ---------------------------------------------------------------
     function bukaModalTambahProduk() {
       const inpNama = MugenUI.el("input", { type: "text", placeholder: "Nama produk" });
-      const inpModal = MugenUI.el("input", { type: "number", min: "0", value: "0" });
-      const inpJual = MugenUI.el("input", { type: "number", min: "0", value: "0" });
+      const inpModal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+      const inpJual = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
       const err = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
 
@@ -202,13 +202,20 @@ const PageProduk = (() => {
       btnSimpan.addEventListener("click", () => {
         err.textContent = "";
         const nama = inpNama.value.trim();
-        const hargaModal = Number(inpModal.value);
-        const hargaJual = Number(inpJual.value);
+        // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
+        // bacaAngkaWajib() -> null kalau field dikosongkan, DITOLAK di
+        // bawah -- bukan diam-diam tersimpan sebagai 0.
+        const hargaModal = MugenUI.bacaAngkaWajib(inpModal);
+        const hargaJual = MugenUI.bacaAngkaWajib(inpJual);
         if (!nama) {
           err.textContent = "Nama produk tidak boleh kosong.";
           return;
         }
-        if (Number.isNaN(hargaModal) || hargaModal < 0 || Number.isNaN(hargaJual) || hargaJual < 0) {
+        if (hargaModal === null || hargaJual === null) {
+          err.textContent = "Harga Modal/Harga Jual wajib diisi.";
+          return;
+        }
+        if (hargaModal < 0 || hargaJual < 0) {
           err.textContent = "Harga Modal/Harga Jual tidak valid.";
           return;
         }
@@ -420,8 +427,8 @@ const PageProduk = (() => {
 
     function bukaModalUbahProduk(produk) {
       const inpNama = MugenUI.el("input", { type: "text", value: produk.nama });
-      const inpModal = MugenUI.el("input", { type: "number", min: "0", value: String(produk.harga_modal || 0) });
-      const inpJual = MugenUI.el("input", { type: "number", min: "0", value: String(produk.harga_jual || 0) });
+      const inpModal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(produk.harga_modal) });
+      const inpJual = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(produk.harga_jual) });
       const err = MugenUI.el("div", { class: "login-error" });
       const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan Perubahan");
 
@@ -439,13 +446,17 @@ const PageProduk = (() => {
       btnSimpan.addEventListener("click", () => {
         err.textContent = "";
         const nama = inpNama.value.trim();
-        const hargaModal = Number(inpModal.value);
-        const hargaJual = Number(inpJual.value);
+        const hargaModal = MugenUI.bacaAngkaWajib(inpModal);
+        const hargaJual = MugenUI.bacaAngkaWajib(inpJual);
         if (!nama) {
           err.textContent = "Nama produk tidak boleh kosong.";
           return;
         }
-        if (Number.isNaN(hargaModal) || hargaModal < 0 || Number.isNaN(hargaJual) || hargaJual < 0) {
+        if (hargaModal === null || hargaJual === null) {
+          err.textContent = "Harga Modal/Harga Jual wajib diisi.";
+          return;
+        }
+        if (hargaModal < 0 || hargaJual < 0) {
           err.textContent = "Harga Modal/Harga Jual tidak valid.";
           return;
         }
