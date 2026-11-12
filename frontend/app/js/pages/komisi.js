@@ -63,7 +63,7 @@ const PageKomisi = (() => {
         { key: "nama_barber", label: "Barber" },
         { key: "jumlah_service", label: "Jumlah Service" },
         { key: "total_komisi", label: "Komisi Dasar", format: MugenUI.formatRupiah },
-        { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+        { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
         { key: "uang_harian", label: "Uang Harian", format: MugenUI.formatRupiah },
         { key: "bonus_customer", label: "Bonus Customer", format: MugenUI.formatRupiah },
         { key: "total_pendapatan", label: "Total Pendapatan", format: MugenUI.formatRupiah },

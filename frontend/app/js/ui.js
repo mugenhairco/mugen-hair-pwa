@@ -8,6 +8,16 @@ const MugenUI = (() => {
     return "Rp " + n.toLocaleString("id-ID");
   }
 
+  // PERMINTAAN Owner (kolom Tips di tabel: "jika tidak diisi harus tanda
+  // -"): sama seperti nilaiTampilAngka() tapi untuk NILAI YANG SUDAH
+  // TERSIMPAN ditampilkan di tabel/daftar (BUKAN di dalam form input) --
+  // 0/null/undefined ditampilkan "-", nilai lain tetap format Rupiah
+  // normal lewat formatRupiah().
+  function formatRupiahAtauStrip(angka) {
+    const n = Number(angka);
+    return (angka === null || angka === undefined || angka === "" || !n) ? "-" : formatRupiah(n);
+  }
+
   // Lawan dari formatRupiah -- ambil angka mentah dari string apapun
   // (termasuk yang sudah berisi "Rp", titik pemisah ribuan, dll).
   function parseAngka(str) {
@@ -1110,7 +1120,7 @@ const MugenUI = (() => {
   }
 
   return {
-    formatRupiah, parseAngka, nilaiTampilAngka, bacaAngkaWajib, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
+    formatRupiah, formatRupiahAtauStrip, parseAngka, nilaiTampilAngka, bacaAngkaWajib, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,

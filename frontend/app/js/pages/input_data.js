@@ -416,7 +416,7 @@ const PageInputData = (() => {
           ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
           { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
           { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
-          { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+          { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
           {
             // PERMINTAAN OWNER: tombol Hapus Transaksi dihapus dari sini --
             // redundan dengan Rekap > Transaksi (lihat rekap.js, kolom Aksi
@@ -799,7 +799,7 @@ const PageInputData = (() => {
             { key: "jenis", label: "Jenis", format: (v) => (v === "booking" ? "Booking" : "Waiting List") },
             { key: "nama_barber", label: "Barber", format: (v) => v || "-" },
             { key: "daftar_service", label: "Service", format: (v) => (v && v.length ? v.map((s) => s.nama).join(", ") : "-") },
-            { key: "tips", label: "Tips", format: MugenUI.formatRupiah },
+            { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
             {
               key: "aksi", label: "Aksi", format: (_, r) => {
                 const wrap = MugenUI.el("div", { class: "actions-cell" });
