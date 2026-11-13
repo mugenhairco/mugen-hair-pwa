@@ -2790,8 +2790,12 @@ def tester_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = None
 
 def koreksi_mutasi_produk(mutasi_id: int, tanggal: str, jumlah: int, catatan: str = None):
     """Mengoreksi tanggal/jumlah/catatan sebuah mutasi (tipe restock/jual TIDAK berubah).
-    DITOLAK kalau perubahan ini membuat saldo stok jadi negatif di titik manapun."""
-    _validasi_tanggal(tanggal)
+    DITOLAK kalau perubahan ini membuat saldo stok jadi negatif di titik manapun.
+    PERMINTAAN Owner (menutup celah backdating yang sama lewat Koreksi,
+    bukan cuma lewat Restock/Jual/Tester baru -- lihat
+    _validasi_tanggal_mutasi_produk()): tanggal HASIL koreksi juga dibatasi
+    maks 2 hari ke belakang, SAMA PERSIS seperti mutasi baru."""
+    _validasi_tanggal_mutasi_produk(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")
     with get_conn() as conn:

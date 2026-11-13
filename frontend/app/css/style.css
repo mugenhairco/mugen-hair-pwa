@@ -230,10 +230,10 @@ a:hover { color: var(--accent-secondary); }
 }
 
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 7px;
   flex-shrink: 0;
 }
 
@@ -631,8 +631,16 @@ table.data-table th {
   letter-spacing: 0.02em;
   position: sticky;
   top: 0;
-  background: var(--bg-card);
+  /* PERMINTAAN Owner ("column header tidak ada warna"): SEBELUMNYA sama
+     persis var(--bg-card) -- background tabel ikut .card (putih di light
+     mode), jadi header menyatu TOTAL dengan baris data, nyaris tidak
+     kelihatan sebagai header. Tint tipis warna accent (slate, SAMA
+     dengan --accent) membedakan baris header dari baris data tanpa
+     mengganggu keterbacaan teks --text-dim di atasnya. */
+  background: rgba(51, 65, 85, 0.05);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.18);
 }
+:root[data-theme="dark"] table.data-table th { background: rgba(71, 85, 105, 0.22); border-bottom-color: rgba(148, 163, 184, 0.25); }
 
 table.data-table tr:hover td { background: var(--bg); }
 
@@ -2329,6 +2337,11 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    (lihat aturan ".nav-initial { display: none; }" di bawah). ---- */
 .sidebar { transition: width var(--dur-slow) var(--ease-standard); }
 .sidebar.collapsed { width: 72px; }
+/* PERMINTAAN Owner (logo tenant terlalu kecil): .brand-logo dibesarkan
+   28px -> 36px di atas -- di rail collapsed yang sempit (72px), logo
+   DISATUKAN di tengah (BUKAN tetap nempel padding kiri 20px seperti
+   mode normal) supaya tetap proporsional, tidak mepet tepi. */
+.sidebar.collapsed .brand { padding-left: 0; padding-right: 0; justify-content: center; }
 .sidebar-collapse-btn {
   background: none; border: none; box-shadow: none; min-height: auto;
   color: var(--text-dim); padding: 6px 10px; margin: 0 10px 8px auto;
@@ -2372,6 +2385,10 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .sidebar.collapsed .nav-group-chevron,
   .sidebar.collapsed .user-box > div:not(.theme-switch-row) { display: revert; }
   .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: flex-start; }
+  /* Mobile: ".collapsed" di sini cuma penanda state, bukan rail sempit
+     (lebar balik ke 220px, brand-name tampil lagi) -- batalkan
+     center-logo khusus rail desktop sempit di atas. */
+  .sidebar.collapsed .brand { padding: 0 20px 20px; justify-content: flex-start; }
 }
 
 /* ---- Konten halaman: fade-out singkat SEBELUM diganti (sebelumnya hard
