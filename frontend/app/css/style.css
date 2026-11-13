@@ -631,8 +631,16 @@ table.data-table th {
   letter-spacing: 0.02em;
   position: sticky;
   top: 0;
-  background: var(--bg-card);
+  /* PERMINTAAN Owner ("column header tidak ada warna"): SEBELUMNYA sama
+     persis var(--bg-card) -- background tabel ikut .card (putih di light
+     mode), jadi header menyatu TOTAL dengan baris data, nyaris tidak
+     kelihatan sebagai header. Tint tipis warna accent (slate, SAMA
+     dengan --accent) membedakan baris header dari baris data tanpa
+     mengganggu keterbacaan teks --text-dim di atasnya. */
+  background: rgba(51, 65, 85, 0.05);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.18);
 }
+:root[data-theme="dark"] table.data-table th { background: rgba(71, 85, 105, 0.22); border-bottom-color: rgba(148, 163, 184, 0.25); }
 
 table.data-table tr:hover td { background: var(--bg); }
 
