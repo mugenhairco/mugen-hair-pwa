@@ -230,10 +230,10 @@ a:hover { color: var(--accent-secondary); }
 }
 
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 7px;
   flex-shrink: 0;
 }
 
@@ -2329,6 +2329,11 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    (lihat aturan ".nav-initial { display: none; }" di bawah). ---- */
 .sidebar { transition: width var(--dur-slow) var(--ease-standard); }
 .sidebar.collapsed { width: 72px; }
+/* PERMINTAAN Owner (logo tenant terlalu kecil): .brand-logo dibesarkan
+   28px -> 36px di atas -- di rail collapsed yang sempit (72px), logo
+   DISATUKAN di tengah (BUKAN tetap nempel padding kiri 20px seperti
+   mode normal) supaya tetap proporsional, tidak mepet tepi. */
+.sidebar.collapsed .brand { padding-left: 0; padding-right: 0; justify-content: center; }
 .sidebar-collapse-btn {
   background: none; border: none; box-shadow: none; min-height: auto;
   color: var(--text-dim); padding: 6px 10px; margin: 0 10px 8px auto;
@@ -2372,6 +2377,10 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .sidebar.collapsed .nav-group-chevron,
   .sidebar.collapsed .user-box > div:not(.theme-switch-row) { display: revert; }
   .sidebar.collapsed nav a, .sidebar.collapsed .nav-group-toggle { justify-content: flex-start; }
+  /* Mobile: ".collapsed" di sini cuma penanda state, bukan rail sempit
+     (lebar balik ke 220px, brand-name tampil lagi) -- batalkan
+     center-logo khusus rail desktop sempit di atas. */
+  .sidebar.collapsed .brand { padding: 0 20px 20px; justify-content: flex-start; }
 }
 
 /* ---- Konten halaman: fade-out singkat SEBELUM diganti (sebelumnya hard
