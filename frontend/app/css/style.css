@@ -2284,8 +2284,16 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
 /* ---- Tabs: indikator aktif bergeser (sebelumnya border-bottom-color
    berubah instan) -- SATU pola dipakai MugenUI.tabs() (ui.js), migrasi
    dari 3 implementasi tabs manual (booking.js/rekap.js/pengaturan.js). ---- */
+/* BUGFIX (laporan Owner, screenshot Absensi iPhone): baris tab yang lebih
+   lebar dari layar (overflow-x: auto) -- tanpa pengaman ini, geser ke
+   samping di Safari iPhone bisa "bocor" jadi ikut menggeser SELURUH
+   halaman naik-turun (scroll chaining ke parent), bukan cuma baris tab-nya
+   sendiri. touch-action: pan-x mengunci gestur di baris tab ini HANYA ke
+   arah horizontal, overscroll-behavior-x: contain mencegah halaman di
+   BELAKANGnya ikut ter-scroll begitu baris tab sudah mentok kiri/kanan. */
 .mugen-tabs { position: relative; display: flex; gap: 4px; margin-bottom: 18px;
-  border-bottom: 1px solid var(--border); overflow-x: auto; }
+  border-bottom: 1px solid var(--border); overflow-x: auto;
+  overscroll-behavior-x: contain; touch-action: pan-x; }
 .mugen-tabs button {
   background: none; border: none; border-bottom: 2px solid transparent;
   border-radius: 0; box-shadow: none; min-height: auto;
