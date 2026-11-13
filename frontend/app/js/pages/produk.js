@@ -540,7 +540,7 @@ const PageProduk = (() => {
     function isiFormKoreksiMutasi(btn, m) {
       // Koreksi tanggal/jumlah/catatan lewat prompt sederhana supaya tidak
       // perlu form/modal terpisah untuk aksi yang jarang dipakai ini.
-      const tanggalBaru = prompt("Tanggal (YYYY-MM-DD):", m.tanggal);
+      const tanggalBaru = prompt("Tanggal (YYYY-MM-DD, maks 2 hari ke belakang):", m.tanggal);
       if (tanggalBaru === null) return;
       const jumlahBaru = prompt("Jumlah:", String(m.jumlah));
       if (jumlahBaru === null) return;
