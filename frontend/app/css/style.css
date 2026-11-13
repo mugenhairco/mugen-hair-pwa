@@ -2961,3 +2961,56 @@ input.numkeypad-caret-aktif { caret-color: var(--accent); }
 .pos-produk-terpilih-row:last-child { border-bottom: none; }
 .pos-produk-terpilih-nama { font-weight: 600; font-size: 14px; color: var(--text); }
 .pos-produk-terpilih-harga { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* REDESIGN Booking > Barber Holiday (permintaan Owner): "Compact Barber
+   Cards" + accordion -- satu kartu kecil per barber (BUKAN lagi satu kartu
+   besar menumpuk semua barber dalam baris panjang), day chips selectable
+   menggantikan checkbox. Warna chip terpilih/tidak SENGAJA pakai token
+   var(--accent)/var(--bg-card)/var(--border) yang sudah ada (bukan hex
+   baru) -- di tema terang persis "navy gelap + putih" sesuai permintaan,
+   di tema gelap otomatis ikut slate yang sudah konsisten dipakai elemen
+   aktif lain, TIDAK perlu override data-theme terpisah. */
+.bh-list { display: flex; flex-direction: column; gap: 10px; }
+.bh-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.bh-card-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; cursor: pointer; user-select: none;
+}
+.bh-card-headtext { min-width: 0; }
+.bh-card-nama { font-weight: 700; font-size: 14.5px; color: var(--text); }
+.bh-card-ringkasan { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.bh-card-chevron {
+  flex-shrink: 0; font-size: 18px; line-height: 1; color: var(--text-dim);
+  transition: transform 200ms var(--ease-press);
+}
+.bh-card--open .bh-card-chevron { transform: rotate(180deg); }
+.bh-card-body {
+  overflow: hidden; max-height: 0;
+  transition: max-height 220ms var(--ease-press);
+}
+.bh-card--open .bh-card-body { max-height: 260px; }
+.bh-chip-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  padding: 0 14px 12px;
+}
+.bh-chip {
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  border-radius: 10px; padding: 9px 4px; font-size: 13px; font-weight: 600;
+  text-align: center; cursor: pointer; min-height: auto; box-shadow: none;
+  transition: background-color 150ms var(--ease-press), color 150ms var(--ease-press), border-color 150ms var(--ease-press);
+}
+.bh-chip:hover { border-color: var(--accent); }
+.bh-chip--active, .bh-chip--active:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.bh-card-actions {
+  display: flex; align-items: center; gap: 10px; padding: 0 14px 12px;
+}
+.bh-card-actions .login-error:empty { display: none; }
+.bh-save-btn { min-height: auto; padding: 8px 18px; font-size: 13.5px; }
+@media (max-width: 480px) {
+  .bh-chip-grid { gap: 6px; }
+  .bh-chip { font-size: 12.5px; padding: 8px 2px; }
+}
