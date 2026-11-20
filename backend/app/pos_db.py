@@ -661,8 +661,9 @@ def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
 def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     """{"service": [...], "produk": [...]} -- HANYA transaksi lunas/
     terverifikasi (PERMINTAAN Owner), field ringkas saja (nama barber/
-    service/produk, nominal, jam) TANPA komisi/tips (PERMINTAAN Owner --
-    "dihitung sama, tapi jangan tampilkan")."""
+    service/produk, nominal, tips, jam) TANPA komisi (PERMINTAAN Owner
+    -- tips SEKARANG ditampilkan terpisah per baris, lihat "tips" di
+    bawah; komisi tetap tidak pernah ditampilkan di sini)."""
     import booking_db  # import lokal: hindari import siklik (booking_db tidak perlu tahu pos_db sama sekali)
 
     service_items = []
@@ -696,6 +697,13 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
                 "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"], "nama_barber": b["nama"],
                 "daftar_service": ", ".join(s["nama"] for s in b["daftar_service"]),
                 "nominal": sum(s["harga"] for s in b["daftar_service"]),
+                # FITUR Tampilkan Tips (PERMINTAAN Owner): tips tetap TIDAK
+                # ikut "nominal" di atas (nominal = harga service murni,
+                # dipakai juga filter/rekap lain yang sudah ada) -- kolom
+                # terpisah supaya jelas rinciannya, walau "Total Keseluruhan"/
+                # rincian_metode di bawah SUDAH menghitungnya sejak awal
+                # (dari total_harga mentah, lihat catatan di atas).
+                "tips": b["tips"],
             })
         for p in pos["daftar_produk"]:
             produk_items.append({

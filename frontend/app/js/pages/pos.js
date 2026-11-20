@@ -56,6 +56,7 @@ const PagePos = (() => {
         sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_barber: b.nama,
         daftar_service: b.daftar_service.map((s) => s.nama).join(", "),
         nominal: b.daftar_service.reduce((sum, s) => sum + s.harga, 0),
+        tips: b.tips,
       });
     }
     for (const p of pos.daftar_produk || []) {
@@ -980,9 +981,18 @@ const PagePos = (() => {
         barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
       ]));
 
+      // Kolom "No" (PERMINTAAN Owner) -- nomor urut tampilan, dihitung ULANG
+      // tiap render dari urutan baris SAAT INI (bukan disimpan permanen di
+      // cache), supaya tetap benar walau baris baru masuk lewat suntik
+      // diam-diam (_suntikTransaksiBaru/suntikBookingLunas) yang menyortir
+      // ulang array-nya.
+      const serviceRows = (hasil.service || []).map((r, i) => ({ ...r, no: i + 1 }));
+      const produkRows = (hasil.produk || []).map((r, i) => ({ ...r, no: i + 1 }));
+
       body.appendChild(MugenUI.el("h2", {}, "Service"));
       body.appendChild(MugenUI.buildTable(
         [
+          { key: "no", label: "No" },
           { key: "jam", label: "Jam" },
           // PERMINTAAN Owner: nama customer -- HANYA terisi untuk baris
           // sumber="booking" (online maupun Booking Mandiri, lihat catatan
@@ -993,23 +1003,28 @@ const PagePos = (() => {
           { key: "nama_barber", label: "Barber" },
           { key: "daftar_service", label: "Service" },
           { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+          // FITUR Tampilkan Tips (PERMINTAAN Owner): HANYA terisi untuk
+          // baris sumber="pos" -- Booking Online/Mandiri tidak punya
+          // konsep tips sama sekali (lihat pos_db.get_transaksi_hari_ini()).
+          { key: "tips", label: "Tips", format: (v) => (v ? MugenUI.formatRupiah(v) : "-") },
           { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
           { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
         ],
-        hasil.service,
+        serviceRows,
         { emptyText: "Belum ada transaksi service hari ini." },
       ));
 
       body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
       body.appendChild(MugenUI.buildTable(
         [
+          { key: "no", label: "No" },
           { key: "jam", label: "Jam" },
           { key: "nama_produk", label: "Produk" },
           { key: "jumlah", label: "Jumlah" },
           { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
           { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
         ],
-        hasil.produk,
+        produkRows,
         { emptyText: "Belum ada transaksi produk hari ini." },
       ));
     }

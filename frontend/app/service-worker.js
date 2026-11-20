@@ -1314,7 +1314,17 @@
 // rebuild, jadi upsert baris begitu kini dicocokkan lewat kombinasi
 // (barber_id, tanggal, sumber), bukan id (yang bisa berubah dan tadinya
 // bikin baris dobel kalau Rekap sedang terbuka saat checkout kedua).
-const ASSET_VERSION = "274";
+//
+// v230 -> v231: FITUR Tampilkan Tips & Nomor Urut di POS "Transaksi Hari
+// Ini" (PERMINTAAN Owner): kolom "No" (nomor urut tampilan) ditambah di
+// tabel Service & Produk, kolom "Tips" ditambah di tabel Service (HANYA
+// terisi untuk baris sumber="pos" -- Booking Online/Mandiri tidak punya
+// konsep tips). "Total Keseluruhan"/rincian per metode pembayaran
+// SEBENARNYA sudah menghitung tips sejak awal (dihitung dari total_harga
+// mentah, BUKAN dari kolom Nominal yang sengaja tidak menyertakan tips) --
+// kolom Tips baru ini cuma menampilkan rinciannya supaya tidak kelihatan
+// seperti tips "hilang" saat baris dijumlah manual.
+const ASSET_VERSION = "275";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
