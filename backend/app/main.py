@@ -521,6 +521,7 @@ async def on_startup():
         migrasi_landing()  # FONDASI Multi-Tenant Phase 5: kolom tenants.owner_name/email/whatsapp + tabel landing_faq, drop landing_testimonials (idempotent, WAJIB setelah migrasi_tenant())
         migrasi_email_auth()  # Email/Verifikasi Email/Lupa Kata Sandi: kolom users.email/email_verified/blokir_sampai_verifikasi + tabel email_verification_tokens/password_reset_tokens (idempotent)
         migrasi_booking_slug()  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
+        booking_db.migrasi_sinkronkan_booking_lama_ke_rekap()  # FITUR Sinkronisasi Booking -> Rekap: backfill booking lunas dari SEBELUM fitur ini ada (idempotent, hanya proses pasangan barber+tanggal yang belum tersinkron)
 
     _bootstrap_admin_pertama()
     _reset_admin_darurat()

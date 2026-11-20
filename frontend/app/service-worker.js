@@ -1289,7 +1289,15 @@
 // page_loader.js, lihat pages/book_public.js/input_data.js), menyebabkan
 // "Gagal memuat halaman" tiap kali /absen dibuka walau script-nya sendiri
 // berhasil di-fetch.
-const ASSET_VERSION = "272";
+//
+// v228 -> v229: FITUR Sinkronisasi Booking -> Rekap (PERMINTAAN Owner):
+// booking yang sudah lunas (Booking Online maupun Booking Mandiri) kini
+// otomatis masuk Rekap/Komisi/Slip Gaji, sama seperti POS -- SEBELUMNYA
+// booking "berdiri sendiri", tidak pernah tersambung ke tabel transaksi
+// sama sekali. pages/rekap.js: tombol "Koreksi" disembunyikan juga untuk
+// baris sumber="booking" (dikelola otomatis, mengedit langsung berisiko
+// tertimpa sinkronisasi berikutnya).
+const ASSET_VERSION = "273";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
