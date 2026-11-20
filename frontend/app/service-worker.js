@@ -1332,7 +1332,20 @@
 // (pos_db.get_transaksi_hari_ini()) kini ikut mengembalikan "barber_id"
 // per baris service (sumber="pos" MAUPUN "booking") supaya filter bisa
 // cocok lewat id, bukan nama.
-const ASSET_VERSION = "276";
+// v232 -> v233: FITUR "+ Tambah Transaksi" (Susulan) di Rekap (PERMINTAAN
+// Owner): untuk transaksi walk-in yang beneran kelewat tidak diinput
+// sama sekali di hari itu -- BEDA dari "Koreksi" yang mengedit baris yang
+// SUDAH ada. Pakai endpoint lama POST /api/input-data/transaksi (bekas
+// form Input Barber yang sudah dihapus tampilannya) dengan flag baru
+// `susulan: true` -- SENGAJA tidak ikut aturan "satu tanggal satu mode",
+// supaya tidak ditolak walau tanggal itu sudah terpakai mode POS hari
+// itu (skenario paling umum). Baris hasilnya ditandai sumber=
+// "manual_susulan", aman berdampingan (tidak pernah ikut rebuild
+// otomatis POS/Booking/Manual Customer), tetap boleh di-Koreksi/Hapus
+// seperti baris manual biasa. Izinnya SAMA PERSIS tombol Koreksi
+// (izin_input_data_kelola) -- Owner bisa kasih izin ini ke Kasir juga
+// lewat Pengaturan Izin, tidak perlu izin baru.
+const ASSET_VERSION = "277";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

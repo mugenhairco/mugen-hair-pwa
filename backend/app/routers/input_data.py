@@ -43,6 +43,11 @@ class TransaksiBody(BaseModel):
     tips: int = 0
     catatan: str | None = None
     idempotency_key: str | None = None  # PERBAIKAN Owner "tidak boleh input dobel" -- lihat database.py::tambah_transaksi()
+    # FITUR "+ Tambah Transaksi" di Rekap (PERMINTAAN Owner -- susulan untuk
+    # transaksi walk-in yang kelewat tidak diinput sama sekali di hari
+    # yang sama): True kalau dikirim dari tombol itu -- lihat tambah_transaksi()
+    # di bawah untuk efeknya (skip "satu tanggal satu mode" + sumber khusus).
+    susulan: bool = False
 
 
 class KoreksiBody(BaseModel):
@@ -190,20 +195,28 @@ def detail_transaksi(transaksi_id: int, user: dict = Depends(require_permission(
 def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     try:
-        # FITUR Manual Customer (aturan "satu tanggal satu mode"): SATU-
-        # SATUNYA perubahan yang disentuh di alur Input Barber lama --
-        # menandai/mengonfirmasi tanggal ini memakai mode "barber" sebelum
-        # transaksi dibuat. Tidak berefek apa pun (no-op transparan) kalau
-        # tanggal ini memang belum pernah dipakai atau sudah memakai mode
-        # "barber" -- HANYA menolak (ValueError -> HTTP 422, ditangkap try/
-        # except yang sama seperti di bawah) kalau tanggal ini SUDAH dipakai
-        # lewat Manual Customer, mencegah pencampuran dua metode input yang
-        # bisa membuat service/tips/pendapatan terhitung dua kali di Rekap.
-        manual_customer_db.pastikan_mode(user["tenant_id"], body.tanggal, "barber")
+        # FITUR "+ Tambah Transaksi" di Rekap (PERMINTAAN Owner): susulan
+        # untuk transaksi walk-in yang beneran kelewat tidak diinput sama
+        # sekali di hari itu (BUKAN form Input Barber lama -- itu sudah
+        # dihapus dari tampilan, lihat docstring modul) -- SENGAJA tidak
+        # ikut "satu tanggal satu mode" (manual_customer_db.pastikan_mode())
+        # sama sekali, supaya tidak ditolak kalau tanggal itu kebetulan
+        # sudah terpakai mode POS hari itu (skenario paling umum -- kasir
+        # tetap jalan normal, cuma SATU customer yang lupa). Aman dipakai
+        # berdampingan dengan sumber lain karena baris hasilnya ditandai
+        # sumber="manual_susulan" -- TIDAK PERNAH jadi target rebuild
+        # otomatis apa pun (_rebuild_transaksi_barber_hari()/booking/
+        # manual_customer SELALU memfilter sumber-nya sendiri, lihat
+        # masing-masing modul), jadi tidak akan pernah tertimpa/dihapus
+        # oleh sinkronisasi POS/Booking/Manual Customer di tanggal yang
+        # sama.
+        if not body.susulan:
+            manual_customer_db.pastikan_mode(user["tenant_id"], body.tanggal, "barber")
         transaksi_id = db.tambah_transaksi(
             tanggal=body.tanggal, barber_id=barber_id,
             items=[it.model_dump() for it in body.items],
             tips=body.tips, catatan=body.catatan,
+            sumber="manual_susulan" if body.susulan else None,
             idempotency_key=body.idempotency_key,
         )
     except ValueError as e:
