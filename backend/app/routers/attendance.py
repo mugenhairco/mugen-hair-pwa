@@ -26,10 +26,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import absen_mandiri_db
 import attendance_db
 import izin_cuti_db
 import laporan_pdf
 import permissions
+import tenant_db
 from auth import (get_current_user, require_barber, require_feature, require_menu_feature,
                    require_owner_or_staff, require_permission)
 
@@ -293,6 +295,36 @@ def daftar_absensi_excel(tanggal: str = None, tanggal_dari: str = None, tanggal_
     filename = laporan_pdf.buat_nama_file("absensi").replace(".pdf", ".xlsx")
     return Response(content=konten, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/absen-mandiri-link")
+def absen_mandiri_link(user: dict = Depends(get_current_user)):
+    """FITUR BARU Absen Mandiri: link publik "/absen" (Setting > Absensi,
+    kartu "Link Absen Mandiri" -- REUSE booking_slug tenant yang sama
+    dipakai "Link Booking", lihat tenant_db.py::get_absen_mandiri_url())."""
+    _cek_akses_lihat(user)
+    t = tenant_db.get_tenant(user["tenant_id"])
+    return {"booking_slug": t.get("booking_slug") if t else None,
+            "absen_mandiri_url": tenant_db.get_absen_mandiri_url(t or {})}
+
+
+@router.get("/perangkat-terikat")
+def daftar_perangkat_terikat(user: dict = Depends(get_current_user)):
+    """FITUR BARU Absen Mandiri: panel Admin "Perangkat Terikat" (Setting >
+    Absensi) -- daftar karyawan Non-Barber beserta status device-lock-nya."""
+    _cek_akses_lihat(user)
+    return absen_mandiri_db.get_daftar_device_terikat(user["tenant_id"])
+
+
+@router.post("/perangkat-terikat/{barber_id}/reset")
+def reset_perangkat_terikat(barber_id: int, user: dict = Depends(require_permission("izin_absensi_pengaturan"))):
+    """Lepas ikatan device karyawan ini -- Check In/Out Absen Mandiri
+    berikutnya mengikat device BARU lagi. Digerbang izin yang sama dengan
+    PUT /settings (Owner selalu punya, Admin wajib izin eksplisit)."""
+    try:
+        return absen_mandiri_db.reset_device(barber_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/audit")

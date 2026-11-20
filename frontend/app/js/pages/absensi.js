@@ -932,6 +932,102 @@ const PageAbsensi = (() => {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
     });
+
+    await renderLinkAbsenMandiri(root);
+    await renderPerangkatTerikat(root);
+  }
+
+  // ---- FITUR BARU Absen Mandiri: Link publik "/absen" (REUSE booking_slug
+  // yang sama dipakai "Link Booking" di Setting > Booking -- lihat
+  // tenant_db.py::get_absen_mandiri_url()) -- murni tampilan+salin link,
+  // TIDAK ada form ubah slug di sini (sudah diatur lewat Setting > Booking).
+  async function renderLinkAbsenMandiri(root) {
+    const card = MugenUI.el("div", { class: "card" });
+    root.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Link Absen Mandiri"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Halaman publik (tanpa login) untuk Check In/Check Out karyawan Non-Barber (Kasir/OB/Kru/dst) -- bagikan link ini ke mereka."));
+
+    const body = MugenUI.el("div");
+    card.appendChild(body);
+    try {
+      const hasil = await MugenApi.get("/api/attendance/absen-mandiri-link");
+      if (!hasil.absen_mandiri_url) {
+        body.appendChild(MugenUI.el("div", { class: "subtitle" },
+          "Alamat toko belum diatur. Atur dulu Alamat Booking di menu Setting > Booking (Link Absen Mandiri memakai alamat yang sama)."));
+        return;
+      }
+      const inLink = MugenUI.el("input", { type: "text", value: hasil.absen_mandiri_url, readOnly: true });
+      const btnSalin = MugenUI.el("button", {}, "Salin Link");
+      const btnBuka = MugenUI.el("a", { href: hasil.absen_mandiri_url, target: "_blank", rel: "noopener noreferrer", class: "btn-primary" }, "Buka");
+      body.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;" }, [inLink, btnSalin, btnBuka]));
+      btnSalin.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(inLink.value);
+          MugenUI.toast("Link Absen Mandiri disalin.", "success");
+        } catch (e) {
+          inLink.select();
+          MugenUI.toast("Gagal menyalin otomatis -- link sudah disorot, salin manual (Ctrl+C).", "error");
+        }
+      });
+    } catch (e) {
+      body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+    }
+  }
+
+  // ---- FITUR BARU Absen Mandiri: panel "Perangkat Terikat" (device-lock
+  // anti "titip absen", lihat absen_mandiri_db.py untuk penjelasan lengkap)
+  // -- daftar karyawan Non-Barber + status device terikatnya + tombol Reset.
+  async function renderPerangkatTerikat(root) {
+    const card = MugenUI.el("div", { class: "card" });
+    root.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Perangkat Terikat (Absen Mandiri)"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Device (browser) yang dipakai karyawan Non-Barber saat Check In PERTAMA otomatis terikat ke namanya -- " +
+      "percobaan berikutnya dari device LAIN ditolak. Reset kalau karyawan berganti perangkat."));
+
+    const body = MugenUI.el("div");
+    card.appendChild(body);
+
+    async function muat() {
+      await MugenUI.refreshInto(body, async () => {
+        let rows;
+        try {
+          rows = await MugenApi.get("/api/attendance/perangkat-terikat");
+        } catch (e) {
+          return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
+        }
+        return MugenUI.buildTable([
+          { key: "nama", label: "Nama" },
+          { key: "jabatan", label: "Jabatan" },
+          { key: "device_label_terikat", label: "Perangkat", format: (v) => v || "— belum terikat —" },
+          { key: "device_terikat_sejak", label: "Terikat Sejak", format: (v) => v ? MugenUI.formatTanggal(v.slice(0, 10)) : "-" },
+          {
+            key: "aksi", label: "Aksi", format: (_, r) => {
+              const btn = MugenUI.el("button", {}, "Reset Perangkat");
+              btn.disabled = !r.device_id_terikat;
+              btn.addEventListener("click", async () => {
+                const ok = await MugenUI.confirmModal({
+                  title: "Reset Perangkat",
+                  message: `Lepas ikatan perangkat untuk ${r.nama}? Check In/Out Absen Mandiri berikutnya akan mengikat perangkat baru.`,
+                  confirmText: "Ya, Reset",
+                });
+                if (!ok) return;
+                try {
+                  await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/attendance/perangkat-terikat/${r.id}/reset`, {}));
+                  MugenUI.toast("Perangkat berhasil di-reset.", "success");
+                  muat();
+                } catch (e) {
+                  MugenUI.infoModal({ title: "Gagal", body: MugenUI.el("p", {}, (e.detail && e.detail.detail) ? e.detail.detail : e.message) });
+                }
+              });
+              return btn;
+            },
+          },
+        ], rows, { emptyText: "Belum ada karyawan Non-Barber." });
+      }, { skeleton: { kind: "table", cols: 5, rows: 3 } });
+    }
+    muat();
   }
 
   // ---- Kuota Cuti & Libur (PERMINTAAN OWNER: dipindahkan dari Setting >

@@ -180,6 +180,23 @@ services:
       - type: rewrite
         source: /app/book/*
         destination: /app/index.html
+      # FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan
+      # Non-Barber): "/absen"/"/app/absen" sama persis pola "/book"/"/app/book"
+      # di atas (path ASLI, bukan hash, supaya kompatibel Instagram Bio dkk
+      # dan aman di-refresh) -- router.js::pathAdalahHalamanAbsen() yang
+      # mendeteksi location.pathname dan merender PageAbsenMandiri.
+      - type: rewrite
+        source: /absen
+        destination: /app/index.html
+      - type: rewrite
+        source: /absen/*
+        destination: /app/index.html
+      - type: rewrite
+        source: /app/absen
+        destination: /app/index.html
+      - type: rewrite
+        source: /app/absen/*
+        destination: /app/index.html
     headers:
       # /api/* TIDAK PERNAH ada di Static Site ini (seluruhnya dilayani
       # backend terpisah) -- header ini murni jaga-jaga supaya file publik
