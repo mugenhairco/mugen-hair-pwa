@@ -1324,7 +1324,28 @@
 // mentah, BUKAN dari kolom Nominal yang sengaja tidak menyertakan tips) --
 // kolom Tips baru ini cuma menampilkan rinciannya supaya tidak kelihatan
 // seperti tips "hilang" saat baris dijumlah manual.
-const ASSET_VERSION = "275";
+// v231 -> v232: FITUR Filter Barber di POS "Transaksi Hari Ini"
+// (PERMINTAAN Owner): dropdown baru di atas tabel Service, opsinya
+// diambil dari barber yang benar-benar punya transaksi hari ini (bukan
+// semua barber aktif) -- filter MURNI tampilan (client-side), "Rincian
+// Pembayaran"/"Total Keseluruhan" TETAP untuk seluruh hari. Backend
+// (pos_db.get_transaksi_hari_ini()) kini ikut mengembalikan "barber_id"
+// per baris service (sumber="pos" MAUPUN "booking") supaya filter bisa
+// cocok lewat id, bukan nama.
+// v232 -> v233: FITUR "+ Tambah Transaksi" (Susulan) di Rekap (PERMINTAAN
+// Owner): untuk transaksi walk-in yang beneran kelewat tidak diinput
+// sama sekali di hari itu -- BEDA dari "Koreksi" yang mengedit baris yang
+// SUDAH ada. Pakai endpoint lama POST /api/input-data/transaksi (bekas
+// form Input Barber yang sudah dihapus tampilannya) dengan flag baru
+// `susulan: true` -- SENGAJA tidak ikut aturan "satu tanggal satu mode",
+// supaya tidak ditolak walau tanggal itu sudah terpakai mode POS hari
+// itu (skenario paling umum). Baris hasilnya ditandai sumber=
+// "manual_susulan", aman berdampingan (tidak pernah ikut rebuild
+// otomatis POS/Booking/Manual Customer), tetap boleh di-Koreksi/Hapus
+// seperti baris manual biasa. Izinnya SAMA PERSIS tombol Koreksi
+// (izin_input_data_kelola) -- Owner bisa kasih izin ini ke Kasir juga
+// lewat Pengaturan Izin, tidak perlu izin baru.
+const ASSET_VERSION = "277";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
