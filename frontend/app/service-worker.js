@@ -1283,7 +1283,13 @@
 // Non-Barber TIDAK berubah). Tandai Libur pindah ke pages/absensi.js (tab
 // "Kuota Cuti & Libur"), Koreksi Transaksi pindah ke pages/rekap.js (tombol
 // Koreksi di samping Hapus, baris bertipe transaksi).
-const ASSET_VERSION = "271";
+//
+// v227 -> v228: BUGFIX Absen Mandiri -- pages/absen_mandiri.js lupa expose
+// window.PageAbsenMandiri di akhir file (pola wajib untuk lazy-load lewat
+// page_loader.js, lihat pages/book_public.js/input_data.js), menyebabkan
+// "Gagal memuat halaman" tiap kali /absen dibuka walau script-nya sendiri
+// berhasil di-fetch.
+const ASSET_VERSION = "272";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
