@@ -261,7 +261,16 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
 
     'pendapatan' = total_gaji APA ADANYA (sudah termasuk Bonus - Potongan,
     lihat tambah_data_non_barber()) -- TIDAK dihitung ulang di sini, sama
-    prinsipnya seperti seluruh modul lain di file ini."""
+    prinsipnya seperti seluruh modul lain di file ini.
+
+    REDESIGN PDF Rekap Detail/Ringkasan (permintaan Owner, contoh gambar
+    disetujui): Non-Barber sekarang ditampilkan di TABEL TERPISAH dari
+    Barber (bukan nyempil di baris yang sama) -- field `nb_*` + `tanggal_
+    selesai` di bawah ditambahkan KHUSUS supaya laporan_pdf.py bisa
+    menyusun kolom Non-Barber sendiri (Periode/Hari Masuk/Gaji per Hari/
+    Bonus/Potongan) tanpa perlu fetch ulang data_non_barber -- field LAMA
+    (tanggal/pendapatan/keterangan/dst) TIDAK dihapus/diubah, supaya
+    pemakai lama (rekap_ringkasan.py, tampilan layar) tidak perlu disentuh."""
     entri = get_data_non_barber_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
                                       tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
                                       tenant_id=tenant_id)
@@ -283,6 +292,12 @@ def gabung_ke_rekap_transaksi(baris: list, tahun: int = None, bulan: int = None,
             "pendapatan": e["total_gaji"],
             "keterangan": "; ".join(bagian_ket),
             "catatan": e.get("catatan") or "",  # field mentah -- dipakai rekap_ringkasan.py
+            "tanggal_selesai": e["tanggal_selesai"],
+            "nb_hari_masuk": e["hari_masuk"],
+            "nb_hari_libur": e["hari_libur"],
+            "nb_gaji_per_hari": e["gaji_per_hari"],
+            "nb_bonus": e["bonus"],
+            "nb_potongan": e["potongan"],
         })
     baris.sort(key=lambda r: r["nama_barber"])
     baris.sort(key=lambda r: r["tanggal"], reverse=True)

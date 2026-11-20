@@ -60,6 +60,16 @@ def ringkas_per_karyawan(baris: list) -> list:
                 "reimburse_ket_list": [],  # (kategori, jumlah) tiap klaim
                 "libur_list": [],       # tanggal ISO tiap hari libur
                 "_tanggal_uang_harian_dihitung": set(),  # MAINTENANCE #1: lihat catatan di bawah
+                # REDESIGN PDF Rekap Detail/Ringkasan (tabel Non-Barber
+                # terpisah dari Barber, contoh gambar disetujui Owner):
+                # dijumlah lintas periode Non-Barber (satu karyawan bisa
+                # punya lebih dari satu baris data_non_barber dalam rentang
+                # yang dipilih) -- laporan_pdf.py yang menampilkannya,
+                # file ini murni menjumlahkan apa adanya.
+                "nb_hari_masuk": 0,
+                "nb_hari_libur": 0,
+                "nb_bonus": 0,
+                "nb_potongan": 0,
             }
             urutan.append(bid)
         acc = ringkas[bid]
@@ -117,6 +127,10 @@ def ringkas_per_karyawan(baris: list) -> list:
             acc["kasbon_ket_list"].append(jumlah)
         elif tipe == "non_barber":
             acc["gaji_non_barber"] += r["pendapatan"]
+            acc["nb_hari_masuk"] += r.get("nb_hari_masuk", 0)
+            acc["nb_hari_libur"] += r.get("nb_hari_libur", 0)
+            acc["nb_bonus"] += r.get("nb_bonus", 0)
+            acc["nb_potongan"] += r.get("nb_potongan", 0)
             if (r.get("catatan") or "").strip():
                 acc["catatan_list"].append(r["catatan"].strip())
 
@@ -160,6 +174,10 @@ def ringkas_per_karyawan(baris: list) -> list:
             "reimburse": acc["reimburse"],
             "kasbon_dibayar": acc["kasbon_dibayar"],
             "gaji_non_barber": acc["gaji_non_barber"],
+            "nb_hari_masuk": acc["nb_hari_masuk"],
+            "nb_hari_libur": acc["nb_hari_libur"],
+            "nb_bonus": acc["nb_bonus"],
+            "nb_potongan": acc["nb_potongan"],
             "total": total,
             "keterangan": keterangan,
         })
