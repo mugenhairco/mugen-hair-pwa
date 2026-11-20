@@ -16,23 +16,20 @@ persis apa yang dipakai tampilan layar & Rekap Detail apa adanya), supaya
 logika perhitungan Barber/Non-Barber yang sudah ada tidak tersentuh sama
 sekali (sesuai permintaan).
 
-Kolom Keterangan (`keterangan_list`, REVISI): dikembalikan sebagai LIST
-baris teks TERPISAH (bukan satu string gabungan) -- satu baris per info
-(Catatan/Kasbon/Reimburse/Libur), urut per kategori lalu tanggal, supaya
-tampilan (laporan_pdf.py, lewat _sel_keterangan()) bisa menaruh tiap info
-di baris terpisah, TIDAK digabung koma/titik-koma jadi satu baris."""
-
-_NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-               "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+Kolom Keterangan (`keterangan`, REDESIGN Rapikan PDF -- contoh gambar
+disetujui Owner): dikembalikan sebagai DICT terkelompok per kategori
+({"catatan": [...], "kasbon": [...], "reimburse": [...], "libur": [...]})
+-- BUKAN lagi list string pre-format satu baris per info. laporan_pdf.py
+(lewat _sel_keterangan()) yang menentukan cara menampilkannya (label
+kategori ditebalkan sekali, Kasbon/Reimburse digabung satu baris dipisah
+koma, tanggal Libur SEBANYAK APA PUN digabung jadi satu baris ringkas) --
+file ini murni mengumpulkan datanya per kategori, tidak tahu soal tata
+letak PDF sama sekali. `libur` berisi tanggal ISO mentah (BUKAN sudah
+diformat Indonesia) -- pemformatan tanggal jadi urusan laporan_pdf.py."""
 
 
 def _rupiah(v) -> str:
     return f"Rp {int(v or 0):,}".replace(",", ".")
-
-
-def _tanggal_indo(iso: str) -> str:
-    tahun, bulan, hari = iso.split("-")
-    return f"{int(hari)} {_NAMA_BULAN[int(bulan)]} {int(tahun)}"
 
 
 def ringkas_per_karyawan(baris: list) -> list:
@@ -63,6 +60,16 @@ def ringkas_per_karyawan(baris: list) -> list:
                 "reimburse_ket_list": [],  # (kategori, jumlah) tiap klaim
                 "libur_list": [],       # tanggal ISO tiap hari libur
                 "_tanggal_uang_harian_dihitung": set(),  # MAINTENANCE #1: lihat catatan di bawah
+                # REDESIGN PDF Rekap Detail/Ringkasan (tabel Non-Barber
+                # terpisah dari Barber, contoh gambar disetujui Owner):
+                # dijumlah lintas periode Non-Barber (satu karyawan bisa
+                # punya lebih dari satu baris data_non_barber dalam rentang
+                # yang dipilih) -- laporan_pdf.py yang menampilkannya,
+                # file ini murni menjumlahkan apa adanya.
+                "nb_hari_masuk": 0,
+                "nb_hari_libur": 0,
+                "nb_bonus": 0,
+                "nb_potongan": 0,
             }
             urutan.append(bid)
         acc = ringkas[bid]
@@ -120,6 +127,10 @@ def ringkas_per_karyawan(baris: list) -> list:
             acc["kasbon_ket_list"].append(jumlah)
         elif tipe == "non_barber":
             acc["gaji_non_barber"] += r["pendapatan"]
+            acc["nb_hari_masuk"] += r.get("nb_hari_masuk", 0)
+            acc["nb_hari_libur"] += r.get("nb_hari_libur", 0)
+            acc["nb_bonus"] += r.get("nb_bonus", 0)
+            acc["nb_potongan"] += r.get("nb_potongan", 0)
             if (r.get("catatan") or "").strip():
                 acc["catatan_list"].append(r["catatan"].strip())
 
@@ -135,20 +146,19 @@ def ringkas_per_karyawan(baris: list) -> list:
         # dijumlah manual oleh pengguna).
         total = acc["pendapatan"] + acc["uang_harian"] + acc["gaji_non_barber"] + acc["reimburse"] - acc["kasbon_dibayar"]
 
-        # Keterangan: satu baris teks PER INFORMASI (bukan digabung jadi
-        # satu baris) -- urut kategori: Catatan, lalu Kasbon, lalu
-        # Reimburse, lalu Libur (tiap hari libur baris SENDIRI-SENDIRI,
-        # urut tanggal), sesuai contoh yang diminta.
-        keterangan_list = []
-        for c in acc["catatan_list"]:
-            keterangan_list.append(f"Catatan: {c}")
-        for jumlah in acc["kasbon_ket_list"]:
-            keterangan_list.append(f"Kasbon: {_rupiah(jumlah)}")
-        for kategori, jumlah in acc["reimburse_ket_list"]:
-            label = f"Reimburse: {kategori} {_rupiah(jumlah)}".replace("  ", " ").strip()
-            keterangan_list.append(label)
-        for tanggal in sorted(acc["libur_list"]):
-            keterangan_list.append(f"Libur: {_tanggal_indo(tanggal)}")
+        # Keterangan: dikelompokkan per kategori (dict) -- lihat docstring
+        # modul di atas. Tanggal Libur dikirim MENTAH (ISO, urut) supaya
+        # laporan_pdf.py bebas meringkasnya (mis. "3, 10, 12 November 2026")
+        # tanpa file ini perlu tahu format tampilannya.
+        keterangan = {
+            "catatan": list(acc["catatan_list"]),
+            "kasbon": [_rupiah(jumlah) for jumlah in acc["kasbon_ket_list"]],
+            "reimburse": [
+                f"{kategori} {_rupiah(jumlah)}".replace("  ", " ").strip()
+                for kategori, jumlah in acc["reimburse_ket_list"]
+            ],
+            "libur": sorted(acc["libur_list"]),
+        }
 
         hasil.append({
             "barber_id": acc["barber_id"],
@@ -164,8 +174,12 @@ def ringkas_per_karyawan(baris: list) -> list:
             "reimburse": acc["reimburse"],
             "kasbon_dibayar": acc["kasbon_dibayar"],
             "gaji_non_barber": acc["gaji_non_barber"],
+            "nb_hari_masuk": acc["nb_hari_masuk"],
+            "nb_hari_libur": acc["nb_hari_libur"],
+            "nb_bonus": acc["nb_bonus"],
+            "nb_potongan": acc["nb_potongan"],
             "total": total,
-            "keterangan_list": keterangan_list,
+            "keterangan": keterangan,
         })
     hasil.sort(key=lambda r: r["nama_barber"])
     return hasil

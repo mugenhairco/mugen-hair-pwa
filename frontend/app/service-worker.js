@@ -1269,7 +1269,14 @@
 // transaksi POS lunas, barisnya langsung disuntikkan ke cache Transaksi
 // Hari Ini (_suntikTransaksiBaru(), optimistic update TANPA fetch ulang)
 // supaya pindah ke tab itu langsung tampil, bukan fetch+skeleton lagi.
-const ASSET_VERSION = "269";
+//
+// v225 -> v226: FITUR BARU Absen Mandiri -- halaman publik "/absen" (tanpa
+// login) untuk Check In/Check Out GPS karyawan Non-Barber (Kasir/OB/Kru/dst,
+// yang tidak pernah punya akun login, lihat karyawan_migrasi.py). File baru
+// pages/absen_mandiri.js (lihat daftar APP_SHELL di bawah) + router.js
+// (pathAdalahHalamanAbsen()) + absensi.js (kartu "Link Absen Mandiri" &
+// panel "Perangkat Terikat" di Setting > Absensi).
+const ASSET_VERSION = "270";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1357,6 +1364,10 @@ const _APP_SHELL_BER_VERSI = [
   // catatan page_loader.js soal file lazy-load tetap wajib masuk APP_SHELL).
   "/app/js/pages/whatsapp.js",
   "/app/js/pages/book_public.js",
+  // FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan Non-
+  // Barber): file baru, harus terdaftar di sini juga (lihat catatan
+  // page_loader.js soal file lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/pages/absen_mandiri.js",
   "/app/js/pages/riwayat_transaksi.js",
   "/app/js/pages/settlement_faspay.js",
   "/app/js/pages/superadmin.js",

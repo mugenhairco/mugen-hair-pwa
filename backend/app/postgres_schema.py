@@ -353,6 +353,13 @@ ALTER TABLE barbers ADD COLUMN IF NOT EXISTS foto_data BYTEA;
 -- karyawan_migrasi.py::_migrasi_kolom_nomor_whatsapp() untuk jalur SQLite.
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS nomor_whatsapp TEXT;
 
+-- FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan Non-
+-- Barber): device-lock anti "titip absen" -- lihat absen_mandiri_db.py
+-- untuk penjelasan lengkap & jalur SQLite-nya (migrasi_absen_mandiri()).
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS device_id_terikat TEXT;
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS device_label_terikat TEXT;
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS device_terikat_sejak TEXT;
+
 CREATE TABLE IF NOT EXISTS slip_gaji (
     id                SERIAL PRIMARY KEY,
     barber_id         INTEGER NOT NULL REFERENCES barbers(id),
@@ -1562,8 +1569,13 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
     created_at            TEXT NOT NULL,
     updated_at            TEXT,
     tenant_id             INTEGER,
+    sumber                TEXT,
     UNIQUE(barber_id, tanggal)
 );
+-- FITUR BARU Absen Mandiri: kolom `sumber` (mis. "absen_mandiri") -- murni
+-- jejak audit asal baris, lihat attendance_db.py::init_attendance_db() untuk
+-- penjelasan lengkap & jalur SQLite-nya.
+ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS sumber TEXT;
 
 CREATE TABLE IF NOT EXISTS attendance_audit_logs (
     id           SERIAL PRIMARY KEY,

@@ -90,6 +90,7 @@ import manual_customer_db  # FITUR BARU Manual Customer (Waiting List/Booking): 
 import pos_db  # FITUR BARU Point of Sale (Kasir walk-in): tabel pos_transaksi/pos_transaksi_service/pos_transaksi_produk (idempotent)
 import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
+import absen_mandiri_db  # FITUR BARU Absen Mandiri: kolom barbers.device_id_terikat/device_label_terikat/device_terikat_sejak (idempotent, device-lock Non-Barber tanpa login)
 import absensi_reminder_db  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
@@ -107,7 +108,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, pos, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, whatsapp_bot, sales
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, pos, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, whatsapp_bot, sales, absen_mandiri
 import whatsapp_bot_db  # FITUR WA Bot (Input Data & Rekap via WhatsApp): tabel whatsapp_bot_config/whatsapp_bot_pesan_log (idempotent, berdiri sendiri)
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
@@ -374,6 +375,7 @@ app.include_router(snap_advance.notification_router)
 app.include_router(faspay_settlement.router)
 app.include_router(faspay_settlement_superadmin.router)
 app.include_router(attendance.router)
+app.include_router(absen_mandiri.public_router)
 app.include_router(cron_reminder.router)
 app.include_router(cron_purge_data.router)
 app.include_router(sales.router)
@@ -481,6 +483,7 @@ async def on_startup():
         migrasi_user_roles()    # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
         migrasi_revisi_setting()  # REVISI Setting: target Uang Harian bisa diatur + Harga Modal per-service (idempotent)
         migrasi_karyawan()      # Karyawan Non-Barber: kolom barbers.jabatan + barbers.gaji_per_hari (idempotent)
+        absen_mandiri_db.migrasi_absen_mandiri()  # FITUR BARU Absen Mandiri: kolom barbers.device_id_terikat/device_label_terikat/device_terikat_sejak (idempotent)
         migrasi_izin_cuti()     # REVISI Sistem Dinamis Cuti & Izin: kolom mode_kuota/kuota_izin_hari/kuota_gabungan_hari/periode_mulai_dasar/h_min_pengajuan_izin di izin_cuti_settings + tabel izin_cuti_saldo_awal (idempotent)
         migrasi_absensi_libur_sumber()  # Migrasi skema kolom absensi_libur.sumber (idempotent) -- dipakai Kuota Libur (Tandai Libur manual), lihat kuota_libur_db.py
         db.migrasi_transaksi_idempotency_key()  # Migrasi skema kolom transaksi.idempotency_key + unique index (idempotent) -- cegah Transaksi dobel dari "Kirim Ulang", lihat database.py

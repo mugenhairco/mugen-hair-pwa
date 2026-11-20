@@ -45,6 +45,14 @@ const MugenRouter = (() => {
     return p === "/book" || p.startsWith("/book/") || p === "/app/book" || p.startsWith("/app/book/");
   }
 
+  // FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan Non-
+  // Barber): pola SAMA PERSIS pathAdalahHalamanBook() di atas -- lihat
+  // render.yaml routes untuk "/absen"/"/app/absen".
+  function pathAdalahHalamanAbsen() {
+    const p = location.pathname;
+    return p === "/absen" || p.startsWith("/absen/") || p === "/app/absen" || p.startsWith("/app/absen/");
+  }
+
   function _simpanScrollLama() {
     const contentLama = document.getElementById("content");
     if (contentLama && _lastHash) _scrollPos.set(_lastHash, contentLama.scrollTop);
@@ -216,6 +224,24 @@ const MugenRouter = (() => {
       appRoot.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
       MugenPageLoader.ensure("PageBookPublic", "js/pages/book_public.js")
         .then(() => { appRoot.innerHTML = ""; PageBookPublic.render(appRoot); })
+        .catch((err) => {
+          appRoot.innerHTML = "";
+          appRoot.appendChild(MugenUI.errorState("Gagal memuat halaman. Cek koneksi internet Anda, lalu muat ulang halaman."));
+          console.error(err);
+        });
+      return;
+    }
+
+    // FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan Non-
+    // Barber: Kasir/OB/Kru/dst) -- pola SAMA PERSIS blok "/book" di atas
+    // (Dark Mode dipaksa Light, guard hash sama, lazy-load page module).
+    if (pathAdalahHalamanAbsen() || hash === "#/absen" || hash.startsWith("#/absen/") || hash.startsWith("#/absen?")) {
+      MugenTheme.forceLight();
+      if (hash === hashSebelumnya) return;
+      appRoot.innerHTML = "";
+      appRoot.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+      MugenPageLoader.ensure("PageAbsenMandiri", "js/pages/absen_mandiri.js")
+        .then(() => { appRoot.innerHTML = ""; PageAbsenMandiri.render(appRoot); })
         .catch((err) => {
           appRoot.innerHTML = "";
           appRoot.appendChild(MugenUI.errorState("Gagal memuat halaman. Cek koneksi internet Anda, lalu muat ulang halaman."));

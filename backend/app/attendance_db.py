@@ -173,9 +173,19 @@ def init_attendance_db():
                 created_at           TEXT NOT NULL,
                 updated_at           TEXT,
                 tenant_id            INTEGER,
+                sumber               TEXT,
                 UNIQUE(barber_id, tanggal)
             )
         """)
+        # FITUR BARU Absen Mandiri: kolom `sumber` (mis. "absen_mandiri" --
+        # kosong/NULL = Check In/Out Barber biasa lewat akun login, perilaku
+        # lama) -- murni jejak audit asal baris, TIDAK memengaruhi validasi/
+        # perhitungan apa pun. Instalasi SQLite yang SUDAH ADA sebelum kolom
+        # ini ditambahkan ke CREATE TABLE (pola sama seperti kolom
+        # attendance_settings di atas).
+        kolom_logs = [r["name"] for r in conn.execute("PRAGMA table_info(attendance_logs)").fetchall()]
+        if kolom_logs and "sumber" not in kolom_logs:
+            conn.execute("ALTER TABLE attendance_logs ADD COLUMN sumber TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance_audit_logs (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -401,8 +411,16 @@ def _menit_terlambat_baris(row: dict, settings: dict) -> int | None:
 def _menit_pulang_awal_baris(row: dict, settings: dict) -> int | None:
     """None kalau baris ini BUKAN pulang lebih awal (belum check-out / check-
     out di atas atau tepat jam_pulang) -- else jumlah menit pulang lebih
-    awal (>=0)."""
+    awal (>=0).
+
+    FITUR BARU Absen Mandiri (keputusan Owner: Non-Barber TIDAK terikat jam
+    operasional sama sekali): karyawan Non-Barber (jabatan != 'barber')
+    TIDAK PERNAH dianggap "pulang lebih awal" -- jam_pulang di
+    attendance_settings murni acuan Barber, tidak relevan untuk Non-Barber."""
     if not row.get("check_out_at"):
+        return None
+    barber = get_barber(row["barber_id"])
+    if barber is not None and (barber.get("jabatan") or "barber") != "barber":
         return None
     jam_pulang_dt = _gabung_jam(row["tanggal"], settings["jam_pulang"])
     check_out_dt = datetime.fromisoformat(row["check_out_at"])
@@ -875,12 +893,25 @@ def _validasi_koordinat(latitude, longitude, accuracy):
     return latitude, longitude
 
 
-def validasi_checkin(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None):
+def validasi_checkin(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None, device_id: str = None):
     """Return (settings, jarak_meter, status_ketepatan) kalau valid, raise
-    ValueError (pesan siap ditampilkan ke Barber) kalau tidak."""
+    ValueError (pesan siap ditampilkan ke Barber) kalau tidak.
+
+    FITUR BARU Absen Mandiri (keputusan Owner): karyawan Non-Barber (jabatan
+    != 'barber', Check In/Out TANPA LOGIN lewat halaman publik /absen, lihat
+    routers/absen_mandiri.py) TIDAK terikat jendela waktu jam_masuk/
+    jam_pulang/toleransi sama sekali (tidak punya jam operasional) -- radius
+    GPS TETAP berlaku sama seperti Barber. `device_id` (opsional, HANYA
+    dikirim jalur Absen Mandiri) dicek lewat absen_mandiri_db.cek_device_lock()
+    supaya device yang belum terdaftar untuk karyawan ini ditolak (anti
+    "titip absen")."""
     barber = get_barber(barber_id)
     if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
+    is_barber = (barber.get("jabatan") or "barber") == "barber"
+    if not is_barber:
+        import absen_mandiri_db
+        absen_mandiri_db.cek_device_lock(barber, device_id)
     settings = get_settings(tenant_id)
     if settings.get("lokasi_latitude") is None or settings.get("lokasi_longitude") is None:
         raise ValueError("Lokasi Toko belum diatur Owner. Hubungi Owner untuk mengatur Pengaturan Absensi.")
@@ -892,35 +923,45 @@ def validasi_checkin(tenant_id: int, barber_id: int, latitude, longitude, accura
 
     sekarang = _sekarang_wib()
     tanggal = sekarang.strftime("%Y-%m-%d")
-    jam_masuk_dt = _gabung_jam(tanggal, settings["jam_masuk"])
-    # FITUR Toleransi Absen Lebih Awal (feedback Owner): jam_masuk_dt TETAP
-    # acuan tunggal utk status_ketepatan (tepat_waktu/terlambat) di bawah --
-    # HANYA batas AWAL yang boleh Check In yang digeser mundur, supaya
-    # Barber bisa bersiap-siap sebelum toko buka tanpa mengubah definisi
-    # "tepat waktu" itu sendiri. toleransi_absen_awal_menit bisa None utk
-    # baris lama sebelum ALTER TABLE (fallback 0 = perilaku lama).
-    batas_awal_dt = jam_masuk_dt - timedelta(minutes=settings.get("toleransi_absen_awal_menit") or 0)
-    if sekarang < batas_awal_dt:
-        raise ValueError(f"Belum waktunya Check In (toko buka jam {settings['jam_masuk']}, "
-                          f"Check In bisa dimulai jam {batas_awal_dt.strftime('%H:%M')}).")
-    jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
-    if sekarang >= jam_pulang_dt:
-        raise ValueError("Sudah melewati jam pulang. Tidak bisa Check In lagi hari ini.")
+    if is_barber:
+        jam_masuk_dt = _gabung_jam(tanggal, settings["jam_masuk"])
+        # FITUR Toleransi Absen Lebih Awal (feedback Owner): jam_masuk_dt TETAP
+        # acuan tunggal utk status_ketepatan (tepat_waktu/terlambat) di bawah --
+        # HANYA batas AWAL yang boleh Check In yang digeser mundur, supaya
+        # Barber bisa bersiap-siap sebelum toko buka tanpa mengubah definisi
+        # "tepat waktu" itu sendiri. toleransi_absen_awal_menit bisa None utk
+        # baris lama sebelum ALTER TABLE (fallback 0 = perilaku lama).
+        batas_awal_dt = jam_masuk_dt - timedelta(minutes=settings.get("toleransi_absen_awal_menit") or 0)
+        if sekarang < batas_awal_dt:
+            raise ValueError(f"Belum waktunya Check In (toko buka jam {settings['jam_masuk']}, "
+                              f"Check In bisa dimulai jam {batas_awal_dt.strftime('%H:%M')}).")
+        jam_pulang_dt = _gabung_jam(tanggal, settings["jam_pulang"])
+        if sekarang >= jam_pulang_dt:
+            raise ValueError("Sudah melewati jam pulang. Tidak bisa Check In lagi hari ini.")
 
     jarak = haversine_meter(latitude, longitude, settings["lokasi_latitude"], settings["lokasi_longitude"])
     if jarak > settings["radius_meter"]:
         raise ValueError(f"Anda berada di luar radius absensi ({round(jarak)} meter dari toko, "
                           f"maksimal {settings['radius_meter']} meter).")
 
-    batas_toleransi_dt = _gabung_jam(tanggal, settings["jam_masuk"]) + timedelta(minutes=settings["toleransi_menit"])
-    status_ketepatan = "terlambat" if sekarang > batas_toleransi_dt else "tepat_waktu"
+    if is_barber:
+        batas_toleransi_dt = _gabung_jam(tanggal, settings["jam_masuk"]) + timedelta(minutes=settings["toleransi_menit"])
+        status_ketepatan = "terlambat" if sekarang > batas_toleransi_dt else "tepat_waktu"
+    else:
+        # Non-Barber: tanpa jam operasional -> tanpa klasifikasi tepat
+        # waktu/terlambat (lihat _menit_terlambat_baris(), yang hanya
+        # menganggap "terlambat" sebagai keterlambatan).
+        status_ketepatan = None
     return settings, jarak, status_ketepatan
 
 
-def validasi_checkout(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None):
+def validasi_checkout(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None, device_id: str = None):
     barber = get_barber(barber_id)
     if barber is None or (tenant_id is not None and barber["tenant_id"] != tenant_id):
         raise ValueError("Barber tidak ditemukan.")
+    if (barber.get("jabatan") or "barber") != "barber":
+        import absen_mandiri_db
+        absen_mandiri_db.cek_device_lock(barber, device_id)
     settings = get_settings(tenant_id)
     latitude, longitude = _validasi_koordinat(latitude, longitude, accuracy)
 
@@ -946,8 +987,13 @@ def validasi_checkout(tenant_id: int, barber_id: int, latitude, longitude, accur
 
 
 def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None, speed=None,
-             heading=None, browser: str = None, device: str = None, ip_address: str = None) -> dict:
-    settings, jarak, status_ketepatan = validasi_checkin(tenant_id, barber_id, latitude, longitude, accuracy)
+             heading=None, browser: str = None, device: str = None, ip_address: str = None,
+             device_id: str = None, sumber: str = None) -> dict:
+    """`device_id`/`sumber` HANYA diisi jalur Absen Mandiri (Check In TANPA
+    LOGIN, lihat routers/absen_mandiri.py) -- None/kosong untuk Check In
+    Barber biasa lewat akun login, perilaku lama 100% tidak berubah."""
+    settings, jarak, status_ketepatan = validasi_checkin(
+        tenant_id, barber_id, latitude, longitude, accuracy, device_id=device_id)
     sekarang = _sekarang_wib()
     now_iso = sekarang.isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -965,11 +1011,11 @@ def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None,
             """INSERT INTO attendance_logs
                    (barber_id, tanggal, check_in_at, check_in_latitude, check_in_longitude, check_in_accuracy,
                     check_in_speed, check_in_heading, check_in_jarak_meter, check_in_status, check_in_browser,
-                    check_in_device, check_in_ip, created_at, tenant_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    check_in_device, check_in_ip, created_at, tenant_id, sumber)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(barber_id, tanggal) DO NOTHING""",
             (barber_id, sekarang.strftime("%Y-%m-%d"), now_iso, latitude, longitude, accuracy, speed, heading,
-             jarak, status_ketepatan, browser, device, ip_address, now_iso, tenant_id),
+             jarak, status_ketepatan, browser, device, ip_address, now_iso, tenant_id, sumber),
         )
         gagal_race = cur.rowcount == 0
     # catat_audit() dipanggil SETELAH blok `with` di atas selesai (commit +
@@ -999,12 +1045,22 @@ def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None,
         )
     catat_audit(barber_id, "check_in", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
+    # FITUR BARU Absen Mandiri: ikat device_id ke karyawan ini pada Check In
+    # PERTAMA yang berhasil (sekali saja -- lihat absen_mandiri_db.
+    # ikat_device_jika_belum()). Tidak berpengaruh apa pun untuk Check In
+    # Barber biasa (device_id selalu None di jalur itu).
+    if device_id:
+        import absen_mandiri_db
+        absen_mandiri_db.ikat_device_jika_belum(barber_id, device_id, device)
     return _lengkapi(get_log_hari_ini(barber_id, tenant_id), settings)
 
 
 def check_out(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None, speed=None,
-              heading=None, browser: str = None, device: str = None, ip_address: str = None) -> dict:
-    settings, existing, jarak = validasi_checkout(tenant_id, barber_id, latitude, longitude, accuracy)
+              heading=None, browser: str = None, device: str = None, ip_address: str = None,
+              device_id: str = None) -> dict:
+    """`device_id` HANYA diisi jalur Absen Mandiri -- lihat check_in()."""
+    settings, existing, jarak = validasi_checkout(tenant_id, barber_id, latitude, longitude, accuracy,
+                                                   device_id=device_id)
     sekarang = _sekarang_wib()
     now_iso = sekarang.isoformat(timespec="seconds")
     check_in_at = datetime.fromisoformat(existing["check_in_at"])

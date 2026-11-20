@@ -97,6 +97,20 @@ def get_booking_url(tenant: dict) -> str | None:
     return f"https://{booking_slug}.{TENANT_SUBDOMAIN_SUFFIX}/book"
 
 
+def get_absen_mandiri_url(tenant: dict) -> str | None:
+    """FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan
+    Non-Barber): REUSE `booking_slug` yang SAMA dipakai get_booking_url()
+    di atas (BUKAN slug baru -- satu toko = satu subdomain, cukup beda
+    path) diikuti path "/absen" (path ASLI, bukan hash, pola SAMA PERSIS
+    "/book" -- lihat render.yaml routes untuk "/absen"/"/app/absen" dan
+    router.js::pathAdalahHalamanAbsen()). None kalau tenant belum punya
+    booking_slug sama sekali (lihat get_booking_url())."""
+    booking_slug = (tenant.get("booking_slug") or "").strip()
+    if not booking_slug:
+        return None
+    return f"https://{booking_slug}.{TENANT_SUBDOMAIN_SUFFIX}/absen"
+
+
 def _slugify_dasar(nama: str) -> str:
     """SAMA PERSIS algoritma yang dipakai routers/tenant_registration.py
     sebelumnya (dipusatkan di sini supaya `slug` DAN `booking_slug`
