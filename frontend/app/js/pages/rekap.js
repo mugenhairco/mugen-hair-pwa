@@ -46,7 +46,17 @@ const PageRekap = (() => {
     // Upsert (bukan skip-kalau-sudah-ada) -- "Koreksi" transaksi yang SUDAH
     // tampil di cache juga lewat jalur ini (id-nya sama, nilainya beda),
     // baris lama WAJIB diganti, bukan dibiarkan basi sampai refresh manual.
-    const idxLama = c.data.findIndex((r) => r.tipe === "transaksi" && r.id === baris.id);
+    //
+    // Baris sumber="pos"/"booking"/"manual_customer" dibangun ULANG (hapus
+    // baris lama + tambah baris baru) setiap kali sinkronisasi jalan --
+    // id-nya TIDAK stabil antar rebuild, beda dengan Koreksi manual (PUT
+    // in-place, id tetap). Untuk sumber otomatis itu, cocokkan upsert lewat
+    // (barber_id, tanggal, sumber) -- SELALU maksimal 1 baris per kombinasi
+    // itu (invarian rebuild-nya), bukan lewat id yang bisa berubah-ubah.
+    const idxLama = baris.sumber
+      ? c.data.findIndex((r) => r.tipe === "transaksi" && r.barber_id === baris.barber_id
+          && r.tanggal === baris.tanggal && r.sumber === baris.sumber)
+      : c.data.findIndex((r) => r.tipe === "transaksi" && r.id === baris.id);
     if (idxLama >= 0) c.data[idxLama] = baris;
     else c.data.push(baris);
     // Urutan SAMA PERSIS get_rekap_transaksi_list() (database.py): nama_barber

@@ -566,6 +566,34 @@ def _rebuild_transaksi_barber_hari(tenant_id: int, barber_id: int, tanggal: str)
     tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=total_tips, sumber="pos")
 
 
+def get_rekap_transaksi_ids(pos_id: int) -> list:
+    """FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+    Owner, lihat docstring routers/rekap.py::rekap_transaksi_baris() --
+    "pola sama Transaksi Hari Ini POS/Booking Mandiri", TAPI sebelumnya
+    HANYA pernah dipakai Input Data, tidak pernah benar-benar disambungkan
+    ke POS): dipanggil endpoint lunas (bayar-cash/verifikasi/status PAID)
+    SETELAH transaksi POS ini lunas -- cari id baris `transaksi` (Rekap)
+    milik SETIAP barber yang terlibat transaksi ini untuk tanggal yang
+    sama, supaya frontend bisa suntik baris itu ke Rekap (kalau sedang
+    terbuka sesi ini) TANPA fetch ulang seluruh daftar/skeleton loading.
+    Read-only murni -- TIDAK membangun ulang apa pun (itu sudah terjadi di
+    _proses_setelah_lunas()/_rebuild_transaksi_barber_hari()), aman
+    dipanggil kapan saja SETELAH status 'lunas'."""
+    pos = get_pos_transaksi(pos_id)
+    if pos is None:
+        return []
+    barber_ids = {b["barber_id"] for b in pos["daftar_barber"] if b.get("barber_id") is not None}
+    if not barber_ids:
+        return []
+    with get_conn() as conn:
+        placeholder = ", ".join("?" for _ in barber_ids)
+        rows = conn.execute(
+            f"SELECT id FROM transaksi WHERE tanggal = ? AND sumber = 'pos' AND barber_id IN ({placeholder})",
+            [pos["tanggal"], *barber_ids],
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def reset_hari_pos(tenant_id: int, tanggal: str) -> None:
     """Dipanggil manual_customer_db.reset_hari() (tombol "Reset Semua
     Transaksi Hari Ini") kalau mode tanggal ini == "pos" -- hapus baris
@@ -633,8 +661,9 @@ def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
 def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     """{"service": [...], "produk": [...]} -- HANYA transaksi lunas/
     terverifikasi (PERMINTAAN Owner), field ringkas saja (nama barber/
-    service/produk, nominal, jam) TANPA komisi/tips (PERMINTAAN Owner --
-    "dihitung sama, tapi jangan tampilkan")."""
+    service/produk, nominal, tips, jam) TANPA komisi (PERMINTAAN Owner
+    -- tips SEKARANG ditampilkan terpisah per baris, lihat "tips" di
+    bawah; komisi tetap tidak pernah ditampilkan di sini)."""
     import booking_db  # import lokal: hindari import siklik (booking_db tidak perlu tahu pos_db sama sekali)
 
     service_items = []
@@ -668,6 +697,13 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
                 "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"], "nama_barber": b["nama"],
                 "daftar_service": ", ".join(s["nama"] for s in b["daftar_service"]),
                 "nominal": sum(s["harga"] for s in b["daftar_service"]),
+                # FITUR Tampilkan Tips (PERMINTAAN Owner): tips tetap TIDAK
+                # ikut "nominal" di atas (nominal = harga service murni,
+                # dipakai juga filter/rekap lain yang sudah ada) -- kolom
+                # terpisah supaya jelas rinciannya, walau "Total Keseluruhan"/
+                # rincian_metode di bawah SUDAH menghitungnya sejak awal
+                # (dari total_harga mentah, lihat catatan di atas).
+                "tips": b["tips"],
             })
         for p in pos["daftar_produk"]:
             produk_items.append({

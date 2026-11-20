@@ -56,6 +56,7 @@ const PagePos = (() => {
         sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_barber: b.nama,
         daftar_service: b.daftar_service.map((s) => s.nama).join(", "),
         nominal: b.daftar_service.reduce((sum, s) => sum + s.harga, 0),
+        tips: b.tips,
       });
     }
     for (const p of pos.daftar_produk || []) {
@@ -97,6 +98,26 @@ const PagePos = (() => {
     data.rincian_metode = data.rincian_metode || {};
     data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) + booking.total_harga;
     data.total_keseluruhan = (data.total_keseluruhan || 0) + booking.total_harga;
+  }
+
+  // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+  // Owner): dulu HANYA pernah disambungkan ke Input Data (lihat komentar
+  // lama di routers/rekap.py::rekap_transaksi_baris(), yang bahkan
+  // menyebut "pola sama Transaksi Hari Ini POS" padahal belum pernah
+  // benar-benar dipakai POS) -- akibatnya menu Rekap SELALU skeleton
+  // loading begitu dibuka setelah ada transaksi POS baru, walau sudah
+  // terbuka sesi ini. `ids`: hasil.rekap_transaksi_ids dari respons
+  // bayar-cash/verifikasi/status (PAID) -- lihat pos_db.py::
+  // get_rekap_transaksi_ids(). Best-effort, gagal diam-diam (baris baru
+  // TETAP kelihatan begitu Rekap dibuka/di-refresh biasa).
+  function suntikKeRekap(ids) {
+    if (!ids || !ids.length) return;
+    if (typeof PageRekap === "undefined" || typeof PageRekap.suntikBarisTransaksi !== "function") return;
+    for (const id of ids) {
+      MugenApi.get(`/api/rekap/transaksi/baris/${id}`)
+        .then((baris) => PageRekap.suntikBarisTransaksi(baris))
+        .catch(() => {});
+    }
   }
 
   async function render(root) {
@@ -681,6 +702,7 @@ const PagePos = (() => {
           const hasil = await MugenUI.withButtonLoading(btnTerima, () => MugenApi.post(`/api/pos/transaksi/${state.transaksi.id}/verifikasi`));
           state.transaksi = hasil;
           _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran dikonfirmasi.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {
@@ -733,6 +755,7 @@ const PagePos = (() => {
         if (status.status === "PAID") {
           clearInterval(pollTimer);
           _suntikTransaksiBaru(r);
+          suntikKeRekap(status.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
           fase = "selesai"; gantiFase();
           return true;
@@ -785,6 +808,7 @@ const PagePos = (() => {
             MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
             state.transaksi = hasil;
             _suntikTransaksiBaru(hasil);
+            suntikKeRekap(hasil.rekap_transaksi_ids);
             fase = "selesai"; gantiFase();
             return;
           }
@@ -841,6 +865,7 @@ const PagePos = (() => {
             () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
           state.transaksi = hasil;
           _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {
@@ -956,9 +981,18 @@ const PagePos = (() => {
         barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
       ]));
 
+      // Kolom "No" (PERMINTAAN Owner) -- nomor urut tampilan, dihitung ULANG
+      // tiap render dari urutan baris SAAT INI (bukan disimpan permanen di
+      // cache), supaya tetap benar walau baris baru masuk lewat suntik
+      // diam-diam (_suntikTransaksiBaru/suntikBookingLunas) yang menyortir
+      // ulang array-nya.
+      const serviceRows = (hasil.service || []).map((r, i) => ({ ...r, no: i + 1 }));
+      const produkRows = (hasil.produk || []).map((r, i) => ({ ...r, no: i + 1 }));
+
       body.appendChild(MugenUI.el("h2", {}, "Service"));
       body.appendChild(MugenUI.buildTable(
         [
+          { key: "no", label: "No" },
           { key: "jam", label: "Jam" },
           // PERMINTAAN Owner: nama customer -- HANYA terisi untuk baris
           // sumber="booking" (online maupun Booking Mandiri, lihat catatan
@@ -969,23 +1003,28 @@ const PagePos = (() => {
           { key: "nama_barber", label: "Barber" },
           { key: "daftar_service", label: "Service" },
           { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+          // FITUR Tampilkan Tips (PERMINTAAN Owner): HANYA terisi untuk
+          // baris sumber="pos" -- Booking Online/Mandiri tidak punya
+          // konsep tips sama sekali (lihat pos_db.get_transaksi_hari_ini()).
+          { key: "tips", label: "Tips", format: (v) => (v ? MugenUI.formatRupiah(v) : "-") },
           { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
           { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
         ],
-        hasil.service,
+        serviceRows,
         { emptyText: "Belum ada transaksi service hari ini." },
       ));
 
       body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
       body.appendChild(MugenUI.buildTable(
         [
+          { key: "no", label: "No" },
           { key: "jam", label: "Jam" },
           { key: "nama_produk", label: "Produk" },
           { key: "jumlah", label: "Jumlah" },
           { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
           { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
         ],
-        hasil.produk,
+        produkRows,
         { emptyText: "Belum ada transaksi produk hari ini." },
       ));
     }
