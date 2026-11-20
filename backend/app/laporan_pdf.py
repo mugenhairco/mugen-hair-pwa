@@ -111,23 +111,79 @@ def _sel_service(daftar_service: str) -> Paragraph:
     return Paragraph("<br/>".join(diformat), _SEL_STYLE)
 
 
+# REDESIGN Rapikan PDF Rekap Detail/Ringkasan (contoh gambar disetujui
+# Owner): kolom Keterangan dilonggarkan sedikit jaraknya (leading 12.5,
+# bukan 10 seperti _SEL_STYLE sel biasa) -- TERPISAH dari _SEL_STYLE supaya
+# _sel()/_sel_service() (kolom lain) tidak ikut berubah.
+_SEL_STYLE_KETERANGAN = ParagraphStyle("sel-keterangan", fontName="Helvetica", fontSize=8, leading=12.5)
+
+
+def _format_tanggal_libur_ringkas(daftar_iso: list) -> str:
+    """Gabungkan daftar tanggal ISO (urut) jadi teks ringkas, dikelompokkan
+    per bulan yang sama -- "3, 10, 12 November 2026" -- supaya hari libur
+    SEBANYAK APA PUN tetap satu baris di kolom Keterangan Rekap Ringkasan
+    (sebelumnya satu baris PER TANGGAL). Rentang lintas bulan (jarang
+    terjadi) menghasilkan beberapa kelompok dipisah "; ", mis. "28, 29
+    Oktober 2026; 1, 2 November 2026"."""
+    kelompok = []  # [(tahun, bulan, [hari, ...]), ...]
+    for iso in daftar_iso:
+        tahun, bulan, hari = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+        if kelompok and kelompok[-1][0] == tahun and kelompok[-1][1] == bulan:
+            kelompok[-1][2].append(hari)
+        else:
+            kelompok.append((tahun, bulan, [hari]))
+    return "; ".join(
+        f"{', '.join(str(h) for h in hari_list)} {_NAMA_BULAN[bulan]} {tahun}"
+        for tahun, bulan, hari_list in kelompok
+    )
+
+
 def _sel_keterangan(nilai) -> Paragraph:
-    """Kolom Keterangan/Ket (Rekap Transaksi Detail & Ringkasan): kalau
-    berisi LEBIH DARI SATU informasi (Catatan/Kasbon/Reimburse/Libur, dst),
-    tampilkan SATU BARIS BARU per informasi -- BUKAN digabung koma/titik-
-    koma jadi satu baris, prinsipnya sama persis _sel_service() di atas.
-    Menerima LIST (baris sudah dipisah per info, dipakai rekap_ringkasan.py
-    lewat field keterangan_list) ATAU string gabungan "; " (pola lama,
-    dipakai r["keterangan"] baris Rekap Detail dari database.py/
-    reimburse_db.py/kasbon_db.py/data_non_barber_db.py -- lihat _tempel()
-    di bawah). TIDAK mengubah data sumbernya, murni cara menampilkannya."""
-    if isinstance(nilai, list):
-        bagian = [str(b).strip() for b in nilai if str(b or "").strip()]
-    else:
-        bagian = [b.strip() for b in (nilai or "").split("; ") if b.strip()]
+    """Kolom Keterangan/Ket (Rekap Transaksi Detail & Ringkasan) -- REDESIGN
+    Rapikan PDF (contoh gambar disetujui Owner), TIDAK mengubah data
+    sumbernya, murni cara menampilkannya:
+
+    - dict (BARU -- rekap_ringkasan.py, field `keterangan`, SATU baris
+      mewakili SELURUH periode per karyawan): dikelompokkan per kategori,
+      label kategori ditebalkan SEKALI (bukan diulang tiap baris). Kasbon/
+      Reimburse (nilai pendek) digabung SATU baris dipisah koma. Libur
+      (bisa banyak tanggal) diringkas lewat _format_tanggal_libur_ringkas()
+      -- SATU baris + jumlah hari, bukan satu baris per tanggal. Catatan
+      (kalimat bebas, tidak cocok digabung koma): 1 catatan jadi satu
+      baris "Label: isi", 2+ catatan jadi label sekali + bullet per baris.
+    - string gabungan "; " (LAMA -- r["keterangan"] baris Rekap Detail dari
+      database.py/reimburse_db.py/kasbon_db.py/data_non_barber_db.py, SATU
+      baris mewakili satu transaksi/hari, biasanya cuma 1-2 info): tetap
+      satu baris per info, pakai bullet HANYA kalau lebih dari satu info
+      (1 info berdiri sendiri tidak perlu bullet)."""
+    if isinstance(nilai, dict):
+        baris = []
+        catatan = [c for c in (nilai.get("catatan") or []) if c]
+        if len(catatan) == 1:
+            baris.append(f"<b>Catatan</b>: {catatan[0]}")
+        elif len(catatan) > 1:
+            baris.append("<b>Catatan</b>")
+            baris.extend(f"&bull; {c}" for c in catatan)
+        kasbon = nilai.get("kasbon") or []
+        if kasbon:
+            baris.append(f"<b>Kasbon</b>: {', '.join(kasbon)}")
+        reimburse = nilai.get("reimburse") or []
+        if reimburse:
+            baris.append(f"<b>Reimburse</b>: {', '.join(reimburse)}")
+        libur = nilai.get("libur") or []
+        if libur:
+            label = f"Libur ({len(libur)} hari)" if len(libur) > 1 else "Libur"
+            baris.append(f"<b>{label}</b>: {_format_tanggal_libur_ringkas(libur)}")
+        if not baris:
+            return _sel("-")
+        return Paragraph("<br/>".join(baris), _SEL_STYLE_KETERANGAN)
+
+    bagian = [b.strip() for b in (nilai or "").split("; ") if b.strip()]
     if not bagian:
         return _sel("-")
-    return Paragraph("<br/>".join(bagian), _SEL_STYLE)
+    if len(bagian) == 1:
+        return Paragraph(bagian[0], _SEL_STYLE_KETERANGAN)
+    return Paragraph("<br/>".join(f"&bull; {b}" for b in bagian), _SEL_STYLE_KETERANGAN)
 
 
 # Header kolom tabel -- BEDA dari _SEL_STYLE (isi sel biasa): tebal + putih
@@ -276,6 +332,108 @@ def _gaya_tabel() -> TableStyle:
     ])
 
 
+# REDESIGN Rapikan PDF Rekap Detail/Ringkasan (contoh gambar disetujui
+# Owner): gaya-gaya kotak ringkasan di bawah tabel -- dua kolom ("Ringkasan
+# Total" & "Rincian Service") dibungkus satu kotak abu-abu tipis, SATU-
+# SATUNYA pemakai gaya-gaya ini (lihat _bangun_kotak_ringkasan() di bawah),
+# TIDAK menyentuh _RINGKASAN_STYLE (laporan lain yang masih pakai daftar
+# string polos lama).
+_SUBHEAD_RINGKASAN_STYLE = ParagraphStyle("subhead-ringkasan", fontName="Helvetica-Bold", fontSize=8,
+                                           leading=11, textColor=colors.HexColor("#666666"))
+_LABEL_RINGKASAN_STYLE = ParagraphStyle("label-ringkasan", fontName="Helvetica", fontSize=9, leading=14)
+_VALUE_RINGKASAN_STYLE = ParagraphStyle("value-ringkasan", fontName="Helvetica", fontSize=9, leading=14, alignment=2)
+_TOTAL_LABEL_RINGKASAN_STYLE = ParagraphStyle("total-label-ringkasan", fontName="Helvetica-Bold", fontSize=10.5, leading=16)
+_TOTAL_VALUE_RINGKASAN_STYLE = ParagraphStyle("total-value-ringkasan", fontName="Helvetica-Bold", fontSize=10.5,
+                                               leading=16, alignment=2)
+_SVC_NAME_RINGKASAN_STYLE = ParagraphStyle("svc-name-ringkasan", fontName="Helvetica", fontSize=9, leading=13.5)
+_SVC_QTY_RINGKASAN_STYLE = ParagraphStyle("svc-qty-ringkasan", fontName="Helvetica", fontSize=9, leading=13.5, alignment=2)
+
+
+def _bangun_kotak_ringkasan(komisi_total: int, uang_harian_total: int, tips_total: int,
+                             non_barber_per_role: dict, reimburse_total: int, kasbon_total: int,
+                             ada_reimburse: bool, ada_kasbon: bool, total_diterima: int,
+                             rincian_service: list, lebar_total) -> Table:
+    """Kotak ringkasan di BAWAH tabel Rekap Detail/Ringkasan (REDESIGN
+    Rapikan PDF, contoh gambar disetujui Owner) -- MENGGANTIKAN daftar
+    string polos lama (Komisi/Uang Harian/dst ditumpuk satu per satu tanpa
+    pembeda). Kiri "Ringkasan Total" (label rata kiri + nominal rata kanan,
+    baris bernilai 0 TIDAK dikirim sama sekali -- urusan pemanggil), ditutup
+    "Total Diterima" ditebalkan + digarisi di atasnya. Kanan "Rincian
+    Service" (nama rata kiri, jumlah rata kanan) -- HANYA muncul kalau ada
+    datanya, kalau tidak kotak kiri saja yang melebar penuh. Dibungkus satu
+    kotak abu-abu tipis supaya jelas terpisah dari tabel transaksi di
+    atasnya. Dipakai buat_pdf_rekap_transaksi() DAN buat_pdf_rekap_
+    transaksi_ringkasan() -- murni tata letak, TIDAK menghitung ulang satu
+    angka pun (semua nilai dikirim pemanggil apa adanya)."""
+    # BUGFIX (ditemukan smoke-test manual sebelum dipakai production -- lihat
+    # catatan commit): lebar tabel BAGIAN DALAM (t_kiri/t_kanan) WAJIB
+    # dikurangi padding kiri+kanan kotak LUAR dulu -- kalau tidak, nilai rata
+    # kanan (nominal/jumlah) overflow sampai keluar garis kotak sama sekali
+    # (Table bersarang reportlab TIDAK otomatis menyusut mengikuti padding
+    # sel induknya, lebarnya pas-pasan ikut lebar kolom induk APA ADANYA).
+    _PADDING_KOTAK = 10  # points -- SATU sumber dipakai TableStyle & hitungan lebar di bawah, WAJIB sama
+    if rincian_service:
+        lebar_kolom_kotak = [lebar_total / 2, lebar_total / 2]
+    else:
+        lebar_kolom_kotak = [lebar_total]
+    lebar_isi = lebar_kolom_kotak[0] - (2 * _PADDING_KOTAK)
+    lebar_label, lebar_nilai = lebar_isi * 0.62, lebar_isi * 0.38
+
+    kiri = [[Paragraph("RINGKASAN TOTAL", _SUBHEAD_RINGKASAN_STYLE), ""]]
+
+    def _baris(label, nilai):
+        kiri.append([Paragraph(label, _LABEL_RINGKASAN_STYLE), Paragraph(nilai, _VALUE_RINGKASAN_STYLE)])
+
+    if komisi_total:
+        _baris("Komisi", _rupiah(komisi_total))
+    if uang_harian_total:
+        _baris("Uang Harian", _rupiah(uang_harian_total))
+    if tips_total:
+        _baris("Tips", _rupiah(tips_total))
+    for role, total in non_barber_per_role.items():
+        if total:
+            _baris(f"Total Gaji {_label_jabatan(role)}", _rupiah(total))
+    if ada_reimburse:
+        _baris("Reimburse", _rupiah(reimburse_total))
+    if ada_kasbon:
+        _baris("Kasbon", f"-{_rupiah(kasbon_total)}")
+    kiri.append([Paragraph("Total Diterima", _TOTAL_LABEL_RINGKASAN_STYLE),
+                 Paragraph(_rupiah(total_diterima), _TOTAL_VALUE_RINGKASAN_STYLE)])
+
+    t_kiri = Table(kiri, colWidths=[lebar_label, lebar_nilai])
+    t_kiri.setStyle(TableStyle([
+        ("SPAN", (0, 0), (1, 0)),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -2), 2),
+        ("LINEABOVE", (0, -1), (-1, -1), 0.75, colors.HexColor("#999999")),
+        ("TOPPADDING", (0, -1), (-1, -1), 5),
+    ]))
+
+    isi_kotak = [t_kiri]
+    style_kotak = [
+        ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#CCCCCC")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), _PADDING_KOTAK), ("RIGHTPADDING", (0, 0), (-1, -1), _PADDING_KOTAK),
+        ("TOPPADDING", (0, 0), (-1, -1), _PADDING_KOTAK), ("BOTTOMPADDING", (0, 0), (-1, -1), _PADDING_KOTAK),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FAFAFA")),
+    ]
+    if rincian_service:
+        kanan = [[Paragraph("RINCIAN SERVICE", _SUBHEAD_RINGKASAN_STYLE), ""]]
+        for s in rincian_service:
+            kanan.append([Paragraph(s["nama_service"], _SVC_NAME_RINGKASAN_STYLE),
+                           Paragraph(str(s["jumlah"]), _SVC_QTY_RINGKASAN_STYLE)])
+        t_kanan = Table(kanan, colWidths=[lebar_label, lebar_nilai])
+        t_kanan.setStyle(TableStyle([
+            ("SPAN", (0, 0), (1, 0)),
+            ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        isi_kotak.append(t_kanan)
+        style_kotak.append(("LINEAFTER", (0, 0), (0, 0), 0.75, colors.HexColor("#CCCCCC")))
+
+    kotak = Table([isi_kotak], colWidths=lebar_kolom_kotak)
+    kotak.setStyle(TableStyle(style_kotak))
+    return kotak
+
+
 def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list, baris: list,
                  col_widths: list | None = None, ringkasan_tambahan: list | None = None,
                  landscape_page: bool = False, extra_style: list | None = None,
@@ -317,7 +475,17 @@ def _bangun_pdf(judul: str, periode: str, dicetak_oleh: str, header_kolom: list,
         if ringkasan_tambahan:
             elemen.append(Spacer(1, 4 * mm))
             for baris_ringkasan in ringkasan_tambahan:
-                elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
+                # REDESIGN Rapikan PDF Rekap Detail/Ringkasan: item BUKAN lagi
+                # SELALU string -- buat_pdf_rekap_transaksi()/buat_pdf_rekap_
+                # transaksi_ringkasan() sekarang mengirim SATU flowable (Table
+                # kotak dari _bangun_kotak_ringkasan()) menggantikan daftar
+                # string lama. Laporan lain (Rekap Bulanan/Pengeluaran/dst)
+                # TIDAK diubah -- tetap mengirim list string apa adanya, jadi
+                # cabang isinstance ini TIDAK mengubah tampilannya sama sekali.
+                if isinstance(baris_ringkasan, str):
+                    elemen.append(Paragraph(baris_ringkasan, _RINGKASAN_STYLE))
+                else:
+                    elemen.append(baris_ringkasan)
 
     on_page = _header_footer_factory(judul, periode, dicetak_oleh, tenant_id=tenant_id)
     doc.build(elemen, onFirstPage=on_page, onLaterPages=on_page)
@@ -906,34 +1074,24 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
         non_barber_per_role[role] = non_barber_per_role.get(role, 0) + r["pendapatan"]
     gaji_non_barber_total = sum(non_barber_per_role.values())
 
-    ringkasan_tambahan = []
-    if komisi_total:
-        ringkasan_tambahan.append(f"<b>Komisi: {_rupiah(komisi_total)}</b>")
-    if uang_harian_total:
-        ringkasan_tambahan.append(f"<b>Uang Harian: {_rupiah(uang_harian_total)}</b>")
-    if tips_total:
-        ringkasan_tambahan.append(f"<b>Tips: {_rupiah(tips_total)}</b>")
-    for role, total in non_barber_per_role.items():
-        if not total:
-            continue
-        ringkasan_tambahan.append(f"<b>Total Gaji {_label_jabatan(role)}: {_rupiah(total)}</b>")
-    if ada_reimburse:
-        ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
-    if ada_kasbon:
-        ringkasan_tambahan.append(f"<b>Kasbon: -{_rupiah(kasbon_total)}</b>")
-    if rincian_service:
-        ringkasan_tambahan.append("<b>Service</b>")
-        for s in rincian_service:
-            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
     total_diterima = komisi_total + uang_harian_total + tips_total + gaji_non_barber_total + reimburse_total - kasbon_total
-    ringkasan_tambahan.append(f"<b>Total Diterima: {_rupiah(total_diterima)}</b>")
     if is_barber:
+        # Barber tunggal dicetak LANDSCAPE -- _LEBAR_HALAMAN_RINGKASAN
+        # (281mm, didefinisikan di bawah) dipakai bersama di sini, nilai
+        # SAMA (A4 landscape dikurangi margin kiri+kanan 8mm+8mm).
+        kotak = _bangun_kotak_ringkasan(komisi_total, uang_harian_total, tips_total, non_barber_per_role,
+                                         reimburse_total, kasbon_total, ada_reimburse, ada_kasbon, total_diterima,
+                                         rincian_service, lebar_total=_LEBAR_HALAMAN_RINGKASAN)
         return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                             col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI_BARBER[(ada_reimburse, ada_kasbon)],
-                            ringkasan_tambahan=ringkasan_tambahan, landscape_page=True, tenant_id=tenant_id)
+                            ringkasan_tambahan=[kotak], landscape_page=True, tenant_id=tenant_id)
+    # A4 potret (210mm) dikurangi margin kiri+kanan 8mm+8mm.
+    kotak = _bangun_kotak_ringkasan(komisi_total, uang_harian_total, tips_total, non_barber_per_role,
+                                     reimburse_total, kasbon_total, ada_reimburse, ada_kasbon, total_diterima,
+                                     rincian_service, lebar_total=194 * mm)
     return _bangun_pdf("Rekap Transaksi", periode, dicetak_oleh, header, baris,
                         col_widths=_LEBAR_KOLOM_REKAP_TRANSAKSI[(ada_reimburse, ada_kasbon)],
-                        ringkasan_tambahan=ringkasan_tambahan, tenant_id=tenant_id)
+                        ringkasan_tambahan=[kotak], tenant_id=tenant_id)
 
 
 # REVISI (Rapikan tampilan PDF Rekap Periode Ringkasan): laporan ini bisa
@@ -1081,7 +1239,7 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
         if ada_non_barber:
             sel.append(_sel(_rupiah(r["gaji_non_barber"]) if r["gaji_non_barber"] else "-"))
         sel.append(_sel(_rupiah(r["total"])))
-        sel.append(_sel_keterangan(r["keterangan_list"]))
+        sel.append(_sel_keterangan(r["keterangan"]))
         baris.append(sel)
 
     # MAINTENANCE #1 (bugfix): ringkasan bawah SEBELUMNYA "SAMA PERSIS
@@ -1105,29 +1263,16 @@ def buat_pdf_rekap_transaksi_ringkasan(tahun: int | None, bulan: int | None, bar
     gaji_non_barber_total = sum(non_barber_per_role.values())
 
     # Susunan & tampilan dinamis (MAINTENANCE #1): SAMA PERSIS
-    # buat_pdf_rekap_transaksi() -- lihat catatan lengkap di sana.
-    ringkasan_tambahan = []
-    if komisi_total:
-        ringkasan_tambahan.append(f"<b>Komisi: {_rupiah(komisi_total)}</b>")
-    if uang_harian_total:
-        ringkasan_tambahan.append(f"<b>Uang Harian: {_rupiah(uang_harian_total)}</b>")
-    if tips_total:
-        ringkasan_tambahan.append(f"<b>Tips: {_rupiah(tips_total)}</b>")
-    for role, total in non_barber_per_role.items():
-        ringkasan_tambahan.append(f"<b>Total Gaji {_label_jabatan(role)}: {_rupiah(total)}</b>")
-    if ada_reimburse:
-        ringkasan_tambahan.append(f"<b>Reimburse: {_rupiah(reimburse_total)}</b>")
-    if ada_kasbon:
-        ringkasan_tambahan.append(f"<b>Kasbon: -{_rupiah(kasbon_total)}</b>")
-    if rincian_service:
-        ringkasan_tambahan.append("<b>Service</b>")
-        for s in rincian_service:
-            ringkasan_tambahan.append(f"{s['nama_service']}: {s['jumlah']}")
+    # buat_pdf_rekap_transaksi() -- lihat catatan lengkap di sana. REDESIGN
+    # Rapikan PDF (contoh gambar disetujui Owner): kotak dua kolom lewat
+    # _bangun_kotak_ringkasan() menggantikan daftar string polos lama.
     total_diterima = komisi_total + uang_harian_total + tips_total + gaji_non_barber_total + reimburse_total - kasbon_total
-    ringkasan_tambahan.append(f"<b>Total Diterima: {_rupiah(total_diterima)}</b>")
+    kotak = _bangun_kotak_ringkasan(komisi_total, uang_harian_total, tips_total, non_barber_per_role,
+                                     reimburse_total, kasbon_total, ada_reimburse, ada_kasbon, total_diterima,
+                                     rincian_service, lebar_total=_LEBAR_HALAMAN_RINGKASAN)
 
     return _bangun_pdf("Rekap Periode (Ringkasan)", periode, dicetak_oleh, header, baris,
-                        col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=ringkasan_tambahan,
+                        col_widths=_lebar_kolom_ringkasan(header), ringkasan_tambahan=[kotak],
                         landscape_page=True, extra_style=_gaya_kolom_ringkasan(header), tenant_id=tenant_id)
 
 
