@@ -1,15 +1,29 @@
 // pages/input_data.js
-// Barber: barber_id otomatis dari akun login, tidak ada pilihan barber di form.
-// Owner: wajib pilih barber di form.
+// PENGHAPUSAN Input Data Barber (keputusan Owner: jalur input transaksi
+// harian hanya POS & Manual Customer): mode "Input Data Barber" (form
+// Tambah/Koreksi Transaksi qty-per-service + tab "Transaksi Bulan Ini" +
+// kartu "Tandai Libur") SUDAH DIHAPUS TOTAL dari halaman ini. Dua fungsi
+// yang dulu menempel di mode itu dipindahkan:
+// - Tandai Libur -> pages/absensi.js, tab "Kuota Cuti & Libur"
+//   (renderTandaiLiburManual()) -- endpoint backend (POST/DELETE
+//   /api/input-data/libur) TIDAK berubah, hanya lokasi formnya.
+// - Koreksi Transaksi -> pages/rekap.js, tombol "✏ Koreksi" di samping
+//   "🗑 Hapus" pada baris bertipe transaksi -- endpoint backend (PUT
+//   /api/input-data/transaksi/{id}) TIDAK berubah.
+// Router/endpoint `/api/input-data/*` (barbers/karyawan/services/libur/
+// transaksi) TETAP ADA APA ADANYA -- dipakai bersama oleh Manual Customer
+// (di bawah), Non-Barber (di bawah), Rekap, Booking (Barber Holiday), dan
+// Absensi. Halaman ini sekarang HANYA berisi Manual Customer & Input Data
+// Non-Barber.
 
 const PageInputData = (() => {
   // PERMINTAAN OWNER: pola SAMA seperti produk.js/rekap.js -- simpan hasil
-  // fetch TERAKHIR (Transaksi, Data Gaji Non-Barber, Status & Daftar Manual
-  // Customer -- key dibedakan lewat `bagian` di bawah) di LUAR render()
-  // (modul-level) supaya bertahan lintas navigasi menu. Kalau Input Data
-  // dibuka lagi TANPA ada simpan/edit/hapus apa pun sejak terakhir kali
-  // BAGIAN itu berhasil dimuat (lihat state.js::halamanPerluRefresh()) DAN
-  // filter (url) yang aktif sama persis, tampilkan ulang data ini TANPA
+  // fetch TERAKHIR (Status & Daftar Manual Customer, Data Gaji Non-Barber --
+  // key dibedakan lewat `bagian` di bawah) di LUAR render() (modul-level)
+  // supaya bertahan lintas navigasi menu. Kalau Input Data dibuka lagi
+  // TANPA ada simpan/edit/hapus apa pun sejak terakhir kali BAGIAN itu
+  // berhasil dimuat (lihat state.js::halamanPerluRefresh()) DAN filter
+  // (url) yang aktif sama persis, tampilkan ulang data ini TANPA
   // fetch/skeleton.
   let _cacheTerakhir = {}; // { [bagian]: { userId, url, data } }
 
@@ -30,40 +44,6 @@ const PageInputData = (() => {
     return MugenUI.isoHariIniWib();
   }
 
-  // PERMINTAAN OWNER: Simpan Transaksi tidak lagi menunggu/blokir tombol
-  // sampai server menjawab (dulu kasir merasa "loading" tiap simpan satu
-  // transaksi) -- begitu diklik, form langsung dikosongkan supaya kasir
-  // bisa lanjut input transaksi berikutnya, sementara request ke server
-  // jalan di belakang. Untuk jaga-jaga kalau tab ditutup SEBELUM server
-  // menjawab (atau koneksi putus), setiap transaksi yang belum terkonfirmasi
-  // sukses disimpan dulu ke localStorage (kunci per-user, bukan per-tenant,
-  // karena satu perangkat/kiosk bisa dipakai login berganti-ganti) --
-  // begitu halaman ini dibuka lagi, muncul banner-nya (TIDAK dikirim ulang
-  // OTOMATIS -- supaya tidak dobel kalau ternyata request yang lama itu
-  // sebenarnya sudah sukses sebelum tab ditutup, Admin/Kasir yang
-  // memutuskan lewat tombol "Kirim Ulang"/"Sudah Ada, Buang"). Data TIDAK
-  // PERNAH hilang diam-diam. Tandai Libur SENGAJA TIDAK dibuat seperti ini (lihat
-  // instruksi Owner) -- hasilnya (Libur/Cuti/Kelebihan Kuota) ditentukan
-  // kuota_libur_db.py di server, jadi harus tetap menunggu jawaban asli.
-  function kunciPendingTransaksi(userId) {
-    return `mugen_pending_transaksi_user_${userId}`;
-  }
-  function bacaPendingTransaksi(userId) {
-    try {
-      return JSON.parse(localStorage.getItem(kunciPendingTransaksi(userId)) || "[]");
-    } catch (e) {
-      return [];
-    }
-  }
-  function tulisPendingTransaksi(userId, daftar) {
-    try {
-      localStorage.setItem(kunciPendingTransaksi(userId), JSON.stringify(daftar));
-    } catch (e) {
-      // localStorage penuh/diblokir (mode privat) -- biarkan, request tetap
-      // dicoba kirim langsung, cuma jaring pengamannya yang tidak aktif.
-    }
-  }
-
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
@@ -72,464 +52,53 @@ const PageInputData = (() => {
     root.appendChild(MugenUI.pageTitle("Input Data", MugenIcons.inputData));
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
-    // pesan kosong, tanpa form/data apa pun (mencakup ketiga mode: Barber/
-    // Manual Customer/Non-Barber, satu menu yang sama).
+    // pesan kosong, tanpa form/data apa pun (mencakup kedua mode: Manual
+    // Customer/Non-Barber, satu menu yang sama).
     if (isAdmin && (await MugenMenuAccess.get("input_data")) === "none") {
       root.appendChild(MugenUI.emptyState("Anda tidak memiliki akses ke menu ini."));
       return;
     }
 
-    // Dukungan Barber + Non-Barber: dropdown pemilih mode -- KHUSUS Owner/
-    // Admin (Non-Barber murni fitur pengelolaan data, sama seperti seluruh
-    // Input Data yang memang sudah Owner/Admin-only). Default "Input Data
-    // Barber" SELALU terpilih (poin #3) supaya tampilan & alur kerja Barber
-    // yang sudah ada TIDAK BERUBAH SAMA SEKALI kalau dropdown ini tidak
-    // pernah disentuh -- seksi Non-Barber murni TAMBAHAN yang disembunyikan
-    // sampai Owner secara eksplisit memilihnya.
-    const barberSection = MugenUI.el("div");
-    // FITUR BARU Manual Customer: pilihan KETIGA sejajar dengan Barber/
-    // Non-Barber (keputusan eksplisit Owner: "tiga pilihan sejajar",
-    // BUKAN sub-mode di dalam Input Barber) -- lihat manual_customer_db.py.
-    const manualCustomerSection = MugenUI.el("div", { style: "display:none;" });
+    // Dropdown pemilih mode -- KHUSUS Owner/Admin (Non-Barber murni fitur
+    // pengelolaan data, sama seperti seluruh Input Data yang memang sudah
+    // Owner/Admin-only). Default "Manual Customer" SELALU terpilih.
+    const manualCustomerSection = MugenUI.el("div");
     const nonBarberSection = MugenUI.el("div", { style: "display:none;" });
     if (isAdmin) {
       const selMode = MugenUI.el("select", { style: "max-width:280px;margin-bottom:16px;" }, [
-        MugenUI.el("option", { value: "barber" }, "Input Data Barber"),
         MugenUI.el("option", { value: "manual_customer" }, "Manual Customer"),
         MugenUI.el("option", { value: "non_barber" }, "Input Data Non-Barber"),
       ]);
-      selMode.value = "barber";
+      selMode.value = "manual_customer";
       selMode.addEventListener("change", () => {
-        barberSection.style.display = selMode.value === "barber" ? "" : "none";
         manualCustomerSection.style.display = selMode.value === "manual_customer" ? "" : "none";
         nonBarberSection.style.display = selMode.value === "non_barber" ? "" : "none";
       });
       root.appendChild(MugenUI.selectIcon(MugenIcons.filter, selMode));
     }
-    root.appendChild(barberSection);
     root.appendChild(manualCustomerSection);
     root.appendChild(nonBarberSection);
 
     // Hak Akses Menu: level "Baca" -- sembunyikan form Tambah/Koreksi
-    // Transaksi (ketiga mode: Barber/Manual Customer/Non-Barber), daftar
-    // tetap tampil. Dihitung sekali di sini, dipakai lagi di
-    // renderManualCustomer()/renderNonBarber() di bawah lewat closure.
+    // (kedua mode: Manual Customer/Non-Barber), daftar tetap tampil.
+    // Dihitung sekali di sini, dipakai lagi di renderManualCustomer()/
+    // renderNonBarber() di bawah lewat closure.
     const bolehEditInputData = !isAdmin || (await MugenMenuAccess.get("input_data")) === "write";
 
+    // `services`/`barbers` dipakai Manual Customer (dropdown Barber +
+    // checklist Service di form Booking) -- Non-Barber punya fetch
+    // karyawan sendiri (/api/input-data/karyawan), tidak butuh dua ini.
     let services = [];
     let barbers = [];
-    let editingId = null; // null = mode SIMPAN baru, angka = mode KOREKSI
-
-    // Banner transaksi yang belum terkonfirmasi sukses (lihat
-    // bacaPendingTransaksi() di atas) -- biasanya kosong/tersembunyi, cuma
-    // muncul kalau sesi SEBELUMNYA ditutup sebelum server sempat menjawab.
-    const pendingBanner = MugenUI.el("div", { style: "display:none;" });
-    const formCard = MugenUI.el("div", { class: "card" });
-    const listCard = MugenUI.el("div", { class: "card" });
-    const liburCard = MugenUI.el("div", { class: "card" });
-
-    // PERMINTAAN OWNER: "Transaksi Bulan Ini" (listCard) dipisah jadi tab
-    // SENDIRI -- tabelnya bisa sangat panjang ke bawah, membuat tombol
-    // "Tandai Libur" (liburCard) susah dijangkau tanpa scroll jauh. Form +
-    // Tandai Libur tetap satu tab bersama (keduanya pendek, dipakai
-    // berurutan), tab kedua KHUSUS tabel panjang itu saja.
-    const paneInputLibur = MugenUI.el("div");
-    if (bolehEditInputData) {
-      paneInputLibur.appendChild(pendingBanner);
-      paneInputLibur.appendChild(formCard);
-    }
-    paneInputLibur.appendChild(liburCard);
-    const paneTransaksi = MugenUI.el("div", { style: "display:none;" });
-    paneTransaksi.appendChild(listCard);
-
-    const barberTabs = MugenUI.tabs(
-      [{ key: "input", label: "Input & Libur" }, { key: "transaksi", label: "Transaksi Bulan Ini" }],
-      {
-        onChange: (key) => {
-          paneInputLibur.style.display = key === "input" ? "" : "none";
-          paneTransaksi.style.display = key === "transaksi" ? "" : "none";
-        },
-      }
-    );
-    barberSection.appendChild(barberTabs.bar);
-    barberSection.appendChild(paneInputLibur);
-    barberSection.appendChild(paneTransaksi);
-    requestAnimationFrame(barberTabs.moveIndicator);
-
     try {
       [services, barbers] = await Promise.all([
         MugenApi.get("/api/input-data/services", { useCache: true }),
         isAdmin ? MugenApi.get("/api/input-data/barbers", { useCache: true }) : Promise.resolve([]),
       ]);
     } catch (e) {
-      formCard.appendChild(MugenUI.errorState(e.message));
+      root.appendChild(MugenUI.errorState(e.message));
       return;
     }
-
-    // --- FORM ---
-    const formTitle = MugenUI.el("h2", {}, "Tambah Transaksi");
-    const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
-    const selBarber = isAdmin ? MugenUI.el("select") : null;
-    if (isAdmin) {
-      selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
-      for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    }
-    const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
-    const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
-
-    const itemInputs = {}; // service_id -> input jumlah
-    const serviceRows = services.map((s) => {
-      const inp = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", style: "max-width:90px;" });
-      itemInputs[s.id] = inp;
-      return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
-        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
-        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
-      ]);
-    });
-
-    const previewBox = MugenUI.el("div", { class: "card", style: "background:var(--bg-input);" }, "Preview: -");
-    const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
-    const btnBatalKoreksi = MugenUI.el("button", { style: "display:none;" }, "Batal Koreksi");
-    const formError = MugenUI.el("div", { class: "login-error" });
-
-    formCard.appendChild(formTitle);
-    formCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
-    formCard.appendChild(inputTanggal);
-    if (isAdmin) {
-      formCard.appendChild(MugenUI.el("label", {}, "Barber"));
-      formCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
-    }
-    formCard.appendChild(MugenUI.el("label", {}, "Service & Jumlah"));
-    for (const row of serviceRows) formCard.appendChild(row);
-    formCard.appendChild(MugenUI.el("label", {}, "Tips (Rp)"));
-    formCard.appendChild(inputTips);
-    formCard.appendChild(MugenUI.el("label", {}, "Catatan"));
-    formCard.appendChild(inputCatatan);
-    formCard.appendChild(previewBox);
-    formCard.appendChild(formError);
-    formCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnSubmit, btnBatalKoreksi]));
-
-    function currentItems() {
-      return Object.entries(itemInputs)
-        .map(([service_id, inp]) => ({ service_id: Number(service_id), jumlah: Number(inp.value) || 0 }))
-        .filter((it) => it.jumlah > 0);
-    }
-
-    async function updatePreview() {
-      const items = currentItems();
-      if (items.length === 0) {
-        previewBox.textContent = "Preview: -";
-        return;
-      }
-      try {
-        const p = await MugenApi.post("/api/input-data/preview", { items });
-        previewBox.textContent = `Preview: Total ${MugenUI.formatRupiah(p.total_harga)} — Komisi ${MugenUI.formatRupiah(p.total_komisi)}`;
-      } catch (e) {
-        previewBox.textContent = "Preview: -";
-      }
-    }
-    for (const inp of Object.values(itemInputs)) inp.addEventListener("input", updatePreview);
-
-    function resetForm() {
-      editingId = null;
-      formTitle.textContent = "Tambah Transaksi";
-      btnSubmit.textContent = "Simpan";
-      btnBatalKoreksi.style.display = "none";
-      inputTanggal.value = todayIso();
-      if (isAdmin) selBarber.value = "";
-      inputTips.value = "";
-      inputCatatan.value = "";
-      for (const inp of Object.values(itemInputs)) inp.value = "";
-      updatePreview();
-    }
-
-    function isiFormUntukKoreksi(t) {
-      editingId = t.id;
-      formTitle.textContent = `Koreksi Transaksi #${t.id}`;
-      btnSubmit.textContent = "Simpan Koreksi";
-      btnBatalKoreksi.style.display = "";
-      inputTanggal.value = t.tanggal;
-      if (isAdmin) selBarber.value = String(t.barber_id);
-      inputTips.value = MugenUI.nilaiTampilAngka(t.tips);
-      inputCatatan.value = t.catatan || "";
-      for (const inp of Object.values(itemInputs)) inp.value = "";
-      for (const it of t.items) if (itemInputs[it.service_id]) itemInputs[it.service_id].value = MugenUI.nilaiTampilAngka(it.jumlah);
-      updatePreview();
-      formCard.scrollIntoView({ behavior: "smooth" });
-    }
-
-    btnBatalKoreksi.addEventListener("click", resetForm);
-
-    // --- Jaring pengaman Simpan BARU & Simpan Koreksi (lihat catatan
-    // bacaPendingTransaksi() di atas) -- disimpan per-user di localStorage,
-    // dihapus begitu server mengonfirmasi sukses. Entry koreksi dibedakan
-    // lewat `editId` (lihat labelItemsUntukPending()/kirimTransaksiPending()
-    // di bawah -- PUT ke baris itu, bukan POST baris baru).
-    let pendingList = bacaPendingTransaksi(user.id);
-
-    function labelItemsUntukPending(body, editId) {
-      const daftar = body.items
-        .map((it) => {
-          const s = services.find((sv) => sv.id === it.service_id);
-          return `${s ? s.nama : "?"} x${it.jumlah}`;
-        })
-        .join(", ");
-      const prefix = editId ? `Koreksi #${editId}` : body.tanggal;
-      if (!isAdmin) return `${prefix} -- ${daftar}`;
-      const b = barbers.find((bb) => bb.id === body.barber_id);
-      return `${prefix} -- ${b ? b.nama : "?"}: ${daftar}`;
-    }
-
-    function renderPendingBanner() {
-      pendingBanner.innerHTML = "";
-      if (pendingList.length === 0) {
-        pendingBanner.style.display = "none";
-        return;
-      }
-      pendingBanner.style.display = "";
-      const box = MugenUI.el("div", { class: "card", style: "border:1px solid var(--danger);" });
-      box.appendChild(MugenUI.el("div", { style: "font-weight:600;margin-bottom:6px;" },
-        `${pendingList.length} transaksi belum terkonfirmasi tersimpan di server.`));
-      box.appendChild(MugenUI.el("div", { style: "margin-bottom:8px;color:var(--text-muted);" },
-        'Cek dulu di "Transaksi Bulan Ini" di bawah -- kalau transaksi baru sudah muncul di sana, atau koreksinya sudah berubah, klik "Sudah Ada, Buang" (jangan Kirim Ulang supaya tidak dobel/tertimpa).'));
-      for (const entry of pendingList) {
-        const row = MugenUI.el("div", { class: "row", style: "align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px;" });
-        row.appendChild(MugenUI.el("div", { style: "flex:1;" }, entry.label));
-        const btnKirim = MugenUI.el("button", {}, "Kirim Ulang");
-        btnKirim.addEventListener("click", () => kirimTransaksiPending(entry, btnKirim));
-        const btnBuang = MugenUI.el("button", { class: "btn-danger" }, "Sudah Ada, Buang");
-        btnBuang.addEventListener("click", () => {
-          pendingList = pendingList.filter((e) => e.tempId !== entry.tempId);
-          tulisPendingTransaksi(user.id, pendingList);
-          renderPendingBanner();
-        });
-        row.appendChild(btnKirim);
-        row.appendChild(btnBuang);
-        box.appendChild(row);
-      }
-      pendingBanner.appendChild(box);
-    }
-
-    function kirimTransaksiPending(entry, btnEl) {
-      const kirim = () => entry.editId
-        ? MugenApi.put(`/api/input-data/transaksi/${entry.editId}`, entry.body)
-        : MugenApi.post("/api/input-data/transaksi", entry.body);
-      (btnEl ? MugenUI.withButtonLoading(btnEl, kirim) : kirim())
-        .then((hasil) => {
-          pendingList = pendingList.filter((e) => e.tempId !== entry.tempId);
-          tulisPendingTransaksi(user.id, pendingList);
-          renderPendingBanner();
-          loadList({ silent: true });
-          // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam"
-          // (PERMINTAAN Owner, pola sama Transaksi Hari Ini POS/Booking
-          // Mandiri): suntik baris baru/terkoreksi ke cache Rekap >
-          // Transaksi (kalau sedang/sudah pernah dibuka sesi ini) TANPA
-          // pernah menghitung komisi/uang-harian sendiri di JS -- ambil
-          // baris siap-pakai dari endpoint khusus (SATU-SATUNYA sumber
-          // kebenaran rumus itu, lihat database.py::get_rekap_transaksi_
-          // baris()). Best-effort -- gagal diam-diam, baris baru TETAP
-          // kelihatan begitu Rekap dibuka/di-refresh biasa. PageRekap
-          // lazy-loaded (lihat page_loader.js) -- guard typeof WAJIB.
-          const transaksiId = entry.editId || (hasil && hasil.id);
-          if (transaksiId && typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisTransaksi === "function") {
-            MugenApi.get(`/api/rekap/transaksi/baris/${transaksiId}`)
-              .then((baris) => PageRekap.suntikBarisTransaksi(baris))
-              .catch(() => {});
-          }
-          // FITUR "Dashboard tidak perlu refresh semua, cukup data yang
-          // berubah saja" (PERMINTAAN Owner): transaksi baru/dikoreksi ikut
-          // mengubah angka Total Pendapatan/Komisi/Jumlah Service Dashboard
-          // -- segarkan cache-nya di latar belakang (lihat dashboard_owner.js/
-          // dashboard_barber.js::refreshDiamDiam(), TIDAK PERNAH menyentuh
-          // DOM, no-op kalau Dashboard belum pernah dibuka sesi ini).
-          if (typeof PageDashboardOwner !== "undefined") PageDashboardOwner.refreshDiamDiam();
-          if (typeof PageDashboardBarber !== "undefined") PageDashboardBarber.refreshDiamDiam();
-        })
-        .catch((e) => {
-          renderPendingBanner();
-          MugenUI.toast(`Transaksi ${entry.label} gagal terkirim: ${e.message}`, "error", { force: true });
-        });
-    }
-
-    renderPendingBanner();
-
-    btnSubmit.addEventListener("click", async () => {
-      formError.textContent = "";
-      const items = currentItems();
-      if (items.length === 0) {
-        formError.textContent = "Minimal satu service harus diisi jumlahnya.";
-        return;
-      }
-      if (isAdmin && !selBarber.value) {
-        formError.textContent = "Pilih barber terlebih dahulu.";
-        return;
-      }
-      // PERBAIKAN Owner (audit "tidak boleh input dobel"): tempId dibuat
-      // DULU (bukan di objek entry seperti sebelumnya) supaya bisa
-      // diselipkan ke body sebagai idempotency_key -- kalau entry ini
-      // nanti terkirim LEBIH dari sekali (tombol "Kirim Ulang") padahal
-      // percobaan pertamanya sebenarnya sudah sukses di server, server
-      // (database.py::tambah_transaksi()) mengembalikan transaksi yang
-      // SUDAH ADA alih-alih membuat baris baru. HANYA relevan untuk
-      // Simpan BARU (POST) -- Simpan Koreksi (PUT ke baris yang sudah
-      // ada) sudah idempoten secara alami, tapi tidak masalah ikut
-      // dikirim juga (diabaikan server untuk endpoint itu).
-      const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const body = {
-        tanggal: inputTanggal.value,
-        barber_id: isAdmin ? Number(selBarber.value) : null,
-        items,
-        tips: Number(inputTips.value) || 0,
-        catatan: inputCatatan.value || null,
-        idempotency_key: tempId,
-      };
-
-      // PERMINTAAN OWNER: Simpan BARU maupun Simpan Koreksi -- jangan tunggu
-      // server, supaya kasir bisa langsung lanjut tanpa loading. Dicatat
-      // dulu ke jaring pengaman (localStorage) SEBELUM form dikosongkan,
-      // baru dikirim diam-diam di belakang (lihat kirimTransaksiPending()).
-      const entry = {
-        tempId,
-        editId: editingId,
-        body,
-        label: labelItemsUntukPending(body, editingId),
-      };
-      pendingList = [...pendingList, entry];
-      tulisPendingTransaksi(user.id, pendingList);
-      MugenUI.toast(editingId ? "Transaksi dikoreksi." : "Transaksi disimpan.", "success");
-      resetForm();
-      kirimTransaksiPending(entry);
-    });
-
-    // --- DAFTAR TRANSAKSI (bulan berjalan) ---
-    listCard.appendChild(MugenUI.el("h2", {}, "Transaksi Bulan Ini"));
-    const listBody = MugenUI.el("div");
-    listCard.appendChild(listBody);
-
-    function renderDenganDataList(data) {
-      listBody.innerHTML = "";
-      if (data.__offline) listBody.appendChild(MugenUI.offlineBanner(data.__cachedAt));
-      const rows = Array.isArray(data) ? data : data.data || [];
-      listBody.appendChild(MugenUI.buildTable(
-        [
-          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
-          ...(isAdmin ? [{ key: "nama_barber", label: "Barber" }] : []),
-          { key: "daftar_service", label: "Service", format: MugenUI.serviceCell },
-          { key: "total_harga", label: "Total", format: MugenUI.formatRupiah },
-          { key: "tips", label: "Tips", format: MugenUI.formatRupiahAtauStrip },
-          {
-            // PERMINTAAN OWNER: tombol Hapus Transaksi dihapus dari sini --
-            // redundan dengan Rekap > Transaksi (lihat rekap.js, kolom Aksi
-            // "Hapus Transaksi") yang sudah menyediakan aksi yang sama.
-            key: "aksi", label: "Aksi", format: (_, r) => {
-              const wrap = MugenUI.el("div", { class: "actions-cell" });
-              const btnEdit = MugenUI.el("button", {}, "Koreksi");
-              btnEdit.addEventListener("click", () => isiFormUntukKoreksi(r));
-              wrap.appendChild(btnEdit);
-              return wrap;
-            },
-          },
-        ],
-        rows,
-      ));
-    }
-
-    async function loadList(opts = {}) {
-      // `silent`: dipakai refresh di belakang layar setelah transaksi
-      // (yang sudah ditampilkan optimis) terkonfirmasi sukses -- tabel
-      // yang sudah tampil TIDAK diganti skeleton dulu (supaya tidak kedip),
-      // baris lama tetap kelihatan sampai baris baru (dari server) datang.
-      const silent = !!opts.silent;
-      const now = new Date();
-      const url = `/api/input-data/transaksi?tahun=${now.getFullYear()}&bulan=${now.getMonth() + 1}`;
-
-      // PERMINTAAN OWNER: pola SAMA seperti Dashboard/Rekap/Produk -- lihat
-      // catatan panjang di produk.js::loadProdukList(). Hanya dicek untuk
-      // pemuatan AWAL (opts.bisaDariCache, dipanggil sekali di akhir
-      // render() di bawah) -- refresh setelah simpan/koreksi/hapus (call
-      // site lain di file ini) SELALU fetch ulang seperti biasa.
-      if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("input_data")) {
-        const cached = _ambilDariCache("transaksi", MugenState.getUser().id, url);
-        if (cached) {
-          renderDenganDataList(cached);
-          return;
-        }
-      }
-
-      // REVISI UI/UX Premium: skeleton tabel menggantikan teks "Memuat..." --
-      // ada banner offline yang bisa ikut tampil di atas tabel, jadi TIDAK
-      // dipindah ke refreshInto() (lihat contoh sama di dashboard_owner.js).
-      if (!silent) {
-        listBody.innerHTML = "";
-        listBody.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 6 : 5, rows: 4 }));
-      }
-      try {
-        const data = await MugenApi.get(url, { useCache: true });
-        if (!data.__offline) {
-          _simpanKeCache("transaksi", MugenState.getUser().id, url, data);
-          MugenState.tandaiHalamanBersih("input_data");
-        }
-        renderDenganDataList(data);
-      } catch (e) {
-        // Refresh diam-diam gagal (mis. koneksi putus sesaat) -- baris
-        // lama yang sudah tampil TIDAK dihapus/diganti pesan error, data
-        // transaksinya sendiri tetap aman (sudah dicatat kirimTransaksiPending()).
-        if (!silent) {
-          listBody.innerHTML = "";
-          listBody.appendChild(MugenUI.errorState(e.message));
-        }
-      }
-    }
-
-    // --- TANDAI LIBUR ---
-    liburCard.appendChild(MugenUI.el("h2", {}, "Tandai Libur"));
-    const liburTanggal = MugenUI.el("input", { type: "date", value: todayIso() });
-    const liburBarberSel = isAdmin ? MugenUI.el("select") : null;
-    if (isAdmin) {
-      liburBarberSel.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
-      for (const b of barbers) liburBarberSel.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
-    }
-    const btnTandaiLibur = MugenUI.el("button", { class: "btn-primary" }, "Tandai Libur");
-    const btnBatalkanLibur = MugenUI.el("button", {}, "Batalkan Libur");
-    liburCard.appendChild(MugenUI.el("label", {}, "Tanggal"));
-    liburCard.appendChild(liburTanggal);
-    if (isAdmin) {
-      liburCard.appendChild(MugenUI.el("label", {}, "Barber"));
-      liburCard.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, liburBarberSel));
-    }
-    liburCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnTandaiLibur, btnBatalkanLibur]));
-
-    function liburBody() {
-      return { barber_id: isAdmin ? Number(liburBarberSel.value) || null : null, tanggal: liburTanggal.value };
-    }
-    btnTandaiLibur.addEventListener("click", async () => {
-      if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
-      try {
-        // REVISI UI/UX Premium: spinner inline di tombol, tanpa overlay layar penuh.
-        const hasil = await MugenUI.withButtonLoading(btnTandaiLibur, () => MugenApi.post("/api/input-data/libur", liburBody()));
-        // PERMINTAAN OWNER: Tandai Libur sekarang bisa "dikonversi" otomatis
-        // kalau Kuota Libur bulan itu sudah habis (lihat kuota_libur_db.py)
-        // -- beri tahu Admin/Owner persis apa yang terjadi, bukan selalu
-        // "Ditandai libur" walau sebenarnya tercatat sebagai Cuti.
-        if (hasil.jenis === "cuti") {
-          MugenUI.toast("Kuota Libur bulan ini sudah habis -- tanggal ini dicatat sebagai Cuti.", "success", { force: true });
-        } else if (hasil.jenis === "kelebihan_kuota") {
-          MugenUI.toast("Kuota Libur & Izin/Cuti bulan ini sama-sama sudah habis -- tetap ditandai libur (distabilo merah di Rekap).", "success", { force: true });
-        } else {
-          MugenUI.toast("Ditandai libur.", "success");
-        }
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
-    btnBatalkanLibur.addEventListener("click", async () => {
-      if (isAdmin && !liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
-      try {
-        await MugenUI.withButtonLoading(btnBatalkanLibur, () => MugenApi.del("/api/input-data/libur", liburBody()));
-        MugenUI.toast("Libur dibatalkan.", "success");
-      } catch (e) { MugenUI.toast(e.message, "error"); }
-    });
-
-    resetForm();
-    loadList({ bisaDariCache: true });
 
     // --- INPUT DATA NON-BARBER (Kasir/OB/Kru/role lainnya) ---
     // Tabel & endpoint baru, TIDAK terhubung ke `transaksi`/Slip Gaji Barber
@@ -537,20 +106,20 @@ const PageInputData = (() => {
     // ini di-skip total untuk Barber (dropdown mode di atas juga tidak
     // pernah muncul untuknya).
     // PERBAIKAN PERFORMA (keluhan Owner: menu terasa ada jeda): KEDUANYA
-    // sengaja TIDAK di-await lagi -- seksi Manual Customer & Non-Barber
-    // sama-sama TERSEMBUNYI (display:none) sampai Owner/Admin pilih
-    // dropdown modenya, jadi fetch-nya tidak boleh menahan render() Input
-    // Data (seksi Barber yang langsung terlihat) selesai lebih dulu.
+    // sengaja TIDAK di-await lagi -- seksi Non-Barber TERSEMBUNYI
+    // (display:none) sampai Owner/Admin pilih dropdown modenya, jadi
+    // fetch-nya tidak boleh menahan render() Input Data (seksi Manual
+    // Customer yang langsung terlihat) selesai lebih dulu.
     if (isAdmin) renderManualCustomer();
     if (isAdmin) renderNonBarber();
 
     // --- INPUT DATA MANUAL CUSTOMER (Waiting List / Booking) ---
-    // Metode input KEDUA untuk Input Barber, sejajar (bukan sub-mode) --
-    // lihat manual_customer_db.py untuk aturan lengkap ("satu tanggal satu
-    // mode", jam immutable, Closing tidak mengunci Rekap, dst). Tabel &
-    // endpoint baru, TIDAK PERNAH menyentuh `transaksi`/Rekap langsung --
-    // hanya lewat database.tambah_transaksi() yang SAMA PERSIS dipakai
-    // Input Barber, saat tombol "Tutup & Simpan Hari Ini" ditekan.
+    // Metode input transaksi harian -- lihat manual_customer_db.py untuk
+    // aturan lengkap ("satu tanggal satu mode", jam immutable, Closing
+    // tidak mengunci Rekap, dst). Tabel & endpoint baru, TIDAK PERNAH
+    // menyentuh `transaksi`/Rekap langsung -- hanya lewat
+    // database.tambah_transaksi() saat tombol "Tutup & Simpan Hari Ini"
+    // ditekan.
     async function renderManualCustomer() {
       const mcStatusCard = MugenUI.el("div", { class: "card" });
       const mcFormCard = MugenUI.el("div", { class: "card" });
@@ -715,7 +284,7 @@ const PageInputData = (() => {
       async function loadMcStatus(opts = {}) {
         const url = `/api/manual-customer/status?tanggal=${mcTanggal.value}`;
 
-        // PERMINTAAN OWNER: pola SAMA seperti loadList()/loadProdukList() --
+        // PERMINTAAN OWNER: pola SAMA seperti loadMcStatus()/loadProdukList() --
         // lihat catatan panjang di produk.js::loadProdukList(). Hanya
         // berlaku untuk pemuatan AWAL (tanggal default = hari ini) --
         // ganti tanggal/tutup/reset/submit SELALU fetch ulang.
@@ -737,7 +306,10 @@ const PageInputData = (() => {
         if (mcStatus.mode === null) {
           mcStatusBadge.textContent = "Tanggal ini belum dipakai -- mode bebas dipilih.";
         } else if (mcStatus.mode === "barber") {
-          mcStatusBadge.textContent = "Tanggal ini sudah memakai metode Input Barber -- Manual Customer tidak bisa dipakai (Reset dulu untuk berganti metode).";
+          // Data LAMA (dari sebelum mode "Input Data Barber" dihapus) --
+          // tanggal itu sudah terkunci mode 'barber' selamanya sampai
+          // di-Reset, biarpun form pembuatnya sudah tidak ada lagi.
+          mcStatusBadge.textContent = "Tanggal ini sudah memakai metode Input Barber (data lama) -- Manual Customer tidak bisa dipakai (Reset dulu untuk berganti metode).";
         } else {
           mcStatusBadge.textContent = mcStatus.status === "closed"
             ? "Mode Manual Customer -- sudah DITUTUP (Closing). Data tetap bisa dikoreksi/dihapus lewat Rekap seperti biasa."
@@ -763,7 +335,7 @@ const PageInputData = (() => {
       });
 
       btnResetHari.addEventListener("click", async () => {
-        if (!(await MugenUI.confirmModal({ message: `Hapus SELURUH transaksi tanggal ${mcTanggal.value} (Input Barber maupun Manual Customer) supaya metode bisa dipilih ulang? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
+        if (!(await MugenUI.confirmModal({ message: `Hapus SELURUH transaksi tanggal ${mcTanggal.value} supaya metode bisa dipilih ulang? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
         try {
           await MugenUI.withButtonLoading(btnResetHari, () => MugenApi.post(`/api/manual-customer/reset?tanggal=${mcTanggal.value}`, {}));
           MugenUI.toast("Seluruh transaksi tanggal ini direset.", "success", { force: true });

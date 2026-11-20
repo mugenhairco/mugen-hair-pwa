@@ -1276,7 +1276,14 @@
 // pages/absen_mandiri.js (lihat daftar APP_SHELL di bawah) + router.js
 // (pathAdalahHalamanAbsen()) + absensi.js (kartu "Link Absen Mandiri" &
 // panel "Perangkat Terikat" di Setting > Absensi).
-const ASSET_VERSION = "270";
+// v226 -> v227: PENGHAPUSAN Input Data Barber (keputusan Owner: jalur input
+// transaksi harian hanya POS & Manual Customer) -- mode "Input Data Barber"
+// (form Tambah/Koreksi Transaksi + tab "Transaksi Bulan Ini" + kartu
+// "Tandai Libur") dihapus total dari pages/input_data.js (Manual Customer &
+// Non-Barber TIDAK berubah). Tandai Libur pindah ke pages/absensi.js (tab
+// "Kuota Cuti & Libur"), Koreksi Transaksi pindah ke pages/rekap.js (tombol
+// Koreksi di samping Hapus, baris bertipe transaksi).
+const ASSET_VERSION = "271";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
