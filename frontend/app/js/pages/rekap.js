@@ -552,14 +552,16 @@ const PageRekap = (() => {
                     // untuk baris yang TIDAK dikelola jalur lain -- baris
                     // sumber="pos"/"manual_customer" dibangun ULANG otomatis
                     // oleh jalur masing-masing (reset_hari_pos()/
-                    // _sinkronkan_transaksi_hari()) begitu ada perubahan di
-                    // sana, mengedit baris gabungannya langsung di sini
-                    // berisiko tertimpa/hilang pada sinkronisasi berikutnya --
-                    // koreksi yang benar untuk baris itu lewat Point of Sale/
-                    // Manual Customer sendiri. Baris lama (sumber kosong) &
+                    // _sinkronkan_transaksi_hari()/_rebuild_transaksi_
+                    // booking_barber_hari()) begitu ada perubahan di sana,
+                    // mengedit baris gabungannya langsung di sini berisiko
+                    // tertimpa/hilang pada sinkronisasi berikutnya -- koreksi
+                    // yang benar untuk baris itu lewat Point of Sale/Manual
+                    // Customer/Booking sendiri. Baris lama (sumber kosong) &
                     // hasil WA Bot (sumber="wa_bot") TETAP boleh dikoreksi di
                     // sini, sama seperti sebelumnya.
-                    const bolehKoreksi = bolehKoreksiTransaksi && r.sumber !== "pos" && r.sumber !== "manual_customer";
+                    const SUMBER_TERKELOLA_OTOMATIS = ["pos", "manual_customer", "booking"];
+                    const bolehKoreksi = bolehKoreksiTransaksi && !SUMBER_TERKELOLA_OTOMATIS.includes(r.sumber);
                     if (!bolehHapusTransaksi && !bolehKoreksi) return "-";
                     const wrap = bolehHapusTransaksi
                       ? tombolAksi({

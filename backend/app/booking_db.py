@@ -1092,6 +1092,95 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
                       booking.get("id"), type(e).__name__, e)
 
 
+def _rebuild_transaksi_booking_barber_hari(tenant_id: int, barber_id: int, tanggal: str) -> None:
+    """FITUR Sinkronisasi Booking -> Rekap (PERMINTAAN Owner): sejak modul
+    ini dibuat, Booking "berdiri sendiri" -- lunas atau tidak, TIDAK
+    PERNAH tersambung ke tabel `transaksi` yang dibaca Rekap/Komisi/Slip
+    Gaji (docstring modul di atas: "terpisah dari transaksi/komisi/dst").
+    Fungsi ini menyambungkannya, REUSE pola pos_db.py::
+    _rebuild_transaksi_barber_hari() APA ADANYA (hapus baris `transaksi`
+    lama milik Booking untuk barber+tanggal ini, lalu bangun ULANG dari
+    SELURUH booking terverifikasi+aktif hari itu, qty service dijumlahkan
+    lintas booking) -- hasilnya SELALU 1 baris transaksi per barber per
+    hari, sumber="booking", TANPA tips (booking tidak punya konsep tips).
+    Baris sumber="pos"/"manual_customer"/lama tidak pernah tersentuh --
+    masing-masing sumber punya baris sendiri-sendiri untuk barber+tanggal
+    yang sama, persis seperti pos_db.py berdampingan dengan
+    manual_customer_db.py.
+
+    Dipanggil dari SETIAP titik yang mengubah status_pembayaran/
+    status_booking booking (buat_booking() metode cash,
+    verifikasi_pembayaran(), batalkan_booking(), hapus_booking(),
+    reschedule_booking() -- untuk barber+tanggal LAMA *dan* BARU) --
+    idempotent & aman dipanggil berkali-kali, TIDAK berinteraksi dengan
+    aturan "satu tanggal satu mode" (manual_customer_db.pastikan_mode())
+    sama sekali, konsisten dengan pos_db.py yang juga tidak memanggilnya."""
+    with get_conn() as conn:
+        service_rows = [dict(r) for r in conn.execute(
+            "SELECT bi.service_id FROM booking_items bi "
+            "JOIN bookings bk ON bk.id = bi.booking_id "
+            "WHERE bk.tenant_id = ? AND bk.tanggal = ? AND bk.barber_id = ? "
+            "AND bk.status_pembayaran = 'terverifikasi' AND bk.status_booking = 'aktif'",
+            (tenant_id, tanggal, barber_id),
+        ).fetchall()]
+        lama_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ? AND sumber = 'booking'",
+            (barber_id, tanggal),
+        ).fetchall()]
+
+    agregat = {}
+    for r in service_rows:
+        agregat[r["service_id"]] = agregat.get(r["service_id"], 0) + 1
+
+    for tid in lama_ids:
+        db.hapus_transaksi(tid)
+
+    if not agregat:
+        return
+
+    items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
+    try:
+        db.tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=0, sumber="booking")
+    except ValueError:
+        # Service yang dipakai booking ini sudah dihapus permanen Owner
+        # SEBELUM booking-nya sempat lunas (gap pre-existing yang SAMA
+        # juga ada di pos_db.py::_rebuild_transaksi_barber_hari(), tidak
+        # ditangani khusus di sana juga) -- dicatat ke log server supaya
+        # bisa ditelusuri, TIDAK dilempar ke pemanggil (klik "Payment
+        # Diterima"/webhook pembayaran TIDAK BOLEH gagal gara-gara ini).
+        logger.error(
+            "Gagal sinkronkan booking ke Rekap (barber_id=%s, tanggal=%s) -- "
+            "kemungkinan service sudah dihapus permanen.", barber_id, tanggal, exc_info=True,
+        )
+
+
+def migrasi_sinkronkan_booking_lama_ke_rekap() -> None:
+    """FITUR Sinkronisasi Booking -> Rekap: backfill SEKALI untuk booking
+    yang SUDAH terverifikasi+aktif dari SEBELUM
+    _rebuild_transaksi_booking_barber_hari() mulai dipanggil di setiap
+    titik terkait (buat_booking/verifikasi_pembayaran/batalkan_booking/
+    hapus_booking/reschedule_booking) -- dipanggil dari main.py
+    on_startup() seperti migrasi_* lain, WAJIB setelah migrasi_tenant()
+    (butuh kolom bookings.tenant_id).
+
+    Idempotent & murah setelah backfill pertama: HANYA memproses pasangan
+    (barber_id, tanggal) yang BELUM punya satu pun baris `transaksi`
+    sumber='booking' -- pasangan yang sudah pernah tersinkron (oleh
+    migrasi ini sendiri ATAU oleh hook real-time sejak fitur ini ada)
+    dilewati, jadi startup berikutnya tinggal query kosong/cepat."""
+    with get_conn() as conn:
+        pasangan = [dict(r) for r in conn.execute(
+            """SELECT DISTINCT bk.tenant_id, bk.barber_id, bk.tanggal FROM bookings bk
+                   WHERE bk.status_pembayaran = 'terverifikasi' AND bk.status_booking = 'aktif'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM transaksi t WHERE t.barber_id = bk.barber_id
+                           AND t.tanggal = bk.tanggal AND t.sumber = 'booking'
+                   )"""
+        ).fetchall()]
+    for p in pasangan:
+        _rebuild_transaksi_booking_barber_hari(p["tenant_id"], p["barber_id"], p["tanggal"])
+
+
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
                   catatan: str = None, tenant_id: int = None, sumber: str = "publik") -> dict:
@@ -1238,6 +1327,12 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
                     (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
                 )
     booking_baru = get_booking(booking_id)
+    # FITUR Sinkronisasi Booking -> Rekap: metode "cash" LANGSUNG
+    # 'terverifikasi' di atas (satu-satunya metode yang tidak lewat
+    # verifikasi_pembayaran()), jadi sinkronisasi ke Rekap juga harus
+    # dipicu DI SINI -- bukan hanya di verifikasi_pembayaran().
+    if status_pembayaran_awal == "terverifikasi":
+        _rebuild_transaksi_booking_barber_hari(tenant_id, barber_id, tanggal)
     # Pesan Otomatis Berdasarkan Jam Operasional Tenant: `dibuat_di_luar_jam_operasional`
     # field TRANSIEN, HANYA dipakai layar konfirmasi wizard booking publik
     # tepat setelah booking ini dibuat (book_public.js::renderConfirmed())
@@ -1453,6 +1548,12 @@ def batalkan_booking(booking_id: int):
     sudah_dibatalkan = booking["status_booking"] == "dibatalkan"
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_booking = 'dibatalkan' WHERE id = ?", (booking_id,))
+    # FITUR Sinkronisasi Booking -> Rekap: booking yang dibatalkan harus
+    # ikut hilang dari Rekap kalau sebelumnya sudah lunas+tersinkron --
+    # rebuild untuk barber+tanggal booking ini (otomatis mengecualikan
+    # baris ini karena status_booking sudah bukan 'aktif' lagi).
+    if booking["status_pembayaran"] == "terverifikasi":
+        _rebuild_transaksi_booking_barber_hari(booking["tenant_id"], booking["barber_id"], booking["tanggal"])
     if not sudah_dibatalkan:
         _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "pembatalan")
 
@@ -1598,6 +1699,12 @@ def verifikasi_pembayaran(booking_id: int, oleh: str = None):
                 "pembayaran_diterima_oleh = ? WHERE id = ?",
                 (now, (oleh or "").strip() or None, booking_id),
             )
+    # FITUR Sinkronisasi Booking -> Rekap: dipanggil TANPA guard
+    # `sudah_terverifikasi` (beda dari notifikasi WA di bawah) -- rebuild
+    # idempotent & murah, dan klik dobel/retry webhook yang kebetulan
+    # terjadi SETELAH baris Rekap sempat dihapus manual dari Rekap (lihat
+    # tombol "Hapus Transaksi") akan membangunnya ulang dengan benar juga.
+    _rebuild_transaksi_booking_barber_hari(booking["tenant_id"], booking["barber_id"], booking["tanggal"])
     if not sudah_terverifikasi:
         _jalankan_di_belakang(_kirim_notifikasi_wa_booking, get_booking(booking_id), "konfirmasi_pembayaran")
 
@@ -1717,6 +1824,16 @@ def reschedule_booking(booking_id: int, tenant_id: int = None, barber_id: int = 
                     "VALUES (?, ?, ?, ?, ?)",
                     (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
                 )
+    # FITUR Sinkronisasi Booking -> Rekap: status_pembayaran TIDAK disentuh
+    # fungsi ini (tetap 'terverifikasi' apa adanya kalau sudah lunas
+    # sebelumnya, lihat docstring di atas) -- tapi barber_id/tanggal/
+    # service BISA berubah, jadi rebuild harus dipanggil untuk pasangan
+    # barber+tanggal LAMA (hilangkan dari Rekap hari lama) *dan* BARU
+    # (muncul di Rekap hari baru) -- aman dipanggil dua kali kalau
+    # ternyata sama (idempotent, no-op kedua kali).
+    if booking["status_pembayaran"] == "terverifikasi":
+        _rebuild_transaksi_booking_barber_hari(tenant_id, booking["barber_id"], booking["tanggal"])
+        _rebuild_transaksi_booking_barber_hari(tenant_id, barber_baru, tanggal_baru)
     return get_booking(booking_id)
 
 
@@ -1787,6 +1904,13 @@ def hapus_booking(booking_id: int) -> dict:
         conn.execute("DELETE FROM booking_payment_transactions WHERE booking_id = ?", (booking_id,))
         conn.execute("DELETE FROM booking_items WHERE booking_id = ?", (booking_id,))
         conn.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
+    # FITUR Sinkronisasi Booking -> Rekap: booking (dan booking_items-nya)
+    # sudah terhapus permanen di atas SEBELUM rebuild ini -- dipanggil
+    # memakai barber_id/tanggal/tenant_id yang DITANGKAP dari `booking`
+    # SEBELUM delete (baris itu sendiri sudah tidak ada lagi untuk dibaca
+    # ulang). Hanya perlu kalau booking ini sebelumnya sudah lunas+tersinkron.
+    if booking["status_pembayaran"] == "terverifikasi":
+        _rebuild_transaksi_booking_barber_hari(booking["tenant_id"], booking["barber_id"], booking["tanggal"])
     return booking
 
 
