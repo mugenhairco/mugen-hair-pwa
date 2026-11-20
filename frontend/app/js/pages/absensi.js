@@ -1144,13 +1144,33 @@ const PageAbsensi = (() => {
     }
 
     // ---- Dashboard ringkasan ----
-    const dashCard = MugenUI.el("div", { class: "card" });
-    panels.dashboard.appendChild(dashCard);
-    dashCard.appendChild(MugenUI.el("h2", {}, "Dashboard Absensi Hari Ini"));
+    // REDESIGN "Modern Dashboard -- Colorful Professional" (permintaan
+    // Owner, referensi desain dari luar): kartu ringkasan kehadiran +
+    // progress bar paling atas, lalu grid kartu statistik berwarna
+    // (reuse .card--blue/green/orange/purple yang sudah ada di style.css
+    // tapi belum pernah dipakai + 2 warna baru .card--red/.card--teal).
+    // Data SAMA PERSIS seperti sebelumnya (GET /api/attendance/dashboard,
+    // field tidak berubah) -- murni redesain tampilan. "Total Barber"
+    // dilebur ke ringkasan atas ("X dari Y"), "Sudah Check Out" tidak
+    // ditampilkan lagi sebagai kartu terpisah (mengikuti referensi desain
+    // persis -- datanya tetap ada di response kalau suatu saat dibutuhkan
+    // lagi).
+    const dashSummary = MugenUI.el("div", { class: "card ab-dash-summary" });
+    panels.dashboard.appendChild(dashSummary);
     const dashGrid = MugenUI.el("div", { class: "grid-cards" });
-    dashCard.appendChild(dashGrid);
+    panels.dashboard.appendChild(dashGrid);
+
+    const STAT_KARTU_ABSENSI = [
+      { key: "hadir", label: "Hadir", warna: "green", warnaTeks: "#047857", icon: MugenIcons.statusCheck, pct: true },
+      { key: "belum_hadir", label: "Belum Hadir", warna: "red", warnaTeks: "#B91C1C", icon: MugenIcons.personX },
+      { key: "terlambat", label: "Terlambat", warna: "orange", warnaTeks: "#C2410C", icon: MugenIcons.absensi },
+      { key: "sedang_bekerja", label: "Sedang Bekerja", warna: "blue", warnaTeks: "#1D4ED8", icon: MugenIcons.service },
+      { key: "tidak_check_in", label: "Tidak Check In", warna: "purple", warnaTeks: "#6D28D9", icon: MugenIcons.login },
+      { key: "tidak_check_out", label: "Tidak Check Out", warna: "teal", warnaTeks: "#0F766E", icon: MugenIcons.logout },
+    ];
 
     async function loadDashboard() {
+      dashSummary.innerHTML = "";
       dashGrid.innerHTML = "";
       dashGrid.appendChild(MugenUI.skeleton("card", { lines: 1 }));
       let ringkasan;
@@ -1161,16 +1181,35 @@ const PageAbsensi = (() => {
         dashGrid.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
         return;
       }
+      const total = ringkasan.total_barber ?? 0;
+      const hadir = ringkasan.hadir ?? 0;
+      const pct = total > 0 ? Math.round((hadir / total) * 100) : 0;
+
+      dashSummary.appendChild(MugenUI.el("div", { class: "ab-dash-summary-top" }, [
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "ab-dash-summary-label" }, [
+            document.createTextNode("Absensi"),
+            MugenUI.el("span", { class: "badge badge-success" }, "Hari ini"),
+          ]),
+          MugenUI.el("div", { class: "big-number" }, `${hadir} dari ${total}`),
+          MugenUI.el("div", { class: "subtitle" }, "Barber telah hadir"),
+        ]),
+        MugenUI.el("div", { class: "page-title-icon icon-chip--accent ab-dash-summary-icon", html: MugenIcons.karyawan }),
+      ]));
+      dashSummary.appendChild(MugenUI.el("div", { class: "ab-dash-progress" }, [
+        MugenUI.el("div", { class: "ab-dash-progress-fill", style: `width:${pct}%;` }),
+      ]));
+
       dashGrid.innerHTML = "";
-      const KARTU = [
-        ["total_barber", "Total Barber"], ["hadir", "Hadir"], ["belum_hadir", "Belum Hadir"],
-        ["terlambat", "Terlambat"], ["sedang_bekerja", "Sedang Bekerja"], ["sudah_check_out", "Sudah Check Out"],
-        ["tidak_check_in", "Tidak Check In"], ["tidak_check_out", "Tidak Check Out"],
-      ];
-      for (const [key, label] of KARTU) {
-        dashGrid.appendChild(MugenUI.el("div", { class: "card" }, [
-          MugenUI.el("h2", {}, label),
-          MugenUI.el("div", { class: "big-number" }, String(ringkasan[key] ?? 0)),
+      for (const s of STAT_KARTU_ABSENSI) {
+        const head = MugenUI.el("div", { style: "display:flex;align-items:center;justify-content:space-between;" }, [
+          MugenUI.el("div", { class: `page-title-icon icon-chip--${s.warna}2`, html: s.icon }),
+        ]);
+        if (s.pct) head.appendChild(MugenUI.el("span", { class: "badge badge-success" }, `${pct}%`));
+        dashGrid.appendChild(MugenUI.el("div", { class: `card card--${s.warna}` }, [
+          head,
+          MugenUI.el("div", { class: "big-number", style: `color:${s.warnaTeks};margin-top:10px;` }, String(ringkasan[s.key] ?? 0)),
+          MugenUI.el("div", { style: `color:${s.warnaTeks};font-weight:600;font-size:13px;margin-top:2px;` }, s.label),
         ]));
       }
     }

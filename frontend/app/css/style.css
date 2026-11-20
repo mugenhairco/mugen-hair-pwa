@@ -344,19 +344,31 @@ a:hover { color: var(--accent-secondary); }
 .card--green  { background: #D1FAE5; border-color: #A7F3D0; }
 .card--orange { background: #FFE4CC; border-color: #FED7AA; }
 .card--purple { background: #EDE4FF; border-color: #DDD0FE; }
+/* REDESIGN Dashboard Absensi (permintaan Owner): 2 kategori warna baru,
+   mengikuti pola PERSIS 4 di atas (tint muda + border senada + varian
+   gelap rgba) -- dipakai kartu "Belum Hadir" (merah) dan "Tidak Check
+   Out" (teal), supaya 6 kartu statistik tidak ada yang warnanya sama. */
+.card--red    { background: #FEE2E2; border-color: #FECACA; }
+.card--teal   { background: #CCFBF1; border-color: #99F6E4; }
 .icon-chip--blue2   { background: #BFDBFE; color: #1D4ED8; }
 .icon-chip--green2  { background: #A7F3D0; color: #047857; }
 .icon-chip--orange2 { background: #FED7AA; color: #C2410C; }
 .icon-chip--purple2 { background: #DDD0FE; color: #6D28D9; }
+.icon-chip--red2    { background: #FECACA; color: #B91C1C; }
+.icon-chip--teal2   { background: #99F6E4; color: #0F766E; }
 
 :root[data-theme="dark"] .card--blue   { background: rgba(37,99,235,0.16); border-color: rgba(37,99,235,0.35); }
 :root[data-theme="dark"] .card--green  { background: rgba(5,150,105,0.16); border-color: rgba(5,150,105,0.35); }
 :root[data-theme="dark"] .card--orange { background: rgba(194,65,12,0.16); border-color: rgba(194,65,12,0.35); }
 :root[data-theme="dark"] .card--purple { background: rgba(109,40,217,0.16); border-color: rgba(109,40,217,0.35); }
+:root[data-theme="dark"] .card--red    { background: rgba(220,38,38,0.16); border-color: rgba(220,38,38,0.35); }
+:root[data-theme="dark"] .card--teal   { background: rgba(13,148,136,0.16); border-color: rgba(13,148,136,0.35); }
 :root[data-theme="dark"] .icon-chip--blue2   { background: rgba(37,99,235,0.28); color: #93C5FD; }
 :root[data-theme="dark"] .icon-chip--green2  { background: rgba(5,150,105,0.28); color: #6EE7B7; }
 :root[data-theme="dark"] .icon-chip--orange2 { background: rgba(194,65,12,0.28); color: #FDBA74; }
 :root[data-theme="dark"] .icon-chip--purple2 { background: rgba(109,40,217,0.28); color: #D8B4FE; }
+:root[data-theme="dark"] .icon-chip--red2    { background: rgba(220,38,38,0.28); color: #FCA5A5; }
+:root[data-theme="dark"] .icon-chip--teal2   { background: rgba(13,148,136,0.28); color: #5EEAD4; }
 
 /* REVISI (latar menu aktif sekarang tint lembut, bukan solid pekat --
    lihat .sidebar nav a.active di atas): chip ikon TIDAK perlu lagi
@@ -3021,4 +3033,22 @@ input.numkeypad-caret-aktif { caret-color: var(--accent); }
 @media (max-width: 480px) {
   .bh-chip-grid { gap: 6px; }
   .bh-chip { font-size: 12.5px; padding: 8px 2px; }
+}
+
+/* REDESIGN Dashboard Absensi "Modern -- Colorful Professional" (referensi
+   desain dari Owner): kartu ringkasan kehadiran + progress bar di atas
+   grid kartu statistik berwarna (.card--blue/green/orange/purple/red/teal
+   di atas). Data TIDAK berubah (GET /api/attendance/dashboard sama persis
+   seperti sebelumnya) -- murni redesain tampilan. */
+.ab-dash-summary-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.ab-dash-summary-label { font-size: 14px; color: var(--text-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.ab-dash-summary-icon { width: 48px; height: 48px; border-radius: 14px; }
+.ab-dash-summary-icon svg { width: 24px; height: 24px; }
+.ab-dash-progress {
+  margin-top: 14px; height: 9px; border-radius: 999px; background: var(--bg-input);
+  overflow: hidden;
+}
+.ab-dash-progress-fill {
+  height: 100%; border-radius: 999px; background: var(--success);
+  transition: width var(--dur-base) var(--ease-standard);
 }

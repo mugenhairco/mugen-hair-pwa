@@ -60,6 +60,14 @@ const MugenIcons = (() => {
     // untuk SEMUA role (satu implementasi dipakai bersama).
     logout: `<svg ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
 
+    // REDESIGN Dashboard Absensi (permintaan Owner, kartu statistik
+    // berwarna "Tidak Check In"/"Belum Hadir"): dua ikon baru, mengikuti
+    // gaya stroke SATU warna yang sama persis seperti ikon lain di atas
+    // (bukan aset luar). `login` sengaja cermin PERSIS dari `logout` di
+    // atas (arah panah dibalik) supaya terasa sepasang.
+    login: `<svg ${S}><path d="M15 21h4a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-4"/><polyline points="8 7 3 12 8 17"/><line x1="3" y1="12" x2="15" y2="12"/></svg>`,
+    personX: `<svg ${S}><circle cx="8" cy="8" r="3.2"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 8l5 5"/><path d="M22 8l-5 5"/></svg>`,
+
     // PERMINTAAN Owner (aksi per-baris tabel Daftar Produk jadi satu
     // tombol menu, bukan banyak tombol sejajar): titik tiga vertikal,
     // isi solid (BUKAN outline seperti ikon lain -- fill/stroke di-override
