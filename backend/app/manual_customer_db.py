@@ -445,7 +445,16 @@ def _buat_transaksi_gabungan(tanggal: str, entri: list) -> int:
                 agregat[sid] = agregat.get(sid, 0) + 1
         items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
         tips_total = sum(e.get("tips") or 0 for e in grup)
-        transaksi_id = tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips_total)
+        # PENGHAPUSAN Input Data Barber (REKAP, audit trail): SEBELUMNYA
+        # baris gabungan hasil Closing ini tidak mengisi `sumber` sama
+        # sekali (default None) -- tidak bisa dibedakan dari baris Input
+        # Barber lama. Ditandai eksplisit di sini supaya Rekap bisa
+        # menyembunyikan tombol "Koreksi" untuk baris ini (mengedit
+        # langsung baris gabungan berisiko tertimpa _sinkronkan_transaksi_
+        # hari() di bawah begitu ada perubahan Manual Customer berikutnya --
+        # koreksi yang benar untuk baris ini lewat edit_manual_customer()).
+        transaksi_id = tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips_total,
+                                         sumber="manual_customer")
         with get_conn() as conn:
             for e in grup:
                 conn.execute(

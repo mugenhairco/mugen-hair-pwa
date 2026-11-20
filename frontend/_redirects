@@ -35,3 +35,13 @@
 /book/* /app/ 200
 /app/book /app/ 200
 /app/book/* /app/ 200
+
+# FITUR BARU Absen Mandiri (Check In/Out tanpa login untuk karyawan Non-
+# Barber): pola SAMA PERSIS "/book" di atas -- render.yaml (Render Static
+# Site) sudah punya rewrite yang sama, TAPI Cloudflare Workers Assets
+# (jalur yang SUNGGUHAN dipakai produksi sekarang) TIDAK membaca
+# render.yaml sama sekali, jadi WAJIB ditambahkan di sini juga.
+/absen /app/ 200
+/absen/* /app/ 200
+/app/absen /app/ 200
+/app/absen/* /app/ 200

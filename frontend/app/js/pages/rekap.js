@@ -126,6 +126,113 @@ const PageRekap = (() => {
     return wrap;
   }
 
+  // PENGHAPUSAN Input Data Barber: `services` dulu selalu ikut dimuat di
+  // pages/input_data.js (form Tambah/Koreksi Transaksi) -- di sini HANYA
+  // dibutuhkan kalau tombol "✏ Koreksi" (lihat bukaModalKoreksi() di bawah)
+  // benar-benar diklik, jadi fetch-nya lazy (sekali saja, di-cache module-
+  // level) alih-alih ikut membebani pemuatan awal Rekap yang jauh lebih
+  // sering dibuka.
+  let _servicesPromise = null;
+  function _ambilServices() {
+    if (!_servicesPromise) _servicesPromise = MugenApi.get("/api/input-data/services", { useCache: true });
+    return _servicesPromise;
+  }
+
+  // PENGHAPUSAN Input Data Barber: modal Koreksi Transaksi -- pola overlay/
+  // box/modal-actions SAMA PERSIS MugenUI.confirmModal()/infoModal() (lihat
+  // ui.js), dibuat lokal di sini (bukan di ui.js) karena isinya FORM
+  // (tanggal/barber/qty per service/tips/catatan), bukan cuma teks/tombol.
+  // Field & alur SAMA PERSIS form Koreksi lama di input_data.js -- endpoint
+  // backend (GET/PUT /api/input-data/transaksi/{id}) TIDAK berubah.
+  async function bukaModalKoreksi(transaksiId, { karyawanPromise, onSelesai }) {
+    const overlay = MugenUI.el("div", { class: "modal-overlay" });
+    const box = MugenUI.el("div", { class: "modal-box" });
+    box.appendChild(MugenUI.el("h3", {}, `Koreksi Transaksi #${transaksiId}`));
+    const body = MugenUI.el("div", { style: "text-align:left;" }, MugenUI.skeleton("card", { lines: 4 }));
+    box.appendChild(body);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function tutup() {
+      overlay.classList.add("closing");
+      setTimeout(() => overlay.remove(), 120);
+    }
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(); });
+
+    let transaksi, services, barbersOnly;
+    try {
+      [transaksi, services, { barbersOnly }] = await Promise.all([
+        MugenApi.get(`/api/input-data/transaksi/${transaksiId}`),
+        _ambilServices(),
+        karyawanPromise,
+      ]);
+    } catch (e) {
+      body.innerHTML = "";
+      body.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+      body.appendChild(MugenUI.el("div", { class: "modal-actions" },
+        MugenUI.el("button", { type: "button", onclick: tutup }, "Tutup")));
+      return;
+    }
+
+    body.innerHTML = "";
+    const inputTanggal = MugenUI.el("input", { type: "date", value: transaksi.tanggal });
+    const selBarber = MugenUI.el("select");
+    for (const b of barbersOnly) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+    selBarber.value = String(transaksi.barber_id);
+    const itemInputs = {}; // service_id -> input jumlah
+    const itemsAwal = {};
+    for (const it of transaksi.items) itemsAwal[it.service_id] = it.jumlah;
+    const serviceRows = services.map((s) => {
+      const inp = MugenUI.el("input", {
+        type: "number", min: "0", placeholder: "—", style: "max-width:90px;",
+        value: itemsAwal[s.id] ? MugenUI.nilaiTampilAngka(itemsAwal[s.id]) : "",
+      });
+      itemInputs[s.id] = inp;
+      return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
+        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
+        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
+      ]);
+    });
+    const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(transaksi.tips) });
+    const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional", value: transaksi.catatan || "" });
+    const formError = MugenUI.el("div", { class: "login-error" });
+    const btnSimpan = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Simpan Koreksi");
+    const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
+
+    body.appendChild(MugenUI.el("label", {}, "Tanggal"));
+    body.appendChild(inputTanggal);
+    body.appendChild(MugenUI.el("label", {}, "Barber"));
+    body.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
+    body.appendChild(MugenUI.el("label", {}, "Service & Jumlah"));
+    for (const row of serviceRows) body.appendChild(row);
+    body.appendChild(MugenUI.el("label", {}, "Tips (Rp)"));
+    body.appendChild(inputTips);
+    body.appendChild(MugenUI.el("label", {}, "Catatan"));
+    body.appendChild(inputCatatan);
+    body.appendChild(formError);
+    box.appendChild(MugenUI.el("div", { class: "modal-actions" }, [btnBatal, btnSimpan]));
+
+    btnBatal.addEventListener("click", tutup);
+    btnSimpan.addEventListener("click", async () => {
+      formError.textContent = "";
+      const items = Object.entries(itemInputs)
+        .map(([service_id, inp]) => ({ service_id: Number(service_id), jumlah: Number(inp.value) || 0 }))
+        .filter((it) => it.jumlah > 0);
+      if (items.length === 0) { formError.textContent = "Minimal satu service harus diisi jumlahnya."; return; }
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(`/api/input-data/transaksi/${transaksiId}`, {
+          tanggal: inputTanggal.value, barber_id: Number(selBarber.value), items,
+          tips: Number(inputTips.value) || 0, catatan: inputCatatan.value || null,
+        }));
+        MugenUI.toast("Transaksi dikoreksi.", "success");
+        tutup();
+        if (onSelesai) onSelesai(hasil);
+      } catch (e) {
+        formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+      }
+    });
+  }
+
   async function render(root) {
     const user = MugenState.getUser();
     const isAdmin = user.role === "admin" || user.role === "staff";
@@ -145,6 +252,12 @@ const PageRekap = (() => {
     // itu sendiri TETAP tidak pernah tampil untuk Barber (!isAdmin) --
     // konsep "Aksi" administratif ini tidak relevan untuk mereka.
     const bolehHapusTransaksi = isAdmin && (await MugenMenuAccess.has("izin_input_data_hapus"));
+    // PENGHAPUSAN Input Data Barber: tombol "✏ Koreksi" (dulu di menu Input
+    // Data, mode "Input Data Barber", sekarang dihapus) dipindah ke sini --
+    // izin SAMA PERSIS dipakai endpoint backend-nya (routers/input_data.py::
+    // koreksi_transaksi(), "izin_input_data_kelola"), TERPISAH dari izin
+    // Hapus di atas (kelola != hapus).
+    const bolehKoreksiTransaksi = isAdmin && (await MugenMenuAccess.has("izin_input_data_kelola"));
     const bolehHapusReimburse = isAdmin && (await MugenMenuAccess.has("izin_reimburse_hapus"));
     const bolehBatalKasbon = isAdmin && (await MugenMenuAccess.has("izin_kasbon"));
     const bolehHapusNonBarber = isAdmin && (await MugenMenuAccess.has("izin_data_non_barber_hapus"));
@@ -435,17 +548,40 @@ const PageRekap = (() => {
                   }
                   if (r.id == null) return "-";
                   if (r.tipe === "transaksi") {
-                    if (!bolehHapusTransaksi) return "-";
-                    return tombolAksi({
-                      label: "🗑 Hapus", title: "Hapus Transaksi",
-                      confirmTitle: "Hapus Transaksi",
-                      confirmMessage: [
-                        "Apakah Anda yakin ingin menghapus transaksi ini?",
-                        "Data yang dihapus tidak dapat dikembalikan.",
-                      ],
-                      hapusUrl: `/api/input-data/transaksi/${r.id}`,
-                      pesanSukses: "Transaksi berhasil dihapus.",
-                    });
+                    // PENGHAPUSAN Input Data Barber: tombol "✏ Koreksi" HANYA
+                    // untuk baris yang TIDAK dikelola jalur lain -- baris
+                    // sumber="pos"/"manual_customer" dibangun ULANG otomatis
+                    // oleh jalur masing-masing (reset_hari_pos()/
+                    // _sinkronkan_transaksi_hari()) begitu ada perubahan di
+                    // sana, mengedit baris gabungannya langsung di sini
+                    // berisiko tertimpa/hilang pada sinkronisasi berikutnya --
+                    // koreksi yang benar untuk baris itu lewat Point of Sale/
+                    // Manual Customer sendiri. Baris lama (sumber kosong) &
+                    // hasil WA Bot (sumber="wa_bot") TETAP boleh dikoreksi di
+                    // sini, sama seperti sebelumnya.
+                    const bolehKoreksi = bolehKoreksiTransaksi && r.sumber !== "pos" && r.sumber !== "manual_customer";
+                    if (!bolehHapusTransaksi && !bolehKoreksi) return "-";
+                    const wrap = bolehHapusTransaksi
+                      ? tombolAksi({
+                          label: "🗑 Hapus", title: "Hapus Transaksi",
+                          confirmTitle: "Hapus Transaksi",
+                          confirmMessage: [
+                            "Apakah Anda yakin ingin menghapus transaksi ini?",
+                            "Data yang dihapus tidak dapat dikembalikan.",
+                          ],
+                          hapusUrl: `/api/input-data/transaksi/${r.id}`,
+                          pesanSukses: "Transaksi berhasil dihapus.",
+                        })
+                      : MugenUI.el("div", { class: "actions-cell" });
+                    if (bolehKoreksi) {
+                      const btnKoreksi = MugenUI.el("button", { type: "button", title: "Koreksi Transaksi" }, "✏ Koreksi");
+                      btnKoreksi.addEventListener("click", () => bukaModalKoreksi(r.id, {
+                        karyawanPromise,
+                        onSelesai: () => load(),
+                      }));
+                      wrap.insertBefore(btnKoreksi, wrap.firstChild);
+                    }
+                    return wrap;
                   }
                   if (r.tipe === "reimburse") {
                     if (!bolehHapusReimburse) return "-";

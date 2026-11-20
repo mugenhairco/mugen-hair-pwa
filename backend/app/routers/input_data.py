@@ -174,6 +174,18 @@ def list_transaksi(tahun: int = None, bulan: int = None, tanggal: str = None,
                                   tenant_id=user["tenant_id"])
 
 
+@router.get("/transaksi/{transaksi_id}")
+def detail_transaksi(transaksi_id: int, user: dict = Depends(require_permission("izin_input_data_kelola"))):
+    """PENGHAPUSAN Input Data Barber: dipakai tombol baru "✏ Koreksi" di
+    Rekap Transaksi (pages/rekap.js) -- baris Rekap hanya punya
+    `daftar_service` terformat (string), BUKAN `items` mentah (service_id+
+    jumlah) yang dibutuhkan form koreksi, jadi perlu fetch detail penuh
+    dulu sebelum modal koreksi dibuka. `_pastikan_pemilik()` sudah
+    memanggil db.get_transaksi() + validasi kepemilikan/tenant -- hasilnya
+    dipakai langsung, tidak query ulang."""
+    return _pastikan_pemilik(user, transaksi_id)
+
+
 @router.post("/transaksi")
 def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)

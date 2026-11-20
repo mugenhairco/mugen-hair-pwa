@@ -68,7 +68,12 @@ PERMISSION_TREE = {
 
     # ---- Input Data ----
     "izin_input_data_lihat": ("Input Data", None),
-    "izin_input_data_kelola": ("Input Barber (Transaksi & Tandai Libur, termasuk Koreksi)", "izin_input_data_lihat"),
+    # PENGHAPUSAN Input Data Barber: label diperbarui (bukan key -- key tetap
+    # "izin_input_data_kelola", TIDAK berubah, supaya hak akses Role yang
+    # sudah diset Owner tidak ikut ter-reset) -- Tandai Libur sekarang di
+    # menu Absensi, Koreksi Transaksi sekarang di Rekap, keduanya TETAP
+    # digerbang izin yang sama ini apa adanya.
+    "izin_input_data_kelola": ("Tandai Libur & Koreksi Transaksi", "izin_input_data_lihat"),
     "izin_input_data_hapus": ("Hapus Transaksi", "izin_input_data_kelola"),
     "izin_manual_customer": ("Manual Customer (Waiting List / Booking Jalan)", "izin_input_data_lihat"),
     "izin_data_non_barber_kelola": ("Data Non-Barber (Kasir/OB/Kru -- input gaji harian)", "izin_input_data_lihat"),

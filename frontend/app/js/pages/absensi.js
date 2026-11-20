@@ -1045,7 +1045,73 @@ const PageAbsensi = (() => {
   // Izin & Cuti) SELALU melewati kebijakan ini -- HANYA barber sendiri
   // (self-service) yang tunduk penuh, lihat izin_cuti_db.py::
   // _validasi_kebijakan_cuti().
+  // PENGHAPUSAN Input Data Barber (keputusan Owner): kartu "Tandai Libur"
+  // DULU menempel di menu Input Data (mode "Input Data Barber", sudah
+  // dihapus total) -- dipindah ke sini (tab "Kuota Cuti & Libur", namanya
+  // pas) karena fungsinya murni menandai barber libur, tidak terkait
+  // transaksi/mode input apa pun. Endpoint backend (POST/DELETE
+  // /api/input-data/libur, dikelola kuota_libur_db.py) TIDAK berubah sama
+  // sekali -- hanya lokasi form-nya yang pindah.
+  async function renderTandaiLiburManual(root) {
+    const card = MugenUI.el("div", { class: "card" });
+    root.appendChild(card);
+    card.appendChild(MugenUI.el("h2", {}, "Tandai Libur Manual"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" },
+      "Tandai satu barber libur pada tanggal tertentu -- otomatis dicatat sebagai Cuti kalau Kuota Libur " +
+      "bulan itu sudah habis (lihat Kuota Libur per Bulan di bawah)."));
+
+    let barbers = [];
+    try {
+      barbers = await MugenApi.get("/api/input-data/barbers", { useCache: true });
+    } catch (e) {
+      card.appendChild(MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message));
+      return;
+    }
+
+    const liburTanggal = MugenUI.el("input", { type: "date", value: MugenUI.isoHariIniWib() });
+    const liburBarberSel = MugenUI.el("select");
+    liburBarberSel.appendChild(MugenUI.el("option", { value: "" }, "-- pilih barber --"));
+    for (const b of barbers) liburBarberSel.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
+    const btnTandaiLibur = MugenUI.el("button", { class: "btn-primary" }, "Tandai Libur");
+    const btnBatalkanLibur = MugenUI.el("button", {}, "Batalkan Libur");
+
+    card.appendChild(MugenUI.el("label", {}, "Tanggal"));
+    card.appendChild(liburTanggal);
+    card.appendChild(MugenUI.el("label", {}, "Barber"));
+    card.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, liburBarberSel));
+    card.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-top:12px;" }, [btnTandaiLibur, btnBatalkanLibur]));
+
+    function liburBody() {
+      return { barber_id: Number(liburBarberSel.value) || null, tanggal: liburTanggal.value };
+    }
+    btnTandaiLibur.addEventListener("click", async () => {
+      if (!liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
+      try {
+        const hasil = await MugenUI.withButtonLoading(btnTandaiLibur, () => MugenApi.post("/api/input-data/libur", liburBody()));
+        // PERMINTAAN OWNER: Tandai Libur bisa "dikonversi" otomatis kalau
+        // Kuota Libur bulan itu sudah habis (lihat kuota_libur_db.py) --
+        // beri tahu Admin/Owner persis apa yang terjadi, bukan selalu
+        // "Ditandai libur" walau sebenarnya tercatat sebagai Cuti.
+        if (hasil.jenis === "cuti") {
+          MugenUI.toast("Kuota Libur bulan ini sudah habis -- tanggal ini dicatat sebagai Cuti.", "success", { force: true });
+        } else if (hasil.jenis === "kelebihan_kuota") {
+          MugenUI.toast("Kuota Libur & Izin/Cuti bulan ini sama-sama sudah habis -- tetap ditandai libur (distabilo merah di Rekap).", "success", { force: true });
+        } else {
+          MugenUI.toast("Ditandai libur.", "success");
+        }
+      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+    });
+    btnBatalkanLibur.addEventListener("click", async () => {
+      if (!liburBarberSel.value) { MugenUI.toast("Pilih barber dulu.", "error"); return; }
+      try {
+        await MugenUI.withButtonLoading(btnBatalkanLibur, () => MugenApi.del("/api/input-data/libur", liburBody()));
+        MugenUI.toast("Libur dibatalkan.", "success");
+      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+    });
+  }
+
   async function renderKuotaCuti(root) {
+    await renderTandaiLiburManual(root);
     const card = MugenUI.el("div", { class: "card" });
     root.appendChild(card);
     card.appendChild(MugenUI.el("h2", {}, "Pengaturan Izin & Cuti"));
