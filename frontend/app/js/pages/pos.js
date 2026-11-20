@@ -53,7 +53,7 @@ const PagePos = (() => {
     for (const b of pos.daftar_barber || []) {
       if (!b.daftar_service || !b.daftar_service.length) continue;
       data.service.push({
-        sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_barber: b.nama,
+        sumber: "pos", pos_id: pos.id, jam: pos.jam, barber_id: b.barber_id, nama_barber: b.nama,
         daftar_service: b.daftar_service.map((s) => s.nama).join(", "),
         nominal: b.daftar_service.reduce((sum, s) => sum + s.harga, 0),
         tips: b.tips,
@@ -90,7 +90,8 @@ const PagePos = (() => {
     // untuk booking yang sama (mis. klik dobel tombol Verifikasi/Sudah Bayar).
     if (data.service.some((s) => s.sumber === "booking" && s.booking_id === booking.id)) return;
     data.service.push({
-      sumber: "booking", booking_id: booking.id, jam: booking.jam_mulai, nama_barber: booking.nama_barber,
+      sumber: "booking", booking_id: booking.id, jam: booking.jam_mulai,
+      barber_id: booking.barber_id, nama_barber: booking.nama_barber,
       daftar_service: booking.daftar_service, nominal: booking.total_harga,
       nama_customer: booking.customer_nama,
     });
@@ -986,33 +987,69 @@ const PagePos = (() => {
       // cache), supaya tetap benar walau baris baru masuk lewat suntik
       // diam-diam (_suntikTransaksiBaru/suntikBookingLunas) yang menyortir
       // ulang array-nya.
-      const serviceRows = (hasil.service || []).map((r, i) => ({ ...r, no: i + 1 }));
       const produkRows = (hasil.produk || []).map((r, i) => ({ ...r, no: i + 1 }));
 
       body.appendChild(MugenUI.el("h2", {}, "Service"));
-      body.appendChild(MugenUI.buildTable(
-        [
-          { key: "no", label: "No" },
-          { key: "jam", label: "Jam" },
-          // PERMINTAAN Owner: nama customer -- HANYA terisi untuk baris
-          // sumber="booking" (online maupun Booking Mandiri, lihat catatan
-          // pos_db.py::get_transaksi_hari_ini()). Baris sumber="pos" (Kasir
-          // walk-in) TIDAK PERNAH punya field ini (form checkout Kasir
-          // tidak menanyakan nama customer sama sekali) -- tampil strip.
-          { key: "nama_customer", label: "Nama Customer", format: (v) => v || "-" },
-          { key: "nama_barber", label: "Barber" },
-          { key: "daftar_service", label: "Service" },
-          { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
-          // FITUR Tampilkan Tips (PERMINTAAN Owner): HANYA terisi untuk
-          // baris sumber="pos" -- Booking Online/Mandiri tidak punya
-          // konsep tips sama sekali (lihat pos_db.get_transaksi_hari_ini()).
-          { key: "tips", label: "Tips", format: (v) => (v ? MugenUI.formatRupiah(v) : "-") },
-          { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
-          { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
-        ],
-        serviceRows,
-        { emptyText: "Belum ada transaksi service hari ini." },
-      ));
+
+      // FITUR Filter Barber (PERMINTAAN Owner) -- daftar opsi diambil dari
+      // barber yang BENAR-BENAR punya transaksi hari ini (bukan semua
+      // barber aktif), supaya tidak ada opsi kosong di dropdown. Filter
+      // ini MURNI tampilan (client-side, data hari ini sudah lengkap di
+      // memori) -- "Rincian Pembayaran"/"Total Keseluruhan" di atas TETAP
+      // untuk SELURUH hari (tidak ikut terpotong oleh filter ini).
+      const daftarBarberHariIni = [];
+      const idBarberSudahAda = new Set();
+      for (const r of hasil.service || []) {
+        if (r.barber_id == null || idBarberSudahAda.has(r.barber_id)) continue;
+        idBarberSudahAda.add(r.barber_id);
+        daftarBarberHariIni.push({ id: r.barber_id, nama: r.nama_barber });
+      }
+      daftarBarberHariIni.sort((a, c) => a.nama.localeCompare(c.nama));
+
+      const selFilterBarber = MugenUI.el("select", {}, [
+        MugenUI.el("option", { value: "" }, "Semua Barber"),
+        ...daftarBarberHariIni.map((b) => MugenUI.el("option", { value: String(b.id) }, b.nama)),
+      ]);
+      body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [
+        MugenUI.selectIcon(MugenIcons.karyawan, selFilterBarber),
+      ]));
+
+      const tabelServiceWrap = MugenUI.el("div");
+      body.appendChild(tabelServiceWrap);
+
+      function gambarTabelService() {
+        tabelServiceWrap.innerHTML = "";
+        const dipilih = selFilterBarber.value;
+        const serviceTersaring = dipilih
+          ? (hasil.service || []).filter((r) => String(r.barber_id) === dipilih)
+          : (hasil.service || []);
+        const serviceRows = serviceTersaring.map((r, i) => ({ ...r, no: i + 1 }));
+        tabelServiceWrap.appendChild(MugenUI.buildTable(
+          [
+            { key: "no", label: "No" },
+            { key: "jam", label: "Jam" },
+            // PERMINTAAN Owner: nama customer -- HANYA terisi untuk baris
+            // sumber="booking" (online maupun Booking Mandiri, lihat catatan
+            // pos_db.py::get_transaksi_hari_ini()). Baris sumber="pos" (Kasir
+            // walk-in) TIDAK PERNAH punya field ini (form checkout Kasir
+            // tidak menanyakan nama customer sama sekali) -- tampil strip.
+            { key: "nama_customer", label: "Nama Customer", format: (v) => v || "-" },
+            { key: "nama_barber", label: "Barber" },
+            { key: "daftar_service", label: "Service" },
+            { key: "nominal", label: "Nominal", format: (v) => MugenUI.formatRupiah(v) },
+            // FITUR Tampilkan Tips (PERMINTAAN Owner): HANYA terisi untuk
+            // baris sumber="pos" -- Booking Online/Mandiri tidak punya
+            // konsep tips sama sekali (lihat pos_db.get_transaksi_hari_ini()).
+            { key: "tips", label: "Tips", format: (v) => (v ? MugenUI.formatRupiah(v) : "-") },
+            { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
+            { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
+          ],
+          serviceRows,
+          { emptyText: dipilih ? "Belum ada transaksi service hari ini untuk barber ini." : "Belum ada transaksi service hari ini." },
+        ));
+      }
+      selFilterBarber.addEventListener("change", gambarTabelService);
+      gambarTabelService();
 
       body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
       body.appendChild(MugenUI.buildTable(

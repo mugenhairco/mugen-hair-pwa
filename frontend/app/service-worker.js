@@ -1324,7 +1324,15 @@
 // mentah, BUKAN dari kolom Nominal yang sengaja tidak menyertakan tips) --
 // kolom Tips baru ini cuma menampilkan rinciannya supaya tidak kelihatan
 // seperti tips "hilang" saat baris dijumlah manual.
-const ASSET_VERSION = "275";
+// v231 -> v232: FITUR Filter Barber di POS "Transaksi Hari Ini"
+// (PERMINTAAN Owner): dropdown baru di atas tabel Service, opsinya
+// diambil dari barber yang benar-benar punya transaksi hari ini (bukan
+// semua barber aktif) -- filter MURNI tampilan (client-side), "Rincian
+// Pembayaran"/"Total Keseluruhan" TETAP untuk seluruh hari. Backend
+// (pos_db.get_transaksi_hari_ini()) kini ikut mengembalikan "barber_id"
+// per baris service (sumber="pos" MAUPUN "booking") supaya filter bisa
+// cocok lewat id, bukan nama.
+const ASSET_VERSION = "276";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

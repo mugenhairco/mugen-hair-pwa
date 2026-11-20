@@ -694,7 +694,10 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
             if not b["daftar_service"]:
                 continue
             service_items.append({
-                "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"], "nama_barber": b["nama"],
+                "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"],
+                # Dipakai dropdown "Filter Barber" di pages/pos.js -- id, BUKAN
+                # nama (nama bisa sama antar barber berbeda, walau jarang).
+                "barber_id": b["barber_id"], "nama_barber": b["nama"],
                 "daftar_service": ", ".join(s["nama"] for s in b["daftar_service"]),
                 "nominal": sum(s["harga"] for s in b["daftar_service"]),
                 # FITUR Tampilkan Tips (PERMINTAAN Owner): tips tetap TIDAK
@@ -717,7 +720,8 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         metode_b = b.get("metode_pembayaran")
         rincian_metode[metode_b] = rincian_metode.get(metode_b, 0) + (b.get("total_harga") or 0)
         service_items.append({
-            "sumber": "booking", "jam": b["jam_mulai"], "nama_barber": b["nama_barber"],
+            "sumber": "booking", "jam": b["jam_mulai"],
+            "barber_id": b["barber_id"], "nama_barber": b["nama_barber"],
             "daftar_service": b["daftar_service"], "nominal": b["total_harga"],
             # PERMINTAAN Owner: tampilkan nama customer di Transaksi Hari Ini
             # -- HANYA baris sumber="booking" (online maupun kasir_mandiri,
