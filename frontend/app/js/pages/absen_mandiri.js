@@ -180,3 +180,13 @@ const PageAbsenMandiri = (() => {
 
   return { render };
 })();
+
+// PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js (lihat
+// router.js) -- top-level "const" TIDAK menempel ke objek window di
+// browser (beda dari "var"), jadi page_loader.js TIDAK BISA mendeteksi
+// lewat window.PageAbsenMandiri begitu saja setelah script ini selesai
+// dimuat. Baris ini SATU-SATUNYA perubahan di file ini untuk mendukung
+// lazy-load -- expose eksplisit ke window supaya page_loader.js bisa
+// memverifikasi modul benar-benar berhasil dimuat sebelum memanggil
+// render()-nya (pola SAMA PERSIS pages/input_data.js/book_public.js).
+window.PageAbsenMandiri = PageAbsenMandiri;
