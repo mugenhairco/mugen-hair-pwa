@@ -125,7 +125,14 @@ def batalkan_pos(pos_id: int, user: dict = Depends(require_permission("izin_pos_
     sebelum Kasir klik Batalkan), bukan dianggap error."""
     pos = pos_db.get_pos_transaksi(pos_id)
     _pastikan_pos_tenant_sama(user, pos)
-    return pos_db.batalkan_pos(pos_id)
+    hasil = pos_db.batalkan_pos(pos_id)
+    # FITUR "Rekap tidak refresh, cuma tambah baris diam-diam": race jarang
+    # di atas (customer bayar tepat sebelum Kasir klik Batalkan) bisa
+    # mengembalikan status 'lunas' -- lampirkan juga supaya kasus itu ikut
+    # tersuntik, bukan cuma status 'batal' biasa (yang tidak relevan).
+    if hasil["status"] == "lunas":
+        hasil["rekap_transaksi_ids"] = pos_db.get_rekap_transaksi_ids(pos_id)
+    return hasil
 
 
 class BayarCashBody(BaseModel):
@@ -138,9 +145,13 @@ def bayar_cash_pos(pos_id: int, body: BayarCashBody, user: dict = Depends(requir
     pos_db.bayar_cash()."""
     _pastikan_pos_tenant_sama(user, pos_db.get_pos_transaksi(pos_id))
     try:
-        return pos_db.bayar_cash(pos_id, user["tenant_id"], body.uang_diterima)
+        hasil = pos_db.bayar_cash(pos_id, user["tenant_id"], body.uang_diterima)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    # FITUR "Rekap tidak refresh, cuma tambah baris diam-diam": lihat
+    # pos_db.get_rekap_transaksi_ids().
+    hasil["rekap_transaksi_ids"] = pos_db.get_rekap_transaksi_ids(pos_id)
+    return hasil
 
 
 @router.post("/transaksi/{pos_id}/verifikasi")
@@ -150,9 +161,13 @@ def verifikasi_manual(pos_id: int, user: dict = Depends(require_permission("izin
     verifikasi_manual()."""
     _pastikan_pos_tenant_sama(user, pos_db.get_pos_transaksi(pos_id))
     try:
-        return pos_db.verifikasi_manual(pos_id, user["tenant_id"])
+        hasil = pos_db.verifikasi_manual(pos_id, user["tenant_id"])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    # FITUR "Rekap tidak refresh, cuma tambah baris diam-diam": lihat
+    # pos_db.get_rekap_transaksi_ids().
+    hasil["rekap_transaksi_ids"] = pos_db.get_rekap_transaksi_ids(pos_id)
+    return hasil
 
 
 @router.get("/transaksi/{pos_id}/status")
@@ -167,7 +182,14 @@ def status_transaksi(pos_id: int, user: dict = Depends(require_permission("izin_
     transaksi = snap_payment_db.get_transaksi_terkini_untuk_pos(pos_id)
     if transaksi is None:
         raise HTTPException(status_code=404, detail="Transaksi pembayaran tidak ditemukan.")
-    return {"status": transaksi["status"], "pos_status": pos_db.get_pos_transaksi(pos_id)["status"]}
+    hasil = {"status": transaksi["status"], "pos_status": pos_db.get_pos_transaksi(pos_id)["status"]}
+    # FITUR "Rekap tidak refresh, cuma tambah baris diam-diam": webhook
+    # gateway sudah memicu cascade SEBELUM polling ini mendeteksi PAID
+    # (lihat pos_db.get_rekap_transaksi_ids()) -- HANYA dilampirkan saat
+    # PAID, supaya frontend tidak mencoba suntik baris yang belum ada.
+    if transaksi["status"] == "PAID":
+        hasil["rekap_transaksi_ids"] = pos_db.get_rekap_transaksi_ids(pos_id)
+    return hasil
 
 
 @router.post("/transaksi/{pos_id}/cek-ulang")

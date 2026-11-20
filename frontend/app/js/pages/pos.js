@@ -99,6 +99,26 @@ const PagePos = (() => {
     data.total_keseluruhan = (data.total_keseluruhan || 0) + booking.total_harga;
   }
 
+  // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
+  // Owner): dulu HANYA pernah disambungkan ke Input Data (lihat komentar
+  // lama di routers/rekap.py::rekap_transaksi_baris(), yang bahkan
+  // menyebut "pola sama Transaksi Hari Ini POS" padahal belum pernah
+  // benar-benar dipakai POS) -- akibatnya menu Rekap SELALU skeleton
+  // loading begitu dibuka setelah ada transaksi POS baru, walau sudah
+  // terbuka sesi ini. `ids`: hasil.rekap_transaksi_ids dari respons
+  // bayar-cash/verifikasi/status (PAID) -- lihat pos_db.py::
+  // get_rekap_transaksi_ids(). Best-effort, gagal diam-diam (baris baru
+  // TETAP kelihatan begitu Rekap dibuka/di-refresh biasa).
+  function suntikKeRekap(ids) {
+    if (!ids || !ids.length) return;
+    if (typeof PageRekap === "undefined" || typeof PageRekap.suntikBarisTransaksi !== "function") return;
+    for (const id of ids) {
+      MugenApi.get(`/api/rekap/transaksi/baris/${id}`)
+        .then((baris) => PageRekap.suntikBarisTransaksi(baris))
+        .catch(() => {});
+    }
+  }
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.pageTitle("Point of Sale", MugenIcons.pos));
@@ -681,6 +701,7 @@ const PagePos = (() => {
           const hasil = await MugenUI.withButtonLoading(btnTerima, () => MugenApi.post(`/api/pos/transaksi/${state.transaksi.id}/verifikasi`));
           state.transaksi = hasil;
           _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran dikonfirmasi.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {
@@ -733,6 +754,7 @@ const PagePos = (() => {
         if (status.status === "PAID") {
           clearInterval(pollTimer);
           _suntikTransaksiBaru(r);
+          suntikKeRekap(status.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
           fase = "selesai"; gantiFase();
           return true;
@@ -785,6 +807,7 @@ const PagePos = (() => {
             MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
             state.transaksi = hasil;
             _suntikTransaksiBaru(hasil);
+            suntikKeRekap(hasil.rekap_transaksi_ids);
             fase = "selesai"; gantiFase();
             return;
           }
@@ -841,6 +864,7 @@ const PagePos = (() => {
             () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
           state.transaksi = hasil;
           _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
           MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
           fase = "selesai"; gantiFase();
         } catch (e) {

@@ -2165,6 +2165,10 @@ def _baris_rekap_dari_transaksi(t: dict, ada_libur_hari_sama: bool, uang_harian:
         "tanggal": t["tanggal"],
         "barber_id": t["barber_id"],
         "nama_barber": t["nama_barber"],
+        # Dipakai gate tombol "Koreksi" (lihat rekap.js SUMBER_TERKELOLA_OTOMATIS)
+        # & upsert suntikBarisTransaksi() -- t["sumber"] selalu ada (kolom
+        # `transaksi.sumber`, lihat SELECT t.* di get_transaksi()/get_transaksi_list()).
+        "sumber": t.get("sumber"),
         "daftar_service": t["daftar_service"],
         "jumlah_service": sum(it["jumlah"] for it in t["items"]),
         "tips": t["tips"],

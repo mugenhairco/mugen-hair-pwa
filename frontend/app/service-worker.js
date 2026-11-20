@@ -1297,7 +1297,24 @@
 // sama sekali. pages/rekap.js: tombol "Koreksi" disembunyikan juga untuk
 // baris sumber="booking" (dikelola otomatis, mengedit langsung berisiko
 // tertimpa sinkronisasi berikutnya).
-const ASSET_VERSION = "273";
+//
+// v229 -> v230: FITUR "Rekap tidak refresh, cuma tambah baris diam-diam"
+// kini jalan juga untuk POS (PERMINTAAN Owner: sebelumnya mekanisme ini
+// cuma pernah tersambung ke form Input Data Barber yang sekarang sudah
+// dihapus, jadi transaksi POS SELALU bikin Rekap full-reload/skeleton
+// loading tiap ada checkout baru). pages/pos.js: suntikKeRekap() dipanggil
+// setelah lunas (cash/QRIS manual/gateway/race-condition batal) --
+// backend (routers/pos.py) kini ikut mengembalikan "rekap_transaksi_ids".
+// BUGFIX terkait: database.py::_baris_rekap_dari_transaksi() lupa membawa
+// field "sumber" (dipakai gate tombol Koreksi SEJAK v228->v229 di atas --
+// sebelumnya selalu undefined, jadi Koreksi salah tampil untuk baris
+// pos/manual_customer/booking). rekap.js::suntikBarisTransaksi() juga
+// diperbaiki: baris sumber="pos"/"booking"/"manual_customer" dibangun
+// ULANG (hapus+insert) tiap sinkronisasi -- id-nya TIDAK stabil antar
+// rebuild, jadi upsert baris begitu kini dicocokkan lewat kombinasi
+// (barber_id, tanggal, sumber), bukan id (yang bisa berubah dan tadinya
+// bikin baris dobel kalau Rekap sedang terbuka saat checkout kedua).
+const ASSET_VERSION = "274";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
