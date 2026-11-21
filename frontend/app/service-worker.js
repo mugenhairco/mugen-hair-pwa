@@ -1362,7 +1362,21 @@
 // 3. Tombol "Hapus" di POS > Transaksi Hari Ini juga diubah jadi link
 //    teks polos yang sama (class .text-link-aksi), supaya tinggi
 //    barisnya sama dengan baris Booking Online (yang Aksi-nya cuma "-").
-const ASSET_VERSION = "278";
+// v234 -> v235: BUGFIX "Rekap masih loading walau ada data baru dari POS"
+// (PERMINTAAN Owner): akar masalahnya -- api.js menandai flag "rekap"
+// KOTOR untuk SETIAP mutasi di seluruh aplikasi (termasuk mutasi POS yang
+// BARUSAN memicu suntik diam-diam itu sendiri), jadi walau cache sudah
+// akurat lewat suntikBarisTransaksi(), tab Transaksi tetap fetch ulang +
+// skeleton begitu dibuka lagi (flag "rekap"-nya tetap kotor). Diperbaiki
+// dengan flag TERPISAH khusus tab Transaksi ("rekap_transaksi", lihat
+// api.js & pages/rekap.js) -- suntikBarisTransaksi() & fungsi baru
+// gantiBarisTransaksi() (dipakai "+ Tambah Transaksi", REPLACE TOTAL --
+// buang SEMUA baris lama barber+tanggal itu apa pun sumbernya, bukan
+// upsert satu sumber) membersihkan flag ini begitu berhasil menyuntik.
+// "+ Tambah Transaksi" sekarang juga ikut diam-diam (tabel yang sedang
+// terbuka langsung dirender ulang dari cache, tanpa fetch/skeleton),
+// bukan cuma untuk pembukaan Rekap berikutnya.
+const ASSET_VERSION = "279";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

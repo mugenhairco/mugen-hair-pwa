@@ -64,6 +64,46 @@ const PageRekap = (() => {
     // terbaru dulu, nama_barber A-Z per tanggal yang sama".
     c.data.sort((a, b) => (a.nama_barber < b.nama_barber ? -1 : a.nama_barber > b.nama_barber ? 1 : 0));
     c.data.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0));
+    // BUGFIX "Rekap masih loading walau sudah disuntik" (PERMINTAAN Owner):
+    // api.js menandai flag "rekap_transaksi" KOTOR untuk SETIAP mutasi di
+    // seluruh aplikasi (termasuk mutasi POS/Booking yang BARUSAN memicu
+    // suntik ini) -- tanpa baris ini, cache SUDAH akurat tapi flag-nya
+    // tetap kotor, jadi load() di renderTransaksi() tetap fetch ulang +
+    // skeleton begitu tab ini dibuka lagi. Dibersihkan HANYA di sini
+    // (bukan "rekap" -- itu tetap punya Bulanan/Pengeluaran, keduanya
+    // belum punya suntik jadi memang harus tetap fetch ulang).
+    MugenState.tandaiHalamanBersih("rekap_transaksi");
+  }
+
+  // FITUR "+ Tambah Transaksi" REPLACE TOTAL (PERMINTAAN Owner): BEDA dari
+  // suntikBarisTransaksi() di atas (upsert SATU baris per sumber) -- submit
+  // "Tambah Transaksi" menghapus SELURUH baris transaksi barber+tanggal
+  // ini di server APA PUN sumbernya (lihat database.py::
+  // ganti_transaksi_barber_hari()), jadi cache di sini juga harus
+  // membuang SEMUA baris lama untuk barber+tanggal itu (bukan cuma yang
+  // sumbernya sama) sebelum memasukkan baris penggantinya -- supaya
+  // tidak ada baris basi (mis. bekas sumber="pos") yang tertinggal di
+  // cache padahal sudah tidak ada lagi di server. Return array data baru
+  // (untuk dirender ULANG instan oleh pemanggil, lihat renderTransaksi())
+  // kalau berhasil disuntik, atau null kalau tidak berlaku (filter tidak
+  // cocok/cache belum ada) -- pemanggil fallback ke load() biasa.
+  function gantiBarisTransaksi(baris) {
+    const c = _cacheTerakhir["transaksi"];
+    if (!c || !baris || !Array.isArray(c.data)) return null;
+    if (c.userId !== MugenState.getUser().id) return null;
+    const params = new URLSearchParams((c.url.split("?")[1] || ""));
+    const tahunCache = Number(params.get("tahun"));
+    const bulanCache = Number(params.get("bulan"));
+    const barberCache = params.get("barber_id");
+    const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
+    if (tahunBaris !== tahunCache || bulanBaris !== bulanCache) return null;
+    if (barberCache && String(baris.barber_id) !== barberCache) return null;
+    c.data = c.data.filter((r) => !(r.tipe === "transaksi" && r.barber_id === baris.barber_id && r.tanggal === baris.tanggal));
+    c.data.push(baris);
+    c.data.sort((a, b) => (a.nama_barber < b.nama_barber ? -1 : a.nama_barber > b.nama_barber ? 1 : 0));
+    c.data.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0));
+    MugenState.tandaiHalamanBersih("rekap_transaksi");
+    return c.data;
   }
 
   // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
@@ -374,7 +414,16 @@ const PageRekap = (() => {
         }));
         MugenUI.toast("Transaksi barber ini pada tanggal tersebut diperbarui.", "success");
         tutup();
-        if (onSelesai) onSelesai(hasil);
+        // FITUR "Rekap tidak refresh, cuma diam-diam diperbarui" (PERMINTAAN
+        // Owner, pola SAMA pos.js::suntikKeRekap()): `hasil` di atas baris
+        // transaksi MENTAH (database.get_transaksi()), BUKAN bentuk baris
+        // Rekap yang sudah dihitung (komisi/pendapatan/uang harian/dst) --
+        // ambil dulu bentuk yang benar lewat endpoint yang sama dipakai
+        // suntik POS, baru serahkan ke onSelesai (pemanggil di
+        // renderTransaksi() yang tahu cara menyuntik+render ulang instan).
+        if (onSelesai) {
+          MugenApi.get(`/api/rekap/transaksi/baris/${hasil.id}`).then(onSelesai).catch(() => onSelesai(null));
+        }
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -592,7 +641,19 @@ const PageRekap = (() => {
       // (Cetak PDF, dll) di atasnya.
       if (bolehKoreksiTransaksi) {
         const linkTambah = MugenUI.el("button", { type: "button", class: "text-link-aksi", style: "display:block;margin-top:10px;" }, "+ Tambah Transaksi");
-        linkTambah.addEventListener("click", () => bukaModalTambah({ karyawanPromise, onSelesai: () => load() }));
+        linkTambah.addEventListener("click", () => bukaModalTambah({
+          karyawanPromise,
+          // PERMINTAAN Owner: tabel yang SEDANG terbuka ini ikut diperbarui
+          // diam-diam (gantiBarisTransaksi() + render ULANG dari cache,
+          // TANPA fetch/skeleton) -- fallback ke load() biasa kalau baris
+          // hasilnya tidak cocok filter Bulan/Tahun/Barber yang sedang
+          // aktif (mis. ditambahkan untuk bulan lain).
+          onSelesai: (barisRekap) => {
+            const dataBaru = barisRekap && gantiBarisTransaksi(barisRekap);
+            if (dataBaru) renderDenganData(dataBaru);
+            else load();
+          },
+        }));
         body.appendChild(linkTambah);
       }
 
@@ -933,7 +994,22 @@ const PageRekap = (() => {
         // dicek untuk pemuatan AWAL (opts.bisaDariCache, dipanggil SEKALI
         // di akhir renderTransaksi() di bawah) -- ganti filter manual oleh
         // user (event listener di bawah, TANPA opts) SELALU fetch ulang.
-        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap")) {
+        //
+        // BUGFIX "Rekap masih loading walau ada suntik diam-diam dari POS/
+        // Booking/Tambah Transaksi" (PERMINTAAN Owner): flag ini SENGAJA
+        // "rekap_transaksi" -- TERPISAH dari "rekap" yang dipakai tab
+        // Bulanan/Pengeluaran di bawah. api.js menandai KEDUA flag ini
+        // kotor untuk SETIAP mutasi di seluruh aplikasi (default aman,
+        // tidak berubah) -- TAPI suntikBarisTransaksi()/gantiBarisTransaksi()
+        // di atas membersihkan HANYA "rekap_transaksi" setelah berhasil
+        // menyuntik satu baris, supaya tab INI tidak ikut fetch ulang
+        // (sebelumnya: suntik berhasil mengubah cache, tapi flag "rekap"
+        // bersama Bulanan/Pengeluaran tetap kotor dari mutasi POS itu
+        // sendiri, jadi tab ini tetap fetch ulang + skeleton walau
+        // datanya sudah akurat). Bulanan/Pengeluaran TIDAK disentuh --
+        // keduanya memang belum punya suntik, tetap fetch ulang seperti
+        // biasa (benar, karena totalnya memang perlu dihitung ulang server).
+        if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap_transaksi")) {
           const cached = _ambilDariCache("transaksi", MugenState.getUser().id, url);
           if (cached) {
             renderDenganData(cached);
@@ -950,7 +1026,7 @@ const PageRekap = (() => {
             // Cache offline (data.__offline) SENGAJA tidak disimpan ke sini --
             // bukan representasi data yang sebenarnya berhasil dimuat barusan.
             _simpanKeCache("transaksi", MugenState.getUser().id, url, data);
-            MugenState.tandaiHalamanBersih("rekap");
+            MugenState.tandaiHalamanBersih("rekap_transaksi");
           }
           renderDenganData(data);
         } catch (e) {

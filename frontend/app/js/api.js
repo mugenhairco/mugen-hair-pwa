@@ -152,6 +152,15 @@ const MugenApi = (() => {
       // Keempatnya SENGAJA TIDAK didaftarkan di sini -- tetap fetch ulang
       // seperti biasa setiap dibuka.
       MugenState.tandaiHalamanKotor("rekap");
+      // BUGFIX "Rekap masih loading walau sudah disuntik diam-diam dari
+      // POS/Booking/Tambah Transaksi" (PERMINTAAN Owner): flag TERPISAH
+      // khusus tab Transaksi (lihat pages/rekap.js::suntikBarisTransaksi()/
+      // gantiBarisTransaksi()) -- default-nya SAMA kotor seperti "rekap"
+      // di atas untuk SEMUA mutasi (aman), tapi suntik berhasil akan
+      // membersihkan HANYA flag ini lagi segera setelahnya, supaya tab
+      // Transaksi tidak ikut fetch ulang walau mutasi yang BARUSAN terjadi
+      // itu sendiri (POS checkout/dst) yang memicu baris ini.
+      MugenState.tandaiHalamanKotor("rekap_transaksi");
       MugenState.tandaiHalamanKotor("produk");
       MugenState.tandaiHalamanKotor("input_data");
       MugenState.tandaiHalamanKotor("slip_gaji");
