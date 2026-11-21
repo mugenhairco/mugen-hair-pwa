@@ -1525,7 +1525,13 @@
 // sekarang berhenti setelah MAKSIMAL 5 tanggal kalender (ada datanya atau
 // tidak), sisanya diserahkan sepenuhnya ke fetch satu-bulan-penuh yang
 // tetap berjalan bersamaan sejak awal.
-const ASSET_VERSION = "295";
+// v295 -> v296: BUGFIX ketahanan -- titik awal cursor Muat Satu-Satu
+// sekarang SELALU diturunkan dari MugenUI.isoHariIniWib() (zona waktu
+// toko/WIB) dibandingkan sebagai Date OBJECT penuh, bukan membandingkan
+// komponen tahun/bulan new Date() browser-local terhadap komponen WIB
+// secara terpisah -- itu bisa meleset ke tanggal BESOK kalau zona
+// waktu/jam perangkat browser pernah beda dari WIB.
+const ASSET_VERSION = "296";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -1288,12 +1288,20 @@ const PageRekap = (() => {
           const JATAH_HARI = 5;
           const dua = (n) => String(n).padStart(2, "0");
           const fmt = (d) => `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
-          const hariIniIso = MugenUI.isoHariIniWib();
-          const [thnIni, blnIni, tglIni] = hariIniIso.split("-").map(Number);
           const awalBulanDipilih = new Date(tahunF, bulanF - 1, 1);
-          const cursor = (tahunF === thnIni && bulanF === blnIni)
-            ? new Date(thnIni, blnIni - 1, tglIni)
-            : new Date(tahunF, bulanF, 0); // akhir bulan yang difilter, kalau bukan bulan berjalan
+          const akhirBulanDipilih = new Date(tahunF, bulanF, 0);
+          // BUGFIX (ditemukan Owner): cursor mulai dari MIN(akhir bulan yang
+          // difilter, hari ini) -- "hari ini" di sini SELALU diturunkan dari
+          // MugenUI.isoHariIniWib() (zona waktu toko, WIB tetap) dan
+          // dibandingkan sebagai Date OBJECT penuh terhadap akhirBulanDipilih
+          // (BUKAN membandingkan komponen tahun/bulan `new Date()` browser-
+          // local dengan komponen WIB secara terpisah seperti sebelumnya --
+          // itu bisa meleset ke tanggal BESOK kalau zona waktu/jam perangkat
+          // browser beda dari WIB, device lagi lewat tengah malam WIB tapi
+          // browser-local masih hari sebelumnya, dst).
+          const [thnIni, blnIni, tglIni] = MugenUI.isoHariIniWib().split("-").map(Number);
+          const hariIniDate = new Date(thnIni, blnIni - 1, tglIni);
+          const cursor = hariIniDate < akhirBulanDipilih ? hariIniDate : akhirBulanDipilih;
 
           let sisaJatah = JATAH_HARI;
           while (sisaJatah > 0 && cursor >= awalBulanDipilih) {
