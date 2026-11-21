@@ -1438,7 +1438,16 @@
 // setelah Tambah/Koreksi/Hapus sukses, upsert/hapus langsung ke cache tab
 // Pengeluaran lalu membersihkan flag "rekap" lagi, supaya Rekap tidak
 // fetch ulang kalau datanya sudah disuntik sendiri.
-const ASSET_VERSION = "285";
+// v241 -> v242: PERMINTAAN Owner -- (1) Booking Mandiri metode QRIS (statis
+// manual maupun dinamis gateway) sekarang ikut dapat pesan WhatsApp
+// reminder & konfirmasi pembayaran seperti Booking Online, sebelumnya
+// diblokir total oleh guard sumber="kasir_mandiri" (booking_db.py); metode
+// lain & jenis pesan lain tetap diblokir seperti semula. (2) BUGFIX:
+// "Transaksi Hari Ini" POS tidak langsung update saat booking yang sudah
+// lunas dihapus dari List Booking -- ditambahkan PagePos.
+// hapusBookingDariPos() (kebalikan suntikBookingLunas()), dipanggil
+// booking.js setelah hapus sukses.
+const ASSET_VERSION = "286";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
