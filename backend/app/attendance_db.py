@@ -1207,6 +1207,22 @@ def _terapkan_koreksi_ke_log(koreksi: dict):
                            updated_at = ? WHERE id = ?""",
                     (waktu_iso, status_ketepatan, PENANDA, now, row["id"]),
                 )
+            # BUGFIX (PERMINTAAN Owner, ditemukan dari Rekap: hari yang
+            # jelas-jelas ada transaksi/Uang Harian tetap tertulis "Libur"):
+            # check_in() biasa SUDAH membatalkan jadwal Libur Mingguan yang
+            # terlanjur tercatat otomatis (lihat catatan panjang di sana) --
+            # koreksi Check In yang disetujui (jalur ini, dipakai barber yang
+            # lupa Check In lalu mengajukan koreksi) TIDAK PERNAH melakukan
+            # hal yang sama, jadi baris absensi_libur sumber='libur_mingguan'
+            # nyangkut selamanya walau barber TERBUKTI masuk hari itu (dari
+            # koreksi yang disetujui Admin/Owner, bukan cuma klaim sepihak).
+            # HANYA sumber='libur_mingguan' yang dihapus -- SAMA PERSIS guard
+            # check_in(), baris Libur manual/kelebihan_kuota tidak disentuh.
+            import kuota_libur_db
+            conn.execute(
+                "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber = ?",
+                (barber_id, tanggal, kuota_libur_db.SUMBER_LIBUR_MINGGUAN),
+            )
         else:
             if row is None:
                 conn.execute(
