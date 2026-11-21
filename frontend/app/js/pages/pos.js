@@ -947,7 +947,10 @@ const PagePos = (() => {
     // sendiri di frontend seperti _suntikTransaksiBaru()).
     function kolomAksi(posId) {
       if (!posId) return "-";
-      const btn = MugenUI.el("button", { type: "button" }, "Hapus");
+      // PERMINTAAN Owner: link teks polos (gaya "Lupa Kata Sandi?" di
+      // Login), BUKAN tombol -- supaya tinggi baris ini SAMA dengan baris
+      // Booking Online (Aksi-nya cuma "-", teks polos juga).
+      const btn = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Hapus");
       btn.addEventListener("click", async () => {
         if (!(await MugenUI.confirmModal({ message: "Hapus transaksi POS ini? Stok produk (kalau ada) dikembalikan & Rekap barber terkait dihitung ulang.", danger: true }))) return;
         try {

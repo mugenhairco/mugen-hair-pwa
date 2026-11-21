@@ -1316,6 +1316,20 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 .actions-cell button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; box-shadow: none; border-radius: 10px; }
 
+/* FITUR "+ Tambah Transaksi" (Rekap) & Hapus di POS "Transaksi Hari Ini"
+   (PERMINTAAN Owner): link teks polos -- gaya SAMA seperti "Lupa Kata
+   Sandi?" di Login (warna redup, garis bawah), TANPA tampilan tombol
+   (tanpa background/border/padding) supaya baris tabel yang memakainya
+   tingginya SAMA dengan baris lain yang isinya cuma teks biasa ("-").
+   Dipakai di elemen <button> juga (reset total chrome tombolnya) supaya
+   tetap bisa punya event listener klik seperti tombol biasa. */
+.text-link-aksi {
+  background: none; border: none; padding: 0; margin: 0; font: inherit;
+  font-size: 13px; color: var(--text-dim); text-decoration: underline;
+  cursor: pointer; box-shadow: none; min-height: 0;
+}
+.text-link-aksi:hover { color: var(--text); }
+
 /* PERMINTAAN Owner (Daftar Produk, lanjut dipakai Booking List: banyak
    baris, aksi jadi satu tombol menu "⋮" -- bukan banyak tombol sejajar)
    -- lihat MugenUI.bukaMenuAksi() di ui.js (helper generik, dipakai lebih

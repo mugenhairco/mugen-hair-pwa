@@ -823,6 +823,65 @@ def hapus_transaksi(transaksi_id: int):
         conn.execute("DELETE FROM transaksi WHERE id = ?", (transaksi_id,))
 
 
+def get_transaksi_gabungan_barber_hari(barber_id: int, tanggal: str) -> dict:
+    """FITUR "Tambah Transaksi" (susulan) di Rekap (PERMINTAAN Owner): pre-
+    fill form -- gabungan SEMUA baris `transaksi` untuk barber+tanggal ini,
+    APA PUN sumbernya (pos/booking/manual_customer/manual_susulan/legacy),
+    supaya admin melihat gambaran LENGKAP yang sudah tercatat hari itu
+    sebelum menggantinya (lihat ganti_transaksi_barber_hari() di bawah --
+    submit form itu MENGGANTI TOTAL, bukan menambah, jadi pre-fill ini
+    WAJIB akurat supaya tidak ada data yang kehapus tanpa sengaja)."""
+    with get_conn() as conn:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ?", (barber_id, tanggal),
+        ).fetchall()]
+    agregat = {}  # service_id -> jumlah
+    tips_total = 0
+    catatan_list = []
+    for tid in ids:
+        t = get_transaksi(tid)
+        for it in t["items"]:
+            agregat[it["service_id"]] = agregat.get(it["service_id"], 0) + it["jumlah"]
+        tips_total += t["tips"] or 0
+        if (t.get("catatan") or "").strip():
+            catatan_list.append(t["catatan"].strip())
+    return {
+        "items": [{"service_id": sid, "jumlah": jumlah} for sid, jumlah in agregat.items()],
+        "tips": tips_total,
+        "catatan": "; ".join(catatan_list) if catatan_list else None,
+        "ada_data": bool(ids),
+    }
+
+
+def ganti_transaksi_barber_hari(barber_id: int, tanggal: str, items: list, tips: int = 0,
+                                 catatan: str = None, sumber: str = None) -> int:
+    """FITUR "Tambah Transaksi" (susulan) di Rekap (PERMINTAAN Owner): "kalau
+    ada penambahan data di baris yang sudah ada, baris itu benar-benar
+    dikosongkan, admin mengisi data yang benar secara KESELURUHAN, bukan
+    menambah satu service saja" -- jadi ini REPLACE, bukan merge. Validasi
+    `items` dulu SEBELUM menghapus apa pun (lihat _bersihkan_items di
+    bawah) supaya kalau submit-nya invalid, data lama yang sudah ada
+    TIDAK ikut terhapus sia-sia. Menghapus SELURUH baris transaksi barber+
+    tanggal ini (apa pun sumbernya -- pos/booking/manual_customer/lama),
+    lalu membuat SATU baris baru pengganti -- hasilnya SELALU maksimal
+    satu baris per barber per tanggal untuk kombinasi ini, sama seperti
+    invarian _rebuild_transaksi_barber_hari() (pos_db.py)/
+    _rebuild_transaksi_booking_barber_hari() (booking_db.py), bedanya di
+    sini dipicu input manual admin, bukan dihitung ulang dari tabel
+    sumber lain."""
+    valid_items = _bersihkan_items(items)
+    if not valid_items:
+        raise ValueError("Minimal satu service harus diisi jumlahnya (lebih dari 0).")
+    with get_conn() as conn:
+        ids_lama = [r["id"] for r in conn.execute(
+            "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ?", (barber_id, tanggal),
+        ).fetchall()]
+    for tid in ids_lama:
+        hapus_transaksi(tid)
+    return tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips,
+                             catatan=catatan, sumber=sumber)
+
+
 def hapus_riwayat_transaksi(tenant_id: int, sebelum_tanggal: str) -> int:
     """FITUR Pembersihan Data Bulanan Otomatis (lihat data_purge_db.py):
     hapus PERMANEN SEMUA transaksi (beserta transaksi_detail-nya, ikut

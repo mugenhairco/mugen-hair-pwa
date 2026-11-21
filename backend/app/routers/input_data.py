@@ -191,34 +191,58 @@ def detail_transaksi(transaksi_id: int, user: dict = Depends(require_permission(
     return _pastikan_pemilik(user, transaksi_id)
 
 
+@router.get("/transaksi-gabungan")
+def transaksi_gabungan(barber_id: int, tanggal: str,
+                        user: dict = Depends(require_permission("izin_input_data_kelola"))):
+    """FITUR "+ Tambah Transaksi" di Rekap (PERMINTAAN Owner): pre-fill
+    form -- gabungan SEMUA baris transaksi barber+tanggal ini, APA PUN
+    sumbernya, supaya admin melihat gambaran LENGKAP yang sudah tercatat
+    sebelum submit MENGGANTI TOTAL (lihat tambah_transaksi() di bawah,
+    body.susulan -- "kalau ada penambahan data di baris yang sudah ada,
+    baris itu benar-benar dikosongkan, admin mengisi data yang benar
+    secara keseluruhan")."""
+    barber = db.get_barber(barber_id)
+    if barber is None or barber.get("tenant_id") != user.get("tenant_id"):
+        raise HTTPException(status_code=404, detail="Barber tidak ditemukan.")
+    return db.get_transaksi_gabungan_barber_hari(barber_id, tanggal)
+
+
 @router.post("/transaksi")
 def tambah_transaksi(body: TransaksiBody, user: dict = Depends(require_permission("izin_input_data_kelola"))):
     barber_id = _resolve_barber_id(user, body.barber_id)
     try:
-        # FITUR "+ Tambah Transaksi" di Rekap (PERMINTAAN Owner): susulan
-        # untuk transaksi walk-in yang beneran kelewat tidak diinput sama
-        # sekali di hari itu (BUKAN form Input Barber lama -- itu sudah
-        # dihapus dari tampilan, lihat docstring modul) -- SENGAJA tidak
-        # ikut "satu tanggal satu mode" (manual_customer_db.pastikan_mode())
-        # sama sekali, supaya tidak ditolak kalau tanggal itu kebetulan
-        # sudah terpakai mode POS hari itu (skenario paling umum -- kasir
-        # tetap jalan normal, cuma SATU customer yang lupa). Aman dipakai
-        # berdampingan dengan sumber lain karena baris hasilnya ditandai
-        # sumber="manual_susulan" -- TIDAK PERNAH jadi target rebuild
-        # otomatis apa pun (_rebuild_transaksi_barber_hari()/booking/
-        # manual_customer SELALU memfilter sumber-nya sendiri, lihat
-        # masing-masing modul), jadi tidak akan pernah tertimpa/dihapus
-        # oleh sinkronisasi POS/Booking/Manual Customer di tanggal yang
-        # sama.
-        if not body.susulan:
+        if body.susulan:
+            # FITUR "+ Tambah Transaksi" di Rekap (PERMINTAAN Owner): susulan
+            # untuk transaksi walk-in yang beneran kelewat tidak diinput
+            # sama sekali di hari itu (BUKAN form Input Barber lama -- itu
+            # sudah dihapus dari tampilan, lihat docstring modul) --
+            # SENGAJA tidak ikut "satu tanggal satu mode"
+            # (manual_customer_db.pastikan_mode()) sama sekali, supaya
+            # tidak ditolak kalau tanggal itu kebetulan sudah terpakai
+            # mode POS hari itu (skenario paling umum -- kasir tetap jalan
+            # normal, cuma SATU customer yang lupa). REPLACE TOTAL (lihat
+            # db.ganti_transaksi_barber_hari()) -- bukan tambah di
+            # samping baris yang sudah ada, menghapus SELURUH baris lama
+            # barber+tanggal ini (apa pun sumbernya) lalu membuat SATU
+            # baris pengganti bersumber "manual_susulan", supaya Rekap
+            # tetap maksimal satu baris per barber per tanggal, SAMA
+            # seperti invarian POS/Booking/Manual Customer -- frontend
+            # (rekap.js::bukaModalTambah()) WAJIB pre-fill form ini dari
+            # GET /transaksi-gabungan di atas supaya admin tidak tidak
+            # sengaja menghapus data yang sudah benar.
+            transaksi_id = db.ganti_transaksi_barber_hari(
+                barber_id=barber_id, tanggal=body.tanggal,
+                items=[it.model_dump() for it in body.items],
+                tips=body.tips, catatan=body.catatan, sumber="manual_susulan",
+            )
+        else:
             manual_customer_db.pastikan_mode(user["tenant_id"], body.tanggal, "barber")
-        transaksi_id = db.tambah_transaksi(
-            tanggal=body.tanggal, barber_id=barber_id,
-            items=[it.model_dump() for it in body.items],
-            tips=body.tips, catatan=body.catatan,
-            sumber="manual_susulan" if body.susulan else None,
-            idempotency_key=body.idempotency_key,
-        )
+            transaksi_id = db.tambah_transaksi(
+                tanggal=body.tanggal, barber_id=barber_id,
+                items=[it.model_dump() for it in body.items],
+                tips=body.tips, catatan=body.catatan,
+                idempotency_key=body.idempotency_key,
+            )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db.get_transaksi(transaksi_id)
