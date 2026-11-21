@@ -1464,7 +1464,34 @@
 // (halaman 1-2 atau mendekati akhir) jendela nomor menciut jadi 2-3 angka
 // -- sekarang jendela 3-nomor-tengah digeser utuh saat mentok, total nomor
 // yang tampil (1 awal + 3 tengah + 1 akhir) SELALU 5 di posisi mana pun.
-const ASSET_VERSION = "288";
+// v244 -> v245: BUGFIX "Rekap masih refresh penuh (skeleton+fetch) saat
+// Koreksi Transaksi" (PERMINTAAN Owner -- audit "apakah Rekap masih
+// refresh saat data baru/koreksi/hapus"): onSelesai() tombol Koreksi
+// SEBELUMNYA menyerahkan baris transaksi MENTAH (database.get_transaksi(),
+// bukan bentuk baris Rekap siap-pakai) ke pemanggil, yang cuma bisa load()
+// ulang penuh -- sekarang pola SAMA PERSIS "+ Tambah Transaksi"/suntik POS:
+// ambil dulu bentuk baris Rekap lewat GET /api/rekap/transaksi/baris/{id},
+// suntikBarisTransaksi() (upsert by id) + render ulang dari cache, TANPA
+// fetch/skeleton. Diverifikasi lewat Playwright (MutationObserver
+// mendeteksi elemen skeleton): tidak ada skeleton muncul saat submit
+// Koreksi. "+ Tambah Transaksi"/data baru dari POS/Booking sudah diam-diam
+// sejak awal (tidak berubah); "🗑 Hapus" SENGAJA tetap fetch ulang penuh
+// TAPI hanya di kunjungan BERIKUTNYA (baris langsung hilang dari DOM saat
+// diklik, tidak ada reload seketika) -- angka agregat (komisi/dst) butuh
+// dihitung ulang server, sama seperti precedent pos.js.
+// v245 -> v246: FITUR "Hapus Transaksi di Rekap 100% diam-diam, TIDAK
+// PERNAH fetch ulang" (PERMINTAAN Owner): SEBELUMNYA tombol "🗑 Hapus"
+// cuma membuang <tr> dari DOM (tampilan yang sedang terbuka langsung
+// benar), TANPA menyentuh cache -- kunjungan Rekap BERIKUTNYA tetap
+// fetch+skeleton sekali untuk "memperbaiki" cache yang sebenarnya sudah
+// benar di layar. Ditambahkan hapusBarisTransaksi() (buang baris dari
+// cache + bersihkan flag) -- beda dari Hapus POS (produk/stok, butuh
+// angka server), baris Transaksi di sini tidak melibatkan stok apa pun,
+// total/pengelompokan per tanggal selalu dihitung ULANG dari cache di
+// setiap render, jadi 100% aman dihitung sendiri di frontend. Diverifikasi
+// lewat Playwright: tidak ada skeleton baik saat menghapus maupun saat
+// kembali ke tab Transaksi setelahnya.
+const ASSET_VERSION = "290";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
