@@ -93,6 +93,36 @@ def rebuild_transaksi_pos_booking_barber_hari(tenant_id: int, barber_id: int, ta
     for sid, qty in agregat_booking.items():
         agregat[sid] = agregat.get(sid, 0) + qty
 
+    # BUGFIX (ditemukan audit "susuri keuangan Rekap POS"): database.py::
+    # hapus_service() HANYA mengecek service_sudah_dipakai() lewat
+    # transaksi_detail (histori yang SUDAH jadi) -- booking_items/
+    # pos_transaksi_service (booking belum terverifikasi / POS belum
+    # lunas) TIDAK ikut dicek, jadi service yang dipakai booking/POS yang
+    # MASIH PENDING bisa terlanjur dihapus permanen Owner. Kalau ini
+    # dibiarkan lolos ke tambah_transaksi() apa adanya, SATU service_id
+    # yang hilang membuat SELURUH baris gabungan gagal dibuat (ValueError
+    # di satu item membatalkan seluruh INSERT) -- SEBELUM penggabungan
+    # POS+Booking, ini cuma menghapuskan kontribusi SATU sumber (baris
+    # sumber lain tetap aman); SEKARANG baris gabungan berarti kegagalan
+    # ini menghapuskan POS *dan* Booking SEKALIGUS dari Rekap hari itu.
+    # Diperbaiki dengan memvalidasi service_id yang MASIH ADA lebih dulu,
+    # membuang (+ log) HANYA item yang sudah terhapus, bukan menjatuhkan
+    # seluruh baris.
+    if agregat:
+        with get_conn() as conn:
+            placeholder = ", ".join("?" for _ in agregat)
+            id_valid = {r["id"] for r in conn.execute(
+                f"SELECT id FROM services WHERE id IN ({placeholder})", list(agregat.keys()),
+            ).fetchall()}
+        for sid in list(agregat.keys()):
+            if sid not in id_valid:
+                logger.error(
+                    "Service id=%s (dipakai POS/Booking barber_id=%s, tanggal=%s) sudah dihapus "
+                    "permanen -- item ini DILEWATI, kontribusi sumber lain tetap tersimpan.",
+                    sid, barber_id, tanggal,
+                )
+                del agregat[sid]
+
     with get_conn() as conn:
         lama_ids = [r["id"] for r in conn.execute(
             "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ? AND sumber = ?",
@@ -105,14 +135,4 @@ def rebuild_transaksi_pos_booking_barber_hari(tenant_id: int, barber_id: int, ta
         return
 
     items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
-    try:
-        tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips, sumber=SUMBER_POS_BOOKING)
-    except ValueError:
-        # Service yang dipakai POS/booking ini sudah dihapus permanen Owner
-        # SEBELUM sempat lunas/terverifikasi -- dicatat ke log server supaya
-        # bisa ditelusuri, TIDAK dilempar ke pemanggil (pembayaran/verifikasi
-        # TIDAK BOLEH gagal gara-gara ini).
-        logger.error(
-            "Gagal sinkronkan POS/Booking ke Rekap (barber_id=%s, tanggal=%s) -- "
-            "kemungkinan service sudah dihapus permanen.", barber_id, tanggal, exc_info=True,
-        )
+    tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=tips, sumber=SUMBER_POS_BOOKING)
