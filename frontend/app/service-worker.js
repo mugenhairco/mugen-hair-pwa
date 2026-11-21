@@ -1447,7 +1447,14 @@
 // lunas dihapus dari List Booking -- ditambahkan PagePos.
 // hapusBookingDariPos() (kebalikan suntikBookingLunas()), dipanggil
 // booking.js setelah hapus sukses.
-const ASSET_VERSION = "286";
+// v242 -> v243: BUGFIX "Daftar Absensi (menu Admin) tidak ada kolom
+// Tanggal" (PERMINTAAN Owner) -- tidak kentara selama filter Periode
+// default "Hari Ini", tapi begitu diganti Minggu Ini/Bulan Ini/Rentang
+// Tanggal (banyak baris per barber lintas hari), tidak ada cara tahu
+// baris mana untuk tanggal mana tanpa buka "Lihat Detail" satu per satu.
+// Ditambahkan kolom Tanggal (data `r.tanggal` sudah ada, tinggal
+// ditampilkan).
+const ASSET_VERSION = "287";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

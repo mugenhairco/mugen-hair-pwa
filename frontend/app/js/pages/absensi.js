@@ -1581,6 +1581,16 @@ const PageAbsensi = (() => {
           return MugenUI.errorState(e.detail && e.detail.detail ? e.detail.detail : e.message);
         }
         return MugenUI.buildTable([
+          // BUGFIX (PERMINTAAN Owner): tabel ini SEBELUMNYA tidak punya
+          // kolom Tanggal sama sekali -- tidak kentara selama filter
+          // Periode default "Hari Ini" (semua baris otomatis satu tanggal
+          // yang sama), tapi begitu diganti "Minggu Ini"/"Bulan Ini"/
+          // "Rentang Tanggal" (bisa banyak baris per barber lintas hari),
+          // tidak ada cara tahu baris mana untuk tanggal mana TANPA buka
+          // "Lihat Detail" satu per satu. `r.tanggal` sudah selalu ada di
+          // data (dipakai juga oleh bukaDetail() di atas), tinggal
+          // ditampilkan.
+          { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
           { key: "nama_barber", label: "Nama" },
           { key: "check_in_at", label: "Check In", format: jamDariIso },
           { key: "check_out_at", label: "Check Out", format: jamDariIso },
