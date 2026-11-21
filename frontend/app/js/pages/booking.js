@@ -1074,12 +1074,16 @@ const PageBooking = (() => {
           // disembunyikan untuk metode itu.
           if (onVerifikasi && r.metode_pembayaran !== "gateway" && r.status_pembayaran !== "terverifikasi" && r.status_booking === "aktif") {
             // FITUR Booking Mandiri: metode "bayar_nanti" (kasir pilih
-            // "Bayar Nanti" saat input walk-in) dilabel "Sudah Bayar" --
-            // FUNGSI yang dipanggil klik TETAP SAMA (onVerifikasi ->
-            // verifikasi_pembayaran()), hanya labelnya beda biar jelas
-            // maksudnya buat kasir.
+            // "Bayar Nanti" saat input walk-in) & "cash" (REVISI PERMINTAAN
+            // Owner: sebelumnya langsung lunas begitu dibuat, sekarang
+            // SAMA seperti metode lain -- Kasir wajib konfirmasi begitu
+            // customer BENAR-BENAR bayar fisik, supaya booking yang
+            // ternyata batal/tidak datang tidak salah tercatat lunas)
+            // dilabel "Sudah Bayar" -- FUNGSI yang dipanggil klik TETAP
+            // SAMA (onVerifikasi -> verifikasi_pembayaran()), hanya
+            // labelnya beda biar jelas maksudnya buat kasir.
             items.push({
-              label: r.metode_pembayaran === "bayar_nanti" ? "Sudah Bayar" : "Verifikasi",
+              label: (r.metode_pembayaran === "bayar_nanti" || r.metode_pembayaran === "cash") ? "Sudah Bayar" : "Verifikasi",
               onClick: () => onVerifikasi(r),
             });
           }

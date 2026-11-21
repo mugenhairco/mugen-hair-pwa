@@ -160,8 +160,11 @@ PAYMENT_SETTINGS_KEYS = [
 # PERMINTAAN OWNER: metode "transfer" dihapus total (termasuk field info
 # rekening bank_nama/bank_nomor_rekening/bank_nama_pemilik, lihat
 # get_payment_settings()/update_payment_settings() di bawah). Metode baru
-# "cash" (Bayar di Toko) ditambahkan -- TIDAK PERNAH butuh verifikasi
-# Admin sama sekali (lihat status_pembayaran_awal di buat_booking()).
+# "cash" (Bayar di Toko) ditambahkan -- REVISI: dulu TIDAK PERNAH butuh
+# verifikasi Admin (langsung 'terverifikasi' begitu booking dibuat), SEKARANG
+# tetap butuh (Kasir/Admin klik "Sudah Bayar"/"Verifikasi" begitu customer
+# BENAR-BENAR bayar fisik di toko) -- lihat status_pembayaran_awal di
+# buat_booking() untuk alasannya.
 METODE_VALID = {"qris", "gateway", "cash"}
 # PERMINTAAN OWNER: batas waktu TAMPILAN (bukan pembatalan sungguhan di
 # sisi Faspay -- QR/VA TETAP berlaku penuh di sana, tidak ada endpoint
@@ -1285,13 +1288,19 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
     # klaim customer/frontend -- lihat routers/booking.py::public_buat_booking()
     # untuk alur checkout gateway (buat transaksi provider SETELAH baris
     # ini dibuat).
-    # PERMINTAAN OWNER: metode "cash" (Bayar di Toko) TIDAK PERNAH butuh
-    # verifikasi Admin -- tidak ada apa pun untuk diverifikasi (pembayaran
-    # dilakukan fisik di toko, dicatat lewat Transaksi biasa saat itu,
-    # terpisah total dari status booking ini). Langsung 'terverifikasi'
-    # begitu booking dibuat, SATU-SATUNYA pengecualian dari aturan "SEMUA
-    # metode mulai menunggu_verifikasi" di atas.
-    status_pembayaran_awal = "terverifikasi" if metode_pembayaran == "cash" else "menunggu_verifikasi"
+    # REVISI PERMINTAAN OWNER (sebelumnya "cash" langsung 'terverifikasi'
+    # begitu booking dibuat -- DIUBAH): customer yang booking HARI INI
+    # untuk LAYANAN di tanggal mendatang belum tentu benar-benar datang
+    # (bisa batal/tidak datang), jadi uang Cash belum tentu diterima --
+    # SEMUA metode (termasuk cash) sekarang mulai 'menunggu_verifikasi',
+    # Kasir/Admin WAJIB klik "Sudah Bayar"/"Verifikasi" (verifikasi_pembayaran()
+    # di bawah, tombol sudah ada & generik di booking.js, tidak perlu
+    # tombol baru) begitu customer BENAR-BENAR membayar fisik di toko --
+    # konsisten dengan skema rekonsiliasi pembayaran booking (tanggal
+    # PEMBAYARAN diterima vs tanggal LAYANAN, lihat pos_db.
+    # get_transaksi_hari_ini()/get_booking_terverifikasi_by_tanggal_bayar()
+    # di bawah).
+    status_pembayaran_awal = "menunggu_verifikasi"
     # FITUR Unread Row Highlight (List Booking Owner/Admin, lihat
     # booking_dilihat_migrasi.py): sumber="kasir_mandiri" DIANGGAP sudah
     # dilihat SEJAK DIBUAT -- staff sendiri yang menginputnya saat itu
@@ -1327,12 +1336,11 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
                     (booking_id, s["id"], s["nama"], s["harga"], int(s.get("durasi_menit") or 60)),
                 )
     booking_baru = get_booking(booking_id)
-    # FITUR Sinkronisasi Booking -> Rekap: metode "cash" LANGSUNG
-    # 'terverifikasi' di atas (satu-satunya metode yang tidak lewat
-    # verifikasi_pembayaran()), jadi sinkronisasi ke Rekap juga harus
-    # dipicu DI SINI -- bukan hanya di verifikasi_pembayaran().
-    if status_pembayaran_awal == "terverifikasi":
-        _rebuild_transaksi_booking_barber_hari(tenant_id, barber_id, tanggal)
+    # FITUR Sinkronisasi Booking -> Rekap: SEMUA metode (termasuk cash,
+    # lihat REVISI status_pembayaran_awal di atas) sekarang SELALU mulai
+    # 'menunggu_verifikasi' di sini -- sinkronisasi ke Rekap jadi SELALU
+    # lewat verifikasi_pembayaran() (satu-satunya titik, tidak ada lagi
+    # pengecualian cash langsung lunas di sini).
     # Pesan Otomatis Berdasarkan Jam Operasional Tenant: `dibuat_di_luar_jam_operasional`
     # field TRANSIEN, HANYA dipakai layar konfirmasi wizard booking publik
     # tepat setelah booking ini dibuat (book_public.js::renderConfirmed())
@@ -1440,6 +1448,51 @@ def tandai_booking_dilihat(booking_id: int) -> dict:
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET dilihat = 1 WHERE id = ?", (booking_id,))
     return get_booking(booking_id)
+
+
+def tanggal_wib_dari_timestamp(ts: str | None) -> str | None:
+    """Konversi timestamp `datetime.now().isoformat()` POLOS (waktu server,
+    default UTC di Render, BUKAN WIB -- lihat catatan panjang di
+    _is_advance_booking() di atas) ke tanggal WIB (`'YYYY-MM-DD'`) --
+    dipakai get_booking_terverifikasi_by_tanggal_bayar()/pos_db.
+    get_transaksi_hari_ini() untuk membandingkan tanggal PEMBAYARAN
+    diterima (bukan tanggal layanan) secara akurat, pola konversi SAMA
+    PERSIS _is_advance_booking(). None kalau ts kosong/tidak valid."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts).replace(tzinfo=ZoneInfo("UTC")).astimezone(WIB).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def get_booking_terverifikasi_by_tanggal_bayar(tenant_id: int, tanggal_bayar: str) -> list:
+    """FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): daftar
+    booking terverifikasi yang PEMBAYARANNYA diterima pada tanggal_bayar
+    ini (WIB), APA PUN tanggal LAYANANNYA -- dipakai pos_db.
+    get_transaksi_hari_ini() untuk menghitung "Rincian Pembayaran Hari
+    Ini"/Total Keseluruhan berdasarkan uang yang BENERAN diterima hari
+    itu, BUKAN tanggal layanan -- supaya rekonsiliasi kas/settlement
+    QRIS-Gateway harian akurat walau ada booking yang dibayar di muka
+    untuk layanan di tanggal lain (lihat tanggal_wib_dari_timestamp()
+    untuk alasan konversi WIB eksplisit).
+
+    Query SQL di bawah cuma PRE-FILTER kasar (tanggal_bayar -1/+1 hari,
+    mencakup kemungkinan pergeseran akibat selisih zona waktu server vs
+    WIB) -- filter PRESISI-nya (konversi WIB per-baris) dilakukan di
+    Python."""
+    batas = date.fromisoformat(tanggal_bayar)
+    awal = (batas - timedelta(days=1)).isoformat()
+    akhir = (batas + timedelta(days=1)).isoformat()
+    with get_conn() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT bk.*, b.nama AS nama_barber FROM bookings bk JOIN barbers b ON b.id = bk.barber_id "
+            "WHERE bk.tenant_id = ? AND bk.status_pembayaran = 'terverifikasi' AND bk.status_booking = 'aktif' "
+            "AND bk.pembayaran_diterima_at IS NOT NULL "
+            "AND substr(bk.pembayaran_diterima_at, 1, 10) BETWEEN ? AND ?",
+            (tenant_id, awal, akhir),
+        ).fetchall()]
+    return [r for r in rows if tanggal_wib_dari_timestamp(r["pembayaran_diterima_at"]) == tanggal_bayar]
 
 
 def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None,

@@ -84,8 +84,29 @@ const PagePos = (() => {
   function suntikBookingLunas(booking) {
     if (!_cacheTransaksiHariIni || !booking) return;
     if (booking.status_pembayaran !== "terverifikasi") return;
-    if (booking.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal -- biarkan, fetch fresh nanti saat tab dibuka utk tanggal itu
     const data = _cacheTransaksiHariIni.data;
+    data.rincian_metode = data.rincian_metode || {};
+    // FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): uang yang
+    // diterima HARI INI (saat verifikasi/"Sudah Bayar" ini terjadi) SELALU
+    // masuk Total Keseluruhan/Rincian Pembayaran hari ini, APA PUN tanggal
+    // LAYANAN booking-nya (lihat catatan panjang di pos_db.
+    // get_transaksi_hari_ini()) -- beda dari daftar Service (appointment
+    // list) di bawah yang TETAP cuma tampil kalau tanggal layanannya
+    // PERSIS hari ini.
+    data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) + booking.total_harga;
+    data.total_keseluruhan = (data.total_keseluruhan || 0) + booking.total_harga;
+    if (booking.tanggal !== _cacheTransaksiHariIni.tanggal) {
+      // Dibayar hari ini, TAPI layanannya bukan hari ini -- tidak masuk
+      // daftar Service (appointment list hari ini tetap murni tanggal
+      // layanan), cukup baris penyesuaian "+" merah yang menjelaskan
+      // kenapa Total Keseluruhan bertambah.
+      data.penyesuaian = data.penyesuaian || [];
+      data.penyesuaian.push({
+        arah: "tambah", nominal: booking.total_harga,
+        label: `${booking.customer_nama || booking.nama_barber} -- booking tanggal ${booking.tanggal}`,
+      });
+      return;
+    }
     // Guard idempoten -- hindari baris dobel kalau (jarang) dipanggil 2x
     // untuk booking yang sama (mis. klik dobel tombol Verifikasi/Sudah Bayar).
     if (data.service.some((s) => s.sumber === "booking" && s.booking_id === booking.id)) return;
@@ -96,9 +117,6 @@ const PagePos = (() => {
       nama_customer: booking.customer_nama,
     });
     data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
-    data.rincian_metode = data.rincian_metode || {};
-    data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) + booking.total_harga;
-    data.total_keseluruhan = (data.total_keseluruhan || 0) + booking.total_harga;
   }
 
   // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
@@ -976,6 +994,23 @@ const PagePos = (() => {
           style: `display:flex;justify-content:space-between;${tebal ? "font-weight:700;" : ""}`,
         }, [MugenUI.el("span", {}, label), MugenUI.el("span", {}, MugenUI.formatRupiah(nominal || 0))]);
       }
+      // FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): "Total
+      // Keseluruhan"/rincian metode di atas SEKARANG berdasarkan tanggal
+      // PEMBAYARAN diterima (bukan tanggal layanan, lihat catatan
+      // panjang di pos_db.get_transaksi_hari_ini()) -- baris "penyesuaian"
+      // di bawah ini (warna merah) menjelaskan SECARA TRANSPARAN kenapa
+      // totalnya segitu: "+" = booking yang dibayar HARI INI untuk
+      // layanan di tanggal lain (uangnya ikut masuk total hari ini),
+      // "-" = booking untuk LAYANAN hari ini yang sudah dibayar di
+      // tanggal lain (uangnya TIDAK ikut dihitung di total hari ini,
+      // sudah benar -- baris ini murni penjelasan, bukan pengurang
+      // ulang).
+      const barisPenyesuaian = (hasil.penyesuaian || []).map((p) => MugenUI.el("div", {
+        style: "display:flex;justify-content:space-between;color:#dc2626;font-size:12.5px;margin-top:4px;",
+      }, [
+        MugenUI.el("span", {}, `${p.arah === "tambah" ? "+" : "-"} ${p.label}`),
+        MugenUI.el("span", {}, `${p.arah === "tambah" ? "+" : "-"} ${MugenUI.formatRupiah(p.nominal)}`),
+      ]));
       body.appendChild(MugenUI.el("div", { class: "card", style: "margin-bottom:16px;" }, [
         MugenUI.el("div", { style: "font-weight:700;margin-bottom:8px;" }, "Rincian Pembayaran Hari Ini"),
         barisRincian("Payment Gateway", rincian.gateway),
@@ -983,6 +1018,7 @@ const PagePos = (() => {
         barisRincian("Cash", rincian.cash),
         MugenUI.el("hr"),
         barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
+        ...barisPenyesuaian,
       ]));
 
       // Kolom "No" (PERMINTAAN Owner) -- nomor urut tampilan, dihitung ULANG
@@ -1044,11 +1080,27 @@ const PagePos = (() => {
             // baris sumber="pos" -- Booking Online/Mandiri tidak punya
             // konsep tips sama sekali (lihat pos_db.get_transaksi_hari_ini()).
             { key: "tips", label: "Tips", format: (v) => (v ? MugenUI.formatRupiah(v) : "-") },
-            { key: "sumber", label: "Sumber", format: (v) => (v === "pos" ? "Kasir" : "Booking Online") },
+            {
+              key: "sumber", label: "Sumber",
+              // FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner):
+              // baris booking yang pembayarannya sudah diterima di
+              // tanggal LAIN (dibayar di muka) ikut ditandai di sini,
+              // supaya kasir langsung tahu "customer ini sudah bayar"
+              // tanpa perlu buka Rincian Pembayaran di atas.
+              format: (v, r) => (v === "pos" ? "Kasir" : "Booking Online")
+                + (r.dibayar_tanggal_lain ? ` (dibayar ${r.dibayar_tanggal_lain})` : ""),
+            },
             { key: "pos_id", label: "Aksi", format: (v) => kolomAksi(v) },
           ],
           serviceRows,
-          { emptyText: dipilih ? "Belum ada transaksi service hari ini untuk barber ini." : "Belum ada transaksi service hari ini." },
+          {
+            emptyText: dipilih ? "Belum ada transaksi service hari ini untuk barber ini." : "Belum ada transaksi service hari ini.",
+            // PERMINTAAN Owner: baris customer yang SUDAH BAYAR (booking
+            // dibayar di muka untuk layanan hari ini) font-nya merah,
+            // supaya kasir gampang tahu customer mana yang tidak perlu
+            // ditagih lagi.
+            rowClass: (r) => (r.dibayar_tanggal_lain ? "pos-baris-sudah-bayar" : ""),
+          },
         ));
       }
       selFilterBarber.addEventListener("change", gambarTabelService);

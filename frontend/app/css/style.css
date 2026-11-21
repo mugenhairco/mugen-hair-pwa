@@ -656,6 +656,12 @@ table.data-table th {
 
 table.data-table tr:hover td { background: var(--bg); }
 
+/* FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner, POS > Transaksi
+   Hari Ini): baris customer booking yang SUDAH BAYAR di muka (tanggal
+   lain) -- font merah, supaya kasir gampang tahu tanpa perlu buka
+   Rincian Pembayaran. */
+table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
+
 .table-wrap { overflow-x: auto; }
 
 /* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
