@@ -1414,7 +1414,19 @@
 // (9400) ternyata di BAWAH .modal-overlay (9500) -- keypad yang dibuka
 // dari DALAM modal jadi tidak bisa diklik (ketutup modal walau secara
 // visual terlihat di depan). Dinaikkan ke 9550.
-const ASSET_VERSION = "283";
+// v239 -> v240: PERMINTAAN Owner -- (1) pengeluaran/penyesuaian Uang Kas
+// yang membuat saldo jadi minus TIDAK LAGI ditolak (uang_kas_db.py --
+// bugfix audit sebelumnya dibatalkan, pencatatan pengeluaran tidak boleh
+// terhambat saldo tercatat); (2) semua field Nominal/Jumlah (Rp) di menu
+// Keuangan & Karyawan (Pengeluaran, Uang Kas, Pemasukan, Kasbon, Komisi,
+// Reimburse, Slip Gaji) sekarang tampil berformat Rupiah DAN pakai keypad
+// angka custom yang sudah ada (MugenUI.attachNumericKeypad(..., {rupiah:
+// true})), konsisten dengan POS/Rekap -- field pembacaannya ikut diganti
+// ke MugenUI.bacaRupiahWajib()/parseAngka() (baru, lihat ui.js), BUKAN lagi
+// Number()/bacaAngkaWajib() langsung (string berformat "Rp X.XXX" bakal
+// dibaca NaN->0 kalau tetap pakai itu). Penyesuaian Komisi di Slip Gaji
+// DIKECUALIKAN (boleh negatif, keypad custom tidak punya tombol minus).
+const ASSET_VERSION = "284";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

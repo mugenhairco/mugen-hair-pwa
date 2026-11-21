@@ -77,6 +77,7 @@ const PagePengeluaran = (() => {
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Operasional" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Untuk apa pengeluaran ini" });
     const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputNominal, { rupiah: true });
     // Sumber Dana (Tahap 12): Uang Kas -> otomatis mengurangi saldo Uang
     // Kas. Uang Karyawan -> otomatis membuat klaim Reimburse tersambung
     // (cair lewat Slip Gaji periode terkait). selBarber jadi WAJIB hanya
@@ -143,7 +144,7 @@ const PagePengeluaran = (() => {
       inputTanggal.value = p.tanggal;
       inputKategori.value = p.kategori || "";
       inputKeterangan.value = p.keterangan || "";
-      inputNominal.value = MugenUI.nilaiTampilAngka(p.jumlah);
+      inputNominal.value = MugenUI.formatRupiah(p.jumlah);
       selSumberDana.value = p.sumber_dana || "kas";
       selBarber.value = p.barber_id ? String(p.barber_id) : "";
       inputAktif.checked = !!p.aktif;
@@ -159,7 +160,7 @@ const PagePengeluaran = (() => {
       // PERMINTAAN Owner ("nilai kosong tidak otomatis dianggap 0"):
       // bacaAngkaWajib() mengembalikan null kalau field dikosongkan --
       // DITOLAK di bawah, bukan diam-diam terkirim sebagai 0.
-      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
+      const nominal = MugenUI.bacaRupiahWajib(inputNominal);
       const body = {
         tanggal: inputTanggal.value,
         kategori: inputKategori.value.trim(),

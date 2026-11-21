@@ -78,6 +78,7 @@ const PagePemasukan = (() => {
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Modal Tambahan" });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Untuk apa pemasukan ini" });
     const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputNominal, { rupiah: true });
     const selBarber = MugenUI.el("select");
     selBarber.appendChild(MugenUI.el("option", { value: "" }, "-- tidak terkait barber (opsional) --"));
     for (const b of barbers) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
@@ -125,7 +126,7 @@ const PagePemasukan = (() => {
       inputTanggal.value = p.tanggal;
       inputKategori.value = p.kategori || "";
       inputKeterangan.value = p.keterangan || "";
-      inputNominal.value = MugenUI.nilaiTampilAngka(p.jumlah);
+      inputNominal.value = MugenUI.formatRupiah(p.jumlah);
       selBarber.value = p.barber_id ? String(p.barber_id) : "";
       inputAktif.checked = !!p.aktif;
       formError.textContent = "";
@@ -136,7 +137,7 @@ const PagePemasukan = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
-      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
+      const nominal = MugenUI.bacaRupiahWajib(inputNominal);
       const body = {
         tanggal: inputTanggal.value,
         kategori: inputKategori.value.trim(),

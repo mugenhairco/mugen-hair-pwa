@@ -69,6 +69,7 @@ const PageUangKas = (() => {
     saldoSaatIniText.appendChild(MugenUI.skeleton("line", { width: "140px" }));
 
     const inputSaldoAwal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputSaldoAwal, { rupiah: true });
     const btnSimpanSaldoAwal = MugenUI.el("button", {}, "Simpan Saldo Kas Awal");
     const saldoAwalError = MugenUI.el("div", { class: "login-error" });
     const saldoAwalInfo = MugenUI.el("div", { class: "subtitle" }, "");
@@ -83,7 +84,7 @@ const PageUangKas = (() => {
     }
 
     function terapkanSaldo({ awal, saatIni }) {
-      inputSaldoAwal.value = MugenUI.nilaiTampilAngka(awal.saldo);
+      inputSaldoAwal.value = awal.saldo ? MugenUI.formatRupiah(awal.saldo) : "";
       saldoAwalInfo.textContent = awal.diubah_oleh ? `Terakhir diubah oleh ${awal.diubah_oleh} (${awal.updated_at || "-"})` : "";
       saldoSaatIniText.textContent = MugenUI.formatRupiah(saatIni.saldo);
     }
@@ -116,7 +117,7 @@ const PageUangKas = (() => {
 
     btnSimpanSaldoAwal.addEventListener("click", async () => {
       saldoAwalError.textContent = "";
-      const saldo = MugenUI.bacaAngkaWajib(inputSaldoAwal);
+      const saldo = MugenUI.bacaRupiahWajib(inputSaldoAwal);
       if (saldo === null || saldo < 0) { saldoAwalError.textContent = "Saldo Kas Awal wajib diisi dan tidak boleh negatif."; return; }
       btnSimpanSaldoAwal.disabled = true;
       try {
@@ -139,6 +140,7 @@ const PageUangKas = (() => {
       MugenUI.el("option", { value: "kurang" }, "Kurang"),
     ]);
     const inputJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputJumlah, { rupiah: true });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "mis. Koreksi selisih hitung fisik" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -171,7 +173,7 @@ const PageUangKas = (() => {
 
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
-      const jumlah = MugenUI.bacaAngkaWajib(inputJumlah);
+      const jumlah = MugenUI.bacaRupiahWajib(inputJumlah);
       if (jumlah === null || jumlah <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       btnSubmit.disabled = true;
       try {
@@ -252,7 +254,7 @@ const PageUangKas = (() => {
                 btnBatal.style.display = "";
                 inputTanggal.value = r.tanggal;
                 selJenis.value = r.jenis;
-                inputJumlah.value = MugenUI.nilaiTampilAngka(r.jumlah);
+                inputJumlah.value = MugenUI.formatRupiah(r.jumlah);
                 inputKeterangan.value = r.keterangan || "";
                 formError.textContent = "";
                 formCard.scrollIntoView({ behavior: "smooth" });

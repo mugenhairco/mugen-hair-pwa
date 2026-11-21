@@ -250,6 +250,7 @@ const PageSlipGaji = (() => {
     // selBarber, lihat terapkanTampilanJabatan() di bawah.
     const wrapGajiPokok = MugenUI.el("div");
     const inputGajiPokok = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputGajiPokok, { rupiah: true });
     wrapGajiPokok.appendChild(MugenUI.el("label", {}, "Gaji Pokok (Rp, opsional)"));
     wrapGajiPokok.appendChild(inputGajiPokok);
 
@@ -261,10 +262,14 @@ const PageSlipGaji = (() => {
     wrapHariMasuk.appendChild(infoGajiPerHari);
 
     const inputPotonganKasbon = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
-    const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", placeholder: "—" }); // boleh negatif -- tanpa atribut min
+    MugenUI.attachNumericKeypad(inputPotonganKasbon, { rupiah: true });
+    const inputPenyesuaianKomisi = MugenUI.el("input", { type: "number", placeholder: "—" }); // boleh negatif -- tanpa atribut min, keypad custom tidak dukung minus jadi dibiarkan input number biasa
     const inputReimburse = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputReimburse, { rupiah: true });
     const inputBonusManual = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputBonusManual, { rupiah: true });
     const inputPotonganLain = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputPotonganLain, { rupiah: true });
     const inputCatatanPotongan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. keterlambatan" });
     const btnGenerate = MugenUI.el("button", { class: "btn-primary" }, "Generate Slip Gaji");
     const formError = MugenUI.el("div", { class: "login-error" });
@@ -290,7 +295,7 @@ const PageSlipGaji = (() => {
     // hanya menampilkan info Gaji per Hari karyawan itu sebagai referensi.
     function isiGajiPokokDariBarber() {
       const b = barbers.find((x) => String(x.id) === selBarber.value);
-      inputGajiPokok.value = MugenUI.nilaiTampilAngka(b && b.gaji_pokok);
+      inputGajiPokok.value = b && b.gaji_pokok ? MugenUI.formatRupiah(b.gaji_pokok) : "";
       inputJumlahHariMasuk.value = "";
       infoGajiPerHari.textContent = b ? `Gaji per Hari: ${MugenUI.formatRupiah(b.gaji_per_hari || 0)}` : "";
       terapkanTampilanJabatan();
@@ -304,7 +309,7 @@ const PageSlipGaji = (() => {
       if (!selBarber.value) { inputPotonganKasbon.value = ""; return; }
       try {
         const saldo = await MugenApi.get(`/api/kasbon/saldo/${selBarber.value}`);
-        inputPotonganKasbon.value = MugenUI.nilaiTampilAngka(saldo.saldo);
+        inputPotonganKasbon.value = saldo.saldo ? MugenUI.formatRupiah(saldo.saldo) : "";
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     // Modul Karyawan Fase 3 (Komisi): Penyesuaian Komisi otomatis terisi dari
@@ -344,7 +349,7 @@ const PageSlipGaji = (() => {
           const qs = new URLSearchParams({ tanggal_mulai: inputTanggalMulai.value, tanggal_selesai: inputTanggalSelesai.value });
           saldo = await MugenApi.get(`/api/reimburse/saldo-rentang/${selBarber.value}?${qs.toString()}`);
         }
-        inputReimburse.value = MugenUI.nilaiTampilAngka(saldo.saldo);
+        inputReimburse.value = saldo.saldo ? MugenUI.formatRupiah(saldo.saldo) : "";
       } catch (e) { /* opsional -- kalau gagal (mis. tidak ada izin), biarkan manual */ }
     }
     selBarber.addEventListener("change", () => {
@@ -407,16 +412,16 @@ const PageSlipGaji = (() => {
       try {
         const body = {
           barber_id: Number(selBarber.value),
-          potongan_kasbon: Number(inputPotonganKasbon.value) || 0, potongan_lain: Number(inputPotonganLain.value) || 0,
+          potongan_kasbon: MugenUI.parseAngka(inputPotonganKasbon.value), potongan_lain: MugenUI.parseAngka(inputPotonganLain.value),
           penyesuaian_komisi: Number(inputPenyesuaianKomisi.value) || 0,
-          reimburse: Number(inputReimburse.value) || 0,
-          bonus_manual: Number(inputBonusManual.value) || 0,
+          reimburse: MugenUI.parseAngka(inputReimburse.value),
+          bonus_manual: MugenUI.parseAngka(inputBonusManual.value),
           catatan_potongan: inputCatatanPotongan.value.trim(),
         };
         if (barberMode) {
           body.tahun = Number(selTahun.value);
           body.bulan = Number(selBulan.value);
-          body.gaji_pokok = Number(inputGajiPokok.value) || 0;
+          body.gaji_pokok = MugenUI.parseAngka(inputGajiPokok.value);
         } else {
           body.tanggal_mulai = inputTanggalMulai.value;
           body.tanggal_selesai = inputTanggalSelesai.value;
@@ -429,7 +434,7 @@ const PageSlipGaji = (() => {
         // Sinkronkan cache lokal supaya kalau karyawan yang sama dipilih lagi
         // tanpa reload halaman, Gaji Pokok yang tampil sudah yang terbaru.
         const b = barbers.find((x) => String(x.id) === selBarber.value);
-        if (b && barberMode) b.gaji_pokok = Number(inputGajiPokok.value) || 0;
+        if (b && barberMode) b.gaji_pokok = MugenUI.parseAngka(inputGajiPokok.value);
         MugenUI.toast("Slip Gaji berhasil dibuat.", "success");
         loadList();
       } catch (e) {
