@@ -1033,15 +1033,21 @@ def check_in(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None,
     # tercatat otomatis sebagai Libur (mis. Owner sempat buka Rekap/
     # Dashboard SEBELUM barber ini Check In), Check In yang BARU SAJA
     # berhasil ini membatalkannya -- shift tukar dadakan TIDAK boleh tetap
-    # dianggap Libur. HANYA baris sumber='libur_mingguan' yang dihapus di
-    # sini -- baris Libur manual/kelebihan_kuota TIDAK PERNAH ikut terhapus
-    # oleh Check In. Import lokal: kuota_libur_db mengimpor attendance_db
-    # (hindari siklik).
+    # dianggap Libur.
+    # PERLUASAN (PERMINTAAN Owner, kasus sama ditemukan utk sumber=
+    # 'kelebihan_kuota'): awalnya HANYA 'libur_mingguan' yang dihapus di
+    # sini, baris Libur manual/kelebihan_kuota sengaja dibiarkan (dianggap
+    # catatan "kuota sudah lewat" yang tetap relevan). Skenario yang SAMA
+    # PERSIS ternyata terjadi untuk kelebihan_kuota (barber Check In di
+    # hari yang kebetulan tercatat kelebihan_kuota), jadi sekarang
+    # disamakan: KEDUA sumber dihapus di sini. Import lokal: kuota_libur_db
+    # mengimpor attendance_db (hindari siklik).
     import kuota_libur_db
     with get_conn() as conn:
         conn.execute(
-            "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber = ?",
-            (barber_id, sekarang.strftime("%Y-%m-%d"), kuota_libur_db.SUMBER_LIBUR_MINGGUAN),
+            "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber IN (?, ?)",
+            (barber_id, sekarang.strftime("%Y-%m-%d"), kuota_libur_db.SUMBER_LIBUR_MINGGUAN,
+             kuota_libur_db.SUMBER_KELEBIHAN_KUOTA),
         )
     catat_audit(barber_id, "check_in", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
@@ -1216,12 +1222,20 @@ def _terapkan_koreksi_ke_log(koreksi: dict):
             # hal yang sama, jadi baris absensi_libur sumber='libur_mingguan'
             # nyangkut selamanya walau barber TERBUKTI masuk hari itu (dari
             # koreksi yang disetujui Admin/Owner, bukan cuma klaim sepihak).
-            # HANYA sumber='libur_mingguan' yang dihapus -- SAMA PERSIS guard
-            # check_in(), baris Libur manual/kelebihan_kuota tidak disentuh.
+            # PERLUASAN (PERMINTAAN Owner, kasus sama ditemukan utk
+            # sumber='kelebihan_kuota'): awalnya HANYA 'libur_mingguan' yang
+            # dihapus di sini (sama seperti guard check_in()) -- 'kelebihan_
+            # kuota' sengaja dibiarkan manual karena dianggap catatan "kuota
+            # sudah lewat" yang relevan buat Admin. Ternyata skenario yang
+            # SAMA PERSIS terjadi: barber lupa Check In, bulan itu kuota
+            # Libur-nya kebetulan sudah habis, tanggal itu tercatat
+            # 'kelebihan_kuota', lalu koreksi disetujui TAPI baris itu tetap
+            # nyangkut "Libur" di Rekap walau TERBUKTI masuk hari itu --
+            # sekarang disamakan: KEDUA sumber dihapus di sini.
             import kuota_libur_db
             conn.execute(
-                "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber = ?",
-                (barber_id, tanggal, kuota_libur_db.SUMBER_LIBUR_MINGGUAN),
+                "DELETE FROM absensi_libur WHERE barber_id = ? AND tanggal = ? AND sumber IN (?, ?)",
+                (barber_id, tanggal, kuota_libur_db.SUMBER_LIBUR_MINGGUAN, kuota_libur_db.SUMBER_KELEBIHAN_KUOTA),
             )
         else:
             if row is None:
