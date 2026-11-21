@@ -996,11 +996,26 @@ const PageRekap = (() => {
 
           // PERMINTAAN Owner ("default-nya harusnya tampilkan halaman
           // pagination yang TERAKHIR, bukan yang pertama"): tanggalUnik
-          // terurut ASC (lama -> baru, lihat komentar di atas), jadi
-          // index terakhir = tanggal PALING BARU -- itu yang pertama
-          // kali dilihat saat Rekap Transaksi dibuka, bukan tanggal
-          // paling lama.
-          let slideIndex = Math.max(tanggalUnik.length - 1, 0);
+          // terurut ASC (lama -> baru, lihat komentar di atas).
+          //
+          // BUGFIX (PERMINTAAN Owner, ditemukan setelah fitur Booking
+          // advance ada): "index TERAKHIR" dulu SELALU sama dengan "hari
+          // ini" karena transaksi tidak pernah bertanggal MASA DEPAN --
+          // sekarang booking yang dibayar hari ini untuk layanan tanggal
+          // NANTI bisa membuat baris transaksi bertanggal depan, jadi
+          // "terakhir" bisa jadi tanggal depan itu, BUKAN hari ini. Cari
+          // dulu index hari ini SECARA EKSPLISIT (WIB) -- kalau hari ini
+          // belum punya transaksi sama sekali (wajar, mis. toko belum
+          // buka), mundur ke tanggal TERAKHIR SEBELUM hari ini (BUKAN
+          // tanggal depan manapun) supaya tidak "melompat" ke booking
+          // advance.
+          const _hariIni = MugenUI.isoHariIniWib();
+          let slideIndex = tanggalUnik.indexOf(_hariIni);
+          if (slideIndex === -1) {
+            slideIndex = tanggalUnik.length - 1;
+            while (slideIndex >= 0 && tanggalUnik[slideIndex] > _hariIni) slideIndex -= 1;
+          }
+          slideIndex = Math.max(slideIndex, 0);
 
           // PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen
           // pagination, ada nomor 1 2 3 4 5 ... sampai nomor terakhir"):
@@ -1012,8 +1027,21 @@ const PageRekap = (() => {
           function _daftarHalamanPaginasi(aktif, total) {
             const AMBANG = 7; // total tanggal <= ini -> tampilkan semua, tanpa "..."
             if (total <= AMBANG) return Array.from({ length: total }, (_, i) => i);
-            const kiri = Math.max(aktif - 1, 1);
-            const kanan = Math.min(aktif + 1, total - 2);
+            // BUGFIX (PERMINTAAN Owner "selalu tampilkan 5 angka"): jendela
+            // SEBELUMNYA (kiri/kanan di-clamp independen ke [1, total-2])
+            // menciut jadi cuma 2-3 angka begitu halaman aktif dekat ujung
+            // (mis. halaman 1 atau 2) karena satu sisi mentok tanpa
+            // menggeser sisi lain untuk menutupinya. UKURAN_JENDELA (3
+            // nomor tengah) sekarang digeser utuh saat mentok, supaya
+            // total nomor yang tampil (1 awal + 3 tengah + 1 akhir) SELALU
+            // 5, di posisi mana pun.
+            const UKURAN_JENDELA = 3;
+            let kiri = aktif - 1;
+            let kanan = aktif + 1;
+            if (kiri < 1) { kiri = 1; kanan = kiri + UKURAN_JENDELA - 1; }
+            if (kanan > total - 2) { kanan = total - 2; kiri = kanan - UKURAN_JENDELA + 1; }
+            kiri = Math.max(kiri, 1);
+            kanan = Math.min(kanan, total - 2);
             const hasil = [0];
             if (kiri > 1) hasil.push("...");
             for (let i = kiri; i <= kanan; i++) hasil.push(i);
