@@ -37,6 +37,7 @@ baris ini (kalau sempat terlanjur dibuat) DIHAPUS oleh attendance_db.
 check_in() -- lihat SUMBER_LIBUR_MINGGUAN.
 """
 
+import json
 from datetime import date, datetime, timedelta
 
 import attendance_db
@@ -416,17 +417,61 @@ def pastikan_libur_mingguan_tercatat(barber_id: int, tenant_id: int, tanggal_mul
     if akhir_efektif < tanggal_mulai:
         return
 
+    # BUGFIX PERFORMA (N+1, dilaporkan Owner -- Rekap Transaksi lambat):
+    # SEBELUMNYA loop di bawah memanggil booking_db.is_jadwal_mingguan_libur()
+    # (query hari_libur_mingguan barber + attendance_logs) UNTUK SETIAP HARI,
+    # ditambah query absensi_libur + izin_cuti_db.get_pengajuan_aktif_pada_
+    # tanggal() lagi kalau hari itu memang jadwal libur mingguan -- untuk
+    # rentang sebulan kali banyak barber (get_libur_list() memanggil fungsi
+    # ini per barber TANPA filter), ini jadi ratusan round-trip database
+    # SETIAP KALI Rekap dibuka. Diganti: SEMUA data yang dibutuhkan loop ini
+    # diambil SEKALI di awal (beberapa query, bukan per hari), loop di bawah
+    # murni logika Python di memori -- hasil akhir identik (data yang dibaca
+    # PERSIS sama, cuma caranya diambil sekaligus bukan satu-satu).
+    with get_conn() as conn:
+        barber_row = conn.execute(
+            "SELECT hari_libur_mingguan FROM barbers WHERE id = ?", (barber_id,)
+        ).fetchone()
+    if barber_row is None:
+        return
+    try:
+        hari_libur_mingguan = set(json.loads(barber_row["hari_libur_mingguan"] or "[]"))
+    except (TypeError, ValueError):
+        hari_libur_mingguan = set()
+    if not hari_libur_mingguan:
+        return  # tidak ada jadwal libur mingguan sama sekali -- tidak ada yang perlu dicek
+
+    with get_conn() as conn:
+        checkin_dates = {r["tanggal"] for r in conn.execute(
+            "SELECT DISTINCT tanggal FROM attendance_logs WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ?",
+            (barber_id, tanggal_mulai, akhir_efektif),
+        ).fetchall()}
+        sudah_ada_dates = {r["tanggal"] for r in conn.execute(
+            "SELECT tanggal FROM absensi_libur WHERE barber_id = ? AND tanggal >= ? AND tanggal <= ?",
+            (barber_id, tanggal_mulai, akhir_efektif),
+        ).fetchall()}
+        izin_cuti_rows = conn.execute(
+            "SELECT tanggal_mulai, tanggal_selesai FROM izin_cuti WHERE barber_id = ? AND status = 'disetujui' "
+            "AND tanggal_mulai <= ? AND tanggal_selesai >= ?",
+            (barber_id, akhir_efektif, tanggal_mulai),
+        ).fetchall()
+    izin_cuti_dates = set()
+    for r in izin_cuti_rows:
+        dd = date.fromisoformat(max(r["tanggal_mulai"], tanggal_mulai))
+        dd_akhir = date.fromisoformat(min(r["tanggal_selesai"], akhir_efektif))
+        while dd <= dd_akhir:
+            izin_cuti_dates.add(dd.isoformat())
+            dd += timedelta(days=1)
+
     d = date.fromisoformat(tanggal_mulai)
     akhir = date.fromisoformat(akhir_efektif)
     while d <= akhir:
         iso = d.isoformat()
-        if booking_db.is_jadwal_mingguan_libur(barber_id, iso):
-            with get_conn() as conn:
-                sudah_ada = conn.execute(
-                    "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
-                    (barber_id, iso),
-                ).fetchone()
-            if sudah_ada is None and izin_cuti_db.get_pengajuan_aktif_pada_tanggal(barber_id, iso) is None:
+        # SAMA PERSIS booking_db._jadwal_mingguan_libur(): hari ini termasuk
+        # jadwal libur mingguan barber ini DAN belum Check In hari itu (shift
+        # tukar dadakan tidak boleh diam-diam dianggap libur).
+        if booking_db.HARI_LIST[d.weekday()] in hari_libur_mingguan and iso not in checkin_dates:
+            if iso not in sudah_ada_dates and iso not in izin_cuti_dates:
                 _terapkan_kuota_libur(barber_id, tenant_id, iso, sumber_libur=SUMBER_LIBUR_MINGGUAN)
         d += timedelta(days=1)
 

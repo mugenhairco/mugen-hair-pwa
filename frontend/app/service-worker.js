@@ -1496,7 +1496,11 @@
 // lagi 'pos'+'booking' terpisah), PERMINTAAN Owner. Tombol "Koreksi" ikut
 // disesuaikan (SUMBER_TERKELOLA_OTOMATIS) supaya baris gabungan ini tetap
 // tersembunyi dari Koreksi manual, sama seperti sebelumnya.
-const ASSET_VERSION = "291";
+// v291 -> v292: BUGFIX -- baris Rekap LAMA yang sumbernya masih "pos"/
+// "booking" (belum sempat ter-rebuild ke "pos_booking" sejak penggabungan
+// v291) salah menampilkan tombol Koreksi (seharusnya tersembunyi, baris
+// itu tetap berisiko dibangun-ulang otomatis kapan saja).
+const ASSET_VERSION = "292";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

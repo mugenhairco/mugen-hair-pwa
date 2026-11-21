@@ -915,7 +915,17 @@ const PageRekap = (() => {
                     // Customer/Booking sendiri. Baris lama (sumber kosong) &
                     // hasil WA Bot (sumber="wa_bot") TETAP boleh dikoreksi di
                     // sini, sama seperti sebelumnya.
-                    const SUMBER_TERKELOLA_OTOMATIS = ["pos_booking", "manual_customer"];
+                    //
+                    // BUGFIX (ditemukan Owner setelah penggabungan POS+Booking):
+                    // "pos"/"booking" TETAP disertakan di sini WALAUPUN kode
+                    // backend TIDAK PERNAH menulis sumber itu lagi (sudah
+                    // digantikan "pos_booking") -- baris LAMA yang sumbernya
+                    // masih "pos"/"booking" (dibuat SEBELUM penggabungan
+                    // dideploy, belum sempat ter-rebuild ulang ke format baru
+                    // karena belum ada kejadian baru utk barber+tanggal itu)
+                    // TETAP berisiko dibangun-ulang/tertimpa otomatis kapan
+                    // saja -- Koreksi manual atas baris itu TIDAK aman.
+                    const SUMBER_TERKELOLA_OTOMATIS = ["pos_booking", "manual_customer", "pos", "booking"];
                     const bolehKoreksi = bolehKoreksiTransaksi && !SUMBER_TERKELOLA_OTOMATIS.includes(r.sumber);
                     if (!bolehHapusTransaksi && !bolehKoreksi) return "-";
                     const wrap = bolehHapusTransaksi
