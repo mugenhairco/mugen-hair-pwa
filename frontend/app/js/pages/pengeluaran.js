@@ -179,15 +179,21 @@ const PagePengeluaran = (() => {
       btnSubmit.disabled = true;
       try {
         // REVISI UI/UX Premium: spinner inline di tombol Simpan, bukan overlay layar penuh.
+        let savedRow;
         await MugenUI.withButtonLoading(btnSubmit, async () => {
           if (editingId) {
-            await MugenApi.put(`/api/pengeluaran/${editingId}`, body);
+            savedRow = await MugenApi.put(`/api/pengeluaran/${editingId}`, body);
             MugenUI.toast("Pengeluaran diperbarui.", "success");
           } else {
-            await MugenApi.post("/api/pengeluaran", body);
+            savedRow = await MugenApi.post("/api/pengeluaran", body);
             MugenUI.toast("Pengeluaran disimpan.", "success");
           }
         });
+        // BUGFIX "Rekap masih loading walau cuma input Pengeluaran" (PERMINTAAN
+        // Owner): lihat catatan lengkap di pages/rekap.js::suntikBarisPengeluaran().
+        if (typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisPengeluaran === "function") {
+          PageRekap.suntikBarisPengeluaran(savedRow);
+        }
         // Kategori baru yang baru saja diketik langsung ikut jadi saran berikutnya.
         if (!kategoriOptions.includes(body.kategori)) {
           kategoriOptions.push(body.kategori);
@@ -292,6 +298,9 @@ const PagePengeluaran = (() => {
                   // REVISI UI/UX Premium: spinner inline di tombol Hapus, bukan overlay layar penuh.
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));
                   MugenUI.toast("Pengeluaran dihapus.", "success");
+                  if (typeof PageRekap !== "undefined" && typeof PageRekap.hapusBarisPengeluaran === "function") {
+                    PageRekap.hapusBarisPengeluaran(r.id, r.tanggal);
+                  }
                   loadList();
                 } catch (e) {
                   MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
