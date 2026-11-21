@@ -20,6 +20,29 @@ const PageRekap = (() => {
     _cacheTerakhir[tab] = { userId, url, data };
   }
 
+  // FITUR "Muat Bertahap" tab Transaksi (PERMINTAAN Owner -- Rekap terasa
+  // lambat karena menunggu SATU BULAN PENUH selesai dimuat sebelum tampil
+  // apa pun, padahal layar sendiri cuma menampilkan satu tanggal per
+  // halaman): jendela ~14 hari TERAKHIR di dalam bulan yang difilter
+  // (bukan 14 hari kalender mentah -- supaya tidak pernah bocor ke bulan
+  // sebelah, backend hanya diberi tanggal_mulai/tanggal_selesai yang
+  // MENGGANTIKAN tahun/bulan sama sekali, lihat routers/rekap.py) --
+  // dipakai SEBAGAI pemuatan AWAL yang cepat, sisanya menyusul di
+  // belakang layar lewat fetch tahun+bulan penuh seperti biasa.
+  function _jendelaMuatCepat(tahun, bulan) {
+    const dua = (n) => String(n).padStart(2, "0");
+    const fmt = (d) => `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
+    const hariIniIso = MugenUI.isoHariIniWib();
+    const [thnIni, blnIni, tglIni] = hariIniIso.split("-").map(Number);
+    const akhirBulanDipilih = new Date(tahun, bulan, 0); // hari terakhir bulan ini
+    const batasAkhir = (tahun === thnIni && bulan === blnIni) ? new Date(thnIni, blnIni - 1, tglIni) : akhirBulanDipilih;
+    const awalBulanDipilih = new Date(tahun, bulan - 1, 1);
+    const batasMulaiMentah = new Date(batasAkhir);
+    batasMulaiMentah.setDate(batasMulaiMentah.getDate() - 13); // jendela 14 hari (inklusif)
+    const batasMulai = batasMulaiMentah < awalBulanDipilih ? awalBulanDipilih : batasMulaiMentah;
+    return { mulai: fmt(batasMulai), selesai: fmt(batasAkhir) };
+  }
+
   // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
   // Owner, pola sama Transaksi Hari Ini POS/Booking Mandiri): dipanggil
   // pages/input_data.js SETELAH simpan transaksi sukses. HANYA mengubah
@@ -675,6 +698,22 @@ const PageRekap = (() => {
       return { row, selBulan, selTahun, selBarber };
     }
 
+    // FITUR "Muat Bertahap" (PERMINTAAN Owner -- tab Bulanan/Pengeluaran
+    // jangan rebutan jalur ke server bersamaan dengan tab Transaksi yang
+    // masih memuat sisa satu bulan di belakang layar): dipegang di scope
+    // render() ini (bukan modul-level) supaya reset bersih setiap kali
+    // halaman Rekap dibuka ulang. renderTransaksi()::load() membuat Promise
+    // BARU di awal SETIAP pemanggilannya (termasuk jalur cache-instan) dan
+    // menyelesaikannya begitu tab itu selesai (apa pun hasilnya) --
+    // renderBulanan()/renderPengeluaran()::load() menunggu Promise ini
+    // SEBELUM memulai fetch jaringannya sendiri (bukan sebelum cek cache
+    // sendiri -- kalau tab itu sudah punya cache instan, tidak perlu
+    // menunggu apa pun). Kalau tab Transaksi belum pernah disentuh sama
+    // sekali, Promise ini tetap ter-resolve dari awal (lihat nilai awal di
+    // bawah) -- Bulanan/Pengeluaran TIDAK menunggu sesuatu yang tidak
+    // pernah akan terjadi.
+    let _transaksiLoadSelesai = Promise.resolve();
+
     async function renderBody() {
       body.innerHTML = "";
       if (tabsCtl.active === "Transaksi") await renderTransaksi();
@@ -1189,6 +1228,10 @@ const PageRekap = (() => {
           renderSlide();
       }
 
+      // Token pembanding "load() mana yang paling baru" -- lihat pemakaiannya
+      // di load() tepat di bawah (FITUR Muat Bertahap).
+      let _tokenMuatTransaksiTerakhir = null;
+
       async function load(opts = {}) {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
@@ -1218,19 +1261,61 @@ const PageRekap = (() => {
         // datanya sudah akurat). Bulanan/Pengeluaran TIDAK disentuh --
         // keduanya memang belum punya suntik, tetap fetch ulang seperti
         // biasa (benar, karena totalnya memang perlu dihitung ulang server).
+        // Promise BARU setiap load() dipanggil (termasuk jalur cache-instan
+        // di bawah) -- lihat deklarasi _transaksiLoadSelesai di render()
+        // untuk kenapa (gerbang Bulanan/Pengeluaran supaya tidak rebutan
+        // jalur server dengan tab ini). _selesai() dipanggil di SEMUA jalur
+        // keluar fungsi ini (cache-instan, sukses, maupun gagal).
+        let _selesai;
+        _transaksiLoadSelesai = new Promise((resolve) => { _selesai = resolve; });
+
         if (opts.bisaDariCache && !MugenState.halamanPerluRefresh("rekap_transaksi")) {
           const cached = _ambilDariCache("transaksi", MugenState.getUser().id, url);
           if (cached) {
             renderDenganData(cached);
+            _selesai();
             return;
           }
         }
 
-        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
-        tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
+        // FITUR "Muat Bertahap" (PERMINTAAN Owner): ambil dulu jendela
+        // pendek (~14 hari terakhir bulan ini, lihat _jendelaMuatCepat())
+        // untuk tampilan AWAL yang cepat -- TIDAK disimpan ke cache (hanya
+        // hasil SATU BULAN PENUH di bawah yang representasi "benar" utk
+        // filter ini). Token (_tokenMuat) mencegah respons yang telat
+        // (mis. user ganti filter lagi sebelum fetch ini selesai) menimpa
+        // tampilan yang sudah tidak relevan lagi.
+        const tokenMuat = (_tokenMuatTransaksiTerakhir = Symbol());
+        const jendela = _jendelaMuatCepat(Number(selTahun.value), Number(selBulan.value));
+        const qsCepat = new URLSearchParams({ tanggal_mulai: jendela.mulai, tanggal_selesai: jendela.selesai });
+        if (selBarber && selBarber.value) qsCepat.set("barber_id", selBarber.value);
+
+        let dataCepatTampil = false;
+        try {
+          const dataCepat = await MugenApi.get(`/api/rekap/transaksi?${qsCepat}`);
+          if (tokenMuat === _tokenMuatTransaksiTerakhir && !dataCepat.__offline
+              && Array.isArray(dataCepat) && dataCepat.length) {
+            renderDenganData(dataCepat);
+            dataCepatTampil = true;
+          }
+        } catch (e) {
+          // Jendela cepat gagal -- tidak fatal, fetch satu bulan penuh di
+          // bawah tetap jalan (skeleton biasa tampil kalau itu juga belum
+          // selesai apa-apa).
+        }
+        if (tokenMuat !== _tokenMuatTransaksiTerakhir) { _selesai(); return; }
+
+        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks
+        // "Memuat..." -- HANYA dipasang kalau jendela cepat di atas belum
+        // sempat menampilkan apa pun (gagal/kosong), supaya data yang
+        // sudah terlanjur tampil tidak kedip balik ke skeleton.
+        if (!dataCepatTampil) {
+          tableWrap.innerHTML = "";
+          tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
+        }
         try {
           const data = await MugenApi.get(url, { useCache: true });
+          if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
           if (!data.__offline) {
             // Cache offline (data.__offline) SENGAJA tidak disimpan ke sini --
             // bukan representasi data yang sebenarnya berhasil dimuat barusan.
@@ -1239,8 +1324,16 @@ const PageRekap = (() => {
           }
           renderDenganData(data);
         } catch (e) {
-          tableWrap.innerHTML = "";
-          tableWrap.appendChild(MugenUI.errorState(e.message));
+          if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
+          // Kalau jendela cepat SUDAH menampilkan data yang valid, biarkan
+          // apa adanya (jangan ditimpa pesan error) -- user tetap lihat
+          // data yang benar, cuma belum lengkap satu bulan penuh.
+          if (!dataCepatTampil) {
+            tableWrap.innerHTML = "";
+            tableWrap.appendChild(MugenUI.errorState(e.message));
+          }
+        } finally {
+          _selesai();
         }
       }
       // REVISI UI/UX Premium (Contextual Loading): tanpa overlay layar penuh
@@ -1311,6 +1404,14 @@ const PageRekap = (() => {
           }
         }
 
+        // FITUR "Muat Bertahap" (PERMINTAAN Owner): tunggu tab Transaksi
+        // selesai TOTAL (jendela cepat + satu bulan penuh) dulu sebelum
+        // tab ini mulai fetch sendiri -- supaya tidak rebutan jalur ke
+        // server bersamaan. Kalau tab Transaksi tidak pernah disentuh sama
+        // sekali sesi ini, Promise ini sudah ter-resolve dari awal (lihat
+        // deklarasinya di render()) -- tidak ada penundaan sama sekali.
+        await _transaksiLoadSelesai;
+
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 11, rows: 4 }));
@@ -1380,6 +1481,10 @@ const PageRekap = (() => {
             return;
           }
         }
+
+        // FITUR "Muat Bertahap" (PERMINTAAN Owner): lihat catatan panjang
+        // di load() renderBulanan() di atas -- pola SAMA PERSIS.
+        await _transaksiLoadSelesai;
 
         // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks "Memuat..."
         tableWrap.innerHTML = "";
