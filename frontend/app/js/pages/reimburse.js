@@ -107,6 +107,7 @@ const PageReimburse = (() => {
     const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso(), max: todayIso() });
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Transportasi" });
     const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputNominal, { rupiah: true });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Ajukan");
     const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -143,7 +144,7 @@ const PageReimburse = (() => {
       btnBatal.style.display = "";
       inputTanggal.value = r.tanggal;
       inputKategori.value = r.kategori;
-      inputNominal.value = MugenUI.nilaiTampilAngka(r.nominal);
+      inputNominal.value = MugenUI.formatRupiah(r.nominal);
       inputKeterangan.value = r.keterangan || "";
       formError.textContent = "";
       formCard.scrollIntoView({ behavior: "smooth" });
@@ -153,7 +154,7 @@ const PageReimburse = (() => {
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
       if (!inputKategori.value.trim()) { formError.textContent = "Kategori tidak boleh kosong."; return; }
-      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
+      const nominal = MugenUI.bacaRupiahWajib(inputNominal);
       if (nominal === null) { formError.textContent = "Nominal wajib diisi."; return; }
       if (nominal <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
       try {
@@ -310,6 +311,7 @@ const PageReimburse = (() => {
     const inputTanggal = MugenUI.el("input", { type: "date", value: todayIso(), max: todayIso() });
     const inputKategori = MugenUI.el("input", { type: "text", list: kategoriListId, placeholder: "mis. Transportasi" });
     const inputNominal = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputNominal, { rupiah: true });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Opsional" });
     const btnSubmit = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
     const btnBatal = MugenUI.el("button", { style: "display:none;" }, "Batal Edit");
@@ -353,7 +355,7 @@ const PageReimburse = (() => {
       selBarber.disabled = true;
       inputTanggal.value = r.tanggal;
       inputKategori.value = r.kategori;
-      inputNominal.value = MugenUI.nilaiTampilAngka(r.nominal);
+      inputNominal.value = MugenUI.formatRupiah(r.nominal);
       inputKeterangan.value = r.keterangan || "";
       formError.textContent = "";
       formCard.scrollIntoView({ behavior: "smooth" });
@@ -364,7 +366,7 @@ const PageReimburse = (() => {
       formError.textContent = "";
       if (!selBarber.value) { formError.textContent = "Pilih karyawan dulu."; return; }
       if (!inputKategori.value.trim()) { formError.textContent = "Kategori tidak boleh kosong."; return; }
-      const nominal = MugenUI.bacaAngkaWajib(inputNominal);
+      const nominal = MugenUI.bacaRupiahWajib(inputNominal);
       if (nominal === null) { formError.textContent = "Nominal wajib diisi."; return; }
       if (nominal <= 0) { formError.textContent = "Nominal harus lebih dari 0."; return; }
       try {

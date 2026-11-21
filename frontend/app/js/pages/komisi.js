@@ -232,6 +232,7 @@ const PageKomisi = (() => {
       MugenUI.el("option", { value: "potongan" }, "Potongan Komisi"),
     ]);
     const inputJumlah = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputJumlah, { rupiah: true });
     const inputKeterangan = MugenUI.el("input", { type: "text", placeholder: "Wajib diisi -- alasan penyesuaian" });
     const lockedNote = MugenUI.el("div", { class: "subtitle", style: "display:none;" },
       "Slip Gaji periode ini sudah Sudah Dibayar dan terkunci -- batalkan statusnya dulu di halaman Slip Gaji kalau perlu mengubah ini.");
@@ -283,7 +284,7 @@ const PageKomisi = (() => {
       selTahun.value = String(p.tahun);
       selTahun.disabled = true;
       selJenis.value = p.jenis;
-      inputJumlah.value = MugenUI.nilaiTampilAngka(p.jumlah);
+      inputJumlah.value = MugenUI.formatRupiah(p.jumlah);
       inputKeterangan.value = p.keterangan || "";
       lockedNote.style.display = "none";
       formError.textContent = "";
@@ -295,7 +296,7 @@ const PageKomisi = (() => {
     btnSubmit.addEventListener("click", async () => {
       formError.textContent = "";
       if (!selBarber.value) { formError.textContent = "Pilih barber dulu."; return; }
-      const jumlah = MugenUI.bacaAngkaWajib(inputJumlah);
+      const jumlah = MugenUI.bacaRupiahWajib(inputJumlah);
       if (jumlah === null) { formError.textContent = "Jumlah wajib diisi."; return; }
       if (jumlah <= 0) { formError.textContent = "Jumlah harus lebih dari 0."; return; }
       if (!inputKeterangan.value.trim()) { formError.textContent = "Keterangan wajib diisi."; return; }

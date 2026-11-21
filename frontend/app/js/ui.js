@@ -54,6 +54,17 @@ const MugenUI = (() => {
     return Number.isFinite(angka) ? angka : null;
   }
 
+  // Sama seperti bacaAngkaWajib() di atas (null kalau kosong, TIDAK PERNAH
+  // diam-diam jadi 0), tapi untuk field yang sudah diformat Rupiah lewat
+  // attachNumericKeypad(input, {rupiah:true}) -- nilainya string "Rp
+  // X.XXX", bukan angka murni, jadi dibaca lewat parseAngka() (lucuti
+  // "Rp"/titik pemisah ribuan) alih-alih Number() langsung.
+  function bacaRupiahWajib(inputEl) {
+    const teks = (inputEl.value || "").trim();
+    if (teks === "") return null;
+    return parseAngka(teks);
+  }
+
   function formatTanggal(iso) {
     if (!iso) return "-";
     const [y, m, d] = iso.split("-");
@@ -1120,7 +1131,7 @@ const MugenUI = (() => {
   }
 
   return {
-    formatRupiah, formatRupiahAtauStrip, parseAngka, nilaiTampilAngka, bacaAngkaWajib, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
+    formatRupiah, formatRupiahAtauStrip, parseAngka, nilaiTampilAngka, bacaAngkaWajib, bacaRupiahWajib, formatTanggal, namaBulan, namaTanggalIndo, namaFileAman, toast, el, buildTable,
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
