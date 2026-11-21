@@ -1479,7 +1479,19 @@
 // TAPI hanya di kunjungan BERIKUTNYA (baris langsung hilang dari DOM saat
 // diklik, tidak ada reload seketika) -- angka agregat (komisi/dst) butuh
 // dihitung ulang server, sama seperti precedent pos.js.
-const ASSET_VERSION = "289";
+// v245 -> v246: FITUR "Hapus Transaksi di Rekap 100% diam-diam, TIDAK
+// PERNAH fetch ulang" (PERMINTAAN Owner): SEBELUMNYA tombol "🗑 Hapus"
+// cuma membuang <tr> dari DOM (tampilan yang sedang terbuka langsung
+// benar), TANPA menyentuh cache -- kunjungan Rekap BERIKUTNYA tetap
+// fetch+skeleton sekali untuk "memperbaiki" cache yang sebenarnya sudah
+// benar di layar. Ditambahkan hapusBarisTransaksi() (buang baris dari
+// cache + bersihkan flag) -- beda dari Hapus POS (produk/stok, butuh
+// angka server), baris Transaksi di sini tidak melibatkan stok apa pun,
+// total/pengelompokan per tanggal selalu dihitung ULANG dari cache di
+// setiap render, jadi 100% aman dihitung sendiri di frontend. Diverifikasi
+// lewat Playwright: tidak ada skeleton baik saat menghapus maupun saat
+// kembali ke tab Transaksi setelahnya.
+const ASSET_VERSION = "290";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

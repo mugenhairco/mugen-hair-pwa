@@ -106,6 +106,31 @@ const PageRekap = (() => {
     return c.data;
   }
 
+  // BUGFIX "Rekap tetap fetch ulang sekali di kunjungan BERIKUTNYA setelah
+  // Hapus Transaksi" (PERMINTAAN Owner): SEBELUMNYA tombol "🗑 Hapus" cuma
+  // menghapus <tr> dari DOM (tampilan yang SEDANG terbuka langsung benar),
+  // TANPA menyentuh cache `_cacheTerakhir["transaksi"].data` maupun flag
+  // "rekap_transaksi" -- hook mutasi generik di api.js tetap menandainya
+  // kotor, jadi kunjungan Rekap BERIKUTNYA tetap fetch+skeleton sekali
+  // untuk "memperbaiki" cache yang sebenarnya sudah benar di layar (cuma
+  // belum di array-nya). BEDA dari "🗑 Hapus" POS (produk/stok, butuh
+  // angka server yang tidak bisa dihitung ulang di frontend), baris
+  // Transaksi di sini TIDAK melibatkan stok apa pun -- total/pengelompokan
+  // per tanggal SELALU dihitung ULANG dari `c.data` di setiap render
+  // (lihat tanggalUnik/baganTanggal di renderTransaksi()), jadi cukup
+  // dibuang dari array ini, 100% aman dihitung sendiri di frontend TANPA
+  // perlu fetch ulang sama sekali.
+  function hapusBarisTransaksi(id) {
+    const c = _cacheTerakhir["transaksi"];
+    if (!c || !Array.isArray(c.data)) return null;
+    if (c.userId !== MugenState.getUser().id) return null;
+    const idx = c.data.findIndex((r) => r.tipe === "transaksi" && r.id === id);
+    if (idx < 0) return null;
+    c.data.splice(idx, 1);
+    MugenState.tandaiHalamanBersih("rekap_transaksi");
+    return c.data;
+  }
+
   // BUGFIX "Rekap masih loading walau cuma input Pengeluaran" (PERMINTAAN
   // Owner): tab Pengeluaran di Rekap SEBELUMNYA memang belum punya suntik
   // (lihat catatan di suntikBarisTransaksi() di atas: "Bulanan/Pengeluaran,
@@ -900,6 +925,17 @@ const PageRekap = (() => {
                           ],
                           hapusUrl: `/api/input-data/transaksi/${r.id}`,
                           pesanSukses: "Transaksi berhasil dihapus.",
+                          // PERMINTAAN Owner: lihat catatan lengkap di
+                          // hapusBarisTransaksi() -- buang baris ini dari
+                          // cache + render ulang dari situ, TANPA fetch
+                          // ulang sama sekali (beda dari default tombolAksi()
+                          // yang cuma membuang <tr> dari DOM, cache-nya
+                          // tetap basi sampai kunjungan berikutnya).
+                          onSelesai: () => {
+                            const dataBaru = hapusBarisTransaksi(r.id);
+                            if (dataBaru) renderDenganData(dataBaru);
+                            else load();
+                          },
                         })
                       : MugenUI.el("div", { class: "actions-cell" });
                     if (bolehKoreksi) {
