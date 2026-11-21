@@ -1255,16 +1255,23 @@ const PageRekap = (() => {
           }
         }
 
-        // FITUR "Muat Satu-Satu" (PERMINTAAN Owner -- tanpa pengecekan/
-        // daftar tanggal terpisah dulu): tampilkan tanggal demi tanggal
-        // SECEPAT mungkin, mundur satu hari kalender per permintaan lewat
-        // endpoint `tanggal` satu hari yang sudah lama ada -- percobaan
-        // fetch itu SENDIRI sekaligus jadi pengecekannya (tanggal yang
-        // ternyata kosong cuma dilewati, langsung lanjut ke hari
-        // sebelumnya, TANPA query "cek dulu" terpisah). Berjalan
-        // BERSAMAAN (bukan berurutan menunggu) dengan fetch satu-bulan-
-        // penuh di bawah -- token (_tokenMuat) memastikan begitu salah
-        // satu dari KEDUANYA selesai duluan, yang satunya berhenti
+        // FITUR "Muat Satu-Satu" (PERMINTAAN Owner, DIBATASI 5 hari --
+        // versi tanpa batas sebelumnya ternyata membebani server terlalu
+        // berat: fungsi tandai_rekap_transaksi_kuota() dkk berbiaya
+        // HAMPIR SAMA besar apa pun panjang rentang tanggalnya sejak
+        // dioptimasi batch, jadi N request satu-hari costnya ~N kali
+        // request satu-bulan-penuh, bukan lebih murah): coba tampilkan
+        // MAKSIMAL 5 tanggal kalender terakhir SATU PER SATU secepat
+        // mungkin, mundur dari hari ini, lewat endpoint `tanggal` satu
+        // hari yang sudah lama ada -- percobaan fetch itu SENDIRI
+        // sekaligus jadi pengecekannya (tanggal yang ternyata kosong
+        // cuma dilewati, TETAP mengurangi jatah 5 hari, langsung lanjut
+        // ke hari sebelumnya, TANPA query "cek dulu" terpisah). Begitu
+        // jatah 5 hari habis (ada datanya atau tidak), probe INI berhenti
+        // -- sisa bulan SEPENUHNYA diserahkan ke fetch satu-bulan-penuh
+        // di bawah yang berjalan BERSAMAAN sejak awal (bukan menunggu
+        // probe ini selesai dulu). Token (_tokenMuat) memastikan begitu
+        // salah satu dari KEDUANYA selesai duluan, yang satunya berhenti
         // menimpa (full-month SELALU menang kalau sempat lebih dulu,
         // karena itu satu-satunya yang representasi "benar" utk disimpan
         // ke cache -- probe satu-satu TIDAK pernah disimpan ke cache).
@@ -1278,6 +1285,7 @@ const PageRekap = (() => {
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
 
         (async () => {
+          const JATAH_HARI = 5;
           const dua = (n) => String(n).padStart(2, "0");
           const fmt = (d) => `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
           const hariIniIso = MugenUI.isoHariIniWib();
@@ -1287,7 +1295,8 @@ const PageRekap = (() => {
             ? new Date(thnIni, blnIni - 1, tglIni)
             : new Date(tahunF, bulanF, 0); // akhir bulan yang difilter, kalau bukan bulan berjalan
 
-          while (cursor >= awalBulanDipilih) {
+          let sisaJatah = JATAH_HARI;
+          while (sisaJatah > 0 && cursor >= awalBulanDipilih) {
             if (tokenMuat !== _tokenMuatTransaksiTerakhir) return; // full-month sudah menang duluan
             const qsHari = new URLSearchParams({ tanggal: fmt(cursor) });
             if (barberIdF) qsHari.set("barber_id", barberIdF);
@@ -1300,8 +1309,9 @@ const PageRekap = (() => {
                 dataCepatTampil = true;
               }
             } catch (e) {
-              // Satu hari gagal -- lewati saja, lanjut ke hari sebelumnya.
+              // Satu hari gagal -- lewati saja, tetap hitung jatah, lanjut ke hari sebelumnya.
             }
+            sisaJatah -= 1;
             cursor.setDate(cursor.getDate() - 1);
           }
         })();

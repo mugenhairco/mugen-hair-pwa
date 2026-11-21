@@ -1517,7 +1517,15 @@
 // BUGFIX -- parameter `tanggal` (satu hari) sekarang ikut membatasi baris
 // Reimburse/Kasbon/Gaji Non-Barber juga (sebelumnya unbounded/seluruh
 // riwayat kalau dipakai tanpa tahun/bulan).
-const ASSET_VERSION = "294";
+// v294 -> v295: FITUR Muat Satu-Satu DIBATASI 5 hari (PERMINTAAN Owner --
+// versi tanpa batas ternyata membebani server 20-30x lipat per buka Rekap,
+// karena biaya tandai_rekap_transaksi_kuota() dkk hampir sama besar apa
+// pun panjang rentang tanggalnya sejak dioptimasi batch -- N request
+// satu-hari costnya ~N kali request satu-bulan-penuh). Probe satu-satu
+// sekarang berhenti setelah MAKSIMAL 5 tanggal kalender (ada datanya atau
+// tidak), sisanya diserahkan sepenuhnya ke fetch satu-bulan-penuh yang
+// tetap berjalan bersamaan sejak awal.
+const ASSET_VERSION = "295";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
