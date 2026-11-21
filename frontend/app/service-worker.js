@@ -1508,7 +1508,30 @@
 // Transaksi selesai total sebelum mulai fetch sendiri, supaya tidak
 // rebutan jalur ke server. Backend: GET /api/rekap/transaksi sekarang
 // menerima tanggal_mulai/tanggal_selesai (opsional).
-const ASSET_VERSION = "293";
+// v293 -> v294: FITUR Muat Satu-Satu (PERMINTAAN Owner, revisi dari jendela
+// 14 hari v293): tab Transaksi sekarang mencoba tanggal demi tanggal
+// SECEPAT mungkin (mundur dari hari ini, satu hari kalender per permintaan
+// lewat endpoint tanggal tunggal yang sudah lama ada -- TANPA pengecekan/
+// daftar tanggal terpisah dulu, tanggal kosong cuma dilewati), berjalan
+// bersamaan dengan fetch satu-bulan-penuh di belakang layar. Backend:
+// BUGFIX -- parameter `tanggal` (satu hari) sekarang ikut membatasi baris
+// Reimburse/Kasbon/Gaji Non-Barber juga (sebelumnya unbounded/seluruh
+// riwayat kalau dipakai tanpa tahun/bulan).
+// v294 -> v295: FITUR Muat Satu-Satu DIBATASI 5 hari (PERMINTAAN Owner --
+// versi tanpa batas ternyata membebani server 20-30x lipat per buka Rekap,
+// karena biaya tandai_rekap_transaksi_kuota() dkk hampir sama besar apa
+// pun panjang rentang tanggalnya sejak dioptimasi batch -- N request
+// satu-hari costnya ~N kali request satu-bulan-penuh). Probe satu-satu
+// sekarang berhenti setelah MAKSIMAL 5 tanggal kalender (ada datanya atau
+// tidak), sisanya diserahkan sepenuhnya ke fetch satu-bulan-penuh yang
+// tetap berjalan bersamaan sejak awal.
+// v295 -> v296: BUGFIX ketahanan -- titik awal cursor Muat Satu-Satu
+// sekarang SELALU diturunkan dari MugenUI.isoHariIniWib() (zona waktu
+// toko/WIB) dibandingkan sebagai Date OBJECT penuh, bukan membandingkan
+// komponen tahun/bulan new Date() browser-local terhadap komponen WIB
+// secara terpisah -- itu bisa meleset ke tanggal BESOK kalau zona
+// waktu/jam perangkat browser pernah beda dari WIB.
+const ASSET_VERSION = "296";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
