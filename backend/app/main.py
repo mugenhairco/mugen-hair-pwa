@@ -522,17 +522,22 @@ async def on_startup():
         migrasi_email_auth()  # Email/Verifikasi Email/Lupa Kata Sandi: kolom users.email/email_verified/blokir_sampai_verifikasi + tabel email_verification_tokens/password_reset_tokens (idempotent)
         migrasi_booking_slug()  # FITUR URL Booking Publik per Tenant: kolom tenants.booking_slug + backfill tenant lama (idempotent, WAJIB setelah migrasi_tenant())
 
-    # BUGFIX (audit: booking lunas tidak pernah masuk Rekap setelah deploy):
-    # SEBELUMNYA dipanggil DI DALAM blok `else:` SQLite di atas -- di jalur
-    # Postgres (db_compat.IS_POSTGRES, produksi SEKARANG), baris itu TIDAK
-    # PERNAH tereksekusi sama sekali (if/else di atas membagi dua jalur
-    # eksklusif), jadi backfill booking lama tidak pernah jalan di produksi.
-    # Fungsi ini portable KEDUA jalur DB (hanya SELECT/INSERT/DELETE biasa,
-    # TANPA PRAGMA/ALTER TABLE khusus SQLite) -- dipindah ke sini (SETELAH
-    # if/else, SELALU jalan) sama seperti seed_konfigurasi_awal_agustus_2026()/
-    # migrasi_konsolidasi_kuota_gabungan() di bawah.
-    booking_db.migrasi_sinkronkan_booking_lama_ke_rekap()  # FITUR Sinkronisasi Booking -> Rekap: backfill booking lunas dari SEBELUM fitur ini ada (idempotent, hanya proses pasangan barber+tanggal yang belum tersinkron)
-
+    # REVISI (PERMINTAAN Owner, bug ditemukan produksi): booking_db.
+    # migrasi_sinkronkan_booking_lama_ke_rekap() yang SEBELUMNYA dipanggil di
+    # sini DIHAPUS TOTAL -- backfill-nya cuma mengecek "barber+tanggal belum
+    # punya baris transaksi sumber='booking'", TIDAK tahu kalau booking lama
+    # itu kemungkinan BESAR sudah tercatat manual lewat Input Data Barber
+    # (mode lama, sudah dihapus dari frontend -- baris transaksi sumber=NULL
+    # miliknya TETAP ada) SEBELUM fitur sinkronisasi real-time ini dipasang.
+    # Akibatnya setiap server restart, booking lama yang sudah lunas dobel
+    # dibuatkan baris transaksi BARU (sumber='booking') di ATAS baris manual
+    # yang sudah ada -- komisi barber jadi terhitung dua kali. 30 baris dobel
+    # (6 barber, 1-20 November 2026, Rp 9.920.000 nilai service) sudah
+    # dibersihkan manual dari database produksi. Sinkronisasi booking->Rekap
+    # untuk booking BARU tetap jalan normal lewat jalur real-time (lihat
+    # _rebuild_transaksi_booking_barber_hari() dipanggil dari
+    # verifikasi_pembayaran()/batalkan_booking()/hapus_booking()/dst) --
+    # HANYA backfill retroaktif (yang punya bug ini) yang dihentikan.
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     _bootstrap_superadmin_pertama()

@@ -1171,33 +1171,6 @@ def _rebuild_transaksi_booking_barber_hari(tenant_id: int, barber_id: int, tangg
         )
 
 
-def migrasi_sinkronkan_booking_lama_ke_rekap() -> None:
-    """FITUR Sinkronisasi Booking -> Rekap: backfill SEKALI untuk booking
-    yang SUDAH terverifikasi+aktif dari SEBELUM
-    _rebuild_transaksi_booking_barber_hari() mulai dipanggil di setiap
-    titik terkait (buat_booking/verifikasi_pembayaran/batalkan_booking/
-    hapus_booking/reschedule_booking) -- dipanggil dari main.py
-    on_startup() seperti migrasi_* lain, WAJIB setelah migrasi_tenant()
-    (butuh kolom bookings.tenant_id).
-
-    Idempotent & murah setelah backfill pertama: HANYA memproses pasangan
-    (barber_id, tanggal) yang BELUM punya satu pun baris `transaksi`
-    sumber='booking' -- pasangan yang sudah pernah tersinkron (oleh
-    migrasi ini sendiri ATAU oleh hook real-time sejak fitur ini ada)
-    dilewati, jadi startup berikutnya tinggal query kosong/cepat."""
-    with get_conn() as conn:
-        pasangan = [dict(r) for r in conn.execute(
-            """SELECT DISTINCT bk.tenant_id, bk.barber_id, bk.tanggal FROM bookings bk
-                   WHERE bk.status_pembayaran = 'terverifikasi' AND bk.status_booking = 'aktif'
-                   AND NOT EXISTS (
-                       SELECT 1 FROM transaksi t WHERE t.barber_id = bk.barber_id
-                           AND t.tanggal = bk.tanggal AND t.sumber = 'booking'
-                   )"""
-        ).fetchall()]
-    for p in pasangan:
-        _rebuild_transaksi_booking_barber_hari(p["tenant_id"], p["barber_id"], p["tanggal"])
-
-
 def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list,
                   customer_nama: str, customer_whatsapp: str, metode_pembayaran: str,
                   catatan: str = None, tenant_id: int = None, sumber: str = "publik") -> dict:
