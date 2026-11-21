@@ -634,13 +634,18 @@ const PageRekap = (() => {
       // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner) -- izin SAMA PERSIS
       // tombol Koreksi (bolehKoreksiTransaksi, "izin_input_data_kelola"),
       // supaya Owner bisa kasih izin ini ke Kasir juga lewat Pengaturan
-      // Izin tanpa perlu izin baru. Diletakkan di BAWAH tabel (pojok kiri,
-      // sejajar kolom "Tanggal" paling kiri tabel), bentuknya link teks
-      // polos (gaya "Lupa Kata Sandi?" di Login) -- BUKAN tombol penuh,
+      // Izin tanpa perlu izin baru. Bentuknya link teks polos (gaya "Lupa
+      // Kata Sandi?" di Login, TANPA simbol "+") -- BUKAN tombol penuh,
       // supaya tidak terlalu menonjol dibanding tombol-tombol utama
-      // (Cetak PDF, dll) di atasnya.
+      // (Cetak PDF, dll) di atasnya. Elemennya dibuat SEKALI di sini
+      // (bukan di renderDenganData() yang bisa dipanggil berkali-kali
+      // tiap ganti filter/halaman, supaya listener klik tidak terpasang
+      // dobel) -- lihat renderDenganData() di bawah untuk tempat node ini
+      // SEBENARNYA dipasang (sejajar baris pagination "‹ 1 ... 20 21 ›",
+      // PERMINTAAN Owner, bukan di bawah sendiri terpisah).
+      let linkTambah = null;
       if (bolehKoreksiTransaksi) {
-        const linkTambah = MugenUI.el("button", { type: "button", class: "text-link-aksi", style: "display:block;margin-top:10px;" }, "+ Tambah Transaksi");
+        linkTambah = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Tambah Transaksi");
         linkTambah.addEventListener("click", () => bukaModalTambah({
           karyawanPromise,
           // PERMINTAAN Owner: tabel yang SEDANG terbuka ini ikut diperbarui
@@ -654,7 +659,6 @@ const PageRekap = (() => {
             else load();
           },
         }));
-        body.appendChild(linkTambah);
       }
 
       function renderDenganData(data) {
@@ -934,6 +938,7 @@ const PageRekap = (() => {
 
             if (tanggalUnik.length === 0) {
               slideTableBox.appendChild(MugenUI.buildTable(columns, []));
+              if (linkTambah) navRow.appendChild(linkTambah);
               return;
             }
 
@@ -973,7 +978,16 @@ const PageRekap = (() => {
             pager.appendChild(btnBerikutnya);
 
             navRow.appendChild(labelBox);
-            navRow.appendChild(pager);
+            // PERMINTAAN Owner ("tombol Tambah Transaksi harusnya sejajar
+            // dengan pagination, bukan di bawah sendiri"): dibungkus SATU
+            // div bersama pager supaya keduanya SELALU berada di baris
+            // yang sama (satu flex item dari sudut pandang navRow, jadi
+            // tidak ikut membungkus terpisah walau labelBox di atas
+            // ikut turun baris di layar sempit).
+            const barisBawah = MugenUI.el("div", { class: "rekap-slide-nav-bawah" });
+            if (linkTambah) barisBawah.appendChild(linkTambah);
+            barisBawah.appendChild(pager);
+            navRow.appendChild(barisBawah);
 
             slideTableBox.appendChild(MugenUI.buildTable(columns, baganTanggal.get(tanggalAktif)));
           }

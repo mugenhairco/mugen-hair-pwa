@@ -1376,7 +1376,11 @@
 // "+ Tambah Transaksi" sekarang juga ikut diam-diam (tabel yang sedang
 // terbuka langsung dirender ulang dari cache, tanpa fetch/skeleton),
 // bukan cuma untuk pembukaan Rekap berikutnya.
-const ASSET_VERSION = "279";
+// v235 -> v236: Perbaikan tampilan link "Tambah Transaksi" di Rekap
+// Transaksi (PERMINTAAN Owner): dipindah supaya SEJAJAR satu baris
+// dengan pagination tanggal ("‹ 1 ... 20 21 ›"), bukan di bawahnya
+// sendiri terpisah -- dan simbol "+" di depan labelnya dihapus.
+const ASSET_VERSION = "280";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
