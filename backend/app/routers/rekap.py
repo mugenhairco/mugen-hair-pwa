@@ -49,33 +49,49 @@ def _cek_akses_rekap(user: dict, tab_key: str):
 
 @router.get("/transaksi")
 def rekap_transaksi(tahun: int = None, bulan: int = None, barber_id: int = None,
-                     tanggal: str = None, user: dict = Depends(get_current_user)):
+                     tanggal: str = None, tanggal_mulai: str = None, tanggal_selesai: str = None,
+                     user: dict = Depends(get_current_user)):
+    """`tanggal_mulai`/`tanggal_selesai` (opsional, BARU): FITUR "muat
+    bertahap" (PERMINTAAN Owner -- Rekap terasa lambat karena menunggu
+    SATU BULAN PENUH selesai dimuat sebelum tampil apa pun, padahal layar
+    cuma menampilkan beberapa tanggal per halaman) -- frontend memanggil
+    endpoint ini DUA KALI: sekali dengan rentang pendek (beberapa hari
+    terakhir) untuk tampilan AWAL yang cepat, sekali lagi dengan tahun+bulan
+    PENUH seperti biasa untuk melengkapi sisanya di belakang layar. Kedua
+    parameter ini MENGGANTIKAN tahun/bulan kalau diisi (pola identik
+    tanggal_mulai/tanggal_selesai yang sudah lama dipakai fitur PDF, lihat
+    laporan_pdf.py) -- SEMUA fungsi di bawah ini sudah mendukungnya."""
     _cek_akses_rekap(user, "izin_rekap_transaksi")
     if user["role"] == "barber":
         barber_id = user.get("barber_id")
     data = db.get_rekap_transaksi_list(tahun=tahun, bulan=bulan, barber_id=barber_id, tanggal=tanggal,
+                                        tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
                                         tenant_id=user["tenant_id"])
     # Tahap 14: baris Reimburse yang sudah DISETUJUI ikut digabung di sini
     # (bukan di database.py, circular import) -- tanggal barisnya tanggal
     # DISETUJUI, bukan tanggal klaim diajukan.
     data = reimburse_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                   tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
                                                    tenant_id=user["tenant_id"])
     # Tahap 17: baris Kasbon yang sudah DIBAYAR (manual maupun potong_gaji)
     # ikut digabung juga -- BEDA dari Reimburse, pendapatan barisnya
     # NEGATIF (mengurangi Total, lihat kasbon_db.py).
     data = kasbon_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
                                                 tenant_id=user["tenant_id"])
     # Dukungan Barber + Non-Barber: baris Gaji Non-Barber (Input Data
     # Non-Barber) ikut digabung juga -- karyawan non-barber TIDAK PERNAH
     # punya baris "transaksi" (lihat data_non_barber_db.py), jadi tanpa ini
     # filter "Semua Karyawan"/pilih karyawan non-barber selalu kosong.
     data = data_non_barber_db.gabung_ke_rekap_transaksi(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
+                                                         tanggal_mulai=tanggal_mulai, tanggal_selesai=tanggal_selesai,
                                                          tenant_id=user["tenant_id"])
     # PERMINTAAN OWNER: tanda visual beda ("Libur ⚠️"/"Libur 🔴") untuk
     # tanggal yang Tandai Libur-nya sebenarnya "nebeng" kuota Cuti/Izin atau
     # kuota keduanya sudah habis -- lihat kuota_libur_db.py.
     data = kuota_libur_db.tandai_rekap_transaksi_kuota(data, tahun=tahun, bulan=bulan, barber_id=barber_id,
-                                                         tanggal=tanggal, tenant_id=user["tenant_id"])
+                                                         tanggal=tanggal, tanggal_mulai=tanggal_mulai,
+                                                         tanggal_selesai=tanggal_selesai, tenant_id=user["tenant_id"])
     return data
 
 
