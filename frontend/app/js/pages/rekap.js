@@ -20,29 +20,6 @@ const PageRekap = (() => {
     _cacheTerakhir[tab] = { userId, url, data };
   }
 
-  // FITUR "Muat Bertahap" tab Transaksi (PERMINTAAN Owner -- Rekap terasa
-  // lambat karena menunggu SATU BULAN PENUH selesai dimuat sebelum tampil
-  // apa pun, padahal layar sendiri cuma menampilkan satu tanggal per
-  // halaman): jendela ~14 hari TERAKHIR di dalam bulan yang difilter
-  // (bukan 14 hari kalender mentah -- supaya tidak pernah bocor ke bulan
-  // sebelah, backend hanya diberi tanggal_mulai/tanggal_selesai yang
-  // MENGGANTIKAN tahun/bulan sama sekali, lihat routers/rekap.py) --
-  // dipakai SEBAGAI pemuatan AWAL yang cepat, sisanya menyusul di
-  // belakang layar lewat fetch tahun+bulan penuh seperti biasa.
-  function _jendelaMuatCepat(tahun, bulan) {
-    const dua = (n) => String(n).padStart(2, "0");
-    const fmt = (d) => `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
-    const hariIniIso = MugenUI.isoHariIniWib();
-    const [thnIni, blnIni, tglIni] = hariIniIso.split("-").map(Number);
-    const akhirBulanDipilih = new Date(tahun, bulan, 0); // hari terakhir bulan ini
-    const batasAkhir = (tahun === thnIni && bulan === blnIni) ? new Date(thnIni, blnIni - 1, tglIni) : akhirBulanDipilih;
-    const awalBulanDipilih = new Date(tahun, bulan - 1, 1);
-    const batasMulaiMentah = new Date(batasAkhir);
-    batasMulaiMentah.setDate(batasMulaiMentah.getDate() - 13); // jendela 14 hari (inklusif)
-    const batasMulai = batasMulaiMentah < awalBulanDipilih ? awalBulanDipilih : batasMulaiMentah;
-    return { mulai: fmt(batasMulai), selesai: fmt(batasAkhir) };
-  }
-
   // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
   // Owner, pola sama Transaksi Hari Ini POS/Booking Mandiri): dipanggil
   // pages/input_data.js SETELAH simpan transaksi sukses. HANYA mengubah
@@ -1278,44 +1255,61 @@ const PageRekap = (() => {
           }
         }
 
-        // FITUR "Muat Bertahap" (PERMINTAAN Owner): ambil dulu jendela
-        // pendek (~14 hari terakhir bulan ini, lihat _jendelaMuatCepat())
-        // untuk tampilan AWAL yang cepat -- TIDAK disimpan ke cache (hanya
-        // hasil SATU BULAN PENUH di bawah yang representasi "benar" utk
-        // filter ini). Token (_tokenMuat) mencegah respons yang telat
-        // (mis. user ganti filter lagi sebelum fetch ini selesai) menimpa
-        // tampilan yang sudah tidak relevan lagi.
+        // FITUR "Muat Satu-Satu" (PERMINTAAN Owner -- tanpa pengecekan/
+        // daftar tanggal terpisah dulu): tampilkan tanggal demi tanggal
+        // SECEPAT mungkin, mundur satu hari kalender per permintaan lewat
+        // endpoint `tanggal` satu hari yang sudah lama ada -- percobaan
+        // fetch itu SENDIRI sekaligus jadi pengecekannya (tanggal yang
+        // ternyata kosong cuma dilewati, langsung lanjut ke hari
+        // sebelumnya, TANPA query "cek dulu" terpisah). Berjalan
+        // BERSAMAAN (bukan berurutan menunggu) dengan fetch satu-bulan-
+        // penuh di bawah -- token (_tokenMuat) memastikan begitu salah
+        // satu dari KEDUANYA selesai duluan, yang satunya berhenti
+        // menimpa (full-month SELALU menang kalau sempat lebih dulu,
+        // karena itu satu-satunya yang representasi "benar" utk disimpan
+        // ke cache -- probe satu-satu TIDAK pernah disimpan ke cache).
         const tokenMuat = (_tokenMuatTransaksiTerakhir = Symbol());
-        const jendela = _jendelaMuatCepat(Number(selTahun.value), Number(selBulan.value));
-        const qsCepat = new URLSearchParams({ tanggal_mulai: jendela.mulai, tanggal_selesai: jendela.selesai });
-        if (selBarber && selBarber.value) qsCepat.set("barber_id", selBarber.value);
-
+        const tahunF = Number(selTahun.value), bulanF = Number(selBulan.value);
+        const barberIdF = selBarber && selBarber.value ? selBarber.value : null;
+        let dataAkumulasi = [];
         let dataCepatTampil = false;
-        try {
-          const dataCepat = await MugenApi.get(`/api/rekap/transaksi?${qsCepat}`);
-          if (tokenMuat === _tokenMuatTransaksiTerakhir && !dataCepat.__offline
-              && Array.isArray(dataCepat) && dataCepat.length) {
-            renderDenganData(dataCepat);
-            dataCepatTampil = true;
-          }
-        } catch (e) {
-          // Jendela cepat gagal -- tidak fatal, fetch satu bulan penuh di
-          // bawah tetap jalan (skeleton biasa tampil kalau itu juga belum
-          // selesai apa-apa).
-        }
-        if (tokenMuat !== _tokenMuatTransaksiTerakhir) { _selesai(); return; }
 
-        // REVISI UI/UX Premium: skeleton (bentuk tabel) menggantikan teks
-        // "Memuat..." -- HANYA dipasang kalau jendela cepat di atas belum
-        // sempat menampilkan apa pun (gagal/kosong), supaya data yang
-        // sudah terlanjur tampil tidak kedip balik ke skeleton.
-        if (!dataCepatTampil) {
-          tableWrap.innerHTML = "";
-          tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
-        }
+        tableWrap.innerHTML = "";
+        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
+
+        (async () => {
+          const dua = (n) => String(n).padStart(2, "0");
+          const fmt = (d) => `${d.getFullYear()}-${dua(d.getMonth() + 1)}-${dua(d.getDate())}`;
+          const hariIniIso = MugenUI.isoHariIniWib();
+          const [thnIni, blnIni, tglIni] = hariIniIso.split("-").map(Number);
+          const awalBulanDipilih = new Date(tahunF, bulanF - 1, 1);
+          const cursor = (tahunF === thnIni && bulanF === blnIni)
+            ? new Date(thnIni, blnIni - 1, tglIni)
+            : new Date(tahunF, bulanF, 0); // akhir bulan yang difilter, kalau bukan bulan berjalan
+
+          while (cursor >= awalBulanDipilih) {
+            if (tokenMuat !== _tokenMuatTransaksiTerakhir) return; // full-month sudah menang duluan
+            const qsHari = new URLSearchParams({ tanggal: fmt(cursor) });
+            if (barberIdF) qsHari.set("barber_id", barberIdF);
+            try {
+              const dataHari = await MugenApi.get(`/api/rekap/transaksi?${qsHari}`);
+              if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
+              if (!dataHari.__offline && Array.isArray(dataHari) && dataHari.length) {
+                dataAkumulasi = dataAkumulasi.concat(dataHari);
+                renderDenganData(dataAkumulasi);
+                dataCepatTampil = true;
+              }
+            } catch (e) {
+              // Satu hari gagal -- lewati saja, lanjut ke hari sebelumnya.
+            }
+            cursor.setDate(cursor.getDate() - 1);
+          }
+        })();
+
         try {
           const data = await MugenApi.get(url, { useCache: true });
           if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
+          _tokenMuatTransaksiTerakhir = Symbol(); // hentikan probe satu-satu di atas kalau masih berjalan
           if (!data.__offline) {
             // Cache offline (data.__offline) SENGAJA tidak disimpan ke sini --
             // bukan representasi data yang sebenarnya berhasil dimuat barusan.
@@ -1325,7 +1319,7 @@ const PageRekap = (() => {
           renderDenganData(data);
         } catch (e) {
           if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
-          // Kalau jendela cepat SUDAH menampilkan data yang valid, biarkan
+          // Kalau probe satu-satu SUDAH menampilkan data yang valid, biarkan
           // apa adanya (jangan ditimpa pesan error) -- user tetap lihat
           // data yang benar, cuma belum lengkap satu bulan penuh.
           if (!dataCepatTampil) {

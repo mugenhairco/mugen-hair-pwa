@@ -1508,7 +1508,16 @@
 // Transaksi selesai total sebelum mulai fetch sendiri, supaya tidak
 // rebutan jalur ke server. Backend: GET /api/rekap/transaksi sekarang
 // menerima tanggal_mulai/tanggal_selesai (opsional).
-const ASSET_VERSION = "293";
+// v293 -> v294: FITUR Muat Satu-Satu (PERMINTAAN Owner, revisi dari jendela
+// 14 hari v293): tab Transaksi sekarang mencoba tanggal demi tanggal
+// SECEPAT mungkin (mundur dari hari ini, satu hari kalender per permintaan
+// lewat endpoint tanggal tunggal yang sudah lama ada -- TANPA pengecekan/
+// daftar tanggal terpisah dulu, tanggal kosong cuma dilewati), berjalan
+// bersamaan dengan fetch satu-bulan-penuh di belakang layar. Backend:
+// BUGFIX -- parameter `tanggal` (satu hari) sekarang ikut membatasi baris
+// Reimburse/Kasbon/Gaji Non-Barber juga (sebelumnya unbounded/seluruh
+// riwayat kalau dipakai tanpa tahun/bulan).
+const ASSET_VERSION = "294";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
