@@ -1454,7 +1454,17 @@
 // baris mana untuk tanggal mana tanpa buka "Lihat Detail" satu per satu.
 // Ditambahkan kolom Tanggal (data `r.tanggal` sudah ada, tinggal
 // ditampilkan).
-const ASSET_VERSION = "287";
+// v243 -> v244: PERMINTAAN Owner -- (1) BUGFIX tab Transaksi Rekap default
+// ke tanggal TERAKHIR yang ada data, bukan hari ini -- dulu sama saja
+// (transaksi tidak pernah bertanggal masa depan), sekarang booking advance
+// (dibayar hari ini untuk layanan nanti) bisa bikin baris bertanggal depan,
+// jadi dicari eksplisit index hari ini (WIB); kalau hari ini belum ada
+// transaksi, mundur ke tanggal terakhir SEBELUM hari ini (bukan tanggal
+// depan manapun). (2) BUGFIX pagination tanggal Rekap: dekat ujung
+// (halaman 1-2 atau mendekati akhir) jendela nomor menciut jadi 2-3 angka
+// -- sekarang jendela 3-nomor-tengah digeser utuh saat mentok, total nomor
+// yang tampil (1 awal + 3 tengah + 1 akhir) SELALU 5 di posisi mana pun.
+const ASSET_VERSION = "288";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
