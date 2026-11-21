@@ -246,14 +246,20 @@ const PageRekap = (() => {
   // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner): untuk transaksi walk-in
   // yang beneran kelewat tidak diinput sama sekali di hari itu (BEDA dari
   // Koreksi di atas yang mengedit baris yang SUDAH ADA) -- bentuknya
-  // SENGAJA dibuat mirip bukaModalKoreksi() di atas (field yang sama),
-  // cuma TANPA fetch detail transaksi dulu (belum ada apa-apa) dan field
-  // kosong semua di awal. Dikirim dengan `susulan: true` supaya backend
-  // (routers/input_data.py::tambah_transaksi()) tidak menolak walau
-  // tanggalnya sudah terpakai mode POS/Manual Customer hari itu (lihat
-  // catatan lengkap di endpoint itu) -- baris hasilnya ditandai
-  // sumber="manual_susulan", tetap boleh di-Koreksi/Hapus seperti baris
-  // manual biasa (TIDAK masuk SUMBER_TERKELOLA_OTOMATIS di bawah).
+  // SENGAJA dibuat mirip bukaModalKoreksi() di atas (field yang sama).
+  // Dikirim dengan `susulan: true` supaya backend (routers/input_data.py::
+  // tambah_transaksi()) tidak menolak walau tanggalnya sudah terpakai
+  // mode POS/Manual Customer hari itu -- TAPI (REVISI PERMINTAAN Owner)
+  // submit ini MENGGANTI TOTAL seluruh baris transaksi barber+tanggal
+  // itu (apa pun sumbernya), BUKAN menambah di samping yang sudah ada --
+  // lihat db.ganti_transaksi_barber_hari(). Supaya admin tidak tidak
+  // sengaja menghapus data yang sudah benar, begitu Barber & Tanggal
+  // SAMA-SAMA terisi, form ini PRE-FILL otomatis dari GET
+  // /transaksi-gabungan (gabungan SEMUA baris yang sudah ada untuk
+  // kombinasi itu) -- admin tinggal MENAMBAHKAN yang kelewat di form
+  // yang SAMA, baris hasilnya ditandai sumber="manual_susulan", tetap
+  // boleh di-Koreksi/Hapus seperti baris manual biasa (TIDAK masuk
+  // SUMBER_TERKELOLA_OTOMATIS di bawah).
   async function bukaModalTambah({ karyawanPromise, onSelesai }) {
     const overlay = MugenUI.el("div", { class: "modal-overlay" });
     const box = MugenUI.el("div", { class: "modal-box" });
@@ -282,7 +288,7 @@ const PageRekap = (() => {
 
     body.innerHTML = "";
     body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:-4px;" },
-      "Untuk transaksi walk-in yang kelewat tidak diinput sama sekali di hari itu. Pembayarannya TIDAK diproses ulang di sini -- cukup catat Service & Tips yang sebenarnya diterima."));
+      "Untuk transaksi walk-in yang kelewat tidak diinput sama sekali di hari itu. Simpan akan MENGGANTI TOTAL seluruh transaksi barber ini pada tanggal yang dipilih (bukan menambah di samping yang sudah ada) -- data yang sudah tercatat otomatis dimuat di bawah begitu Barber & Tanggal dipilih."));
     const inputTanggal = MugenUI.el("input", { type: "date", value: MugenUI.isoHariIniWib() });
     const selBarber = MugenUI.el("select", {}, MugenUI.el("option", { value: "" }, "-- Pilih Barber --"));
     for (const b of barbersOnly) selBarber.appendChild(MugenUI.el("option", { value: String(b.id) }, b.nama));
@@ -297,6 +303,7 @@ const PageRekap = (() => {
     });
     const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
     const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. \"Susulan lupa input\"" });
+    const statusPrefill = MugenUI.el("div", { class: "subtitle", style: "margin:4px 0 0;" });
     const formError = MugenUI.el("div", { class: "login-error" });
     const btnSimpan = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Simpan");
     const btnBatal = MugenUI.el("button", { type: "button" }, "Batal");
@@ -305,6 +312,7 @@ const PageRekap = (() => {
     body.appendChild(inputTanggal);
     body.appendChild(MugenUI.el("label", {}, "Barber"));
     body.appendChild(MugenUI.selectIcon(MugenIcons.karyawan, selBarber));
+    body.appendChild(statusPrefill);
     body.appendChild(MugenUI.el("label", {}, "Service & Jumlah"));
     for (const row of serviceRows) body.appendChild(row);
     body.appendChild(MugenUI.el("label", {}, "Tips (Rp)"));
@@ -313,6 +321,43 @@ const PageRekap = (() => {
     body.appendChild(inputCatatan);
     body.appendChild(formError);
     box.appendChild(MugenUI.el("div", { class: "modal-actions" }, [btnBatal, btnSimpan]));
+
+    // FITUR Pre-fill (PERMINTAAN Owner, "biar lebih aman" -- supaya admin
+    // tidak tidak sengaja menghapus data yang sudah benar, karena Simpan
+    // MENGGANTI TOTAL): begitu Barber & Tanggal SAMA-SAMA terisi, ambil
+    // gabungan baris yang sudah ada untuk kombinasi itu lewat
+    // GET /transaksi-gabungan, isi ulang form ini dengan hasilnya.
+    // `prefillToken` menghindari race kalau barber/tanggal diganti lagi
+    // SEBELUM fetch sebelumnya selesai (hasil fetch basi diabaikan).
+    let prefillToken = 0;
+    async function muatPrefill() {
+      for (const inp of Object.values(itemInputs)) inp.value = "";
+      inputTips.value = "";
+      inputCatatan.value = "";
+      statusPrefill.textContent = "";
+      if (!selBarber.value || !inputTanggal.value) return;
+      const token = ++prefillToken;
+      statusPrefill.textContent = "Memuat data yang sudah ada...";
+      try {
+        const qs = new URLSearchParams({ barber_id: selBarber.value, tanggal: inputTanggal.value });
+        const hasil = await MugenApi.get(`/api/input-data/transaksi-gabungan?${qs}`);
+        if (token !== prefillToken) return;
+        for (const it of hasil.items) {
+          if (itemInputs[it.service_id]) itemInputs[it.service_id].value = MugenUI.nilaiTampilAngka(it.jumlah);
+        }
+        if (hasil.tips) inputTips.value = MugenUI.nilaiTampilAngka(hasil.tips);
+        if (hasil.catatan) inputCatatan.value = hasil.catatan;
+        statusPrefill.textContent = hasil.ada_data
+          ? "Data yang sudah tercatat untuk Barber & Tanggal ini sudah dimuat di atas -- tambahkan yang kelewat, lalu Simpan."
+          : "Belum ada transaksi tercatat untuk Barber & Tanggal ini.";
+      } catch (e) {
+        if (token !== prefillToken) return;
+        statusPrefill.textContent = "";
+        formError.textContent = "Gagal memuat data yang sudah ada: " + (e.detail && e.detail.detail ? e.detail.detail : e.message);
+      }
+    }
+    selBarber.addEventListener("change", muatPrefill);
+    inputTanggal.addEventListener("change", muatPrefill);
 
     btnBatal.addEventListener("click", tutup);
     btnSimpan.addEventListener("click", async () => {
@@ -327,7 +372,7 @@ const PageRekap = (() => {
           tanggal: inputTanggal.value, barber_id: Number(selBarber.value), items,
           tips: Number(inputTips.value) || 0, catatan: inputCatatan.value || null, susulan: true,
         }));
-        MugenUI.toast("Transaksi susulan ditambahkan.", "success");
+        MugenUI.toast("Transaksi barber ini pada tanggal tersebut diperbarui.", "success");
         tutup();
         if (onSelesai) onSelesai(hasil);
       } catch (e) {
@@ -535,17 +580,21 @@ const PageRekap = (() => {
 
       const tableWrap = MugenUI.el("div");
       body.appendChild(row);
+      body.appendChild(pdfRow);
+      body.appendChild(tableWrap);
       // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner) -- izin SAMA PERSIS
       // tombol Koreksi (bolehKoreksiTransaksi, "izin_input_data_kelola"),
       // supaya Owner bisa kasih izin ini ke Kasir juga lewat Pengaturan
-      // Izin tanpa perlu izin baru.
+      // Izin tanpa perlu izin baru. Diletakkan di BAWAH tabel (pojok kiri,
+      // sejajar kolom "Tanggal" paling kiri tabel), bentuknya link teks
+      // polos (gaya "Lupa Kata Sandi?" di Login) -- BUKAN tombol penuh,
+      // supaya tidak terlalu menonjol dibanding tombol-tombol utama
+      // (Cetak PDF, dll) di atasnya.
       if (bolehKoreksiTransaksi) {
-        const btnTambah = MugenUI.el("button", { type: "button", class: "btn-primary", style: "margin-bottom:14px;" }, "+ Tambah Transaksi");
-        btnTambah.addEventListener("click", () => bukaModalTambah({ karyawanPromise, onSelesai: () => load() }));
-        body.appendChild(btnTambah);
+        const linkTambah = MugenUI.el("button", { type: "button", class: "text-link-aksi", style: "display:block;margin-top:10px;" }, "+ Tambah Transaksi");
+        linkTambah.addEventListener("click", () => bukaModalTambah({ karyawanPromise, onSelesai: () => load() }));
+        body.appendChild(linkTambah);
       }
-      body.appendChild(pdfRow);
-      body.appendChild(tableWrap);
 
       function renderDenganData(data) {
         tableWrap.innerHTML = "";

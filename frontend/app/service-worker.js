@@ -1345,7 +1345,24 @@
 // seperti baris manual biasa. Izinnya SAMA PERSIS tombol Koreksi
 // (izin_input_data_kelola) -- Owner bisa kasih izin ini ke Kasir juga
 // lewat Pengaturan Izin, tidak perlu izin baru.
-const ASSET_VERSION = "277";
+// v233 -> v234: REVISI "+ Tambah Transaksi" (Susulan) di Rekap +
+// bentuk tombol Aksi (PERMINTAAN Owner):
+// 1. Link "+ Tambah Transaksi" dipindah ke BAWAH tabel Transaksi (pojok
+//    kiri, sejajar kolom "Tanggal"), bentuknya diubah dari tombol penuh
+//    jadi link teks polos (gaya "Lupa Kata Sandi?" di Login, class CSS
+//    baru .text-link-aksi).
+// 2. REVISI PERMINTAAN Owner: submit form ini sekarang MENGGANTI TOTAL
+//    seluruh baris transaksi barber+tanggal yang dipilih (apa pun
+//    sumbernya -- pos/booking/manual_customer/lama), BUKAN menambah di
+//    samping yang sudah ada -- lihat database.py::ganti_transaksi_barber_
+//    hari() & endpoint baru GET /api/input-data/transaksi-gabungan.
+//    Supaya admin tidak tidak sengaja menghapus data yang sudah benar,
+//    form ini PRE-FILL otomatis begitu Barber & Tanggal dipilih (gabungan
+//    SEMUA baris yang sudah ada untuk kombinasi itu).
+// 3. Tombol "Hapus" di POS > Transaksi Hari Ini juga diubah jadi link
+//    teks polos yang sama (class .text-link-aksi), supaya tinggi
+//    barisnya sama dengan baris Booking Online (yang Aksi-nya cuma "-").
+const ASSET_VERSION = "278";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
