@@ -1426,7 +1426,19 @@
 // Number()/bacaAngkaWajib() langsung (string berformat "Rp X.XXX" bakal
 // dibaca NaN->0 kalau tetap pakai itu). Penyesuaian Komisi di Slip Gaji
 // DIKECUALIKAN (boleh negatif, keypad custom tidak punya tombol minus).
-const ASSET_VERSION = "284";
+// v240 -> v241: BUGFIX "Rekap masih loading ~5 detik walau cuma input
+// Pengeluaran" (PERMINTAAN Owner): tab Pengeluaran (dan tidak sengaja ikut
+// tab Bulanan, satu flag "rekap") di menu Rekap SEBELUMNYA belum punya
+// suntik diam-diam (beda dari tab Transaksi yang sudah dari fitur POS/
+// Booking) -- setiap mutasi (termasuk Tambah/Koreksi/Hapus Pengeluaran)
+// menandai flag "rekap" kotor lewat hook generik di api.js, jadi tab ini
+// SELALU fetch ulang + skeleton begitu Rekap dibuka lagi. Ditambahkan
+// PageRekap.suntikBarisPengeluaran()/hapusBarisPengeluaran() (pola sama
+// suntikBarisTransaksi() punya POS) -- pages/pengeluaran.js memanggilnya
+// setelah Tambah/Koreksi/Hapus sukses, upsert/hapus langsung ke cache tab
+// Pengeluaran lalu membersihkan flag "rekap" lagi, supaya Rekap tidak
+// fetch ulang kalau datanya sudah disuntik sendiri.
+const ASSET_VERSION = "285";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

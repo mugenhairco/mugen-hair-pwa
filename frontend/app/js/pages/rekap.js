@@ -106,6 +106,63 @@ const PageRekap = (() => {
     return c.data;
   }
 
+  // BUGFIX "Rekap masih loading walau cuma input Pengeluaran" (PERMINTAAN
+  // Owner): tab Pengeluaran di Rekap SEBELUMNYA memang belum punya suntik
+  // (lihat catatan di suntikBarisTransaksi() di atas: "Bulanan/Pengeluaran,
+  // keduanya belum punya suntik jadi memang harus tetap fetch ulang") --
+  // api.js menandai flag "rekap" KOTOR untuk SETIAP mutasi di aplikasi
+  // (termasuk Tambah/Koreksi Pengeluaran yang BARUSAN memicu ini), jadi tab
+  // ini SELALU fetch ulang (skeleton ~beberapa detik) begitu Rekap dibuka
+  // lagi. Dipanggil pages/pengeluaran.js SETELAH simpan (Tambah/Koreksi)
+  // sukses dengan baris HASIL simpan (response POST/PUT, sudah termasuk
+  // nama_barber) -- upsert by id ke cache tab "Pengeluaran" (kalau PERNAH
+  // dimuat sesi ini & filter tahun/bulan yang di-cache cocok dengan baris
+  // ini), lalu bersihkan flag "rekap" supaya tab ini TIDAK fetch ulang.
+  // AMAN membersihkan "rekap" (bukan cuma bagian "pengeluaran") karena tab
+  // Bulanan tidak memuat data Pengeluaran sama sekali (murni rekap per-
+  // barber: komisi/tips/uang harian/dst, lihat renderBulanan() di bawah).
+  function suntikBarisPengeluaran(p) {
+    const c = _cacheTerakhir["pengeluaran"];
+    if (!c || !p || !c.data || !Array.isArray(c.data.daftar)) return;
+    if (c.userId !== MugenState.getUser().id) return;
+    const params = new URLSearchParams((c.url.split("?")[1] || ""));
+    const tahunCache = Number(params.get("tahun"));
+    const bulanCache = Number(params.get("bulan"));
+    const [tahunBaris, bulanBaris] = String(p.tanggal || "").split("-").map(Number);
+    if (tahunBaris !== tahunCache || bulanBaris !== bulanCache) return; // filter bulan/tahun tidak cocok (mis. Koreksi pindah bulan) -- biarkan flag tetap kotor, fetch ulang biasa yang akan memperbaikinya
+    const idx = c.data.daftar.findIndex((r) => r.id === p.id);
+    if (idx >= 0) {
+      c.data.total += p.jumlah - c.data.daftar[idx].jumlah;
+      c.data.daftar[idx] = p;
+    } else {
+      c.data.daftar.push(p);
+      c.data.total += p.jumlah;
+    }
+    // Urutan SAMA PERSIS get_pengeluaran_list() (pengeluaran_db.py): tanggal DESC, id DESC.
+    c.data.daftar.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : b.id - a.id));
+    MugenState.tandaiHalamanBersih("rekap");
+  }
+
+  // Pasangan suntikBarisPengeluaran() di atas untuk Hapus -- dipanggil
+  // pages/pengeluaran.js SETELAH hapus sukses dengan id & tanggal baris
+  // yang baru dihapus (tanggal dipakai utk cocokkan filter bulan/tahun
+  // cache, SAMA seperti suntikBarisPengeluaran()).
+  function hapusBarisPengeluaran(id, tanggal) {
+    const c = _cacheTerakhir["pengeluaran"];
+    if (!c || !c.data || !Array.isArray(c.data.daftar)) return;
+    if (c.userId !== MugenState.getUser().id) return;
+    const params = new URLSearchParams((c.url.split("?")[1] || ""));
+    const tahunCache = Number(params.get("tahun"));
+    const bulanCache = Number(params.get("bulan"));
+    const [tahunBaris, bulanBaris] = String(tanggal || "").split("-").map(Number);
+    if (tahunBaris !== tahunCache || bulanBaris !== bulanCache) return;
+    const idx = c.data.daftar.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    c.data.total -= c.data.daftar[idx].jumlah;
+    c.data.daftar.splice(idx, 1);
+    MugenState.tandaiHalamanBersih("rekap");
+  }
+
   // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
   // mengunduh -- PDF dibuat lalu ditampilkan dulu lewat MugenPdfPreview
   // (Preview PDF di dalam aplikasi, dengan Zoom/Nomor Halaman/Download
@@ -1244,7 +1301,7 @@ const PageRekap = (() => {
     renderBody();
   }
 
-  return { render, suntikBarisTransaksi };
+  return { render, suntikBarisTransaksi, suntikBarisPengeluaran, hapusBarisPengeluaran };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js
