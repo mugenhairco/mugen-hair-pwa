@@ -10,15 +10,14 @@ Satu kali scan/pembayaran bisa mencakup Service + Produk sekaligus.
 INTEGRASI KE REKAP (PERMINTAAN EKSPLISIT Owner -- "saya tidak ingin 1 barber
 banyak baris dalam satu hari, saya ingin seperti menu Rekap sekarang, 1 baris
 untuk 1 barber"): begitu SATU transaksi POS (bagian Service-nya) lunas,
-_rebuild_transaksi_barber_hari() di bawah menghapus baris `transaksi` lama
-(kalau ada) untuk barber+tanggal itu lalu membangunnya ULANG dari SELURUH
-transaksi POS lunas hari itu (qty service dijumlahkan) -- hasilnya SELALU 1
-baris transaksi per barber per hari di Rekap, persis seperti Input Barber/
-Manual Customer, walau banyak customer walk-in berbeda dibayar sepanjang
-hari (real-time, TANPA tombol "Tutup & Simpan" terpisah). Pola rebuild ini
-REUSE TOTAL manual_customer_db._buat_transaksi_gabungan()/
-_sinkronkan_transaksi_hari() (DITULIS ULANG di sini karena sumber datanya
-beda tabel, BUKAN logika baru).
+rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari() menghapus
+baris `transaksi` lama (kalau ada) untuk barber+tanggal itu lalu
+membangunnya ULANG dari SELURUH transaksi POS lunas HARI ITU DIGABUNG
+dengan kontribusi Booking (Online/Mandiri) yang sama (qty service
+dijumlahkan lintas KEDUA sumber, PERMINTAAN Owner lanjutan -- lihat
+rekap_gabungan_db.py) -- hasilnya SELALU 1 baris transaksi per barber per
+hari di Rekap, walau banyak customer walk-in berbeda dibayar sepanjang
+hari (real-time, TANPA tombol "Tutup & Simpan" terpisah).
 
 Mode "satu tanggal satu mode" (manual_customer_db.MODE_VALID) diperluas
 dengan "pos" -- SATU tanggal tidak bisa pakai Input Barber/Manual Customer
@@ -47,9 +46,10 @@ from zoneinfo import ZoneInfo
 import gateway_client_base
 import manual_customer_db
 import payment_provider_client
+import rekap_gabungan_db
 import snap_payment_db
 from database import (get_barber, get_conn, get_produk, get_service, get_setting, get_stok_produk,
-                       hapus_mutasi_produk, hapus_transaksi, jual_produk, set_setting, tambah_transaksi)
+                       hapus_mutasi_produk, jual_produk, set_setting)
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -482,13 +482,13 @@ def _tandai_lunas(pos_id: int) -> dict:
 def _proses_setelah_lunas(pos: dict) -> None:
     """Pecah SATU pembayaran yang baru lunas jadi dua cascade terpisah
     (PERMINTAAN Owner -- "satu kali scan untuk Service + Produk, tapi
-    rekapannya nanti terpisah"): Service -> rebuild baris Rekap 1x/barber/
-    hari (lihat _rebuild_transaksi_barber_hari()), Produk -> reuse TOTAL
-    database.jual_produk() per item (TIDAK diagregasi, lihat docstring
-    modul)."""
+    rekapannya nanti terpisah"): Service -> rebuild baris Rekap gabungan
+    POS+Booking 1x/barber/hari (lihat rekap_gabungan_db.py), Produk ->
+    reuse TOTAL database.jual_produk() per item (TIDAK diagregasi, lihat
+    docstring modul)."""
     for b in pos["daftar_barber"]:
         if b["barber_id"] is not None:
-            _rebuild_transaksi_barber_hari(pos["tenant_id"], b["barber_id"], pos["tanggal"])
+            rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari(pos["tenant_id"], b["barber_id"], pos["tanggal"])
     for item in pos["daftar_produk"]:
         try:
             mutasi_id = jual_produk(
@@ -514,56 +514,11 @@ def _proses_setelah_lunas(pos: dict) -> None:
             )
 
 
-def _transaksi_lama_pos(barber_id: int, tanggal: str):
-    """Cari baris `transaksi` (Rekap) hasil rebuild POS SEBELUMNYA untuk
-    barber+tanggal ini -- dicari langsung lewat barber_id+tanggal+sumber='pos'
-    (BUKAN lagi lewat pos_transaksi.transaksi_id, kolom header itu sudah
-    tidak punya arti tunggal sejak satu pos_transaksi bisa mencakup
-    BEBERAPA barber sekaligus -- lihat FITUR Keranjang Multi-Barber)."""
-    with get_conn() as conn:
-        return [r["id"] for r in conn.execute(
-            "SELECT id FROM transaksi WHERE barber_id = ? AND tanggal = ? AND sumber = 'pos'",
-            (barber_id, tanggal),
-        ).fetchall()]
-
-
-def _rebuild_transaksi_barber_hari(tenant_id: int, barber_id: int, tanggal: str) -> None:
-    """REUSE pola manual_customer_db._buat_transaksi_gabungan()/
-    _sinkronkan_transaksi_hari() (ditulis ulang di sini karena sumber
-    datanya tabel pos_transaksi, bukan manual_customer_transaksi) --
-    hapus baris `transaksi` lama (kalau ada) untuk barber+tanggal ini yang
-    berasal dari POS, lalu bangun ULANG dari SELURUH transaksi POS lunas
-    hari itu (qty service dijumlahkan lintas customer, tips dijumlahkan
-    lintas customer) -- hasilnya SELALU 1 baris transaksi per barber per
-    hari, PERMINTAAN Owner eksplisit. Dipanggil per-barber (BUKAN per
-    pos_transaksi) -- satu pos_transaksi lintas-barber memicu ini
-    SEKALI untuk SETIAP barber yang terlibat (lihat _proses_setelah_lunas())."""
-    with get_conn() as conn:
-        service_rows = [dict(r) for r in conn.execute(
-            "SELECT pts.service_id FROM pos_transaksi_service pts "
-            "JOIN pos_transaksi pt ON pt.id = pts.pos_transaksi_id "
-            "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pt.status = 'lunas' AND pts.barber_id = ?",
-            (tenant_id, tanggal, barber_id),
-        ).fetchall()]
-        total_tips = conn.execute(
-            "SELECT COALESCE(SUM(ptbt.tips), 0) AS total FROM pos_transaksi_barber_tips ptbt "
-            "JOIN pos_transaksi pt ON pt.id = ptbt.pos_transaksi_id "
-            "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pt.status = 'lunas' AND ptbt.barber_id = ?",
-            (tenant_id, tanggal, barber_id),
-        ).fetchone()["total"]
-
-    agregat = {}
-    for r in service_rows:
-        agregat[r["service_id"]] = agregat.get(r["service_id"], 0) + 1
-
-    for tid in _transaksi_lama_pos(barber_id, tanggal):
-        hapus_transaksi(tid)
-
-    if not agregat:
-        return
-
-    items = [{"service_id": sid, "jumlah": qty} for sid, qty in agregat.items()]
-    tambah_transaksi(tanggal=tanggal, barber_id=barber_id, items=items, tips=total_tips, sumber="pos")
+# PERMINTAAN Owner (gabung POS+Booking jadi 1 baris Rekap per barber/hari):
+# bekas _transaksi_lama_pos()/_rebuild_transaksi_barber_hari() di sini
+# sudah DIHAPUS -- gantikan dengan rekap_gabungan_db.py yang membaca KEDUA
+# sumber (POS + Booking) sekaligus setiap kali salah satunya berubah,
+# lihat modul itu untuk detail lengkap.
 
 
 def get_rekap_transaksi_ids(pos_id: int) -> list:
@@ -577,8 +532,10 @@ def get_rekap_transaksi_ids(pos_id: int) -> list:
     sama, supaya frontend bisa suntik baris itu ke Rekap (kalau sedang
     terbuka sesi ini) TANPA fetch ulang seluruh daftar/skeleton loading.
     Read-only murni -- TIDAK membangun ulang apa pun (itu sudah terjadi di
-    _proses_setelah_lunas()/_rebuild_transaksi_barber_hari()), aman
-    dipanggil kapan saja SETELAH status 'lunas'."""
+    _proses_setelah_lunas()/rekap_gabungan_db.py), aman dipanggil kapan
+    saja SETELAH status 'lunas'. `sumber` dicari sebagai
+    rekap_gabungan_db.SUMBER_POS_BOOKING (PERMINTAAN Owner: baris Rekap
+    POS+Booking sekarang digabung jadi satu, lihat modul itu)."""
     pos = get_pos_transaksi(pos_id)
     if pos is None:
         return []
@@ -588,24 +545,29 @@ def get_rekap_transaksi_ids(pos_id: int) -> list:
     with get_conn() as conn:
         placeholder = ", ".join("?" for _ in barber_ids)
         rows = conn.execute(
-            f"SELECT id FROM transaksi WHERE tanggal = ? AND sumber = 'pos' AND barber_id IN ({placeholder})",
-            [pos["tanggal"], *barber_ids],
+            f"SELECT id FROM transaksi WHERE tanggal = ? AND sumber = ? AND barber_id IN ({placeholder})",
+            [pos["tanggal"], rekap_gabungan_db.SUMBER_POS_BOOKING, *barber_ids],
         ).fetchall()
     return [r["id"] for r in rows]
 
 
 def reset_hari_pos(tenant_id: int, tanggal: str) -> None:
     """Dipanggil manual_customer_db.reset_hari() (tombol "Reset Semua
-    Transaksi Hari Ini") kalau mode tanggal ini == "pos" -- hapus baris
-    `transaksi` hasil rebuild (kalau ada, untuk SETIAP barber yang pernah
-    muncul di pos_transaksi_service tanggal ini) + SELURUH baris
-    pos_transaksi tanggal ini (cascade otomatis menghapus service/produk/
-    tips anaknya). Mutasi stok produk yang SUDAH tercatat (database.
-    produk_mutasi) SENGAJA TIDAK ikut dibalik di sini -- TIDAK pernah jadi
-    bagian mode Input Data (lihat docstring modul), Admin membalikkannya
-    sendiri lewat Produk > Riwayat Mutasi kalau memang perlu (tombol Hapus
-    Mutasi yang sudah ada, konsisten dengan cara produk dikelola di seluruh
-    aplikasi ini)."""
+    Transaksi Hari Ini") kalau mode tanggal ini == "pos" -- hapus SELURUH
+    baris pos_transaksi tanggal ini (cascade otomatis menghapus service/
+    produk/tips anaknya), LALU bangun ULANG baris Rekap gabungan POS+
+    Booking untuk SETIAP barber yang pernah muncul di pos_transaksi_service
+    tanggal ini (BUKAN hapus manual -- PERMINTAAN Owner: kontribusi Booking
+    yang sah untuk barber+tanggal yang SAMA tidak boleh ikut hilang cuma
+    gara-gara Admin mereset data POS saja; urutan sengaja dibalik supaya
+    pos_transaksi SUDAH kosong saat rebuild membaca ulang, hasilnya
+    otomatis menyusut ke kontribusi Booking saja kalau ada, atau hilang
+    total kalau Booking juga kosong). Mutasi stok produk yang SUDAH
+    tercatat (database.produk_mutasi) SENGAJA TIDAK ikut dibalik di sini --
+    TIDAK pernah jadi bagian mode Input Data (lihat docstring modul),
+    Admin membalikkannya sendiri lewat Produk > Riwayat Mutasi kalau
+    memang perlu (tombol Hapus Mutasi yang sudah ada, konsisten dengan
+    cara produk dikelola di seluruh aplikasi ini)."""
     with get_conn() as conn:
         barber_ids = [r["barber_id"] for r in conn.execute(
             "SELECT DISTINCT pts.barber_id FROM pos_transaksi_service pts "
@@ -613,11 +575,9 @@ def reset_hari_pos(tenant_id: int, tanggal: str) -> None:
             "WHERE pt.tenant_id = ? AND pt.tanggal = ? AND pts.barber_id IS NOT NULL",
             (tenant_id, tanggal),
         ).fetchall()]
-    for bid in barber_ids:
-        for tid in _transaksi_lama_pos(bid, tanggal):
-            hapus_transaksi(tid)
-    with get_conn() as conn:
         conn.execute("DELETE FROM pos_transaksi WHERE tenant_id = ? AND tanggal = ?", (tenant_id, tanggal))
+    for bid in barber_ids:
+        rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari(tenant_id, bid, tanggal)
 
 
 def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
@@ -634,8 +594,9 @@ def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
       SEBELUM pos_transaksi dihapus supaya penolakan ini tidak meninggalkan
       state setengah jalan (pos_transaksi UTUH kalau ValueError dilempar).
     - Service: Rekap barber+hari di-hitung ULANG untuk SETIAP barber yang
-      terlibat transaksi ini (lihat _rebuild_transaksi_barber_hari()),
-      TANPA transaksi yang baru dihapus."""
+      terlibat transaksi ini (lihat rekap_gabungan_db.py), TANPA transaksi
+      yang baru dihapus (kontribusi Booking di barber+tanggal yang sama,
+      kalau ada, tetap ikut terbaca ulang -- tidak ikut terhapus)."""
     pos = get_pos_transaksi(pos_id)
     if pos is None or pos["tenant_id"] != tenant_id:
         raise ValueError("Transaksi Point of Sale tidak ditemukan.")
@@ -651,7 +612,7 @@ def hapus_transaksi_lunas(pos_id: int, tenant_id: int) -> None:
 
     for b in pos["daftar_barber"]:
         if b["barber_id"] is not None:
-            _rebuild_transaksi_barber_hari(tenant_id, b["barber_id"], pos["tanggal"])
+            rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari(tenant_id, b["barber_id"], pos["tanggal"])
 
 
 # ---------------------------------------------------------------------------

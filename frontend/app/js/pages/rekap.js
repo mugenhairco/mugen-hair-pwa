@@ -47,8 +47,9 @@ const PageRekap = (() => {
     // tampil di cache juga lewat jalur ini (id-nya sama, nilainya beda),
     // baris lama WAJIB diganti, bukan dibiarkan basi sampai refresh manual.
     //
-    // Baris sumber="pos"/"booking"/"manual_customer" dibangun ULANG (hapus
-    // baris lama + tambah baris baru) setiap kali sinkronisasi jalan --
+    // Baris sumber="pos_booking" (gabungan POS+Booking, PERMINTAAN Owner)/
+    // "manual_customer" dibangun ULANG (hapus baris lama + tambah baris
+    // baru) setiap kali sinkronisasi jalan --
     // id-nya TIDAK stabil antar rebuild, beda dengan Koreksi manual (PUT
     // in-place, id tetap). Untuk sumber otomatis itu, cocokkan upsert lewat
     // (barber_id, tanggal, sumber) -- SELALU maksimal 1 baris per kombinasi
@@ -902,17 +903,19 @@ const PageRekap = (() => {
                   if (r.tipe === "transaksi") {
                     // PENGHAPUSAN Input Data Barber: tombol "✏ Koreksi" HANYA
                     // untuk baris yang TIDAK dikelola jalur lain -- baris
-                    // sumber="pos"/"manual_customer" dibangun ULANG otomatis
-                    // oleh jalur masing-masing (reset_hari_pos()/
-                    // _sinkronkan_transaksi_hari()/_rebuild_transaksi_
-                    // booking_barber_hari()) begitu ada perubahan di sana,
-                    // mengedit baris gabungannya langsung di sini berisiko
-                    // tertimpa/hilang pada sinkronisasi berikutnya -- koreksi
-                    // yang benar untuk baris itu lewat Point of Sale/Manual
+                    // sumber="pos_booking" (gabungan POS+Booking Online/
+                    // Mandiri, PERMINTAAN Owner)/"manual_customer" dibangun
+                    // ULANG otomatis oleh jalur masing-masing
+                    // (reset_hari_pos()/_sinkronkan_transaksi_hari()/
+                    // rekap_gabungan_db.rebuild_transaksi_pos_booking_
+                    // barber_hari()) begitu ada perubahan di sana, mengedit
+                    // baris gabungannya langsung di sini berisiko tertimpa/
+                    // hilang pada sinkronisasi berikutnya -- koreksi yang
+                    // benar untuk baris itu lewat Point of Sale/Manual
                     // Customer/Booking sendiri. Baris lama (sumber kosong) &
                     // hasil WA Bot (sumber="wa_bot") TETAP boleh dikoreksi di
                     // sini, sama seperti sebelumnya.
-                    const SUMBER_TERKELOLA_OTOMATIS = ["pos", "manual_customer", "booking"];
+                    const SUMBER_TERKELOLA_OTOMATIS = ["pos_booking", "manual_customer"];
                     const bolehKoreksi = bolehKoreksiTransaksi && !SUMBER_TERKELOLA_OTOMATIS.includes(r.sumber);
                     if (!bolehHapusTransaksi && !bolehKoreksi) return "-";
                     const wrap = bolehHapusTransaksi

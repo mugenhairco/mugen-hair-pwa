@@ -865,10 +865,9 @@ def ganti_transaksi_barber_hari(barber_id: int, tanggal: str, items: list, tips:
     tanggal ini (apa pun sumbernya -- pos/booking/manual_customer/lama),
     lalu membuat SATU baris baru pengganti -- hasilnya SELALU maksimal
     satu baris per barber per tanggal untuk kombinasi ini, sama seperti
-    invarian _rebuild_transaksi_barber_hari() (pos_db.py)/
-    _rebuild_transaksi_booking_barber_hari() (booking_db.py), bedanya di
-    sini dipicu input manual admin, bukan dihitung ulang dari tabel
-    sumber lain."""
+    invarian rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari()
+    (dipakai pos_db.py & booking_db.py), bedanya di sini dipicu input
+    manual admin, bukan dihitung ulang dari tabel sumber lain."""
     valid_items = _bersihkan_items(items)
     if not valid_items:
         raise ValueError("Minimal satu service harus diisi jumlahnya (lebih dari 0).")

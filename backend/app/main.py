@@ -535,9 +535,11 @@ async def on_startup():
     # (6 barber, 1-20 November 2026, Rp 9.920.000 nilai service) sudah
     # dibersihkan manual dari database produksi. Sinkronisasi booking->Rekap
     # untuk booking BARU tetap jalan normal lewat jalur real-time (lihat
-    # _rebuild_transaksi_booking_barber_hari() dipanggil dari
-    # verifikasi_pembayaran()/batalkan_booking()/hapus_booking()/dst) --
-    # HANYA backfill retroaktif (yang punya bug ini) yang dihentikan.
+    # rekap_gabungan_db.rebuild_transaksi_pos_booking_barber_hari() dipanggil
+    # dari verifikasi_pembayaran()/batalkan_booking()/hapus_booking()/dst --
+    # PERMINTAAN Owner lanjutan: sejak itu digabung dengan kontribusi POS
+    # jadi 1 baris, bukan lagi sumber='booking' sendiri) -- HANYA backfill
+    # retroaktif (yang punya bug ini) yang dihentikan.
     _bootstrap_admin_pertama()
     _reset_admin_darurat()
     _bootstrap_superadmin_pertama()

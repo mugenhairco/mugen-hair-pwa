@@ -1491,7 +1491,12 @@
 // setiap render, jadi 100% aman dihitung sendiri di frontend. Diverifikasi
 // lewat Playwright: tidak ada skeleton baik saat menghapus maupun saat
 // kembali ke tab Transaksi setelahnya.
-const ASSET_VERSION = "290";
+// v290 -> v291: Rekap Transaksi -- baris POS + Booking (Online/Mandiri)
+// digabung jadi SATU baris per barber/hari (sumber='pos_booking', bukan
+// lagi 'pos'+'booking' terpisah), PERMINTAAN Owner. Tombol "Koreksi" ikut
+// disesuaikan (SUMBER_TERKELOLA_OTOMATIS) supaya baris gabungan ini tetap
+// tersembunyi dari Koreksi manual, sama seperti sebelumnya.
+const ASSET_VERSION = "291";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
