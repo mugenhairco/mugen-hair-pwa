@@ -114,6 +114,16 @@
   height: 0;
 }
 
+/* BUGFIX "halaman/form bisa goyang-goyang kiri-kanan di HP" (PERMINTAAN
+   Owner): pengaman GLOBAL -- apa pun elemen di halaman mana pun yang
+   (sengaja atau tidak, lihat BUGFIX min-width di .row > * & modal service
+   list, pages/rekap.js) jadi lebih lebar dari layar TIDAK PERNAH membuat
+   seluruh dokumen bisa digeser horizontal (yang terasa seperti "goyang"
+   saat scroll vertikal, karena gesture sentuh ikut menangkap arah
+   horizontal yang sebenarnya tidak perlu ada). width:100% mencegah html
+   sendiri melebar mengikuti child yang overflow. */
+html, body { overflow-x: hidden; width: 100%; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -1156,7 +1166,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   max-width: 360px;
   width: 100%;
   max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
+  /* BUGFIX "form goyang-goyang/overflow horizontal di HP" -- pengaman
+     TAMBAHAN (lihat juga overflow-x:hidden global di html,body di atas
+     berkas ini): kalau ADA isi modal yang tidak sengaja lebih lebar dari
+     360px (mis. BUGFIX min-width di .row > * yang baru diperbaiki di
+     pages/rekap.js), overflow-nya terpotong RAPI di sini dulu (modal
+     tetap terlihat stabil/centered), bukan ikut melebarkan seluruh
+     dokumen. 100dvh (viewport dinamis, mengikuti address bar browser HP
+     yang bisa sembul/sembunyi) menggantikan 100vh yang sering kelebihan
+     tinggi di Safari/Chrome mobile -- baris 100vh TETAP ada duluan
+     sebagai fallback browser lama yang belum kenal dvh. */
+  overflow-x: hidden;
 }
 .modal-box h3 { margin: 0 0 10px; font-size: 17px; }
 .modal-box p { margin: 0 0 8px; color: var(--text-dim); font-size: 14px; line-height: 1.5; }

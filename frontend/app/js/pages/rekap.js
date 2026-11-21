@@ -238,9 +238,17 @@ const PageRekap = (() => {
         value: itemsAwal[s.id] ? MugenUI.nilaiTampilAngka(itemsAwal[s.id]) : "",
       });
       itemInputs[s.id] = inp;
+      // BUGFIX "form goyang-goyang/overflow horizontal di HP" (PERMINTAAN
+      // Owner): `.row > * { min-width: 140px }` (style.css, dipakai filter
+      // bar lain) ikut membebani KEDUA div ini (flex:2 & flex:0 0 100px
+      // TIDAK cukup, min-width menang di atas flex-basis) -- baris 2
+      // kolom (nama service panjang + input qty sempit) jadi butuh ruang
+      // lebih lebar dari layar HP sempit. min-width:0 eksplisit di sini
+      // (inline style menang atas class) mengembalikan lebar sesuai
+      // flex-basis yang dimaksud.
       return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
-        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
-        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
+        MugenUI.el("div", { style: "flex:2;min-width:0;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
+        MugenUI.el("div", { style: "flex:0 0 90px;min-width:0;" }, inp),
       ]);
     });
     const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(transaksi.tips) });
@@ -336,9 +344,11 @@ const PageRekap = (() => {
     const serviceRows = services.map((s) => {
       const inp = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", style: "max-width:90px;" });
       itemInputs[s.id] = inp;
+      // BUGFIX "form goyang-goyang/overflow horizontal di HP" -- lihat
+      // catatan lengkap di bukaModalKoreksi() (pola sama persis di sini).
       return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
-        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
-        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
+        MugenUI.el("div", { style: "flex:2;min-width:0;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
+        MugenUI.el("div", { style: "flex:0 0 90px;min-width:0;" }, inp),
       ]);
     });
     const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
