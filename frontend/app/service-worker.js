@@ -1376,7 +1376,25 @@
 // "+ Tambah Transaksi" sekarang juga ikut diam-diam (tabel yang sedang
 // terbuka langsung dirender ulang dari cache, tanpa fetch/skeleton),
 // bukan cuma untuk pembukaan Rekap berikutnya.
-const ASSET_VERSION = "279";
+// v235 -> v236: Perbaikan tampilan link "Tambah Transaksi" di Rekap
+// Transaksi (PERMINTAAN Owner): dipindah supaya SEJAJAR satu baris
+// dengan pagination tanggal ("‹ 1 ... 20 21 ›"), bukan di bawahnya
+// sendiri terpisah -- dan simbol "+" di depan labelnya dihapus.
+// v236 -> v237: FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner):
+// booking yang dibayar di muka hari ini untuk layanan di tanggal lain
+// sebelumnya bikin "Rincian Pembayaran Hari Ini"/Total Keseluruhan di POS
+// tidak sinkron dengan uang fisik/settlement QRIS-Gateway yang BENERAN
+// diterima hari itu (uang masuk hari ini malah baru dihitung di hari
+// layanannya). Sekarang Total Keseluruhan dihitung dari tanggal
+// PEMBAYARAN diterima (bukan tanggal layanan), dengan baris rincian
+// warna merah ("+"/"-") yang menjelaskan selisihnya secara transparan --
+// baris customer yang sudah bayar di tanggal lain juga ditandai font
+// merah di tabel Service. SATU paket dengan ini: metode Cash (Bayar di
+// Toko) untuk booking TIDAK LAGI otomatis "lunas" begitu dibuat --
+// Kasir/Admin wajib klik "Sudah Bayar" begitu customer BENAR-BENAR
+// membayar fisik (customer bisa saja batal/tidak datang, uang Cash
+// belum tentu diterima hanya karena tanggal appointment-nya tiba).
+const ASSET_VERSION = "281";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

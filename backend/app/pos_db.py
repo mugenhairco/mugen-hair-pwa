@@ -663,7 +663,25 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     terverifikasi (PERMINTAAN Owner), field ringkas saja (nama barber/
     service/produk, nominal, tips, jam) TANPA komisi (PERMINTAAN Owner
     -- tips SEKARANG ditampilkan terpisah per baris, lihat "tips" di
-    bawah; komisi tetap tidak pernah ditampilkan di sini)."""
+    bawah; komisi tetap tidak pernah ditampilkan di sini).
+
+    FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): booking
+    yang dibayar di muka untuk layanan di tanggal LAIN (customer booking
+    hari ini untuk besok, bayar QRIS/Gateway hari ini juga) sebelumnya
+    bikin "Rincian Pembayaran Hari Ini"/Total Keseluruhan tidak sinkron
+    dengan uang fisik/settlement yang BENERAN diterima hari itu (uang
+    yang sudah masuk hari ini malah baru dihitung besok, saat layanannya
+    terjadi). Sekarang "rincian_metode"/"total_keseluruhan" dihitung dari
+    tanggal PEMBAYARAN diterima (bukan tanggal layanan), dan "penyesuaian"
+    (list baris +/- , dipakai pages/pos.js menampilkan rincian warna
+    merah) menjelaskan selisihnya secara transparan:
+    - "tambah": booking yang pembayarannya diterima tanggal INI untuk
+      layanan di tanggal LAIN -- uangnya MASUK ke total hari ini.
+    - "kurang": booking untuk LAYANAN tanggal ini yang pembayarannya
+      SUDAH diterima di tanggal LAIN -- informasional saja (uangnya
+      TIDAK ikut dihitung di total hari ini, sudah benar dari sono lewat
+      query tanggal pembayaran di atas, baris "kurang" ini cuma
+      menjelaskan KENAPA baris Service-nya tidak nongol di uang)."""
     import booking_db  # import lokal: hindari import siklik (booking_db tidak perlu tahu pos_db sama sekali)
 
     service_items = []
@@ -714,11 +732,24 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
                 "jumlah": p["jumlah"], "nominal": p["harga_satuan"] * p["jumlah"],
             })
 
+    # FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): daftar
+    # Service (appointment hari ini) TETAP berdasarkan tanggal LAYANAN
+    # (booking untuk hari ini, siapa saja yang akan datang) -- TIDAK
+    # berubah. Yang berubah: uang/rincian_metode TIDAK lagi dihitung dari
+    # loop yang sama ini (lihat loop baru di bawah, berdasarkan tanggal
+    # PEMBAYARAN diterima) -- loop ini SEKARANG murni membangun daftar
+    # tampilan + menandai baris mana yang pembayarannya sudah diterima di
+    # tanggal LAIN (dibayar di muka untuk booking tanggal mendatang, atau
+    # kasus langka dibayar belakangan) supaya frontend bisa menandainya
+    # (font merah, lihat pages/pos.js) -- uangnya SENDIRI sudah/akan
+    # dihitung di hari pembayaran yang sebenarnya, BUKAN di sini, supaya
+    # tidak dihitung dua kali.
+    penyesuaian = []  # [{"arah": "tambah"|"kurang", "nominal": int, "label": str}]
     for b in booking_db.get_booking_list(tenant_id=tenant_id, tanggal=tanggal, status_booking="aktif"):
         if b.get("status_pembayaran") != "terverifikasi":
             continue
-        metode_b = b.get("metode_pembayaran")
-        rincian_metode[metode_b] = rincian_metode.get(metode_b, 0) + (b.get("total_harga") or 0)
+        tanggal_bayar = booking_db.tanggal_wib_dari_timestamp(b.get("pembayaran_diterima_at"))
+        dibayar_tanggal_lain = tanggal_bayar if tanggal_bayar and tanggal_bayar != tanggal else None
         service_items.append({
             "sumber": "booking", "jam": b["jam_mulai"],
             "barber_id": b["barber_id"], "nama_barber": b["nama_barber"],
@@ -732,7 +763,33 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
             # sekali, kolomnya tidak ada di tabel pos_transaksi (beda topik
             # dari permintaan ini, lihat percakapan Owner).
             "nama_customer": b.get("customer_nama"),
+            # FITUR Rekonsiliasi Pembayaran Booking: tanggal pembayaran
+            # diterima (WIB), HANYA diisi kalau BEDA dari tanggal layanan
+            # ini -- pages/pos.js memakainya untuk font merah + keterangan
+            # "sudah dibayar tanggal X" di baris ini.
+            "dibayar_tanggal_lain": dibayar_tanggal_lain,
         })
+        if dibayar_tanggal_lain:
+            penyesuaian.append({
+                "arah": "kurang", "nominal": b["total_harga"],
+                "label": f"{b.get('customer_nama') or b['nama_barber']} -- sudah dibayar tanggal {dibayar_tanggal_lain}",
+            })
+
+    # Rincian pembayaran/Total Keseluruhan booking: berdasarkan tanggal
+    # PEMBAYARAN diterima (BUKAN tanggal layanan di loop atas) -- supaya
+    # cocok dengan rekonsiliasi kas/settlement QRIS-Gateway hari ini
+    # (uang yang BENERAN masuk hari ini, termasuk booking yang dibayar di
+    # muka untuk layanan tanggal lain, TIDAK termasuk booking hari ini
+    # yang sudah dibayar di hari sebelumnya -- lihat
+    # booking_db.get_booking_terverifikasi_by_tanggal_bayar()).
+    for b in booking_db.get_booking_terverifikasi_by_tanggal_bayar(tenant_id, tanggal):
+        metode_b = b.get("metode_pembayaran")
+        rincian_metode[metode_b] = rincian_metode.get(metode_b, 0) + (b.get("total_harga") or 0)
+        if b["tanggal"] != tanggal:
+            penyesuaian.append({
+                "arah": "tambah", "nominal": b["total_harga"],
+                "label": f"{b.get('customer_nama') or b['nama_barber']} -- booking tanggal {b['tanggal']}",
+            })
 
     service_items.sort(key=lambda x: x["jam"])
     produk_items.sort(key=lambda x: x["jam"])
@@ -740,4 +797,5 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         "service": service_items, "produk": produk_items,
         "rincian_metode": rincian_metode,
         "total_keseluruhan": sum(rincian_metode.values()),
+        "penyesuaian": penyesuaian,
     }

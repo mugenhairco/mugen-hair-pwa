@@ -656,6 +656,12 @@ table.data-table th {
 
 table.data-table tr:hover td { background: var(--bg); }
 
+/* FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner, POS > Transaksi
+   Hari Ini): baris customer booking yang SUDAH BAYAR di muka (tanggal
+   lain) -- font merah, supaya kasir gampang tahu tanpa perlu buka
+   Rincian Pembayaran. */
+table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
+
 .table-wrap { overflow-x: auto; }
 
 /* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
@@ -783,6 +789,19 @@ table.data-table tr:hover td { background: var(--bg); }
 .rekap-slide-label strong { display: block; font-size: 14.5px; color: var(--text); }
 .rekap-slide-label span { display: block; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
+/* PERMINTAAN Owner ("tombol Tambah Transaksi harusnya sejajar dengan
+   pagination"): link "Tambah Transaksi" & pager (.rekap-pagination)
+   SATU baris flex yang sama (flex-basis:100% -- ikut turun baris
+   bersama labelBox di atasnya kalau layar sempit, TAPI keduanya sendiri
+   TIDAK PERNAH terpisah satu sama lain -- flex-wrap:nowrap SENGAJA,
+   diukur: di layar 390px gabungan keduanya pas-pasan/sedikit melebihi
+   lebar yang tersisa, overflow-x:auto menggeser bukan membungkus kalau
+   kurang pas). .rekap-pagination tetap rata kanan lewat margin-left:auto
+   miliknya sendiri (lihat aturan itu di bawah), jadi tetap rata kanan
+   walau link-nya tidak ada (Barber/staff tanpa izin Kelola). */
+.rekap-slide-nav-bawah { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-basis: 100%; overflow-x: auto; }
+.rekap-slide-nav-bawah .text-link-aksi { flex-shrink: 0; white-space: nowrap; }
+
 /* PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen pagination
    bernomor, 1 2 3 4 5 ... sampai nomor terakhir, titik-titik kalau
    tanggalnya banyak, letaknya di bawah sebelah kanan") -- menggantikan
@@ -790,9 +809,13 @@ table.data-table tr:hover td { background: var(--bg); }
    tanggal PALING LAMA, nomor terbesar = tanggal PALING BARU, maju ke
    kanan = makin baru (lihat rekap.js::renderTransaksi() untuk urutan
    tanggalUnik-nya). Nomor halaman aktif diberi warna aksen solid, sama
-   seperti pola active state lain di app (mis. .sidebar nav a.active). */
+   seperti pola active state lain di app (mis. .sidebar nav a.active).
+   flex-wrap:nowrap (BUKAN wrap seperti sebelumnya) -- SATU baris yang
+   sama dengan link "Tambah Transaksi" di .rekap-slide-nav-bawah,
+   flex-shrink:0 di tiap tombol supaya tidak gepeng kalau ruang pas-pasan
+   (orang tua-nya yang scroll horizontal, bukan tombol ini yang menyusut). */
 .rekap-pagination {
-  display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; margin-left: auto;
+  display: flex; align-items: center; justify-content: flex-end; gap: 2px; flex-wrap: nowrap; flex-shrink: 0; margin-left: auto;
 }
 .rekap-page-arrow, .rekap-page-num {
   min-height: 34px; padding: 0 10px; font-size: 13.5px; border-radius: 999px; flex-shrink: 0;
