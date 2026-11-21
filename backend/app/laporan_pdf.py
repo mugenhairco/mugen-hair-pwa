@@ -871,12 +871,13 @@ def buat_nama_file(prefix: str) -> str:
 # masing-masing BOLEH memakai lebar halaman PENUH karena tidak berbagi
 # ruang horizontal. Lebar kolom Rekap Transaksi (mm), total 281mm --
 # Tanggal/Barber/Service/Jml Service/Uang Harian/Tips/Pendapatan(/
-# Reimburse/Kasbon Dibayar kalau ada)/Ket.
+# Reimburse/Kasbon Dibayar kalau ada)/Total/Ket. (Kolom "Total" ditambah
+# sebelum Ket, lebarnya diambil dari jatah Ket -- total tetap 281mm.)
 _LEBAR_KOLOM_REKAP_TRANSAKSI = {
-    (False, False): [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 91 * mm],
-    (True, False):  [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 22 * mm, 69 * mm],
-    (False, True):  [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 24 * mm, 67 * mm],
-    (True, True):   [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 22 * mm, 24 * mm, 45 * mm],
+    (False, False): [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 22 * mm, 69 * mm],
+    (True, False):  [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 22 * mm, 22 * mm, 47 * mm],
+    (False, True):  [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 24 * mm, 22 * mm, 45 * mm],
+    (True, True):   [22 * mm, 30 * mm, 50 * mm, 16 * mm, 24 * mm, 22 * mm, 26 * mm, 22 * mm, 24 * mm, 22 * mm, 23 * mm],
 }
 
 # Lebar kolom Rekap Non-Barber (Kasir/OB/Kru), tabel TERPISAH di bawah
@@ -1083,6 +1084,12 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
             header.append("Reimburse")
         if ada_kasbon:
             header.append("Kasbon Dibayar")
+        # PERMINTAAN Owner: kolom "Total" per baris -- SAMA PERSIS rumus
+        # "Pendapatan" (sebenarnya Total) di cabang is_barber di atas
+        # (Pendapatan + Uang Harian + Reimburse - Kasbon). TIDAK menggantikan
+        # kolom "Pendapatan" yang sudah ada (itu tetap Komisi+Tips apa
+        # adanya) -- kolom BARU ditambahkan di akhir.
+        header.append("Total")
         header.append("Ket")
 
         baris = []
@@ -1098,6 +1105,8 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
                 sel.append(_sel(_rupiah(r["reimburse"]) if r["reimburse"] else "-"))
             if ada_kasbon:
                 sel.append(_sel(f"-{_rupiah(r['kasbon_dibayar'])}" if r["kasbon_dibayar"] else "-"))
+            total_baris = r["pendapatan"] + r["uang_harian"] + r.get("reimburse", 0) - r.get("kasbon_dibayar", 0)
+            sel.append(_sel(_rupiah(total_baris)))
             sel.append(_sel_keterangan(r["keterangan"]))
             baris.append(sel)
 
