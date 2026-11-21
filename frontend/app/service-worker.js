@@ -1500,7 +1500,15 @@
 // "booking" (belum sempat ter-rebuild ke "pos_booking" sejak penggabungan
 // v291) salah menampilkan tombol Koreksi (seharusnya tersembunyi, baris
 // itu tetap berisiko dibangun-ulang otomatis kapan saja).
-const ASSET_VERSION = "292";
+// v292 -> v293: FITUR Muat Bertahap Rekap Transaksi (PERMINTAAN Owner --
+// Rekap terasa lambat karena menunggu satu bulan penuh sebelum tampil apa
+// pun). Tab Transaksi sekarang mengambil jendela ~14 hari terakhir dulu
+// (tampilan awal cepat), baru melengkapi satu bulan penuh di belakang
+// layar tanpa reload terlihat. Tab Bulanan/Pengeluaran menunggu tab
+// Transaksi selesai total sebelum mulai fetch sendiri, supaya tidak
+// rebutan jalur ke server. Backend: GET /api/rekap/transaksi sekarang
+// menerima tanggal_mulai/tanggal_selesai (opsional).
+const ASSET_VERSION = "293";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
