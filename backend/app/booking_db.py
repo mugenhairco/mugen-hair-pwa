@@ -1029,8 +1029,22 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     # terima_booking(), total 4 jalur) supaya booking sumber="kasir_mandiri"
     # TIDAK PERNAH memicu Fonte di jalur apa pun, sekarang maupun jalur
     # baru di masa depan yang lupa menambahkan guard sendiri-sendiri.
+    #
+    # REVISI (PERMINTAAN Owner): "booking mandiri metode pembayaran qris
+    # juga mengirimkan pesan seperti booking online" -- dibuka KHUSUS untuk
+    # booking QRIS (baik QRIS statis manual metode_pembayaran=="qris",
+    # maupun QRIS dinamis lewat gateway/channel=="qris"), dan KHUSUS jenis
+    # pesan "reminder_qris" (sudah digerbang metode_pembayaran=="qris" oleh
+    # pemanggilnya sendiri -- lihat buat_booking()/terima_booking() di
+    # atas) & "konfirmasi_pembayaran" (dipanggil utk SEMUA metode dari
+    # verifikasi_pembayaran(), jadi perlu dicek is_qris di sini). Jenis lain
+    # (pembatalan, booking_luar_jam_operasional) & metode selain QRIS TETAP
+    # diblokir total untuk Booking Mandiri, sesuai keputusan awal di atas.
     if booking.get("sumber") == "kasir_mandiri":
-        return
+        metode = booking.get("metode_pembayaran")
+        is_qris = metode == "qris" or (metode == "gateway" and booking.get("gateway_channel") == "qris")
+        if jenis not in ("reminder_qris", "konfirmasi_pembayaran") or not is_qris:
+            return
     tenant_id = booking.get("tenant_id")
     import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
     # REVISI Work #2 (Superadmin Package Permission Tree): kode fitur

@@ -1368,6 +1368,14 @@ const PageBooking = (() => {
             try {
               await MugenApi.del(`/api/booking/${r.id}`);
               MugenUI.toast("Booking dihapus.", "success");
+              // BUGFIX "Transaksi Hari Ini POS tidak langsung update saat
+              // booking lunas dihapus" (PERMINTAAN Owner): lihat catatan
+              // lengkap di pages/pos.js::hapusBookingDariPos(). `r` (baris
+              // tabel SEBELUM dihapus) sudah lengkap -- status_pembayaran/
+              // metode_pembayaran/total_harga/tanggal/daftar_service.
+              if (typeof PagePos !== "undefined" && typeof PagePos.hapusBookingDariPos === "function") {
+                PagePos.hapusBookingDariPos(r);
+              }
               load({ silent: true });
               MugenBookingNotif.refreshNow();
             } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }

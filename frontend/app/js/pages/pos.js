@@ -102,7 +102,7 @@ const PagePos = (() => {
       // kenapa Total Keseluruhan bertambah.
       data.penyesuaian = data.penyesuaian || [];
       data.penyesuaian.push({
-        arah: "tambah", nominal: booking.total_harga,
+        arah: "tambah", nominal: booking.total_harga, booking_id: booking.id,
         label: `${booking.customer_nama || booking.nama_barber} -- booking tanggal ${booking.tanggal}`,
       });
       return;
@@ -117,6 +117,35 @@ const PagePos = (() => {
       nama_customer: booking.customer_nama,
     });
     data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
+  }
+
+  // BUGFIX "Transaksi Hari Ini POS tidak langsung update saat booking yang
+  // SUDAH LUNAS dihapus dari List Booking" (PERMINTAAN Owner): kebalikan
+  // suntikBookingLunas() di atas -- backend (booking_db.hapus_booking())
+  // SUDAH benar membangun ulang baris transaksi barber+tanggal itu begitu
+  // booking terverifikasi dihapus, tapi cache module-level ini (kalau tab
+  // "Transaksi Hari Ini" sedang/pernah dibuka sesi ini) tidak pernah
+  // diberitahu, jadi baris lama nyangkut sampai F5. Dipanggil
+  // pages/booking.js SETELAH hapus booking sukses, dengan data booking
+  // (baris tabel `r`, SUDAH berisi metode_pembayaran/total_harga/tanggal/
+  // daftar_service -- lihat booking_db.get_booking_list()) SEBELUM baris
+  // itu benar-benar dihapus dari server.
+  function hapusBookingDariPos(booking) {
+    if (!_cacheTransaksiHariIni || !booking) return;
+    if (booking.status_pembayaran !== "terverifikasi") return; // belum lunas -- tidak pernah ikut disuntik, tidak ada yang perlu dibersihkan
+    const data = _cacheTransaksiHariIni.data;
+    data.rincian_metode = data.rincian_metode || {};
+    data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) - booking.total_harga;
+    data.total_keseluruhan = (data.total_keseluruhan || 0) - booking.total_harga;
+    if (booking.tanggal !== _cacheTransaksiHariIni.tanggal) {
+      if (data.penyesuaian) {
+        const idxPenyesuaian = data.penyesuaian.findIndex((p) => p.booking_id === booking.id);
+        if (idxPenyesuaian >= 0) data.penyesuaian.splice(idxPenyesuaian, 1);
+      }
+      return;
+    }
+    const idxService = data.service.findIndex((s) => s.sumber === "booking" && s.booking_id === booking.id);
+    if (idxService >= 0) data.service.splice(idxService, 1);
   }
 
   // FITUR "Rekap tidak refresh, cuma tambah baris diam-diam" (PERMINTAAN
@@ -1146,7 +1175,7 @@ const PagePos = (() => {
     await muatUlangPaksa();
   }
 
-  return { render, suntikBookingLunas };
+  return { render, suntikBookingLunas, hapusBookingDariPos };
 })();
 
 window.PagePos = PagePos;
