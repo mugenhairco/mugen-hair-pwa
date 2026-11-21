@@ -237,13 +237,29 @@ const PageRekap = (() => {
         type: "number", min: "0", placeholder: "—", style: "max-width:90px;",
         value: itemsAwal[s.id] ? MugenUI.nilaiTampilAngka(itemsAwal[s.id]) : "",
       });
+      // PERMINTAAN Owner: pakai keypad angka custom yang sudah ada
+      // (MugenUI.attachNumericKeypad(), dipakai POS untuk Tips/Uang
+      // Cash) -- di HP (touch) keyboard OS diganti keypad angka custom
+      // milik aplikasi sendiri, konsisten dengan form lain. Jumlah per-
+      // service BUKAN nominal Rupiah, jadi TANPA opts.rupiah (angka
+      // polos, bukan "Rp ...").
+      MugenUI.attachNumericKeypad(inp);
       itemInputs[s.id] = inp;
+      // BUGFIX "form goyang-goyang/overflow horizontal di HP" (PERMINTAAN
+      // Owner): `.row > * { min-width: 140px }` (style.css, dipakai filter
+      // bar lain) ikut membebani KEDUA div ini (flex:2 & flex:0 0 100px
+      // TIDAK cukup, min-width menang di atas flex-basis) -- baris 2
+      // kolom (nama service panjang + input qty sempit) jadi butuh ruang
+      // lebih lebar dari layar HP sempit. min-width:0 eksplisit di sini
+      // (inline style menang atas class) mengembalikan lebar sesuai
+      // flex-basis yang dimaksud.
       return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
-        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
-        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
+        MugenUI.el("div", { style: "flex:2;min-width:0;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
+        MugenUI.el("div", { style: "flex:0 0 90px;min-width:0;" }, inp),
       ]);
     });
     const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", value: MugenUI.nilaiTampilAngka(transaksi.tips) });
+    MugenUI.attachNumericKeypad(inputTips, { rupiah: true });
     const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional", value: transaksi.catatan || "" });
     const formError = MugenUI.el("div", { class: "login-error" });
     const btnSimpan = MugenUI.el("button", { type: "button", class: "btn-primary" }, "Simpan Koreksi");
@@ -272,7 +288,11 @@ const PageRekap = (() => {
       try {
         const hasil = await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put(`/api/input-data/transaksi/${transaksiId}`, {
           tanggal: inputTanggal.value, barber_id: Number(selBarber.value), items,
-          tips: Number(inputTips.value) || 0, catatan: inputCatatan.value || null,
+          // PERMINTAAN Owner (keypad angka custom): inputTips.value SEKARANG
+          // berformat "Rp ..." (attachNumericKeypad({rupiah:true})) -- WAJIB
+          // dibaca lewat MugenUI.parseAngka(), bukan Number() (akan selalu
+          // NaN/0 kalau langsung Number() dipanggil pada string berformat).
+          tips: MugenUI.parseAngka(inputTips.value) || 0, catatan: inputCatatan.value || null,
         }));
         MugenUI.toast("Transaksi dikoreksi.", "success");
         tutup();
@@ -335,13 +355,19 @@ const PageRekap = (() => {
     const itemInputs = {}; // service_id -> input jumlah
     const serviceRows = services.map((s) => {
       const inp = MugenUI.el("input", { type: "number", min: "0", placeholder: "—", style: "max-width:90px;" });
+      // PERMINTAAN Owner: pakai keypad angka custom yang sudah ada -- lihat
+      // catatan lengkap di bukaModalKoreksi() (pola sama persis di sini).
+      MugenUI.attachNumericKeypad(inp);
       itemInputs[s.id] = inp;
+      // BUGFIX "form goyang-goyang/overflow horizontal di HP" -- lihat
+      // catatan lengkap di bukaModalKoreksi() (pola sama persis di sini).
       return MugenUI.el("div", { class: "row", style: "align-items:center;" }, [
-        MugenUI.el("div", { style: "flex:2;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
-        MugenUI.el("div", { style: "flex:0 0 100px;" }, inp),
+        MugenUI.el("div", { style: "flex:2;min-width:0;" }, `${s.nama} (${MugenUI.formatRupiah(s.harga)})`),
+        MugenUI.el("div", { style: "flex:0 0 90px;min-width:0;" }, inp),
       ]);
     });
     const inputTips = MugenUI.el("input", { type: "number", min: "0", placeholder: "—" });
+    MugenUI.attachNumericKeypad(inputTips, { rupiah: true });
     const inputCatatan = MugenUI.el("input", { type: "text", placeholder: "Opsional, mis. \"Susulan lupa input\"" });
     const statusPrefill = MugenUI.el("div", { class: "subtitle", style: "margin:4px 0 0;" });
     const formError = MugenUI.el("div", { class: "login-error" });
@@ -385,7 +411,11 @@ const PageRekap = (() => {
         for (const it of hasil.items) {
           if (itemInputs[it.service_id]) itemInputs[it.service_id].value = MugenUI.nilaiTampilAngka(it.jumlah);
         }
-        if (hasil.tips) inputTips.value = MugenUI.nilaiTampilAngka(hasil.tips);
+        // PERMINTAAN Owner (keypad angka custom): inputTips SEKARANG
+        // berformat "Rp ..." (attachNumericKeypad({rupiah:true})) --
+        // set .value langsung TIDAK memicu listener "input" milik
+        // keypad itu, jadi format Rupiah-nya diterapkan manual di sini.
+        if (hasil.tips) inputTips.value = MugenUI.formatRupiah(hasil.tips);
         if (hasil.catatan) inputCatatan.value = hasil.catatan;
         statusPrefill.textContent = hasil.ada_data
           ? "Data yang sudah tercatat untuk Barber & Tanggal ini sudah dimuat di atas -- tambahkan yang kelewat, lalu Simpan."
@@ -410,7 +440,10 @@ const PageRekap = (() => {
       try {
         const hasil = await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.post("/api/input-data/transaksi", {
           tanggal: inputTanggal.value, barber_id: Number(selBarber.value), items,
-          tips: Number(inputTips.value) || 0, catatan: inputCatatan.value || null, susulan: true,
+          // PERMINTAAN Owner (keypad angka custom): lihat catatan di
+          // bukaModalKoreksi() -- inputTips.value berformat "Rp ...",
+          // WAJIB dibaca lewat MugenUI.parseAngka().
+          tips: MugenUI.parseAngka(inputTips.value) || 0, catatan: inputCatatan.value || null, susulan: true,
         }));
         MugenUI.toast("Transaksi barber ini pada tanggal tersebut diperbarui.", "success");
         tutup();
