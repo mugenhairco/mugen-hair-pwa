@@ -1464,7 +1464,22 @@
 // (halaman 1-2 atau mendekati akhir) jendela nomor menciut jadi 2-3 angka
 // -- sekarang jendela 3-nomor-tengah digeser utuh saat mentok, total nomor
 // yang tampil (1 awal + 3 tengah + 1 akhir) SELALU 5 di posisi mana pun.
-const ASSET_VERSION = "288";
+// v244 -> v245: BUGFIX "Rekap masih refresh penuh (skeleton+fetch) saat
+// Koreksi Transaksi" (PERMINTAAN Owner -- audit "apakah Rekap masih
+// refresh saat data baru/koreksi/hapus"): onSelesai() tombol Koreksi
+// SEBELUMNYA menyerahkan baris transaksi MENTAH (database.get_transaksi(),
+// bukan bentuk baris Rekap siap-pakai) ke pemanggil, yang cuma bisa load()
+// ulang penuh -- sekarang pola SAMA PERSIS "+ Tambah Transaksi"/suntik POS:
+// ambil dulu bentuk baris Rekap lewat GET /api/rekap/transaksi/baris/{id},
+// suntikBarisTransaksi() (upsert by id) + render ulang dari cache, TANPA
+// fetch/skeleton. Diverifikasi lewat Playwright (MutationObserver
+// mendeteksi elemen skeleton): tidak ada skeleton muncul saat submit
+// Koreksi. "+ Tambah Transaksi"/data baru dari POS/Booking sudah diam-diam
+// sejak awal (tidak berubah); "🗑 Hapus" SENGAJA tetap fetch ulang penuh
+// TAPI hanya di kunjungan BERIKUTNYA (baris langsung hilang dari DOM saat
+// diklik, tidak ada reload seketika) -- angka agregat (komisi/dst) butuh
+// dihitung ulang server, sama seperti precedent pos.js.
+const ASSET_VERSION = "289";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

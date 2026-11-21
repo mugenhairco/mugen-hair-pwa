@@ -353,7 +353,18 @@ const PageRekap = (() => {
         }));
         MugenUI.toast("Transaksi dikoreksi.", "success");
         tutup();
-        if (onSelesai) onSelesai(hasil);
+        // BUGFIX "Rekap masih refresh penuh saat Koreksi" (PERMINTAAN Owner):
+        // SEBELUMNYA onSelesai(hasil) langsung diserahkan baris transaksi
+        // MENTAH (database.get_transaksi(), bukan bentuk baris Rekap yang
+        // sudah dihitung komisi/pendapatan/uang-harian), jadi pemanggil
+        // (renderTransaksi()) tidak bisa menyuntik apa pun -- cuma bisa
+        // load() ulang (fetch+skeleton penuh). Pola SAMA PERSIS
+        // bukaModalTambah() di atas: ambil dulu bentuk baris Rekap siap-
+        // pakai lewat endpoint yang sama dipakai suntik POS, baru serahkan
+        // ke onSelesai.
+        if (onSelesai) {
+          MugenApi.get(`/api/rekap/transaksi/baris/${transaksiId}`).then(onSelesai).catch(() => onSelesai(null));
+        }
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -895,7 +906,24 @@ const PageRekap = (() => {
                       const btnKoreksi = MugenUI.el("button", { type: "button", title: "Koreksi Transaksi" }, "✏ Koreksi");
                       btnKoreksi.addEventListener("click", () => bukaModalKoreksi(r.id, {
                         karyawanPromise,
-                        onSelesai: () => load(),
+                        // PERMINTAAN Owner: tabel yang SEDANG terbuka ikut
+                        // diperbarui diam-diam (suntikBarisTransaksi() --
+                        // upsert by id, pas untuk Koreksi yang mengedit
+                        // SATU baris yang sudah ada -- + render ULANG dari
+                        // cache, TANPA fetch/skeleton), fallback ke load()
+                        // biasa kalau baris hasilnya tidak cocok filter
+                        // Bulan/Tahun/Barber yang sedang aktif (mis.
+                        // tanggalnya dikoreksi pindah ke bulan lain).
+                        onSelesai: (barisRekap) => {
+                          if (barisRekap) {
+                            suntikBarisTransaksi(barisRekap);
+                            if (!MugenState.halamanPerluRefresh("rekap_transaksi")) {
+                              renderDenganData(_cacheTerakhir["transaksi"].data);
+                              return;
+                            }
+                          }
+                          load();
+                        },
                       }));
                       wrap.insertBefore(btnKoreksi, wrap.firstChild);
                     }
