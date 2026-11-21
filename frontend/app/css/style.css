@@ -2685,16 +2685,23 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   .mugen-cuti-marquee-sep { margin: 0 12px; }
 }
 
-/* FITUR Custom Numeric Keypad (PERMINTAAN Owner, khusus input Tips & Uang
-   Cash Diterima di POS) -- lihat MugenUI.attachNumericKeypad() (ui.js).
-   HANYA dipasang di perangkat touch (pointer kasar), laptop/desktop sama
-   sekali tidak kena styling/overlay ini. z-index di bawah .modal-overlay
-   (9500) -- keypad TIDAK PERNAH muncul bersamaan modal konfirmasi di
-   halaman ini, tapi kalau suatu saat bersamaan, modal tetap menang. */
+/* FITUR Custom Numeric Keypad (PERMINTAAN Owner, awalnya khusus input
+   Tips & Uang Cash Diterima di POS, SEKARANG juga dipakai field
+   Jumlah/Tips di modal Koreksi & Tambah Transaksi Susulan Rekap --
+   pages/rekap.js) -- lihat MugenUI.attachNumericKeypad() (ui.js). HANYA
+   dipasang di perangkat touch (pointer kasar), laptop/desktop sama
+   sekali tidak kena styling/overlay ini.
+   BUGFIX (ditemukan begitu dipakai di DALAM modal): z-index SEBELUMNYA
+   9400, di BAWAH .modal-overlay (9500) -- keypad yang dibuka dari dalam
+   modal jadi tertutup/tidak bisa diklik (modal-overlay menang hit-test
+   di area yang sama walau keypad-nya SECARA VISUAL ada di depan).
+   Dinaikkan ke 9550 -- di ATAS seluruh modal (9500) tapi tetap di BAWAH
+   PDF preview/loading overlay (9600/9999, keduanya memang harus menutupi
+   apa pun termasuk keypad yang sedang terbuka). */
 .numkeypad-overlay {
   position: fixed;
   left: 0; right: 0; bottom: 0;
-  z-index: 9400;
+  z-index: 9550;
   display: flex;
   justify-content: center;
   padding: 0 0 env(safe-area-inset-bottom);

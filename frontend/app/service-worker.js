@@ -1406,7 +1406,15 @@
 // .modal-box, dan 100dvh menggantikan 100vh untuk max-height modal
 // (lebih akurat di Safari/Chrome mobile yang address bar-nya bisa
 // sembul/sembunyi).
-const ASSET_VERSION = "282";
+// v238 -> v239: FITUR keypad angka custom untuk modal Koreksi/Tambah
+// Transaksi Susulan di Rekap (PERMINTAAN Owner): field Jumlah per-service
+// & Tips sekarang pakai MugenUI.attachNumericKeypad() yang sudah ada
+// (dipakai POS untuk Tips/Uang Cash) -- konsisten dengan form lain di
+// aplikasi. BUGFIX terkait yang ditemukan: .numkeypad-overlay z-index-nya
+// (9400) ternyata di BAWAH .modal-overlay (9500) -- keypad yang dibuka
+// dari DALAM modal jadi tidak bisa diklik (ketutup modal walau secara
+// visual terlihat di depan). Dinaikkan ke 9550.
+const ASSET_VERSION = "283";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
