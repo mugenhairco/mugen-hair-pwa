@@ -803,13 +803,20 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 /* PERMINTAAN Owner ("tombol Tambah Transaksi harusnya sejajar dengan
    pagination"): link "Tambah Transaksi" & pager (.rekap-pagination)
    SATU baris flex yang sama (flex-basis:100% -- ikut turun baris
-   bersama labelBox di atasnya kalau layar sempit, TAPI keduanya sendiri
-   TIDAK PERNAH terpisah satu sama lain -- flex-wrap:nowrap SENGAJA,
-   diukur: di layar 390px gabungan keduanya pas-pasan/sedikit melebihi
-   lebar yang tersisa, overflow-x:auto menggeser bukan membungkus kalau
-   kurang pas). .rekap-pagination tetap rata kanan lewat margin-left:auto
-   miliknya sendiri (lihat aturan itu di bawah), jadi tetap rata kanan
-   walau link-nya tidak ada (Barber/staff tanpa izin Kelola). */
+   bersama labelBox di atasnya kalau layar sempit). .rekap-pagination
+   tetap rata kanan lewat margin-left:auto miliknya sendiri (lihat
+   aturan itu di bawah), jadi tetap rata kanan walau link-nya tidak ada
+   (Barber/staff tanpa izin Kelola).
+   BUGFIX (PERMINTAAN Owner "jangan terpotong"): overflow-x:auto/nowrap
+   SEBELUMNYA membuat nomor halaman terakhir ketutupan tepi layar di HP
+   sempit (sekitar <=480px, mis. iPhone) karena gabungan lebar link +
+   semua tombol pagination melebihi lebar yang tersisa -- geser ke
+   samping tidak kelihatan jelas buat user awam. Sekarang flex-wrap
+   DIBIARKAN wrap di layar <=480px (lihat media query di bawah
+   .rekap-page-ellipsis) supaya pagination pindah ke barisnya sendiri
+   di bawah link kalau tidak cukup tempat -- keduanya SELALU utuh
+   kelihatan, tidak ada lagi yang kepotong atau perlu digeser. Di layar
+   lebih lebar (>480px) keduanya tetap satu baris seperti semula. */
 .rekap-slide-nav-bawah { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-basis: 100%; overflow-x: auto; }
 .rekap-slide-nav-bawah .text-link-aksi { flex-shrink: 0; white-space: nowrap; }
 
@@ -838,6 +845,15 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 }
 .rekap-page-ellipsis {
   padding: 0 4px; color: var(--text-dim); font-size: 13.5px; flex-shrink: 0; user-select: none;
+}
+@media (max-width: 480px) {
+  /* Lihat komentar di .rekap-slide-nav-bawah: di layar sesempit ini,
+     link "Tambah Transaksi" + seluruh tombol pagination tidak pernah
+     muat jadi satu baris tanpa ada yang kepotong -- pagination pindah
+     ke baris sendiri (masih rata kanan) di bawah link, bukan digeser
+     tersembunyi lewat overflow-x. */
+  .rekap-slide-nav-bawah { flex-wrap: wrap; overflow-x: visible; }
+  .rekap-pagination { flex-basis: 100%; }
 }
 
 label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
