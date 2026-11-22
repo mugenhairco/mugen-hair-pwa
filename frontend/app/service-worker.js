@@ -1570,7 +1570,13 @@
 // portal ke document.body) -- format tampilan DD/MM/YYYY, nilai
 // internal TETAP ISO (YYYY-MM-DD) lewat getValue(), kontrak data yang
 // dikirim ke backend TIDAK berubah sama sekali dari sebelumnya.
-const ASSET_VERSION = "301";
+// v301 -> v302: REVISI (PERMINTAAN Owner "kotaknya terlalu tinggi,
+// kecilkan hurufnya"): kartu Filter & Pengaturan Laporan PDF (Rekap)
+// dipakaikan class .rekap-card (padding lebih kecil, judul lebih
+// kecil), field di dalam grid-nya (select/input/trigger Date Range
+// Picker/tombol Cetak PDF) dibuat lebih kompak (padding & font-size
+// diperkecil). Hanya tampilan -- tidak ada perubahan fungsi/data.
+const ASSET_VERSION = "302";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

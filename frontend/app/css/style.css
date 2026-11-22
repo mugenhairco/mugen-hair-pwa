@@ -795,10 +795,25 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
    (lihat breakpoint existing @821px-1100px di file ini), 1 kolom HP
    (<=820px) -- dipakai rekap.js::filterBar()/renderTransaksi()/
    renderBulanan()/renderPengeluaran(). */
-.rekap-field-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+/* PERMINTAAN Owner ("kotaknya terlalu tinggi, kecilkan hurufnya"): kartu
+   Filter/Pengaturan Laporan PDF dipakaikan `.rekap-card` (padding lebih
+   kecil dari .card biasa + judul lebih kecil), dan seluruh field di
+   dalam grid-nya (select/input/trigger Date Range Picker/tombol Cetak
+   PDF) dibuat lebih kompak (padding & font-size diperkecil) -- SELAIN
+   di dalam .rekap-filter-grid/.rekap-pdf-grid, input/select/tombol di
+   halaman lain TIDAK terpengaruh sama sekali (selector di bawah semua
+   di-scope ke dua kelas grid itu). */
+.card.rekap-card { padding: 14px 18px; }
+.card.rekap-card h2 { margin: 0 0 10px; font-size: 13px; }
+.rekap-field-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
 .rekap-filter-grid, .rekap-pdf-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: end;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: end;
 }
+.rekap-filter-grid select, .rekap-filter-grid input,
+.rekap-pdf-grid select, .rekap-pdf-grid input, .rekap-pdf-grid .drp-trigger {
+  padding-top: 7px; padding-bottom: 7px; font-size: 13px;
+}
+.rekap-pdf-grid button.btn-primary { min-height: 38px; padding: 7px 16px; font-size: 13px; }
 @media (min-width: 821px) and (max-width: 1100px) {
   .rekap-filter-grid, .rekap-pdf-grid { grid-template-columns: repeat(2, 1fr); }
 }
