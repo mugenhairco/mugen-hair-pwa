@@ -776,8 +776,11 @@ const PageBookPublic = (() => {
       body.appendChild(MugenUI.el("a", {
         href: `https://wa.me/${nomorKeFormatInternasional(whatsappToko)}`,
         target: "_blank", rel: "noopener noreferrer", class: "book-sudah-booking-link",
-        style: "display:block;text-align:center;margin-top:14px;",
-      }, "Ada kendala pembayaran? Hubungi kami"));
+        style: "display:inline-flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:14px;",
+      }, [
+        MugenUI.el("span", { style: "display:inline-flex;", html: IKON_WHATSAPP_SVG }),
+        MugenUI.el("span", {}, "Ada kendala pembayaran? Hubungi kami"),
+      ]));
     }
 
     function renderHasil(hasil) {

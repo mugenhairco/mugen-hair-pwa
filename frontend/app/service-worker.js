@@ -1650,7 +1650,10 @@
 // pembayaran? Hubungi kami" (gaya sama seperti "Lupa Kata Sandi?") di
 // SEMUA fase, mengarah ke WhatsApp toko (Website Content > Connect With
 // Us).
-const ASSET_VERSION = "311";
+// v311 -> v312: tambah ikon WhatsApp (reuse IKON_WHATSAPP_SVG, sama
+// seperti ikon Connect With Us) di link "Ada kendala pembayaran? Hubungi
+// kami".
+const ASSET_VERSION = "312";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
