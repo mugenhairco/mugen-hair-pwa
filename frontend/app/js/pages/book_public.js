@@ -733,20 +733,54 @@ const PageBookPublic = (() => {
   // = kontainer yang sudah disiapkan pemanggil, `kembaliKeBeranda` =
   // callback kembali ke halaman utama (beda elemen tapi perilaku SAMA di
   // kedua pemanggil).
-  function _renderHasilCekStatus(body, hasil, kembaliKeBeranda) {
+  function _renderHasilCekStatus(body, hasil, kembaliKeBeranda, {
+    tampilkanTombolNavigasi = true, whatsappToko = null,
+  } = {}) {
+    // BUGFIX (laporan Owner, link langsung dari pesan WA): tombol "Back to
+    // Home"/"Booking Baru" di sini memanggil `kembaliKeBeranda`, yang untuk
+    // renderStatusToken() di bawah TIDAK mengubah URL sama sekali (token
+    // tetap ada di address bar) -- render() ulang mendeteksi token itu
+    // LAGI dan menampilkan halaman status yang SAMA, terlihat seperti
+    // tombolnya tidak berfungsi. Owner memilih membuang tombolnya total
+    // untuk jalur link (BUKAN memperbaiki navigasinya) -- `tampilkanTombolNavigasi:
+    // false` (dipakai renderStatusToken()) membuat fungsi ini sama sekali
+    // tidak menambahkan tombol tsb, di SEMUA fase. renderSudahBooking()
+    // (jalur form nomor WA lama) TIDAK terpengaruh (defaultnya tetap true,
+    // kembaliKeBeranda-nya sendiri memang sudah benar di sana).
     function tombolKembali(tawarkanBookingBaru) {
-      const actions = MugenUI.el("div", { class: "book-selesai-actions" });
-      if (tawarkanBookingBaru) {
-        const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Booking Baru");
-        tambahkanEfekRipple(btnBaru);
-        btnBaru.addEventListener("click", kembaliKeBeranda);
-        actions.appendChild(btnBaru);
+      if (tampilkanTombolNavigasi) {
+        const actions = MugenUI.el("div", { class: "book-selesai-actions" });
+        if (tawarkanBookingBaru) {
+          const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Booking Baru");
+          tambahkanEfekRipple(btnBaru);
+          btnBaru.addEventListener("click", kembaliKeBeranda);
+          actions.appendChild(btnBaru);
+        }
+        const btnBeranda = MugenUI.el("button", { type: "button" }, "Back to Home");
+        tambahkanEfekRipple(btnBeranda);
+        btnBeranda.addEventListener("click", kembaliKeBeranda);
+        actions.appendChild(btnBeranda);
+        body.appendChild(actions);
       }
-      const btnBeranda = MugenUI.el("button", { type: "button" }, "Back to Home");
-      tambahkanEfekRipple(btnBeranda);
-      btnBeranda.addEventListener("click", kembaliKeBeranda);
-      actions.appendChild(btnBeranda);
-      body.appendChild(actions);
+      tambahkanLinkBantuanWa();
+    }
+
+    // FITUR BARU (PERMINTAAN Owner): link kecil gaya "Lupa Kata Sandi?"
+    // (reuse class .book-sudah-booking-link, lihat login.js) di SEMUA fase
+    // (termasuk sudah selesai/dibatalkan) -- `whatsappToko` (nomor WA toko
+    // dari Website Content > Connect With Us, lihat renderStatusToken())
+    // kosong/gagal dimuat = link ini TIDAK ditampilkan sama sekali, bukan
+    // link rusak.
+    function tambahkanLinkBantuanWa() {
+      if (!whatsappToko) return;
+      body.appendChild(MugenUI.el("a", {
+        href: `https://wa.me/${nomorKeFormatInternasional(whatsappToko)}`,
+        target: "_blank", rel: "noopener noreferrer", class: "book-sudah-booking-link",
+        style: "display:inline-flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:14px;",
+      }, [
+        MugenUI.el("span", { style: "display:inline-flex;", html: IKON_WHATSAPP_SVG }),
+        MugenUI.el("span", {}, "Ada kendala pembayaran? Hubungi kami"),
+      ]));
     }
 
     function renderHasil(hasil) {
@@ -874,6 +908,7 @@ const PageBookPublic = (() => {
         MugenUI.el("hr"),
         fieldRow("Total Payment", MugenUI.formatRupiah(hasil.total_harga), true),
       ]));
+      tambahkanLinkBantuanWa();
 
       function terapkanStatusTerbaru(status) {
         if (status.status === "PAID") {
@@ -998,11 +1033,6 @@ const PageBookPublic = (() => {
     const body = MugenUI.el("div", { class: "book-body" });
     page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
 
-    function kembaliKeBeranda() {
-      root.innerHTML = "";
-      render(root);
-    }
-
     body.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
     let hasil;
     try {
@@ -1015,8 +1045,23 @@ const PageBookPublic = (() => {
       ));
       return;
     }
+    // FITUR BARU (PERMINTAAN Owner): nomor WA toko (Website Content >
+    // Connect With Us) untuk link "Ada kendala pembayaran? Hubungi kami"
+    // -- "best effort", gagal dimuat TIDAK BOLEH menghalangi tampilan
+    // status utama (sudah berhasil di atas), link-nya cukup tidak muncul
+    // (lihat _renderHasilCekStatus()::tambahkanLinkBantuanWa()).
+    let whatsappToko = null;
+    try {
+      const content = await MugenApi.get("/api/website/content");
+      whatsappToko = content.whatsapp || null;
+    } catch (e) { /* lewati -- link bantuan cukup tidak tampil */ }
     body.innerHTML = "";
-    _renderHasilCekStatus(body, hasil, kembaliKeBeranda);
+    // BUGFIX (PERMINTAAN Owner): tombol "Back to Home"/"Booking Baru"
+    // dibuang total untuk jalur link langsung ini (tampilkanTombolNavigasi:
+    // false) -- lihat komentar panjang di _renderHasilCekStatus() untuk
+    // alasan lengkapnya (kembaliKeBeranda tidak bisa benar-benar
+    // meninggalkan halaman ini selama token masih ada di URL).
+    _renderHasilCekStatus(body, hasil, null, { tampilkanTombolNavigasi: false, whatsappToko });
   }
 
   // ================= WIZARD BOOKING =================

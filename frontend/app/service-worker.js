@@ -1643,7 +1643,17 @@
 // BUGFIX: pesan "Pembatalan" sekarang ikut terkirim untuk Booking Mandiri
 // metode QRIS (sebelumnya diblokir total untuk semua jenis pesan Booking
 // Mandiri tanpa pengecualian).
-const ASSET_VERSION = "310";
+// v310 -> v311: BUGFIX halaman link status (PERMINTAAN Owner): tombol
+// "Back to Home"/"Booking Baru" dibuang total di halaman ini (sebelumnya
+// terlihat "tidak berfungsi" -- token tetap di URL membuat halaman
+// menampilkan dirinya sendiri lagi). FITUR BARU: link "Ada kendala
+// pembayaran? Hubungi kami" (gaya sama seperti "Lupa Kata Sandi?") di
+// SEMUA fase, mengarah ke WhatsApp toko (Website Content > Connect With
+// Us).
+// v311 -> v312: tambah ikon WhatsApp (reuse IKON_WHATSAPP_SVG, sama
+// seperti ikon Connect With Us) di link "Ada kendala pembayaran? Hubungi
+// kami".
+const ASSET_VERSION = "312";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
