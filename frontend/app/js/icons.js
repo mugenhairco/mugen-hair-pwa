@@ -74,6 +74,11 @@ const MugenIcons = (() => {
     // langsung di tiap <circle> supaya tetap pakai currentColor).
     moreVertical: `<svg ${S}><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>`,
 
+    // PERMINTAAN Owner (tombol Cetak PDF tab Bulanan/Pengeluaran Rekap --
+    // "tidak perlu kartu Laporan PDF, ganti ikon print saja"): printer
+    // klasik (badan + kertas keluar atas + kertas keluar bawah).
+    print: `<svg ${S}><path d="M6 9V3h12v6"/><rect x="5" y="9" width="14" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg>`,
+
     // PERMINTAAN Owner (tombol "Tambah Produk" di header "Daftar Produk"
     // -- form pindah jadi modal): plus polos, dipakai jadi ikon prefix
     // tombol tambah/buat baru.
