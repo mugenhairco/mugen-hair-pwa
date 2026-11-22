@@ -1044,12 +1044,17 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     # yang dibatalkan karena tidak kunjung dibayar SEHARUSNYA tetap
     # memberi tahu customer, sama seperti booking online -- sebelumnya
     # jenis ini selalu diblokir total untuk Booking Mandiri tanpa
-    # pengecualian). "booking_luar_jam_operasional" & metode selain QRIS
-    # TETAP diblokir total untuk Booking Mandiri, sesuai keputusan awal.
+    # pengecualian), DAN "reminder_gateway" (REVISI LAGI: setara
+    # reminder_qris tapi untuk booking metode Payment Gateway, lihat
+    # whatsapp_templates.py -- gerbang is_qris di bawah TETAP berlaku,
+    # jadi booking mandiri channel VA masih TIDAK dapat pesan ini, HANYA
+    # channel QRIS dinamis, konsisten "khusus QRIS saja" sejak awal).
+    # "booking_luar_jam_operasional" & metode selain QRIS TETAP diblokir
+    # total untuk Booking Mandiri, sesuai keputusan awal.
     if booking.get("sumber") == "kasir_mandiri":
         metode = booking.get("metode_pembayaran")
         is_qris = metode == "qris" or (metode == "gateway" and booking.get("gateway_channel") == "qris")
-        if jenis not in ("reminder_qris", "konfirmasi_pembayaran", "pembatalan") or not is_qris:
+        if jenis not in ("reminder_qris", "reminder_gateway", "konfirmasi_pembayaran", "pembatalan") or not is_qris:
             return
     tenant_id = booking.get("tenant_id")
     import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)

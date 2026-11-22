@@ -26,6 +26,16 @@ from datetime import datetime
 JENIS_PESAN = [
     ("reminder_qris", "Reminder Bayar QRIS",
      "Dikirim saat customer booking metode QRIS, atau saat Admin menekan \"Verifikasi Booking\" untuk booking QRIS yang belum dibayar."),
+    # FITUR BARU (laporan Owner: booking metode Payment Gateway TIDAK
+    # pernah dapat WA apa pun saat dibuat -- sebelumnya memang BY DESIGN
+    # begitu, Owner sekarang minta disamakan dengan reminder_qris di atas).
+    # Jenis TERPISAH (bukan reuse "reminder_qris") karena metode Payment
+    # Gateway punya 2 channel (VA/QRIS dinamis) -- teks default di bawah
+    # SENGAJA generik, tidak menyebut channel spesifik (customer buka
+    # {link_status} untuk lihat QR/nomor VA yang benar sesuai channel yang
+    # dipilihnya), beda dari reminder_qris yang memang KHUSUS QRIS statis.
+    ("reminder_gateway", "Reminder Bayar Payment Gateway",
+     "Dikirim saat customer booking metode Payment Gateway (VA/QRIS dinamis), begitu booking dibuat."),
     ("konfirmasi_pembayaran", "Konfirmasi Pembayaran",
      "Dikirim saat pembayaran diverifikasi (manual oleh Admin/Owner, atau otomatis lewat Payment Gateway)."),
     ("pembatalan", "Pembatalan Booking", "Dikirim saat booking dibatalkan karena belum dibayar."),
@@ -53,6 +63,14 @@ DEFAULT_TEMPLATES = {
         "- Tanggal: {tanggal}, {jam}\n\n"
         "Booking akan otomatis kami proses setelah pembayaran diverifikasi.\n\n"
         "Cek status atau scan ulang QRIS: {link_status}"
+    ),
+    "reminder_gateway": (
+        "Halo {nama}, terima kasih sudah booking di *{toko}*.\n\n"
+        "Silakan selesaikan pembayaran sebesar *{nominal}* untuk booking:\n"
+        "- Layanan: {layanan}\n"
+        "- Tanggal: {tanggal}, {jam}\n\n"
+        "Lihat detail & cara pembayaran (QRIS/Virtual Account) lewat link berikut:\n{link_status}\n\n"
+        "Booking akan otomatis kami proses setelah pembayaran diverifikasi."
     ),
     "konfirmasi_pembayaran": (
         "Halo {nama}, pembayaran Anda sebesar *{nominal}* untuk booking di *{toko}* telah kami terima & "

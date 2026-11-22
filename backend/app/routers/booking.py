@@ -410,6 +410,23 @@ def _checkout_gateway_booking(booking: dict, channel: str, bank_code: str | None
     # _gateway_detik_tersisa() untuk alasan kenapa durasi (bukan timestamp
     # mentah) yang dikirim ke frontend.
     booking["gateway_detik_tersisa"] = booking_db._gateway_detik_tersisa(transaksi_setelah["created_at"])
+    # FITUR Notifikasi WhatsApp Otomatis Booking (BUGFIX laporan Owner:
+    # booking metode Payment Gateway TIDAK PERNAH dapat WA apa pun saat
+    # dibuat, beda dari metode "qris" statis yang langsung dapat
+    # reminder_qris di booking_db.py::buat_booking() -- SENGAJA begitu
+    # sebelumnya karena checkout VA/QRIS baru selesai DI SINI, setelah
+    # buat_booking() return, jadi tidak bisa ditempel di sana). Ditempel
+    # di SATU titik ini (BUKAN di buat_booking()) supaya berlaku untuk
+    # kedua pemanggil (public_buat_booking() DAN buat_booking_mandiri(),
+    # lihat docstring fungsi ini) sekaligus, dan supaya `channel`
+    # (`booking["gateway_channel"]`, dipakai gerbang is_qris Booking
+    # Mandiri di atas) sudah pasti benar-benar terisi -- checkout BARU
+    # saja sukses tepat sebelum baris ini. "best effort", TIDAK PERNAH
+    # menggagalkan respons booking/checkout utamanya (lihat
+    # _kirim_notifikasi_wa_booking(), sudah membungkus diri sendiri
+    # try/except).
+    booking["gateway_channel"] = channel
+    booking_db._jalankan_di_belakang(booking_db._kirim_notifikasi_wa_booking, booking, "reminder_gateway")
     return booking
 
 
