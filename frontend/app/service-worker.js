@@ -1629,7 +1629,21 @@
 // lengkap (booking_db.py::get_booking_list() param `limit`) -- termasuk
 // bugfix race condition yang ditemukan saat verifikasi (jalur cepat yang
 // telat sempat menimpa jalur penuh yang sudah tampil lebih dulu).
-const ASSET_VERSION = "308";
+// v308 -> v309: BUGFIX Booking Mandiri (laporan Owner: "halaman cuma
+// memberikan keterangan di bawah tanpa reaksi atau kembali default") --
+// setelah booking berhasil dibuat, seluruh form (nama/WA/Barber/Service/
+// tanggal/jam/metode/channel/bank) sekarang kembali ke kondisi kosong
+// otomatis, siap dipakai mencatat customer walk-in berikutnya. Kartu hasil
+// booking (konfirmasi) tetap tampil di bawah seperti sebelumnya.
+// v309 -> v310: FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner)
+// -- link baru (/book/status/<token>) disisipkan OTOMATIS ke pesan WhatsApp
+// booking (reminder QRIS/konfirmasi pembayaran/pembatalan, placeholder baru
+// {link_status}) supaya customer bisa klik langsung lihat status booking-nya
+// (atau scan ulang QRIS yang kelewat) TANPA mengetik ulang nomor WA. Juga
+// BUGFIX: pesan "Pembatalan" sekarang ikut terkirim untuk Booking Mandiri
+// metode QRIS (sebelumnya diblokir total untuk semua jenis pesan Booking
+// Mandiri tanpa pengecualian).
+const ASSET_VERSION = "310";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

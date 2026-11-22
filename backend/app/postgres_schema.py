@@ -859,6 +859,14 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS dilihat INTEGER NOT NULL DEFAULT 1
 -- pernah berubah).
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS nomor_transaksi TEXT;
 
+-- FITUR Link Cek Status Booking Langsung (lihat booking_status_token_migrasi.py
+-- jalur SQLite untuk penjelasan lengkap) -- token acak (BUKAN nomor_transaksi,
+-- yang predictable) dipakai sebagai identifier publik aman di link yang
+-- dikirim otomatis lewat pesan WhatsApp. Nullable, TANPA backfill massal --
+-- diisi lazy oleh booking_db.py::get_atau_buat_status_token().
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_status_token ON bookings(status_token);
+
 -- FONDASI Multi-Tenant Phase 5 (Landing Page SaaS): kolom identitas Owner
 -- yang dikumpulkan lewat form Register publik -- lihat landing_migrasi.py
 -- (jalur SQLite) untuk penjelasan lengkap kenapa kolom ini baru ditambahkan

@@ -424,9 +424,33 @@ const PageBookPublic = (() => {
     page.appendChild(hero);
   }
 
+  // FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner, dikirim
+  // otomatis lewat pesan WhatsApp -- lihat whatsapp_templates.py
+  // placeholder {link_status}/booking_db.py::_kirim_notifikasi_wa_booking()
+  // dan routers/booking.py::public_cek_status_token()): path
+  // "/book/status/<token>" (pola SAMA PERSIS isHalamanReturnPembayaran()
+  // di atas -- path ASLI didahulukan, hash fallback untuk kompatibilitas
+  // kalau suatu saat ada yang membagikannya sebagai "#/book/status/..."
+  // juga). Dicek PALING AWAL di render() (sebelum blok lain) persis
+  // seperti isHalamanReturnPembayaran() -- SENGAJA regex longgar (bukan
+  // exact match), supaya trailing slash tidak pernah membuat link gagal
+  // cocok (instruksi yang sama dipakai komentar isHalamanReturnPembayaran()
+  // di atas).
+  function ambilTokenStatusDariUrl() {
+    const p = location.pathname;
+    let m = p.match(/^\/book\/status\/([^/?]+)/) || p.match(/^\/app\/book\/status\/([^/?]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    const h = location.hash || "";
+    m = h.match(/^#\/book\/status\/([^/?]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    return null;
+  }
+
   async function render(root) {
     root.innerHTML = "";
     if (isHalamanReturnPembayaran()) { renderPembayaranKembali(root); return; }
+    const tokenStatus = ambilTokenStatusDariUrl();
+    if (tokenStatus) { renderStatusToken(root, tokenStatus); return; }
     // REVISI UI/UX (Dark Mode): lapis pertahanan KEDUA di sisi JS -- router.js
     // sudah memanggil MugenTheme.forceLight() sebelum PageBookPublic.render()
     // dipanggil, tapi dipanggil ulang di sini juga supaya halaman ini tetap
@@ -691,28 +715,25 @@ const PageBookPublic = (() => {
   // Server (POST /api/public/booking/cek-status, routers/booking.py) HANYA
   // mencari booking TERBARU milik nomor itu (bukan riwayat penuh), dan
   // mengembalikan field berbeda tergantung fase (lihat ringkasan di bawah).
-  async function renderSudahBooking(root) {
-    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
-    document.body.classList.add("book-public-active");
-    const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
-    root.appendChild(page);
-    let body = MugenUI.el("div", { class: "book-body" });
-    page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
-
-    function kembaliKeBeranda() {
-      root.innerHTML = "";
-      render(root);
+  function _salinTeksKeClipboard(teks) {
+    try {
+      navigator.clipboard.writeText(teks);
+      MugenUI.toast("Disalin.", "success");
+    } catch (e) {
+      MugenUI.toast("Gagal menyalin -- salin manual.", "error");
     }
+  }
 
-    function salinTeksLokal(teks, btn) {
-      try {
-        navigator.clipboard.writeText(teks);
-        MugenUI.toast("Disalin.", "success");
-      } catch (e) {
-        MugenUI.toast("Gagal menyalin -- salin manual.", "error");
-      }
-    }
-
+  // Tampilan hasil cek status -- dipakai BERSAMA renderSudahBooking() (cek
+  // lewat nomor WA, di bawah) DAN renderStatusToken() (link langsung per
+  // booking dari pesan WhatsApp, lihat lebih bawah lagi) supaya KEDUA jalur
+  // masuk selalu menampilkan hasil yang identik, satu tempat satu-satunya
+  // yang tahu cara merender tiap `fase` (lihat docstring _bentuk_respons_
+  // cek_status() di routers/booking.py untuk daftar lengkap fase). `body`
+  // = kontainer yang sudah disiapkan pemanggil, `kembaliKeBeranda` =
+  // callback kembali ke halaman utama (beda elemen tapi perilaku SAMA di
+  // kedua pemanggil).
+  function _renderHasilCekStatus(body, hasil, kembaliKeBeranda) {
     function tombolKembali(tawarkanBookingBaru) {
       const actions = MugenUI.el("div", { class: "book-selesai-actions" });
       if (tawarkanBookingBaru) {
@@ -728,42 +749,13 @@ const PageBookPublic = (() => {
       body.appendChild(actions);
     }
 
-    function renderForm() {
-      body.innerHTML = "";
-      body.appendChild(MugenUI.el("h2", {}, "Cek Status Booking"));
-      body.appendChild(MugenUI.el("div", { class: "subtitle" },
-        "Masukkan nomor WhatsApp yang Anda gunakan saat booking."));
-      const inputWa = MugenUI.el("input", { type: "tel", placeholder: "+62 8xx-xxxx-xxxx" });
-      const errorBox = MugenUI.el("div", { class: "login-error" });
-      body.appendChild(MugenUI.el("label", {}, "WhatsApp Number"));
-      body.appendChild(inputWa);
-      body.appendChild(errorBox);
-      const btnCek = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Cek Status");
-      tambahkanEfekRipple(btnCek);
-      btnCek.addEventListener("click", async () => {
-        errorBox.textContent = "";
-        if (!inputWa.value.trim()) { errorBox.textContent = "Nomor WhatsApp wajib diisi."; return; }
-        try {
-          const hasil = await MugenUI.withButtonLoading(btnCek,
-            () => MugenApi.post("/api/public/booking/cek-status", { whatsapp: inputWa.value.trim() }));
-          renderHasil(hasil);
-        } catch (e) {
-          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-      body.appendChild(btnCek);
-      const btnBatal = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:8px;" }, "< Back to Home");
-      btnBatal.addEventListener("click", kembaliKeBeranda);
-      body.appendChild(btnBatal);
-    }
-
     function renderHasil(hasil) {
       body.innerHTML = "";
       if (!hasil.ditemukan) {
         body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
           MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "?"),
           MugenUI.el("h2", {}, "Booking Tidak Ditemukan"),
-          MugenUI.el("div", { class: "subtitle" }, "Tidak ada booking dengan nomor WhatsApp tersebut."),
+          MugenUI.el("div", { class: "subtitle" }, "Tidak ditemukan booking untuk nomor WhatsApp/link tersebut."),
         ]));
         tombolKembali();
         return;
@@ -851,7 +843,7 @@ const PageBookPublic = (() => {
         ]);
         const btnSalin = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Salin Nomor");
         tambahkanEfekRipple(btnSalin);
-        btnSalin.addEventListener("click", () => salinTeksLokal(hasil.va_number || "", btnSalin));
+        btnSalin.addEventListener("click", () => _salinTeksKeClipboard(hasil.va_number || ""));
         nomorRow.appendChild(btnSalin);
         kontenItems.push(nomorRow);
         kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" },
@@ -942,7 +934,89 @@ const PageBookPublic = (() => {
       }, 1000);
     }
 
+    renderHasil(hasil);
+  }
+
+  async function renderSudahBooking(root) {
+    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    document.body.classList.add("book-public-active");
+    const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
+    root.appendChild(page);
+    let body = MugenUI.el("div", { class: "book-body" });
+    page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
+
+    function kembaliKeBeranda() {
+      root.innerHTML = "";
+      render(root);
+    }
+
+    function renderForm() {
+      body.innerHTML = "";
+      body.appendChild(MugenUI.el("h2", {}, "Cek Status Booking"));
+      body.appendChild(MugenUI.el("div", { class: "subtitle" },
+        "Masukkan nomor WhatsApp yang Anda gunakan saat booking."));
+      const inputWa = MugenUI.el("input", { type: "tel", placeholder: "+62 8xx-xxxx-xxxx" });
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      body.appendChild(MugenUI.el("label", {}, "WhatsApp Number"));
+      body.appendChild(inputWa);
+      body.appendChild(errorBox);
+      const btnCek = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Cek Status");
+      tambahkanEfekRipple(btnCek);
+      btnCek.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        if (!inputWa.value.trim()) { errorBox.textContent = "Nomor WhatsApp wajib diisi."; return; }
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnCek,
+            () => MugenApi.post("/api/public/booking/cek-status", { whatsapp: inputWa.value.trim() }));
+          _renderHasilCekStatus(body, hasil, kembaliKeBeranda);
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      body.appendChild(btnCek);
+      const btnBatal = MugenUI.el("button", { type: "button", style: "width:100%;margin-top:8px;" }, "< Back to Home");
+      btnBatal.addEventListener("click", kembaliKeBeranda);
+      body.appendChild(btnBatal);
+    }
+
     renderForm();
+  }
+
+  // ================= LINK CEK STATUS BOOKING LANGSUNG (dari pesan WA) =====
+  // FITUR BARU (PERMINTAAN Owner): entry point KEDUA ke tampilan hasil cek
+  // status yang SAMA PERSIS dengan renderSudahBooking() di atas (reuse
+  // _renderHasilCekStatus()) -- bedanya di sini TIDAK ADA form isi nomor WA
+  // sama sekali, token dari URL (disisipkan otomatis ke pesan WhatsApp,
+  // lihat ambilTokenStatusDariUrl() di atas) sudah cukup untuk langsung
+  // menemukan booking SPESIFIK yang dimaksud (lihat routers/booking.py::
+  // public_cek_status_token()).
+  async function renderStatusToken(root, token) {
+    if (typeof MugenTheme !== "undefined") MugenTheme.forceLight();
+    document.body.classList.add("book-public-active");
+    const page = MugenUI.el("div", { class: "book-public book-wizard-enter" });
+    root.appendChild(page);
+    const body = MugenUI.el("div", { class: "book-body" });
+    page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
+
+    function kembaliKeBeranda() {
+      root.innerHTML = "";
+      render(root);
+    }
+
+    body.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+    let hasil;
+    try {
+      hasil = await MugenApi.get(`/api/public/booking/status/${encodeURIComponent(token)}`);
+    } catch (e) {
+      body.innerHTML = "";
+      body.appendChild(errorStateRetry(
+        e.detail && e.detail.detail ? e.detail.detail : e.message,
+        () => renderStatusToken(root, token),
+      ));
+      return;
+    }
+    body.innerHTML = "";
+    _renderHasilCekStatus(body, hasil, kembaliKeBeranda);
   }
 
   // ================= WIZARD BOOKING =================

@@ -920,10 +920,40 @@ const PageBooking = (() => {
         MugenUI.toast("Booking Mandiri dibuat.", "success", { force: true });
         _suntikBookingLunasKeHalamanLain(hasil);
         _tampilkanHasilMandiri(hasilBox, hasil);
+        resetFormMandiri();
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
     });
+
+    // BUGFIX (laporan Owner: "halaman cuma memberikan keterangan di bawah
+    // tanpa reaksi atau kembali default"): setelah booking berhasil dibuat,
+    // seluruh form (nama/WA/Barber/Service/tanggal/jam/metode/channel/bank)
+    // SEBELUMNYA dibiarkan apa adanya -- staff harus manual mengosongkan
+    // tiap field sebelum mencatat customer walk-in berikutnya. Kartu hasil
+    // (_tampilkanHasilMandiri() di atas) TETAP ditampilkan sebagai bukti
+    // konfirmasi (TIDAK dihapus) -- hanya form input yang kembali ke
+    // kondisi awal, siap dipakai lagi.
+    function resetFormMandiri() {
+      inputNama.value = "";
+      inputWa.value = "";
+      dropdownBarber.setValue(null);
+      state.barberId = null;
+      state.serviceIds = new Set();
+      state.tanggal = null;
+      state.jam = null;
+      state.metode = null;
+      state.channel = null;
+      state.bankCode = null;
+      liburBarber = { cuti: false, tanggal_libur: [] };
+      liburFetchKey = null;
+      for (const card of serviceGrid.children) card.classList.remove("selected");
+      calendarShown = new Date();
+      renderKalender();
+      renderSlotBox();
+      for (const el of metodeBox.children) el.classList.remove("selected");
+      renderChannelBox();
+    }
   }
 
   // Hasil "Buat Booking" -- metode cash/bayar_nanti/qris cukup ringkasan,
