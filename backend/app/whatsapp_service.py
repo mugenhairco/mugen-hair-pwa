@@ -36,6 +36,14 @@ TOKEN_SETTING_KEY = "whatsapp_fonnte_token"
 # berarti "belum diubah, pakai default".
 TEMPLATE_SETTING_KEYS = {
     "reminder_qris": "whatsapp_template_reminder_qris",
+    # BUGFIX (laporan Owner, "Jenis pesan tidak dikenal: reminder_gateway"
+    # saat klik Simpan Isi Pesan): jenis BARU "reminder_gateway" (lihat
+    # whatsapp_templates.py::JENIS_PESAN) sempat lupa didaftarkan di sini
+    # -- set_templates() di bawah menolak SELURUH simpanan (bukan cuma
+    # jenis ini) kalau ada SATU jenis saja yang tidak dikenal di dict ini,
+    # karena templates dikirim frontend sebagai satu payload gabungan
+    # (lihat whatsapp.js::btnSimpanTemplate).
+    "reminder_gateway": "whatsapp_template_reminder_gateway",
     "konfirmasi_pembayaran": "whatsapp_template_konfirmasi_pembayaran",
     "pembatalan": "whatsapp_template_pembatalan",
     "booking_luar_jam_operasional": "whatsapp_template_booking_luar_jam_operasional",
