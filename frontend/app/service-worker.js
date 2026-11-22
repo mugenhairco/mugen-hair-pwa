@@ -1560,7 +1560,17 @@
 // sebelumnya sampai 6 tombol sejajar per baris -- sekarang satu tombol
 // menu "⋮" (MugenUI.bukaMenuAksi(), pola SAMA PERSIS Booking List/Daftar
 // Produk). Seluruh kondisi/aksi tiap tombol lama TIDAK berubah.
-const ASSET_VERSION = "300";
+// v300 -> v301: REDESAIN RESPONSIVE halaman Rekap (PERMINTAAN Owner,
+// "Modern SaaS Dashboard -- Card Based Layout"). Filter (Bulan/Tahun/
+// Karyawan) & Pengaturan Laporan PDF (Periode/Jenis Laporan/Cetak PDF)
+// masing-masing dibungkus kartu terpisah dengan grid responsif (3 kolom
+// desktop, 2 tablet, 1 kolom HP, Cetak PDF full-width di HP). Dua input
+// tanggal terpisah (Periode PDF) digantikan SATU komponen Date Range
+// Picker baru (MugenUI.dateRangePicker() di ui.js, popover kalender
+// portal ke document.body) -- format tampilan DD/MM/YYYY, nilai
+// internal TETAP ISO (YYYY-MM-DD) lewat getValue(), kontrak data yang
+// dikirim ke backend TIDAK berubah sama sekali dari sebelumnya.
+const ASSET_VERSION = "301";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
