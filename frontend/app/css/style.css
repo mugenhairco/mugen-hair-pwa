@@ -1379,8 +1379,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .login-tenant-picker-label { font-size: 13px; color: var(--text-dim); }
 .login-tenant-option { width: 100%; min-height: 40px; text-align: left; }
 
-.actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+.actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .actions-cell button { min-height: 34px; padding: 6px 12px; font-size: 12.5px; box-shadow: none; border-radius: 10px; }
+/* PERMINTAAN Owner (Hapus Rekap Transaksi -> link teks polos): selektor
+   `.actions-cell button` di atas lebih spesifik dari `.text-link-aksi`
+   sendirian, jadi akan menimpa balik padding/min-height-nya kalau tidak
+   di-override lagi di sini -- SENGAJA diulang supaya tombol Hapus
+   (dan sejenisnya) yang pakai .text-link-aksi di dalam .actions-cell
+   (lihat rekap.js::tombolAksi()) tetap tampil sebagai link, bukan pil. */
+.actions-cell .text-link-aksi { min-height: 0; padding: 0; box-shadow: none; border-radius: 0; }
 
 /* FITUR "+ Tambah Transaksi" (Rekap) & Hapus di POS "Transaksi Hari Ini"
    (PERMINTAAN Owner): link teks polos -- gaya SAMA seperti "Lupa Kata

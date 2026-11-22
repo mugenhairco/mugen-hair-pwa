@@ -230,8 +230,12 @@ const PageRekap = (() => {
   // transaksi/reimburse/kasbon/non_barber -- lihat DELETE /api/input-data/libur,
   // pola SAMA seperti tombol "Batalkan Libur" yang sudah ada di Input Data).
   function tombolAksi({ label, title, confirmTitle, confirmMessage, hapusUrl, hapusBody, pesanSukses, onSelesai }) {
+    // PERMINTAAN Owner: link teks polos (gaya SAMA seperti "Lupa Kata
+    // Sandi?" di Login / "Tambah Transaksi" di atas / Hapus POS "Transaksi
+    // Hari Ini"), BUKAN tombol pil berwarna -- lihat .text-link-aksi di
+    // style.css untuk detail class-nya.
     const wrap = MugenUI.el("div", { class: "actions-cell" });
-    const btn = MugenUI.el("button", { type: "button", class: "btn-danger", title }, label);
+    const btn = MugenUI.el("button", { type: "button", class: "text-link-aksi", title }, label);
     btn.addEventListener("click", async () => {
       const ok = await MugenUI.confirmModal({
         title: confirmTitle,
@@ -904,7 +908,7 @@ const PageRekap = (() => {
                     // Keterangan Libur di sini TIDAK berlaku untuk baris ini.
                     if (r.dari_kuota_cuti_izin) return "-";
                     return tombolAksi({
-                      label: "🗑 Hapus", title: "Hapus Keterangan Libur",
+                      label: "Hapus", title: "Hapus Keterangan Libur",
                       confirmTitle: "Hapus Keterangan Libur",
                       confirmMessage: [
                         `Apakah Anda yakin ingin menghapus keterangan libur ${r.nama_barber} pada ${MugenUI.formatTanggal(r.tanggal)}?`,
@@ -946,7 +950,7 @@ const PageRekap = (() => {
                     if (!bolehHapusTransaksi && !bolehKoreksi) return "-";
                     const wrap = bolehHapusTransaksi
                       ? tombolAksi({
-                          label: "🗑 Hapus", title: "Hapus Transaksi",
+                          label: "Hapus", title: "Hapus Transaksi",
                           confirmTitle: "Hapus Transaksi",
                           confirmMessage: [
                             "Apakah Anda yakin ingin menghapus transaksi ini?",
@@ -997,7 +1001,7 @@ const PageRekap = (() => {
                   if (r.tipe === "reimburse") {
                     if (!bolehHapusReimburse) return "-";
                     return tombolAksi({
-                      label: "🗑 Hapus", title: "Hapus Klaim Reimburse",
+                      label: "Hapus", title: "Hapus Klaim Reimburse",
                       confirmTitle: "Hapus Klaim Reimburse",
                       confirmMessage: [
                         "Apakah Anda yakin ingin menghapus klaim reimburse yang sudah disetujui ini?",
@@ -1012,7 +1016,7 @@ const PageRekap = (() => {
                     if (r.sumber !== "manual") return "-"; // potong_gaji: lewat Slip Gaji
                     if (!bolehBatalKasbon) return "-";
                     return tombolAksi({
-                      label: "↩ Batalkan", title: "Batalkan Pembayaran Kasbon",
+                      label: "Batalkan", title: "Batalkan Pembayaran Kasbon",
                       confirmTitle: "Batalkan Pembayaran Kasbon",
                       confirmMessage: [
                         "Apakah Anda yakin ingin membatalkan pembayaran kasbon ini?",
@@ -1026,7 +1030,7 @@ const PageRekap = (() => {
                   if (r.tipe === "non_barber") {
                     if (!bolehHapusNonBarber) return "-";
                     return tombolAksi({
-                      label: "🗑 Hapus", title: "Hapus Data Gaji Non-Barber",
+                      label: "Hapus", title: "Hapus Data Gaji Non-Barber",
                       confirmTitle: "Hapus Data Gaji Non-Barber",
                       confirmMessage: [
                         "Apakah Anda yakin ingin menghapus data gaji ini?",

@@ -1040,93 +1040,107 @@ const PagePengaturan = (() => {
               },
               { key: "urutan", label: "Urutan" },
               {
-                key: "aksi", label: "Aksi", format: (_, r, idx, allRows) => {
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => {
-                    editingId = r.id;
-                    formTitle.textContent = `Edit Karyawan #${r.id}`;
-                    btnSubmit.textContent = "Simpan Perubahan";
-                    btnBatal.style.display = "";
-                    inputNama.value = r.nama;
-                    const jabatanKaryawan = r.jabatan || "barber";
-                    if (JABATAN_TETAP.includes(jabatanKaryawan)) {
-                      selJabatan.value = jabatanKaryawan;
-                      inputJabatanKustom.value = "";
-                    } else {
-                      selJabatan.value = "__lainnya__";
-                      inputJabatanKustom.value = jabatanKaryawan;
-                    }
-                    inputUangHarian.value = MugenUI.nilaiTampilAngka(r.uang_harian);
-                    inputGajiPerHari.value = MugenUI.nilaiTampilAngka(r.gaji_per_hari);
-                    inputNomorWhatsapp.value = r.nomor_whatsapp || "";
-                    terapkanTampilanJabatan();
-                    formError.textContent = "";
-                    formCard.scrollIntoView({ behavior: "smooth" });
-                  });
-                  const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
-                  btnToggle.addEventListener("click", async () => {
-                    try {
-                      await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/pengaturan/barber/${r.id}`, { aktif: !r.aktif }));
-                      MugenUI.toast(r.aktif ? "Karyawan dinonaktifkan." : "Karyawan diaktifkan.", "success");
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.message, "error"); }
-                  });
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!(await MugenUI.confirmModal({ message: `Hapus karyawan "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`, danger: true }))) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/barber/${r.id}`));
-                      MugenUI.toast("Karyawan dihapus.", "success");
-                      loadList();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
+                // PERMINTAAN Owner ("tab Karyawan, aksi jadi titik tiga juga",
+                // sama seperti Booking List/Daftar Produk): sampai 6 tombol
+                // sejajar (Edit/Nonaktifkan/Foto/Naik/Turun/Hapus) sekarang
+                // satu tombol menu "⋮" (MugenUI.bukaMenuAksi()). Kondisi tiap
+                // item TETAP PERSIS seperti tombol lama -- cuma bentuk
+                // tampilannya yang berubah. Naik/Turun TIDAK ditampilkan sama
+                // sekali di menu kalau baris ini sudah di urutan paling atas/
+                // bawah (dulu tombolnya tetap ada tapi disabled -- menu tidak
+                // punya state disabled, jadi item yang tidak berguna cukup
+                // tidak dimasukkan). Spinner inline per-tombol (withButtonLoading)
+                // dilepas -- menu sudah tertutup duluan begitu item diklik.
+                key: "aksi", label: "Aksi", format: (_, r) => {
                   const idxInList = rows.findIndex((x) => x.id === r.id);
-                  const btnNaik = MugenUI.el("button", { title: "Naikkan urutan" }, "↑");
-                  btnNaik.disabled = idxInList <= 0;
-                  btnNaik.addEventListener("click", async () => {
-                    const other = rows[idxInList - 1];
-                    try {
-                      await MugenUI.withButtonLoading(btnNaik, async () => {
-                        await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
-                        await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-                  });
-                  const btnTurun = MugenUI.el("button", { title: "Turunkan urutan" }, "↓");
-                  btnTurun.disabled = idxInList >= rows.length - 1;
-                  btnTurun.addEventListener("click", async () => {
-                    const other = rows[idxInList + 1];
-                    try {
-                      await MugenUI.withButtonLoading(btnTurun, async () => {
-                        await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
-                        await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-                  });
                   const inFoto = MugenUI.el("input", { type: "file", accept: "image/jpeg,image/png,image/webp", style: "display:none;" });
-                  const btnFoto = MugenUI.el("button", {}, "Foto");
-                  btnFoto.addEventListener("click", () => inFoto.click());
                   inFoto.addEventListener("change", async () => {
                     if (!inFoto.files || !inFoto.files[0]) return;
                     try {
-                      await MugenUI.withButtonLoading(btnFoto, () => MugenApi.uploadFile(`/api/booking/barber/${r.id}/foto`, inFoto.files[0]));
+                      await MugenApi.uploadFile(`/api/booking/barber/${r.id}/foto`, inFoto.files[0]);
                       MugenUI.toast("Foto barber disimpan.", "success");
                       loadList();
                     } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
                   });
-                  wrap.appendChild(btnEdit);
-                  wrap.appendChild(btnToggle);
-                  wrap.appendChild(btnFoto);
-                  wrap.appendChild(inFoto);
-                  wrap.appendChild(btnNaik);
-                  wrap.appendChild(btnTurun);
-                  wrap.appendChild(btnHapus);
-                  return wrap;
+
+                  const items = [];
+                  items.push({
+                    label: "Edit", onClick: () => {
+                      editingId = r.id;
+                      formTitle.textContent = `Edit Karyawan #${r.id}`;
+                      btnSubmit.textContent = "Simpan Perubahan";
+                      btnBatal.style.display = "";
+                      inputNama.value = r.nama;
+                      const jabatanKaryawan = r.jabatan || "barber";
+                      if (JABATAN_TETAP.includes(jabatanKaryawan)) {
+                        selJabatan.value = jabatanKaryawan;
+                        inputJabatanKustom.value = "";
+                      } else {
+                        selJabatan.value = "__lainnya__";
+                        inputJabatanKustom.value = jabatanKaryawan;
+                      }
+                      inputUangHarian.value = MugenUI.nilaiTampilAngka(r.uang_harian);
+                      inputGajiPerHari.value = MugenUI.nilaiTampilAngka(r.gaji_per_hari);
+                      inputNomorWhatsapp.value = r.nomor_whatsapp || "";
+                      terapkanTampilanJabatan();
+                      formError.textContent = "";
+                      formCard.scrollIntoView({ behavior: "smooth" });
+                    },
+                  });
+                  items.push({
+                    label: r.aktif ? "Nonaktifkan" : "Aktifkan",
+                    onClick: async () => {
+                      try {
+                        await MugenApi.put(`/api/pengaturan/barber/${r.id}`, { aktif: !r.aktif });
+                        MugenUI.toast(r.aktif ? "Karyawan dinonaktifkan." : "Karyawan diaktifkan.", "success");
+                        loadList();
+                      } catch (e) { MugenUI.toast(e.message, "error"); }
+                    },
+                  });
+                  items.push({ label: "Ganti Foto", onClick: () => inFoto.click() });
+                  if (idxInList > 0) {
+                    items.push({
+                      label: "Naikkan Urutan", onClick: async () => {
+                        const other = rows[idxInList - 1];
+                        try {
+                          await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                          await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                          loadList();
+                        } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                      },
+                    });
+                  }
+                  if (idxInList < rows.length - 1) {
+                    items.push({
+                      label: "Turunkan Urutan", onClick: async () => {
+                        const other = rows[idxInList + 1];
+                        try {
+                          await MugenApi.put(`/api/booking/barber/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                          await MugenApi.put(`/api/booking/barber/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                          loadList();
+                        } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                      },
+                    });
+                  }
+                  items.push({
+                    label: "Hapus", danger: true, onClick: async () => {
+                      if (!(await MugenUI.confirmModal({ message: `Hapus karyawan "${r.nama}"? Hanya bisa dihapus kalau belum ada transaksi.`, danger: true }))) return;
+                      try {
+                        await MugenApi.del(`/api/pengaturan/barber/${r.id}`);
+                        MugenUI.toast("Karyawan dihapus.", "success");
+                        loadList();
+                      } catch (e) {
+                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                      }
+                    },
+                  });
+
+                  const btnAksi = MugenUI.el("button", { type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical });
+                  btnAksi.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    MugenUI.bukaMenuAksi(btnAksi, items);
+                  });
+                  return MugenUI.el("span", {}, [btnAksi, inFoto]);
                 },
               },
             ],
@@ -1267,71 +1281,79 @@ const PagePengaturan = (() => {
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               { key: "urutan", label: "Urutan" },
               {
+                // PERMINTAAN Owner ("tab Layanan, aksi jadi titik tiga juga"):
+                // lihat catatan lengkap di tabelKaryawan() di atas -- pola
+                // SAMA PERSIS, cuma tanpa item "Ganti Foto".
                 key: "aksi", label: "Aksi", format: (_, r) => {
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
-                  const btnEdit = MugenUI.el("button", {}, "Edit");
-                  btnEdit.addEventListener("click", () => {
-                    editingId = r.id;
-                    formTitle.textContent = `Edit Layanan #${r.id}`;
-                    btnSubmit.textContent = "Simpan Perubahan";
-                    btnBatal.style.display = "";
-                    inputNama.value = r.nama;
-                    inputHarga.value = MugenUI.nilaiTampilAngka(r.harga);
-                    inputModal.value = MugenUI.nilaiTampilAngka(r.modal);
-                    inputDurasi.value = String(r.durasi_menit || 60);
-                    formError.textContent = "";
-                    formCard.scrollIntoView({ behavior: "smooth" });
-                  });
-                  const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
-                  btnToggle.addEventListener("click", async () => {
-                    try {
-                      await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/pengaturan/service/${r.id}`, { aktif: !r.aktif }));
-                      MugenUI.toast(r.aktif ? "Layanan dinonaktifkan." : "Layanan diaktifkan.", "success");
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.message, "error"); }
-                  });
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!(await MugenUI.confirmModal({ message: `Hapus layanan "${r.nama}"? Hanya bisa dihapus kalau belum pernah dipakai transaksi.`, danger: true }))) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/service/${r.id}`));
-                      MugenUI.toast("Layanan dihapus.", "success");
-                      loadList();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
                   const idxInList = rows.findIndex((x) => x.id === r.id);
-                  const btnNaik = MugenUI.el("button", { title: "Naikkan urutan" }, "↑");
-                  btnNaik.disabled = idxInList <= 0;
-                  btnNaik.addEventListener("click", async () => {
-                    const other = rows[idxInList - 1];
-                    try {
-                      await MugenUI.withButtonLoading(btnNaik, async () => {
-                        await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
-                        await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  const items = [];
+                  items.push({
+                    label: "Edit", onClick: () => {
+                      editingId = r.id;
+                      formTitle.textContent = `Edit Layanan #${r.id}`;
+                      btnSubmit.textContent = "Simpan Perubahan";
+                      btnBatal.style.display = "";
+                      inputNama.value = r.nama;
+                      inputHarga.value = MugenUI.nilaiTampilAngka(r.harga);
+                      inputModal.value = MugenUI.nilaiTampilAngka(r.modal);
+                      inputDurasi.value = String(r.durasi_menit || 60);
+                      formError.textContent = "";
+                      formCard.scrollIntoView({ behavior: "smooth" });
+                    },
                   });
-                  const btnTurun = MugenUI.el("button", { title: "Turunkan urutan" }, "↓");
-                  btnTurun.disabled = idxInList >= rows.length - 1;
-                  btnTurun.addEventListener("click", async () => {
-                    const other = rows[idxInList + 1];
-                    try {
-                      await MugenUI.withButtonLoading(btnTurun, async () => {
-                        await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
-                        await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
-                      });
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  items.push({
+                    label: r.aktif ? "Nonaktifkan" : "Aktifkan",
+                    onClick: async () => {
+                      try {
+                        await MugenApi.put(`/api/pengaturan/service/${r.id}`, { aktif: !r.aktif });
+                        MugenUI.toast(r.aktif ? "Layanan dinonaktifkan." : "Layanan diaktifkan.", "success");
+                        loadList();
+                      } catch (e) { MugenUI.toast(e.message, "error"); }
+                    },
                   });
-                  wrap.appendChild(btnEdit);
-                  wrap.appendChild(btnToggle);
-                  wrap.appendChild(btnNaik);
-                  wrap.appendChild(btnTurun);
-                  wrap.appendChild(btnHapus);
-                  return wrap;
+                  if (idxInList > 0) {
+                    items.push({
+                      label: "Naikkan Urutan", onClick: async () => {
+                        const other = rows[idxInList - 1];
+                        try {
+                          await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                          await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                          loadList();
+                        } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                      },
+                    });
+                  }
+                  if (idxInList < rows.length - 1) {
+                    items.push({
+                      label: "Turunkan Urutan", onClick: async () => {
+                        const other = rows[idxInList + 1];
+                        try {
+                          await MugenApi.put(`/api/booking/service/${r.id}/urutan`, { urutan: other.urutan || 0 });
+                          await MugenApi.put(`/api/booking/service/${other.id}/urutan`, { urutan: r.urutan || 0 });
+                          loadList();
+                        } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                      },
+                    });
+                  }
+                  items.push({
+                    label: "Hapus", danger: true, onClick: async () => {
+                      if (!(await MugenUI.confirmModal({ message: `Hapus layanan "${r.nama}"? Hanya bisa dihapus kalau belum pernah dipakai transaksi.`, danger: true }))) return;
+                      try {
+                        await MugenApi.del(`/api/pengaturan/service/${r.id}`);
+                        MugenUI.toast("Layanan dihapus.", "success");
+                        loadList();
+                      } catch (e) {
+                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                      }
+                    },
+                  });
+
+                  const btnAksi = MugenUI.el("button", { type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical });
+                  btnAksi.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    MugenUI.bukaMenuAksi(btnAksi, items);
+                  });
+                  return btnAksi;
                 },
               },
             ],
@@ -1526,44 +1548,45 @@ const PagePengaturan = (() => {
               },
               { key: "aktif", label: "Status", format: (v) => MugenUI.el("span", { class: "badge" + (v ? "" : " badge-libur") }, v ? "Aktif" : "Nonaktif") },
               {
+                // PERMINTAAN Owner ("tab User & Hak Akses, aksi jadi titik
+                // tiga juga"): lihat catatan lengkap di tabelKaryawan() di
+                // atas -- pola SAMA PERSIS. Seluruh kondisi visibilitas per
+                // role (superadmin/staff-actor) & isi tiap aksi (Ganti
+                // Username/Role/Password, Toggle, Hapus) TIDAK berubah --
+                // hanya dikumpulkan jadi array `items` utk satu menu "⋮".
                 key: "aksi", label: "Aksi", format: (_, r) => {
-                  const wrap = MugenUI.el("div", { class: "actions-cell" });
                   // Akun Super Admin (role="superadmin") TIDAK PERNAH ikut
                   // terkirim ke tenant mana pun (backend memfilter list ini
                   // per tenant_id, dan Super Admin tidak terkait tenant
                   // mana pun -- lihat routers/pengaturan.py::list_user()),
                   // jadi baris ini seharusnya tidak pernah dirender sama
                   // sekali. Guard ini murni lapis pertahanan tambahan (defense
-                  // in depth) supaya tombol Edit/Hapus/Reset Password TIDAK
-                  // PERNAH tampil untuk akun yang dilindungi kalau asumsi itu
+                  // in depth) supaya Edit/Hapus/Reset Password TIDAK PERNAH
+                  // tampil untuk akun yang dilindungi kalau asumsi itu
                   // ternyata berubah -- backend juga menolak lewat 403
                   // (lihat _pastikan_bukan_akun_dilindungi()) apa pun yang
                   // ditampilkan di sini.
-                  if (r.role === "superadmin") {
-                    wrap.appendChild(MugenUI.el("span", { style: "color:var(--text-dim);" }, "-"));
-                    return wrap;
-                  }
+                  if (r.role === "superadmin") return MugenUI.el("span", { style: "color:var(--text-dim);" }, "-");
                   // REVISI Hak Akses Admin: 'staff' (Admin) hanya boleh
-                  // menyasar user ber-role 'barber' -- tombol aksi untuk
+                  // menyasar user ber-role 'barber' -- menu aksi untuk
                   // baris Owner/Admin lain disembunyikan sama sekali di sini
-                  // (bukan hanya ditolak backend) supaya tidak ada tombol
-                  // yang pasti berujung error 403.
-                  if (isStaffActor && r.role !== "barber") {
-                    wrap.appendChild(MugenUI.el("span", { style: "color:var(--text-dim);" }, "-"));
-                    return wrap;
-                  }
+                  // (bukan hanya ditolak backend) supaya tidak ada aksi yang
+                  // pasti berujung error 403.
+                  if (isStaffActor && r.role !== "barber") return MugenUI.el("span", { style: "color:var(--text-dim);" }, "-");
+
+                  const items = [];
                   if (!isStaffActor) {
-                    const btnUsername = MugenUI.el("button", {}, "Ganti Username");
-                    btnUsername.addEventListener("click", async () => {
-                      const baru = prompt(`Username baru untuk "${r.username}":`, r.username);
-                      if (!baru || !baru.trim() || baru.trim() === r.username) return;
-                      try {
-                        await MugenUI.withButtonLoading(btnUsername, () => MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() }));
-                        MugenUI.toast("Username diperbarui.", "success");
-                        loadList();
-                      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                    items.push({
+                      label: "Ganti Username", onClick: async () => {
+                        const baru = prompt(`Username baru untuk "${r.username}":`, r.username);
+                        if (!baru || !baru.trim() || baru.trim() === r.username) return;
+                        try {
+                          await MugenApi.put(`/api/pengaturan/user/${r.id}/username`, { username: baru.trim() });
+                          MugenUI.toast("Username diperbarui.", "success");
+                          loadList();
+                        } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                      },
                     });
-                    wrap.appendChild(btnUsername);
                   }
                   // HANYA relevan untuk row ber-role 'staff' -- Owner bisa
                   // mengganti Role akun ini (Admin atau Role Custom mana
@@ -1573,78 +1596,84 @@ const PagePengaturan = (() => {
                   // TIDAK ADA LAGI opsi "Admin (Default)" untuk balik ke
                   // custom_role_id null.
                   if (!isStaffActor && r.role === "staff") {
-                    const btnGantiRole = MugenUI.el("button", {}, "Ganti Role");
-                    btnGantiRole.addEventListener("click", () => {
-                      if (!roles.length) {
-                        MugenUI.toast("Belum ada Role. Buat Role dulu di tab \"Hak Akses User\".", "error");
-                        return;
-                      }
-                      const sel = MugenUI.el("select");
-                      for (const rr of roles) sel.appendChild(MugenUI.el("option", { value: String(rr.id) }, rr.nama));
-                      if (r.custom_role_id) sel.value = String(r.custom_role_id);
-                      const err = MugenUI.el("div", { class: "login-error" });
-                      const btnSimpanRole = MugenUI.el("button", { class: "btn-primary" }, "Simpan Role");
-                      btnSimpanRole.addEventListener("click", async () => {
-                        err.textContent = "";
-                        try {
-                          await MugenUI.withButtonLoading(btnSimpanRole, () => MugenApi.put(`/api/pengaturan/user/${r.id}/role`,
-                            { custom_role_id: Number(sel.value) }));
-                          MugenUI.toast(`Role "${r.username}" diperbarui.`, "success");
-                          modal.close();
-                          loadList();
-                        } catch (e) { err.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
-                      });
-                      const modal = MugenUI.infoModal({
-                        title: `Ganti Role -- ${r.username}`,
-                        body: [MugenUI.el("label", {}, "Role"), MugenUI.selectIcon(MugenIcons.tag, sel), err, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanRole)],
-                      });
+                    items.push({
+                      label: "Ganti Role", onClick: () => {
+                        if (!roles.length) {
+                          MugenUI.toast("Belum ada Role. Buat Role dulu di tab \"Hak Akses User\".", "error");
+                          return;
+                        }
+                        const sel = MugenUI.el("select");
+                        for (const rr of roles) sel.appendChild(MugenUI.el("option", { value: String(rr.id) }, rr.nama));
+                        if (r.custom_role_id) sel.value = String(r.custom_role_id);
+                        const err = MugenUI.el("div", { class: "login-error" });
+                        const btnSimpanRole = MugenUI.el("button", { class: "btn-primary" }, "Simpan Role");
+                        btnSimpanRole.addEventListener("click", async () => {
+                          err.textContent = "";
+                          try {
+                            await MugenUI.withButtonLoading(btnSimpanRole, () => MugenApi.put(`/api/pengaturan/user/${r.id}/role`,
+                              { custom_role_id: Number(sel.value) }));
+                            MugenUI.toast(`Role "${r.username}" diperbarui.`, "success");
+                            modal.close();
+                            loadList();
+                          } catch (e) { err.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message; }
+                        });
+                        const modal = MugenUI.infoModal({
+                          title: `Ganti Role -- ${r.username}`,
+                          body: [MugenUI.el("label", {}, "Role"), MugenUI.selectIcon(MugenIcons.tag, sel), err, MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpanRole)],
+                        });
+                      },
                     });
-                    wrap.appendChild(btnGantiRole);
                   }
-                  const btnPassword = MugenUI.el("button", {}, "Ganti Password");
-                  btnPassword.addEventListener("click", async () => {
-                    const baru = prompt(`Password baru untuk "${r.username}" (min. 4 karakter):`);
-                    if (!baru) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnPassword, () => MugenApi.put(`/api/pengaturan/user/${r.id}/password`, { password: baru }));
-                      // Password TIDAK ditampilkan di tabel manapun (beda
-                      // dari Ganti Username, yang reaksinya kelihatan lewat
-                      // loadList()) -- tanpa force:true di sini, klik yang
-                      // berhasil terlihat identik dengan tidak terjadi apa-apa.
-                      MugenUI.toast("Password diperbarui.", "success", { force: true });
-                    } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                  items.push({
+                    label: "Ganti Password", onClick: async () => {
+                      const baru = prompt(`Password baru untuk "${r.username}" (min. 4 karakter):`);
+                      if (!baru) return;
+                      try {
+                        await MugenApi.put(`/api/pengaturan/user/${r.id}/password`, { password: baru });
+                        // Password TIDAK ditampilkan di tabel manapun (beda
+                        // dari Ganti Username, yang reaksinya kelihatan lewat
+                        // loadList()) -- tanpa force:true di sini, klik yang
+                        // berhasil terlihat identik dengan tidak terjadi apa-apa.
+                        MugenUI.toast("Password diperbarui.", "success", { force: true });
+                      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                    },
                   });
-                  const btnToggle = MugenUI.el("button", {}, r.aktif ? "Nonaktifkan" : "Aktifkan");
-                  btnToggle.addEventListener("click", async () => {
-                    try {
-                      await MugenUI.withButtonLoading(btnToggle, () => MugenApi.put(`/api/pengaturan/user/${r.id}/${r.aktif ? "nonaktifkan" : "aktifkan"}`, {}));
-                      MugenUI.toast(r.aktif ? "User dinonaktifkan." : "User diaktifkan.", "success");
-                      loadList();
-                    } catch (e) { MugenUI.toast(e.message, "error"); }
+                  items.push({
+                    label: r.aktif ? "Nonaktifkan" : "Aktifkan",
+                    onClick: async () => {
+                      try {
+                        await MugenApi.put(`/api/pengaturan/user/${r.id}/${r.aktif ? "nonaktifkan" : "aktifkan"}`, {});
+                        MugenUI.toast(r.aktif ? "User dinonaktifkan." : "User diaktifkan.", "success");
+                        loadList();
+                      } catch (e) { MugenUI.toast(e.message, "error"); }
+                    },
                   });
-                  wrap.appendChild(btnPassword);
-                  wrap.appendChild(btnToggle);
-
                   // Hapus PERMANEN -- beda dari Nonaktifkan di atas (yang
                   // cuma menonaktifkan status login, datanya tetap ada).
                   // Tidak ditampilkan untuk akun sendiri (backend juga
-                  // menolak, tapi tombolnya disembunyikan lebih dulu di
-                  // sini supaya tidak ada tombol yang pasti error).
+                  // menolak, tapi disembunyikan lebih dulu di sini supaya
+                  // tidak ada aksi yang pasti error).
                   if (r.id !== user.id) {
-                    const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                    btnHapus.addEventListener("click", async () => {
-                      if (!(await MugenUI.confirmModal({ message: `Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
-                      try {
-                        await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/user/${r.id}`));
-                        MugenUI.toast("User dihapus.", "success");
-                        loadList();
-                      } catch (e) {
-                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                      }
+                    items.push({
+                      label: "Hapus", danger: true, onClick: async () => {
+                        if (!(await MugenUI.confirmModal({ message: `Hapus PERMANEN user "${r.username}"? Tindakan ini tidak bisa dibatalkan.`, danger: true }))) return;
+                        try {
+                          await MugenApi.del(`/api/pengaturan/user/${r.id}`);
+                          MugenUI.toast("User dihapus.", "success");
+                          loadList();
+                        } catch (e) {
+                          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                        }
+                      },
                     });
-                    wrap.appendChild(btnHapus);
                   }
-                  return wrap;
+
+                  const btnAksi = MugenUI.el("button", { type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical });
+                  btnAksi.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    MugenUI.bukaMenuAksi(btnAksi, items);
+                  });
+                  return btnAksi;
                 },
               },
             ],
@@ -1900,34 +1929,39 @@ const PagePengaturan = (() => {
           [
             { key: "nama", label: "Role" },
             {
+              // PERMINTAAN Owner ("tab User & Hak Akses, aksi jadi titik
+              // tiga juga"): lihat catatan lengkap di tabelKaryawan() di atas.
               key: "aksi", label: "Aksi", format: (_, r) => {
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnIzin = MugenUI.el("button", {}, "Kelola Izin");
-                btnIzin.addEventListener("click", () => bukaModalIzinRole(r));
-                wrap.appendChild(btnIzin);
-                const btnGanti = MugenUI.el("button", {}, "Ganti Nama");
-                btnGanti.addEventListener("click", async () => {
-                  const baru = prompt(`Nama baru untuk role "${r.nama}":`, r.nama);
-                  if (!baru || !baru.trim() || baru.trim() === r.nama) return;
-                  try {
-                    await MugenUI.withButtonLoading(btnGanti,
-                      () => MugenApi.put(`/api/pengaturan/user-roles/${r.id}`, { nama: baru.trim() }));
-                    MugenUI.toast("Nama role diperbarui.", "success");
-                    loadRoles();
-                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                const items = [
+                  { label: "Kelola Izin", onClick: () => bukaModalIzinRole(r) },
+                  {
+                    label: "Ganti Nama", onClick: async () => {
+                      const baru = prompt(`Nama baru untuk role "${r.nama}":`, r.nama);
+                      if (!baru || !baru.trim() || baru.trim() === r.nama) return;
+                      try {
+                        await MugenApi.put(`/api/pengaturan/user-roles/${r.id}`, { nama: baru.trim() });
+                        MugenUI.toast("Nama role diperbarui.", "success");
+                        loadRoles();
+                      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                    },
+                  },
+                  {
+                    label: "Hapus", danger: true, onClick: async () => {
+                      if (!(await MugenUI.confirmModal({ message: `Hapus role "${r.nama}"? Hanya bisa dihapus kalau sudah tidak ada akun yang memakainya.`, danger: true }))) return;
+                      try {
+                        await MugenApi.del(`/api/pengaturan/user-roles/${r.id}`);
+                        MugenUI.toast("Role dihapus.", "success");
+                        loadRoles();
+                      } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+                    },
+                  },
+                ];
+                const btnAksi = MugenUI.el("button", { type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical });
+                btnAksi.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  MugenUI.bukaMenuAksi(btnAksi, items);
                 });
-                wrap.appendChild(btnGanti);
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!(await MugenUI.confirmModal({ message: `Hapus role "${r.nama}"? Hanya bisa dihapus kalau sudah tidak ada akun yang memakainya.`, danger: true }))) return;
-                  try {
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengaturan/user-roles/${r.id}`));
-                    MugenUI.toast("Role dihapus.", "success");
-                    loadRoles();
-                  } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-                });
-                wrap.appendChild(btnHapus);
-                return wrap;
+                return btnAksi;
               },
             },
           ],
