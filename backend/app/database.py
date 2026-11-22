@@ -389,13 +389,30 @@ def get_all_settings(tenant_id=None) -> dict:
     """tenant_id diisi: hanya setting milik tenant itu (prefix dibuang dari
     key hasil). tenant_id=None: SEMUA baris apa adanya termasuk prefiknya --
     HANYA untuk kode lama/migrasi, endpoint API ber-login WAJIB mengisi
-    tenant_id (lihat catatan _kunci_tenant())."""
+    tenant_id (lihat catatan _kunci_tenant()).
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "get_all_settings() full
+    scan semua tenant"): SEBELUMNYA menarik SELURUH tabel `settings` (milik
+    SEMUA tenant sekaligus) lewat Python, baru menyaring prefix tenant_id
+    di Python -- fungsi ini dipanggil berkali-kali di jalur PUBLIK booking
+    (lihat booking_db.py::get_booking_settings()/get_payment_settings(),
+    tiap klik slot/submit booking), bebannya naik LINIER seiring jumlah
+    tenant bertambah walau tenant yang dibutuhkan cuma SATU. Filter prefix
+    sekarang didorong ke SQL (`WHERE key LIKE 'tenant_id:%'`) -- SQLite
+    bisa memakai index PRIMARY KEY `settings.key` untuk prefix-match ini
+    (wildcard hanya di akhir pola), jadi hanya baris milik tenant ini yang
+    ditarik dari DB sama sekali. `tenant_id` SELALU berupa integer murni
+    (tidak pernah mengandung karakter wildcard LIKE `%`/`_`), jadi aman
+    dipakai langsung tanpa escaping."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    if tenant_id is None:
-        return {r["key"]: r["value"] for r in rows}
-    prefix = f"{tenant_id}:"
-    return {r["key"][len(prefix):]: r["value"] for r in rows if r["key"].startswith(prefix)}
+        if tenant_id is None:
+            rows = conn.execute("SELECT key, value FROM settings").fetchall()
+            return {r["key"]: r["value"] for r in rows}
+        prefix = f"{tenant_id}:"
+        rows = conn.execute(
+            "SELECT key, value FROM settings WHERE key LIKE ?", (f"{prefix}%",)
+        ).fetchall()
+    return {r["key"][len(prefix):]: r["value"] for r in rows}
 
 
 def set_setting(key: str, value, tenant_id=None):

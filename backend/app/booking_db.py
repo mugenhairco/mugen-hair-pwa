@@ -722,6 +722,51 @@ def is_barber_libur(barber_id: int, tanggal: str) -> bool:
         return _jadwal_mingguan_libur(barber_id, tanggal, conn)
 
 
+def is_barber_libur_batch(barber_ids: list, tanggal: str) -> set:
+    """BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di halaman
+    Booking publik"): routers/booking.py::public_barbers() memanggil
+    is_barber_libur() SATU PER SATU per barber (sampai 3 query + koneksi
+    TERPISAH masing-masing -- absensi_libur, barbers.hari_libur_mingguan,
+    attendance_logs -- lihat is_barber_libur()/_jadwal_mingguan_libur() di
+    atas) di SETIAP kunjungan halaman /book publik. Versi batch ini
+    menjawab PERSIS pertanyaan yang sama (barber mana saja yang libur PADA
+    tanggal ini) untuk SEMUA barber_ids SEKALIGUS lewat 3 query TOTAL
+    (bukan 3 query PER barber) -- return set barber_id yang libur."""
+    ids = list({bid for bid in barber_ids if bid is not None})
+    if not ids:
+        return set()
+    placeholder = ", ".join("?" for _ in ids)
+    with get_conn() as conn:
+        libur_manual = {r["barber_id"] for r in conn.execute(
+            f"SELECT DISTINCT barber_id FROM absensi_libur WHERE barber_id IN ({placeholder}) AND tanggal = ?",
+            ids + [tanggal],
+        ).fetchall()}
+        sisa_ids = [bid for bid in ids if bid not in libur_manual]
+        if not sisa_ids:
+            return libur_manual
+        placeholder_sisa = ", ".join("?" for _ in sisa_ids)
+        barbers = conn.execute(
+            f"SELECT id, hari_libur_mingguan FROM barbers WHERE id IN ({placeholder_sisa})", sisa_ids,
+        ).fetchall()
+        hari_ini = HARI_LIST[datetime.strptime(tanggal, "%Y-%m-%d").weekday()]
+        kandidat_mingguan = set()
+        for b in barbers:
+            try:
+                hari_libur_mingguan = json.loads(b["hari_libur_mingguan"] or "[]")
+            except (TypeError, ValueError):
+                hari_libur_mingguan = []
+            if hari_ini in hari_libur_mingguan:
+                kandidat_mingguan.add(b["id"])
+        if not kandidat_mingguan:
+            return libur_manual
+        placeholder_kandidat = ", ".join("?" for _ in kandidat_mingguan)
+        sudah_checkin = {r["barber_id"] for r in conn.execute(
+            f"SELECT DISTINCT barber_id FROM attendance_logs WHERE barber_id IN ({placeholder_kandidat}) "
+            f"AND tanggal = ?", list(kandidat_mingguan) + [tanggal],
+        ).fetchall()}
+    return libur_manual | (kandidat_mingguan - sudah_checkin)
+
+
 def is_barber_cuti(barber_id: int) -> bool:
     """Status 'cuti' (On Vacation) di kolom barbers.status_booking -- cuti
     PANJANG/tidak tentu (barber tidak bisa dibooking di SEMUA tanggal
@@ -1436,6 +1481,50 @@ def get_booking(booking_id: int):
         booking["is_advance_booking"] = _is_advance_booking(booking["created_at"], booking["tanggal"])
         _perkaya_status_gateway(booking)
         return booking
+
+
+def get_booking_ringkas_batch(booking_ids: list) -> dict:
+    """BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di Riwayat
+    Transaksi Gateway"): routers/booking.py::_terjemahkan_transaksi_snap_ke_gateway()
+    dipanggil SEKALI PER BARIS transaksi SNAP (list_transaksi_gateway(),
+    bisa ribuan baris untuk tenant yang sudah lama jalan), dan sebelumnya
+    memanggil get_booking(booking_id) PENUH (header + items + enrichment
+    status gateway lewat _perkaya_status_gateway(), yang sama sekali TIDAK
+    dipakai di sana -- hanya nomor_transaksi/customer_nama/nama_barber/
+    daftar_service yang diambil) -- SATU get_booking() saja ~4-6 query,
+    dikali ribuan baris jadi ribuan query per buka halaman.
+
+    Fungsi ini mengambil HANYA keempat field itu, untuk SEMUA booking_ids
+    SEKALIGUS lewat 2 query total (bukan 2 query PER booking) -- return
+    dict {booking_id: {"nomor_transaksi", "customer_nama", "nama_barber",
+    "daftar_service"}}, booking_id yang tidak ditemukan tidak ikut jadi
+    key (caller pakai .get(id) dengan fallback None, pola sama seperti
+    get_transaksi_terkini_untuk_booking_batch())."""
+    ids = list({bid for bid in booking_ids if bid is not None})
+    if not ids:
+        return {}
+    placeholder = ", ".join("?" for _ in ids)
+    with get_conn() as conn:
+        headers = conn.execute(
+            f"SELECT bk.id, bk.nomor_transaksi, bk.customer_nama, b.nama AS nama_barber "
+            f"FROM bookings bk JOIN barbers b ON b.id = bk.barber_id WHERE bk.id IN ({placeholder})",
+            ids,
+        ).fetchall()
+        items = conn.execute(
+            f"SELECT booking_id, nama_service FROM booking_items WHERE booking_id IN ({placeholder}) ORDER BY id",
+            ids,
+        ).fetchall()
+    layanan_per_booking = {}
+    for i in items:
+        layanan_per_booking.setdefault(i["booking_id"], []).append(i["nama_service"])
+    hasil = {}
+    for h in headers:
+        hasil[h["id"]] = {
+            "nomor_transaksi": h["nomor_transaksi"], "customer_nama": h["customer_nama"],
+            "nama_barber": h["nama_barber"],
+            "daftar_service": ", ".join(layanan_per_booking.get(h["id"], [])),
+        }
+    return hasil
 
 
 def tandai_booking_dilihat(booking_id: int) -> dict:
