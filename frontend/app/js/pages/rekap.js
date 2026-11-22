@@ -793,6 +793,10 @@ const PageRekap = (() => {
         return MugenUI.namaFileAman(`${jenisLabel} ${karyawan} ${tanggalLabel}.pdf`);
       }
 
+      // PERMINTAAN Owner ("ikon print-nya untuk ke-3 tab", posisi di
+      // samping dropdown Jenis Laporan): iconOnly:true -- konsisten
+      // dengan tombol Cetak PDF Bulanan/Pengeluaran, diletakkan SATU
+      // baris dengan select Jenis Laporan (bukan kolom grid sendiri lagi).
       const btnCetakPdf = tombolCetakPdf(() => {
         const qs = new URLSearchParams();
         const { mulai: m, selesai: s } = rangePdf.getValue();
@@ -809,17 +813,20 @@ const PageRekap = (() => {
           generate: () => MugenApi.fetchBlob(`/api/rekap/transaksi/pdf?${qs}`),
           filename: namaFilePdf(),
         };
-      });
+      }, { iconOnly: true });
 
       // PERMINTAAN Owner ("CARD PENGATURAN LAPORAN PDF"): dibungkus kartu
       // kedua terpisah dari kartu Filter di atas -- grid responsif sama
-      // (.rekap-pdf-grid), tombol Cetak PDF full-width di HP (lihat CSS).
+      // (.rekap-pdf-grid), sekarang 2 field (Periode Laporan, Jenis
+      // Laporan+ikon Cetak PDF).
       const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Pengaturan Laporan PDF"),
         MugenUI.el("div", { class: "rekap-pdf-grid" }, [
           fieldBlock("Periode Laporan (opsional)", rangePdf.el),
-          fieldBlock("Jenis Laporan", MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan)),
-          btnCetakPdf,
+          fieldBlock("Jenis Laporan", MugenUI.el("div", { class: "rekap-jenis-laporan-row" }, [
+            MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan),
+            btnCetakPdf,
+          ])),
         ]),
       ]);
 

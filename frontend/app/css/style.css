@@ -814,21 +814,30 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 .rekap-card-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 .card.rekap-card .rekap-card-header h2 { margin: 0; }
 .rekap-field-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
-.rekap-filter-grid, .rekap-pdf-grid {
+.rekap-filter-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: end;
 }
+/* PERMINTAAN Owner ("posisi tombolnya di samping dropdown Jenis Laporan,
+   ikon print-nya untuk KE-3 tab"): tombol Cetak PDF tab Transaksi
+   SEKARANG juga ikon polos (bukan tombol teks "Cetak PDF" lagi -- lihat
+   .aksi-btn/MugenIcons.print, konsisten dengan Bulanan/Pengeluaran),
+   diletakkan SATU baris dengan select Jenis Laporan (.rekap-jenis-
+   laporan-row) -- BUKAN kolom grid sendiri lagi, jadi .rekap-pdf-grid
+   sekarang cuma 2 field (Periode Laporan, Jenis Laporan+ikon). */
+.rekap-pdf-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-items: end;
+}
+.rekap-jenis-laporan-row { display: flex; align-items: center; gap: 8px; }
+.rekap-jenis-laporan-row .select-icon-wrap { flex: 1; width: auto; }
 .rekap-filter-grid select, .rekap-filter-grid input,
 .rekap-pdf-grid select, .rekap-pdf-grid input, .rekap-pdf-grid .drp-trigger {
   padding-top: 7px; padding-bottom: 7px; font-size: 13px;
 }
-.rekap-pdf-grid button.btn-primary { min-height: 38px; padding: 7px 16px; font-size: 13px; }
 @media (min-width: 821px) and (max-width: 1100px) {
-  .rekap-filter-grid, .rekap-pdf-grid { grid-template-columns: repeat(2, 1fr); }
+  .rekap-filter-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 820px) {
   .rekap-filter-grid, .rekap-pdf-grid { grid-template-columns: 1fr; }
-  /* Tombol Cetak PDF full-width di HP (PERMINTAAN Owner eksplisit). */
-  .rekap-pdf-grid .btn-primary { width: 100%; }
 }
 
 /* PERMINTAAN Owner ("posisi pagination tidak konsisten, naik turun kalau
