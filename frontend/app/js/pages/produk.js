@@ -62,12 +62,17 @@ const PageProduk = (() => {
   // sama dipakai rekap.js (duplikasi kecil per-modul, konsisten dengan
   // gaya codebase). `computeOptions` dipanggil ULANG tiap klik supaya
   // filter yang aktif SAAT diklik yang dipakai.
-  function tombolCetakPdf(computeOptions) {
+  function tombolCetakPdf(computeOptions, { iconOnly = false } = {}) {
     // Feature Gating "export_pdf": lihat catatan sama di pages/rekap.js.
     if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
       return MugenFeature.upgradeBlock("Export PDF");
     }
-    const btn = MugenUI.el("button", {}, "Cetak PDF");
+    // PERMINTAAN Owner ("tombol Cetak PDF ganti ikon juga", konsisten
+    // dengan Rekap): ikon print polos (.aksi-btn/MugenIcons.print)
+    // alih-alih tombol teks.
+    const btn = iconOnly
+      ? MugenUI.el("button", { type: "button", class: "aksi-btn", title: "Cetak PDF", "aria-label": "Cetak PDF", html: MugenIcons.print })
+      : MugenUI.el("button", {}, "Cetak PDF");
     btn.addEventListener("click", () => {
       const { generate, filename } = computeOptions();
       MugenPdfPreview.open({ generate, filename });
@@ -506,14 +511,15 @@ const PageProduk = (() => {
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahunFilter.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahunFilter.value = String(today.getFullYear());
 
-    riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" },
-      [MugenUI.selectIcon(MugenIcons.produk, selProdukFilter), MugenUI.selectIcon(MugenIcons.filter, selTipeFilter), MugenUI.selectIcon(MugenIcons.calendar, selBulanFilter), MugenUI.selectIcon(MugenIcons.calendar, selTahunFilter)]));
-
     // Cetak PDF: filter yang dipakai SAMA PERSIS dengan yang sedang aktif
     // di layar (produk/tipe/tahun/bulan) -- lihat laporan_pdf.py
     // buat_pdf_mutasi_produk(), sumber datanya SAMA (db.get_mutasi_produk_list())
     // dengan tabel di bawah supaya isi PDF selalu identik dengan tabel.
-    riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [
+    // PERMINTAAN Owner ("tombol Cetak PDF ganti ikon juga"): disisipkan
+    // langsung di baris filter yang sama (bukan baris sendiri lagi).
+    riwayatCard.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;align-items:center;" }, [
+      MugenUI.selectIcon(MugenIcons.produk, selProdukFilter), MugenUI.selectIcon(MugenIcons.filter, selTipeFilter),
+      MugenUI.selectIcon(MugenIcons.calendar, selBulanFilter), MugenUI.selectIcon(MugenIcons.calendar, selTahunFilter),
       tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahunFilter.value, bulan: selBulanFilter.value });
         if (selProdukFilter.value) qs.set("produk_id", selProdukFilter.value);
@@ -525,7 +531,7 @@ const PageProduk = (() => {
           generate: () => MugenApi.fetchBlob(`/api/produk/mutasi/pdf?${qs}`),
           filename: MugenUI.namaFileAman(`Riwayat Mutasi Produk ${namaProduk} ${MugenUI.namaBulan(Number(selBulanFilter.value))} ${selTahunFilter.value}.pdf`),
         };
-      }),
+      }, { iconOnly: true }),
     ]));
 
     const riwayatBody = MugenUI.el("div");
@@ -537,7 +543,7 @@ const PageProduk = (() => {
       for (const p of produkList) selProdukFilter.appendChild(MugenUI.el("option", { value: String(p.id) }, p.nama));
     }
 
-    function isiFormKoreksiMutasi(btn, m) {
+    function isiFormKoreksiMutasi(m) {
       // Koreksi tanggal/jumlah/catatan lewat prompt sederhana supaya tidak
       // perlu form/modal terpisah untuk aksi yang jarang dipakai ini.
       const tanggalBaru = prompt("Tanggal (YYYY-MM-DD, maks 2 hari ke belakang):", m.tanggal);
@@ -546,14 +552,17 @@ const PageProduk = (() => {
       if (jumlahBaru === null) return;
       const catatanBaru = prompt("Catatan (kosongkan jika tidak ada):", m.catatan || "");
       if (catatanBaru === null) return;
+      // PERMINTAAN Owner (aksi jadi menu "⋮"): spinner inline per-tombol
+      // (withButtonLoading) dilepas -- menu sudah tertutup duluan begitu
+      // item diklik, tidak ada lagi tombol yang bisa ditempeli spinner
+      // (pola sama seperti pengaturan.js/booking.js).
       (async () => {
         try {
-          // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-          await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/produk/mutasi/${m.id}`, {
+          await MugenApi.put(`/api/produk/mutasi/${m.id}`, {
             tanggal: tanggalBaru,
             jumlah: Number(jumlahBaru),
             catatan: catatanBaru || null,
-          }));
+          });
           MugenUI.toast("Mutasi dikoreksi.", "success");
           loadProdukList();
           loadRiwayat();
@@ -583,30 +592,39 @@ const PageProduk = (() => {
             {
               // REVISI Hak Akses (sub-item terpisah): Koreksi (izin_produk_
               // mutasi) dan Hapus (izin_produk_hapus) punya gerbang sendiri.
+              // PERMINTAAN Owner ("tombol aksi di Produk diganti titik 3
+              // seperti yang sudah ada"): pola SAMA PERSIS kolom Aksi
+              // Daftar Produk di atas (MugenUI.bukaMenuAksi()) -- Koreksi/
+              // Hapus sekarang satu menu "⋮", bukan dua tombol sejajar.
               key: "aksi", label: "Aksi", format: (_, m) => {
-                if (!bolehMutasi && !bolehHapusProduk) return MugenUI.el("span", {}, "-");
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
+                const items = [];
                 if (bolehMutasi) {
-                  const btnKoreksi = MugenUI.el("button", {}, "Koreksi");
-                  btnKoreksi.addEventListener("click", () => isiFormKoreksiMutasi(btnKoreksi, m));
-                  wrap.appendChild(btnKoreksi);
+                  items.push({ label: "Koreksi", onClick: () => isiFormKoreksiMutasi(m) });
                 }
-                if (!bolehHapusProduk) return wrap;
-                const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                btnHapus.addEventListener("click", async () => {
-                  if (!(await MugenUI.confirmModal({ message: `Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`, danger: true }))) return;
-                  try {
-                    // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-                    await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/produk/mutasi/${m.id}`));
-                    MugenUI.toast("Data mutasi dihapus.", "success");
-                    loadProdukList();
-                    loadRiwayat();
-                  } catch (e) {
-                    MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                  }
+                if (bolehHapusProduk) {
+                  items.push({
+                    label: "Hapus", danger: true, onClick: async () => {
+                      if (!(await MugenUI.confirmModal({ message: `Hapus data ${m.tipe} #${m.id} (${m.nama_produk}, ${m.jumlah})?`, danger: true }))) return;
+                      try {
+                        await MugenApi.del(`/api/produk/mutasi/${m.id}`);
+                        MugenUI.toast("Data mutasi dihapus.", "success");
+                        loadProdukList();
+                        loadRiwayat();
+                      } catch (e) {
+                        MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+                      }
+                    },
+                  });
+                }
+                if (items.length === 0) return MugenUI.el("span", {}, "-");
+                const btnAksi = MugenUI.el("button", {
+                  type: "button", class: "aksi-btn", "aria-label": "Aksi", html: MugenIcons.moreVertical,
                 });
-                wrap.appendChild(btnHapus);
-                return wrap;
+                btnAksi.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  MugenUI.bukaMenuAksi(btnAksi, items);
+                });
+                return btnAksi;
               },
             },
           ],

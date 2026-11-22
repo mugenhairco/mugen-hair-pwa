@@ -661,17 +661,6 @@ const PageRekap = (() => {
           .catch(() => ({ barbersOnly: [], karyawanAll: [] })) // filter tetap opsional kalau gagal dimuat
       : Promise.resolve({ barbersOnly: [], karyawanAll: [] });
 
-    // PERMINTAAN Owner (Redesain Rekap -- Modern SaaS Dashboard, Card Based
-    // Layout): field berlabel (teks eksplisit di atas, bukan cuma ikon)
-    // dipakai di kartu Filter maupun kartu Pengaturan Laporan PDF -- satu
-    // helper kecil supaya markup-nya konsisten di keduanya.
-    function fieldBlock(labelText, contentEl) {
-      return MugenUI.el("div", { class: "rekap-field" }, [
-        MugenUI.el("div", { class: "rekap-field-label" }, labelText),
-        contentEl,
-      ]);
-    }
-
     // PERMINTAAN Owner (Redesain Rekap, "CARD FILTER TRANSAKSI"): dibungkus
     // satu kartu ("Filter") dengan grid responsif (3 kolom desktop, 2
     // tablet, 1 kolom HP -- lihat .rekap-filter-grid di style.css), BUKAN
@@ -696,10 +685,15 @@ const PageRekap = (() => {
           }
         });
       }
+      // PERMINTAAN Owner ("hilangkan tulisan Bulan/Tahun/Karyawan di atas
+      // dropdown, biar kartu bisa kecil lagi"): label teks eksplisit yang
+      // sempat ditambahkan di Redesain sebelumnya DIHAPUS -- ikon di
+      // selectIcon() sudah cukup jadi penanda, sama seperti sebelum
+      // Redesain Card Based Layout.
       const grid = MugenUI.el("div", { class: "rekap-filter-grid" }, [
-        fieldBlock("Bulan", MugenUI.selectIcon(MugenIcons.calendar, selBulan)),
-        fieldBlock("Tahun", MugenUI.selectIcon(MugenIcons.calendar, selTahun)),
-        ...(selBarber ? [fieldBlock(labelSemua === "Semua Karyawan" ? "Karyawan" : "Barber", MugenUI.selectIcon(MugenIcons.karyawan, selBarber))] : []),
+        MugenUI.selectIcon(MugenIcons.calendar, selBulan),
+        MugenUI.selectIcon(MugenIcons.calendar, selTahun),
+        ...(selBarber ? [MugenUI.selectIcon(MugenIcons.karyawan, selBarber)] : []),
       ]);
       // PERMINTAAN Owner (tab Bulanan/Pengeluaran: "tidak perlu kartu
       // Laporan PDF, ganti ikon print saja"): header kartu Filter dibuat
@@ -818,15 +812,17 @@ const PageRekap = (() => {
       // PERMINTAAN Owner ("CARD PENGATURAN LAPORAN PDF"): dibungkus kartu
       // kedua terpisah dari kartu Filter di atas -- grid responsif sama
       // (.rekap-pdf-grid), sekarang 2 field (Periode Laporan, Jenis
-      // Laporan+ikon Cetak PDF).
+      // Laporan+ikon Cetak PDF). Label teks "Periode Laporan (opsional)"/
+      // "Jenis Laporan" DIHAPUS (PERMINTAAN Owner, biar kartu kecil lagi)
+      // -- ikon di dalam trigger/selectIcon sudah cukup jadi penanda.
       const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Pengaturan Laporan PDF"),
         MugenUI.el("div", { class: "rekap-pdf-grid" }, [
-          fieldBlock("Periode Laporan (opsional)", rangePdf.el),
-          fieldBlock("Jenis Laporan", MugenUI.el("div", { class: "rekap-jenis-laporan-row" }, [
+          rangePdf.el,
+          MugenUI.el("div", { class: "rekap-jenis-laporan-row" }, [
             MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan),
             btnCetakPdf,
-          ])),
+          ]),
         ]),
       ]);
 

@@ -789,12 +789,14 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 /* ============ REDESAIN Rekap (PERMINTAAN Owner, "Modern SaaS Dashboard --
    Card Based Layout") ============ Kartu "Filter" (Bulan/Tahun/Karyawan)
    & kartu "Pengaturan Laporan PDF" (Periode/Jenis Laporan/Cetak PDF) --
-   masing-masing field diberi label eksplisit di atasnya (.rekap-field-
-   label), beda dari pola .row/.select-icon-wrap lama yang cuma ikon
-   tanpa teks label. Grid 3 kolom sejajar di desktop, 2 kolom tablet
-   (lihat breakpoint existing @821px-1100px di file ini), 1 kolom HP
-   (<=820px) -- dipakai rekap.js::filterBar()/renderTransaksi()/
-   renderBulanan()/renderPengeluaran(). */
+   Grid 3 kolom sejajar di desktop, 2 kolom tablet (lihat breakpoint
+   existing @821px-1100px di file ini), 1 kolom HP (<=820px) -- dipakai
+   rekap.js::filterBar()/renderTransaksi()/renderBulanan()/
+   renderPengeluaran(). REVISI (PERMINTAAN Owner "hilangkan tulisan
+   Bulan/Tahun/Karyawan/Periode Laporan/Jenis Laporan di atas dropdown,
+   biar kartu kecil lagi"): label teks eksplisit yang sempat ditambahkan
+   di Redesain awal (class .rekap-field-label) DIHAPUS -- ikon di
+   selectIcon()/trigger Date Range Picker sudah cukup jadi penanda. */
 /* PERMINTAAN Owner ("kotaknya terlalu tinggi, kecilkan hurufnya"): kartu
    Filter/Pengaturan Laporan PDF dipakaikan `.rekap-card` (padding lebih
    kecil dari .card biasa + judul lebih kecil), dan seluruh field di
@@ -813,7 +815,6 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
    margin bawaan h2 di atas. */
 .rekap-card-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 .card.rekap-card .rekap-card-header h2 { margin: 0; }
-.rekap-field-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
 .rekap-filter-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: end;
 }
@@ -1063,6 +1064,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    container-nya, supaya flex-wrap barisnya sendiri benar-benar aktif. */
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; max-width: 100%; }
 .row > * { flex: 1; min-width: 140px; }
+/* PERMINTAAN Owner (Daftar Produk > Riwayat Mutasi: "tombol Cetak PDF
+   ganti ikon juga", disisipkan ke baris filter yang sama): tombol ikon
+   polos (.aksi-btn, ukuran tetap 32x32) TIDAK ikut melar seperti field
+   filter lain di .row -- aturan generik `.row > *` di atas di-override
+   supaya ukurannya tetap seperti seharusnya. */
+.row > .aksi-btn { flex: none; min-width: 0; align-self: center; }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .tabs button {
