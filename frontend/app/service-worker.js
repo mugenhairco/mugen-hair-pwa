@@ -1590,7 +1590,18 @@
 // baris dengan select Jenis Laporan (bukan kolom grid sendiri lagi) --
 // kartu "Pengaturan Laporan PDF" sekarang cuma 2 field (Periode Laporan,
 // Jenis Laporan+ikon). Fungsi/endpoint tidak berubah, hanya tampilan.
-const ASSET_VERSION = "304";
+// v304 -> v305: PERMINTAAN Owner, 2 revisi:
+// (1) Rekap: label teks "Bulan"/"Tahun"/"Karyawan"/"Periode Laporan
+// (opsional)"/"Jenis Laporan" di atas tiap dropdown/input DIHAPUS --
+// ikon di selectIcon()/trigger Date Range Picker sudah cukup jadi
+// penanda, kartu Filter & Pengaturan Laporan PDF jadi lebih pendek lagi.
+// (2) Produk > Riwayat Mutasi: kolom Aksi (Koreksi/Hapus, dua tombol
+// sejajar) diganti SATU menu "⋮" (MugenUI.bukaMenuAksi()), konsisten
+// dengan kolom Aksi Daftar Produk yang sudah lebih dulu pakai pola ini.
+// Tombol Cetak PDF Riwayat Mutasi juga diganti ikon print polos
+// (MugenIcons.print), disisipkan ke baris filter yang sama (bukan baris
+// sendiri lagi).
+const ASSET_VERSION = "305";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
