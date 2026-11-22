@@ -1629,7 +1629,13 @@
 // lengkap (booking_db.py::get_booking_list() param `limit`) -- termasuk
 // bugfix race condition yang ditemukan saat verifikasi (jalur cepat yang
 // telat sempat menimpa jalur penuh yang sudah tampil lebih dulu).
-const ASSET_VERSION = "308";
+// v308 -> v309: BUGFIX Booking Mandiri (laporan Owner: "halaman cuma
+// memberikan keterangan di bawah tanpa reaksi atau kembali default") --
+// setelah booking berhasil dibuat, seluruh form (nama/WA/Barber/Service/
+// tanggal/jam/metode/channel/bank) sekarang kembali ke kondisi kosong
+// otomatis, siap dipakai mencatat customer walk-in berikutnya. Kartu hasil
+// booking (konfirmasi) tetap tampil di bawah seperti sebelumnya.
+const ASSET_VERSION = "309";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
