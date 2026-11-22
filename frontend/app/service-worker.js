@@ -1601,7 +1601,24 @@
 // Tombol Cetak PDF Riwayat Mutasi juga diganti ikon print polos
 // (MugenIcons.print), disisipkan ke baris filter yang sama (bukan baris
 // sendiri lagi).
-const ASSET_VERSION = "305";
+// v305 -> v306: PERMINTAAN Owner ("hapus fitur Periode, jangan cuma
+// disembunyikan -- tulisan Bulanan juga dihapus karena memang tidak ada
+// pilihan lagi") -- Dashboard Owner/Admin: mode "Periode" (rentang
+// tanggal bebas) beserta tab switcher "Bulanan"/"Periode" DIHAPUS
+// PERMANEN dari frontend (bukan disembunyikan lewat CSS/kondisi) --
+// hanya tersisa picker Bulan+Tahun langsung tanpa tab apa pun, sama
+// seperti sebelum fitur Periode ditambahkan. Endpoint backend
+// /api/dashboard/owner/periode TIDAK dihapus (dibiarkan ada tanpa
+// konsumen UI, pola sama seperti endpoint laporan PDF lama di Backup).
+// v306 -> v307: PERMINTAAN Owner (Rekap Transaksi): link teks "Tambah
+// Transaksi" (sebelumnya sejajar baris pagination) dipindah & disembunyikan
+// di balik ikon judul halaman "Rekap" -- klik ikon itu sekarang membuka
+// modal Tambah Transaksi yang sama persis, berfungsi dari tab mana pun
+// (Transaksi/Bulanan/Pengeluaran). Tulisan tanggal ("22 November 2026"/
+// "Tanggal X dari Y") yang sebelumnya selalu turun ke barisnya sendiri di
+// atas sekarang sejajar satu baris dengan paginasi (ruang yang tadinya
+// dipakai teks "Tambah Transaksi" sudah tidak perlu lagi).
+const ASSET_VERSION = "307";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

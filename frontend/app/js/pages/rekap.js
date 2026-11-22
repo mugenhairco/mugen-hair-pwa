@@ -600,7 +600,40 @@ const PageRekap = (() => {
     const bolehLihatKolomAksi = isAdmin;
 
     root.innerHTML = "";
-    root.appendChild(MugenUI.pageTitle("Rekap", MugenIcons.rekap));
+    const judulRekap = MugenUI.pageTitle("Rekap", MugenIcons.rekap);
+    root.appendChild(judulRekap);
+    // PERMINTAAN Owner ("tombol Tambah Transaksi dipindahkan & disembunyikan
+    // di balik ikon judul Rekap -- klik ikon itu fungsinya sama seperti
+    // tombol Tambah Transaksi"): ikon di sebelah judul "Rekap" (dekoratif
+    // sebelumnya) SEKARANG jadi pemicu modal Tambah Transaksi untuk user
+    // yang punya izin (bolehKoreksiTransaksi, SAMA PERSIS gerbang link
+    // "Tambah Transaksi" lama) -- berfungsi dari tab mana pun (bukan cuma
+    // tab Transaksi), karena bukaModalTambah()/karyawanPromise/
+    // gantiBarisTransaksi() semuanya sudah di scope render() ini (bukan
+    // renderTransaksi()). Kalau tab Transaksi sedang aktif, tabel-nya ikut
+    // diperbarui lewat renderBody() (re-render ulang tab aktif, membaca
+    // cache yang sudah disuntik gantiBarisTransaksi() kalau cocok filter,
+    // atau fresh-fetch kalau tidak -- lihat load() masing-masing tab).
+    if (bolehKoreksiTransaksi) {
+      const ikonJudul = judulRekap.querySelector(".page-title-icon");
+      if (ikonJudul) {
+        ikonJudul.classList.add("page-title-icon--clickable");
+        ikonJudul.setAttribute("title", "Tambah Transaksi");
+        ikonJudul.setAttribute("role", "button");
+        ikonJudul.setAttribute("tabindex", "0");
+        const bukaTambah = () => bukaModalTambah({
+          karyawanPromise,
+          onSelesai: (barisRekap) => {
+            if (barisRekap) gantiBarisTransaksi(barisRekap);
+            renderBody();
+          },
+        });
+        ikonJudul.addEventListener("click", bukaTambah);
+        ikonJudul.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); bukaTambah(); }
+        });
+      }
+    }
 
     // AUDIT Hak Akses Menu (permintaan Owner): "Tidak Ada Akses" -- HANYA
     // pesan kosong, tanpa tab/data apa pun (MugenMenuAccess.get() selalu
@@ -830,35 +863,11 @@ const PageRekap = (() => {
       body.appendChild(filterCard);
       body.appendChild(pdfCard);
       body.appendChild(tableWrap);
-      // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner) -- izin SAMA PERSIS
-      // tombol Koreksi (bolehKoreksiTransaksi, "izin_input_data_kelola"),
-      // supaya Owner bisa kasih izin ini ke Kasir juga lewat Pengaturan
-      // Izin tanpa perlu izin baru. Bentuknya link teks polos (gaya "Lupa
-      // Kata Sandi?" di Login, TANPA simbol "+") -- BUKAN tombol penuh,
-      // supaya tidak terlalu menonjol dibanding tombol-tombol utama
-      // (Cetak PDF, dll) di atasnya. Elemennya dibuat SEKALI di sini
-      // (bukan di renderDenganData() yang bisa dipanggil berkali-kali
-      // tiap ganti filter/halaman, supaya listener klik tidak terpasang
-      // dobel) -- lihat renderDenganData() di bawah untuk tempat node ini
-      // SEBENARNYA dipasang (sejajar baris pagination "‹ 1 ... 20 21 ›",
-      // PERMINTAAN Owner, bukan di bawah sendiri terpisah).
-      let linkTambah = null;
-      if (bolehKoreksiTransaksi) {
-        linkTambah = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Tambah Transaksi");
-        linkTambah.addEventListener("click", () => bukaModalTambah({
-          karyawanPromise,
-          // PERMINTAAN Owner: tabel yang SEDANG terbuka ini ikut diperbarui
-          // diam-diam (gantiBarisTransaksi() + render ULANG dari cache,
-          // TANPA fetch/skeleton) -- fallback ke load() biasa kalau baris
-          // hasilnya tidak cocok filter Bulan/Tahun/Barber yang sedang
-          // aktif (mis. ditambahkan untuk bulan lain).
-          onSelesai: (barisRekap) => {
-            const dataBaru = barisRekap && gantiBarisTransaksi(barisRekap);
-            if (dataBaru) renderDenganData(dataBaru);
-            else load();
-          },
-        }));
-      }
+      // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner): link teks yang
+      // SEBELUMNYA ada di sini (sejajar baris pagination) sudah DIPINDAH
+      // ke ikon judul "Rekap" (lihat render() -- klik ikon di sebelah
+      // judul halaman sekarang fungsinya sama persis) -- disembunyikan
+      // dari sini supaya tidak menonjol/dobel.
 
       function renderDenganData(data) {
         tableWrap.innerHTML = "";
@@ -1214,7 +1223,6 @@ const PageRekap = (() => {
 
             if (tanggalUnik.length === 0) {
               slideTableBox.appendChild(MugenUI.buildTable(columns, []));
-              if (linkTambah) navRow.appendChild(linkTambah);
               return;
             }
 
@@ -1254,14 +1262,15 @@ const PageRekap = (() => {
             pager.appendChild(btnBerikutnya);
 
             navRow.appendChild(labelBox);
-            // PERMINTAAN Owner ("tombol Tambah Transaksi harusnya sejajar
-            // dengan pagination, bukan di bawah sendiri"): dibungkus SATU
-            // div bersama pager supaya keduanya SELALU berada di baris
-            // yang sama (satu flex item dari sudut pandang navRow, jadi
-            // tidak ikut membungkus terpisah walau labelBox di atas
-            // ikut turun baris di layar sempit).
+            // PERMINTAAN Owner ("tulisan tanggal di atas Tambah Transaksi
+            // turunkan agar sejajar"): sekarang link "Tambah Transaksi"
+            // sudah pindah ke ikon judul Rekap (bukan di sini lagi),
+            // labelBox & pager sejajar satu baris lewat justify-content:
+            // space-between milik navRow (lihat .rekap-slide-nav) --
+            // barisBawah TETAP dipertahankan sebagai pembungkus pager
+            // (bukan dihapus) murni supaya overflow-x:auto-nya tetap ada
+            // sebagai jaring pengaman kalau pager sendiri kepanjangan.
             const barisBawah = MugenUI.el("div", { class: "rekap-slide-nav-bawah" });
-            if (linkTambah) barisBawah.appendChild(linkTambah);
             barisBawah.appendChild(pager);
             navRow.appendChild(barisBawah);
 

@@ -85,55 +85,28 @@ const PageDashboardOwner = (() => {
     let bulan = today.getMonth() + 1;
     const isOwner = MugenState.getUser().role === "admin";
 
-    // FITUR BARU (diminta Owner): mode "Periode" -- rentang tanggal bebas
-    // (mis. 1-10 Agustus), berdampingan dengan mode "Bulanan" yang sudah
-    // ada (satu bulan kalender penuh, TIDAK diubah sama sekali).
-    let mode = "bulanan"; // "bulanan" | "periode"
-    let tanggalMulai = MugenUI.awalBulanWib(MugenUI.isoHariIniWib());
-    let tanggalSelesai = MugenUI.isoHariIniWib();
-
     root.innerHTML = "";
     const header = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
     header.appendChild(MugenUI.pageTitle(isOwner ? "Dashboard Owner" : "Dashboard Admin", MugenIcons.dashboard));
 
+    // PERMINTAAN Owner ("hapus fitur Periode, jangan cuma disembunyikan --
+    // tulisan 'Bulanan' juga dihapus karena sudah tidak ada pilihan lagi
+    // untuk dipilih"): mode "Periode" (rentang tanggal bebas) DIHAPUS
+    // PERMANEN beserta tab switcher "Bulanan"/"Periode" -- hanya tersisa
+    // picker Bulan+Tahun langsung tanpa tab apa pun, sama seperti sebelum
+    // fitur Periode ditambahkan.
     const selBulan = MugenUI.el("select");
     for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
     selBulan.value = String(bulan);
     const selTahun = MugenUI.el("select");
     for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 1; y++) selTahun.appendChild(MugenUI.el("option", { value: String(y) }, String(y)));
     selTahun.value = String(tahun);
-    const pickerBulanan = MugenUI.el("div", { class: "row", style: "flex:none;" }, [
+    const picker = MugenUI.el("div", { class: "row", style: "flex:none;align-items:center;gap:10px;flex-wrap:wrap;" }, [
       MugenUI.selectIcon(MugenIcons.calendar, selBulan),
       MugenUI.selectIcon(MugenIcons.calendar, selTahun),
     ]);
-
-    const inputTanggalMulai = MugenUI.el("input", { type: "date", value: tanggalMulai, style: "max-width:150px;" });
-    const inputTanggalSelesai = MugenUI.el("input", { type: "date", value: tanggalSelesai, style: "max-width:150px;" });
-    const pickerPeriode = MugenUI.el("div", { class: "row", style: "flex:none;display:none;align-items:center;gap:6px;" }, [
-      inputTanggalMulai,
-      MugenUI.el("span", {}, "s/d"),
-      inputTanggalSelesai,
-    ]);
-
-    const modeTabs = MugenUI.tabs(
-      [{ key: "bulanan", label: "Bulanan" }, { key: "periode", label: "Periode" }],
-      {
-        initial: mode,
-        onChange: (key) => {
-          mode = key;
-          pickerBulanan.style.display = mode === "bulanan" ? "" : "none";
-          pickerPeriode.style.display = mode === "periode" ? "" : "none";
-          load();
-        },
-      },
-    );
-
-    const picker = MugenUI.el("div", { class: "row", style: "flex:none;align-items:center;gap:10px;flex-wrap:wrap;" }, [
-      modeTabs.bar, pickerBulanan, pickerPeriode,
-    ]);
     header.appendChild(picker);
     root.appendChild(header);
-    modeTabs.moveIndicator();
 
     const body = MugenUI.el("div");
     root.appendChild(body);
@@ -343,17 +316,15 @@ const PageDashboardOwner = (() => {
     let urutanTerkini = 0;
 
     async function load(opts = {}) {
-      const url = mode === "periode"
-        ? `/api/dashboard/owner/periode?tanggal_mulai=${tanggalMulai}&tanggal_selesai=${tanggalSelesai}`
-        : `/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`;
+      const url = `/api/dashboard/owner?tahun=${tahun}&bulan=${bulan}`;
 
       // PERMINTAAN OWNER: begitu Dashboard dibuka lagi (pindah menu lalu
       // balik) TANPA ada simpan/edit/hapus apa pun sejak terakhir kali
       // Dashboard INI berhasil dimuat, tampilkan ulang hasil fetch terakhir
       // PERSIS seperti itu -- instan, tanpa skeleton/fetch sama sekali.
       // Hanya dicek untuk pemuatan AWAL (opts.bisaDariCache, dipanggil
-      // SEKALI dari akhir render() di bawah) -- ganti bulan/tahun/periode
-      // manual oleh user (handler di bawah, TANPA opts) SELALU fetch ulang.
+      // SEKALI dari akhir render() di bawah) -- ganti bulan/tahun manual
+      // oleh user (handler di bawah, TANPA opts) SELALU fetch ulang.
       if (opts.bisaDariCache && !MugenState.dashboardPerluRefresh()) {
         const cached = _ambilDariCache(MugenState.getUser().id, url);
         if (cached) {
@@ -440,10 +411,8 @@ const PageDashboardOwner = (() => {
         // ditutup baris total): menggantikan tabel 2-kolom polos sebelumnya.
         const serviceCard = MugenUI.el("div", { class: "card" });
         const serviceHeader = MugenUI.el("div", { style: "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;" });
-        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, mode === "periode" ? "SERVICE PERIODE INI" : "SERVICE BULAN INI"));
-        const periodeLabel = mode === "periode"
-          ? `${MugenUI.formatTanggal(tanggalMulai)} s/d ${MugenUI.formatTanggal(tanggalSelesai)}`
-          : `${MugenUI.namaBulan(bulan)} ${tahun}`;
+        serviceHeader.appendChild(MugenUI.el("h2", { style: "margin:0;" }, "SERVICE BULAN INI"));
+        const periodeLabel = `${MugenUI.namaBulan(bulan)} ${tahun}`;
         serviceHeader.appendChild(MugenUI.el("span", { class: "badge badge-period" }, periodeLabel));
         serviceCard.appendChild(serviceHeader);
 
@@ -474,13 +443,12 @@ const PageDashboardOwner = (() => {
           const totalTransaksi = terurut.reduce((jumlah, s) => jumlah + s.jumlah, 0);
           const terlaris = terurut[0];
           const maxJumlah = terlaris.jumlah || 1;
-          const subPeriode = mode === "periode" ? "periode ini" : "bulan ini";
 
           const stats = MugenUI.el("div", { class: "sp-stats" }, [
             MugenUI.el("div", { class: "sp-stat-tile card--blue" }, [
               MugenUI.el("div", { class: "sp-stat-label" }, "Total Service"),
               MugenUI.el("div", { class: "sp-stat-value" }, String(totalTransaksi)),
-              MugenUI.el("div", { class: "sp-stat-sub" }, `Transaksi ${subPeriode}`),
+              MugenUI.el("div", { class: "sp-stat-sub" }, "Transaksi bulan ini"),
             ]),
             MugenUI.el("div", { class: "sp-stat-tile card--green" }, [
               MugenUI.el("div", { class: "sp-stat-label" }, "Best Seller"),
@@ -531,10 +499,8 @@ const PageDashboardOwner = (() => {
     // feedback yang cukup, ganti bulan/tahun terasa instan.
     selBulan.addEventListener("change", () => { bulan = Number(selBulan.value); load(); });
     selTahun.addEventListener("change", () => { tahun = Number(selTahun.value); load(); });
-    inputTanggalMulai.addEventListener("change", () => { tanggalMulai = inputTanggalMulai.value; load(); });
-    inputTanggalSelesai.addEventListener("change", () => { tanggalSelesai = inputTanggalSelesai.value; load(); });
-    // bisaDariCache: true HANYA di pemuatan AWAL ini -- ganti bulan/tahun/
-    // periode manual oleh user (keempat handler di atas) SELALU fetch ulang.
+    // bisaDariCache: true HANYA di pemuatan AWAL ini -- ganti bulan/tahun
+    // manual oleh user (kedua handler di atas) SELALU fetch ulang.
     load({ bisaDariCache: true });
   }
 
