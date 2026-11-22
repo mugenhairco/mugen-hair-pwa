@@ -495,6 +495,7 @@ a:hover { color: var(--accent-secondary); }
   flex: 1;
   height: 100%;
   padding: 28px;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -804,11 +805,18 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
    SATU baris flex yang sama (flex-basis:100% -- ikut turun baris
    bersama labelBox di atasnya kalau layar sempit, TAPI keduanya sendiri
    TIDAK PERNAH terpisah satu sama lain -- flex-wrap:nowrap SENGAJA,
-   diukur: di layar 390px gabungan keduanya pas-pasan/sedikit melebihi
-   lebar yang tersisa, overflow-x:auto menggeser bukan membungkus kalau
-   kurang pas). .rekap-pagination tetap rata kanan lewat margin-left:auto
-   miliknya sendiri (lihat aturan itu di bawah), jadi tetap rata kanan
-   walau link-nya tidak ada (Barber/staff tanpa izin Kelola). */
+   Owner TIDAK suka pagination pindah baris sendiri di bawah link).
+   .rekap-pagination tetap rata kanan lewat margin-left:auto miliknya
+   sendiri (lihat aturan itu di bawah), jadi tetap rata kanan walau
+   link-nya tidak ada (Barber/staff tanpa izin Kelola).
+   BUGFIX (PERMINTAAN Owner "jangan terpotong, hilangkan 1 angka, perkecil
+   ukuran jika masih tertimpa"): di layar <=480px satu nomor tengah
+   dikurangi (lihat rekap.js::_daftarHalamanPaginasi, UKURAN_JENDELA)
+   DAN seluruh tombol pagination diperkecil (lihat media query di bawah
+   .rekap-page-ellipsis) supaya gabungan link + pagination tetap muat
+   satu baris tanpa ada yang kepotong -- overflow-x:auto dipertahankan
+   sebagai jaring pengaman kalau tetap tidak cukup (mis. tanggal 3
+   digit), tapi seharusnya tidak lagi kepakai dalam kondisi normal. */
 .rekap-slide-nav-bawah { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-basis: 100%; overflow-x: auto; }
 .rekap-slide-nav-bawah .text-link-aksi { flex-shrink: 0; white-space: nowrap; }
 
@@ -837,6 +845,19 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 }
 .rekap-page-ellipsis {
   padding: 0 4px; color: var(--text-dim); font-size: 13.5px; flex-shrink: 0; user-select: none;
+}
+@media (max-width: 480px) {
+  /* Lihat komentar di .rekap-slide-nav-bawah: tombol pagination
+     diperkecil (bukan dipindah ke baris sendiri) supaya tetap sejajar
+     satu baris dengan link "Tambah Transaksi" di layar sesempit ini. */
+  .rekap-pagination { gap: 1px; }
+  .rekap-page-arrow, .rekap-page-num {
+    min-height: 29px; padding: 0 6px; font-size: 12px;
+  }
+  .rekap-page-arrow { width: 29px; }
+  .rekap-page-num { min-width: 29px; }
+  .rekap-page-ellipsis { padding: 0 2px; font-size: 12px; }
+  .rekap-slide-nav-bawah { gap: 4px; }
 }
 
 label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
@@ -1453,7 +1474,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      TETAP bisa lewat tap backdrop atau pilih menu, lihat router.js::shell(),
      jadi tidak ada fungsi yang hilang). */
   .sidebar.open ~ .hamburger { display: none; }
-  .content { padding: 16px; padding-top: 64px; }
+  .content {
+    padding: 16px;
+    padding-top: 64px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
   .sidebar-backdrop {
     display: block;
     position: fixed; inset: 0; z-index: 40;

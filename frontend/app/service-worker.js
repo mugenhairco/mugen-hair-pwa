@@ -1531,7 +1531,27 @@
 // komponen tahun/bulan new Date() browser-local terhadap komponen WIB
 // secara terpisah -- itu bisa meleset ke tanggal BESOK kalau zona
 // waktu/jam perangkat browser pernah beda dari WIB.
-const ASSET_VERSION = "296";
+// v296 -> v297: BUGFIX .content (kontainer scroll utama shell app) tidak
+// memperhitungkan env(safe-area-inset-bottom) di padding bawahnya --
+// akibatnya baris paginasi/"Tambah Transaksi" paling bawah Rekap Transaksi
+// bisa ketutupan area home-indicator iPhone. Ditambahkan di rule dasar
+// .content maupun override mobile (<=820px).
+// v297 -> v298: BUGFIX (PERMINTAAN Owner "jangan terpotong") -- link
+// "Tambah Transaksi" + nomor pagination Rekap Transaksi sebelumnya
+// dipaksa satu baris nowrap+overflow-x:auto di layar sempit, membuat
+// nomor halaman terakhir kepotong tepi layar di iPhone (geser ke
+// samping tidak kelihatan jelas). Sekarang di layar <=480px pagination
+// boleh pindah ke barisnya sendiri (tetap rata kanan) di bawah link --
+// keduanya selalu utuh kelihatan. Layar >480px tetap satu baris seperti
+// semula.
+// v298 -> v299: REVISI (PERMINTAAN Owner -- tidak suka pagination pindah
+// baris sendiri di bawah link): dikembalikan ke SATU baris nowrap seperti
+// semula. Supaya tetap tidak ada yang kepotong di layar <=480px: satu
+// nomor tengah pagination dikurangi (rekap.js::_daftarHalamanPaginasi,
+// UKURAN_JENDELA 2 bukan 3) DAN seluruh tombol pagination diperkecil
+// (29px, font 12px). overflow-x:auto dipertahankan sebagai jaring
+// pengaman terakhir, bukan mekanisme utama lagi.
+const ASSET_VERSION = "299";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
