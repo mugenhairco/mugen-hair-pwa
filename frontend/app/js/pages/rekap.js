@@ -1118,7 +1118,16 @@ const PageRekap = (() => {
           // (pola pagination standar, bukan menampilkan SEMUA nomor kalau
           // tanggalnya puluhan dalam satu bulan).
           function _daftarHalamanPaginasi(aktif, total) {
-            const AMBANG = 7; // total tanggal <= ini -> tampilkan semua, tanpa "..."
+            // BUGFIX (PERMINTAAN Owner "jangan terpotong, hilangkan 1 angka"):
+            // di layar sempit (<=480px, mis. iPhone) link "Tambah Transaksi" +
+            // SEMUA tombol pagination tidak muat satu baris -- Owner TIDAK
+            // suka solusi sebelumnya (pagination pindah ke baris sendiri di
+            // bawah link). Sekarang satu nomor tengah dikurangi khusus di
+            // layar sempit (jendela 2 nomor tengah, bukan 3) supaya totalnya
+            // lebih ringkas dan tetap satu baris -- dibarengi tombol yang
+            // diperkecil lewat CSS (lihat style.css, media <=480px).
+            const layarSempit = window.innerWidth <= 480;
+            const AMBANG = layarSempit ? 6 : 7; // total tanggal <= ini -> tampilkan semua, tanpa "..."
             if (total <= AMBANG) return Array.from({ length: total }, (_, i) => i);
             // BUGFIX (PERMINTAAN Owner "selalu tampilkan 5 angka"): jendela
             // SEBELUMNYA (kiri/kanan di-clamp independen ke [1, total-2])
@@ -1127,8 +1136,8 @@ const PageRekap = (() => {
             // menggeser sisi lain untuk menutupinya. UKURAN_JENDELA (3
             // nomor tengah) sekarang digeser utuh saat mentok, supaya
             // total nomor yang tampil (1 awal + 3 tengah + 1 akhir) SELALU
-            // 5, di posisi mana pun.
-            const UKURAN_JENDELA = 3;
+            // 5, di posisi mana pun (4 di layar sempit, lihat atas).
+            const UKURAN_JENDELA = layarSempit ? 2 : 3;
             let kiri = aktif - 1;
             let kanan = aktif + 1;
             if (kiri < 1) { kiri = 1; kanan = kiri + UKURAN_JENDELA - 1; }

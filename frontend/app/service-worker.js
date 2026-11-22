@@ -1544,7 +1544,14 @@
 // boleh pindah ke barisnya sendiri (tetap rata kanan) di bawah link --
 // keduanya selalu utuh kelihatan. Layar >480px tetap satu baris seperti
 // semula.
-const ASSET_VERSION = "298";
+// v298 -> v299: REVISI (PERMINTAAN Owner -- tidak suka pagination pindah
+// baris sendiri di bawah link): dikembalikan ke SATU baris nowrap seperti
+// semula. Supaya tetap tidak ada yang kepotong di layar <=480px: satu
+// nomor tengah pagination dikurangi (rekap.js::_daftarHalamanPaginasi,
+// UKURAN_JENDELA 2 bukan 3) DAN seluruh tombol pagination diperkecil
+// (29px, font 12px). overflow-x:auto dipertahankan sebagai jaring
+// pengaman terakhir, bukan mekanisme utama lagi.
+const ASSET_VERSION = "299";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
