@@ -240,6 +240,20 @@ def _terapkan_status_invoice(invoice: dict, status_baru: str, sumber: str,
     if status_baru == STATUS_PAID:
         _aktifkan_subscription(invoice["tenant_id"], invoice["package_kode"],
                                 periode_mulai=fields["periode_mulai"], periode_selesai=fields["periode_selesai"])
+        # BUGFIX UANG (audit "susuri menyeluruh" -- "komisi afiliasi hilang
+        # untuk pembayaran gateway"): SEBELUMNYA jalur PAID online ini
+        # (dipakai webhook Xpress lama MAUPUN snap_webhook.py::
+        # _cascade_saas_billing() yang baru, lihat docstring fungsi ini)
+        # tidak pernah memanggil sales_db sama sekali -- tenant hasil
+        # referral sales yang bayar lewat Payment Gateway tidak pernah
+        # menghasilkan komisi. Import lokal (hindari import siklik level
+        # modul, pola sama seperti routers/subscription.py) -- tidak ada
+        # efek apa pun kalau tenant tidak punya kode referral terpasang.
+        # `invoice` (parameter, BUKAN hasil get_invoice() lagi) sudah
+        # punya id/tenant_id/jumlah yang dibutuhkan, tidak berubah oleh
+        # transisi status ini.
+        import sales_db
+        sales_db.catat_komisi_dari_invoice(invoice)
 
     return billing_invoice_db.get_invoice(invoice["id"])
 

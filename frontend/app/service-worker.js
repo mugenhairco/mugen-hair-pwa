@@ -1660,7 +1660,13 @@
 // codebase -- bisa jalan selamanya tiap 4 detik di background kalau
 // kasir membuat Booking Mandiri gateway lain sebelum transaksi lama
 // lunas/batal).
-const ASSET_VERSION = "313";
+// v313 -> v314: audit menyeluruh babak 2 -- tabel Komisi Sales (Super
+// Admin) sekarang mengenal status "dibatalkan" (komisi yang dibatalkan
+// otomatis saat Super Admin mengoreksi status pembayaran subscription
+// dari 'paid' ke status lain SEBELUM komisinya dicairkan) -- badge &
+// tombol aksi disesuaikan supaya tidak salah tampil sebagai "Belum
+// Dibayar".
+const ASSET_VERSION = "314";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

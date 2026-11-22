@@ -29,12 +29,32 @@ sini -- di luar permintaan Owner, tetap baris sendiri seperti sekarang.
 lama juga tidak pernah mengisi field ini)."""
 
 import logging
+import threading
+from collections import defaultdict
 
 from database import get_conn, hapus_transaksi, tambah_transaksi
 
 logger = logging.getLogger(__name__)
 
 SUMBER_POS_BOOKING = "pos_booking"
+
+# BUGFIX UANG (audit "susuri menyeluruh" -- pola sama persis
+# kasbon_db.py::_kunci_per_kasbon / slip_gaji_db.py::_kunci_per_slip):
+# rebuild_transaksi_pos_booking_barber_hari() membaca kontribusi POS+
+# Booking, HAPUS baris lama, lalu INSERT baris baru -- rangkaian baca-
+# hapus-tulis itu TIDAK atomik dan SEBELUMNYA tidak dikunci sama sekali.
+# Dua pemicu rebuild untuk barber+tanggal YANG SAMA nyaris bersamaan (mis.
+# webhook PAID booking A datang tepat saat Kasir klik "Verifikasi" booking
+# B, atau POS lunas, untuk barber & tanggal yang sama) bisa SAMA-SAMA
+# membaca kontribusi SEBELUM salah satu sempat menghapus baris lama,
+# sehingga KEDUANYA memanggil tambah_transaksi() dan omzet/komisi hari itu
+# tercatat DOBEL. Lock per (barber_id, tanggal) menyerialkan seluruh
+# rangkaian baca-hapus-tulis untuk kombinasi itu.
+_kunci_per_barber_tanggal: dict[tuple[int, str], threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_rekap(barber_id: int, tanggal: str) -> threading.Lock:
+    return _kunci_per_barber_tanggal[(barber_id, tanggal)]
 
 
 def _ambil_kontribusi_pos(tenant_id: int, barber_id: int, tanggal: str):
@@ -85,7 +105,14 @@ def rebuild_transaksi_pos_booking_barber_hari(tenant_id: int, barber_id: int, ta
     """Hapus baris `transaksi` lama (kalau ada) sumber=SUMBER_POS_BOOKING
     untuk barber+tanggal ini, lalu bangun ULANG dari gabungan kontribusi
     POS + Booking hari itu (qty per service_id dijumlahkan lintas KEDUA
-    sumber, tips HANYA dari POS)."""
+    sumber, tips HANYA dari POS). SELURUH rangkaian ini dikunci per
+    (barber_id, tanggal) lewat _kunci_rekap() -- lihat komentar di
+    _kunci_per_barber_tanggal di atas."""
+    with _kunci_rekap(barber_id, tanggal):
+        _rebuild_terkunci(tenant_id, barber_id, tanggal)
+
+
+def _rebuild_terkunci(tenant_id: int, barber_id: int, tanggal: str) -> None:
     agregat_pos, tips = _ambil_kontribusi_pos(tenant_id, barber_id, tanggal)
     agregat_booking = _ambil_kontribusi_booking(tenant_id, barber_id, tanggal)
 
