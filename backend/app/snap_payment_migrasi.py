@@ -119,3 +119,16 @@ def migrasi_snap_payment():
                 updated_at            TEXT NOT NULL
             )
         """)
+        # BUGFIX PERFORMA (audit "apa saja yang membebani server", bukan laporan
+        # Owner): snap_payment_db.get_transaksi_terkini_untuk_booking() --
+        # "SELECT * FROM snap_payment_transactions WHERE booking_id = ? ORDER
+        # BY id DESC LIMIT 1" -- dipanggil di jalur yang SANGAT sering lewat
+        # booking_db.py::_perkaya_status_gateway() (jalan tiap kali get_booking()
+        # dipanggil untuk booking metode gateway -- praktis di hampir SETIAP
+        # tampilan booking manapun) DAN sekarang juga oleh batalkan_booking()/
+        # hapus_booking() (lihat komentar di sana) -- TIDAK PERNAH punya index
+        # di kolom booking_id sejak tabel ini dibuat, jadi setiap panggilan full
+        # table scan. Belum terasa sekarang (~200 baris produksi), tapi akan
+        # makin lambat linear seiring tabel bertambah besar. Index ini murni
+        # mempercepat baca, TIDAK mengubah perilaku apa pun.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_payment_transactions_booking_id ON snap_payment_transactions(booking_id)")

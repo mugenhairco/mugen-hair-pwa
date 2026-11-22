@@ -1264,6 +1264,12 @@ CREATE TABLE IF NOT EXISTS snap_payment_transactions (
 -- maupun baru, pola sama seperti ALTER TABLE lain di file ini.
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS binding_id INTEGER;
 
+-- BUGFIX PERFORMA (lihat snap_payment_migrasi.py jalur SQLite untuk
+-- penjelasan lengkap): get_transaksi_terkini_untuk_booking() dipanggil di
+-- jalur yang sangat sering lewat (_perkaya_status_gateway(), praktis tiap
+-- tampilan booking manapun) TANPA index di booking_id -- full table scan.
+CREATE INDEX IF NOT EXISTS idx_snap_payment_transactions_booking_id ON snap_payment_transactions(booking_id);
+
 -- Fitur multi-bank VA (Super Admin bisa aktifkan lebih dari satu bank VA
 -- sekaligus) -- kode bank yang BENAR-BENAR dipakai per transaksi harus
 -- tersimpan supaya rekonsiliasi/cek-status nanti tidak salah pakai config
