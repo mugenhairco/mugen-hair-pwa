@@ -866,10 +866,23 @@ def hitung_slot(barber_id: int, tanggal: str, service_ids: list = None, tenant_i
         closed = _get_closed_slots_tanggal(conn, barber_id, tanggal)
         booked = _get_booking_aktif_tanggal(conn, barber_id, tanggal)
 
+    # BUGFIX (audit "susuri menyeluruh" -- booking tanggal lampau diterima):
+    # sebelumnya `sekarang_menit` (penentu slot "closed" karena jamnya
+    # sudah lewat) HANYA diisi kalau tanggal == hari ini -- tanggal yang
+    # SELURUHNYA sudah lewat (kemarin, bulan lalu, dst.) tidak pernah
+    # masuk cabang ini sama sekali, jadi SEMUA slotnya tampil "available"
+    # (lihat juga _validasi_slot_tersedia() yang sekarang menolak tanggal
+    # ini lebih awal di jalur submit -- perbaikan DI SINI supaya tampilan
+    # pilih jam juga tidak menyesatkan, bukan cuma ditolak belakangan).
+    # `sekarang_menit = jam_tutup_menit` membuat SELURUH slot hari itu
+    # (yang semuanya t < jam_tutup_menit per kondisi while loop di bawah)
+    # otomatis jatuh ke cabang "jam sudah lewat" -> status "closed".
     sekarang_menit = None
     if tanggal == _hari_ini_wib().isoformat():
         now = _sekarang_wib()
         sekarang_menit = now.hour * 60 + now.minute
+    elif tanggal < _hari_ini_wib().isoformat():
+        sekarang_menit = jam_tutup_menit
 
     slots = []
     t = jam_buka_menit
@@ -930,6 +943,15 @@ def _validasi_slot_tersedia(barber_id: int, tanggal: str, jam_mulai: str, durasi
     `exclude_booking_id`: diteruskan ke _get_booking_aktif_tanggal() --
     lihat docstring-nya (dipakai reschedule_booking(), None untuk buat_booking()
     biasa)."""
+    # BUGFIX (audit "susuri menyeluruh" -- booking tanggal lampau diterima):
+    # pengecekan "jam yang dipilih sudah lewat" di bawah HANYA berlaku kalau
+    # `tanggal == hari ini` -- tanggal SEBELUM hari ini (mis. dikirim
+    # langsung ke API publik, tanpa lewat UI kalender yang membatasi
+    # pilihan) tidak pernah ditolak sama sekali di titik mana pun. Dicek
+    # PALING AWAL (lebih mendasar dari toko libur/hari operasional) --
+    # perbandingan string ISO "YYYY-MM-DD" aman dibandingkan leksikografis.
+    if tanggal < _hari_ini_wib().isoformat():
+        raise ValueError("Tidak bisa booking untuk tanggal yang sudah lewat.")
     if is_toko_libur(tanggal, tenant_id=tenant_id):
         raise ValueError("Toko sedang libur pada tanggal ini.")
     if not is_hari_operasional(tanggal, tenant_id=tenant_id):

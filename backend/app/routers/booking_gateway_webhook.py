@@ -17,6 +17,7 @@ yang berhasil diproses (termasuk yang idempoten/duplikat) supaya provider
 tidak retry terus menerus untuk sesuatu yang sebenarnya sudah beres."""
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 import booking_gateway_webhook
 
@@ -27,7 +28,9 @@ public_router = APIRouter(prefix="/api/public/booking", tags=["booking-gateway-w
 async def gateway_webhook(request: Request):
     payload = await request.json()
     try:
-        transaksi = booking_gateway_webhook.proses_notifikasi(payload)
+        # BUGFIX (audit "susuri menyeluruh" -- "webhook async blocking event
+        # loop"): pola & alasan SAMA PERSIS routers/billing_webhook.py.
+        transaksi = await run_in_threadpool(booking_gateway_webhook.proses_notifikasi, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "transaction_id": transaksi["id"], "status": transaksi["status_pembayaran"]}

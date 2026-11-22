@@ -14,6 +14,7 @@ import auth_db
 import email_auth_db
 import email_service
 import email_templates
+import push_db
 import tenant_db
 from auth import buat_token, get_current_user, hash_token
 
@@ -187,6 +188,12 @@ def logout(user: dict = Depends(get_current_user)):
     lagi di request berikutnya, sama seperti kalau akun ini login di
     device lain."""
     auth_db.set_session_hash(user["id"], None)
+    # BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "push notifikasi tidak
+    # dilepas saat logout"): lihat docstring lengkap push_db.
+    # hapus_semua_subscription_milik_user() -- subscription push terikat ke
+    # BROWSER, bukan ke sesi login, jadi harus ikut dilepas di sini secara
+    # eksplisit, TIDAK otomatis ikut mati hanya karena sesi dicabut.
+    push_db.hapus_semua_subscription_milik_user(user["id"])
     return {"ok": True}
 
 

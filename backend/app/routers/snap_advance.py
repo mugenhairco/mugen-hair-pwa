@@ -47,6 +47,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 import snap_advance_db
@@ -144,7 +145,21 @@ async def _tangani_notifikasi(request: Request, jenis: str, path: str):
     logger.info("SNAP WEBHOOK IN -- POST %s -- X-TIMESTAMP: %s -- X-SIGNATURE: %s -- snap_faspay_public_key terisi: %s -- BODY: %s",
                 path, timestamp_header, signature_header, public_key_terisi, raw_body)
     try:
-        snap_webhook.proses_notifikasi(raw_body, signature_header, timestamp_header, jenis, path)
+        # BUGFIX (audit "susuri menyeluruh" -- "webhook async blocking event
+        # loop"): proses_notifikasi() verifikasi signature RSA (CPU-bound)
+        # + SELURUH kerja database SINKRON (idempotency check, update
+        # status, cascade ke booking/POS/billing/lifetime) -- SEBELUMNYA
+        # dipanggil LANGSUNG di endpoint `async def` ini, yang berarti
+        # SELURUH proses itu berjalan di thread event loop uvicorn.
+        # Karena deployment ini SATU proses uvicorn tanpa --workers (lihat
+        # render.yaml), request LAIN (booking publik, Dashboard Admin, dst)
+        # TIDAK BISA dilayani SAMA SEKALI selama webhook ini masih
+        # berjalan. run_in_threadpool() (reuse Starlette, sudah jadi
+        # dependency FastAPI, BUKAN paket baru) memindahkan pemanggilan ini
+        # ke thread pool terpisah -- event loop tetap bebas melayani
+        # request lain selagi webhook ini diproses di background.
+        await run_in_threadpool(
+            snap_webhook.proses_notifikasi, raw_body, signature_header, timestamp_header, jenis, path)
         balasan = snap_webhook.balas_notifikasi(jenis, json.loads(raw_body))
         logger.info("SNAP WEBHOOK IN -- POST %s -- diterima, balasan: %s", path, balasan)
         return balasan

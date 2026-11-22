@@ -21,6 +21,7 @@ diproses (termasuk yang idempoten/duplikat) supaya provider tidak retry
 terus menerus untuk sesuatu yang sebenarnya sudah beres."""
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 import billing_webhook
 
@@ -31,7 +32,13 @@ public_router = APIRouter(prefix="/api/public/billing", tags=["billing-webhook"]
 async def gateway_webhook(request: Request):
     payload = await request.json()
     try:
-        invoice = billing_webhook.proses_notifikasi(payload)
+        # BUGFIX (audit "susuri menyeluruh" -- "webhook async blocking event
+        # loop"): proses_notifikasi() SELURUHNYA kerja database sinkron
+        # (signature, idempotency, aktivasi subscription) -- dipindah ke
+        # thread pool (run_in_threadpool, reuse Starlette lewat FastAPI,
+        # BUKAN paket baru) supaya tidak menahan event loop satu-satunya
+        # proses uvicorn ini (lihat render.yaml) selagi diproses.
+        invoice = await run_in_threadpool(billing_webhook.proses_notifikasi, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "invoice_id": invoice["id"], "status": invoice["status"]}
