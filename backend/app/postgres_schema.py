@@ -1277,6 +1277,16 @@ CREATE INDEX IF NOT EXISTS idx_snap_payment_transactions_booking_id ON snap_paym
 -- SQLite) untuk penjelasan lengkap.
 ALTER TABLE snap_payment_transactions ADD COLUMN IF NOT EXISTS channel_code TEXT;
 
+-- BUGFIX PERFORMA (audit "susuri menyeluruh, apa saja yang membebani
+-- server" -- kategori sama dengan idx_snap_payment_transactions_booking_id
+-- di atas): bookings & pos_transaksi TIDAK PERNAH punya index di kolom yang
+-- di-query terus-menerus (rekap_gabungan_db.py::_ambil_kontribusi_booking()/
+-- _ambil_kontribusi_pos(), dipanggil SETIAP kali POS/Booking berubah;
+-- get_booking_list()/get_transaksi_hari_ini(), tampilan admin) -- full table
+-- scan tanpa ini. Murni mempercepat baca, TIDAK mengubah perilaku apa pun.
+CREATE INDEX IF NOT EXISTS idx_bookings_tenant_tanggal_barber ON bookings(tenant_id, tanggal, barber_id);
+CREATE INDEX IF NOT EXISTS idx_pos_transaksi_tenant_tanggal ON pos_transaksi(tenant_id, tanggal);
+
 -- FITUR Program Afiliasi Sales/Marketing -- Lisensi Lifetime (Beli Putus)
 -- dibayar lewat gateway SNAP Advance yang SAMA dengan Booking Payment &
 -- SaaS Billing di atas -- kolom ini menautkan transaksi SNAP ke baris

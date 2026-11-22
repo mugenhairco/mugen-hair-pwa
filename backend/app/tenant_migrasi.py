@@ -87,6 +87,19 @@ def migrasi_tenant():
                 _backfill_tenant_id(conn, tabel, tenant_id_default)
         _migrasi_prefix_settings(conn, tenant_id_default)
         _backfill_default_settings_semua_tenant(conn)
+        # BUGFIX PERFORMA (audit "susuri menyeluruh, apa saja yang membebani
+        # server" -- kategori sama dengan idx_snap_payment_transactions_
+        # booking_id yang sudah diperbaiki sebelumnya): bookings TIDAK
+        # PERNAH punya index di kolom yang di-query terus-menerus --
+        # rekap_gabungan_db.py::_ambil_kontribusi_booking() (JOIN bookings
+        # WHERE tenant_id+tanggal+barber_id, dipanggil SETIAP kali POS/
+        # Booking berubah) dan get_booking_list() (tenant_id+tanggal,
+        # tampilan Booking List/Calendar Admin) keduanya full table scan
+        # tanpa ini. HARUS di SINI (bukan booking_db.py::init_booking_db(),
+        # yang berjalan SEBELUM baris ALTER TABLE tenant_id di atas untuk
+        # instalasi lama) -- kolom tenant_id baru benar-benar ada di titik
+        # ini. Murni mempercepat baca, TIDAK mengubah perilaku apa pun.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bookings_tenant_tanggal_barber ON bookings(tenant_id, tanggal, barber_id)")
 
 
 def _buat_tabel_tenants(conn):

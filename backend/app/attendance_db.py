@@ -1072,14 +1072,30 @@ def check_out(tenant_id: int, barber_id: int, latitude, longitude, accuracy=None
     check_in_at = datetime.fromisoformat(existing["check_in_at"])
     durasi_menit = int((sekarang - check_in_at).total_seconds() // 60)
     with get_conn() as conn:
-        conn.execute(
+        # REVISI (audit race condition -- simetris dengan fix check_in()
+        # sebelumnya): dulu UPDATE tanpa guard apa pun, sedangkan
+        # validasi_checkout() membaca `existing.get("check_out_at")` di
+        # transaksi TERPISAH sebelum UPDATE ini -- dua Check Out nyaris
+        # bersamaan (tap ganda, atau device kedua di Absen Mandiri) bisa
+        # SAMA-SAMA lolos validasi, dan yang datang belakangan diam-diam
+        # MENIMPA data lokasi/akurasi/durasi_kerja milik Check Out pertama.
+        # Sekarang `AND check_out_at IS NULL` di WHERE jadi penentu akhir
+        # (DB-level, bukan Python yang bisa balapan) -- request kedua yang
+        # kalah dideteksi lewat rowcount == 0 dan ditolak, BUKAN menimpa.
+        cur = conn.execute(
             """UPDATE attendance_logs SET check_out_at = ?, check_out_latitude = ?, check_out_longitude = ?,
                    check_out_accuracy = ?, check_out_speed = ?, check_out_heading = ?, check_out_jarak_meter = ?,
                    check_out_browser = ?, check_out_device = ?, check_out_ip = ?, durasi_kerja_menit = ?,
-                   updated_at = ? WHERE id = ?""",
+                   updated_at = ? WHERE id = ? AND check_out_at IS NULL""",
             (now_iso, latitude, longitude, accuracy, speed, heading, jarak, browser, device, ip_address,
              durasi_menit, now_iso, existing["id"]),
         )
+        gagal_race = cur.rowcount == 0
+    if gagal_race:
+        catat_audit(barber_id, "check_out", False, alasan_gagal="Race: sudah Check Out (konflik DB)",
+                    latitude=latitude, longitude=longitude, accuracy=accuracy,
+                    browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
+        raise ValueError("Anda sudah Check Out hari ini.")
     catat_audit(barber_id, "check_out", True, latitude=latitude, longitude=longitude, accuracy=accuracy,
                 browser=browser, device=device, ip_address=ip_address, tenant_id=tenant_id)
     return get_log(existing["id"])

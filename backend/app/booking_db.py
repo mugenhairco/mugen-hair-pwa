@@ -214,6 +214,14 @@ def init_booking_db():
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
             )
         """)
+        # BUGFIX PERFORMA index tenant_id+tanggal+barber_id -- SENGAJA TIDAK
+        # dibuat di sini (beda dari idx_pos_transaksi_tenant_tanggal di
+        # pos_db.py): kolom tenant_id bookings BELUM ADA di titik ini untuk
+        # instalasi lama (ditambahkan belakangan lewat ALTER TABLE di
+        # tenant_migrasi.py::migrasi_tenant(), yang berjalan SETELAH
+        # init_booking_db() ini di main.py::on_startup() -- CREATE INDEX
+        # akan error "no such column" kalau dipaksakan di sini). Index-nya
+        # dibuat di tenant_migrasi.py SETELAH ALTER TABLE itu, lihat di sana.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS booking_items (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
