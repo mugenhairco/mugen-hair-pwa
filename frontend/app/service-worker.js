@@ -1601,7 +1601,16 @@
 // Tombol Cetak PDF Riwayat Mutasi juga diganti ikon print polos
 // (MugenIcons.print), disisipkan ke baris filter yang sama (bukan baris
 // sendiri lagi).
-const ASSET_VERSION = "305";
+// v305 -> v306: PERMINTAAN Owner ("hapus fitur Periode, jangan cuma
+// disembunyikan -- tulisan Bulanan juga dihapus karena memang tidak ada
+// pilihan lagi") -- Dashboard Owner/Admin: mode "Periode" (rentang
+// tanggal bebas) beserta tab switcher "Bulanan"/"Periode" DIHAPUS
+// PERMANEN dari frontend (bukan disembunyikan lewat CSS/kondisi) --
+// hanya tersisa picker Bulan+Tahun langsung tanpa tab apa pun, sama
+// seperti sebelum fitur Periode ditambahkan. Endpoint backend
+// /api/dashboard/owner/periode TIDAK dihapus (dibiarkan ada tanpa
+// konsumen UI, pola sama seperti endpoint laporan PDF lama di Backup).
+const ASSET_VERSION = "306";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
