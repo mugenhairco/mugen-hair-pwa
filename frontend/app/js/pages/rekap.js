@@ -197,18 +197,26 @@ const PageRekap = (() => {
   // dipanggil ULANG setiap kali tombol diklik (bukan sekali di awal),
   // supaya filter yang aktif SAAT diklik yang dipakai -- return
   // { generate: () => Promise<Blob>, filename: string }.
-  function tombolCetakPdf(computeOptions) {
+  function tombolCetakPdf(computeOptions, { iconOnly = false } = {}) {
     // Feature Gating "export_pdf": tanpa fitur ini di paket, tombolnya
-    // diganti blok upgrade -- SATU titik keputusan untuk seluruh 3 pemanggil
-    // tombolCetakPdf() di file ini (Rekap Detail/Ringkasan, Rekap Pengeluaran).
+    // diganti blok upgrade -- SATU titik keputusan untuk seluruh pemanggil
+    // tombolCetakPdf() di file ini (Rekap Detail/Ringkasan, Bulanan, Pengeluaran).
     if (typeof MugenFeature !== "undefined" && !MugenFeature.has("export_pdf")) {
       return MugenFeature.upgradeBlock("Export PDF");
     }
-    // PERMINTAAN Owner ("tombol Cetak PDF ikutin warna yang sudah ada di
-    // pengaturan aplikasi"): class "btn-primary" -- warna aksen yang SAMA
-    // dipakai tombol utama lain di seluruh app (Simpan, dst), bukan warna
-    // biru-ungu di gambar referensi (itu cuma contoh layout, bukan warna).
-    const btn = MugenUI.el("button", { class: "btn-primary" }, "Cetak PDF");
+    // PERMINTAAN Owner (tab Bulanan/Pengeluaran: "tidak perlu kartu
+    // Laporan PDF, ganti ikon print saja"): `iconOnly` -- tombol ikon
+    // print polos (pola SAMA seperti tombol menu "⋮" -- .aksi-btn),
+    // dipakai di header kartu Filter alih-alih kartu PDF sendiri. Tab
+    // Transaksi (Periode/Jenis Laporan lebih kompleks) TETAP pakai
+    // tombol teks penuh seperti semula (iconOnly default false).
+    const btn = iconOnly
+      ? MugenUI.el("button", { type: "button", class: "aksi-btn", title: "Cetak PDF", "aria-label": "Cetak PDF", html: MugenIcons.print })
+      // PERMINTAAN Owner ("tombol Cetak PDF ikutin warna yang sudah ada di
+      // pengaturan aplikasi"): class "btn-primary" -- warna aksen yang SAMA
+      // dipakai tombol utama lain di seluruh app (Simpan, dst), bukan warna
+      // biru-ungu di gambar referensi (itu cuma contoh layout, bukan warna).
+      : MugenUI.el("button", { class: "btn-primary" }, "Cetak PDF");
     btn.addEventListener("click", () => {
       const { generate, filename } = computeOptions();
       MugenPdfPreview.open({ generate, filename });
@@ -693,11 +701,21 @@ const PageRekap = (() => {
         fieldBlock("Tahun", MugenUI.selectIcon(MugenIcons.calendar, selTahun)),
         ...(selBarber ? [fieldBlock(labelSemua === "Semua Karyawan" ? "Karyawan" : "Barber", MugenUI.selectIcon(MugenIcons.karyawan, selBarber))] : []),
       ]);
-      const filterCard = MugenUI.el("div", { class: "card rekap-card" }, [
+      // PERMINTAAN Owner (tab Bulanan/Pengeluaran: "tidak perlu kartu
+      // Laporan PDF, ganti ikon print saja"): header kartu Filter dibuat
+      // satu baris (h2 + slot kosong di kanan) supaya pemanggil yang
+      // perlu (renderBulanan/renderPengeluaran) bisa menyisipkan tombol
+      // ikon print langsung di sini, TANPA kartu terpisah lagi. Tab
+      // Transaksi tidak menambahkan apa pun ke `filterHeaderRow` --
+      // tampilannya identik seperti sebelumnya (h2 "Filter" sendirian).
+      const filterHeaderRow = MugenUI.el("div", { class: "rekap-card-header" }, [
         MugenUI.el("h2", {}, "Filter"),
+      ]);
+      const filterCard = MugenUI.el("div", { class: "card rekap-card" }, [
+        filterHeaderRow,
         grid,
       ]);
-      return { filterCard, selBulan, selTahun, selBarber };
+      return { filterCard, filterHeaderRow, selBulan, selTahun, selBarber };
     }
 
     // FITUR "Muat Bertahap" (PERMINTAAN Owner -- tab Bulanan/Pengeluaran
@@ -1401,8 +1419,11 @@ const PageRekap = (() => {
     }
 
     async function renderBulanan() {
-      const { filterCard, selBulan, selTahun, selBarber } = filterBar();
-      const btnCetakPdf = tombolCetakPdf(() => {
+      const { filterCard, filterHeaderRow, selBulan, selTahun, selBarber } = filterBar();
+      // PERMINTAAN Owner ("tidak perlu kartu Laporan PDF, ganti ikon print
+      // saja"): tombol ikon print disisipkan di header kartu Filter --
+      // kartu PDF terpisah yang sebelumnya ada di sini DIHAPUS.
+      filterHeaderRow.appendChild(tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
         const barberNama = selBarber && selBarber.value
@@ -1412,17 +1433,9 @@ const PageRekap = (() => {
           generate: () => MugenApi.fetchBlob(`/api/rekap/bulanan/pdf?${qs}`),
           filename: MugenUI.namaFileAman(`Rekap Bulanan ${barberNama} ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
         };
-      });
-      // PERMINTAAN Owner (Redesain Rekap -- kartu kedua konsisten di
-      // seluruh tab, walau tab ini tidak punya Periode/Jenis Laporan
-      // seperti Transaksi): cuma berisi tombol Cetak PDF, full-width di HP.
-      const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
-        MugenUI.el("h2", {}, "Laporan PDF"),
-        MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
-      ]);
+      }, { iconOnly: true }));
       const tableWrap = MugenUI.el("div");
       body.appendChild(filterCard);
-      body.appendChild(pdfCard);
       body.appendChild(tableWrap);
 
       function renderDenganData(data) {
@@ -1500,22 +1513,19 @@ const PageRekap = (() => {
     }
 
     async function renderPengeluaran() {
-      const { filterCard, selBulan, selTahun } = filterBar({ withBarber: false });
-      const btnCetakPdf = tombolCetakPdf(() => {
+      const { filterCard, filterHeaderRow, selBulan, selTahun } = filterBar({ withBarber: false });
+      // PERMINTAAN Owner ("tidak perlu kartu Laporan PDF, ganti ikon print
+      // saja"): lihat catatan lengkap di renderBulanan() di atas.
+      filterHeaderRow.appendChild(tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         return {
           generate: () => MugenApi.fetchBlob(`/api/rekap/pengeluaran/pdf?${qs}`),
           filename: MugenUI.namaFileAman(`Rekap Pengeluaran ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
         };
-      });
-      const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
-        MugenUI.el("h2", {}, "Laporan PDF"),
-        MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
-      ]);
+      }, { iconOnly: true }));
       const totalBox = MugenUI.el("div", { class: "card" });
       const tableWrap = MugenUI.el("div");
       body.appendChild(filterCard);
-      body.appendChild(pdfCard);
       body.appendChild(totalBox);
       body.appendChild(tableWrap);
 

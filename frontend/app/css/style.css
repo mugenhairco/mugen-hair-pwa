@@ -805,6 +805,14 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
    di-scope ke dua kelas grid itu). */
 .card.rekap-card { padding: 14px 18px; }
 .card.rekap-card h2 { margin: 0 0 10px; font-size: 13px; }
+/* PERMINTAAN Owner (tab Bulanan/Pengeluaran: "tidak perlu kartu Laporan
+   PDF, ganti ikon print saja"): header kartu Filter jadi satu baris (h2
+   + tombol ikon print di kanan, lihat rekap.js::filterBar()/
+   renderBulanan()/renderPengeluaran()) -- margin-bottom dipindah ke baris
+   ini sendiri (h2 di dalamnya di-reset ke 0) supaya tidak dobel dengan
+   margin bawaan h2 di atas. */
+.rekap-card-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.card.rekap-card .rekap-card-header h2 { margin: 0; }
 .rekap-field-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
 .rekap-filter-grid, .rekap-pdf-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: end;

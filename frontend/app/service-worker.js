@@ -1576,7 +1576,14 @@
 // kecil), field di dalam grid-nya (select/input/trigger Date Range
 // Picker/tombol Cetak PDF) dibuat lebih kompak (padding & font-size
 // diperkecil). Hanya tampilan -- tidak ada perubahan fungsi/data.
-const ASSET_VERSION = "302";
+// v302 -> v303: PERMINTAAN Owner (tab Bulanan/Pengeluaran: "tidak perlu
+// kartu Laporan PDF, ganti ikon print saja") -- kartu "Laporan PDF" di
+// kedua tab itu DIHAPUS, tombol Cetak PDF-nya diganti ikon print polos
+// (ikon baru MugenIcons.print, icons.js) disisipkan di header kartu
+// Filter (kanan judul "Filter"). Tab Transaksi TIDAK berubah (tetap
+// tombol teks penuh, Periode/Jenis Laporan tetap ada). Fungsi/endpoint
+// Cetak PDF tidak berubah sama sekali, hanya bentuk tombolnya.
+const ASSET_VERSION = "303";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
