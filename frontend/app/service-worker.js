@@ -1551,7 +1551,16 @@
 // UKURAN_JENDELA 2 bukan 3) DAN seluruh tombol pagination diperkecil
 // (29px, font 12px). overflow-x:auto dipertahankan sebagai jaring
 // pengaman terakhir, bukan mekanisme utama lagi.
-const ASSET_VERSION = "299";
+// v299 -> v300: PERMINTAAN Owner (2 perubahan UI):
+// (1) Tombol "Hapus" kolom Aksi tab Transaksi Rekap (juga Reimburse/
+// Kasbon/Gaji Non-Barber/Keterangan Libur di tab yang sama) sekarang link
+// teks polos (gaya "Lupa Kata Sandi?"), BUKAN tombol pil merah -- lihat
+// class .text-link-aksi baru dipakai tombolAksi() di rekap.js.
+// (2) Kolom Aksi tab Karyawan/Layanan/User & Hak Akses (Setting) --
+// sebelumnya sampai 6 tombol sejajar per baris -- sekarang satu tombol
+// menu "⋮" (MugenUI.bukaMenuAksi(), pola SAMA PERSIS Booking List/Daftar
+// Produk). Seluruh kondisi/aksi tiap tombol lama TIDAK berubah.
+const ASSET_VERSION = "300";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
