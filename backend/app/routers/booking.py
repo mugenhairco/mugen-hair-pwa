@@ -638,11 +638,15 @@ def _pastikan_toko_libur_tenant_sama(user: dict, toko_libur: dict | None):
 
 @router.get("")
 def list_booking(tahun: int = None, bulan: int = None, barber_id: int = None,
-                  status_booking: str = None, user: dict = Depends(require_menu_read("booking"))):
+                  status_booking: str = None, limit: int = None,
+                  user: dict = Depends(require_menu_read("booking"))):
     """Dipakai Booking List & Calendar (Calendar cukup mengelompokkan hasil
-    yang sama per tanggal di frontend, tidak perlu endpoint terpisah)."""
+    yang sama per tanggal di frontend, tidak perlu endpoint terpisah).
+    `limit` opsional (FITUR Muat Bertahap Booking List, PERMINTAAN Owner):
+    lihat catatan lengkap di booking_db.py::get_booking_list()."""
     return booking_db.get_booking_list(barber_id=barber_id, tahun=tahun, bulan=bulan,
-                                        status_booking=status_booking, tenant_id=user["tenant_id"])
+                                        status_booking=status_booking, tenant_id=user["tenant_id"],
+                                        limit=limit)
 
 
 # =============================================================================

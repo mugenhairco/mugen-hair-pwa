@@ -1941,6 +1941,17 @@ body.book-public-active {
 .book-calendar-cell.disabled { opacity: 0.3; cursor: not-allowed; }
 .book-calendar-cell.selected { background: var(--book-grad-primary); color: #fff; border-color: var(--accent); font-weight: 700; box-shadow: var(--book-shadow-glow); }
 .book-calendar-cell:hover:not(.disabled):not(.selected) { border-color: var(--accent); background: var(--bg-card); }
+/* BUGFIX (PERMINTAAN Owner, tab Booking > Calendar -- admin: "tanggal
+   yang dipilih jadi hilang"): .book-calendar-cell.selected di atas
+   SENGAJA pakai var(--book-grad-primary)/--book-shadow-glow yang HANYA
+   didefinisikan di scope .book-public (Web Booking publik, lihat
+   komentar panjang di dekat .bm-calendar -- bug yang SAMA PERSIS pernah
+   terjadi di sana). Kalender admin (pages/booking.js::renderCalendar(),
+   dipakai TANPA wrapper .book-public) diberi class modifier ini supaya
+   SATU-SATUNYA titik yang beda -- state "selected" -- pakai warna solid
+   var(--accent), yang SELALU terdefinisi. Ukuran/sel lain TIDAK berubah
+   sama sekali (tetap reuse .book-calendar-cell apa adanya). */
+.book-calendar--admin .book-calendar-cell.selected { background: var(--accent); box-shadow: none; }
 
 /* FITUR Tampilan Operasional Harian Barber (tab "Hari Ini"/"Akan Datang",
    lihat pages/booking.js::bookingCard()) -- kartu ringkas untuk dibaca
