@@ -1587,6 +1587,36 @@ def batalkan_booking(booking_id: int):
     sudah_dibatalkan = booking["status_booking"] == "dibatalkan"
     with get_conn() as conn:
         conn.execute("UPDATE bookings SET status_booking = 'dibatalkan' WHERE id = ?", (booking_id,))
+    # BUGFIX (laporan Owner: "customer polling terus menerus walau admin
+    # sudah membatalkan booking-nya"): titik ini SEBELUMNYA hanya mengubah
+    # bookings.status_booking -- transaksi Payment Gateway (snap_payment_
+    # transactions) milik booking ini TIDAK PERNAH ikut ditandai batal kalau
+    # masih berstatus CREATED/PENDING saat admin membatalkan manual (BEDA
+    # dari pembatalan OTOMATIS 15 menit, yang memang titik mulainya dari
+    # transaksi -- lihat batalkan_booking_gateway_kedaluwarsa()). Akibatnya:
+    # (1) endpoint publik /snap-status/{payment_reference} yang di-poll
+    # customer tiap 3 detik terus membaca status lama transaksi itu (PENDING
+    # selamanya, TIDAK PERNAH tahu booking sudah dibatalkan) -- polling
+    # browser customer jadi TIDAK PERNAH berhenti sendiri selama tab/halaman
+    # itu masih hidup; (2) mekanisme auto-expire 15 menit JUGA ikut berhenti
+    # bekerja untuk transaksi ini sejak saat ini (query-nya mensyaratkan
+    # status_booking='aktif', yang sudah tidak terpenuhi lagi) -- transaksi
+    # ini akan PERMANEN tidak pernah "dibersihkan" tanpa baris di bawah.
+    #
+    # Perbaikan: tandai transaksi (kalau ada & masih CREATED/PENDING) jadi
+    # CANCELLED di SINI juga, lewat snap_payment_db.update_status()
+    # LANGSUNG -- BUKAN snap_webhook.terapkan_status_transaksi() (yang
+    # men-cascade balik ke sini lewat _cascade_booking() -> batalkan_booking()
+    # untuk status FAILED/EXPIRED/CANCELLED, lihat snap_webhook.py -- kalau
+    # dipanggil dari sini akan jadi rekursi tak berujung). update_status()
+    # sendiri sudah idempoten & TIDAK men-cascade apa pun, aman dipanggil
+    # berkali-kali/dari jalur mana pun.
+    if not sudah_dibatalkan:
+        transaksi_gateway = snap_payment_db.get_transaksi_terkini_untuk_booking(booking_id)
+        if transaksi_gateway is not None and transaksi_gateway["status"] in (
+            snap_payment_db.STATUS_CREATED, snap_payment_db.STATUS_PENDING,
+        ):
+            snap_payment_db.update_status(transaksi_gateway["id"], snap_payment_db.STATUS_CANCELLED, sumber="batalkan_booking_admin")
     # FITUR Sinkronisasi Booking -> Rekap: booking yang dibatalkan harus
     # ikut hilang dari Rekap kalau sebelumnya sudah lunas+tersinkron --
     # rebuild untuk barber+tanggal booking ini (otomatis mengecualikan
@@ -1975,6 +2005,20 @@ def hapus_booking(booking_id: int) -> dict:
     booking = get_booking(booking_id)
     if booking is None:
         raise ValueError("Booking tidak ditemukan.")
+    # BUGFIX (SAMA PERSIS batalkan_booking() di atas -- lihat komentar
+    # panjang di sana): baris `bookings` dihapus TOTAL di bawah, jadi JOIN
+    # di batalkan_booking_gateway_kedaluwarsa() TIDAK AKAN PERNAH lagi
+    # menemukan transaksi ini (booking_id-nya sudah tidak ada) -- transaksi
+    # Payment Gateway yang masih CREATED/PENDING akan PERMANEN tidak
+    # pernah "dibersihkan" tanpa baris ini, polling customer tidak pernah
+    # berhenti sendiri. Ditandai batal DI SINI, SEBELUM baris bookings-nya
+    # dihapus (urutan tidak masalah -- lookup transaksi lewat booking_id,
+    # bukan join balik ke booking).
+    transaksi_gateway = snap_payment_db.get_transaksi_terkini_untuk_booking(booking_id)
+    if transaksi_gateway is not None and transaksi_gateway["status"] in (
+        snap_payment_db.STATUS_CREATED, snap_payment_db.STATUS_PENDING,
+    ):
+        snap_payment_db.update_status(transaksi_gateway["id"], snap_payment_db.STATUS_CANCELLED, sumber="hapus_booking_admin")
     with get_conn() as conn:
         conn.execute(
             "DELETE FROM booking_payment_status_log WHERE transaction_id IN "

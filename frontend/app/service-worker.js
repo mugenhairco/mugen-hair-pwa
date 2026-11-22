@@ -1653,7 +1653,14 @@
 // v311 -> v312: tambah ikon WhatsApp (reuse IKON_WHATSAPP_SVG, sama
 // seperti ikon Connect With Us) di link "Ada kendala pembayaran? Hubungi
 // kami".
-const ASSET_VERSION = "312";
+// v312 -> v313: BUGFIX "polling tanpa henti" (audit, laporan Owner) --
+// layar "Lihat QRIS/VA" Booking Mandiri (pages/booking.js) sekarang
+// berhenti polling sendiri begitu kartunya hilang dari layar (dulu TIDAK
+// ADA pengecekan ini sama sekali, beda dari polling sejenis lain di
+// codebase -- bisa jalan selamanya tiap 4 detik di background kalau
+// kasir membuat Booking Mandiri gateway lain sebelum transaksi lama
+// lunas/batal).
+const ASSET_VERSION = "313";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

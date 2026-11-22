@@ -985,7 +985,17 @@ const PageBooking = (() => {
       qrisBox.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-top:8px;" }, "Tunjukkan ke customer untuk scan/transfer -- status diperbarui otomatis."));
     }
     renderQris();
+    // BUGFIX (ditemukan saat audit "apa saja yang memanggil server terus
+    // menerus"): sebelumnya TIDAK ADA pengecekan "elemen masih di layar
+    // atau tidak" di sini (beda dari SEMUA polling sejenis lain di
+    // codebase ini -- book_public.js/pos.js/billing_checkout_shared.js) --
+    // begitu kasir membuat Booking Mandiri gateway LAIN sebelum transaksi
+    // ini lunas/batal (hasilBox, induk qrisBox, dirender ulang dari nol
+    // oleh _tampilkanHasilMandiri()), qrisBox lepas dari DOM tapi interval
+    // ini TETAP jalan tiap 4 detik SELAMANYA karena tidak ada yang
+    // menghentikannya.
     const pollTimer = setInterval(async () => {
+      if (!document.body.contains(qrisBox)) { clearInterval(pollTimer); return; }
       try {
         const terbaru = await MugenApi.get(`/api/booking/${booking.id}`);
         if (terbaru.status_pembayaran === "terverifikasi") {
