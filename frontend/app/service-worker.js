@@ -1618,7 +1618,18 @@
 // "Tanggal X dari Y") yang sebelumnya selalu turun ke barisnya sendiri di
 // atas sekarang sejajar satu baris dengan paginasi (ruang yang tadinya
 // dipakai teks "Tambah Transaksi" sudah tidak perlu lagi).
-const ASSET_VERSION = "307";
+// v307 -> v308: PERMINTAAN Owner -- (1) urutan menu sidebar: Point of Sale
+// pindah ke posisi 2, Input Data ke posisi 4, Karyawan ke posisi 8 (lihat
+// nav.js, isi menu TIDAK berubah, murni urutan). (2) BUGFIX tab Booking >
+// Calendar: tanggal yang dipilih sempat "hilang" (CSS variable --book-
+// grad-primary/--book-shadow-glow hanya terdefinisi di scope .book-public,
+// dipakai di luar scope itu di kalender admin -- lihat
+// .book-calendar--admin di style.css). (3) Booking List sekarang muat
+// bertahap: 10 booking terbaru masuk tampil dulu, baru disusul data
+// lengkap (booking_db.py::get_booking_list() param `limit`) -- termasuk
+// bugfix race condition yang ditemukan saat verifikasi (jalur cepat yang
+// telat sempat menimpa jalur penuh yang sudah tampil lebih dulu).
+const ASSET_VERSION = "308";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

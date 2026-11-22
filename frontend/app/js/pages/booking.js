@@ -1291,102 +1291,159 @@ const PageBooking = (() => {
     // default) -- itu memang pergantian konten besar, bukan aksi satu
     // baris; auto-refresh dari push "booking_baru" (_bookingQuietReload,
     // lihat di bawah) SELALU silent:true.
+    // FITUR "Muat Bertahap" Booking List (PERMINTAAN Owner -- "jangan
+    // langsung memuat full semua saat refresh/awal login, cukup 10 teratas
+    // termasuk booking yang baru masuk, sisanya diam-diam disuntikkan
+    // sekaligus (BUKAN satu-satu seperti Rekap)"): tabel + seluruh
+    // callback aksi (Verifikasi/Batalkan/Reschedule/Hapus/TandaiDilihat)
+    // ditarik jadi satu fungsi dipakai ULANG oleh jalur cepat (10 teratas)
+    // maupun jalur penuh (lihat load() di bawah) -- supaya tidak ada
+    // logika yang dobel/berbeda antara keduanya.
+    function renderRows(rows) {
+      // Hak Akses Menu: level "Baca" (bolehEdit=false) -- tombol
+      // Verifikasi/Batalkan/Reschedule TIDAK dikirim ke bookingTable()
+      // sama sekali (null = disembunyikan, lihat bookingTable() di atas),
+      // data booking TETAP tampil apa adanya.
+      return bookingTable(rows, {
+        // PERMINTAAN Owner (Unread Row Highlight): dipanggil onVerifikasi/
+        // onBatalkan/onReschedule di bawah (fire-and-forget, TIDAK
+        // menunggu/menggagalkan aksi utamanya kalau ini gagal) begitu
+        // tombol aksi diklik, DAN oleh bookingTable() sendiri saat baris
+        // metode "gateway" diklik langsung (lihat onRowClick di
+        // bookingTable()). load({silent:true}) yang sudah dipanggil tiap
+        // handler akan membawa dilihat=1 terbaru dari server, highlight
+        // hilang otomatis tanpa kode tambahan di sini.
+        onTandaiDilihat: !bolehEdit ? null : (r) => {
+          MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
+        },
+        onVerifikasi: !bolehEdit ? null : async (r) => {
+          MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
+          try {
+            const hasil = await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
+            // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
+            // pembayaran booking) SENGAJA memakai force:true -- satu dari
+            // sedikit titik toast sukses yang tetap ditampilkan di seluruh
+            // aplikasi (lihat daftar whitelist di ui.js::toast()).
+            MugenUI.toast("Pembayaran diterima, booking dikonfirmasi.", "success", { force: true });
+            // FITUR Booking Mandiri: "sudah lunas, baik dari Booking Mandiri
+            // MAUPUN dari List Booking" -- suntik diam-diam ke Transaksi
+            // Hari Ini POS/Rekap/Dashboard KALAU sedang terbuka sesi ini.
+            _suntikBookingLunasKeHalamanLain(hasil);
+            load({ silent: true });
+            MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
+          } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+        },
+        onBatalkan: !bolehEdit ? null : async (r) => {
+          if (!(await MugenUI.confirmModal({ message: `Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`, danger: true }))) return;
+          MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
+          try {
+            await MugenApi.post(`/api/booking/${r.id}/batalkan`);
+            MugenUI.toast("Booking dibatalkan.", "success");
+            load({ silent: true });
+            MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
+          } catch (e) { MugenUI.toast(e.message, "error"); }
+        },
+        onReschedule: !bolehEdit ? null : async (r) => {
+          MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
+          const berhasil = await bukaRescheduleModal(r, barbers, services || []);
+          if (berhasil) {
+            MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
+            load({ silent: true });
+          }
+        },
+        onHapus: !bolehEdit ? null : async (r) => {
+          const ok = await MugenUI.confirmModal({
+            title: "Hapus Booking?",
+            message: `Booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai}) akan dihapus permanen dan seluruh slot waktu yang digunakan akan dibuka kembali untuk booking lainnya. Tindakan ini tidak bisa dibatalkan.`,
+            confirmText: "Hapus Booking", cancelText: "Batal", danger: true,
+          });
+          if (!ok) return;
+          try {
+            await MugenApi.del(`/api/booking/${r.id}`);
+            MugenUI.toast("Booking dihapus.", "success");
+            // BUGFIX "Transaksi Hari Ini POS tidak langsung update saat
+            // booking lunas dihapus" (PERMINTAAN Owner): lihat catatan
+            // lengkap di pages/pos.js::hapusBookingDariPos(). `r` (baris
+            // tabel SEBELUM dihapus) sudah lengkap -- status_pembayaran/
+            // metode_pembayaran/total_harga/tanggal/daftar_service.
+            if (typeof PagePos !== "undefined" && typeof PagePos.hapusBookingDariPos === "function") {
+              PagePos.hapusBookingDariPos(r);
+            }
+            load({ silent: true });
+            MugenBookingNotif.refreshNow();
+          } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+        },
+      });
+    }
+
+    // Token pembanding "load() mana yang paling baru" -- mencegah jalur
+    // cepat (10 teratas) yang telat menimpa hasil jalur penuh yang sudah
+    // lebih dulu selesai & tampil (pola sama seperti rekap.js).
+    let _tokenMuatBookingTerakhir = Symbol();
     async function load({ silent = false } = {}) {
       if (!silent) {
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
       }
+      const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
+      if (selBarber.value) qs.set("barber_id", selBarber.value);
+      if (selStatus.value) qs.set("status_booking", selStatus.value);
+
+      const tokenMuat = (_tokenMuatBookingTerakhir = Symbol());
+      let dataCepatTampil = false;
+      // BUGFIX (ditemukan sendiri lewat verifikasi manual, BUKAN laporan
+      // Owner): token di atas HANYA mencegah load() yang SUDAH USANG
+      // (ganti filter/tab baru) menimpa -- TIDAK mencegah jalur cepat ini
+      // menimpa jalur penuh kalau jalur PENUH kebetulan selesai LEBIH DULU
+      // (urutan selesai dua fetch paralel tidak terjamin, terutama di
+      // database kecil/lokal) -- tabel yang sudah benar (lengkap) sempat
+      // balik jadi cuma 10 baris quick-path yang sudah usang. Flag ini
+      // ditandai jalur penuh di bawah SEBELUM render-nya, dicek di sini
+      // supaya jalur cepat yang telat tidak lagi menimpa jalur penuh yang
+      // sudah tampil.
+      let dataPenuhTampil = false;
+
+      // FITUR "Muat Bertahap": jalur cepat (10 booking TERBARU MASUK,
+      // lihat booking_db.py::get_booking_list() param `limit`) berjalan
+      // BERSAMAAN (bukan menunggu) dengan jalur penuh di bawah -- yang
+      // mana pun selesai duluan yang tampil, token mencegah yang telat
+      // menimpa. HANYA dijalankan untuk pemuatan awal/ganti filter
+      // (!silent) -- refresh diam-diam (silent:true, dari aksi baris atau
+      // push "booking_baru") tidak perlu "kilatan" 10 data dulu, tabel
+      // yang sedang tampil sudah cukup sampai data penuh siap.
+      if (!silent) {
+        (async () => {
+          try {
+            const qsCepat = new URLSearchParams(qs);
+            qsCepat.set("limit", "10");
+            const dataCepat = await MugenApi.get(`/api/booking?${qsCepat}`);
+            if (tokenMuat !== _tokenMuatBookingTerakhir || dataPenuhTampil) return;
+            if (!dataCepat.__offline && Array.isArray(dataCepat) && dataCepat.length) {
+              tableWrap.innerHTML = "";
+              tableWrap.appendChild(renderRows(_urutkanTerbaruDiAtas(dataCepat)));
+              dataCepatTampil = true;
+            }
+          } catch (e) { /* lewati -- jalur penuh di bawah yang menentukan tampilan akhir */ }
+        })();
+      }
+
       try {
-        const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
-        if (selBarber.value) qs.set("barber_id", selBarber.value);
-        if (selStatus.value) qs.set("status_booking", selStatus.value);
         const data = await MugenApi.get(`/api/booking?${qs}`, { useCache: true });
+        if (tokenMuat !== _tokenMuatBookingTerakhir) return;
+        dataPenuhTampil = true;
         tableWrap.innerHTML = "";
         // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         // PERMINTAAN Owner: "bookingan terbaru itu selalu di atas" -- lihat
         // _urutkanTerbaruDiAtas() di atas.
-        const rows = _urutkanTerbaruDiAtas(Array.isArray(data) ? data : []);
-        // Hak Akses Menu: level "Baca" (bolehEdit=false) -- tombol
-        // Verifikasi/Batalkan/Reschedule TIDAK dikirim ke bookingTable()
-        // sama sekali (null = disembunyikan, lihat bookingTable() di atas),
-        // data booking TETAP tampil apa adanya.
-        tableWrap.appendChild(bookingTable(rows, {
-          // PERMINTAAN Owner (Unread Row Highlight): dipanggil onVerifikasi/
-          // onBatalkan/onReschedule di bawah (fire-and-forget, TIDAK
-          // menunggu/menggagalkan aksi utamanya kalau ini gagal) begitu
-          // tombol aksi diklik, DAN oleh bookingTable() sendiri saat baris
-          // metode "gateway" diklik langsung (lihat onRowClick di
-          // bookingTable()). load({silent:true}) yang sudah dipanggil tiap
-          // handler akan membawa dilihat=1 terbaru dari server, highlight
-          // hilang otomatis tanpa kode tambahan di sini.
-          onTandaiDilihat: !bolehEdit ? null : (r) => {
-            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
-          },
-          onVerifikasi: !bolehEdit ? null : async (r) => {
-            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
-            try {
-              const hasil = await MugenApi.post(`/api/booking/${r.id}/verifikasi`);
-              // REVISI UI/UX Premium: aksi besar/konfirmasi penting (verifikasi
-              // pembayaran booking) SENGAJA memakai force:true -- satu dari
-              // sedikit titik toast sukses yang tetap ditampilkan di seluruh
-              // aplikasi (lihat daftar whitelist di ui.js::toast()).
-              MugenUI.toast("Pembayaran diterima, booking dikonfirmasi.", "success", { force: true });
-              // FITUR Booking Mandiri: "sudah lunas, baik dari Booking Mandiri
-              // MAUPUN dari List Booking" -- suntik diam-diam ke Transaksi
-              // Hari Ini POS/Rekap/Dashboard KALAU sedang terbuka sesi ini.
-              _suntikBookingLunasKeHalamanLain(hasil);
-              load({ silent: true });
-              MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
-            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-          },
-          onBatalkan: !bolehEdit ? null : async (r) => {
-            if (!(await MugenUI.confirmModal({ message: `Batalkan booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai})?`, danger: true }))) return;
-            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
-            try {
-              await MugenApi.post(`/api/booking/${r.id}/batalkan`);
-              MugenUI.toast("Booking dibatalkan.", "success");
-              load({ silent: true });
-              MugenBookingNotif.refreshNow(); // REVISI: badge langsung update, tidak menunggu poll berikutnya
-            } catch (e) { MugenUI.toast(e.message, "error"); }
-          },
-          onReschedule: !bolehEdit ? null : async (r) => {
-            MugenApi.post(`/api/booking/${r.id}/tandai-dilihat`).catch(() => {});
-            const berhasil = await bukaRescheduleModal(r, barbers, services || []);
-            if (berhasil) {
-              MugenUI.toast("Booking berhasil dijadwal ulang.", "success", { force: true });
-              load({ silent: true });
-            }
-          },
-          onHapus: !bolehEdit ? null : async (r) => {
-            const ok = await MugenUI.confirmModal({
-              title: "Hapus Booking?",
-              message: `Booking ${r.customer_nama} (${r.tanggal} ${r.jam_mulai}) akan dihapus permanen dan seluruh slot waktu yang digunakan akan dibuka kembali untuk booking lainnya. Tindakan ini tidak bisa dibatalkan.`,
-              confirmText: "Hapus Booking", cancelText: "Batal", danger: true,
-            });
-            if (!ok) return;
-            try {
-              await MugenApi.del(`/api/booking/${r.id}`);
-              MugenUI.toast("Booking dihapus.", "success");
-              // BUGFIX "Transaksi Hari Ini POS tidak langsung update saat
-              // booking lunas dihapus" (PERMINTAAN Owner): lihat catatan
-              // lengkap di pages/pos.js::hapusBookingDariPos(). `r` (baris
-              // tabel SEBELUM dihapus) sudah lengkap -- status_pembayaran/
-              // metode_pembayaran/total_harga/tanggal/daftar_service.
-              if (typeof PagePos !== "undefined" && typeof PagePos.hapusBookingDariPos === "function") {
-                PagePos.hapusBookingDariPos(r);
-              }
-              load({ silent: true });
-              MugenBookingNotif.refreshNow();
-            } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
-          },
-        }));
+        tableWrap.appendChild(renderRows(_urutkanTerbaruDiAtas(Array.isArray(data) ? data : [])));
       } catch (e) {
+        if (tokenMuat !== _tokenMuatBookingTerakhir) return;
         // REVISI: refresh diam-diam (silent, lihat atas) yang gagal karena
         // jaringan sesaat TIDAK BOLEH menghapus tabel yang sedang tampil --
         // baris lama tetap ditampilkan, gagalnya cukup diam-diam diabaikan
         // (konsisten dengan muatUlang() tab Barber di atas).
-        if (!silent) {
+        if (!silent && !dataCepatTampil) {
           tableWrap.innerHTML = "";
           tableWrap.appendChild(MugenUI.errorState(e.message));
         }
@@ -1412,7 +1469,16 @@ const PageBooking = (() => {
     body.appendChild(MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [MugenUI.selectIcon(MugenIcons.karyawan, selBarber)]));
 
     const calOfflineBox = MugenUI.el("div"); // AUDIT SINKRONISASI: lihat komentar renderBarberList()
-    const calBox = MugenUI.el("div", { class: "book-calendar", style: "max-width:520px;" });
+    // BUGFIX (laporan Owner: "tanggal yang dipilih jadi hilang"): lihat
+    // komentar lengkap di style.css::.book-calendar--admin -- .book-
+    // calendar-cell.selected SENGAJA pakai var(--book-grad-primary)/
+    // --book-shadow-glow yang HANYA didefinisikan di scope .book-public
+    // (Web Booking publik), class ini dipakai di SINI (sidebar admin,
+    // TANPA wrapper .book-public) jadi variabelnya undefined -- background
+    // jadi transparan + teks putih (#fff) di atasnya, tanggal yang dipilih
+    // kelihatan "hilang". `book-calendar--admin` memberi override warna
+    // solid yang aman (tidak bergantung variabel ber-scope itu).
+    const calBox = MugenUI.el("div", { class: "book-calendar book-calendar--admin", style: "max-width:520px;" });
     const detailBox = MugenUI.el("div", { style: "margin-top:16px;" });
     body.appendChild(calOfflineBox);
     body.appendChild(calBox);

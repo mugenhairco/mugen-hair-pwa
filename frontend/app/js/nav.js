@@ -41,27 +41,18 @@ const MugenNav = (() => {
   // TANPA field `izin` (Dashboard/Karyawan/Absensi dst -- granularitasnya
   // sendiri sudah diatur DI DALAM halamannya masing-masing, lihat
   // menu_access.js) tetap tampil untuk SEMUA role di `roles`.
+  // PERMINTAAN Owner (urutan sidebar): Point of Sale & Input Data dipindah
+  // lebih atas (dipakai tiap hari -- checkout kasir & input transaksi),
+  // Karyawan (pengelolaan staf, dipakai lebih jarang) dipindah lebih
+  // bawah. Isi tiap entri/grup TIDAK berubah sama sekali, murni urutannya.
   const MENU = [
     { hash: "#/dashboard", label: "Dashboard", roles: ["admin", "staff", "barber"], icon: MugenIcons.dashboard },
+    // FITUR BARU Point of Sale (Kasir walk-in): dua tab (Kasir/Transaksi
+    // Hari Ini), hak akses sendiri (izin_pos_lihat/izin_pos_kelola).
+    { hash: "#/pos", label: "Point of Sale", roles: ["admin", "staff"], izin: "izin_pos_lihat", icon: MugenIcons.pos },
+    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"], izin: "izin_rekap_lihat", icon: MugenIcons.rekap },
     // REVISI: Input Data sekarang khusus admin -- Barber hanya Dashboard + Rekap.
     { hash: "#/input-data", label: "Input Data", roles: ["admin", "staff"], izin: "izin_input_data_lihat", icon: MugenIcons.inputData },
-    { hash: "#/rekap", label: "Rekap", roles: ["admin", "staff", "barber"], izin: "izin_rekap_lihat", icon: MugenIcons.rekap },
-    // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi,
-    // Fase 4: Reimburse, Fase 5: Izin & Cuti. `children` dirender sebagai
-    // grup expand/collapse KALAU child yang lolos filter role >= 2 (kondisi
-    // ini sejak Kasbon); kalau cuma 1, otomatis dirender sebagai link flat
-    // biasa (lihat _bangunItemNav()) -- supaya tidak ada dropdown kosong-
-    // satu-item yang janggal. `badgeId`/`badgeRoles` (Izin & Cuti) dipakai
-    // izin_notif.js untuk badge jumlah pengajuan pending, pola sama seperti
-    // badge Booking di bawah (lihat _bangunItemNav()).
-    { label: "Karyawan", roles: ["admin", "staff", "barber"], icon: MugenIcons.karyawan, children: [
-      { hash: "#/karyawan/slip-gaji", label: "Slip Gaji", roles: ["admin", "staff", "barber"] },
-      { hash: "#/karyawan/kasbon", label: "Kasbon", roles: ["admin", "staff", "barber"] },
-      { hash: "#/karyawan/komisi", label: "Komisi", roles: ["admin", "staff", "barber"] },
-      { hash: "#/karyawan/reimburse", label: "Reimburse", roles: ["admin", "staff", "barber"] },
-      { hash: "#/karyawan/izin-cuti", label: "Izin & Cuti", roles: ["admin", "staff", "barber"],
-        badgeId: "izin-badge", badgeRoles: ["admin", "staff"] },
-    ]},
     // Modul BARU Absensi (GPS Check In/Out Geofencing) -- berdiri sendiri,
     // TIDAK terhubung ke Izin & Cuti/Barber Holiday (keputusan eksplisit
     // Owner). Barber: self-service Check In/Out + riwayat sendiri. Owner/
@@ -117,9 +108,22 @@ const MugenNav = (() => {
       // Faspay SNAP Advance toko ini sendiri (lihat pages/settlement_faspay.js).
       { hash: "#/settlement-faspay", label: "Settlement Faspay", roles: ["admin", "staff"], izin: "izin_settlement_faspay_lihat" },
     ]},
-    // FITUR BARU Point of Sale (Kasir walk-in): dua tab (Kasir/Transaksi
-    // Hari Ini), hak akses sendiri (izin_pos_lihat/izin_pos_kelola).
-    { hash: "#/pos", label: "Point of Sale", roles: ["admin", "staff"], izin: "izin_pos_lihat", icon: MugenIcons.pos },
+    // Modul Karyawan -- Fase 1: Slip Gaji, Fase 2: Kasbon, Fase 3: Komisi,
+    // Fase 4: Reimburse, Fase 5: Izin & Cuti. `children` dirender sebagai
+    // grup expand/collapse KALAU child yang lolos filter role >= 2 (kondisi
+    // ini sejak Kasbon); kalau cuma 1, otomatis dirender sebagai link flat
+    // biasa (lihat _bangunItemNav()) -- supaya tidak ada dropdown kosong-
+    // satu-item yang janggal. `badgeId`/`badgeRoles` (Izin & Cuti) dipakai
+    // izin_notif.js untuk badge jumlah pengajuan pending, pola sama seperti
+    // badge Booking di bawah (lihat _bangunItemNav()).
+    { label: "Karyawan", roles: ["admin", "staff", "barber"], icon: MugenIcons.karyawan, children: [
+      { hash: "#/karyawan/slip-gaji", label: "Slip Gaji", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/kasbon", label: "Kasbon", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/komisi", label: "Komisi", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/reimburse", label: "Reimburse", roles: ["admin", "staff", "barber"] },
+      { hash: "#/karyawan/izin-cuti", label: "Izin & Cuti", roles: ["admin", "staff", "barber"],
+        badgeId: "izin-badge", badgeRoles: ["admin", "staff"] },
+    ]},
     { hash: "#/produk", label: "Produk", roles: ["admin", "staff"], izin: "izin_produk_lihat", icon: MugenIcons.produk },
     // REVISI Hak Akses (hapus menu Owner-only hardcoded -- lihat
     // permissions.py): WhatsApp SEKARANG grantable Owner ke Role manapun

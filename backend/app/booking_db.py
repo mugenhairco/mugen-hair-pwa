@@ -1439,7 +1439,8 @@ def get_booking_terverifikasi_by_tanggal_bayar(tenant_id: int, tanggal_bayar: st
 
 def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None,
                       tanggal: str = None, dari_tanggal: str = None,
-                      status_booking: str = None, tenant_id: int = None) -> list:
+                      status_booking: str = None, tenant_id: int = None,
+                      limit: int = None) -> list:
     q = """SELECT bk.*, b.nama AS nama_barber FROM bookings bk
            JOIN barbers b ON b.id = bk.barber_id WHERE 1=1"""
     params = []
@@ -1464,7 +1465,20 @@ def get_booking_list(barber_id: int = None, tahun: int = None, bulan: int = None
         q += " AND bk.tanggal >= ?"; params.append(dari_tanggal)
     if status_booking is not None:
         q += " AND bk.status_booking = ?"; params.append(status_booking)
-    q += " ORDER BY bk.tanggal DESC, bk.jam_mulai DESC"
+    # FITUR "Muat Bertahap" Booking List (PERMINTAAN Owner -- "jangan
+    # langsung memuat full semua saat refresh/awal login, cukup 10 teratas
+    # termasuk booking yang baru masuk, sisanya diam-diam disuntikkan
+    # sekaligus (BUKAN satu-satu seperti Rekap)"): `limit` opsional HANYA
+    # dipakai jalur cepat ini (lihat routers/booking.py) -- urutannya
+    # SENGAJA beda dari query penuh (tanggal+jam_mulai jadwal kunjungan):
+    # "10 teratas" di sini berarti 10 yang PALING BARU MASUK ke sistem
+    # (created_at DESC, SAMA PERSIS kriteria _urutkanTerbaruDiAtas() di
+    # frontend), bukan 10 jadwal kunjungan terdekat.
+    if limit is not None:
+        q += " ORDER BY bk.created_at DESC, bk.id DESC LIMIT ?"
+        params.append(limit)
+    else:
+        q += " ORDER BY bk.tanggal DESC, bk.jam_mulai DESC"
     with get_conn() as conn:
         headers = [dict(r) for r in conn.execute(q, params).fetchall()]
         if not headers:
