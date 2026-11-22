@@ -653,6 +653,23 @@ const PageRekap = (() => {
           .catch(() => ({ barbersOnly: [], karyawanAll: [] })) // filter tetap opsional kalau gagal dimuat
       : Promise.resolve({ barbersOnly: [], karyawanAll: [] });
 
+    // PERMINTAAN Owner (Redesain Rekap -- Modern SaaS Dashboard, Card Based
+    // Layout): field berlabel (teks eksplisit di atas, bukan cuma ikon)
+    // dipakai di kartu Filter maupun kartu Pengaturan Laporan PDF -- satu
+    // helper kecil supaya markup-nya konsisten di keduanya.
+    function fieldBlock(labelText, contentEl) {
+      return MugenUI.el("div", { class: "rekap-field" }, [
+        MugenUI.el("div", { class: "rekap-field-label" }, labelText),
+        contentEl,
+      ]);
+    }
+
+    // PERMINTAAN Owner (Redesain Rekap, "CARD FILTER TRANSAKSI"): dibungkus
+    // satu kartu ("Filter") dengan grid responsif (3 kolom desktop, 2
+    // tablet, 1 kolom HP -- lihat .rekap-filter-grid di style.css), BUKAN
+    // lagi .row flex datar seperti sebelumnya. selBulan/selTahun/selBarber
+    // & seluruh logikanya (termasuk opsi karyawan yang disisipi async)
+    // TIDAK berubah sama sekali -- murni pembungkus tampilannya.
     function filterBar({ withBarber = true, ambilDaftarDari = (hasil) => hasil.barbersOnly, labelSemua = "Semua Barber" } = {}) {
       const selBulan = MugenUI.el("select");
       for (let m = 1; m <= 12; m++) selBulan.appendChild(MugenUI.el("option", { value: String(m) }, MugenUI.namaBulan(m)));
@@ -671,12 +688,16 @@ const PageRekap = (() => {
           }
         });
       }
-      const row = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;" }, [
-        MugenUI.selectIcon(MugenIcons.calendar, selBulan),
-        MugenUI.selectIcon(MugenIcons.calendar, selTahun),
-        ...(selBarber ? [MugenUI.selectIcon(MugenIcons.karyawan, selBarber)] : []),
+      const grid = MugenUI.el("div", { class: "rekap-filter-grid" }, [
+        fieldBlock("Bulan", MugenUI.selectIcon(MugenIcons.calendar, selBulan)),
+        fieldBlock("Tahun", MugenUI.selectIcon(MugenIcons.calendar, selTahun)),
+        ...(selBarber ? [fieldBlock(labelSemua === "Semua Karyawan" ? "Karyawan" : "Barber", MugenUI.selectIcon(MugenIcons.karyawan, selBarber))] : []),
       ]);
-      return { row, selBulan, selTahun, selBarber };
+      const filterCard = MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("h2", {}, "Filter"),
+        grid,
+      ]);
+      return { filterCard, selBulan, selTahun, selBarber };
     }
 
     // FITUR "Muat Bertahap" (PERMINTAAN Owner -- tab Bulanan/Pengeluaran
@@ -703,15 +724,19 @@ const PageRekap = (() => {
     }
 
     async function renderTransaksi() {
-      const { row, selBulan, selTahun, selBarber } = filterBar({ ambilDaftarDari: (hasil) => hasil.karyawanAll, labelSemua: "Semua Karyawan" });
+      const { filterCard, selBulan, selTahun, selBarber } = filterBar({ ambilDaftarDari: (hasil) => hasil.karyawanAll, labelSemua: "Semua Karyawan" });
 
       // Periode tanggal TAMBAHAN khusus untuk cetak PDF (filter Bulan+Tahun
       // di atas untuk tampilan layar TIDAK berubah) -- kalau diisi,
       // menggantikan Bulan+Tahun sebagai periode PDF supaya bisa cetak
       // rentang custom (mis. per 2 minggu), default kosong (pakai Bulan+
-      // Tahun seperti biasa).
-      const inputDariTanggal = MugenUI.el("input", { type: "date" });
-      const inputSampaiTanggal = MugenUI.el("input", { type: "date" });
+      // Tahun seperti biasa). REDESAIN (PERMINTAAN Owner): SATU Date Range
+      // Picker (MugenUI.dateRangePicker(), satu komponen kalender pilih
+      // mulai+akhir) menggantikan dua <input type=date> terpisah --
+      // getValue() mengembalikan ISO (YYYY-MM-DD) PERSIS seperti
+      // inputDariTanggal.value/inputSampaiTanggal.value sebelumnya, jadi
+      // qs yang dikirim ke backend di bawah TIDAK berubah sama sekali.
+      const rangePdf = MugenUI.dateRangePicker();
       // Jenis Laporan (Perbaikan Alur Cetak PDF): "Rekap Detail" = format
       // lama (satu baris per transaksi/hari, TIDAK berubah), "Rekap
       // Periode (Ringkasan)" = BARU, satu baris per karyawan untuk seluruh
@@ -720,12 +745,6 @@ const PageRekap = (() => {
         MugenUI.el("option", { value: "detail" }, "Rekap Detail"),
         MugenUI.el("option", { value: "ringkasan" }, "Rekap Periode (Ringkasan)"),
       ]);
-      const pdfRow = MugenUI.el("div", { class: "row", style: "flex:none;margin-bottom:14px;align-items:center;flex-wrap:wrap;" }, [
-        MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Periode PDF (opsional):"),
-        inputDariTanggal, inputSampaiTanggal,
-        MugenUI.el("span", { class: "subtitle", style: "margin:0;" }, "Jenis Laporan:"),
-        MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan),
-      ]);
 
       // Periode efektif yang dipakai NAMA FILE (murni tampilan nama file --
       // parameter yang DIKIRIM ke server tetap lewat qs di bawah, TIDAK
@@ -733,9 +752,8 @@ const PageRekap = (() => {
       // tidak, diturunkan dari Bulan+Tahun yang aktif (tanggal 1 s.d. hari
       // terakhir bulan itu).
       function periodeUntukNamaFile() {
-        if (inputDariTanggal.value && inputSampaiTanggal.value) {
-          return { mulai: inputDariTanggal.value, selesai: inputSampaiTanggal.value };
-        }
+        const { mulai: m, selesai: s } = rangePdf.getValue();
+        if (m && s) return { mulai: m, selesai: s };
         const tahun = Number(selTahun.value), bulan = Number(selBulan.value);
         const hariTerakhir = new Date(tahun, bulan, 0).getDate();
         const dua = (n) => String(n).padStart(2, "0");
@@ -757,11 +775,12 @@ const PageRekap = (() => {
         return MugenUI.namaFileAman(`${jenisLabel} ${karyawan} ${tanggalLabel}.pdf`);
       }
 
-      pdfRow.appendChild(tombolCetakPdf(() => {
+      const btnCetakPdf = tombolCetakPdf(() => {
         const qs = new URLSearchParams();
-        if (inputDariTanggal.value && inputSampaiTanggal.value) {
-          qs.set("tanggal_mulai", inputDariTanggal.value);
-          qs.set("tanggal_selesai", inputSampaiTanggal.value);
+        const { mulai: m, selesai: s } = rangePdf.getValue();
+        if (m && s) {
+          qs.set("tanggal_mulai", m);
+          qs.set("tanggal_selesai", s);
         } else {
           qs.set("tahun", selTahun.value);
           qs.set("bulan", selBulan.value);
@@ -772,11 +791,23 @@ const PageRekap = (() => {
           generate: () => MugenApi.fetchBlob(`/api/rekap/transaksi/pdf?${qs}`),
           filename: namaFilePdf(),
         };
-      }));
+      });
+
+      // PERMINTAAN Owner ("CARD PENGATURAN LAPORAN PDF"): dibungkus kartu
+      // kedua terpisah dari kartu Filter di atas -- grid responsif sama
+      // (.rekap-pdf-grid), tombol Cetak PDF full-width di HP (lihat CSS).
+      const pdfCard = MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("h2", {}, "Pengaturan Laporan PDF"),
+        MugenUI.el("div", { class: "rekap-pdf-grid" }, [
+          fieldBlock("Periode Laporan (opsional)", rangePdf.el),
+          fieldBlock("Jenis Laporan", MugenUI.selectIcon(MugenIcons.filter, selJenisLaporan)),
+          btnCetakPdf,
+        ]),
+      ]);
 
       const tableWrap = MugenUI.el("div");
-      body.appendChild(row);
-      body.appendChild(pdfRow);
+      body.appendChild(filterCard);
+      body.appendChild(pdfCard);
       body.appendChild(tableWrap);
       // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner) -- izin SAMA PERSIS
       // tombol Koreksi (bolehKoreksiTransaksi, "izin_input_data_kelola"),
@@ -1370,8 +1401,8 @@ const PageRekap = (() => {
     }
 
     async function renderBulanan() {
-      const { row, selBulan, selTahun, selBarber } = filterBar();
-      row.appendChild(tombolCetakPdf(() => {
+      const { filterCard, selBulan, selTahun, selBarber } = filterBar();
+      const btnCetakPdf = tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         if (selBarber && selBarber.value) qs.set("barber_id", selBarber.value);
         const barberNama = selBarber && selBarber.value
@@ -1381,9 +1412,17 @@ const PageRekap = (() => {
           generate: () => MugenApi.fetchBlob(`/api/rekap/bulanan/pdf?${qs}`),
           filename: MugenUI.namaFileAman(`Rekap Bulanan ${barberNama} ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
         };
-      }));
+      });
+      // PERMINTAAN Owner (Redesain Rekap -- kartu kedua konsisten di
+      // seluruh tab, walau tab ini tidak punya Periode/Jenis Laporan
+      // seperti Transaksi): cuma berisi tombol Cetak PDF, full-width di HP.
+      const pdfCard = MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("h2", {}, "Laporan PDF"),
+        MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
+      ]);
       const tableWrap = MugenUI.el("div");
-      body.appendChild(row);
+      body.appendChild(filterCard);
+      body.appendChild(pdfCard);
       body.appendChild(tableWrap);
 
       function renderDenganData(data) {
@@ -1461,17 +1500,22 @@ const PageRekap = (() => {
     }
 
     async function renderPengeluaran() {
-      const { row, selBulan, selTahun } = filterBar({ withBarber: false });
-      row.appendChild(tombolCetakPdf(() => {
+      const { filterCard, selBulan, selTahun } = filterBar({ withBarber: false });
+      const btnCetakPdf = tombolCetakPdf(() => {
         const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
         return {
           generate: () => MugenApi.fetchBlob(`/api/rekap/pengeluaran/pdf?${qs}`),
           filename: MugenUI.namaFileAman(`Rekap Pengeluaran ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
         };
-      }));
+      });
+      const pdfCard = MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("h2", {}, "Laporan PDF"),
+        MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
+      ]);
       const totalBox = MugenUI.el("div", { class: "card" });
       const tableWrap = MugenUI.el("div");
-      body.appendChild(row);
+      body.appendChild(filterCard);
+      body.appendChild(pdfCard);
       body.appendChild(totalBox);
       body.appendChild(tableWrap);
 

@@ -1035,6 +1035,152 @@ const MugenUI = (() => {
     }
   }
 
+  // ============ Date Range Picker (PERMINTAAN Owner, Redesain Rekap --
+  // Modern SaaS Dashboard Card Based Layout) ============ SATU trigger
+  // menampilkan "DD/MM/YYYY - DD/MM/YYYY" (format tampilan SAJA), diklik
+  // membuka popover kalender (portal ke document.body, pola SAMA seperti
+  // bukaMenuAksi() di atas supaya tidak kepotong overflow container
+  // manapun) -- pilih tanggal MULAI lewat klik pertama, tanggal AKHIR
+  // lewat klik kedua (klik sebelum tanggal mulai menggantikannya, bukan
+  // dianggap akhir). Nilai internal TETAP ISO (YYYY-MM-DD) lewat
+  // getValue() -- pemanggil mengirim ke backend PERSIS seperti sebelum
+  // ada komponen ini (dua <input type=date> terpisah), TIDAK ada
+  // perubahan kontrak data sama sekali. Grid kalendernya reuse class
+  // .bm-calendar-grid/.bm-calendar-cell/.bm-calendar-nav (sama persis
+  // kalender pilih-satu-tanggal Booking Mandiri, lihat pages/booking.js)
+  // supaya tidak ada CSS baru yang terduplikasi -- HANYA tambah varian
+  // ".in-range" untuk highlight tanggal di antara mulai/akhir.
+  function dateRangePicker({ onChange } = {}) {
+    let mulai = null, selesai = null; // ISO (YYYY-MM-DD) atau null
+    let bulanDitampilkan = new Date();
+
+    function formatTampil(iso) {
+      const [y, m, d] = iso.split("-");
+      return `${d}/${m}/${y}`;
+    }
+
+    const labelEl = el("span", { class: "drp-trigger-label" }, "Pilih periode");
+    const trigger = el("button", { type: "button", class: "drp-trigger" }, [
+      el("span", { class: "drp-trigger-icon", html: MugenIcons.calendar }),
+      labelEl,
+    ]);
+
+    function perbaruiLabel() {
+      if (mulai && selesai) labelEl.textContent = `${formatTampil(mulai)} - ${formatTampil(selesai)}`;
+      else if (mulai) labelEl.textContent = `${formatTampil(mulai)} - Pilih tanggal akhir`;
+      else labelEl.textContent = "Pilih periode";
+      trigger.classList.toggle("ada-isi", !!(mulai && selesai));
+    }
+
+    function tutupPopover() {
+      const pop = document.querySelector(".drp-popover");
+      if (pop) pop.remove();
+      document.removeEventListener("click", klikLuar);
+      window.removeEventListener("scroll", tutupPopover, true);
+    }
+    function klikLuar(e) {
+      const pop = document.querySelector(".drp-popover");
+      if (!pop) return;
+      // BUGFIX: klik pilih tanggal MULAI (belum menutup popover, lihat
+      // renderIsiPopover() -- re-render grid di tempat) membuat <button>
+      // sel yang diklik DICOPOT dari DOM secara sinkron SEBELUM event click
+      // ini selesai bubbling ke document -- pop.contains(e.target) jadi
+      // SALAH mengira klik itu "di luar popover" begitu sampai di sini,
+      // menutup popover padahal usernya baru pilih tanggal pertama.
+      // composedPath() mengambil SNAPSHOT jalur elemen SAAT event dibuat
+      // (sebelum re-render), jadi tetap benar walau elemen aslinya sudah
+      // tidak ada di DOM lagi saat listener ini jalan.
+      const path = e.composedPath ? e.composedPath() : [e.target];
+      if (!path.includes(pop) && !path.includes(trigger)) tutupPopover();
+    }
+
+    function renderIsiPopover(pop) {
+      pop.innerHTML = "";
+      const y = bulanDitampilkan.getFullYear(), m = bulanDitampilkan.getMonth();
+      const nav = el("div", { class: "bm-calendar-nav" });
+      const btnPrev = el("button", { type: "button" }, "‹");
+      const btnNext = el("button", { type: "button" }, "›");
+      btnPrev.addEventListener("click", () => { bulanDitampilkan = new Date(y, m - 1, 1); renderIsiPopover(pop); });
+      btnNext.addEventListener("click", () => { bulanDitampilkan = new Date(y, m + 1, 1); renderIsiPopover(pop); });
+      nav.appendChild(btnPrev);
+      nav.appendChild(el("div", {}, `${namaBulan(m + 1)} ${y}`));
+      nav.appendChild(btnNext);
+      pop.appendChild(nav);
+
+      const grid = el("div", { class: "bm-calendar-grid" });
+      for (const h of ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]) grid.appendChild(el("div", { class: "bm-calendar-dow" }, h));
+      const firstDay = new Date(y, m, 1);
+      const startOffset = firstDay.getDay();
+      const jumlahHari = new Date(y, m + 1, 0).getDate();
+      for (let i = 0; i < startOffset; i++) grid.appendChild(el("div", { class: "bm-calendar-cell empty" }));
+      for (let d = 1; d <= jumlahHari; d++) {
+        const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        let kelas = "bm-calendar-cell";
+        if (iso === mulai || iso === selesai) kelas += " selected";
+        else if (mulai && selesai && iso > mulai && iso < selesai) kelas += " in-range";
+        const cell = el("button", { type: "button", class: kelas }, String(d));
+        cell.addEventListener("click", () => {
+          if (!mulai || (mulai && selesai)) {
+            mulai = iso; selesai = null;
+          } else if (iso < mulai) {
+            mulai = iso;
+          } else {
+            selesai = iso;
+          }
+          perbaruiLabel();
+          if (mulai && selesai) {
+            if (onChange) onChange(mulai, selesai);
+            tutupPopover();
+          } else {
+            renderIsiPopover(pop);
+          }
+        });
+        grid.appendChild(cell);
+      }
+      pop.appendChild(grid);
+
+      const footer = el("div", { class: "drp-footer" });
+      const btnBersihkan = el("button", { type: "button", class: "text-link-aksi" }, "Bersihkan");
+      btnBersihkan.addEventListener("click", () => {
+        mulai = null; selesai = null;
+        perbaruiLabel();
+        if (onChange) onChange(null, null);
+        tutupPopover();
+      });
+      footer.appendChild(btnBersihkan);
+      pop.appendChild(footer);
+    }
+
+    function bukaPopover() {
+      tutupPopover();
+      const pop = el("div", { class: "drp-popover" });
+      renderIsiPopover(pop);
+      document.body.appendChild(pop);
+      const rect = trigger.getBoundingClientRect();
+      let left = rect.left;
+      if (left + pop.offsetWidth > window.innerWidth - 8) left = window.innerWidth - pop.offsetWidth - 8;
+      if (left < 8) left = 8;
+      let top = rect.bottom + 4;
+      if (top + pop.offsetHeight > window.innerHeight - 8) top = rect.top - pop.offsetHeight - 4;
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+      // setTimeout 0: klik yang MEMBUKA popover ini masih "in-flight" ke
+      // document saat baris ini jalan -- pola sama seperti bukaMenuAksi().
+      setTimeout(() => {
+        document.addEventListener("click", klikLuar);
+        window.addEventListener("scroll", tutupPopover, true);
+      }, 0);
+    }
+
+    trigger.addEventListener("click", (e) => { e.stopPropagation(); bukaPopover(); });
+
+    return {
+      el: trigger,
+      getValue() { return { mulai: mulai || "", selesai: selesai || "" }; },
+      clear() { mulai = null; selesai = null; perbaruiLabel(); },
+    };
+  }
+
   // ============ Dropdown Modern (PERMINTAAN Owner, dipakai POS untuk
   // pilih Barber) ============ Single-select, daftar pilihan langsung
   // terlihat begitu dibuka (bukan native <select>), item aktif ditandai
@@ -1136,6 +1282,6 @@ const MugenUI = (() => {
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
-    attachNumericKeypad, dropdownSelect, selectIcon,
+    attachNumericKeypad, dropdownSelect, selectIcon, dateRangePicker,
   };
 })();
