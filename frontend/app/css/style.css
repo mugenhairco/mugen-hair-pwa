@@ -495,6 +495,7 @@ a:hover { color: var(--accent-secondary); }
   flex: 1;
   height: 100%;
   padding: 28px;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1453,7 +1454,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      TETAP bisa lewat tap backdrop atau pilih menu, lihat router.js::shell(),
      jadi tidak ada fungsi yang hilang). */
   .sidebar.open ~ .hamburger { display: none; }
-  .content { padding: 16px; padding-top: 64px; }
+  .content {
+    padding: 16px;
+    padding-top: 64px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
   .sidebar-backdrop {
     display: block;
     position: fixed; inset: 0; z-index: 40;

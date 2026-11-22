@@ -1531,7 +1531,12 @@
 // komponen tahun/bulan new Date() browser-local terhadap komponen WIB
 // secara terpisah -- itu bisa meleset ke tanggal BESOK kalau zona
 // waktu/jam perangkat browser pernah beda dari WIB.
-const ASSET_VERSION = "296";
+// v296 -> v297: BUGFIX .content (kontainer scroll utama shell app) tidak
+// memperhitungkan env(safe-area-inset-bottom) di padding bawahnya --
+// akibatnya baris paginasi/"Tambah Transaksi" paling bawah Rekap Transaksi
+// bisa ketutupan area home-indicator iPhone. Ditambahkan di rule dasar
+// .content maupun override mobile (<=820px).
+const ASSET_VERSION = "297";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
