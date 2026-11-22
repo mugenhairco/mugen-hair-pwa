@@ -87,6 +87,17 @@ def init_pos_db():
                 paid_at            TEXT
             )
         """)
+        # BUGFIX PERFORMA (audit "susuri menyeluruh, apa saja yang membebani
+        # server" -- kategori sama dengan idx_snap_payment_transactions_
+        # booking_id yang sudah diperbaiki sebelumnya): tabel ini TIDAK
+        # PERNAH punya index di kolom yang di-query terus-menerus padahal
+        # sudah dipakai sejak awal fitur POS -- rekap_gabungan_db.py::
+        # _ambil_kontribusi_pos() (JOIN pos_transaksi WHERE tenant_id+
+        # tanggal+status, dipanggil SETIAP kali POS/Booking berubah) dan
+        # get_transaksi_hari_ini() (tenant_id+tanggal, tampilan "Transaksi
+        # Hari Ini") keduanya full table scan tanpa ini. Murni mempercepat
+        # baca, TIDAK mengubah perilaku apa pun.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_transaksi_tenant_tanggal ON pos_transaksi(tenant_id, tanggal)")
         # FITUR Cash di POS (PERMINTAAN Owner): nominal uang yang diterima
         # Kasir dari customer + kembalian yang dihitung sistem (uang_diterima
         # - total_harga), lihat bayar_cash(). Nullable (NULL untuk transaksi
@@ -448,8 +459,9 @@ def tandai_lunas_dari_gateway(pos_id: int) -> dict:
 
 def batalkan_pos(pos_id: int) -> dict:
     """Dipanggil snap_webhook.py::_cascade_pos() saat status FAILED/EXPIRED/
-    CANCELLED -- transaksi POS yang gatewaynya gagal/kedaluwarsa, TIDAK
-    PERNAH menyentuh Rekap/stok produk (belum pernah 'lunas')."""
+    CANCELLED, ATAU manual lewat tombol "Batalkan" Kasir (routers/pos.py) --
+    transaksi POS yang gatewaynya gagal/kedaluwarsa/dibatalkan, TIDAK PERNAH
+    menyentuh Rekap/stok produk (belum pernah 'lunas')."""
     pos = get_pos_transaksi(pos_id)
     if pos is None:
         raise ValueError("Transaksi Point of Sale tidak ditemukan.")
@@ -458,6 +470,36 @@ def batalkan_pos(pos_id: int) -> dict:
     with get_conn() as conn:
         conn.execute("UPDATE pos_transaksi SET status = 'batal', updated_at = ? WHERE id = ?",
                      (datetime.now().isoformat(timespec="seconds"), pos_id))
+    # BUGFIX (audit "susuri menyeluruh, apakah ada bug" -- pola PERSIS bug
+    # yang sudah diperbaiki di booking_db.py::batalkan_booking()): titik ini
+    # SEBELUMNYA hanya mengubah pos_transaksi.status -- transaksi Payment
+    # Gateway (snap_payment_transactions) milik POS ini TIDAK PERNAH ikut
+    # ditandai batal kalau masih CREATED/PENDING saat Kasir klik "Batalkan"
+    # manual (webhook FAILED/EXPIRED/CANCELLED dari Faspay sendiri sudah
+    # benar lewat snap_webhook.py::terapkan_status_transaksi(), yang
+    # memperbarui snap_payment_transactions SEBELUM men-cascade ke sini --
+    # jalur ITU sudah aman). Akibatnya KHUSUS jalur manual Kasir: kalau
+    # customer TETAP scan & bayar QR/VA setelah Kasir membatalkan, webhook
+    # PAID dari Faspay tetap datang & snap_payment_transactions tetap
+    # ditandai PAID -- tapi tandai_lunas_dari_gateway() di atas melihat
+    # pos_transaksi.status sudah 'batal' (bukan 'menunggu') dan diam-diam
+    # no-op. HASIL: uang customer BENAR-BENAR diterima toko, tapi TIDAK
+    # ADA stok berkurang, TIDAK ADA baris Rekap -- sama sekali tidak
+    # tercatat di aplikasi.
+    #
+    # Perbaikan: tandai transaksi gateway (kalau ada & masih CREATED/
+    # PENDING) jadi CANCELLED di SINI juga, lewat snap_payment_db.
+    # update_status() LANGSUNG -- BUKAN snap_webhook.terapkan_status_
+    # transaksi() (yang men-cascade balik ke sini lewat _cascade_pos() ->
+    # batalkan_pos() untuk status FAILED/EXPIRED/CANCELLED, lihat
+    # snap_webhook.py -- kalau dipanggil dari sini akan jadi rekursi tak
+    # berujung). update_status() sendiri sudah idempoten & TIDAK men-
+    # cascade apa pun, aman dipanggil berkali-kali/dari jalur mana pun.
+    transaksi_gateway = snap_payment_db.get_transaksi_terkini_untuk_pos(pos_id)
+    if transaksi_gateway is not None and transaksi_gateway["status"] in (
+        snap_payment_db.STATUS_CREATED, snap_payment_db.STATUS_PENDING,
+    ):
+        snap_payment_db.update_status(transaksi_gateway["id"], snap_payment_db.STATUS_CANCELLED, sumber="batalkan_pos_admin")
     return get_pos_transaksi(pos_id)
 
 

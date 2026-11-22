@@ -22,6 +22,7 @@ dibuat di postgres_schema.py.
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -706,6 +707,23 @@ def get_jumlah_pending(tenant_id: int = None) -> int:
     return int(row["jumlah"] or 0)
 
 
+def _jalankan_di_belakang(fn, *args):
+    """BUGFIX PERFORMA (audit "susuri menyeluruh, apakah ada bug yang
+    membebani server"): dua fungsi push di bawah SEBELUMNYA dipanggil
+    LANGSUNG di jalur utama buat_pengajuan()/proses_approval() -- padahal
+    docstring modul ini sendiri mengklaim pola "SAMA PERSIS
+    booking_db.py::_kirim_notifikasi_push_booking_baru()", yang di
+    booking_db.py justru SUDAH dijalankan di thread terpisah lewat
+    booking_db.py::_jalankan_di_belakang() (pywebpush timeout 10 detik PER
+    penerima, dikirim BERURUTAN -- lihat push_service._kirim_ke_daftar_
+    subscription()). Tanpa ini, barber/Admin menunggu sampai push SELESAI
+    (atau timeout) sebelum respons submit/approve pengajuan balik -- bisa
+    puluhan detik kalau ada banyak penerima/salah satu lambat. Reuse pola
+    PERSIS sama (thread daemon, aman karena `fn` di bawah SUDAH membungkus
+    isinya sendiri dengan try/except, tidak pernah melempar ke pemanggil)."""
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
 def _kirim_notifikasi_push_pengajuan_baru(pengajuan: dict):
     """FITUR Notifikasi Push: "best effort" -- TIDAK PERNAH melempar
     exception/menggagalkan pengajuan utamanya (pola sama persis
@@ -789,7 +807,7 @@ def buat_pengajuan(barber_id: int, jenis: str, tanggal_mulai: str, tanggal_seles
         )
         pengajuan_id = cur.lastrowid
     pengajuan_baru = get_pengajuan(pengajuan_id)
-    _kirim_notifikasi_push_pengajuan_baru(pengajuan_baru)
+    _jalankan_di_belakang(_kirim_notifikasi_push_pengajuan_baru, pengajuan_baru)
     return pengajuan_baru
 
 
@@ -878,7 +896,7 @@ def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str =
             (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, pengajuan_id),
         )
     pengajuan_baru = get_pengajuan(pengajuan_id)
-    _kirim_notifikasi_push_status_pengajuan(pengajuan_baru)
+    _jalankan_di_belakang(_kirim_notifikasi_push_status_pengajuan, pengajuan_baru)
     return pengajuan_baru
 
 
