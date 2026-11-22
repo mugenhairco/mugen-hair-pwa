@@ -42,6 +42,7 @@ PLACEHOLDER_INFO = [
     ("{nama}", "Nama customer"), ("{toko}", "Nama barbershop"), ("{nominal}", "Total harga (format Rupiah)"),
     ("{layanan}", "Daftar layanan yang dibooking"), ("{tanggal}", "Tanggal booking"), ("{jam}", "Jam booking"),
     ("{jam_buka}", "Jam buka toko berikutnya (khusus pesan Booking di Luar Jam Operasional)"),
+    ("{link_status}", "Link untuk customer cek status booking ini langsung (bisa juga scan ulang QRIS kalau belum sempat)"),
 ]
 
 DEFAULT_TEMPLATES = {
@@ -50,21 +51,24 @@ DEFAULT_TEMPLATES = {
         "Silakan selesaikan pembayaran sebesar *{nominal}* melalui QRIS yang tertera untuk booking:\n"
         "- Layanan: {layanan}\n"
         "- Tanggal: {tanggal}, {jam}\n\n"
-        "Booking akan otomatis kami proses setelah pembayaran diverifikasi."
+        "Booking akan otomatis kami proses setelah pembayaran diverifikasi.\n\n"
+        "Cek status atau scan ulang QRIS: {link_status}"
     ),
     "konfirmasi_pembayaran": (
         "Halo {nama}, pembayaran Anda sebesar *{nominal}* untuk booking di *{toko}* telah kami terima & "
         "verifikasi:\n"
         "- Layanan: {layanan}\n"
         "- Tanggal: {tanggal}, {jam}\n\n"
-        "Sampai jumpa!"
+        "Sampai jumpa!\n\n"
+        "Cek status booking: {link_status}"
     ),
     "pembatalan": (
         "Halo {nama}, mohon maaf booking Anda di *{toko}* berikut ini kami batalkan karena pembayaran belum "
         "kami terima:\n"
         "- Layanan: {layanan}\n"
         "- Tanggal: {tanggal}, {jam}\n\n"
-        "Silakan booking ulang jika masih berminat."
+        "Silakan booking ulang jika masih berminat.\n\n"
+        "Cek status booking: {link_status}"
     ),
     "booking_luar_jam_operasional": (
         "Booking Anda telah diterima. Saat ini *{toko}* sudah di luar jam operasional. Tim kami akan "
@@ -87,9 +91,14 @@ def _tanggal_indo(tanggal: str) -> str:
         return tanggal
 
 
-def render(jenis: str, booking: dict, nama_toko: str, template_text: str = None) -> str:
+def render(jenis: str, booking: dict, nama_toko: str, template_text: str = None, link_status: str = None) -> str:
     """`template_text` = teks custom milik tenant (kosong/None -> pakai
-    DEFAULT_TEMPLATES[jenis])."""
+    DEFAULT_TEMPLATES[jenis]). `link_status` (FITUR Link Cek Status Booking
+    Langsung) = URL publik yang dibentuk booking_db.py::_kirim_notifikasi_wa_booking()
+    SEBELUM memanggil render() ini -- None/kosong kalau gagal dibentuk
+    (tenant belum punya booking_slug, dll), placeholder-nya cukup jadi
+    string kosong di pesan (BUKAN menggagalkan pengiriman, "best effort"
+    sama seperti placeholder lain)."""
     teks = (template_text or "").strip() or DEFAULT_TEMPLATES[jenis]
     nilai = {
         "nama": booking["customer_nama"],
@@ -105,6 +114,7 @@ def render(jenis: str, booking: dict, nama_toko: str, template_text: str = None)
         # `.get()` supaya jenis lain yang tidak menyertakan placeholder ini
         # di templatenya tetap aman walau field-nya kosong.
         "jam_buka": booking.get("jam_buka", ""),
+        "link_status": link_status or "",
     }
     for key, val in nilai.items():
         teks = teks.replace("{" + key + "}", str(val))

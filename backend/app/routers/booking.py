@@ -528,7 +528,42 @@ def public_cek_status(body: CekStatusBody, tenant_id: int = Depends(resolve_tena
     """FITUR "Sudah Booking?" (permintaan Owner): customer tidak sengaja
     menutup tab saat pembayaran -- masukkan nomor WA yang dipakai saat
     booking, dapat kembali status TERKINI booking TERBARU miliknya (bukan
-    riwayat lengkap). `fase` yang dikembalikan:
+    riwayat lengkap). `fase` yang dikembalikan -- lihat docstring lengkap
+    di _bentuk_respons_cek_status() di bawah (SATU-SATUNYA tempat yang
+    membentuk respons ini, dipakai BERSAMA public_cek_status_token())."""
+    booking = booking_db.cari_booking_terbaru_whatsapp(body.whatsapp, tenant_id)
+    return _bentuk_respons_cek_status(booking, tenant_id)
+
+
+@public_router.get("/status/{token}")
+def public_cek_status_token(token: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    """FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner): link yang
+    disisipkan otomatis ke pesan WhatsApp booking (reminder QRIS/konfirmasi
+    pembayaran/pembatalan -- lihat whatsapp_templates.py placeholder
+    {link_status} & booking_db.py::_kirim_notifikasi_wa_booking()) --
+    customer klik link, LANGSUNG lihat status booking SPESIFIK itu, TANPA
+    mengetik ulang nomor WA sama sekali (beda dari public_cek_status() di
+    atas, yang mencari booking TERBARU milik satu nomor WA -- token di
+    sini sudah menunjuk SATU booking pasti). Respons SAMA PERSIS bentuknya
+    dengan public_cek_status() (lihat _bentuk_respons_cek_status()), supaya
+    frontend bisa pakai satu fungsi tampilan yang sama untuk keduanya.
+
+    `tenant_id` (dari subdomain request, SAMA seperti endpoint publik
+    lain) dicocokkan ULANG terhadap tenant pemilik booking -- token sudah
+    unik per booking (index UNIQUE di kolom status_token), jadi ini
+    murni lapis pertahanan kedua (kalau link kebetulan dibuka dari
+    subdomain tenant lain), BUKAN syarat utama buat menemukan bookingnya."""
+    booking = booking_db.get_booking_by_status_token(token)
+    if booking is not None and booking["tenant_id"] != tenant_id:
+        booking = None
+    return _bentuk_respons_cek_status(booking, tenant_id)
+
+
+def _bentuk_respons_cek_status(booking: dict | None, tenant_id: int) -> dict:
+    """Dipakai BERSAMA public_cek_status() (lookup lewat nomor WA) dan
+    public_cek_status_token() (lookup lewat link langsung) di atas -- SATU
+    tempat yang menentukan bentuk respons & `fase`-nya supaya keduanya
+    SELALU konsisten:
       - "dibatalkan": tampilkan pesan dibatalkan, tawarkan booking ulang.
       - "lewat": tanggal+jam appointment sudah lewat, tawarkan booking baru.
       - "menunggu_gateway": tampilkan ulang QR/VA + countdown (SAMA seperti
@@ -540,7 +575,6 @@ def public_cek_status(body: CekStatusBody, tenant_id: int = Depends(resolve_tena
       - "selesai": sudah lunas/terverifikasi (metode apa pun, TERMASUK
         cash yang memang SELALU langsung terverifikasi) -- tampilkan
         Bukti Booking."""
-    booking = booking_db.cari_booking_terbaru_whatsapp(body.whatsapp, tenant_id)
     if booking is None:
         return {"ditemukan": False}
 

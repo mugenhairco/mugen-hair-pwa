@@ -33,6 +33,7 @@ import io
 import json
 import logging
 import re
+import secrets
 import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -1037,14 +1038,18 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     # maupun QRIS dinamis lewat gateway/channel=="qris"), dan KHUSUS jenis
     # pesan "reminder_qris" (sudah digerbang metode_pembayaran=="qris" oleh
     # pemanggilnya sendiri -- lihat buat_booking()/terima_booking() di
-    # atas) & "konfirmasi_pembayaran" (dipanggil utk SEMUA metode dari
-    # verifikasi_pembayaran(), jadi perlu dicek is_qris di sini). Jenis lain
-    # (pembatalan, booking_luar_jam_operasional) & metode selain QRIS TETAP
-    # diblokir total untuk Booking Mandiri, sesuai keputusan awal di atas.
+    # atas), "konfirmasi_pembayaran" (dipanggil utk SEMUA metode dari
+    # verifikasi_pembayaran(), jadi perlu dicek is_qris di sini), DAN
+    # "pembatalan" (REVISI LAGI, permintaan Owner: booking mandiri QRIS
+    # yang dibatalkan karena tidak kunjung dibayar SEHARUSNYA tetap
+    # memberi tahu customer, sama seperti booking online -- sebelumnya
+    # jenis ini selalu diblokir total untuk Booking Mandiri tanpa
+    # pengecualian). "booking_luar_jam_operasional" & metode selain QRIS
+    # TETAP diblokir total untuk Booking Mandiri, sesuai keputusan awal.
     if booking.get("sumber") == "kasir_mandiri":
         metode = booking.get("metode_pembayaran")
         is_qris = metode == "qris" or (metode == "gateway" and booking.get("gateway_channel") == "qris")
-        if jenis not in ("reminder_qris", "konfirmasi_pembayaran") or not is_qris:
+        if jenis not in ("reminder_qris", "konfirmasi_pembayaran", "pembatalan") or not is_qris:
             return
     tenant_id = booking.get("tenant_id")
     import feature_access  # import lokal: hindari import siklik (feature_access.py -> database.py)
@@ -1056,7 +1061,26 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
     try:
         nama_toko = pengaturan_identitas.get_identitas(tenant_id=tenant_id).get("nama_barbershop") or "Kami"
         template_text = whatsapp_service.get_templates(tenant_id=tenant_id).get(jenis)
-        pesan = whatsapp_templates.render(jenis, booking, nama_toko, template_text)
+        # FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner): link
+        # disisipkan ke SEMUA pesan lewat placeholder {link_status} (lihat
+        # whatsapp_templates.py) -- SATU titik pembuatan link di sini,
+        # bukan di tiap jenis pesan, supaya konsisten & otomatis ikut kalau
+        # ada jenis pesan baru di masa depan. "best effort" juga -- gagal
+        # membentuk link (tenant belum punya booking_slug, dll) TIDAK
+        # BOLEH menggagalkan pengiriman pesan itu sendiri, placeholder
+        # cukup jadi string kosong (lihat whatsapp_templates.render()).
+        link_status = None
+        try:
+            import tenant_db  # import lokal: hindari import siklik
+            tenant = tenant_db.get_tenant(tenant_id)
+            booking_url = tenant_db.get_booking_url(tenant) if tenant else None
+            if booking_url:
+                token = get_atau_buat_status_token(booking["id"])
+                if token:
+                    link_status = f"{booking_url}/status/{token}"
+        except Exception as e:
+            logger.error("Link status booking #%s GAGAL dibentuk: %s: %s", booking.get("id"), type(e).__name__, e)
+        pesan = whatsapp_templates.render(jenis, booking, nama_toko, template_text, link_status=link_status)
         whatsapp_service.kirim_whatsapp(booking["customer_whatsapp"], pesan, tenant_id=tenant_id)
     except Exception as e:
         logger.error("Notifikasi WhatsApp booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
@@ -1263,12 +1287,13 @@ def buat_booking(barber_id: int, tanggal: str, jam_mulai: str, service_ids: list
             cur = conn.execute(
                 "INSERT INTO bookings (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama, "
                 "customer_whatsapp, total_harga, total_durasi_menit, metode_pembayaran, "
-                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi, sumber, dilihat) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?, ?, ?)",
+                "status_pembayaran, status_booking, catatan, created_at, tenant_id, nomor_transaksi, sumber, dilihat, "
+                "status_token) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif', ?, ?, ?, ?, ?, ?, ?)",
                 (barber_id, tanggal, jam_mulai, jam_selesai, customer_nama.strip(),
                  (customer_whatsapp or "").strip(), total_harga, total_durasi, metode_pembayaran,
                  status_pembayaran_awal, (catatan or "").strip() or None, now, tenant_id, nomor_transaksi, sumber,
-                 dilihat_awal),
+                 dilihat_awal, secrets.token_urlsafe(16)),
             )
             booking_id = cur.lastrowid
             for s in items:
@@ -1651,6 +1676,47 @@ def cari_booking_terbaru_whatsapp(nomor_whatsapp: str, tenant_id: int) -> dict |
         if _normalisasi_whatsapp(r["customer_whatsapp"]) == target:
             return get_booking(r["id"])
     return None
+
+
+def get_booking_by_status_token(token: str) -> dict | None:
+    """FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner): lookup
+    booking lewat `status_token` (string acak, lihat booking_status_token_
+    migrasi.py) -- dipakai routers/booking.py::public_cek_status_token(),
+    SATU-SATUNYA titik pemicu endpoint publik baru yang tidak butuh nomor
+    WA sama sekali (beda dari cari_booking_terbaru_whatsapp() di atas,
+    yang mencari booking TERBARU milik satu nomor -- ini mencari booking
+    SPESIFIK yang link-nya dibuka, apa pun urutannya). `tenant_id` TIDAK
+    perlu dicek terpisah di sini -- token sudah unik per booking (index
+    UNIQUE), jadi hasilnya otomatis milik tenant yang benar."""
+    if not token:
+        return None
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM bookings WHERE status_token = ?", (token,)).fetchone()
+    if row is None:
+        return None
+    return get_booking(row["id"])
+
+
+def get_atau_buat_status_token(booking_id: int) -> str | None:
+    """FITUR Link Cek Status Booking Langsung: booking BARU (dibuat setelah
+    fitur ini ada) sudah langsung punya `status_token` diisi saat INSERT
+    (lihat buat_booking() di atas) -- fungsi ini HANYA jaring pengaman
+    untuk booking LAMA yang kolomnya masih NULL (dibuat SEBELUM migrasi),
+    diisi LAZY satu per satu persis saat sebuah notifikasi WhatsApp untuk
+    booking itu AKAN dikirim (lihat _kirim_notifikasi_wa_booking() di
+    bawah) -- BUKAN migrasi massal retroaktif saat startup (lihat
+    booking_status_token_migrasi.py untuk alasan lengkap). None kalau
+    booking_id tidak ditemukan sama sekali (seharusnya tidak pernah
+    terjadi dari pemanggil manapun -- dijaga defensif)."""
+    booking = get_booking(booking_id)
+    if booking is None:
+        return None
+    if booking.get("status_token"):
+        return booking["status_token"]
+    token = secrets.token_urlsafe(16)
+    with get_conn() as conn:
+        conn.execute("UPDATE bookings SET status_token = ? WHERE id = ?", (token, booking_id))
+    return token
 
 
 def _normalisasi_whatsapp(nomor: str) -> str:

@@ -1635,7 +1635,15 @@
 // tanggal/jam/metode/channel/bank) sekarang kembali ke kondisi kosong
 // otomatis, siap dipakai mencatat customer walk-in berikutnya. Kartu hasil
 // booking (konfirmasi) tetap tampil di bawah seperti sebelumnya.
-const ASSET_VERSION = "309";
+// v309 -> v310: FITUR Link Cek Status Booking Langsung (PERMINTAAN Owner)
+// -- link baru (/book/status/<token>) disisipkan OTOMATIS ke pesan WhatsApp
+// booking (reminder QRIS/konfirmasi pembayaran/pembatalan, placeholder baru
+// {link_status}) supaya customer bisa klik langsung lihat status booking-nya
+// (atau scan ulang QRIS yang kelewat) TANPA mengetik ulang nomor WA. Juga
+// BUGFIX: pesan "Pembatalan" sekarang ikut terkirim untuk Booking Mandiri
+// metode QRIS (sebelumnya diblokir total untuk semua jenis pesan Booking
+// Mandiri tanpa pengecualian).
+const ASSET_VERSION = "310";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
