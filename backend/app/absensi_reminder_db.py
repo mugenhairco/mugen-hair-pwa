@@ -22,7 +22,7 @@ memori proses.
 IDEMPOTEN: tabel absensi_reminder_log mencatat SATU baris per (barber,
 tanggal, jenis) -- walau endpoint pemicu dipanggil berkali-kali dalam
 jendela waktu yang sama, SATU barber HANYA menerima SATU pesan per jenis
-per hari (lihat _sudah_diingatkan()/_catat_pengingat()).
+per hari (lihat _sudah_diingatkan()/_klaim_pengingat()).
 
 DIKECUALIKAN dari pengingat (PERMINTAAN Owner): barber yang sedang
 Libur/Cuti/Izin pada tanggal itu (lihat _barber_sedang_libur_cuti_izin()),
@@ -160,12 +160,43 @@ def _sudah_diingatkan(barber_id: int, tanggal: str, jenis: str) -> bool:
         return row is not None
 
 
-def _catat_pengingat(tenant_id: int, barber_id: int, tanggal: str, jenis: str):
+def _klaim_pengingat(tenant_id: int, barber_id: int, tanggal: str, jenis: str) -> bool:
+    """BUGFIX (audit "susuri menyeluruh" -- "reminder absensi WA bisa
+    dobel"): SEBELUMNYA (nama lama _catat_pengingat()) baris log ini
+    ditulis SETELAH WhatsApp berhasil terkirim -- _sudah_diingatkan() (cek
+    "sudah ada baris log?") dan pengiriman WA itu sendiri adalah DUA
+    langkah terpisah TANPA penanda apa pun di antaranya (check-then-act).
+    Kalau jalankan_pengecekan() terpanggil dua kali nyaris bersamaan untuk
+    barber+jenis YANG SAMA (penjadwal cron eksternal retry, atau dua
+    invocation tumpang tindih karena yang pertama lambat -- Fonnte timeout
+    15 detik PER barber, lihat whatsapp_service.py), KEDUANYA bisa
+    SAMA-SAMA membaca "belum diingatkan" SEBELUM salah satu sempat
+    mengirim WA, sehingga KEDUANYA mengirim -- barber menerima WA
+    reminder dobel.
+
+    Sekarang baris log ini "diklaim" (INSERT) SEBELUM WA benar-benar
+    dikirim -- `ON CONFLICT DO NOTHING` + cek rowcount (BUKAN cuma "tidak
+    error") menjadikan constraint UNIQUE(barber_id, tanggal, jenis) di
+    level DB sebagai penentu akhir: HANYA SATU pemanggil yang berhasil
+    klaim (return True), yang lain (rowcount 0) return False dan TIDAK
+    PERNAH mengirim WA sama sekali. Kalau WA yang dikirim pemenang klaim
+    ternyata GAGAL, panggil _lepas_klaim_pengingat() supaya tick cron
+    BERIKUTNYA tetap mencoba lagi (perilaku retry-on-failure yang SUDAH
+    ADA sebelumnya TIDAK berubah)."""
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO absensi_reminder_log (tenant_id, barber_id, tanggal, jenis, dikirim_at) "
             "VALUES (?, ?, ?, ?, ?) ON CONFLICT(barber_id, tanggal, jenis) DO NOTHING",
             (tenant_id, barber_id, tanggal, jenis, _sekarang_wib().isoformat()),
+        )
+        return cur.rowcount > 0
+
+
+def _lepas_klaim_pengingat(barber_id: int, tanggal: str, jenis: str):
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM absensi_reminder_log WHERE barber_id = ? AND tanggal = ? AND jenis = ?",
+            (barber_id, tanggal, jenis),
         )
 
 
@@ -243,17 +274,21 @@ def jalankan_pengecekan() -> dict:
             nilai = {**nilai_placeholder, "nama_barber": b["nama"]}
 
             if (lewat_jam_buka and (log is None or not log.get("check_in_at"))
-                    and not _sudah_diingatkan(b["id"], tanggal, "checkin")):
+                    and not _sudah_diingatkan(b["id"], tanggal, "checkin")
+                    and _klaim_pengingat(tenant_id, b["id"], tanggal, "checkin")):
                 pesan = render("checkin", nilai, templates.get("checkin"))
                 if whatsapp_service.kirim_whatsapp(nomor, pesan, tenant_id=tenant_id):
-                    _catat_pengingat(tenant_id, b["id"], tanggal, "checkin")
                     ringkasan["checkin_terkirim"] += 1
+                else:
+                    _lepas_klaim_pengingat(b["id"], tanggal, "checkin")
 
             if (lewat_batas_checkout and log is not None and log.get("check_in_at") and not log.get("check_out_at")
-                    and not _sudah_diingatkan(b["id"], tanggal, "checkout")):
+                    and not _sudah_diingatkan(b["id"], tanggal, "checkout")
+                    and _klaim_pengingat(tenant_id, b["id"], tanggal, "checkout")):
                 pesan = render("checkout", nilai, templates.get("checkout"))
                 if whatsapp_service.kirim_whatsapp(nomor, pesan, tenant_id=tenant_id):
-                    _catat_pengingat(tenant_id, b["id"], tanggal, "checkout")
                     ringkasan["checkout_terkirim"] += 1
+                else:
+                    _lepas_klaim_pengingat(b["id"], tanggal, "checkout")
 
     return ringkasan

@@ -38,6 +38,8 @@ check_in() -- lihat SUMBER_LIBUR_MINGGUAN.
 """
 
 import json
+import threading
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import attendance_db
@@ -45,6 +47,24 @@ import booking_db
 import database as db
 import izin_cuti_db
 from database import get_conn
+
+# BUGFIX (audit "susuri menyeluruh" -- "cuti otomatis kuota libur bisa
+# dobel"): _terapkan_kuota_libur() di bawah membaca (absensi_libur sudah
+# ada? kuota terpakai berapa?) LALU menulis (INSERT izin_cuti ATAU
+# tandai_libur()) tanpa lock -- dua pemicu untuk barber+tanggal YANG SAMA
+# nyaris bersamaan (fungsi ini dipanggil OPORTUNISTIK setiap kali data
+# Libur dibutuhkan, lihat docstring pastikan_libur_mingguan_tercatat(),
+# jadi dua request Rekap/Dashboard bersamaan bisa memicu ini untuk
+# kombinasi yang sama) bisa SAMA-SAMA lolos pengecekan "belum ada baris"
+# SEBELUM salah satu menulis, menghasilkan DUA baris Cuti/Libur untuk
+# tanggal yang SAMA -- kuota Izin & Cuti gabungan terpotong dobel. Pola
+# lock SAMA PERSIS kasbon_db.py::_kunci_per_kasbon/rekap_gabungan_db.py::
+# _kunci_per_barber_tanggal.
+_kunci_per_barber_tanggal: dict[tuple[int, str], threading.Lock] = defaultdict(threading.Lock)
+
+
+def _kunci_kuota_libur(barber_id: int, tanggal: str) -> threading.Lock:
+    return _kunci_per_barber_tanggal[(barber_id, tanggal)]
 
 SUMBER_KELEBIHAN_KUOTA = "kelebihan_kuota"
 SUMBER_LIBUR_MINGGUAN = "libur_mingguan"
@@ -337,7 +357,15 @@ def _terapkan_kuota_libur(barber_id: int, tenant_id: int, tanggal: str, sumber_l
     DAN Cuti sekaligus) -- bikin Rekap & kuota salah hitung, dan baris
     Cuti itu dibuat lewat INSERT langsung di bawah (BUKAN
     izin_cuti_db.buat_pengajuan()), jadi tidak lewat guard tumpang
-    tindih yang ada di sana sama sekali."""
+    tindih yang ada di sana sama sekali.
+
+    SELURUH fungsi dikunci per (barber_id, tanggal) lewat _kunci_kuota_libur()
+    -- lihat komentar di _kunci_per_barber_tanggal atas modul ini."""
+    with _kunci_kuota_libur(barber_id, tanggal):
+        return _terapkan_kuota_libur_terkunci(barber_id, tenant_id, tanggal, sumber_libur)
+
+
+def _terapkan_kuota_libur_terkunci(barber_id: int, tenant_id: int, tanggal: str, sumber_libur: str = None) -> str:
     with get_conn() as conn:
         sudah_ada = conn.execute(
             "SELECT 1 FROM absensi_libur WHERE barber_id = ? AND tanggal = ?",
@@ -360,6 +388,28 @@ def _terapkan_kuota_libur(barber_id: int, tenant_id: int, tanggal: str, sumber_l
 
     sisa = izin_cuti_db.get_sisa_kuota_gabungan_pada_tanggal(barber_id, tenant_id, tanggal)
     if sisa is None or sisa > 0:
+        # BUGFIX (audit "susuri menyeluruh" -- "cuti otomatis kuota libur
+        # bisa dobel", lanjutan dari lock _kunci_kuota_libur() di atas):
+        # lock di atas MENCEGAH DUA PANGGILAN BERSAMAAN sama-sama lolos
+        # sampai titik ini, TAPI cabang "cuti" ini sendiri TIDAK PERNAH
+        # dicek idempotensinya (beda dari cabang "libur" di atas, yang
+        # sudah dicek lewat baris absensi_libur di awal fungsi) -- DUA
+        # PANGGILAN BERURUTAN (bukan cuma bersamaan) untuk barber+tanggal
+        # yang SAMA, SETELAH baris Cuti pertama berhasil dibuat, akan
+        # TETAP lolos ke INSERT ini lagi (baris Cuti BUKAN baris
+        # absensi_libur, jadi tidak ikut tertangkap pengecekan di awal
+        # fungsi) -- kuota Izin & Cuti gabungan barber ini terpotong
+        # dobel/tiga kali/dst. Dicek di sini: kalau baris Cuti OTOMATIS
+        # (diajukan_oleh=DIAJUKAN_OLEH_KUOTA_LIBUR) untuk tanggal PERSIS
+        # ini SUDAH ada, anggap sudah selesai, JANGAN insert lagi.
+        with get_conn() as conn:
+            sudah_ada_cuti = conn.execute(
+                "SELECT 1 FROM izin_cuti WHERE barber_id = ? AND tanggal_mulai = ? AND tanggal_selesai = ? "
+                "AND jenis = 'cuti' AND diajukan_oleh = ?",
+                (barber_id, tanggal, tanggal, DIAJUKAN_OLEH_KUOTA_LIBUR),
+            ).fetchone()
+        if sudah_ada_cuti is not None:
+            return "cuti"
         now = datetime.now().isoformat(timespec="seconds")
         with get_conn() as conn:
             conn.execute(

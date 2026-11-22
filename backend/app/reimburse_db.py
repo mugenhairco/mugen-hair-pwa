@@ -365,6 +365,19 @@ def hapus_reimburse_disetujui(reimburse_id: int):
 
 def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str = "",
                           disetujui_oleh: str = "") -> dict:
+    """BUGFIX (audit "susuri menyeluruh" -- "guard anti-approve-dobel
+    Reimburse & Izin/Cuti"): SEBELUMNYA pengecekan `existing["status"] !=
+    "pending"` dan UPDATE di bawah adalah dua langkah terpisah (check-then-
+    act di Python) -- dua Admin di dua tab mengklik Setujui/Tolak untuk
+    klaim YANG SAMA nyaris bersamaan bisa SAMA-SAMA membaca status
+    "pending" SEBELUM salah satu menulis, sehingga KEDUANYA lolos dan
+    KEDUANYA menulis -- yang menulis TERAKHIR yang menang (mis. klaim
+    yang sudah dibayar tunai bisa berubah jadi "ditolak", barber menerima
+    dua notifikasi push yang saling bertentangan). UPDATE sekarang
+    bersyarat `WHERE status = 'pending'` (compare-and-swap atomik di
+    level SQL, pola sama persis attendance_db.py::check_out()) -- kalau
+    GAGAL (rowcount 0), berarti klaim ini SUDAH diproses oleh request
+    lain di antara baca & tulis kita."""
     if status not in {"disetujui", "ditolak"}:
         raise ValueError(f"Status tidak dikenal: {status}")
     existing = get_reimburse(reimburse_id)
@@ -379,11 +392,13 @@ def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str =
         )
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """UPDATE reimburse SET status = ?, catatan_approval = ?, disetujui_oleh = ?,
-                   tanggal_approval = ?, updated_at = ? WHERE id = ?""",
+                   tanggal_approval = ?, updated_at = ? WHERE id = ? AND status = 'pending'""",
             (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, reimburse_id),
         )
+    if cur.rowcount == 0:
+        raise ValueError("Klaim ini sudah diproses sebelumnya.")
     return get_reimburse(reimburse_id)
 
 
