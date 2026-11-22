@@ -523,6 +523,14 @@ a:hover { color: var(--accent-secondary); }
   display: flex; align-items: center; justify-content: center;
 }
 .page-title-icon svg { width: 19px; height: 19px; }
+/* PERMINTAAN Owner (Rekap -- "tombol Tambah Transaksi disembunyikan di
+   balik ikon judul"): dipakai HANYA saat ikon judul halaman benar-benar
+   jadi pemicu aksi (lihat rekap.js::render()) -- affordance TIPIS
+   SENGAJA (cuma cursor+sedikit redup saat hover/fokus), supaya tetap
+   terkesan "disembunyikan" seperti diminta, bukan tombol mencolok. */
+.page-title-icon--clickable { cursor: pointer; transition: filter 120ms var(--ease-press), transform 120ms var(--ease-press); }
+.page-title-icon--clickable:hover, .page-title-icon--clickable:focus-visible { filter: brightness(0.92); transform: scale(1.05); }
+.page-title-icon--clickable:active { transform: scale(0.95); }
 
 .hamburger {
   display: none;
@@ -856,25 +864,17 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 .rekap-slide-label strong { display: block; font-size: 14.5px; color: var(--text); }
 .rekap-slide-label span { display: block; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
-/* PERMINTAAN Owner ("tombol Tambah Transaksi harusnya sejajar dengan
-   pagination"): link "Tambah Transaksi" & pager (.rekap-pagination)
-   SATU baris flex yang sama (flex-basis:100% -- ikut turun baris
-   bersama labelBox di atasnya kalau layar sempit, TAPI keduanya sendiri
-   TIDAK PERNAH terpisah satu sama lain -- flex-wrap:nowrap SENGAJA,
-   Owner TIDAK suka pagination pindah baris sendiri di bawah link).
-   .rekap-pagination tetap rata kanan lewat margin-left:auto miliknya
-   sendiri (lihat aturan itu di bawah), jadi tetap rata kanan walau
-   link-nya tidak ada (Barber/staff tanpa izin Kelola).
-   BUGFIX (PERMINTAAN Owner "jangan terpotong, hilangkan 1 angka, perkecil
-   ukuran jika masih tertimpa"): di layar <=480px satu nomor tengah
-   dikurangi (lihat rekap.js::_daftarHalamanPaginasi, UKURAN_JENDELA)
-   DAN seluruh tombol pagination diperkecil (lihat media query di bawah
-   .rekap-page-ellipsis) supaya gabungan link + pagination tetap muat
-   satu baris tanpa ada yang kepotong -- overflow-x:auto dipertahankan
-   sebagai jaring pengaman kalau tetap tidak cukup (mis. tanggal 3
-   digit), tapi seharusnya tidak lagi kepakai dalam kondisi normal. */
-.rekap-slide-nav-bawah { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-basis: 100%; overflow-x: auto; }
-.rekap-slide-nav-bawah .text-link-aksi { flex-shrink: 0; white-space: nowrap; }
+/* REVISI (PERMINTAAN Owner "tombol Tambah Transaksi dipindahkan &
+   disembunyikan di balik ikon judul Rekap, tulisan tanggal di atasnya
+   turunkan agar sejajar"): link "Tambah Transaksi" SUDAH TIDAK ADA lagi
+   di sini (pindah jadi ikon judul halaman, lihat rekap.js::render()) --
+   flex-basis:100% yang SEBELUMNYA memaksa baris ini (pager) SELALU
+   pindah baris sendiri di bawah labelBox (supaya keduanya tidak pernah
+   kepisah waktu link itu masih ada) DIHAPUS -- sekarang labelBox & pager
+   sejajar satu baris lewat justify-content:space-between milik
+   .rekap-slide-nav (parent-nya), baru ikut turun baris kalau BENAR-BENAR
+   tidak cukup lebar (flex-wrap:wrap milik .rekap-slide-nav). */
+.rekap-slide-nav-bawah { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; }
 
 /* PERMINTAAN Owner ("tombol sebelumnya/berikutnya jadi komponen pagination
    bernomor, 1 2 3 4 5 ... sampai nomor terakhir, titik-titik kalau
@@ -884,10 +884,11 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
    kanan = makin baru (lihat rekap.js::renderTransaksi() untuk urutan
    tanggalUnik-nya). Nomor halaman aktif diberi warna aksen solid, sama
    seperti pola active state lain di app (mis. .sidebar nav a.active).
-   flex-wrap:nowrap (BUKAN wrap seperti sebelumnya) -- SATU baris yang
-   sama dengan link "Tambah Transaksi" di .rekap-slide-nav-bawah,
-   flex-shrink:0 di tiap tombol supaya tidak gepeng kalau ruang pas-pasan
-   (orang tua-nya yang scroll horizontal, bukan tombol ini yang menyusut). */
+   flex-wrap:nowrap (BUKAN wrap seperti sebelumnya) supaya tombol-tombol
+   nomor halaman tidak terpisah ke beberapa baris, flex-shrink:0 di tiap
+   tombol supaya tidak gepeng kalau ruang pas-pasan (orang tua-nya --
+   .rekap-slide-nav-bawah -- yang scroll horizontal kalau perlu, bukan
+   tombol ini yang menyusut). */
 .rekap-pagination {
   display: flex; align-items: center; justify-content: flex-end; gap: 2px; flex-wrap: nowrap; flex-shrink: 0; margin-left: auto;
 }
@@ -903,9 +904,8 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
   padding: 0 4px; color: var(--text-dim); font-size: 13.5px; flex-shrink: 0; user-select: none;
 }
 @media (max-width: 480px) {
-  /* Lihat komentar di .rekap-slide-nav-bawah: tombol pagination
-     diperkecil (bukan dipindah ke baris sendiri) supaya tetap sejajar
-     satu baris dengan link "Tambah Transaksi" di layar sesempit ini. */
+  /* Tombol pagination diperkecil supaya tetap muat satu baris tanpa
+     kepotong di layar sesempit ini. */
   .rekap-pagination { gap: 1px; }
   .rekap-page-arrow, .rekap-page-num {
     min-height: 29px; padding: 0 6px; font-size: 12px;

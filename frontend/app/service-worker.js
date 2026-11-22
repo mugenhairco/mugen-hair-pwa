@@ -1610,7 +1610,15 @@
 // seperti sebelum fitur Periode ditambahkan. Endpoint backend
 // /api/dashboard/owner/periode TIDAK dihapus (dibiarkan ada tanpa
 // konsumen UI, pola sama seperti endpoint laporan PDF lama di Backup).
-const ASSET_VERSION = "306";
+// v306 -> v307: PERMINTAAN Owner (Rekap Transaksi): link teks "Tambah
+// Transaksi" (sebelumnya sejajar baris pagination) dipindah & disembunyikan
+// di balik ikon judul halaman "Rekap" -- klik ikon itu sekarang membuka
+// modal Tambah Transaksi yang sama persis, berfungsi dari tab mana pun
+// (Transaksi/Bulanan/Pengeluaran). Tulisan tanggal ("22 November 2026"/
+// "Tanggal X dari Y") yang sebelumnya selalu turun ke barisnya sendiri di
+// atas sekarang sejajar satu baris dengan paginasi (ruang yang tadinya
+// dipakai teks "Tambah Transaksi" sudah tidak perlu lagi).
+const ASSET_VERSION = "307";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
