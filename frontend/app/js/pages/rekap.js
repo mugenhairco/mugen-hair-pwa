@@ -693,7 +693,7 @@ const PageRekap = (() => {
         fieldBlock("Tahun", MugenUI.selectIcon(MugenIcons.calendar, selTahun)),
         ...(selBarber ? [fieldBlock(labelSemua === "Semua Karyawan" ? "Karyawan" : "Barber", MugenUI.selectIcon(MugenIcons.karyawan, selBarber))] : []),
       ]);
-      const filterCard = MugenUI.el("div", { class: "card" }, [
+      const filterCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Filter"),
         grid,
       ]);
@@ -796,7 +796,7 @@ const PageRekap = (() => {
       // PERMINTAAN Owner ("CARD PENGATURAN LAPORAN PDF"): dibungkus kartu
       // kedua terpisah dari kartu Filter di atas -- grid responsif sama
       // (.rekap-pdf-grid), tombol Cetak PDF full-width di HP (lihat CSS).
-      const pdfCard = MugenUI.el("div", { class: "card" }, [
+      const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Pengaturan Laporan PDF"),
         MugenUI.el("div", { class: "rekap-pdf-grid" }, [
           fieldBlock("Periode Laporan (opsional)", rangePdf.el),
@@ -1416,7 +1416,7 @@ const PageRekap = (() => {
       // PERMINTAAN Owner (Redesain Rekap -- kartu kedua konsisten di
       // seluruh tab, walau tab ini tidak punya Periode/Jenis Laporan
       // seperti Transaksi): cuma berisi tombol Cetak PDF, full-width di HP.
-      const pdfCard = MugenUI.el("div", { class: "card" }, [
+      const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Laporan PDF"),
         MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
       ]);
@@ -1508,7 +1508,7 @@ const PageRekap = (() => {
           filename: MugenUI.namaFileAman(`Rekap Pengeluaran ${MugenUI.namaBulan(Number(selBulan.value))} ${selTahun.value}.pdf`),
         };
       });
-      const pdfCard = MugenUI.el("div", { class: "card" }, [
+      const pdfCard = MugenUI.el("div", { class: "card rekap-card" }, [
         MugenUI.el("h2", {}, "Laporan PDF"),
         MugenUI.el("div", { class: "rekap-pdf-grid" }, [btnCetakPdf]),
       ]);
