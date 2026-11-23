@@ -79,6 +79,7 @@ import file_asset_db
 import r2_storage
 import slip_gaji_db
 import kasbon_db
+import wa_otp_db
 import komisi_penyesuaian_db
 import reimburse_db
 import izin_cuti_db
@@ -448,6 +449,7 @@ async def on_startup():
         file_asset_db.init_file_asset_db()  # Tahap 16: tabel file_asset -- Logo/Hero/Foto About/Background/QRIS (idempotent)
         slip_gaji_db.init_slip_gaji_db()  # Modul Karyawan Fase 1: kolom barbers.gaji_pokok + tabel slip_gaji (idempotent)
         kasbon_db.init_kasbon_db()  # Modul Karyawan Fase 2: tabel kasbon + kasbon_pembayaran (idempotent)
+        wa_otp_db.init_wa_otp_db()  # FITUR Lupa Kata Sandi Karyawan via OTP WhatsApp: tabel wa_otp_reset (idempotent, berdiri sendiri)
         komisi_penyesuaian_db.init_komisi_penyesuaian_db()  # Modul Karyawan Fase 3: tabel komisi_penyesuaian (idempotent; kolom slip_gaji.penyesuaian_komisi dibuat di init_slip_gaji_db() di atas)
         reimburse_db.init_reimburse_db()  # Modul Karyawan Fase 4: tabel reimburse (idempotent; kolom slip_gaji.reimburse dibuat di init_slip_gaji_db() di atas)
         izin_cuti_db.init_izin_cuti_db()  # Modul Karyawan Fase 5: tabel izin_cuti (idempotent, berdiri sendiri)

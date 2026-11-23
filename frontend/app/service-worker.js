@@ -1687,7 +1687,13 @@
 // jadi cukup bersihkan flag kotornya langsung, tidak perlu suntik baris)
 // sekarang juga tidak memaksa Rekap Transaksi/Bulanan fetch ulang kalau
 // memang tidak ada yang berubah di sana.
-const ASSET_VERSION = "317";
+// v317 -> v318: FITUR BARU Lupa Kata Sandi Karyawan via OTP WhatsApp
+// (PERMINTAAN Owner) -- halaman "Lupa Kata Sandi" (pages/lupa_password.js)
+// sekarang punya toggle "Saya Owner"/"Saya Karyawan". Jalur Karyawan:
+// isi username + nomor WhatsApp terdaftar, kode OTP 6 digit dikirim ke
+// WhatsApp itu dari WA toko (wa_otp_db.py + 2 endpoint baru di
+// routers/auth_router.py), lalu isi kode + password baru + konfirmasi.
+const ASSET_VERSION = "318";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
