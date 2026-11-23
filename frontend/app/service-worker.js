@@ -1715,7 +1715,18 @@
 // tampil duluan. Sekarang kedua fungsi itu juga membersihkan
 // "rekap_transaksi" (aman -- Pengeluaran tidak pernah muncul di tab
 // Transaksi sama sekali).
-const ASSET_VERSION = "321";
+// v321 -> v322: PERLUASAN bugfix v320->v321 di atas ke menu LAIN yang
+// mutasinya TIDAK PERNAH berhubungan sama sekali dengan data Rekap (tab
+// Transaksi maupun Bulanan), tapi api.js tetap menandai "rekap"/
+// "rekap_transaksi" KOTOR untuk setiap mutasinya (blanket default) --
+// Produk, Pemasukan, Uang Kas, Komisi (Penyesuaian), WhatsApp (termasuk
+// Reminder Absensi) -- setiap save/hapus di menu-menu ini sekarang juga
+// membersihkan kedua flag itu, supaya Rekap tidak reload penuh tanpa
+// alasan saat dibuka lagi. Pengaturan (umum) SENGAJA TIDAK diikutkan --
+// sebagian sub-fiturnya (bonus tiers, syarat/target uang harian, status
+// aktif barber) justru DIBACA LIVE oleh tab Bulanan, jadi reload Rekap
+// setelah mengubahnya memang perilaku yang benar, bukan bug.
+const ASSET_VERSION = "322";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

@@ -320,6 +320,13 @@ const PageKomisi = (() => {
         }
         resetForm();
         loadList();
+        // Penyesuaian Komisi TIDAK PERNAH dibaca Rekap (tab manapun) --
+        // perhitungan komisi dasar di Bulanan tetap berjalan terpisah,
+        // lihat komisi_penyesuaian_db.py. Bersihkan lagi di sini supaya
+        // Rekap tidak reload penuh tanpa alasan (bugfix sama seperti
+        // Pengeluaran di rekap.js).
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -387,6 +394,8 @@ const PageKomisi = (() => {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/komisi/penyesuaian/${r.id}`));
                   MugenUI.toast("Penyesuaian komisi dihapus.", "success");
                   loadList();
+                  MugenState.tandaiHalamanBersih("rekap");
+                  MugenState.tandaiHalamanBersih("rekap_transaksi");
                 } catch (e) {
                   MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                 }
