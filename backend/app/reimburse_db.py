@@ -321,16 +321,27 @@ def edit_reimburse(reimburse_id: int, tanggal: str = None, kategori: str = None,
 
 
 def hapus_reimburse(reimburse_id: int):
+    """BUGFIX (audit "susuri menyeluruh" -- "reimburse periode terkunci
+    tertahan pending selamanya"): SEBELUMNYA fungsi ini (dan
+    set_status_reimburse() di bawah) MENOLAK klaim yang periodenya
+    terkunci, KONTRADIKTIF dengan docstring modul sendiri yang eksplisit
+    menyatakan "membuat klaim BARU tetap diizinkan" untuk periode yang
+    slipnya sudah dibayar (klaim telat yang wajar) -- akibatnya klaim
+    'pending' semacam itu TIDAK BISA disetujui/ditolak (lihat
+    set_status_reimburse()) MAUPUN dihapus di sini, PERMANEN tertahan
+    'pending' selamanya, tidak ada jalan keluar apa pun. Guard `terkunci`
+    DIHAPUS di sini -- aman karena klaim 'pending' BELUM PERNAH terhitung
+    di slip_gaji mana pun (get_saldo_periode() hanya menjumlah klaim
+    BERSTATUS DISETUJUI), menghapusnya TIDAK PERNAH membuat slip yang
+    sudah dibayar jadi tidak sinkron. BEDA dari hapus_reimburse_disetujui()
+    di bawah (guard `terkunci` di sana TETAP, SENGAJA -- klaim yang SUDAH
+    disetujui BISA SAJA sudah ikut terhitung di slip yang sekarang
+    terkunci, menghapusnya akan membuat slip itu tidak sinkron)."""
     existing = get_reimburse(reimburse_id)
     if existing is None:
         raise ValueError("Reimburse tidak ditemukan.")
     if existing["status"] != "pending":
         raise ValueError("Klaim yang sudah diproses (Disetujui/Ditolak) tidak bisa dihapus lagi.")
-    if existing["terkunci"]:
-        raise ValueError(
-            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
-            "batalkan statusnya dulu kalau perlu menghapus klaim ini."
-        )
     r2_key = _ambil_bukti_r2_key(reimburse_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM reimburse WHERE id = ?", (reimburse_id,))
@@ -377,7 +388,17 @@ def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str =
     bersyarat `WHERE status = 'pending'` (compare-and-swap atomik di
     level SQL, pola sama persis attendance_db.py::check_out()) -- kalau
     GAGAL (rowcount 0), berarti klaim ini SUDAH diproses oleh request
-    lain di antara baca & tulis kita."""
+    lain di antara baca & tulis kita.
+
+    BUGFIX (audit "susuri menyeluruh" -- "reimburse periode terkunci
+    tertahan pending selamanya"): guard `terkunci` yang SEBELUMNYA ada di
+    sini DIHAPUS -- lihat penjelasan lengkap di hapus_reimburse() (fungsi
+    ini TIDAK PERNAH menulis balik ke slip_gaji, hanya mengubah status
+    klaim, jadi menyetujui/menolak klaim periode terkunci TIDAK PERNAH
+    membuat slip yang sudah dibayar jadi tidak sinkron -- klaim yang baru
+    disetujui ini akan terlihat di Rekap Transaksi lewat tanggal_approval,
+    bukan otomatis masuk ke slip periode lamanya yang sudah terlanjur
+    dibayar, SESUAI docstring modul)."""
     if status not in {"disetujui", "ditolak"}:
         raise ValueError(f"Status tidak dikenal: {status}")
     existing = get_reimburse(reimburse_id)
@@ -385,11 +406,6 @@ def set_status_reimburse(reimburse_id: int, status: str, catatan_approval: str =
         raise ValueError("Reimburse tidak ditemukan.")
     if existing["status"] != "pending":
         raise ValueError("Klaim ini sudah diproses sebelumnya.")
-    if existing["terkunci"]:
-        raise ValueError(
-            "Slip Gaji periode ini sudah berstatus Sudah Dibayar dan terkunci -- "
-            "batalkan statusnya dulu kalau perlu mengubah status klaim ini."
-        )
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
         cur = conn.execute(

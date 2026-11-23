@@ -784,7 +784,17 @@ def ambil_libur_booking_mandiri(barber_id: int, tahun: int, bulan: int,
     otomatis memanggil _pastikan_libur_mingguan_sebelum_hitung() dulu) --
     SATU sumber kebenaran yang sama dipakai booking_db.is_barber_libur().
     `cuti`: status cuti PANJANG (barbers.status_booking == "cuti") ->
-    SEMUA tanggal diblok, frontend tinggal cek flag ini dulu."""
+    SEMUA tanggal diblok, frontend tinggal cek flag ini dulu.
+
+    BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "/mandiri/libur bocor
+    status cuti lintas tenant"): SEBELUMNYA booking_db.is_barber_cuti()
+    dipanggil langsung dengan barber_id APA ADANYA, TANPA verifikasi
+    kepemilikan tenant (BEDA dari tanggal_libur di bawah, yang SUDAH aman
+    karena get_libur_list() sendiri memfilter tenant_id) -- staff Tenant A
+    bisa menebak barber_id milik Tenant B dan mengetahui status cuti
+    panjangnya. _pastikan_barber_tenant_sama() (sudah dipakai 5 endpoint
+    lain di file ini) ditambahkan di sini juga."""
+    _pastikan_barber_tenant_sama(user, barber_id)
     tanggal_libur = [
         row["tanggal"] for row in db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     ]
