@@ -349,11 +349,19 @@ const PageKasbon = (() => {
       try {
         // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
         // tombol) menggantikan withLoading() (overlay layar penuh).
-        await MugenUI.withButtonLoading(btnBayar, () => MugenApi.post(`/api/kasbon/${bayarKasbonId}/pembayaran`, {
+        const hasil = await MugenUI.withButtonLoading(btnBayar, () => MugenApi.post(`/api/kasbon/${bayarKasbonId}/pembayaran`, {
           tanggal: inputBayarTanggal.value, jumlah: jumlahBayar,
           keterangan: inputBayarKeterangan.value.trim(),
         }));
         MugenUI.toast("Pembayaran kasbon disimpan.", "success");
+        // BUGFIX "Rekap masih loading penuh setelah Bayar Kasbon"
+        // (PERMINTAAN Owner): suntik diam-diam baris "Kasbon Dibayar" ke
+        // cache Rekap Transaksi -- lihat kasbon_db.py::bayar_kasbon()
+        // untuk shape `hasil.pembayaran` dan pages/rekap.js::
+        // suntikBarisKasbon() untuk detail lengkapnya.
+        if (typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisKasbon === "function") {
+          PageRekap.suntikBarisKasbon(hasil.pembayaran);
+        }
         bayarKasbonId = null;
         baySubtitle.textContent = "Klik \"Bayar\" pada salah satu kasbon di daftar bawah untuk mengisi form ini.";
         loadList();

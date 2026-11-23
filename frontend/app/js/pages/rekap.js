@@ -189,6 +189,79 @@ const PageRekap = (() => {
     MugenState.tandaiHalamanBersih("rekap");
   }
 
+  // Upsert generik satu baris ke cache tab "Transaksi" by (tipe, id) --
+  // dipakai suntikBarisKasbon()/suntikBarisReimburse() di bawah (BEDA dari
+  // suntikBarisTransaksi() di atas, yang upsert-nya khusus baris
+  // sumber=pos_booking/manual_customer lewat kombinasi barber_id+tanggal+
+  // sumber, bukan id). Return `c` (cache tab "Transaksi") kalau filter
+  // bulan/tahun/barber cocok dan baris berhasil di-upsert, null kalau
+  // tidak berlaku (cache belum ada/filter tidak cocok -- pemanggil
+  // cukup diam, fetch ulang biasa yang akan memperbaikinya).
+  function _upsertBarisTransaksiById(tipe, baris) {
+    const c = _cacheTerakhir["transaksi"];
+    if (!c || !baris || !Array.isArray(c.data)) return null;
+    if (c.userId !== MugenState.getUser().id) return null;
+    const params = new URLSearchParams((c.url.split("?")[1] || ""));
+    const tahunCache = Number(params.get("tahun"));
+    const bulanCache = Number(params.get("bulan"));
+    const barberCache = params.get("barber_id");
+    const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
+    if (tahunBaris !== tahunCache || bulanBaris !== bulanCache) return null;
+    if (barberCache && String(baris.barber_id) !== barberCache) return null;
+    const idx = c.data.findIndex((r) => r.tipe === tipe && r.id === baris.id);
+    if (idx >= 0) c.data[idx] = baris;
+    else c.data.push(baris);
+    c.data.sort((a, b) => (a.nama_barber < b.nama_barber ? -1 : a.nama_barber > b.nama_barber ? 1 : 0));
+    c.data.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0));
+    return c;
+  }
+
+  // FITUR "Rekap tidak reload penuh saat Bayar Kasbon" (PERMINTAAN Owner,
+  // keluhan: "menu rekap masih loading penuh ketika input data dilakukan
+  // (kasbon) bayar"): dipanggil pages/kasbon.js SETELAH bayar sukses,
+  // dengan `baris` = field `pembayaran` dari response (shape SAMA PERSIS
+  // satu item kasbon_db.py::gabung_ke_rekap_transaksi(), lihat
+  // kasbon_db.py::bayar_kasbon()). HANYA membersihkan flag
+  // "rekap_transaksi" (BEDA dari suntikBarisPengeluaran() yang
+  // membersihkan "rekap" -- tab Bulanan IKUT menghitung kasbon_dibayar ke
+  // Total Pendapatan per barber, lihat routers/rekap.py, jadi kalau tab
+  // itu sendiri dibuka setelah ini TETAP harus fetch ulang sekali supaya
+  // totalnya benar; HANYA tab Transaksi yang aman disuntik diam-diam di
+  // sini karena isinya murni daftar baris, dihitung ulang dari `c.data`
+  // sendiri tiap render, tidak ada agregat server yang perlu disegarkan).
+  function suntikBarisKasbon(baris) {
+    if (_upsertBarisTransaksiById("kasbon", baris)) MugenState.tandaiHalamanBersih("rekap_transaksi");
+  }
+
+  // Pasangan suntikBarisKasbon() di atas, untuk klaim Reimburse yang BARU
+  // disetujui (PERMINTAAN Owner, sama sifatnya: "Setujui" klaim Reimburse
+  // adalah aksi dari menu LAIN -- pages/reimburse.js -- yang sebelumnya
+  // juga memaksa Rekap Transaksi fetch ulang begitu dibuka lagi). `k` =
+  // response PUT /api/reimburse/{id}/status (SUDAH berisi seluruh field
+  // yang dibutuhkan -- tanggal_approval/nominal/kategori/nama_barber/
+  // barber_id -- TIDAK perlu perubahan backend, lihat reimburse_db.py::
+  // get_reimburse()/gabung_ke_rekap_transaksi() untuk shape baris yang
+  // sama). "Tolak" TIDAK perlu suntik apa pun -- klaim pending yang
+  // ditolak tidak pernah tampil di Rekap Transaksi sama sekali.
+  function suntikBarisReimburse(k) {
+    if (!k) return;
+    const baris = {
+      tipe: "reimburse",
+      id: k.id,
+      tanggal: k.tanggal_approval,
+      barber_id: k.barber_id,
+      nama_barber: k.nama_barber,
+      daftar_service: "",
+      jumlah_service: 0,
+      tips: 0,
+      uang_harian: 0,
+      pendapatan: k.nominal,
+      keterangan: `Reimburse (${k.kategori})`,
+      kategori: k.kategori,
+    };
+    if (_upsertBarisTransaksiById("reimburse", baris)) MugenState.tandaiHalamanBersih("rekap_transaksi");
+  }
+
   // Perbaikan Alur Cetak PDF: tombol "Cetak PDF" TIDAK lagi langsung
   // mengunduh -- PDF dibuat lalu ditampilkan dulu lewat MugenPdfPreview
   // (Preview PDF di dalam aplikasi, dengan Zoom/Nomor Halaman/Download
@@ -1602,7 +1675,10 @@ const PageRekap = (() => {
     renderBody();
   }
 
-  return { render, suntikBarisTransaksi, suntikBarisPengeluaran, hapusBarisPengeluaran };
+  return {
+    render, suntikBarisTransaksi, suntikBarisPengeluaran, hapusBarisPengeluaran,
+    suntikBarisKasbon, suntikBarisReimburse,
+  };
 })();
 
 // PERBAIKAN PERFORMA: modul ini dimuat DINAMIS oleh page_loader.js

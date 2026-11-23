@@ -438,8 +438,17 @@ const PageReimburse = (() => {
       }
       try {
         // REVISI UI/UX Premium: withButtonLoading() menggantikan withLoading().
-        await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/reimburse/${id}/status`, { status, catatan_approval: catatan }));
+        const hasil = await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/reimburse/${id}/status`, { status, catatan_approval: catatan }));
         MugenUI.toast(`Klaim reimburse ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
+        // BUGFIX "Rekap masih loading penuh setelah Setujui Reimburse"
+        // (PERMINTAAN Owner, pola sama kasbon.js): HANYA berlaku untuk
+        // "disetujui" -- klaim "ditolak" tidak pernah tampil di Rekap
+        // Transaksi sama sekali (lihat reimburse_db.py::
+        // gabung_ke_rekap_transaksi(), hanya menarik klaim status
+        // 'disetujui'), jadi tidak ada baris yang perlu disuntik.
+        if (status === "disetujui" && typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisReimburse === "function") {
+          PageRekap.suntikBarisReimburse(hasil);
+        }
         loadList();
       } catch (e) {
         MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");

@@ -306,19 +306,50 @@ def bayar_kasbon(kasbon_id: int, tanggal: str, jumlah: int, keterangan: str = ""
         kasbon = dict(kasbon)
         if jumlah > kasbon["sisa"]:
             raise ValueError(f"Jumlah pembayaran ({jumlah}) melebihi sisa kasbon ({kasbon['sisa']}).")
-        conn.execute(
+        keterangan = (keterangan or "").strip()
+        cur = conn.execute(
             """INSERT INTO kasbon_pembayaran (kasbon_id, tanggal, jumlah, sumber, slip_gaji_id, keterangan,
                                                dibuat_oleh, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (kasbon_id, tanggal, jumlah, sumber, slip_gaji_id, (keterangan or "").strip(), dibuat_oleh, now),
+            (kasbon_id, tanggal, jumlah, sumber, slip_gaji_id, keterangan, dibuat_oleh, now),
         )
+        pembayaran_id = cur.lastrowid
         sisa_baru = kasbon["sisa"] - jumlah
         status_baru = "lunas" if sisa_baru <= 0 else "belum_lunas"
         conn.execute(
             "UPDATE kasbon SET sisa = ?, status = ?, updated_at = ? WHERE id = ?",
             (sisa_baru, status_baru, now, kasbon_id),
         )
-    return get_kasbon(kasbon_id)
+    kasbon_terbaru = get_kasbon(kasbon_id)
+    # BUGFIX "Rekap masih loading penuh setelah Bayar Kasbon" (PERMINTAAN
+    # Owner): return SEKARANG juga menyertakan `pembayaran`, baris siap-
+    # suntik dengan shape SAMA PERSIS satu item gabung_ke_rekap_transaksi()
+    # di bawah -- routers/kasbon.py meneruskan return ini apa adanya ke
+    # frontend, yang lalu menyuntikkannya diam-diam ke cache Rekap
+    # Transaksi (lihat pages/rekap.js::suntikBarisKasbon(), dipanggil dari
+    # pages/kasbon.js SETELAH bayar sukses) TANPA fetch ulang. `kasbon`
+    # (shape LAMA, flat) tetap dipertahankan sebagai key terpisah --
+    # TIDAK ada pemanggil lain yang membaca shape lama ini langsung
+    # (dicek: hanya dipanggil dari sini sendiri secara rekursif lewat
+    # terapkan_potongan_slip_gaji(), yang mengabaikan return, dan dari
+    # routers/kasbon.py yang meneruskan apa adanya ke frontend).
+    return {
+        "kasbon": kasbon_terbaru,
+        "pembayaran": {
+            "tipe": "kasbon",
+            "id": pembayaran_id,
+            "sumber": sumber,
+            "tanggal": tanggal,
+            "barber_id": kasbon["barber_id"],
+            "nama_barber": kasbon_terbaru["nama_barber"],
+            "daftar_service": "",
+            "jumlah_service": 0,
+            "tips": 0,
+            "uang_harian": 0,
+            "pendapatan": -jumlah,
+            "keterangan": "Kasbon Dibayar" + (f" ({keterangan})" if keterangan else ""),
+        },
+    }
 
 
 def get_saldo_barber(barber_id: int) -> int:
