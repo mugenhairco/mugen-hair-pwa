@@ -369,9 +369,19 @@ def hapus_user(user_id: int):
     ada tabel lain yang menyimpan FK ke users.id (kolom 'dibuat_oleh'/
     'diajukan_oleh' dkk di seluruh modul murni TEXT username, bukan FK),
     jadi tidak ada risiko riwayat data hilang/rusak seperti pada Barber
-    (yang diblokir kalau sudah punya transaksi/absensi)."""
+    (yang diblokir kalau sudah punya transaksi/absensi).
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "bersihkan
+    push_subscriptions yatim"): SEBELUMNYA push_subscriptions milik user
+    ini tidak ikut terhapus -- baris itu jadi yatim SELAMANYA (JOIN ke
+    users di push_service.py tidak akan pernah menemukannya lagi, jadi
+    tidak pernah terkirim, TAPI tetap tersimpan menumpuk). Dibersihkan di
+    sini (import lokal, hindari import siklik di level modul, pola sama
+    seperti modul lain di proyek ini)."""
+    import push_db
     with get_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    push_db.hapus_semua_subscription_milik_user(user_id)
 
 
 # REVISI UI/UX: preferensi Dark/Light Mode disimpan PER AKUN (kolom
