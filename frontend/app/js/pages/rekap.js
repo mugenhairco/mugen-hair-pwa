@@ -160,11 +160,28 @@ const PageRekap = (() => {
   // yang baru saja Input Pengeluaran lalu membuka Rekap TETAP melihat
   // skeleton loading di tab Transaksi yang tampil duluan, dan menyimpulkan
   // "Rekap belum diperbaiki" -- padahal tab Pengeluaran-nya sendiri sudah
-  // benar. Pengeluaran TIDAK PERNAH muncul di tab Transaksi sama sekali
-  // (dicek database.py::get_rekap_transaksi_list() -- hanya baris
-  // tipe transaksi/libur, kasbon/reimburse via gabung_ke_rekap_transaksi()
-  // terpisah, TIDAK ADA pengeluaran) -- AMAN membersihkan "rekap_transaksi"
-  // juga di sini, nol risiko data Transaksi jadi basi karenanya.
+  // benar. Pengeluaran sumber_dana="kas" TIDAK PERNAH muncul di tab
+  // Transaksi sama sekali (dicek database.py::get_rekap_transaksi_list() --
+  // hanya baris tipe transaksi/libur, kasbon/reimburse via
+  // gabung_ke_rekap_transaksi() terpisah) -- AMAN membersihkan
+  // "rekap_transaksi" juga di sini UNTUK KASUS ITU.
+  //
+  // BUGFIX KRITIS (ditemukan sendiri lewat riset menyeluruh, BUKAN laporan
+  // Owner -- SEBELUM sempat terlihat sebagai bug nyata di produksi):
+  // pengeluaran_db.py::tambah_pengeluaran()/edit_pengeluaran()/
+  // hapus_pengeluaran() untuk sumber_dana="karyawan" justru membuat/ubah/
+  // hapus baris Reimburse OTOMATIS (status 'disetujui' langsung, lihat
+  // reimburse_db.py::buat_reimburse_sistem()) -- baris Reimburse ITU
+  // MUNCUL di tab Transaksi lewat reimburse_db.py::gabung_ke_rekap_
+  // transaksi(). Kalau "rekap_transaksi" tetap dibersihkan buta untuk
+  // kasus sumber_dana="karyawan", tab Transaksi yang sedang di-cache akan
+  // ditandai bersih padahal sebenarnya KEHILANGAN/basi baris Reimburse
+  // otomatis itu -- data uang yang salah tampil tanpa tanda apa pun.
+  // Fix: HANYA bersihkan "rekap_transaksi" untuk sumber_dana="kas" (default
+  // kalau field ini kosong, pola lama sebelum field ini ada) -- untuk
+  // sumber_dana="karyawan", BIARKAN flag itu tetap kotor supaya tab
+  // Transaksi fetch ulang biasa (yang akan membawa baris Reimburse
+  // otomatis itu dengan benar).
   function suntikBarisPengeluaran(p) {
     const c = _cacheTerakhir["pengeluaran"];
     if (!c || !p || !c.data || !Array.isArray(c.data.daftar)) return;
@@ -185,15 +202,16 @@ const PageRekap = (() => {
     // Urutan SAMA PERSIS get_pengeluaran_list() (pengeluaran_db.py): tanggal DESC, id DESC.
     c.data.daftar.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : b.id - a.id));
     MugenState.tandaiHalamanBersih("rekap");
-    MugenState.tandaiHalamanBersih("rekap_transaksi");
+    if ((p.sumber_dana || "kas") === "kas") MugenState.tandaiHalamanBersih("rekap_transaksi");
   }
 
   // Pasangan suntikBarisPengeluaran() di atas untuk Hapus -- dipanggil
-  // pages/pengeluaran.js SETELAH hapus sukses dengan id & tanggal baris
-  // yang baru dihapus (tanggal dipakai utk cocokkan filter bulan/tahun
-  // cache, SAMA seperti suntikBarisPengeluaran()). Juga membersihkan
-  // "rekap_transaksi" -- alasan sama persis suntikBarisPengeluaran() di atas.
-  function hapusBarisPengeluaran(id, tanggal) {
+  // pages/pengeluaran.js SETELAH hapus sukses dengan id, tanggal, DAN
+  // sumber_dana baris yang baru dihapus (tanggal dipakai utk cocokkan
+  // filter bulan/tahun cache, sumber_dana dipakai utk keputusan bersihkan
+  // "rekap_transaksi" atau tidak -- SAMA PERSIS alasan di
+  // suntikBarisPengeluaran() di atas, termasuk BUGFIX KRITIS-nya).
+  function hapusBarisPengeluaran(id, tanggal, sumberDana) {
     const c = _cacheTerakhir["pengeluaran"];
     if (!c || !c.data || !Array.isArray(c.data.daftar)) return;
     if (c.userId !== MugenState.getUser().id) return;
@@ -207,7 +225,7 @@ const PageRekap = (() => {
     c.data.total -= c.data.daftar[idx].jumlah;
     c.data.daftar.splice(idx, 1);
     MugenState.tandaiHalamanBersih("rekap");
-    MugenState.tandaiHalamanBersih("rekap_transaksi");
+    if ((sumberDana || "kas") === "kas") MugenState.tandaiHalamanBersih("rekap_transaksi");
   }
 
   // Upsert generik satu baris ke cache tab "Transaksi" by (tipe, id) --

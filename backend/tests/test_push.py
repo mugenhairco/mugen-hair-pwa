@@ -181,11 +181,12 @@ def test_buat_booking_memanggil_push_ke_role_admin_staff(single_tenant, monkeypa
     service_id = db.add_service("Cukur Booking Push2", 50000, tenant_id=tenant_id)
 
     panggilan = {}
-    def _catat(tid, roles, title, body, url=None, jenis=None):
+    def _catat(tid, roles, title, body, url=None, jenis=None, data=None):
         panggilan["tenant_id"] = tid
         panggilan["roles"] = roles
         panggilan["title"] = title
         panggilan["jenis"] = jenis
+        panggilan["data"] = data
         return 1
     monkeypatch.setattr(push_service, "kirim_ke_role", _catat)
 
@@ -216,8 +217,8 @@ def test_buat_booking_memanggil_push_ke_barber_ybs(single_tenant, monkeypatch):
 
     panggilan = {}
     monkeypatch.setattr(push_service, "kirim_ke_barber",
-                         lambda bid, title, body, url=None, jenis=None: panggilan.update(
-                             barber_id=bid, title=title, jenis=jenis) or 1)
+                         lambda bid, title, body, url=None, jenis=None, data=None: panggilan.update(
+                             barber_id=bid, title=title, jenis=jenis, data=data) or 1)
 
     from datetime import timedelta
     tanggal = (booking_db._hari_ini_wib() + timedelta(days=1)).isoformat()
