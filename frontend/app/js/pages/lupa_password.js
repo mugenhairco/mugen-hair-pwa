@@ -23,9 +23,6 @@ const PageLupaPassword = (() => {
     card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
     card.appendChild(MugenUI.el("h1", { class: "brand-name" }, "Rivoir"));
     card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Lupa Kata Sandi"));
-    card.appendChild(MugenUI.el("div", { style: "font-size:13px;color:var(--text-dim);margin:4px 0 12px;" },
-      "Masukkan username & nomor HP yang terdaftar di akun Anda. Kode OTP (karyawan) atau link reset "
-      + "(Owner) akan dikirim secara otomatis ke tempat yang sesuai."));
 
     // ---- Langkah 1: username + nomor HP -> minta reset ----
     const inputUsername = MugenUI.el("input", {
