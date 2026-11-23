@@ -1770,6 +1770,27 @@ CREATE TABLE IF NOT EXISTS whatsapp_bot_pending_input (
 
 ALTER TABLE transaksi ADD COLUMN IF NOT EXISTS sumber TEXT;
 ALTER TABLE produk_mutasi ADD COLUMN IF NOT EXISTS sumber TEXT;
+
+-- FITUR Lupa Kata Sandi via OTP WhatsApp (wa_otp_db.py) -- BUGFIX
+-- "relation wa_otp_reset does not exist" (ditemukan di produksi: tabel
+-- ini SEBELUMNYA hanya dibuat lewat wa_otp_db.py::init_wa_otp_db(), yang
+-- (SAMA seperti SELURUH init_*_db() lain) HANYA dipanggil di jalur
+-- SQLite -- lihat main.py::on_startup(), jalur Postgres SEPENUHNYA
+-- digantikan create_all() di sini, jadi tabel baru WAJIB didaftarkan di
+-- SINI JUGA, tidak cukup di modul SQLite-nya saja). TIDAK ada
+-- `REFERENCES users(id)` (SAMA PERSIS pola password_reset_tokens/
+-- email_verification_tokens di atas) -- FK ke `users` sengaja dihindari
+-- di tabel token/OTP semacam ini, lihat catatan panjang di
+-- email_verification_tokens untuk riwayat insiden yang melatarinya.
+CREATE TABLE IF NOT EXISTS wa_otp_reset (
+    id               SERIAL PRIMARY KEY,
+    user_id          INTEGER NOT NULL,
+    kode             TEXT NOT NULL,
+    percobaan_gagal  INTEGER NOT NULL DEFAULT 0,
+    expires_at       TEXT NOT NULL,
+    used_at          TEXT,
+    created_at       TEXT NOT NULL
+);
 """
 
 
