@@ -1704,7 +1704,29 @@
 // v319 -> v320: PERMINTAAN Owner -- hapus paragraf penjelasan di halaman
 // Lupa Kata Sandi ("Masukkan username & nomor HP... ke tempat yang
 // sesuai"), form-nya sudah cukup jelas tanpa teks itu.
-const ASSET_VERSION = "320";
+// v320 -> v321: BUGFIX "Rekap tetap loading penuh saat input pengeluaran"
+// (dibuktikan lewat reproduksi langsung, Owner melaporkan fix sebelumnya
+// belum cukup) -- rekap.js::suntikBarisPengeluaran()/hapusBarisPengeluaran()
+// SEBELUMNYA hanya membersihkan flag "rekap" (tab Bulanan/Pengeluaran),
+// padahal api.js juga menandai flag "rekap_transaksi" (tab Transaksi) KOTOR
+// untuk mutasi Pengeluaran ini. Tab Transaksi SELALU tampil PERTAMA setiap
+// Rekap dibuka, jadi walau tab Pengeluaran sendiri sudah benar tanpa
+// reload, user tetap melihat skeleton loading di tab Transaksi yang
+// tampil duluan. Sekarang kedua fungsi itu juga membersihkan
+// "rekap_transaksi" (aman -- Pengeluaran tidak pernah muncul di tab
+// Transaksi sama sekali).
+// v321 -> v322: PERLUASAN bugfix v320->v321 di atas ke menu LAIN yang
+// mutasinya TIDAK PERNAH berhubungan sama sekali dengan data Rekap (tab
+// Transaksi maupun Bulanan), tapi api.js tetap menandai "rekap"/
+// "rekap_transaksi" KOTOR untuk setiap mutasinya (blanket default) --
+// Produk, Pemasukan, Uang Kas, Komisi (Penyesuaian), WhatsApp (termasuk
+// Reminder Absensi) -- setiap save/hapus di menu-menu ini sekarang juga
+// membersihkan kedua flag itu, supaya Rekap tidak reload penuh tanpa
+// alasan saat dibuka lagi. Pengaturan (umum) SENGAJA TIDAK diikutkan --
+// sebagian sub-fiturnya (bonus tiers, syarat/target uang harian, status
+// aktif barber) justru DIBACA LIVE oleh tab Bulanan, jadi reload Rekap
+// setelah mengubahnya memang perilaku yang benar, bukan bug.
+const ASSET_VERSION = "322";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

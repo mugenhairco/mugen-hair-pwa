@@ -125,6 +125,11 @@ const PageUangKas = (() => {
         await MugenUI.withButtonLoading(btnSimpanSaldoAwal, () => MugenApi.put("/api/uang-kas/saldo-awal", { saldo }));
         MugenUI.toast("Saldo Kas Awal disimpan.", "success");
         muatSaldo();
+        // Data Uang Kas TIDAK PERNAH dibaca Rekap (tab manapun) -- lihat
+        // bugfix sama untuk Pengeluaran di rekap.js. Bersihkan lagi di
+        // sini supaya Rekap tidak reload penuh tanpa alasan.
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         saldoAwalError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {
@@ -192,6 +197,8 @@ const PageUangKas = (() => {
         resetForm();
         muatSaldo();
         loadList();
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         formError.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       } finally {
@@ -268,6 +275,8 @@ const PageUangKas = (() => {
                   MugenUI.toast("Penyesuaian kas dihapus.", "success");
                   muatSaldo();
                   loadList();
+                  MugenState.tandaiHalamanBersih("rekap");
+                  MugenState.tandaiHalamanBersih("rekap_transaksi");
                 } catch (e) {
                   MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                 }

@@ -173,6 +173,14 @@ const PageProduk = (() => {
             if (entry.jenis === "produk") isiOpsiProdukFilter();
           });
           if (entry.jenis === "mutasi") loadRiwayat();
+          // Data Produk TIDAK PERNAH dibaca Rekap (tab Transaksi maupun
+          // Bulanan) sama sekali -- api.js tetap menandai "rekap"/
+          // "rekap_transaksi" kotor untuk SETIAP mutasi (blanket default),
+          // jadi bersihkan lagi di sini supaya Rekap tidak reload penuh
+          // tanpa alasan nanti saat dibuka (lihat bugfix sama untuk
+          // Pengeluaran di rekap.js).
+          MugenState.tandaiHalamanBersih("rekap");
+          MugenState.tandaiHalamanBersih("rekap_transaksi");
         })
         .catch((e) => {
           renderProdukPendingBanner();
@@ -488,6 +496,8 @@ const PageProduk = (() => {
         await MugenApi.del(`/api/produk/${produk.id}`);
         MugenUI.toast("Produk dinonaktifkan.", "success");
         loadProdukList();
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         MugenUI.toast(e.message, "error");
       }
@@ -566,6 +576,8 @@ const PageProduk = (() => {
           MugenUI.toast("Mutasi dikoreksi.", "success");
           loadProdukList();
           loadRiwayat();
+          MugenState.tandaiHalamanBersih("rekap");
+          MugenState.tandaiHalamanBersih("rekap_transaksi");
         } catch (e) {
           MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
         }
@@ -610,6 +622,8 @@ const PageProduk = (() => {
                         MugenUI.toast("Data mutasi dihapus.", "success");
                         loadProdukList();
                         loadRiwayat();
+                        MugenState.tandaiHalamanBersih("rekap");
+                        MugenState.tandaiHalamanBersih("rekap_transaksi");
                       } catch (e) {
                         MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
                       }

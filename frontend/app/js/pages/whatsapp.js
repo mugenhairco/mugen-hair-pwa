@@ -81,6 +81,11 @@ const PageWhatsapp = (() => {
         await MugenUI.withButtonLoading(btnSimpan, () => MugenApi.put("/api/pengaturan/whatsapp", { fonnte_token: inputToken.value.trim() }));
         MugenUI.toast("Token WhatsApp disimpan.", "success");
         renderNotifikasiBooking(body);
+        // Pengaturan WhatsApp murni config notifikasi keluar, TIDAK PERNAH
+        // dibaca Rekap -- bersihkan lagi di sini supaya Rekap tidak reload
+        // penuh tanpa alasan (bugfix sama seperti Pengeluaran di rekap.js).
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -99,6 +104,8 @@ const PageWhatsapp = (() => {
       try {
         await MugenUI.withButtonLoading(btnTes, () => MugenApi.post("/api/pengaturan/whatsapp/tes", { nomor_tujuan: inputNomorTes.value.trim() }));
         MugenUI.toast("Pesan tes berhasil dikirim.", "success");
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         errorTes.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -141,6 +148,8 @@ const PageWhatsapp = (() => {
       try {
         await MugenUI.withButtonLoading(btnSimpanTemplate, () => MugenApi.put("/api/pengaturan/whatsapp", { templates }));
         MugenUI.toast("Isi pesan disimpan.", "success");
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         errorTemplate.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
@@ -197,6 +206,8 @@ const PageWhatsapp = (() => {
       try {
         await MugenApi.put("/api/pengaturan/absensi-reminder", { aktif: chkAktif.checked });
         MugenUI.toast(chkAktif.checked ? "Reminder Absensi diaktifkan." : "Reminder Absensi dinonaktifkan.", "success");
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         chkAktif.checked = !chkAktif.checked;
         errorAktif.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
@@ -240,6 +251,8 @@ const PageWhatsapp = (() => {
       try {
         await MugenUI.withButtonLoading(btnSimpanTemplate, () => MugenApi.put("/api/pengaturan/absensi-reminder", { templates }));
         MugenUI.toast("Isi pesan disimpan.", "success");
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
       } catch (e) {
         errorTemplate.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
       }
