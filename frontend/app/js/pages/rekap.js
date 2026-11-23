@@ -233,6 +233,26 @@ const PageRekap = (() => {
     if (_upsertBarisTransaksiById("kasbon", baris)) MugenState.tandaiHalamanBersih("rekap_transaksi");
   }
 
+  // Pasangan suntikBarisKasbon() di atas, untuk pembatalan -- dipakai
+  // pages/slip_gaji.js SETELAH "Batalkan Status" (sudah_dibayar ->
+  // belum_dibayar) sukses, yang lewat kasbon_db.py::
+  // batalkan_potongan_slip_gaji() menghapus balik baris "Kasbon Dibayar"
+  // (sumber='potong_gaji') yang sempat dibuat otomatis. `ids` = field
+  // `kasbon_dihapus_ids` dari response PUT /api/slip-gaji/{id}/status
+  // (BISA LEBIH DARI SATU id -- distribusi FIFO bisa menyentuh beberapa
+  // kasbon). Sama seperti hapusBarisPengeluaran(): HANYA membersihkan
+  // "rekap_transaksi" (BUKAN "rekap" -- kasbon_dibayar ikut Total
+  // Pendapatan Bulanan, tab itu tetap fetch ulang sekali).
+  function hapusBarisKasbon(ids) {
+    const c = _cacheTerakhir["transaksi"];
+    if (!c || !Array.isArray(c.data) || !Array.isArray(ids) || !ids.length) return;
+    if (c.userId !== MugenState.getUser().id) return;
+    const idSet = new Set(ids);
+    const panjangSebelum = c.data.length;
+    c.data = c.data.filter((r) => !(r.tipe === "kasbon" && idSet.has(r.id)));
+    if (c.data.length !== panjangSebelum) MugenState.tandaiHalamanBersih("rekap_transaksi");
+  }
+
   // Pasangan suntikBarisKasbon() di atas, untuk klaim Reimburse yang BARU
   // disetujui (PERMINTAAN Owner, sama sifatnya: "Setujui" klaim Reimburse
   // adalah aksi dari menu LAIN -- pages/reimburse.js -- yang sebelumnya
@@ -1677,7 +1697,7 @@ const PageRekap = (() => {
 
   return {
     render, suntikBarisTransaksi, suntikBarisPengeluaran, hapusBarisPengeluaran,
-    suntikBarisKasbon, suntikBarisReimburse,
+    suntikBarisKasbon, hapusBarisKasbon, suntikBarisReimburse,
   };
 })();
 

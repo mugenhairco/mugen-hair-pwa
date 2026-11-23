@@ -334,6 +334,18 @@ const PageIzinCuti = (() => {
         // aksi CRUD rutin -- lihat catatan di ui.js.
         await MugenUI.withButtonLoading(btn, () => MugenApi.put(`/api/izin-cuti/${id}/status`, { status, catatan_approval: catatan }));
         MugenUI.toast(`Pengajuan ${status === "disetujui" ? "disetujui" : "ditolak"}.`, "success");
+        // BUGFIX "Rekap masih loading penuh setelah Setujui/Tolak Izin &
+        // Cuti" (PERMINTAAN Owner): BEDA dari kasbon.js/reimburse.js --
+        // aksi ini TIDAK PERNAH mengubah apa pun yang ditampilkan Rekap
+        // (disetujui/ditolak manual TIDAK menyentuh tabel absensi_libur
+        // ataupun field apa pun yang dibaca database.py::
+        // get_rekap_transaksi_list()/get_rekap_bulanan_list(), dicek
+        // izin_cuti_db.py::set_status_pengajuan()) -- jadi TIDAK ada baris
+        // yang perlu disuntik, cukup bersihkan flag "kotor" yang ditandai
+        // generik oleh api.js untuk SETIAP mutasi (aman, tidak ada risiko
+        // data Rekap jadi basi karena memang tidak ada yang berubah).
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
         if (typeof MugenIzinNotif !== "undefined") MugenIzinNotif.refreshNow();
         loadList();
       } catch (e) {
@@ -354,6 +366,11 @@ const PageIzinCuti = (() => {
       try {
         await MugenUI.withButtonLoading(btn, () => MugenApi.post(`/api/izin-cuti/${id}/batalkan`, {}));
         MugenUI.toast("Pengajuan dibatalkan, kuota dikembalikan.", "success");
+        // Sama seperti ubahStatus() di atas -- murni DELETE FROM izin_cuti
+        // (izin_cuti_db.py::batalkan_pengajuan_disetujui()), tidak pernah
+        // menyentuh data yang ditampilkan Rekap.
+        MugenState.tandaiHalamanBersih("rekap");
+        MugenState.tandaiHalamanBersih("rekap_transaksi");
         loadList();
       } catch (e) {
         MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");

@@ -111,8 +111,22 @@ const PageSlipGaji = (() => {
                     // REVISI UI/UX Premium: withButtonLoading() (spinner inline di
                     // tombol) menggantikan withLoading() (overlay layar penuh) untuk
                     // aksi CRUD rutin -- lihat catatan di ui.js.
-                    await MugenUI.withButtonLoading(btnStatus, () => MugenApi.put(`/api/slip-gaji/${r.id}/status`, { status: statusBaru }));
+                    const hasil = await MugenUI.withButtonLoading(btnStatus, () => MugenApi.put(`/api/slip-gaji/${r.id}/status`, { status: statusBaru }));
                     MugenUI.toast("Status Slip Gaji diperbarui.", "success");
+                    // BUGFIX "Rekap masih loading penuh setelah Tandai
+                    // Dibayar/Batalkan Status Slip Gaji" (PERMINTAAN Owner,
+                    // pola sama kasbon.js/reimburse.js): "Tandai Dibayar"
+                    // bisa otomatis memotong beberapa kasbon sekaligus
+                    // (FIFO) -- disuntik SATU PER SATU; "Batalkan Status"
+                    // membuang balik baris-baris yang sempat dibuat.
+                    if (typeof PageRekap !== "undefined") {
+                      if (typeof PageRekap.suntikBarisKasbon === "function") {
+                        for (const baris of hasil.kasbon_disuntik || []) PageRekap.suntikBarisKasbon(baris);
+                      }
+                      if (typeof PageRekap.hapusBarisKasbon === "function") {
+                        PageRekap.hapusBarisKasbon(hasil.kasbon_dihapus_ids || []);
+                      }
+                    }
                     onBerubah();
                   } catch (e) {
                     MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");

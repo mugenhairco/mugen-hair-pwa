@@ -365,17 +365,23 @@ def get_saldo_barber(barber_id: int) -> int:
     return int(row["total"] or 0)
 
 
-def terapkan_potongan_slip_gaji(barber_id: int, slip_gaji_id: int, jumlah: int) -> int:
+def terapkan_potongan_slip_gaji(barber_id: int, slip_gaji_id: int, jumlah: int) -> tuple[int, list]:
     """Dipanggil HANYA dari slip_gaji_db.tandai_status() saat transisi ke
     'sudah_dibayar'. Distribusi FIFO: kasbon belum lunas milik barber ini,
     diurutkan tanggal paling lama dulu, masing-masing dipotong
     min(sisa_kasbon, sisa_jumlah) sampai `jumlah` habis atau kasbon habis --
     otomatis ter-cap ke total saldo outstanding riil (tidak mungkin membuat
-    sisa negatif). Return total yang benar-benar diterapkan (bisa < jumlah
-    kalau saldo outstanding lebih kecil dari potongan yang diminta)."""
+    sisa negatif). Return (total_diterapkan, baris_disuntik):
+    total_diterapkan = total yang benar-benar diterapkan (bisa < jumlah
+    kalau saldo outstanding lebih kecil dari potongan yang diminta);
+    baris_disuntik = list baris "Kasbon Dibayar" siap-suntik (BISA LEBIH
+    DARI SATU -- distribusi FIFO bisa menyentuh beberapa kasbon sekaligus),
+    shape SAMA PERSIS field `pembayaran` dari bayar_kasbon() (BUGFIX "Rekap
+    masih loading penuh setelah Tandai Dibayar Slip Gaji", lihat
+    slip_gaji_db.py::tandai_status())."""
     jumlah = int(jumlah or 0)
     if jumlah <= 0:
-        return 0
+        return 0, []
     with get_conn() as conn:
         outstanding = [dict(r) for r in conn.execute(
             "SELECT id, sisa FROM kasbon WHERE barber_id = ? AND status = 'belum_lunas' ORDER BY tanggal ASC, id ASC",
@@ -384,6 +390,7 @@ def terapkan_potongan_slip_gaji(barber_id: int, slip_gaji_id: int, jumlah: int) 
 
     sisa_potongan = jumlah
     total_diterapkan = 0
+    baris_disuntik = []
     tanggal_hari_ini = datetime.now(WIB).strftime("%Y-%m-%d")
     for row in outstanding:
         if sisa_potongan <= 0:
@@ -391,19 +398,25 @@ def terapkan_potongan_slip_gaji(barber_id: int, slip_gaji_id: int, jumlah: int) 
         potong = min(row["sisa"], sisa_potongan)
         if potong <= 0:
             continue
-        bayar_kasbon(row["id"], tanggal_hari_ini, potong,
-                     keterangan="Potong otomatis dari Slip Gaji", dibuat_oleh="sistem",
-                     sumber="potong_gaji", slip_gaji_id=slip_gaji_id)
+        hasil = bayar_kasbon(row["id"], tanggal_hari_ini, potong,
+                              keterangan="Potong otomatis dari Slip Gaji", dibuat_oleh="sistem",
+                              sumber="potong_gaji", slip_gaji_id=slip_gaji_id)
+        baris_disuntik.append(hasil["pembayaran"])
         sisa_potongan -= potong
         total_diterapkan += potong
-    return total_diterapkan
+    return total_diterapkan, baris_disuntik
 
 
-def batalkan_potongan_slip_gaji(slip_gaji_id: int):
+def batalkan_potongan_slip_gaji(slip_gaji_id: int) -> list:
     """Kebalikan dari terapkan_potongan_slip_gaji() -- dipanggil saat status
     Slip Gaji dibatalkan kembali ke 'belum_dibayar'. Kembalikan `sisa` tiap
     kasbon yang sempat dipotong lewat slip ini, set status balik ke
-    'belum_lunas', lalu hapus baris kasbon_pembayaran terkait.
+    'belum_lunas', lalu hapus baris kasbon_pembayaran terkait. Return list
+    id baris kasbon_pembayaran yang dihapus (BUGFIX "Rekap masih loading
+    penuh setelah Batalkan Status Slip Gaji" -- dipakai slip_gaji_db.py::
+    tandai_status() supaya frontend bisa membuang baris-baris ini dari
+    cache Rekap Transaksi diam-diam, pola sama seperti
+    rekap.js::hapusBarisPengeluaran()).
 
     BUGFIX UANG (audit "susuri menyeluruh" -- pola sama persis
     _kunci_per_kasbon di atas): SEBELUMNYA baca+tulis `sisa` tiap kasbon di
@@ -433,6 +446,7 @@ def batalkan_potongan_slip_gaji(slip_gaji_id: int):
                 (sisa_baru, now, p["kasbon_id"]),
             )
             conn.execute("DELETE FROM kasbon_pembayaran WHERE id = ?", (p["id"],))
+    return [p["id"] for p in baris]
 
 
 def batalkan_pembayaran_kasbon(pembayaran_id: int):
