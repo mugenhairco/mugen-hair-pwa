@@ -53,13 +53,14 @@ PostgreSQL: tabel yang SAMA dibuat di postgres_schema.py. Kolom
 tenants.referral_code_id ditambah lewat migrasi_tenant_referral_code()
 (SQLite) / ALTER TABLE ... ADD COLUMN IF NOT EXISTS (Postgres)."""
 
+import logging
 from datetime import datetime
 
 from database import get_conn
 from db_compat import IntegrityError
 
 JENIS_KOMISI_VALID = {"baru", "repeat", "lifetime"}
-STATUS_KOMISI_VALID = {"belum_dibayar", "sudah_dibayar"}
+STATUS_KOMISI_VALID = {"belum_dibayar", "sudah_dibayar", "dibatalkan"}
 PAYMENT_STATUS_VALID = {"pending", "paid", "expired", "failed", "cancelled"}
 # Begitu satu transaksi Lifetime mencapai salah satu status ini, TIDAK ADA
 # transisi lanjutan yang sah -- SATU baris tenant_lifetime_purchases
@@ -280,14 +281,44 @@ def _buat_baris_komisi(referral_code_id: int, tenant_id: int, jenis: str, sumber
     return get_komisi(new_id)
 
 
+def _jumlah_paid_lain_subscription(tenant_id: int, kecuali_sumber_tabel: str, kecuali_sumber_id: int) -> int:
+    """Hitung riwayat pembayaran subscription tenant ini yang SUDAH 'paid',
+    LINTAS KEDUA sumber yang ADA di aplikasi ini -- `subscription_invoices`
+    (jalur ONLINE Payment Gateway/Faspay, lihat billing_invoice_db.py) dan
+    `tenant_subscription_payments` (jalur MANUAL ditandai Super Admin,
+    lihat subscription_db.py). BUGFIX UANG (audit "susuri menyeluruh" --
+    komisi afiliasi hilang/salah jenis untuk pembayaran gateway):
+    SEBELUMNYA masing-masing jalur komisi (lihat dua fungsi di bawah) hanya
+    menghitung riwayat dari TABELNYA SENDIRI -- tenant yang bayar PERTAMA
+    kali lewat satu jalur lalu bayar LAGI lewat jalur yang LAIN salah
+    dihitung sebagai pembayaran "baru" (komisi 50%) untuk kedua kalinya,
+    padahal seharusnya "repeat" (komisi 20%) karena tenant itu sudah
+    pernah bayar sebelumnya (hanya beda jalur). `kecuali_*` mengeluarkan
+    baris yang SEDANG diproses dari hitungan (supaya baris itu sendiri
+    tidak terhitung sebagai "riwayat" miliknya sendiri)."""
+    with get_conn() as conn:
+        n_invoice = conn.execute(
+            "SELECT COUNT(*) AS n FROM subscription_invoices WHERE tenant_id = ? AND status = 'paid' "
+            "AND NOT (? = 'subscription_invoices' AND id = ?)",
+            (tenant_id, kecuali_sumber_tabel, kecuali_sumber_id),
+        ).fetchone()["n"]
+        n_manual = conn.execute(
+            "SELECT COUNT(*) AS n FROM tenant_subscription_payments WHERE tenant_id = ? AND payment_status = 'paid' "
+            "AND NOT (? = 'tenant_subscription_payments' AND id = ?)",
+            (tenant_id, kecuali_sumber_tabel, kecuali_sumber_id),
+        ).fetchone()["n"]
+    return n_invoice + n_manual
+
+
 def catat_komisi_dari_subscription_payment(payment: dict) -> dict | None:
     """Dipanggil dari routers/subscription.py SETELAH suatu baris
-    tenant_subscription_payments ditandai 'paid' -- menentukan sendiri
-    apakah ini pembayaran PERTAMA tenant itu (persen "baru") atau
-    perpanjangan (persen "repeat", berlaku SELAMANYA, bukan hanya sekali)
-    dengan menghitung baris 'paid' LAIN milik tenant yang sama. Return None
-    (tanpa efek apa pun) kalau tenant itu tidak punya kode referral
-    terpasang, atau kodenya sudah tidak aktif."""
+    tenant_subscription_payments ditandai 'paid' (jalur MANUAL Super
+    Admin) -- menentukan sendiri apakah ini pembayaran PERTAMA tenant itu
+    (persen "baru") atau perpanjangan (persen "repeat", berlaku SELAMANYA,
+    bukan hanya sekali) lewat _jumlah_paid_lain_subscription() (LINTAS
+    jalur manual maupun online, lihat BUGFIX di sana). Return None (tanpa
+    efek apa pun) kalau tenant itu tidak punya kode referral terpasang,
+    atau kodenya sudah tidak aktif."""
     tenant_id = payment["tenant_id"]
     referral_code_id = get_tenant_referral_code_id(tenant_id)
     if referral_code_id is None:
@@ -295,16 +326,40 @@ def catat_komisi_dari_subscription_payment(payment: dict) -> dict | None:
     kode = get_kode_referral(referral_code_id)
     if kode is None or not kode["aktif"]:
         return None
-    with get_conn() as conn:
-        jumlah_paid_lain = conn.execute(
-            "SELECT COUNT(*) AS n FROM tenant_subscription_payments "
-            "WHERE tenant_id = ? AND payment_status = 'paid' AND id != ?",
-            (tenant_id, payment["id"]),
-        ).fetchone()["n"]
+    jumlah_paid_lain = _jumlah_paid_lain_subscription(tenant_id, "tenant_subscription_payments", payment["id"])
     jenis = "baru" if jumlah_paid_lain == 0 else "repeat"
     persen = kode["komisi_persen_baru"] if jenis == "baru" else kode["komisi_persen_repeat"]
     return _buat_baris_komisi(referral_code_id, tenant_id, jenis, "tenant_subscription_payments",
                                payment["id"], payment["amount"], persen)
+
+
+def catat_komisi_dari_invoice(invoice: dict) -> dict | None:
+    """BUGFIX UANG (audit "susuri menyeluruh" -- "komisi afiliasi hilang
+    untuk pembayaran gateway"): dipanggil dari billing_webhook.py::
+    _terapkan_status_invoice() SETELAH `subscription_invoices` ditandai
+    'paid' (jalur ONLINE Payment Gateway/Faspay -- TERPADU dipakai baik
+    oleh webhook Xpress lama MAUPUN snap_webhook.py::_cascade_saas_billing()
+    yang baru). SEBELUMNYA jalur pembayaran online ini TIDAK PERNAH
+    memanggil sales_db sama sekali -- tenant hasil referral sales yang
+    bayar subscription-nya lewat Payment Gateway (bukan ditandai manual
+    Super Admin) tidak pernah menghasilkan komisi untuk sales-nya sama
+    sekali, padahal secara bisnis seharusnya tetap dapat komisi. Pola &
+    nama parameter SENGAJA SAMA dengan catat_komisi_dari_subscription_payment()
+    di atas supaya simetris -- satu-satunya beda adalah nama tabel sumber
+    (`subscription_invoices` vs `tenant_subscription_payments`) dan nama
+    kolom nominal (`jumlah` vs `amount`)."""
+    tenant_id = invoice["tenant_id"]
+    referral_code_id = get_tenant_referral_code_id(tenant_id)
+    if referral_code_id is None:
+        return None
+    kode = get_kode_referral(referral_code_id)
+    if kode is None or not kode["aktif"]:
+        return None
+    jumlah_paid_lain = _jumlah_paid_lain_subscription(tenant_id, "subscription_invoices", invoice["id"])
+    jenis = "baru" if jumlah_paid_lain == 0 else "repeat"
+    persen = kode["komisi_persen_baru"] if jenis == "baru" else kode["komisi_persen_repeat"]
+    return _buat_baris_komisi(referral_code_id, tenant_id, jenis, "subscription_invoices",
+                               invoice["id"], invoice["jumlah"], persen)
 
 
 def catat_komisi_dari_lifetime(purchase: dict) -> dict | None:
@@ -353,6 +408,47 @@ def tandai_komisi(id_: int, status: str) -> dict:
         conn.execute("UPDATE sales_commissions SET status = ?, dibayar_at = ? WHERE id = ?",
                      (status, dibayar_at, id_))
     return get_komisi(id_)
+
+
+def batalkan_komisi_jika_ada(sumber_tabel: str, sumber_id: int) -> None:
+    """BUGFIX UANG (audit "susuri menyeluruh" -- "komisi sales tidak
+    dibatalkan saat status payment dikoreksi"): dipanggil routers/
+    subscription.py SETELAH Super Admin MENGOREKSI status pembayaran
+    tenant_subscription_payments dari 'paid' ke status lain (pending/
+    failed/expired) -- SEBELUMNYA baris sales_commissions yang sudah
+    terlanjur dibuat saat payment itu ditandai 'paid' TETAP 'belum_dibayar'
+    selamanya dan tetap bisa dicairkan Super Admin walau pembayaran yang
+    mendasarinya sudah dikoreksi/dibatalkan.
+
+    - Kalau komisinya masih 'belum_dibayar' (uang belum keluar ke sales):
+      langsung dibatalkan (status='dibatalkan') -- aman, belum ada efek
+      uang nyata yang perlu dibalik.
+    - Kalau komisinya SUDAH 'sudah_dibayar' (uang SUDAH keluar ke sales):
+      SENGAJA TIDAK diubah otomatis -- membalik status komisi tidak
+      mengembalikan uang yang sudah ditransfer ke sales, ini butuh
+      keputusan/tindak lanjut manual Super Admin, jadi cukup dicatat ke
+      log server supaya tidak hilang diam-diam.
+    - Tidak ada baris sama sekali (payment ini tidak pernah menghasilkan
+      komisi, mis. tenant tidak referral): no-op, tidak ada yang
+      dilakukan."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sales_commissions WHERE sumber_tabel = ? AND sumber_id = ?",
+            (sumber_tabel, sumber_id),
+        ).fetchone()
+    if row is None:
+        return
+    row = dict(row)
+    if row["status"] == "sudah_dibayar":
+        logging.getLogger(__name__).warning(
+            "Komisi sales #%s (sumber_tabel=%s, sumber_id=%s) SUDAH 'sudah_dibayar' saat payment "
+            "sumbernya dikoreksi keluar dari 'paid' -- TIDAK dibatalkan otomatis, perlu tindak lanjut "
+            "manual Super Admin.", row["id"], sumber_tabel, sumber_id,
+        )
+        return
+    if row["status"] == "belum_dibayar":
+        with get_conn() as conn:
+            conn.execute("UPDATE sales_commissions SET status = 'dibatalkan' WHERE id = ?", (row["id"],))
 
 
 # ============================= Lifetime Purchases =============================
@@ -416,7 +512,25 @@ def tandai_status_lifetime(id_: int, payment_status: str) -> dict:
     TIDAK melempar error) -- SENGAJA supaya webhook SNAP yang telat datang
     SETELAH Super Admin membatalkan transaksi ini manual (routers/sales.py::
     ubah_status_lifetime()) tidak diam-diam mengaktifkan kembali akses
-    Lifetime tenant."""
+    Lifetime tenant.
+
+    BUGFIX UANG (audit "susuri menyeluruh" -- race condition pembelian
+    Lifetime): SEBELUMNYA pengecekan status final di atas dan UPDATE di
+    bawah adalah DUA langkah terpisah TANPA compare-and-swap (check-then-
+    act di Python) -- webhook SNAP "paid" dan Super Admin klik "Batalkan"
+    untuk transaksi YANG SAMA nyaris bersamaan bisa SAMA-SAMA membaca
+    status "pending" (belum final) SEBELUM salah satu menulis, sehingga
+    KEDUANYA lolos pengecekan dan KEDUANYA menulis -- hasil akhirnya
+    tergantung siapa menulis LEBIH DULU/BELAKANGAN, bisa berujung
+    kombinasi tidak konsisten (status tersimpan 'cancelled', tapi
+    subscription tenant SUDAH naik ke 'lifetime' & komisi SUDAH tercatat,
+    atau sebaliknya). UPDATE sekarang bersyarat `WHERE payment_status = ?`
+    (compare-and-swap atomik di level SQL, pola SAMA PERSIS snap_payment_db.
+    update_status()/billing_invoice_db.update_invoice()) -- kalau GAGAL
+    (rowcount 0, status sudah diubah proses lain di antara baca & tulis
+    kita), fungsi ini memanggil dirinya sendiri ulang terhadap state
+    TERBARU supaya SELURUH pengecekan (termasuk guard final di atas)
+    dinilai ulang, bukan diam-diam menimpa."""
     if payment_status not in PAYMENT_STATUS_VALID:
         raise ValueError(f"payment_status harus salah satu dari: {', '.join(sorted(PAYMENT_STATUS_VALID))}.")
     purchase = get_lifetime_purchase(id_)
@@ -426,8 +540,13 @@ def tandai_status_lifetime(id_: int, payment_status: str) -> dict:
         return purchase
     paid_at = _now() if payment_status == "paid" else purchase.get("paid_at")
     with get_conn() as conn:
-        conn.execute("UPDATE tenant_lifetime_purchases SET payment_status = ?, paid_at = ? WHERE id = ?",
-                     (payment_status, paid_at, id_))
+        cur = conn.execute(
+            "UPDATE tenant_lifetime_purchases SET payment_status = ?, paid_at = ? "
+            "WHERE id = ? AND payment_status = ?",
+            (payment_status, paid_at, id_, purchase["payment_status"]),
+        )
+    if cur.rowcount == 0:
+        return tandai_status_lifetime(id_, payment_status)
     purchase = get_lifetime_purchase(id_)
     if payment_status == "paid":
         import subscription_db

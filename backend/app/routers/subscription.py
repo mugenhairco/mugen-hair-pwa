@@ -323,6 +323,7 @@ def ubah_status_payment(payment_id: int, body: PaymentStatusBody, user: dict = D
     payment = subscription_db.get_payment(payment_id)
     if payment is None:
         raise HTTPException(status_code=404, detail="Catatan pembayaran tidak ditemukan.")
+    status_lama = payment["payment_status"]
     try:
         hasil = subscription_db.tandai_status_pembayaran(payment_id, body.payment_status, paid_at=body.paid_at)
     except ValueError as e:
@@ -334,9 +335,18 @@ def ubah_status_payment(payment_id: int, body: PaymentStatusBody, user: dict = D
     # pembayaran 'paid' tenant ini). Import lokal (hindari import siklik di
     # level modul, pola sama seperti modul lain di proyek ini) -- tidak ada
     # efek apa pun kalau tenant tidak punya kode referral terpasang.
+    import sales_db
     if body.payment_status == "paid":
-        import sales_db
         sales_db.catat_komisi_dari_subscription_payment(hasil)
+    elif status_lama == "paid" and body.payment_status != "paid":
+        # BUGFIX UANG (audit "susuri menyeluruh" -- "komisi sales tidak
+        # dibatalkan saat status payment dikoreksi"): endpoint ini SATU-
+        # SATUNYA jalur yang juga dipakai Super Admin untuk MENGOREKSI
+        # status payment yang sudah 'paid' (TIDAK ada endpoint lain) --
+        # sebelumnya koreksi status ini tidak pernah membatalkan komisi
+        # yang sudah tercatat atas nama payment ini, lihat docstring
+        # sales_db.batalkan_komisi_jika_ada() untuk detail lengkap.
+        sales_db.batalkan_komisi_jika_ada("tenant_subscription_payments", payment_id)
     t = tenant_db.get_tenant(payment["tenant_id"])
     superadmin_audit_db.catat(user["username"], "ubah_status_pembayaran_subscription",
                                tenant_id=payment["tenant_id"], tenant_slug=t["slug"] if t else None,

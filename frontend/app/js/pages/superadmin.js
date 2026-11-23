@@ -2989,12 +2989,24 @@ const PageSuperadmin = (() => {
             { key: "nominal_dibayar", label: "Dibayar Tenant", format: (v) => MugenUI.formatRupiah(v) },
             { key: "nominal_komisi", label: "Komisi", format: (v) => MugenUI.formatRupiah(v) },
             {
+              // BUGFIX (audit "susuri menyeluruh" -- komisi sales tidak
+              // dibatalkan saat status pembayaran dikoreksi): status baru
+              // "dibatalkan" ditambahkan backend (sales_db.py) untuk komisi
+              // yang sumber pembayarannya dikoreksi Super Admin dari 'paid'
+              // ke status lain SEBELUM komisinya dicairkan -- sebelumnya
+              // kolom ini cuma mengenal dua nilai, jadi "dibatalkan" salah
+              // tampil sebagai "Belum Dibayar" (menyesatkan, seolah masih
+              // bisa/perlu dicairkan).
               key: "status", label: "Status",
-              format: (v) => MugenUI.el("span", { class: "badge " + (v === "sudah_dibayar" ? "badge-success" : "badge-warning") },
-                v === "sudah_dibayar" ? "Sudah Dibayar" : "Belum Dibayar"),
+              format: (v) => MugenUI.el("span", {
+                class: "badge " + (v === "sudah_dibayar" ? "badge-success" : v === "dibatalkan" ? "badge-danger" : "badge-warning"),
+              }, v === "sudah_dibayar" ? "Sudah Dibayar" : v === "dibatalkan" ? "Dibatalkan" : "Belum Dibayar"),
             },
             {
               key: "aksi", label: "Aksi", format: (_, k) => {
+                if (k.status === "dibatalkan") {
+                  return MugenUI.el("span", { class: "subtitle" }, "-");
+                }
                 const menujuStatus = k.status === "sudah_dibayar" ? "belum_dibayar" : "sudah_dibayar";
                 const btn = MugenUI.el("button", {}, menujuStatus === "sudah_dibayar" ? "Tandai Sudah Dibayar" : "Tandai Belum Dibayar");
                 btn.addEventListener("click", async () => {

@@ -84,6 +84,26 @@ def hapus_subscription_milik_user(user_id: int, endpoint: str) -> bool:
         return cur.rowcount > 0
 
 
+def hapus_semua_subscription_milik_user(user_id: int) -> int:
+    """BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "push notifikasi tidak
+    dilepas saat logout"): dipanggil routers/auth_router.py::logout()
+    SETELAH sesi dicabut (auth_db.set_session_hash(..., None)). Subscription
+    push terikat ke BROWSER/perangkat (endpoint-nya persisten lintas
+    login/logout), BUKAN ke sesi login seperti current_session_hash --
+    tanpa ini, perangkat yang dipakai BERGANTIAN (mis. HP Kasir bersama)
+    tetap menerima notifikasi (Booking Baru, Izin/Cuti, dst.) milik akun
+    yang SUDAH logout sampai akun BERIKUTNYA yang login di perangkat itu
+    sadar dan menonaktifkan push secara manual -- kebocoran notifikasi
+    antar akun. Menghapus SEMUA baris (bukan satu endpoint saja) aman
+    karena model sesi aplikasi ini SATU-DEVICE-PER-AKUN (lihat
+    set_session_hash()) -- device lain yang masih ingin menerima push
+    untuk akun ini tinggal mengaktifkan ulang saat login lagi. Return
+    jumlah baris yang terhapus (murni info, TIDAK dipakai validasi)."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM push_subscriptions WHERE user_id = ?", (user_id,))
+        return cur.rowcount
+
+
 def get_subscriptions_untuk_user(user_id: int) -> list:
     with get_conn() as conn:
         rows = conn.execute(

@@ -163,7 +163,15 @@ def pakai_token_reset(token: str, password_baru: str):
     transaksi -- raise ValueError kalau token sudah tidak valid (dicek
     ulang di sini, BUKAN cuma mengandalkan pemanggil sudah memvalidasi
     lewat ambil_reset_token_valid() -- mencegah race condition token yang
-    SAMA dipakai dua kali nyaris bersamaan)."""
+    SAMA dipakai dua kali nyaris bersamaan).
+
+    BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "sesi tidak dicabut saat
+    password diganti/direset", lihat catatan lengkap di auth_db.ganti_password()
+    -- fungsi INI bahkan lebih kritis: jalur ini dipakai SAAT akun TIDAK
+    sedang login sama sekali (lupa password), jadi skenario paling umum
+    justru akun ini diduga dibajak/token dicuri -- sesi lama yang masih
+    hidup WAJIB dicabut begitu password baru berhasil diset, bukan
+    dibiarkan tetap valid sampai token-nya sendiri basi)."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM password_reset_tokens WHERE token = ? AND expires_at > ? AND used_at IS NULL",
@@ -174,7 +182,7 @@ def pakai_token_reset(token: str, password_baru: str):
         if not password_baru or len(password_baru) < 4:
             raise ValueError("Password minimal 4 karakter.")
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?, current_session_hash = NULL WHERE id = ?",
             (hash_password(password_baru), row["user_id"]),
         )
         conn.execute(

@@ -21,6 +21,7 @@ endpoint ini."""
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
 import gateway_notification_dispatch
@@ -39,7 +40,11 @@ async def faspay_notification(request: Request):
     (signature/bill_no/amount tidak valid)."""
     payload = await request.json()
     try:
-        gateway_notification_dispatch.proses(payload)
+        # BUGFIX (audit "susuri menyeluruh" -- "webhook async blocking event
+        # loop"): pola & alasan SAMA PERSIS routers/billing_webhook.py --
+        # endpoint ini SATU-SATUNYA yang benar2 didaftarkan ke Faspay
+        # sekarang (lihat docstring modul), jadi paling sering dipukul.
+        await run_in_threadpool(gateway_notification_dispatch.proses, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # Format respons SESUAI dokumentasi resmi Faspay Payment Notification --

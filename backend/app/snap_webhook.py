@@ -275,6 +275,37 @@ def _ekstrak_notifikasi(payload: dict, jenis: str) -> tuple:
             payload.get("latestTransactionStatus"), info.get("paymentDate"))
 
 
+def _ekstrak_amount(payload: dict, jenis: str) -> int | None:
+    """BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "SNAP webhook tidak
+    cocokkan nominal pembayaran"): webhook Xpress lama (booking_gateway_webhook.py/
+    billing_webhook.py) SELALU mencocokkan `bill_total` dari payload dengan
+    nominal transaksi tersimpan SEBELUM mempercayai statusnya -- webhook
+    SNAP Advance ini TIDAK PERNAH melakukan pengecekan yang sama. Risiko
+    utamanya BUKAN pemalsuan (signature RSA tetap WAJIB valid dulu,
+    butuh private key Faspay) melainkan Faspay mengirim notifikasi PAID
+    untuk pembayaran SEBAGIAN atau nominal yang salah -- tanpa cek ini,
+    transaksi tetap dianggap lunas PENUH.
+
+    Nama field BEDA per jenis (lihat _ekstrak_notifikasi() di atas untuk
+    pola serupa): `paidAmount` untuk VA, `amount` untuk QRIS/Direct Debit,
+    keduanya berbentuk {"value": "...", "currency": "IDR"}. Return None
+    (BUKAN 0) kalau field ini tidak dikirim sama sekali ATAU bentuknya
+    tidak bisa diparsing sebagai angka -- SENGAJA tidak menolak notifikasi
+    semata-mata karena field ini kosong (beberapa notifikasi, mis. status
+    non-final, tidak selalu menyertakannya), caller HANYA membandingkan
+    kalau nilainya benar-benar ada."""
+    field = payload.get("paidAmount") if jenis == "va" else payload.get("amount")
+    if not isinstance(field, dict):
+        return None
+    nilai = field.get("value")
+    if nilai is None:
+        return None
+    try:
+        return round(float(nilai))
+    except (TypeError, ValueError):
+        return None
+
+
 def balas_notifikasi(jenis: str, payload: dict) -> dict:
     """Body acknowledgment SESUAI dokumen resmi Faspay per jenis notifikasi
     -- WAJIB dipakai sebagai respons HTTP endpoint webhook (routers/
@@ -328,8 +359,24 @@ def proses_notifikasi(raw_body: str, signature_header: str, timestamp_header: st
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None:
         raise ValueError(f"payment_reference tidak dikenal: {payment_reference}")
-    snap_payment_db.catat_webhook_diterima(transaksi["id"], raw_body, berhasil=True)
+    # BUGFIX KEAMANAN -- lihat docstring _ekstrak_amount() di atas.
+    nominal_payload = _ekstrak_amount(payload, jenis)
+    if nominal_payload is not None and nominal_payload != int(transaksi["amount"]):
+        raise ValueError(
+            f"Nominal pembayaran dari Faspay tidak cocok dengan transaksi "
+            f"(payload={nominal_payload}, transaksi={transaksi['amount']})."
+        )
+    # BUGFIX (audit "susuri menyeluruh" -- "status catatan webhook keliru"):
+    # SEBELUMNYA catat_webhook_diterima(berhasil=True) ditulis SEBELUM
+    # _map_latest_transaction_status() -- untuk kode "04" (Refund) atau
+    # kode yang tidak dikenal, fungsi itu melempar ValueError (request
+    # dibalas 400), TAPI kolom audit webhook_processing_status TETAP
+    # tercatat "diterima_sukses", menyesatkan saat troubleshooting.
+    # Dipindah ke SETELAH mapping status berhasil (dan setelah cek nominal
+    # di atas) -- notifikasi yang DITOLAK sekarang TIDAK tercatat sebagai
+    # "diterima_sukses" sama sekali.
     status_baru = _map_latest_transaction_status(status_code)
+    snap_payment_db.catat_webhook_diterima(transaksi["id"], raw_body, berhasil=True)
     return terapkan_status_transaksi(transaksi, status_baru, sumber="webhook",
                                       provider_transaction_id=provider_transaction_id, paid_at=paid_at)
 

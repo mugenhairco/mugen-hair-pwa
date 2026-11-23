@@ -182,30 +182,41 @@ def buat_kasbon(barber_id: int, tanggal: str, jumlah: int, keterangan: str = "",
 
 
 def edit_kasbon(kasbon_id: int, tanggal: str = None, jumlah: int = None, keterangan: str = None) -> dict:
-    existing = get_kasbon(kasbon_id)
-    if existing is None:
-        raise ValueError("Kasbon tidak ditemukan.")
-    with get_conn() as conn:
-        sudah_dibayar = _hitung_sudah_dibayar(conn, kasbon_id)
-        if sudah_dibayar > 0 and (tanggal is not None or jumlah is not None):
-            raise ValueError(
-                "Kasbon ini sudah punya riwayat pembayaran -- Tanggal dan Jumlah tidak bisa diubah lagi "
-                "(hanya Keterangan yang masih bisa diedit)."
+    # BUGFIX UANG (audit "susuri menyeluruh" -- pola sama persis komentar
+    # _kunci_per_kasbon di atas): fungsi ini membaca sudah_dibayar lalu
+    # menulis `sisa` TANPA lock, sedangkan bayar_kasbon() (dipanggil
+    # manual ATAU lewat potong otomatis Slip Gaji) bisa berjalan nyaris
+    # bersamaan untuk kasbon YANG SAMA -- mis. Admin edit kasbon tepat saat
+    # ada pembayaran baru masuk: edit_kasbon() baca "belum ada pembayaran"
+    # SEBELUM bayar_kasbon() sempat commit, lalu edit_kasbon() menimpa
+    # `sisa` dengan `jumlah_baru - 0` begitu lock-nya sendiri dilepas --
+    # pembayaran yang baru masuk itu "hilang" dari sisa (barber ditagih
+    # lagi untuk sesuatu yang sudah dibayar).
+    with _kunci_kasbon(kasbon_id):
+        existing = get_kasbon(kasbon_id)
+        if existing is None:
+            raise ValueError("Kasbon tidak ditemukan.")
+        with get_conn() as conn:
+            sudah_dibayar = _hitung_sudah_dibayar(conn, kasbon_id)
+            if sudah_dibayar > 0 and (tanggal is not None or jumlah is not None):
+                raise ValueError(
+                    "Kasbon ini sudah punya riwayat pembayaran -- Tanggal dan Jumlah tidak bisa diubah lagi "
+                    "(hanya Keterangan yang masih bisa diedit)."
+                )
+            tanggal_baru = tanggal if tanggal is not None else existing["tanggal"]
+            jumlah_baru = int(jumlah) if jumlah is not None else existing["jumlah"]
+            if jumlah is not None and jumlah_baru <= 0:
+                raise ValueError("Jumlah kasbon harus lebih dari 0.")
+            if tanggal is not None:
+                datetime.strptime(tanggal_baru, "%Y-%m-%d")
+            keterangan_baru = keterangan.strip() if keterangan is not None else existing["keterangan"]
+            sisa_baru = jumlah_baru - sudah_dibayar
+            now = datetime.now().isoformat(timespec="seconds")
+            conn.execute(
+                """UPDATE kasbon SET tanggal = ?, jumlah = ?, keterangan = ?, sisa = ?, updated_at = ?
+                   WHERE id = ?""",
+                (tanggal_baru, jumlah_baru, keterangan_baru, sisa_baru, now, kasbon_id),
             )
-        tanggal_baru = tanggal if tanggal is not None else existing["tanggal"]
-        jumlah_baru = int(jumlah) if jumlah is not None else existing["jumlah"]
-        if jumlah is not None and jumlah_baru <= 0:
-            raise ValueError("Jumlah kasbon harus lebih dari 0.")
-        if tanggal is not None:
-            datetime.strptime(tanggal_baru, "%Y-%m-%d")
-        keterangan_baru = keterangan.strip() if keterangan is not None else existing["keterangan"]
-        sisa_baru = jumlah_baru - sudah_dibayar
-        now = datetime.now().isoformat(timespec="seconds")
-        conn.execute(
-            """UPDATE kasbon SET tanggal = ?, jumlah = ?, keterangan = ?, sisa = ?, updated_at = ?
-               WHERE id = ?""",
-            (tanggal_baru, jumlah_baru, keterangan_baru, sisa_baru, now, kasbon_id),
-        )
     return get_kasbon(kasbon_id)
 
 
@@ -361,14 +372,26 @@ def batalkan_potongan_slip_gaji(slip_gaji_id: int):
     """Kebalikan dari terapkan_potongan_slip_gaji() -- dipanggil saat status
     Slip Gaji dibatalkan kembali ke 'belum_dibayar'. Kembalikan `sisa` tiap
     kasbon yang sempat dipotong lewat slip ini, set status balik ke
-    'belum_lunas', lalu hapus baris kasbon_pembayaran terkait."""
+    'belum_lunas', lalu hapus baris kasbon_pembayaran terkait.
+
+    BUGFIX UANG (audit "susuri menyeluruh" -- pola sama persis
+    _kunci_per_kasbon di atas): SEBELUMNYA baca+tulis `sisa` tiap kasbon di
+    sini TANPA lock -- kasbon yang sama bisa diubah bersamaan lewat
+    bayar_kasbon()/edit_kasbon() yang berjalan di request lain, lost
+    update. Setiap baris dikunci SATU PER SATU lewat _kunci_kasbon()
+    (bukan satu lock besar untuk semua baris) -- kasbon-kasbon yang
+    dipotong slip ini bisa berbeda-beda (distribusi FIFO terapkan_
+    potongan_slip_gaji() bisa menyentuh lebih dari satu kasbon), dan
+    mengunci satu per satu cukup untuk menyerialkan baca-ubah-tulis PER
+    kasbon tanpa menahan kasbon lain yang tidak terkait."""
     with get_conn() as conn:
         baris = [dict(r) for r in conn.execute(
             "SELECT * FROM kasbon_pembayaran WHERE slip_gaji_id = ? AND sumber = 'potong_gaji'",
             (slip_gaji_id,),
         ).fetchall()]
-        now = datetime.now().isoformat(timespec="seconds")
-        for p in baris:
+    now = datetime.now().isoformat(timespec="seconds")
+    for p in baris:
+        with _kunci_kasbon(p["kasbon_id"]), get_conn() as conn:
             kasbon = conn.execute("SELECT * FROM kasbon WHERE id = ?", (p["kasbon_id"],)).fetchone()
             if kasbon is None:
                 conn.execute("DELETE FROM kasbon_pembayaran WHERE id = ?", (p["id"],))
@@ -389,8 +412,22 @@ def batalkan_pembayaran_kasbon(pembayaran_id: int):
     sumber='manual' -- pembayaran hasil potong otomatis Slip Gaji harus
     dibatalkan lewat status Slip Gaji terkait (batalkan_potongan_slip_gaji()
     di atas), supaya tidak membuat slip yang sudah terlanjur dibayar jadi
-    tidak sinkron dengan riwayat potongan kasbonnya."""
+    tidak sinkron dengan riwayat potongan kasbonnya.
+
+    BUGFIX UANG (audit "susuri menyeluruh" -- pola sama persis
+    _kunci_per_kasbon di atas): SEBELUMNYA baca+tulis `sisa` kasbon di sini
+    TANPA lock. `kasbon_id` baru diketahui setelah baca baris
+    kasbon_pembayaran, jadi lock baru bisa diambil SETELAH baca pertama
+    itu -- baris pembayaran dibaca ULANG di dalam lock (bukan dipakai apa
+    adanya dari baca pertama) supaya tidak ada jendela TOCTOU kalau baris
+    itu sempat berubah/terhapus di antaranya."""
     with get_conn() as conn:
+        p_awal = conn.execute(
+            "SELECT kasbon_id FROM kasbon_pembayaran WHERE id = ?", (pembayaran_id,)
+        ).fetchone()
+    if p_awal is None:
+        raise ValueError("Riwayat pembayaran kasbon tidak ditemukan.")
+    with _kunci_kasbon(p_awal["kasbon_id"]), get_conn() as conn:
         p = conn.execute("SELECT * FROM kasbon_pembayaran WHERE id = ?", (pembayaran_id,)).fetchone()
         if p is None:
             raise ValueError("Riwayat pembayaran kasbon tidak ditemukan.")

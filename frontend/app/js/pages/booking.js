@@ -994,8 +994,22 @@ const PageBooking = (() => {
     // oleh _tampilkanHasilMandiri()), qrisBox lepas dari DOM tapi interval
     // ini TETAP jalan tiap 4 detik SELAMANYA karena tidak ada yang
     // menghentikannya.
+    // BUGFIX PERFORMA (audit "susuri menyeluruh" -- "tambah max-attempts di
+    // polling frontend"): guard DOM di atas sudah mencegah polling jalan
+    // selamanya kalau kartunya hilang dari layar, TAPI kalau Kasir benar2
+    // membiarkan kartu ini terbuka terus (mis. lupa menutup tab), interval
+    // ini tetap jalan selamanya setiap 4 detik TANPA batas -- booking
+    // gateway kedaluwarsa 15 menit (GATEWAY_EXPIRE_MENIT) setelahnya pun
+    // tidak otomatis menghentikan polling kalau tidak ada aksi lain yang
+    // memicu batalkan_booking_gateway_kedaluwarsa() di server. Batas 300
+    // percobaan (~20 menit di interval 4 detik, melebihi jendela 15 menit
+    // itu sendiri) sebagai jaring pengaman, BUKAN mengubah kapan booking
+    // dianggap kedaluwarsa (itu tetap murni keputusan server).
+    let percobaanPoll = 0;
+    const MAKS_PERCOBAAN_POLL = 300;
     const pollTimer = setInterval(async () => {
       if (!document.body.contains(qrisBox)) { clearInterval(pollTimer); return; }
+      if (++percobaanPoll > MAKS_PERCOBAAN_POLL) { clearInterval(pollTimer); return; }
       try {
         const terbaru = await MugenApi.get(`/api/booking/${booking.id}`);
         if (terbaru.status_pembayaran === "terverifikasi") {

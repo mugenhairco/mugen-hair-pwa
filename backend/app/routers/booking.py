@@ -38,7 +38,7 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 
 import billing_limits
@@ -52,6 +52,7 @@ import payment_gateway_client
 import payment_gateway_db
 import payment_provider_client
 import r2_storage
+import rate_limit_db
 import snap_advance_db
 import snap_payment_db
 import snap_webhook
@@ -152,13 +153,17 @@ def public_barbers(tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     # query string, sama seperti perbaikan logo/favicon.
     slug = tenant_db.slug_untuk_url_media(tenant_id)
     param_tenant = f"&tenant={slug}" if slug else ""
+    # BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di halaman
+    # Booking publik"): SATU batch untuk SEMUA barber, bukan is_barber_libur()
+    # per barber -- lihat docstring booking_db.is_barber_libur_batch().
+    barber_libur_ids = booking_db.is_barber_libur_batch([b["id"] for b in barbers], hari_ini)
     hasil = []
     for b in barbers:
         cuti = b.get("status_booking") == "cuti"
         hasil.append({
             "id": b["id"], "nama": b["nama"],
             "foto_url": f"/api/public/booking/barber-foto/{b['id']}?v={b['foto_filename']}{param_tenant}" if b.get("foto_filename") else None,
-            "libur_hari_ini": cuti or booking_db.is_barber_libur(b["id"], hari_ini),
+            "libur_hari_ini": cuti or b["id"] in barber_libur_ids,
         })
     return hasil
 
@@ -302,7 +307,16 @@ class BookingCreateBody(BaseModel):
 
 
 @public_router.post("")
-def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_buat_booking(body: BookingCreateBody, request: Request,
+                         tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    # BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di
+    # endpoint publik booking/cek-status"): endpoint ini sebelumnya bisa
+    # dipanggil tanpa batas sama sekali -- script bisa memenuhi SEMUA slot
+    # booking yang ada. Batas longgar (20 booking/10 menit per IP) --
+    # cukup untuk pemakaian wajar (satu HP/komputer bisa dipakai booking
+    # beberapa orang sekaligus, mis. keluarga/warnet) tapi menahan spam.
+    if not rate_limit_db.cek_dan_catat("booking_buat", rate_limit_db.ambil_ip_client(request), 20, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan booking. Coba lagi beberapa menit lagi.")
     # Feature Gating "booking_online": lapis pertahanan kedua (public_pengaturan
     # di atas SUDAH menyembunyikan wizard-nya dari frontend kalau fitur ini
     # tidak aktif, tapi endpoint publik ini bisa dipanggil langsung tanpa
@@ -488,7 +502,8 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
 
 
 @public_router.post("/snap-cek-ulang/{payment_reference}")
-def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_snap_cek_ulang(payment_reference: str, request: Request,
+                           tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """Tombol customer "Saya Sudah Bayar" (halaman booking publik, saat
     countdown VA/QRIS berjalan) -- TRIGGER pengecekan status KE PROVIDER,
     FUNGSI PERSIS SAMA dengan tombol admin "Cek Ulang ke Provider"
@@ -499,7 +514,19 @@ def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resol
     transaksi_id+login staff). Sumber kebenaran status TETAP provider
     (Faspay) -- endpoint ini TIDAK PERNAH menandai transaksi berhasil
     sendiri, murni memicu query ulang lalu menerapkan hasilnya lewat
-    terapkan_status_transaksi() (jalur SAMA PERSIS webhook resmi)."""
+    terapkan_status_transaksi() (jalur SAMA PERSIS webhook resmi).
+
+    BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di endpoint
+    publik booking/cek-status"): endpoint ini memicu PANGGILAN KELUAR ke
+    Faspay setiap dipanggil -- dibatasi per payment_reference (1x/5 detik,
+    cukup untuk klik ulang wajar TANPA membiarkan satu transaksi memicu
+    panggilan Faspay bertubi-tubi) DAN per IP (30x/10 menit, jaring
+    pengaman kedua kalau satu pengunjung mencoba banyak payment_reference
+    berbeda)."""
+    if not rate_limit_db.cek_dan_catat("snap_cek_ulang_ref", payment_reference, 1, 5):
+        raise HTTPException(status_code=429, detail="Mohon tunggu beberapa detik sebelum memeriksa ulang lagi.")
+    if not rate_limit_db.cek_dan_catat("snap_cek_ulang_ip", rate_limit_db.ambil_ip_client(request), 30, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi beberapa menit lagi.")
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None or transaksi["tenant_id"] != tenant_id:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
@@ -541,13 +568,21 @@ class CekStatusBody(BaseModel):
 
 
 @public_router.post("/cek-status")
-def public_cek_status(body: CekStatusBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_cek_status(body: CekStatusBody, request: Request, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """FITUR "Sudah Booking?" (permintaan Owner): customer tidak sengaja
     menutup tab saat pembayaran -- masukkan nomor WA yang dipakai saat
     booking, dapat kembali status TERKINI booking TERBARU miliknya (bukan
     riwayat lengkap). `fase` yang dikembalikan -- lihat docstring lengkap
     di _bentuk_respons_cek_status() di bawah (SATU-SATUNYA tempat yang
-    membentuk respons ini, dipakai BERSAMA public_cek_status_token())."""
+    membentuk respons ini, dipakai BERSAMA public_cek_status_token()).
+
+    BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di endpoint
+    publik booking/cek-status"): endpoint ini menerima nomor WA APA PUN
+    dan membalas data customer (nama, jadwal, status pembayaran) -- tanpa
+    batas, bisa dipakai scraping nomor WA satu-satu. Dibatasi per IP
+    (20x/10 menit, pola sama seperti public_buat_booking())."""
+    if not rate_limit_db.cek_dan_catat("cek_status", rate_limit_db.ambil_ip_client(request), 20, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi beberapa menit lagi.")
     booking = booking_db.cari_booking_terbaru_whatsapp(body.whatsapp, tenant_id)
     return _bentuk_respons_cek_status(booking, tenant_id)
 
@@ -646,21 +681,40 @@ def _bentuk_respons_cek_status(booking: dict | None, tenant_id: int) -> dict:
 # =====================================================================
 
 
-def _terjemahkan_transaksi_snap_ke_gateway(t: dict) -> dict:
+_TIDAK_DIBERI = object()
+
+
+def _terjemahkan_transaksi_snap_ke_gateway(t: dict, booking_ringkas=_TIDAK_DIBERI) -> dict:
     """Migrasi Faspay SNAP Advance: terjemahkan SATU baris
     snap_payment_transactions ke bentuk baris booking_payment_transactions
     (Xpress v4) yang SUDAH dikenal frontend (riwayat_transaksi.js/
     booking.js TIDAK PERLU tahu ada dua tabel berbeda) -- dipakai list
     (list_transaksi_gateway()) MAUPUN detail (detail_transaksi_snap())
-    supaya keduanya konsisten satu tempat."""
-    booking = booking_db.get_booking(t["booking_id"]) if t["booking_id"] else None
+    supaya keduanya konsisten satu tempat.
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di Riwayat
+    Transaksi Gateway"): `booking_ringkas` opsional -- caller yang SUDAH
+    mengambil ringkasan booking lewat booking_db.get_booking_ringkas_batch()
+    (list_transaksi_gateway(), banyak baris SEKALIGUS) bisa mengopernya di
+    sini LANGSUNG (termasuk None kalau booking_id ini TIDAK ditemukan di
+    hasil batch) supaya TIDAK fetch ulang per baris. Caller tunggal
+    (detail_transaksi_snap(), satu baris saja) biarkan default (sentinel
+    _TIDAK_DIBERI) -- fetch sendiri lewat get_booking() seperti sebelumnya,
+    overhead-nya tidak masalah untuk satu baris."""
+    if booking_ringkas is _TIDAK_DIBERI:
+        booking = booking_db.get_booking(t["booking_id"]) if t["booking_id"] else None
+        booking_ringkas = {
+            "nomor_transaksi": booking.get("nomor_transaksi"), "customer_nama": booking.get("customer_nama"),
+            "nama_barber": booking.get("nama_barber"), "daftar_service": booking.get("daftar_service"),
+        } if booking else None
     status_terjemahan = booking_db._SNAP_STATUS_KE_VOCAB_GATEWAY.get(t["status"], t["status"])
     return {
         "id": t["id"], "tenant_id": t["tenant_id"], "booking_id": t["booking_id"],
-        "order_id": t["payment_reference"], "nomor_transaksi": booking.get("nomor_transaksi") if booking else None,
-        "customer_nama": booking.get("customer_nama") if booking else None,
-        "barber_nama": booking.get("nama_barber") if booking else None,
-        "layanan": booking.get("daftar_service") if booking else None,
+        "order_id": t["payment_reference"],
+        "nomor_transaksi": booking_ringkas.get("nomor_transaksi") if booking_ringkas else None,
+        "customer_nama": booking_ringkas.get("customer_nama") if booking_ringkas else None,
+        "barber_nama": booking_ringkas.get("nama_barber") if booking_ringkas else None,
+        "layanan": booking_ringkas.get("daftar_service") if booking_ringkas else None,
         "nominal": t["amount"], "metode_pembayaran": "gateway", "channel_pembayaran": t["channel"],
         "status_pembayaran": status_terjemahan, "transaction_id_provider": t["provider_transaction_id"],
         "reference_id_provider": t["payment_reference"], "checkout_token": None, "checkout_redirect_url": None,
@@ -761,7 +815,17 @@ def ambil_libur_booking_mandiri(barber_id: int, tahun: int, bulan: int,
     otomatis memanggil _pastikan_libur_mingguan_sebelum_hitung() dulu) --
     SATU sumber kebenaran yang sama dipakai booking_db.is_barber_libur().
     `cuti`: status cuti PANJANG (barbers.status_booking == "cuti") ->
-    SEMUA tanggal diblok, frontend tinggal cek flag ini dulu."""
+    SEMUA tanggal diblok, frontend tinggal cek flag ini dulu.
+
+    BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "/mandiri/libur bocor
+    status cuti lintas tenant"): SEBELUMNYA booking_db.is_barber_cuti()
+    dipanggil langsung dengan barber_id APA ADANYA, TANPA verifikasi
+    kepemilikan tenant (BEDA dari tanggal_libur di bawah, yang SUDAH aman
+    karena get_libur_list() sendiri memfilter tenant_id) -- staff Tenant A
+    bisa menebak barber_id milik Tenant B dan mengetahui status cuti
+    panjangnya. _pastikan_barber_tenant_sama() (sudah dipakai 5 endpoint
+    lain di file ini) ditambahkan di sini juga."""
+    _pastikan_barber_tenant_sama(user, barber_id)
     tanggal_libur = [
         row["tanggal"] for row in db.get_libur_list(barber_id=barber_id, tahun=tahun, bulan=bulan, tenant_id=user["tenant_id"])
     ]
@@ -843,8 +907,13 @@ def list_transaksi_gateway(
     # list ini, lihat catatan modul). metode_pembayaran/status_pembayaran
     # difilter di sini (bukan di query) karena datang dari sumber berbeda.
     if metode_pembayaran is None or metode_pembayaran == "gateway":
-        for t in snap_payment_db.list_transaksi(user["tenant_id"], transaction_type=snap_payment_db.TRANSACTION_TYPE_BOOKING):
-            baris = _terjemahkan_transaksi_snap_ke_gateway(t)
+        daftar_snap = snap_payment_db.list_transaksi(user["tenant_id"], transaction_type=snap_payment_db.TRANSACTION_TYPE_BOOKING)
+        # BUGFIX PERFORMA -- lihat docstring booking_db.get_booking_ringkas_batch()
+        # dan _terjemahkan_transaksi_snap_ke_gateway() di atas: SATU batch
+        # untuk SEMUA baris, bukan satu get_booking() per baris.
+        ringkas_batch = booking_db.get_booking_ringkas_batch([t["booking_id"] for t in daftar_snap])
+        for t in daftar_snap:
+            baris = _terjemahkan_transaksi_snap_ke_gateway(t, ringkas_batch.get(t["booking_id"]))
             if status_pembayaran is not None and baris["status_pembayaran"] != status_pembayaran:
                 continue
             if tanggal_mulai is not None and baris["created_at"] < tanggal_mulai:

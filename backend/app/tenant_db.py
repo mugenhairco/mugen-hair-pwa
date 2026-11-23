@@ -636,9 +636,27 @@ def hapus_tenant(tenant_id: int) -> dict:
         conn.execute(
             "DELETE FROM absensi_libur WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
             (tenant_id,))
+        # BUGFIX (audit "susuri menyeluruh" -- "hapus_tenant lengkapi tabel
+        # yang belum terhapus"): izin_cuti_saldo_awal.barber_id punya FK
+        # EKSPLISIT ke barbers(id) (beda dari sebagian besar tabel lain di
+        # bawah yang sudah punya tenant_id langsung TANPA FK ke barbers) --
+        # WAJIB dihapus di sini, SEBELUM baris "Root: barbers" di bawah.
+        conn.execute(
+            "DELETE FROM izin_cuti_saldo_awal WHERE barber_id IN (SELECT id FROM barbers WHERE tenant_id = ?)",
+            (tenant_id,))
         conn.execute("DELETE FROM closed_slot WHERE tenant_id = ?", (tenant_id,))
         conn.execute("DELETE FROM bookings WHERE tenant_id = ?", (tenant_id,))
         conn.execute("DELETE FROM pemasukan WHERE tenant_id = ?", (tenant_id,))
+        # BUGFIX (audit "susuri menyeluruh" -- "hapus_tenant lengkapi tabel
+        # yang belum terhapus"): push_subscriptions.tenant_id BOLEH NULL
+        # (lihat push_db.py) -- dihapus di SINI, SEBELUM baris `users` di
+        # bawah, supaya subquery user_id masih bisa menemukan user tenant
+        # ini (kalau dipindah ke SETELAH users dihapus, subquery ini akan
+        # selalu kosong dan baris lama yang kebetulan tenant_id-nya NULL
+        # tidak pernah ikut tersapu).
+        conn.execute(
+            "DELETE FROM push_subscriptions WHERE tenant_id = ? OR user_id IN "
+            "(SELECT id FROM users WHERE tenant_id = ?)", (tenant_id, tenant_id))
         # users.barber_id -> barbers, WAJIB dihapus sebelum barbers.
         conn.execute("DELETE FROM users WHERE tenant_id = ?", (tenant_id,))
         conn.execute("DELETE FROM kas_penyesuaian WHERE tenant_id = ?", (tenant_id,))
@@ -652,6 +670,67 @@ def hapus_tenant(tenant_id: int) -> dict:
         _pola_prefix = f"{tenant_id}:%"
         conn.execute("DELETE FROM settings WHERE key LIKE ?", (_pola_prefix,))
         conn.execute("DELETE FROM file_asset WHERE key LIKE ?", (_pola_prefix,))
+
+        # BUGFIX (audit "susuri menyeluruh" -- "hapus_tenant lengkapi tabel
+        # yang belum terhapus"): 21 tabel di bawah ini SEBELUMNYA tidak ikut
+        # terhapus sama sekali -- fitur-fitur ini (Absensi, POS, SNAP
+        # Advance, Program Afiliasi Sales, Push Notifikasi, Input Data
+        # Manual Customer, Role Custom, WhatsApp Bot, Xpress Booking lama,
+        # Settlement Faspay) semuanya dibangun SETELAH fondasi multi-tenant
+        # ada, jadi tenant_id-nya SELALU terisi (TIDAK ada baris legacy
+        # tanpa tenant_id seperti settings/file_asset di atas) -- aman
+        # difilter `tenant_id = ?` langsung. SEMUA tabel anak (punya FK ke
+        # tabel lain dalam daftar ini) dihapus DULU, baru tabel induknya,
+        # pola SAMA PERSIS bagian atas fungsi ini. TIDAK membocorkan data
+        # (ID AUTOINCREMENT/SERIAL tidak pernah dipakai ulang), TAPI
+        # membiarkannya menumpuk jadi baris yatim selamanya TANPA ini --
+        # salah satu akibat konkret: whatsapp_bot_config.phone_number_id
+        # UNIQUE membuat nomor WA tenant yang dihapus tidak bisa dipasang
+        # ulang ke tenant lain selama baris lama ini tidak dibersihkan.
+        conn.execute(
+            "DELETE FROM snap_payment_status_log WHERE transaction_id IN "
+            "(SELECT id FROM snap_payment_transactions WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM snap_payment_transactions WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM snap_account_bindings WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM pos_transaksi_service WHERE pos_transaksi_id IN "
+            "(SELECT id FROM pos_transaksi WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute(
+            "DELETE FROM pos_transaksi_produk WHERE pos_transaksi_id IN "
+            "(SELECT id FROM pos_transaksi WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute(
+            "DELETE FROM pos_transaksi_barber_tips WHERE pos_transaksi_id IN "
+            "(SELECT id FROM pos_transaksi WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM pos_transaksi WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM manual_customer_transaksi_service WHERE manual_customer_transaksi_id IN "
+            "(SELECT id FROM manual_customer_transaksi WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM manual_customer_transaksi WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM input_data_hari WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM user_role_permissions WHERE role_id IN "
+            "(SELECT id FROM user_roles WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM user_roles WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM whatsapp_bot_pending_input WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM whatsapp_bot_pesan_log WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM whatsapp_bot_config WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM booking_payment_status_log WHERE transaction_id IN "
+            "(SELECT id FROM booking_payment_transactions WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM booking_payment_transactions WHERE tenant_id = ?", (tenant_id,))
+        conn.execute(
+            "DELETE FROM faspay_settlement_items WHERE settlement_id IN "
+            "(SELECT id FROM faspay_settlements WHERE tenant_id = ?)", (tenant_id,))
+        conn.execute("DELETE FROM faspay_settlements WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM attendance_koreksi WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM attendance_audit_logs WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM attendance_logs WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM attendance_settings WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM absensi_reminder_log WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM izin_cuti_settings WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM sales_commissions WHERE tenant_id = ?", (tenant_id,))
+        conn.execute("DELETE FROM tenant_lifetime_purchases WHERE tenant_id = ?", (tenant_id,))
+
         conn.execute("DELETE FROM tenant_subscriptions WHERE tenant_id = ?", (tenant_id,))
         conn.execute("DELETE FROM tenant_subscription_payments WHERE tenant_id = ?", (tenant_id,))
         conn.execute("DELETE FROM subscription_invoices WHERE tenant_id = ?", (tenant_id,))

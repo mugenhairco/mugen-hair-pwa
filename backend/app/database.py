@@ -389,13 +389,30 @@ def get_all_settings(tenant_id=None) -> dict:
     """tenant_id diisi: hanya setting milik tenant itu (prefix dibuang dari
     key hasil). tenant_id=None: SEMUA baris apa adanya termasuk prefiknya --
     HANYA untuk kode lama/migrasi, endpoint API ber-login WAJIB mengisi
-    tenant_id (lihat catatan _kunci_tenant())."""
+    tenant_id (lihat catatan _kunci_tenant()).
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "get_all_settings() full
+    scan semua tenant"): SEBELUMNYA menarik SELURUH tabel `settings` (milik
+    SEMUA tenant sekaligus) lewat Python, baru menyaring prefix tenant_id
+    di Python -- fungsi ini dipanggil berkali-kali di jalur PUBLIK booking
+    (lihat booking_db.py::get_booking_settings()/get_payment_settings(),
+    tiap klik slot/submit booking), bebannya naik LINIER seiring jumlah
+    tenant bertambah walau tenant yang dibutuhkan cuma SATU. Filter prefix
+    sekarang didorong ke SQL (`WHERE key LIKE 'tenant_id:%'`) -- SQLite
+    bisa memakai index PRIMARY KEY `settings.key` untuk prefix-match ini
+    (wildcard hanya di akhir pola), jadi hanya baris milik tenant ini yang
+    ditarik dari DB sama sekali. `tenant_id` SELALU berupa integer murni
+    (tidak pernah mengandung karakter wildcard LIKE `%`/`_`), jadi aman
+    dipakai langsung tanpa escaping."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    if tenant_id is None:
-        return {r["key"]: r["value"] for r in rows}
-    prefix = f"{tenant_id}:"
-    return {r["key"][len(prefix):]: r["value"] for r in rows if r["key"].startswith(prefix)}
+        if tenant_id is None:
+            rows = conn.execute("SELECT key, value FROM settings").fetchall()
+            return {r["key"]: r["value"] for r in rows}
+        prefix = f"{tenant_id}:"
+        rows = conn.execute(
+            "SELECT key, value FROM settings WHERE key LIKE ?", (f"{prefix}%",)
+        ).fetchall()
+    return {r["key"][len(prefix):]: r["value"] for r in rows}
 
 
 def set_setting(key: str, value, tenant_id=None):
@@ -2361,13 +2378,21 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None, tenant
     """Satu baris = satu barber untuk satu bulan, akumulasi dari transaksi sebulan
     (termasuk total Uang Harian), lengkap dengan detail Bonus Customer (target
     berupa jumlah service acuan Setting > Bonus Service, dan syarat hari libur) yang
-    menentukan bonus itu cair atau tidak."""
-    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers(tenant_id=tenant_id)
+    menentukan bonus itu cair atau tidak.
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di Rekap
+    Bulanan"): SEBELUMNYA memanggil get_ringkasan_barber_bulan() SATU PER
+    SATU per barber di dalam loop (~15 query TERPISAH per barber, lihat
+    docstring get_ringkasan_semua_barber_bulan() -- fungsi BATCH ini SUDAH
+    ADA sejak audit pool-exhaustion sebelumnya, tapi belum pernah dipakai
+    di sini). Sekarang satu panggilan batch untuk SEMUA barber sekaligus
+    -- rumus dijamin identik (keduanya delegasi ke _hitung_bonus_customer_inti()
+    yang sama)."""
+    barbers = [b for b in [get_barber(barber_id)] if b is not None] if barber_id is not None \
+        else get_barbers(tenant_id=tenant_id)
     hasil = []
-    for barber in barbers:
-        if barber is None:
-            continue
-        ringkasan = get_ringkasan_barber_bulan(barber["id"], tahun, bulan)
+    for ringkasan in get_ringkasan_semua_barber_bulan(barbers, tahun, bulan, tenant_id=tenant_id):
+        barber = ringkasan["barber"]
         bonus_customer = ringkasan["bonus_customer_detail"]
         hasil.append({
             "tahun": tahun,

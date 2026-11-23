@@ -369,9 +369,19 @@ def hapus_user(user_id: int):
     ada tabel lain yang menyimpan FK ke users.id (kolom 'dibuat_oleh'/
     'diajukan_oleh' dkk di seluruh modul murni TEXT username, bukan FK),
     jadi tidak ada risiko riwayat data hilang/rusak seperti pada Barber
-    (yang diblokir kalau sudah punya transaksi/absensi)."""
+    (yang diblokir kalau sudah punya transaksi/absensi).
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "bersihkan
+    push_subscriptions yatim"): SEBELUMNYA push_subscriptions milik user
+    ini tidak ikut terhapus -- baris itu jadi yatim SELAMANYA (JOIN ke
+    users di push_service.py tidak akan pernah menemukannya lagi, jadi
+    tidak pernah terkirim, TAPI tetap tersimpan menumpuk). Dibersihkan di
+    sini (import lokal, hindari import siklik di level modul, pola sama
+    seperti modul lain di proyek ini)."""
+    import push_db
     with get_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    push_db.hapus_semua_subscription_milik_user(user_id)
 
 
 # REVISI UI/UX: preferensi Dark/Light Mode disimpan PER AKUN (kolom
@@ -402,10 +412,27 @@ def set_lokasi_user(user_id: int, lat: float, lng: float):
 
 
 def ganti_password(user_id: int, password_baru: str):
+    """BUGFIX KEAMANAN (audit "susuri menyeluruh" -- "sesi tidak dicabut
+    saat password diganti/direset"): SEBELUMNYA fungsi ini hanya mengganti
+    password_hash, TIDAK PERNAH menyentuh current_session_hash -- sesi
+    (token) yang SUDAH TERBIT SEBELUM password diganti tetap valid sampai
+    masa berlakunya sendiri habis (bisa 14 hari, lihat auth.py), walau
+    password-nya sudah diganti. Dua skenario nyata: (1) token akun ini
+    sempat dicuri/bocor -- mengganti password SENDIRIAN tidak menutup
+    akses token yang sudah dicuri itu; (2) Owner/Admin mereset password
+    staff yang bermasalah (endpoint ini DIPAKAI untuk mengubah password
+    USER LAIN, lihat routers/pengaturan.py::ganti_password()) -- sesi
+    aktif staff itu di device manapun seharusnya ikut berakhir, bukan
+    tetap hidup sampai token itu sendiri basi. Sekarang current_session_hash
+    ikut di-NULL-kan dalam UPDATE yang SAMA -- device/tab mana pun yang
+    sedang login dengan token LAMA otomatis ditolak (lihat auth.py::
+    hash_token(credentials.credentials) != user.get("current_session_hash"))
+    begitu permintaan berikutnya dikirim, memaksa login ulang dengan
+    password baru."""
     if not password_baru or len(password_baru) < 4:
         raise ValueError("Password minimal 4 karakter.")
     with get_conn() as conn:
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+        conn.execute("UPDATE users SET password_hash = ?, current_session_hash = NULL WHERE id = ?",
                      (hash_password(password_baru), user_id))
 
 

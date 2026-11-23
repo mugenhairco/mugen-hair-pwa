@@ -406,7 +406,35 @@ def tandai_status(slip_id: int, status: str) -> dict:
             )
 
         if status == "sudah_dibayar" and status_lama != "sudah_dibayar" and existing["potongan_kasbon"] > 0:
-            kasbon_db.terapkan_potongan_slip_gaji(existing["barber_id"], slip_id, existing["potongan_kasbon"])
+            # BUGFIX UANG (audit "susuri menyeluruh"): terapkan_potongan_slip_gaji()
+            # meng-cap potongan ke saldo outstanding RIIL kasbon barber saat
+            # ini, yang bisa lebih kecil dari existing["potongan_kasbon"] --
+            # mis. dua slip draft (Oktober & November) yang keduanya
+            # "menyarankan" potongan 500rb dari saldo kasbon yang sebenarnya
+            # cuma 500rb (get_saldo_barber() dipakai sebagai SARAN awal saat
+            # generate, TIDAK memperhitungkan slip draft LAIN yang belum
+            # ditandai dibayar) -- begitu slip Oktober ditandai dibayar
+            # duluan, kasbon-nya sudah lunas; slip November ditandai dibayar
+            # SETELAHNYA tetap "memotong" 500rb dari total_diterima-nya
+            # (dihitung saat generate) padahal terapkan_potongan_slip_gaji()
+            # di sini CUMA benar2 memotong 0 dari kasbon (sudah lunas) --
+            # SEBELUM fix ini, nilai balik fungsi itu diabaikan sama sekali,
+            # jadi selisihnya (500rb) hilang begitu saja dari gaji barber
+            # TANPA jejak apa pun. Sekarang: kalau yang benar2 diterapkan ke
+            # kasbon LEBIH KECIL dari potongan_kasbon yang tersimpan di slip
+            # ini, selisihnya dikembalikan ke total_diterima & kolom
+            # potongan_kasbon slip ini disesuaikan supaya keduanya tetap
+            # konsisten dengan apa yang BENAR-BENAR dipotong dari kasbon.
+            total_diterapkan = kasbon_db.terapkan_potongan_slip_gaji(
+                existing["barber_id"], slip_id, existing["potongan_kasbon"])
+            if total_diterapkan < existing["potongan_kasbon"]:
+                selisih = existing["potongan_kasbon"] - total_diterapkan
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE slip_gaji SET potongan_kasbon = ?, total_diterima = total_diterima + ? "
+                        "WHERE id = ?",
+                        (total_diterapkan, selisih, slip_id),
+                    )
         elif status == "belum_dibayar" and status_lama == "sudah_dibayar":
             kasbon_db.batalkan_potongan_slip_gaji(slip_id)
 

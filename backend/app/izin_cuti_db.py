@@ -881,6 +881,12 @@ def hapus_pengajuan(pengajuan_id: int):
 
 def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str = "",
                           disetujui_oleh: str = "") -> dict:
+    """BUGFIX (audit "susuri menyeluruh" -- "guard anti-approve-dobel
+    Reimburse & Izin/Cuti"): pola & alasan SAMA PERSIS reimburse_db.py::
+    set_status_reimburse() -- UPDATE sekarang bersyarat `WHERE status =
+    'pending'` (compare-and-swap, cegah dua Admin memproses pengajuan yang
+    SAMA nyaris bersamaan menghasilkan status akhir yang tidak konsisten/
+    push notifikasi ganda yang saling bertentangan)."""
     if status not in {"disetujui", "ditolak"}:
         raise ValueError(f"Status tidak dikenal: {status}")
     existing = get_pengajuan(pengajuan_id)
@@ -890,11 +896,13 @@ def set_status_pengajuan(pengajuan_id: int, status: str, catatan_approval: str =
         raise ValueError("Pengajuan ini sudah diproses sebelumnya.")
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             """UPDATE izin_cuti SET status = ?, catatan_approval = ?, disetujui_oleh = ?,
-                   tanggal_approval = ?, updated_at = ? WHERE id = ?""",
+                   tanggal_approval = ?, updated_at = ? WHERE id = ? AND status = 'pending'""",
             (status, (catatan_approval or "").strip(), disetujui_oleh, now[:10], now, pengajuan_id),
         )
+    if cur.rowcount == 0:
+        raise ValueError("Pengajuan ini sudah diproses sebelumnya.")
     pengajuan_baru = get_pengajuan(pengajuan_id)
     _jalankan_di_belakang(_kirim_notifikasi_push_status_pengajuan, pengajuan_baru)
     return pengajuan_baru

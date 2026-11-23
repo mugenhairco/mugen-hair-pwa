@@ -1660,7 +1660,19 @@
 // codebase -- bisa jalan selamanya tiap 4 detik di background kalau
 // kasir membuat Booking Mandiri gateway lain sebelum transaksi lama
 // lunas/batal).
-const ASSET_VERSION = "313";
+// v313 -> v314: audit menyeluruh babak 2 -- tabel Komisi Sales (Super
+// Admin) sekarang mengenal status "dibatalkan" (komisi yang dibatalkan
+// otomatis saat Super Admin mengoreksi status pembayaran subscription
+// dari 'paid' ke status lain SEBELUM komisinya dicairkan) -- badge &
+// tombol aksi disesuaikan supaya tidak salah tampil sebagai "Belum
+// Dibayar".
+// v314 -> v315: audit menyeluruh babak 2 -- BUGFIX "tambah max-attempts
+// di polling frontend": pages/booking.js (Booking Mandiri gateway) dan
+// pages/book_public.js (dua polling QRIS/VA publik) sekarang punya batas
+// percobaan (selain guard DOM yang sudah ada) supaya tidak pernah polling
+// selamanya tiap 3-4 detik kalau tab/kartu dibiarkan terbuka jauh lebih
+// lama dari jendela gateway 15 menit.
+const ASSET_VERSION = "315";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

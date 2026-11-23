@@ -925,8 +925,19 @@ const PageBookPublic = (() => {
         return false;
       }
 
+      // BUGFIX PERFORMA (audit "susuri menyeluruh" -- "tambah max-attempts
+      // di polling frontend"): guard DOM di atas tidak mencegah polling
+      // jalan selamanya kalau customer membiarkan tab ini terbuka terus
+      // (BUKAN ditutup) sampai server terus membalas error/PENDING tanpa
+      // henti -- batas 400 percobaan (~20 menit di interval 3 detik,
+      // melebihi jendela gateway 15 menit) sebagai jaring pengaman, BUKAN
+      // mengubah kapan transaksi dianggap kedaluwarsa (itu tetap murni
+      // keputusan server).
+      let percobaanPollGateway = 0;
+      const MAKS_PERCOBAAN_POLL_GATEWAY = 400;
       const pollTimer = setInterval(async () => {
         if (!document.body.contains(countdownEl)) { clearInterval(pollTimer); return; }
+        if (++percobaanPollGateway > MAKS_PERCOBAAN_POLL_GATEWAY) { clearInterval(pollTimer); return; }
         let status;
         try {
           status = await MugenApi.get(`/api/public/booking/snap-status/${hasil.payment_reference}`);
@@ -2009,8 +2020,14 @@ const PageBookPublic = (() => {
         // Polling + countdown SAMA-SAMA self-clear begitu elemen ini sudah
         // tidak ada di DOM lagi (user pindah fase/keluar wizard lewat cara
         // APA PUN) -- pola guard yang sama seperti timer lain di file ini.
+        // BUGFIX PERFORMA (audit "susuri menyeluruh" -- "tambah max-attempts
+        // di polling frontend"): pola & alasan SAMA PERSIS renderGatewayWaiting()
+        // di atas.
+        let percobaanPollWizard = 0;
+        const MAKS_PERCOBAAN_POLL_WIZARD = 400;
         const pollTimer = setInterval(async () => {
           if (!document.body.contains(countdownEl)) { clearInterval(pollTimer); return; }
+          if (++percobaanPollWizard > MAKS_PERCOBAAN_POLL_WIZARD) { clearInterval(pollTimer); return; }
           let status;
           try {
             status = await MugenApi.get(`/api/public/booking/snap-status/${paymentReference}`);
