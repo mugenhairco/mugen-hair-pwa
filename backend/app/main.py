@@ -562,6 +562,28 @@ async def on_startup():
             _INSTANCE_ID,
         )
 
+    # PENJAGA asumsi "satu proses uvicorn" (code-review audit menyeluruh
+    # babak 2, catatan minor #2): rate_limit_db.py (dan limiter sejenis di
+    # masa depan) menyimpan kuota di memori proses ini SENDIRI, bukan di DB
+    # -- benar hanya kalau startCommand TIDAK pernah dijalankan dengan
+    # --workers>1/WEB_CONCURRENCY>1 (lihat render.yaml, saat ini memang
+    # tidak). Kalau suatu saat env var itu diisi >1 tanpa modul limiter
+    # diperbarui (mis. pindah ke Redis), tiap proses punya kuota sendiri2
+    # dan rate limit jadi longgar diam2 -- log ini supaya ketahuan dari
+    # log Render, BUKAN menolak start (hosting ini tidak menjalankan
+    # pengguna tanpa backend sama sekali kalau cuma longgar, bukan error).
+    _jumlah_worker = os.environ.get("WEB_CONCURRENCY") or os.environ.get("UVICORN_WORKERS")
+    if _jumlah_worker and _jumlah_worker.strip() not in ("", "0", "1"):
+        logger.critical(
+            "[%s] BOOT: WEB_CONCURRENCY/UVICORN_WORKERS=%s (>1) -- rate_limit_db.py mengasumsikan "
+            "SATU proses uvicorn (kuota disimpan di memori proses, bukan DB/Redis). Dengan >1 "
+            "proses, tiap proses punya kuota rate-limit SENDIRI-SENDIRI (limit efektif jadi "
+            "longgar diam-diam, BUKAN error) -- perbarui rate_limit_db.py (mis. pindah ke Redis) "
+            "sebelum menjalankan >1 worker di produksi.",
+            _INSTANCE_ID,
+            _jumlah_worker,
+        )
+
     # AUDIT DATA HILANG SETELAH RESTART: ringkasan jumlah baris tabel inti,
     # dicetak SETELAH seluruh migrasi/bootstrap di atas selesai -- log ini
     # jadi "sidik jari" kondisi database tiap kali proses ini boot, gampang

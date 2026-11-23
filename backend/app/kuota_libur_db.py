@@ -38,14 +38,13 @@ check_in() -- lihat SUMBER_LIBUR_MINGGUAN.
 """
 
 import json
-import threading
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import attendance_db
 import booking_db
 import database as db
 import izin_cuti_db
+import locks_db
 from database import get_conn
 
 # BUGFIX (audit "susuri menyeluruh" -- "cuti otomatis kuota libur bisa
@@ -57,14 +56,11 @@ from database import get_conn
 # jadi dua request Rekap/Dashboard bersamaan bisa memicu ini untuk
 # kombinasi yang sama) bisa SAMA-SAMA lolos pengecekan "belum ada baris"
 # SEBELUM salah satu menulis, menghasilkan DUA baris Cuti/Libur untuk
-# tanggal yang SAMA -- kuota Izin & Cuti gabungan terpotong dobel. Pola
-# lock SAMA PERSIS kasbon_db.py::_kunci_per_kasbon/rekap_gabungan_db.py::
-# _kunci_per_barber_tanggal.
-_kunci_per_barber_tanggal: dict[tuple[int, str], threading.Lock] = defaultdict(threading.Lock)
-
-
-def _kunci_kuota_libur(barber_id: int, tanggal: str) -> threading.Lock:
-    return _kunci_per_barber_tanggal[(barber_id, tanggal)]
+# tanggal yang SAMA -- kuota Izin & Cuti gabungan terpotong dobel. Lock
+# per (barber_id, tanggal) lewat factory bersama locks_db.py (dipakai
+# juga oleh rekap_gabungan_db.py -- lihat modul itu untuk alasan ditarik
+# ke factory bersama alih-alih masing-masing bikin defaultdict sendiri).
+_kunci_kuota_libur = locks_db.buat_pengambil_kunci()
 
 SUMBER_KELEBIHAN_KUOTA = "kelebihan_kuota"
 SUMBER_LIBUR_MINGGUAN = "libur_mingguan"
