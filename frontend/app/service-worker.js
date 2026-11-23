@@ -1704,7 +1704,18 @@
 // v319 -> v320: PERMINTAAN Owner -- hapus paragraf penjelasan di halaman
 // Lupa Kata Sandi ("Masukkan username & nomor HP... ke tempat yang
 // sesuai"), form-nya sudah cukup jelas tanpa teks itu.
-const ASSET_VERSION = "320";
+// v320 -> v321: BUGFIX "Rekap tetap loading penuh saat input pengeluaran"
+// (dibuktikan lewat reproduksi langsung, Owner melaporkan fix sebelumnya
+// belum cukup) -- rekap.js::suntikBarisPengeluaran()/hapusBarisPengeluaran()
+// SEBELUMNYA hanya membersihkan flag "rekap" (tab Bulanan/Pengeluaran),
+// padahal api.js juga menandai flag "rekap_transaksi" (tab Transaksi) KOTOR
+// untuk mutasi Pengeluaran ini. Tab Transaksi SELALU tampil PERTAMA setiap
+// Rekap dibuka, jadi walau tab Pengeluaran sendiri sudah benar tanpa
+// reload, user tetap melihat skeleton loading di tab Transaksi yang
+// tampil duluan. Sekarang kedua fungsi itu juga membersihkan
+// "rekap_transaksi" (aman -- Pengeluaran tidak pernah muncul di tab
+// Transaksi sama sekali).
+const ASSET_VERSION = "321";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
