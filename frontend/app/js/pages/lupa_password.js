@@ -3,105 +3,50 @@
 // mengarah ke sini (#/lupa-password). Murni PLATFORM (BUKAN halaman
 // tenant mana pun, lihat MugenBrand.refreshPlatformOnly()).
 //
-// DUA JALUR TERPISAH, dipilih lewat toggle di atas (default "Owner"):
-// 1. Owner (Email) -- SUDAH ADA sebelumnya, TIDAK diubah sama sekali.
-//    Endpoint backend (/api/auth/lupa-password) SELALU membalas pesan
-//    yang SAMA apa pun hasilnya, KECUALI kalau email itu ternyata milik
-//    akun karyawan (pesan eksplisit mengarahkan ke jalur WhatsApp di
-//    bawah) -- lihat routers/auth_router.py.
-// 2. Karyawan (WhatsApp) -- BARU (PERMINTAAN Owner): isi username + nomor
-//    WhatsApp yang terdaftar di data karyawan, kode OTP 6 digit dikirim
-//    ke WhatsApp itu dari WA toko. BEDA dari jalur Email (pesan SELALU
-//    generik demi anti-enumerasi): di sini pesan EKSPLISIT "Akun tidak
-//    ditemukan" kalau username+nomor TIDAK COCOK BERSAMA -- permintaan
-//    eksplisit Owner, risiko enumerasinya kecil karena butuh DUA data
-//    yang benar sekaligus (lihat routers/auth_router.py::lupa_password_wa()
-//    untuk alasan lengkap).
+// SATU form (username + nomor HP) untuk Owner MAUPUN Karyawan (PERMINTAAN
+// Owner: "saya tidak mau ada dua pilihan seperti itu" -- menggantikan
+// rancangan toggle 2 pilihan yang sempat dibuat sebelumnya, TIDAK pernah
+// dirilis). Channel pengiriman (WhatsApp/Email) ditentukan OTOMATIS oleh
+// backend berdasarkan role akun yang ditemukan lewat username -- lihat
+// routers/auth_router.py::lupa_password_telepon(). Respons membawa
+// `channel`, dipakai di sini untuk menentukan langkah berikutnya:
+// - "whatsapp" (akun barber): tampilkan form kode OTP + password baru.
+// - "email" (akun Owner): cukup tampilkan "cek email Anda" -- Owner
+//   melanjutkan dari LINK di emailnya (#/reset-password?token=...,
+//   halaman TERPISAH yang SUDAH ADA, tidak diubah sama sekali).
 
 const PageLupaPassword = (() => {
-  function renderToggle(container, modeAktif, onPilih) {
-    container.innerHTML = "";
-    const buatTombol = (mode, label) => {
-      const aktif = mode === modeAktif;
-      const btn = MugenUI.el("button", {
-        type: "button",
-        class: "btn-toggle-lupa-password" + (aktif ? " aktif" : ""),
-        style: "flex:1;padding:8px;border-radius:8px;border:1px solid var(--border-color,#ccc);"
-          + (aktif ? "background:var(--accent,#16a34a);color:#fff;font-weight:600;" : "background:transparent;"),
-      }, label);
-      btn.addEventListener("click", () => onPilih(mode));
-      return btn;
-    };
-    container.appendChild(buatTombol("owner", "Saya Owner"));
-    container.appendChild(buatTombol("karyawan", "Saya Karyawan"));
-  }
+  function render(root) {
+    root.innerHTML = "";
+    const wrap = MugenUI.el("div", { class: "login-wrap" });
+    const card = MugenUI.el("div", { class: "login-card" });
+    card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
+    card.appendChild(MugenUI.el("h1", { class: "brand-name" }, "Rivoir"));
+    card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Lupa Kata Sandi"));
+    card.appendChild(MugenUI.el("div", { style: "font-size:13px;color:var(--text-dim);margin:4px 0 12px;" },
+      "Masukkan username & nomor HP yang terdaftar di akun Anda. Kode OTP (karyawan) atau link reset "
+      + "(Owner) akan dikirim secara otomatis ke tempat yang sesuai."));
 
-  function renderOwner(bodyBox) {
-    bodyBox.innerHTML = "";
-    bodyBox.appendChild(MugenUI.el("div", { style: "font-size:13px;color:var(--text-dim);margin:4px 0 12px;" },
-      "Masukkan email akun Owner Anda -- kami akan mengirimkan link untuk mengatur ulang password."));
-
-    const inputEmail = MugenUI.el("input", { type: "email", placeholder: "Email", autocomplete: "email" });
-    const hasilBox = MugenUI.el("div", { style: "margin-top:12px;font-size:14px;" });
-    const errorBox = MugenUI.el("div", { class: "login-error" });
-    const btnSubmit = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Kirim Link Reset");
-
-    const form = MugenUI.el("form", {}, [
-      MugenUI.el("label", {}, "Email"), inputEmail,
-      errorBox, hasilBox,
-      btnSubmit,
-    ]);
-
-    form.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      errorBox.textContent = "";
-      hasilBox.innerHTML = "";
-      const email = inputEmail.value.trim();
-      if (!email) {
-        errorBox.textContent = "Email tidak boleh kosong.";
-        return;
-      }
-      btnSubmit.disabled = true;
-      btnSubmit.textContent = "Memproses...";
-      try {
-        const res = await MugenApi.post("/api/auth/lupa-password", { email });
-        form.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
-        hasilBox.textContent = res.message || "Kalau email tersebut terdaftar, kami telah mengirimkan instruksi lebih lanjut.";
-      } catch (e) {
-        const detail = e.detail && e.detail.detail;
-        errorBox.textContent = (typeof detail === "string" && detail) || e.message;
-      } finally {
-        btnSubmit.disabled = false;
-        btnSubmit.textContent = "Kirim Link Reset";
-      }
-    });
-
-    bodyBox.appendChild(form);
-  }
-
-  function renderKaryawan(bodyBox) {
-    bodyBox.innerHTML = "";
-    bodyBox.appendChild(MugenUI.el("div", { style: "font-size:13px;color:var(--text-dim);margin:4px 0 12px;" },
-      "Masukkan username & nomor WhatsApp yang terdaftar di data karyawan Anda -- kode OTP akan dikirim ke WhatsApp itu."));
-
-    // ---- Langkah 1: username + nomor WhatsApp -> minta OTP ----
+    // ---- Langkah 1: username + nomor HP -> minta reset ----
     const inputUsername = MugenUI.el("input", {
       type: "text", placeholder: "Username", autocomplete: "username",
       autocapitalize: "off", autocorrect: "off", spellcheck: "false",
     });
-    const inputNomor = MugenUI.el("input", { type: "tel", placeholder: "Nomor WhatsApp (contoh: 081234567890)", autocomplete: "tel" });
+    const inputNomor = MugenUI.el("input", { type: "tel", placeholder: "Nomor HP (contoh: 081234567890)", autocomplete: "tel" });
     const errorBox1 = MugenUI.el("div", { class: "login-error" });
-    const btnKirimOtp = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Kirim Kode OTP");
+    const hasilBox1 = MugenUI.el("div", { style: "margin-top:12px;font-size:14px;" });
+    const btnLangkah1 = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Lanjutkan");
 
     const form1 = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Username"), inputUsername,
-      MugenUI.el("label", {}, "Nomor WhatsApp"), inputNomor,
-      errorBox1,
-      btnKirimOtp,
+      MugenUI.el("label", {}, "Nomor HP"), inputNomor,
+      errorBox1, hasilBox1,
+      btnLangkah1,
     ]);
 
-    // ---- Langkah 2: kode OTP + password baru + konfirmasi (SEMBUNYI
-    // sampai langkah 1 sukses) ----
+    // ---- Langkah 2 (HANYA untuk channel="whatsapp"): kode OTP + password
+    // baru + konfirmasi -- SEMBUNYI sampai langkah 1 sukses dengan channel
+    // itu. ----
     const langkah2 = MugenUI.el("div", { style: "display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color,#ccc);" });
     const inputKode = MugenUI.el("input", {
       type: "text", placeholder: "Kode OTP (6 digit)", autocomplete: "one-time-code",
@@ -113,9 +58,7 @@ const PageLupaPassword = (() => {
     const hasilBox2 = MugenUI.el("div", { style: "margin-top:12px;font-size:14px;" });
     const btnUbahPassword = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Ubah Password");
 
-    const infoOtpTerkirim = MugenUI.el("div", { style: "color:#16a34a;font-weight:600;margin-bottom:8px;" });
     const form2 = MugenUI.el("form", {}, [
-      infoOtpTerkirim,
       MugenUI.el("label", {}, "Kode OTP"), inputKode,
       MugenUI.el("label", {}, "Password Baru"), inputPassword,
       MugenUI.el("label", {}, "Konfirmasi Password Baru"), inputConfirmPassword,
@@ -127,27 +70,36 @@ const PageLupaPassword = (() => {
     form1.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       errorBox1.textContent = "";
+      hasilBox1.innerHTML = "";
       const username = inputUsername.value.trim();
       const nomor = inputNomor.value.trim();
       if (!username || !nomor) {
-        errorBox1.textContent = "Username dan nomor WhatsApp wajib diisi.";
+        errorBox1.textContent = "Username dan nomor HP wajib diisi.";
         return;
       }
-      btnKirimOtp.disabled = true;
-      btnKirimOtp.textContent = "Memproses...";
+      btnLangkah1.disabled = true;
+      btnLangkah1.textContent = "Memproses...";
       try {
-        const res = await MugenApi.post("/api/auth/lupa-password-wa", { username, nomor_whatsapp: nomor });
+        const res = await MugenApi.post("/api/auth/lupa-password-telepon", { username, nomor_hp: nomor });
         inputUsername.disabled = true;
         inputNomor.disabled = true;
-        btnKirimOtp.style.display = "none";
-        infoOtpTerkirim.textContent = res.message || "Kode OTP telah dikirim ke WhatsApp Anda.";
-        langkah2.style.display = "";
+        btnLangkah1.style.display = "none";
+        if (res.channel === "whatsapp") {
+          hasilBox1.textContent = res.message || "Kode OTP telah dikirim ke WhatsApp Anda.";
+          langkah2.style.display = "";
+        } else {
+          // channel === "email" (akun Owner) -- tidak ada form lanjutan
+          // di halaman ini, Owner melanjutkan dari link di emailnya.
+          hasilBox1.innerHTML = "";
+          hasilBox1.appendChild(MugenUI.el("div", { style: "color:#16a34a;font-weight:600;" },
+            res.message || "Link reset password telah dikirim ke email Anda."));
+        }
       } catch (e) {
         const detail = e.detail && e.detail.detail;
         errorBox1.textContent = (typeof detail === "string" && detail) || e.message;
       } finally {
-        btnKirimOtp.disabled = false;
-        btnKirimOtp.textContent = "Kirim Kode OTP";
+        btnLangkah1.disabled = false;
+        btnLangkah1.textContent = "Lanjutkan";
       }
     });
 
@@ -185,31 +137,8 @@ const PageLupaPassword = (() => {
       }
     });
 
-    bodyBox.appendChild(form1);
-    bodyBox.appendChild(langkah2);
-  }
-
-  function render(root) {
-    root.innerHTML = "";
-    const wrap = MugenUI.el("div", { class: "login-wrap" });
-    const card = MugenUI.el("div", { class: "login-card" });
-    card.appendChild(MugenUI.el("img", { class: "brand-logo login-logo", style: "display:none;", alt: "Logo" }));
-    card.appendChild(MugenUI.el("h1", { class: "brand-name" }, "Rivoir"));
-    card.appendChild(MugenUI.el("div", { class: "subtitle" }, "Lupa Kata Sandi"));
-
-    const toggleBox = MugenUI.el("div", { style: "display:flex;gap:8px;margin-bottom:12px;" });
-    const bodyBox = MugenUI.el("div");
-
-    function pilihMode(mode) {
-      renderToggle(toggleBox, mode, pilihMode);
-      if (mode === "karyawan") renderKaryawan(bodyBox);
-      else renderOwner(bodyBox);
-    }
-    pilihMode("owner");
-
-    card.appendChild(toggleBox);
-    card.appendChild(bodyBox);
-
+    card.appendChild(form1);
+    card.appendChild(langkah2);
     const linkLogin = MugenUI.el("a", { href: "#/login", style: "display:block;text-align:center;margin-top:16px;" }, "Kembali ke Login");
     card.appendChild(linkLogin);
     wrap.appendChild(card);
