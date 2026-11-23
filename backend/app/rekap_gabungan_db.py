@@ -29,9 +29,8 @@ sini -- di luar permintaan Owner, tetap baris sendiri seperti sekarang.
 lama juga tidak pernah mengisi field ini)."""
 
 import logging
-import threading
-from collections import defaultdict
 
+import locks_db
 from database import get_conn, hapus_transaksi, tambah_transaksi
 
 logger = logging.getLogger(__name__)
@@ -49,12 +48,12 @@ SUMBER_POS_BOOKING = "pos_booking"
 # membaca kontribusi SEBELUM salah satu sempat menghapus baris lama,
 # sehingga KEDUANYA memanggil tambah_transaksi() dan omzet/komisi hari itu
 # tercatat DOBEL. Lock per (barber_id, tanggal) menyerialkan seluruh
-# rangkaian baca-hapus-tulis untuk kombinasi itu.
-_kunci_per_barber_tanggal: dict[tuple[int, str], threading.Lock] = defaultdict(threading.Lock)
-
-
-def _kunci_rekap(barber_id: int, tanggal: str) -> threading.Lock:
-    return _kunci_per_barber_tanggal[(barber_id, tanggal)]
+# rangkaian baca-hapus-tulis untuk kombinasi itu -- lewat factory bersama
+# locks_db.py (code-review audit babak 2, catatan minor #2: sebelumnya
+# modul ini dan kuota_libur_db.py masing-masing bikin defaultdict sendiri
+# dengan pola identik; ditarik ke satu factory supaya perubahan strategi
+# locking ke depan cukup di satu tempat).
+_kunci_rekap = locks_db.buat_pengambil_kunci()
 
 
 def _ambil_kontribusi_pos(tenant_id: int, barber_id: int, tanggal: str):
