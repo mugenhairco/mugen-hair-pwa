@@ -38,7 +38,7 @@ import json
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 
 import billing_limits
@@ -52,6 +52,7 @@ import payment_gateway_client
 import payment_gateway_db
 import payment_provider_client
 import r2_storage
+import rate_limit_db
 import snap_advance_db
 import snap_payment_db
 import snap_webhook
@@ -306,7 +307,16 @@ class BookingCreateBody(BaseModel):
 
 
 @public_router.post("")
-def public_buat_booking(body: BookingCreateBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_buat_booking(body: BookingCreateBody, request: Request,
+                         tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+    # BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di
+    # endpoint publik booking/cek-status"): endpoint ini sebelumnya bisa
+    # dipanggil tanpa batas sama sekali -- script bisa memenuhi SEMUA slot
+    # booking yang ada. Batas longgar (20 booking/10 menit per IP) --
+    # cukup untuk pemakaian wajar (satu HP/komputer bisa dipakai booking
+    # beberapa orang sekaligus, mis. keluarga/warnet) tapi menahan spam.
+    if not rate_limit_db.cek_dan_catat("booking_buat", rate_limit_db.ambil_ip_client(request), 20, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan booking. Coba lagi beberapa menit lagi.")
     # Feature Gating "booking_online": lapis pertahanan kedua (public_pengaturan
     # di atas SUDAH menyembunyikan wizard-nya dari frontend kalau fitur ini
     # tidak aktif, tapi endpoint publik ini bisa dipanggil langsung tanpa
@@ -492,7 +502,8 @@ def public_snap_status(payment_reference: str, tenant_id: int = Depends(resolve_
 
 
 @public_router.post("/snap-cek-ulang/{payment_reference}")
-def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_snap_cek_ulang(payment_reference: str, request: Request,
+                           tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """Tombol customer "Saya Sudah Bayar" (halaman booking publik, saat
     countdown VA/QRIS berjalan) -- TRIGGER pengecekan status KE PROVIDER,
     FUNGSI PERSIS SAMA dengan tombol admin "Cek Ulang ke Provider"
@@ -503,7 +514,19 @@ def public_snap_cek_ulang(payment_reference: str, tenant_id: int = Depends(resol
     transaksi_id+login staff). Sumber kebenaran status TETAP provider
     (Faspay) -- endpoint ini TIDAK PERNAH menandai transaksi berhasil
     sendiri, murni memicu query ulang lalu menerapkan hasilnya lewat
-    terapkan_status_transaksi() (jalur SAMA PERSIS webhook resmi)."""
+    terapkan_status_transaksi() (jalur SAMA PERSIS webhook resmi).
+
+    BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di endpoint
+    publik booking/cek-status"): endpoint ini memicu PANGGILAN KELUAR ke
+    Faspay setiap dipanggil -- dibatasi per payment_reference (1x/5 detik,
+    cukup untuk klik ulang wajar TANPA membiarkan satu transaksi memicu
+    panggilan Faspay bertubi-tubi) DAN per IP (30x/10 menit, jaring
+    pengaman kedua kalau satu pengunjung mencoba banyak payment_reference
+    berbeda)."""
+    if not rate_limit_db.cek_dan_catat("snap_cek_ulang_ref", payment_reference, 1, 5):
+        raise HTTPException(status_code=429, detail="Mohon tunggu beberapa detik sebelum memeriksa ulang lagi.")
+    if not rate_limit_db.cek_dan_catat("snap_cek_ulang_ip", rate_limit_db.ambil_ip_client(request), 30, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi beberapa menit lagi.")
     transaksi = snap_payment_db.get_transaksi_by_reference(payment_reference)
     if transaksi is None or transaksi["tenant_id"] != tenant_id:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
@@ -545,13 +568,21 @@ class CekStatusBody(BaseModel):
 
 
 @public_router.post("/cek-status")
-def public_cek_status(body: CekStatusBody, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
+def public_cek_status(body: CekStatusBody, request: Request, tenant_id: int = Depends(resolve_tenant_publik_aktif)):
     """FITUR "Sudah Booking?" (permintaan Owner): customer tidak sengaja
     menutup tab saat pembayaran -- masukkan nomor WA yang dipakai saat
     booking, dapat kembali status TERKINI booking TERBARU miliknya (bukan
     riwayat lengkap). `fase` yang dikembalikan -- lihat docstring lengkap
     di _bentuk_respons_cek_status() di bawah (SATU-SATUNYA tempat yang
-    membentuk respons ini, dipakai BERSAMA public_cek_status_token())."""
+    membentuk respons ini, dipakai BERSAMA public_cek_status_token()).
+
+    BUGFIX (audit "susuri menyeluruh" -- "tidak ada rate limit di endpoint
+    publik booking/cek-status"): endpoint ini menerima nomor WA APA PUN
+    dan membalas data customer (nama, jadwal, status pembayaran) -- tanpa
+    batas, bisa dipakai scraping nomor WA satu-satu. Dibatasi per IP
+    (20x/10 menit, pola sama seperti public_buat_booking())."""
+    if not rate_limit_db.cek_dan_catat("cek_status", rate_limit_db.ambil_ip_client(request), 20, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi beberapa menit lagi.")
     booking = booking_db.cari_booking_terbaru_whatsapp(body.whatsapp, tenant_id)
     return _bentuk_respons_cek_status(booking, tenant_id)
 
