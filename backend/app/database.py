@@ -2378,13 +2378,21 @@ def get_rekap_bulanan_list(tahun: int, bulan: int, barber_id: int = None, tenant
     """Satu baris = satu barber untuk satu bulan, akumulasi dari transaksi sebulan
     (termasuk total Uang Harian), lengkap dengan detail Bonus Customer (target
     berupa jumlah service acuan Setting > Bonus Service, dan syarat hari libur) yang
-    menentukan bonus itu cair atau tidak."""
-    barbers = [get_barber(barber_id)] if barber_id is not None else get_barbers(tenant_id=tenant_id)
+    menentukan bonus itu cair atau tidak.
+
+    BUGFIX PERFORMA (audit "susuri menyeluruh" -- "N+1 query di Rekap
+    Bulanan"): SEBELUMNYA memanggil get_ringkasan_barber_bulan() SATU PER
+    SATU per barber di dalam loop (~15 query TERPISAH per barber, lihat
+    docstring get_ringkasan_semua_barber_bulan() -- fungsi BATCH ini SUDAH
+    ADA sejak audit pool-exhaustion sebelumnya, tapi belum pernah dipakai
+    di sini). Sekarang satu panggilan batch untuk SEMUA barber sekaligus
+    -- rumus dijamin identik (keduanya delegasi ke _hitung_bonus_customer_inti()
+    yang sama)."""
+    barbers = [b for b in [get_barber(barber_id)] if b is not None] if barber_id is not None \
+        else get_barbers(tenant_id=tenant_id)
     hasil = []
-    for barber in barbers:
-        if barber is None:
-            continue
-        ringkasan = get_ringkasan_barber_bulan(barber["id"], tahun, bulan)
+    for ringkasan in get_ringkasan_semua_barber_bulan(barbers, tahun, bulan, tenant_id=tenant_id):
+        barber = ringkasan["barber"]
         bonus_customer = ringkasan["bonus_customer_detail"]
         hasil.append({
             "tahun": tahun,
