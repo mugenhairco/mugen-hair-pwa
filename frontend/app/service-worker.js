@@ -1672,7 +1672,22 @@
 // percobaan (selain guard DOM yang sudah ada) supaya tidak pernah polling
 // selamanya tiap 3-4 detik kalau tab/kartu dibiarkan terbuka jauh lebih
 // lama dari jendela gateway 15 menit.
-const ASSET_VERSION = "315";
+// v315 -> v316: BUGFIX "Rekap masih loading penuh setelah Bayar Kasbon/
+// Setujui Reimburse" (keluhan Owner) -- pages/kasbon.js (setelah Bayar
+// Kasbon) dan pages/reimburse.js (setelah Setujui klaim) sekarang
+// menyuntikkan baris baru ke cache Rekap Transaksi secara diam-diam
+// (pages/rekap.js::suntikBarisKasbon()/suntikBarisReimburse(), pola sama
+// suntikBarisPengeluaran() yang sudah ada) -- tab Transaksi tidak lagi
+// fetch ulang+skeleton tiap kali dibuka setelah dua aksi ini.
+// v316 -> v317: lanjutan BUGFIX sama -- pages/slip_gaji.js (Tandai
+// Dibayar/Batalkan Status, potongan kasbon otomatis bisa menyentuh
+// beberapa baris sekaligus lewat FIFO, rekap.js::suntikBarisKasbon()/
+// hapusBarisKasbon() baru) dan pages/izin_cuti.js (Setujui/Tolak/
+// Batalkan Pengajuan -- TIDAK pernah mengubah data Rekap sama sekali,
+// jadi cukup bersihkan flag kotornya langsung, tidak perlu suntik baris)
+// sekarang juga tidak memaksa Rekap Transaksi/Bulanan fetch ulang kalau
+// memang tidak ada yang berubah di sana.
+const ASSET_VERSION = "317";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

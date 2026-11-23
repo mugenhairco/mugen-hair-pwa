@@ -405,6 +405,16 @@ def tandai_status(slip_id: int, status: str) -> dict:
                 (status, tanggal_dibayar, now, slip_id),
             )
 
+        # BUGFIX "Rekap masih loading penuh setelah Tandai Dibayar/Batalkan
+        # Status Slip Gaji" (PERMINTAAN Owner, pola sama kasbon.js/
+        # reimburse.js): dua cabang di bawah bisa mengubah baris "Kasbon
+        # Dibayar" (sumber='potong_gaji') di Rekap Transaksi -- dikumpulkan
+        # di sini (bukan dibuang seperti SEBELUMNYA) supaya return di akhir
+        # fungsi ini bisa meneruskannya ke frontend (routers/slip_gaji.py
+        # meneruskan apa adanya), yang lalu menyuntik/membuangnya diam-diam
+        # lewat rekap.js::suntikBarisKasbon()/hapusBarisKasbon().
+        kasbon_disuntik = []
+        kasbon_dihapus_ids = []
         if status == "sudah_dibayar" and status_lama != "sudah_dibayar" and existing["potongan_kasbon"] > 0:
             # BUGFIX UANG (audit "susuri menyeluruh"): terapkan_potongan_slip_gaji()
             # meng-cap potongan ke saldo outstanding RIIL kasbon barber saat
@@ -425,7 +435,7 @@ def tandai_status(slip_id: int, status: str) -> dict:
             # ini, selisihnya dikembalikan ke total_diterima & kolom
             # potongan_kasbon slip ini disesuaikan supaya keduanya tetap
             # konsisten dengan apa yang BENAR-BENAR dipotong dari kasbon.
-            total_diterapkan = kasbon_db.terapkan_potongan_slip_gaji(
+            total_diterapkan, kasbon_disuntik = kasbon_db.terapkan_potongan_slip_gaji(
                 existing["barber_id"], slip_id, existing["potongan_kasbon"])
             if total_diterapkan < existing["potongan_kasbon"]:
                 selisih = existing["potongan_kasbon"] - total_diterapkan
@@ -436,9 +446,13 @@ def tandai_status(slip_id: int, status: str) -> dict:
                         (total_diterapkan, selisih, slip_id),
                     )
         elif status == "belum_dibayar" and status_lama == "sudah_dibayar":
-            kasbon_db.batalkan_potongan_slip_gaji(slip_id)
+            kasbon_dihapus_ids = kasbon_db.batalkan_potongan_slip_gaji(slip_id)
 
-        return get_slip_gaji(slip_id)
+        return {
+            "slip": get_slip_gaji(slip_id),
+            "kasbon_disuntik": kasbon_disuntik,
+            "kasbon_dihapus_ids": kasbon_dihapus_ids,
+        }
 
 
 def hapus_slip_gaji(slip_id: int):
