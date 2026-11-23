@@ -1726,7 +1726,28 @@
 // sebagian sub-fiturnya (bonus tiers, syarat/target uang harian, status
 // aktif barber) justru DIBACA LIVE oleh tab Bulanan, jadi reload Rekap
 // setelah mengubahnya memang perilaku yang benar, bukan bug.
-const ASSET_VERSION = "322";
+// v322 -> v323: PERBAIKAN AKAR MASALAH (menggantikan tambal-sulam
+// per-halaman v321/v322 di atas) -- api.js::request() TIDAK LAGI mengotori
+// SEMUA flag + dashboard untuk SETIAP mutasi (blanket default lama).
+// Sekarang tiap endpoint dipetakan (lihat POLA_FLAG_PRESISI di api.js,
+// hasil riset menyeluruh kode backend) ke flag yang BENAR relevan
+// untuknya -- endpoint yang belum/tidak sempat diverifikasi tetap jatuh
+// ke default konservatif (kotori semua, SAMA seperti sebelumnya, TIDAK
+// ada regresi). Juga BUGFIX KRITIS: suntikBarisPengeluaran()/
+// hapusBarisPengeluaran() (rekap.js) SEBELUMNYA (v321) membersihkan
+// "rekap_transaksi" TANPA PEDULI sumber_dana -- padahal Pengeluaran
+// sumber_dana="karyawan" membuat baris Reimburse OTOMATIS yang MUNCUL di
+// tab Transaksi (reimburse_db.py::buat_reimburse_sistem()), jadi flag itu
+// SEHARUSNYA tetap kotor untuk kasus itu (sekarang hanya dibersihkan
+// untuk sumber_dana="kas"). FITUR BARU -- suntik diam-diam ke List
+// Booking (Owner/Admin/Staff) DAN tab Hari Ini/Akan Datang/Semua Booking
+// (Barber): payload push "booking_baru" (push_service.py/booking_db.py)
+// sekarang membawa baris booking lengkap, diteruskan service-worker.js
+// (listener "push" di bawah) -> app.js -> pages/booking.js::
+// refreshDiamDiam() yang langsung menyuntik baris itu ke tabel/kartu yang
+// sedang tampil TANPA fetch ulang ke server sama sekali (jatuh kembali ke
+// fetch diam-diam lama kalau tab belum siap/baris tidak cocok filter).
+const ASSET_VERSION = "323";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1946,7 +1967,12 @@ self.addEventListener("push", (event) => {
       }),
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
         for (const client of clientList) {
-          client.postMessage({ type: "push-notifikasi", jenis: data.jenis || null, url: data.url || "/app/" });
+          // PERMINTAAN Owner (suntik diam-diam ke List Booking): `data.data`
+          // opsional -- baris booking lengkap (lihat push_service.py/
+          // booking_db.py), diteruskan apa adanya ke app.js supaya bisa
+          // disuntik langsung ke tabel/kartu TANPA fetch ulang. `|| null`
+          // menjaga payload lama (tanpa field ini) tetap aman diproses.
+          client.postMessage({ type: "push-notifikasi", jenis: data.jenis || null, url: data.url || "/app/", data: data.data || null });
         }
       }),
     ])

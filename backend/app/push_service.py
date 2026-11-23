@@ -73,7 +73,8 @@ def _kirim_ke_satu_subscription(sub: dict, payload: dict) -> bool:
         return False
 
 
-def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = None, jenis: str = None) -> int:
+def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = None, jenis: str = None,
+                                   data: dict = None) -> int:
     if not IS_ENABLED:
         logger.info("Push '%s' TIDAK dikirim (%d subscription dilewati) -- VAPID_* belum dikonfigurasi.",
                      title, len(subs))
@@ -86,6 +87,17 @@ def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = 
     # relay apa pun -- lihat service-worker.js::push listener.
     if jenis:
         payload["jenis"] = jenis
+    # PERMINTAAN Owner (suntik diam-diam ke List Booking, BUKAN cuma "muat
+    # ulang diam-diam"): `data` opsional -- payload mentah (mis. SATU baris
+    # booking lengkap, lihat booking_db.py::_kirim_notifikasi_push_booking_
+    # baru()) yang diteruskan apa adanya lewat service-worker.js -> app.js
+    # -> pages/booking.js::refreshDiamDiam(), supaya baris itu bisa
+    # DISUNTIK LANGSUNG ke tabel/kartu yang sedang tampil TANPA fetch ulang
+    # ke server sama sekali. Payload Web Push dibatasi ~4KB oleh
+    # provider/browser -- SATU baris booking (bukan daftar) jauh di bawah
+    # itu, aman.
+    if data is not None:
+        payload["data"] = data
     terkirim = 0
     for sub in subs:
         if _kirim_ke_satu_subscription(sub, payload):
@@ -93,20 +105,23 @@ def _kirim_ke_daftar_subscription(subs: list, title: str, body: str, url: str = 
     return terkirim
 
 
-def kirim_ke_user(user_id: int, title: str, body: str, url: str = None, jenis: str = None) -> int:
+def kirim_ke_user(user_id: int, title: str, body: str, url: str = None, jenis: str = None,
+                   data: dict = None) -> int:
     """Kirim ke SEMUA perangkat yang subscribe atas nama akun ini (bisa 0
     kalau belum pernah mengaktifkan notifikasi push sama sekali -- itu
     kondisi NORMAL, bukan error)."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_user(user_id), title, body, url, jenis)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_user(user_id), title, body, url, jenis, data)
 
 
-def kirim_ke_barber(barber_id: int, title: str, body: str, url: str = None, jenis: str = None) -> int:
+def kirim_ke_barber(barber_id: int, title: str, body: str, url: str = None, jenis: str = None,
+                     data: dict = None) -> int:
     """Kirim ke akun login barber ini SAJA (bukan tenant_id/roles seperti
     kirim_ke_role() -- lihat push_db.get_subscriptions_untuk_barber())."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_barber(barber_id), title, body, url, jenis)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_barber(barber_id), title, body, url, jenis, data)
 
 
-def kirim_ke_role(tenant_id: int, roles: list, title: str, body: str, url: str = None, jenis: str = None) -> int:
+def kirim_ke_role(tenant_id: int, roles: list, title: str, body: str, url: str = None, jenis: str = None,
+                   data: dict = None) -> int:
     """Kirim ke SEMUA akun tenant ini yang role-nya termasuk `roles` (mis.
     Booking Baru/Pengajuan Izin -> ["admin", "staff"])."""
-    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_role(tenant_id, roles), title, body, url, jenis)
+    return _kirim_ke_daftar_subscription(push_db.get_subscriptions_untuk_role(tenant_id, roles), title, body, url, jenis, data)

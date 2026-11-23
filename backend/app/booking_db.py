@@ -1195,6 +1195,13 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
             # menambah polling/timer jaringan apa pun (murni reaksi atas push
             # yang memang sudah dikirim backend saat booking baru masuk).
             jenis="booking_baru",
+            # PERMINTAAN Owner (suntik diam-diam ke List Booking): kirim
+            # baris booking LENGKAP (hasil get_booking(), lihat pemanggil
+            # fungsi ini) apa adanya -- frontend (pages/booking.js::
+            # refreshDiamDiam()) menyuntikkannya langsung ke tabel yang
+            # sedang tampil TANPA fetch ulang. Lihat catatan panjang di
+            # push_service.py soal batas ukuran payload.
+            data=booking,
         )
     except Exception as e:
         logger.error("Notifikasi push booking #%s (role admin/staff) GAGAL disiapkan: %s: %s",
@@ -1202,12 +1209,20 @@ def _kirim_notifikasi_push_booking_baru(booking: dict):
     try:
         barber_id = booking.get("barber_id")
         if barber_id is not None:
+            # PERMINTAAN Owner (lama, TETAP berlaku): nomor WhatsApp
+            # customer TIDAK ditampilkan ke akun Barber -- lihat
+            # routers/booking.py::booking_saya() yang juga membuang field
+            # ini dari respons GET /api/booking/mine. Buang juga di sini
+            # SEBELUM diteruskan sebagai payload push ke barber ybs.
+            booking_utk_barber = dict(booking)
+            booking_utk_barber.pop("customer_whatsapp", None)
             push_service.kirim_ke_barber(
                 barber_id,
                 title="Booking Baru",
                 body=f"{booking.get('customer_nama') or 'Customer'} booking Anda {booking.get('tanggal')} {booking.get('jam_mulai')}.",
                 url="/app/#/booking",
                 jenis="booking_baru",
+                data=booking_utk_barber,
             )
     except Exception as e:
         logger.error("Notifikasi push booking #%s (barber ybs) GAGAL disiapkan: %s: %s",

@@ -57,6 +57,161 @@ const MugenApi = (() => {
     return { ...payload, detail: _pesanDariDetail(payload.detail) };
   }
 
+  // Daftar LENGKAP flag "halaman" generik (BUKAN termasuk "dashboard", yang
+  // punya mekanisme terpisah -- lihat tandaiDashboardKotor() di state.js) --
+  // INI YANG DIPAKAI SEBAGAI DEFAULT KONSERVATIF kalau endpoint yang baru
+  // dipanggil TIDAK cocok pola apa pun di POLA_FLAG_PRESISI di bawah.
+  const FLAG_HALAMAN_SEMUA = [
+    "rekap", "rekap_transaksi", "produk", "input_data", "slip_gaji", "kasbon",
+    "komisi", "reimburse", "pemasukan", "pengeluaran", "uang_kas", "whatsapp",
+    "pengaturan",
+  ];
+
+  // BUGFIX "Rekap/menu lain reload penuh tanpa alasan" (PERMINTAAN Owner,
+  // lanjutan PR #304/#305) -- SEBELUMNYA SETIAP mutasi (POST/PUT/DELETE) di
+  // MANA PUN mengotori SEMUA 13 flag di atas + dashboard sekaligus (lihat
+  // riwayat di bawah FLAG_HALAMAN_SEMUA), padahal mayoritas endpoint cuma
+  // benar-benar memengaruhi SATU flag miliknya sendiri. Efeknya: menu A
+  // selalu reload penuh begitu dibuka lagi gara-gara mutasi TIDAK TERKAIT
+  // di menu B/C/dst.
+  //
+  // Daftar di bawah MENGGANTIKAN daftar penuh HANYA untuk endpoint yang
+  // cocok (method + path, path TANPA query string) -- tiap baris punya
+  // bukti kode backend (riset menyeluruh, bukan tebakan) soal flag mana
+  // yang BENAR relevan. Endpoint yang TIDAK cocok pola apa pun di bawah
+  // (termasuk SEMUA endpoint Input Data/manual-customer/data-non-barber --
+  // BELUM diverifikasi tuntas relasinya dengan flag lain, lihat riset) TETAP
+  // memakai FLAG_HALAMAN_SEMUA + dashboard seperti sebelumnya -- default
+  // AMAN/konservatif ini SENGAJA dipertahankan: lebih baik reload
+  // berlebihan daripada diam-diam menampilkan DATA UANG yang basi.
+  //
+  // Relasi uang nyata (BUKAN nol relasi) yang dipertahankan di bawah,
+  // dengan bukti:
+  // - Pengeluaran (sumber_dana="karyawan") membuat/ubah/hapus baris
+  //   Reimburse OTOMATIS langsung berstatus "disetujui" (reimburse_db.py::
+  //   buat_reimburse_sistem()), yang ikut tampil di tab Transaksi Rekap
+  //   (reimburse_db.py::gabung_ke_rekap_transaksi()) -- endpoint Pengeluaran
+  //   TETAP mengotori "reimburse"/"rekap"/"rekap_transaksi" (suntik di
+  //   rekap.js::suntikBarisPengeluaran()/hapusBarisPengeluaran() yang
+  //   membersihkan SEBAGIAN lagi kalau baris itu ternyata sumber_dana="kas").
+  // - Slip Gaji ubah status (sudah_dibayar/batal) MEMOTONG/MEMBATALKAN
+  //   Kasbon NYATA (kasbon_db.py::terapkan_potongan_slip_gaji()/
+  //   batalkan_potongan_slip_gaji(), dipanggil slip_gaji_db.py) -- endpoint
+  //   ini TETAP mengotori "kasbon"/"rekap"/"rekap_transaksi" (sudah
+  //   di-suntik slip_gaji.js::suntikBarisKasbon()/hapusBarisKasbon()).
+  //   Endpoint GENERATE slip gaji (POST) TIDAK menyentuh Kasbon sama sekali
+  //   (hanya baca live saldo Kasbon/Komisi/Reimburse lewat GET terpisah
+  //   sebelum submit, lihat slip_gaji.js) -- aman HANYA kotori "slip_gaji".
+  // - Produk "jual" (POS maupun manual) mengubah omzet penjualan produk
+  //   yang dibaca Dashboard (routers/dashboard.py::dashboard_owner() ->
+  //   database.py::get_omzet_penjualan_produk()) -- TETAP kotori "dashboard".
+  // - Pengaturan Komisi/Bonus Tier/Bonus Service/Uang Harian/status aktif
+  //   Barber dibaca LIVE oleh Rekap Bulanan DAN Dashboard
+  //   (database.py::get_ringkasan_semua_barber_bulan(), routers/
+  //   dashboard.py::dashboard_owner()) -- TETAP kotori "rekap" + dashboard
+  //   (TIDAK "rekap_transaksi" -- tidak pernah mengubah baris transaksi
+  //   apa pun, murni angka ringkasan).
+  const POLA_FLAG_PRESISI = [
+    // ---- Produk (logic di database.py) -- TIDAK PERNAH dibaca Rekap
+    // (Transaksi maupun Bulanan) ataupun halaman lain mana pun, KECUALI
+    // "jual"/koreksi-hapus mutasi (bisa jenis "jual") yang muncul di omzet
+    // Dashboard.
+    { re: /^\/api\/produk\/\d+\/jual$/, methods: ["POST"], flags: ["produk"], dashboard: true },
+    { re: /^\/api\/produk\/mutasi\/\d+$/, methods: ["PUT", "DELETE"], flags: ["produk"], dashboard: true },
+    { re: /^\/api\/produk(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["produk"], dashboard: false },
+    { re: /^\/api\/produk\/\d+\/(restock|tester)$/, methods: ["POST"], flags: ["produk"], dashboard: false },
+
+    // ---- Pemasukan (pemasukan_db.py) -- leaf TOTAL, tidak pernah ditulis
+    // maupun dibaca modul lain mana pun (hanya laporan_pdf.py yang membaca,
+    // itu generate-on-demand, bukan cache halaman apa pun).
+    { re: /^\/api\/pemasukan(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pemasukan"], dashboard: false },
+
+    // ---- Uang Kas -- endpoint MANUAL milik menu ini sendiri (penyesuaian
+    // otomatis dari Pengeluaran sumber_dana="kas" BUKAN request terpisah,
+    // lihat pola Pengeluaran di bawah).
+    { re: /^\/api\/uang-kas\/saldo-awal$/, methods: ["PUT"], flags: ["uang_kas"], dashboard: false },
+    { re: /^\/api\/uang-kas(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["uang_kas"], dashboard: false },
+
+    // ---- Kasbon (kasbon_db.py) -- endpoint MILIK SENDIRI (ajukan/bayar/
+    // hapus). Leaf TOTAL untuk tulisan KELUAR (tidak pernah menulis ke
+    // modul lain) DAN tidak dibaca Dashboard -- TAPI baris Kasbon
+    // dibayar/diajukan MEMANG tampil di tab Transaksi Rekap (sudah
+    // di-suntik kasbon.js::suntikBarisKasbon()/hapusBarisKasbon()), jadi
+    // TETAP kotori "rekap"/"rekap_transaksi".
+    { re: /^\/api\/kasbon(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["kasbon", "rekap", "rekap_transaksi"], dashboard: false },
+    { re: /^\/api\/kasbon\/\d+\/pembayaran$/, methods: ["POST"], flags: ["kasbon", "rekap", "rekap_transaksi"], dashboard: false },
+
+    // ---- Reimburse (reimburse_db.py) -- endpoint MILIK SENDIRI (ajukan/
+    // setujui/tolak/hapus lewat reimburse.js, BEDA dari baris sistem yang
+    // dibuat Pengeluaran sumber_dana="karyawan" lewat endpoint Pengeluaran
+    // sendiri). Leaf TOTAL untuk tulisan KELUAR, tidak dibaca Dashboard --
+    // TAPI klaim disetujui TAMPIL di tab Transaksi Rekap (sudah di-suntik
+    // reimburse.js::suntikBarisReimburse()), jadi TETAP kotori
+    // "rekap"/"rekap_transaksi".
+    { re: /^\/api\/reimburse(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["reimburse", "rekap", "rekap_transaksi"], dashboard: false },
+    { re: /^\/api\/reimburse\/\d+\/status$/, methods: ["PUT"], flags: ["reimburse", "rekap", "rekap_transaksi"], dashboard: false },
+
+    // ---- Komisi Penyesuaian (komisi_penyesuaian_db.py) -- leaf TOTAL,
+    // TIDAK menyentuh perhitungan komisi dasar Rekap Bulanan/Transaksi
+    // ataupun halaman lain mana pun (docstring modul ini sendiri: "Jangan
+    // mengubah sistem komisi yang sudah ada").
+    { re: /^\/api\/komisi\/penyesuaian(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["komisi"], dashboard: false },
+
+    // ---- Slip Gaji -- generate (POST) HANYA baca live saldo terkait lewat
+    // GET terpisah sebelum submit, TIDAK menulis ke Kasbon/Rekap sama
+    // sekali saat ini. Ubah status (PUT .../status) BARU memotong/
+    // membatalkan Kasbon nyata -- lihat catatan panjang di atas.
+    { re: /^\/api\/slip-gaji$/, methods: ["POST"], flags: ["slip_gaji"], dashboard: false },
+    { re: /^\/api\/slip-gaji\/\d+\/status$/, methods: ["PUT"], flags: ["slip_gaji", "kasbon", "rekap", "rekap_transaksi"], dashboard: false },
+
+    // ---- WhatsApp settings (token/template notifikasi booking) + Reminder
+    // Absensi -- config pengiriman WA murni, tidak pernah dibaca modul
+    // uang/Rekap/Dashboard mana pun.
+    { re: /^\/api\/pengaturan\/whatsapp(\/tes)?$/, methods: ["POST", "PUT"], flags: ["whatsapp"], dashboard: false },
+    { re: /^\/api\/pengaturan\/absensi-reminder$/, methods: ["PUT"], flags: ["whatsapp"], dashboard: false },
+
+    // ---- Pengaturan: sub-fitur TERBUKTI dibaca LIVE oleh Rekap Bulanan
+    // DAN Dashboard -- lihat catatan panjang di atas.
+    { re: /^\/api\/pengaturan\/komisi$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/bonus-tiers(\/[^/]+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/bonus-service-acuan$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/uang-harian-acuan$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/uang-harian-syarat$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/uang-harian-target$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/uang-harian-dinamis\/config$/, methods: ["PUT"], flags: ["pengaturan", "rekap"], dashboard: true },
+    { re: /^\/api\/pengaturan\/barber(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pengaturan", "rekap"], dashboard: true },
+
+    // ---- Pengaturan: sub-fitur LAIN yang TERBUKTI TIDAK ada hubungan sama
+    // sekali (branding/favicon, akun User, Hak Akses Role, Profil/Email) --
+    // murni konfigurasi platform/akses, tidak pernah dibaca modul uang/
+    // Rekap/Dashboard.
+    { re: /^\/api\/pengaturan\/(branding|favicon)$/, methods: ["PUT", "DELETE"], flags: ["pengaturan"], dashboard: false },
+    { re: /^\/api\/pengaturan\/user(\/.*)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pengaturan"], dashboard: false },
+    { re: /^\/api\/pengaturan\/user-roles(\/.*)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pengaturan"], dashboard: false },
+    { re: /^\/api\/pengaturan\/profil\/(email|kirim-ulang-verifikasi)$/, methods: ["POST", "PUT"], flags: ["pengaturan"], dashboard: false },
+
+    // ---- Pengeluaran -- lihat catatan panjang di atas (relasi uang nyata
+    // dengan Uang Kas DAN Reimburse, tergantung sumber_dana baris yang
+    // BARU DIUBAH -- TIDAK bisa dibedakan hanya dari method+path di sini,
+    // jadi KEDUANYA tetap dikotori, suntik di rekap.js yang membersihkan
+    // sebagian secara kondisional per-baris).
+    { re: /^\/api\/pengeluaran(\/\d+)?$/, methods: ["POST", "PUT", "DELETE"], flags: ["pengeluaran", "uang_kas", "reimburse", "rekap", "rekap_transaksi"], dashboard: true },
+  ];
+
+  // Tentukan flag "halaman" + perlu-tidaknya kotori Dashboard untuk SATU
+  // mutasi (dipanggil request() di bawah). `path` BISA membawa query string
+  // (mis. POST /api/manual-customer/close?tanggal=...) -- dibuang dulu
+  // sebelum dicocokkan ke pola di atas, supaya pola tetap sederhana.
+  function _tentukanDampakMutasi(method, path) {
+    const pathTanpaQuery = String(path || "").split("?")[0];
+    for (const pola of POLA_FLAG_PRESISI) {
+      if (pola.methods.includes(method) && pola.re.test(pathTanpaQuery)) {
+        return { flags: pola.flags, dashboard: pola.dashboard };
+      }
+    }
+    return { flags: FLAG_HALAMAN_SEMUA, dashboard: true }; // default konservatif, lihat catatan panjang di atas
+  }
+
   async function request(method, path, body, { useCache = false } = {}) {
     const cacheKey = `${method}:${path}`;
     const headers = { "Content-Type": "application/json" };
@@ -126,61 +281,30 @@ const MugenApi = (() => {
     }
     // PERMINTAAN OWNER: SETIAP panggilan mutasi (bukan GET) yang sukses --
     // dari menu mana pun, sekarang ATAU di masa depan -- menandai Dashboard
-    // "kotor" (lihat state.js::tandaiDashboardKotor()) supaya Dashboard
-    // fetch ulang SEKALI begitu dibuka lagi, bukan terus-terusan menampilkan
+    // + halaman-halaman terkait "kotor" (lihat state.js::
+    // tandaiDashboardKotor()/tandaiHalamanKotor()) supaya menu itu fetch
+    // ulang SEKALI begitu dibuka lagi, bukan terus-terusan menampilkan
     // angka yang sudah basi. Satu hook di sini (bukan dipanggil manual di
     // tiap halaman) supaya tidak ada jalur simpan/edit/hapus yang terlewat.
+    //
+    // MANA yang dikotori per mutasi ditentukan _tentukanDampakMutasi() di
+    // atas (lihat riset lengkap + POLA_FLAG_PRESISI di sana) -- BUKAN lagi
+    // "semua flag, selalu" seperti sebelumnya (PERLUASAN BUGFIX "Rekap/menu
+    // lain reload penuh tanpa alasan", PR #304/#305). Endpoint Booking/
+    // Absensi/Izin & Cuti/Riwayat Transaksi (Payment Gateway)/POS TIDAK
+    // cocok pola apa pun di POLA_FLAG_PRESISI (belum/tidak perlu
+    // diverifikasi di sini -- Booking/Absensi/Izin&Cuti sudah pakai pola
+    // cache DOM/stale-while-revalidate sendiri yang tidak baca flag ini
+    // sama sekali, Riwayat Transaksi Gateway berubah lewat webhook bukan
+    // aksi akun ini, dan "pos_kasir"/"pos_transaksi" milik pos.js memang
+    // SENGAJA tidak punya flag di FLAG_HALAMAN_SEMUA sama sekali) -- jadi
+    // tetap jatuh ke default konservatif (kotori SEMUA flag + dashboard,
+    // perilaku SAMA PERSIS sebelum refactor ini untuk endpoint-endpoint
+    // itu).
     if (method !== "GET") {
-      MugenState.tandaiDashboardKotor();
-      // PERMINTAAN OWNER: sama seperti Dashboard di atas -- halaman-halaman
-      // ini juga tidak perlu fetch ulang tiap dibuka lagi kalau tidak ada
-      // perubahan (lihat state.js::tandaiHalamanKotor()). PERLUASAN
-      // (keluhan Owner: "menu terasa ada jeda loading") -- hampir SEMUA
-      // menu internal sekarang ikut didaftarkan di sini, KECUALI yang
-      // isinya bisa berubah dari AKSI PIHAK LAIN (bukan dari akun yang
-      // sedang login ini), karena hook ini (sama seperti Dashboard/Rekap/
-      // Produk sebelumnya) HANYA tahu "akun ini sendiri baru mengubah
-      // sesuatu" -- TIDAK bisa tahu perubahan dari perangkat/sesi lain:
-      //   - Booking: booking baru bisa masuk dari pelanggan langsung
-      //     (halaman booking publik).
-      //   - Absensi & Izin & Cuti: sudah pakai pola cache DOM penuh
-      //     tersendiri (lihat absensi.js/izin_cuti.js -- _cacheAdminDom/
-      //     _cacheBarberDom/_cacheDom), tidak lewat hook generik ini.
-      //   - Riwayat Transaksi (Payment Gateway)/Settlement Faspay/Billing:
-      //     status berubah lewat webhook bank/payment gateway (lihat
-      //     snap_webhook.py), bukan aksi akun ini.
-      // Keempatnya SENGAJA TIDAK didaftarkan di sini -- tetap fetch ulang
-      // seperti biasa setiap dibuka.
-      MugenState.tandaiHalamanKotor("rekap");
-      // BUGFIX "Rekap masih loading walau sudah disuntik diam-diam dari
-      // POS/Booking/Tambah Transaksi" (PERMINTAAN Owner): flag TERPISAH
-      // khusus tab Transaksi (lihat pages/rekap.js::suntikBarisTransaksi()/
-      // gantiBarisTransaksi()) -- default-nya SAMA kotor seperti "rekap"
-      // di atas untuk SEMUA mutasi (aman), tapi suntik berhasil akan
-      // membersihkan HANYA flag ini lagi segera setelahnya, supaya tab
-      // Transaksi tidak ikut fetch ulang walau mutasi yang BARUSAN terjadi
-      // itu sendiri (POS checkout/dst) yang memicu baris ini.
-      MugenState.tandaiHalamanKotor("rekap_transaksi");
-      MugenState.tandaiHalamanKotor("produk");
-      MugenState.tandaiHalamanKotor("input_data");
-      MugenState.tandaiHalamanKotor("slip_gaji");
-      MugenState.tandaiHalamanKotor("kasbon");
-      MugenState.tandaiHalamanKotor("komisi");
-      MugenState.tandaiHalamanKotor("reimburse");
-      MugenState.tandaiHalamanKotor("pemasukan");
-      MugenState.tandaiHalamanKotor("pengeluaran");
-      MugenState.tandaiHalamanKotor("uang_kas");
-      MugenState.tandaiHalamanKotor("whatsapp");
-      MugenState.tandaiHalamanKotor("pengaturan");
-      // "pos_kasir"/"pos_transaksi" (menu Point of Sale, lihat
-      // pages/pos.js) SENGAJA TIDAK didaftarkan di sini -- endpoint POS
-      // sendiri (buat transaksi/bayar/batalkan) JUGA mutasi (method !==
-      // "GET"), jadi kalau ikut daftar ini, SATU kali checkout akan
-      // langsung menandai cache "pos_kasir" kotor lagi & memaksa loading
-      // di checkout BERIKUTNYA -- justru menggagalkan tujuan "tidak ada
-      // loading" untuk pemakaian kasir yang paling umum (banyak checkout
-      // berturut-turut). Kedua cache itu diinvalidasi lewat mekanismenya
-      // sendiri (lihat catatan panjang di pages/pos.js).
+      const dampak = _tentukanDampakMutasi(method, path);
+      if (dampak.dashboard) MugenState.tandaiDashboardKotor();
+      for (const flag of dampak.flags) MugenState.tandaiHalamanKotor(flag);
     }
     return payload;
   }

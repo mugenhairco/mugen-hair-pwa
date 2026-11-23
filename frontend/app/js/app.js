@@ -65,7 +65,14 @@ if ("serviceWorker" in navigator) {
     if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
     if (location.hash.startsWith("#/booking") && typeof PageBooking !== "undefined"
         && typeof PageBooking.refreshDiamDiam === "function") {
-      PageBooking.refreshDiamDiam();
+      // PERMINTAAN Owner (suntik diam-diam, BUKAN cuma "muat ulang diam-
+      // diam"): `data.data` opsional -- baris booking lengkap, diteruskan
+      // ke refreshDiamDiam() supaya PageBooking bisa langsung menyuntik
+      // baris itu ke tabel/kartu yang sedang tampil TANPA fetch ulang ke
+      // server (lihat catatan panjang _bookingSuntikBaris di pages/
+      // booking.js) -- otomatis jatuh kembali ke fetch diam-diam lama
+      // kalau tab aktif belum siap/payload tidak membawa data.
+      PageBooking.refreshDiamDiam(data.data);
     }
   });
 }

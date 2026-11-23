@@ -299,7 +299,7 @@ const PagePengeluaran = (() => {
                   await MugenUI.withButtonLoading(btnHapus, () => MugenApi.del(`/api/pengeluaran/${r.id}`));
                   MugenUI.toast("Pengeluaran dihapus.", "success");
                   if (typeof PageRekap !== "undefined" && typeof PageRekap.hapusBarisPengeluaran === "function") {
-                    PageRekap.hapusBarisPengeluaran(r.id, r.tanggal);
+                    PageRekap.hapusBarisPengeluaran(r.id, r.tanggal, r.sumber_dana);
                   }
                   loadList();
                 } catch (e) {

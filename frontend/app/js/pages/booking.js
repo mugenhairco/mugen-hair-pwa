@@ -63,7 +63,30 @@ const PageBooking = (() => {
   // me-render ulang SELURUH halaman, flash skeleton + reset filter/tab).
   let _bookingQuietReload = null;
 
-  function refreshDiamDiam() {
+  // PERMINTAAN Owner (suntik diam-diam, BUKAN cuma "muat ulang diam-diam"
+  // di atas): payload push "booking_baru" SEKARANG membawa baris booking
+  // lengkap (lihat backend push_service.py/booking_db.py dan app.js), jadi
+  // refreshDiamDiam() bisa langsung MENYUNTIK baris itu ke tabel/kartu yang
+  // sedang tampil TANPA fetch ulang ke server sama sekali -- diisi oleh tab
+  // booking yang SEDANG terbuka (pola sama seperti _bookingQuietReload di
+  // atas, satu referensi dipakai bersama), null kalau tab aktif bukan salah
+  // satu tab booking. Fungsi ini WAJIB mengembalikan true/false:
+  // - true  = sudah ditangani (baris disuntik KE tabel ini, ATAU baris itu
+  //   memang bukan untuk filter/rentang tanggal yang sedang ditampilkan
+  //   tab ini -- kedua kasus ini TIDAK perlu fetch ulang apa pun).
+  // - false = tab ini belum siap (data awal belum termuat) -- refreshDiamDiam()
+  //   di bawah akan JATUH KEMBALI ke _bookingQuietReload({silent:true})
+  //   (fetch ulang diam-diam seperti sebelumnya) supaya tidak ada skenario
+  //   baris baru hilang begitu saja kalau suntik gagal/tidak yakin.
+  let _bookingSuntikBaris = null;
+
+  function refreshDiamDiam(baris) {
+    // `baris` opsional -- hanya dikirim app.js saat push "booking_baru"
+    // membawa data booking lengkap (lihat catatan _bookingSuntikBaris di
+    // atas). Coba suntik dulu (TANPA fetch ulang); kalau tab aktif belum
+    // siap/tidak punya fungsi suntik, jatuh kembali ke fetch diam-diam
+    // seperti sebelumnya.
+    if (baris && typeof _bookingSuntikBaris === "function" && _bookingSuntikBaris(baris)) return;
     if (_bookingQuietReload) _bookingQuietReload({ silent: true });
   }
 
@@ -289,6 +312,7 @@ const PageBooking = (() => {
     async function renderBody(activeTab) {
       body.innerHTML = "";
       _bookingQuietReload = null; // reset -- tab lama (kalau ada) tidak lagi aktif
+      _bookingSuntikBaris = null;
       if (activeTab === "Booking List") await renderBookingList(body, barbers, services, bolehEditBooking);
       else if (activeTab === "Booking Mandiri") await renderBookingMandiri(body);
       else if (activeTab === "Calendar") await renderCalendar(body, barbers);
@@ -450,6 +474,24 @@ const PageBooking = (() => {
     const cached = _ambilDariCacheBarberTab("hari_ini", userId, url);
     if (cached) renderData(cached);
 
+    // PERMINTAAN Owner (suntik diam-diam push "booking_baru" -- lihat
+    // catatan panjang _bookingSuntikBaris di atas): simpan data MENTAH
+    // (sebelum filter tanggal/status di renderData()) supaya bisa
+    // di-upsert langsung TANPA fetch ulang. `baris` dari push ini akun
+    // barber sendiri -- backend /api/booking/mine sudah membatasi per
+    // barber_id akun login, jadi TIDAK perlu cek kepemilikan lagi di sini.
+    let _dataMentahSaatIni = null;
+    function suntikBarisHariIni(baris) {
+      if (!Array.isArray(_dataMentahSaatIni)) return false; // belum termuat -- minta fallback fetch ulang
+      if (baris.tanggal !== todayIso) return true; // bukan hari ini -- tidak usah apa-apa di tab ini
+      const idx = _dataMentahSaatIni.findIndex((r) => r.id === baris.id);
+      if (idx >= 0) _dataMentahSaatIni[idx] = baris;
+      else _dataMentahSaatIni.push(baris);
+      _simpanKeCacheBarberTab("hari_ini", userId, url, _dataMentahSaatIni);
+      renderData(_dataMentahSaatIni);
+      return true;
+    }
+
     // PERMINTAAN Owner ("diam-diam kalau ada booking baru masuk, tanpa
     // refresh 1 halaman"): muatUlang() dipakai untuk load pertama (skeleton
     // HANYA kalau card masih kosong/belum ada cache) MAUPUN dipanggil ulang
@@ -462,13 +504,17 @@ const PageBooking = (() => {
       if (!silent && !card.children.length) card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
       try {
         const data = await MugenApi.get(url, { useCache: true });
-        if (!data.__offline) _simpanKeCacheBarberTab("hari_ini", userId, url, data);
+        if (!data.__offline) {
+          _simpanKeCacheBarberTab("hari_ini", userId, url, data);
+          _dataMentahSaatIni = data;
+        }
         renderData(data);
       } catch (e) {
         if (!card.children.length) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
       }
     }
     _bookingQuietReload = muatUlang;
+    _bookingSuntikBaris = suntikBarisHariIni;
     muatUlang({ silent: !!cached });
   }
 
@@ -513,18 +559,37 @@ const PageBooking = (() => {
     const cached = _ambilDariCacheBarberTab("akan_datang", userId, url);
     if (cached) renderData(cached);
 
+    // Pola sama persis suntikBarisHariIni() di atas -- "Akan Datang"
+    // meliputi RENTANG tanggal (bukan satu hari), jadi filternya tanggal
+    // >= besok (bukan tanggal === hari ini).
+    let _dataMentahSaatIni = null;
+    function suntikBarisAkanDatang(baris) {
+      if (!Array.isArray(_dataMentahSaatIni)) return false;
+      if (baris.tanggal < besokIso) return true; // sudah lewat/hari ini -- bukan rentang tab ini
+      const idx = _dataMentahSaatIni.findIndex((r) => r.id === baris.id);
+      if (idx >= 0) _dataMentahSaatIni[idx] = baris;
+      else _dataMentahSaatIni.push(baris);
+      _simpanKeCacheBarberTab("akan_datang", userId, url, _dataMentahSaatIni);
+      renderData(_dataMentahSaatIni);
+      return true;
+    }
+
     // Pola sama persis renderBarberHariIni() di atas.
     async function muatUlang({ silent = false } = {}) {
       if (!silent && !card.children.length) card.appendChild(MugenUI.skeleton("card", { lines: 4 }));
       try {
         const data = await MugenApi.get(url, { useCache: true });
-        if (!data.__offline) _simpanKeCacheBarberTab("akan_datang", userId, url, data);
+        if (!data.__offline) {
+          _simpanKeCacheBarberTab("akan_datang", userId, url, data);
+          _dataMentahSaatIni = data;
+        }
         renderData(data);
       } catch (e) {
         if (!card.children.length) { card.innerHTML = ""; card.appendChild(MugenUI.errorState(e.message)); }
       }
     }
     _bookingQuietReload = muatUlang;
+    _bookingSuntikBaris = suntikBarisAkanDatang;
     muatUlang({ silent: !!cached });
   }
 
@@ -562,6 +627,26 @@ const PageBooking = (() => {
       card.appendChild(bookingTable(_urutkanTerbaruDiAtas(Array.isArray(data) ? data : []), { withBarber: false, withWhatsapp: false }));
     }
 
+    // PERMINTAAN Owner (suntik diam-diam push "booking_baru" -- lihat
+    // catatan panjang _bookingSuntikBaris di atas): BEDA dari 2 tab di
+    // atas, cache tab ini dikunci per kombinasi bulan/tahun lewat `url`
+    // (dihitung ulang tiap panggil, SAMA seperti load() di bawah) --
+    // bukan satu closure cache tunggal, jadi suntik di sini bekerja
+    // LANGSUNG terhadap cache kombinasi bulan/tahun yang SEDANG tampil.
+    function suntikBarisSemuaBooking(baris) {
+      const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
+      if (tahunBaris !== Number(selTahun.value) || bulanBaris !== Number(selBulan.value)) return true; // bukan bulan/tahun yang sedang dilihat -- tidak usah apa-apa
+      const url = `/api/booking/mine?tahun=${selTahun.value}&bulan=${selBulan.value}`;
+      const cached = _ambilDariCacheBarberTab("semua_booking", userId, url);
+      if (!Array.isArray(cached)) return false; // belum ada cache utk kombinasi ini -- minta fallback fetch ulang
+      const idx = cached.findIndex((r) => r.id === baris.id);
+      if (idx >= 0) cached[idx] = baris;
+      else cached.push(baris);
+      _simpanKeCacheBarberTab("semua_booking", userId, url, cached);
+      renderData(cached);
+      return true;
+    }
+
     // Pola stale-while-revalidate -- lihat catatan panjang di
     // renderBarberHariIni(). Cache dikunci per kombinasi bulan/tahun lewat
     // `url` (ganti filter = cache miss = skeleton SEKALI untuk kombinasi
@@ -584,6 +669,7 @@ const PageBooking = (() => {
     selBulan.addEventListener("change", () => load());
     selTahun.addEventListener("change", () => load());
     _bookingQuietReload = load;
+    _bookingSuntikBaris = suntikBarisSemuaBooking;
     load();
   }
 
@@ -1434,7 +1520,33 @@ const PageBooking = (() => {
     // cepat (10 teratas) yang telat menimpa hasil jalur penuh yang sudah
     // lebih dulu selesai & tampil (pola sama seperti rekap.js).
     let _tokenMuatBookingTerakhir = Symbol();
+
+    // PERMINTAAN Owner (suntik diam-diam push "booking_baru" -- lihat
+    // catatan panjang _bookingSuntikBaris di atas): snapshot baris yang
+    // SEDANG tampil di tabel ini (hasil jalur PENUH, BUKAN jalur cepat 10
+    // teratas -- supaya suntik tidak beroperasi di atas tampilan yang
+    // belum lengkap) + flag "siap disuntik". Diisi/dipakai HANYA oleh
+    // load()/suntikBarisBookingList() di bawah.
+    let _bookingListRowsSaatIni = null;
+    let _bookingListSiapDisuntik = false;
+
+    function suntikBarisBookingList(baris) {
+      if (!_bookingListSiapDisuntik || !Array.isArray(_bookingListRowsSaatIni)) return false; // belum siap -- minta fallback fetch ulang
+      const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
+      if (tahunBaris !== Number(selTahun.value) || bulanBaris !== Number(selBulan.value)) return true; // bukan filter bulan/tahun yang sedang tampil -- tidak usah apa-apa
+      if (selBarber.value && Number(baris.barber_id) !== Number(selBarber.value)) return true;
+      if (selStatus.value && baris.status_booking !== selStatus.value) return true;
+      const idx = _bookingListRowsSaatIni.findIndex((r) => r.id === baris.id);
+      if (idx >= 0) _bookingListRowsSaatIni[idx] = baris;
+      else _bookingListRowsSaatIni.push(baris);
+      _bookingListRowsSaatIni = _urutkanTerbaruDiAtas(_bookingListRowsSaatIni);
+      tableWrap.innerHTML = "";
+      tableWrap.appendChild(renderRows(_bookingListRowsSaatIni));
+      return true;
+    }
+
     async function load({ silent = false } = {}) {
+      _bookingListSiapDisuntik = false; // reset -- jangan disuntik sampai jalur penuh load() INI selesai lagi
       if (!silent) {
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
@@ -1490,7 +1602,15 @@ const PageBooking = (() => {
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
         // PERMINTAAN Owner: "bookingan terbaru itu selalu di atas" -- lihat
         // _urutkanTerbaruDiAtas() di atas.
-        tableWrap.appendChild(renderRows(_urutkanTerbaruDiAtas(Array.isArray(data) ? data : [])));
+        const rowsTerurut = _urutkanTerbaruDiAtas(Array.isArray(data) ? data : []);
+        tableWrap.appendChild(renderRows(rowsTerurut));
+        // Hanya tandai "siap disuntik" kalau ini data SERVER sungguhan
+        // (bukan fallback offline) -- lihat catatan _bookingListRowsSaatIni
+        // di atas.
+        if (!data.__offline) {
+          _bookingListRowsSaatIni = rowsTerurut;
+          _bookingListSiapDisuntik = true;
+        }
       } catch (e) {
         if (tokenMuat !== _tokenMuatBookingTerakhir) return;
         // REVISI: refresh diam-diam (silent, lihat atas) yang gagal karena
@@ -1508,6 +1628,7 @@ const PageBooking = (() => {
     selBarber.addEventListener("change", load);
     selStatus.addEventListener("change", load);
     _bookingQuietReload = load;
+    _bookingSuntikBaris = suntikBarisBookingList;
     load();
   }
 
