@@ -1701,7 +1701,10 @@
 // halaman ini) -- endpoint email langsung (/lupa-password) yang lama
 // TETAP ada apa adanya (dipakai test_email_auth.py), hanya tidak lagi
 // ditautkan langsung dari UI.
-const ASSET_VERSION = "319";
+// v319 -> v320: PERMINTAAN Owner -- hapus paragraf penjelasan di halaman
+// Lupa Kata Sandi ("Masukkan username & nomor HP... ke tempat yang
+// sesuai"), form-nya sudah cukup jelas tanpa teks itu.
+const ASSET_VERSION = "320";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
