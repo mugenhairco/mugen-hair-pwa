@@ -1687,7 +1687,21 @@
 // jadi cukup bersihkan flag kotornya langsung, tidak perlu suntik baris)
 // sekarang juga tidak memaksa Rekap Transaksi/Bulanan fetch ulang kalau
 // memang tidak ada yang berubah di sana.
-const ASSET_VERSION = "317";
+// v317 -> v318: FITUR BARU Lupa Kata Sandi Karyawan via OTP WhatsApp
+// (PERMINTAAN Owner) -- rancangan AWAL (toggle "Saya Owner"/"Saya
+// Karyawan") -- DIGANTIKAN oleh v319 di bawah sebelum pernah dirilis.
+// v318 -> v319: REVISI (PERMINTAAN Owner: "saya tidak mau ada dua
+// pilihan seperti itu") -- halaman "Lupa Kata Sandi" sekarang SATU form
+// saja (username + nomor HP) untuk Owner MAUPUN Karyawan, tidak ada
+// toggle lagi. Backend (routers/auth_router.py::lupa_password_telepon())
+// otomatis menentukan channel berdasarkan role akun: karyawan (barber)
+// dapat kode OTP lewat WhatsApp (cocokkan ke barbers.nomor_whatsapp),
+// Owner (admin) dapat LINK reset lewat email seperti biasa (cocokkan
+// nomor HP ke tenants.whatsapp, bukan membaca email sama sekali di
+// halaman ini) -- endpoint email langsung (/lupa-password) yang lama
+// TETAP ada apa adanya (dipakai test_email_auth.py), hanya tidak lagi
+// ditautkan langsung dari UI.
+const ASSET_VERSION = "319";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

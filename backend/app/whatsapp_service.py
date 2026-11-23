@@ -78,10 +78,18 @@ def set_templates(templates: dict, tenant_id: int = None):
         db.set_setting(TEMPLATE_SETTING_KEYS[jenis], (teks or "").strip(), tenant_id=tenant_id)
 
 
-def _format_nomor_fonnte(nomor: str) -> str:
+def normalisasi_nomor_wa(nomor: str) -> str:
     """Fonnte mengharapkan nomor tanpa "+" di depan (mis. "6281234567890")
     -- normalisasi longgar dari format apa pun yang lolos booking_db.py::
-    _whatsapp_valid() (boleh diawali 08/+62/62)."""
+    _whatsapp_valid() (boleh diawali 08/+62/62).
+
+    SENGAJA dijadikan publik (sebelumnya `_format_nomor_fonnte`, HANYA
+    dipakai internal modul ini) -- FITUR Lupa Kata Sandi Karyawan via OTP
+    WhatsApp (wa_otp_db.py/routers/auth_router.py) butuh fungsi normalisasi
+    yang SAMA PERSIS untuk mencocokkan nomor yang diketik user di form
+    dengan nomor yang tersimpan di barbers.nomor_whatsapp -- format
+    berbeda (08xx vs +62xx vs 62xx) untuk nomor yang SAMA tidak boleh
+    dianggap tidak cocok."""
     nomor = (nomor or "").strip().replace(" ", "").replace("-", "")
     if nomor.startswith("+"):
         nomor = nomor[1:]
@@ -108,7 +116,7 @@ def kirim_whatsapp(nomor_tujuan: str, pesan: str, tenant_id: int = None) -> bool
     try:
         resp = requests.post(
             _FONNTE_URL,
-            data={"target": _format_nomor_fonnte(nomor_tujuan), "message": pesan},
+            data={"target": normalisasi_nomor_wa(nomor_tujuan), "message": pesan},
             headers={"Authorization": token},
             timeout=_TIMEOUT_DETIK,
         )

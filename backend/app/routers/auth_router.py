@@ -11,12 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 import auth_db
+import database as db
 import email_auth_db
 import email_service
 import email_templates
 import push_db
+import rate_limit_db
 import tenant_db
-from auth import buat_token, get_current_user, hash_token
+import wa_otp_db
+import whatsapp_service
+from auth import buat_token, get_current_user, hash_token, resolve_tenant_publik
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -283,7 +287,15 @@ def lupa_password(body: LupaPasswordBody):
     3. Email milik karyawan (role selain 'admin') -> TIDAK kirim email,
        pesan EKSPLISIT mengarahkan ke Owner (SENGAJA beda dari kasus 1 & 2
        -- ini memang harus menginformasikan langkah yang benar ke pengguna
-       ber-akun karyawan, sesuai instruksi eksplisit)."""
+       ber-akun karyawan, sesuai instruksi eksplisit). Pesan ini diperbarui
+       (FITUR Lupa Kata Sandi via nomor HP, lihat lupa_password_telepon() di
+       bawah) supaya ikut mengarahkan ke jalur self-service yang sekarang
+       tersedia (form tunggal username+nomor HP di halaman yang sama) --
+       endpoint berbasis EMAIL ini sendiri TETAP dipertahankan apa adanya
+       (dipakai test_email_auth.py, dan API tetap kompatibel untuk
+       pemanggil lain yang mungkin masih memakai jalur email langsung),
+       hanya UI-nya yang tidak lagi mengarahkan orang ke sini secara
+       langsung."""
     email = (body.email or "").strip().lower()
     if not email:
         return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
@@ -292,18 +304,28 @@ def lupa_password(body: LupaPasswordBody):
         return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
     if user["role"] != "admin":
         return {
-            "message": "Password akun karyawan hanya dapat direset oleh Owner Tenant. "
-                       "Silakan hubungi pemilik atau administrator toko Anda."
+            "message": "Password akun karyawan tidak direset lewat email -- silakan isi nomor "
+                       "WhatsApp Anda di halaman Lupa Kata Sandi. Kalau nomor itu belum terdaftar, "
+                       "silakan hubungi pemilik atau administrator (Owner Tenant) toko Anda."
         }
+    _kirim_email_reset_owner(user)
+    return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
+
+
+def _kirim_email_reset_owner(user: dict) -> None:
+    """Diekstrak dari lupa_password() di atas supaya dipakai ULANG oleh
+    lupa_password_telepon() (jalur BARU, username+nomor HP -- cocok sebagai
+    akun Owner lewat tenants.whatsapp) TANPA duplikasi -- isi email yang
+    dikirim & cara token dibuat harus TETAP SAMA PERSIS, apa pun pintu
+    masuknya (email langsung, atau nomor HP)."""
     token = email_auth_db.buat_token_reset(user["id"])
     link = email_service.link_reset_password(token)
     tenant = tenant_db.get_tenant(user["tenant_id"]) if user.get("tenant_id") else None
     nama = (tenant or {}).get("owner_name") or user["username"]
     email_service.kirim_email(
-        email, "Atur ulang password Rivoir Anda",
+        user["email"], "Atur ulang password Rivoir Anda",
         email_templates.template_reset_password(nama, link, email_auth_db.MASA_BERLAKU_RESET_JAM),
     )
-    return {"message": _PESAN_LUPA_PASSWORD_GENERIK}
 
 
 class ResetPasswordBody(BaseModel):
@@ -318,6 +340,143 @@ def reset_password(body: ResetPasswordBody):
         raise HTTPException(status_code=422, detail="Konfirmasi password tidak cocok.")
     try:
         email_auth_db.pakai_token_reset((body.token or "").strip(), body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True, "message": "Password berhasil diubah. Silakan login dengan password baru Anda."}
+
+
+# ---------------------------------------------------------------------------
+# FITUR Lupa Kata Sandi -- SATU form (username + nomor HP) untuk Owner
+# MAUPUN Karyawan (PERMINTAAN Owner: "saya tidak mau ada dua pilihan
+# seperti itu" -- gantikan rancangan toggle 2 pilihan yang sempat dibuat
+# sebelumnya, TIDAK pernah dirilis). Channel pengiriman OTOMATIS mengikuti
+# role akun yang ditemukan lewat username -- pengguna TIDAK perlu tahu/
+# pilih channel apa pun, cukup isi username + nomor HP yang terdaftar:
+# - role='barber': cocokkan ke barbers.nomor_whatsapp, kirim kode OTP ke
+#   WhatsApp itu dari WA toko (lihat wa_otp_db.py, reset_password_wa() di
+#   bawah untuk langkah verifikasi+ganti password).
+# - role='admin' (Owner): cocokkan ke tenants.whatsapp (nomor yang
+#   didaftarkan saat registrasi toko), kirim LINK reset ke EMAIL akun --
+#   JALUR SAMA PERSIS lupa_password()/reset_password() di atas (via
+#   _kirim_email_reset_owner(), diekstrak supaya tidak duplikasi), cuma
+#   pintu masuknya beda (nomor HP, bukan email langsung).
+#
+# BEDA PRINSIP RESPON dari lupa_password() (email, pesan SELALU generik
+# demi anti-enumerasi akun): PERMINTAAN EKSPLISIT Owner di sini adalah
+# pesan JELAS "Akun tidak ditemukan" kalau username+nomor HP yang diisi
+# TIDAK COCOK BERSAMA -- risiko enumerasinya jauh lebih kecil karena
+# membutuhkan DUA data yang benar sekaligus (bukan cuma menebak satu
+# username), dan dibatasi lagi oleh rate limit per username di bawah.
+# ---------------------------------------------------------------------------
+
+_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN = "Akun tidak ditemukan. Periksa username atau nomor telepon."
+
+
+class LupaPasswordTeleponBody(BaseModel):
+    username: str = ""
+    nomor_hp: str = ""
+
+
+@router.post("/lupa-password-telepon")
+def lupa_password_telepon(body: LupaPasswordTeleponBody, request: Request,
+                           tenant_id: int = Depends(resolve_tenant_publik)):
+    ip = rate_limit_db.ambil_ip_client(request)
+    if not rate_limit_db.cek_dan_catat("lupa_password_telepon_ip", ip, 10, 3600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi nanti.")
+
+    username = (body.username or "").strip()
+    nomor_input = whatsapp_service.normalisasi_nomor_wa(body.nomor_hp or "")
+    if not username or not nomor_input:
+        raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+
+    # Rate limit PER USERNAME (di-scope ke tenant ini -- username yang
+    # sama di toko lain punya kuota terpisah, konsisten dengan prinsip
+    # username HANYA unik per-tenant di seluruh aplikasi ini): mencegah
+    # satu username dicoba berulang kali dengan nomor HP tebak-tebakan.
+    if not rate_limit_db.cek_dan_catat("lupa_password_telepon_user", f"{tenant_id}:{username.lower()}", 3, 900):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan untuk username ini. Coba lagi nanti.")
+
+    user = auth_db.get_user_by_username(username, tenant_id=tenant_id)
+    if user is None:
+        raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+
+    if user["role"] == "barber":
+        if not user.get("barber_id"):
+            raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+        barber = db.get_barber(user["barber_id"])
+        nomor_tersimpan = whatsapp_service.normalisasi_nomor_wa((barber or {}).get("nomor_whatsapp") or "")
+        if not nomor_tersimpan or nomor_tersimpan != nomor_input:
+            raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+        # Dari titik ini identitas SUDAH terbukti cocok (username+nomor
+        # HP) -- pesan untuk kegagalan SETELAHNYA (WA toko belum aktif/
+        # gagal kirim) boleh eksplisit, BUKAN lagi pesan generik "akun
+        # tidak ditemukan" (PERMINTAAN Owner: ini bukan rahasia keamanan,
+        # cuma status konfigurasi toko -- pengguna yang identitasnya
+        # sudah terverifikasi berhak tahu kenapa gagal).
+        if not whatsapp_service.is_enabled(tenant_id):
+            raise HTTPException(status_code=422, detail="WhatsApp toko belum aktif. Silakan hubungi Owner Anda.")
+        kode = wa_otp_db.buat_otp(user["id"])
+        terkirim = whatsapp_service.kirim_whatsapp(
+            nomor_tersimpan,
+            f"Kode OTP reset password Anda: {kode}\n"
+            f"Berlaku {wa_otp_db.MASA_BERLAKU_OTP_MENIT} menit. Jangan bagikan kode ini ke siapa pun.",
+            tenant_id=tenant_id,
+        )
+        if not terkirim:
+            raise HTTPException(
+                status_code=422,
+                detail="Gagal mengirim kode OTP lewat WhatsApp. Silakan coba lagi atau hubungi Owner Anda.",
+            )
+        return {"ok": True, "channel": "whatsapp", "message": "Kode OTP telah dikirim ke WhatsApp Anda."}
+
+    if user["role"] == "admin":
+        tenant = tenant_db.get_tenant(user["tenant_id"]) if user.get("tenant_id") else None
+        nomor_tersimpan = whatsapp_service.normalisasi_nomor_wa((tenant or {}).get("whatsapp") or "")
+        if not nomor_tersimpan or nomor_tersimpan != nomor_input:
+            raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+        if not user.get("email"):
+            raise HTTPException(
+                status_code=422, detail="Email akun Anda belum terdaftar. Silakan hubungi dukungan Rivoir.",
+            )
+        _kirim_email_reset_owner(user)
+        return {
+            "ok": True, "channel": "email",
+            "message": "Link reset password telah dikirim ke email Anda. Silakan periksa kotak masuk (dan folder spam).",
+        }
+
+    # role lain (superadmin/sales/dst) SEHARUSNYA TIDAK PERNAH ketemu di
+    # sini -- akun platform itu selalu tenant_id=NULL (lihat BUGFIX KRITIS
+    # di login() atas), jadi get_user_by_username(tenant_id=...) di atas
+    # tidak akan pernah mencocokkannya. Baris ini murni jaring pengaman.
+    raise HTTPException(status_code=422, detail=_PESAN_AKUN_TELEPON_TIDAK_DITEMUKAN)
+
+
+class ResetPasswordWaBody(BaseModel):
+    username: str = ""
+    kode: str = ""
+    password: str = ""
+    confirm_password: str = ""
+
+
+@router.post("/reset-password-wa")
+def reset_password_wa(body: ResetPasswordWaBody, request: Request,
+                       tenant_id: int = Depends(resolve_tenant_publik)):
+    ip = rate_limit_db.ambil_ip_client(request)
+    if not rate_limit_db.cek_dan_catat("reset_password_wa_ip", ip, 20, 600):
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan. Coba lagi nanti.")
+    if body.password != body.confirm_password:
+        raise HTTPException(status_code=422, detail="Konfirmasi password tidak cocok.")
+
+    username = (body.username or "").strip()
+    user = auth_db.get_user_by_username(username, tenant_id=tenant_id)
+    if user is None or user["role"] != "barber":
+        # SAMA PERSIS pesan wa_otp_db._PESAN_OTP_TIDAK_VALID -- username
+        # yang sudah tidak cocok lagi di langkah ini (mis. akun dinonaktifkan
+        # Owner tepat di antara minta OTP & verifikasi) tidak perlu
+        # pembeda tersendiri, tetap jatuh ke pesan "OTP tidak valid".
+        raise HTTPException(status_code=422, detail="Kode OTP tidak valid atau sudah kedaluwarsa. Silakan minta kode baru.")
+    try:
+        wa_otp_db.verifikasi_dan_pakai_otp(user["id"], body.kode, body.password)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True, "message": "Password berhasil diubah. Silakan login dengan password baru Anda."}
