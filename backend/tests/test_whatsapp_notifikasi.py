@@ -430,9 +430,13 @@ def test_api_whatsapp_settings_owner_bisa_simpan_dan_lihat(single_tenant):
     assert r2.json()["fonnte_token"] == "token-abc"
     assert r2.json()["templates"]["reminder_qris"] == ""
     assert "reminder_qris" in r2.json()["defaults"]
-    # 3 jenis asli + "booking_luar_jam_operasional" (Pesan Otomatis
-    # Berdasarkan Jam Operasional Tenant, ditambah belakangan).
-    assert len(r2.json()["jenis_pesan"]) == 4
+    # BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    # aplikasi): 3 jenis asli + "reminder_gateway" (Payment Gateway,
+    # ditambah belakangan) + "booking_luar_jam_operasional" (Pesan
+    # Otomatis Berdasarkan Jam Operasional Tenant, ditambah belakangan
+    # juga) = 5 -- lihat whatsapp_templates.py::JENIS_PESAN. Assertion ini
+    # tidak pernah ikut diperbarui saat "reminder_gateway" ditambahkan.
+    assert len(r2.json()["jenis_pesan"]) == 5
 
 
 def test_api_whatsapp_templates_simpan_tidak_menimpa_token(single_tenant):
