@@ -1745,6 +1745,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        bisa diklik lagi untuk membuka ulang). */
     z-index: 55;
   }
+  /* BUGFIX: .content (z-index:55) kini di ATAS .sidebar-backdrop (z-index:40,
+     lihat di bawah) -- tint redup .sidebar-backdrop sendiri jadi TIDAK PERNAH
+     kelihatan lagi (tertutup total oleh .content yang background-nya sudah
+     tidak transparan, lihat catatan "background: var(--bg)" di atas). Dim
+     visual dipindah ke sini, lewat ::after milik .content sendiri (lapisan/
+     stacking context yang SAMA, tidak perlu bersaing z-index dgn sidebar) --
+     .content punya transform (lihat di atas) sehingga jadi containing block
+     utk descendant position:fixed, jadi ::after ini otomatis menutup PAS
+     kotak .content (ikut bergeser bersamanya), dan ikut diklip oleh
+     clip-path/filter milik .content (termasuk dlm siluet squircle & shadow).
+     .sidebar-backdrop TETAP ada & TETAP perlu -- fungsinya murni sebagai
+     target klik "tap di luar sidebar utk tutup" (lihat router.js::shell()),
+     tint visualnya sendiri sekarang vestigial/tidak kelihatan, tidak masalah. */
+  .content::after {
+    content: "";
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .content.scroll-terkunci::after { opacity: 1; }
   .sidebar-backdrop {
     display: block;
     position: fixed; inset: 0; z-index: 40;
@@ -1798,7 +1819,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop, .content, .hamburger { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
