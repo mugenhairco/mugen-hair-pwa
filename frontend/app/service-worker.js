@@ -1804,7 +1804,23 @@
 // browser yang sama) yang membuat render berikutnya fetch ulang. Perilaku
 // sekarang SAMA PERSIS seperti Rekap tab Transaksi (keterbatasan yang sama:
 // tetap bukan real-time, baru ter-refresh begitu tab ini dibuka lagi).
-const ASSET_VERSION = "329";
+// v329 -> v330: FITUR Notifikasi Push "Transaksi POS Baru" (PERMINTAAN
+// Owner, "kerjakan dengan teliti" -- lanjutan BUGFIX "pos_transaksi" v329,
+// yang hanya menjamin tab "Transaksi Hari Ini" fetch ulang PENUH begitu
+// dibuka/dipindah-balik lagi, BUKAN real-time selama tab itu SEDANG
+// dilihat). Backend (pos_db.py::_tandai_lunas()) sekarang mengirim push
+// "pos_transaksi_lunas" (role admin/staff, pola SAMA PERSIS booking_baru)
+// setiap transaksi POS lunas (cash/QRIS manual/gateway) -- app.js merelai
+// ke pages/pos.js::suntikTransaksiLunas() kalau #/pos sedang terbuka,
+// menyisipkan baris itu LANGSUNG ke DOM yang sedang tampil (kalau tab
+// "Transaksi Hari Ini" aktif) ATAU diam-diam ke cache saja (kalau tab
+// "Kasir" yang aktif, baru tampil begitu pindah tab) -- TANPA fetch ulang
+// ke server sama sekali, baik checkout milik sesi sendiri MAUPUN dari
+// device/user lain. Diverifikasi end-to-end: wiring backend (spy
+// push_service.kirim_ke_role, pastikan tepat 1x panggilan per checkout,
+// payload benar) + injeksi DOM frontend lewat Playwright (baris baru
+// tampil seketika tanpa reload/klik apa pun).
+const ASSET_VERSION = "330";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

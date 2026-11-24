@@ -53,6 +53,28 @@ const PagePos = (() => {
   let _cachePengaturan = null; // { userId, data }
   let _cacheTransaksiHariIni = null; // { userId, tanggal, data }
 
+  // FITUR Notifikasi Push "Transaksi POS Baru" -> suntik diam-diam REAL-
+  // TIME (PERMINTAAN Owner, "kerjakan dengan teliti" -- lanjutan BUGFIX
+  // "pos_transaksi" di atas, yang HANYA menjamin tab ini fetch ulang
+  // begitu dibuka/dipindah-balik lagi, bukan real-time selama tab SEDANG
+  // dilihat). Pola SAMA PERSIS pages/booking.js::_bookingSuntikBaris --
+  // diisi renderTransaksiHariIniTab() HANYA saat tab itu yang sedang aktif
+  // (null kalau tab aktif sekarang "Kasir"), dipanggil suntikTransaksiLunas()
+  // di bawah supaya baris baru dari CHECKOUT DEVICE LAIN langsung tampil
+  // di DOM yang SEDANG terlihat, bukan cuma diam-diam masuk ke cache untuk
+  // ditampilkan "nanti" begitu tab-nya dibuka lagi.
+  let _transaksiHariIniTampilUlang = null;
+
+  // Dipanggil app.js begitu push "pos_transaksi_lunas" masuk (lihat
+  // catatan push_service.py/pos_db.py::_kirim_notifikasi_push_pos_lunas())
+  // -- `pos` baris POS lengkap (SAMA PERSIS bentuk yang sudah dipakai
+  // _suntikTransaksiBaru() untuk checkout sesi sendiri), method PUBLIC
+  // (page lain lazy-loaded, lihat page_loader.js).
+  function suntikTransaksiLunas(pos) {
+    _suntikTransaksiBaru(pos);
+    if (typeof _transaksiHariIniTampilUlang === "function") _transaksiHariIniTampilUlang();
+  }
+
   function _suntikTransaksiBaru(pos) {
     if (!_cacheTransaksiHariIni || !pos) return;
     if (pos.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal (jaga2 lewat tengah malam) -- biarkan, nanti fetch fresh saat tab dibuka utk tanggal itu
@@ -214,6 +236,10 @@ const PagePos = (() => {
 
     async function renderBody(activeTab) {
       body.innerHTML = "";
+      // Reset diawal -- tab lama (kalau ada) tidak lagi aktif, lihat
+      // catatan _transaksiHariIniTampilUlang di atas (pola sama
+      // pages/booking.js::_bookingSuntikBaris).
+      _transaksiHariIniTampilUlang = null;
       if (activeTab === "Kasir") await renderKasirTab(body);
       else await renderTransaksiHariIniTab(body);
     }
@@ -1195,6 +1221,18 @@ const PagePos = (() => {
     // tidak fetch ulang penuh terjadi begitu Owner/Kasir di device INI
     // sendiri melakukan APA PUN yang lain lalu kembali ke tab ini, bukan
     // menunggu F5 selamanya) -- lihat catatan "pos_transaksi" di api.js.
+    //
+    // FITUR Notifikasi Push "Transaksi POS Baru" (PERMINTAAN Owner,
+    // "kerjakan dengan teliti"): tab ini SELALU jadi target "tampil ulang"
+    // live kalau tab ini yang sedang aktif -- diisi DI SINI (bukan di
+    // dalam cabang if/muatUlangPaksa di bawah) supaya berlaku utk KEDUA
+    // jalur (cache hit MAUPUN fetch fresh), persis seperti pola
+    // pages/booking.js::_bookingSuntikBaris. suntikTransaksiLunas() (lihat
+    // atas) memanggil ini setelah _suntikTransaksiBaru() menyisipkan baris
+    // dari checkout DEVICE LAIN ke cache, supaya DOM yang SEDANG terlihat
+    // ikut ter-update SEKETIKA, bukan cuma cache-nya saja (yang baru
+    // kelihatan "nanti" begitu tab ini dibuka lagi).
+    _transaksiHariIniTampilUlang = () => { if (_cacheTransaksiHariIni) tampilkanData(_cacheTransaksiHariIni.data); };
     if (_cacheTransaksiHariIni && _cacheTransaksiHariIni.userId === userId && _cacheTransaksiHariIni.tanggal === tanggalHariIni
         && !MugenState.halamanPerluRefresh("pos_transaksi")) {
       tampilkanData(_cacheTransaksiHariIni.data);
@@ -1204,7 +1242,7 @@ const PagePos = (() => {
     await muatUlangPaksa();
   }
 
-  return { render, suntikBookingLunas, hapusBookingDariPos };
+  return { render, suntikBookingLunas, hapusBookingDariPos, suntikTransaksiLunas };
 })();
 
 window.PagePos = PagePos;
