@@ -182,7 +182,25 @@ const PageRekap = (() => {
   // sumber_dana="karyawan", BIARKAN flag itu tetap kotor supaya tab
   // Transaksi fetch ulang biasa (yang akan membawa baris Reimburse
   // otomatis itu dengan benar).
-  function suntikBarisPengeluaran(p) {
+  //
+  // BUGFIX KRITIS #2 (ditemukan lewat code review PR #305, BUKAN laporan
+  // Owner): fix di atas HANYA melihat sumber_dana BARU -- tidak cukup
+  // untuk kasus KOREKSI yang MENGUBAH sumber dana. Kalau Pengeluaran
+  // dikoreksi dari sumber_dana="karyawan" MENJADI "kas",
+  // pengeluaran_db.py::koreksi_pengeluaran() (cabang "sumber dana
+  // berubah") MENGHAPUS baris Reimburse otomatis yang lama
+  // (reimburse_db.py::hapus_reimburse_sistem()) -- padahal baris
+  // Reimburse itu MASIH nyangkut di cache tab Transaksi. Kalau kita cuma
+  // lihat sumber_dana BARU ("kas") lalu membersihkan "rekap_transaksi",
+  // tab itu ditandai bersih padahal sebenarnya basi (masih menampilkan
+  // baris Reimburse yang sudah terhapus) -- persis jenis bug yang fix di
+  // atas coba cegah, cuma arahnya kebalik.
+  // Fix: pemanggil (pages/pengeluaran.js) sekarang meneruskan
+  // `sumberDanaLama` (sumber_dana baris SEBELUM diedit, undefined untuk
+  // baris baru/Tambah) -- HANYA aman membersihkan "rekap_transaksi" kalau
+  // sumber_dana BARU "kas" DAN TIDAK ADA transisi dari "karyawan" (baris
+  // baru, atau sumber_dana lama juga sudah "kas").
+  function suntikBarisPengeluaran(p, sumberDanaLama) {
     const c = _cacheTerakhir["pengeluaran"];
     if (!c || !p || !c.data || !Array.isArray(c.data.daftar)) return;
     if (c.userId !== MugenState.getUser().id) return;
@@ -202,7 +220,9 @@ const PageRekap = (() => {
     // Urutan SAMA PERSIS get_pengeluaran_list() (pengeluaran_db.py): tanggal DESC, id DESC.
     c.data.daftar.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : b.id - a.id));
     MugenState.tandaiHalamanBersih("rekap");
-    if ((p.sumber_dana || "kas") === "kas") MugenState.tandaiHalamanBersih("rekap_transaksi");
+    const sumberDanaBaru = p.sumber_dana || "kas";
+    const transisiDariKaryawan = sumberDanaLama === "karyawan" && sumberDanaBaru !== "karyawan";
+    if (sumberDanaBaru === "kas" && !transisiDariKaryawan) MugenState.tandaiHalamanBersih("rekap_transaksi");
   }
 
   // Pasangan suntikBarisPengeluaran() di atas untuk Hapus -- dipanggil

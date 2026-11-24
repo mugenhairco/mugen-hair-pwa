@@ -50,7 +50,15 @@ def test_tandai_status_terkunci_per_slip_tidak_potong_kasbon_dobel(single_tenant
 
     t.join(timeout=5)
     assert not t.is_alive()
-    assert hasil["slip"]["status"] == "sudah_dibayar"
+    # BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    # aplikasi): tandai_status() TIDAK lagi mengembalikan slip itu sendiri
+    # secara langsung -- sekarang membungkusnya jadi {"slip": ..., "kasbon_
+    # disuntik": ..., "kasbon_dihapus_ids": ...} (lihat slip_gaji_db.py,
+    # commit "fix: Rekap tidak loading penuh lagi setelah Slip Gaji/Izin &
+    # Cuti" -- bagian "kasbon_disuntik" diteruskan ke frontend untuk suntik
+    # diam-diam rekap.js::suntikBarisKasbon()). Test ini tidak pernah ikut
+    # diperbarui saat itu.
+    assert hasil["slip"]["slip"]["status"] == "sudah_dibayar"
     assert kasbon_db.get_kasbon(kasbon["id"])["sisa"] == 50000  # terpotong TEPAT SEKALI
 
 

@@ -1529,8 +1529,20 @@ const PageBooking = (() => {
     // load()/suntikBarisBookingList() di bawah.
     let _bookingListRowsSaatIni = null;
     let _bookingListSiapDisuntik = false;
+    // BUGFIX (ditemukan lewat code review PR #305, BUKAN laporan Owner):
+    // kalau push "booking_baru" masuk PERSIS saat load() lain sedang
+    // berjalan (mis. user baru saja ganti filter), _bookingListSiapDisuntik
+    // sempat false (baru di-reset di awal load() di bawah) -- suntik akan
+    // return false dan refreshDiamDiam() memicu load() KEDUA yang
+    // mubazir, padahal load() PERTAMA yang sudah berjalan itu sendiri
+    // akan segera menentukan tampilan akhir. Flag ini membedakan "belum
+    // PERNAH dimuat sama sekali" (perlu fallback fetch) dari "SEDANG
+    // dimuat" (tidak perlu fetch kedua, biarkan yang sedang berjalan
+    // selesai duluan).
+    let _bookingListSedangMuat = false;
 
     function suntikBarisBookingList(baris) {
+      if (_bookingListSedangMuat) return true; // load() lain sedang berjalan, biarkan itu yang menentukan tampilan akhir -- tidak perlu fetch kedua
       if (!_bookingListSiapDisuntik || !Array.isArray(_bookingListRowsSaatIni)) return false; // belum siap -- minta fallback fetch ulang
       const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
       if (tahunBaris !== Number(selTahun.value) || bulanBaris !== Number(selBulan.value)) return true; // bukan filter bulan/tahun yang sedang tampil -- tidak usah apa-apa
@@ -1547,6 +1559,7 @@ const PageBooking = (() => {
 
     async function load({ silent = false } = {}) {
       _bookingListSiapDisuntik = false; // reset -- jangan disuntik sampai jalur penuh load() INI selesai lagi
+      _bookingListSedangMuat = true;
       if (!silent) {
         tableWrap.innerHTML = "";
         tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
@@ -1597,6 +1610,7 @@ const PageBooking = (() => {
         const data = await MugenApi.get(`/api/booking?${qs}`, { useCache: true });
         if (tokenMuat !== _tokenMuatBookingTerakhir) return;
         dataPenuhTampil = true;
+        _bookingListSedangMuat = false;
         tableWrap.innerHTML = "";
         // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -1613,6 +1627,7 @@ const PageBooking = (() => {
         }
       } catch (e) {
         if (tokenMuat !== _tokenMuatBookingTerakhir) return;
+        _bookingListSedangMuat = false;
         // REVISI: refresh diam-diam (silent, lihat atas) yang gagal karena
         // jaringan sesaat TIDAK BOLEH menghapus tabel yang sedang tampil --
         // baris lama tetap ditampilkan, gagalnya cukup diam-diam diabaikan

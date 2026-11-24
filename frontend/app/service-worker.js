@@ -1747,7 +1747,35 @@
 // refreshDiamDiam() yang langsung menyuntik baris itu ke tabel/kartu yang
 // sedang tampil TANPA fetch ulang ke server sama sekali (jatuh kembali ke
 // fetch diam-diam lama kalau tab belum siap/baris tidak cocok filter).
-const ASSET_VERSION = "323";
+// v323 -> v324: BUGFIX (ditemukan lewat code review PR #305, BUKAN
+// laporan Owner) -- suntikBarisPengeluaran() (rekap.js) sebelumnya hanya
+// melihat sumber_dana BARU, tidak cukup untuk kasus KOREKSI yang
+// mengubah sumber dana dari "karyawan" ke "kas": backend menghapus baris
+// Reimburse otomatis yang lama (pengeluaran_db.py::koreksi_pengeluaran())
+// saat transisi itu, tapi flag "rekap_transaksi" sempat dibersihkan buta
+// padahal baris Reimburse yang terhapus itu masih nyangkut di cache tab
+// Transaksi -- data uang basi tanpa tanda apa pun. Sekarang pemanggil
+// (pengeluaran.js) meneruskan sumber_dana SEBELUM diedit, flag hanya
+// dibersihkan kalau TIDAK ada transisi dari "karyawan". Juga perbaikan
+// kecil di suntik Booking List: push yang masuk persis saat filter
+// sedang diganti tidak lagi memicu fetch ulang kedua yang mubazir.
+// v324 -> v325: BUGFIX GANDA (dilaporkan Owner) pages/absensi.js --
+// (1) tombol "Lihat Detail" di Daftar Absensi tidak menampilkan apa-apa:
+// latitude/longitude dikirim sebagai NUMBER (bukan string), MugenUI.el()
+// hanya mengonversi child bertipe string jadi text node otomatis, child
+// berupa number dilempar apa adanya ke appendChild() yang melempar
+// TypeError dan menggagalkan SELURUH pembangunan modal SEBELUM infoModal()
+// sempat dipanggil -- tanpa pesan error terlihat. (2) Dashboard Absensi
+// ("Hadir"/dst) & tabel Daftar Absensi basi, harus refresh penuh (F5) baru
+// muncul data baru: cache DOM admin (_cacheAdminDom, BUGFIX PERFORMA
+// sebelumnya) membuat render() berhenti memasang ulang DOM lama APA
+// ADANYA tanpa pernah memanggil ulang loadDashboard()/loadList() --
+// cocok untuk tab Pengaturan/Kuota Cuti (jarang berubah), SALAH untuk
+// data agregat lintas-barber yang berubah tiap ada Check In/Out dari
+// device LAIN. Sekarang render() memanggil ulang keduanya (via
+// _cacheAdminRefresh) setiap kali cache dipakai ulang, tanpa membangun
+// ulang seluruh DOM.
+const ASSET_VERSION = "325";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

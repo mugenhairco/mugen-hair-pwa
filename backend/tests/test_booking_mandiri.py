@@ -57,7 +57,15 @@ def test_buat_booking_mandiri_wa_kosong_diterima(single_tenant, monkeypatch):
     )
     assert booking["customer_whatsapp"] == ""
     assert booking["sumber"] == "kasir_mandiri"
-    assert booking["status_pembayaran"] == "terverifikasi"  # cash selalu instan
+    # BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    # aplikasi): assertion ini sebelumnya mengharapkan "terverifikasi"
+    # ("cash selalu instan") -- itu perilaku LAMA, sudah SENGAJA diubah
+    # (lihat booking_db.py::buat_booking(), komentar "REVISI PERMINTAAN
+    # OWNER": SEMUA metode termasuk cash sekarang mulai
+    # 'menunggu_verifikasi', Kasir/Admin wajib klik Verifikasi begitu
+    # customer benar-benar membayar). Test ini tidak pernah ikut
+    # diperbarui saat itu.
+    assert booking["status_pembayaran"] == "menunggu_verifikasi"
 
 
 def test_buat_booking_mandiri_wa_invalid_tetap_ditolak(single_tenant):
@@ -190,7 +198,9 @@ def test_endpoint_buat_booking_mandiri_cash(single_tenant, monkeypatch):
     }, headers=headers)
     assert r.status_code == 200, r.text
     data = r.json()
-    assert data["status_pembayaran"] == "terverifikasi"
+    # BUGFIX (test basi -- lihat catatan di test_buat_booking_mandiri_wa_
+    # kosong_diterima() di atas, alasan sama persis).
+    assert data["status_pembayaran"] == "menunggu_verifikasi"
     assert data["sumber"] == "kasir_mandiri"
 
 
