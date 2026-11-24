@@ -1249,18 +1249,41 @@ const PagePos = (() => {
     // yang sudah dipilih kasir TIDAK hilang kalau kartu di-collapse dulu
     // (mis. untuk lihat/expand draft lain) lalu dibuka lagi.
     if (!persisted.state) {
-      persisted.state = { serviceIds: new Set(), tips: 0, metode: null, channel: null, bankCode: null, transaksi: null };
+      persisted.state = { serviceIds: new Set(), tips: 0, produk: {}, metode: null, channel: null, bankCode: null, transaksi: null };
     }
     const state = persisted.state;
     let fase = persisted.fase || "isi";
 
+    // PERMINTAAN Owner ("siapa tahu customer mau beli produk juga"):
+    // totalHarga() ikut menjumlahkan Produk (state.produk, map produk_id
+    // -> qty -- pola SAMA PERSIS wizard Kasir biasa), dipakai baik di
+    // layar "isi" (renderTotal()) maupun ketiga layar pasca-submit
+    // (barisTotalDraft() di bawah).
     function totalHarga() {
       let total = state.tips || 0;
       for (const sid of state.serviceIds) {
         const s = pengaturan.services.find((x) => x.id === sid);
         if (s) total += s.harga;
       }
+      for (const pid of Object.keys(state.produk)) {
+        const qty = state.produk[pid];
+        if (qty > 0) {
+          const p = pengaturan.produk.find((x) => x.id === Number(pid));
+          if (p) total += p.harga_jual * qty;
+        }
+      }
       return total;
+    }
+
+    // PERMINTAAN Owner ("tampilkan total payment yg harus dibayarkan,
+    // sama seperti Menunggu Pembayaran (QRIS) di POS bukan draft"):
+    // baris Total Payment yang dipakai di KETIGA layar pasca-submit
+    // (QRIS manual/Payment Gateway/Cash) -- pola SAMA PERSIS barisTotal()
+    // milik jalankanWizardKasir() di atas.
+    function barisTotalDraft() {
+      return MugenUI.el("div", { style: "display:flex;justify-content:space-between;font-weight:700;" }, [
+        MugenUI.el("span", {}, "Total Payment"), MugenUI.el("span", {}, MugenUI.formatRupiah(totalHarga())),
+      ]);
     }
 
     function gantiFase() {
@@ -1294,6 +1317,106 @@ const PagePos = (() => {
       }
       container.appendChild(serviceGrid);
       if (!pengaturan.services.length) container.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
+
+      // PERMINTAAN Owner ("draft harusnya juga bisa menampilkan produk,
+      // siapa tahu customer mau beli produk juga"): SENGAJA bukan modal
+      // layar-penuh seperti renderPilih() milik jalankanWizardKasir() di
+      // atas (yang nempel ke document.body -- draft bisa expand
+      // BERSAMAAN dengan wizard Kasir biasa yang sedang dibuka di tab
+      // yang sama, modal document.body akan BENTROK satu sama lain) --
+      // daftar produk + qty stepper di sini murni INLINE di dalam kartu
+      // draft itu sendiri, cukup ditoggle tampil/sembunyi oleh link
+      // "+ Tambah Produk". Produk opsional -- boleh pilih Service saja,
+      // Produk saja, atau keduanya (lihat validasi submit di bawah).
+      container.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Produk (opsional)"));
+
+      function buatQtyStepperDraft(p) {
+        const qty = state.produk[p.id] || 0;
+        const btnMinus = MugenUI.el("button", { type: "button", class: "pos-qty-btn" }, "−");
+        const nilai = MugenUI.el("span", { class: "pos-qty-value" }, String(qty));
+        const btnPlus = MugenUI.el("button", { type: "button", class: "pos-qty-btn" }, "+");
+        btnMinus.disabled = qty <= 0;
+        btnPlus.disabled = qty >= p.stok;
+        btnMinus.addEventListener("click", (e) => { e.stopPropagation(); ubahQtyProdukDraft(p, -1); });
+        btnPlus.addEventListener("click", (e) => { e.stopPropagation(); ubahQtyProdukDraft(p, 1); });
+        return MugenUI.el("div", { class: "pos-qty-stepper" }, [btnMinus, nilai, btnPlus]);
+      }
+
+      const produkTerpilihBoxDraft = MugenUI.el("div", { class: "pos-produk-terpilih" });
+      function renderProdukTerpilihDraft() {
+        produkTerpilihBoxDraft.innerHTML = "";
+        const idsTerpilih = Object.keys(state.produk).map(Number).filter((id) => state.produk[id] > 0);
+        for (const pid of idsTerpilih) {
+          const p = pengaturan.produk.find((x) => x.id === pid);
+          if (!p) continue;
+          produkTerpilihBoxDraft.appendChild(MugenUI.el("div", { class: "pos-produk-terpilih-row" }, [
+            MugenUI.el("div", {}, [
+              MugenUI.el("div", { class: "pos-produk-terpilih-nama" }, p.nama),
+              MugenUI.el("div", { class: "pos-produk-terpilih-harga" }, `${MugenUI.formatRupiah(p.harga_jual)}/pcs`),
+            ]),
+            buatQtyStepperDraft(p),
+          ]));
+        }
+      }
+
+      const daftarProdukBoxDraft = MugenUI.el("div", {
+        style: "display:none;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px;",
+      });
+      function renderDaftarProdukDraft(query) {
+        daftarProdukBoxDraft.innerHTML = "";
+        const q = (query || "").trim().toLowerCase();
+        const hasil = pengaturan.produk.filter((p) => !q || p.nama.toLowerCase().includes(q));
+        if (!hasil.length) {
+          daftarProdukBoxDraft.appendChild(MugenUI.el("div", { class: "mugen-dropdown-empty" }, "Produk tidak ditemukan."));
+          return;
+        }
+        for (const p of hasil) {
+          const terpilih = (state.produk[p.id] || 0) > 0;
+          const row = MugenUI.el("div", { class: "pos-produk-option" + (terpilih ? " selected" : "") }, [
+            MugenUI.el("div", { class: "pos-produk-option-check" }, "✓"),
+            MugenUI.el("div", { class: "pos-produk-option-info" }, [
+              MugenUI.el("div", { class: "pos-produk-option-nama" }, p.nama),
+              MugenUI.el("div", { class: "pos-produk-option-meta" }, `${MugenUI.formatRupiah(p.harga_jual)}/pcs · stok ${p.stok}`),
+            ]),
+            buatQtyStepperDraft(p),
+          ]);
+          row.addEventListener("click", (e) => {
+            if (e.target.closest(".pos-qty-btn")) return;
+            if (p.stok <= 0) return;
+            ubahQtyProdukDraft(p, 1);
+            renderDaftarProdukDraft(searchProdukInputDraft.value);
+          });
+          daftarProdukBoxDraft.appendChild(row);
+        }
+      }
+
+      function ubahQtyProdukDraft(p, delta) {
+        const qtyBaru = Math.max(0, Math.min(p.stok, (state.produk[p.id] || 0) + delta));
+        if (qtyBaru > 0) state.produk[p.id] = qtyBaru; else delete state.produk[p.id];
+        renderProdukTerpilihDraft();
+        if (daftarProdukBoxDraft.style.display !== "none") renderDaftarProdukDraft(searchProdukInputDraft.value);
+        renderTotal();
+      }
+
+      const searchProdukInputDraft = MugenUI.el("input", { type: "text", placeholder: "Cari produk…", style: "margin-top:8px;" });
+      searchProdukInputDraft.addEventListener("input", () => renderDaftarProdukDraft(searchProdukInputDraft.value));
+
+      const triggerProdukDraft = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "+ Tambah Produk");
+      triggerProdukDraft.addEventListener("click", () => {
+        const sedangTerbuka = daftarProdukBoxDraft.style.display !== "none";
+        daftarProdukBoxDraft.style.display = sedangTerbuka ? "none" : "";
+        if (!sedangTerbuka) { searchProdukInputDraft.value = ""; renderDaftarProdukDraft(""); }
+      });
+
+      if (pengaturan.produk.length) {
+        container.appendChild(produkTerpilihBoxDraft);
+        renderProdukTerpilihDraft();
+        container.appendChild(triggerProdukDraft);
+        container.appendChild(searchProdukInputDraft);
+        container.appendChild(daftarProdukBoxDraft);
+      } else {
+        container.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada produk aktif."));
+      }
 
       container.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tips (opsional)"));
       const inputTips = MugenUI.el("input", { type: "text", value: MugenUI.nilaiTampilAngka(state.tips), style: "max-width:160px;" });
@@ -1381,7 +1504,9 @@ const PagePos = (() => {
         "Buat Transaksi");
       btnBuat.addEventListener("click", async () => {
         errorBox.textContent = "";
-        if (!state.serviceIds.size) { errorBox.textContent = "Pilih minimal satu Service terlebih dahulu."; return; }
+        if (!state.serviceIds.size && !Object.keys(state.produk).length) {
+          errorBox.textContent = "Pilih minimal satu Service atau Produk."; return;
+        }
         if (!state.metode) { errorBox.textContent = "Pilih metode pembayaran terlebih dahulu."; return; }
         if (state.metode === "gateway" && !state.channel) { errorBox.textContent = "Pilih VA/QRIS terlebih dahulu."; return; }
         if (state.metode === "gateway" && state.channel === "va" && !state.bankCode) {
@@ -1389,8 +1514,10 @@ const PagePos = (() => {
         }
         try {
           const payload = {
-            jasa_items: [{ barber_id: draft.barber_id, service_ids: Array.from(state.serviceIds), tips: state.tips || 0 }],
-            produk_items: [],
+            jasa_items: state.serviceIds.size
+              ? [{ barber_id: draft.barber_id, service_ids: Array.from(state.serviceIds), tips: state.tips || 0 }]
+              : [],
+            produk_items: Object.keys(state.produk).map((pid) => ({ produk_id: Number(pid), jumlah: state.produk[pid] })),
             metode_pembayaran: state.metode,
             channel: state.metode === "gateway" ? state.channel : undefined,
             bank_code: state.metode === "gateway" && state.channel === "va" ? state.bankCode : undefined,
@@ -1423,6 +1550,8 @@ const PagePos = (() => {
       }
       items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, metodeInstruksi.qris || ""));
       container.appendChild(MugenUI.el("div", { class: "card" }, [
+        barisTotalDraft(),
+        MugenUI.el("hr"),
         MugenUI.el("div", { style: "text-align:center;" }, items),
       ]));
       const errorBox = MugenUI.el("div", { class: "login-error" });
@@ -1471,6 +1600,8 @@ const PagePos = (() => {
         MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar, btnBatalkanTx])]),
         MugenUI.el("hr"),
         MugenUI.el("div", { style: "text-align:center;" }, items),
+        MugenUI.el("hr"),
+        barisTotalDraft(),
       ]));
 
       function terapkanStatus(status) {
@@ -1544,6 +1675,7 @@ const PagePos = (() => {
     function renderBayarCash() {
       const r = state.transaksi;
       container.appendChild(MugenUI.el("h3", {}, "Pembayaran Cash"));
+      container.appendChild(MugenUI.el("div", { class: "card" }, [barisTotalDraft()]));
       container.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Uang Diterima"));
       const inputUang = MugenUI.el("input", { type: "text", style: "width:100%;font-size:18px;" });
       MugenUI.attachNumericKeypad(inputUang, { rupiah: true });
