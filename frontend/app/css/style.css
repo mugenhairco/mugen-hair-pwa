@@ -1711,11 +1711,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        bagian yang tergeser keluar layar otomatis terklip rapi, tanpa
        memicu scroll horizontal (html/body sendiri juga overflow-x:hidden). */
     transform: translateX(0);
-    border-radius: 0;
+    /* PERMINTAAN Owner ("Continuous Corner/Squircle"): border-radius CSS
+       cuma bisa bikin lengkungan lingkaran biasa -- diganti clip-path
+       dengan path SVG squircle (dihitung router.js::_terapkanSquircleKonten()
+       lewat custom property --squircle-clip, lihat catatan di sana).
+       clip-path TIDAK bisa morph mulus dari "none" (state normal, di
+       sini) ke sebuah path kompleks (state terbuka, lihat
+       .content.scroll-terkunci) -- browser akan "meloncat" di suatu
+       titik tengah transisi, bukan melengkung bertahap -- TIDAK masalah,
+       lengkungannya sendiri kecil (36px) & baru benar2 kelihatan setelah
+       konten hampir berhenti bergeser. transform (gerakan utama) TETAP
+       mulus penuh, itu yang paling kelihatan. filter (bayangan, lihat
+       .scroll-terkunci) TETAP ikut animasi mulus SEPENUHNYA (drop-shadow
+       beda dari clip-path, nilainya murni angka yang bisa diinterpolasi). */
+    clip-path: none;
+    filter: none;
     transition:
       transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
-      border-radius 300ms cubic-bezier(0.16, 1, 0.3, 1),
-      box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1);
+      filter 300ms cubic-bezier(0.16, 1, 0.3, 1);
     /* PERBAIKAN (klarifikasi via rekaman layar Claude AI dari Owner):
        konten HARUS menimpa/overlap sidebar (z-index LEBIH TINGGI dari
        .sidebar/50), BUKAN di bawahnya -- sebelumnya z-index:10 (di bawah
@@ -1755,22 +1768,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .content.scroll-terkunci {
     overflow: hidden;
     transform: translateX(var(--sidebar-w));
-    border-top-left-radius: 36px;
-    border-bottom-left-radius: 36px;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
-    /* BUGFIX (Safari/iOS -- konfirmasi screenshot langsung dari HP Owner):
-       border-radius pada elemen yang SEDANG di-transform (translateX) +
-       overflow:hidden gagal benar-benar ter-clip di sebagian WebKit/Safari
-       (bug lama & dikenal luas -- lapisan hasil kompositing GPU dari
-       transform kadang tidak ikut menghormati border-radius induknya,
-       sudut jadi tampil SIKU TAJAM/patah alih-alih melengkung walau CSS-
-       nya sudah benar, 24px/36px tidak ada bedanya kalau bug ini aktif).
-       -webkit-mask-image memaksa Safari membuat ULANG lapisan masking
-       berbasis radius (bukan cuma overflow:hidden) -- perbaikan standar
-       utk bug spesifik ini, radial-gradient putih solid di sini TIDAK
-       mengubah tampilan apa pun (hanya trik render), aman di browser lain
-       yang sudah benar (properti -webkit- diabaikan begitu saja). */
-    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    /* clip-path (BUKAN border-radius) -- lihat catatan panjang di ".content"
+       di atas. --squircle-clip dihitung router.js::_terapkanSquircleKonten()
+       (rumus superellipse, kurva "squircle" sungguhan, BUKAN lingkaran
+       biasa) -- fallback "none" (persegi penuh, tanpa lengkungan) kalau
+       JS belum sempat menghitungnya sama sekali (mis. race SANGAT awal
+       sebelum rAF pertama selesai) supaya tidak pernah pecah/rusak.
+       filter:drop-shadow (BUKAN box-shadow) SENGAJA dipakai -- box-shadow
+       mengikuti kotak/border-radius elemen, BUKAN bentuk clip-path-nya,
+       jadi bayangannya akan tetap persegi tajam mengintip di balik sudut
+       yang sudah dipotong clip-path kalau tetap pakai box-shadow.
+       drop-shadow mengikuti SILUET ALPHA hasil clip-path dengan benar. */
+    clip-path: var(--squircle-clip, none);
+    filter: drop-shadow(-8px 0 24px rgba(0, 0, 0, 0.25));
     /* BUGFIX: z-index .content baru saja dinaikkan di atas .sidebar-
        backdrop (lihat ".content" z-index:55 vs .sidebar-backdrop:40) --
        tanpa ini, tap di luar sidebar (dimaksud kena backdrop ->
