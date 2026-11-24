@@ -18,6 +18,7 @@ import database as db
 import booking_db
 import payment_provider_client
 import pos_db
+import pos_draft_db
 import snap_payment_db
 import snap_webhook
 from auth import require_menu_read, require_permission
@@ -100,6 +101,36 @@ def buat_transaksi(body: BuatTransaksiBody, user: dict = Depends(require_permiss
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+class BuatDraftBody(BaseModel):
+    barber_id: int
+    customer_nama: str
+
+
+@router.get("/draft")
+def ambil_draft_list(user: dict = Depends(require_menu_read("pos"))):
+    """FITUR BARU Draft POS: kartu di tab Kasir yang disiapkan lebih awal
+    (Barber + Nama Customer) sebelum customer-nya benar-benar siap bayar --
+    lihat pos_draft_db.py untuk arsitektur lengkap. Tersimpan di server,
+    sama bagi semua kasir/device tenant ini (BUKAN per-device)."""
+    return pos_draft_db.list_draft(user["tenant_id"])
+
+
+@router.post("/draft")
+def buat_draft(body: BuatDraftBody, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    nama = body.customer_nama.strip()
+    if not nama:
+        raise HTTPException(status_code=422, detail="Nama Customer tidak boleh kosong.")
+    return pos_draft_db.buat_draft(user["tenant_id"], body.barber_id, nama, user["username"])
+
+
+@router.delete("/draft/{draft_id}")
+def hapus_draft(draft_id: int, user: dict = Depends(require_permission("izin_pos_kelola"))):
+    ok = pos_draft_db.hapus_draft(user["tenant_id"], draft_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Draft tidak ditemukan.")
+    return {"ok": True}
 
 
 def _pastikan_pos_tenant_sama(user: dict, pos: dict | None):

@@ -53,6 +53,34 @@ const PagePos = (() => {
   let _cachePengaturan = null; // { userId, data }
   let _cacheTransaksiHariIni = null; // { userId, tanggal, data }
 
+  // FITUR BARU Draft POS (PERMINTAAN Owner): kasir siapkan Barber+Nama
+  // Customer LEBIH AWAL, sebelum customer-nya benar-benar siap bayar --
+  // lihat pos_draft_db.py untuk arsitektur backend lengkap. Cache array
+  // draft, TERSENDIRI dari _cachePengaturan (yang SENGAJA tidak pernah
+  // ditandai kotor, lihat catatan di atas) -- "pos_draft" didaftarkan di
+  // FLAG_HALAMAN_SEMUA (api.js) persis seperti "pos_transaksi", supaya
+  // draft yang dibuat/dihapus dari DEVICE LAIN saat tab Kasir di device
+  // ini SEDANG TIDAK terbuka tetap ter-refresh begitu tab Kasir dibuka
+  // lagi (push diam-diam HANYA sampai kalau #/pos sedang terbuka, lihat
+  // app.js) -- bukan cuma mengandalkan push real-time semata.
+  let _cacheDraftList = null; // array baris draft
+
+  // Pointer suntik-diam-diam utk seksi Draft, pola SAMA PERSIS
+  // _transaksiHariIniTampilUlang -- diisi saat seksi Draft tab Kasir
+  // dirender, direset null di renderBody() begitu pindah tab/menu.
+  let _draftTampilUlang = null;
+
+  // Dipanggil app.js begitu push "pos_draft_berubah" masuk -- `daftarBaru`
+  // SELALU full list draft terbaru tenant ini (lihat pos_draft_db.py::
+  // _kirim_notifikasi_push_draft_berubah()), method PUBLIC (page lain
+  // lazy-loaded, lihat page_loader.js).
+  function suntikDraftBerubah(daftarBaru) {
+    if (!daftarBaru) return;
+    _cacheDraftList = daftarBaru;
+    MugenState.tandaiHalamanBersih("pos_draft");
+    if (typeof _draftTampilUlang === "function") _draftTampilUlang();
+  }
+
   // FITUR Notifikasi Push "Transaksi POS Baru" -> suntik diam-diam REAL-
   // TIME (PERMINTAAN Owner, "kerjakan dengan teliti" -- lanjutan BUGFIX
   // "pos_transaksi" di atas, yang HANYA menjamin tab ini fetch ulang
@@ -240,6 +268,7 @@ const PagePos = (() => {
       // catatan _transaksiHariIniTampilUlang di atas (pola sama
       // pages/booking.js::_bookingSuntikBaris).
       _transaksiHariIniTampilUlang = null;
+      _draftTampilUlang = null;
       if (activeTab === "Kasir") await renderKasirTab(body);
       else await renderTransaksiHariIniTab(body);
     }
@@ -278,7 +307,21 @@ const PagePos = (() => {
   // atas) -- pindah antar fase di bawah ini TIDAK PERNAH menunggu network
   // lagi KECUALI saat benar-benar submit pembayaran (tombol "Buat
   // Transaksi"/"Payment Diterima"), pola SAMA PERSIS wizard booking publik.
-  function jalankanWizardKasir(body, pengaturan) {
+  function jalankanWizardKasir(bodyOuter, pengaturan) {
+    // FITUR BARU Draft POS: seksi "Draft" PERSISTEN di atas wizard biasa --
+    // TIDAK ikut terhapus setiap gantiFase() (yang hanya membersihkan
+    // wizardBox, bukan seluruh bodyOuter) supaya kartu draft tetap
+    // kelihatan walau kasir sedang di fase manapun dari alur checkout
+    // biasa (non-draft). `body` di-shadow ke wizardBox di bawah --
+    // SELURUH renderPilih()/renderPayment()/dst TETAP memakai
+    // `body.appendChild` apa adanya, tidak perlu disentuh satu per satu.
+    const draftBox = MugenUI.el("div", { class: "pos-draft-section" });
+    const wizardBox = MugenUI.el("div");
+    bodyOuter.appendChild(draftBox);
+    bodyOuter.appendChild(wizardBox);
+    const body = wizardBox;
+    renderDraftSection(draftBox, pengaturan);
+
     const metodeAktif = pengaturan.metode_aktif || [];
     const metodeNama = pengaturan.metode_nama || {};
     const metodeInstruksi = pengaturan.metode_instruksi || {};
@@ -481,7 +524,13 @@ const PagePos = (() => {
       MugenUI.attachNumericKeypad(inputTips, { rupiah: true });
       body.appendChild(inputTips);
 
-      const btnTambah = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "+ Tambah ke Keranjang");
+      // PERMINTAAN Owner: tombol ini jadi ikon keranjang SAJA, tanpa teks
+      // (lihat icons.js::MugenIcons.keranjang, style polos TANPA warna/fill
+      // -- konvensi SAMA PERSIS tombol Download QRIS di book_public.js).
+      const btnTambah = MugenUI.el("button", {
+        type: "button", class: "pos-tambah-keranjang-btn", style: "margin-top:12px;",
+        "aria-label": "Tambah ke Keranjang", title: "Tambah ke Keranjang",
+      }, MugenUI.el("span", { html: MugenIcons.keranjang }));
       btnTambah.addEventListener("click", () => {
         errorBox.textContent = "";
         if (!state.formBarberId) { errorBox.textContent = "Pilih Barber terlebih dahulu."; return; }
@@ -1022,6 +1071,484 @@ const PagePos = (() => {
     gantiFase();
   }
 
+  // FITUR BARU Draft POS (PERMINTAAN Owner): "Draft Baru" -- tautan teks
+  // biasa (BUKAN tombol, TANPA simbol "+", gaya SAMA PERSIS ".text-link-
+  // aksi" yang sudah dipakai "Hapus" di tab Transaksi Hari Ini) yang
+  // membuka form kecil Barber+Nama Customer. Draft yang sudah dibuat
+  // tampil sebagai kartu persisten -- diklik -> expand INLINE di tempat
+  // (Tips -> Service -> Metode Bayar -> Submit, lihat
+  // jalankanDraftPembayaran() di bawah), TANPA pindah fase/halaman sama
+  // sekali. Tersimpan di server (pos_draft_db.py) -- SAMA bagi semua
+  // kasir/device tenant ini, lihat catatan _cacheDraftList/
+  // suntikDraftBerubah() di atas untuk sinkronisasi real-time lintas
+  // device.
+  async function renderDraftSection(draftBox, pengaturan) {
+    let expandedId = null; // hanya SATU kartu boleh expand pada satu waktu
+
+    draftBox.innerHTML = "";
+    const linkDraftBaru = MugenUI.el("button", { type: "button", class: "text-link-aksi pos-draft-baru-link" }, "Draft Baru");
+    const formBox = MugenUI.el("div", { style: "display:none;" });
+    const listBox = MugenUI.el("div", { class: "pos-draft-list" });
+    draftBox.appendChild(linkDraftBaru);
+    draftBox.appendChild(formBox);
+    draftBox.appendChild(listBox);
+
+    function tutupForm() { formBox.style.display = "none"; formBox.innerHTML = ""; }
+
+    function bukaForm() {
+      formBox.innerHTML = "";
+      formBox.style.display = "";
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      let barberIdForm = null;
+      const barberOpsi = pengaturan.barbers.map((b) => ({ value: b.id, label: b.nama }));
+      const dropdownBarber = MugenUI.dropdownSelect(barberOpsi, {
+        placeholder: "-- Pilih Barber --",
+        onChange: (v) => { barberIdForm = v; },
+      });
+      const inputNama = MugenUI.el("input", { type: "text", placeholder: "Nama Customer" });
+      const btnSimpan = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Simpan Draft");
+      const btnBatalForm = MugenUI.el("button", { type: "button" }, "Batal");
+      btnSimpan.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const nama = inputNama.value.trim();
+        if (!barberIdForm) { errorBox.textContent = "Pilih Barber terlebih dahulu."; return; }
+        if (!nama) { errorBox.textContent = "Nama Customer tidak boleh kosong."; return; }
+        try {
+          const draft = await MugenUI.withButtonLoading(btnSimpan, () =>
+            MugenApi.post("/api/pos/draft", { barber_id: barberIdForm, customer_nama: nama }));
+          _cacheDraftList = _cacheDraftList || [];
+          _cacheDraftList.push(draft);
+          MugenState.tandaiHalamanBersih("pos_draft");
+          tutupForm();
+          renderList();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      btnBatalForm.addEventListener("click", tutupForm);
+      formBox.appendChild(MugenUI.el("div", { class: "card pos-draft-form", style: "margin:8px 0 12px;" }, [
+        MugenUI.el("label", {}, "Barber"),
+        dropdownBarber.el,
+        MugenUI.el("label", { style: "margin-top:8px;" }, "Nama Customer"),
+        inputNama,
+        errorBox,
+        MugenUI.el("div", { style: "margin-top:10px;display:flex;gap:8px;" }, [btnSimpan, btnBatalForm]),
+      ]));
+    }
+
+    linkDraftBaru.addEventListener("click", () => {
+      if (formBox.style.display === "none") bukaForm(); else tutupForm();
+    });
+
+    function buatKartuDraft(d) {
+      const expandSlot = MugenUI.el("div");
+      const btnBatalDraft = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Batal");
+      btnBatalDraft.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!(await MugenUI.confirmModal({ message: `Batalkan draft ${d.customer_nama}?`, danger: true }))) return;
+        try {
+          await MugenUI.withButtonLoading(btnBatalDraft, () => MugenApi.del(`/api/pos/draft/${d.id}`));
+          _cacheDraftList = (_cacheDraftList || []).filter((x) => x.id !== d.id);
+          MugenState.tandaiHalamanBersih("pos_draft");
+          if (expandedId === d.id) expandedId = null;
+          renderList();
+        } catch (e2) {
+          MugenUI.toast(e2.detail && e2.detail.detail ? e2.detail.detail : e2.message, "error");
+        }
+      });
+      const header = MugenUI.el("div", { class: "pos-draft-card-header" }, [
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { style: "font-weight:700;" }, d.nama_barber || "(barber terhapus)"),
+          MugenUI.el("div", { class: "subtitle" }, d.customer_nama),
+        ]),
+        btnBatalDraft,
+      ]);
+      header.addEventListener("click", (e) => {
+        if (e.target.closest(".text-link-aksi")) return;
+        expandedId = expandedId === d.id ? null : d.id;
+        renderList();
+      });
+      const card = MugenUI.el("div", { class: "pos-draft-card" + (expandedId === d.id ? " expanded" : "") }, [header, expandSlot]);
+      if (expandedId === d.id) {
+        jalankanDraftPembayaran(expandSlot, d, pengaturan, {
+          onBatal: () => { expandedId = null; renderList(); },
+          onSelesai: async () => {
+            try {
+              await MugenApi.del(`/api/pos/draft/${d.id}`);
+            } catch (e3) {
+              // Draft sudah terhapus/basi -- tidak fatal, transaksinya SENDIRI
+              // sudah berhasil dibuat (lihat jalankanDraftPembayaran()).
+            }
+            _cacheDraftList = (_cacheDraftList || []).filter((x) => x.id !== d.id);
+            MugenState.tandaiHalamanBersih("pos_draft");
+            expandedId = null;
+            renderList();
+          },
+        });
+      }
+      return card;
+    }
+
+    function renderList() {
+      listBox.innerHTML = "";
+      for (const d of (_cacheDraftList || [])) {
+        listBox.appendChild(buatKartuDraft(d));
+      }
+    }
+
+    // Pola SAMA PERSIS _transaksiHariIniTampilUlang -- berlaku utk KEDUA
+    // jalur (cache hit MAUPUN fetch fresh) di bawah.
+    _draftTampilUlang = renderList;
+
+    if (_cacheDraftList === null || MugenState.halamanPerluRefresh("pos_draft")) {
+      try {
+        _cacheDraftList = await MugenApi.get("/api/pos/draft");
+        MugenState.tandaiHalamanBersih("pos_draft");
+      } catch (e) {
+        _cacheDraftList = _cacheDraftList || [];
+      }
+    }
+    renderList();
+  }
+
+  // Mini-wizard INLINE (Tips -> Service -> Metode Bayar -> Submit) utk
+  // satu kartu Draft -- Barber+Nama Customer SUDAH terisi dari draft-nya
+  // (`draft.barber_id`, dikunci, TIDAK bisa diubah di sini), TIDAK ada
+  // Keranjang multi-barber/Produk sama sekali (draft SENGAJA 1 barber 1
+  // customer, lihat spesifikasi Owner). Submit memakai endpoint checkout
+  // SAMA PERSIS alur biasa (POST /api/pos/transaksi) -- fase pasca-submit
+  // (QRIS manual/Payment Gateway/Cash) SENGAJA kode TERSENDIRI (bukan
+  // reuse renderMenungguManual/renderWaitingGateway/renderBayarCash milik
+  // jalankanWizardKasir() di atas) supaya alur checkout utama yang sudah
+  // teruji TIDAK ikut tersentuh/berisiko regresi oleh perubahan ini --
+  // logikanya sengaja dijaga identik (endpoint, validasi, polling
+  // gateway, hitung kembalian cash).
+  function jalankanDraftPembayaran(container, draft, pengaturan, { onBatal, onSelesai }) {
+    const metodeAktif = pengaturan.metode_aktif || [];
+    const metodeNama = pengaturan.metode_nama || {};
+    const metodeInstruksi = pengaturan.metode_instruksi || {};
+    const state = { serviceIds: new Set(), tips: 0, metode: null, channel: null, bankCode: null, transaksi: null };
+    let fase = "isi";
+
+    function totalHarga() {
+      let total = state.tips || 0;
+      for (const sid of state.serviceIds) {
+        const s = pengaturan.services.find((x) => x.id === sid);
+        if (s) total += s.harga;
+      }
+      return total;
+    }
+
+    function gantiFase() {
+      container.innerHTML = "";
+      if (fase === "menunggu_manual") renderMenungguManual();
+      else if (fase === "waiting") renderWaitingGateway();
+      else if (fase === "bayar_cash") renderBayarCash();
+      else renderIsi();
+    }
+
+    function renderIsi() {
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+
+      container.appendChild(MugenUI.el("label", {}, "Service"));
+      const serviceGrid = MugenUI.el("div", { class: "pos-service-grid" });
+      for (const s of pengaturan.services) {
+        const card = MugenUI.el("button", {
+          type: "button", class: "pos-service-card" + (state.serviceIds.has(s.id) ? " selected" : ""),
+        }, [
+          MugenUI.el("div", { class: "pos-service-card-nama" }, s.nama),
+          MugenUI.el("div", { class: "pos-service-card-harga" }, MugenUI.formatRupiah(s.harga)),
+          MugenUI.el("div", { class: "pos-service-card-check" }, "✓"),
+        ]);
+        card.addEventListener("click", () => {
+          if (state.serviceIds.has(s.id)) state.serviceIds.delete(s.id); else state.serviceIds.add(s.id);
+          card.classList.toggle("selected");
+          renderTotal();
+        });
+        serviceGrid.appendChild(card);
+      }
+      container.appendChild(serviceGrid);
+      if (!pengaturan.services.length) container.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada service aktif."));
+
+      container.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Tips (opsional)"));
+      const inputTips = MugenUI.el("input", { type: "text", value: MugenUI.nilaiTampilAngka(state.tips), style: "max-width:160px;" });
+      inputTips.addEventListener("input", () => {
+        state.tips = Math.max(0, MugenUI.parseAngka(inputTips.value));
+        renderTotal();
+      });
+      MugenUI.attachNumericKeypad(inputTips, { rupiah: true });
+      container.appendChild(inputTips);
+
+      const metodeBox = MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:12px;" });
+      const bankBox = MugenUI.el("div", { class: "bank-grid" });
+
+      function renderBankBox() {
+        bankBox.innerHTML = "";
+        if (state.metode !== "gateway" || state.channel !== "va") return;
+        const bankAktif = pengaturan.snap_va_bank_aktif || {};
+        const kodeList = Object.keys(bankAktif);
+        for (const kode of kodeList) {
+          const card = MugenUI.el("button", {
+            type: "button", class: "bank-card" + (state.bankCode === kode ? " selected" : ""),
+          }, [MugenUI.bankLogoBadge(kode), MugenUI.el("span", {}, MugenUI.bankNamaLengkap(kode, bankAktif[kode]))]);
+          card.addEventListener("click", () => {
+            state.bankCode = kode;
+            for (const el of bankBox.children) el.classList.remove("selected");
+            card.classList.add("selected");
+          });
+          bankBox.appendChild(card);
+        }
+        if (kodeList.length === 1) state.bankCode = kodeList[0];
+      }
+
+      const opsi = [];
+      for (const m of metodeAktif) {
+        if (m === "gateway") {
+          for (const c of (pengaturan.snap_channel_aktif || [])) {
+            opsi.push({ metode: "gateway", channel: c, label: c === "va" ? "Virtual Account" : "QRIS" });
+          }
+        } else {
+          opsi.push({ metode: m, channel: null, label: metodeNama[m] || m });
+        }
+      }
+      container.appendChild(MugenUI.el("label", { style: "margin-top:12px;" }, "Metode Bayar"));
+      const satuOpsi = opsi.length === 1;
+      if (!opsi.length) {
+        container.appendChild(MugenUI.el("div", { class: "subtitle" }, "Belum ada metode pembayaran aktif."));
+      } else if (satuOpsi) {
+        state.metode = opsi[0].metode; state.channel = opsi[0].channel;
+        metodeBox.appendChild(MugenUI.el("div", { class: "subtitle" }, `Metode pembayaran: ${opsi[0].label}`));
+        renderBankBox();
+      } else {
+        for (const o of opsi) {
+          const dipilih = state.metode === o.metode && state.channel === o.channel;
+          const btn = MugenUI.el("button", {
+            type: "button", class: "book-metode-btn" + (dipilih ? " selected" : ""),
+          }, o.label);
+          btn.addEventListener("click", () => {
+            state.metode = o.metode; state.channel = o.channel; state.bankCode = null;
+            for (const el of metodeBox.children) el.classList.remove("selected");
+            btn.classList.add("selected");
+            renderBankBox();
+          });
+          metodeBox.appendChild(btn);
+        }
+      }
+      container.appendChild(metodeBox);
+      container.appendChild(bankBox);
+
+      const totalBox = MugenUI.el("div", { class: "card", style: "margin-top:12px;" });
+      container.appendChild(totalBox);
+      function renderTotal() {
+        totalBox.innerHTML = "";
+        totalBox.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:space-between;font-weight:700;" }, [
+          MugenUI.el("span", {}, "Total Payment"), MugenUI.el("span", {}, MugenUI.formatRupiah(totalHarga())),
+        ]));
+      }
+      renderTotal();
+
+      container.appendChild(errorBox);
+
+      const btnTutup = MugenUI.el("button", { type: "button" }, "Tutup");
+      btnTutup.addEventListener("click", () => onBatal());
+
+      const btnBuat = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
+        "Buat Transaksi");
+      btnBuat.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        if (!state.serviceIds.size) { errorBox.textContent = "Pilih minimal satu Service terlebih dahulu."; return; }
+        if (!state.metode) { errorBox.textContent = "Pilih metode pembayaran terlebih dahulu."; return; }
+        if (state.metode === "gateway" && !state.channel) { errorBox.textContent = "Pilih VA/QRIS terlebih dahulu."; return; }
+        if (state.metode === "gateway" && state.channel === "va" && !state.bankCode) {
+          errorBox.textContent = "Pilih bank terlebih dahulu."; return;
+        }
+        try {
+          const payload = {
+            jasa_items: [{ barber_id: draft.barber_id, service_ids: Array.from(state.serviceIds), tips: state.tips || 0 }],
+            produk_items: [],
+            metode_pembayaran: state.metode,
+            channel: state.metode === "gateway" ? state.channel : undefined,
+            bank_code: state.metode === "gateway" && state.channel === "va" ? state.bankCode : undefined,
+          };
+          const hasil = await MugenUI.withButtonLoading(btnBuat, () => MugenApi.post("/api/pos/transaksi", payload));
+          state.transaksi = hasil;
+          fase = state.metode === "gateway" ? "waiting" : (state.metode === "cash" ? "bayar_cash" : "menunggu_manual");
+          gantiFase();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      container.appendChild(MugenUI.el("div", { style: "display:flex;gap:8px;margin-top:12px;" }, [btnBuat, btnTutup]));
+    }
+
+    function renderMenungguManual() {
+      container.appendChild(MugenUI.el("h3", {}, "Menunggu Pembayaran (QRIS)"));
+      const items = [];
+      if (pengaturan.qris_url) {
+        items.push(MugenUI.el("img", { src: MUGEN_API_BASE + pengaturan.qris_url, class: "book-qris-img", alt: "QRIS" }));
+      } else {
+        items.push(MugenUI.el("div", { class: "subtitle" }, "Foto QRIS belum diunggah Superadmin."));
+      }
+      items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, metodeInstruksi.qris || ""));
+      container.appendChild(MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("div", { style: "text-align:center;" }, items),
+      ]));
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      container.appendChild(errorBox);
+      const btnTerima = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
+        "Payment Diterima");
+      btnTerima.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnTerima, () => MugenApi.post(`/api/pos/transaksi/${state.transaksi.id}/verifikasi`));
+          _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
+          MugenUI.toast("Pembayaran dikonfirmasi.", "success", { force: true });
+          onSelesai();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      container.appendChild(btnTerima);
+    }
+
+    function renderWaitingGateway() {
+      const r = state.transaksi;
+      container.appendChild(MugenUI.el("h3", {}, "Menunggu Konfirmasi Pembayaran"));
+      const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran memakai info di bawah.");
+      const items = [];
+      if (r.channel === "va" || state.channel === "va") {
+        items.push(MugenUI.el("div", { class: "subtitle" },
+          r.channel_code ? `Virtual Account ${MugenUI.bankNamaLengkap(r.channel_code, null)}` : "Virtual Account"));
+        items.push(MugenUI.el("div", { style: "font-size:20px;font-weight:700;letter-spacing:1px;text-align:center;margin-top:4px;" },
+          r.va_number || "-"));
+      } else if (r.qr_url) {
+        items.push(MugenUI.el("img", { src: r.qr_url, class: "book-qris-img", alt: "QRIS" }));
+      } else if (r.qr_content) {
+        const btnBuka = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Buka Halaman QRIS");
+        btnBuka.addEventListener("click", () => window.open(r.qr_content, "_blank"));
+        items.push(btnBuka);
+      }
+      const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+      const btnBatalkanTx = MugenUI.el("button", { type: "button", style: "margin-top:12px;margin-left:8px;" }, "Batalkan");
+      container.appendChild(MugenUI.el("div", { class: "card" }, [
+        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, MugenUI.el("div", {}, [btnSudahBayar, btnBatalkanTx])]),
+        MugenUI.el("hr"),
+        MugenUI.el("div", { style: "text-align:center;" }, items),
+      ]));
+
+      function terapkanStatus(status) {
+        if (status.status === "PAID") {
+          clearInterval(pollTimer);
+          _suntikTransaksiBaru(r);
+          suntikKeRekap(status.rekap_transaksi_ids);
+          MugenUI.toast("Pembayaran berhasil.", "success", { force: true });
+          onSelesai();
+          return true;
+        }
+        if (["FAILED", "CANCELLED", "EXPIRED"].includes(status.status)) {
+          clearInterval(pollTimer);
+          MugenUI.toast("Pembayaran gagal/dibatalkan.", "error", { force: true });
+          fase = "isi"; gantiFase();
+          return true;
+        }
+        return false;
+      }
+
+      const pollTimer = setInterval(async () => {
+        if (!document.body.contains(statusLabelEl)) { clearInterval(pollTimer); return; }
+        let status;
+        try {
+          status = await MugenApi.get(`/api/pos/transaksi/${r.id}/status`);
+        } catch (e) {
+          return; // hiccup jaringan sesaat -- coba lagi di tick berikutnya
+        }
+        if (!terapkanStatus(status) && status.status === "PENDING") {
+          statusLabelEl.textContent = "Pembayaran sedang diproses provider…";
+        }
+      }, 3000);
+
+      btnSudahBayar.addEventListener("click", async () => {
+        if (!document.body.contains(statusLabelEl)) return;
+        try {
+          const status = await MugenUI.withButtonLoading(btnSudahBayar,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/cek-ulang`));
+          if (!terapkanStatus(status)) {
+            statusLabelEl.textContent = "Pembayaran belum terdeteksi -- coba lagi setelah selesai bayar.";
+          }
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+
+      btnBatalkanTx.addEventListener("click", async () => {
+        if (!document.body.contains(statusLabelEl)) return;
+        if (!(await MugenUI.confirmModal({ message: "Batalkan transaksi ini? Kalau customer terlanjur membayar, pembayaran TETAP akan terdeteksi lunas, TIDAK akan ikut terbatalkan.", danger: true }))) return;
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnBatalkanTx,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/batalkan`));
+          clearInterval(pollTimer);
+          if (hasil.status === "lunas") {
+            MugenUI.toast("Pembayaran ternyata sudah diterima -- transaksi TIDAK dibatalkan.", "error", { force: true });
+            state.transaksi = hasil;
+            _suntikTransaksiBaru(hasil);
+            suntikKeRekap(hasil.rekap_transaksi_ids);
+            onSelesai();
+            return;
+          }
+          MugenUI.toast("Transaksi dibatalkan.", "success", { force: true });
+          state.transaksi = null; state.metode = null; state.channel = null; state.bankCode = null;
+          fase = "isi"; gantiFase();
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+        }
+      });
+    }
+
+    function renderBayarCash() {
+      const r = state.transaksi;
+      container.appendChild(MugenUI.el("h3", {}, "Pembayaran Cash"));
+      container.appendChild(MugenUI.el("label", { style: "margin-top:8px;" }, "Uang Diterima"));
+      const inputUang = MugenUI.el("input", { type: "text", style: "width:100%;font-size:18px;" });
+      MugenUI.attachNumericKeypad(inputUang, { rupiah: true });
+      container.appendChild(inputUang);
+      const kembalianBox = MugenUI.el("div", { style: "margin-top:8px;font-weight:700;" });
+      container.appendChild(kembalianBox);
+      function renderKembalian() {
+        const diterima = MugenUI.parseAngka(inputUang.value);
+        const sisa = diterima - totalHarga();
+        kembalianBox.className = sisa >= 0 ? "subtitle" : "login-error";
+        kembalianBox.textContent = sisa >= 0
+          ? `Kembalian: ${MugenUI.formatRupiah(sisa)}`
+          : `Kurang ${MugenUI.formatRupiah(-sisa)}`;
+      }
+      inputUang.addEventListener("input", renderKembalian);
+      renderKembalian();
+      const errorBox = MugenUI.el("div", { class: "login-error" });
+      container.appendChild(errorBox);
+      const btnSelesai = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:12px;" },
+        "Selesaikan Transaksi");
+      btnSelesai.addEventListener("click", async () => {
+        errorBox.textContent = "";
+        const diterima = MugenUI.parseAngka(inputUang.value);
+        if (diterima < totalHarga()) { errorBox.textContent = "Uang diterima kurang dari total pembayaran."; return; }
+        try {
+          const hasil = await MugenUI.withButtonLoading(btnSelesai,
+            () => MugenApi.post(`/api/pos/transaksi/${r.id}/bayar-cash`, { uang_diterima: diterima }));
+          _suntikTransaksiBaru(hasil);
+          suntikKeRekap(hasil.rekap_transaksi_ids);
+          MugenUI.toast("Pembayaran Cash diterima.", "success", { force: true });
+          onSelesai();
+        } catch (e) {
+          errorBox.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
+        }
+      });
+      container.appendChild(btnSelesai);
+    }
+
+    gantiFase();
+  }
+
   // ================= TAB: TRANSAKSI HARI INI =================
   // Gabungan booking online (sudah terverifikasi/lunas) + transaksi Kasir
   // (lunas) hari ini -- field ringkas saja (nama barber/service/produk,
@@ -1242,7 +1769,7 @@ const PagePos = (() => {
     await muatUlangPaksa();
   }
 
-  return { render, suntikBookingLunas, hapusBookingDariPos, suntikTransaksiLunas };
+  return { render, suntikBookingLunas, hapusBookingDariPos, suntikTransaksiLunas, suntikDraftBerubah };
 })();
 
 window.PagePos = PagePos;

@@ -1791,6 +1791,21 @@ CREATE TABLE IF NOT EXISTS wa_otp_reset (
     used_at          TEXT,
     created_at       TEXT NOT NULL
 );
+
+-- FITUR BARU Draft POS (pos_draft_db.py) -- Kasir siapkan Barber+Nama
+-- Customer lebih awal, SEBELUM customer-nya benar-benar siap bayar.
+-- SAMA seperti wa_otp_reset di atas, tabel baru WAJIB didaftarkan di SINI
+-- JUGA (jalur Postgres TIDAK memanggil pos_draft_db.init_pos_draft_db(),
+-- SEPENUHNYA digantikan create_all() ini). Tidak ada kolom status --
+-- draft cuma 2 keadaan: ADA (baris ini) atau TIDAK ADA (baris dihapus).
+CREATE TABLE IF NOT EXISTS pos_draft (
+    id             SERIAL PRIMARY KEY,
+    tenant_id      INTEGER NOT NULL,
+    barber_id      INTEGER NOT NULL,
+    customer_nama  TEXT NOT NULL,
+    dibuat_oleh    TEXT,
+    created_at     TEXT NOT NULL
+);
 """
 
 
