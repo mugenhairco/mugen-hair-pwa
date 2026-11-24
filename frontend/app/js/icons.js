@@ -111,6 +111,15 @@ const MugenIcons = (() => {
     xCircle: `<svg ${S}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
     alertTriangle: `<svg ${S}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
     infoCircle: `<svg ${S}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+
+    // PERMINTAAN Owner ("Penyesuaian Animasi Sidebar Rivoir" -- desain
+    // tombol hamburger): 3 garis rata kiri, baris PALING BAWAH sengaja
+    // lebih pendek (bukan baris tengah) -- proporsi persis diukur dari
+    // screenshot referensi Owner (garis atas & tengah sama panjang, garis
+    // bawah ~45% panjangnya) -- HANYA bentuk ikon ini yang mengadopsi
+    // referensi Claude AI (bukan desain/tampilan sidebar lainnya, lihat
+    // router.js::shell()/style.css .hamburger).
+    menuTrigger: `<svg ${S}><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h7"/></svg>`,
   };
 })();
 

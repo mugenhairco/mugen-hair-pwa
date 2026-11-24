@@ -651,13 +651,39 @@ const PagePos = (() => {
       const modalOverlayProduk = MugenUI.el("div", { class: "pos-produk-modal-overlay" }, [modalBoxProduk]);
       document.body.appendChild(modalOverlayProduk);
 
+      // PERMINTAAN Owner (Animasi Morphing Form): modal ini box/overlay-nya
+      // PERSISTEN (dibuat sekali per renderPilih(), dibuka/ditutup berkali-
+      // kali lewat toggle class .open -- BUKAN instance baru tiap panggil
+      // seperti confirmModal/infoModal) -- pakai morphDariTombol() SEKALI,
+      // lalu panggil buka()/tutup() berkali-kali. Style inline yang
+      // dipasang buka()/tutup() otomatis menang atas CSS transform/
+      // transition `.pos-produk-modal`/`.open` di bawah (style inline pada
+      // elemen selalu menang atas rule stylesheet apa pun utk elemen yang
+      // sama) -- jadi tidak perlu CSS tambahan apa pun di sini. Kalau null
+      // (prefers-reduced-motion / tombol pemicu tidak wajar), fallback diam
+      // -diam ke animasi scale+slide class-toggle yang SUDAH ADA (tidak
+      // berubah dari sebelumnya).
+      // BUGFIX (ketemu lewat Playwright mid-transition sampling -- rect box
+      // ternyata cuma ikut CSS scale(0.97) lama, FLIP tidak pernah jalan):
+      // morphDariTombol() mensyaratkan asalEl.isConnected, TAPI baris ini
+      // berjalan SEBELUM triggerProduk di-append ke DOM (lihat
+      // `body.appendChild(triggerProduk)` jauh di bawah) -- dipanggil di
+      // sini, asalEl.isConnected selalu false, morphDariTombol() selalu
+      // balas null diam-diam. Inisialisasi LAZY di buka() pertama kali
+      // (saat itu sudah pasti attached -- dipicu dari klik tombolnya
+      // sendiri) supaya pengukuran rect valid.
+      let morphProduk;
+
       function bukaModalProduk() {
         modalOverlayProduk.classList.add("open");
         searchProdukInput.value = "";
         renderDaftarProdukDropdown("");
+        if (morphProduk === undefined) morphProduk = MugenUI.morphDariTombol(modalBoxProduk, triggerProduk);
+        if (morphProduk) morphProduk.buka();
       }
       function tutupModalProduk() {
         modalOverlayProduk.classList.remove("open");
+        if (morphProduk) morphProduk.tutup();
       }
       triggerProduk.addEventListener("click", bukaModalProduk);
       btnTutupModalProduk.addEventListener("click", tutupModalProduk);
@@ -1084,6 +1110,12 @@ const PagePos = (() => {
   // device.
   async function renderDraftSection(draftBox, pengaturan) {
     let expandedId = null; // hanya SATU kartu boleh expand pada satu waktu
+    // Dipakai renderList() membedakan "baru saja expand" (morph HARUS
+    // diputar) vs "render ulang sementara kartu ybs memang sudah terbuka"
+    // (mis. refresh list dari push notif draft berubah di perangkat lain)
+    // -- kalau tidak dibedakan, morph accordion akan terputar ULANG setiap
+    // kali list di-refresh walau user tidak mengklik apa pun.
+    let expandedIdSebelumnya = null;
     // BUGFIX (dilaporkan Owner: "jika user telah memilih service dan menutup
     // draf nya, pastikan service yg dipilih tidak hilang"): renderList() di
     // bawah membangun ULANG SELURUH kartu (termasuk instance
@@ -1152,6 +1184,45 @@ const PagePos = (() => {
       if (formBox.style.display === "none") bukaForm(); else tutupForm();
     });
 
+    // REVISI UI/UX Premium (PERMINTAAN Owner -- "Animasi Morphing Form",
+    // form Draft POS): accordion morph -- slot tumbuh dari max-height:0
+    // menuju tinggi asli kontennya (diukur scrollHeight, SETELAH slot
+    // ter-attach ke DOM -- makanya dipanggil lewat requestAnimationFrame
+    // dari buatKartuDraft(), bukan sebelum di-append), dibarengi fade+
+    // slide (konsisten dgn morph lain di app ini). max-height dikunci
+    // balik ke "none" setelah transisi usai supaya perubahan konten
+    // berikutnya (ganti fase Tips->Service->Metode Bayar) TIDAK ikut
+    // kepotong/clip oleh nilai max-height lama yang sudah basi.
+    function _animasiAccordionMasuk(slot) {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const tinggi = slot.scrollHeight;
+      if (!tinggi) return;
+      slot.style.overflow = "hidden";
+      slot.style.transition = "none";
+      slot.style.maxHeight = "0px";
+      slot.style.opacity = "0";
+      slot.style.transform = "translateY(8px)";
+      void slot.offsetHeight; // paksa reflow -- state AWAL harus ter-apply dulu sebelum transisi dipasang di bawah (rAF)
+      requestAnimationFrame(() => {
+        slot.style.transition = "max-height 300ms var(--ease-standard), opacity 300ms var(--ease-standard), transform 300ms var(--ease-standard)";
+        slot.style.maxHeight = tinggi + "px";
+        slot.style.opacity = "1";
+        slot.style.transform = "translateY(0)";
+      });
+      let selesai = false;
+      const beres = (e) => {
+        if (e.target !== slot || e.propertyName !== "max-height") return;
+        if (selesai) return;
+        selesai = true;
+        slot.removeEventListener("transitionend", beres);
+        slot.style.maxHeight = "none";
+        slot.style.overflow = "";
+        slot.style.transition = "";
+      };
+      slot.addEventListener("transitionend", beres);
+      setTimeout(beres, 360); // jaring pengaman kalau transitionend tidak terpicu
+    }
+
     function buatKartuDraft(d) {
       const expandSlot = MugenUI.el("div");
       const btnBatalDraft = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Batal");
@@ -1183,6 +1254,9 @@ const PagePos = (() => {
       });
       const card = MugenUI.el("div", { class: "pos-draft-card" + (expandedId === d.id ? " expanded" : "") }, [header, expandSlot]);
       if (expandedId === d.id) {
+        if (expandedId !== expandedIdSebelumnya) {
+          requestAnimationFrame(() => _animasiAccordionMasuk(expandSlot));
+        }
         jalankanDraftPembayaran(expandSlot, d, pengaturan, {
           persisted: _draftState[d.id] || (_draftState[d.id] = {}),
           onBatal: () => { expandedId = null; renderList(); },
@@ -1209,6 +1283,7 @@ const PagePos = (() => {
       for (const d of (_cacheDraftList || [])) {
         listBox.appendChild(buatKartuDraft(d));
       }
+      expandedIdSebelumnya = expandedId; // dibaca buatKartuDraft() di ATAS (closure) -- diupdate SETELAH loop supaya seluruh kartu dalam render ini konsisten dibandingkan dgn nilai SEBELUM render ini mulai
     }
 
     // Pola SAMA PERSIS _transaksiHariIniTampilUlang -- berlaku utk KEDUA
