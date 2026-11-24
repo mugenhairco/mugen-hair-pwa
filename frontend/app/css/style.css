@@ -62,6 +62,14 @@
   --dur-slow: 320ms;   /* entrance: modal, konten halaman, sidebar collapse */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1); /* entrance/exit, sedikit lebih tegas */
+  /* Lebar panel .sidebar (dipakai DUA tempat: .sidebar{width:} di bawah
+     DAN animasi "push" konten utama saat sidebar dibuka di HP, lihat
+     ".content.scroll-terkunci" di breakpoint mobile) -- SATU variabel
+     supaya kedua tempat itu TIDAK BISA diam-diam berbeda nilai (lihat
+     catatan panjang soal bug "kolom sticky header drift" di tempat lain
+     file ini -- literal angka yang sama diduplikasi di 2 tempat adalah
+     pola yang sudah pernah terbukti berisiko). */
+  --sidebar-w: 220px;
 }
 
 /* REVISI UI/UX: Dark Mode per akun (lihat frontend/js/theme.js) -- attribute
@@ -213,7 +221,7 @@ a:hover { color: var(--accent-secondary); }
 }
 
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-w);
   flex-shrink: 0;
   height: 100%;
   background: var(--bg-sidebar);
@@ -1644,6 +1652,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     padding: 16px;
     padding-top: 64px;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    /* PERMINTAAN Owner (klarifikasi screenshot referensi "sidebar Claude
+       AI"): bukan cuma diredupkan (dim overlay) di tempat -- konten utama
+       HARUS ikut tergeser ke kanan ("push"), sinkron & dengan easing yang
+       SAMA PERSIS seperti .sidebar (lihat ".sidebar.open ~ .hamburger" di
+       atas utk transition .sidebar). Struktur/isi konten TIDAK berubah
+       sama sekali, cuma posisinya yang sementara bergeser selama sidebar
+       terbuka -- .app-shell punya overflow:hidden (lihat definisinya) jadi
+       bagian yang tergeser keluar layar otomatis terklip rapi, tanpa
+       memicu scroll horizontal (html/body sendiri juga overflow-x:hidden). */
+    transform: translateX(0);
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .sidebar-backdrop {
     display: block;
@@ -1656,15 +1675,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   /* PERMINTAAN Owner: scroll halaman di BELAKANG sidebar (area .content)
      dikunci selama sidebar terbuka di HP -- router.js::shell() menambah
      class ini ke .content tepat saat sidebar dibuka/ditutup (lihat
-     closeSidebar()/listener hamburger di sana). */
-  .content.scroll-terkunci { overflow: hidden; }
+     closeSidebar()/listener hamburger di sana). SATU class yang sama ini
+     JUGA dipakai utk animasi "push" konten (translateX, lihat ".content"
+     di atas) -- keduanya SELALU ditoggle berbarengan di router.js (baris
+     yang sama), jadi aman digabung tanpa perlu class/listener terpisah. */
+  .content.scroll-terkunci { overflow: hidden; transform: translateX(var(--sidebar-w)); }
 }
 
 /* Owner/perangkat yang minta gerakan minimal (prefers-reduced-motion) --
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
