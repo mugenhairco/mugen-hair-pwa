@@ -59,6 +59,14 @@ const MugenRouter = (() => {
   }
 
   function _pulihkanScroll(hash, content) {
+    // PERMINTAAN Owner (bar judul "nama menu" tetap di atas): dipanggil
+    // TANPA SYARAT di sini (SEBELUM guard scroll di bawah) -- ini SATU
+    // titik yang sudah dipanggil SEMUA cabang render di handle() (lihat
+    // _sinkronTopbar() untuk alasan lengkap), guard scroll di bawah HANYA
+    // berlaku utk pemulihan posisi scroll, BUKAN utk sinkronisasi judul
+    // (kalau ikut di-guard, kunjungan PERTAMA ke suatu halaman -- belum
+    // ada posisi scroll tersimpan -- bar judulnya akan kosong selamanya).
+    _sinkronTopbar(content);
     const posisi = _scrollPos.get(hash);
     if (!posisi) return;
     // requestAnimationFrame: beri browser satu frame untuk selesai layout
@@ -170,24 +178,91 @@ const MugenRouter = (() => {
     _squircleResizeTimer = setTimeout(_terapkanSquircleKonten, 150);
   });
 
+  // PERMINTAAN Owner (bar judul "nama menu" tetap di atas, tidak ikut
+  // scroll -- berlaku di HP MAUPUN tablet/desktop, lihat shell()): di
+  // breakpoint mobile, #content SELALU full-width (sidebar di sana adalah
+  // overlay/drawer, BUKAN berbagi ruang) -- posisi bar SEPENUHNYA diatur
+  // CSS (".page-topbar", fixed, lihat style.css), jadi fungsi ini sengaja
+  // tidak melakukan apa pun (early return) supaya tidak menimpa nilai
+  // inline yang sebelumnya sempat diset dari sesi tablet/desktop (mis.
+  // kalau window di-resize lintas breakpoint). Di tablet/desktop, #content
+  // BERBAGI ruang dengan .sidebar (flex row, lihat ".app-shell") yang
+  // lebarnya bisa berubah (collapse/expand, resize jendela) -- kotak bar
+  // ini di-samakan PERSIS dengan kotak #content saat itu (left+width),
+  // dibaca langsung dari layout sungguhan (bukan dihitung ulang dari
+  // var(--sidebar-w)/.collapsed secara terpisah) supaya TIDAK PERNAH bisa
+  // diam-diam berbeda nilai dari #content yang sebenarnya.
+  function _posisikanTopbar(topbar, main) {
+    if (window.innerWidth <= 820) {
+      topbar.style.left = "";
+      topbar.style.width = "";
+      return;
+    }
+    const r = main.getBoundingClientRect();
+    topbar.style.left = `${r.left}px`;
+    topbar.style.width = `${r.width}px`;
+  }
+
+  // PERMINTAAN Owner (koreksi -- bar judul harus menampilkan judul ASLI
+  // tiap halaman, ikon+teks persis seperti MugenUI.pageTitle() merender-
+  // nya, TERMASUK variasi per-role seperti "Dashboard Owner"/"Dashboard
+  // Admin"/"Dashboard Saya" -- BUKAN label generik dari daftar menu
+  // sidebar): dipanggil SETIAP render() halaman selesai (lihat
+  // _pulihkanScroll() di bawah, SATU titik yang sudah dipanggil oleh
+  // SEMUA cabang render di handle() -- superadmin/sales/upgrade-paket/
+  // menu biasa) -- menyalin innerHTML <h1> PERTAMA di dalam #content
+  // (SELALU ada persis satu per halaman, konvensi MugenUI.pageTitle()/
+  // el("h1", ...) yang sudah dipakai SEMUA halaman) ke bar judul.
+  // <h1> ASLI-nya sendiri disembunyikan dari alur konten yang scroll
+  // (lihat ".content h1 { display:none; }" di style.css) -- isinya TETAP
+  // dibaca dari situ (display:none tidak menghapus elemen dari DOM, cuma
+  // tidak dirender), jadi SATU sumber kebenaran, tidak ada duplikasi teks
+  // yang bisa diam-diam berbeda.
+  function _sinkronTopbar(content) {
+    const judul = document.querySelector(".page-topbar-title");
+    if (!judul) return;
+    const h1 = content.querySelector("h1");
+    judul.innerHTML = h1 ? h1.innerHTML : "";
+    // BUGFIX: beberapa halaman (lihat rekap.js -- ikon judul "Rekap"
+    // dipakai SEKALIGUS sebagai tombol tersembunyi "Tambah Transaksi",
+    // class ".page-title-icon--clickable") memasang event listener
+    // LANGSUNG ke elemen ikon di dalam <h1> ASLI -- innerHTML di atas
+    // cuma MENYALIN MARKUP (tidak pernah ikut menyalin listener JS apa
+    // pun), jadi ikon salinan di bar ini akan tampak bisa diklik (ikut
+    // ter-style ".page-title-icon--clickable") tapi sama sekali tidak
+    // berfungsi tanpa baris ini. Solusi: teruskan klik/keydown ikon
+    // SALINAN ke ikon ASLI lewat `.click()` -- dipanggil programatis
+    // begini TETAP memicu listener "click" aslinya walau elemen asli
+    // sendiri display:none (DOM click() tidak bergantung visibility).
+    const ikonAsli = h1 ? h1.querySelector(".page-title-icon--clickable") : null;
+    const ikonSalinan = judul.querySelector(".page-title-icon--clickable");
+    if (ikonAsli && ikonSalinan) {
+      ikonSalinan.onclick = () => ikonAsli.click();
+      ikonSalinan.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ikonAsli.click(); }
+      };
+    }
+  }
+
   function shell() {
     appRoot.innerHTML = "";
     const wrap = MugenUI.el("div", { class: "app-shell" });
     const sidebar = MugenNav.render(location.hash || "#/dashboard");
     const backdrop = MugenUI.el("div", { class: "sidebar-backdrop" });
     const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button", html: MugenIcons.menuTrigger });
-    // PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
-    // bawah Dynamic Island saat konten di-scroll): bar JUDUL TERPISAH dari
-    // judul yang sudah ada di tiap halaman (MugenUI.pageTitle(), itu TETAP
-    // ikut scroll bersama konten seperti biasa, TIDAK disentuh sama
-    // sekali) -- bar ini posisinya fixed (lihat ".mobile-topbar" di
-    // style.css, HANYA aktif di breakpoint mobile, sama seperti
-    // .hamburger), jadi SELALU kelihatan tepat di bawah safe-area-inset-top
-    // apa pun posisi scroll halaman. shell() dipanggil ULANG setiap pindah
-    // menu (lihat catatan di atas), jadi label-nya cukup dihitung SEKALI
-    // di sini dari hash saat ini -- tidak perlu listener terpisah.
-    const topbar = MugenUI.el("div", { class: "mobile-topbar" },
-      MugenUI.el("span", { class: "mobile-topbar-title" }, MugenNav.cariLabelUntukHash(location.hash || "#/dashboard") || ""));
+    // PERMINTAAN Owner ("nama menu tetap di atas saat di-scroll", berlaku
+    // di HP MAUPUN tablet/desktop): bar judul TERPISAH dari <h1> asli tiap
+    // halaman (MugenUI.pageTitle(), lihat style.css ".content h1" --
+    // sekarang disembunyikan dari alur konten yang scroll, ISINYA disalin
+    // ke bar ini lewat _sinkronTopbar() SETIAP SELESAI render halaman,
+    // lihat _pulihkanScroll() di bawah) -- supaya teks+ikon bar ini SELALU
+    // identik dengan judul asli tiap halaman (termasuk variasi per-role,
+    // mis. "Dashboard Owner"/"Dashboard Admin"/"Dashboard Saya"), bukan
+    // tebakan generik dari daftar menu sidebar. `.page-topbar-title`
+    // kosong dulu di sini -- baru terisi begitu render() halaman pertama
+    // selesai (lihat _sinkronTopbar()).
+    const topbar = MugenUI.el("div", { class: "page-topbar" },
+      MugenUI.el("span", { class: "page-topbar-title" }));
     const main = MugenUI.el("main", { class: "content", id: "content" });
 
     // PERMINTAAN Owner: cegah scroll halaman di belakang sidebar (area
@@ -221,6 +296,19 @@ const MugenRouter = (() => {
     // ukuran layout (clientWidth/clientHeight) sebelum dihitung, elemennya
     // baru saja di-append sinkron di atas.
     requestAnimationFrame(_terapkanSquircleKonten);
+    // PERMINTAAN Owner ("nama menu tetap di posisi yang sama juga di
+    // tablet/desktop"): di layar itu #content TIDAK full-width (sidebar
+    // sungguhan ambil ruang di kirinya, bisa diciutkan/collapsed lewat
+    // tombol di nav.js, lihat ".sidebar.collapsed" -- 220px vs 72px) --
+    // ResizeObserver di #content OTOMATIS mendeteksi SETIAP perubahan
+    // lebar/posisi kotaknya (termasuk akibat collapse sidebar ATAU resize
+    // jendela) tanpa perlu router.js tahu/dengar event tombol collapse
+    // nav.js sama sekali -- satu mekanisme berlaku utk SEMUA penyebab
+    // perubahan ukuran. Di breakpoint mobile, _posisikanTopbar() sengaja
+    // TIDAK melakukan apa pun (lihat isinya) -- posisi bar di sana
+    // SEPENUHNYA diatur CSS (fixed, lihat ".page-topbar" di style.css).
+    new ResizeObserver(() => _posisikanTopbar(topbar, main)).observe(main);
+    _posisikanTopbar(topbar, main);
     // FONDASI Multi-Tenant Phase 2.2: applyToDom() SAJA (dari cache), BUKAN
     // refresh() -- shell() dipanggil di SETIAP pindah halaman/menu, dan
     // spesifikasi Phase 2.2 eksplisit melarang request branding berulang

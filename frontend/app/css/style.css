@@ -7,6 +7,14 @@
    sudah dipakai sejak awal justru mempermudah revisi total ini). */
 :root {
   --bg: #F5F7FA;
+  /* PERMINTAAN Owner (bar judul "nama menu" -- efek blur/kaca-buram saat
+     konten lewat di belakangnya, lihat ".page-topbar"): color-mix() SUDAH
+     dipakai di file ini (lihat ":root[data-theme='dark'] .icon-chip--accent"
+     di bawah), jadi aman dipakai lagi di sini -- token ini OTOMATIS ikut
+     --bg (terang/gelap sesuai tema akun) TANPA perlu didefinisikan ulang
+     terpisah di :root[data-theme="dark"], beda dari token warna literal
+     lain di file ini yang memang harus ditulis ulang manual per tema. */
+  --bg-translucent: color-mix(in srgb, var(--bg) 72%, transparent);
   --bg-card: #FFFFFF;
   --bg-sidebar: #FFFFFF;
   --bg-input: #F8FAFC;
@@ -157,13 +165,26 @@ body {
    baliknya -- gaya status bar "translucent" khas native iOS -- sekaligus
    menjamin ikon sistem tetap kebaca di kedua tema. z-index SENGAJA paling
    tinggi di seluruh file (di atas modal/toast mana pun) -- status bar
-   sungguhan juga selalu di lapisan paling atas tanpa terkecuali. */
+   sungguhan juga selalu di lapisan paling atas tanpa terkecuali.
+   PERMINTAAN Owner (lanjutan -- efek blur/kaca-buram): backdrop-filter
+   ditambah DI SINI juga (bukan cuma ".page-topbar") supaya strip status
+   bar ini & bar judul "nama menu" di bawahnya terasa SATU panel kaca
+   buram yang menyatu dari ujung atas layar, bukan dua gaya beda (satu
+   blur satu tidak). Warna TETAP gelap literal (BUKAN var(--bg-translucent)
+   yang ikut tema) -- alasan SAMA seperti sebelumnya, ikon sistem SELALU
+   putih jadi butuh latar gelap tetap di KEDUA tema. Strip ini SENGAJA
+   TIDAK ikut geser saat sidebar dibuka (beda dari ".page-topbar" di
+   bawah) -- statusnya murni "lapisan sistem" (status bar sungguhan juga
+   tidak pernah sadar app di bawahnya sedang buka drawer apa pun), span
+   penuh lebar layar apa pun kondisi sidebar. */
 body::before {
   content: "";
   position: fixed;
   top: 0; left: 0; right: 0;
   height: env(safe-area-inset-top);
   background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   z-index: 999999;
   pointer-events: none;
 }
@@ -529,6 +550,14 @@ a:hover { color: var(--accent-secondary); }
   flex: 1;
   height: 100%;
   padding: 28px;
+  /* PERMINTAAN Owner (bar judul "nama menu" tetap di atas, berlaku di
+     tablet/desktop juga): ".page-topbar" (fixed, 56px tinggi, lihat
+     atas) melayang DI ATAS #content tanpa mendorong layout apa pun --
+     tanpa padding-top tambahan ini, konten ASLI (mis. baris filter Bulan/
+     Tahun Dashboard yang sekarang naik mengisi slot <h1> yang disembunyikan)
+     akan mulai TEPAT di bawah padding standar, tertutup/terblur sebagian
+     oleh bar yang melayang di atasnya. */
+  padding-top: calc(28px + 56px);
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
@@ -541,15 +570,17 @@ a:hover { color: var(--accent-secondary); }
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  /* PERMINTAAN Owner ("judul menu seharusnya ada ikonnya juga" -- setelah
-     menu dipilih di sidebar): judul halaman (lihat MugenUI.pageTitle() di
-     ui.js) sekarang bisa diawali ikon chip yang SAMA PERSIS dengan ikon
-     menu sidebar-nya (lihat nav.js::MENU) -- flex selalu diaktifkan di
-     sini (bukan cuma saat ada ikon) supaya tidak perlu selector terpisah,
-     h1 TANPA ikon (satu text node) tidak terpengaruh sama sekali. */
-  display: flex;
   align-items: center;
   gap: 10px;
+  /* PERMINTAAN Owner (bar judul "nama menu" tetap di atas, tidak ikut
+     scroll): <h1> ASLI ini (MugenUI.pageTitle(), lihat ui.js) sekarang
+     disembunyikan dari alur konten yang scroll -- isinya (ikon+teks)
+     disalin router.js::_sinkronTopbar() ke ".page-topbar-title" (fixed,
+     SELALU kelihatan) SETIAP halaman selesai dirender, jadi SATU sumber
+     kebenaran (bukan duplikat teks yang bisa diam-diam beda). display:none
+     TIDAK menghapusnya dari DOM -- _sinkronTopbar() tetap bisa membaca
+     innerHTML-nya seperti biasa, cuma tidak dirender dua kali di layar. */
+  display: none;
 }
 .page-title-icon {
   width: 34px; height: 34px; flex-shrink: 0;
@@ -578,13 +609,60 @@ a:hover { color: var(--accent-secondary); }
 }
 .hamburger svg { width: 22px; height: 22px; display: block; }
 
-/* PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
-   bawah Dynamic Island saat di-scroll): bar judul mobile TERPISAH dari
-   judul yang sudah ada di tiap halaman (MugenUI.pageTitle(), lihat
-   router.js::shell()) -- hanya aktif di breakpoint mobile (lihat aturan
-   di bawah), `display:none` di sini (dasar) supaya tidak kelihatan sama
-   sekali di desktop/tablet. */
-.mobile-topbar { display: none; }
+/* PERMINTAAN Owner ("nama menu tetap di posisi yang sama" -- berlaku di
+   HP MAUPUN tablet/desktop, BUKAN cuma mobile seperti revisi pertama):
+   bar judul TERPISAH dari <h1> asli tiap halaman (disembunyikan dari
+   alur konten yang scroll, lihat ".content h1" di atas) -- isinya
+   (ikon+teks) disalin dari situ oleh router.js::_sinkronTopbar() SETIAP
+   halaman selesai dirender, lihat catatan lengkap di sana. Aturan DASAR
+   ini berlaku SEMUA ukuran layar (posisi kotaknya -- left/width -- diatur
+   router.js::_posisikanTopbar() mengikuti lebar #content yang sebenarnya,
+   supaya otomatis sejajar walau sidebar tablet/desktop di-collapse/
+   di-expand); override breakpoint mobile di bawah HANYA menimpa posisi
+   (fixed, mengikuti hamburger) + geser saat sidebar overlay dibuka.
+   backdrop-filter (efek kaca buram/blur, PERMINTAAN Owner): konten yang
+   lewat di belakang bar ini terlihat BURAM, bukan tajam-numpuk mentah
+   (masalah sebelum revisi ini) atau hilang total di balik latar solid. */
+.page-topbar {
+  position: fixed;
+  top: 0;
+  left: 0; right: 0; /* fallback, ditimpa router.js::_posisikanTopbar()/CSS mobile di bawah */
+  z-index: 58;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  pointer-events: none;
+  background: var(--bg-translucent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.page-topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Ikon chip (.page-title-icon, lihat ".content h1" di atas) disalin APA
+   ADANYA dari <h1> asli -- ukurannya (34px, pas untuk judul besar di
+   dalam konten) sedikit mengecil di sini supaya proporsional dengan bar
+   nav yang lebih ramping (56px, bukan ukuran judul halaman penuh). */
+.page-topbar-title .page-title-icon { width: 26px; height: 26px; border-radius: 8px; }
+.page-topbar-title .page-title-icon svg { width: 15px; height: 15px; }
+/* BUGFIX: ".page-topbar" sengaja pointer-events:none (murni label, lihat
+   atas) -- tapi beberapa halaman (rekap.js) memakai ikon judul SEKALIGUS
+   sebagai tombol tersembunyi (".page-title-icon--clickable", lihat
+   router.js::_sinkronTopbar() untuk forwarding klik-nya). Elemen anak BISA
+   "membatalkan" pointer-events:none milik leluhurnya dengan auto eksplisit
+   seperti ini -- SATU-SATUNYA bagian di dalam bar ini yang tetap bisa
+   diklik, sisanya (teks judul, ikon biasa) tetap "tembus" seperti biasa. */
+.page-topbar-title .page-title-icon--clickable { pointer-events: auto; }
 
 /* ---------------------------------------------------------------------
    Animasi umum: fade + slide ringan (12px, ~220ms), dipakai konsisten di
@@ -1675,35 +1753,44 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        menghormati delay sama sekali. */
     transition: opacity 0ms linear 300ms, visibility 0ms linear 300ms;
   }
-  /* PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
-     bawah Dynamic Island saat konten di-scroll): bar ini SEJAJAR dengan
-     .hamburger (top/height/transition SAMA PERSIS, lihat aturan di atas)
-     supaya terasa satu "nav bar" utuh -- posisinya di SAMPING KANAN
-     tombol hamburger (left: 68px = 12px margin kiri hamburger + 44px
-     lebar hamburger + 12px jarak), BUKAN di tengah layar penuh seperti
-     nav bar iOS native -- judul yang panjang (mis. "Riwayat Transaksi
-     (Payment Gateway)") akan terpotong (text-overflow:ellipsis) kalau
-     dipaksa center+lebar penuh malah berisiko bertumpuk dengan hamburger
-     di layar sempit. pointer-events:none -- murni label, bukan tombol,
-     tap di area ini tetap "tembus" ke konten/backdrop di belakangnya. */
-  .mobile-topbar {
-    display: flex;
-    position: fixed;
-    top: calc(12px + env(safe-area-inset-top)); left: 68px; right: 12px; z-index: 58;
+  /* PERMINTAAN Owner ("nama menu tetap di bawah Dynamic Island saat
+     di-scroll", lanjutan koreksi "posisi hamburger & judul harus sama
+     rata"): top/height DI SINI SENGAJA SAMA PERSIS dengan .hamburger di
+     atas (bukan cuma nilainya -- box model keduanya SAMA, flex+align-
+     items:center keduanya) supaya pusat vertikal tombol & bar judul
+     benar-benar sejajar, bukan cuma "kelihatan dekat". Posisi default
+     (sidebar TERTUTUP): mulai di SAMPING KANAN hamburger (left: 68px =
+     12px margin kiri hamburger + 44px lebar hamburger + 12px jarak),
+     BUKAN di tengah layar penuh seperti nav bar iOS native -- supaya
+     TIDAK PERNAH bertumpuk dengan hamburger di layar sempit (judul
+     panjang terpotong via text-overflow:ellipsis, lihat ".page-topbar-
+     title" di atas). pointer-events:none -- murni label, tap di area ini
+     tetap "tembus" ke konten/backdrop di belakangnya. left/width dari
+     aturan DASAR (".page-topbar", diisi JS khusus tablet/desktop)
+     ditimpa TOTAL di sini oleh left/right literal -- router.js::
+     _posisikanTopbar() sendiri SENGAJA tidak melakukan apa pun di
+     breakpoint ini (lihat isinya), jadi tidak ada nilai inline yang
+     bentrok. */
+  .page-topbar {
+    top: calc(12px + env(safe-area-inset-top)); left: 68px; right: 12px;
     height: 44px;
-    align-items: center;
-    pointer-events: none;
-    opacity: 1;
-    visibility: visible;
-    transition: opacity 0ms linear 300ms, visibility 0ms linear 300ms;
+    padding: 0;
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .mobile-topbar-title {
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  /* PERMINTAAN Owner ("saat sidebar dibuka, icon+menu ikut bergeser ke
+     kanan, PASKAN dulu posisi di kiri; saat sidebar ditutup, munculkan
+     hamburger BERBARENGAN dengan geser icon+menu"): bar judul BUKAN
+     disembunyikan (beda dari revisi pertama) -- ikut "push" SAMA PERSIS
+     seperti .content (transform+durasi 300ms identik, lihat ".content.
+     scroll-terkunci" di bawah) supaya terasa menyatu dengan konten yang
+     sedang digeser di bawahnya. Arah TUTUP (hamburger muncul kembali
+     SETELAH delay 300ms, lihat aturan dasar .hamburger di atas) otomatis
+     "berbarengan" dengan bar ini selesai bergeser balik ke kiri -- durasi
+     geser SAMA PERSIS (300ms, TANPA delay di sini) berarti keduanya
+     TIBA di keadaan akhir pada momen yang SAMA PERSIS, tanpa perlu
+     delay tambahan dikoordinasi manual. */
+  .sidebar.open ~ .page-topbar {
+    transform: translateX(var(--sidebar-w));
   }
   /* REVISI UI/UX Premium (PERMINTAAN Owner -- "Penyesuaian Animasi Sidebar
      Rivoir", referensi perilaku: sidebar Claude AI): sidebar PANEL UTUH
@@ -1746,14 +1833,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      sidebar mulai dibuka (tidak perlu menunggu), hanya kemunculan KEMBALI
      (arah tutup) yang sengaja ditunda, lihat catatan .hamburger di atas. */
   .sidebar.open ~ .hamburger {
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0ms linear 0ms, visibility 0ms linear 0ms;
-  }
-  /* Bar judul (.mobile-topbar) ikut sembunyi/muncul BARENG hamburger --
-     sama-sama bagian dari "nav bar" default yang digantikan tampilan
-     sidebar sendiri (logo+nama toko) selama sidebar terbuka. */
-  .sidebar.open ~ .mobile-topbar {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0ms linear 0ms, visibility 0ms linear 0ms;
@@ -1891,11 +1970,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .mobile-topbar { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .page-topbar { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
-  .content { padding: 22px; }
+  /* padding-top terpisah: lihat catatan ".page-topbar"/".content" (base) --
+     berlaku juga di breakpoint tablet ini. */
+  .content { padding: 22px; padding-top: calc(22px + 56px); }
   .grid-cards { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 }
 

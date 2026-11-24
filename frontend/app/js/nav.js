@@ -303,29 +303,6 @@ const MugenNav = (() => {
     return null;
   }
 
-  // PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
-  // bawah Dynamic Island saat di-scroll): dipakai router.js::shell() untuk
-  // bar judul mobile terpisah (lihat ".mobile-topbar" di style.css) --
-  // BEDA dari cariIzinUntukHash() di atas (itu cuma mengembalikan match
-  // untuk menu yang punya field izin/izinPaket), di sini SEMUA item MENU
-  // dicocokkan (termasuk Dashboard/Billing/Setting yang tidak punya field
-  // izin sama sekali) supaya SETIAP halaman dapat judulnya. Return null
-  // kalau hash-nya benar-benar tidak ada di MENU (mis. akun superadmin/
-  // sales yang menu-nya sendiri tidak lewat MENU sama sekali) -- bar-nya
-  // tetap tampil (ruang amannya tetap berguna), cuma tanpa teks judul.
-  function cariLabelUntukHash(hash) {
-    for (const item of MENU) {
-      if (item.children) {
-        for (const child of item.children) {
-          if (child.hash && hash.startsWith(child.hash)) return child.label;
-        }
-        continue;
-      }
-      if (item.hash && hash.startsWith(item.hash)) return item.label;
-    }
-    return null;
-  }
-
   function render(activeHash) {
     const user = MugenState.getUser();
     // REVISI Hak Akses: picu pengisian cache izin (non-blocking, lihat
@@ -473,5 +450,5 @@ const MugenNav = (() => {
     return sidebar;
   }
 
-  return { render, cariIzinUntukHash, cariLabelUntukHash };
+  return { render, cariIzinUntukHash };
 })();
