@@ -176,6 +176,18 @@ const MugenRouter = (() => {
     const sidebar = MugenNav.render(location.hash || "#/dashboard");
     const backdrop = MugenUI.el("div", { class: "sidebar-backdrop" });
     const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button", html: MugenIcons.menuTrigger });
+    // PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
+    // bawah Dynamic Island saat konten di-scroll): bar JUDUL TERPISAH dari
+    // judul yang sudah ada di tiap halaman (MugenUI.pageTitle(), itu TETAP
+    // ikut scroll bersama konten seperti biasa, TIDAK disentuh sama
+    // sekali) -- bar ini posisinya fixed (lihat ".mobile-topbar" di
+    // style.css, HANYA aktif di breakpoint mobile, sama seperti
+    // .hamburger), jadi SELALU kelihatan tepat di bawah safe-area-inset-top
+    // apa pun posisi scroll halaman. shell() dipanggil ULANG setiap pindah
+    // menu (lihat catatan di atas), jadi label-nya cukup dihitung SEKALI
+    // di sini dari hash saat ini -- tidak perlu listener terpisah.
+    const topbar = MugenUI.el("div", { class: "mobile-topbar" },
+      MugenUI.el("span", { class: "mobile-topbar-title" }, MugenNav.cariLabelUntukHash(location.hash || "#/dashboard") || ""));
     const main = MugenUI.el("main", { class: "content", id: "content" });
 
     // PERMINTAAN Owner: cegah scroll halaman di belakang sidebar (area
@@ -202,6 +214,7 @@ const MugenRouter = (() => {
     wrap.appendChild(sidebar);
     wrap.appendChild(backdrop);
     wrap.appendChild(hamburger);
+    wrap.appendChild(topbar);
     wrap.appendChild(main);
     appRoot.appendChild(wrap);
     // rAF -- tunggu satu frame supaya #content SUDAH benar-benar punya

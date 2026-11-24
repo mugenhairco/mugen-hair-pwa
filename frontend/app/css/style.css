@@ -578,6 +578,14 @@ a:hover { color: var(--accent-secondary); }
 }
 .hamburger svg { width: 22px; height: 22px; display: block; }
 
+/* PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
+   bawah Dynamic Island saat di-scroll): bar judul mobile TERPISAH dari
+   judul yang sudah ada di tiap halaman (MugenUI.pageTitle(), lihat
+   router.js::shell()) -- hanya aktif di breakpoint mobile (lihat aturan
+   di bawah), `display:none` di sini (dasar) supaya tidak kelihatan sama
+   sekali di desktop/tablet. */
+.mobile-topbar { display: none; }
+
 /* ---------------------------------------------------------------------
    Animasi umum: fade + slide ringan (12px, ~220ms), dipakai konsisten di
    seluruh aplikasi TERMASUK Web Booking lewat SATU aturan pada .card --
@@ -1667,6 +1675,36 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        menghormati delay sama sekali. */
     transition: opacity 0ms linear 300ms, visibility 0ms linear 300ms;
   }
+  /* PERMINTAAN Owner ("iOS Edge-to-Edge Display" -- nama menu tetap di
+     bawah Dynamic Island saat konten di-scroll): bar ini SEJAJAR dengan
+     .hamburger (top/height/transition SAMA PERSIS, lihat aturan di atas)
+     supaya terasa satu "nav bar" utuh -- posisinya di SAMPING KANAN
+     tombol hamburger (left: 68px = 12px margin kiri hamburger + 44px
+     lebar hamburger + 12px jarak), BUKAN di tengah layar penuh seperti
+     nav bar iOS native -- judul yang panjang (mis. "Riwayat Transaksi
+     (Payment Gateway)") akan terpotong (text-overflow:ellipsis) kalau
+     dipaksa center+lebar penuh malah berisiko bertumpuk dengan hamburger
+     di layar sempit. pointer-events:none -- murni label, bukan tombol,
+     tap di area ini tetap "tembus" ke konten/backdrop di belakangnya. */
+  .mobile-topbar {
+    display: flex;
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top)); left: 68px; right: 12px; z-index: 58;
+    height: 44px;
+    align-items: center;
+    pointer-events: none;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0ms linear 300ms, visibility 0ms linear 300ms;
+  }
+  .mobile-topbar-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* REVISI UI/UX Premium (PERMINTAAN Owner -- "Penyesuaian Animasi Sidebar
      Rivoir", referensi perilaku: sidebar Claude AI): sidebar PANEL UTUH
      (bukan background-nya saja) bergeser dari kiri -- seluruh isi (ikon,
@@ -1708,6 +1746,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      sidebar mulai dibuka (tidak perlu menunggu), hanya kemunculan KEMBALI
      (arah tutup) yang sengaja ditunda, lihat catatan .hamburger di atas. */
   .sidebar.open ~ .hamburger {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0ms linear 0ms, visibility 0ms linear 0ms;
+  }
+  /* Bar judul (.mobile-topbar) ikut sembunyi/muncul BARENG hamburger --
+     sama-sama bagian dari "nav bar" default yang digantikan tampilan
+     sidebar sendiri (logo+nama toko) selama sidebar terbuka. */
+  .sidebar.open ~ .mobile-topbar {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0ms linear 0ms, visibility 0ms linear 0ms;
@@ -1845,7 +1891,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .mobile-topbar { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
