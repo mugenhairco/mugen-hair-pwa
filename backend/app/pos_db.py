@@ -40,12 +40,14 @@ Superadmin) TIDAK memanggil provider apa pun -- status tetap 'menunggu'
 sampai Kasir klik "Payment Diterima" (lihat verifikasi_manual())."""
 
 import logging
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import gateway_client_base
 import manual_customer_db
 import payment_provider_client
+import push_service
 import rekap_gabungan_db
 import snap_payment_db
 from database import (get_barber, get_conn, get_produk, get_service, get_setting, get_stok_produk,
@@ -518,7 +520,76 @@ def _tandai_lunas(pos_id: int) -> dict:
         return get_pos_transaksi(pos_id)
     pos = get_pos_transaksi(pos_id)
     _proses_setelah_lunas(pos)
+    # FITUR Notifikasi Push "Transaksi POS Baru" (PERMINTAAN Owner, "kerjakan
+    # dengan teliti" -- lihat catatan panjang di _kirim_notifikasi_push_pos_
+    # lunas() di bawah): titik SATU-SATUNYA tempat pembayaran POS (cash/
+    # QRIS manual/gateway, ketiganya lewat _tandai_lunas() ini) benar-benar
+    # jadi 'lunas' -- aman dipakai untuk memicu push TANPA risiko dobel
+    # (CAS rowcount di atas sudah menjamin blok ini hanya jalan SEKALI per
+    # transaksi, sama seperti _proses_setelah_lunas()).
+    _jalankan_di_belakang(_kirim_notifikasi_push_pos_lunas, pos)
     return get_pos_transaksi(pos_id)
+
+
+def _jalankan_di_belakang(fn, *args):
+    """PERBAIKAN PERFORMA -- pola SAMA PERSIS booking_db.py::
+    _jalankan_di_belakang()/izin_cuti_db.py::_jalankan_di_belakang(): Push
+    (pywebpush, timeout 10 detik PER penerima, lihat push_service.py) adalah
+    panggilan HTTP KELUAR yang bisa lambat/macet -- dipanggil LANGSUNG di
+    jalur checkout POS akan menahan respons Kasir (cash/QRIS manual/
+    verifikasi gateway) sampai push-nya selesai/timeout. Dipindah ke thread
+    terpisah (daemon -- tidak menahan proses berhenti) supaya respons
+    checkout langsung balik begitu DATABASE-nya sendiri selesai; `fn`
+    (_kirim_notifikasi_push_pos_lunas() di bawah) SUDAH membungkus isinya
+    sendiri dengan try/except (tidak pernah melempar ke pemanggil)."""
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
+def _kirim_notifikasi_push_pos_lunas(pos: dict) -> None:
+    """FITUR Notifikasi Push "Transaksi POS Baru" (dilaporkan Owner: "Tab
+    Transaksi Hari Ini tidak menyuntik data diam-diam kalau ada user lain
+    yang input" -- perbaikan SEBELUMNYA, lihat catatan "pos_transaksi" di
+    api.js, hanya membuat tab itu fetch ulang PENUH begitu dibuka/dipindah-
+    balik lagi, BUKAN real-time sama sekali selama tab itu sedang dilihat.
+    "Kerjakan dengan teliti" -- permintaan Owner untuk benar-benar real-
+    time, pola SAMA PERSIS booking_db.py::_kirim_notifikasi_push_booking_
+    baru() -- best effort, TIDAK PERNAH melempar exception maupun
+    menggagalkan checkout utamanya kalau push gagal/belum dikonfigurasi
+    (lihat push_service.IS_ENABLED).
+
+    Audiens: role admin/staff SATU tenant ini SAJA (SAMA seperti gerbang
+    akses menu Point of Sale sendiri, lihat nav.js: `roles: ["admin",
+    "staff"]`, izin "izin_pos_lihat") -- TIDAK ada audiens Barber terpisah
+    seperti booking_baru (Barber tidak pernah punya akses menu POS sama
+    sekali, lihat nav.js)."""
+    tenant_id = pos.get("tenant_id")
+    try:
+        push_service.kirim_ke_role(
+            tenant_id, ["admin", "staff"],
+            title="Transaksi POS Baru",
+            body=f"{pos.get('nama_barber') or 'Transaksi'} -- Rp {pos.get('total_harga', 0):,}".replace(",", "."),
+            url="/app/#/pos",
+            # FITUR Auto-Refresh Transaksi Hari Ini via Push: `jenis`
+            # diteruskan ke payload push (lihat push_service.py) supaya
+            # service-worker.js bisa merelai postMessage ke tab yang
+            # terbuka -- app.js lalu memanggil PagePos.suntikTransaksiBaru()
+            # kalau #/pos sedang terbuka, TANPA menambah polling/timer
+            # jaringan apa pun (murni reaksi atas push yang memang sudah
+            # dikirim backend saat transaksi lunas).
+            jenis="pos_transaksi_lunas",
+            # PERMINTAAN Owner (suntik diam-diam ke Transaksi Hari Ini,
+            # BUKAN cuma "muat ulang diam-diam"): kirim baris POS LENGKAP
+            # (hasil get_pos_transaksi(), lihat pemanggil fungsi ini) apa
+            # adanya -- frontend (pages/pos.js::suntikTransaksiBaru()) sudah
+            # punya logika SAMA PERSIS yang dipakai checkout milik sesi
+            # sendiri (_suntikTransaksiBaru()) untuk menyisipkannya langsung
+            # ke tabel yang sedang tampil TANPA fetch ulang. Lihat catatan
+            # panjang soal batas ukuran payload di push_service.py.
+            data=pos,
+        )
+    except Exception as e:
+        _logger.error("Notifikasi push transaksi POS #%s GAGAL disiapkan: %s: %s",
+                       pos.get("id"), type(e).__name__, e)
 
 
 def _proses_setelah_lunas(pos: dict) -> None:

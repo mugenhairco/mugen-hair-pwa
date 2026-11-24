@@ -64,8 +64,26 @@ const MugenApi = (() => {
   const FLAG_HALAMAN_SEMUA = [
     "rekap", "rekap_transaksi", "produk", "input_data", "slip_gaji", "kasbon",
     "komisi", "reimburse", "pemasukan", "pengeluaran", "uang_kas", "whatsapp",
-    "pengaturan",
+    "pengaturan", "pos_transaksi",
   ];
+
+  // BUGFIX (dilaporkan Owner: "Tab Transaksi Hari Ini tidak menyuntik data
+  // diam-diam kalau ada user LAIN yang input, padahal Rekap tab Transaksi
+  // sudah"): "pos_transaksi" (tab "Transaksi Hari Ini" di pages/pos.js)
+  // SEBELUMNYA tidak pernah didaftarkan di sini sama sekali -- cache-nya
+  // (SEKALI dimuat, lalu disuntik langsung lewat _suntikTransaksiBaru()/
+  // suntikBookingLunas()/hapusBookingDariPos() setiap kali SESI BROWSER INI
+  // sendiri yang melakukan aksinya) TIDAK PERNAH dianggap "kotor" oleh
+  // mutasi APA PUN, termasuk checkout POS/verifikasi booking dari device
+  // LAIN -- beda dari "rekap"/"rekap_transaksi" yang SUDAH ada di daftar
+  // ini sejak awal (makanya Rekap tab Transaksi sudah ikut ter-refresh,
+  // via MugenState.halamanPerluRefresh(), begitu tab itu dibuka lagi
+  // setelah mutasi APA PUN -- lihat pages/rekap.js). Sekarang "pos_transaksi"
+  // ikut didaftarkan sebagai flag default konservatif (TIDAK dikecualikan
+  // via POLA_FLAG_PRESISI untuk endpoint /api/pos atau /api/booking
+  // sendiri -- pos.js yang menandainya "bersih" kembali SEGERA setelah
+  // tiap suntik diam-diam berhasil, lihat catatan di sana, supaya checkout
+  // MILIK SESI INI SENDIRI tetap tidak pernah memicu loading ulang).
 
   // BUGFIX "Rekap/menu lain reload penuh tanpa alasan" (PERMINTAAN Owner,
   // lanjutan PR #304/#305) -- SEBELUMNYA SETIAP mutasi (POST/PUT/DELETE) di

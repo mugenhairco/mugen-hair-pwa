@@ -61,18 +61,37 @@ if ("serviceWorker" in navigator) {
   // tidak memicu apa pun kalau tidak ada push yang masuk.
   navigator.serviceWorker.addEventListener("message", (event) => {
     const data = event.data || {};
-    if (data.type !== "push-notifikasi" || data.jenis !== "booking_baru") return;
-    if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
-    if (location.hash.startsWith("#/booking") && typeof PageBooking !== "undefined"
-        && typeof PageBooking.refreshDiamDiam === "function") {
-      // PERMINTAAN Owner (suntik diam-diam, BUKAN cuma "muat ulang diam-
-      // diam"): `data.data` opsional -- baris booking lengkap, diteruskan
-      // ke refreshDiamDiam() supaya PageBooking bisa langsung menyuntik
-      // baris itu ke tabel/kartu yang sedang tampil TANPA fetch ulang ke
-      // server (lihat catatan panjang _bookingSuntikBaris di pages/
-      // booking.js) -- otomatis jatuh kembali ke fetch diam-diam lama
-      // kalau tab aktif belum siap/payload tidak membawa data.
-      PageBooking.refreshDiamDiam(data.data);
+    if (data.type !== "push-notifikasi") return;
+    if (data.jenis === "booking_baru") {
+      if (typeof MugenBookingNotif !== "undefined") MugenBookingNotif.refreshNow();
+      if (location.hash.startsWith("#/booking") && typeof PageBooking !== "undefined"
+          && typeof PageBooking.refreshDiamDiam === "function") {
+        // PERMINTAAN Owner (suntik diam-diam, BUKAN cuma "muat ulang diam-
+        // diam"): `data.data` opsional -- baris booking lengkap, diteruskan
+        // ke refreshDiamDiam() supaya PageBooking bisa langsung menyuntik
+        // baris itu ke tabel/kartu yang sedang tampil TANPA fetch ulang ke
+        // server (lihat catatan panjang _bookingSuntikBaris di pages/
+        // booking.js) -- otomatis jatuh kembali ke fetch diam-diam lama
+        // kalau tab aktif belum siap/payload tidak membawa data.
+        PageBooking.refreshDiamDiam(data.data);
+      }
+      return;
+    }
+    // FITUR Notifikasi Push "Transaksi POS Baru" (PERMINTAAN Owner,
+    // "kerjakan dengan teliti" -- perbaikan SEBELUMNYA, "pos_transaksi" di
+    // api.js, cuma membuat tab "Transaksi Hari Ini" fetch ulang PENUH
+    // begitu dibuka/dipindah-balik lagi, BUKAN real-time SAMA SEKALI
+    // selama tab itu sedang dilihat). Pola SAMA PERSIS "booking_baru" di
+    // atas, hanya audiensnya beda: TIDAK ada badge/suara terpisah (menu
+    // POS tidak punya itu), dan HANYA suntik diam-diam kalau #/pos
+    // sedang terbuka (PagePos baru ter-load lazy, lihat page_loader.js --
+    // kalau menu ini belum pernah dibuka sesi ini, PagePos undefined,
+    // tidak ada apa pun yang perlu disuntik).
+    if (data.jenis === "pos_transaksi_lunas") {
+      if (location.hash.startsWith("#/pos") && typeof PagePos !== "undefined"
+          && typeof PagePos.suntikTransaksiLunas === "function") {
+        PagePos.suntikTransaksiLunas(data.data);
+      }
     }
   });
 }
