@@ -657,6 +657,123 @@ const MugenUI = (() => {
     return el("h1", {}, children);
   }
 
+  // REVISI UI/UX Premium (PERMINTAAN Owner -- "Animasi Morphing Form"):
+  // shared-element transition sederhana (teknik FLIP -- First/Last/Invert/
+  // Play) -- box "tumbuh" dari kotak tombol pemicunya menuju posisi/
+  // ukuran akhirnya yang SUDAH ADA (CSS box TIDAK disentuh -- morph murni
+  // animasi MENUJU posisi itu, bukan mengubahnya). Primitif INI (dipakai
+  // ULANG oleh _pasangMorphModal() di bawah untuk confirmModal()/
+  // infoModal(), dan langsung dipanggil pages/pos.js untuk modal Produk
+  // POS yang box/overlay-nya PERSISTEN -- dibuat SEKALI, dibuka/ditutup
+  // berkala lewat toggle class, BUKAN instance baru tiap kali) -- `buka()`
+  // & `tutup()` keduanya mengukur ULANG posisi tombol tiap dipanggil
+  // (jaga-jaga halaman sempat di-resize/scroll di antara buka/tutup).
+  // Fallback diam-diam (return null) kalau tombol pemicu tidak ada/bukan
+  // elemen klik yang wajar/prefers-reduced-motion aktif -- pemanggil
+  // lanjut pakai animasi fade+scale yang SUDAH ADA sebagai fallback,
+  // tidak ada mode gagal/rusak.
+  function morphDariTombol(box, asalEl, { durasiMasuk = 300, durasiKeluar = 250 } = {}) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
+    if (!asalEl || !asalEl.isConnected) return null;
+    // Hanya morph dari elemen yang WAJAR jadi tombol pemicu (button/link/
+    // role=button) -- kalau activeElement kebetulan <body> atau input lain
+    // yang tidak sengaja fokus, jangan dipaksakan (rect-nya bisa besar/aneh).
+    if (!["BUTTON", "A"].includes(asalEl.tagName) && asalEl.getAttribute("role") !== "button") return null;
+
+    function hitungState() {
+      const asalRect = asalEl.getBoundingClientRect();
+      if (!asalRect.width || !asalRect.height) return null;
+      // BUGFIX (ketemu lewat Playwright mid-transition sampling, modal
+      // Produk POS): pemanggil (pos.js::bukaModalProduk()) menambah class
+      // "open" (yang punya CSS transform+transition SENDIRI, mis. scale
+      // (0.97)->scale(1)) tepat SEBELUM memanggil buka() -- kalau rect box
+      // diukur apa adanya di sini, yang terbaca BUKAN posisi/ukuran akhir
+      // box yang sesungguhnya (scale 1 identity), melainkan nilai transisi
+      // CSS lama yang BELUM sempat berjalan sama sekali (0ms berlalu sejak
+      // class ditambah == rect-nya masih persis di titik AWAL transisi lama,
+      // mis. scale 0.97) -- box.getBoundingClientRect() ikut terpengaruh
+      // transform CSS apa pun yang SEDANG aktif saat itu. Netralkan dulu
+      // (transform:none = IDENTITAS, SAMA dengan nilai akhir transform CSS
+      // `.open` manapun di app ini) sesaat sebelum mengukur, baru pasang
+      // balik (buka()/tutup() akan langsung menimpa dengan transform FLIP
+      // yang benar sesaat sesudahnya, jadi "none" ini TIDAK PERNAH sempat
+      // ter-cat/terlihat sama sekali).
+      const transformSebelum = box.style.transform;
+      box.style.transform = "none";
+      const akhirRect = box.getBoundingClientRect();
+      box.style.transform = transformSebelum;
+      if (!akhirRect.width || !akhirRect.height) return null;
+      const scaleX = asalRect.width / akhirRect.width;
+      const scaleY = asalRect.height / akhirRect.height;
+      const dx = (asalRect.left + asalRect.width / 2) - (akhirRect.left + akhirRect.width / 2);
+      const dy = (asalRect.top + asalRect.height / 2) - (akhirRect.top + akhirRect.height / 2);
+      return {
+        transform: `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`,
+        radiusAsal: getComputedStyle(asalEl).borderRadius || "8px",
+        radiusAkhir: getComputedStyle(box).borderRadius,
+      };
+    }
+
+    box.classList.add("js-morph");
+    return {
+      // Dipanggil saat membuka -- return false (diam-diam, tanpa morph)
+      // kalau rect tombol/box tidak valid saat itu.
+      buka() {
+        const state = hitungState();
+        if (!state) return false;
+        box.style.transformOrigin = "center center";
+        box.style.transition = "none";
+        box.style.transform = state.transform;
+        box.style.opacity = "0";
+        box.style.borderRadius = state.radiusAsal;
+        void box.offsetWidth; // paksa reflow -- state AWAL harus benar-benar ter-apply dulu sebelum transisi dipasang di bawah (rAF)
+        requestAnimationFrame(() => {
+          box.style.transition = `transform ${durasiMasuk}ms var(--ease-standard), opacity ${durasiMasuk}ms var(--ease-standard), border-radius ${durasiMasuk}ms var(--ease-standard)`;
+          box.style.transform = "translate(0px, 0px) scale(1, 1)";
+          box.style.opacity = "1";
+          box.style.borderRadius = state.radiusAkhir;
+        });
+        return true;
+      },
+      // Dipanggil saat menutup -- mengembalikan Promise yang selesai begitu
+      // box sudah menciut kembali ke kotak tombol asal (dipakai pemanggil
+      // untuk menunda overlay.remove()/class toggle sampai animasi usai).
+      tutup() {
+        return new Promise((resolve) => {
+          const state = hitungState();
+          box.style.transition = `transform ${durasiKeluar}ms var(--ease-standard), opacity ${durasiKeluar}ms var(--ease-standard), border-radius ${durasiKeluar}ms var(--ease-standard)`;
+          box.style.transform = state ? state.transform : "scale(0.85)";
+          box.style.opacity = "0";
+          if (state) box.style.borderRadius = state.radiusAsal;
+          // PENTING: transitionend MEMBUBUNG dari transisi elemen ANAK
+          // (mis. tombol Batal/Konfirmasi yang punya transisi background-
+          // color sendiri saat :active/:hover) -- tanpa cek
+          // `e.target === box`, event yang membubung itu SALAH dianggap
+          // "box selesai menciut", membuat overlay/box dilepas/ditutup
+          // nyaris instan (bug ini sempat lolos sebelum diuji ulang
+          // dengan sampling frame per frame, bukan cuma before/after).
+          let selesai = false;
+          const beres = (e) => {
+            if (e && e.target !== box) return;
+            if (selesai) return;
+            selesai = true;
+            box.removeEventListener("transitionend", beres);
+            resolve();
+          };
+          box.addEventListener("transitionend", beres);
+          setTimeout(beres, durasiKeluar + 60); // jaring pengaman kalau transitionend tidak terpicu
+        });
+      },
+    };
+  }
+
+  function _pasangMorphModal(overlay, box, asalEl, opts) {
+    const morph = morphDariTombol(box, asalEl, opts);
+    if (!morph || !morph.buka()) return null;
+    overlay.classList.add("morphing");
+    return morph.tutup;
+  }
+
   // Dialog konfirmasi modern (menggantikan confirm() bawaan browser yang
   // tidak bisa diberi styling) -- dipakai fitur yang butuh konfirmasi
   // bertingkat lebih jelas dari sekadar ya/tidak polos, mis. Hapus Rekap
@@ -667,6 +784,7 @@ const MugenUI = (() => {
   // seperti confirm() bawaan (async, tidak membekukan tab).
   function confirmModal({ title, message, confirmText = "Ya", cancelText = "Batal", danger = false } = {}) {
     return new Promise((resolve) => {
+      const asalEl = document.activeElement;
       const overlay = el("div", { class: "modal-overlay" });
       const box = el("div", { class: "modal-box" });
       if (title) box.appendChild(el("h3", {}, title));
@@ -678,13 +796,20 @@ const MugenUI = (() => {
       box.appendChild(el("div", { class: "modal-actions" }, [btnBatal, btnKonfirmasi]));
       overlay.appendChild(box);
       document.body.appendChild(overlay);
+      const tutupMorph = _pasangMorphModal(overlay, box, asalEl);
 
       function tutup(hasil) {
         // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya
         // .remove() instan) -- .closing (style.css) memicu
-        // mugen-overlay-out/mugen-overlay-box-out, var(--dur-fast).
+        // mugen-overlay-out/mugen-overlay-box-out, var(--dur-fast), KECUALI
+        // morph sedang aktif (tutupMorph bukan null) -- box diurus sendiri
+        // oleh _pasangMorphModal(), overlay menunggu Promise-nya selesai
+        // sebelum benar-benar dilepas dari DOM.
         overlay.classList.add("closing");
-        setTimeout(() => { overlay.remove(); resolve(hasil); }, 120);
+        (tutupMorph ? tutupMorph() : new Promise((r) => setTimeout(r, 120))).then(() => {
+          overlay.remove();
+          resolve(hasil);
+        });
       }
       btnBatal.addEventListener("click", () => tutup(false));
       btnKonfirmasi.addEventListener("click", () => tutup(true));
@@ -700,6 +825,7 @@ const MugenUI = (() => {
   // di sini). Pola overlay/box SAMA PERSIS confirmModal() di atas supaya
   // konsisten secara visual, HANYA tombolnya beda (satu tombol Tutup).
   function infoModal({ title, body } = {}) {
+    const asalEl = document.activeElement;
     const overlay = el("div", { class: "modal-overlay" });
     const box = el("div", { class: "modal-box" });
     if (title) box.appendChild(el("h3", {}, title));
@@ -708,10 +834,11 @@ const MugenUI = (() => {
     box.appendChild(el("div", { class: "modal-actions" }, [btnTutup]));
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    const tutupMorph = _pasangMorphModal(overlay, box, asalEl);
 
     function tutup() {
       overlay.classList.add("closing");
-      setTimeout(() => overlay.remove(), 120);
+      (tutupMorph ? tutupMorph() : new Promise((r) => setTimeout(r, 120))).then(() => overlay.remove());
     }
     btnTutup.addEventListener("click", tutup);
     overlay.addEventListener("click", (e) => { if (e.target === overlay) tutup(); });
@@ -1413,6 +1540,6 @@ const MugenUI = (() => {
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
-    attachNumericKeypad, dropdownSelect, selectIcon, dateRangePicker,
+    attachNumericKeypad, dropdownSelect, selectIcon, dateRangePicker, morphDariTombol,
   };
 })();
