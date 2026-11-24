@@ -1775,7 +1775,21 @@
 // device LAIN. Sekarang render() memanggil ulang keduanya (via
 // _cacheAdminRefresh) setiap kali cache dipakai ulang, tanpa membangun
 // ulang seluruh DOM.
-const ASSET_VERSION = "325";
+// v325 -> v326: PERMINTAAN Owner (Web Booking + halaman Lupa Kata Sandi).
+// (1) lupa_password.js: "Nomor HP" -> "Nomor Handphone" (placeholder,
+// label, pesan error) supaya lebih profesional. (2) book_public.js: tombol
+// "Download QRIS" (pill + teks) diganti jadi ikon download saja, dipindah
+// jadi badge bundar melayang di pojok kanan-bawah gambar QRIS (bukan lagi
+// baris terpisah di bawahnya) -- pojok kanan-bawah dipilih supaya tidak
+// menimpa pola kotak pemandu QR code (selalu ada di 3 pojok lainnya).
+// v326 -> v327: PERMINTAAN Owner ("saya tidak suka bundar seperti itu") --
+// badge ikon Download QRIS diganti dari bundar (border-radius:50%) jadi
+// kotak membulat (var(--book-radius-sm)), konsisten dengan sudut gambar
+// QRIS di sekelilingnya.
+// v327 -> v328: PERMINTAAN Owner ("tidak usah kasih fil atau warna") --
+// badge ikon Download QRIS dilepas kotak warna/bayangannya sama sekali,
+// jadi ikon polos (abu-abu, menggelap jadi warna aksen saat hover).
+const ASSET_VERSION = "328";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

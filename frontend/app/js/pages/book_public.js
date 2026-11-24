@@ -1669,17 +1669,23 @@ const PageBookPublic = (() => {
         } else if (state.metode === "qris") {
           if (pengaturan.qris_url) {
             const qrisFullUrl = MUGEN_API_BASE + pengaturan.qris_url;
-            items.push(MugenUI.el("img", { src: qrisFullUrl, class: "book-qris-img", alt: "QRIS" }));
+            // PERMINTAAN Owner: tombol "Download QRIS" (pill + teks) diganti
+            // jadi ikon download SAJA -- dipindah jadi badge bundar
+            // melayang di pojok kanan-atas gambar QRIS (BUKAN lagi baris
+            // terpisah di bawahnya) supaya tetap terlihat rapi/profesional
+            // tanpa menyita tempat tambahan.
             const btnDownload = MugenUI.el("button", {
               type: "button",
-              class: "book-download-qris-btn",
-            }, [
-              MugenUI.el("span", { class: "book-download-qris-icon", html: IKON_DOWNLOAD_SVG }),
-              "Download QRIS",
-            ]);
+              class: "book-download-qris-btn book-download-qris-btn--icon",
+              "aria-label": "Download QRIS",
+              title: "Download QRIS",
+            }, MugenUI.el("span", { class: "book-download-qris-icon", html: IKON_DOWNLOAD_SVG }));
             tambahkanEfekRipple(btnDownload);
             btnDownload.addEventListener("click", () => unduhGambar(qrisFullUrl, namaFileQris(pengaturan.qris_url, identitas.nama_barbershop)));
-            items.push(btnDownload);
+            items.push(MugenUI.el("div", { class: "book-qris-wrap" }, [
+              MugenUI.el("img", { src: qrisFullUrl, class: "book-qris-img", alt: "QRIS" }),
+              btnDownload,
+            ]));
           }
           items.push(MugenUI.el("div", { style: "margin-top:8px;" }, pengaturan.qris_merchant_nama || ""));
           items.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, metodeInstruksi.qris || ""));

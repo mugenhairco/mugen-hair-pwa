@@ -2141,8 +2141,12 @@ body.book-public-active {
 /* Halaman Pembayaran QRIS: gambar tetap tajam (tidak diperbesar melebihi
    ukuran aslinya lewat CSS, hanya dibatasi lebar maksimum) di semua ukuran
    layar, plus hint rendering tajam untuk browser yang mendukungnya. */
+/* PERMINTAAN Owner: tombol Download QRIS (pill + teks) diganti jadi ikon
+   bundar melayang di pojok gambar -- .book-qris-wrap sekadar pembungkus
+   relative supaya badge-nya bisa diposisikan absolute terhadap gambar. */
+.book-qris-wrap { position: relative; max-width: 240px; width: 100%; margin: 8px auto 0; }
 .book-qris-img {
-  max-width: 240px; width: 100%; display: block; margin: 8px auto; border-radius: var(--book-radius-sm);
+  width: 100%; display: block; margin: 0; border-radius: var(--book-radius-sm);
   image-rendering: -webkit-optimize-contrast; box-shadow: var(--book-shadow-soft); padding: 10px; background: #fff;
   border: 1px solid var(--border);
 }
@@ -2160,6 +2164,23 @@ body.book-public-active {
 }
 .book-download-qris-btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
 .book-download-qris-icon { display: inline-flex; line-height: 0; }
+/* Varian ikon-saja (badge bundar di pojok kanan-bawah gambar QRIS) --
+   menggantikan pill lebar + teks "Download QRIS" yang sebelumnya menyita
+   baris terpisah di bawah gambar. Pojok kanan-BAWAH dipilih (bukan atas)
+   supaya tidak menimpa pola kotak pemandu ("finder pattern") QR code,
+   yang selalu ada di 3 dari 4 pojok (kiri-atas, kanan-atas, kiri-bawah) --
+   kanan-bawah satu-satunya pojok yang SELALU kosong di QR code apa pun.*/
+.book-download-qris-btn--icon {
+  position: absolute; bottom: 8px; right: 8px; margin: 0;
+  width: 34px; height: 34px; padding: 0; border-radius: var(--book-radius-sm);
+  /* PERMINTAAN Owner ("tidak usah kasih fil atau warna"): TANPA kotak
+     warna/bayangan sama sekali -- murni ikon polos (currentColor
+     mengikuti teks biasa), menimpa background/border/shadow gradient
+     yang dipakai .book-download-qris-btn (versi pill+teks) di atas. */
+  background: none; border-color: transparent; box-shadow: none; color: var(--text-dim);
+}
+.book-download-qris-btn--icon:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--accent); }
+.book-download-qris-btn--icon .book-ripple { background: rgba(15,23,42,0.12); }
 .book-ripple {
   position: absolute; border-radius: 50%; background: rgba(255,255,255,0.55);
   transform: scale(0); animation: book-ripple-anim 550ms ease-out forwards; pointer-events: none;
