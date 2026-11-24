@@ -29,14 +29,14 @@ const PageLupaPassword = (() => {
       type: "text", placeholder: "Username", autocomplete: "username",
       autocapitalize: "off", autocorrect: "off", spellcheck: "false",
     });
-    const inputNomor = MugenUI.el("input", { type: "tel", placeholder: "Nomor HP (contoh: 081234567890)", autocomplete: "tel" });
+    const inputNomor = MugenUI.el("input", { type: "tel", placeholder: "Nomor Handphone (contoh: 081234567890)", autocomplete: "tel" });
     const errorBox1 = MugenUI.el("div", { class: "login-error" });
     const hasilBox1 = MugenUI.el("div", { style: "margin-top:12px;font-size:14px;" });
     const btnLangkah1 = MugenUI.el("button", { class: "btn-primary", style: "width:100%;margin-top:16px;" }, "Lanjutkan");
 
     const form1 = MugenUI.el("form", {}, [
       MugenUI.el("label", {}, "Username"), inputUsername,
-      MugenUI.el("label", {}, "Nomor HP"), inputNomor,
+      MugenUI.el("label", {}, "Nomor Handphone"), inputNomor,
       errorBox1, hasilBox1,
       btnLangkah1,
     ]);
@@ -71,7 +71,7 @@ const PageLupaPassword = (() => {
       const username = inputUsername.value.trim();
       const nomor = inputNomor.value.trim();
       if (!username || !nomor) {
-        errorBox1.textContent = "Username dan nomor HP wajib diisi.";
+        errorBox1.textContent = "Username dan nomor Handphone wajib diisi.";
         return;
       }
       btnLangkah1.disabled = true;
