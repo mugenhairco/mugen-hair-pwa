@@ -708,7 +708,7 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 /* FITUR Judul Kolom Tabel Menempel (Sticky) saat Scroll (PERMINTAAN Owner,
    Booking List + Produk > Riwayat Mutasi) -- klon <thead> mengambang,
    dipasang/diposisikan via JS (lihat ui.js `_pasangStickyHeader()`).
-   Ditaruh di document.body (BUKAN di .content) supaya tidak terklip. */
+   Ditaruh di dalam #app (BUKAN di .content) supaya tidak terklip. */
 .sticky-table-head {
   position: fixed;
   z-index: 40;
@@ -717,7 +717,12 @@ table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
   background: var(--bg-card);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
-.sticky-table-head table.data-table { width: 100%; }
+/* CATATAN: width table klon TIDAK dipaksa 100% -- tabel asli bisa lebih
+   lebar dari layar (geser ke samping di HP, lihat .table-wrap overflow-x),
+   jadi lebar tabel klon juga harus mengikuti lebar ASLI yang sebenarnya
+   (diset lewat JS updateLebar(), sama seperti lebar tiap kolomnya) supaya
+   tidak ikut "diperas" proporsional ke lebar wadah yang lebih sempit --
+   itu yang membuat kolom klon sebelumnya tidak sejajar dengan data asli. */
 
 /* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
    referensi kartu "Service Performance") -- badge periode di header,
