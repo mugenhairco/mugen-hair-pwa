@@ -1806,6 +1806,12 @@ CREATE TABLE IF NOT EXISTS pos_draft (
     dibuat_oleh    TEXT,
     created_at     TEXT NOT NULL
 );
+
+-- FITUR BARU Matikan Notifikasi Suara per-Booking (booking_notif_dimatikan_
+-- migrasi.py) -- SAMA seperti dilihat di atas, kolom baru WAJIB didaftarkan
+-- di SINI JUGA (jalur Postgres TIDAK memanggil migrasi_booking_notif_
+-- dimatikan(), SEPENUHNYA digantikan create_all() ini).
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notif_suara_dimatikan INTEGER NOT NULL DEFAULT 0;
 """
 
 

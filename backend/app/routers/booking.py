@@ -1093,6 +1093,18 @@ def tandai_booking_dilihat(booking_id: int, user: dict = Depends(require_permiss
     return booking_db.tandai_booking_dilihat(booking_id)
 
 
+@router.post("/{booking_id}/matikan-notifikasi-suara")
+def matikan_notifikasi_suara(booking_id: int, user: dict = Depends(require_permission("izin_booking_list"))):
+    """FITUR Matikan Notifikasi Suara per-Booking (PERMINTAAN Owner, lihat
+    booking_db.matikan_notifikasi_suara_booking()): dipanggil pages/
+    booking.js begitu staff klik "No. Transaksi" booking yang masih
+    menunggu verifikasi -- booking ini berhenti ikut dihitung di badge/
+    chime booking_notif.js (lihat booking_db.hitung_booking_belum_
+    dikonfirmasi()), permanen & berlaku untuk semua staff/device."""
+    _pastikan_booking_tenant_sama(user, booking_db.get_booking(booking_id))
+    return booking_db.matikan_notifikasi_suara_booking(booking_id)
+
+
 class ClosedSlotBody(BaseModel):
     barber_id: int
     tanggal: str

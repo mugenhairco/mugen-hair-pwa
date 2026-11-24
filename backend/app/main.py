@@ -60,6 +60,7 @@ from nomor_transaksi_booking_migrasi import migrasi_nomor_transaksi_booking
 from booking_sumber_migrasi import migrasi_booking_sumber  # FITUR Booking Mandiri: kolom sumber di bookings (idempotent)
 from booking_status_token_migrasi import migrasi_booking_status_token  # FITUR Link Cek Status Booking Langsung: kolom status_token di bookings (idempotent)
 from booking_dilihat_migrasi import migrasi_booking_dilihat  # FITUR Unread Row Highlight: kolom dilihat di bookings (idempotent)
+from booking_notif_dimatikan_migrasi import migrasi_booking_notif_dimatikan  # FITUR Matikan Notifikasi Suara per-Booking: kolom notif_suara_dimatikan di bookings (idempotent)
 from produk_migrasi import migrasi_produk
 from bonus_service_migrasi import migrasi_bonus_service
 from tampilan_migrasi import migrasi_tampilan
@@ -482,6 +483,7 @@ async def on_startup():
         migrasi_booking_sumber()  # FITUR Booking Mandiri: kolom sumber di bookings (idempotent)
         migrasi_booking_status_token()  # FITUR Link Cek Status Booking Langsung: kolom status_token di bookings (idempotent)
         migrasi_booking_dilihat()  # FITUR Unread Row Highlight: kolom dilihat di bookings (idempotent)
+        migrasi_booking_notif_dimatikan()  # FITUR Matikan Notifikasi Suara per-Booking: kolom notif_suara_dimatikan di bookings (idempotent)
         migrasi_produk()        # REVISI: harga_modal/harga_jual produk + snapshot harga di produk_mutasi (idempotent)
         migrasi_bonus_service() # REVISI: seed Setting Bonus Service & Setting Uang Harian dari hardcode lama (idempotent)
         migrasi_tampilan()      # REVISI UI/UX: kolom users.tema untuk Dark/Light Mode per akun (idempotent)

@@ -94,6 +94,12 @@ const MugenIcons = (() => {
     // di wizard checkout biasa (bukan di kartu Draft, yang submit-nya
     // langsung lewat tombol teks terpisah).
     keranjang: `<svg ${S}><path d="M3 4h2.2l2.1 11.2a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 8H6.5"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>`,
+
+    // PERMINTAAN Owner (klik "No. Transaksi" di Booking List mematikan
+    // notifikasi suara booking itu secara permanen): lonceng + garis
+    // silang -- indikator kecil di samping nomor yang sudah dimatikan,
+    // dipakai pages/booking.js::bookingTable().
+    bellOff: `<svg ${S}><path d="M8.5 5.5A4 4 0 0 1 16 8v3.5l2 3.5H6"/><path d="M10.5 18a1.8 1.8 0 0 0 3 0"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`,
   };
 })();
 

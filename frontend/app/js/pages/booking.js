@@ -1115,7 +1115,7 @@ const PageBooking = (() => {
   // ================= Helper: tabel booking (dipakai List & Calendar) =================
   function bookingTable(rows, {
     withBarber = true, withWhatsapp = true, onVerifikasi = null, onBatalkan = null,
-    onReschedule = null, onHapus = null, onTandaiDilihat = null,
+    onReschedule = null, onHapus = null, onTandaiDilihat = null, onMatikanNotifikasi = null,
   } = {}) {
     // Format Baru Nomor Transaksi Booking: booking BARU sudah punya
     // r.nomor_transaksi tersimpan dari server (booking_db.py::
@@ -1135,11 +1135,30 @@ const PageBooking = (() => {
         key: "no_transaksi", label: "No. Transaksi",
         format: (_, r) => {
           const nomor = r.nomor_transaksi || MugenUI.buatNomorTransaksi(r, namaBarbershop);
-          if (!r.is_advance_booking) return nomor;
-          return MugenUI.el("span", {
+          const nomorEl = !r.is_advance_booking ? nomor : MugenUI.el("span", {
             style: "background:#fff3b0;color:#7a5b00;padding:2px 6px;border-radius:4px;font-weight:600;",
             title: "Booking dibuat lebih awal dari tanggal appointment (booking advance)",
           }, nomor);
+          // PERMINTAAN Owner (hentikan notifikasi suara booking ini SAJA,
+          // walau belum diverifikasi): HANYA relevan selama booking masih
+          // "menunggu_verifikasi" & "aktif" -- begitu lunas/dibatalkan,
+          // booking itu sudah TIDAK ikut dihitung booking_notif.js sama
+          // sekali (lihat hitung_booking_belum_dikonfirmasi()), jadi cukup
+          // tampil polos seperti biasa.
+          if (r.status_pembayaran !== "menunggu_verifikasi" || r.status_booking !== "aktif") return nomorEl;
+          if (r.notif_suara_dimatikan) {
+            return MugenUI.el("span", { style: "display:inline-flex;align-items:center;gap:4px;color:var(--text-dim);" }, [
+              nomorEl,
+              MugenUI.el("span", { class: "booking-notif-off-icon", title: "Notifikasi suara dimatikan", html: MugenIcons.bellOff }),
+            ]);
+          }
+          if (!onMatikanNotifikasi) return nomorEl;
+          const btn = MugenUI.el("button", {
+            type: "button", class: "text-link-aksi", style: "font:inherit;color:inherit;text-decoration:none;",
+            title: "Klik untuk mematikan notifikasi suara booking ini",
+          }, nomorEl);
+          btn.addEventListener("click", (e) => { e.stopPropagation(); onMatikanNotifikasi(r); });
+          return btn;
         },
       },
       { key: "tanggal", label: "Tanggal", format: MugenUI.formatTanggal },
@@ -1400,7 +1419,12 @@ const PageBooking = (() => {
   // ================= TAB: BOOKING LIST =================
   async function renderBookingList(body, barbers, services, bolehEdit = true) {
     const today = new Date();
-    const { row, selBulan, selTahun, selBarber, selStatus } = barberFilterRow(barbers, today);
+    // PERMINTAAN Owner ("dropdown filter Semua Status tidak dibutuhkan,
+    // dihapus total, bukan disembunyikan"): withStatus:false -- selStatus
+    // dihapus dari destructure, barberFilterRow() sendiri (dipakai
+    // bersama tab Calendar) TIDAK perlu diubah, withStatus memang sudah
+    // jadi opsi sejak awal (lihat definisinya di atas).
+    const { row, selBulan, selTahun, selBarber } = barberFilterRow(barbers, today, { withStatus: false });
     // REVISI (PERMINTAAN Owner -- "hilangkan tombol Muat Ulang, ganti diam-
     // diam kalau ada booking baru masuk, tanpa refresh 1 halaman"): tombol
     // "↻ Muat Ulang" manual DIHAPUS -- SEBELUMNYA perlu karena booking baru
@@ -1414,6 +1438,19 @@ const PageBooking = (() => {
     // push itu sendiri di app.js, tidak lagi lewat klik tombol ini.
     const tableWrap = MugenUI.el("div");
     body.appendChild(row);
+    // PERMINTAAN Owner: form pencarian Nama Customer ATAU Nomor WhatsApp --
+    // murni client-side di atas baris yang SUDAH termuat untuk Bulan/Tahun
+    // (dan Barber, kalau dipilih) yang sedang ditampilkan (dikonfirmasi
+    // Owner: "cukup di dalam bulan/tahun yang sedang ditampilkan") -- TIDAK
+    // fetch ulang ke server, pola sama persis pencarian produk di
+    // pages/produk.js (filter di memori atas list yang sudah ada).
+    const inputCariBooking = MugenUI.el("input", { type: "text", placeholder: "Cari nama atau nomor WhatsApp…" });
+    body.appendChild(MugenUI.el("div", { style: "max-width:320px;margin-bottom:14px;" },
+      [MugenUI.selectIcon(MugenIcons.search, inputCariBooking)]));
+    inputCariBooking.addEventListener("input", () => {
+      _searchQueryBookingList = inputCariBooking.value.trim();
+      if (_bookingListRowsSaatIni) tampilkanRows(_bookingListRowsSaatIni);
+    });
     body.appendChild(tableWrap);
 
     // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat...", filter
@@ -1439,12 +1476,46 @@ const PageBooking = (() => {
     // ditarik jadi satu fungsi dipakai ULANG oleh jalur cepat (10 teratas)
     // maupun jalur penuh (lihat load() di bawah) -- supaya tidak ada
     // logika yang dobel/berbeda antara keduanya.
+    // PERMINTAAN Owner: state pencarian + helper render yang menyaringnya --
+    // dipakai GANTI 3 titik lama yang langsung tableWrap.innerHTML=""/
+    // appendChild(renderRows(...)) (jalur cepat 10 teratas, jalur penuh,
+    // suntik diam-diam), supaya pencarian ikut berlaku di KETIGA jalur itu
+    // tanpa fetch ulang apa pun.
+    let _searchQueryBookingList = "";
+    function saringPencarianBooking(rows) {
+      const q = _searchQueryBookingList.toLowerCase();
+      if (!q) return rows;
+      return rows.filter((r) =>
+        (r.customer_nama || "").toLowerCase().includes(q) || (r.customer_whatsapp || "").toLowerCase().includes(q));
+    }
+    // Dipakai jalur cepat (10 teratas) & suntik diam-diam -- keduanya TIDAK
+    // butuh offline banner (lihat load() di bawah utk jalur penuh, yang
+    // menanganinya sendiri karena ada elemen TAMBAHAN sebelum tabelnya).
+    function tampilkanRows(rows) {
+      tableWrap.innerHTML = "";
+      tableWrap.appendChild(renderRows(saringPencarianBooking(rows)));
+    }
+
     function renderRows(rows) {
       // Hak Akses Menu: level "Baca" (bolehEdit=false) -- tombol
       // Verifikasi/Batalkan/Reschedule TIDAK dikirim ke bookingTable()
       // sama sekali (null = disembunyikan, lihat bookingTable() di atas),
       // data booking TETAP tampil apa adanya.
       return bookingTable(rows, {
+        // PERMINTAAN Owner (hentikan notifikasi suara booking ini SAJA,
+        // walau belum diverifikasi): lihat bookingTable()::no_transaksi
+        // utk kapan kolom ini bisa diklik. refreshNow() di sini langsung
+        // meng-update badge/chime di DEVICE INI seketika -- device/staff
+        // lain ikut ter-update lewat trigger refreshNow() yang SUDAH ada
+        // di banyak tempat lain (navigasi, login, visibilitychange, dst),
+        // TIDAK ada push baru ditambahkan khusus utk ini (sengaja sederhana).
+        onMatikanNotifikasi: !bolehEdit ? null : async (r) => {
+          try {
+            await MugenApi.post(`/api/booking/${r.id}/matikan-notifikasi-suara`);
+            load({ silent: true });
+            MugenBookingNotif.refreshNow();
+          } catch (e) { MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error"); }
+        },
         // PERMINTAAN Owner (Unread Row Highlight): dipanggil onVerifikasi/
         // onBatalkan/onReschedule di bawah (fire-and-forget, TIDAK
         // menunggu/menggagalkan aksi utamanya kalau ini gagal) begitu
@@ -1547,13 +1618,11 @@ const PageBooking = (() => {
       const [tahunBaris, bulanBaris] = String(baris.tanggal || "").split("-").map(Number);
       if (tahunBaris !== Number(selTahun.value) || bulanBaris !== Number(selBulan.value)) return true; // bukan filter bulan/tahun yang sedang tampil -- tidak usah apa-apa
       if (selBarber.value && Number(baris.barber_id) !== Number(selBarber.value)) return true;
-      if (selStatus.value && baris.status_booking !== selStatus.value) return true;
       const idx = _bookingListRowsSaatIni.findIndex((r) => r.id === baris.id);
       if (idx >= 0) _bookingListRowsSaatIni[idx] = baris;
       else _bookingListRowsSaatIni.push(baris);
       _bookingListRowsSaatIni = _urutkanTerbaruDiAtas(_bookingListRowsSaatIni);
-      tableWrap.innerHTML = "";
-      tableWrap.appendChild(renderRows(_bookingListRowsSaatIni));
+      tampilkanRows(_bookingListRowsSaatIni);
       return true;
     }
 
@@ -1566,7 +1635,6 @@ const PageBooking = (() => {
       }
       const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
       if (selBarber.value) qs.set("barber_id", selBarber.value);
-      if (selStatus.value) qs.set("status_booking", selStatus.value);
 
       const tokenMuat = (_tokenMuatBookingTerakhir = Symbol());
       let dataCepatTampil = false;
@@ -1598,8 +1666,7 @@ const PageBooking = (() => {
             const dataCepat = await MugenApi.get(`/api/booking?${qsCepat}`);
             if (tokenMuat !== _tokenMuatBookingTerakhir || dataPenuhTampil) return;
             if (!dataCepat.__offline && Array.isArray(dataCepat) && dataCepat.length) {
-              tableWrap.innerHTML = "";
-              tableWrap.appendChild(renderRows(_urutkanTerbaruDiAtas(dataCepat)));
+              tampilkanRows(_urutkanTerbaruDiAtas(dataCepat));
               dataCepatTampil = true;
             }
           } catch (e) { /* lewati -- jalur penuh di bawah yang menentukan tampilan akhir */ }
@@ -1617,7 +1684,7 @@ const PageBooking = (() => {
         // PERMINTAAN Owner: "bookingan terbaru itu selalu di atas" -- lihat
         // _urutkanTerbaruDiAtas() di atas.
         const rowsTerurut = _urutkanTerbaruDiAtas(Array.isArray(data) ? data : []);
-        tableWrap.appendChild(renderRows(rowsTerurut));
+        tableWrap.appendChild(renderRows(saringPencarianBooking(rowsTerurut)));
         // Hanya tandai "siap disuntik" kalau ini data SERVER sungguhan
         // (bukan fallback offline) -- lihat catatan _bookingListRowsSaatIni
         // di atas.
@@ -1641,7 +1708,6 @@ const PageBooking = (() => {
     selBulan.addEventListener("change", load);
     selTahun.addEventListener("change", load);
     selBarber.addEventListener("change", load);
-    selStatus.addEventListener("change", load);
     _bookingQuietReload = load;
     _bookingSuntikBaris = suntikBarisBookingList;
     load();
