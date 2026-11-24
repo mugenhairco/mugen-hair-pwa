@@ -30,6 +30,20 @@ const PageAbsensi = (() => {
   // sama sekali.
   let _cacheAdminDom = null;
   let _cacheUserId = null;
+  // BUGFIX (dilaporkan Owner: "Dashboard Absensi tidak menyuntikkan data
+  // diam-diam, Hadir masih 0 walau sudah ada yang Check In, harus refresh
+  // penuh baru muncul"): cache DOM di atas membuat render() TIDAK PERNAH
+  // memanggil ulang loadDashboard()/loadList() begitu adminRoot sudah
+  // pernah dibangun sekali -- cocok untuk tab Pengaturan/Kuota Cuti/Log
+  // Audit (jarang berubah), TAPI salah untuk kartu "Hadir/Belum Hadir/dst"
+  // (dashboard) dan tabel "Daftar Absensi" -- keduanya agregat lintas
+  // SEMUA barber, berubah tiap kali ada yang Check In/Out dari device lain
+  // (BUKAN cuma reaksi atas aksi akun yang login sendiri, beda dari kasus
+  // _cacheBarberDom di bawah yang memang cuma data MILIK SATU barber).
+  // Disimpan di sini oleh renderAdminView() (closure atas loadDashboard()/
+  // loadList() miliknya) supaya render() bisa memanggilnya ulang SETIAP
+  // kali cache dipakai ulang, tanpa membangun ulang seluruh DOM.
+  let _cacheAdminRefresh = null;
 
   // PERMINTAAN OWNER (REVISI): pola SAMA PERSIS seperti _cacheAdminDom di
   // atas, tapi untuk role barber -- status Check In/Out hari ini, riwayat,
@@ -1548,8 +1562,17 @@ const PageAbsensi = (() => {
     listCard.appendChild(listBody);
 
     function bukaDetail(r) {
+      // BUGFIX (dilaporkan Owner: "Lihat Detail" klik tidak muncul apa-apa):
+      // MugenUI.el() HANYA mengonversi child bertipe string jadi text node
+      // otomatis -- child berupa NUMBER (mis. latitude/longitude di bawah,
+      // field asli dari API adalah angka, bukan string) dilempar APA ADANYA
+      // ke node.appendChild(), yang melempar TypeError ("parameter 1 is not
+      // of type 'Node'") dan menggagalkan SELURUH pembangunan body2 sebelum
+      // infoModal() sempat dipanggil -- modal tidak pernah tampil, tanpa
+      // pesan error apa pun yang terlihat user. String(value) di sini
+      // memastikan child SELALU string apa pun tipe aslinya.
       const baris = (label, value) => MugenUI.el("div", { style: "display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:1px solid var(--border);" }, [
-        MugenUI.el("span", { class: "subtitle" }, label), MugenUI.el("span", {}, value ?? "-"),
+        MugenUI.el("span", { class: "subtitle" }, label), MugenUI.el("span", {}, value == null ? "-" : String(value)),
       ]);
       const body2 = MugenUI.el("div", {}, [
         baris("Barber", r.nama_barber),
@@ -1613,6 +1636,14 @@ const PageAbsensi = (() => {
     inputDari.addEventListener("change", loadList);
     inputSampai.addEventListener("change", loadList);
     loadList();
+
+    // BUGFIX (lihat catatan _cacheAdminRefresh di awal file): disimpan di
+    // sini (BUKAN di akhir fungsi) supaya tetap persis sejajar dengan
+    // loadDashboard()/loadList() yang DIPANGGIL di baris ini -- render()
+    // memanggil ulang keduanya SETIAP KALI cache adminRoot dipakai ulang,
+    // supaya kartu Hadir/Belum Hadir dan tabel Daftar Absensi tidak pernah
+    // basi walau DOM-nya tidak dibangun ulang dari nol.
+    _cacheAdminRefresh = () => { loadDashboard(); loadList(); };
 
     // ---- Pengajuan Koreksi Absensi (barber lupa Check In/Check Out) ----
     const koreksiCard = MugenUI.el("div", { class: "card" });
@@ -1810,6 +1841,7 @@ const PageAbsensi = (() => {
     // jangan dibangun ulang dari nol.
     if (_cacheAdminDom && _cacheUserId === user.id) {
       root.appendChild(_cacheAdminDom);
+      if (_cacheAdminRefresh) _cacheAdminRefresh();
       return;
     }
     const adminRoot = MugenUI.el("div");

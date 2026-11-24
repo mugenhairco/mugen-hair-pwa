@@ -1759,7 +1759,23 @@
 // dibersihkan kalau TIDAK ada transisi dari "karyawan". Juga perbaikan
 // kecil di suntik Booking List: push yang masuk persis saat filter
 // sedang diganti tidak lagi memicu fetch ulang kedua yang mubazir.
-const ASSET_VERSION = "324";
+// v324 -> v325: BUGFIX GANDA (dilaporkan Owner) pages/absensi.js --
+// (1) tombol "Lihat Detail" di Daftar Absensi tidak menampilkan apa-apa:
+// latitude/longitude dikirim sebagai NUMBER (bukan string), MugenUI.el()
+// hanya mengonversi child bertipe string jadi text node otomatis, child
+// berupa number dilempar apa adanya ke appendChild() yang melempar
+// TypeError dan menggagalkan SELURUH pembangunan modal SEBELUM infoModal()
+// sempat dipanggil -- tanpa pesan error terlihat. (2) Dashboard Absensi
+// ("Hadir"/dst) & tabel Daftar Absensi basi, harus refresh penuh (F5) baru
+// muncul data baru: cache DOM admin (_cacheAdminDom, BUGFIX PERFORMA
+// sebelumnya) membuat render() berhenti memasang ulang DOM lama APA
+// ADANYA tanpa pernah memanggil ulang loadDashboard()/loadList() --
+// cocok untuk tab Pengaturan/Kuota Cuti (jarang berubah), SALAH untuk
+// data agregat lintas-barber yang berubah tiap ada Check In/Out dari
+// device LAIN. Sekarang render() memanggil ulang keduanya (via
+// _cacheAdminRefresh) setiap kali cache dipakai ulang, tanpa membangun
+// ulang seluruh DOM.
+const ASSET_VERSION = "325";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
