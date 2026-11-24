@@ -90,6 +90,7 @@ import uang_kas_db
 import data_non_barber_db
 import manual_customer_db  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service, berdiri sendiri dari transaksi Barber (idempotent)
 import pos_db  # FITUR BARU Point of Sale (Kasir walk-in): tabel pos_transaksi/pos_transaksi_service/pos_transaksi_produk (idempotent)
+import pos_draft_db  # FITUR BARU Draft POS (Kasir siapkan Barber+Customer lebih awal): tabel pos_draft (idempotent, berdiri sendiri)
 import superadmin_audit_db
 import attendance_db  # Modul BARU Absensi (GPS Check In/Out Geofencing): tabel attendance_settings/attendance_logs/attendance_audit_logs (idempotent, berdiri sendiri)
 import absen_mandiri_db  # FITUR BARU Absen Mandiri: kolom barbers.device_id_terikat/device_label_terikat/device_terikat_sejak (idempotent, device-lock Non-Barber tanpa login)
@@ -469,6 +470,7 @@ async def on_startup():
         data_non_barber_db.init_data_non_barber_db()  # Input Data Non-Barber: tabel data_non_barber, berdiri sendiri dari transaksi Barber (idempotent)
         manual_customer_db.init_manual_customer_db()  # FITUR BARU Manual Customer (Waiting List/Booking): tabel input_data_hari/manual_customer_transaksi/manual_customer_transaksi_service (idempotent)
         pos_db.init_pos_db()  # FITUR BARU Point of Sale (Kasir walk-in): tabel pos_transaksi/pos_transaksi_service/pos_transaksi_produk (idempotent)
+        pos_draft_db.init_pos_draft_db()  # FITUR BARU Draft POS: tabel pos_draft (idempotent, berdiri sendiri)
         superadmin_audit_db.init_superadmin_audit_db()  # FONDASI Multi-Tenant Phase 2.1: tabel superadmin_audit_log (idempotent)
         migrasi_pengeluaran()  # TAHAP 9: tambah kolom kategori/barber_id/aktif ke tabel pengeluaran (idempotent)
         migrasi_pengaturan()   # TAHAP 10: kolom modal di services + seed setting identitas (idempotent)

@@ -3203,6 +3203,39 @@ input.numkeypad-caret-aktif { caret-color: var(--accent); }
 .pos-produk-terpilih-nama { font-weight: 600; font-size: 14px; color: var(--text); }
 .pos-produk-terpilih-harga { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
+/* PERMINTAAN Owner (tombol "+ Tambah ke Keranjang" jadi ikon saja): sama
+   persis konvensi .book-download-qris-btn--icon di atas -- polos, TANPA
+   warna/fill, currentColor ikut teks biasa, hover berubah warna accent. */
+.pos-tambah-keranjang-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; border-radius: var(--book-radius-sm);
+  background: none; border-color: transparent; box-shadow: none; color: var(--text-dim);
+}
+.pos-tambah-keranjang-btn:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--accent); }
+.pos-tambah-keranjang-btn svg { width: 20px; height: 20px; }
+
+/* FITUR BARU Draft POS (PERMINTAAN Owner): seksi persisten di atas wizard
+   Kasir -- "Draft Baru" (link, lihat .text-link-aksi) + kartu per draft
+   yang sudah dibuat. Kartu dibangun dari .card dasar yang sudah ada di
+   app ini (padding/border/shadow konsisten), expand inline (Tips/
+   Service/Metode Bayar) ditambahkan langsung di dalam kartu yang sama
+   saat diklik -- TIDAK ada modal/halaman terpisah. */
+.pos-draft-section { margin-bottom: 18px; }
+.pos-draft-baru-link { font-size: 14px; }
+.pos-draft-list { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.pos-draft-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+  padding: 12px 14px; cursor: pointer;
+}
+.pos-draft-card.expanded { cursor: default; border-color: var(--accent); }
+.pos-draft-card-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.pos-draft-card .pos-draft-card-header + div:not(:empty) {
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+
 /* REDESIGN Booking > Barber Holiday (permintaan Owner): "Compact Barber
    Cards" + accordion -- satu kartu kecil per barber (BUKAN lagi satu kartu
    besar menumpuk semua barber dalam baris panjang), day chips selectable

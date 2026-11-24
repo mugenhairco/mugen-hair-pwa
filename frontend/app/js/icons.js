@@ -88,6 +88,12 @@ const MugenIcons = (() => {
     // kaca pembesar -- dipakai MugenUI.selectIcon() sebagai prefix input
     // teks pencarian (fungsinya generik, bukan cuma untuk <select>).
     search: `<svg ${S}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`,
+
+    // PERMINTAAN Owner (tombol "+ Tambah ke Keranjang" di Kasir POS jadi
+    // ikon saja, tanpa teks): keranjang belanja klasik -- dipakai pos.js
+    // di wizard checkout biasa (bukan di kartu Draft, yang submit-nya
+    // langsung lewat tombol teks terpisah).
+    keranjang: `<svg ${S}><path d="M3 4h2.2l2.1 11.2a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 8H6.5"/><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>`,
   };
 })();
 

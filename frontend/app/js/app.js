@@ -92,6 +92,17 @@ if ("serviceWorker" in navigator) {
           && typeof PagePos.suntikTransaksiLunas === "function") {
         PagePos.suntikTransaksiLunas(data.data);
       }
+      return;
+    }
+    // FITUR BARU Draft POS: kartu "Draft Baru" di tab Kasir (Barber + Nama
+    // Customer disiapkan lebih awal) harus terlihat SAMA oleh semua kasir/
+    // device tenant ini -- pola SAMA PERSIS "pos_transaksi_lunas" di atas,
+    // `data.data` membawa FULL list draft terbaru (lihat pos_draft_db.py).
+    if (data.jenis === "pos_draft_berubah") {
+      if (location.hash.startsWith("#/pos") && typeof PagePos !== "undefined"
+          && typeof PagePos.suntikDraftBerubah === "function") {
+        PagePos.suntikDraftBerubah(data.data);
+      }
     }
   });
 }

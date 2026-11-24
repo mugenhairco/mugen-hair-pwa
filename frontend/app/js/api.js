@@ -64,8 +64,16 @@ const MugenApi = (() => {
   const FLAG_HALAMAN_SEMUA = [
     "rekap", "rekap_transaksi", "produk", "input_data", "slip_gaji", "kasbon",
     "komisi", "reimburse", "pemasukan", "pengeluaran", "uang_kas", "whatsapp",
-    "pengaturan", "pos_transaksi",
+    "pengaturan", "pos_transaksi", "pos_draft",
   ];
+
+  // FITUR BARU Draft POS: "pos_draft" (cache _cacheDraftList di pages/
+  // pos.js) -- pola SAMA PERSIS "pos_transaksi" di atas: default
+  // konservatif (endpoint /api/pos/draft TIDAK dikecualikan di
+  // POLA_FLAG_PRESISI, jadi mutasi APA PUN mengotorinya), pos.js sendiri
+  // yang menandainya "bersih" lagi SEGERA setelah tiap suntik diam-diam
+  // (buat/hapus draft sendiri MAUPUN push "pos_draft_berubah" dari device
+  // lain) berhasil, supaya aksinya sendiri tidak memicu loading ulang.
 
   // BUGFIX (dilaporkan Owner: "Tab Transaksi Hari Ini tidak menyuntik data
   // diam-diam kalau ada user LAIN yang input, padahal Rekap tab Transaksi
