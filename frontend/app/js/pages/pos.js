@@ -1084,6 +1084,18 @@ const PagePos = (() => {
   // device.
   async function renderDraftSection(draftBox, pengaturan) {
     let expandedId = null; // hanya SATU kartu boleh expand pada satu waktu
+    // BUGFIX (dilaporkan Owner: "jika user telah memilih service dan menutup
+    // draf nya, pastikan service yg dipilih tidak hilang"): renderList() di
+    // bawah membangun ULANG SELURUH kartu (termasuk instance
+    // jalankanDraftPembayaran() milik kartu yang sedang expand) setiap kali
+    // dipanggil -- tanpa ini, state (serviceIds/tips/metode/fase) jadi
+    // OBJEK BARU tiap render, hilang begitu kartu di-collapse lalu di-
+    // expand lagi. `_draftState[draftId]` di sini PERSISTEN selama seksi
+    // Draft tab Kasir ini masih hidup (bertahan lintas collapse/expand,
+    // direset hanya kalau draft itu sendiri selesai/dibatalkan atau Kasir
+    // pindah tab/menu) -- jalankanDraftPembayaran() dibuat memakai OBJEK
+    // yang SAMA (bukan bikin baru) lewat opsi `persisted` di bawah.
+    const _draftState = {};
 
     draftBox.innerHTML = "";
     const linkDraftBaru = MugenUI.el("button", { type: "button", class: "text-link-aksi pos-draft-baru-link" }, "Draft Baru");
@@ -1150,6 +1162,7 @@ const PagePos = (() => {
           await MugenUI.withButtonLoading(btnBatalDraft, () => MugenApi.del(`/api/pos/draft/${d.id}`));
           _cacheDraftList = (_cacheDraftList || []).filter((x) => x.id !== d.id);
           MugenState.tandaiHalamanBersih("pos_draft");
+          delete _draftState[d.id];
           if (expandedId === d.id) expandedId = null;
           renderList();
         } catch (e2) {
@@ -1171,6 +1184,7 @@ const PagePos = (() => {
       const card = MugenUI.el("div", { class: "pos-draft-card" + (expandedId === d.id ? " expanded" : "") }, [header, expandSlot]);
       if (expandedId === d.id) {
         jalankanDraftPembayaran(expandSlot, d, pengaturan, {
+          persisted: _draftState[d.id] || (_draftState[d.id] = {}),
           onBatal: () => { expandedId = null; renderList(); },
           onSelesai: async () => {
             try {
@@ -1181,6 +1195,7 @@ const PagePos = (() => {
             }
             _cacheDraftList = (_cacheDraftList || []).filter((x) => x.id !== d.id);
             MugenState.tandaiHalamanBersih("pos_draft");
+            delete _draftState[d.id];
             expandedId = null;
             renderList();
           },
@@ -1223,12 +1238,21 @@ const PagePos = (() => {
   // teruji TIDAK ikut tersentuh/berisiko regresi oleh perubahan ini --
   // logikanya sengaja dijaga identik (endpoint, validasi, polling
   // gateway, hitung kembalian cash).
-  function jalankanDraftPembayaran(container, draft, pengaturan, { onBatal, onSelesai }) {
+  function jalankanDraftPembayaran(container, draft, pengaturan, { onBatal, onSelesai, persisted }) {
     const metodeAktif = pengaturan.metode_aktif || [];
     const metodeNama = pengaturan.metode_nama || {};
     const metodeInstruksi = pengaturan.metode_instruksi || {};
-    const state = { serviceIds: new Set(), tips: 0, metode: null, channel: null, bankCode: null, transaksi: null };
-    let fase = "isi";
+    // BUGFIX (lihat catatan _draftState di renderDraftSection()): `state`
+    // dan `fase` di bawah DIAMBIL dari `persisted` (objek yang sama,
+    // dipertahankan pemanggil lintas collapse/expand), BUKAN dibuat baru
+    // tiap kartu ini di-render ulang -- supaya Service/Tips/Metode Bayar
+    // yang sudah dipilih kasir TIDAK hilang kalau kartu di-collapse dulu
+    // (mis. untuk lihat/expand draft lain) lalu dibuka lagi.
+    if (!persisted.state) {
+      persisted.state = { serviceIds: new Set(), tips: 0, metode: null, channel: null, bankCode: null, transaksi: null };
+    }
+    const state = persisted.state;
+    let fase = persisted.fase || "isi";
 
     function totalHarga() {
       let total = state.tips || 0;
@@ -1240,6 +1264,7 @@ const PagePos = (() => {
     }
 
     function gantiFase() {
+      persisted.fase = fase; // sinkron tiap kali fase berubah -- lihat catatan di atas
       container.innerHTML = "";
       if (fase === "menunggu_manual") renderMenungguManual();
       else if (fase === "waiting") renderWaitingGateway();
@@ -1385,7 +1410,14 @@ const PagePos = (() => {
       container.appendChild(MugenUI.el("h3", {}, "Menunggu Pembayaran (QRIS)"));
       const items = [];
       if (pengaturan.qris_url) {
-        items.push(MugenUI.el("img", { src: MUGEN_API_BASE + pengaturan.qris_url, class: "book-qris-img", alt: "QRIS" }));
+        // BUGFIX (dilaporkan Owner: "tampilan qris memenuhi full layar") --
+        // .book-qris-img sengaja width:100% (lihat style.css), mengikuti
+        // lebar kontainernya -- di kartu Draft yang kecil ini WAJIB
+        // dibungkus .book-qris-wrap (max-width 240px, pola SAMA PERSIS
+        // halaman Booking Publik) supaya ukurannya pas untuk kartu inline,
+        // tidak melebar penuh.
+        items.push(MugenUI.el("div", { class: "book-qris-wrap" },
+          MugenUI.el("img", { src: MUGEN_API_BASE + pengaturan.qris_url, class: "book-qris-img", alt: "QRIS" })));
       } else {
         items.push(MugenUI.el("div", { class: "subtitle" }, "Foto QRIS belum diunggah Superadmin."));
       }
@@ -1423,7 +1455,11 @@ const PagePos = (() => {
         items.push(MugenUI.el("div", { style: "font-size:20px;font-weight:700;letter-spacing:1px;text-align:center;margin-top:4px;" },
           r.va_number || "-"));
       } else if (r.qr_url) {
-        items.push(MugenUI.el("img", { src: r.qr_url, class: "book-qris-img", alt: "QRIS" }));
+        // BUGFIX sama seperti renderMenungguManual() di atas -- bungkus
+        // .book-qris-wrap supaya QR Payment Gateway juga tidak melebar
+        // penuh di kartu Draft yang kecil ini.
+        items.push(MugenUI.el("div", { class: "book-qris-wrap" },
+          MugenUI.el("img", { src: r.qr_url, class: "book-qris-img", alt: "QRIS" })));
       } else if (r.qr_content) {
         const btnBuka = MugenUI.el("button", { type: "button", class: "book-download-qris-btn" }, "Buka Halaman QRIS");
         btnBuka.addEventListener("click", () => window.open(r.qr_content, "_blank"));
