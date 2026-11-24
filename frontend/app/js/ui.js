@@ -319,7 +319,7 @@ const MugenUI = (() => {
   // lihat pages/absensi.js (tabel ringkasan kuota Owner). Default
   // undefined (tidak ada perubahan) supaya SELURUH pemanggil buildTable()
   // yang sudah ada tidak terpengaruh sama sekali.
-  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass, onRowClick } = {}) {
+  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass, onRowClick, stickyHeader = false } = {}) {
     const wrap = el("div", { class: "table-wrap" });
     const table = el("table", { class: "data-table" });
     const thead = el("thead", {}, el("tr", {}, columns.map((c) => el("th", {}, c.label))));
@@ -348,7 +348,88 @@ const MugenUI = (() => {
     table.appendChild(thead);
     table.appendChild(tbody);
     wrap.appendChild(table);
+    // FITUR Judul Kolom Menempel (Sticky) saat Scroll -- opt-in (lihat
+    // pages/booking.js::bookingTable() & pages/produk.js Riwayat Mutasi).
+    // CSS `position:sticky` polos tidak bisa dipakai karena `.table-wrap`
+    // punya overflow-x:auto (lihat catatan CSS di style.css), jadi dipakai
+    // klon header mengambang via JS. rAF: beri waktu `wrap` masuk DOM dulu.
+    if (stickyHeader) requestAnimationFrame(() => _pasangStickyHeader(wrap, table));
     return wrap;
+  }
+
+  // Lihat catatan FITUR di buildTable() di atas. Membuat klon <thead> yang
+  // mengambang (position:fixed, ditempel ke document.body supaya tidak
+  // terklip overflow-x:hidden milik .content -- pola sama persis modal
+  // Produk POS) saat judul kolom ASLI sudah scroll melewati batas atas
+  // .content, SELAMA badan tabel belum seluruhnya lewat juga.
+  function _pasangStickyHeader(wrap, table) {
+    // Bersihkan klon yatim (wrap aslinya sudah lepas dari DOM, mis. ganti
+    // tab tanpa ganti hash) -- jaring pengaman tambahan selain hashchange.
+    document.querySelectorAll(".sticky-table-head").forEach((n) => {
+      if (!n._wrapRef || !n._wrapRef.isConnected) {
+        if (n._cleanup) n._cleanup();
+        else n.remove();
+      }
+    });
+
+    const content = document.getElementById("content");
+    const theadAsli = table.querySelector("thead");
+    if (!content || !theadAsli) return;
+
+    const klon = el("div", { class: "sticky-table-head" });
+    klon._wrapRef = wrap;
+    const tabelKlon = el("table", { class: "data-table" });
+    const theadKlon = theadAsli.cloneNode(true);
+    tabelKlon.appendChild(theadKlon);
+    klon.appendChild(tabelKlon);
+    klon.style.display = "none";
+    document.body.appendChild(klon);
+
+    function updateLebar() {
+      const thAsli = theadAsli.querySelectorAll("th");
+      const thKlon = theadKlon.querySelectorAll("th");
+      thAsli.forEach((th, i) => {
+        if (thKlon[i]) thKlon[i].style.width = th.getBoundingClientRect().width + "px";
+      });
+    }
+
+    function updatePosisi() {
+      if (!wrap.isConnected) {
+        bersihkan();
+        return;
+      }
+      const contentRect = content.getBoundingClientRect();
+      const theadRect = theadAsli.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const tampil = theadRect.top < contentRect.top && wrapRect.bottom > contentRect.top;
+      if (tampil) {
+        updateLebar();
+        klon.style.display = "";
+        klon.style.top = contentRect.top + "px";
+        klon.style.left = wrapRect.left + "px";
+        klon.style.width = wrapRect.width + "px";
+        tabelKlon.style.transform = `translateX(${-wrap.scrollLeft}px)`;
+      } else {
+        klon.style.display = "none";
+      }
+    }
+
+    function bersihkan() {
+      content.removeEventListener("scroll", updatePosisi);
+      wrap.removeEventListener("scroll", updatePosisi);
+      window.removeEventListener("resize", updateLebar);
+      window.removeEventListener("hashchange", bersihkan);
+      klon.remove();
+    }
+    klon._cleanup = bersihkan;
+
+    content.addEventListener("scroll", updatePosisi);
+    wrap.addEventListener("scroll", updatePosisi);
+    window.addEventListener("resize", updateLebar);
+    window.addEventListener("hashchange", bersihkan, { once: true });
+
+    updateLebar();
+    updatePosisi();
   }
 
   // ======================= REVISI UI/UX Premium =======================

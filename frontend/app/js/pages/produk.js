@@ -643,7 +643,7 @@ const PageProduk = (() => {
             },
           ],
           rows,
-          { emptyText: "Belum ada riwayat mutasi." },
+          { emptyText: "Belum ada riwayat mutasi.", stickyHeader: true },
         ));
     }
 

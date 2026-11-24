@@ -667,8 +667,15 @@ table.data-table th {
   font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  position: sticky;
-  top: 0;
+  /* CATATAN: position:sticky di sini TIDAK EFEKTIF -- .table-wrap (di
+     bawah) punya overflow-x:auto, dan menurut spesifikasi CSS begitu
+     overflow-x diisi non-"visible", overflow-y ikut dipaksa "auto" juga,
+     menjadikan .table-wrap (bukan .content, pembungkus scroll halaman
+     sebenarnya) sebagai acuan sticky -- yang tidak pernah "mengambang"
+     karena .table-wrap sendiri tidak pernah overflow vertikal. Untuk
+     tabel yang butuh judul kolom menempel, dipakai mekanisme JS klon
+     header (`stickyHeader: true` di buildTable(), lihat ui.js
+     `_pasangStickyHeader()` + CSS `.sticky-table-head` di bawah). */
   /* PERMINTAAN Owner ("column header tidak ada warna"): SEBELUMNYA sama
      persis var(--bg-card) -- background tabel ikut .card (putih di light
      mode), jadi header menyatu TOTAL dengan baris data, nyaris tidak
@@ -688,7 +695,29 @@ table.data-table tr:hover td { background: var(--bg); }
    Rincian Pembayaran. */
 table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 
-.table-wrap { overflow-x: auto; }
+/* overflow-x:auto dibutuhkan agar tabel lebar bisa digeser ke samping di
+   HP -- scrollbar-nya disembunyikan (PERMINTAAN Owner untuk fitur sticky
+   header di bawah), scroll (sentuh/drag/wheel) tetap berfungsi normal. */
+.table-wrap {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.table-wrap::-webkit-scrollbar { display: none; }
+
+/* FITUR Judul Kolom Tabel Menempel (Sticky) saat Scroll (PERMINTAAN Owner,
+   Booking List + Produk > Riwayat Mutasi) -- klon <thead> mengambang,
+   dipasang/diposisikan via JS (lihat ui.js `_pasangStickyHeader()`).
+   Ditaruh di document.body (BUKAN di .content) supaya tidak terklip. */
+.sticky-table-head {
+  position: fixed;
+  z-index: 40;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-card);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.sticky-table-head table.data-table { width: 100%; }
 
 /* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
    referensi kartu "Service Performance") -- badge periode di header,
