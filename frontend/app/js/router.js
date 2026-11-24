@@ -107,13 +107,19 @@ const MugenRouter = (() => {
     const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button" }, "☰");
     const main = MugenUI.el("main", { class: "content", id: "content" });
 
+    // PERMINTAAN Owner: cegah scroll halaman di belakang sidebar (area
+    // .content) selama sidebar terbuka di HP -- class ini hanya berefek
+    // lewat CSS di breakpoint mobile (lihat .content.scroll-terkunci di
+    // style.css), jadi aman ditambah/dilepas tanpa guard lebar layar di sini.
     function closeSidebar() {
       sidebar.classList.remove("open");
       backdrop.classList.remove("open");
+      main.classList.remove("scroll-terkunci");
     }
     hamburger.addEventListener("click", () => {
-      sidebar.classList.toggle("open");
-      backdrop.classList.toggle("open");
+      const kiniTerbuka = sidebar.classList.toggle("open");
+      backdrop.classList.toggle("open", kiniTerbuka);
+      main.classList.toggle("scroll-terkunci", kiniTerbuka);
     });
     backdrop.addEventListener("click", closeSidebar);
     // Tutup otomatis begitu satu menu dipilih (layar sempit) supaya user
