@@ -1747,7 +1747,19 @@
 // refreshDiamDiam() yang langsung menyuntik baris itu ke tabel/kartu yang
 // sedang tampil TANPA fetch ulang ke server sama sekali (jatuh kembali ke
 // fetch diam-diam lama kalau tab belum siap/baris tidak cocok filter).
-const ASSET_VERSION = "323";
+// v323 -> v324: BUGFIX (ditemukan lewat code review PR #305, BUKAN
+// laporan Owner) -- suntikBarisPengeluaran() (rekap.js) sebelumnya hanya
+// melihat sumber_dana BARU, tidak cukup untuk kasus KOREKSI yang
+// mengubah sumber dana dari "karyawan" ke "kas": backend menghapus baris
+// Reimburse otomatis yang lama (pengeluaran_db.py::koreksi_pengeluaran())
+// saat transisi itu, tapi flag "rekap_transaksi" sempat dibersihkan buta
+// padahal baris Reimburse yang terhapus itu masih nyangkut di cache tab
+// Transaksi -- data uang basi tanpa tanda apa pun. Sekarang pemanggil
+// (pengeluaran.js) meneruskan sumber_dana SEBELUM diedit, flag hanya
+// dibersihkan kalau TIDAK ada transisi dari "karyawan". Juga perbaikan
+// kecil di suntik Booking List: push yang masuk persis saat filter
+// sedang diganti tidak lagi memicu fetch ulang kedua yang mubazir.
+const ASSET_VERSION = "324";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

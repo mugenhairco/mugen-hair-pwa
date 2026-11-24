@@ -32,6 +32,13 @@ const PagePengeluaran = (() => {
   async function render(root) {
     const today = new Date();
     let editingId = null; // null = mode Tambah, angka = mode Edit
+    // BUGFIX (ditemukan lewat code review PR #305, BUKAN laporan Owner):
+    // suntikBarisPengeluaran() (rekap.js) perlu tahu sumber_dana SEBELUM
+    // diedit -- lihat catatan panjang di sana soal kenapa (transisi
+    // "karyawan" -> "kas" menghapus baris Reimburse otomatis yang terkait,
+    // TIDAK cukup lihat nilai sumber_dana yang BARU saja). null = mode
+    // Tambah (baris baru, tidak ada transisi).
+    let sumberDanaSebelumEdit = null;
     let barbers = [];
     let kategoriOptions = [];
 
@@ -122,6 +129,7 @@ const PagePengeluaran = (() => {
 
     function resetForm() {
       editingId = null;
+      sumberDanaSebelumEdit = null;
       formTitle.textContent = "Tambah Pengeluaran";
       btnSubmit.textContent = "Simpan";
       btnBatal.style.display = "none";
@@ -138,6 +146,7 @@ const PagePengeluaran = (() => {
 
     function isiFormUntukEdit(p) {
       editingId = p.id;
+      sumberDanaSebelumEdit = p.sumber_dana || "kas";
       formTitle.textContent = `Edit Pengeluaran #${p.id}`;
       btnSubmit.textContent = "Simpan Perubahan";
       btnBatal.style.display = "";
@@ -192,7 +201,7 @@ const PagePengeluaran = (() => {
         // BUGFIX "Rekap masih loading walau cuma input Pengeluaran" (PERMINTAAN
         // Owner): lihat catatan lengkap di pages/rekap.js::suntikBarisPengeluaran().
         if (typeof PageRekap !== "undefined" && typeof PageRekap.suntikBarisPengeluaran === "function") {
-          PageRekap.suntikBarisPengeluaran(savedRow);
+          PageRekap.suntikBarisPengeluaran(savedRow, sumberDanaSebelumEdit);
         }
         // Kategori baru yang baru saja diketik langsung ikut jadi saran berikutnya.
         if (!kategoriOptions.includes(body.kategori)) {
