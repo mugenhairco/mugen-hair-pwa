@@ -1729,9 +1729,22 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .content.scroll-terkunci {
     overflow: hidden;
     transform: translateX(var(--sidebar-w));
-    border-top-left-radius: 24px;
-    border-bottom-left-radius: 24px;
+    border-top-left-radius: 36px;
+    border-bottom-left-radius: 36px;
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+    /* BUGFIX (Safari/iOS -- konfirmasi screenshot langsung dari HP Owner):
+       border-radius pada elemen yang SEDANG di-transform (translateX) +
+       overflow:hidden gagal benar-benar ter-clip di sebagian WebKit/Safari
+       (bug lama & dikenal luas -- lapisan hasil kompositing GPU dari
+       transform kadang tidak ikut menghormati border-radius induknya,
+       sudut jadi tampil SIKU TAJAM/patah alih-alih melengkung walau CSS-
+       nya sudah benar, 24px/36px tidak ada bedanya kalau bug ini aktif).
+       -webkit-mask-image memaksa Safari membuat ULANG lapisan masking
+       berbasis radius (bukan cuma overflow:hidden) -- perbaikan standar
+       utk bug spesifik ini, radial-gradient putih solid di sini TIDAK
+       mengubah tampilan apa pun (hanya trik render), aman di browser lain
+       yang sudah benar (properti -webkit- diabaikan begitu saja). */
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
     /* BUGFIX: z-index .content baru saja dinaikkan di atas .sidebar-
        backdrop (lihat ".content" z-index:55 vs .sidebar-backdrop:40) --
        tanpa ini, tap di luar sidebar (dimaksud kena backdrop ->
