@@ -383,7 +383,20 @@ const MugenUI = (() => {
     tabelKlon.appendChild(theadKlon);
     klon.appendChild(tabelKlon);
     klon.style.display = "none";
-    document.body.appendChild(klon);
+    // Ditempel di dalam #app (BUKAN document.body langsung) -- #app punya
+    // "position:relative; z-index:1;" (lihat style.css), yang membuat
+    // seluruh isinya (termasuk tombol hamburger, z-index:60) terjebak di
+    // satu stacking context SENDIRI bernilai 1 dari sudut pandang <body>.
+    // Klon yang ditempel LANGSUNG ke <body> dengan z-index 40 akan SELALU
+    // menang dibanding #app (1) itu sendiri, membuat z-index:60 hamburger
+    // di dalamnya percuma -- klon tetap menimpa hamburger. Dengan ditaruh
+    // DI DALAM #app, perbandingan z-index klon (40) vs hamburger (60)
+    // baru benar-benar berlaku di stacking context yang SAMA. #app/
+    // .app-shell TIDAK punya transform/filter apa pun, jadi TIDAK jadi
+    // containing block untuk position:fixed -- klon (position:fixed)
+    // tetap diposisikan relatif ke viewport seperti biasa, TIDAK ikut
+    // terklip overflow:hidden milik .app-shell.
+    (document.getElementById("app") || document.body).appendChild(klon);
 
     function updateLebar() {
       const thAsli = theadAsli.querySelectorAll("th");
