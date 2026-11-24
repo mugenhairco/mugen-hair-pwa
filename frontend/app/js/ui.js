@@ -409,6 +409,12 @@ const MugenUI = (() => {
       const theadRect = theadAsli.getBoundingClientRect();
       const wrapRect = wrap.getBoundingClientRect();
       const tampil = theadRect.top < batasAtas && wrapRect.bottom > batasAtas;
+      // Header ASLI disembunyikan (bukan dihapus) persis selama klonnya
+      // tampil -- tanpa ini, selama theadRect.top SUDAH lewat batasAtas
+      // tapi theadRect.bottom BELUM (tinggi 1 baris header, ~36px), header
+      // asli masih mengintip beberapa piksel BERBARENGAN dengan klon yang
+      // baru muncul -- terlihat seperti 2 judul kolom bertumpuk.
+      theadAsli.style.visibility = tampil ? "hidden" : "";
       if (tampil) {
         updateLebar();
         klon.style.display = "";
