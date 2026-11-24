@@ -33,22 +33,35 @@ const PagePos = (() => {
   // dimuat SEKALI per sesi (default "kotor" sebelum pernah dimuat, lalu
   // ditandai "bersih" & TIDAK PERNAH kotor lagi sampai SPA reload total).
   //
-  // "pos_transaksi" (Transaksi Hari Ini) TIDAK pakai flag "kotor" sama
-  // sekali -- daftar ini berubah TIAP SATU transaksi POS lunas (jalur
-  // paling sering dipakai di menu ini), begitu lunas barisnya langsung
-  // DISUNTIKKAN ke cache ini (_suntikTransaksiBaru(), optimistic update,
-  // TANPA fetch ulang apa pun) -- kalau tab ini belum pernah dibuka sesi
-  // ini (cache masih null), tidak ada yang perlu disuntik (nanti fetch
-  // fresh begitu pertama kali dibuka, otomatis sudah termasuk transaksi
-  // barunya). Hapus baris (kolomAksi()) TETAP fetch ulang penuh (butuh
-  // angka stok/Rekap yang benar-benar baru dari server, tidak bisa
-  // dihitung sendiri di frontend).
+  // "pos_transaksi" (Transaksi Hari Ini): checkout/verifikasi/hapus booking
+  // SESI INI SENDIRI tetap TIDAK pernah memicu loading ulang -- begitu
+  // lunas, barisnya langsung DISUNTIKKAN ke cache ini (_suntikTransaksiBaru()/
+  // suntikBookingLunas()/hapusBookingDariPos(), optimistic update, TANPA
+  // fetch ulang), SEGERA diikuti tandaiHalamanBersih("pos_transaksi") supaya
+  // flag kotor yang otomatis ditulis mutasi POS/Booking (default konservatif
+  // di api.js, SEKARANG mendaftarkan "pos_transaksi") langsung dinetralkan
+  // lagi. BUGFIX (dilaporkan Owner, "tidak menyuntik data diam-diam kalau
+  // ada user LAIN yang input"): yang BENAR-BENAR berubah di sini -- "pos_
+  // transaksi" SEKARANG ikut didaftarkan di FLAG_HALAMAN_SEMUA (api.js),
+  // jadi mutasi dari mana pun SELAIN jalur suntik di atas (termasuk dari
+  // device/sesi LAIN yang backend-nya sudah tahu, tapi dirty-flag di
+  // localStorage sendiri cuma per-BROWSER, tidak lintas device real-time)
+  // membuat render() berikutnya di DEVICE INI fetch ulang, bukan cache
+  // selamanya seperti sebelumnya. Hapus baris (kolomAksi()) TETAP fetch
+  // ulang penuh (butuh angka stok/Rekap yang benar-benar baru dari server,
+  // tidak bisa dihitung sendiri di frontend).
   let _cachePengaturan = null; // { userId, data }
   let _cacheTransaksiHariIni = null; // { userId, tanggal, data }
 
   function _suntikTransaksiBaru(pos) {
     if (!_cacheTransaksiHariIni || !pos) return;
     if (pos.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal (jaga2 lewat tengah malam) -- biarkan, nanti fetch fresh saat tab dibuka utk tanggal itu
+    // BUGFIX (lihat catatan "pos_transaksi" di api.js): checkout SESI INI
+    // SENDIRI -- tandai "bersih" lagi SEGERA setelah suntik, supaya flag
+    // kotor otomatis dari mutasi POST /api/pos/transaksi (default
+    // konservatif, lihat api.js) tidak memicu loading ulang yang tidak
+    // perlu untuk aksinya sendiri.
+    MugenState.tandaiHalamanBersih("pos_transaksi");
     const data = _cacheTransaksiHariIni.data;
     for (const b of pos.daftar_barber || []) {
       if (!b.daftar_service || !b.daftar_service.length) continue;
@@ -84,6 +97,9 @@ const PagePos = (() => {
   function suntikBookingLunas(booking) {
     if (!_cacheTransaksiHariIni || !booking) return;
     if (booking.status_pembayaran !== "terverifikasi") return;
+    // BUGFIX (lihat catatan "pos_transaksi" di api.js) -- sama seperti
+    // _suntikTransaksiBaru() di atas.
+    MugenState.tandaiHalamanBersih("pos_transaksi");
     const data = _cacheTransaksiHariIni.data;
     data.rincian_metode = data.rincian_metode || {};
     // FITUR Rekonsiliasi Pembayaran Booking (PERMINTAAN Owner): uang yang
@@ -133,6 +149,9 @@ const PagePos = (() => {
   function hapusBookingDariPos(booking) {
     if (!_cacheTransaksiHariIni || !booking) return;
     if (booking.status_pembayaran !== "terverifikasi") return; // belum lunas -- tidak pernah ikut disuntik, tidak ada yang perlu dibersihkan
+    // BUGFIX (lihat catatan "pos_transaksi" di api.js) -- sama seperti
+    // _suntikTransaksiBaru() di atas.
+    MugenState.tandaiHalamanBersih("pos_transaksi");
     const data = _cacheTransaksiHariIni.data;
     data.rincian_metode = data.rincian_metode || {};
     data.rincian_metode[booking.metode_pembayaran] = (data.rincian_metode[booking.metode_pembayaran] || 0) - booking.total_harga;
@@ -1160,6 +1179,7 @@ const PagePos = (() => {
         return;
       }
       _cacheTransaksiHariIni = { userId, tanggal: tanggalHariIni, data: hasil };
+      MugenState.tandaiHalamanBersih("pos_transaksi");
       tampilkanData(hasil);
     }
 
@@ -1167,7 +1187,16 @@ const PagePos = (() => {
     // dibuka sesi ini untuk tanggal yang sama -- baris baru masuk lewat
     // _suntikTransaksiBaru() (dipanggil begitu SATU transaksi POS lunas,
     // lihat jalankanWizardKasir()), BUKAN fetch ulang di sini.
-    if (_cacheTransaksiHariIni && _cacheTransaksiHariIni.userId === userId && _cacheTransaksiHariIni.tanggal === tanggalHariIni) {
+    //
+    // BUGFIX (dilaporkan Owner: "tidak menyuntik data diam-diam kalau ada
+    // user LAIN yang input"): syarat TAMBAHAN di atas supaya tab ini TETAP
+    // dianggap "bersih" HANYA kalau tidak ada mutasi yang relevan (termasuk
+    // dari SESI/DEVICE LAIN -- tidak bisa dideteksi real-time, tapi paling
+    // tidak fetch ulang penuh terjadi begitu Owner/Kasir di device INI
+    // sendiri melakukan APA PUN yang lain lalu kembali ke tab ini, bukan
+    // menunggu F5 selamanya) -- lihat catatan "pos_transaksi" di api.js.
+    if (_cacheTransaksiHariIni && _cacheTransaksiHariIni.userId === userId && _cacheTransaksiHariIni.tanggal === tanggalHariIni
+        && !MugenState.halamanPerluRefresh("pos_transaksi")) {
       tampilkanData(_cacheTransaksiHariIni.data);
       return;
     }

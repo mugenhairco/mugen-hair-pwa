@@ -1789,7 +1789,22 @@
 // v327 -> v328: PERMINTAAN Owner ("tidak usah kasih fil atau warna") --
 // badge ikon Download QRIS dilepas kotak warna/bayangannya sama sekali,
 // jadi ikon polos (abu-abu, menggelap jadi warna aksen saat hover).
-const ASSET_VERSION = "328";
+// v328 -> v329: BUGFIX (dilaporkan Owner: "Tab Transaksi Hari Ini tidak
+// menyuntik data diam-diam kalau ada user lain yang input, padahal Rekap
+// tab Transaksi sudah"). Akar masalah: cache "Transaksi Hari Ini" (pages/
+// pos.js) TIDAK PERNAH dianggap kotor oleh mutasi apa pun (beda dari
+// "rekap"/"rekap_transaksi" yang sudah lama terdaftar di flag default) --
+// sekali dimuat sesi ini, cache-nya SELAMANYA dianggap valid kecuali lewat
+// suntik diam-diam dari aksi SESI INI SENDIRI (checkout/verifikasi booking)
+// -- transaksi dari device/akun LAIN tidak pernah memicu apa pun. "pos_
+// transaksi" sekarang didaftarkan di flag default konservatif (api.js),
+// dan setiap suntik diam-diam diikuti tandaiHalamanBersih() supaya checkout
+// MILIK SESI INI SENDIRI tetap tidak pernah memicu loading ulang -- hanya
+// mutasi LAIN (termasuk dari device lain, atau aksi tidak terkait di
+// browser yang sama) yang membuat render berikutnya fetch ulang. Perilaku
+// sekarang SAMA PERSIS seperti Rekap tab Transaksi (keterbatasan yang sama:
+// tetap bukan real-time, baru ter-refresh begitu tab ini dibuka lagi).
+const ASSET_VERSION = "329";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
