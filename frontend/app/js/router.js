@@ -104,7 +104,7 @@ const MugenRouter = (() => {
     const wrap = MugenUI.el("div", { class: "app-shell" });
     const sidebar = MugenNav.render(location.hash || "#/dashboard");
     const backdrop = MugenUI.el("div", { class: "sidebar-backdrop" });
-    const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button" }, "☰");
+    const hamburger = MugenUI.el("button", { class: "hamburger", "aria-label": "Buka menu", type: "button", html: MugenIcons.menuTrigger });
     const main = MugenUI.el("main", { class: "content", id: "content" });
 
     // PERMINTAAN Owner: cegah scroll halaman di belakang sidebar (area

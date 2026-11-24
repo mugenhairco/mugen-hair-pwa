@@ -301,7 +301,7 @@ a:hover { color: var(--accent-secondary); }
    Menu terpilih: biru muted #3E5C87 (SENGAJA bukan solid --accent cerah --
    permintaan "warna jangan terlalu terang"), BUKAN lagi tint tipis
    var(--accent) seperti sebelumnya. */
-.sidebar, .hamburger { background: #0F1B33; }
+.sidebar { background: #0F1B33; }
 .sidebar .brand { color: #fff; border-bottom-color: rgba(255,255,255,0.14); }
 .sidebar nav a, .nav-group-toggle, .nav-group-chevron, .sidebar-collapse-btn, .sidebar .user-box {
   color: #94A3B8;
@@ -537,10 +537,12 @@ a:hover { color: var(--accent-secondary); }
   background: none;
   border: none;
   color: var(--text);
-  font-size: 22px;
   padding: 10px 16px;
   cursor: pointer;
+  align-items: center;
+  justify-content: center;
 }
+.hamburger svg { width: 22px; height: 22px; display: block; }
 
 /* ---------------------------------------------------------------------
    Animasi umum: fade + slide ringan (12px, ~220ms), dipakai konsisten di
@@ -1580,40 +1582,52 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .sidebar-backdrop { display: none; }
 
 @media (max-width: 820px) {
+  /* PERMINTAAN Owner ("Penyesuaian Animasi Sidebar Rivoir" -- desain
+     tombol hamburger): HANYA detail ikon+warna tombol ini yang mengadopsi
+     referensi Claude AI (background hitam pekat, bukan navy #0F1B33
+     seperti .sidebar) -- desain/warna sidebar & menu lainnya TIDAK ikut
+     berubah sama sekali. */
   .hamburger {
-    display: block;
+    display: flex;
     position: fixed; top: env(safe-area-inset-top); left: 0; z-index: 60;
-    background: #0F1B33;
+    background: #000;
     color: #fff;
     border-bottom: 1px solid rgba(255,255,255,0.14);
     border-right: 1px solid rgba(255,255,255,0.14);
     border-radius: 0 0 8px 0;
   }
-  /* REVISI UI/UX Premium: animasi buka/tutup sidebar (PERMINTAAN Owner) --
-     Smooth Slide-in + Fade + Backdrop Dim, easing cubic-bezier(0.16,1,.3,1)
-     ("ease-out-expo", kesan modern/premium -- cepat di awal, mendarat
-     halus di akhir), durasi 300ms. HANYA animasinya yang diperbarui --
-     warna/ukuran/struktur menu sidebar TIDAK disentuh sama sekali. */
+  /* REVISI UI/UX Premium (PERMINTAAN Owner -- "Penyesuaian Animasi Sidebar
+     Rivoir", referensi perilaku: sidebar Claude AI): sidebar PANEL UTUH
+     (bukan background-nya saja) bergeser dari kiri -- seluruh isi (ikon,
+     teks menu, grup navigasi, profil pengguna) adalah anak DOM dari
+     `.sidebar` ini sendiri (lihat router.js::shell(), SATU elemen dari
+     MugenNav.render()), jadi `transform: translateX()` pada elemen ini
+     SUDAH otomatis menggerakkan seluruh isinya bersama panelnya (bukan
+     cuma kotak/background-nya) -- TIDAK perlu transform terpisah di
+     elemen anak mana pun. Opacity fade yang SEBELUMNYA dibarengkan di
+     sini DIHAPUS (sebelumnya membuat kesan isi "memudar muncul" alih-alih
+     "bergerak sebagai satu kesatuan" bersama panelnya, persis keluhan
+     Owner) -- sekarang MURNI slide transform, backdrop gelap TETAP fade
+     terpisah (lihat .sidebar-backdrop di bawah, tidak ikut disentuh). */
   .sidebar {
     position: fixed; inset: 0 auto 0 0; z-index: 50;
     transform: translateX(-100%);
-    opacity: 0;
     /* CATATAN: properti `transition` untuk .sidebar DIGABUNG di SATU
-       tempat saja (lihat ".sidebar { transition: width ..., transform ...,
-       opacity ...; }" di bagian "Sidebar collapse (desktop)" lebih bawah
-       di file ini) -- shorthand `transition` TIDAK bisa dipecah ke
-       beberapa aturan CSS terpisah untuk selector yang sama; yang
-       terakhir muncul di file akan MENIMPA TOTAL nilai sebelumnya (bukan
-       digabung), bukan cuma menambah. Deklarasi transition SENGAJA
-       dihapus dari sini supaya tidak diam-diam ditimpa rule yang di bawah
-       (itu yang terjadi SEBELUM revisi ini -- animasi slide/fade mobile
-       jadi gagal, berganti sunyi jadi transisi width dari rail collapse
+       tempat saja (lihat ".sidebar { transition: width ..., transform
+       ...; }" di bagian "Sidebar collapse (desktop)" lebih bawah di file
+       ini) -- shorthand `transition` TIDAK bisa dipecah ke beberapa
+       aturan CSS terpisah untuk selector yang sama; yang terakhir muncul
+       di file akan MENIMPA TOTAL nilai sebelumnya (bukan digabung), bukan
+       cuma menambah. Deklarasi transition SENGAJA dihapus dari sini
+       supaya tidak diam-diam ditimpa rule yang di bawah (itu yang terjadi
+       SEBELUM revisi pertama animasi ini -- animasi slide mobile jadi
+       gagal, berganti sunyi jadi transisi width dari rail collapse
        desktop, walau closed/open state-nya tetap benar). */
     height: 100vh;
     height: 100dvh;
     box-shadow: var(--shadow-elevated);
   }
-  .sidebar.open { transform: translateX(0); opacity: 1; }
+  .sidebar.open { transform: translateX(0); }
   /* REVISI feedback Owner: tombol hamburger (posisi fixed, z-index di ATAS
      sidebar) menutupi logo/nama toko di pojok kiri atas sidebar begitu
      sidebar dibuka -- disembunyikan selama sidebar terbuka (menutup sidebar
@@ -2660,17 +2674,18 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
    catatan panjang di aturan mobile ".sidebar" -- deklarasi transition
    TIDAK boleh dipecah ke rule lain untuk selector yang sama, nanti
    saling menimpa, bukan digabung). `width` dipakai rail collapse/expand
-   desktop di bawah; `transform`/`opacity` dipakai animasi buka/tutup
-   sidebar mobile (PERMINTAAN Owner -- Smooth Slide-in + Fade, easing
-   cubic-bezier(0.16,1,.3,1), 300ms, lihat ".sidebar.open" di breakpoint
-   mobile). Keduanya aman digabung satu deklarasi -- tiap properti hanya
-   benar-benar berubah nilai (jadi hanya benar-benar teranimasi) di
-   konteksnya masing-masing (desktop vs mobile), tidak pernah berbarengan. */
+   desktop di bawah; `transform` dipakai animasi buka/tutup sidebar
+   mobile (PERMINTAAN Owner -- perilaku slide mengikuti referensi sidebar
+   Claude AI: panel utuh + seluruh isinya bergeser bersama, MURNI
+   transform, tanpa fade -- easing cubic-bezier(0.16,1,.3,1), 300ms,
+   lihat ".sidebar.open" di breakpoint mobile). Keduanya aman digabung
+   satu deklarasi -- tiap properti hanya benar-benar berubah nilai (jadi
+   hanya benar-benar teranimasi) di konteksnya masing-masing (desktop vs
+   mobile), tidak pernah berbarengan. */
 .sidebar {
   transition:
     width var(--dur-slow) var(--ease-standard),
-    transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .sidebar.collapsed { width: 72px; }
 /* PERMINTAAN Owner (logo tenant terlalu kecil): .brand-logo dibesarkan
