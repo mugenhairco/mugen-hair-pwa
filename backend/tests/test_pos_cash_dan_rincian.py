@@ -142,7 +142,17 @@ def test_nama_customer_hanya_terisi_untuk_baris_sumber_booking(single_tenant, mo
         customer_nama="Rudi Pelanggan", customer_whatsapp="081234567890",
         metode_pembayaran="cash", tenant_id=tenant_id, sumber="kasir_mandiri",
     )
-    assert booking["status_pembayaran"] == "terverifikasi"
+    # BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    # aplikasi): booking cash TIDAK lagi langsung "terverifikasi" begitu
+    # dibuat (lihat booking_db.py::buat_booking(), komentar "REVISI
+    # PERMINTAAN OWNER") -- Kasir/Admin wajib klik "Verifikasi" begitu
+    # customer BENAR-BENAR membayar. get_transaksi_hari_ini() HANYA
+    # menyertakan booking yang status_pembayaran="terverifikasi" (lihat
+    # pos_db.py), jadi test ini sekarang memanggil verifikasi_pembayaran()
+    # eksplisit -- sama seperti Kasir/Admin akan lakukan di dunia nyata --
+    # supaya baris booking-nya benar-benar muncul untuk dicek di bawah.
+    assert booking["status_pembayaran"] == "menunggu_verifikasi"
+    booking_db.verifikasi_pembayaran(booking["id"], oleh="smoke")
 
     hasil = pos_db.get_transaksi_hari_ini(tenant_id, tanggal)
     baris_pos = next(s for s in hasil["service"] if s["sumber"] == "pos")

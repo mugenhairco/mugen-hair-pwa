@@ -60,10 +60,16 @@ def test_rekap_detail_total_diterima_termasuk_uang_harian(single_tenant):
     tips = 10000
     total_diterima = komisi + uang_harian + tips
 
-    assert f"Komisi: Rp {komisi:,}".replace(",", ".") in teks
-    assert f"Uang Harian: Rp {uang_harian:,}".replace(",", ".") in teks
-    assert f"Tips: Rp {tips:,}".replace(",", ".") in teks
-    assert f"Total Diterima: Rp {total_diterima:,}".replace(",", ".") in teks
+    # BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    # aplikasi): kotak "Ringkasan Total" diubah dari baris polos "Label: Rp
+    # X" jadi tabel 2 kolom label/nilai (lihat laporan_pdf.py::
+    # _kotak_ringkasan_total(), commit "Rapikan PDF Rekap Detail/Ringkasan")
+    # -- pypdf mengekstrak isi 2 kolom itu sebagai "Label\n Rp X" (baris
+    # baru, bukan titik dua). Test ini tidak pernah ikut diperbarui saat itu.
+    assert f"Komisi\n Rp {komisi:,}".replace(",", ".") in teks
+    assert f"Uang Harian\n Rp {uang_harian:,}".replace(",", ".") in teks
+    assert f"Tips\n Rp {tips:,}".replace(",", ".") in teks
+    assert f"Total Diterima\n Rp {total_diterima:,}".replace(",", ".") in teks
     # Dinamis: tidak ada Reimburse/Kasbon sama sekali -> baris itu TIDAK muncul.
     assert "Reimburse:" not in teks
     assert "Kasbon:" not in teks
@@ -86,10 +92,13 @@ def test_rekap_detail_dua_transaksi_hari_sama_uang_harian_tidak_dobel(single_ten
     konten = laporan_pdf.buat_pdf_rekap_transaksi(2026, 7, None, "tester", tenant_id=tenant_id)
     teks = _teks_pdf(konten)
     # 2 transaksi -> komisi 40000 x 2 = 80000, TAPI Uang Harian TETAP 50000 (bukan 100000).
-    assert "Uang Harian: Rp 50.000" in teks
-    assert "Uang Harian: Rp 100.000" not in teks
-    assert "Komisi: Rp 80.000" in teks
-    assert "Total Diterima: Rp 130.000" in teks  # 80000 + 50000
+    # BUGFIX (test basi -- lihat catatan di
+    # test_rekap_detail_total_diterima_termasuk_uang_harian() di atas, alasan
+    # sama persis).
+    assert "Uang Harian\n Rp 50.000" in teks
+    assert "Uang Harian\n Rp 100.000" not in teks
+    assert "Komisi\n Rp 80.000" in teks
+    assert "Total Diterima\n Rp 130.000" in teks  # 80000 + 50000
 
 
 def test_rekap_detail_dengan_kasbon_dan_reimburse(single_tenant):
@@ -114,12 +123,20 @@ def test_rekap_detail_dengan_kasbon_dan_reimburse(single_tenant):
                                                    tanggal_mulai="2026-07-01", tanggal_selesai="2030-12-31",
                                                    tenant_id=tenant_id)
     teks = _teks_pdf(konten)
-    assert "Komisi: Rp 40.000" in teks
-    assert "Reimburse: Rp 20.000" in teks
-    assert "Kasbon: -Rp 15.000" in teks
-    assert "Total Diterima: Rp 45.000" in teks  # 40000 + 20000 - 15000
-    assert "Uang Harian:" not in teks  # tidak diatur -> 0 -> tidak tampil
-    assert "Tips:" not in teks
+    # BUGFIX (test basi -- lihat catatan di
+    # test_rekap_detail_total_diterima_termasuk_uang_harian() di atas, alasan
+    # sama persis).
+    assert "Komisi\n Rp 40.000" in teks
+    assert "Reimburse\n Rp 20.000" in teks
+    assert "Kasbon\n -Rp 15.000" in teks
+    assert "Total Diterima\n Rp 45.000" in teks  # 40000 + 20000 - 15000
+    # "Uang Harian"/"Tips" SENGAJA dicek dalam bentuk "Label\n Rp" (bukan
+    # cuma substring "Uang Harian"/"Tips" polos) -- keduanya SELALU muncul
+    # sebagai HEADER KOLOM tabel transaksi di atasnya terlepas ada datanya
+    # atau tidak, jadi substring polos akan selalu lolos (test jadi tidak
+    # berarti).
+    assert "Uang Harian\n Rp" not in teks  # tidak diatur -> 0 -> tidak tampil
+    assert "Tips\n Rp" not in teks
 
 
 def test_rekap_detail_hanya_dry_cut_tanpa_service_lain(single_tenant):
@@ -133,7 +150,10 @@ def test_rekap_detail_hanya_dry_cut_tanpa_service_lain(single_tenant):
 
     konten = laporan_pdf.buat_pdf_rekap_transaksi(2026, 7, None, "tester", tenant_id=tenant_id)
     teks = _teks_pdf(konten)
-    assert "MT Dry Cut: 2" in teks
+    # BUGFIX (test basi -- lihat catatan di
+    # test_rekap_detail_total_diterima_termasuk_uang_harian() di atas; sama
+    # persis tapi untuk kotak "Rincian Service", bukan "Ringkasan Total").
+    assert "MT Dry Cut\n 2" in teks
     assert "MT Cut & Wash" not in teks
 
 
@@ -163,8 +183,11 @@ def test_rekap_ringkasan_total_diterima_termasuk_uang_harian(single_tenant):
 
     konten = laporan_pdf.buat_pdf_rekap_transaksi_ringkasan(2026, 7, None, "tester", tenant_id=tenant_id)
     teks = _teks_pdf(konten)
-    assert "Uang Harian: Rp 50.000" in teks
-    assert "Total Diterima: Rp 95.000" in teks  # 40000 komisi + 50000 uang harian + 5000 tips
+    # BUGFIX (test basi -- lihat catatan di
+    # test_rekap_detail_total_diterima_termasuk_uang_harian() di atas, alasan
+    # sama persis).
+    assert "Uang Harian\n Rp 50.000" in teks
+    assert "Total Diterima\n Rp 95.000" in teks  # 40000 komisi + 50000 uang harian + 5000 tips
 
 
 def test_rekap_ringkasan_dua_transaksi_hari_sama_uang_harian_tidak_dobel(single_tenant):

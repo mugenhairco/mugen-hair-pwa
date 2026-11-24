@@ -90,8 +90,21 @@ def test_pdf_rekap_transaksi_is_barber_true_tidak_error_dan_landscape(single_ten
 
 def test_pdf_rekap_transaksi_is_barber_false_default_tidak_berubah(single_tenant):
     """Regresi: PARAMETER is_barber default False -- pemanggil lama (Owner/
-    Admin, tidak pernah mengisi parameter ini) HARUS tetap dapat PDF potret
-    apa adanya, tidak ada perubahan sama sekali dari sebelum fitur ini ada."""
+    Admin, tidak pernah mengisi parameter ini) HARUS tetap dapat PDF dengan
+    tata letak yang sama (tabel Non-Barber terpisah, kotak Ringkasan Total)
+    terlepas is_barber diisi atau tidak.
+
+    BUGFIX (test basi, ditemukan lewat laporan CI Owner -- BUKAN bug
+    aplikasi): assertion ini SEBELUMNYA mengharapkan PDF potret -- itu
+    perilaku LAMA, sudah SENGAJA diubah (lihat laporan_pdf.py commit
+    "Pisahkan tabel Non-Barber dari Barber di PDF Rekap Detail & Ringkasan":
+    "Rekap Transaksi (Owner/Admin) sekarang dicetak landscape (sebelumnya
+    potret) supaya kedua tabel muat rapi -- is_barber ... tidak berubah
+    sama sekali"). Jadi yang harus TETAP SAMA bukan orientasinya, tapi
+    bahwa is_barber=False/default tidak diam-diam ikut mendapat tata letak
+    khusus Barber (header/kolom Komisi, dst) -- dicek lewat isi teks di
+    bawah, bukan orientasi halaman. Test ini tidak pernah ikut diperbarui
+    saat itu."""
     import re
 
     tenant_id = single_tenant["tenant_id"]
@@ -105,7 +118,7 @@ def test_pdf_rekap_transaksi_is_barber_false_default_tidak_berubah(single_tenant
     assert konten[:4] == b"%PDF"
     m = re.search(rb"/MediaBox\s*\[([^\]]+)\]", konten)
     lebar, tinggi = [float(x) for x in m.group(1).split()[2:4]]
-    assert lebar < tinggi, "PDF Rekap Transaksi Owner/Admin (default) harus TETAP potret, tidak berubah"
+    assert lebar > tinggi, "PDF Rekap Transaksi Owner/Admin (default) sekarang landscape, sama seperti is_barber"
 
 
 # ============================= BUGFIX PERFORMA (N+1 Uang Harian + filter tahun/bulan) =============================

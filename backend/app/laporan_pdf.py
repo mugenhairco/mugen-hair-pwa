@@ -992,8 +992,11 @@ def buat_pdf_rekap_transaksi(tahun: int | None, bulan: int | None, barber_id: in
     adanya) menambahkan kolom Komisi & mengubah Pendapatan supaya benar-
     benar total baris itu (Komisi+Uang Harian+Tips+Reimburse-Kasbon),
     dicetak LANDSCAPE (lihat _LEBAR_KOLOM_REKAP_TRANSAKSI_BARBER) supaya
-    header tidak terpotong. Default False -- PDF Owner/Admin TIDAK berubah
-    sama sekali."""
+    header tidak terpotong. Default False -- susunan kolom/header Owner/
+    Admin TIDAK berubah sama sekali (REDESIGN tabel Non-Barber terpisah
+    BELAKANGAN membuat is_barber=False juga ikut dicetak landscape, lihat
+    komentar di titik return masing-masing di bawah -- hanya orientasi
+    halaman yang berubah, bukan isi/susunannya)."""
     if tanggal_mulai and tanggal_selesai:
         data = db.get_rekap_transaksi_list(barber_id=barber_id, tanggal_mulai=tanggal_mulai,
                                             tanggal_selesai=tanggal_selesai, tenant_id=tenant_id)
