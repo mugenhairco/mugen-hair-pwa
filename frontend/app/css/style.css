@@ -2173,8 +2173,14 @@ body.book-public-active {
 .book-download-qris-btn--icon {
   position: absolute; bottom: 8px; right: 8px; margin: 0;
   width: 34px; height: 34px; padding: 0; border-radius: var(--book-radius-sm);
-  box-shadow: var(--book-shadow-soft);
+  /* PERMINTAAN Owner ("tidak usah kasih fil atau warna"): TANPA kotak
+     warna/bayangan sama sekali -- murni ikon polos (currentColor
+     mengikuti teks biasa), menimpa background/border/shadow gradient
+     yang dipakai .book-download-qris-btn (versi pill+teks) di atas. */
+  background: none; border-color: transparent; box-shadow: none; color: var(--text-dim);
 }
+.book-download-qris-btn--icon:hover:not(:disabled) { transform: none; box-shadow: none; color: var(--accent); }
+.book-download-qris-btn--icon .book-ripple { background: rgba(15,23,42,0.12); }
 .book-ripple {
   position: absolute; border-radius: 50%; background: rgba(255,255,255,0.55);
   transform: scale(0); animation: book-ripple-anim 550ms ease-out forwards; pointer-events: none;

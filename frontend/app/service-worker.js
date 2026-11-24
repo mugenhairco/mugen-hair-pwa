@@ -1786,7 +1786,10 @@
 // badge ikon Download QRIS diganti dari bundar (border-radius:50%) jadi
 // kotak membulat (var(--book-radius-sm)), konsisten dengan sudut gambar
 // QRIS di sekelilingnya.
-const ASSET_VERSION = "327";
+// v327 -> v328: PERMINTAAN Owner ("tidak usah kasih fil atau warna") --
+// badge ikon Download QRIS dilepas kotak warna/bayangannya sama sekali,
+// jadi ikon polos (abu-abu, menggelap jadi warna aksen saat hover).
+const ASSET_VERSION = "328";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
