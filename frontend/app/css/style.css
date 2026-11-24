@@ -634,6 +634,13 @@ tr.row-clickable { cursor: pointer; }
 }
 .card-collapse-icon svg { width: 17px; height: 17px; }
 
+/* PERMINTAAN Owner (klik "No. Transaksi" di Booking List mematikan
+   notifikasi suara booking itu permanen): indikator kecil polos di
+   samping nomor yang sudah dimatikan -- SENGAJA bukan .icon-chip--xxx
+   (semua variannya berwarna, tidak cocok utk status "sudah redup/diam"). */
+.booking-notif-off-icon { display: inline-flex; width: 14px; height: 14px; flex-shrink: 0; color: var(--text-dim); }
+.booking-notif-off-icon svg { width: 100%; height: 100%; }
+
 .grid-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

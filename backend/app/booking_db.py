@@ -1556,6 +1556,19 @@ def tandai_booking_dilihat(booking_id: int) -> dict:
     return get_booking(booking_id)
 
 
+def matikan_notifikasi_suara_booking(booking_id: int) -> dict:
+    """FITUR Matikan Notifikasi Suara per-Booking (lihat booking_notif_
+    dimatikan_migrasi.py): dipanggil endpoint POST /{id}/matikan-
+    notifikasi-suara -- frontend (pages/booking.js) memanggilnya begitu
+    staff klik "No. Transaksi" booking yang masih menunggu verifikasi.
+    Permanen & BERSAMA untuk semua staff/Owner (bukan per akun, SAMA
+    seperti dilihat) -- tidak ada jalur "nyalakan lagi". UPDATE idempotent
+    (aman dipanggil berkali-kali)."""
+    with get_conn() as conn:
+        conn.execute("UPDATE bookings SET notif_suara_dimatikan = 1 WHERE id = ?", (booking_id,))
+    return get_booking(booking_id)
+
+
 def tanggal_wib_dari_timestamp(ts: str | None) -> str | None:
     """Konversi timestamp `datetime.now().isoformat()` POLOS (waktu server,
     default UTC di Render, BUKAN WIB -- lihat catatan panjang di
@@ -1700,7 +1713,8 @@ def hitung_booking_belum_dikonfirmasi(tenant_id: int = None) -> int:
     Dipakai badge menu Booking + polling notifikasi suara di sisi Admin
     (Depends(require_admin) di router, HANYA Admin yang bisa
     verifikasi/batalkan booking -- lihat routers/booking.py)."""
-    q = "SELECT COUNT(*) AS jumlah FROM bookings WHERE status_pembayaran = 'menunggu_verifikasi' AND status_booking = 'aktif'"
+    q = ("SELECT COUNT(*) AS jumlah FROM bookings WHERE status_pembayaran = 'menunggu_verifikasi' "
+         "AND status_booking = 'aktif' AND (notif_suara_dimatikan IS NULL OR notif_suara_dimatikan = 0)")
     params = []
     if tenant_id is not None:
         q += " AND tenant_id = ?"; params.append(tenant_id)
