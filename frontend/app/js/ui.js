@@ -398,19 +398,12 @@ const MugenUI = (() => {
         bersihkan();
         return;
       }
-      // Di HP ada tombol hamburger (position:fixed, lihat style.css) yang
-      // HARUS tetap di atas segalanya -- klon ini tidak boleh menutupinya.
-      // Dipakai batas bawah tombol hamburger ITU SENDIRI (bukan padding-top
-      // .content yang sengaja dilebihkan untuk jarak napas konten biasa)
-      // supaya klon berhenti PERSIS menempel di bawahnya, tanpa jarak
-      // kosong. Di desktop (hamburger display:none) tidak ada batas
-      // tambahan -- balik ke contentRect.top polos seperti semula.
-      const hamburger = document.querySelector(".hamburger");
+      // PERMINTAAN Owner: klon header harus SEBARIS dengan tombol hamburger
+      // (bukan di bawahnya) -- tombol hamburger (z-index lebih tinggi,
+      // lihat style.css) otomatis tetap tampil & bisa diklik menimpa sedikit
+      // ujung kiri klon, itu disengaja (lihat screenshot referensi Owner).
       const contentRect = content.getBoundingClientRect();
-      let batasAtas = contentRect.top;
-      if (hamburger && getComputedStyle(hamburger).display !== "none") {
-        batasAtas = Math.max(batasAtas, hamburger.getBoundingClientRect().bottom);
-      }
+      const batasAtas = contentRect.top;
       const theadRect = theadAsli.getBoundingClientRect();
       const wrapRect = wrap.getBoundingClientRect();
       const tampil = theadRect.top < batasAtas && wrapRect.bottom > batasAtas;
