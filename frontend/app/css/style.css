@@ -141,6 +141,32 @@ body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* PERMINTAAN Owner ("iOS Edge-to-Edge Display"): sejak index.html mengganti
+   apple-mobile-web-app-status-bar-style ke "black-translucent" (lihat
+   catatan di sana), webview-nya meluas penuh layar -- jam/baterai/ikon
+   status bar sistem digambar iOS SENDIRI (selalu putih, tidak bisa
+   diatur/disamakan otomatis dengan tema terang/gelap aplikasi lewat CSS
+   apa pun -- keterbatasan WebKit, bukan bug di sini) tepat di atas strip
+   setinggi env(safe-area-inset-top). Tanpa ini, di Tema Terang (--bg
+   TERANG) ikon putih itu nyaris tidak kelihatan (kontras buruk, putih di
+   atas nyaris-putih). Pseudo-element INI HANYA strip setinggi status bar
+   (0px & tidak kelihatan sama sekali di desktop/tablet/HP tanpa notch --
+   env(safe-area-inset-top) otomatis 0 di situ, TIDAK mengubah tampilan
+   apa pun di luar iPhone bertakik), warna gelap TRANSLUSEN (bukan solid)
+   supaya warna asli background aplikasi tetap "tembus" sedikit di
+   baliknya -- gaya status bar "translucent" khas native iOS -- sekaligus
+   menjamin ikon sistem tetap kebaca di kedua tema. z-index SENGAJA paling
+   tinggi di seluruh file (di atas modal/toast mana pun) -- status bar
+   sungguhan juga selalu di lapisan paling atas tanpa terkecuali. */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: env(safe-area-inset-top);
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 999999;
+  pointer-events: none;
+}
 
 /* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
    merender apa pun ke #app) -- SEBELUMNYA teks statis polos "Memuat
