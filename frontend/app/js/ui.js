@@ -399,6 +399,13 @@ const MugenUI = (() => {
     (document.getElementById("app") || document.body).appendChild(klon);
 
     function updateLebar() {
+      // Tabel ASLI bisa lebih lebar dari wadahnya (geser ke samping di HP,
+      // lihat .table-wrap overflow-x) -- lebar tabel KLON harus disamakan
+      // PERSIS ke lebar tabel asli yang sebenarnya (BUKAN 100% dari wadah
+      // yang lebih sempit), supaya browser tidak "memeras" proporsional
+      // lebar tiap kolom klon ke wadah yang lebih sempit itu -- itu
+      // penyebab kolom klon sebelumnya tidak sejajar dengan data asli.
+      tabelKlon.style.width = table.getBoundingClientRect().width + "px";
       const thAsli = theadAsli.querySelectorAll("th");
       const thKlon = theadKlon.querySelectorAll("th");
       thAsli.forEach((th, i) => {

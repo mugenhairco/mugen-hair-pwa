@@ -116,8 +116,26 @@ const PageProduk = (() => {
     // di bawah) -- TIDAK ADA LAGI form besar yang selalu terbuka di atas
     // halaman, tombolnya nempel di header card "Daftar Produk".
     if (bolehKelolaProduk) root.appendChild(produkPendingBanner);
+
+    // PERMINTAAN Owner: "Daftar Produk" & "Riwayat Mutasi" sekarang tab
+    // terpisah (SEBELUMNYA dua kartu bertumpuk di satu halaman) -- pola
+    // SAMA seperti MugenUI.tabs() di pages/booking.js. Data KEDUANYA tetap
+    // dimuat seperti biasa (tidak ada perubahan di loadProdukList()/
+    // loadRiwayat() di bawah) -- tab hanya mengatur tampil/sembunyi kartu
+    // mana yang terlihat, supaya risiko perubahan tetap kecil.
+    const produkTabsCtl = MugenUI.tabs(
+      [{ key: "produk", label: "Daftar Produk" }, { key: "riwayat", label: "Riwayat Mutasi" }],
+      {
+        onChange: (key) => {
+          produkListCard.style.display = key === "produk" ? "" : "none";
+          riwayatCard.style.display = key === "riwayat" ? "" : "none";
+        },
+      },
+    );
+    root.appendChild(produkTabsCtl.bar);
     root.appendChild(produkListCard);
     root.appendChild(riwayatCard);
+    riwayatCard.style.display = "none"; // tab aktif awal = "Daftar Produk"
 
     // PERMINTAAN OWNER: lihat catatan lengkap pola ini di
     // input_data.js::pendingList (Simpan Transaksi) -- di sini satu
