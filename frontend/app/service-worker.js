@@ -1820,7 +1820,7 @@
 // push_service.kirim_ke_role, pastikan tepat 1x panggilan per checkout,
 // payload benar) + injeksi DOM frontend lewat Playwright (baris baru
 // tampil seketika tanpa reload/klik apa pun).
-const ASSET_VERSION = "349";
+const ASSET_VERSION = "350";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

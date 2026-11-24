@@ -1662,7 +1662,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        bagian yang tergeser keluar layar otomatis terklip rapi, tanpa
        memicu scroll horizontal (html/body sendiri juga overflow-x:hidden). */
     transform: translateX(0);
-    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 0;
+    transition:
+      transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-radius 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    /* z-index EKSPLISIT (bukan andalkan urutan DOM/stacking context
+       implisit) -- transform di atas membuat .content jadi pembentuk
+       stacking context SENDIRI (CSS Transforms spec: elemen ber-transform
+       selain "none" otomatis membentuk stacking context baru, mirip
+       position:relative, WALAU position-nya sendiri tetap static) --
+       tanpa z-index tegas di sini, urutannya jadi rawan ambigu/salah pada
+       sebagian browser/kondisi render (persis pola bug stacking-context
+       yang sudah beberapa kali ketemu di app ini, lihat juga catatan
+       panjang ui.js::_pasangStickyHeader soal #app z-index:1). Nilainya
+       sengaja jauh di bawah .sidebar (50) / .sidebar-backdrop (40) /
+       .hamburger (60) supaya TIDAK PERNAH bisa menimpa ketiganya. */
+    z-index: 10;
   }
   .sidebar-backdrop {
     display: block;
@@ -1678,8 +1694,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      closeSidebar()/listener hamburger di sana). SATU class yang sama ini
      JUGA dipakai utk animasi "push" konten (translateX, lihat ".content"
      di atas) -- keduanya SELALU ditoggle berbarengan di router.js (baris
-     yang sama), jadi aman digabung tanpa perlu class/listener terpisah. */
-  .content.scroll-terkunci { overflow: hidden; transform: translateX(var(--sidebar-w)); }
+     yang sama), jadi aman digabung tanpa perlu class/listener terpisah.
+     PERMINTAAN Owner (screenshot referensi ke-2): sudut kiri konten yang
+     tersingkap dibulatkan (seperti sudut layar HP, BUKAN siku tajam) +
+     bayangan tipis di tepi kiri -- membuat konten terlihat sebagai
+     lapisan/kartu TERSENDIRI yang melayang di depan sidebar (bukan
+     terlihat seperti satu permukaan datar yang sama dengan sidebar). */
+  .content.scroll-terkunci {
+    overflow: hidden;
+    transform: translateX(var(--sidebar-w));
+    border-top-left-radius: 24px;
+    border-bottom-left-radius: 24px;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+  }
 }
 
 /* Owner/perangkat yang minta gerakan minimal (prefers-reduced-motion) --
