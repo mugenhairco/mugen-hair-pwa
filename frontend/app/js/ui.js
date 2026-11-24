@@ -398,14 +398,19 @@ const MugenUI = (() => {
         bersihkan();
         return;
       }
-      // .content punya padding-top ekstra di HP (lihat style.css) khusus
-      // supaya konten tidak ketutup tombol hamburger (position:fixed).
-      // Batas atas "mengambang"-nya klon ini HARUS ikut turun sejumlah
-      // padding itu -- kalau dipaku di contentRect.top polos (y=0), klon
-      // menutupi tombol hamburger yang seharusnya tetap di atas segalanya.
-      const paddingAtas = parseFloat(getComputedStyle(content).paddingTop) || 0;
+      // Di HP ada tombol hamburger (position:fixed, lihat style.css) yang
+      // HARUS tetap di atas segalanya -- klon ini tidak boleh menutupinya.
+      // Dipakai batas bawah tombol hamburger ITU SENDIRI (bukan padding-top
+      // .content yang sengaja dilebihkan untuk jarak napas konten biasa)
+      // supaya klon berhenti PERSIS menempel di bawahnya, tanpa jarak
+      // kosong. Di desktop (hamburger display:none) tidak ada batas
+      // tambahan -- balik ke contentRect.top polos seperti semula.
+      const hamburger = document.querySelector(".hamburger");
       const contentRect = content.getBoundingClientRect();
-      const batasAtas = contentRect.top + paddingAtas;
+      let batasAtas = contentRect.top;
+      if (hamburger && getComputedStyle(hamburger).display !== "none") {
+        batasAtas = Math.max(batasAtas, hamburger.getBoundingClientRect().bottom);
+      }
       const theadRect = theadAsli.getBoundingClientRect();
       const wrapRect = wrap.getBoundingClientRect();
       const tampil = theadRect.top < batasAtas && wrapRect.bottom > batasAtas;
