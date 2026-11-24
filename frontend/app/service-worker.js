@@ -1782,7 +1782,11 @@
 // jadi badge bundar melayang di pojok kanan-bawah gambar QRIS (bukan lagi
 // baris terpisah di bawahnya) -- pojok kanan-bawah dipilih supaya tidak
 // menimpa pola kotak pemandu QR code (selalu ada di 3 pojok lainnya).
-const ASSET_VERSION = "326";
+// v326 -> v327: PERMINTAAN Owner ("saya tidak suka bundar seperti itu") --
+// badge ikon Download QRIS diganti dari bundar (border-radius:50%) jadi
+// kotak membulat (var(--book-radius-sm)), konsisten dengan sudut gambar
+// QRIS di sekelilingnya.
+const ASSET_VERSION = "327";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --

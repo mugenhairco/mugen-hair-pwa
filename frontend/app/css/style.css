@@ -2172,7 +2172,7 @@ body.book-public-active {
    kanan-bawah satu-satunya pojok yang SELALU kosong di QR code apa pun.*/
 .book-download-qris-btn--icon {
   position: absolute; bottom: 8px; right: 8px; margin: 0;
-  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  width: 34px; height: 34px; padding: 0; border-radius: var(--book-radius-sm);
   box-shadow: var(--book-shadow-soft);
 }
 .book-ripple {
