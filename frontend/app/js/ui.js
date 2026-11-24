@@ -203,24 +203,40 @@ const MugenUI = (() => {
   // seluruh pemanggilan toast(...,"success"/"info") yang SUDAH ADA di
   // puluhan file (ditulis dengan pesan yang sudah rapi, cuma sebelumnya
   // diam) langsung aktif tanpa perlu disentuh satu per satu.
+  // REVISI UI/UX Premium (PERMINTAAN Owner -- "Modern Floating Toast"):
+  // ikon + judul singkat otomatis per `type`, TANPA mengubah signature
+  // toast(message, type, opts) -- seluruh pemanggilan yang SUDAH ADA di
+  // puluhan file (toast("...", "success"/"error"/"info"/"warning")) ikut
+  // dapat ikon+judul baru otomatis, tidak ada satu pun yang perlu diubah.
+  const _TOAST_VARIAN = {
+    success: { title: "Berhasil", icon: "checkCircle" },
+    error: { title: "Gagal", icon: "xCircle" },
+    warning: { title: "Perhatian", icon: "alertTriangle" },
+    info: { title: "Info", icon: "infoCircle" },
+  };
   function toast(message, type = "info", { force = false } = {}) {
-    const el = document.createElement("div");
-    el.className = "toast " + type;
-    el.textContent = message;
-    _tumpukToast.push(el);
+    const varian = _TOAST_VARIAN[type] || _TOAST_VARIAN.info;
+    const toastEl = el("div", { class: "toast " + type }, [
+      el("span", { class: "toast-icon", html: MugenIcons[varian.icon] }),
+      el("div", { class: "toast-body" }, [
+        el("div", { class: "toast-title" }, varian.title),
+        el("div", { class: "toast-message" }, message),
+      ]),
+    ]);
+    _tumpukToast.push(toastEl);
     _aturPosisiTumpukanToast();
-    document.body.appendChild(el);
+    document.body.appendChild(toastEl);
     // REVISI UI/UX Premium: animasi KELUAR sungguhan (sebelumnya .remove()
-    // instan) -- .toast-out (style.css) memicu mugen-toast-out, dilepas
-    // dari DOM setelah durasinya selesai (var(--dur-fast), lihat CSS).
+    // instan) -- .toast-out (style.css) memicu mugen-toast-out (200ms),
+    // dilepas dari DOM setelah durasinya selesai + sedikit buffer.
     setTimeout(() => {
-      el.classList.add("toast-out");
+      toastEl.classList.add("toast-out");
       setTimeout(() => {
-        el.remove();
-        _tumpukToast = _tumpukToast.filter((t) => t !== el);
+        toastEl.remove();
+        _tumpukToast = _tumpukToast.filter((t) => t !== toastEl);
         _aturPosisiTumpukanToast();
-      }, 150);
-    }, 3500);
+      }, 230);
+    }, 2500);
   }
 
   // Tumpukan toast (BARU -- sebelumnya tidak pernah dibutuhkan karena
@@ -230,10 +246,13 @@ const MugenUI = (() => {
   // digeser vertikal berurutan ke bawah supaya tidak saling menimpa.
   let _tumpukToast = [];
   function _aturPosisiTumpukanToast() {
-    let atas = 16;
+    let atas = 20;
     for (const t of _tumpukToast) {
-      t.style.top = atas + "px";
-      atas += t.offsetHeight + 10;
+      // PERMINTAAN Owner (safe area HP): calc() + env(safe-area-inset-top)
+      // -- bukan px polos -- supaya toast paling atas tidak ketutup
+      // notch/status bar, browser yang menghitung nilai env()-nya sendiri.
+      t.style.top = `calc(${atas}px + env(safe-area-inset-top))`;
+      atas += t.offsetHeight + 12;
     }
   }
 
