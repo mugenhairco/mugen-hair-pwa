@@ -100,6 +100,17 @@ const MugenIcons = (() => {
     // silang -- indikator kecil di samping nomor yang sudah dimatikan,
     // dipakai pages/booking.js::bookingTable().
     bellOff: `<svg ${S}><path d="M8.5 5.5A4 4 0 0 1 16 8v3.5l2 3.5H6"/><path d="M10.5 18a1.8 1.8 0 0 0 3 0"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`,
+
+    // REVISI UI/UX Premium (PERMINTAAN Owner -- "Modern Floating Toast"):
+    // 4 ikon status Lucide, dipakai ui.js::toast() -- warna ikon diatur
+    // lewat CSS per jenis toast (.toast.success svg dst, bukan atribut
+    // warna di sini), bentuknya SAMA PERSIS glyph resmi Lucide (check-
+    // circle/x-circle/alert-triangle/info) supaya konsisten gaya outline
+    // 2px yang sudah dipakai seluruh ikon lain di file ini.
+    checkCircle: `<svg ${S}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`,
+    xCircle: `<svg ${S}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>`,
+    alertTriangle: `<svg ${S}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+    infoCircle: `<svg ${S}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
   };
 })();
 
