@@ -1664,6 +1664,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     padding: 16px;
     padding-top: 64px;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    /* BUGFIX: .content TIDAK PERNAH punya background sendiri (transparan,
+       selama ini warna "abu-abu terang" yang terlihat sebenarnya tembus
+       dari <body>, lihat "body { background: var(--bg); }") -- begitu
+       .app-shell diberi navy (lihat di atas), navy itu ikut tembus ke
+       SELURUH kotak .content (bukan cuma di sudut yang dipotong rounded
+       corner seperti yang dimaksud), bikin seluruh halaman keliatan navy.
+       background eksplisit di sini mengembalikan tampilan semula (var
+       (--bg), SAMA seperti <body>) -- navy milik .app-shell jadi HANYA
+       kelihatan tepat di area potongan sudut bulat (satu-satunya bagian
+       yang bukan bagian dari kotak .content sama sekali). */
+    background: var(--bg);
     /* PERMINTAAN Owner (klarifikasi screenshot referensi "sidebar Claude
        AI"): bukan cuma diredupkan (dim overlay) di tempat -- konten utama
        HARUS ikut tergeser ke kanan ("push"), sinkron & dengan easing yang
