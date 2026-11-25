@@ -2564,30 +2564,20 @@ body.book-public-active {
    tidak menyusut aneh akibat object-fit: contain di dalam kotak persegi. */
 .book-hero-logo { height: 96px; width: auto; max-width: 260px; object-fit: contain; margin: 0 auto 14px; display: block; filter: drop-shadow(0 4px 14px rgba(15,23,42,0.18)); }
 .book-hero-content h1 { font-size: clamp(26px, 6vw, 36px); font-weight: 800; letter-spacing: -0.025em; margin: 0 0 10px; line-height: 1.1; }
-/* KOREKSI (Owner: foto hero "berkedip-kedip cepat" saat discroll): kuirk
-   WebKit dikenal lain (beda dari sticky/fixed yang dikejar sepanjang
-   sesi ini, ini soal backdrop-filter TANPA lapisan compositing sendiri
-   yang stabil) -- blur di tagline ini ada di dalam ".book-hero" yang
-   PUNYA animation masuk sekali (lihat "book-hero-in" di atas, scale
-   1.03->1). Selama animation AKTIF, WebKit otomatis kasih elemen
-   lapisan GPU tersendiri (demi animasi mulus) -- begitu animation
-   SELESAI, lapisan itu sering DILEPAS lagi, dan backdrop-filter yang
-   TIDAK punya lapisan sendiri harus menghitung ulang "apa yang ada di
-   baliknya" (foto hero) dari bitmap mentah SETIAP frame scroll --
-   kadang WebKit gagal melakukannya mulus, tampak sebagai foto di
-   baliknya "berkedip". transform:translateZ(0) + will-change memaksa
-   elemen blur ini MEMILIKI lapisan GPU-nya SENDIRI secara permanen
-   (bukan cuma sewaktu animasi), independen dari foto di baliknya --
-   blur dihitung SEKALI lalu lapisannya sendiri yang digeser saat
-   scroll (jauh lebih murah/stabil), bukan dihitung ulang dari nol
-   tiap frame. */
+/* KOREKSI (Owner: foto hero "berkedip-kedip cepat" saat discroll --
+   ternyata backdrop-filter:blur TANPA lapisan compositing sendiri yang
+   stabil di WebKit, lihat riwayat commit): PERMINTAAN Owner "hapus saja"
+   -- blur DIHAPUS TOTAL (bukan cuma distabilkan) -- tagline sekarang
+   latar SOLID (bukan lagi var(--book-glass-bg) yang translucent/
+   mengandalkan blur di baliknya -- dipakai apa adanya tanpa blur akan
+   terlihat "kotor"/tembus pandang sebagian, bukan solid bersih) --
+   warna gelap solid semi-transparan (BUKAN var(--book-glass-bg) yang
+   terang, supaya teks tetap terbaca di atas foto apa pun warnanya,
+   senada gradasi gelap ".book-hero-media::after" di atas foto). */
 .book-hero-tagline {
-  display: inline-block; color: var(--text-dim); font-size: 14.5px; font-weight: 500; font-style: normal;
+  display: inline-block; color: #fff; font-size: 14.5px; font-weight: 500; font-style: normal;
   margin-bottom: 4px; padding: 7px 16px; border-radius: 999px;
-  background: var(--book-glass-bg); border: 1px solid var(--book-glass-border);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  transform: translateZ(0);
-  will-change: backdrop-filter;
+  background: rgba(15,23,42,0.55);
 }
 
 .book-about {
