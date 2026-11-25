@@ -913,7 +913,6 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         "total_keseluruhan": sum(rincian_metode.values()),
         "penyesuaian": penyesuaian,
         "rincian_service": rincian_service,
-        "total_service": sum(v["nominal"] for v in agregat_service.values()),
         "total_tips": total_tips,
         "total_produk": total_produk,
     }

@@ -1868,8 +1868,6 @@ const PagePos = (() => {
         MugenUI.infoModal({
           title: "Detail Transaksi Hari Ini",
           body: [
-            MugenUI.el("div", { style: "font-weight:700;margin-bottom:8px;" },
-              `Total Service: ${MugenUI.formatRupiah(hasil.total_service || 0)}`),
             MugenUI.el("div", { class: "subtitle", style: "margin-bottom:4px;" }, "Rincian Service"),
             ...(rincianService.length
               ? rincianService.map((s) => MugenUI.el("div", {
