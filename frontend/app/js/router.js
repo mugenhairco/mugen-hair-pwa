@@ -193,6 +193,14 @@ const MugenRouter = (() => {
     const topbar = MugenUI.el("div", { class: "page-topbar" },
       MugenUI.el("span", { class: "page-topbar-title" }));
     const main = MugenUI.el("main", { class: "content", id: "content" });
+    // KOREKSI (Owner: layar iPhone asli -- redup konten "terpotong" ikut
+    // posisi scroll #content, lihat catatan ".content-dim" di style.css):
+    // elemen TERPISAH dari #content (bukan pseudo-element di dalamnya) --
+    // kebal dari bug WebKit "position:fixed ikut scroll internal ancestor
+    // yang jadi containing block". Sibling dari .sidebar (sama seperti
+    // .page-topbar/.hamburger) supaya selector `.sidebar.open ~
+    // .content-dim` di style.css bisa menjangkaunya.
+    const contentDim = MugenUI.el("div", { class: "content-dim" });
 
     // PERMINTAAN Owner: cegah scroll halaman di belakang sidebar (area
     // .content) selama sidebar terbuka di HP -- class ini hanya berefek
@@ -248,6 +256,7 @@ const MugenRouter = (() => {
     wrap.appendChild(hamburger);
     wrap.appendChild(topbar);
     wrap.appendChild(main);
+    wrap.appendChild(contentDim);
     appRoot.appendChild(wrap);
     // PERMINTAAN Owner ("nama menu tetap di posisi yang sama juga di
     // tablet/desktop"): di layar itu #content TIDAK full-width (sidebar
