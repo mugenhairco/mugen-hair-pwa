@@ -183,8 +183,9 @@ body {
    sidebar terbuka (lewat body:has(.sidebar.open) di bawah) -- strip ini
    jadi HANYA menutupi sisa lebar di sebelah KANAN sidebar (area konten,
    yang memang masih butuh bantuan kontras itu), sidebar sendiri tampil
-   solid navy tanpa tintnya. transition left SAMA PERSIS durasi/easing
-   animasi buka/tutup sidebar yang sudah ada supaya geraknya sinkron. */
+   solid navy tanpa tintnya. transition transform (BUKAN left, lihat
+   KOREKSI KEDUA di bawah) SAMA PERSIS durasi/easing animasi buka/tutup
+   sidebar yang sudah ada supaya geraknya sinkron. */
 body::before {
   content: "";
   position: fixed;
@@ -195,7 +196,7 @@ body::before {
   -webkit-backdrop-filter: blur(20px);
   z-index: 999999;
   pointer-events: none;
-  transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 /* PERMINTAAN Owner (strip status bar "ikuti warna konten", bukan tint
    gelap): background jadi transparent (blur-nya sendiri sudah cukup utk
@@ -214,10 +215,26 @@ body::before {
    diisi via class JS langsung (lihat router.js, dipasang BERBARENGAN
    dengan `.sidebar.open`) sebagai jaminan kedua yang tidak bergantung pada
    relational selector apa pun -- kalau salah satu gagal berefek di WebKit
-   tertentu, yang satu lagi tetap menjamin redup ini benar-benar terpasang. */
+   tertentu, yang satu lagi tetap menjamin redup ini benar-benar terpasang.
+   KOREKSI KEDUA (Owner: screenshot iPhone asli -- strip ini jadi PUTIH
+   TERANG penuh selebar layar, menimpa BAGIAN SIDEBAR JUGA, begitu sidebar
+   dibuka): background-color/gradient DI ATAS terbukti BERHASIL berubah
+   (buktinya warnanya berubah, bukan transparan+blur lagi) TAPI `left:
+   var(--sidebar-w)` TIDAK ikut membuat kotaknya menyusut ke sisi kanan
+   sidebar -- bug WebKit lain lagi: mengubah `left` pada elemen
+   position:fixed + backdrop-filter (lapisan komposit sendiri) MEMICU
+   resize/reposisi layer yang MAHAL & TIDAK SELALU direpaint dgn benar di
+   WebKit sungguhan, BEDA dari sekadar ganti warna (repaint murah, SELALU
+   berhasil) -- komposit flat (var(--bg) terang + tint) akhirnya tergambar
+   SELEBAR PENUH LAYAR (termasuk di atas sidebar yang navy), bukan cuma di
+   sisi konten. ".page-topbar" (lihat rule-nya) sudah lebih dulu
+   membuktikan TRANSFORM (bukan left) SELALU andal dipakai utk kasus
+   serupa (geser kotak fixed penuh layar begitu sidebar dibuka) -- `left:
+   var(--sidebar-w)` di sini diganti `transform: translateX(var(
+   --sidebar-w))`, pola SAMA PERSIS yang sudah terbukti jalan. */
 body:has(.sidebar.open)::before,
 body.sidebar-open::before {
-  left: var(--sidebar-w);
+  transform: translateX(var(--sidebar-w));
   background-color: var(--bg);
   background-image: linear-gradient(rgba(15, 23, 42, 0.35), rgba(15, 23, 42, 0.35));
   backdrop-filter: none;
@@ -1916,11 +1933,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     -webkit-mask-image: linear-gradient(to bottom, black, black 55%, transparent);
     z-index: 57;
     pointer-events: none;
-    transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+  /* KOREKSI (Owner: sama persis dgn body::before -- "left" pada elemen
+     position:fixed + backdrop-filter tidak selalu ikut repaint ulang di
+     WebKit sungguhan saat sidebar dibuka, beda dari ".page-topbar" yang
+     pakai transform & terbukti andal): diganti transform:translateX,
+     pola yang sama. */
   body:has(.sidebar.open)::after,
   body.sidebar-open::after {
-    left: var(--sidebar-w);
+    transform: translateX(var(--sidebar-w));
   }
   /* PERMINTAAN Owner ("saat sidebar dibuka, icon+menu ikut bergeser ke
      kanan, PASKAN dulu posisi di kiri; saat sidebar ditutup, munculkan
