@@ -682,7 +682,10 @@ a:hover { color: var(--accent-secondary); }
   align-items: center;
   padding: 0 28px;
   pointer-events: none;
-  background: var(--bg-translucent);
+  /* PERMINTAAN Owner (ikon+judul TANPA latar pill): background dihapus
+     total (transparent) -- backdrop-filter TETAP (blur-nya sendiri yang
+     menjaga konten di belakangnya tetap buram, bukan latar warna). */
+  background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -838,15 +841,6 @@ table.data-table th {
   font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  /* CATATAN: position:sticky di sini TIDAK EFEKTIF -- .table-wrap (di
-     bawah) punya overflow-x:auto, dan menurut spesifikasi CSS begitu
-     overflow-x diisi non-"visible", overflow-y ikut dipaksa "auto" juga,
-     menjadikan .table-wrap (bukan .content, pembungkus scroll halaman
-     sebenarnya) sebagai acuan sticky -- yang tidak pernah "mengambang"
-     karena .table-wrap sendiri tidak pernah overflow vertikal. Untuk
-     tabel yang butuh judul kolom menempel, dipakai mekanisme JS klon
-     header (`stickyHeader: true` di buildTable(), lihat ui.js
-     `_pasangStickyHeader()` + CSS `.sticky-table-head` di bawah). */
   /* PERMINTAAN Owner ("column header tidak ada warna"): SEBELUMNYA sama
      persis var(--bg-card) -- background tabel ikut .card (putih di light
      mode), jadi header menyatu TOTAL dengan baris data, nyaris tidak
@@ -867,33 +861,14 @@ table.data-table tr:hover td { background: var(--bg); }
 table.data-table tr.pos-baris-sudah-bayar td { color: #dc2626; }
 
 /* overflow-x:auto dibutuhkan agar tabel lebar bisa digeser ke samping di
-   HP -- scrollbar-nya disembunyikan (PERMINTAAN Owner untuk fitur sticky
-   header di bawah), scroll (sentuh/drag/wheel) tetap berfungsi normal. */
+   HP -- scrollbar-nya disembunyikan, scroll (sentuh/drag/wheel) tetap
+   berfungsi normal. */
 .table-wrap {
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .table-wrap::-webkit-scrollbar { display: none; }
-
-/* FITUR Judul Kolom Tabel Menempel (Sticky) saat Scroll (PERMINTAAN Owner,
-   Booking List + Produk > Riwayat Mutasi) -- klon <thead> mengambang,
-   dipasang/diposisikan via JS (lihat ui.js `_pasangStickyHeader()`).
-   Ditaruh di dalam #app (BUKAN di .content) supaya tidak terklip. */
-.sticky-table-head {
-  position: fixed;
-  z-index: 40;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--bg-card);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-/* CATATAN: width table klon TIDAK dipaksa 100% -- tabel asli bisa lebih
-   lebar dari layar (geser ke samping di HP, lihat .table-wrap overflow-x),
-   jadi lebar tabel klon juga harus mengikuti lebar ASLI yang sebenarnya
-   (diset lewat JS updateLebar(), sama seperti lebar tiap kolomnya) supaya
-   tidak ikut "diperas" proporsional ke lebar wadah yang lebih sempit --
-   itu yang membuat kolom klon sebelumnya tidak sejajar dengan data asli. */
 
 /* Dashboard Owner: "Service Bulan Ini/Periode Ini" (PERMINTAAN Owner,
    referensi kartu "Service Performance") -- badge periode di header,
@@ -1866,7 +1841,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      cukup, warna tambahan di sini bikin seam dgn konten di sekitarnya
      (lihat histori perbaikan body::before di atas). left digeser sama
      seperti body::before saat sidebar dibuka supaya tidak ikut
-     mengaburkan sidebar yang sedang terbuka. */
+     mengaburkan sidebar yang sedang terbuka.
+     KOREKSI (Owner: efek "kotak" -- blur rata dgn tepi tegas, bukan
+     memudar alami): backdrop-filter apa pun pada kotak biasa SELALU
+     buram RATA penuh sampai tepinya lalu LANGSUNG tajam begitu keluar,
+     bukan transisi bertahap. mask-image gradasi (alpha 0 -> 1 -> 0)
+     membuat EFEK BLUR ITU SENDIRI ikut memudar di kedua ujung strip
+     (bukan cuma warnanya) -- butuh -webkit-mask-image juga utk Safari
+     iOS (WebKit belum dukung properti tanpa prefix). */
   body::after {
     content: "";
     position: fixed;
@@ -1876,6 +1858,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     background: transparent;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    mask-image: linear-gradient(to bottom, transparent, black 40%, black 60%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 40%, black 60%, transparent);
     z-index: 57;
     pointer-events: none;
     transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
