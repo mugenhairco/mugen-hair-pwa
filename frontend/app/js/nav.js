@@ -314,12 +314,28 @@ const MugenNav = (() => {
     const sidebar = MugenUI.el("aside", {
       class: "sidebar" + (_collapsedTersimpan() ? " collapsed" : ""),
     });
+    // KOREKSI (Owner: logo+nama tenant TIDAK ikut tertahan/sticky di
+    // perangkat asli, walau sudah benar secara kode): ".sidebar" sendiri
+    // punya transform (animasi slide buka/tutup) SEKALIGUS jadi kontainer
+    // scroll (overflow-y:auto) -- kombinasi position:sticky DI DALAM
+    // elemen yang JUGA punya transform pada DIRINYA SENDIRI adalah kuirk
+    // WebKit dikenal lain (beda dari sebelumnya, ini soal sticky bukan
+    // fixed) yang membuat sticky gagal berfungsi sama sekali. ".sidebar"
+    // TETAP pegang transform+posisi (SEMUA selector ".sidebar.open ~ ...",
+    // "body:has(.sidebar.open)" dkk di style.css TIDAK berubah/TIDAK
+    // tersentuh) -- overflow-y:auto (scroll sungguhan) dipindah ke
+    // wrapper BARU ".sidebar-scroll" di dalamnya, elemen POLOS TANPA
+    // transform apa pun miliknya sendiri. position:sticky brand/user-box
+    // (lihat style.css) jadi menghitung relatif ke ".sidebar-scroll" yang
+    // bersih dari transform -- kuirk itu hilang.
+    const sidebarScroll = MugenUI.el("div", { class: "sidebar-scroll" });
+    sidebar.appendChild(sidebarScroll);
 
     const brandBox = MugenUI.el("div", { class: "brand" }, [
       MugenUI.el("img", { class: "brand-logo", style: "display:none;", alt: "Logo" }),
       MugenUI.el("span", { class: "brand-name" }, MugenBrand.get().nama_barbershop),
     ]);
-    sidebar.appendChild(brandBox);
+    sidebarScroll.appendChild(brandBox);
     MugenBrand.applyToDom();
 
     // FITUR Notifikasi H-7 & Perpanjangan Cepat (diminta Owner): tulisan
@@ -366,7 +382,7 @@ const MugenNav = (() => {
         const collapsed = sidebar.classList.toggle("collapsed");
         localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
       });
-      sidebar.appendChild(btnCollapse);
+      sidebarScroll.appendChild(btnCollapse);
     }
 
     const nav = MugenUI.el("nav");
@@ -390,7 +406,7 @@ const MugenNav = (() => {
           style: "opacity:.4;pointer-events:none;" }, `${label} (segera)`));
       }
     }
-    sidebar.appendChild(nav);
+    sidebarScroll.appendChild(nav);
 
     const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber", superadmin: "Super Admin", sales: "Sales" };
     const userBox = MugenUI.el("div", { class: "user-box" }, [
@@ -445,7 +461,7 @@ const MugenNav = (() => {
       }
     });
     userBox.appendChild(btnLogout);
-    sidebar.appendChild(userBox);
+    sidebarScroll.appendChild(userBox);
 
     return sidebar;
   }
