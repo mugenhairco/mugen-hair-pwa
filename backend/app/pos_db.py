@@ -766,6 +766,20 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     # dipecah per baris tampilan & SENGAJA tidak menyertakan tips).
     rincian_metode = {"gateway": 0, "qris": 0, "cash": 0}
 
+    # FITUR "Detail Transaksi Hari Ini" (PERMINTAAN Owner): rekap per NAMA
+    # service digabung dari KEDUA sumber (Kasir walk-in + Booking Online),
+    # dijumlahkan satu hari penuh -- {"Dry Cut": {"jumlah": 7, "nominal":
+    # 700000}, ...}. Scope-nya SAMA PERSIS service_items di atas (tanggal
+    # LAYANAN hari ini, status_pembayaran terverifikasi untuk booking) --
+    # BUKAN tanggal pembayaran seperti rincian_metode/total_keseluruhan.
+    agregat_service = {}
+    total_tips = 0
+
+    def _tambah_agregat(nama, harga):
+        a = agregat_service.setdefault(nama, {"jumlah": 0, "nominal": 0})
+        a["jumlah"] += 1
+        a["nominal"] += harga
+
     with get_conn() as conn:
         pos_rows = [dict(r) for r in conn.execute(
             "SELECT * FROM pos_transaksi WHERE tenant_id = ? AND tanggal = ? AND status = 'lunas' ORDER BY jam ASC",
@@ -785,6 +799,9 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         for b in pos["daftar_barber"]:
             if not b["daftar_service"]:
                 continue
+            for s in b["daftar_service"]:
+                _tambah_agregat(s["nama"], s["harga"])
+            total_tips += b["tips"]
             service_items.append({
                 "sumber": "pos", "pos_id": pos["id"], "jam": pos["jam"],
                 # Dipakai dropdown "Filter Barber" di pages/pos.js -- id, BUKAN
@@ -819,9 +836,11 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
     # dihitung di hari pembayaran yang sebenarnya, BUKAN di sini, supaya
     # tidak dihitung dua kali.
     penyesuaian = []  # [{"arah": "tambah"|"kurang", "nominal": int, "label": str}]
+    booking_ids_untuk_rincian = []  # dipakai query booking_items itemized di bawah
     for b in booking_db.get_booking_list(tenant_id=tenant_id, tanggal=tanggal, status_booking="aktif"):
         if b.get("status_pembayaran") != "terverifikasi":
             continue
+        booking_ids_untuk_rincian.append(b["id"])
         tanggal_bayar = booking_db.tanggal_wib_dari_timestamp(b.get("pembayaran_diterima_at"))
         dibayar_tanggal_lain = tanggal_bayar if tanggal_bayar and tanggal_bayar != tanggal else None
         service_items.append({
@@ -865,6 +884,27 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
                 "label": f"{b.get('customer_nama') or b['nama_barber']} -- booking tanggal {b['tanggal']}",
             })
 
+    # Itemized nama_service+harga per booking HANYA tersedia di tabel
+    # booking_items (booking_db.get_booking_list() sendiri cuma mengirim
+    # string gabungan tanpa harga per item, lihat daftar_service di atas)
+    # -- satu query batch untuk seluruh booking yang masuk service_items
+    # hari ini, digabung ke agregat_service yang sama dengan Kasir/POS.
+    if booking_ids_untuk_rincian:
+        placeholder = ", ".join("?" for _ in booking_ids_untuk_rincian)
+        with get_conn() as conn:
+            item_rows = conn.execute(
+                f"SELECT nama_service, harga FROM booking_items WHERE booking_id IN ({placeholder})",
+                booking_ids_untuk_rincian,
+            ).fetchall()
+        for it in item_rows:
+            _tambah_agregat(it["nama_service"], it["harga"])
+
+    rincian_service = sorted(
+        [{"nama": nama, "jumlah": v["jumlah"], "nominal": v["nominal"]} for nama, v in agregat_service.items()],
+        key=lambda x: -x["nominal"],
+    )
+    total_produk = sum(p["nominal"] for p in produk_items)
+
     service_items.sort(key=lambda x: x["jam"])
     produk_items.sort(key=lambda x: x["jam"])
     return {
@@ -872,4 +912,8 @@ def get_transaksi_hari_ini(tenant_id: int, tanggal: str) -> dict:
         "rincian_metode": rincian_metode,
         "total_keseluruhan": sum(rincian_metode.values()),
         "penyesuaian": penyesuaian,
+        "rincian_service": rincian_service,
+        "total_service": sum(v["nominal"] for v in agregat_service.values()),
+        "total_tips": total_tips,
+        "total_produk": total_produk,
     }
