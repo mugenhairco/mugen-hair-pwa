@@ -1933,8 +1933,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      "berbarengan" dengan bar ini selesai bergeser balik ke kiri -- durasi
      geser SAMA PERSIS (300ms, TANPA delay di sini) berarti keduanya
      TIBA di keadaan akhir pada momen yang SAMA PERSIS, tanpa perlu
-     delay tambahan dikoordinasi manual. */
+     delay tambahan dikoordinasi manual.
+     KOREKSI (Owner: screenshot simulasi -- saat sidebar dibuka, muncul
+     "garis"/pita terang di baris hamburger+judul, membentang sampai tepi
+     kanan layar): ".page-topbar" dilebarkan ke left:0 (lihat rule dasar di
+     atas) KHUSUS supaya menutup celah di sebelah ".hamburger" -- TAPI
+     ".hamburger" sendiri DISEMBUNYIKAN TOTAL begitu sidebar terbuka (lihat
+     ".sidebar.open ~ .hamburger" di bawah), jadi celah itu TIDAK ADA lagi
+     di state ini, perlebaran itu jadi TIDAK PERLU. Lebih parah: begitu
+     digeser (translateX) kotak yang sudah dilebarkan itu, bagian
+     perlebarannya (tadinya x:0-68px, cuma dipakai menutup celah) ikut
+     tergeser PERSIS ke tepi kanan sidebar -- muncul sebagai strip blur
+     POLOS (transparent + backdrop-filter TANPA tint redup, beda dari
+     redup rata milik body::before/::after di sekitarnya) tepat di baris
+     itu, kelihatan seperti "garis" aneh. left & padding-left DIKEMBALIKAN
+     ke geometri ASLI (68px/0, SEBELUM pelebaran) KHUSUS saat sidebar
+     terbuka -- hamburger toh sudah tidak ada, tidak ada celah yang perlu
+     ditutup, kotak kembali seukuran semula yang terbukti aman. */
   .sidebar.open ~ .page-topbar {
+    left: 68px;
+    padding-left: 0;
     transform: translateX(var(--sidebar-w));
   }
   /* REVISI UI/UX Premium (PERMINTAAN Owner -- "Penyesuaian Animasi Sidebar
