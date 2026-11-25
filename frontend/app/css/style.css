@@ -205,8 +205,11 @@ body::before {
   top: 0; left: 0; right: 0;
   height: var(--safe-top, env(safe-area-inset-top));
   background: transparent;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* KOREKSI SEMENTARA (Owner: diagnosis gradasi warna -- matikan SEMUA
+     efek blur utk menguji apakah gradasinya masih muncul tanpa blur
+     sama sekali). */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   z-index: 999999;
   pointer-events: none;
   transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -420,8 +423,9 @@ a:hover { color: var(--accent-secondary); }
   position: sticky;
   top: 0;
   z-index: 2;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* KOREKSI SEMENTARA (Owner: diagnosis gradasi warna -- matikan). */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .brand-logo {
@@ -786,10 +790,11 @@ a:hover { color: var(--accent-secondary); }
   pointer-events: none;
   /* PERMINTAAN Owner (ikon+judul TANPA latar pill): background dihapus
      total (transparent) -- backdrop-filter TETAP (blur-nya sendiri yang
-     menjaga konten di belakangnya tetap buram, bukan latar warna). */
+     menjaga konten di belakangnya tetap buram, bukan latar warna).
+     KOREKSI SEMENTARA (Owner: diagnosis gradasi warna -- matikan). */
   background: transparent;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .page-topbar-title {
@@ -2013,8 +2018,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     left: 0; right: 0;
     height: 32px;
     background: transparent;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    /* KOREKSI SEMENTARA (Owner: diagnosis gradasi warna -- matikan). */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     mask-image: linear-gradient(to bottom, black, black 55%, transparent);
     -webkit-mask-image: linear-gradient(to bottom, black, black 55%, transparent);
     z-index: 57;
