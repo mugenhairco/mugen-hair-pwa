@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import billing_db
+import billing_limits
 import subscription_db
 import superadmin_audit_db
 import tenant_db
@@ -91,7 +92,7 @@ def subscription_status(user: dict = Depends(get_current_user)):
         return {
             "akses_diblokir": False, "package": None, "features": [], "izin_paket": [],
             "periode_selesai": None, "hari_tersisa": None, "peringatan_kadaluarsa": False,
-            "status": None,
+            "status": None, "booking_limit": None, "booking_terpakai": 0, "booking_sisa": None,
         }
     tenant_id = user["tenant_id"]
     sub = subscription_db.get_subscription(tenant_id)
@@ -123,6 +124,11 @@ def subscription_status(user: dict = Depends(get_current_user)):
     peringatan_kadaluarsa = (
         hari_tersisa is not None and 0 <= hari_tersisa <= subscription_db.PERINGATAN_KADALUARSA_HARI
     )
+    # PERMINTAAN Owner: banner peringatan kuota booking bulanan di halaman
+    # Booking List (dashboard internal) -- dibaca dari cache MugenSubscription
+    # yang SAMA (pola identik fitur lain di endpoint ini, lihat docstring),
+    # tidak perlu endpoint/refresh terpisah.
+    kuota_booking = billing_limits.ringkasan_kuota_booking(tenant_id)
     return {
         "akses_diblokir": subscription_db.akses_diblokir(tenant_id),
         "package": sub["package"] if sub else None,
@@ -132,6 +138,9 @@ def subscription_status(user: dict = Depends(get_current_user)):
         "periode_selesai": periode_selesai,
         "hari_tersisa": hari_tersisa,
         "peringatan_kadaluarsa": peringatan_kadaluarsa,
+        "booking_limit": kuota_booking["limit"],
+        "booking_terpakai": kuota_booking["terpakai"],
+        "booking_sisa": kuota_booking["sisa"],
     }
 
 

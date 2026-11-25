@@ -122,6 +122,19 @@ def kuota_booking_habis(tenant_id: int) -> bool:
     return jumlah >= limit
 
 
+def ringkasan_kuota_booking(tenant_id: int) -> dict:
+    """PERMINTAAN Owner: dipanggil dari GET /api/subscription/status --
+    supaya halaman Booking List (dashboard internal Owner/Admin) bisa
+    menampilkan banner peringatan SEBELUM kuota benar-benar habis (sisa
+    <= 10) maupun SETELAH habis, bukan hanya di web publik. `limit`/`sisa`
+    None = TIDAK DIBATASI (paket tanpa batas booking)."""
+    pemakaian = _hitung_pemakaian_booking(tenant_id)
+    if pemakaian is None:
+        return {"limit": None, "terpakai": 0, "sisa": None}
+    jumlah, limit = pemakaian
+    return {"limit": limit, "terpakai": jumlah, "sisa": max(limit - jumlah, 0)}
+
+
 # ============================= Downgrade =============================
 # SESUAI KEPUTUSAN cakupan Phase 4: downgrade diblokir TOTAL selama
 # pemakaian SEKARANG melebihi limit paket TUJUAN -- TIDAK ADA penonaktifan
