@@ -103,6 +103,19 @@ const PagePos = (() => {
     if (typeof _transaksiHariIniTampilUlang === "function") _transaksiHariIniTampilUlang();
   }
 
+  // BUGFIX (dilaporkan Owner: "Rincian Service kosong padahal ada
+  // transaksi baru"): rincian_service/total_tips/total_produk (dipakai
+  // bukaDetailTransaksi()) HARUS ikut dipelihara di sini juga -- dulu
+  // hanya service/produk/rincian_metode/total_keseluruhan yang disuntik,
+  // jadi transaksi yang baru checkout (belum sempat fetch ulang penuh)
+  // tampil benar di tabel Service tapi KOSONG di modal Detail Transaksi.
+  function _tambahRincianService(data, nama, harga) {
+    data.rincian_service = data.rincian_service || [];
+    const existing = data.rincian_service.find((r) => r.nama === nama);
+    if (existing) { existing.jumlah += 1; existing.nominal += harga; }
+    else data.rincian_service.push({ nama, jumlah: 1, nominal: harga });
+  }
+
   function _suntikTransaksiBaru(pos) {
     if (!_cacheTransaksiHariIni || !pos) return;
     if (pos.tanggal !== _cacheTransaksiHariIni.tanggal) return; // beda tanggal (jaga2 lewat tengah malam) -- biarkan, nanti fetch fresh saat tab dibuka utk tanggal itu
@@ -121,12 +134,15 @@ const PagePos = (() => {
         nominal: b.daftar_service.reduce((sum, s) => sum + s.harga, 0),
         tips: b.tips,
       });
+      for (const s of b.daftar_service) _tambahRincianService(data, s.nama, s.harga);
+      data.total_tips = (data.total_tips || 0) + (b.tips || 0);
     }
     for (const p of pos.daftar_produk || []) {
       data.produk.push({
         sumber: "pos", pos_id: pos.id, jam: pos.jam, nama_produk: p.nama,
         jumlah: p.jumlah, nominal: p.harga_satuan * p.jumlah,
       });
+      data.total_produk = (data.total_produk || 0) + p.harga_satuan * p.jumlah;
     }
     data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
     data.produk.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
@@ -183,6 +199,12 @@ const PagePos = (() => {
       nama_customer: booking.customer_nama,
     });
     data.service.sort((a, c) => (a.jam < c.jam ? -1 : a.jam > c.jam ? 1 : 0));
+    // BUGFIX (lihat catatan _tambahRincianService di atas): `booking.items`
+    // (array {nama_service, harga}, lihat booking_db.get_booking()) dipakai
+    // kalau ada -- caller yang memanggil method ini dengan objek booking
+    // PENUH (hasil POST /api/booking/mandiri atau GET /api/booking/{id}
+    // setelah verifikasi) selalu punya field ini.
+    for (const it of booking.items || []) _tambahRincianService(data, it.nama_service, it.harga);
   }
 
   // BUGFIX "Transaksi Hari Ini POS tidak langsung update saat booking yang
