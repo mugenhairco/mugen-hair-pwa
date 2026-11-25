@@ -107,77 +107,6 @@ const MugenRouter = (() => {
       });
   }
 
-  // REVISI UI/UX Premium (PERMINTAAN Owner -- "Continuous Corner/Squircle"):
-  // CSS border-radius HANYA bisa bikin lengkungan lingkaran biasa, BUKAN
-  // squircle (superellipse, kurva yang lebih "landai"/menyatu mulus khas
-  // sudut layar iPhone) -- satu-satunya cara dapat kurva ini di web adalah
-  // clip-path dengan path SVG custom, dihitung di sini lewat rumus
-  // superellipse murni (eksponen n=4, pendekatan umum utk "squircle" --
-  // bukan algoritma presisi Figma/Apple yang jauh lebih rumit, tapi secara
-  // visual sangat dekat utk sudut sekecil ini). HANYA sudut KIRI (atas &
-  // bawah) yang melengkung (sudut kanan di luar layar saat sidebar
-  // terbuka, lihat ".content.scroll-terkunci" di style.css), sudut kanan
-  // dibiarkan siku tajam.
-  //
-  // Lebar/tinggi #content STABIL terlepas sidebar terbuka/tertutup (yang
-  // berubah cuma transform/posisinya, bukan ukuran box-nya sendiri) --
-  // jadi path ini CUKUP dihitung ulang saat resize/rotate layar, TIDAK
-  // perlu dihitung ulang tiap toggle buka/tutup sidebar. Hasilnya ditaruh
-  // di custom property --squircle-clip (dibaca ".content.scroll-terkunci"
-  // di style.css lewat clip-path:var(...)) -- pemisahan ini sengaja:
-  // GEOMETRI dihitung JS (jarang), KAPAN ditampilkan tetap diatur CSS
-  // class seperti sebelumnya (tidak berubah).
-  function _terapkanSquircleKonten() {
-    const main = document.getElementById("content");
-    if (!main || window.innerWidth > 820) return; // squircle cuma dipakai animasi push sidebar mobile
-    const r = 36; // SAMA PERSIS nilai lama border-top/bottom-left-radius
-    const w = main.clientWidth;
-    const h = main.clientHeight;
-    if (!w || !h) return;
-    const n = 4;
-    const steps = 32;
-    // BUGFIX (ketemu lewat screenshot zoom -- ada "duri"/spike tajam di
-    // ujung kurva, BUKAN sekadar kurang rapat): parametrisasi BAKU
-    // superellipse (x=R*|cosθ|^(2/n), y=R*|sinθ|^(2/n)) punya turunan
-    // dy/dθ BENAR-BENAR TAK TERHINGGA persis di θ=0 & θ=π/2 utk n=4
-    // (sifat matematis asli superellipse -- makin besar n, makin "mepet
-    // rata" ke sisi lurus lalu BERBELOK TAJAM persis di ujung, itu yang
-    // bikin squircle terlihat "lebih kotak" dari lingkaran biasa).
-    // Menambah jumlah langkah SAMPLING LINEAR saja (sudah dicoba 20 lalu
-    // 48 langkah) TIDAK PERNAH cukup -- berapa pun jumlah langkahnya,
-    // selama θ disebar RATA, langkah PERTAMA/TERAKHIR akan selalu
-    // melompati sebagian besar lengkungan curam itu, kelihatan patah.
-    // Fix sesungguhnya: sebar sampel lewat "raised cosine" (lebih rapat
-    // di KEDUA ujung, lebih jarang di tengah) -- dekat θ=0, fungsi ini
-    // membuat θ tumbuh KUADRATIK terhadap i (bukan linear), yang PERSIS
-    // menetralkan sifat 1/sqrt(θ) dari turunannya -- hasilnya laju
-    // perubahan titik per-langkah jadi RATA di SELURUH kurva, termasuk
-    // di ujung yang sebelumnya meloncat.
-    const titik = [];
-    for (let i = 0; i <= steps; i++) {
-      const theta = (Math.PI / 2) * (0.5 - 0.5 * Math.cos((Math.PI * i) / steps));
-      const x = r * Math.pow(Math.cos(theta), 2 / n);
-      const y = r * Math.pow(Math.sin(theta), 2 / n);
-      titik.push([r - x, r - y]);
-    }
-    // theta naik dari 0 -> pi/2 SUDAH otomatis berarti titik berjalan dari
-    // (0,r) -> (r,0) -- urutan yang benar, TIDAK perlu dibalik lagi.
-    let d = `M 0 ${r} `;
-    for (const [x, y] of titik) d += `L ${x.toFixed(2)} ${y.toFixed(2)} `;
-    d += `L ${w} 0 L ${w} ${h} `;
-    for (let i = steps; i >= 0; i--) {
-      const [x, y] = titik[i];
-      d += `L ${x.toFixed(2)} ${(h - y).toFixed(2)} `;
-    }
-    d += "Z";
-    main.style.setProperty("--squircle-clip", `path("${d}")`);
-  }
-  let _squircleResizeTimer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(_squircleResizeTimer);
-    _squircleResizeTimer = setTimeout(_terapkanSquircleKonten, 150);
-  });
-
   // PERMINTAAN Owner (bar judul "nama menu" tetap di atas, tidak ikut
   // scroll -- berlaku di HP MAUPUN tablet/desktop, lihat shell()): di
   // breakpoint mobile, #content SELALU full-width (sidebar di sana adalah
@@ -320,10 +249,6 @@ const MugenRouter = (() => {
     wrap.appendChild(topbar);
     wrap.appendChild(main);
     appRoot.appendChild(wrap);
-    // rAF -- tunggu satu frame supaya #content SUDAH benar-benar punya
-    // ukuran layout (clientWidth/clientHeight) sebelum dihitung, elemennya
-    // baru saja di-append sinkron di atas.
-    requestAnimationFrame(_terapkanSquircleKonten);
     // PERMINTAAN Owner ("nama menu tetap di posisi yang sama juga di
     // tablet/desktop"): di layar itu #content TIDAK full-width (sidebar
     // sungguhan ambil ruang di kirinya, bisa diciutkan/collapsed lewat
