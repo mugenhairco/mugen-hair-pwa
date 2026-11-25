@@ -808,8 +808,12 @@ a:hover { color: var(--accent-secondary); }
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 17px;
-  font-weight: 600;
+  /* PERMINTAAN Owner: blur bar judul dimatikan sementara (lihat ".page-topbar"
+     di atas) -- sebagai gantinya ikon+font judul dibuat lebih besar & lebih
+     tebal supaya tetap menonjol tanpa efek blur. Scope: "bar judul konten
+     saja" -- TIDAK menyentuh ".sidebar .brand" (nama tenant/logo sidebar). */
+  font-size: 19px;
+  font-weight: 800;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -818,9 +822,16 @@ a:hover { color: var(--accent-secondary); }
 /* Ikon chip (.page-title-icon, lihat ".content h1" di atas) disalin APA
    ADANYA dari <h1> asli -- ukurannya (34px, pas untuk judul besar di
    dalam konten) sedikit mengecil di sini supaya proporsional dengan bar
-   nav yang lebih ramping (56px, bukan ukuran judul halaman penuh). */
-.page-topbar-title .page-title-icon { width: 26px; height: 26px; border-radius: 8px; }
-.page-topbar-title .page-title-icon svg { width: 15px; height: 15px; }
+   nav yang lebih ramping (56px, bukan ukuran judul halaman penuh).
+   Dibesarkan lagi dari 26/15px (lihat komentar font di atas). */
+.page-topbar-title .page-title-icon { width: 32px; height: 32px; border-radius: 9px; }
+.page-topbar-title .page-title-icon svg { width: 18px; height: 18px; }
+/* Warna chip ikon dibuat lebih "bold" (tint lebih pekat) KHUSUS di bar
+   judul konten ini -- scoped lewat selector gabungan, TIDAK mengubah
+   ".icon-chip--accent" global (dipakai juga di kartu statistik dashboard
+   dkk., lihat baris ~546) supaya blast radius tetap kecil. */
+.page-topbar-title .page-title-icon.icon-chip--accent { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+:root[data-theme="dark"] .page-topbar-title .page-title-icon.icon-chip--accent { background: color-mix(in srgb, var(--accent) 36%, transparent); }
 /* BUGFIX: ".page-topbar" sengaja pointer-events:none (murni label, lihat
    atas) -- tapi beberapa halaman (rekap.js) memakai ikon judul SEKALIGUS
    sebagai tombol tersembunyi (".page-title-icon--clickable", lihat
