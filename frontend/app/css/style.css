@@ -370,7 +370,15 @@ a:hover { color: var(--accent-secondary); }
      position:fixed+transform (animasi slide) TANPA scroll-nya sendiri
      lagi, lihat catatan panjang di router.js::shell()/nav.js::render()
      ttg kenapa kombinasi position:sticky + transform pada ELEMEN YANG
-     SAMA gagal di WebKit. */
+     SAMA gagal di WebKit.
+     KOREKSI KEDUA (brand/user-box ikut tertarik pantulan elastis --
+     sticky TIDAK imun 100% dari rubber-band WebKit, lihat nav.js):
+     brandBox/userBox sekarang position:absolute (bukan lagi sticky di
+     dalam ".sidebar-scroll"), butuh containing block -- `position:
+     relative` di SINI (base rule, berlaku desktop JUGA, bukan cuma rule
+     mobile "position:fixed" di @media 820px di bawah) supaya keduanya
+     selalu anchor relatif ".sidebar" ini di KEDUA ukuran layar. */
+  position: relative;
   display: flex;
   flex-direction: column;
 }
@@ -398,6 +406,19 @@ a:hover { color: var(--accent-secondary); }
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  /* brandBox/userBox SEKARANG melayang DI ATAS elemen ini (position:
+     absolute, lihat ".sidebar .brand"/".sidebar .user-box" di bawah),
+     bukan lagi anak DI DALAMNYA -- padding ini mencadangkan ruang supaya
+     nav item paling atas/bawah tidak tertutup. Tinggi keduanya TIDAK
+     tetap (nama tenant panjang, peringatan kadaluarsa, Dark Mode row
+     Barber dst) -- var() diisi JS (ResizeObserver, lihat nav.js::
+     _ukurUlangOverlaySidebar()), fallback 78px/69px dipakai sebelum JS
+     sempat mengukur (render pertama/sepersekian detik awal). +6px pada
+     padding-top = gap visual ke nav item pertama (dulu margin-bottom
+     milik ".brand" sendiri -- sudah tidak berlaku lagi begitu ".brand"
+     keluar dari normal flow, dipindah ke sini). */
+  padding-top: calc(var(--sidebar-brand-h, 78px) + 6px);
+  padding-bottom: var(--sidebar-userbox-h, 69px);
 }
 
 /* PERMINTAAN Owner (nama tenant+logo "ditahan" di atas saat sidebar
@@ -423,21 +444,30 @@ a:hover { color: var(--accent-secondary); }
   letter-spacing: 0.02em;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
-  margin-bottom: 6px;
   display: flex;
   align-items: center;
   /* PERMINTAAN Owner (logo+nama tenant terlalu kecil & tidak di tengah
      utk kotak yang besar): justify-content:center menengahkan horizontal
-     -- padding-top clearance (lihat override mobile @media di bawah,
-     74.5px, WAJIB tetap ada -- itu yg mencegah bug "brand bisa digeser
-     dikit" muncul lagi) tetap di ATAS logo+nama, tapi logo+font kini
-     dibesarkan (lihat ".brand-logo"/".brand-name" di bawah) + padding-
-     bottom ditambah (20->26) supaya kontennya terasa proporsional
-     mengisi kotak, bukan kekecilan menggantung dekat garis pembatas. */
+     -- logo+font dibesarkan (lihat ".brand-logo"/".brand-name" di bawah)
+     + padding-bottom ditambah (20->26) supaya kontennya terasa
+     proporsional mengisi kotak, bukan kekecilan menggantung dekat garis
+     pembatas. */
   justify-content: center;
   gap: 12px;
-  position: sticky;
+  /* KOREKSI (Owner: ikut tertarik pantulan elastis saat menu overflow --
+     lihat catatan "KOREKSI KEDUA" panjang di nav.js & ".sidebar"/
+     ".sidebar-scroll" di atas): position:absolute (BUKAN lagi sticky)
+     -- elemen ini sekarang SAUDARA ".sidebar-scroll" (lihat nav.js),
+     bukan anak di dalamnya, jadi "menempel" di atas secara LITERAL
+     (di luar kontainer scroll manapun), bukan lagi via mekanisme sticky
+     yang masih bisa ketarik rubber-band. margin-bottom LAMA (dulu jarak
+     ke nav item pertama) sudah tidak relevan -- elemen position:absolute
+     keluar dari normal flow, gap itu sekarang dari padding-top
+     ".sidebar-scroll" (lihat rule-nya). */
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 2;
   /* KOREKSI SEMENTARA (Owner: diagnosis gradasi warna -- matikan). */
   backdrop-filter: none;
@@ -508,7 +538,15 @@ a:hover { color: var(--accent-secondary); }
    permintaan "warna jangan terlalu terang"), BUKAN lagi tint tipis
    var(--accent) seperti sebelumnya. */
 .sidebar { background: #0F1B33; }
-.sidebar .brand { color: #fff; border-bottom-color: rgba(255,255,255,0.14); }
+/* KOREKSI (Owner: nav item yang discroll "tembus" kelihatan dari balik
+   brand saat melayang -- ditemukan SETELAH brand jadi overlay sungguhan
+   di luar ".sidebar-scroll", lihat nav.js/.sidebar .brand di atas):
+   background solid WAJIB sekarang (dulu transparent, mengandalkan
+   backdrop-filter blur yang SAAT INI dimatikan -- lihat KOREKSI SEMENTARA
+   di rule dasar -- jadi tidak ada apa pun yang menutupi konten di
+   baliknya). SAMA PERSIS pola ".sidebar .user-box" (solid, bukan
+   transparent) di bawah. */
+.sidebar .brand { color: #fff; border-bottom-color: rgba(255,255,255,0.14); background: #0F1B33; }
 .sidebar nav a, .nav-group-toggle, .nav-group-chevron, .sidebar-collapse-btn, .sidebar .user-box {
   color: #94A3B8;
 }
@@ -664,25 +702,29 @@ a:hover { color: var(--accent-secondary); }
 .sidebar nav .nav-submenu a:hover, .sidebar nav .nav-submenu a.active { opacity: 1; }
 
 /* PERMINTAAN Owner (keterangan user + tombol keluar "ditahan" di bawah
-   saat sidebar di-scroll, TANPA efek blur -- cukup solid): pola sama
-   persis dengan ".sidebar .brand" di atas (position:sticky, TANPA
-   restrukturisasi DOM), cuma nempel ke bawah (bottom:0) bukan atas.
-   background #0F1B33 literal (SAMA PERSIS warna ".sidebar", lihat
-   KOREKSI "navy gelap PERMANEN" di atas) -- WAJIB solid (bukan transparent
-   seperti brand) supaya item menu yang discroll di baliknya TIDAK
-   kelihatan tembus sama sekali selagi nempel di bawah. padding-bottom
-   20px (BARU, dulu 16px -- jaraknya dulu datang dari padding-bottom
-   ".sidebar" sendiri) supaya celah itu ikut jadi BAGIAN KOTAK user-box,
-   ikut tertutup background solid-nya sampai BENAR-BENAR ke tepi bawah
-   scrollport, lihat catatan ".sidebar" di atas. */
+   saat sidebar di-scroll, TANPA efek blur -- cukup solid): nempel ke
+   bawah (bottom:0). background #0F1B33 literal (SAMA PERSIS warna
+   ".sidebar", lihat KOREKSI "navy gelap PERMANEN" di atas) -- WAJIB
+   solid (bukan transparent seperti brand) supaya item menu yang
+   discroll di baliknya TIDAK kelihatan tembus sama sekali selagi
+   nempel di bawah.
+   KOREKSI (Owner: ikut tertarik pantulan elastis saat menu overflow --
+   lihat catatan "KOREKSI KEDUA" di nav.js & ".sidebar"/".sidebar-scroll"
+   di atas): position:absolute (BUKAN lagi sticky, `margin-top:auto`
+   DIHAPUS -- dulu untuk mendorong elemen ini ke bawah selagi masih jadi
+   flex child ".sidebar-scroll", sekarang sudah saudara-nya, tidak lagi
+   relevan) -- elemen ini sekarang SAUDARA ".sidebar-scroll" (lihat
+   nav.js), bukan anak di dalamnya, jadi "menempel" di bawah secara
+   LITERAL (di luar kontainer scroll manapun). */
 .sidebar .user-box {
-  margin-top: auto;
   padding: 14px 20px 18px;
   border-top: 1px solid rgba(255,255,255,0.14);
   font-size: 13px;
   color: var(--text-dim);
-  position: sticky;
+  position: absolute;
   bottom: 0;
+  left: 0;
+  right: 0;
   z-index: 2;
   background: #0F1B33;
 }
@@ -2039,22 +2081,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   body::before {
     height: calc(var(--safe-top, env(safe-area-inset-top)) + 4px);
   }
-  /* RIWAYAT: dulu 74.5px (20px dasar + 54.5px) -- angka itu HANYA supaya
-     logo+nama sidebar sejajar PERSIS dengan bar judul konten (preferensi
-     visual lama, diukur via Playwright brandCenter vs judulCenter), BUKAN
-     kebutuhan teknis (bukan clearance status bar/notch -- itu urusan
-     "body::before" & var(--safe-top) sendiri, tidak terkait rule ini).
-     REVISI (Owner: kotak logo+nama sekarang didesain ulang lebih besar &
-     di-tengah, keselarasan dengan bar judul SUDAH TIDAK lagi jadi acuan)
-     -- padding-top dikecilkan jadi 28px, hampir sama dgn padding-bottom
-     26px milik rule dasar ".brand" (lihat atas) supaya logo+nama terasa
-     di-tengah vertikal dalam kotak yang jauh lebih ringkas, tidak lagi
-     menyisakan ruang kosong besar di atasnya. TETAP padding (bukan
-     margin) -- itu bagian WAJIB yang dipertahankan (lihat catatan
-     "WAJIB tetap ada" di rule dasar ".brand" di atas): padding ikut jadi
-     bagian kotak sticky itu sendiri, jadi posisi alami elemen SUDAH
-     PERSIS di top:0 sejak scroll pertama (TIDAK ADA jendela geser sticky
-     sama sekali) -- yang berubah cuma ANGKA-nya, mekanismenya sama. */
+  /* RIWAYAT: dulu 74.5px -- angka itu HANYA supaya logo+nama sidebar
+     sejajar PERSIS dengan bar judul konten (preferensi visual lama),
+     BUKAN kebutuhan teknis (bukan clearance status bar/notch -- itu
+     urusan "body::before" & var(--safe-top) sendiri, tidak terkait rule
+     ini). Lalu dikecilkan jadi 28px (desain ulang kotak lebih ringkas).
+     CATATAN (".brand" sekarang position:absolute, BUKAN lagi sticky --
+     lihat rule dasarnya & nav.js): angka 28px di sini MURNI preferensi
+     visual (sedikit lebih lega di mobile dibanding 20px desktop), tidak
+     ada lagi kaitan dengan mekanisme sticky/padding-vs-margin apa pun. */
   .sidebar .brand {
     padding-top: 28px;
   }
