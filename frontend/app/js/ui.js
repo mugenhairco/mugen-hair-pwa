@@ -338,7 +338,7 @@ const MugenUI = (() => {
   // lihat pages/absensi.js (tabel ringkasan kuota Owner). Default
   // undefined (tidak ada perubahan) supaya SELURUH pemanggil buildTable()
   // yang sudah ada tidak terpengaruh sama sekali.
-  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass, onRowClick, stickyHeader = false } = {}) {
+  function buildTable(columns, rows, { emptyText = "Belum ada data.", rowClass, onRowClick } = {}) {
     const wrap = el("div", { class: "table-wrap" });
     const table = el("table", { class: "data-table" });
     const thead = el("thead", {}, el("tr", {}, columns.map((c) => el("th", {}, c.label))));
@@ -367,119 +367,7 @@ const MugenUI = (() => {
     table.appendChild(thead);
     table.appendChild(tbody);
     wrap.appendChild(table);
-    // FITUR Judul Kolom Menempel (Sticky) saat Scroll -- opt-in (lihat
-    // pages/booking.js::bookingTable() & pages/produk.js Riwayat Mutasi).
-    // CSS `position:sticky` polos tidak bisa dipakai karena `.table-wrap`
-    // punya overflow-x:auto (lihat catatan CSS di style.css), jadi dipakai
-    // klon header mengambang via JS. rAF: beri waktu `wrap` masuk DOM dulu.
-    if (stickyHeader) requestAnimationFrame(() => _pasangStickyHeader(wrap, table));
     return wrap;
-  }
-
-  // Lihat catatan FITUR di buildTable() di atas. Membuat klon <thead> yang
-  // mengambang (position:fixed, ditempel ke document.body supaya tidak
-  // terklip overflow-x:hidden milik .content -- pola sama persis modal
-  // Produk POS) saat judul kolom ASLI sudah scroll melewati batas atas
-  // .content, SELAMA badan tabel belum seluruhnya lewat juga.
-  function _pasangStickyHeader(wrap, table) {
-    // Bersihkan klon yatim (wrap aslinya sudah lepas dari DOM, mis. ganti
-    // tab tanpa ganti hash) -- jaring pengaman tambahan selain hashchange.
-    document.querySelectorAll(".sticky-table-head").forEach((n) => {
-      if (!n._wrapRef || !n._wrapRef.isConnected) {
-        if (n._cleanup) n._cleanup();
-        else n.remove();
-      }
-    });
-
-    const content = document.getElementById("content");
-    const theadAsli = table.querySelector("thead");
-    if (!content || !theadAsli) return;
-
-    const klon = el("div", { class: "sticky-table-head" });
-    klon._wrapRef = wrap;
-    const tabelKlon = el("table", { class: "data-table" });
-    const theadKlon = theadAsli.cloneNode(true);
-    tabelKlon.appendChild(theadKlon);
-    klon.appendChild(tabelKlon);
-    klon.style.display = "none";
-    // Ditempel di dalam #app (BUKAN document.body langsung) -- #app punya
-    // "position:relative; z-index:1;" (lihat style.css), yang membuat
-    // seluruh isinya (termasuk tombol hamburger, z-index:60) terjebak di
-    // satu stacking context SENDIRI bernilai 1 dari sudut pandang <body>.
-    // Klon yang ditempel LANGSUNG ke <body> dengan z-index 40 akan SELALU
-    // menang dibanding #app (1) itu sendiri, membuat z-index:60 hamburger
-    // di dalamnya percuma -- klon tetap menimpa hamburger. Dengan ditaruh
-    // DI DALAM #app, perbandingan z-index klon (40) vs hamburger (60)
-    // baru benar-benar berlaku di stacking context yang SAMA. #app/
-    // .app-shell TIDAK punya transform/filter apa pun, jadi TIDAK jadi
-    // containing block untuk position:fixed -- klon (position:fixed)
-    // tetap diposisikan relatif ke viewport seperti biasa, TIDAK ikut
-    // terklip overflow:hidden milik .app-shell.
-    (document.getElementById("app") || document.body).appendChild(klon);
-
-    function updateLebar() {
-      // Tabel ASLI bisa lebih lebar dari wadahnya (geser ke samping di HP,
-      // lihat .table-wrap overflow-x) -- lebar tabel KLON harus disamakan
-      // PERSIS ke lebar tabel asli yang sebenarnya (BUKAN 100% dari wadah
-      // yang lebih sempit), supaya browser tidak "memeras" proporsional
-      // lebar tiap kolom klon ke wadah yang lebih sempit itu -- itu
-      // penyebab kolom klon sebelumnya tidak sejajar dengan data asli.
-      tabelKlon.style.width = table.getBoundingClientRect().width + "px";
-      const thAsli = theadAsli.querySelectorAll("th");
-      const thKlon = theadKlon.querySelectorAll("th");
-      thAsli.forEach((th, i) => {
-        if (thKlon[i]) thKlon[i].style.width = th.getBoundingClientRect().width + "px";
-      });
-    }
-
-    function updatePosisi() {
-      if (!wrap.isConnected) {
-        bersihkan();
-        return;
-      }
-      // PERMINTAAN Owner: klon header harus SEBARIS dengan tombol hamburger
-      // (bukan di bawahnya) -- tombol hamburger (z-index lebih tinggi,
-      // lihat style.css) otomatis tetap tampil & bisa diklik menimpa sedikit
-      // ujung kiri klon, itu disengaja (lihat screenshot referensi Owner).
-      const contentRect = content.getBoundingClientRect();
-      const batasAtas = contentRect.top;
-      const theadRect = theadAsli.getBoundingClientRect();
-      const wrapRect = wrap.getBoundingClientRect();
-      const tampil = theadRect.top < batasAtas && wrapRect.bottom > batasAtas;
-      // Header ASLI disembunyikan (bukan dihapus) persis selama klonnya
-      // tampil -- tanpa ini, selama theadRect.top SUDAH lewat batasAtas
-      // tapi theadRect.bottom BELUM (tinggi 1 baris header, ~36px), header
-      // asli masih mengintip beberapa piksel BERBARENGAN dengan klon yang
-      // baru muncul -- terlihat seperti 2 judul kolom bertumpuk.
-      theadAsli.style.visibility = tampil ? "hidden" : "";
-      if (tampil) {
-        updateLebar();
-        klon.style.display = "";
-        klon.style.top = batasAtas + "px";
-        klon.style.left = wrapRect.left + "px";
-        klon.style.width = wrapRect.width + "px";
-        tabelKlon.style.transform = `translateX(${-wrap.scrollLeft}px)`;
-      } else {
-        klon.style.display = "none";
-      }
-    }
-
-    function bersihkan() {
-      content.removeEventListener("scroll", updatePosisi);
-      wrap.removeEventListener("scroll", updatePosisi);
-      window.removeEventListener("resize", updateLebar);
-      window.removeEventListener("hashchange", bersihkan);
-      klon.remove();
-    }
-    klon._cleanup = bersihkan;
-
-    content.addEventListener("scroll", updatePosisi);
-    wrap.addEventListener("scroll", updatePosisi);
-    window.addEventListener("resize", updateLebar);
-    window.addEventListener("hashchange", bersihkan, { once: true });
-
-    updateLebar();
-    updatePosisi();
   }
 
   // ======================= REVISI UI/UX Premium =======================

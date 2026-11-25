@@ -1309,7 +1309,6 @@ const PageBooking = (() => {
     // supaya highlight hilang seketika saat diklik.
     return MugenUI.buildTable(columns, rows, {
       emptyText: "Belum ada booking.",
-      stickyHeader: true,
       rowClass: (r) => {
         const belumDilihat = !!onTandaiDilihat && !r.dilihat && r.sumber !== "kasir_mandiri";
         if (!belumDilihat) return "";
