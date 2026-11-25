@@ -150,8 +150,25 @@ html, body { overflow-x: hidden; width: 100%; }
    memicu pantulan native walau tidak ada konten yang sungguhan
    discroll/berpindah. overscroll-behavior:none DI SINI (bukan cuma di
    #content) mematikan pantulan itu di level HALAMAN, bukan cuma di satu
-   kontainer scroll. */
-html, body { overscroll-behavior: none; }
+   kontainer scroll.
+   KOREKSI KEDUA (Owner: tablet Android/Huawei -- "tarik ke bawah dikit
+   lalu lepas" di Dashboard dulu memicu pull-to-refresh bawaan Chrome/
+   Android, sekarang sudah tidak bisa lagi sama sekali): overscroll-
+   behavior:none di <html>/<body> SECARA GLOBAL (SELALU aktif, bahkan
+   saat sidebar TERTUTUP) ternyata jadi efek samping besar di Android --
+   properti ini SATU-SATUNYA cara standar mematikan pull-to-refresh
+   Chrome, jadi kalau dipasang selamanya, pull-to-refresh ikut mati
+   selamanya juga, bukan cuma pantulan halaman di belakang sidebar yang
+   memang jadi tujuan awal perbaikan ini. Fix: SCOPED ke SELAGI sidebar
+   TERBUKA saja (class ".sidebar-open", dipasang DI DUA elemen -- html
+   DAN body, lewat JS bersamaan toggle buka/tutup sidebar, lihat
+   router.js -- BUKAN cuma "body" supaya <html> ikut ketimpa juga tanpa
+   bergantung CSS `:has()` yang dukungannya tidak merata di semua
+   WebView Android/Huawei). Begitu sidebar ditutup lagi, overscroll-
+   behavior balik ke default -- pull-to-refresh & efek overscroll native
+   platform berfungsi normal lagi utk pemakaian sehari-hari, TETAP mati
+   HANYA selagi sidebar terbuka (tujuan asli perbaikan di atas). */
+html.sidebar-open, body.sidebar-open { overscroll-behavior: none; }
 
 body {
   margin: 0;

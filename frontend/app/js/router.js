@@ -216,17 +216,27 @@ const MugenRouter = (() => {
     // apa pun -- jaminan lebih pasti, dipasang BERBARENGAN dengan toggle
     // "open" milik sidebar (lihat juga CSS "body.sidebar-open::before/
     // ::after" sebagai pasangan selector `:has()` yang sudah ada).
+    // KOREKSI (Owner: pull-to-refresh Android/Chrome di tablet Huawei ikut
+    // mati selamanya, bukan cuma selagi sidebar terbuka -- lihat catatan
+    // panjang "KOREKSI KEDUA" di style.css dekat "html, body { overscroll-
+    // behavior... }"): class "sidebar-open" SEKARANG dipasang DI <html>
+    // JUGA (document.documentElement), bukan cuma <body> -- CSS yang
+    // mematikan overscroll-behavior (hanya selagi sidebar terbuka) butuh
+    // keduanya ketimpa, dan ini TIDAK bergantung `:has()` (dukungannya
+    // tidak merata di semua WebView Android/Huawei).
     function closeSidebar() {
       sidebar.classList.remove("open");
       backdrop.classList.remove("open");
       main.classList.remove("scroll-terkunci");
       document.body.classList.remove("sidebar-open");
+      document.documentElement.classList.remove("sidebar-open");
     }
     hamburger.addEventListener("click", () => {
       const kiniTerbuka = sidebar.classList.toggle("open");
       backdrop.classList.toggle("open", kiniTerbuka);
       main.classList.toggle("scroll-terkunci", kiniTerbuka);
       document.body.classList.toggle("sidebar-open", kiniTerbuka);
+      document.documentElement.classList.toggle("sidebar-open", kiniTerbuka);
     });
     backdrop.addEventListener("click", closeSidebar);
     // Tutup otomatis begitu satu menu dipilih (layar sempit) supaya user
