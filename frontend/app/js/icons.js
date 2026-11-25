@@ -100,6 +100,7 @@ const MugenIcons = (() => {
     // silang -- indikator kecil di samping nomor yang sudah dimatikan,
     // dipakai pages/booking.js::bookingTable().
     bellOff: `<svg ${S}><path d="M8.5 5.5A4 4 0 0 1 16 8v3.5l2 3.5H6"/><path d="M10.5 18a1.8 1.8 0 0 0 3 0"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`,
+    close: `<svg ${S}><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`,
 
     // REVISI UI/UX Premium (PERMINTAAN Owner -- "Modern Floating Toast"):
     // 4 ikon status Lucide, dipakai ui.js::toast() -- warna ikon diatur

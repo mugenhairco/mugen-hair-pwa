@@ -1855,15 +1855,42 @@ const PagePos = (() => {
         MugenUI.el("span", {}, `${p.arah === "tambah" ? "+" : "-"} ${p.label}`),
         MugenUI.el("span", {}, `${p.arah === "tambah" ? "+" : "-"} ${MugenUI.formatRupiah(p.nominal)}`),
       ]));
-      body.appendChild(MugenUI.el("div", { class: "card", style: "margin-bottom:16px;" }, [
-        MugenUI.el("div", { style: "font-weight:700;margin-bottom:8px;" }, "Rincian Pembayaran Hari Ini"),
-        barisRincian("Payment Gateway", rincian.gateway),
-        barisRincian("QRIS Manual", rincian.qris),
-        barisRincian("Cash", rincian.cash),
-        MugenUI.el("hr"),
-        barisRincian("Total Keseluruhan", hasil.total_keseluruhan, true),
-        ...barisPenyesuaian,
-      ]));
+
+      // FITUR "Detail Transaksi Hari Ini" (PERMINTAAN Owner): kartu
+      // "Rincian Pembayaran Hari Ini" yang DULU tampil permanen di atas
+      // halaman sekarang DIHAPUS -- isinya (Payment Gateway/QRIS/Cash/
+      // Total/penyesuaian) pindah ke modal ini, DIGABUNG dengan rincian
+      // service per-nama (dijumlahkan satu hari, lintas Kasir+Booking
+      // Online -- lihat pos_db.get_transaksi_hari_ini()) + Total Tips +
+      // Total Produk. Dipicu tombol link "Detail" di bawah tabel Service.
+      function bukaDetailTransaksi() {
+        const rincianService = hasil.rincian_service || [];
+        MugenUI.infoModal({
+          title: "Detail Transaksi Hari Ini",
+          body: [
+            MugenUI.el("div", { class: "subtitle", style: "margin-bottom:4px;" }, "Rincian Service"),
+            ...(rincianService.length
+              ? rincianService.map((s) => MugenUI.el("div", {
+                  style: "display:flex;justify-content:space-between;",
+                }, [
+                  MugenUI.el("span", {}, `${s.nama} ${s.jumlah}×`),
+                  MugenUI.el("span", {}, MugenUI.formatRupiah(s.nominal)),
+                ]))
+              : [MugenUI.el("div", { class: "subtitle" }, "Belum ada service hari ini.")]),
+            MugenUI.el("hr"),
+            barisRincian("Total Tips", hasil.total_tips),
+            barisRincian("Total Produk", hasil.total_produk),
+            MugenUI.el("hr"),
+            MugenUI.el("div", { style: "font-weight:700;margin-bottom:4px;" }, "Metode Pembayaran"),
+            barisRincian("Payment Gateway", rincian.gateway),
+            barisRincian("QRIS Manual", rincian.qris),
+            barisRincian("Cash", rincian.cash),
+            MugenUI.el("hr"),
+            barisRincian("Total Transaksi", hasil.total_keseluruhan, true),
+            ...barisPenyesuaian,
+          ],
+        });
+      }
 
       // Kolom "No" (PERMINTAAN Owner) -- nomor urut tampilan, dihitung ULANG
       // tiap render dari urutan baris SAAT INI (bukan disimpan permanen di
@@ -1878,8 +1905,8 @@ const PagePos = (() => {
       // barber yang BENAR-BENAR punya transaksi hari ini (bukan semua
       // barber aktif), supaya tidak ada opsi kosong di dropdown. Filter
       // ini MURNI tampilan (client-side, data hari ini sudah lengkap di
-      // memori) -- "Rincian Pembayaran"/"Total Keseluruhan" di atas TETAP
-      // untuk SELURUH hari (tidak ikut terpotong oleh filter ini).
+      // memori) -- kartu "Detail Transaksi Hari Ini" (lihat bukaDetailTransaksi()
+      // di atas) TETAP untuk SELURUH hari (tidak ikut terpotong oleh filter ini).
       const daftarBarberHariIni = [];
       const idBarberSudahAda = new Set();
       for (const r of hasil.service || []) {
@@ -1949,6 +1976,13 @@ const PagePos = (() => {
       }
       selFilterBarber.addEventListener("change", gambarTabelService);
       gambarTabelService();
+
+      // Tombol link "Detail" (PERMINTAAN Owner: posisi di bawah tabel
+      // Service, rata kanan) -- gaya link polos, pola SAMA PERSIS tombol
+      // "Hapus" (.text-link-aksi) di kolom Aksi tabel di atas.
+      const btnDetail = MugenUI.el("button", { type: "button", class: "text-link-aksi" }, "Detail");
+      btnDetail.addEventListener("click", bukaDetailTransaksi);
+      body.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:flex-end;margin:6px 0 4px;" }, [btnDetail]));
 
       body.appendChild(MugenUI.el("h2", { style: "margin-top:20px;" }, "Produk"));
       body.appendChild(MugenUI.buildTable(

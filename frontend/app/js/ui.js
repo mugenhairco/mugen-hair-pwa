@@ -712,19 +712,36 @@ const MugenUI = (() => {
   // sendiri (struktur detail beda-beda per fitur, tidak bisa digeneralisasi
   // di sini). Pola overlay/box SAMA PERSIS confirmModal() di atas supaya
   // konsisten secara visual, HANYA tombolnya beda (satu tombol Tutup).
-  function infoModal({ title, body } = {}) {
+  function infoModal({ title, body, onClose } = {}) {
     const asalEl = document.activeElement;
     const overlay = el("div", { class: "modal-overlay" });
-    const box = el("div", { class: "modal-box" });
+    const box = el("div", { class: "modal-box modal-box--info" });
+    // PERMINTAAN Owner: tombol "Tutup" di bawah diganti ikon X mengambang di
+    // sudut kanan-atas kartu (pola umum modal info modern) -- lebih ringkas,
+    // tidak makan baris tersendiri di bawah konten yang bisa panjang
+    // (mis. Detail Transaksi Hari Ini, lihat pages/pos.js).
+    const btnTutup = el("button", { type: "button", class: "modal-close-x", "aria-label": "Tutup" });
+    btnTutup.innerHTML = MugenIcons.close;
+    box.appendChild(btnTutup);
     if (title) box.appendChild(el("h3", {}, title));
     (Array.isArray(body) ? body : [body]).forEach((node) => { if (node) box.appendChild(node); });
-    const btnTutup = el("button", { type: "button", class: "btn-primary" }, "Tutup");
-    box.appendChild(el("div", { class: "modal-actions" }, [btnTutup]));
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     const tutupMorph = _pasangMorphModal(overlay, box, asalEl);
 
+    // `onClose` opsional (PERMINTAAN pemanggil seperti pages/booking.js::
+    // Jadwal Ulang -- butuh tahu kapan modal ditutup TANPA lewat aksi
+    // utamanya sendiri, supaya Promise terkait tidak menggantung) --
+    // dipanggil SEKALI persis sebelum animasi keluar mulai, apa pun jalur
+    // penutupannya (klik X, klik di luar kotak, atau close() dipanggil
+    // manual dari luar) -- menggantikan pola lama caller men-query DOM
+    // internal (".modal-actions button") yang jadi rapuh begitu markup
+    // tombolnya berubah.
+    let sudahDitutup = false;
     function tutup() {
+      if (sudahDitutup) return;
+      sudahDitutup = true;
+      if (onClose) onClose();
       overlay.classList.add("closing");
       (tutupMorph ? tutupMorph() : new Promise((r) => setTimeout(r, 120))).then(() => overlay.remove());
     }

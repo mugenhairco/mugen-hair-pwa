@@ -1383,18 +1383,15 @@ const PageBooking = (() => {
         MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan),
       ]);
 
-      const modal = MugenUI.infoModal({ title: `Jadwal Ulang -- ${booking.customer_nama}`, body: form });
       let selesai = false;
-      // infoModal() sendiri sudah punya tombol "Tutup" + klik-di-luar-kotak
-      // untuk menutup overlay-nya (lihat ui.js) -- di sini HANYA menitipkan
-      // resolve(false) supaya Promise ini tidak menggantung kalau modal
-      // ditutup TANPA lewat btnSimpan (klik Tutup/klik luar/dst).
-      const overlay = btnSimpan.closest(".modal-overlay");
-      if (overlay) {
-        overlay.addEventListener("click", (e) => { if (e.target === overlay && !selesai) resolve(false); });
-        const btnTutup = overlay.querySelector(".modal-actions button");
-        if (btnTutup) btnTutup.addEventListener("click", () => { if (!selesai) resolve(false); });
-      }
+      // infoModal() sendiri sudah punya ikon X + klik-di-luar-kotak untuk
+      // menutup overlay-nya (lihat ui.js) -- `onClose` dipanggil PERSIS
+      // sekali apa pun jalur penutupannya, dipakai di sini supaya Promise
+      // ini tidak menggantung kalau modal ditutup TANPA lewat btnSimpan.
+      const modal = MugenUI.infoModal({
+        title: `Jadwal Ulang -- ${booking.customer_nama}`, body: form,
+        onClose: () => { if (!selesai) resolve(false); },
+      });
 
       btnSimpan.addEventListener("click", async () => {
         errorBox.textContent = "";
