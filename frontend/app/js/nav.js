@@ -409,9 +409,25 @@ const MugenNav = (() => {
     sidebarScroll.appendChild(nav);
 
     const LABEL_ROLE = { admin: "Owner", staff: "Admin", barber: "Barber", superadmin: "Super Admin", sales: "Sales" };
-    const userBox = MugenUI.el("div", { class: "user-box" }, [
+    // PERMINTAAN Owner: tombol "Keluar" dipindah ke SAMPING KANAN nama
+    // user/role (sebelumnya baris terpisah di bawah) -- dibungkus bersama
+    // dalam ".user-box-top" (satu baris flex, lihat style.css) supaya
+    // kotak footer sidebar lebih ringkas, tidak menyisakan ruang kosong.
+    const userInfo = MugenUI.el("div", { class: "user-box-info" }, [
       MugenUI.el("div", {}, user.username),
       MugenUI.el("div", {}, LABEL_ROLE[user.role] || user.role),
+    ]);
+
+    // PERMINTAAN Owner: tombol "Keluar" sekarang ikon pintu+panah keluar
+    // polos (tanpa border/latar kotak) -- TIDAK ADA teks "Keluar" yang
+    // tampil sama sekali, baik diam maupun saat hover (tanpa tooltip).
+    // aria-label TETAP ada (hanya untuk pembaca layar/aksesibilitas, tidak
+    // pernah tampil visual) supaya tombol tetap bermakna tanpa teks.
+    const btnLogout = MugenUI.el("button", { class: "btn-logout", "aria-label": "Keluar" },
+      MugenUI.el("span", { class: "nav-icon", html: MugenIcons.logout }));
+
+    const userBox = MugenUI.el("div", { class: "user-box" }, [
+      MugenUI.el("div", { class: "user-box-top" }, [userInfo, btnLogout]),
     ]);
 
     // REVISI UI/UX: switch Dark Mode di sidebar HANYA untuk Barber -- Owner
@@ -427,13 +443,6 @@ const MugenNav = (() => {
       ]));
     }
 
-    // PERMINTAAN Owner: tombol "Keluar" sekarang ikon pintu+panah keluar
-    // polos (tanpa border/latar kotak) -- TIDAK ADA teks "Keluar" yang
-    // tampil sama sekali, baik diam maupun saat hover (tanpa tooltip).
-    // aria-label TETAP ada (hanya untuk pembaca layar/aksesibilitas, tidak
-    // pernah tampil visual) supaya tombol tetap bermakna tanpa teks.
-    const btnLogout = MugenUI.el("button", { class: "btn-logout", "aria-label": "Keluar" },
-      MugenUI.el("span", { class: "nav-icon", html: MugenIcons.logout }));
     btnLogout.addEventListener("click", async () => {
       if (!(await MugenUI.confirmModal({ message: "Yakin ingin keluar?" }))) return;
       // REVISI: setelah konfirmasi, tampilkan loading animation + teks
@@ -460,7 +469,6 @@ const MugenNav = (() => {
         location.hash = "#/login";
       }
     });
-    userBox.appendChild(btnLogout);
     sidebarScroll.appendChild(userBox);
 
     return sidebar;
