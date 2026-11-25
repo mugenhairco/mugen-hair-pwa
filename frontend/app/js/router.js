@@ -297,6 +297,22 @@ const MugenRouter = (() => {
     sidebar.addEventListener("click", (e) => {
       if (e.target.tagName === "A") closeSidebar();
     });
+    // KOREKSI (Owner: konten di sebelah sidebar MASIH bisa discroll walau
+    // sidebar sedang terbuka): CSS ".content.scroll-terkunci" (overflow:
+    // hidden + touch-action:none, lihat style.css) SEHARUSNYA cukup, TAPI
+    // di WebKit/Safari asli overflow:hidden tidak selalu menghentikan
+    // scroll yang SEDANG berlangsung dengan momentum/inersia (gestur flick
+    // sebelum tap hamburger) -- fisika momentum itu ditangani NATIVE oleh
+    // browser, tidak terus-menerus mengecek ulang CSS tiap frame. Listener
+    // touchmove+preventDefault ini jaminan kedua yang pasti: { passive:
+    // false } WAJIB supaya preventDefault() benar-benar berefek (listener
+    // touch SECARA DEFAULT pasif di browser modern demi performa scroll,
+    // preventDefault() pada listener pasif diabaikan diam-diam tanpa
+    // error). Dipasang SEKALI di <main> (bukan di-attach/lepas tiap toggle)
+    // -- cek class di dalam handler supaya tidak pernah lupa dilepas.
+    main.addEventListener("touchmove", (e) => {
+      if (main.classList.contains("scroll-terkunci")) e.preventDefault();
+    }, { passive: false });
 
     wrap.appendChild(sidebar);
     wrap.appendChild(backdrop);

@@ -2107,6 +2107,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      terlihat seperti satu permukaan datar yang sama dengan sidebar). */
   .content.scroll-terkunci {
     overflow: hidden;
+    /* KOREKSI (Owner: konten di sebelah sidebar MASIH bisa discroll
+       walau sidebar sedang terbuka): overflow:hidden SEHARUSNYA cukup,
+       TAPI di WebKit/Safari asli ini TIDAK SELALU menghentikan scroll
+       yang SEDANG berlangsung dengan momentum/inersia (gestur flick
+       sebelum tap hamburger) -- fisika momentum itu ditangani NATIVE
+       oleh browser, tidak terus-menerus mengecek ulang CSS overflow
+       tiap frame. touch-action:none memberi sinyal LEBIH TEGAS ke
+       gesture recognizer WebKit (level lebih rendah dari overflow CSS
+       biasa) supaya SAMA SEKALI tidak menerima gestur pan/scroll apa
+       pun di elemen ini selama class ini aktif -- dipasang BERBARENGAN
+       dengan listener touchmove+preventDefault di router.js sebagai
+       jaminan kedua (lihat catatan di sana) -- sama seperti pola
+       "CSS + JS redundan" yang sudah dipakai utk bug WebKit lain di
+       file ini. */
+    touch-action: none;
     transform: translateX(var(--sidebar-w));
     /* clip-path (BUKAN border-radius) -- lihat catatan panjang di ".content"
        di atas. --squircle-clip dihitung router.js::_terapkanSquircleKonten()
