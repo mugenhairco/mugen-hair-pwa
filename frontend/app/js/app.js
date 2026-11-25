@@ -30,6 +30,45 @@
 // sedang berjalan (aplikasi ini penuh form input yang belum tentu sudah
 // tersimpan) -- yang berubah HANYA sisi "memberi tahu user", bukan sisi
 // keamanan datanya.
+// ROBUSTNESS (Owner: layar iPhone asli -- strip blur status bar kadang TIDAK
+// full sampai ikon sinyal/baterai, kadang full, tidak konsisten di perangkat
+// yang sama): env(safe-area-inset-top) adalah CSS env var LIVE yang
+// semestinya ikut bertambah kalau status bar jadi lebih tinggi (pita hijau/
+// oranye "Sedang Menelepon"/"Perekaman Layar Aktif" dsb muncul), TAPI WebKit
+// punya bug dikenal -- elemen position:fixed yang tingginya pakai calc()
+// berisi env() tidak selalu ikut di-repaint ulang saat nilai env() berubah
+// live, kecuali ada "nudge" reflow dari luar. Probe tersembunyi ini mengukur
+// env(safe-area-inset-top) SUNGGUHAN lewat getBoundingClientRect() (bukan
+// CSS murni), lalu menyuntikkannya sebagai custom property --safe-top di
+// :root -- SELURUH tempat di style.css yang butuh nilai ini (body::before/
+// ::after, .page-topbar, .hamburger, .content, dst) pakai
+// var(--safe-top, env(safe-area-inset-top)): (a) tetap benar di render
+// PERTAMA sebelum skrip ini sempat jalan (fallback ke env() mentah), (b)
+// diukur ULANG & dipaksa reflow di setiap titik yang mungkin mengubah tinggi
+// status bar (resize, orientasi berubah, app kembali ke foreground,
+// visualViewport resize) -- walau WebKit gagal repaint OTOMATIS, perubahan
+// nilai custom property ini sendiri memaksa layout baru di semua elemen yang
+// memakainya.
+(function jagaSafeAreaTop() {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed; top:0; left:0; width:0; height:0; margin:0; border:0;" +
+    "padding-top:env(safe-area-inset-top); pointer-events:none; visibility:hidden;";
+  document.documentElement.appendChild(probe);
+  function ukurUlang() {
+    const tinggi = probe.getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--safe-top", tinggi + "px");
+  }
+  ukurUlang();
+  window.addEventListener("resize", ukurUlang);
+  window.addEventListener("orientationchange", ukurUlang);
+  window.addEventListener("pageshow", ukurUlang);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") ukurUlang();
+  });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", ukurUlang);
+})();
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
