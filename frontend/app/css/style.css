@@ -2035,12 +2035,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        selama ini warna "abu-abu terang" yang terlihat sebenarnya tembus
        dari <body>, lihat "body { background: var(--bg); }") -- begitu
        .app-shell diberi navy (lihat di atas), navy itu ikut tembus ke
-       SELURUH kotak .content (bukan cuma di sudut yang dipotong rounded
-       corner seperti yang dimaksud), bikin seluruh halaman keliatan navy.
+       SELURUH kotak .content, bikin seluruh halaman keliatan navy.
        background eksplisit di sini mengembalikan tampilan semula (var
        (--bg), SAMA seperti <body>) -- navy milik .app-shell jadi HANYA
-       kelihatan tepat di area potongan sudut bulat (satu-satunya bagian
-       yang bukan bagian dari kotak .content sama sekali). */
+       kelihatan di luar kotak .content (mis. sudut kiri sidebar). */
     background: var(--bg);
     /* PERMINTAAN Owner (klarifikasi screenshot referensi "sidebar Claude
        AI"): bukan cuma diredupkan (dim overlay) di tempat -- konten utama
@@ -2052,24 +2050,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        bagian yang tergeser keluar layar otomatis terklip rapi, tanpa
        memicu scroll horizontal (html/body sendiri juga overflow-x:hidden). */
     transform: translateX(0);
-    /* PERMINTAAN Owner ("Continuous Corner/Squircle"): border-radius CSS
-       cuma bisa bikin lengkungan lingkaran biasa -- diganti clip-path
-       dengan path SVG squircle (dihitung router.js::_terapkanSquircleKonten()
-       lewat custom property --squircle-clip, lihat catatan di sana).
-       clip-path TIDAK bisa morph mulus dari "none" (state normal, di
-       sini) ke sebuah path kompleks (state terbuka, lihat
-       .content.scroll-terkunci) -- browser akan "meloncat" di suatu
-       titik tengah transisi, bukan melengkung bertahap -- TIDAK masalah,
-       lengkungannya sendiri kecil (36px) & baru benar2 kelihatan setelah
-       konten hampir berhenti bergeser. transform (gerakan utama) TETAP
-       mulus penuh, itu yang paling kelihatan. filter (bayangan, lihat
-       .scroll-terkunci) TETAP ikut animasi mulus SEPENUHNYA (drop-shadow
-       beda dari clip-path, nilainya murni angka yang bisa diinterpolasi). */
-    clip-path: none;
-    filter: none;
+    box-shadow: none;
     transition:
       transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
-      filter 300ms cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1);
     /* PERBAIKAN (klarifikasi via rekaman layar Claude AI dari Owner):
        konten HARUS menimpa/overlap sidebar (z-index LEBIH TINGGI dari
        .sidebar/50), BUKAN di bawahnya -- sebelumnya z-index:10 (di bawah
@@ -2079,8 +2063,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        duluan ada di atasnya -- shadow jadi tidak pernah kelihatan sama
        sekali, itu sebabnya terkesan "bukan efek menimpa sidebar". Nilai
        55 sengaja di ANTARA .sidebar (50) dan .hamburger (60) -- harus di
-       atas sidebar (supaya shadow & sudut bulat konten kelihatan jatuh
-       ke permukaan sidebar), TAPI TETAP di bawah .hamburger (supaya
+       atas sidebar (supaya shadow konten kelihatan jatuh ke permukaan
+       sidebar), TAPI TETAP di bawah .hamburger (supaya
        tombol hamburger TIDAK ikut ketutup konten begitu sidebar
        benar-benar tertutup penuh -- tombol itu HARUS tetap kelihatan &
        bisa diklik lagi untuk membuka ulang). */
@@ -2094,8 +2078,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      stacking context yang SAMA, tidak perlu bersaing z-index dgn sidebar) --
      .content punya transform (lihat di atas) sehingga jadi containing block
      utk descendant position:fixed, jadi ::after ini otomatis menutup PAS
-     kotak .content (ikut bergeser bersamanya), dan ikut diklip oleh
-     clip-path/filter milik .content (termasuk dlm siluet squircle & shadow).
+     kotak .content (ikut bergeser bersamanya).
      .sidebar-backdrop TETAP ada & TETAP perlu -- fungsinya murni sebagai
      target klik "tap di luar sidebar utk tutup" (lihat router.js::shell()),
      tint visualnya sendiri sekarang vestigial/tidak kelihatan, tidak masalah. */
@@ -2122,11 +2105,19 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      JUGA dipakai utk animasi "push" konten (translateX, lihat ".content"
      di atas) -- keduanya SELALU ditoggle berbarengan di router.js (baris
      yang sama), jadi aman digabung tanpa perlu class/listener terpisah.
-     PERMINTAAN Owner (screenshot referensi ke-2): sudut kiri konten yang
-     tersingkap dibulatkan (seperti sudut layar HP, BUKAN siku tajam) +
-     bayangan tipis di tepi kiri -- membuat konten terlihat sebagai
-     lapisan/kartu TERSENDIRI yang melayang di depan sidebar (bukan
-     terlihat seperti satu permukaan datar yang sama dengan sidebar). */
+     PERMINTAAN Owner (screenshot referensi ke-2): bayangan tipis di tepi
+     kiri -- membuat konten terlihat sebagai lapisan/kartu TERSENDIRI yang
+     melayang di depan sidebar (bukan terlihat seperti satu permukaan
+     datar yang sama dengan sidebar).
+     KOREKSI (Owner: minta dihilangkan, kembalikan seperti semula): sudut
+     kiri konten SEMPAT dibulatkan pakai clip-path squircle (lihat riwayat
+     git utk detail "Continuous Corner" -- rumus superellipse di
+     router.js::_terapkanSquircleKonten(), SUDAH DIHAPUS TOTAL), sekarang
+     dikembalikan siku tajam seperti sebelumnya. box-shadow biasa dipakai
+     lagi (BUKAN filter:drop-shadow) -- drop-shadow hanya perlu kalau ada
+     clip-path non-persegi yang bayangannya harus mengikuti siluet
+     custom; untuk kotak persegi biasa box-shadow sudah cukup & lebih
+     murah dari sisi performa. */
   .content.scroll-terkunci {
     overflow: hidden;
     /* KOREKSI (Owner: konten di sebelah sidebar MASIH bisa discroll
@@ -2145,19 +2136,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        file ini. */
     touch-action: none;
     transform: translateX(var(--sidebar-w));
-    /* clip-path (BUKAN border-radius) -- lihat catatan panjang di ".content"
-       di atas. --squircle-clip dihitung router.js::_terapkanSquircleKonten()
-       (rumus superellipse, kurva "squircle" sungguhan, BUKAN lingkaran
-       biasa) -- fallback "none" (persegi penuh, tanpa lengkungan) kalau
-       JS belum sempat menghitungnya sama sekali (mis. race SANGAT awal
-       sebelum rAF pertama selesai) supaya tidak pernah pecah/rusak.
-       filter:drop-shadow (BUKAN box-shadow) SENGAJA dipakai -- box-shadow
-       mengikuti kotak/border-radius elemen, BUKAN bentuk clip-path-nya,
-       jadi bayangannya akan tetap persegi tajam mengintip di balik sudut
-       yang sudah dipotong clip-path kalau tetap pakai box-shadow.
-       drop-shadow mengikuti SILUET ALPHA hasil clip-path dengan benar. */
-    clip-path: var(--squircle-clip, none);
-    filter: drop-shadow(-8px 0 24px rgba(0, 0, 0, 0.25));
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
     /* BUGFIX: z-index .content baru saja dinaikkan di atas .sidebar-
        backdrop (lihat ".content" z-index:55 vs .sidebar-backdrop:40) --
        tanpa ini, tap di luar sidebar (dimaksud kena backdrop ->
