@@ -1866,7 +1866,7 @@ const PagePos = (() => {
       function bukaDetailTransaksi() {
         const rincianService = hasil.rincian_service || [];
         MugenUI.infoModal({
-          title: "Detail Transaksi Hari Ini",
+          title: `Detail Transaksi ${MugenUI.namaTanggalIndo(tanggalHariIni)}`,
           body: [
             MugenUI.el("div", { class: "subtitle", style: "margin-bottom:4px;" }, "Rincian Service"),
             ...(rincianService.length
