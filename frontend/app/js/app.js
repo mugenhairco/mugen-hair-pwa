@@ -83,9 +83,35 @@
     void document.body.offsetHeight;
     document.body.style.display = tampilanSemula;
   }
+  // KOREKSI (Owner: foto hero web booking publik "berkedip-kedip cepat"
+  // saat discroll -- TERNYATA bukan soal blur, lihat riwayat commit):
+  // iOS Safari menembakkan event "resize"/"visualViewport resize"
+  // BERKALI-KALI selama momentum scroll berlangsung (toolbar/address bar
+  // animasi sembunyi-muncul mengubah tinggi viewport berulang kali) --
+  // SEBELUM perbaikan ini, ukurUlang() (dipanggil listener resize di
+  // bawah) SELALU memanggil _colekRepaint() TANPA SYARAT setiap kali,
+  // artinya reflow paksa "body display:none lalu balik" (SELURUH
+  // halaman, bukan cuma elemen yg butuh --safe-top) bisa terpicu
+  // puluhan kali per detik SELAMA scroll berlangsung di halaman mana
+  // pun (bukan cuma dashboard internal -- IIFE ini global, berjalan di
+  // SEMUA halaman termasuk #/book/... publik) -- reflow sebanyak itu
+  // beruntun yang tampak sebagai "kedipan cepat", BUKAN backdrop-filter
+  // (yang sudah dicoba dihapus duluan, tidak menyelesaikan masalah).
+  // Fix: _colekRepaint() HANYA dipanggil kalau nilai --safe-top SUNGGUH
+  // BERUBAH dari sebelumnya -- resize gara-gara toolbar iOS selama
+  // scroll vertikal TIDAK mengubah env(safe-area-inset-top) sama sekali
+  // (notch/Dynamic Island tidak berpindah), jadi hampir SEMUA event
+  // resize selama scroll sekarang jadi no-op (early return), reflow
+  // paksa TETAP terjadi seperti sebelumnya HANYA saat nilainya benar-
+  // benar berubah (rotasi layar sungguhan, dst -- tujuan awal perbaikan
+  // ini TIDAK berubah).
+  let _safeTopTerakhir = null;
   function ukurUlang() {
     const tinggi = probe.getBoundingClientRect().height;
-    document.documentElement.style.setProperty("--safe-top", tinggi + "px");
+    const nilaiBaru = tinggi + "px";
+    if (nilaiBaru === _safeTopTerakhir) return;
+    _safeTopTerakhir = nilaiBaru;
+    document.documentElement.style.setProperty("--safe-top", nilaiBaru);
     _colekRepaint();
   }
   ukurUlang();
