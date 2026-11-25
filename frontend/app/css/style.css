@@ -361,7 +361,18 @@ a:hover { color: var(--accent-secondary); }
   height: 100%;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
-  padding: 20px 0;
+  /* KOREKSI (brand/user-box sticky, lihat rule masing-masing): padding
+     atas-bawah DIPINDAH dari sini ke ".brand"/".user-box" sendiri (bukan
+     dihapus, cuma dipindah) -- kalau tetap di sini, 20px celah itu jadi
+     bagian konten yang BISA discroll tapi TIDAK ditutupi backdrop-filter
+     milik brand (sticky punya KOTAKNYA SENDIRI, tidak otomatis "mewarisi"
+     padding parent sebagai bagian dari kotaknya) -- begitu discroll,
+     ujung atas nav item yang sedang lewat sempat "mengintip" tajam
+     (TIDAK ikut ter-blur) tepat di celah itu. Padding sekarang jadi
+     BAGIAN KOTAK brand/user-box sendiri (bukan milik .sidebar), ikut
+     tertutup blur/solid background masing-masing, sampai BENAR-BENAR ke
+     tepi atas/bawah scrollport. */
+  padding: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -370,8 +381,25 @@ a:hover { color: var(--accent-secondary); }
   -webkit-overflow-scrolling: touch;
 }
 
+/* PERMINTAAN Owner (nama tenant+logo "ditahan" di atas saat sidebar
+   di-scroll, efek blur sama seperti bar judul konten): ".sidebar" sendiri
+   satu kontainer scroll (overflow-y:auto, lihat rule-nya) yang berisi
+   brand+menu+footer sekaligus -- position:sticky TIDAK perlu restrukturisasi
+   DOM sama sekali (beda dari bar judul konten yang harus diekstrak jadi
+   elemen terpisah krn harus bertahan LINTAS navigasi halaman) -- brand ini
+   dibangun ulang bersama ".sidebar" tiap render(), cukup "menempel" relatif
+   ke scroll container-nya sendiri. z-index supaya brand selalu tergambar DI
+   ATAS item menu yang lewat di baliknya (tanpa ini, item menu yang muncul
+   SETELAHNYA di DOM akan menimpa brand secara default). backdrop-filter
+   SAMA PERSIS nilainya dengan ".page-topbar" (blur 20px) utk konsistensi
+   visual, TANPA background tambahan (transparent, blur-nya sendiri sudah
+   cukup, item menu yang lewat di baliknya kelihatan buram-kaca).
+   padding-top 20px (BARU, dulu 0 -- jaraknya dulu datang dari padding-top
+   ".sidebar" sendiri) supaya celah itu ikut jadi BAGIAN KOTAK brand,
+   ikut tertutup blur-nya sampai BENAR-BENAR ke tepi atas scrollport,
+   lihat catatan ".sidebar" di atas. */
 .sidebar .brand {
-  padding: 0 20px 20px;
+  padding: 20px 20px 20px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--accent);
@@ -380,6 +408,11 @@ a:hover { color: var(--accent-secondary); }
   display: flex;
   align-items: center;
   gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .brand-logo {
@@ -600,12 +633,28 @@ a:hover { color: var(--accent-secondary); }
 }
 .sidebar nav .nav-submenu a:hover, .sidebar nav .nav-submenu a.active { opacity: 1; }
 
+/* PERMINTAAN Owner (keterangan user + tombol keluar "ditahan" di bawah
+   saat sidebar di-scroll, TANPA efek blur -- cukup solid): pola sama
+   persis dengan ".sidebar .brand" di atas (position:sticky, TANPA
+   restrukturisasi DOM), cuma nempel ke bawah (bottom:0) bukan atas.
+   background #0F1B33 literal (SAMA PERSIS warna ".sidebar", lihat
+   KOREKSI "navy gelap PERMANEN" di atas) -- WAJIB solid (bukan transparent
+   seperti brand) supaya item menu yang discroll di baliknya TIDAK
+   kelihatan tembus sama sekali selagi nempel di bawah. padding-bottom
+   20px (BARU, dulu 16px -- jaraknya dulu datang dari padding-bottom
+   ".sidebar" sendiri) supaya celah itu ikut jadi BAGIAN KOTAK user-box,
+   ikut tertutup background solid-nya sampai BENAR-BENAR ke tepi bawah
+   scrollport, lihat catatan ".sidebar" di atas. */
 .sidebar .user-box {
   margin-top: auto;
-  padding: 16px 20px;
+  padding: 16px 20px 20px;
   border-top: 1px solid rgba(255,255,255,0.14);
   font-size: 13px;
   color: var(--text-dim);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #0F1B33;
 }
 
 /* PERMINTAAN Owner: tombol "Keluar" bukan lagi tombol lebar penuh -- cuma
@@ -1896,12 +1945,22 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   }
   /* PERMINTAAN Owner (nama tenant+logo di sidebar sejajar dengan bar
      judul konten): diukur presisi via Playwright (brandCenter vs
-     judulCenter) -- nilai 44.5px ini SPESIFIK utk posisi ".page-topbar"
-     saat ini (top: env(safe-area-inset-top) + 4px, tinggi 44px), kalau
-     posisi bar judul berubah lagi, nilai ini WAJIB diukur ulang & diganti
-     supaya tetap sejajar. */
+     judulCenter) -- nilai ini SPESIFIK utk posisi ".page-topbar" saat ini
+     (top: env(safe-area-inset-top) + 4px, tinggi 44px) DAN padding-top
+     ".brand" sendiri (lihat KOREKSI "sticky" di atas, brand sekarang
+     punya padding-top 20px miliknya sendiri) -- kalau salah satu berubah
+     lagi, nilai ini WAJIB diukur ulang & diganti supaya tetap sejajar.
+     KOREKSI (brand sticky -- padding-top ".brand" ditambah 20px dari 0,
+     DAN padding-top ".sidebar" sendiri dihapus dari 20px jadi 0, lihat
+     rule dasar masing-masing): dua perubahan itu saling memengaruhi
+     posisi brand -- padding-top brand sendiri menambah tinggi kotaknya
+     (+10px ke titik tengah), TAPI hilangnya padding-top .sidebar
+     menggeser SELURUH flex children (termasuk brand) naik 20px penuh
+     (-20px ke titik tengah) -- net -10px, sebelum dikoreksi. Diukur
+     ulang via Playwright: 44.5px + 10px = 54.5px, brandCenter kembali
+     85 persis sejajar judulCenter. */
   .sidebar .brand {
-    margin-top: 44.5px;
+    margin-top: 54.5px;
   }
   /* PERMINTAAN Owner (blur saat konten discroll HARUS di BAWAH bar judul,
      bukan di atasnya): strip ini TERPISAH dari ".page-topbar" sendiri --
@@ -3275,7 +3334,7 @@ button.btn-danger .btn-inline-spinner, button:not(.btn-primary):not(.btn-danger)
   /* Mobile: ".collapsed" di sini cuma penanda state, bukan rail sempit
      (lebar balik ke 220px, brand-name tampil lagi) -- batalkan
      center-logo khusus rail desktop sempit di atas. */
-  .sidebar.collapsed .brand { padding: 0 20px 20px; justify-content: flex-start; }
+  .sidebar.collapsed .brand { padding: 20px 20px 20px; justify-content: flex-start; }
 }
 
 /* ---- Konten halaman: fade-out singkat SEBELUM diganti (sebelumnya hard
