@@ -269,15 +269,27 @@ const MugenRouter = (() => {
     // .content) selama sidebar terbuka di HP -- class ini hanya berefek
     // lewat CSS di breakpoint mobile (lihat .content.scroll-terkunci di
     // style.css), jadi aman ditambah/dilepas tanpa guard lebar layar di sini.
+    // KOREKSI (Owner: layar sungguhan iPhone -- strip status bar sisi
+    // konten kadang menampakkan navy mentah milik .app-shell, bukan redup
+    // yang seharusnya, begitu sidebar dibuka): CSS `body:has(.sidebar.open)`
+    // seharusnya menimpa background strip itu TEPAT saat ".open" ditambah,
+    // tapi ini tidak selalu konsisten di WebKit/Safari sungguhan (tidak
+    // bisa direproduksi di simulasi Chromium manapun). class JS LANGSUNG
+    // di <body> ini TIDAK bergantung pada mekanisme relational selector
+    // apa pun -- jaminan lebih pasti, dipasang BERBARENGAN dengan toggle
+    // "open" milik sidebar (lihat juga CSS "body.sidebar-open::before/
+    // ::after" sebagai pasangan selector `:has()` yang sudah ada).
     function closeSidebar() {
       sidebar.classList.remove("open");
       backdrop.classList.remove("open");
       main.classList.remove("scroll-terkunci");
+      document.body.classList.remove("sidebar-open");
     }
     hamburger.addEventListener("click", () => {
       const kiniTerbuka = sidebar.classList.toggle("open");
       backdrop.classList.toggle("open", kiniTerbuka);
       main.classList.toggle("scroll-terkunci", kiniTerbuka);
+      document.body.classList.toggle("sidebar-open", kiniTerbuka);
     });
     backdrop.addEventListener("click", closeSidebar);
     // Tutup otomatis begitu satu menu dipilih (layar sempit) supaya user
