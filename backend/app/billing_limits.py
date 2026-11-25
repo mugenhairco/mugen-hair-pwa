@@ -79,24 +79,47 @@ def pastikan_boleh_tambah_layanan(tenant_id: int):
         )
 
 
-def pastikan_boleh_tambah_booking(tenant_id: int):
+def _hitung_pemakaian_booking(tenant_id: int) -> tuple[int, int] | None:
     """max_booking dihitung PER BULAN KALENDER berjalan (WIB) -- bukan
     kumulatif sepanjang umur toko, supaya kuota berulang otomatis setiap
     bulan mengikuti siklus tagihan, tanpa perlu proses reset terpisah.
     Hanya booking status_booking='aktif' yang dihitung (booking yang sudah
-    dibatalkan tidak memakan kuota)."""
+    dibatalkan tidak memakan kuota). None = TIDAK DIBATASI (limit NULL).
+    Dipakai bersama oleh pastikan_boleh_tambah_booking() (melempar error,
+    dipanggil saat SUBMIT booking) dan kuota_booking_habis() (boolean murni,
+    dipanggil saat HALAMAN booking publik dimuat -- lihat routers/website.py)."""
     limit = _limit_paket(tenant_id, "max_booking")
     if limit is None:
-        return
+        return None
     sekarang = datetime.now(WIB)
     jumlah = len(booking_db.get_booking_list(
         tahun=sekarang.year, bulan=sekarang.month, status_booking="aktif", tenant_id=tenant_id,
     ))
+    return jumlah, limit
+
+
+def pastikan_boleh_tambah_booking(tenant_id: int):
+    pemakaian = _hitung_pemakaian_booking(tenant_id)
+    if pemakaian is None:
+        return
+    jumlah, limit = pemakaian
     if jumlah >= limit:
         raise ValueError(
             f"Paket langganan saat ini hanya mengizinkan maksimal {limit} booking per bulan. "
             "Upgrade paket untuk menerima booking lebih banyak bulan ini."
         )
+
+
+def kuota_booking_habis(tenant_id: int) -> bool:
+    """PERMINTAAN Owner: dipanggil dari GET /api/website/content (halaman
+    booking publik) -- supaya tombol "Book Appointment" bisa disembunyikan
+    TOTAL dan diganti pesan pemeliharaan+link WA SEBELUM customer sempat
+    mencoba booking, bukan baru gagal setelah submit (pola lama)."""
+    pemakaian = _hitung_pemakaian_booking(tenant_id)
+    if pemakaian is None:
+        return False
+    jumlah, limit = pemakaian
+    return jumlah >= limit
 
 
 # ============================= Downgrade =============================
