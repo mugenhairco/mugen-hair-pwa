@@ -1838,6 +1838,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     padding: 0;
     transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+  /* PERMINTAAN Owner (referensi screenshot Safari asli: blur menyatu
+     TANPA celah dari ujung atas layar sampai tepi bawah pill hamburger):
+     tinggi dasar "body::before" (env(safe-area-inset-top), pas berhenti
+     di batas notch) ditimpa supaya turun lagi sampai PERSIS ke tepi atas
+     ".page-topbar" (env(safe-area-inset-top) + 4px, lihat rule di atas)
+     -- tanpa ini ada celah tajam ~4px di antara strip notch & bar judul,
+     sekarang keduanya jadi SATU panel kaca buram menerus. */
+  body::before {
+    height: calc(env(safe-area-inset-top) + 4px);
+  }
   /* PERMINTAAN Owner (nama tenant+logo di sidebar sejajar dengan bar
      judul konten): diukur presisi via Playwright (brandCenter vs
      judulCenter) -- nilai 44.5px ini SPESIFIK utk posisi ".page-topbar"
