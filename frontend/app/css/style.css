@@ -172,11 +172,19 @@ body {
    buram yang menyatu dari ujung atas layar, bukan dua gaya beda (satu
    blur satu tidak). Warna TETAP gelap literal (BUKAN var(--bg-translucent)
    yang ikut tema) -- alasan SAMA seperti sebelumnya, ikon sistem SELALU
-   putih jadi butuh latar gelap tetap di KEDUA tema. Strip ini SENGAJA
-   TIDAK ikut geser saat sidebar dibuka (beda dari ".page-topbar" di
-   bawah) -- statusnya murni "lapisan sistem" (status bar sungguhan juga
-   tidak pernah sadar app di bawahnya sedang buka drawer apa pun), span
-   penuh lebar layar apa pun kondisi sidebar. */
+   putih jadi butuh latar gelap tetap di KEDUA tema.
+   KOREKSI (screenshot HP sungguhan Owner): strip blur+tint INI, SELALU
+   span penuh lebar layar sebelumnya, ikut menimpa bagian ATAS sidebar
+   sendiri begitu sidebar dibuka -- sidebar SUDAH navy gelap sendiri
+   (kontras ikon sistem sudah cukup TANPA tint tambahan), jadi lapisan
+   blur di atasnya cuma bikin bagian atas sidebar terlihat "beda warna/
+   pudar", seperti terpotong, bukan menyatu sebagai satu kartu navy utuh
+   sampai ujung atas layar. left digeser ke var(--sidebar-w) begitu
+   sidebar terbuka (lewat body:has(.sidebar.open) di bawah) -- strip ini
+   jadi HANYA menutupi sisa lebar di sebelah KANAN sidebar (area konten,
+   yang memang masih butuh bantuan kontras itu), sidebar sendiri tampil
+   solid navy tanpa tintnya. transition left SAMA PERSIS durasi/easing
+   animasi buka/tutup sidebar yang sudah ada supaya geraknya sinkron. */
 body::before {
   content: "";
   position: fixed;
@@ -187,6 +195,10 @@ body::before {
   -webkit-backdrop-filter: blur(20px);
   z-index: 999999;
   pointer-events: none;
+  transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+body:has(.sidebar.open)::before {
+  left: var(--sidebar-w);
 }
 
 /* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
@@ -1702,6 +1714,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .sidebar-backdrop { display: none; }
 
 @media (max-width: 820px) {
+  /* PERMINTAAN Owner (screenshot HP sungguhan -- "sidebar lebih lebar ke
+     kanan"): --sidebar-w (220px, dipakai BERSAMA oleh .sidebar{width},
+     geser push .content, geser .page-topbar, DAN strip body::before saat
+     sidebar terbuka -- lihat masing-masing catatan) ditimpa KHUSUS di
+     breakpoint mobile ini jadi 75vw (75% lebar layar) -- SATU variabel
+     yang sama, jadi SEMUA tempat yang memakainya ikut menyesuaikan
+     otomatis tanpa perlu disentuh satu per satu. 75vw (BUKAN px literal)
+     supaya proporsinya tetap konsisten di berbagai ukuran iPhone. HANYA
+     berefek di breakpoint mobile (desktop/tablet TETAP 220px dari :root,
+     sidebar di sana bukan overlay/drawer -- lebar 75vw jendela browser
+     penuh akan absurd). */
+  :root { --sidebar-w: 75vw; }
   /* PERBAIKAN (klarifikasi via rekaman layar Claude AI dari Owner): sudut
      kiri konten yang membulat (lihat ".content" di bawah) adalah POTONGAN
      dari kotak konten itu sendiri -- area yang "terpotong" itu menampakkan
@@ -1970,7 +1994,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .page-topbar { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .page-topbar, body::before { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
