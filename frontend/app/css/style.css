@@ -199,9 +199,6 @@ body::before {
 }
 body:has(.sidebar.open)::before {
   left: var(--sidebar-w);
-  background: #0F1B33;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 /* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
@@ -275,10 +272,33 @@ a:hover { color: var(--accent-secondary); }
    (halaman publik /book, ditandai body.book-public-active, punya model
    scroll sendiri yang TIDAK disentuh sama sekali oleh perbaikan ini).
    --------------------------------------------------------------------- */
+/* BUGFIX (screenshot HP sungguhan Owner -- "sudut lengkung konten harus
+   naik ke atas, bukan celahnya ditutup warna lain"): .app-shell adalah
+   anak alur normal <body> (BUKAN position:fixed seperti .sidebar/
+   .hamburger/.page-topbar/body::before) -- padding-top:env(safe-area-
+   inset-top) milik <body> (dipasang utk "iOS Edge-to-Edge Display")
+   ikut MENDORONG TURUN .app-shell beserta SELURUH isinya (termasuk
+   #content, sudut lengkung squircle-nya dihitung relatif ke kotak
+   #content sendiri) sejauh tinggi Dynamic Island -- sementara .sidebar
+   (position:fixed, lepas dari aturan <body>) tetap benar mulai dari
+   y=0. Itu sebabnya sudut lengkung #content (dan konten di baliknya)
+   selalu kelihatan "ketinggalan"/terlalu rendah dibanding sidebar.
+   margin-top NEGATIF di sini menetralkan dorongan dari <body> SECARA
+   KHUSUS utk .app-shell (halaman lain yang TIDAK memakai .app-shell --
+   Login, Web Booking -- tetap mengandalkan padding <body> apa adanya,
+   tidak tersentuh). Efek samping yang JUSTRU memperbaiki bug lama:
+   height:100vh pada .app-shell SELALU dihitung dari tinggi viewport
+   PENUH (tidak tahu-menahu soal padding <body>) -- sebelumnya ini
+   berarti .app-shell diam-diam overflow 59px (atau berapa pun tinggi
+   notch-nya) di bawah viewport (top:59 + height:100vh), TIDAK pernah
+   ketahuan karena #content scroll sendiri secara internal. Setelah
+   margin-top negatif ini, top:0 + height:100vh pas PERSIS dengan
+   viewport, overflow tersembunyi itu ikut hilang. */
 .app-shell {
   display: flex;
   height: 100vh;
   height: 100dvh;
+  margin-top: calc(-1 * env(safe-area-inset-top));
   overflow: hidden;
 }
 
