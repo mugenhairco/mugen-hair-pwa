@@ -379,7 +379,18 @@ def _kunci_tenant(tenant_id, key: str) -> str:
     return f"{tenant_id}:{key}" if tenant_id is not None else key
 
 
-def get_setting(key: str, default=None, tenant_id=None):
+def get_setting(key: str, default=None, tenant_id=None, conn=None):
+    """BUGFIX (insiden deadlock pool koneksi): `conn` opsional -- kalau
+    pemanggil SUDAH memegang koneksi dari pool (mis. _lengkapi_transaksi
+    lewat hitung_komisi_service/_setting_float), itu yang dipakai LANGSUNG
+    di sini, BUKAN membuka koneksi KEDUA dari pool yang sama. Sebelumnya,
+    membuka koneksi kedua sementara koneksi pertama masih dipegang bisa
+    menghabiskan seluruh pool saat banyak request berjalan bersamaan --
+    setiap koneksi saling menunggu koneksi lain yang tidak akan pernah
+    tersedia (self-deadlock), bikin situs lemot ekstrem/macet total."""
+    if conn is not None:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (_kunci_tenant(tenant_id, key),)).fetchone()
+        return row["value"] if row else default
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (_kunci_tenant(tenant_id, key),)).fetchone()
         return row["value"] if row else default
@@ -435,8 +446,8 @@ def set_settings_bulk(data: dict, tenant_id=None):
             )
 
 
-def _setting_float(key: str, tenant_id=None) -> float:
-    return float(get_setting(key, "0", tenant_id=tenant_id))
+def _setting_float(key: str, tenant_id=None, conn=None) -> float:
+    return float(get_setting(key, "0", tenant_id=tenant_id, conn=conn))
 
 
 # ---------------------------------------------------------------------------
@@ -659,7 +670,7 @@ def hapus_service(service_id: int):
 # PERHITUNGAN KOMISI (per transaksi)
 # ---------------------------------------------------------------------------
 
-def hitung_komisi_service(harga: int, modal: int = 0, tenant_id=None) -> float:
+def hitung_komisi_service(harga: int, modal: int = 0, tenant_id=None, conn=None) -> float:
     """
     REVISI Struktur Setting: Komisi = (Harga - Harga Modal) x Persentase Komisi.
     `modal` datang dari Harga Modal per-service (Setting > Layanan, kolom
@@ -678,7 +689,7 @@ def hitung_komisi_service(harga: int, modal: int = 0, tenant_id=None) -> float:
     memakai persentase komisi tenant default, bukan persentase tenant itu
     sendiri, begitu Owner tenant lain mengubah persentase_komisi miliknya.
     """
-    persentase = _setting_float("persentase_komisi", tenant_id=tenant_id) / 100.0
+    persentase = _setting_float("persentase_komisi", tenant_id=tenant_id, conn=conn) / 100.0
     dasar = max(0, harga - modal)
     return round(dasar * persentase)
 
@@ -970,7 +981,7 @@ def _lengkapi_transaksi(conn, header: dict) -> dict:
     header["jumlah_item"] = sum(it["jumlah"] for it in items)
     header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
     header["total_komisi"] = sum(
-        hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id) * it["jumlah"]
+        hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id, conn=conn) * it["jumlah"]
         for it in items
     )
     header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
@@ -1010,7 +1021,7 @@ def _lengkapi_transaksi_batch(conn, headers: list) -> list:
         header["jumlah_item"] = sum(it["jumlah"] for it in items)
         header["total_harga"] = sum(it["harga"] * it["jumlah"] for it in items)
         header["total_komisi"] = sum(
-            hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id) * it["jumlah"]
+            hitung_komisi_service(it["harga"], _modal_snapshot_atau_live(it, modal_map), tenant_id=tenant_id, conn=conn) * it["jumlah"]
             for it in items
         )
         header["daftar_service"] = ", ".join(f"{it['nama_service']} x{it['jumlah']}" for it in items)
@@ -1099,7 +1110,7 @@ def hitung_preview_items(items: list, tenant_id=None) -> dict:
             if tenant_id is not None and service["tenant_id"] != tenant_id:
                 continue
             jumlah = it["jumlah"]
-            komisi_satuan = hitung_komisi_service(service["harga"], service["modal"] or 0, tenant_id=tenant_id)
+            komisi_satuan = hitung_komisi_service(service["harga"], service["modal"] or 0, tenant_id=tenant_id, conn=conn)
             subtotal = service["harga"] * jumlah
             komisi = komisi_satuan * jumlah
             total_harga += subtotal
