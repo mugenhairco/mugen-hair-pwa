@@ -152,6 +152,7 @@ def test_status_endpoint_superadmin_tidak_diblokir(app_client):
     assert r.json() == {
         "akses_diblokir": False, "package": None, "features": [], "izin_paket": [],
         "status": None, "periode_selesai": None, "hari_tersisa": None, "peringatan_kadaluarsa": False,
+        "booking_limit": None, "booking_terpakai": 0, "booking_sisa": None,
     }
 
 
