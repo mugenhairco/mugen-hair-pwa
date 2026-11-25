@@ -1815,11 +1815,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      ditimpa TOTAL di sini oleh left/right literal -- router.js::
      _posisikanTopbar() sendiri SENGAJA tidak melakukan apa pun di
      breakpoint ini (lihat isinya), jadi tidak ada nilai inline yang
-     bentrok. */
+     bentrok.
+     KOREKSI (Owner: jarak antara tombol hamburger & ikon/judul tidak ada
+     blur-nya): sebelum ini kotak ".page-topbar" (sumber blur-nya sendiri,
+     backdrop-filter) MULAI PERSIS di x:68px (kanan hamburger) -- celah
+     sempit x:56-68px (antara tepi kanan ".hamburger" yang solid & tepi
+     kiri ".page-topbar") dan x:0-12px (kiri hamburger) jadi SATU-SATUNYA
+     bagian baris ini yang TIDAK ditutupi elemen blur apa pun, konten yang
+     scroll lewat situ terlihat tajam tak terduga. left digeser ke 0 (kotak
+     blur-nya kini selebar PENUH baris, sama seperti ".hamburger"/body
+     secara horizontal) + padding-left:68px menggantikan left:68px supaya
+     ISI/posisi visual ikon+judul TETAP PERSIS sama seperti sebelumnya
+     (cuma kotak blur-nya yang melebar ke kiri, bukan kontennya) --
+     ".hamburger" z-index:60 TETAP di atas ".page-topbar" z-index:58, jadi
+     hamburger sendiri tetap solid tajam (TIDAK ikut terblur), blur milik
+     ".page-topbar" di belakangnya cuma "mengisi" celah yang tadinya
+     kosong. */
   .page-topbar {
-    top: calc(var(--safe-top, env(safe-area-inset-top)) + 4px); left: 68px; right: 12px;
+    top: calc(var(--safe-top, env(safe-area-inset-top)) + 4px); left: 0; right: 12px;
     height: 44px;
-    padding: 0;
+    padding: 0 0 0 68px;
     transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   /* PERMINTAAN Owner (referensi screenshot Safari asli: blur menyatu
