@@ -146,7 +146,7 @@ body {
   color: var(--text);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  padding-top: env(safe-area-inset-top);
+  padding-top: var(--safe-top, env(safe-area-inset-top));
   padding-bottom: env(safe-area-inset-bottom);
 }
 /* PERMINTAAN Owner ("iOS Edge-to-Edge Display"): sejak index.html mengganti
@@ -189,7 +189,7 @@ body::before {
   content: "";
   position: fixed;
   top: 0; left: 0; right: 0;
-  height: env(safe-area-inset-top);
+  height: var(--safe-top, env(safe-area-inset-top));
   background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -321,7 +321,7 @@ a:hover { color: var(--accent-secondary); }
   display: flex;
   height: 100vh;
   height: 100dvh;
-  margin-top: calc(-1 * env(safe-area-inset-top));
+  margin-top: calc(-1 * var(--safe-top, env(safe-area-inset-top)));
   overflow: hidden;
 }
 
@@ -1370,7 +1370,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    translateY, di sini translateX(-50%) (center) harus ikut tiap frame
    supaya tidak ketimpa oleh translateY animasi masuk/keluar. */
 .toast {
-  position: fixed; top: calc(20px + env(safe-area-inset-top)); left: 50%; transform: translate(-50%, 0); z-index: 999;
+  position: fixed; top: calc(20px + var(--safe-top, env(safe-area-inset-top))); left: 50%; transform: translate(-50%, 0); z-index: 999;
   display: flex; align-items: flex-start; gap: 12px;
   background: var(--bg-card); border: 1px solid var(--border);
   padding: 14px 18px; border-radius: 14px; box-shadow: var(--shadow-elevated);
@@ -1768,7 +1768,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .hamburger {
     display: flex;
     position: fixed;
-    top: calc(env(safe-area-inset-top) + 4px); left: 12px; z-index: 60;
+    top: calc(var(--safe-top, env(safe-area-inset-top)) + 4px); left: 12px; z-index: 60;
     width: 44px; height: 44px;
     border-radius: 50%;
     background: #252525;
@@ -1815,11 +1815,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      ditimpa TOTAL di sini oleh left/right literal -- router.js::
      _posisikanTopbar() sendiri SENGAJA tidak melakukan apa pun di
      breakpoint ini (lihat isinya), jadi tidak ada nilai inline yang
-     bentrok. */
+     bentrok.
+     KOREKSI (Owner: jarak antara tombol hamburger & ikon/judul tidak ada
+     blur-nya): sebelum ini kotak ".page-topbar" (sumber blur-nya sendiri,
+     backdrop-filter) MULAI PERSIS di x:68px (kanan hamburger) -- celah
+     sempit x:56-68px (antara tepi kanan ".hamburger" yang solid & tepi
+     kiri ".page-topbar") dan x:0-12px (kiri hamburger) jadi SATU-SATUNYA
+     bagian baris ini yang TIDAK ditutupi elemen blur apa pun, konten yang
+     scroll lewat situ terlihat tajam tak terduga. left digeser ke 0 (kotak
+     blur-nya kini selebar PENUH baris, sama seperti ".hamburger"/body
+     secara horizontal) + padding-left:68px menggantikan left:68px supaya
+     ISI/posisi visual ikon+judul TETAP PERSIS sama seperti sebelumnya
+     (cuma kotak blur-nya yang melebar ke kiri, bukan kontennya) --
+     ".hamburger" z-index:60 TETAP di atas ".page-topbar" z-index:58, jadi
+     hamburger sendiri tetap solid tajam (TIDAK ikut terblur), blur milik
+     ".page-topbar" di belakangnya cuma "mengisi" celah yang tadinya
+     kosong. */
   .page-topbar {
-    top: calc(env(safe-area-inset-top) + 4px); left: 68px; right: 12px;
+    top: calc(var(--safe-top, env(safe-area-inset-top)) + 4px); left: 0; right: 12px;
     height: 44px;
-    padding: 0;
+    padding: 0 0 0 68px;
     transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   /* PERMINTAAN Owner (referensi screenshot Safari asli: blur menyatu
@@ -1828,9 +1843,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      di batas notch) ditimpa supaya turun lagi sampai PERSIS ke tepi atas
      ".page-topbar" (env(safe-area-inset-top) + 4px, lihat rule di atas)
      -- tanpa ini ada celah tajam ~4px di antara strip notch & bar judul,
-     sekarang keduanya jadi SATU panel kaca buram menerus. */
+     sekarang keduanya jadi SATU panel kaca buram menerus.
+     KOREKSI (Owner: layar iPhone asli -- strip blur ini kadang TIDAK full
+     sampai ikon sinyal/baterai, kadang full -- tidak konsisten di device
+     yang sama): env(safe-area-inset-top) adalah CSS env var LIVE yang
+     semestinya ikut bertambah kalau status bar jadi lebih tinggi (pita
+     hijau/oranye "Sedang Menelepon"/"Perekaman Layar Aktif" dsb muncul),
+     TAPI WebKit punya bug dikenal -- elemen position:fixed yang
+     tingginya pakai calc() berisi env() tidak selalu ikut di-repaint ulang
+     saat nilai env() berubah live, kecuali ada "nudge" reflow dari luar.
+     var(--safe-top, ...) di sini dan di SELURUH tempat lain yang tadinya
+     pakai env(safe-area-inset-top) langsung (lihat app.js::jagaSafeAreaTop())
+     diisi JS lewat probe elemen tersembunyi, diukur ulang di titik-titik
+     yang mungkin mengubah tinggi status bar (resize, orientationchange,
+     visibilitychange, pageshow, visualViewport resize) -- SETIAP kali nilai
+     --safe-top berubah, itu sendiri memaksa reflow baru di elemen manapun
+     yang memakainya, jadi tidak lagi bergantung pada WebKit repaint
+     otomatis. Fallback ke env() mentah TETAP ada (var(..., env(...))) untuk
+     render pertama sebelum app.js sempat jalan. */
   body::before {
-    height: calc(env(safe-area-inset-top) + 4px);
+    height: calc(var(--safe-top, env(safe-area-inset-top)) + 4px);
   }
   /* PERMINTAAN Owner (nama tenant+logo di sidebar sejajar dengan bar
      judul konten): diukur presisi via Playwright (brandCenter vs
@@ -1854,21 +1886,34 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      KOREKSI (Owner: efek "kotak" -- blur rata dgn tepi tegas, bukan
      memudar alami): backdrop-filter apa pun pada kotak biasa SELALU
      buram RATA penuh sampai tepinya lalu LANGSUNG tajam begitu keluar,
-     bukan transisi bertahap. mask-image gradasi (alpha 0 -> 1 -> 0)
-     membuat EFEK BLUR ITU SENDIRI ikut memudar di kedua ujung strip
-     (bukan cuma warnanya) -- butuh -webkit-mask-image juga utk Safari
-     iOS (WebKit belum dukung properti tanpa prefix). */
+     bukan transisi bertahap. mask-image gradasi membuat EFEK BLUR ITU
+     SENDIRI ikut memudar (bukan cuma warnanya) -- butuh -webkit-mask-image
+     juga utk Safari iOS (WebKit belum dukung properti tanpa prefix).
+     KOREKSI KEDUA (Owner: konten kartu -- ikon+label -- tampak "ter-
+     potong"/ghosting ganjil tepat di bawah bar judul): gradasi SEBELUMNYA
+     (transparent -> hitam 40% -> hitam 60% -> transparent, "redup-penuh-
+     redup") membuat blur-nya sendiri MALAH NOL persis di ujung ATAS pita
+     ini (paling dekat ke tepi bawah ".page-topbar") -- sementara
+     ".page-topbar" di atasnya py blur PENUH tanpa gradasi sampai tepinya
+     lalu berhenti MENDADAK. Dua hal ini bertemu jadi satu celah: blur bar
+     judul berhenti total, giliran pita ini seharusnya menyambung TAPI
+     nilainya nol duluan di titik sambung -- konten yang lewat situ sempat
+     "mengintip" tajam sesaat sebelum pita baru naik ke blur penuh. Gradasi
+     diganti SATU ARAH (hitam penuh PERSIS di ujung atas -- menyambung blur
+     ".page-topbar" tanpa jeda -- memudar turun ke transparent di ujung
+     bawah, mendekati konten bersih) supaya transisinya menerus, bukan
+     "redup-penuh-redup" simetris. */
   body::after {
     content: "";
     position: fixed;
-    top: calc(env(safe-area-inset-top) + 48px);
+    top: calc(var(--safe-top, env(safe-area-inset-top)) + 48px);
     left: 0; right: 0;
     height: 32px;
     background: transparent;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    mask-image: linear-gradient(to bottom, transparent, black 40%, black 60%, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, transparent, black 40%, black 60%, transparent);
+    mask-image: linear-gradient(to bottom, black, black 55%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black, black 55%, transparent);
     z-index: 57;
     pointer-events: none;
     transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -1944,7 +1989,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
        mulai TEPAT di bawah kedua elemen fixed itu, supaya tidak ada
        konten yang diam-diam tumpang tindih di belakangnya saat halaman
        baru dimuat (sebelum sempat discroll). */
-    padding-top: calc(env(safe-area-inset-top) + 80px);
+    padding-top: calc(var(--safe-top, env(safe-area-inset-top)) + 80px);
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
     /* BUGFIX: .content TIDAK PERNAH punya background sendiri (transparan,
        selama ini warna "abu-abu terang" yang terlihat sebenarnya tembus
@@ -2163,7 +2208,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   max-width: 480px;
   margin: 0 auto;
   padding: 16px;
-  padding-top: calc(16px + env(safe-area-inset-top));
+  padding-top: calc(16px + var(--safe-top, env(safe-area-inset-top)));
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
   font-variation-settings: normal;
 }
@@ -2363,8 +2408,8 @@ body.book-public-active {
    REVISI UI/UX Premium: sticky + glass blur supaya identitas toko tetap
    terlihat sambil scroll step yang lebih panjang (Booking Summary, dst). */
 .book-wizard-header {
-  text-align: center; margin: -16px -16px 16px; padding: 14px 16px calc(14px + env(safe-area-inset-top));
-  padding-top: calc(14px + env(safe-area-inset-top));
+  text-align: center; margin: -16px -16px 16px; padding: 14px 16px calc(14px + var(--safe-top, env(safe-area-inset-top)));
+  padding-top: calc(14px + var(--safe-top, env(safe-area-inset-top)));
   position: sticky; top: 0; z-index: 20;
   background: var(--book-glass-bg); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
