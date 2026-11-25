@@ -139,6 +139,19 @@
    horizontal yang sebenarnya tidak perlu ada). width:100% mencegah html
    sendiri melebar mengikuti child yang overflow. */
 html, body { overflow-x: hidden; width: 100%; }
+/* KOREKSI (Owner: konten "bergoyang" atas-bawah saat sidebar dibuka --
+   ternyata BUKAN scroll sungguhan, scrollTop terbukti tetap 0 lewat
+   simulasi, melainkan efek PANTULAN ELASTIS ("rubber-band") bawaan
+   Safari pada HALAMAN itu sendiri): gestur sentuh di atas #content yang
+   terkunci (overflow:hidden + pointer-events:none, lihat ".content.
+   scroll-terkunci") "lolos" ke elemen di belakangnya (.sidebar-backdrop,
+   lihat rule-nya) -- tanpa overscroll-behavior di level <html>/<body>,
+   WebKit masih bisa menafsirkan gestur itu sebagai "scroll halaman",
+   memicu pantulan native walau tidak ada konten yang sungguhan
+   discroll/berpindah. overscroll-behavior:none DI SINI (bukan cuma di
+   #content) mematikan pantulan itu di level HALAMAN, bukan cuma di satu
+   kontainer scroll. */
+html, body { overscroll-behavior: none; }
 
 body {
   margin: 0;
@@ -201,8 +214,8 @@ body::before {
 /* PERMINTAAN Owner (strip status bar "ikuti warna konten", bukan tint
    gelap): background jadi transparent (blur-nya sendiri sudah cukup utk
    kontras ikon sistem) -- begitu sidebar dibuka, sisi kanan strip ini
-   HARUS diredupkan SAMA PERSIS seperti redup ".content::after" di bawahnya
-   (lihat ".content::after" di breakpoint mobile) supaya menyatu tanpa
+   HARUS diredupkan SAMA PERSIS seperti redup ".content-dim" di bawahnya
+   (lihat ".content-dim" di breakpoint mobile) supaya menyatu tanpa
    seam warna -- karena itu di sini background-color (var(--bg), SAMA
    solid seperti milik body) + gradient tint rgba(15,23,42,0.35) DITUMPUK
    manual sebagai komposit FLAT yang sama persis, backdrop-filter DIMATIKAN
@@ -2073,28 +2086,53 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   /* BUGFIX: .content (z-index:55) kini di ATAS .sidebar-backdrop (z-index:40,
      lihat di bawah) -- tint redup .sidebar-backdrop sendiri jadi TIDAK PERNAH
      kelihatan lagi (tertutup total oleh .content yang background-nya sudah
-     tidak transparan, lihat catatan "background: var(--bg)" di atas). Dim
-     visual dipindah ke sini, lewat ::after milik .content sendiri (lapisan/
-     stacking context yang SAMA, tidak perlu bersaing z-index dgn sidebar) --
-     .content punya transform (lihat di atas) sehingga jadi containing block
-     utk descendant position:fixed, jadi ::after ini otomatis menutup PAS
-     kotak .content (ikut bergeser bersamanya).
+     tidak transparan, lihat catatan "background: var(--bg)" di atas).
      .sidebar-backdrop TETAP ada & TETAP perlu -- fungsinya murni sebagai
      target klik "tap di luar sidebar utk tutup" (lihat router.js::shell()),
-     tint visualnya sendiri sekarang vestigial/tidak kelihatan, tidak masalah. */
-  .content::after {
-    content: "";
+     tint visualnya sendiri vestigial/tidak kelihatan, tidak masalah.
+     KOREKSI (Owner: layar iPhone asli -- redup konten "terpotong", bagian
+     atas redup tapi bagian bawah TIDAK, tergantung posisi scroll #content
+     saat sidebar dibuka): dim visual ini SEMPAT dipasang sebagai ::after
+     milik .content sendiri (position:fixed, memanfaatkan .content yang
+     punya transform sbg containing block) -- TAPI ini PERSIS kuirk WebKit
+     yang sudah dikenal: elemen position:fixed di dalam ancestor yang
+     JUGA kontainer scroll (".content" overflow-y:auto DAN transform
+     sekaligus) seharusnya tetap diam di layar walau ancestornya di-scroll
+     sendiri (sesuai spec), TAPI di WebKit/Safari TERTENTU elemen itu malah
+     ikut "terbawa" scroll internal ancestornya -- begitu #content discroll
+     ke bawah, lapisan redup yang tadinya nempel di bagian atas ikut
+     "terbawa naik" keluar layar, menyisakan bagian bawah (yang baru
+     kelihatan setelah scroll) TANPA redup sama sekali.
+     Dipindah jadi elemen TERPISAH (".content-dim", lihat router.js::shell()
+     -- sibling .content/.sidebar, BUKAN anak/pseudo-element di dalam
+     kontainer yang scroll) supaya KEBAL dari bug itu -- posisi/gesernya
+     disinkronkan manual lewat sibling selector + transform, pola SAMA
+     PERSIS dengan ".page-topbar" yang sudah terbukti andal (lihat rule-nya
+     di breakpoint ini). */
+  .content-dim {
     position: fixed; inset: 0;
     background: rgba(15, 23, 42, 0.35);
     opacity: 0; pointer-events: none;
-    transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 56;
+    transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .content.scroll-terkunci::after { opacity: 1; }
+  .sidebar.open ~ .content-dim {
+    opacity: 1;
+    transform: translateX(var(--sidebar-w));
+  }
   .sidebar-backdrop {
     display: block;
     position: fixed; inset: 0; z-index: 40;
     background: rgba(15,23,42,0.35);
     opacity: 0; pointer-events: none;
+    /* KOREKSI (Owner: konten "bergoyang"/pantulan elastis saat sidebar
+       dibuka): backdrop ini yang MENERIMA sentuhan begitu #content
+       dikunci (pointer-events:none pada #content, lihat ".content.
+       scroll-terkunci") -- tanpa touch-action:none di sini, gestur yang
+       "lolos" ke backdrop masih bisa ditafsirkan WebKit sebagai scroll
+       halaman, memicu pantulan native (lihat juga "html, body {
+       overscroll-behavior: none }" di atas, perbaikan sepasang). */
+    touch-action: none;
     transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
@@ -2154,7 +2192,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
    sidebar/backdrop langsung tampil/sembunyi tanpa animasi slide/fade,
    TIDAK mengubah hasil akhirnya (tetap terbuka/tertutup seperti biasa). */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-backdrop, .content, .content::after, .hamburger, .page-topbar, body::before, body::after { transition: none !important; }
+  .sidebar, .sidebar-backdrop, .content, .content-dim, .hamburger, .page-topbar, body::before, body::after { transition: none !important; }
 }
 
 @media (min-width: 821px) and (max-width: 1100px) {
