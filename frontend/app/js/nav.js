@@ -325,17 +325,35 @@ const MugenNav = (() => {
     // "body:has(.sidebar.open)" dkk di style.css TIDAK berubah/TIDAK
     // tersentuh) -- overflow-y:auto (scroll sungguhan) dipindah ke
     // wrapper BARU ".sidebar-scroll" di dalamnya, elemen POLOS TANPA
-    // transform apa pun miliknya sendiri. position:sticky brand/user-box
-    // (lihat style.css) jadi menghitung relatif ke ".sidebar-scroll" yang
-    // bersih dari transform -- kuirk itu hilang.
+    // transform apa pun miliknya sendiri.
+    //
+    // KOREKSI KEDUA (Owner: setelah menu di-scroll pakai dropdown/submenu
+    // sampai overflow, brand+user-box ikut TERSERET gerakan pantulan
+    // elastis -- padahal harus tetap diam): position:sticky TERNYATA masih
+    // bisa ikut "ketarik" WebKit selama fase pantulan beneran (rubber-band,
+    // beda dari scroll biasa) karena batas "mengunci"-nya dihitung relatif
+    // viewport scroll container yang SEDANG meregang sementara itu -- bukan
+    // bug CSS yang bisa diperbaiki dengan properti lain, sticky memang
+    // tidak menjamin imun 100% dari rubber-band di WebKit. brandBox/userBox
+    // SEKARANG diekstrak total JADI SAUDARA ".sidebar-scroll" (position:
+    // absolute relatif ".sidebar", BUKAN lagi anak di dalamnya) -- pola
+    // SAMA PERSIS ".page-topbar" (fixed, di luar "#content") yang terbukti
+    // reliable sepanjang sesi ini: elemen yang sungguhan di LUAR kontainer
+    // scroll TIDAK MUNGKIN ikut ter-scroll/memantul apa pun yang terjadi DI
+    // DALAM kontainer itu, apa pun kuirk WebKit-nya -- bukan lagi soal
+    // "sticky berhasil mengunci", tapi "tidak pernah jadi bagian scrollport
+    // itu sama sekali". ".sidebar-scroll" diberi padding-top/bottom
+    // (var(--sidebar-brand-h)/var(--sidebar-userbox-h), lihat _ukurUlang
+    // Overlay() di bawah + style.css) supaya nav item TIDAK tertutup
+    // brandBox/userBox yang sekarang melayang di atasnya.
     const sidebarScroll = MugenUI.el("div", { class: "sidebar-scroll" });
-    sidebar.appendChild(sidebarScroll);
 
     const brandBox = MugenUI.el("div", { class: "brand" }, [
       MugenUI.el("img", { class: "brand-logo", style: "display:none;", alt: "Logo" }),
       MugenUI.el("span", { class: "brand-name" }, MugenBrand.get().nama_barbershop),
     ]);
-    sidebarScroll.appendChild(brandBox);
+    sidebar.appendChild(brandBox);
+    sidebar.appendChild(sidebarScroll);
     MugenBrand.applyToDom();
 
     // FITUR Notifikasi H-7 & Perpanjangan Cepat (diminta Owner): tulisan
@@ -469,9 +487,39 @@ const MugenNav = (() => {
         location.hash = "#/login";
       }
     });
-    sidebarScroll.appendChild(userBox);
+    // Lihat komentar "KOREKSI KEDUA" di dekat pembuatan sidebarScroll di
+    // atas -- userBox SEKARANG saudara ".sidebar-scroll" (bukan anak di
+    // dalamnya), supaya tidak mungkin ikut tertarik pantulan elastis
+    // apa pun yang terjadi di dalam scrollport itu.
+    sidebar.appendChild(userBox);
+    _ukurUlangOverlaySidebar(sidebar, brandBox, userBox);
 
     return sidebar;
+  }
+
+  // Lihat komentar "KOREKSI KEDUA" di atas (dekat pembuatan sidebarScroll
+  // dalam render()): brandBox/userBox sekarang position:absolute MELAYANG
+  // DI ATAS ".sidebar-scroll" (bukan anak di dalamnya) -- supaya nav item
+  // di baliknya tidak tertutup, ".sidebar-scroll" butuh padding-top/bottom
+  // setinggi brandBox/userBox SUNGGUHAN (tinggi keduanya TIDAK tetap --
+  // tergantung isi: nama tenant panjang bisa 2 baris, peringatan
+  // kadaluarsa langganan nambah baris di brand, "Dark Mode" row nambah
+  // tinggi userBox khusus Barber). ResizeObserver (bukan sekali ukur saat
+  // render()) -- elemen BARU dibuat tiap render() jadi belum attached ke
+  // DOM sama sekali saat fungsi ini dipanggil (getBoundingClientRect()
+  // akan 0), ResizeObserver callback-nya SENDIRI terpicu otomatis begitu
+  // elemen attached & punya ukuran nyata (dan tiap kali ukurannya berubah
+  // sesudahnya) -- tidak perlu event listener terpisah apa pun (resize,
+  // dst). CSS var ditaruh di `sidebar` sendiri (bukan :root) -- "diri
+  // sendiri" tiap render() baru, tidak bentrok antar render() yang tumpang
+  // tindih sesaat (transisi slide out/in).
+  function _ukurUlangOverlaySidebar(sidebar, brandBox, userBox) {
+    const ro = new ResizeObserver(() => {
+      sidebar.style.setProperty("--sidebar-brand-h", `${brandBox.getBoundingClientRect().height}px`);
+      sidebar.style.setProperty("--sidebar-userbox-h", `${userBox.getBoundingClientRect().height}px`);
+    });
+    ro.observe(brandBox);
+    ro.observe(userBox);
   }
 
   return { render, cariIzinUntukHash };
