@@ -199,6 +199,9 @@ body::before {
 }
 body:has(.sidebar.open)::before {
   left: var(--sidebar-w);
+  background: #0F1B33;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
