@@ -55,9 +55,38 @@
     "position:fixed; top:0; left:0; width:0; height:0; margin:0; border:0;" +
     "padding-top:env(safe-area-inset-top); pointer-events:none; visibility:hidden;";
   document.documentElement.appendChild(probe);
+  // KOREKSI (Owner: temuan penting -- strip blur status bar SELALU penuh
+  // sampai ikon sinyal/baterai begitu sidebar DIBUKA, tapi TIDAK penuh
+  // begitu sidebar TERTUTUP/tampilan normal): ".sidebar" sendiri
+  // position:fixed; top:0 LANGSUNG -- TIDAK PERNAH bergantung pada
+  // env(safe-area-inset-top)/--safe-top sama sekali, jadi wajar selalu
+  // "penuh" apa pun kondisinya. "body::before" (strip blur tampilan
+  // normal) SATU-SATUNYA yang bergantung pada --safe-top utk tingginya
+  // -- kalau nilainya BENAR (computed style) tapi WebKit gagal
+  // me-render ulang TINGGINYA tanpa pemicu luar (kategori bug yang sama
+  // persis sudah ditemukan berkali-kali utk "left"/"backdrop-filter" di
+  // elemen fixed+backdrop-filter serupa), strip itu bisa "nyangkut" di
+  // ukuran lama/pendek sampai ADA sesuatu yang memicu render ulang --
+  // toggle sidebar kebetulan memicu itu (selector lain ikut berubah di
+  // elemen yang sama), menyamarkan bug-nya alih-alih memperbaikinya.
+  // _colekRepaint() memaksa render ulang SECARA LANGSUNG setiap kali
+  // --safe-top diisi/diubah, TANPA perlu menunggu user membuka sidebar
+  // dulu -- trik reflow klasik (display:none lalu dikembalikan SEKETIKA
+  // dalam fungsi sinkron yang sama, browser tidak sempat menggambar
+  // apa pun di antaranya jadi tidak ada kedipan) pada <body> memaksa
+  // WebKit menghitung ULANG seluruh layout+cat turunannya, TERMASUK
+  // pseudo-element position:fixed (body::before/::after) yang tidak bisa
+  // disentuh langsung lewat JS (bukan node DOM asli).
+  function _colekRepaint() {
+    const tampilanSemula = document.body.style.display;
+    document.body.style.display = "none";
+    void document.body.offsetHeight;
+    document.body.style.display = tampilanSemula;
+  }
   function ukurUlang() {
     const tinggi = probe.getBoundingClientRect().height;
     document.documentElement.style.setProperty("--safe-top", tinggi + "px");
+    _colekRepaint();
   }
   ukurUlang();
   window.addEventListener("resize", ukurUlang);
