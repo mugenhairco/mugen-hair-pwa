@@ -1976,10 +1976,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      (+10px ke titik tengah), TAPI hilangnya padding-top .sidebar
      menggeser SELURUH flex children (termasuk brand) naik 20px penuh
      (-20px ke titik tengah) -- net -10px, sebelum dikoreksi. Diukur
-     ulang via Playwright: 44.5px + 10px = 54.5px, brandCenter kembali
-     85 persis sejajar judulCenter. */
+     ulang via Playwright: 44.5px + 10px = 54.5px.
+     KOREKSI KEDUA (Owner: brand/logo "masih sedikit bisa digeser atas-
+     bawah" saat discroll): margin-top BUKAN bagian dari kotak sticky
+     brand sendiri -- position:sticky baru benar-benar "mengunci" begitu
+     posisi alami (natural, SEBELUM discroll) elemen akan terdorong
+     melewati top:0, jadi SELAMA scrollTop masih lebih kecil dari 54.5px
+     (jarak margin-top ini), brand masih IKUT BERGESER NORMAL dulu
+     sebelum akhirnya mengunci di titik 54.5px perjalanannya -- jendela
+     geser kecil itu yang terlihat sebagai "masih bisa digeser dikit".
+     Diganti padding-top (bukan margin-top) -- padding IKUT jadi bagian
+     kotak sticky itu sendiri, jadi posisi alami elemen SUDAH PERSIS di
+     top:0 sejak scroll pertama, TIDAK ADA jendela geser sama sekali
+     (mengunci dari piksel pertama). Padding-top digabung dgn 20px milik
+     rule dasar ".brand" (lihat di atas) -- 20px + 54.5px = 74.5px,
+     TAMPILAN akhir identik (jarak visual ke logo+teks SAMA PERSIS),
+     cuma mekanismenya yang berubah. */
   .sidebar .brand {
-    margin-top: 54.5px;
+    padding-top: 74.5px;
   }
   /* PERMINTAAN Owner (blur saat konten discroll HARUS di BAWAH bar judul,
      bukan di atasnya): strip ini TERPISAH dari ".page-topbar" sendiri --
