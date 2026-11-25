@@ -380,8 +380,15 @@ a:hover { color: var(--accent-secondary); }
    apa pun miliknya sendiri (hanya flex:1 mengisi sisa tinggi ".sidebar"),
    supaya position:sticky milik ".brand"/".user-box" menghitung relatif
    ke elemen BERSIH ini, bukan ke ".sidebar" yang punya transform.
-   overscroll-behavior:none (PERMINTAAN Owner, sepasang dengan ".content"
-   di bawah) mematikan pantulan elastis saat discroll mentok. */
+   KOREKSI (Owner: pantulan elastis diaktifkan LAGI -- TAPI brand/user-
+   box HARUS tetap konsisten/diam, hanya konten di bawahnya yang boleh
+   kena efek pantulan): overscroll-behavior dikembalikan ke "contain"
+   (bukan "none" lagi) -- "contain" TETAP mencegah pantulan "bocor" ke
+   elemen lain (mis. ke seluruh halaman), TAPI pantulan LOKAL pada daftar
+   menu ini sendiri aktif lagi. Brand/user-box (position:sticky) TIDAK
+   ikut memantul krn sticky dihitung relatif ke posisi scroll TERKINI --
+   selama scroll pantulan berlangsung, keduanya tetap terkunci di
+   top:0/bottom:0 sesuai definisinya, TIDAK terbawa stretch pantulan. */
 .sidebar-scroll {
   flex: 1;
   min-height: 0;
@@ -389,7 +396,7 @@ a:hover { color: var(--accent-secondary); }
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: none;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -711,12 +718,12 @@ a:hover { color: var(--accent-secondary); }
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
-  /* KOREKSI (PERMINTAAN Owner: hilangkan efek pantulan elastis saat
-     konten discroll mentok ke atas/bawah): "contain" cuma mencegah
-     overscroll "bocor" ke elemen lain, pantulan LOKAL pada elemen ini
-     sendiri tetap ada -- "none" mematikan pantulannya juga, bukan cuma
-     mencegah bocor. */
-  overscroll-behavior: none;
+  /* KOREKSI (PERMINTAAN Owner: pantulan elastis diaktifkan LAGI --
+     ".page-topbar" sendiri elemen TERPISAH di luar #content, TIDAK ikut
+     ter-scroll/memantul sama sekali, jadi aman dikembalikan ke "contain"
+     [cuma cegah bocor ke elemen lain, pantulan lokal di #content SENDIRI
+     tetap aktif] tanpa mengganggu konsistensi bar judul). */
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
