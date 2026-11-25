@@ -190,15 +190,29 @@ body::before {
   position: fixed;
   top: 0; left: 0; right: 0;
   height: env(safe-area-inset-top);
-  background: rgba(15, 23, 42, 0.45);
+  background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   z-index: 999999;
   pointer-events: none;
   transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+/* PERMINTAAN Owner (strip status bar "ikuti warna konten", bukan tint
+   gelap): background jadi transparent (blur-nya sendiri sudah cukup utk
+   kontras ikon sistem) -- begitu sidebar dibuka, sisi kanan strip ini
+   HARUS diredupkan SAMA PERSIS seperti redup ".content::after" di bawahnya
+   (lihat ".content::after" di breakpoint mobile) supaya menyatu tanpa
+   seam warna -- karena itu di sini background-color (var(--bg), SAMA
+   solid seperti milik body) + gradient tint rgba(15,23,42,0.35) DITUMPUK
+   manual sebagai komposit FLAT yang sama persis, backdrop-filter DIMATIKAN
+   (bukan diteruskan dari rule dasar) supaya tidak ada lapisan kaca/blur
+   ekstra yang bikin hasil akhirnya beda dari redup konten yang flat. */
 body:has(.sidebar.open)::before {
   left: var(--sidebar-w);
+  background-color: var(--bg);
+  background-image: linear-gradient(rgba(15, 23, 42, 0.35), rgba(15, 23, 42, 0.35));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
@@ -1770,7 +1784,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   .hamburger {
     display: flex;
     position: fixed;
-    top: calc(12px + env(safe-area-inset-top)); left: 12px; z-index: 60;
+    top: calc(env(safe-area-inset-top) + 4px); left: 12px; z-index: 60;
     width: 44px; height: 44px;
     border-radius: 50%;
     background: #252525;
@@ -1819,10 +1833,45 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
      breakpoint ini (lihat isinya), jadi tidak ada nilai inline yang
      bentrok. */
   .page-topbar {
-    top: calc(12px + env(safe-area-inset-top)); left: 68px; right: 12px;
+    top: calc(env(safe-area-inset-top) + 4px); left: 68px; right: 12px;
     height: 44px;
     padding: 0;
     transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* PERMINTAAN Owner (nama tenant+logo di sidebar sejajar dengan bar
+     judul konten): diukur presisi via Playwright (brandCenter vs
+     judulCenter) -- nilai 44.5px ini SPESIFIK utk posisi ".page-topbar"
+     saat ini (top: env(safe-area-inset-top) + 4px, tinggi 44px), kalau
+     posisi bar judul berubah lagi, nilai ini WAJIB diukur ulang & diganti
+     supaya tetap sejajar. */
+  .sidebar .brand {
+    margin-top: 44.5px;
+  }
+  /* PERMINTAAN Owner (blur saat konten discroll HARUS di BAWAH bar judul,
+     bukan di atasnya): strip ini TERPISAH dari ".page-topbar" sendiri --
+     posisinya PERSIS mulai dari tepi bawah bar judul (lihat komentar di
+     atas, top+height ".page-topbar"), supaya konten yang baru mendekati
+     bar judul (belum sampai masuk ke bar judulnya) sudah mulai buram
+     duluan. Tanpa warna (transparent) -- SENGAJA, blur-nya sendiri sudah
+     cukup, warna tambahan di sini bikin seam dgn konten di sekitarnya
+     (lihat histori perbaikan body::before di atas). left digeser sama
+     seperti body::before saat sidebar dibuka supaya tidak ikut
+     mengaburkan sidebar yang sedang terbuka. */
+  body::after {
+    content: "";
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 48px);
+    left: 0; right: 0;
+    height: 32px;
+    background: transparent;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    z-index: 57;
+    pointer-events: none;
+    transition: left 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  body:has(.sidebar.open)::after {
+    left: var(--sidebar-w);
   }
   /* PERMINTAAN Owner ("saat sidebar dibuka, icon+menu ikut bergeser ke
      kanan, PASKAN dulu posisi di kiri; saat sidebar ditutup, munculkan
@@ -1886,7 +1935,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   }
   .content {
     padding: 16px;
-    padding-top: 64px;
+    /* 80px = tinggi ".page-topbar" (env(safe-area-inset-top)+4px sampai
+       +48px) + tinggi zona blur "body::after" (32px) -- konten harus
+       mulai TEPAT di bawah kedua elemen fixed itu, supaya tidak ada
+       konten yang diam-diam tumpang tindih di belakangnya saat halaman
+       baru dimuat (sebelum sempat discroll). */
+    padding-top: calc(env(safe-area-inset-top) + 80px);
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
     /* BUGFIX: .content TIDAK PERNAH punya background sendiri (transparan,
        selama ini warna "abu-abu terang" yang terlihat sebenarnya tembus
