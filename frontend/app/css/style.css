@@ -361,23 +361,32 @@ a:hover { color: var(--accent-secondary); }
   height: 100%;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
-  /* KOREKSI (brand/user-box sticky, lihat rule masing-masing): padding
-     atas-bawah DIPINDAH dari sini ke ".brand"/".user-box" sendiri (bukan
-     dihapus, cuma dipindah) -- kalau tetap di sini, 20px celah itu jadi
-     bagian konten yang BISA discroll tapi TIDAK ditutupi backdrop-filter
-     milik brand (sticky punya KOTAKNYA SENDIRI, tidak otomatis "mewarisi"
-     padding parent sebagai bagian dari kotaknya) -- begitu discroll,
-     ujung atas nav item yang sedang lewat sempat "mengintip" tajam
-     (TIDAK ikut ter-blur) tepat di celah itu. Padding sekarang jadi
-     BAGIAN KOTAK brand/user-box sendiri (bukan milik .sidebar), ikut
-     tertutup blur/solid background masing-masing, sampai BENAR-BENAR ke
-     tepi atas/bawah scrollport. */
-  padding: 0;
+  /* KOREKSI (Owner: brand/user-box TIDAK ikut tertahan/sticky di WebKit
+     sungguhan): scroll sungguhan (overflow-y:auto dkk, SEMUA dipindah ke
+     ".sidebar-scroll" di bawah) -- ".sidebar" sendiri TETAP pegang
+     position:fixed+transform (animasi slide) TANPA scroll-nya sendiri
+     lagi, lihat catatan panjang di router.js::shell()/nav.js::render()
+     ttg kenapa kombinasi position:sticky + transform pada ELEMEN YANG
+     SAMA gagal di WebKit. */
+  display: flex;
+  flex-direction: column;
+}
+/* KOREKSI (Owner: brand/user-box sticky + hilangkan efek pantulan
+   elastis saat sidebar discroll): satu-satunya kontainer scroll
+   SUNGGUHAN sidebar sekarang -- elemen POLOS tanpa transform/position
+   apa pun miliknya sendiri (hanya flex:1 mengisi sisa tinggi ".sidebar"),
+   supaya position:sticky milik ".brand"/".user-box" menghitung relatif
+   ke elemen BERSIH ini, bukan ke ".sidebar" yang punya transform.
+   overscroll-behavior:none (PERMINTAAN Owner, sepasang dengan ".content"
+   di bawah) mematikan pantulan elastis saat discroll mentok. */
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -698,7 +707,12 @@ a:hover { color: var(--accent-secondary); }
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  /* KOREKSI (PERMINTAAN Owner: hilangkan efek pantulan elastis saat
+     konten discroll mentok ke atas/bawah): "contain" cuma mencegah
+     overscroll "bocor" ke elemen lain, pantulan LOKAL pada elemen ini
+     sendiri tetap ada -- "none" mematikan pantulannya juga, bukan cuma
+     mencegah bocor. */
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
 }
 
