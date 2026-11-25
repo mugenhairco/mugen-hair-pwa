@@ -28,6 +28,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
+import billing_limits
 import r2_storage
 import website_content
 from auth import require_admin, resolve_tenant_hibrid
@@ -69,7 +70,14 @@ def _pastikan_gallery_tenant_sama(user: dict, meta: dict | None):
 
 @router.get("/content")
 def ambil_content(tenant_id: int = Depends(resolve_tenant_hibrid)):
-    return website_content.get_content(tenant_id=tenant_id)
+    data = website_content.get_content(tenant_id=tenant_id)
+    # PERMINTAAN Owner: halaman booking publik perlu tahu kuota booking
+    # bulanan sudah habis SEBELUM customer sempat mencoba booking (supaya
+    # tombol "Book Appointment" bisa diganti pesan pemeliharaan+link WA) --
+    # field KOMPUTASI, bukan bagian WEBSITE_CONTENT_KEYS (bukan konten yang
+    # Owner atur lewat PUT di sini).
+    data["booking_kuota_habis"] = billing_limits.kuota_booking_habis(tenant_id)
+    return data
 
 
 @router.put("/content")

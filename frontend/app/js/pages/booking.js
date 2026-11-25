@@ -1424,6 +1424,25 @@ const PageBooking = (() => {
     // dihapus dari destructure, barberFilterRow() sendiri (dipakai
     // bersama tab Calendar) TIDAK perlu diubah, withStatus memang sudah
     // jadi opsi sejak awal (lihat definisinya di atas).
+    // PERMINTAAN Owner: banner peringatan kuota booking online bulanan,
+    // PALING ATAS halaman Booking List (sebelum baris filter) -- dibaca
+    // dari cache MugenSubscription yang SUDAH tersedia app-wide (lihat
+    // nav.js::render() yang memakai pola identik untuk peringatan
+    // kadaluarsa langganan), TIDAK fetch terpisah. "--habis" (sisa 0)
+    // SELALU menang kalau keduanya mungkin true sekaligus secara teori
+    // (sisa<=10 DAN sisa<=0) -- dicek "habis" lebih dulu. Paket TANPA
+    // batas (booking_limit null) -- tidak ada banner sama sekali.
+    const _subBooking = typeof MugenSubscription !== "undefined" ? MugenSubscription.get() : null;
+    if (_subBooking && _subBooking.booking_limit != null) {
+      if (_subBooking.booking_sisa <= 0) {
+        body.appendChild(MugenUI.el("div", { class: "kuota-booking-banner kuota-booking-banner--habis" },
+          `Kuota booking online bulan ini sudah habis (${_subBooking.booking_terpakai}/${_subBooking.booking_limit}). Upgrade paket untuk menerima booking lebih banyak bulan ini.`));
+      } else if (_subBooking.booking_sisa <= 10) {
+        body.appendChild(MugenUI.el("div", { class: "kuota-booking-banner kuota-booking-banner--rendah" },
+          `Sisa kuota booking online bulan ini: ${_subBooking.booking_sisa} dari ${_subBooking.booking_limit}.`));
+      }
+    }
+
     const { row, selBulan, selTahun, selBarber } = barberFilterRow(barbers, today, { withStatus: false });
     // REVISI (PERMINTAAN Owner -- "hilangkan tombol Muat Ulang, ganti diam-
     // diam kalau ada booking baru masuk, tanpa refresh 1 halaman"): tombol

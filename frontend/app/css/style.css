@@ -1641,6 +1641,35 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   padding: 8px; font-size: 13px; border-radius: 10px; margin-bottom: 12px;
 }
 
+/* PERMINTAAN Owner: banner peringatan kuota booking online bulanan di
+   halaman Booking List (dashboard Owner/Admin) -- dua tingkat: "--rendah"
+   (sisa <= 10, masih bisa booking) pakai var(--warning), "--habis" (sisa
+   sudah 0) pakai var(--danger), sama seperti pesan limit lain di app ini
+   (lihat billing_limits.py). color-mix() (bukan rgba literal) supaya tint
+   latar ikut otomatis benar di kedua tema, pola sama dgn ".icon-chip--
+   accent" (lihat komentar di dekat definisinya). */
+.kuota-booking-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.kuota-booking-banner::before { content: "⚠"; font-size: 15px; line-height: 1; flex-shrink: 0; }
+.kuota-booking-banner--rendah {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+}
+.kuota-booking-banner--habis {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
 /* Preview PDF (Perbaikan Alur Cetak PDF) -- layar penuh, di ATAS
    loading-overlay (9999) supaya spinner "Membuat PDF…" tetap terlihat
    menimpa preview lama kalau kebetulan tombol lain ditekan berurutan,
@@ -2535,6 +2564,49 @@ body.book-public-active {
 .book-cta { text-align: center; }
 .book-cta-btn { width: 100%; max-width: 320px; margin-top: 16px; }
 .book-sudah-booking-link { display: block; margin-top: 14px; font-size: 13.5px; color: var(--text-dim); text-decoration: underline; }
+
+/* PERMINTAAN Owner: kuota booking bulanan paket habis -- muncul LANGSUNG di
+   bawah foto hero (lihat book_public.js, section ".book-maintenance" HANYA
+   dirender kalau content.booking_kuota_habis true), menggantikan SELURUH
+   ajakan booking di halaman (section "Book Appointment" ikut tidak
+   dirender). Kotak bersoft background (beda dari ".book-cta" di atas yang
+   SENGAJA tanpa kotak) -- pesan ini perlu menonjol sebagai pemberitahuan,
+   bukan ajakan biasa. */
+.book-maintenance { text-align: center; }
+.book-maintenance-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 24px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.book-maintenance-box p { margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.5; }
+/* "Hubungi via WhatsApp" adalah elemen <a> (link sungguhan ke wa.me, BUKAN
+   <button>, supaya buka tab baru/klik-kanan "copy link" tetap berfungsi
+   wajar) -- ".btn-primary" lain di app ini SELALU elemen <button>
+   ("button.btn-primary", lihat baris ~1385), jadi tampilan tombolnya
+   (warna isi var(--accent), tanpa garis bawah) diulang MANUAL di sini
+   khusus utk tag <a>, bukan menambah selector baru ke rule global. */
+.book-maintenance-wa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 18px;
+  min-height: 48px;
+  padding: 10px 18px;
+  border-radius: var(--radius-btn);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.book-maintenance-wa:hover { background: var(--accent-hover); }
+.book-maintenance-wa:active { background: var(--accent-pressed); }
+.book-maintenance-wa .nav-icon { width: 18px; height: 18px; display: inline-flex; }
 
 /* Connect With Us -- section KECIL sengaja (heading lebih kecil dari
    section lain, layout horizontal ikon-saja), BUKAN section besar. */

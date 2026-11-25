@@ -577,6 +577,41 @@ const PageBookPublic = (() => {
     if (heroContent.children.length) hero.appendChild(heroContent);
     if (heroMediaEl || heroContent.children.length) page.appendChild(hero);
 
+    // FITUR Kuota Booking Bulanan (PERMINTAAN Owner): kalau paket langganan
+    // tenant sudah mencapai batas booking bulan ini (content.booking_kuota_habis,
+    // dihitung backend lewat billing_limits.kuota_booking_habis(), lihat
+    // routers/website.py::ambil_content()), TIDAK boleh lagi ada ajakan
+    // booking apa pun di halaman ini -- pesan pemeliharaan + link WA toko
+    // tampil LANGSUNG di bawah foto hero, DAN section "Book Appointment"
+    // (termasuk tombolnya) di bawah SAMA SEKALI tidak dirender (lihat
+    // `kuotaHabis` di pemakaiannya). Link "Sudah booking? Cek status"
+    // (BUKAN booking baru, cuma lihat status booking YANG SUDAH ADA) tetap
+    // dipindah ke sini supaya customer lama tidak kehilangan akses itu.
+    const kuotaHabis = !!content.booking_kuota_habis;
+    if (kuotaHabis) {
+      const maint = MugenUI.el("section", { class: "book-section book-maintenance book-reveal" });
+      const box = MugenUI.el("div", { class: "book-maintenance-box" }, [
+        MugenUI.el("p", {}, "Booking online sedang dalam pemeliharaan. Silakan hubungi kami untuk membuat janji temu."),
+      ]);
+      if (content.whatsapp) {
+        const btnWa = MugenUI.el("a", {
+          class: "book-maintenance-wa",
+          href: `https://wa.me/${nomorKeFormatInternasional(content.whatsapp)}`,
+          target: "_blank", rel: "noopener noreferrer",
+        }, [MugenUI.el("span", { class: "nav-icon", html: IKON_WHATSAPP_SVG }), "Hubungi via WhatsApp"]);
+        box.appendChild(btnWa);
+      }
+      maint.appendChild(box);
+      const linkSudahBookingAtas = MugenUI.el("a", { href: "#", class: "book-sudah-booking-link" }, "Sudah booking? Cek status di sini");
+      linkSudahBookingAtas.addEventListener("click", (e) => {
+        e.preventDefault();
+        root.innerHTML = "";
+        renderSudahBooking(root);
+      });
+      maint.appendChild(linkSudahBookingAtas);
+      page.appendChild(maint);
+    }
+
     // ---- About -- section (dan judulnya) hanya tampil kalau ADA isinya. ----
     if (content.about_judul || content.about_deskripsi || content.about_foto_url) {
       const about = MugenUI.el("section", { class: "book-section book-about book-reveal" });
@@ -653,7 +688,12 @@ const PageBookPublic = (() => {
     // halaman, di bawah Opening Hours & di atas Connect With Us. Heading/
     // Subheading boleh kosong (layout menyesuaikan tanpa jarak kosong),
     // TAPI tombolnya SELALU tampil apa pun isinya, dan SELALU menuju
-        // halaman booking (bukan link yang bisa diatur Owner). ----
+        // halaman booking (bukan link yang bisa diatur Owner).
+    // PERMINTAAN Owner (kuota booking bulanan habis): section INI (+
+    // tombolnya) TIDAK dirender sama sekali kalau `kuotaHabis` -- pesan
+    // pemeliharaan+link WA+link "Sudah booking?" sudah tampil di bawah
+    // hero (lihat atas), jadi tidak ada ajakan booking baru di sini lagi. ----
+    if (!kuotaHabis) {
     const bookCta = MugenUI.el("section", { class: "book-section book-cta book-reveal" });
     if (content.booking_cta_judul) bookCta.appendChild(MugenUI.el("h2", {}, content.booking_cta_judul));
     if (content.booking_cta_subjudul) bookCta.appendChild(MugenUI.el("div", { class: "subtitle" }, content.booking_cta_subjudul));
@@ -673,6 +713,7 @@ const PageBookPublic = (() => {
     });
     bookCta.appendChild(linkSudahBooking);
     page.appendChild(bookCta);
+    }
 
     // ---- Connect With Us -- section kecil (heading lebih kecil, layout
     // horizontal), HANYA Instagram/TikTok/WhatsApp, ikon HANYA tampil kalau
