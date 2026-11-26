@@ -703,6 +703,17 @@ const MugenRouter = (() => {
         return;
       }
       renderResult = _renderLazy(content, "PageWhatsapp", "js/pages/whatsapp.js");
+    } else if (hash.startsWith("#/live-chat")) {
+      // FITUR BARU Live Chat: Inbox WhatsApp customer, grantable Owner ke
+      // 'staff' (izin_live_chat_lihat, pola SAMA seperti Produk/POS di atas
+      // -- bukan Owner-only seperti #/whatsapp). Perlindungan sebenarnya
+      // tetap di backend (require_permission di setiap endpoint
+      // /api/live-chat/*, lihat routers/live_chat.py).
+      if (user.role !== "admin" && user.role !== "staff") {
+        location.hash = "#/dashboard";
+        return;
+      }
+      renderResult = _renderLazy(content, "PageLiveChat", "js/pages/live_chat.js");
     } else if (hash.startsWith("#/billing")) {
       // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (require_admin di
       // BACKEND juga -- routers/billing.py -- 'staff' TIDAK ikut, sama

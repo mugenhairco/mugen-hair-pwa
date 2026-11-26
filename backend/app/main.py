@@ -98,6 +98,7 @@ import absen_mandiri_db  # FITUR BARU Absen Mandiri: kolom barbers.device_id_ter
 import absensi_reminder_db  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
 import uang_harian_dinamis_db  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent)
 import push_db  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
+import live_chat_db  # FITUR BARU Live Chat: tabel live_chat_config/live_chat_pesan (idempotent, berdiri sendiri)
 import user_roles_db  # FITUR Role User Custom: tabel user_roles/user_role_permissions (idempotent, berdiri sendiri)
 from user_roles_migrasi import migrasi_user_roles  # FITUR Role User Custom: kolom users.custom_role_id (idempotent)
 from subscription_migrasi import migrasi_subscription
@@ -112,8 +113,7 @@ from booking_slug_migrasi import migrasi_booking_slug  # FITUR URL Booking Publi
 from booking_gateway_migrasi import migrasi_booking_gateway  # Implementasi Payment Gateway & Riwayat Transaksi Multi-Tenant: tabel booking_payment_transactions/booking_payment_status_log (idempotent)
 from faspay_settlement_migrasi import migrasi_faspay_settlement  # Settlement Faspay per Terminal (Tenant): tabel faspay_settlements/faspay_settlement_items (idempotent)
 from snap_payment_migrasi import migrasi_snap_payment  # Migrasi Faspay SNAP Advance: tabel snap_payment_transactions/snap_payment_status_log TERPADU Booking+SaaS Billing (idempotent)
-from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, pos, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, whatsapp_bot, sales, absen_mandiri
-import whatsapp_bot_db  # FITUR WA Bot (Input Data & Rekap via WhatsApp): tabel whatsapp_bot_config/whatsapp_bot_pesan_log (idempotent, berdiri sendiri)
+from routers import auth_router, dashboard, input_data, rekap, pengeluaran, pengaturan, produk, booking, website, slip_gaji, kasbon, komisi, reimburse, izin_cuti, pemasukan, uang_kas, data_non_barber, manual_customer, pos, superadmin, branding, subscription, billing, billing_webhook, landing, tenant_registration, payment_gateway, booking_gateway_webhook, transaction_report, gateway_notification, attendance, uang_harian_dinamis, push, snap_advance, faspay_settlement, faspay_settlement_superadmin, cron_reminder, cron_purge_data, sales, absen_mandiri, live_chat, cron_live_chat_purge
 
 app = FastAPI(title="Rivoir API", version="1.0.0")
 
@@ -384,10 +384,11 @@ app.include_router(cron_reminder.router)
 app.include_router(cron_purge_data.router)
 app.include_router(sales.router)
 app.include_router(sales.superadmin_router)
-app.include_router(whatsapp_bot.public_router)
-app.include_router(whatsapp_bot.superadmin_router)
 app.include_router(uang_harian_dinamis.router)
 app.include_router(push.router)
+app.include_router(live_chat.public_router)
+app.include_router(live_chat.authed_router)
+app.include_router(cron_live_chat_purge.router)
 
 
 @app.on_event("startup")
@@ -459,7 +460,7 @@ async def on_startup():
         absensi_reminder_db.init_absensi_reminder_db()  # FITUR Reminder Absensi via WhatsApp: tabel absensi_reminder_log (idempotent, berdiri sendiri)
         uang_harian_dinamis_db.init_uang_harian_dinamis_db()  # FITUR Uang Harian Dinamis: tabel uang_harian_dinamis_settings, opt-in per tenant (idempotent, membaca Absensi read-only)
         push_db.init_push_db()  # FITUR Notifikasi Push: tabel push_subscriptions (idempotent, berdiri sendiri)
-        whatsapp_bot_db.init_whatsapp_bot_db()  # FITUR WA Bot (Input Data & Rekap via WhatsApp): tabel whatsapp_bot_config/whatsapp_bot_pesan_log (idempotent, berdiri sendiri)
+        live_chat_db.init_live_chat_db()  # FITUR BARU Live Chat: tabel live_chat_config/live_chat_pesan (idempotent, berdiri sendiri)
         # Fitur Log Error (DIY error monitoring) DIHAPUS TOTAL (diminta Owner) --
         # tabel error_logs yang sempat terbuat di instalasi lama di-DROP di sini,
         # BUKAN dibuat lagi (pola sama seperti landing_testimonials, lihat

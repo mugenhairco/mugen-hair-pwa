@@ -428,6 +428,12 @@ const MugenApi = (() => {
 
   return {
     ApiError,
+    // FITUR BARU Live Chat: pages/live_chat.js perlu menyusun URL ABSOLUT
+    // (bukan path relatif) untuk ditampilkan Owner sebagai Webhook URL yang
+    // dipasang di dashboard Fonnte-nya sendiri -- base URL efektif (sudah
+    // memperhitungkan fallback localhost di atas) sebelumnya murni private
+    // ke closure ini, tidak ada pemanggil lain yang butuh nilai mentahnya.
+    baseUrl: MUGEN_API_BASE,
     get: (path, opts) => request("GET", path, undefined, opts),
     post: (path, body, opts) => request("POST", path, body, opts),
     put: (path, body, opts) => request("PUT", path, body, opts),

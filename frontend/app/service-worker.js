@@ -1820,7 +1820,7 @@
 // push_service.kirim_ke_role, pastikan tepat 1x panggilan per checkout,
 // payload benar) + injeksi DOM frontend lewat Playwright (baris baru
 // tampil seketika tanpa reload/klik apa pun).
-const ASSET_VERSION = "401";
+const ASSET_VERSION = "403";
 const CACHE_NAME = "mugen-hair-shell-v" + ASSET_VERSION;
 
 // Path navigasi ("/", "/index.html") SENGAJA TIDAK diberi query ?v= --
@@ -1919,6 +1919,10 @@ const _APP_SHELL_BER_VERSI = [
   // file baru -- harus terdaftar di sini juga (lihat catatan page_loader.js
   // soal file lazy-load tetap wajib masuk APP_SHELL).
   "/app/js/pages/sales_portal.js",
+  // FITUR BARU Live Chat (Inbox WhatsApp customer): file baru, harus
+  // terdaftar di sini juga (lihat catatan page_loader.js soal file
+  // lazy-load tetap wajib masuk APP_SHELL).
+  "/app/js/pages/live_chat.js",
   "/app/js/pages/subscription_blocked.js",
   "/app/js/pages/tenant_not_found.js",
   "/app/js/tenant_guard.js",

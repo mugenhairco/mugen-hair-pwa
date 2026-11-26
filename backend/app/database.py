@@ -742,10 +742,13 @@ def tambah_transaksi(tanggal: str, barber_id: int, items: list, tips: int = 0, c
     """SIMPAN data baru. Selalu membuat header transaksi baru + baris transaksi_detail
     untuk setiap service yang jumlahnya > 0.
     `items` = list of {'service_id': int, 'jumlah': int}.
-    `sumber`: FITUR WA Bot (Input Data via WhatsApp) -- 'wa_bot' kalau transaksi
-    ini berasal dari parsing pesan WA (lihat whatsapp_bot_parser.py), None
-    (default) untuk input manual lewat web seperti sebelumnya -- murni
-    penanda audit, TIDAK mempengaruhi perhitungan apa pun.
+    `sumber`: penanda audit asal transaksi -- None (default) untuk input
+    manual lewat web, atau label lain sesuai fitur pemanggil (TIDAK
+    mempengaruhi perhitungan apa pun). Nilai 'wa_bot' MASIH bisa ditemukan
+    di data LAMA (fitur WA Bot/Input Data via WhatsApp sudah dihapus total
+    per permintaan Owner -- baris transaksi lama yang sumbernya 'wa_bot'
+    TETAP valid & ditampilkan apa adanya, cuma tidak ada lagi yang
+    menghasilkan nilai ini).
     `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
     tempId yang SUDAH dibuat frontend (input_data.js) per entry SEBELUM
     dikirim, dipakai ulang kalau entry yang SAMA terkirim lagi (tombol
@@ -2793,7 +2796,7 @@ def restock_produk(produk_id: int, tanggal: str, jumlah: int, catatan: str = Non
     membuat saldo negatif), jadi tidak perlu divalidasi kronologis.
     `idempotency_key`: PERBAIKAN Owner (audit "tidak boleh input dobel") --
     pola yang SAMA PERSIS seperti tambah_transaksi()/_catat_keluar_produk()
-    di bawah, dipakai WA Bot (Restock Produk, lihat whatsapp_bot_parser.py)."""
+    di bawah."""
     _validasi_tanggal_mutasi_produk(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah restock harus lebih dari 0.")
@@ -2829,8 +2832,8 @@ def _catat_keluar_produk(produk_id: int, tanggal: str, jumlah: int, tipe: str,
     sama perannya seperti tambah_transaksi(): kalau INSERT gagal karena
     idempotency_key ini SUDAH ada untuk produk yang sama (unique index
     idx_produk_mutasi_idempotency), mutasi yang SUDAH ADA dikembalikan apa
-    adanya (BUKAN baris baru -- menutup celah race condition/webhook WA
-    Bot terkirim ulang, lihat whatsapp_bot_parser.py)."""
+    adanya (BUKAN baris baru -- menutup celah race condition/webhook
+    terkirim ulang)."""
     _validasi_tanggal_mutasi_produk(tanggal)
     if jumlah is None or jumlah <= 0:
         raise ValueError("Jumlah harus lebih dari 0.")

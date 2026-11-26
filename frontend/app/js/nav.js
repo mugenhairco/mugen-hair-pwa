@@ -135,6 +135,10 @@ const MugenNav = (() => {
     // `feature: "whatsapp_reminder"` DIHAPUS (lihat catatan Absensi di
     // atas, alasan sama persis).
     { hash: "#/whatsapp", label: "WhatsApp", roles: ["admin", "staff"], izin: "izin_whatsapp_lihat", icon: MugenIcons.whatsapp },
+    // FITUR BARU Live Chat: Inbox WhatsApp customer dua arah (lihat
+    // pages/live_chat.js/permissions.py izin_live_chat_lihat) -- pola akses
+    // SAMA PERSIS menu WhatsApp di atas (grantable Owner ke 'staff').
+    { hash: "#/live-chat", label: "Live Chat", roles: ["admin", "staff"], izin: "izin_live_chat_lihat", icon: MugenIcons.liveChat },
     // FONDASI Multi-Tenant Phase 4: KHUSUS Owner (backend require_admin di
     // routers/billing.py) -- 'staff' TIDAK ikut, sama seperti tab
     // Subscription Phase 3 (pages/pengaturan.js), yang TIDAK diubah/

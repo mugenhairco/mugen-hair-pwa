@@ -66,10 +66,15 @@ AKSI_VALID = {
     # -- mengirim request sengaja rusak ke sandbox Faspay, dicatat di sini
     # supaya SIAPA yang menjalankannya tetap tercatat, sama seperti
     # perubahan konfigurasi lain.
-    # FITUR WA Bot (Input Data & Rekap via WhatsApp, Fonnte) -- lihat
-    # whatsapp_bot_db.py/routers/whatsapp_bot.py, EKSKLUSIF Superadmin.
-    "ubah_config_whatsapp_bot", "ubah_status_whatsapp_bot", "hapus_config_whatsapp_bot",
-    "ubah_tampilkan_potongan_keterlambatan_whatsapp_bot",
+    # REVISI (fitur WA Bot DIHAPUS TOTAL per permintaan Owner -- "tidak
+    # terlalu berguna"): 4 aksi "...whatsapp_bot" yang dulu di sini DIHAPUS
+    # dari daftar valid (tidak ada lagi kode yang memanggil catat() dengan
+    # aksi itu) -- baris log LAMA yang sudah tersimpan dengan aksi ini TETAP
+    # ada & tetap bisa dibaca apa adanya (daftar ini cuma memvalidasi
+    # TULISAN baru, lihat catat() di bawah, TIDAK pernah dipakai untuk
+    # memfilter/membaca baris lama). Label tampilannya di superadmin.js
+    # (aksi_label) SENGAJA TIDAK dihapus, supaya Audit Log lama tetap
+    # terbaca manusiawi.
     # FITUR Pembersihan Data Bulanan Otomatis -- jalankan manual (paksa=True)
     # untuk testing/verifikasi, lihat routers/superadmin.py::
     # jalankan_pembersihan_data_manual().

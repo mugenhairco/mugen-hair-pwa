@@ -1709,65 +1709,16 @@ DROP TABLE IF EXISTS error_logs;
 -- nama hari (kosakata sama dengan HARI_LIST di booking_db.py).
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS hari_libur_mingguan TEXT NOT NULL DEFAULT '[]';
 
--- FITUR WA Bot (Input Data & Rekap via WhatsApp) -- lihat whatsapp_bot_db.py
--- untuk arsitektur lengkap (SATU Meta App/WABA dipakai bersama seluruh
--- tenant, dibedakan lewat phone_number_id per tenant, dikelola EKSKLUSIF
--- Superadmin). Kredensial (Access Token, Verify Token) TIDAK PERNAH masuk
--- tabel ini -- murni environment variable platform-wide.
-CREATE TABLE IF NOT EXISTS whatsapp_bot_config (
-    id                      SERIAL PRIMARY KEY,
-    tenant_id               INTEGER NOT NULL UNIQUE,
-    phone_number_id         TEXT NOT NULL UNIQUE,
-    nama_nomor              TEXT,
-    aktif                   INTEGER NOT NULL DEFAULT 0,
-    kuota_pesan_bulanan     INTEGER NOT NULL DEFAULT 50,
-    diatur_oleh             TEXT,
-    created_at              TEXT NOT NULL,
-    updated_at              TEXT
-);
-
-CREATE TABLE IF NOT EXISTS whatsapp_bot_pesan_log (
-    id              SERIAL PRIMARY KEY,
-    tenant_id       INTEGER NOT NULL,
-    wa_id_pengirim  TEXT NOT NULL,
-    isi_pesan       TEXT,
-    status          TEXT NOT NULL,
-    created_at      TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_whatsapp_bot_pesan_log_tenant_id ON whatsapp_bot_pesan_log(tenant_id);
-
-ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS device_token TEXT;
-
--- FITUR WA Bot -- Input Data & Rekap: nomor WA yang setara akses Owner
--- penuh lewat bot (input data siapa saja + rekap siapa saja) -- BEDA dari
--- phone_number_id (nomor bot itu sendiri) dan barbers.nomor_whatsapp
--- (nomor barber individual, akses self-only kecuali Cuti/Izin) -- lihat
--- whatsapp_bot_parser.py::resolve_role().
-ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp TEXT;
-
--- PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner PENUH lewat WA
--- Bot per tenant (toko dengan 2 pemilik/pengelola) -- lihat
--- whatsapp_bot_parser.py::resolve_role().
-ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS nomor_owner_whatsapp_2 TEXT;
-
--- FITUR WA Bot -- toggle tampilan Uang Harian di Rekap WA Bot: kalau
--- dimatikan Superadmin, potongan keterlambatan/limit habis diabaikan
--- KHUSUS untuk tampilan pesan WA (angka asli di Dashboard/Slip Gaji/
--- Laporan PDF tidak berubah) -- lihat whatsapp_bot_parser.py::
--- _uang_harian_tampilan_hari().
-ALTER TABLE whatsapp_bot_config ADD COLUMN IF NOT EXISTS tampilkan_potongan_keterlambatan INTEGER NOT NULL DEFAULT 1;
-
-CREATE TABLE IF NOT EXISTS whatsapp_bot_pending_input (
-    id              SERIAL PRIMARY KEY,
-    tenant_id       INTEGER NOT NULL,
-    wa_id_pengirim  TEXT NOT NULL,
-    jenis           TEXT NOT NULL,
-    payload         TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
-    UNIQUE(tenant_id, wa_id_pengirim)
-);
-
+-- REVISI (fitur WA Bot DIHAPUS TOTAL per permintaan Owner -- "tidak
+-- terlalu berguna"): CREATE TABLE whatsapp_bot_config/whatsapp_bot_pesan_log/
+-- whatsapp_bot_pending_input yang dulu di sini DIHAPUS dari schema (instalasi
+-- BARU tidak akan membuatnya lagi) -- tabel yang SUDAH TERLANJUR ada di
+-- database produksi SENGAJA TIDAK di-DROP di sini (tidak ada bahaya
+-- membiarkannya tetap ada, tidak dipakai kode apa pun lagi). Kolom
+-- `transaksi.sumber='wa_bot'` pada baris transaksi LAMA yang sempat dibuat
+-- lewat fitur ini TETAP valid & TETAP ditampilkan apa adanya oleh Rekap
+-- (lihat rekap.js) -- kolom `sumber` di bawah ini dipakai BERSAMA fitur lain
+-- (mis. 'manual_customer'), TIDAK dihapus.
 ALTER TABLE transaksi ADD COLUMN IF NOT EXISTS sumber TEXT;
 ALTER TABLE produk_mutasi ADD COLUMN IF NOT EXISTS sumber TEXT;
 
@@ -1812,6 +1763,38 @@ CREATE TABLE IF NOT EXISTS pos_draft (
 -- di SINI JUGA (jalur Postgres TIDAK memanggil migrasi_booking_notif_
 -- dimatikan(), SEPENUHNYA digantikan create_all() ini).
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notif_suara_dimatikan INTEGER NOT NULL DEFAULT 0;
+
+-- FITUR BARU Live Chat (live_chat_db.py) -- Inbox WhatsApp customer
+-- terintegrasi, dua arah, memakai token Fonnte yang SAMA dengan
+-- whatsapp_service.py (lihat docstring live_chat_db.py untuk arsitektur
+-- lengkap). SAMA seperti tabel baru lain di atas, WAJIB didaftarkan di
+-- SINI JUGA (jalur Postgres TIDAK memanggil live_chat_db.init_live_chat_db(),
+-- SEPENUHNYA digantikan create_all() ini).
+CREATE TABLE IF NOT EXISTS live_chat_config (
+    tenant_id       INTEGER PRIMARY KEY,
+    webhook_token   TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS live_chat_pesan (
+    id                   SERIAL PRIMARY KEY,
+    tenant_id            INTEGER NOT NULL,
+    arah                 TEXT NOT NULL,
+    nomor_wa             TEXT NOT NULL,
+    nama_kontak          TEXT,
+    jenis                TEXT NOT NULL,
+    isi_teks             TEXT,
+    gambar_filename      TEXT,
+    gambar_data          BYTEA,
+    gambar_r2_key        TEXT,
+    gambar_content_type  TEXT,
+    waktu                TEXT NOT NULL,
+    dibuka_di_rivoir_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_waktu ON live_chat_pesan(tenant_id, waktu);
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_nomor ON live_chat_pesan(tenant_id, nomor_wa, waktu);
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_dibuka ON live_chat_pesan(dibuka_di_rivoir_at);
 """
 
 
