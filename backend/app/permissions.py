@@ -172,6 +172,11 @@ PERMISSION_TREE = {
     "izin_whatsapp_notifikasi_booking": ("Notifikasi Booking", "izin_whatsapp_lihat"),
     "izin_whatsapp_reminder_absensi": ("Reminder Absensi", "izin_whatsapp_lihat"),
 
+    # ---- Live Chat (FITUR BARU: Inbox WhatsApp customer, lihat
+    # live_chat_db.py) -- satu root tunggal (lihat/balas digabung, sama
+    # granularitas dengan WhatsApp di atas, tidak dipecah lebih jauh). ----
+    "izin_live_chat_lihat": ("Live Chat", None),
+
     # ---- Setting (sebelumnya 8 tab hardcoded Owner-only, SEKARANG dibuka
     # SEMUA kecuali "Hak Akses User" -- lihat catatan modul. "Profil" TIDAK
     # masuk di sini sama sekali -- bukan izin yang diberikan ke orang lain,

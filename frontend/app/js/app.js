@@ -197,6 +197,16 @@ if ("serviceWorker" in navigator) {
           && typeof PagePos.suntikDraftBerubah === "function") {
         PagePos.suntikDraftBerubah(data.data);
       }
+      return;
+    }
+    // FITUR BARU Live Chat: pesan customer baru masuk -- pola SAMA PERSIS
+    // "pos_draft_berubah" di atas, `data.data` membawa pesan tunggal yang
+    // baru saja masuk (lihat routers/live_chat.py).
+    if (data.jenis === "live_chat_masuk") {
+      if (location.hash.startsWith("#/live-chat") && typeof PageLiveChat !== "undefined"
+          && typeof PageLiveChat.suntikPesanMasuk === "function") {
+        PageLiveChat.suntikPesanMasuk(data.data);
+      }
     }
   });
 }

@@ -27,6 +27,8 @@ const MugenIcons = (() => {
     pos: `<svg ${S}><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 4h2.3l2.1 11.2a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 7.5H6"/></svg>`,
     produk: `<svg ${S}><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>`,
     whatsapp: `<svg ${S}><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3 20l1.1-5.4A8.5 8.5 0 1 1 21 11.5Z"/><path d="M8.5 9.8c.2 2.9 2.7 5.4 5.6 5.6" stroke-dasharray="0.1 3"/></svg>`,
+    // FITUR BARU Live Chat (Inbox WhatsApp customer).
+    liveChat: `<svg ${S}><path d="M4 4.5h16v11H8.5L4 19.5z"/><path d="M8 9h8"/><path d="M8 12.5h5"/></svg>`,
     billing: `<svg ${S}><rect x="2.5" y="5" width="19" height="14" rx="2.2"/><path d="M2.5 10h19"/><path d="M6 15h4"/></svg>`,
     setting: `<svg ${S}><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z"/></svg>`,
 

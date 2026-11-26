@@ -1763,6 +1763,38 @@ CREATE TABLE IF NOT EXISTS pos_draft (
 -- di SINI JUGA (jalur Postgres TIDAK memanggil migrasi_booking_notif_
 -- dimatikan(), SEPENUHNYA digantikan create_all() ini).
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notif_suara_dimatikan INTEGER NOT NULL DEFAULT 0;
+
+-- FITUR BARU Live Chat (live_chat_db.py) -- Inbox WhatsApp customer
+-- terintegrasi, dua arah, memakai token Fonnte yang SAMA dengan
+-- whatsapp_service.py (lihat docstring live_chat_db.py untuk arsitektur
+-- lengkap). SAMA seperti tabel baru lain di atas, WAJIB didaftarkan di
+-- SINI JUGA (jalur Postgres TIDAK memanggil live_chat_db.init_live_chat_db(),
+-- SEPENUHNYA digantikan create_all() ini).
+CREATE TABLE IF NOT EXISTS live_chat_config (
+    tenant_id       INTEGER PRIMARY KEY,
+    webhook_token   TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS live_chat_pesan (
+    id                   SERIAL PRIMARY KEY,
+    tenant_id            INTEGER NOT NULL,
+    arah                 TEXT NOT NULL,
+    nomor_wa             TEXT NOT NULL,
+    nama_kontak          TEXT,
+    jenis                TEXT NOT NULL,
+    isi_teks             TEXT,
+    gambar_filename      TEXT,
+    gambar_data          BYTEA,
+    gambar_r2_key        TEXT,
+    gambar_content_type  TEXT,
+    waktu                TEXT NOT NULL,
+    dibuka_di_rivoir_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_waktu ON live_chat_pesan(tenant_id, waktu);
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_nomor ON live_chat_pesan(tenant_id, nomor_wa, waktu);
+CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_dibuka ON live_chat_pesan(dibuka_di_rivoir_at);
 """
 
 
