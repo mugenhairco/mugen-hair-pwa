@@ -55,10 +55,43 @@ const MugenPageLoader = (() => {
     if (window[globalName]) return Promise.resolve();
     if (_promises.has(globalName)) return _promises.get(globalName);
 
-    const p = new Promise((resolve, reject) => {
-      const versi = _versiAset();
+    const versi = _versiAset();
+    const fullSrc = versi ? `${src}?v=${versi}` : src;
+
+    // BUGFIX (ditemukan dari laporan Owner: menu Live Chat gagal dimuat
+    // "Identifier 'PageLiveChat' has already been declared" -- HANYA
+    // terjadi di percobaan PERTAMA kali sebuah halaman lazy dimuat di
+    // perangkat itu, saat elemen <script>-nya masih dalam proses diambil
+    // jaringan): app.js memanggil MugenRouter.handle() DUA KALI saat boot
+    // (MugenRouter.init() lalu MugenSubscription.refresh().then(handle)) --
+    // kalau hash yang sama (mis. #/live-chat) masih aktif di kedua
+    // panggilan itu DAN percobaan ensure() yang PERTAMA sempat reject (mis.
+    // jaringan lambat/terputus sesaat) SEBELUM percobaan KEDUA mulai,
+    // `_promises` di atas sudah terlanjur dihapus (lihat p.catch() di
+    // bawah) -- ensure() KEDUA lalu menyangka ini percobaan baru dan
+    // menambah elemen <script> KEDUA untuk src yang SAMA. Kalau elemen
+    // PERTAMA ternyata TETAP berhasil memuat belakangan (cuma lambat,
+    // bukan benar-benar gagal), `const PageLiveChat = ...` di scope
+    // global akan dieksekusi 2x -> SyntaxError "sudah dideklarasikan",
+    // membatalkan proses yang justru akhirnya berhasil itu. Elemen
+    // <script> yang MASIH ADA di DOM (walau `_promises`-nya sudah
+    // terhapus) dicek dulu di sini -- kalau ketemu, TUNGGU elemen itu
+    // (polling window[globalName], bukan elemen baru) alih-alih menambah
+    // elemen kedua.
+    const sudahAda = document.querySelector(`script[src="${fullSrc}"]`);
+    const p = sudahAda ? _tungguElemenYangSudahAda(globalName, src) : _tambahElemenBaru(globalName, fullSrc, src);
+    // Kegagalan TIDAK disimpan di cache -- percobaan navigasi berikutnya
+    // (mis. setelah koneksi pulih) harus mencoba fetch lagi, bukan langsung
+    // gagal lagi dari cache Promise yang sudah reject.
+    p.catch(() => _promises.delete(globalName));
+    _promises.set(globalName, p);
+    return p;
+  }
+
+  function _tambahElemenBaru(globalName, fullSrc, src) {
+    return new Promise((resolve, reject) => {
       const el = document.createElement("script");
-      el.src = versi ? `${src}?v=${versi}` : src;
+      el.src = fullSrc;
       el.onload = () => {
         if (window[globalName]) {
           resolve();
@@ -73,12 +106,27 @@ const MugenPageLoader = (() => {
       el.onerror = () => reject(new Error(`Gagal memuat ${src}.`));
       document.body.appendChild(el);
     });
-    // Kegagalan TIDAK disimpan di cache -- percobaan navigasi berikutnya
-    // (mis. setelah koneksi pulih) harus mencoba fetch lagi, bukan langsung
-    // gagal lagi dari cache Promise yang sudah reject.
-    p.catch(() => _promises.delete(globalName));
-    _promises.set(globalName, p);
-    return p;
+  }
+
+  // Lihat catatan BUGFIX di atas ensure() -- dipanggil KHUSUS saat <script>
+  // untuk src ini SUDAH ada di DOM (percobaan sebelumnya, promise-nya
+  // mungkin sudah terhapus dari cache tapi elemennya sendiri belum selesai
+  // memuat/gagal). Polling sederhana (BUKAN event listener kedua di
+  // elemen yang sama -- aman dipakai berdampingan dengan onload/onerror
+  // elemen itu sendiri yang sudah terpasang dari percobaan pertama, tidak
+  // saling menimpa).
+  function _tungguElemenYangSudahAda(globalName, src) {
+    return new Promise((resolve, reject) => {
+      const batasWaktu = Date.now() + 15000;
+      (function cek() {
+        if (window[globalName]) return resolve();
+        if (Date.now() > batasWaktu) {
+          reject(new Error(`Modul ${globalName} tidak kunjung ada setelah ${src} dimuat (menunggu percobaan sebelumnya).`));
+          return;
+        }
+        setTimeout(cek, 100);
+      })();
+    });
   }
 
   return { ensure };
