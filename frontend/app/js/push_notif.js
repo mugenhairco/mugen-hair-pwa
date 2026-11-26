@@ -51,12 +51,32 @@ const MugenPushNotif = (() => {
   // BROWSER tidak pernah ikut di-unsubscribe (logout TIDAK memanggil
   // nonaktifkan() di sini) -- getSubscription() di browser yang sama
   // tetap mengembalikan subscription LAMA itu, membuat tombol salah kira
-  // sudah aktif walau baris backend-nya sudah kosong. Perbaikannya: setiap
-  // kartu ini dirender (buka Pengaturan/Izin&Cuti), kalau browser masih
-  // punya subscription, SELALU kirim ulang diam-diam ke backend (endpoint
-  // sama -> cuma UPDATE baris lama lewat ON CONFLICT, lihat push_db.py --
-  // aman dipanggil berkali-kali) -- tidak perlu lagi Owner manual
-  // Nonaktifkan lalu Aktifkan ulang habis Logout/Login.
+  // sudah aktif walau baris backend-nya sudah kosong.
+  //
+  // TAPI (PERMINTAAN Owner, "1 device dipakai banyak akun" -- device
+  // kasir/bersama dipakai gantian beberapa staff login/logout): sinkron
+  // ulang itu TIDAK BOLEH otomatis mengklaim notifikasi untuk akun BARU
+  // yang kebetulan login di device yang sama, kalau akun itu sendiri
+  // BELUM PERNAH klik "Aktifkan" (melanggar "SENGAJA opt-in" di atas --
+  // staff lain bisa diam-diam mulai dapat notifikasi tanpa pernah minta).
+  // Dibedakan lewat KUNCI LOCALSTORAGE TERPISAH dari sesi login (lihat
+  // state.js::clearSession() -- hanya menghapus token+data user, kunci di
+  // bawah ini SENGAJA tidak disentuh supaya tetap bisa dibandingkan lagi
+  // setelah Logout/Login akun yang SAMA): simpan user_id yang TERAKHIR
+  // benar-benar klik Aktifkan di PERANGKAT ini. Sinkron diam-diam di
+  // subscriptionAktif() HANYA jalan kalau user yang SEDANG login SAMA
+  // dengan itu (kasus Owner di atas) -- kalau beda akun (device
+  // bersama), dianggap BELUM aktif buat akun ini, tombol tampil
+  // "Aktifkan" normal, user baru itu harus klik sendiri dulu (match pola
+  // aktifkan() yang SELALU mengirim subscribe ulang walau objek
+  // PushSubscription browser-nya kebetulan sudah ada dari akun lain).
+  const _KUNCI_USER_TERAKHIR = "mugen_push_terakhir_user_id";
+
+  function _userSaatIni() {
+    const u = typeof MugenState !== "undefined" ? MugenState.getUser() : null;
+    return u && u.id != null ? String(u.id) : null;
+  }
+
   async function _sinkronDiamDiam(sub) {
     try {
       const json = sub.toJSON();
@@ -74,8 +94,20 @@ const MugenPushNotif = (() => {
     if (!isSupported()) return false;
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
-    if (sub) _sinkronDiamDiam(sub);
-    return sub !== null;
+    if (!sub) return false;
+    const userIni = _userSaatIni();
+    const userTerakhir = localStorage.getItem(_KUNCI_USER_TERAKHIR);
+    if (userIni && userIni === userTerakhir) {
+      // Akun yang SAMA dengan yang terakhir aktifkan di device ini (mis.
+      // Owner Logout lalu Login lagi) -- aman disinkron ulang diam-diam.
+      _sinkronDiamDiam(sub);
+      return true;
+    }
+    // Device bersama, akun BERBEDA dari yang terakhir aktifkan (atau
+    // belum pernah ada yang aktifkan) -- JANGAN klaim otomatis. Tombol
+    // tampil "Aktifkan", backend TIDAK disentuh sampai user ini klik
+    // sendiri.
+    return false;
   }
 
   async function aktifkan() {
@@ -106,10 +138,17 @@ const MugenPushNotif = (() => {
       endpoint: json.endpoint,
       keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
     });
+    // Tandai akun ini sebagai "terakhir aktifkan di device ini" (lihat
+    // catatan panjang di _sinkronDiamDiam()/subscriptionAktif() di atas)
+    // -- klik eksplisit SELALU boleh mengklaim ulang, device bersama
+    // ATAU bukan, sesuai desain "opt-in" semula.
+    const userIni = _userSaatIni();
+    if (userIni) localStorage.setItem(_KUNCI_USER_TERAKHIR, userIni);
     return true;
   }
 
   async function nonaktifkan() {
+    localStorage.removeItem(_KUNCI_USER_TERAKHIR);
     if (!isSupported()) return;
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
