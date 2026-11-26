@@ -145,7 +145,7 @@ const PageBookPublic = (() => {
     const isi = [];
     if (title) {
       isi.push(MugenUI.el("div", { class: "book-appt-section-title" }, [
-        icon ? MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: icon }) : null,
+        icon ? MugenUI.el("span", { class: "book-dlx-icon-badge", html: icon }) : null,
         MugenUI.el("span", { style: "flex:1;" }, title),
       ]));
     }
@@ -164,15 +164,18 @@ const PageBookPublic = (() => {
     return MugenUI.el("div", { class: "book-appt-card" }, isi);
   }
 
-  // Kotak "Total Pembayaran" disorot (background tint warna aksen),
-  // TERPISAH dari apptCard() -- dipakai Booking Summary SAJA (Booking
-  // Berhasil tetap pakai baris total polos di dalam kartu, lihat
-  // apptCard() di atas).
-  function apptTotalBox(label, subtitle, value) {
+  // Kotak "Total Pembayaran" disorot -- TERPISAH dari apptCard(), dipakai
+  // Booking Summary SAJA (Booking Berhasil tetap pakai baris total polos
+  // di dalam kartu, lihat apptCard() di atas). `icon` opsional (badge
+  // Lucide "wallet", konsisten dengan badge section lain).
+  function apptTotalBox(label, subtitle, value, icon) {
     return MugenUI.el("div", { class: "book-appt-total-box" }, [
-      MugenUI.el("div", {}, [
-        MugenUI.el("div", { class: "book-appt-total-box-label" }, label),
-        subtitle ? MugenUI.el("div", { class: "book-appt-total-box-subtitle" }, subtitle) : null,
+      MugenUI.el("div", { style: "display:flex;align-items:center;gap:12px;" }, [
+        icon ? MugenUI.el("span", { class: "book-dlx-icon-badge", html: icon }) : null,
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "book-appt-total-box-label" }, label),
+          subtitle ? MugenUI.el("div", { class: "book-appt-total-box-subtitle" }, subtitle) : null,
+        ]),
       ]),
       MugenUI.el("span", { class: "book-appt-total-box-value" }, value),
     ]);
@@ -338,44 +341,58 @@ const PageBookPublic = (() => {
   const IKON_WHATSAPP_SVG =
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.35a9.87 9.87 0 0 0 4.62 1.16h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.63 14.02c-.24.67-1.4 1.28-1.93 1.35-.5.07-1.12.1-1.8-.11-.42-.13-.96-.31-1.65-.6-2.9-1.25-4.79-4.16-4.94-4.35-.14-.19-1.18-1.57-1.18-3 0-1.43.75-2.13 1.02-2.42.27-.29.58-.36.78-.36.2 0 .39 0 .56.01.18.01.42-.07.65.5.24.58.82 2 .89 2.14.07.14.11.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.68-.79.86-1.06.18-.27.36-.22.6-.13.24.09 1.52.72 1.78.85.26.13.43.2.5.31.07.11.07.63-.17 1.3Z"/></svg>';
 
-  // PERMINTAAN Owner: ganti emoji 📅 di tombol "Add to Calendar" (satu-
-  // satunya pemakai emoji di seluruh halaman ini, render-nya beda-beda
-  // tiap OS/browser, kontras dengan ikon SVG monokrom konsisten di atas)
-  // dengan ikon SVG inline yang sama gayanya dengan IKON_DOWNLOAD_SVG dkk.
+  // REVISI UI/UX "Dark Luxury" (PERMINTAAN Owner, spesifikasi detail):
+  // seluruh ikon di bawah diganti versi SETARA Lucide Icons (outline,
+  // stroke 1.8, ukuran tampil 22-24px di dalam wadah .book-dlx-icon-badge
+  // 47x47 -- lihat style.css) -- menggantikan ikon custom sebelumnya.
+  // IKON_KALENDER_SVG = Lucide "calendar-days" (dipakai badge "Jadwal
+  // Booking"/"Detail Booking" DAN tombol "Add to Calendar", konsisten).
   const IKON_KALENDER_SVG =
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2.5"/>' +
-    '<path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>';
-
-  // REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
-  // PERMINTAAN Owner): ikon baru untuk badge section (Jadwal Booking/
-  // Layanan/Detail Customer/Detail Booking), tombol "Kembali ke Beranda",
-  // kotak info konfirmasi, dan chip nomor referensi -- gaya SAMA PERSIS
-  // IKON_KALENDER_SVG di atas (stroke 2.2, outline, monokrom lewat
-  // currentColor) supaya konsisten satu bahasa visual.
+    '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/>' +
+    '<line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>' +
+    '<path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>';
+  // Lucide "scissors" (badge "Layanan").
   const IKON_GUNTING_SVG =
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>' +
-    '<line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="8.7" y1="8.5" x2="20" y2="20"/></svg>';
+    '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/>' +
+    '<path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg>';
+  // Lucide "user-round" (badge "Detail Customer").
   const IKON_ORANG_SVG =
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/>' +
-    '<path d="M4.5 20c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"/></svg>';
+    '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="5"/>' +
+    '<path d="M20 21a8 8 0 0 0-16 0"/></svg>';
+  // Lucide "home" (tombol "Kembali ke Beranda").
   const IKON_RUMAH_SVG =
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5"/>' +
-    '<path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>';
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<polyline points="9 22 9 12 15 12 15 22"/></svg>';
+  // Lucide "info" (kotak "Informasi Konfirmasi").
   const IKON_INFO_SVG =
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
-    '<line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>';
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' +
+    '<path d="M12 16v-4"/><path d="M12 8h.01"/></svg>';
+  // Lucide "file-text" (chip nomor referensi).
   const IKON_FILE_SVG =
-    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>';
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>' +
+    '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>';
+  // Lucide "copy" (chip nomor referensi).
   const IKON_SALIN_SVG =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>' +
-    '<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/>' +
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+  // Lucide "wallet" (badge kotak "Total Pembayaran").
+  const IKON_DOMPET_SVG =
+    '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
+    '<path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>';
+  // Lucide "calendar-check" (icon hero "Booking Berhasil", GANTI centang
+  // polos -- ukuran ditampilkan lebih besar, lihat .book-dlx-success-icon).
+  const IKON_KALENDER_CENTANG_SVG =
+    '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/>' +
+    '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>';
 
   // Efek ripple ringan (murni CSS animasi + JS posisi klik) saat tombol
   // Download QRIS ditekan, supaya terasa modern tanpa perlu library apa pun.
@@ -1795,26 +1812,31 @@ const PageBookPublic = (() => {
       // ---- fase "checkout": Booking Summary murni (Checkout) ----
       function renderFaseCheckout() {
         body.appendChild(MugenUI.el("h2", {}, "Booking Summary"));
-        body.appendChild(MugenUI.el("div", { class: "card book-summary-card" }, [
-          apptCard({
-            sections: [
-              { title: "Jadwal Booking", icon: IKON_KALENDER_SVG, rows: [
-                apptRow("Barber", state.barberNama),
-                apptRow("Tanggal", MugenUI.formatTanggal(state.tanggal)),
-                apptRow("Jam", state.jam),
-                apptRow("Durasi", `± ${totalDurasi} menit`),
-              ] },
-              { title: "Layanan", icon: IKON_GUNTING_SVG, rows: [
-                apptRow(dipilih.map((s) => s.nama).join(", "), `${dipilih.length} layanan`),
-              ] },
-              { title: "Detail Customer", icon: IKON_ORANG_SVG, rows: [
-                apptRow("Nama", state.nama),
-                apptRow("WhatsApp", state.whatsapp),
-              ] },
-            ],
-          }),
-        ]));
-        body.appendChild(apptTotalBox("Total Pembayaran", "Nominal yang harus dibayarkan", MugenUI.formatRupiah(totalHarga)));
+        // REVISI UI/UX "Dark Luxury": apptCard() sekarang SUDAH jadi kartu
+        // mandiri (background #111318 sendiri, lihat style.css) -- TIDAK
+        // lagi dibungkus div ".card.book-summary-card" (dulu perlu karena
+        // apptCard() cuma berisi section polos tanpa background sendiri;
+        // membungkusnya lagi sekarang bikin kartu gelap-dalam-kartu-terang
+        // dobel). ".book-summary-card"/".book-summary-field" TIDAK dihapus
+        // dari style.css -- masih dipakai layar lain di luar scope ini.
+        body.appendChild(apptCard({
+          sections: [
+            { title: "Jadwal Booking", icon: IKON_KALENDER_SVG, rows: [
+              apptRow("Barber", state.barberNama),
+              apptRow("Tanggal", MugenUI.formatTanggal(state.tanggal)),
+              apptRow("Jam", state.jam),
+              apptRow("Durasi", `± ${totalDurasi} menit`),
+            ] },
+            { title: "Layanan", icon: IKON_GUNTING_SVG, rows: [
+              apptRow(dipilih.map((s) => s.nama).join(", "), `${dipilih.length} layanan`),
+            ] },
+            { title: "Detail Customer", icon: IKON_ORANG_SVG, rows: [
+              apptRow("Nama", state.nama),
+              apptRow("WhatsApp", state.whatsapp),
+            ] },
+          ],
+        }));
+        body.appendChild(apptTotalBox("Total Pembayaran", "Nominal yang harus dibayarkan", MugenUI.formatRupiah(totalHarga), IKON_DOMPET_SVG));
         body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
           MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "< Back"),
         ]));
@@ -2261,12 +2283,7 @@ const PageBookPublic = (() => {
       const jumlahLayanan = String(r.daftar_service || "").split(",").filter((s) => s.trim()).length || 1;
 
       body.appendChild(MugenUI.el("div", { class: "book-confirmed-hero" }, [
-        MugenUI.el("div", { class: "book-selesai-icon" }, [
-          "✓",
-          MugenUI.el("span", { class: "book-sparkle book-sparkle-1" }),
-          MugenUI.el("span", { class: "book-sparkle book-sparkle-2" }),
-          MugenUI.el("span", { class: "book-sparkle book-sparkle-3" }),
-        ]),
+        MugenUI.el("div", { class: "book-dlx-success-icon", html: IKON_KALENDER_CENTANG_SVG }),
         MugenUI.el("h2", {}, "Booking Berhasil!"),
         MugenUI.el("div", { class: "subtitle" }, "Terima kasih, booking Anda telah diterima."),
       ]));
@@ -2283,7 +2300,7 @@ const PageBookPublic = (() => {
 
       body.appendChild(MugenUI.el("div", { class: "card book-appt-card" }, [
         MugenUI.el("div", { class: "book-appt-section-title" }, [
-          MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: IKON_KALENDER_SVG }),
+          MugenUI.el("span", { class: "book-dlx-icon-badge", html: IKON_KALENDER_SVG }),
           MugenUI.el("span", { style: "flex:1;" }, "Detail Booking"),
           MugenUI.el("span", { class: "book-status-badge" }, "Diterima"),
         ]),
