@@ -112,14 +112,6 @@ const PageBookPublic = (() => {
     return MugenUI.tambahHariWib(iso, n);
   }
 
-  function fieldRow(label, value, tebal) {
-    return MugenUI.el("div", { class: "book-field-row" + (tebal ? " book-field-row-total" : "") }, [
-      MugenUI.el("span", { class: "book-field-label" }, label),
-      MugenUI.el("span", { class: "book-field-colon" }, ":"),
-      MugenUI.el("span", { class: "book-field-value" }, value),
-    ]);
-  }
-
   // REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
   // PERMINTAAN Owner, lihat gambar referensi yang dikirim): dipakai
   // BERSAMA renderFaseCheckout() (Booking Summary, sebelum bayar) DAN
@@ -137,6 +129,13 @@ const PageBookPublic = (() => {
       MugenUI.el("span", { class: "book-appt-row-label" }, label),
       MugenUI.el("span", { class: "book-appt-row-value" }, value),
     ]);
+  }
+
+  // Dipakai BERSAMA renderConfirmed() DAN _renderHasilCekStatus() (keduanya
+  // menampilkan "X layanan" di baris Layanan kartu Dark Luxury) -- satu
+  // tempat satu-satunya supaya logika hitungnya SAMA PERSIS di kedua layar.
+  function hitungJumlahLayanan(daftarService) {
+    return String(daftarService || "").split(",").filter((s) => s.trim()).length || 1;
   }
 
   function apptSection(title, baris, icon) {
@@ -393,6 +392,12 @@ const PageBookPublic = (() => {
     '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/>' +
     '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>';
+  // Lucide "circle-x" (icon hero "Booking Dibatalkan", lihat
+  // _renderHasilCekStatus()::statusHero()).
+  const IKON_SILANG_SVG =
+    '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' +
+    '<path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>';
 
   // Efek ripple ringan (murni CSS animasi + JS posisi klik) saat tombol
   // Download QRIS ditekan, supaya terasa modern tanpa perlu library apa pun.
@@ -889,32 +894,85 @@ const PageBookPublic = (() => {
       ]));
     }
 
+    // REVISI UI/UX "Dark Luxury" (PERMINTAAN Owner: halaman cek status
+    // booking -- entry WA/nomor TELEPON dan entry link token keduanya
+    // reuse _renderHasilCekStatus() ini -- ikut gaya yang sama dengan
+    // Booking Summary/Booking Berhasil). `icon`+`varian` menentukan warna
+    // lingkaran hero (reuse .book-dlx-success-icon sebagai basis ukuran/
+    // animasi, lihat modifier --danger/--neutral di style.css -- TANPA
+    // modifier = hijau sukses, SAMA PERSIS renderConfirmed()).
+    function statusHero(icon, varian, judul, subjudul) {
+      const kelasIkon = "book-dlx-success-icon" + (varian ? ` book-dlx-hero-icon--${varian}` : "");
+      return MugenUI.el("div", { class: "book-confirmed-hero" }, [
+        MugenUI.el("div", { class: kelasIkon, html: icon }),
+        MugenUI.el("h2", {}, judul),
+        MugenUI.el("div", { class: "subtitle" }, subjudul),
+      ]);
+    }
+
+    // Chip nomor referensi -- SAMA PERSIS pola renderConfirmed() (klik
+    // untuk menyalin). `null` kalau `nomor` kosong (beberapa fase lama
+    // tidak selalu mengembalikan nomor_transaksi).
+    function refChipStatus(nomor) {
+      if (!nomor) return null;
+      const chip = MugenUI.el("button", { type: "button", class: "book-appt-ref-chip" }, [
+        MugenUI.el("span", { class: "book-icon-inline", html: IKON_FILE_SVG }),
+        MugenUI.el("span", {}, `Ref. ${nomor}`),
+        MugenUI.el("span", { class: "book-icon-inline", html: IKON_SALIN_SVG }),
+      ]);
+      chip.addEventListener("click", () => _salinTeksKeClipboard(nomor));
+      return MugenUI.el("div", { style: "text-align:center;" }, [chip]);
+    }
+
+    // Kartu "Detail Booking" Dark Luxury (dipakai fase "selesai"/
+    // "menunggu_manual"/"menunggu_gateway") -- SAMA PERSIS struktur kartu
+    // "Detail Booking" di renderConfirmed(), badge status warnanya
+    // mengikuti `labelStatus`/`varianBadge` ("success" = hijau default
+    // .book-status-badge, "neutral" = modifier abu-abu untuk fase
+    // menunggu). `ekstra` (opsional) = elemen tambahan ditaruh SETELAH
+    // baris Total (dipakai menunggu_manual/menunggu_gateway untuk
+    // menampilkan QRIS/VA).
+    function kartuDetailBooking(hasil, labelStatus, varianBadge, ekstra) {
+      const jumlahLayanan = hitungJumlahLayanan(hasil.daftar_service);
+      return MugenUI.el("div", { class: "card book-appt-card" }, [
+        MugenUI.el("div", { class: "book-appt-section-title" }, [
+          MugenUI.el("span", { class: "book-dlx-icon-badge", html: IKON_KALENDER_SVG }),
+          MugenUI.el("span", { style: "flex:1;" }, "Detail Booking"),
+          labelStatus
+            ? MugenUI.el("span", { class: "book-status-badge" + (varianBadge ? ` book-status-badge--${varianBadge}` : "") }, labelStatus)
+            : null,
+        ]),
+        apptSection(null, [
+          apptRow("Barber", hasil.nama_barber),
+          apptRow("Tanggal", MugenUI.formatTanggal(hasil.tanggal)),
+          apptRow("Waktu", hasil.jam_mulai),
+        ]),
+        apptSection("Layanan", [apptRow(hasil.daftar_service, `${jumlahLayanan} layanan`)], IKON_GUNTING_SVG),
+        MugenUI.el("div", { class: "book-appt-total" }, [
+          MugenUI.el("span", {}, "Total"),
+          MugenUI.el("span", { class: "book-appt-total-value" }, MugenUI.formatRupiah(hasil.total_harga)),
+        ]),
+        ...(ekstra || []),
+      ]);
+    }
+
     function renderHasil(hasil) {
       body.innerHTML = "";
       if (!hasil.ditemukan) {
-        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
-          MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "?"),
-          MugenUI.el("h2", {}, "Booking Tidak Ditemukan"),
-          MugenUI.el("div", { class: "subtitle" }, "Tidak ditemukan booking untuk nomor WhatsApp/link tersebut."),
-        ]));
+        body.appendChild(statusHero(IKON_INFO_SVG, "neutral", "Booking Tidak Ditemukan",
+          "Tidak ditemukan booking untuk nomor WhatsApp/link tersebut."));
         tombolKembali();
         return;
       }
       if (hasil.fase === "dibatalkan") {
-        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
-          MugenUI.el("div", { class: "book-selesai-icon book-selesai-icon-gagal" }, "✕"),
-          MugenUI.el("h2", {}, "Booking Dibatalkan"),
-          MugenUI.el("div", { class: "subtitle" }, "Booking ini sudah dibatalkan. Silakan booking ulang."),
-        ]));
+        body.appendChild(statusHero(IKON_SILANG_SVG, "danger", "Booking Dibatalkan",
+          "Booking ini sudah dibatalkan. Silakan booking ulang."));
         tombolKembali(true);
         return;
       }
       if (hasil.fase === "lewat") {
-        body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
-          MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
-          MugenUI.el("h2", {}, "Appointment Sudah Selesai"),
-          MugenUI.el("div", { class: "subtitle" }, "Jadwal booking ini sudah lewat. Ingin booking baru?"),
-        ]));
+        body.appendChild(statusHero(IKON_KALENDER_CENTANG_SVG, "neutral", "Appointment Sudah Selesai",
+          "Jadwal booking ini sudah lewat. Ingin booking baru?"));
         tombolKembali(true);
         return;
       }
@@ -923,19 +981,13 @@ const PageBookPublic = (() => {
         if (hasil.qris_url) {
           kontenItems.push(MugenUI.el("img", { src: MUGEN_API_BASE + hasil.qris_url, class: "book-qris-img", alt: "QRIS" }));
         }
-        kontenItems.push(MugenUI.el("div", { style: "margin-top:8px;" }, hasil.qris_merchant_nama || ""));
-        kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, hasil.metode_instruksi || ""));
-        body.appendChild(MugenUI.el("h2", {}, "Menunggu Verifikasi Pembayaran"));
-        body.appendChild(MugenUI.el("div", { class: "card" }, [
-          fieldRow("Transaction Number", hasil.nomor_transaksi),
-          fieldRow("Barber", hasil.nama_barber),
-          fieldRow("Date", MugenUI.formatTanggal(hasil.tanggal)),
-          fieldRow("Time", hasil.jam_mulai),
-          fieldRow("Service", hasil.daftar_service),
-          MugenUI.el("hr"),
-          fieldRow("Total Payment", MugenUI.formatRupiah(hasil.total_harga), true),
-          MugenUI.el("hr"),
-          MugenUI.el("div", { style: "text-align:center;" }, kontenItems),
+        if (hasil.qris_merchant_nama) kontenItems.push(MugenUI.el("div", { style: "margin-top:8px;" }, hasil.qris_merchant_nama));
+        if (hasil.metode_instruksi) kontenItems.push(MugenUI.el("div", { class: "subtitle", style: "margin-top:4px;" }, hasil.metode_instruksi));
+        body.appendChild(statusHero(IKON_DOMPET_SVG, "neutral", "Menunggu Verifikasi Pembayaran",
+          "Selesaikan pembayaran lalu tunggu konfirmasi dari kami."));
+        body.appendChild(refChipStatus(hasil.nomor_transaksi));
+        body.appendChild(kartuDetailBooking(hasil, "Menunggu", "neutral", [
+          MugenUI.el("div", { class: "book-appt-section", style: "border-top:1px solid #343943;margin-top:14px;padding-top:14px;text-align:center;" }, kontenItems),
         ]));
         tombolKembali();
         return;
@@ -945,19 +997,10 @@ const PageBookPublic = (() => {
         return;
       }
       // fase === "selesai" (sudah diverifikasi/dibayar, metode apa pun)
-      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
-        MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
-        MugenUI.el("h2", {}, "Booking Confirmed"),
-        MugenUI.el("div", { class: "book-selesai-detail" }, [
-          fieldRow("Transaction Number", hasil.nomor_transaksi),
-          fieldRow("Barber", hasil.nama_barber),
-          fieldRow("Date", MugenUI.formatTanggal(hasil.tanggal)),
-          fieldRow("Time", hasil.jam_mulai),
-          fieldRow("Service", hasil.daftar_service),
-          MugenUI.el("hr"),
-          fieldRow("Total", MugenUI.formatRupiah(hasil.total_harga), true),
-        ]),
-      ]));
+      body.appendChild(statusHero(IKON_KALENDER_CENTANG_SVG, null, "Booking Confirmed",
+        "Booking Anda sudah dikonfirmasi."));
+      body.appendChild(refChipStatus(hasil.nomor_transaksi));
+      body.appendChild(kartuDetailBooking(hasil, "Diterima", null));
       tombolKembali();
     }
 
@@ -966,12 +1009,14 @@ const PageBookPublic = (() => {
     // supaya countdown TIDAK reset walau customer baru kembali lewat sini.
     function renderGatewayWaiting(hasil) {
       body.innerHTML = "";
-      body.appendChild(MugenUI.el("h2", {}, "Menunggu Konfirmasi Pembayaran"));
-      const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Selesaikan pembayaran memakai info di bawah.");
+      body.appendChild(statusHero(IKON_DOMPET_SVG, "neutral", "Menunggu Konfirmasi Pembayaran",
+        "Selesaikan pembayaran memakai info di bawah."));
+      body.appendChild(refChipStatus(hasil.nomor_transaksi));
+      const statusLabelEl = MugenUI.el("div", { class: "subtitle" }, "Pembayaran sedang menunggu diselesaikan.");
       const sisaAwal = Math.max(0, hasil.gateway_detik_tersisa || 0);
       const countdownEl = MugenUI.el("div", { class: "book-countdown" },
         `${String(Math.floor(sisaAwal / 60)).padStart(2, "0")}:${String(sisaAwal % 60).padStart(2, "0")}`);
-      const btnSudahBayar = MugenUI.el("button", { type: "button", style: "margin-top:12px;" }, "Saya Sudah Bayar");
+      const btnSudahBayar = MugenUI.el("button", { type: "button", class: "book-btn-pill", style: "margin-top:12px;" }, "Saya Sudah Bayar");
       tambahkanEfekRipple(btnSudahBayar);
 
       const kontenItems = [];
@@ -1003,16 +1048,10 @@ const PageBookPublic = (() => {
         }
       }
 
-      body.appendChild(MugenUI.el("div", { class: "card" }, [
-        MugenUI.el("div", { style: "text-align:center;" }, [statusLabelEl, countdownEl, MugenUI.el("div", {}, [btnSudahBayar])]),
-        MugenUI.el("hr"),
-        MugenUI.el("div", { style: "text-align:center;" }, kontenItems),
-        MugenUI.el("hr"),
-        fieldRow("Transaction Number", hasil.nomor_transaksi),
-        fieldRow("Barber", hasil.nama_barber),
-        fieldRow("Service", hasil.daftar_service),
-        MugenUI.el("hr"),
-        fieldRow("Total Payment", MugenUI.formatRupiah(hasil.total_harga), true),
+      body.appendChild(kartuDetailBooking(hasil, "Menunggu", "neutral", [
+        MugenUI.el("div", { class: "book-appt-section", style: "border-top:1px solid #343943;margin-top:14px;padding-top:14px;text-align:center;" },
+          [statusLabelEl, countdownEl, MugenUI.el("div", {}, [btnSudahBayar])]),
+        MugenUI.el("div", { class: "book-appt-section", style: "text-align:center;" }, kontenItems),
       ]));
       tambahkanLinkBantuanWa();
 
@@ -2272,15 +2311,20 @@ const PageBookPublic = (() => {
     // TERSENDIRI dengan badge status "Diterima", dan pesan konfirmasi
     // (pesanPenutupFinal(), isinya TIDAK berubah) pindah ke kotak info
     // terpisah bergaya (IKON_INFO_SVG), bukan lagi teks polos `.subtitle`.
-    // `.book-selesai`/`.book-selesai-icon`/`.book-selesai-actions` TETAP
-    // ADA APA ADANYA -- dipakai juga oleh renderHasil()/renderGatewayWaiting()/
-    // renderPayment() (status lain: dibatalkan/gagal/kedaluwarsa/menunggu,
-    // DI LUAR permintaan ini) jadi TIDAK disentuh, hanya layar ini yang
-    // memakai markup baru (.book-confirmed-hero).
+    // REVISI LANJUTAN (PERMINTAAN Owner: halaman cek status booking ikut
+    // gaya yang sama): `.book-selesai`/`.book-selesai-icon` sekarang HANYA
+    // dipakai renderPayment()::renderFaseGagal()/renderFaseKedaluwarsa()
+    // (fase gagal/kedaluwarsa DI DALAM wizard booking baru -- DI LUAR
+    // permintaan ini, sengaja TIDAK disentuh). _renderHasilCekStatus()
+    // (renderHasil()/renderGatewayWaiting(), dipakai renderSudahBooking()/
+    // renderStatusToken()) SUDAH ikut dipindah ke markup Dark Luxury yang
+    // sama (lihat statusHero()/kartuDetailBooking() di atas).
+    // `.book-selesai-actions` (flex kolom tombol polos, TANPA warna/bg)
+    // TETAP dipakai kedua layar -- aman, tidak terikat tema terang/gelap.
     function renderConfirmed() {
       const r = state.bookingResult;
       const nomorTransaksi = r.nomor_transaksi || MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop);
-      const jumlahLayanan = String(r.daftar_service || "").split(",").filter((s) => s.trim()).length || 1;
+      const jumlahLayanan = hitungJumlahLayanan(r.daftar_service);
 
       body.appendChild(MugenUI.el("div", { class: "book-confirmed-hero" }, [
         MugenUI.el("div", { class: "book-dlx-success-icon", html: IKON_KALENDER_CENTANG_SVG }),

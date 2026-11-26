@@ -3127,15 +3127,6 @@ body.book-public-active {
   60% { opacity: 1; transform: scale(1.08); }
   100% { opacity: 1; transform: scale(1); }
 }
-.book-selesai-detail { text-align: left; margin: 18px 0; }
-.book-field-row {
-  display: grid; grid-template-columns: 84px 10px 1fr; gap: 2px 8px;
-  padding: 6px 0; align-items: baseline;
-}
-.book-field-label, .book-field-colon { color: var(--text-dim); }
-.book-field-value { font-weight: 600; word-break: break-word; }
-.book-field-row-total .book-field-value { font-weight: 700; font-size: 17px; color: var(--accent); }
-.book-selesai-detail hr { margin: 6px 0 10px; border-color: var(--border); }
 .book-selesai-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .book-selesai-icon { animation: none !important; }
@@ -3196,23 +3187,26 @@ body.book-public-active {
 
 /* ===================================================================
    REVISI UI/UX "Dark Luxury" (PERMINTAAN Owner, spesifikasi detail
-   warna/ikon/animasi) -- Booking Summary & Booking Berhasil SAJA.
-   Dipakai BERSAMA renderFaseCheckout() (Booking Summary) DAN
-   renderConfirmed() (Booking Berhasil), lihat apptCard()/apptSection()/
-   apptRow()/apptTotalBox() di book_public.js -- kedua kartu INI
-   (.book-appt-card/.book-appt-total-box/.book-info-box) di SELURUH
-   codebase cuma dipakai di sini, aman diberi warna HEX TETAP (bukan
-   var(--bg-card)/--text dkk) -- kartu ini SENGAJA tidak ikut berubah
-   kalau tema terang/gelap akun berubah (konsisten dengan .book-public
-   yang memang sudah dipaksa Light Mode, lihat catatan panjang di atas),
-   identitas visualnya sendiri. TIDAK memakai gradient/neon/dekorasi
-   berlebih sesuai permintaan eksplisit.
-   TIDAK mengubah .book-summary-field/.book-field-row di atas -- keduanya
-   MASIH dipakai layar lain (renderFaseMetode()/renderFaseBayar()/
-   renderSudahBooking(), di luar scope permintaan ini). Juga TIDAK
-   mengubah .book-selesai/.book-selesai-icon/.book-selesai-actions --
-   dipakai layar status lain (dibatalkan/gagal/kedaluwarsa/menunggu
-   pembayaran), lihat catatan di renderConfirmed() book_public.js. */
+   warna/ikon/animasi) -- awalnya Booking Summary & Booking Berhasil
+   SAJA, lalu DIPERLUAS ke halaman cek status booking (renderSudahBooking()/
+   renderStatusToken(), lewat _renderHasilCekStatus() -- lihat statusHero()/
+   kartuDetailBooking() di book_public.js) supaya SATU bahasa visual yang
+   sama dipakai di seluruh layar publik yang menampilkan detail booking.
+   Dipakai BERSAMA renderFaseCheckout() (Booking Summary), renderConfirmed()
+   (Booking Berhasil), DAN _renderHasilCekStatus() (cek status), lihat
+   apptCard()/apptSection()/apptRow()/apptTotalBox() di book_public.js --
+   kartu-kartu INI (.book-appt-card/.book-appt-total-box/.book-info-box)
+   di SELURUH codebase cuma dipakai di layar-layar itu, aman diberi warna
+   HEX TETAP (bukan var(--bg-card)/--text dkk) -- kartu ini SENGAJA tidak
+   ikut berubah kalau tema terang/gelap akun berubah (konsisten dengan
+   .book-public yang memang sudah dipaksa Light Mode, lihat catatan
+   panjang di atas), identitas visualnya sendiri. TIDAK memakai gradient/
+   neon/dekorasi berlebih sesuai permintaan eksplisit.
+   `.book-selesai`/`.book-selesai-icon` TIDAK disentuh -- sekarang HANYA
+   dipakai renderPayment()::renderFaseGagal()/renderFaseKedaluwarsa()
+   (fase gagal/kedaluwarsa DI DALAM wizard booking baru, DI LUAR
+   permintaan ini); `.book-selesai-actions` (flex kolom tombol polos,
+   tanpa warna/bg) TETAP dipakai di semua layar, aman untuk kedua tema. */
 .book-appt-card {
   text-align: left;
   background: #111318; color: #FFFFFF;
@@ -3243,6 +3237,17 @@ body.book-public-active {
   font-weight: 700; color: #FFFFFF;
 }
 .book-appt-total-value { font-weight: 800; font-size: 21px; color: #27AE60; }
+/* Kontras: `.subtitle` biasa pakai var(--text-dim) (abu medium, dirancang
+   untuk latar TERANG) -- kontrasnya lemah kalau ikut tercakup di dalam
+   kartu gelap ini (lihat kartuDetailBooking()::statusLabelEl dkk di
+   book_public.js, fase menunggu verifikasi/konfirmasi pembayaran). */
+.book-appt-card .subtitle { color: #A5ADBA; }
+/* Kontras: `.book-countdown` dasar pakai var(--accent) (navy gelap) di
+   atas background nyaris transparan -- dirancang untuk latar TERANG,
+   nyaris tidak kebaca di atas kartu gelap ini (lihat renderGatewayWaiting()
+   di book_public.js, dipakai fase menunggu_gateway halaman cek status). */
+.book-appt-card .book-countdown { color: #FFFFFF; background: rgba(255,255,255,0.08); }
+.book-appt-card .book-countdown.book-countdown-urgent { color: #FF8A80; background: rgba(226,92,92,0.18); }
 /* Badge ikon rounded-square (Lucide outline di dalamnya, lihat IKON_*
    di book_public.js) -- SATU gaya tetap dipakai kedua kartu. */
 .book-dlx-icon-badge {
@@ -3266,12 +3271,16 @@ body.book-public-active {
 .book-appt-total-box-label { font-weight: 700; font-size: 15px; color: #FFFFFF; }
 .book-appt-total-box-subtitle { font-size: 12.5px; color: #A5ADBA; margin-top: 3px; }
 .book-appt-total-box-value { font-weight: 800; font-size: 22px; color: #27AE60; white-space: nowrap; }
-/* Badge status hijau ("Diterima", Booking Berhasil > kartu Detail Booking). */
+/* Badge status hijau ("Diterima", Booking Berhasil > kartu Detail Booking).
+   Modifier --neutral (abu-abu, "Menunggu") dipakai halaman cek status
+   booking -- fase menunggu verifikasi/konfirmasi pembayaran BUKAN hijau
+   sukses, lihat kartuDetailBooking() di book_public.js. */
 .book-status-badge {
   display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px;
   font-size: 11.5px; font-weight: 700; white-space: nowrap;
   background: rgba(39,174,96,0.18); color: #27AE60;
 }
+.book-status-badge.book-status-badge--neutral { background: rgba(165,173,186,0.18); color: #A5ADBA; }
 /* Chip nomor referensi (Booking Berhasil) -- klik untuk menyalin (lihat
    _salinTeksKeClipboard()). */
 .book-appt-ref-chip {
@@ -3287,17 +3296,23 @@ body.book-public-active {
    "Detail Booking" jadi kartu sendiri (.book-appt-card), "Informasi
    Konfirmasi" jadi kotak sendiri (.book-info-box di bawah). */
 .book-confirmed-hero { text-align: center; margin-bottom: 4px; }
-/* Icon "Booking Berhasil" (Lucide "calendar-check", GANTI centang polos
-   -- .book-selesai-icon TIDAK disentuh, masih dipakai layar status lain,
-   lihat catatan di renderConfirmed() book_public.js). Lingkaran hijau
-   gelap custom khusus layar ini, ikon lebih besar (44-52px) dari badge
-   section (22-24px) supaya jadi fokus utama halaman. */
+/* Icon hero (Lucide, lihat statusHero() di book_public.js) -- dipakai
+   Booking Berhasil (renderConfirmed()) DAN halaman cek status booking
+   (_renderHasilCekStatus()::renderHasil()/renderGatewayWaiting()).
+   Lingkaran hijau gelap custom khusus layar ini, ikon lebih besar (44-
+   52px) dari badge section (22-24px) supaya jadi fokus utama halaman.
+   TANPA modifier = varian sukses (hijau, default Booking Berhasil/
+   Booking Confirmed) -- modifier --danger/--neutral di bawah untuk fase
+   lain (dibatalkan/tidak ditemukan/menunggu/lewat), SATU bentuk+animasi
+   yang sama, cuma warnanya beda. */
 .book-dlx-success-icon {
   width: 92px; height: 92px; border-radius: 50%;
   background: #174C32; color: #73E69A;
   display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;
   animation: book-dlx-success-pop 620ms var(--ease-emphasized) both;
 }
+.book-dlx-success-icon.book-dlx-hero-icon--danger { background: #3A1F23; color: #FF8A80; }
+.book-dlx-success-icon.book-dlx-hero-icon--neutral { background: #292D35; color: #A5ADBA; }
 @keyframes book-dlx-success-pop {
   0% { opacity: 0; transform: scale(0.5); }
   60% { opacity: 1; transform: scale(1.08); }
