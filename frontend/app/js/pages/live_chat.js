@@ -11,7 +11,9 @@
 // hitung mundur retensi otomatis (gambar 24 jam, teks 7 hari, PERMINTAAN
 // Owner: pesan yang belum pernah dibuka TIDAK PERNAH dihapus).
 
+console.log("[DEBUG LiveChat] script mulai dieksekusi. typeof PageLiveChat sebelumnya:", typeof window.PageLiveChat);
 const PageLiveChat = (() => {
+  console.log("[DEBUG LiveChat] IIFE mulai jalan.");
   let _kontakList = [];
   let _nomorAktif = null;
   let _elemKontakList = null;
@@ -199,5 +201,7 @@ const PageLiveChat = (() => {
     await _muatKontak();
   }
 
+  console.log("[DEBUG LiveChat] IIFE selesai, akan return object.");
   return { render, suntikPesanMasuk };
 })();
+console.log("[DEBUG LiveChat] script SELESAI dieksekusi. typeof PageLiveChat sekarang:", typeof window.PageLiveChat);
