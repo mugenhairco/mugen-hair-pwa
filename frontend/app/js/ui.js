@@ -381,18 +381,165 @@ const MugenUI = (() => {
   // booking.js/rekap.js/pengaturan.js), emptyState()/errorState() (satu
   // pola tampilan, bukan string ad hoc per halaman). ======================
 
+  // REVISI UI/UX (PERMINTAAN Owner, lihat gambar referensi): ring
+  // bersegmen (tick) + ANGKA PERSENTASE di tengah -- GANTI ".content-
+  // spinner" polos yang dipakai skeleton() di bawah. BUKAN animasi
+  // dekoratif berulang tanpa arti -- persentasenya ESTIMASI waktu
+  // (naik pelan dengan easing, MENTOK di `cap` SELAMA data sungguhan
+  // belum siap) supaya TIDAK PERNAH "berbohong" bilang hampir selesai
+  // padahal belum. Dipakai POLOS (skeleton() di bawah, tidak pernah
+  // dipanggil selesaikan()-nya -- ring ikut terbuang begitu container
+  // ditimpa data asli, SAMA seperti .content-spinner lama) MAUPUN
+  // dikontrol manual (Booking List/Rekap Daftar Transaksi, lihat
+  // pindahkanLoadingKeSamping() di bawah -- ring itu PERSISTEN, pindah
+  // posisi lalu capai 100% betulan begitu data bertahap benar-benar
+  // lengkap, lihat pages/booking.js & pages/rekap.js).
+  const MUGEN_LOADING_RING_JUMLAH_TICK = 28;
+  function loadingRing(ukuran = 72, { cap = 92, durasiEstimasi = 1800 } = {}) {
+    const kurangiGerak = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wrap = el("div", { class: "mugen-loading-ring" });
+    const ticks = [];
+    for (let i = 0; i < MUGEN_LOADING_RING_JUMLAH_TICK; i++) {
+      const tick = el("div", { class: "mugen-loading-ring-tick" });
+      ticks.push(tick);
+      wrap.appendChild(tick);
+    }
+    const nilaiEl = el("div", { class: "mugen-loading-ring-value" }, "1%");
+    wrap.appendChild(nilaiEl);
+
+    // Geometri tick dihitung ULANG tiap kali ukuran berubah (aturUkuran(),
+    // dipakai pindahkanLoadingKeSamping() saat ring mengecil pindah ke
+    // samping) -- SATU set 28 tick yang sama direposisi, bukan dibongkar-
+    // pasang ulang.
+    // PERMINTAAN Owner: varian KECIL (dipakai pindahkanLoadingKeSamping(),
+    // ring yang sudah pindah ke samping kolom pencarian/"Daftar
+    // Transaksi") butuh angka % lebih kecil lagi (SEBELUMNYA ikut
+    // kesentuh/tabrakan dengan tick) + warna diredupkan 40% (opacity 0.6)
+    // supaya tidak terlalu mencolok di posisi barunya yang kecil --
+    // varian BESAR (di tengah konten) TIDAK berubah. `u <= 40` dipakai
+    // sebagai ambang "ini varian kecil" (ring besar selalu >=64px, lihat
+    // pemanggil di booking.js/rekap.js/dashboard_owner.js dkk -- ring
+    // kecil selalu di-resize ke 24-28px lewat pindahkanLoadingKeSamping()).
+    function aturUkuran(u) {
+      const kecil = u <= 40;
+      wrap.style.width = `${u}px`;
+      wrap.style.height = `${u}px`;
+      wrap.style.opacity = kecil ? "0.6" : "1";
+      const radius = u / 2 - Math.max(3, u * 0.09);
+      const panjang = Math.max(3, u * 0.11);
+      const lebar = Math.max(1.5, u * 0.032);
+      ticks.forEach((t, i) => {
+        const sudut = (360 / MUGEN_LOADING_RING_JUMLAH_TICK) * i;
+        t.style.width = `${lebar}px`;
+        t.style.height = `${panjang}px`;
+        t.style.marginTop = `${-panjang / 2}px`;
+        t.style.marginLeft = `${-lebar / 2}px`;
+        t.style.transform = `rotate(${sudut}deg) translateY(${-radius}px)`;
+      });
+      nilaiEl.style.fontSize = `${Math.max(6, Math.round(u * (kecil ? 0.15 : 0.22)))}px`;
+    }
+    aturUkuran(ukuran);
+
+    let persenSekarang = 0;
+    function terapkanPersen(p) {
+      persenSekarang = p;
+      const aktif = Math.round((p / 100) * MUGEN_LOADING_RING_JUMLAH_TICK);
+      ticks.forEach((t, i) => t.classList.toggle("active", i < aktif));
+      nilaiEl.textContent = `${Math.round(p)}%`;
+    }
+    terapkanPersen(1);
+
+    let berhenti = false;
+    const mulaiWaktu = performance.now();
+    function frameEstimasi(sekarang) {
+      if (berhenti || !wrap.isConnected) return;
+      const t = Math.min(1, (sekarang - mulaiWaktu) / durasiEstimasi);
+      const ease = 1 - Math.pow(1 - t, 3); // ease-out -- melambat mendekati cap
+      terapkanPersen(Math.max(1, cap * ease));
+      if (t < 1) requestAnimationFrame(frameEstimasi);
+    }
+    if (kurangiGerak) terapkanPersen(cap);
+    else requestAnimationFrame(frameEstimasi);
+
+    return {
+      el: wrap,
+      aturUkuran,
+      // Dipanggil begitu data SUNGGUHAN siap -- lompat cepat ke 100%
+      // (TIDAK pernah dipanggil untuk ring polos bawaan skeleton(), hanya
+      // dipakai pemanggil yang mengontrol ring ini secara manual/persisten
+      // -- lihat catatan di atas). `onSelesai` dipanggil SETELAH lompatan
+      // selesai (user sempat melihat "100%" sesaat sebelum dilepas).
+      selesaikan(onSelesai) {
+        berhenti = true;
+        if (kurangiGerak || !wrap.isConnected) {
+          terapkanPersen(100);
+          if (onSelesai) onSelesai();
+          return;
+        }
+        const dari = persenSekarang;
+        const mulaiLompat = performance.now();
+        const durasiLompat = 260;
+        function frameLompat(sekarang) {
+          if (!wrap.isConnected) return;
+          const t = Math.min(1, (sekarang - mulaiLompat) / durasiLompat);
+          terapkanPersen(dari + (100 - dari) * t);
+          if (t < 1) requestAnimationFrame(frameLompat);
+          else if (onSelesai) setTimeout(onSelesai, 180);
+        }
+        requestAnimationFrame(frameLompat);
+      },
+    };
+  }
+
+  // FLIP sederhana (teknik SAMA seperti morphDariTombol() di bawah): ring
+  // loading yang SEDANG tampil besar di tengah konten dipindah+diperkecil
+  // ke posisi BARU (mis. sebelah kolom pencarian) dengan transisi geser
+  // yang mulus, BUKAN loncat tiba-tiba. PERMINTAAN Owner (Booking List/
+  // Rekap Daftar Transaksi): dipanggil begitu data bertahap PERTAMA
+  // muncul (lihat pages/booking.js & pages/rekap.js) -- ring TIDAK
+  // dilepas, tetap instance yang SAMA, cuma pindah induk+ukuran.
+  function pindahkanLoadingKeSamping(ring, tujuanParent, ukuranBaru) {
+    const kurangiGerak = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rectAwal = ring.el.getBoundingClientRect();
+    const ukuranAwal = rectAwal.width || ukuranBaru;
+    tujuanParent.appendChild(ring.el);
+    ring.aturUkuran(ukuranBaru);
+    if (kurangiGerak || !ukuranAwal) return;
+    const rectAkhir = ring.el.getBoundingClientRect();
+    const dx = (rectAwal.left + rectAwal.width / 2) - (rectAkhir.left + rectAkhir.width / 2);
+    const dy = (rectAwal.top + rectAwal.height / 2) - (rectAkhir.top + rectAkhir.height / 2);
+    const skala = ukuranAwal / ukuranBaru;
+    ring.el.style.transition = "none";
+    ring.el.style.transform = `translate(${dx}px, ${dy}px) scale(${skala})`;
+    void ring.el.offsetWidth; // paksa reflow -- state AWAL harus ter-apply dulu sebelum transisi di bawah
+    requestAnimationFrame(() => {
+      ring.el.style.transition = "transform 320ms var(--ease-standard)";
+      ring.el.style.transform = "translate(0px, 0px) scale(1)";
+    });
+    ring.el.addEventListener("transitionend", function bersihkan() {
+      ring.el.style.transition = "";
+      ring.el.style.transform = "";
+    }, { once: true });
+  }
+
   // Placeholder sebelum data asli datang. SEMULA shimmer bar abu-abu
-  // (meniru bentuk data asli) -- laporan Owner: "loading seperti ini saya
-  // tidak suka, ganti circular progress di semua jenis loading (hapus,
-  // input data, pindah tab menu)". Nama fungsi/parameter (`kind`: "table"
+  // (meniru bentuk data asli), lalu diganti spinner bundar polos per
+  // laporan Owner sebelumnya ("loading seperti ini saya tidak suka") --
+  // SEKARANG diganti lagi jadi loadingRing() (ring tick + persentase,
+  // lihat komentar panjang di atas). Nama fungsi/parameter (`kind`: "table"
   // {cols,rows=4}, "card" {lines=3}, "line" {width}) DIPERTAHANKAN supaya
   // ~90 titik panggilan di seluruh halaman (refreshInto's skeleton:, tab
   // switch, load awal) tidak perlu diubah satu-satu -- cukup isinya diganti
-  // jadi spinner bundar terpusat, otomatis berlaku di semua jenis loading
-  // itu sekaligus. `rows`/`lines` dipakai untuk perkiraan tinggi saja
-  // (supaya tidak ada lonjakan layout terlalu jauh saat data asli masuk).
+  // jadi ring terpusat, otomatis berlaku di semua jenis loading itu
+  // sekaligus. `rows`/`lines` dipakai untuk perkiraan tinggi saja (supaya
+  // tidak ada lonjakan layout terlalu jauh saat data asli masuk). Ring di
+  // sini TIDAK pernah mencapai 100% betulan (selesaikan() tidak pernah
+  // dipanggil) -- begitu data asli datang, pemanggil menimpa container ini
+  // seluruhnya (sama seperti skeleton lama), ring ikut terbuang apa
+  // adanya, BUKAN cacat -- cap di bawah 100% memang disengaja supaya
+  // tidak pernah "berbohong" seolah hampir selesai.
   function skeleton(kind, opts = {}) {
-    const spinner = () => el("div", { class: "content-spinner" });
+    const spinner = (ukuran) => loadingRing(ukuran).el;
     if (kind === "table") {
       const { cols = 4, rows = 4 } = opts;
       const wrap = el("div", { class: "table-wrap" });
@@ -402,7 +549,7 @@ const MugenUI = (() => {
       const td = el(
         "td",
         { colspan: String(cols) },
-        el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(rows, 2) * 38}px;` }, spinner()),
+        el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(rows, 2) * 38}px;` }, spinner(64)),
       );
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -413,10 +560,10 @@ const MugenUI = (() => {
     if (kind === "card") {
       const { lines = 3 } = opts;
       const card = el("div", { class: "card" });
-      card.appendChild(el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(lines, 1) * 22 + 20}px;` }, spinner()));
+      card.appendChild(el("div", { class: "content-spinner-wrap", style: `min-height:${Math.max(lines, 1) * 22 + 20}px;` }, spinner(64)));
       return card;
     }
-    return el("div", { class: "content-spinner-wrap content-spinner-wrap-inline" }, el("div", { class: "content-spinner content-spinner-sm" }));
+    return el("div", { class: "content-spinner-wrap content-spinner-wrap-inline" }, spinner(28));
   }
 
   // Ganti isi `container` dengan hasil `asyncRenderFn()` (harus resolve ke
@@ -1444,6 +1591,7 @@ const MugenUI = (() => {
     serviceCell, keteranganCell, offlineBanner, progressRing, showLoading, hideLoading, withLoading,
     themeSwitch, confirmModal, infoModal, bukaMenuAksi, buatNomorTransaksi,
     skeleton, refreshInto, withButtonLoading, tabs, emptyState, errorState, pageTitle, ambilQueryHash,
+    loadingRing, pindahkanLoadingKeSamping,
     isoHariIniWib, tambahHariWib, awalBulanWib, bankLogoBadge, bankNamaLengkap,
     attachNumericKeypad, dropdownSelect, selectIcon, dateRangePicker, morphDariTombol,
   };

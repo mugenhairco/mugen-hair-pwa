@@ -375,7 +375,7 @@ const MugenRouter = (() => {
       // puluhan KB) dimuat DINAMIS di sini -- Owner/Admin/Barber yang login
       // ke aplikasi internal TIDAK PERNAH butuh file ini sama sekali, jadi
       // sebelumnya selalu ikut terunduh sia-sia di awal untuk mereka juga.
-      appRoot.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+      appRoot.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" }, MugenUI.loadingRing(72).el));
       MugenPageLoader.ensure("PageBookPublic", "js/pages/book_public.js")
         .then(() => { appRoot.innerHTML = ""; PageBookPublic.render(appRoot); })
         .catch((err) => {
@@ -393,7 +393,7 @@ const MugenRouter = (() => {
       MugenTheme.forceLight();
       if (hash === hashSebelumnya) return;
       appRoot.innerHTML = "";
-      appRoot.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+      appRoot.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" }, MugenUI.loadingRing(72).el));
       MugenPageLoader.ensure("PageAbsenMandiri", "js/pages/absen_mandiri.js")
         .then(() => { appRoot.innerHTML = ""; PageAbsenMandiri.render(appRoot); })
         .catch((err) => {

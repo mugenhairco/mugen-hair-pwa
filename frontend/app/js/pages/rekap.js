@@ -1015,6 +1015,39 @@ const PageRekap = (() => {
       body.appendChild(filterCard);
       body.appendChild(pdfCard);
       body.appendChild(tableWrap);
+
+      // REVISI UI/UX (PERMINTAAN Owner, Pola B): loading ring besar di
+      // tengah tableWrap begitu load() mulai -> pindah+mengecil ke
+      // SEBELAH TEKS "Daftar Transaksi" (BUKAN rata kanan kartu -- lihat
+      // `judulKiri` di renderDenganData() di bawah, sub-row flex khusus
+      // berisi h2+ring supaya keduanya menempel, terpisah dari badge
+      // "X Data" yang tetap rata kanan lewat cardHeader) begitu data
+      // bertahap PERTAMA muncul (FITUR "Muat Satu-Satu" ATAU fetch satu-
+      // bulan-penuh, mana pun duluan) -> capai 100% lalu dilepas begitu
+      // fetch satu-bulan-penuh (otoritatif) selesai. `judulKiri` dibangun
+      // ULANG dari nol SETIAP kali renderDenganData() dipanggil (termasuk
+      // tiap probe tanggal yang menyusul) -- ring yang SAMA di-reparent ke
+      // judulKiri BARU tiap kali (instan, TANPA animasi ulang -- posisi
+      // visualnya selalu sama persis, cuma identitas DOM-nya yang
+      // berubah), animasi FLIP hanya terjadi SEKALI (perpindahan pertama
+      // dari tengah).
+      let _ringLoadingTransaksi = null;
+      let _ringTransaksiSudahPindah = false;
+      function _taruhRingTransaksiDiHeader(headerRow) {
+        if (!_ringLoadingTransaksi) return;
+        if (!_ringTransaksiSudahPindah) {
+          _ringTransaksiSudahPindah = true;
+          MugenUI.pindahkanLoadingKeSamping(_ringLoadingTransaksi, headerRow, 24);
+        } else {
+          headerRow.appendChild(_ringLoadingTransaksi.el);
+        }
+      }
+      function _selesaikanRingTransaksi() {
+        if (!_ringLoadingTransaksi) return;
+        const ring = _ringLoadingTransaksi;
+        _ringLoadingTransaksi = null;
+        ring.selesaikan(() => ring.el.remove());
+      }
       // FITUR "+ Tambah Transaksi" (PERMINTAAN Owner): link teks yang
       // SEBELUMNYA ada di sini (sejajar baris pagination) sudah DIPINDAH
       // ke ikon judul "Rekap" (lihat render() -- klik ikon di sebelah
@@ -1286,10 +1319,21 @@ const PageRekap = (() => {
           // kronologis yang benar lewat sort string biasa.
           const tanggalUnik = [...baganTanggal.keys()].sort();
 
-          const cardHeader = MugenUI.el("div", { class: "card-header-row" }, [
+          // REVISI (PERMINTAAN Owner, "posisi loading yg kecil harusnya di
+          // sebelah kanan Daftar Transaksi, bukan rata kanan"): h2+ring
+          // dibungkus SATU sub-row flex tersendiri (judulKiri) supaya ring
+          // nempel PERSIS di sebelah teks "Daftar Transaksi" -- cardHeader
+          // sendiri TETAP space-between (badge "X Data" tetap rata kanan
+          // seperti semula), bedanya ring BUKAN lagi anak ke-3 cardHeader
+          // (yang akan ikut terdorong ke ujung kanan oleh space-between).
+          const judulKiri = MugenUI.el("div", { style: "display:flex;align-items:center;gap:10px;" }, [
             MugenUI.el("h2", { style: "margin:0;" }, "Daftar Transaksi"),
+          ]);
+          const cardHeader = MugenUI.el("div", { class: "card-header-row" }, [
+            judulKiri,
             MugenUI.el("span", { class: "badge badge-period" }, `${rows.length} Data`),
           ]);
+          _taruhRingTransaksiDiHeader(judulKiri);
           const navRow = MugenUI.el("div", { class: "rekap-slide-nav" });
           // PERMINTAAN Owner ("posisi pagination jangan berpindah-pindah
           // naik turun kalau data 4 baris vs 5 baris"): min-height di
@@ -1507,8 +1551,14 @@ const PageRekap = (() => {
         let dataAkumulasi = [];
         let dataCepatTampil = false;
 
+        // Buang ring loading LAMA kalau masih ada (mis. filter diganti
+        // lagi sebelum load() sebelumnya sempat selesai) -- jangan sampai
+        // nyangkut selamanya di samping "Daftar Transaksi".
+        if (_ringLoadingTransaksi) { _ringLoadingTransaksi.el.remove(); _ringLoadingTransaksi = null; }
+        _ringTransaksiSudahPindah = false;
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: isAdmin ? 9 : 11, rows: 4 }));
+        _ringLoadingTransaksi = MugenUI.loadingRing(80);
+        tableWrap.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:40px 0;" }, _ringLoadingTransaksi.el));
 
         (async () => {
           const JATAH_HARI = 5;
@@ -1561,8 +1611,16 @@ const PageRekap = (() => {
             MugenState.tandaiHalamanBersih("rekap_transaksi");
           }
           renderDenganData(data);
+          // Fetch satu-bulan-penuh (otoritatif) selesai -- ring loading
+          // (kalau masih ada) capai 100% lalu dilepas (PERMINTAAN Owner,
+          // Pola B).
+          _selesaikanRingTransaksi();
         } catch (e) {
           if (tokenMuat !== _tokenMuatTransaksiTerakhir) return;
+          // Jangan biarkan ring nyangkut selamanya kalau fetch satu-bulan-
+          // penuh gagal (baik probe satu-satu sempat menampilkan sesuatu
+          // atau tidak).
+          _selesaikanRingTransaksi();
           // Kalau probe satu-satu SUDAH menampilkan data yang valid, biarkan
           // apa adanya (jangan ditimpa pesan error) -- user tetap lihat
           // data yang benar, cuma belum lengkap satu bulan penuh.

@@ -274,42 +274,13 @@ body.sidebar-open::before {
   -webkit-backdrop-filter: none;
 }
 
-/* REVISI UI/UX: animasi loading awal (sebelum JS/router.js sempat
-   merender apa pun ke #app) -- SEBELUMNYA teks statis polos "Memuat
-   aplikasi...". Ditaruh di tengah viewport PERSIS seperti ini (bukan
-   .loading-overlay yang dipakai withLoading() -- itu scrim gelap di ATAS
-   konten yang sudah ada, di sini belum ada konten apa pun untuk
-   didimkan), spinner-nya reuse keyframe mugen-spin yang sama supaya
-   gerakannya konsisten dengan spinner lain di aplikasi (lihat
-   .loading-spinner). Warna dari token --accent/--border (BUKAN warna
-   literal) supaya begitu theme.js menaruh data-theme="dark" di <html> --
-   terjadi SESAAT setelah markup ini, lihat urutan <script> di index.html,
-   sama seperti teks statis lama yang digantikan ini -- spinner otomatis
-   ikut tema yang benar tanpa kode tambahan apa pun, bukan nyangkut warna
-   Light kalau sempat kelihatan sebelum itu. Web Booking (/book) tidak
-   relevan dengan catatan ini karena book_public.js memaksa Light terlepas
-   dari tema akun manapun.*/
-.boot-loading {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-}
-.boot-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: mugen-spin 0.7s linear infinite;
-}
-.boot-loading-text {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: 14px;
-}
+/* REVISI UI/UX (PERMINTAAN Owner, "hapus jangan disembunyikan"): loading
+   awal ".boot-loading" (spinner+teks "Memuat aplikasi...", tampil
+   SEBELUM JS/router.js sempat merender apa pun ke #app) DIHAPUS TOTAL --
+   bukan disembunyikan lewat CSS, markup-nya sendiri sudah dibuang dari
+   index.html (#app kosong sampai router.js mengisinya). Berlaku di
+   aplikasi utama MAUPUN Web Booking (satu index.html yang sama).
+*/
 
 /* ---------------------------------------------------------------------
    Layout app (sidebar + konten), dipakai setelah login.
@@ -3423,27 +3394,34 @@ body.book-public-active {
    SEMUA baru di sini menghormati prefers-reduced-motion sama seperti
    animasi lama di atas. */
 
-/* ---- Loading placeholder (MugenUI.skeleton(), lihat ui.js) -- SEMULA
-   shimmer bar abu-abu, diganti circular progress polos per laporan Owner
-   ("loading seperti ini saya tidak suka") -- satu style ini otomatis
-   berlaku di semua jenis loading (hapus/refresh, input data, pindah tab
-   menu, load awal halaman) karena semua titik panggil lewat satu fungsi
-   terpusat. Reuse keyframe mugen-spin yang sama dengan .loading-spinner/
-   .btn-inline-spinner supaya gerakannya konsisten di seluruh aplikasi. ---- */
+/* ---- Loading placeholder (MugenUI.skeleton(), lihat ui.js) -- wrapper
+   generik (masih dipakai, isinya sekarang loadingRing(), lihat blok
+   .mugen-loading-ring* di bawah untuk ring-nya sendiri). ---- */
 .content-spinner-wrap {
   display: flex; align-items: center; justify-content: center;
   padding: 18px 0; width: 100%;
 }
 .content-spinner-wrap-inline { padding: 4px 0; justify-content: flex-start; }
-.content-spinner {
-  width: 26px; height: 26px;
-  border: 3px solid var(--border); border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: mugen-spin 0.7s linear infinite;
+
+/* ---- loadingRing() (PERMINTAAN Owner, gambar referensi): ring bersegmen
+   (tick) + angka persentase di tengah -- GANTI ".content-spinner" polos
+   yang lama. Tick abu-abu (belum "dilewati" persentase) -> hitam/teks
+   (sudah dilewati), transisi warna halus tiap tick menyala. Ring+teks
+   di-resize lewat aturUkuran() (ui.js) untuk varian besar (tengah
+   konten)/kecil (pindah ke samping, lihat pindahkanLoadingKeSamping()). */
+.mugen-loading-ring { position: relative; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mugen-loading-ring-tick {
+  position: absolute; top: 50%; left: 50%;
+  border-radius: 2px; background: var(--border);
+  transition: background-color 180ms var(--ease-standard);
 }
-.content-spinner-sm { width: 16px; height: 16px; border-width: 2px; }
+.mugen-loading-ring-tick.active { background: var(--text); }
+.mugen-loading-ring-value {
+  position: relative; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
 @media (prefers-reduced-motion: reduce) {
-  .content-spinner { animation-duration: 1.4s; }
+  .mugen-loading-ring-tick { transition: none; }
 }
 
 /* ---- refreshInto(): crossfade isi container tanpa jeda kosong ---- */

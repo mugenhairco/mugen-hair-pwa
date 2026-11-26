@@ -1461,8 +1461,14 @@ const PageBooking = (() => {
     // fetch ulang ke server, pola sama persis pencarian produk di
     // pages/produk.js (filter di memori atas list yang sudah ada).
     const inputCariBooking = MugenUI.el("input", { type: "text", placeholder: "Cari nama atau nomor WhatsApp…" });
-    body.appendChild(MugenUI.el("div", { style: "max-width:320px;margin-bottom:14px;" },
-      [MugenUI.selectIcon(MugenIcons.search, inputCariBooking)]));
+    // REVISI UI/UX (PERMINTAAN Owner): baris flex ini jadi TUJUAN pindah
+    // loading ring kecil (lihat _pindahkanRingBookingJikaPerlu() di
+    // bawah) -- SEBELUMNYA cuma wrapper polos kolom pencarian, sekarang
+    // sengaja flex row supaya ring bisa muncul rapi di sebelahnya.
+    const cariWrapBaris = MugenUI.el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:14px;" }, [
+      MugenUI.el("div", { style: "max-width:320px;flex:1;" }, [MugenUI.selectIcon(MugenIcons.search, inputCariBooking)]),
+    ]);
+    body.appendChild(cariWrapBaris);
     inputCariBooking.addEventListener("input", () => {
       _searchQueryBookingList = inputCariBooking.value.trim();
       if (_bookingListRowsSaatIni) tampilkanRows(_bookingListRowsSaatIni);
@@ -1508,6 +1514,7 @@ const PageBooking = (() => {
     // butuh offline banner (lihat load() di bawah utk jalur penuh, yang
     // menanganinya sendiri karena ada elemen TAMBAHAN sebelum tabelnya).
     function tampilkanRows(rows) {
+      _pindahkanRingBookingJikaPerlu();
       tableWrap.innerHTML = "";
       tableWrap.appendChild(renderRows(saringPencarianBooking(rows)));
     }
@@ -1608,6 +1615,29 @@ const PageBooking = (() => {
     // lebih dulu selesai & tampil (pola sama seperti rekap.js).
     let _tokenMuatBookingTerakhir = Symbol();
 
+    // REVISI UI/UX (PERMINTAAN Owner, Pola B): loading ring besar di
+    // tengah tableWrap begitu load() mulai -> pindah+mengecil ke samping
+    // kolom pencarian (cariWrapBaris, lihat di bawah) begitu data
+    // bertahap PERTAMA muncul (jalur cepat ATAU jalur penuh, mana pun
+    // duluan) -> capai 100% lalu dilepas begitu jalur PENUH (otoritatif)
+    // selesai. `_ringLoadingBooking` = null berarti TIDAK ada loading
+    // aktif saat ini (load({silent:true}) tidak pernah membuat ring sama
+    // sekali -- lihat pengecekan `!silent` di load() di bawah).
+    let _ringLoadingBooking = null;
+    let _ringBookingSudahPindah = false;
+    function _pindahkanRingBookingJikaPerlu() {
+      if (_ringLoadingBooking && !_ringBookingSudahPindah) {
+        _ringBookingSudahPindah = true;
+        MugenUI.pindahkanLoadingKeSamping(_ringLoadingBooking, cariWrapBaris, 26);
+      }
+    }
+    function _selesaikanRingBooking() {
+      if (!_ringLoadingBooking) return;
+      const ring = _ringLoadingBooking;
+      _ringLoadingBooking = null;
+      ring.selesaikan(() => ring.el.remove());
+    }
+
     // PERMINTAAN Owner (suntik diam-diam push "booking_baru" -- lihat
     // catatan panjang _bookingSuntikBaris di atas): snapshot baris yang
     // SEDANG tampil di tabel ini (hasil jalur PENUH, BUKAN jalur cepat 10
@@ -1646,8 +1676,14 @@ const PageBooking = (() => {
       _bookingListSiapDisuntik = false; // reset -- jangan disuntik sampai jalur penuh load() INI selesai lagi
       _bookingListSedangMuat = true;
       if (!silent) {
+        // Buang ring loading LAMA kalau masih ada (mis. filter diganti
+        // lagi sebelum load() sebelumnya sempat selesai) -- jangan sampai
+        // nyangkut selamanya di samping kolom pencarian.
+        if (_ringLoadingBooking) { _ringLoadingBooking.el.remove(); _ringLoadingBooking = null; }
+        _ringBookingSudahPindah = false;
         tableWrap.innerHTML = "";
-        tableWrap.appendChild(MugenUI.skeleton("table", { cols: 10, rows: 4 }));
+        _ringLoadingBooking = MugenUI.loadingRing(80);
+        tableWrap.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:40px 0;" }, _ringLoadingBooking.el));
       }
       const qs = new URLSearchParams({ tahun: selTahun.value, bulan: selBulan.value });
       if (selBarber.value) qs.set("barber_id", selBarber.value);
@@ -1694,6 +1730,7 @@ const PageBooking = (() => {
         if (tokenMuat !== _tokenMuatBookingTerakhir) return;
         dataPenuhTampil = true;
         _bookingListSedangMuat = false;
+        _pindahkanRingBookingJikaPerlu();
         tableWrap.innerHTML = "";
         // AUDIT SINKRONISASI: lihat komentar di renderBarberList() di atas.
         if (data.__offline) tableWrap.appendChild(MugenUI.offlineBanner(data.__cachedAt));
@@ -1701,6 +1738,9 @@ const PageBooking = (() => {
         // _urutkanTerbaruDiAtas() di atas.
         const rowsTerurut = _urutkanTerbaruDiAtas(Array.isArray(data) ? data : []);
         tableWrap.appendChild(renderRows(saringPencarianBooking(rowsTerurut)));
+        // Jalur PENUH (otoritatif) selesai -- ring loading (kalau masih
+        // ada) capai 100% lalu dilepas (PERMINTAAN Owner, Pola B).
+        _selesaikanRingBooking();
         // Hanya tandai "siap disuntik" kalau ini data SERVER sungguhan
         // (bukan fallback offline) -- lihat catatan _bookingListRowsSaatIni
         // di atas.
@@ -1711,6 +1751,10 @@ const PageBooking = (() => {
       } catch (e) {
         if (tokenMuat !== _tokenMuatBookingTerakhir) return;
         _bookingListSedangMuat = false;
+        // Jalur PENUH gagal -- jangan biarkan ring nyangkut selamanya di
+        // samping kolom pencarian (atau di tengah kalau belum sempat
+        // pindah sama sekali).
+        _selesaikanRingBooking();
         // REVISI: refresh diam-diam (silent, lihat atas) yang gagal karena
         // jaringan sesaat TIDAK BOLEH menghapus tabel yang sedang tampil --
         // baris lama tetap ditampilkan, gagalnya cukup diam-diam diabaikan
