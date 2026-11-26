@@ -1018,15 +1018,17 @@ const PageRekap = (() => {
 
       // REVISI UI/UX (PERMINTAAN Owner, Pola B): loading ring besar di
       // tengah tableWrap begitu load() mulai -> pindah+mengecil ke
-      // samping heading "Daftar Transaksi" begitu data bertahap PERTAMA
-      // muncul (FITUR "Muat Satu-Satu" ATAU fetch satu-bulan-penuh, mana
-      // pun duluan) -> capai 100% lalu dilepas begitu fetch satu-bulan-
-      // penuh (otoritatif) selesai. BEDA dari Booking List: cardHeader
-      // ("Daftar Transaksi", lihat renderDenganData() di bawah) dibangun
+      // SEBELAH TEKS "Daftar Transaksi" (BUKAN rata kanan kartu -- lihat
+      // `judulKiri` di renderDenganData() di bawah, sub-row flex khusus
+      // berisi h2+ring supaya keduanya menempel, terpisah dari badge
+      // "X Data" yang tetap rata kanan lewat cardHeader) begitu data
+      // bertahap PERTAMA muncul (FITUR "Muat Satu-Satu" ATAU fetch satu-
+      // bulan-penuh, mana pun duluan) -> capai 100% lalu dilepas begitu
+      // fetch satu-bulan-penuh (otoritatif) selesai. `judulKiri` dibangun
       // ULANG dari nol SETIAP kali renderDenganData() dipanggil (termasuk
       // tiap probe tanggal yang menyusul) -- ring yang SAMA di-reparent ke
-      // header BARU tiap kali (instan, TANPA animasi ulang -- posisi
-      // visualnya selalu sama persis, cuma identitas DOM headernya yang
+      // judulKiri BARU tiap kali (instan, TANPA animasi ulang -- posisi
+      // visualnya selalu sama persis, cuma identitas DOM-nya yang
       // berubah), animasi FLIP hanya terjadi SEKALI (perpindahan pertama
       // dari tengah).
       let _ringLoadingTransaksi = null;
@@ -1317,11 +1319,21 @@ const PageRekap = (() => {
           // kronologis yang benar lewat sort string biasa.
           const tanggalUnik = [...baganTanggal.keys()].sort();
 
-          const cardHeader = MugenUI.el("div", { class: "card-header-row" }, [
+          // REVISI (PERMINTAAN Owner, "posisi loading yg kecil harusnya di
+          // sebelah kanan Daftar Transaksi, bukan rata kanan"): h2+ring
+          // dibungkus SATU sub-row flex tersendiri (judulKiri) supaya ring
+          // nempel PERSIS di sebelah teks "Daftar Transaksi" -- cardHeader
+          // sendiri TETAP space-between (badge "X Data" tetap rata kanan
+          // seperti semula), bedanya ring BUKAN lagi anak ke-3 cardHeader
+          // (yang akan ikut terdorong ke ujung kanan oleh space-between).
+          const judulKiri = MugenUI.el("div", { style: "display:flex;align-items:center;gap:10px;" }, [
             MugenUI.el("h2", { style: "margin:0;" }, "Daftar Transaksi"),
+          ]);
+          const cardHeader = MugenUI.el("div", { class: "card-header-row" }, [
+            judulKiri,
             MugenUI.el("span", { class: "badge badge-period" }, `${rows.length} Data`),
           ]);
-          _taruhRingTransaksiDiHeader(cardHeader);
+          _taruhRingTransaksiDiHeader(judulKiri);
           const navRow = MugenUI.el("div", { class: "rekap-slide-nav" });
           // PERMINTAAN Owner ("posisi pagination jangan berpindah-pindah
           // naik turun kalau data 4 baris vs 5 baris"): min-height di
