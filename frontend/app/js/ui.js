@@ -411,9 +411,20 @@ const MugenUI = (() => {
     // dipakai pindahkanLoadingKeSamping() saat ring mengecil pindah ke
     // samping) -- SATU set 28 tick yang sama direposisi, bukan dibongkar-
     // pasang ulang.
+    // PERMINTAAN Owner: varian KECIL (dipakai pindahkanLoadingKeSamping(),
+    // ring yang sudah pindah ke samping kolom pencarian/"Daftar
+    // Transaksi") butuh angka % lebih kecil lagi (SEBELUMNYA ikut
+    // kesentuh/tabrakan dengan tick) + warna diredupkan 40% (opacity 0.6)
+    // supaya tidak terlalu mencolok di posisi barunya yang kecil --
+    // varian BESAR (di tengah konten) TIDAK berubah. `u <= 40` dipakai
+    // sebagai ambang "ini varian kecil" (ring besar selalu >=64px, lihat
+    // pemanggil di booking.js/rekap.js/dashboard_owner.js dkk -- ring
+    // kecil selalu di-resize ke 24-28px lewat pindahkanLoadingKeSamping()).
     function aturUkuran(u) {
+      const kecil = u <= 40;
       wrap.style.width = `${u}px`;
       wrap.style.height = `${u}px`;
+      wrap.style.opacity = kecil ? "0.6" : "1";
       const radius = u / 2 - Math.max(3, u * 0.09);
       const panjang = Math.max(3, u * 0.11);
       const lebar = Math.max(1.5, u * 0.032);
@@ -425,7 +436,7 @@ const MugenUI = (() => {
         t.style.marginLeft = `${-lebar / 2}px`;
         t.style.transform = `rotate(${sudut}deg) translateY(${-radius}px)`;
       });
-      nilaiEl.style.fontSize = `${Math.max(8, Math.round(u * 0.22))}px`;
+      nilaiEl.style.fontSize = `${Math.max(6, Math.round(u * (kecil ? 0.15 : 0.22)))}px`;
     }
     aturUkuran(ukuran);
 
