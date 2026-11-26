@@ -218,15 +218,6 @@ const PageSuperadmin = (() => {
     // Super Admin di sini: memicu rekonsiliasi H+1 (TIDAK PERNAH mengubah
     // data pengajuan awal terminal).
     const settlementCard = MugenUI.el("div", { class: "card" });
-    // FITUR WA Bot (Input Data & Rekap via WhatsApp, provider Fonnte):
-    // kelola nomor device + token + aktif/nonaktif + kuota per tenant --
-    // SATU-SATUNYA tempat ini bisa diatur (Owner/Admin tenant TIDAK PUNYA
-    // akses sama sekali, lihat routers/whatsapp_bot.py). waBotCard = daftar
-    // tenant + status, waBotEditCard = form "Atur" yang dipopulasi saat
-    // tombol di tabel diklik (pola SAMA seperti billingPackagesCard/
-    // billingPackageEditCard di atas).
-    const waBotCard = MugenUI.el("div", { class: "card" });
-    const waBotEditCard = MugenUI.el("div", { class: "card" });
     // FITUR Program Afiliasi Sales/Marketing (sales_db.py, routers/sales.py):
     // tiga kartu -- rekrut akun sales + daftar kode referral (persentase
     // komisi fleksibel, diedit lewat prompt() pola sama seperti "Ubah Slug"
@@ -244,9 +235,8 @@ const PageSuperadmin = (() => {
     const tabPgw = MugenUI.el("div", { style: "display:none;" });
     const tabTransaksi = MugenUI.el("div", { style: "display:none;" });
     const tabSettlement = MugenUI.el("div", { style: "display:none;" });
-    const tabWaBot = MugenUI.el("div", { style: "display:none;" });
     const tabSales = MugenUI.el("div", { style: "display:none;" });
-    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi, settlement: tabSettlement, wabot: tabWaBot, sales: tabSales };
+    const panelByKey = { dashboard: tabDashboard, tenant: tabTenant, paket: tabPaket, landing: tabLanding, pgw: tabPgw, transaksi: tabTransaksi, settlement: tabSettlement, sales: tabSales };
     const tabsCtl = MugenUI.tabs(
       [
         { key: "dashboard", label: "Dashboard" },
@@ -256,7 +246,6 @@ const PageSuperadmin = (() => {
         { key: "pgw", label: "Payment Gateway" },
         { key: "transaksi", label: "Riwayat Transaksi" },
         { key: "settlement", label: "Settlement Faspay" },
-        { key: "wabot", label: "WA Bot" },
         { key: "sales", label: "Sales & Referral" },
       ],
       {
@@ -278,7 +267,6 @@ const PageSuperadmin = (() => {
     root.appendChild(tabPgw);
     root.appendChild(tabTransaksi);
     root.appendChild(tabSettlement);
-    root.appendChild(tabWaBot);
     root.appendChild(tabSales);
     requestAnimationFrame(tabsCtl.moveIndicator);
 
@@ -320,8 +308,6 @@ const PageSuperadmin = (() => {
 
     tabSettlement.appendChild(settlementCard);
 
-    tabWaBot.appendChild(waBotCard);
-    tabWaBot.appendChild(waBotEditCard);
     tabSales.appendChild(salesCard);
     tabSales.appendChild(salesLifetimeCard);
     tabSales.appendChild(salesKomisiCard);
@@ -2375,181 +2361,11 @@ const PageSuperadmin = (() => {
     }
     stlBtnFilter.addEventListener("click", muatSettlement);
 
-    // ---------------------------------------------------------------
-    // WA BOT (Input Data & Rekap via WhatsApp, provider Fonnte) -- kelola
-    // nomor device + token + aktif/nonaktif + kuota per tenant, EKSKLUSIF
-    // Superadmin (lihat whatsapp_bot_db.py/routers/whatsapp_bot.py). Pola
-    // SAMA seperti Paket Billing di atas: tabel daftar tenant (waBotCard) +
-    // tombol "Atur" yang mempopulasi form edit terpisah (waBotEditCard).
-    // ---------------------------------------------------------------
-    waBotCard.appendChild(MugenUI.el("h2", {}, "WA Bot -- Input Data & Rekap via WhatsApp"));
-    waBotCard.appendChild(MugenUI.el("div", { class: "subtitle" },
-      "Nomor & token dari dashboard Fonnte (device -> token). Tenant baru SELALU mulai Nonaktif -- nyalakan manual lewat tombol \"Aktifkan\" setelah nomor benar-benar siap."));
-    const waBotListBody = MugenUI.el("div");
-    waBotCard.appendChild(waBotListBody);
-
-    waBotEditCard.appendChild(MugenUI.el("h2", {}, "Atur Nomor WA Bot"));
-    const waBotEditBody = MugenUI.el("div");
-    waBotEditCard.appendChild(waBotEditBody);
-    waBotEditBody.appendChild(MugenUI.el("div", { class: "subtitle" }, "Klik \"Atur\" pada salah satu toko di atas untuk mengisi/mengubah."));
-
-    async function loadWaBotList() {
-      waBotListBody.innerHTML = "";
-      waBotListBody.appendChild(MugenUI.skeleton("table", { cols: 5, rows: 3 }));
-      try {
-        const baris = await MugenApi.get("/api/superadmin/whatsapp-bot");
-        waBotListBody.innerHTML = "";
-        waBotListBody.appendChild(MugenUI.buildTable(
-          [
-            { key: "nama_barbershop", label: "Toko" },
-            {
-              key: "nomor", label: "Nomor Device",
-              format: (_, b) => b.config ? b.config.phone_number_id : MugenUI.el("span", { class: "subtitle" }, "belum diatur"),
-            },
-            {
-              key: "kuota", label: "Kuota/Bulan",
-              format: (_, b) => b.config ? String(b.config.kuota_pesan_bulanan) : "-",
-            },
-            {
-              key: "status", label: "Status",
-              format: (_, b) => {
-                if (!b.config) return MugenUI.el("span", { class: "subtitle" }, "-");
-                return MugenUI.el("span", { class: "badge" + (b.config.aktif ? " badge-success" : " badge-libur") },
-                  b.config.aktif ? "Aktif" : "Nonaktif");
-              },
-            },
-            {
-              key: "aksi", label: "Aksi", format: (_, b) => {
-                const wrap = MugenUI.el("div", { class: "actions-cell" });
-                const btnAtur = MugenUI.el("button", {}, b.config ? "Edit" : "Atur");
-                btnAtur.addEventListener("click", () => renderWaBotEdit(b));
-                wrap.appendChild(btnAtur);
-                if (b.config) {
-                  const menujuAktif = !b.config.aktif;
-                  const btnToggle = MugenUI.el("button", { class: menujuAktif ? "" : "btn-danger" },
-                    menujuAktif ? "Aktifkan" : "Nonaktifkan");
-                  btnToggle.addEventListener("click", async () => {
-                    if (!(await MugenUI.confirmModal({ message: `${menujuAktif ? "Aktifkan" : "Nonaktifkan"} WA Bot untuk "${b.nama_barbershop}"?`, danger: !menujuAktif }))) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnToggle,
-                        () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}/status`, { aktif: menujuAktif }));
-                      MugenUI.toast("Status WA Bot diperbarui.", "success");
-                      loadWaBotList();
-                      loadAuditLog();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnToggle);
-                  // FITUR WA Bot: toggle tampilan Uang Harian di pesan Rekap
-                  // WA -- kalau dimatikan, potongan keterlambatan/limit habis
-                  // diabaikan KHUSUS untuk tampilan WA (angka asli di
-                  // Dashboard/Slip Gaji/Laporan PDF tidak berubah sama sekali,
-                  // lihat whatsapp_bot_parser.py::_uang_harian_tampilan_hari()).
-                  const menujuTampilkanPotongan = !b.config.tampilkan_potongan_keterlambatan;
-                  const btnTogglePotongan = MugenUI.el("button", {},
-                    menujuTampilkanPotongan ? "Tampilkan Potongan Telat" : "Sembunyikan Potongan Telat");
-                  btnTogglePotongan.addEventListener("click", async () => {
-                    if (!(await MugenUI.confirmModal({ message: `${menujuTampilkanPotongan ? "Tampilkan" : "Sembunyikan"} potongan keterlambatan di Uang Harian pesan WA Bot untuk "${b.nama_barbershop}"?` }))) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnTogglePotongan,
-                        () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}/tampilkan-potongan-keterlambatan`,
-                          { aktif: menujuTampilkanPotongan }));
-                      MugenUI.toast("Setting tampilan WA Bot diperbarui.", "success");
-                      loadWaBotList();
-                      loadAuditLog();
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnTogglePotongan);
-                  const btnHapus = MugenUI.el("button", { class: "btn-danger" }, "Hapus");
-                  btnHapus.addEventListener("click", async () => {
-                    if (!(await MugenUI.confirmModal({ message: `Hapus konfigurasi WA Bot "${b.nama_barbershop}"? Nomor & token akan dilepas dari tenant ini.`, danger: true }))) return;
-                    try {
-                      await MugenUI.withButtonLoading(btnHapus,
-                        () => MugenApi.del(`/api/superadmin/whatsapp-bot/${b.tenant_id}`));
-                      MugenUI.toast("Konfigurasi WA Bot dihapus.", "success");
-                      loadWaBotList();
-                      loadAuditLog();
-                      waBotEditBody.innerHTML = "";
-                      waBotEditBody.appendChild(MugenUI.el("div", { class: "subtitle" }, "Klik \"Atur\" pada salah satu toko di atas untuk mengisi/mengubah."));
-                    } catch (e) {
-                      MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
-                    }
-                  });
-                  wrap.appendChild(btnHapus);
-                }
-                return wrap;
-              },
-            },
-          ],
-          baris,
-          { emptyText: "Belum ada toko." },
-        ));
-      } catch (e) {
-        waBotListBody.innerHTML = "";
-        waBotListBody.appendChild(MugenUI.errorState(e.message));
-      }
-    }
-
-    function renderWaBotEdit(b) {
-      waBotEditBody.innerHTML = "";
-      waBotEditBody.appendChild(MugenUI.el("h3", {}, `Atur WA Bot: ${b.nama_barbershop}`));
-      const inputNomor = MugenUI.el("input", { type: "text", placeholder: "Nomor device Fonnte, mis. 628xxxxxxxxxx", value: b.config ? b.config.phone_number_id : "" });
-      const inputToken = MugenUI.el("input", { type: "password", autocomplete: "off", placeholder: "Device Token (dashboard Fonnte -> device list)", value: b.config ? b.config.device_token || "" : "" });
-      const inputNama = MugenUI.el("input", { type: "text", placeholder: "Label nomor (opsional)", value: b.config ? b.config.nama_nomor || "" : "" });
-      const inputKuota = MugenUI.el("input", { type: "number", min: "0", placeholder: "50", value: b.config ? MugenUI.nilaiTampilAngka(b.config.kuota_pesan_bulanan) : "" });
-      // FITUR WA Bot (Input Data & Rekap via WhatsApp): nomor yang setara
-      // akses Owner PENUH lewat bot (input data siapa saja + rekap siapa
-      // saja) -- OPSIONAL, beda dari Nomor Device Fonnte di atas (nomor
-      // bot itu sendiri) dan dari nomor_whatsapp tiap barber (diatur di
-      // Setting > Karyawan, akses terbatas ke data masing-masing).
-      const inputNomorOwner = MugenUI.el("input", { type: "text", placeholder: "mis. 6281234567890 (opsional)",
-        value: b.config ? b.config.nomor_owner_whatsapp || "" : "" });
-      // PERMINTAAN OWNER: maksimal 2 nomor setara akses Owner PENUH lewat
-      // bot per tenant (toko dengan 2 pemilik/pengelola) -- OPSIONAL,
-      // kosongkan kalau cuma butuh 1 nomor Owner.
-      const inputNomorOwner2 = MugenUI.el("input", { type: "text", placeholder: "mis. 6281234567891 (opsional, maks. 2)",
-        value: b.config ? b.config.nomor_owner_whatsapp_2 || "" : "" });
-
-      waBotEditBody.appendChild(MugenUI.el("div", { class: "row", style: "flex-wrap:wrap;gap:16px;" }, [
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Device Fonnte"), inputNomor]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Device Token"), inputToken]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Label Nomor"), inputNama]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Kuota Pesan/Bulan"), inputKuota]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner 1 (WA) -- akses penuh lewat bot"), inputNomorOwner]),
-        MugenUI.el("div", {}, [MugenUI.el("label", {}, "Nomor Owner 2 (WA) -- opsional"), inputNomorOwner2]),
-      ]));
-
-      const errEdit = MugenUI.el("div", { class: "login-error" });
-      const btnSimpan = MugenUI.el("button", { class: "btn-primary" }, "Simpan");
-      waBotEditBody.appendChild(errEdit);
-      waBotEditBody.appendChild(MugenUI.el("div", { style: "margin-top:12px;" }, btnSimpan));
-
-      btnSimpan.addEventListener("click", async () => {
-        errEdit.textContent = "";
-        const body = {
-          phone_number_id: inputNomor.value.trim(),
-          device_token: inputToken.value.trim(),
-          nama_nomor: inputNama.value.trim() || null,
-          kuota_pesan_bulanan: inputKuota.value === "" ? null : parseInt(inputKuota.value, 10),
-          nomor_owner_whatsapp: inputNomorOwner.value.trim() || null,
-          nomor_owner_whatsapp_2: inputNomorOwner2.value.trim() || null,
-        };
-        try {
-          await MugenUI.withButtonLoading(btnSimpan,
-            () => MugenApi.put(`/api/superadmin/whatsapp-bot/${b.tenant_id}`, body));
-          MugenUI.toast("Konfigurasi WA Bot disimpan.", "success");
-          loadAuditLog();
-          await loadWaBotList();
-          waBotEditBody.innerHTML = "";
-          waBotEditBody.appendChild(MugenUI.el("div", { class: "subtitle" }, "Klik \"Atur\" pada salah satu toko di atas untuk mengisi/mengubah."));
-        } catch (e) {
-          errEdit.textContent = e.detail && e.detail.detail ? e.detail.detail : e.message;
-        }
-      });
-    }
+    // REVISI (fitur WA Bot DIHAPUS TOTAL per permintaan Owner -- "tidak
+    // terlalu berguna"): tab "WA Bot" (daftar tenant + form "Atur" nomor
+    // device/token Fonnte) dan seluruh logiknya yang dulu ada di sini
+    // DIHAPUS. Lihat superadmin_audit_db.py (AKSI_VALID) untuk catatan
+    // kenapa label aksi auditnya TETAP dipertahankan di aksi_label di atas.
 
     // ---------------------------------------------------------------
     // 14. RIWAYAT AKSI (Audit Log)
@@ -3046,7 +2862,6 @@ const PageSuperadmin = (() => {
     await loadSnapAdvanceConfig();
     await loadTransaksi();
     await muatSettlement();
-    await loadWaBotList();
     await loadKodeReferral();
     await loadTenantOptionsLifetime();
     await loadLifetimePaketOptions();

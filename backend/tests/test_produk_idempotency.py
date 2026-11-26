@@ -1,13 +1,12 @@
 """test_produk_idempotency.py — Produk: cegah Jual/Restock/Tester dobel
 =============================================================================
 PERBAIKAN Owner (audit "Pastikan sekarang tidak bisa input data doubel"):
-sama alasannya persis seperti test_transaksi_idempotency.py -- WA Bot
-(Jual/Restock/Tester Produk, termasuk bagian produk di Input Harian) bisa
-memproses konfirmasi "YA" yang sama dua kali (race condition dua webhook
-bersamaan, atau Fonnte mengirim ulang di luar jendela anti-dobel 2 menit).
-`idempotency_key` per item (dibuat sekali saat preview, dipakai ulang saat
-konfirmasi, lihat whatsapp_bot_parser.py) membuat percobaan kedua jadi
-no-op aman -- mutasi yang SUDAH ADA dikembalikan, bukan baris baru.
+sama alasannya persis seperti test_transaksi_idempotency.py -- pemanggil
+bisa memproses konfirmasi yang sama dua kali (race condition dua request
+bersamaan, atau webhook pihak ketiga mengirim ulang). `idempotency_key`
+per item (dibuat sekali saat preview, dipakai ulang saat konfirmasi)
+membuat percobaan kedua jadi no-op aman -- mutasi yang SUDAH ADA
+dikembalikan, bukan baris baru.
 
 Cakupan: database.py level (jual_produk/restock_produk/tester_produk).
 
