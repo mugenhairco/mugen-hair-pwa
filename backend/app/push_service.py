@@ -66,7 +66,16 @@ def _kirim_ke_satu_subscription(sub: dict, payload: dict) -> bool:
         if status in (404, 410):
             push_db.hapus_subscription(sub["endpoint"])
         else:
-            logger.warning("Push ke user_id=%s gagal (HTTP %s): %s", sub.get("user_id"), status, e)
+            # DIAGNOSTIK SEMENTARA (laporan Owner: push ke endpoint
+            # notify.windows.com -- WNS, dipakai Edge/Windows -- SELALU 400
+            # Bad Request sejak berhari-hari, HANYA akun ini, akun lain di
+            # endpoint FCM/Mozilla aman): status code HTTP saja tidak cukup
+            # buat tahu PERSIS kenapa WNS menolak -- body balasannya (kalau
+            # ada) biasanya mengandung kode error spesifik. Dicatat di sini
+            # supaya bisa dibaca dari log Render, BUKAN ditebak.
+            body = getattr(e.response, "text", None)
+            logger.warning("Push ke user_id=%s gagal (HTTP %s): %s | endpoint=%s | body=%s",
+                            sub.get("user_id"), status, e, sub.get("endpoint"), body)
         return False
     except Exception as e:
         logger.error("Push ke user_id=%s gagal tak terduga: %s: %s", sub.get("user_id"), e.__class__.__name__, e)
