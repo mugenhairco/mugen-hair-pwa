@@ -176,14 +176,14 @@ const PageDashboardBarber = (() => {
       }
 
       const urutanSaya = ++urutanTerkini;
-      // REVISI UI/UX Premium: skeleton menggantikan teks "Memuat..." --
-      // kartu asli otomatis beranimasi masuk begitu ditambahkan (lihat
-      // .card { animation: mugen-fade-slide-in }).
+      // REVISI UI/UX (PERMINTAAN Owner, "kalau banyak kartu yang perlu
+      // loading, cukup tampilkan 1 saja"): SEMULA 3 skeleton kartu
+      // terpisah -- SEKARANG satu loadingRing() tunggal di tengah body,
+      // mewakili fetch Promise.all() di bawah (satu putaran loading,
+      // bukan N ring independen).
       body.innerHTML = "";
-      body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
-        MugenUI.skeleton("card", { lines: 2 }), MugenUI.skeleton("card", { lines: 2 }),
-        MugenUI.skeleton("card", { lines: 2 }),
-      ]));
+      body.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" },
+        MugenUI.loadingRing(80).el));
       try {
         const [r, rekapRows] = await Promise.all([
           MugenApi.get(urlA, { useCache: true }),

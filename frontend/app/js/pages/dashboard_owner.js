@@ -334,15 +334,15 @@ const PageDashboardOwner = (() => {
       }
 
       const urutanSaya = ++urutanTerkini;
-      // REVISI UI/UX Premium: skeleton (bentuk kartu) menggantikan teks
-      // "Memuat..." -- kartu asli otomatis beranimasi masuk begitu
-      // ditambahkan (lihat .card { animation: mugen-fade-slide-in }),
-      // jadi transisi skeleton -> data terasa satu alur, bukan dua lompatan.
+      // REVISI UI/UX (PERMINTAAN Owner, "kalau banyak kartu yang perlu
+      // loading, cukup tampilkan 1 saja"): SEMULA 3 skeleton kartu
+      // terpisah (satu ring per kartu) -- SEKARANG satu loadingRing()
+      // tunggal di tengah body, mewakili SATU fetch `/api/dashboard/owner`
+      // yang sama (kartu-kartu nyata baru ada setelah fetch ini selesai,
+      // lihat renderDenganData() di bawah -- bukan N fetch independen).
       body.innerHTML = "";
-      body.appendChild(MugenUI.el("div", { class: "grid-cards" }, [
-        MugenUI.skeleton("card", { lines: 2 }), MugenUI.skeleton("card", { lines: 2 }),
-        MugenUI.skeleton("card", { lines: 2 }),
-      ]));
+      body.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" },
+        MugenUI.loadingRing(80).el));
       try {
         const data = await MugenApi.get(url, { useCache: true });
         if (urutanSaya !== urutanTerkini) return; // respons basi, biarkan panggilan terbaru yang merender
