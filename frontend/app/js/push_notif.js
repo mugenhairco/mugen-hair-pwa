@@ -41,10 +41,40 @@ const MugenPushNotif = (() => {
     }
   }
 
+  // BUGFIX (laporan Owner: habis Logout lalu Login lagi, tombol sudah
+  // tertulis "Nonaktifkan Notifikasi" -- kelihatan sudah aktif -- padahal
+  // TIDAK ADA baris push_subscriptions tersimpan buat akun ini, push diam-
+  // diam gagal terus): Logout memang SENGAJA menghapus baris subscription
+  // di backend (routers/auth_router.py::logout() -> push_db.hapus_semua_
+  // subscription_milik_user(), KEAMANAN supaya device yang sudah logout
+  // tidak terus kebagian push), TAPI objek PushSubscription di SISI
+  // BROWSER tidak pernah ikut di-unsubscribe (logout TIDAK memanggil
+  // nonaktifkan() di sini) -- getSubscription() di browser yang sama
+  // tetap mengembalikan subscription LAMA itu, membuat tombol salah kira
+  // sudah aktif walau baris backend-nya sudah kosong. Perbaikannya: setiap
+  // kartu ini dirender (buka Pengaturan/Izin&Cuti), kalau browser masih
+  // punya subscription, SELALU kirim ulang diam-diam ke backend (endpoint
+  // sama -> cuma UPDATE baris lama lewat ON CONFLICT, lihat push_db.py --
+  // aman dipanggil berkali-kali) -- tidak perlu lagi Owner manual
+  // Nonaktifkan lalu Aktifkan ulang habis Logout/Login.
+  async function _sinkronDiamDiam(sub) {
+    try {
+      const json = sub.toJSON();
+      await MugenApi.post("/api/push/subscribe", {
+        endpoint: json.endpoint,
+        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+      });
+    } catch (e) {
+      // Best-effort -- gagal (mis. offline) bukan masalah, dicoba lagi
+      // lain kali kartu ini dirender.
+    }
+  }
+
   async function subscriptionAktif() {
     if (!isSupported()) return false;
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
+    if (sub) _sinkronDiamDiam(sub);
     return sub !== null;
   }
 
