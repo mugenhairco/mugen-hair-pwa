@@ -1189,7 +1189,7 @@ const PageBookPublic = (() => {
     const body = MugenUI.el("div", { class: "book-body" });
     page.appendChild(MugenUI.el("div", { class: "book-body-viewport" }, body));
 
-    body.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+    body.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" }, MugenUI.loadingRing(72).el));
     let hasil;
     try {
       hasil = await MugenApi.get(`/api/public/booking/status/${encodeURIComponent(token)}`);

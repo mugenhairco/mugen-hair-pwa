@@ -159,7 +159,7 @@ const PageAbsenMandiri = (() => {
 
   async function renderHalamanUtama(root) {
     root.innerHTML = "";
-    root.appendChild(MugenUI.el("div", { class: "mugen-state" }, "Memuat..."));
+    root.appendChild(MugenUI.el("div", { style: "display:flex;justify-content:center;padding:48px 0;" }, MugenUI.loadingRing(72).el));
     let karyawan;
     try {
       karyawan = await MugenApi.get("/api/public/absen-mandiri/karyawan");
