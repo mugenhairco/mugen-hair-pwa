@@ -3116,6 +3116,7 @@ body.book-public-active {
 
 .book-selesai { text-align: center; }
 .book-selesai-icon {
+  position: relative;
   width: 68px; height: 68px; border-radius: 50%; background: var(--success); color: #fff;
   font-size: 32px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;
   box-shadow: 0 0 0 8px rgba(22,163,74,0.12);
@@ -3126,6 +3127,16 @@ body.book-public-active {
   60% { opacity: 1; transform: scale(1.08); }
   100% { opacity: 1; transform: scale(1); }
 }
+/* Aksen "sparkle" kecil di sekitar centang (Booking Berhasil SAJA -- 3
+   span eksplisit ditambahkan lewat JS khusus renderConfirmed(), lihat
+   catatan di sana; .book-selesai-icon polos di layar lain tidak pernah
+   punya span ini jadi tidak terpengaruh). position:relative di atas
+   murni supaya anchor absolute-nya benar, tidak berefek apa pun tanpa
+   span anak ini. */
+.book-sparkle { position: absolute; width: 9px; height: 2.5px; border-radius: 2px; background: var(--success); opacity: 0.85; }
+.book-sparkle-1 { top: -7px; right: 4px; transform: rotate(-35deg); }
+.book-sparkle-2 { top: 4px; right: -11px; width: 7px; transform: rotate(8deg); }
+.book-sparkle-3 { top: 16px; right: -9px; width: 6px; transform: rotate(55deg); }
 .book-selesai-detail { text-align: left; margin: 18px 0; }
 .book-field-row {
   display: grid; grid-template-columns: 84px 10px 1fr; gap: 2px 8px;
@@ -3193,49 +3204,87 @@ body.book-public-active {
 .book-summary-label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 .book-summary-value { font-weight: 700; margin-top: 3px; word-break: break-word; }
 
-/* PERMINTAAN Owner ("Booking Summary dan Appointment Confirmed jelek"):
-   dipakai BERSAMA renderFaseCheckout() (Booking Summary) DAN
-   renderConfirmed() (Appointment Confirmed, lihat apptCard() di
-   book_public.js) -- dua halaman yang isinya mirip (jadwal+service+total)
-   sekarang satu bahasa visual: info dikelompokkan per blok berjudul
-   (Schedule/Service/dst) alih-alih satu daftar rata tanpa hirarki. Total
-   (lihat .book-appt-total di bawah) SEMPAT berupa badge pil warna aksen
-   (kebaca sebagai tombol), lalu kotak bertekstur lembut -- Owner minta
-   dikembalikan ke teks polos saja ("cukup huruf, tidak perlu desain
-   kotak"), cuma garis pembatas tipis di atasnya (konsisten dengan
-   pembatas antar section lain) + huruf label/nilai sejajar satu baris.
-   TIDAK mengubah .book-summary-field/.book-field-row di atas -- keduanya
-   MASIH dipakai layar lain (renderFaseMetode()/renderFaseBayar()/
+/* REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
+   PERMINTAAN Owner, lihat gambar referensi): dipakai BERSAMA
+   renderFaseCheckout() (Booking Summary) DAN renderConfirmed() (Booking
+   Berhasil, lihat apptCard()/apptSection()/apptRow() di book_public.js)
+   -- tiap section sekarang punya badge ikon bundar (.card-collapse-icon.
+   icon-chip--accent, dipinjam dari kartu statistik Dashboard) + judul
+   tebal ukuran normal (BUKAN lagi label kecil huruf kapital semua), baris
+   label/nilai SEJAJAR satu baris (label kiri biasa, nilai kanan tebal --
+   gantiin tata letak lama yang bertumpuk label-di-atas-nilai).
+   NB riwayat desain SEBELUMNYA (lihat git log) pernah menolak total
+   berbentuk kotak/pil -- permintaan BARU ini (dengan gambar referensi
+   eksplisit) SENGAJA membawanya kembali khusus untuk Booking Summary
+   (lihat .book-appt-total-box di bawah), bukan kekeliruan mengulang yang
+   lama. TIDAK mengubah .book-summary-field/.book-field-row di atas --
+   keduanya MASIH dipakai layar lain (renderFaseMetode()/renderFaseBayar()/
    renderSudahBooking(), di luar scope permintaan ini). */
 .book-appt-card { text-align: left; }
 .book-appt-section { padding: 12px 0; }
 .book-appt-section + .book-appt-section { border-top: 1px solid var(--border); }
 .book-appt-section-title {
-  font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase;
-  letter-spacing: 0.05em; margin: 0 0 8px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 12px;
 }
-.book-appt-row { margin-top: 8px; }
+.book-appt-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .book-appt-row:first-of-type { margin-top: 0; }
-.book-appt-row-label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.book-appt-row-value { font-weight: 700; margin-top: 2px; word-break: break-word; }
-/* REVISI (laporan Owner): dua percobaan sebelumnya (badge pil gradient,
-   lalu kotak tint lembut) SAMA-SAMA ditolak -- "cukup huruf saja seperti
-   sekarang, tidak perlu ada desain kotak atau apalah", "huruf posisinya
-   sejajarkan saja". Jadi teks polos TANPA background/border-radius/box,
-   cuma garis pembatas tipis di atas (SAMA seperti pembatas antar section
-   lain, .book-appt-section + .book-appt-section di atas -- bukan "kotak"
-   baru, konsisten dengan yang sudah ada) + align-items:baseline supaya
-   label & nilai (beda ukuran font) sejajar rapi di satu baris. */
+.book-appt-row-label { font-size: 13.5px; color: var(--text-dim); }
+.book-appt-row-value { font-weight: 700; text-align: right; word-break: break-word; }
 .book-appt-total {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
   font-weight: 700;
 }
 .book-appt-total-value { font-weight: 800; font-size: 20px; color: var(--accent); }
-/* Nomor transaksi/referensi di Appointment Confirmed (lihat renderConfirmed())
-   -- teks kecil di bawah judul, sebelum apptCard(), bukan ikut jadi salah
-   satu baris dalam blok (terasa seperti nomor resi, bukan "field data"). */
-.book-appt-ref { font-size: 13px; color: var(--text-dim); margin: -4px 0 4px; }
+/* Kotak "Total Pembayaran" disorot (Booking Summary SAJA, lihat
+   apptTotalBox() di book_public.js) -- TERPISAH di bawah kartu putih,
+   bukan di dalamnya (beda dari .book-appt-total di atas yang dipakai
+   Booking Berhasil, tetap di dalam kartu). */
+.book-appt-total-box {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-top: 14px; padding: 16px 18px; border-radius: var(--book-radius-md);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
+}
+.book-appt-total-box-label { font-weight: 700; font-size: 14.5px; }
+.book-appt-total-box-subtitle { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.book-appt-total-box-value { font-weight: 800; font-size: 19px; color: var(--accent); white-space: nowrap; }
+/* Badge status hijau ("Diterima", Booking Berhasil > kartu Detail Booking). */
+.book-status-badge {
+  display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success);
+}
+/* Chip nomor referensi (Booking Berhasil) -- klik untuk menyalin (lihat
+   _salinTeksKeClipboard()), menggantikan teks polos .book-appt-ref lama. */
+.book-appt-ref-chip {
+  display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 16px; padding: 8px 16px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card);
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.book-appt-ref-chip:hover { border-color: var(--accent); }
+.book-appt-ref-chip:active { transform: scale(0.96); }
+/* Header polos (icon+judul+subjudul) Booking Berhasil -- SENGAJA BUKAN
+   .book-selesai/.card lagi (dulu SATU kartu membungkus semuanya termasuk
+   detail booking) -- sekarang cuma pembuka halaman, detail booking jadi
+   kartu sendiri (.book-appt-card) + kotak info sendiri (.book-info-box di
+   bawah). .book-selesai/.book-selesai-icon/.book-selesai-actions TETAP
+   dipakai layar lain (dibatalkan/gagal/kedaluwarsa/menunggu) -- TIDAK
+   diubah, lihat catatan panjang di renderConfirmed() book_public.js. */
+.book-confirmed-hero { text-align: center; margin-bottom: 4px; }
+/* Kotak "Informasi Konfirmasi" (Booking Berhasil) -- menggantikan teks
+   polos .subtitle yang dulu dipakai utk pesanPenutupFinal(). */
+.book-info-box {
+  display: flex; gap: 12px; align-items: flex-start; text-align: left;
+  margin-top: 14px; padding: 14px 16px; border-radius: var(--book-radius-md);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+}
+.book-info-box-icon { flex-shrink: 0; color: var(--accent); margin-top: 1px; display: inline-flex; }
+.book-info-box-title { font-weight: 700; font-size: 13.5px; margin-bottom: 3px; }
+.book-info-box-text { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+/* Tombol "Add to Calendar" bentuk pil penuh (Booking Berhasil) -- border-
+   radius lebih bulat dari tombol default, murni modifier presentasi. */
+.book-btn-pill { border-radius: 999px; }
 /* Ikon inline generik (dipakai tombol "Add to Calendar", lihat
    IKON_KALENDER_SVG) -- SAMA PERSIS .book-download-qris-icon, cuma
    namanya digeneralkan supaya tidak menyesatkan dipakai di luar QRIS. */
@@ -3292,7 +3341,7 @@ body.book-public-active {
 }
 /* Kartu "mengambang" premium (Booking Summary, Menunggu Pembayaran, dst) --
    sedikit lebih besar radiusnya + shadow lebih lembut dari .card biasa. */
-.book-summary-card, .book-public .card:has(.book-selesai) { border-radius: var(--book-radius-lg); }
+.book-summary-card, .book-public .card:has(.book-selesai), .book-public .book-appt-card { border-radius: var(--book-radius-lg); }
 @media (prefers-reduced-motion: reduce) {
   .book-public button.btn-primary:hover:not(:disabled),
   .book-public button.btn-primary:active:not(:disabled),

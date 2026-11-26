@@ -120,44 +120,62 @@ const PageBookPublic = (() => {
     ]);
   }
 
-  // PERMINTAAN Owner ("Booking Summary dan Appointment Confirmed jelek"):
-  // dipakai BERSAMA renderFaseCheckout() (Booking Summary, sebelum bayar)
-  // DAN renderConfirmed() (Appointment Confirmed, sesudah bayar) -- supaya
-  // dua halaman yang isinya memang mirip (jadwal+service+total) akhirnya
-  // SATU bahasa visual yang sama, bukan dua desain beda kebetulan isinya
-  // serupa. Info dikelompokkan per blok (Schedule/Service/dst, masing-
-  // masing punya judul kecil) alih-alih satu daftar rata tanpa hirarki,
-  // dan total dibuat badge pil warna aksen supaya jadi titik fokus jelas
-  // di akhir, bukan cuma teks tebal. TIDAK menampilkan foto barber
-  // (sudah diputuskan Owner tidak perlu).
+  // REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
+  // PERMINTAAN Owner, lihat gambar referensi yang dikirim): dipakai
+  // BERSAMA renderFaseCheckout() (Booking Summary, sebelum bayar) DAN
+  // renderConfirmed() (Booking Berhasil, sesudah bayar) -- satu bahasa
+  // visual: tiap section punya badge ikon bundar + judul tebal (BUKAN
+  // lagi label kecil huruf kapital semua), baris label/nilai sejajar
+  // SATU baris (label kiri biasa, nilai kanan tebal -- BUKAN lagi
+  // bertumpuk). Total TIDAK lagi di sini (lihat apptTotalBox() di bawah
+  // untuk versi kotak disorot yang dipakai Booking Summary; Booking
+  // Berhasil tetap pakai baris total polos di dalam apptCard, lihat
+  // totalLabel/totalValue opsional).
   function apptRow(label, value) {
     if (value == null || value === "") return null;
-    // `label` boleh falsy (lihat pemakaian "Service" di bawah) -- blok
-    // dengan HANYA satu baris yang labelnya sama persis judul section-nya
-    // (mis. section "Service" isinya cuma baris "Service") tidak perlu
-    // mengulang label itu sendiri, cukup judul section-nya saja.
     return MugenUI.el("div", { class: "book-appt-row" }, [
-      label ? MugenUI.el("div", { class: "book-appt-row-label" }, label) : null,
-      MugenUI.el("div", { class: "book-appt-row-value" }, value),
+      MugenUI.el("span", { class: "book-appt-row-label" }, label),
+      MugenUI.el("span", { class: "book-appt-row-value" }, value),
     ]);
   }
 
-  function apptSection(title, baris) {
+  function apptSection(title, baris, icon) {
     const rows = baris.filter((b) => b != null);
     if (!rows.length) return null;
-    return MugenUI.el("div", { class: "book-appt-section" }, [
-      MugenUI.el("div", { class: "book-appt-section-title" }, title),
-      ...rows,
-    ]);
+    const isi = [];
+    if (title) {
+      isi.push(MugenUI.el("div", { class: "book-appt-section-title" }, [
+        icon ? MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: icon }) : null,
+        MugenUI.el("span", { style: "flex:1;" }, title),
+      ]));
+    }
+    isi.push(...rows);
+    return MugenUI.el("div", { class: "book-appt-section" }, isi);
   }
 
   function apptCard({ sections, totalLabel, totalValue }) {
-    const isi = sections.map((s) => apptSection(s.title, s.rows)).filter((s) => s != null);
-    isi.push(MugenUI.el("div", { class: "book-appt-total" }, [
-      MugenUI.el("span", {}, totalLabel),
-      MugenUI.el("span", { class: "book-appt-total-value" }, totalValue),
-    ]));
+    const isi = sections.map((s) => apptSection(s.title, s.rows, s.icon)).filter((s) => s != null);
+    if (totalLabel != null) {
+      isi.push(MugenUI.el("div", { class: "book-appt-total" }, [
+        MugenUI.el("span", {}, totalLabel),
+        MugenUI.el("span", { class: "book-appt-total-value" }, totalValue),
+      ]));
+    }
     return MugenUI.el("div", { class: "book-appt-card" }, isi);
+  }
+
+  // Kotak "Total Pembayaran" disorot (background tint warna aksen),
+  // TERPISAH dari apptCard() -- dipakai Booking Summary SAJA (Booking
+  // Berhasil tetap pakai baris total polos di dalam kartu, lihat
+  // apptCard() di atas).
+  function apptTotalBox(label, subtitle, value) {
+    return MugenUI.el("div", { class: "book-appt-total-box" }, [
+      MugenUI.el("div", {}, [
+        MugenUI.el("div", { class: "book-appt-total-box-label" }, label),
+        subtitle ? MugenUI.el("div", { class: "book-appt-total-box-subtitle" }, subtitle) : null,
+      ]),
+      MugenUI.el("span", { class: "book-appt-total-box-value" }, value),
+    ]);
   }
 
   // Konversi nomor WhatsApp ke format internasional untuk link wa.me --
@@ -328,6 +346,36 @@ const PageBookPublic = (() => {
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2.5"/>' +
     '<path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>';
+
+  // REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
+  // PERMINTAAN Owner): ikon baru untuk badge section (Jadwal Booking/
+  // Layanan/Detail Customer/Detail Booking), tombol "Kembali ke Beranda",
+  // kotak info konfirmasi, dan chip nomor referensi -- gaya SAMA PERSIS
+  // IKON_KALENDER_SVG di atas (stroke 2.2, outline, monokrom lewat
+  // currentColor) supaya konsisten satu bahasa visual.
+  const IKON_GUNTING_SVG =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>' +
+    '<line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="8.7" y1="8.5" x2="20" y2="20"/></svg>';
+  const IKON_ORANG_SVG =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/>' +
+    '<path d="M4.5 20c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"/></svg>';
+  const IKON_RUMAH_SVG =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5"/>' +
+    '<path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>';
+  const IKON_INFO_SVG =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
+    '<line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>';
+  const IKON_FILE_SVG =
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>';
+  const IKON_SALIN_SVG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/>' +
+    '<path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 
   // Efek ripple ringan (murni CSS animasi + JS posisi klik) saat tombol
   // Download QRIS ditekan, supaya terasa modern tanpa perlu library apa pun.
@@ -1750,28 +1798,28 @@ const PageBookPublic = (() => {
         body.appendChild(MugenUI.el("div", { class: "card book-summary-card" }, [
           apptCard({
             sections: [
-              { title: "Schedule", rows: [
+              { title: "Jadwal Booking", icon: IKON_KALENDER_SVG, rows: [
                 apptRow("Barber", state.barberNama),
-                apptRow("Date", MugenUI.formatTanggal(state.tanggal)),
-                apptRow("Time", state.jam),
-                apptRow("Duration", `± ${totalDurasi} min`),
+                apptRow("Tanggal", MugenUI.formatTanggal(state.tanggal)),
+                apptRow("Jam", state.jam),
+                apptRow("Durasi", `± ${totalDurasi} menit`),
               ] },
-              { title: "Service", rows: [
-                apptRow(null, dipilih.map((s) => s.nama).join(", ")),
+              { title: "Layanan", icon: IKON_GUNTING_SVG, rows: [
+                apptRow(dipilih.map((s) => s.nama).join(", "), `${dipilih.length} layanan`),
               ] },
-              { title: "Your Details", rows: [
-                apptRow("Name & WhatsApp", `${state.nama} • ${state.whatsapp}`),
+              { title: "Detail Customer", icon: IKON_ORANG_SVG, rows: [
+                apptRow("Nama", state.nama),
+                apptRow("WhatsApp", state.whatsapp),
               ] },
             ],
-            totalLabel: "Total Payment",
-            totalValue: MugenUI.formatRupiah(totalHarga),
           }),
         ]));
+        body.appendChild(apptTotalBox("Total Pembayaran", "Nominal yang harus dibayarkan", MugenUI.formatRupiah(totalHarga)));
         body.appendChild(MugenUI.el("div", { class: "book-nav-row" }, [
           MugenUI.el("button", { type: "button", onclick: () => goto(5) }, "< Back"),
         ]));
         body.appendChild(paginationDots(6, TOTAL_STEP));
-        const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Lanjut ke Pembayaran");
+        const btnLanjut = MugenUI.el("button", { class: "btn-primary", type: "button", style: "width:100%;margin-top:16px;" }, "Lanjut ke Pembayaran →");
         tambahkanEfekRipple(btnLanjut);
         btnLanjut.addEventListener("click", () => { fase = "metode"; gantiFase(); });
         body.appendChild(btnLanjut);
@@ -2193,36 +2241,70 @@ const PageBookPublic = (() => {
       return pengaturan.pesan_penutup || "Thank you! We'll reach out to you on WhatsApp shortly to confirm.";
     }
 
-    // ================= STEP 7: APPOINTMENT CONFIRMED =================
+    // ================= STEP 7: BOOKING BERHASIL =================
+    // REVISI UI/UX ("ganti desain Booking Summary & Booking Berhasil",
+    // PERMINTAAN Owner, lihat gambar referensi yang dikirim): icon+judul+
+    // subjudul sekarang di LUAR kartu (polos, tanpa .card, beda dari
+    // sebelumnya yang membungkus SEMUANYA -- termasuk detail booking --
+    // dalam SATU .card.book-selesai) -- "Detail Booking" jadi kartu
+    // TERSENDIRI dengan badge status "Diterima", dan pesan konfirmasi
+    // (pesanPenutupFinal(), isinya TIDAK berubah) pindah ke kotak info
+    // terpisah bergaya (IKON_INFO_SVG), bukan lagi teks polos `.subtitle`.
+    // `.book-selesai`/`.book-selesai-icon`/`.book-selesai-actions` TETAP
+    // ADA APA ADANYA -- dipakai juga oleh renderHasil()/renderGatewayWaiting()/
+    // renderPayment() (status lain: dibatalkan/gagal/kedaluwarsa/menunggu,
+    // DI LUAR permintaan ini) jadi TIDAK disentuh, hanya layar ini yang
+    // memakai markup baru (.book-confirmed-hero).
     function renderConfirmed() {
       const r = state.bookingResult;
       const nomorTransaksi = r.nomor_transaksi || MugenUI.buatNomorTransaksi(r, identitas.nama_barbershop);
-      // PERMINTAAN Owner: pakai apptCard() yang sama dipakai Booking Summary
-      // (renderFaseCheckout() di atas) -- lihat catatan panjang di
-      // definisinya. Nomor transaksi ditampilkan terpisah sebagai
-      // referensi kecil di bawah judul (bukan ikut jadi salah satu baris
-      // dalam blok), supaya lebih terasa seperti nomor resi, bukan
-      // "field data" biasa.
-      const detail = apptCard({
-        sections: [
-          { title: "Schedule", rows: [
-            apptRow("Barber", r.nama_barber),
-            apptRow("Date", MugenUI.formatTanggal(r.tanggal)),
-            apptRow("Time", r.jam_mulai),
-          ] },
-          { title: "Service", rows: [
-            apptRow(null, r.daftar_service),
-          ] },
-        ],
-        totalLabel: "Total",
-        totalValue: MugenUI.formatRupiah(r.total_harga),
-      });
-      body.appendChild(MugenUI.el("div", { class: "card book-selesai" }, [
-        MugenUI.el("div", { class: "book-selesai-icon" }, "✓"),
-        MugenUI.el("h2", {}, "Appointment Confirmed!"),
-        MugenUI.el("div", { class: "book-appt-ref" }, `Ref. ${nomorTransaksi}`),
-        detail,
-        MugenUI.el("div", { class: "subtitle", style: "margin-top:12px;" }, pesanPenutupFinal(r)),
+      const jumlahLayanan = String(r.daftar_service || "").split(",").filter((s) => s.trim()).length || 1;
+
+      body.appendChild(MugenUI.el("div", { class: "book-confirmed-hero" }, [
+        MugenUI.el("div", { class: "book-selesai-icon" }, [
+          "✓",
+          MugenUI.el("span", { class: "book-sparkle book-sparkle-1" }),
+          MugenUI.el("span", { class: "book-sparkle book-sparkle-2" }),
+          MugenUI.el("span", { class: "book-sparkle book-sparkle-3" }),
+        ]),
+        MugenUI.el("h2", {}, "Booking Berhasil!"),
+        MugenUI.el("div", { class: "subtitle" }, "Terima kasih, booking Anda telah diterima."),
+      ]));
+
+      // Chip nomor referensi -- klik untuk menyalin (reuse
+      // _salinTeksKeClipboard(), SAMA PERSIS pola "Sudah Booking?").
+      const refChip = MugenUI.el("button", { type: "button", class: "book-appt-ref-chip" }, [
+        MugenUI.el("span", { class: "book-icon-inline", html: IKON_FILE_SVG }),
+        MugenUI.el("span", {}, `Ref. ${nomorTransaksi}`),
+        MugenUI.el("span", { class: "book-icon-inline", html: IKON_SALIN_SVG }),
+      ]);
+      refChip.addEventListener("click", () => _salinTeksKeClipboard(nomorTransaksi));
+      body.appendChild(MugenUI.el("div", { style: "text-align:center;" }, [refChip]));
+
+      body.appendChild(MugenUI.el("div", { class: "card book-appt-card" }, [
+        MugenUI.el("div", { class: "book-appt-section-title" }, [
+          MugenUI.el("span", { class: "card-collapse-icon icon-chip--accent", html: IKON_KALENDER_SVG }),
+          MugenUI.el("span", { style: "flex:1;" }, "Detail Booking"),
+          MugenUI.el("span", { class: "book-status-badge" }, "Diterima"),
+        ]),
+        apptSection(null, [
+          apptRow("Barber", r.nama_barber),
+          apptRow("Tanggal", MugenUI.formatTanggal(r.tanggal)),
+          apptRow("Waktu", r.jam_mulai),
+        ]),
+        apptSection("Layanan", [apptRow(r.daftar_service, `${jumlahLayanan} layanan`)], IKON_GUNTING_SVG),
+        MugenUI.el("div", { class: "book-appt-total" }, [
+          MugenUI.el("span", {}, "Total"),
+          MugenUI.el("span", { class: "book-appt-total-value" }, MugenUI.formatRupiah(r.total_harga)),
+        ]),
+      ]));
+
+      body.appendChild(MugenUI.el("div", { class: "book-info-box" }, [
+        MugenUI.el("span", { class: "book-info-box-icon", html: IKON_INFO_SVG }),
+        MugenUI.el("div", {}, [
+          MugenUI.el("div", { class: "book-info-box-title" }, "Informasi Konfirmasi"),
+          MugenUI.el("div", { class: "book-info-box-text" }, pesanPenutupFinal(r)),
+        ]),
       ]));
 
       const actions = MugenUI.el("div", { class: "book-selesai-actions" });
@@ -2232,7 +2314,7 @@ const PageBookPublic = (() => {
       // TIDAK memanggil endpoint apa pun. Ikon SVG (IKON_KALENDER_SVG)
       // menggantikan emoji 📅 (PERMINTAAN Owner -- lihat catatan di
       // definisi IKON_KALENDER_SVG).
-      const btnKalender = MugenUI.el("button", { type: "button" }, [
+      const btnKalender = MugenUI.el("button", { type: "button", class: "book-btn-pill" }, [
         MugenUI.el("span", { class: "book-icon-inline", html: IKON_KALENDER_SVG }),
         "Add to Calendar",
       ]);
@@ -2240,19 +2322,15 @@ const PageBookPublic = (() => {
       btnKalender.addEventListener("click", () => unduhIcs(r, identitas.nama_barbershop));
       actions.appendChild(btnKalender);
 
-      const btnBaru = MugenUI.el("button", { class: "btn-primary", type: "button" }, "Book Another Appointment");
-      tambahkanEfekRipple(btnBaru);
-      btnBaru.addEventListener("click", () => {
-        state.barberId = null; state.barberNama = ""; state.tanggal = null; state.jam = null;
-        state.serviceIds = []; state.nama = ""; state.whatsapp = ""; state.metode = null;
-        goto(1);
-      });
-      actions.appendChild(btnBaru);
-
-      // "Back to Home" -- kembali ke Landing Page (renderLanding), reuse
+      // "Kembali ke Beranda" -- kembali ke Landing Page (renderLanding), reuse
       // fungsi render() yang sama persis dipanggil router.js saat #/book
-      // pertama dibuka (bukan endpoint/logika baru).
-      const btnBeranda = MugenUI.el("button", { type: "button" }, "Back to Home");
+      // pertama dibuka (bukan endpoint/logika baru). PERMINTAAN Owner: tombol
+      // "Book Another Appointment" DIHAPUS (ikut gambar referensi persis --
+      // customer yang mau booking lagi tinggal buka halaman booking dari awal).
+      const btnBeranda = MugenUI.el("button", { class: "btn-primary", type: "button" }, [
+        MugenUI.el("span", { class: "book-icon-inline", html: IKON_RUMAH_SVG }),
+        "Kembali ke Beranda",
+      ]);
       tambahkanEfekRipple(btnBeranda);
       btnBeranda.addEventListener("click", () => {
         window.removeEventListener("popstate", onPopState);
