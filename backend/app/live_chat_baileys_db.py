@@ -12,13 +12,11 @@ yang menjalankan library Baileys, Node.js) -- begitu tersambung, SEMUA
 pesan (masuk dari customer MAUPUN keluar yang diketik manual dari HP)
 otomatis terlihat Rivoir, tidak cuma balasan lewat Live Chat.
 
-BERDAMPINGAN dengan Fonnte, BUKAN ganti total -- HANYA tenant yang berhasil
-scan QR (status 'tersambung' di sini) yang jalur kirim/terima Live Chat-nya
-pindah ke Baileys (lihat kirim_terpasang() di bawah, dipakai
-routers/live_chat.py::kirim_balasan() untuk memilih Fonnte vs Baileys).
-Tenant yang belum/tidak pernah connect TIDAK terpengaruh sama sekali --
-webhook Fonnte lama (routers/live_chat.py::terima_webhook()) tetap jalan
-utuh untuk mereka. Reminder absensi/OTP/notifikasi booking otomatis TIDAK
+PERMINTAAN Owner (lanjutan): Live Chat jadi HANYA lewat Baileys, jalur
+webhook Fonnte + fallback kirimnya sudah DIHAPUS TOTAL dari
+routers/live_chat.py -- tenant WAJIB scan QR dulu (status 'tersambung' di
+sini, lihat kirim_terpasang() di bawah) sebelum Live Chat bisa kirim/
+terima sama sekali. Reminder absensi/OTP/notifikasi booking otomatis TIDAK
 ADA HUBUNGANNYA dengan modul ini -- semua itu tetap lewat
 whatsapp_service.kirim_whatsapp() (Fonnte), sama sekali tidak diubah.
 
@@ -97,9 +95,10 @@ def get_status(tenant_id: int) -> dict:
 
 
 def kirim_terpasang(tenant_id: int) -> bool:
-    """Dipakai routers/live_chat.py::kirim_balasan() memilih jalur kirim --
-    True HANYA kalau tenant ini sudah tersambung Baileys (sesuai kesepakatan
-    "berdampingan, bukan ganti total", lihat docstring modul)."""
+    """Dipakai routers/live_chat.py::kirim_balasan() -- True HANYA kalau
+    tenant ini sudah tersambung Baileys (lihat docstring modul); kalau
+    False, kirim_balasan() menolak dengan 409 (tidak ada fallback Fonnte
+    lagi)."""
     return get_status(tenant_id)["status"] == STATUS_TERSAMBUNG
 
 

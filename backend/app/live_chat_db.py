@@ -1,23 +1,13 @@
 """live_chat_db.py — FITUR BARU "Live Chat": Inbox WhatsApp customer terintegrasi
 =============================================================================
-BEDA dari whatsapp_service.py (token Fonnte tenant dipakai KHUSUS untuk
-KIRIM pesan keluar -- reminder/konfirmasi booking) dan dari WA Bot yang
-sudah DIHAPUS TOTAL (nomor terpisah, dikelola Superadmin, khusus perintah
-Owner/Barber): modul ini memakai TOKEN FONNTE YANG SAMA milik tenant
-(whatsapp_service.TOKEN_SETTING_KEY, diisi Owner lewat Setting > WhatsApp)
-untuk fitur DUA ARAH dengan CUSTOMER -- pesan masuk dari customer otomatis
-tersimpan di sini & memicu notifikasi push, Owner/Admin bisa membalas lewat
-Rivoir (dikirim lewat whatsapp_service.kirim_whatsapp() yang sudah ada,
-TIDAK ada jalur kirim baru).
-
-Fonnte mengirim webhook pesan masuk ke URL yang Owner SENDIRI pasang di
-dashboard Fonnte miliknya (self-service, Rivoir tidak bisa mengatur webhook
-tenant dari jarak jauh) -- URL itu membawa SATU token acak PER TENANT
-(`live_chat_config.webhook_token`, lihat get_or_create_webhook_token())
-supaya endpoint publiknya (routers/live_chat.py) bisa mencari tenant_id
-dari token tanpa perlu sesi login Rivoir, pola mirip webhook WA Bot lama
-TAPI token di sini per-tenant (bukan satu secret global) karena Owner
-sendiri yang mendaftarkan webhook-nya, bukan Superadmin terpusat.
+PERMINTAAN Owner: Live Chat HANYA lewat koneksi WhatsApp Web sendiri (lihat
+live_chat_baileys_db.py, library Baileys) -- Fonnte (dipakai whatsapp_service.py
+KHUSUS reminder/OTP/notifikasi booking otomatis, SAMA SEKALI TIDAK disentuh)
+SUDAH TIDAK dipakai sama sekali untuk fitur ini (jalur webhook Fonnte +
+fallback kirimnya sudah dihapus total dari routers/live_chat.py, lihat
+riwayat git kalau perlu arsip kodenya). Pesan masuk dari customer MAUPUN
+keluar (dari Rivoir atau diketik manual dari HP toko) sama-sama dilaporkan
+baileys-service lewat routers/live_chat_baileys.py.
 
 Retensi otomatis (PERMINTAAN Owner, lihat routers/cron_live_chat_purge.py):
 pesan TIDAK PERNAH dihapus selama belum pernah dibuka di Rivoir
@@ -35,7 +25,6 @@ Tabel baru murni milik modul ini -- init_live_chat_db() dipanggil dari
 main.py on_startup() jalur SQLite. Jalur PostgreSQL: tabel yang SAMA
 dibuat di postgres_schema.py."""
 
-import secrets
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -73,13 +62,6 @@ RETENSI_TEKS_HARI = 7
 def init_live_chat_db():
     with get_conn() as conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS live_chat_config (
-                tenant_id       INTEGER PRIMARY KEY,
-                webhook_token   TEXT NOT NULL UNIQUE,
-                created_at      TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
             CREATE TABLE IF NOT EXISTS live_chat_pesan (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
                 tenant_id            INTEGER NOT NULL,
@@ -99,45 +81,6 @@ def init_live_chat_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_waktu ON live_chat_pesan(tenant_id, waktu)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_nomor ON live_chat_pesan(tenant_id, nomor_wa, waktu)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_dibuka ON live_chat_pesan(dibuka_di_rivoir_at)")
-
-
-# ---------------------------------------------------------------------------
-# Webhook token (per tenant)
-# ---------------------------------------------------------------------------
-
-def get_or_create_webhook_token(tenant_id: int) -> str:
-    with get_conn() as conn:
-        row = conn.execute("SELECT webhook_token FROM live_chat_config WHERE tenant_id = ?", (tenant_id,)).fetchone()
-        if row:
-            return row["webhook_token"]
-        token = secrets.token_urlsafe(24)
-        conn.execute(
-            "INSERT INTO live_chat_config (tenant_id, webhook_token, created_at) VALUES (?, ?, ?)",
-            (tenant_id, token, _sekarang_wib().isoformat(timespec="seconds")),
-        )
-        return token
-
-
-def regenerate_webhook_token(tenant_id: int) -> str:
-    """Owner curiga URL webhook-nya bocor -- token lama otomatis berhenti
-    berfungsi (get_tenant_by_webhook_token() tidak akan menemukannya lagi),
-    Owner tinggal pasang ulang URL baru di dashboard Fonnte-nya."""
-    token = secrets.token_urlsafe(24)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO live_chat_config (tenant_id, webhook_token, created_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(tenant_id) DO UPDATE SET webhook_token = excluded.webhook_token",
-            (tenant_id, token, _sekarang_wib().isoformat(timespec="seconds")),
-        )
-    return token
-
-
-def get_tenant_by_webhook_token(token: str):
-    if not token:
-        return None
-    with get_conn() as conn:
-        row = conn.execute("SELECT tenant_id FROM live_chat_config WHERE webhook_token = ?", (token,)).fetchone()
-    return row["tenant_id"] if row else None
 
 
 # ---------------------------------------------------------------------------
