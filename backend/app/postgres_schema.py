@@ -1795,6 +1795,28 @@ CREATE TABLE IF NOT EXISTS live_chat_pesan (
 CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_waktu ON live_chat_pesan(tenant_id, waktu);
 CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_tenant_nomor ON live_chat_pesan(tenant_id, nomor_wa, waktu);
 CREATE INDEX IF NOT EXISTS idx_live_chat_pesan_dibuka ON live_chat_pesan(dibuka_di_rivoir_at);
+
+-- FITUR Live Chat via Baileys (live_chat_baileys_db.py) -- tenant yang
+-- berhasil scan QR (status 'tersambung') jalur kirim/terima Live Chat-nya
+-- pindah dari Fonnte ke koneksi WhatsApp Web sendiri (lihat docstring
+-- modul itu untuk arsitektur lengkap). `auth_state` dititipkan DI SINI
+-- (bukan disimpan sendiri oleh service Node.js Baileys) supaya kredensial
+-- database tidak perlu ada di service terpisah itu sama sekali.
+CREATE TABLE IF NOT EXISTS live_chat_baileys_sesi (
+    tenant_id         INTEGER PRIMARY KEY,
+    auth_state        TEXT,
+    status            TEXT NOT NULL DEFAULT 'belum_terhubung',
+    qr_data           TEXT,
+    nomor_tersambung  TEXT,
+    updated_at        TEXT NOT NULL
+);
+
+-- Kolom baru di live_chat_pesan: ID pesan dari Baileys (hanya terisi untuk
+-- pesan yang lewat jalur Baileys, baik dikirim dari Rivoir maupun manual
+-- dari HP toko) -- dipakai mekanisme dedup supaya pesan yang dikirim lewat
+-- Live Chat sendiri tidak tersimpan dobel saat "terlihat lagi" oleh
+-- listener Baileys (lihat routers/live_chat_baileys.py).
+ALTER TABLE live_chat_pesan ADD COLUMN IF NOT EXISTS baileys_msg_id TEXT;
 """
 
 

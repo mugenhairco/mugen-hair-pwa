@@ -32,10 +32,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from fastapi.responses import Response
 
+import live_chat_baileys_db
 import live_chat_db
 import push_service
 import whatsapp_service
 from auth import require_permission
+from routers.live_chat_baileys import kirim_pesan_lewat_baileys
 
 logger = logging.getLogger("mugen.live_chat")
 
@@ -171,6 +173,19 @@ def kirim_balasan(nomor_wa: str, body: KirimBalasanBody,
                    user: dict = Depends(require_permission("izin_live_chat_lihat"))):
     if not body.pesan.strip():
         raise HTTPException(status_code=422, detail="Pesan tidak boleh kosong.")
+    # FITUR Live Chat via Baileys (PERMINTAAN Owner: pesan manual dari HP
+    # toko tidak pernah terlihat Rivoir lewat Fonnte -- lihat docstring
+    # live_chat_baileys_db.py): tenant yang SUDAH berhasil scan QR (status
+    # 'tersambung') pindah jalur kirim ke Baileys; tenant lain TETAP lewat
+    # Fonnte seperti semula, TIDAK ada bedanya sama sekali dari sebelumnya.
+    if live_chat_baileys_db.kirim_terpasang(user["tenant_id"]):
+        try:
+            baileys_msg_id = kirim_pesan_lewat_baileys(user["tenant_id"], nomor_wa, body.pesan)
+        except Exception as e:
+            logger.error("Gagal kirim lewat Baileys tenant_id=%s: %s: %s", user["tenant_id"], type(e).__name__, e)
+            raise HTTPException(status_code=502, detail="Gagal mengirim WhatsApp lewat koneksi Baileys.")
+        live_chat_db.simpan_pesan_teks_keluar(user["tenant_id"], nomor_wa, body.pesan, baileys_msg_id)
+        return {"ok": True}
     terkirim = whatsapp_service.kirim_whatsapp(nomor_wa, body.pesan, tenant_id=user["tenant_id"])
     if not terkirim:
         raise HTTPException(status_code=502, detail="Gagal mengirim WhatsApp -- pastikan token Fonnte di Setting > WhatsApp sudah benar.")

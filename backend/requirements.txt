@@ -76,3 +76,10 @@ cryptography>=41.0.0
 # SEKALI saat Owner upload, bukan berulang tiap pengunjung.
 Pillow>=10.0.0
 
+# FITUR Live Chat via Baileys (live_chat_baileys_db.py/routers/live_chat_
+# baileys.py): render kode QR (dari string mentah yang dilaporkan service
+# Node.js Baileys) jadi gambar PNG untuk ditampilkan di halaman Live Chat --
+# Pillow (sudah terpasang di atas) dipakai qrcode sebagai backend gambarnya,
+# tidak perlu layanan pembuat QR eksternal.
+qrcode>=7.4.0
+

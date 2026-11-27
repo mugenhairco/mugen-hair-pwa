@@ -1,0 +1,17 @@
+{
+  "name": "baileys-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FITUR Live Chat via Baileys (WhatsApp Web sendiri) -- lihat docstring backend/app/live_chat_baileys_db.py untuk arsitektur lengkap. Service terpisah dari backend Python, dideploy sebagai Web Service Render ketiga (rootDir: baileys-service).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
