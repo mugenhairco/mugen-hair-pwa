@@ -238,6 +238,28 @@ const PageLiveChat = (() => {
     await _muatKontak();
   }
 
+  // BUGFIX (laporan Owner: pesan baru tidak langsung muncul walau halaman
+  // Live Chat SUDAH terbuka -- harus pindah menu dulu baru kelihatan):
+  // dipastikan perangkat Owner PWA iOS ("Add to Home Screen") -- iOS
+  // SECARA AGRESIF membekukan JavaScript halaman begitu PWA tidak di
+  // depan mata (layar terkunci/app dipindah ke background). Push
+  // notifikasinya SENDIRI terkirim normal (dipastikan lewat log server --
+  // tidak ada error), tapi listener "message" di app.js (yang biasanya
+  // menyuntik pesan baru lewat suntikPesanMasuk()) tidak sempat berjalan
+  // karena halamannya sedang "dibekukan" saat itu. SATU listener
+  // document-level ini didaftarkan SEKALI untuk sisa umur SPA (bukan tiap
+  // render() -- supaya tidak menumpuk listener kalau Owner bolak-balik ke
+  // menu ini), menyegarkan diam-diam begitu halaman terlihat lagi (dicek
+  // _elemKontakList masih di DOM -- no-op kalau bukan Live Chat yang lagi
+  // aktif) -- Owner TIDAK perlu pindah menu lagi, cukup membuka kembali
+  // layar HP/PWA-nya.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (!_elemKontakList || !document.body.contains(_elemKontakList)) return;
+    _muatKontak();
+    if (_nomorAktif) _bukaThread(_nomorAktif);
+  });
+
   return { render, suntikPesanMasuk };
 })();
 window.PageLiveChat = PageLiveChat;
