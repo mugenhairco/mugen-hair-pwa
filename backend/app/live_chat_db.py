@@ -158,14 +158,29 @@ def simpan_pesan_gambar_masuk(tenant_id: int, nomor_wa: str, nama_kontak: str,
         return cur.lastrowid
 
 
-def simpan_pesan_teks_keluar(tenant_id: int, nomor_wa: str, isi_teks: str) -> int:
+def simpan_pesan_teks_keluar(tenant_id: int, nomor_wa: str, isi_teks: str, baileys_msg_id: str = None) -> int:
+    """`baileys_msg_id` HANYA diisi kalau pesan ini dikirim lewat jalur
+    Baileys (lihat live_chat_baileys_db.py) -- dipakai routers/live_chat_
+    baileys.py mencocokkan event "pesan keluar" yang dilaporkan BALIK oleh
+    Baileys (Baileys melihat SEMUA pesan keluar, termasuk yang baru saja
+    dikirim lewat sini sendiri) supaya tidak tersimpan dobel."""
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO live_chat_pesan (tenant_id, arah, nomor_wa, jenis, isi_teks, waktu) "
-            "VALUES (?, 'keluar', ?, 'teks', ?, ?)",
-            (tenant_id, nomor_wa, isi_teks, datetime.now().isoformat(timespec="seconds")),
+            "INSERT INTO live_chat_pesan (tenant_id, arah, nomor_wa, jenis, isi_teks, waktu, baileys_msg_id) "
+            "VALUES (?, 'keluar', ?, 'teks', ?, ?, ?)",
+            (tenant_id, nomor_wa, isi_teks, datetime.now().isoformat(timespec="seconds"), baileys_msg_id),
         )
         return cur.lastrowid
+
+
+def baileys_msg_id_sudah_tersimpan(baileys_msg_id: str) -> bool:
+    """Dipakai routers/live_chat_baileys.py -- lihat catatan dedup di
+    docstring simpan_pesan_teks_keluar() di atas."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 AS ada FROM live_chat_pesan WHERE baileys_msg_id = ? LIMIT 1", (baileys_msg_id,)
+        ).fetchone()
+    return row is not None
 
 
 def list_kontak(tenant_id: int) -> list:

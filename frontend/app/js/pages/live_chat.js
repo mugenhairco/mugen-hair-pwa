@@ -170,6 +170,82 @@ const PageLiveChat = (() => {
     body.appendChild(MugenUI.el("div", { class: "row", style: "gap:8px;" }, [inputUrl, btnSalin, btnReset]));
   }
 
+  // FITUR Live Chat via Baileys (PERMINTAAN Owner: pesan WA yang diketik
+  // manual dari HP toko tidak pernah terlihat Rivoir lewat Fonnte --
+  // dipastikan ini keterbatasan Fonnte sendiri, lihat docstring backend
+  // live_chat_baileys_db.py): kartu BARU, BERDAMPINGAN dengan kartu Webhook
+  // Fonnte di atas (TIDAK menggantikannya) -- tenant yang belum/tidak mau
+  // scan QR tetap pakai Fonnte seperti biasa, tidak terpengaruh sama
+  // sekali. Polling status tiap 3 detik, berhenti sendiri begitu kartu ini
+  // sudah tidak ada di DOM lagi (pola SAMA PERSIS pollTimer di
+  // pages/booking.js -- cek document.body.contains(), bukan listener
+  // hashchange terpisah).
+  async function _renderKartuBaileys(card) {
+    const body = MugenUI.el("div");
+    card.appendChild(body);
+
+    async function muatUlang() {
+      let status;
+      try {
+        status = await MugenApi.get("/api/live-chat/baileys/status");
+      } catch (e) {
+        return; // gagal diam-diam, polling berikutnya coba lagi
+      }
+      body.innerHTML = "";
+
+      if (status.status === "tersambung") {
+        body.appendChild(MugenUI.el("div", { style: "font-weight:700;color:var(--accent);margin-bottom:8px;" },
+          `Tersambung sebagai ${status.nomor_tersambung || "-"}`));
+        const btnPutus = MugenUI.el("button", { class: "btn-danger" }, "Putuskan");
+        btnPutus.addEventListener("click", async () => {
+          if (!(await MugenUI.confirmModal({
+            message: "WhatsApp toko akan diputus dari Rivoir -- Live Chat kembali pakai Fonnte (kalau masih dipasang). Lanjutkan?",
+            danger: true,
+          }))) return;
+          await MugenUI.withButtonLoading(btnPutus, () => MugenApi.post("/api/live-chat/baileys/putuskan", {}));
+          await muatUlang();
+        });
+        body.appendChild(btnPutus);
+        return;
+      }
+
+      if (status.status === "menunggu_scan") {
+        body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
+          "Buka WhatsApp di HP toko -> Pengaturan -> Perangkat Tertaut -> Tautkan Perangkat, lalu arahkan kamera ke kode ini."));
+        try {
+          const blob = await MugenApi.fetchBlob("/api/live-chat/baileys/qr.png");
+          const url = URL.createObjectURL(blob);
+          body.appendChild(MugenUI.el("img", { src: url, alt: "Kode QR WhatsApp", style: "width:220px;height:220px;" }));
+        } catch (e) {
+          body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Kode QR belum siap, menunggu..."));
+        }
+        return;
+      }
+
+      // belum_terhubung / terputus
+      body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
+        "Opsional -- supaya pesan yang diketik manual dari HP toko (bukan lewat kotak balas di bawah) " +
+        "ikut muncul di sini. Kalau tidak diaktifkan, Live Chat tetap berfungsi normal lewat Fonnte."));
+      const btnHubung = MugenUI.el("button", { class: "btn-primary" }, "Hubungkan WhatsApp Toko");
+      btnHubung.addEventListener("click", async () => {
+        try {
+          await MugenUI.withButtonLoading(btnHubung, () => MugenApi.post("/api/live-chat/baileys/connect", {}));
+        } catch (e) {
+          MugenUI.toast(e.detail && e.detail.detail ? e.detail.detail : e.message, "error");
+          return;
+        }
+        await muatUlang();
+      });
+      body.appendChild(btnHubung);
+    }
+
+    await muatUlang();
+    const timer = setInterval(() => {
+      if (!document.body.contains(card)) { clearInterval(timer); return; }
+      muatUlang();
+    }, 3000);
+  }
+
   async function render(root) {
     root.innerHTML = "";
     root.appendChild(MugenUI.pageTitle("Live Chat", MugenIcons.liveChat));
@@ -179,6 +255,12 @@ const PageLiveChat = (() => {
     ]);
     root.appendChild(settingCard);
     _renderSettingWebhook(settingCard);
+
+    const baileysCard = MugenUI.el("div", { class: "card" }, [
+      MugenUI.el("h2", {}, "Hubungkan Langsung Lewat WhatsApp (Baru)"),
+    ]);
+    root.appendChild(baileysCard);
+    _renderKartuBaileys(baileysCard);
 
     const layout = MugenUI.el("div", { class: "card live-chat-layout" });
     _elemKontakList = MugenUI.el("div", { class: "live-chat-kontak-list" });

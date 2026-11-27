@@ -105,6 +105,16 @@ services:
       # (endpoint menolak SEMUA permintaan kalau belum diisi, fail-closed).
       - key: CRON_REMINDER_SECRET
         sync: false
+      # FITUR Live Chat via Baileys (OPSIONAL, lihat service "mugen-hair-
+      # baileys" di bawah): URL service Baileys TANPA trailing slash, dan
+      # shared secret yang HARUS SAMA PERSIS dengan env var bernama sama di
+      # service itu. Kosongkan keduanya untuk menonaktifkan total (Live
+      # Chat tetap berfungsi normal lewat Fonnte, tombol "Hubungkan" di UI
+      # akan gagal dengan pesan jelas, bukan error tersembunyi).
+      - key: BAILEYS_SERVICE_URL
+        sync: false
+      - key: BAILEYS_INTERNAL_SECRET
+        sync: false
 
   # =====================================================================
   # FRONTEND — Landing Page (/) + Dashboard PWA (/app/), Render Static Site
@@ -211,3 +221,40 @@ services:
       - path: /app/index.html
         name: Cache-Control
         value: no-cache
+
+  # =====================================================================
+  # BAILEYS SERVICE — FITUR Live Chat via WhatsApp Web sendiri, Render Web
+  # Service (BUKAN Static Site -- proses Node.js yang harus terus menyala,
+  # lihat docstring baileys-service/index.js untuk arsitektur lengkap).
+  # OPSIONAL & berdampingan dengan backend Fonnte yang sudah ada -- tenant
+  # yang belum mengisi/menyalakan ini TIDAK terpengaruh sama sekali.
+  # =====================================================================
+  - type: web
+    name: mugen-hair-baileys
+    runtime: node
+    rootDir: baileys-service
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    # PENTING: paket free Render TIDAK cocok untuk service ini -- koneksi
+    # WhatsApp (Baileys) harus tetap tersambung terus-menerus, dan paket
+    # free bisa mematikan proses kapan saja karena tidak ada trafik HTTP
+    # masuk (lihat diskusi lengkap soal ini sebelum fitur ini dibangun) --
+    # putus-sambung berulang justru menaikkan risiko WhatsApp mencurigai
+    # otomasi. Pilih paket yang TIDAK pernah tidur lewat dashboard SETELAH
+    # service ini dibuat (sama seperti catatan plan/region di service
+    # backend di atas, tidak bisa ditulis eksplisit di sini).
+    envVars:
+      # URL backend Python DI ATAS (TANPA trailing slash) -- satu-satunya
+      # tempat service ini bicara (sesi login, status, pesan masuk/keluar),
+      # lihat baileys-service/backend-client.js.
+      - key: BACKEND_URL
+        sync: false
+      # WAJIB ISI NILAI YANG SAMA PERSIS dengan BAILEYS_INTERNAL_SECRET di
+      # service backend DI ATAS -- shared secret, pola SAMA PERSIS
+      # CRON_REMINDER_SECRET/X-Cron-Secret yang sudah dipakai routers/
+      # cron_reminder.py. Salah satu beda isi -> SEMUA permintaan ditolak
+      # 403 di kedua arah.
+      - key: BAILEYS_INTERNAL_SECRET
+        sync: false
