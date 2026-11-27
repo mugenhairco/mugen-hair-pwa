@@ -110,7 +110,21 @@ async function mulaiSocket(tenantId) {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
+    // BUGFIX (pertanyaan Owner: pesan yang masuk SAAT service ini tertidur
+    // -- lihat catatan free-tier Render di atas -- apakah ikut masuk begitu
+    // bangun lagi): dipastikan LANGSUNG dari source code Baileys terpasang
+    // (node_modules/@whiskeysockets/baileys/lib/Socket/messages-recv.js,
+    // upsertMessage(msg, node.attrs.offline ? 'append' : 'notify')) --
+    // WhatsApp MEMANG tetap mengirim ulang pesan yang terlewat saat koneksi
+    // putus begitu socket ini sambung lagi, TAPI diberi tipe event
+    // "append" (bukan "notify" yang dipakai pesan real-time). SEBELUM fix
+    // ini, baris di bawah cuma menerima "notify" -- pesan susulan itu
+    // dibuang diam-diam, tidak pernah ikut tersimpan di Rivoir. "append"
+    // juga dipakai Baileys untuk notifikasi non-teks (reaksi/revoke/dst,
+    // lihat messages-recv.js lain) -- itu otomatis tersaring sendiri di
+    // _teruskanPesan() lewat cek `if (!teks) return`, jadi aman diterima
+    // di sini tanpa menyaring tipe secara eksplisit.
+    if (type !== "notify" && type !== "append") return;
     for (const msg of messages) {
       await _teruskanPesan(tenantId, msg);
     }
