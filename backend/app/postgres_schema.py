@@ -1765,17 +1765,12 @@ CREATE TABLE IF NOT EXISTS pos_draft (
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notif_suara_dimatikan INTEGER NOT NULL DEFAULT 0;
 
 -- FITUR BARU Live Chat (live_chat_db.py) -- Inbox WhatsApp customer
--- terintegrasi, dua arah, memakai token Fonnte yang SAMA dengan
--- whatsapp_service.py (lihat docstring live_chat_db.py untuk arsitektur
--- lengkap). SAMA seperti tabel baru lain di atas, WAJIB didaftarkan di
+-- terintegrasi, dua arah lewat koneksi WhatsApp Web sendiri (Baileys, lihat
+-- live_chat_baileys_db.py) -- TIDAK lagi lewat Fonnte (jalur webhook +
+-- tabel live_chat_config/webhook_token sudah dihapus total, PERMINTAAN
+-- Owner). SAMA seperti tabel baru lain di atas, WAJIB didaftarkan di
 -- SINI JUGA (jalur Postgres TIDAK memanggil live_chat_db.init_live_chat_db(),
 -- SEPENUHNYA digantikan create_all() ini).
-CREATE TABLE IF NOT EXISTS live_chat_config (
-    tenant_id       INTEGER PRIMARY KEY,
-    webhook_token   TEXT NOT NULL UNIQUE,
-    created_at      TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS live_chat_pesan (
     id                   SERIAL PRIMARY KEY,
     tenant_id            INTEGER NOT NULL,

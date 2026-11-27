@@ -1,15 +1,15 @@
 // pages/live_chat.js — FITUR BARU Live Chat: Inbox WhatsApp customer
 // terintegrasi, dua arah (lihat docstring backend live_chat_db.py untuk
-// arsitektur lengkap -- token Fonnte yang SAMA dengan menu WhatsApp dipakai
-// untuk membalas, BUKAN jalur kirim baru).
+// arsitektur lengkap -- PERMINTAAN Owner: HANYA lewat koneksi WhatsApp Web
+// sendiri/Baileys, jalur webhook Fonnte sudah dihapus total).
 //
-// Layout: kartu Setting (Webhook URL, dipasang Owner sendiri di dashboard
-// Fonnte-nya) di atas, lalu 2 kolom -- daftar kontak (kiri) + thread chat
-// kontak yang sedang dibuka (kanan). Membuka sebuah thread otomatis
-// menandai SEMUA pesan di thread itu "dibuka di Rivoir" (lihat GET
-// /api/live-chat/pesan/{nomor_wa} di backend) -- inilah yang memicu
-// hitung mundur retensi otomatis (gambar 24 jam, teks 7 hari, PERMINTAAN
-// Owner: pesan yang belum pernah dibuka TIDAK PERNAH dihapus).
+// Layout: kartu "Hubungkan WhatsApp" (status/QR Baileys) di atas, lalu 2
+// kolom -- daftar kontak (kiri) + thread chat kontak yang sedang dibuka
+// (kanan). Membuka sebuah thread otomatis menandai SEMUA pesan di thread
+// itu "dibuka di Rivoir" (lihat GET /api/live-chat/pesan/{nomor_wa} di
+// backend) -- inilah yang memicu hitung mundur retensi otomatis (gambar 24
+// jam, teks 7 hari, PERMINTAAN Owner: pesan yang belum pernah dibuka TIDAK
+// PERNAH dihapus).
 
 const PageLiveChat = (() => {
   let _kontakList = [];
@@ -137,49 +137,12 @@ const PageLiveChat = (() => {
     }
   }
 
-  async function _renderSettingWebhook(card) {
-    const body = MugenUI.el("div");
-    card.appendChild(body);
-    body.appendChild(MugenUI.el("div", { class: "subtitle" }, "Memuat..."));
-    const info = await MugenApi.get("/api/live-chat/webhook-info");
-    body.innerHTML = "";
-    const urlLengkap = (MugenApi.baseUrl || "") + info.webhook_path;
-    const inputUrl = MugenUI.el("input", { type: "text", readonly: "readonly", value: urlLengkap, style: "flex:1;" });
-    const btnSalin = MugenUI.el("button", {}, "Salin");
-    btnSalin.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(urlLengkap);
-        MugenUI.toast("URL disalin.", "success");
-      } catch (e) {
-        inputUrl.select();
-        MugenUI.toast("Gagal menyalin otomatis -- URL sudah dipilih, salin manual (Ctrl+C).", "error");
-      }
-    });
-    const btnReset = MugenUI.el("button", { class: "btn-danger" }, "Buat URL Baru");
-    btnReset.addEventListener("click", async () => {
-      if (!(await MugenUI.confirmModal({
-        message: "URL webhook lama akan BERHENTI berfungsi -- pastikan langsung pasang URL baru di dashboard Fonnte Anda. Lanjutkan?",
-        danger: true,
-      }))) return;
-      const baru = await MugenUI.withButtonLoading(btnReset, () => MugenApi.post("/api/live-chat/webhook-info/reset", {}));
-      inputUrl.value = (MugenApi.baseUrl || "") + baru.webhook_path;
-      MugenUI.toast("URL webhook baru dibuat.", "success");
-    });
-    body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
-      "Pasang URL ini di dashboard Fonnte Anda (Device > Edit > Webhook) supaya pesan customer otomatis masuk ke sini."));
-    body.appendChild(MugenUI.el("div", { class: "row", style: "gap:8px;" }, [inputUrl, btnSalin, btnReset]));
-  }
-
-  // FITUR Live Chat via Baileys (PERMINTAAN Owner: pesan WA yang diketik
-  // manual dari HP toko tidak pernah terlihat Rivoir lewat Fonnte --
-  // dipastikan ini keterbatasan Fonnte sendiri, lihat docstring backend
-  // live_chat_baileys_db.py): kartu BARU, BERDAMPINGAN dengan kartu Webhook
-  // Fonnte di atas (TIDAK menggantikannya) -- tenant yang belum/tidak mau
-  // scan QR tetap pakai Fonnte seperti biasa, tidak terpengaruh sama
-  // sekali. Polling status tiap 3 detik, berhenti sendiri begitu kartu ini
-  // sudah tidak ada di DOM lagi (pola SAMA PERSIS pollTimer di
-  // pages/booking.js -- cek document.body.contains(), bukan listener
-  // hashchange terpisah).
+  // FITUR Live Chat via Baileys (PERMINTAAN Owner: HANYA lewat koneksi
+  // WhatsApp Web sendiri -- jalur Fonnte sudah dihapus total, lihat
+  // docstring backend live_chat_baileys_db.py). Polling status tiap 3
+  // detik, berhenti sendiri begitu kartu ini sudah tidak ada di DOM lagi
+  // (pola SAMA PERSIS pollTimer di pages/booking.js -- cek
+  // document.body.contains(), bukan listener hashchange terpisah).
   async function _renderKartuBaileys(card) {
     const body = MugenUI.el("div");
     card.appendChild(body);
@@ -199,7 +162,7 @@ const PageLiveChat = (() => {
         const btnPutus = MugenUI.el("button", { class: "btn-danger" }, "Putuskan");
         btnPutus.addEventListener("click", async () => {
           if (!(await MugenUI.confirmModal({
-            message: "WhatsApp toko akan diputus dari Rivoir -- Live Chat kembali pakai Fonnte (kalau masih dipasang). Lanjutkan?",
+            message: "WhatsApp toko akan diputus dari Rivoir -- Live Chat tidak bisa kirim/terima pesan sampai dihubungkan lagi. Lanjutkan?",
             danger: true,
           }))) return;
           await MugenUI.withButtonLoading(btnPutus, () => MugenApi.post("/api/live-chat/baileys/putuskan", {}));
@@ -224,8 +187,8 @@ const PageLiveChat = (() => {
 
       // belum_terhubung / terputus
       body.appendChild(MugenUI.el("div", { class: "subtitle", style: "margin-bottom:8px;" },
-        "Opsional -- supaya pesan yang diketik manual dari HP toko (bukan lewat kotak balas di bawah) " +
-        "ikut muncul di sini. Kalau tidak diaktifkan, Live Chat tetap berfungsi normal lewat Fonnte."));
+        "Hubungkan WhatsApp toko dulu sebelum bisa kirim/terima pesan di Live Chat -- termasuk pesan " +
+        "yang diketik manual dari HP toko (bukan lewat kotak balas di bawah)."));
       const btnHubung = MugenUI.el("button", { class: "btn-primary" }, "Hubungkan WhatsApp Toko");
       btnHubung.addEventListener("click", async () => {
         try {
@@ -250,14 +213,8 @@ const PageLiveChat = (() => {
     root.innerHTML = "";
     root.appendChild(MugenUI.pageTitle("Live Chat", MugenIcons.liveChat));
 
-    const settingCard = MugenUI.el("div", { class: "card" }, [
-      MugenUI.el("h2", {}, "Webhook Fonnte"),
-    ]);
-    root.appendChild(settingCard);
-    _renderSettingWebhook(settingCard);
-
     const baileysCard = MugenUI.el("div", { class: "card" }, [
-      MugenUI.el("h2", {}, "Hubungkan Langsung Lewat WhatsApp (Baru)"),
+      MugenUI.el("h2", {}, "Hubungkan WhatsApp"),
     ]);
     root.appendChild(baileysCard);
     _renderKartuBaileys(baileysCard);

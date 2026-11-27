@@ -1,8 +1,8 @@
 """routers/live_chat_baileys.py — FITUR Live Chat via Baileys (WhatsApp Web sendiri)
 =============================================================================
 Lihat docstring live_chat_baileys_db.py untuk latar belakang & arsitektur
-lengkap (kenapa ini ada, kenapa berdampingan dengan Fonnte bukan ganti
-total). Dua router di sini:
+lengkap (kenapa ini ada -- Live Chat sekarang HANYA lewat Baileys, jalur
+Fonnte-nya sudah dihapus total). Dua router di sini:
 
 1. `authed_router` (/api/live-chat/baileys, require_permission("izin_live_
    chat_lihat") -- SAMA PERSIS gerbang routers/live_chat.py): dipanggil
@@ -20,9 +20,9 @@ total). Dua router di sini:
 Fail-CLOSED kalau BAILEYS_INTERNAL_SECRET belum diisi (pola sama
 cron_reminder.py) -- endpoint internal menolak SEMUA permintaan, bukan
 menyala tanpa proteksi. BAILEYS_SERVICE_URL kosong -> authed_router
-mengembalikan status "belum_terhubung" apa adanya (fitur ini murni
-opsional per tenant, TIDAK PERNAH menghalangi Live Chat jalur Fonnte yang
-sudah ada kalau belum/tidak diisi)."""
+mengembalikan status "belum_terhubung" apa adanya -- Live Chat tidak bisa
+kirim/terima apa pun sampai dikonfigurasi (TIDAK ada fallback Fonnte lagi,
+lihat docstring live_chat_baileys_db.py)."""
 
 import logging
 import os
@@ -190,16 +190,13 @@ def lapor_pesan(tenant_id: int, body: PesanBody, x_baileys_secret: str | None = 
     bisa membedakan ASAL-nya, cuma kita yang tahu lewat baileys_msg_id,
     lihat docstring simpan_pesan_teks_keluar() di live_chat_db.py).
 
-    PERBEDAAN dari public_router.webhook() (jalur Fonnte lama): di sini
-    SUDAH dipastikan tenant_id ini sedang berstatus 'tersambung' Baileys
-    SEBELUM dipanggil (dijaga service Baileys sendiri -- cuma mengirim
-    event untuk socket yang memang sedang aktif), jadi tidak perlu cari
-    tenant_id dari token seperti webhook Fonnte.
+    tenant_id di sini SUDAH dipastikan sedang berstatus 'tersambung'
+    Baileys SEBELUM endpoint ini dipanggil (dijaga service Baileys sendiri
+    -- cuma mengirim event untuk socket yang memang sedang aktif).
 
-    Gambar BELUM didukung di endpoint ini (hanya jenis='teks') -- jalur
-    gambar lewat Fonnte yang sudah ada tetap terpisah & utuh untuk tenant
-    yang belum pakai Baileys. Ini keterbatasan YANG DIKETAHUI, bukan bug --
-    didokumentasikan di README/plan untuk fase berikutnya kalau diperlukan."""
+    Gambar BELUM didukung di endpoint ini (hanya jenis='teks'). Ini
+    keterbatasan YANG DIKETAHUI, bukan bug -- didokumentasikan di
+    README/plan untuk fase berikutnya kalau diperlukan."""
     _wajib_secret_internal(x_baileys_secret)
 
     if body.arah == "keluar":
@@ -226,8 +223,7 @@ def lapor_pesan(tenant_id: int, body: PesanBody, x_baileys_secret: str | None = 
         )
         return {"ok": True, "disimpan": True}
 
-    # arah == 'masuk' -- SAMA seperti public_router.webhook() (Fonnte):
-    # selalu simpan & picu notifikasi push "Live Chat -- {nama}".
+    # arah == 'masuk' -- selalu simpan & picu notifikasi push "Live Chat -- {nama}".
     live_chat_db.simpan_pesan_teks_masuk(tenant_id, body.nomor_wa, body.nama_kontak, body.isi_teks)
     preview = body.isi_teks if len(body.isi_teks) <= 80 else body.isi_teks[:77] + "..."
     push_service.kirim_ke_role(
