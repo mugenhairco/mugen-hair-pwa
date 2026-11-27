@@ -86,6 +86,19 @@ async def terima_webhook(token: str, request: Request):
     if tenant_id is None:
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
 
+    # BUGFIX (laporan Owner: 1 pesan customer jadi 2 baris di Live Chat):
+    # kalau tenant ini SUDAH tersambung Baileys (lihat live_chat_baileys_db.py),
+    # jalur kirim/terima Live Chat-nya sudah pindah ke sana -- tapi Owner
+    # bisa saja LUPA melepas URL webhook ini dari dashboard Fonnte-nya
+    # sendiri (Rivoir tidak bisa mengatur itu dari jarak jauh), sehingga
+    # Fonnte TETAP mengirim webhook ini DI SAMPING Baileys yang melihat
+    # pesan yang SAMA secara independen -- keduanya tidak punya ID yang
+    # bisa dicocokkan satu sama lain untuk dedup. Jaga di sini (bukan cuma
+    # mengandalkan Owner menghapus webhook-nya): diam-diam diabaikan kalau
+    # tenant ini sudah tersambung Baileys.
+    if live_chat_baileys_db.kirim_terpasang(tenant_id):
+        return {"ok": True}
+
     try:
         payload = await request.json()
     except Exception:

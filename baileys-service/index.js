@@ -16,18 +16,37 @@
 //   routers/live_chat_baileys.py): POST /tenant/:tenantId/connect, kirim,
 //   putuskan.
 //
-// CATATAN PENTING (belum diuji end-to-end sungguhan): kode ini sudah
-// diverifikasi `node --check` + `npm install` berhasil di sandbox
-// pengembangan, TAPI belum pernah dites scan QR sungguhan + kirim/terima
-// pesan WhatsApp asli (sandbox ini tidak punya HP/nomor WhatsApp untuk
-// dites) -- WAJIB diuji manual oleh Owner di nomor UJI COBA (bukan nomor
-// toko aktif) sebelum dipakai sungguhan, sesuai kesepakatan di plan.
+// CATATAN PENTING (sudah diuji end-to-end sungguhan oleh Owner, 27 Nov
+// 2026): scan QR + kirim/terima pesan WhatsApp asli BERHASIL. Ditemukan 2
+// bug nyata dari pengujian itu (sudah diperbaiki di revisi ini):
+// 1. Logger BAWAAN Baileys (default pino level "info") ternyata mencetak
+//    OBJEK SESI ENKRIPSI MENTAH (kunci privat Signal Protocol!) ke log
+//    Render tiap sesi dibuat/ditutup -- risiko keamanan nyata (siapa pun
+//    yang bisa baca log Render bisa baca kunci privat itu). Diperbaiki:
+//    logger khusus level "error" dipasang eksplisit (lihat `_logBaileys`
+//    di bawah) -- log yang KITA tulis sendiri (console.log/error) TIDAK
+//    ikut terpengaruh, tetap muncul seperti biasa.
+// 2. Satu pesan masuk dari customer bisa membuat 2 baris di Live Chat
+//    kalau Fonnte (webhook LAMA) masih terpasang DI SAMPING Baileys yang
+//    baru -- keduanya "melihat" pesan yang sama secara independen, tidak
+//    ada cara mencocokkan ID antara 2 sistem berbeda itu. Diperbaiki di
+//    sisi backend (routers/live_chat.py::terima_webhook() sekarang skip
+//    diam-diam kalau tenant itu sudah tersambung Baileys) -- TAPI Owner
+//    tetap disarankan melepas/menghapus URL webhook lama dari dashboard
+//    Fonnte-nya sendiri supaya Fonnte berhenti mencoba sama sekali.
 
 const express = require("express");
+const pino = require("pino");
 const makeWASocket = require("@whiskeysockets/baileys").default;
 const { DisconnectReason, Browsers, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 
 const backend = require("./backend-client");
+
+// Lihat catatan keamanan di atas -- "error" saja (bukan default "info"),
+// supaya dump state internal Baileys (termasuk kunci sesi Signal Protocol)
+// tidak ikut tercetak ke log Render. console.log/error KITA sendiri di
+// bawah TIDAK lewat logger ini, jadi tetap muncul seperti biasa.
+const _logBaileys = pino({ level: "error" });
 const { useDbAuthState } = require("./auth-state");
 
 const PORT = process.env.PORT || 3000;
@@ -56,6 +75,7 @@ async function mulaiSocket(tenantId) {
     auth: state,
     browser: Browsers.ubuntu("Rivoir Live Chat"),
     printQRInTerminal: false,
+    logger: _logBaileys,
   });
   sockets.set(tenantId, sock);
 
@@ -101,19 +121,42 @@ async function mulaiSocket(tenantId) {
 
 async function _teruskanPesan(tenantId, msg) {
   if (!msg.message || !msg.key) return; // bukan pesan konten (reaksi/status, dst)
-  const jid = msg.key.remoteJid || "";
+  let jid = msg.key.remoteJid || "";
   if (jid.endsWith("@g.us") || jid === "status@broadcast") return; // Live Chat khusus chat pribadi, bukan grup
+
+  // BUGFIX (laporan Owner: nomor kontak yang muncul aneh/bukan angka WA
+  // biasa, 1 pesan jadi 2 baris beda nomor): WhatsApp sedang migrasi
+  // sebagian kontak ke pengenal "@lid" (Linked ID, demi privasi) alih-alih
+  // nomor HP asli ("@s.whatsapp.net") -- Baileys MENYEDIAKAN padanan nomor
+  // HP asli lewat `key.remoteJidAlt` KHUSUS untuk kasus ini (lihat
+  // node_modules/@whiskeysockets/baileys/lib/Types/Message.d.ts). Dipakai
+  // di sini supaya nomor_wa yang tersimpan SELALU nomor HP asli yang bisa
+  // dikenali Owner, bukan ID internal WhatsApp yang tidak berarti apa pun.
+  if (jid.endsWith("@lid") && msg.key.remoteJidAlt) {
+    jid = msg.key.remoteJidAlt;
+  }
 
   // Jenis gambar BELUM didukung di sini (lihat catatan rencana) -- hanya
   // pesan teks biasa (conversation/extendedTextMessage) yang diteruskan.
   const teks = msg.message.conversation || (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text);
   if (!teks) return;
 
+  const nomorWa = _nomorDariJid(jid);
+  const arah = msg.key.fromMe ? "keluar" : "masuk";
+  // Log bersih (BUKAN lewat _logBaileys yang sengaja dibungkam, lihat
+  // catatan keamanan di atas) -- supaya gampang dicek di log Render kalau
+  // ada laporan pesan tidak muncul/salah nomor, tanpa perlu menebak lagi.
+  console.log(`[tenant ${tenantId}] pesan ${arah} dari/ke ${nomorWa}: "${teks.slice(0, 50)}"`);
+
   try {
     await backend.laporPesan(tenantId, {
-      arah: msg.key.fromMe ? "keluar" : "masuk",
-      nomor_wa: _nomorDariJid(jid),
-      nama_kontak: msg.pushName || null,
+      arah,
+      nomor_wa: nomorWa,
+      // PERMINTAAN Owner: tampilkan nomor HP sebagai identitas kontak,
+      // BUKAN nama profil WhatsApp (pushName) -- frontend sudah otomatis
+      // menampilkan nomor_wa kalau nama_kontak kosong (lihat
+      // pages/live_chat.js::_renderKontakList()), jadi cukup kirim null.
+      nama_kontak: null,
       isi_teks: teks,
       baileys_msg_id: msg.key.id,
     });
