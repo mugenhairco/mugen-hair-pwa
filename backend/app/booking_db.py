@@ -44,6 +44,7 @@ from PIL import Image, ImageOps
 import booking_gateway_db
 import database as db
 import file_asset_db
+import live_chat_db
 import pengaturan_identitas
 import push_service
 import r2_storage
@@ -1161,7 +1162,28 @@ def _kirim_notifikasi_wa_booking(booking: dict, jenis: str):
         except Exception as e:
             logger.error("Link status booking #%s GAGAL dibentuk: %s: %s", booking.get("id"), type(e).__name__, e)
         pesan = whatsapp_templates.render(jenis, booking, nama_toko, template_text, link_status=link_status)
-        whatsapp_service.kirim_whatsapp(booking["customer_whatsapp"], pesan, tenant_id=tenant_id)
+        terkirim = whatsapp_service.kirim_whatsapp(booking["customer_whatsapp"], pesan, tenant_id=tenant_id)
+        # BUGFIX (laporan Owner: "pesan WA yang dikirim dari toko ke
+        # customer tidak muncul di Live Chat, yang muncul hanya chat dari
+        # customer"): notifikasi booking otomatis ini SELALU lewat jalur
+        # terpisah dari kotak balas Live Chat (pages/live_chat.js ->
+        # routers/live_chat.py::kirim_balasan(), yang SUDAH menyimpan
+        # pesannya sendiri lewat simpan_pesan_teks_keluar() di bawah) --
+        # jadi tidak pernah tercatat ke live_chat_pesan sama sekali.
+        # Disimpan juga di sini (best-effort, SAMA seperti kirim_whatsapp()
+        # di atasnya -- gagal simpan TIDAK BOLEH menggagalkan apa pun)
+        # supaya SEMUA pesan keluar ke customer (bukan cuma balasan manual)
+        # tampil di satu thread Live Chat yang sama. normalisasi_nomor_wa()
+        # WAJIB disamakan dengan format yang dikirim webhook Fonnte (lihat
+        # docstring fungsi itu) -- tanpa ini, nomor yang sama bisa kebentuk
+        # jadi 2 "kontak" berbeda (satu dari sini, satu dari webhook).
+        if terkirim:
+            try:
+                live_chat_db.simpan_pesan_teks_keluar(
+                    tenant_id, whatsapp_service.normalisasi_nomor_wa(booking["customer_whatsapp"]), pesan)
+            except Exception as e:
+                logger.error("Gagal menyimpan notifikasi booking #%s ke Live Chat: %s: %s",
+                             booking.get("id"), type(e).__name__, e)
     except Exception as e:
         logger.error("Notifikasi WhatsApp booking #%s GAGAL disiapkan: %s: %s", booking.get("id"), type(e).__name__, e)
 
