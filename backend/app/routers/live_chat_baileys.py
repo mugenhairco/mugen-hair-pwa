@@ -26,6 +26,7 @@ lihat docstring live_chat_baileys_db.py)."""
 
 import logging
 import os
+import threading
 
 import requests
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -43,7 +44,17 @@ internal_router = APIRouter(prefix="/api/internal/baileys", tags=["live-chat-bai
 
 _BAILEYS_SERVICE_URL = os.environ.get("BAILEYS_SERVICE_URL", "").strip().rstrip("/")
 _INTERNAL_SECRET = os.environ.get("BAILEYS_INTERNAL_SECRET", "").strip()
-_TIMEOUT_DETIK = 15
+# BUGFIX (laporan Owner: baileys-service yang tertidur -- paket gratis
+# Render, lihat live_chat_baileys_db.list_tenant_tersambung() -- tidak
+# kebangun begitu Rivoir dibuka, bahkan KIRIM PESAN lewat Live Chat pun
+# gagal): 15 detik TERLALU PENDEK untuk cold start Render (container
+# "dibangunkan" lagi, proses Node boot ulang, Baileys fetchLatestBaileysVersion()
+# ke internet, baru connect ke WhatsApp) -- permintaan timeout duluan
+# sebelum service sempat bangun sepenuhnya. Dinaikkan supaya SATU klik
+# kirim tetap berhasil walau service sedang cold start. Lihat juga
+# ambil_status() di bawah -- "ping bangun" di background supaya service
+# idealnya SUDAH bangun sebelum Owner sempat klik kirim sama sekali.
+_TIMEOUT_DETIK = 45
 
 
 def _wajib_secret_internal(x_baileys_secret: str | None):
@@ -74,8 +85,32 @@ def kirim_pesan_lewat_baileys(tenant_id: int, nomor_wa: str, pesan: str) -> str:
 # authed_router -- dipanggil frontend (pages/live_chat.js)
 # ---------------------------------------------------------------------------
 
+def _ping_bangun_baileys_latar():
+    """Best-effort, TIDAK PERNAH melempar/mengganggu respons ambil_status()
+    (dipanggil di thread terpisah, lihat di bawah) -- paling buruk service
+    masih/tetap tidur dan Owner perlu klik lagi, bukan error yang terlihat."""
+    try:
+        requests.get(f"{_BAILEYS_SERVICE_URL}/health", timeout=_TIMEOUT_DETIK)
+    except Exception:
+        pass
+
+
 @authed_router.get("/status")
 def ambil_status(user: dict = Depends(require_permission("izin_live_chat_lihat"))):
+    # BUGFIX (lihat catatan panjang di _TIMEOUT_DETIK di atas): frontend
+    # (pages/live_chat.js::_renderKartuBaileys()) memanggil endpoint ini
+    # SETIAP ~3 DETIK selama halaman Live Chat terbuka -- dipakai SEKALIAN
+    # untuk memancing baileys-service tetap bangun (atau membangunkannya
+    # kalau sedang tidur) di thread terpisah, TIDAK menunggu hasilnya
+    # (status yang dibalas ke frontend tetap dari database, instan, tidak
+    # ikut tertahan nunggu Render selesai cold start). Efeknya: selama
+    # Owner membuka halaman Live Chat, service PRAKTIS tidak akan pernah
+    # tertidur (dipancing tiap 3 detik, jauh di bawah ambang tidur Render
+    # ~15 menit) -- kalau memang sedang tidur (baru dibuka lagi setelah
+    # lama), percobaan bangun ini sudah berjalan DULUAN di background
+    # sebelum Owner sempat klik kirim sama sekali.
+    if _BAILEYS_SERVICE_URL:
+        threading.Thread(target=_ping_bangun_baileys_latar, daemon=True).start()
     return live_chat_baileys_db.get_status(user["tenant_id"])
 
 
