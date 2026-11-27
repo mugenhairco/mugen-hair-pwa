@@ -147,6 +147,16 @@ class PesanBody(BaseModel):
     baileys_msg_id: str
 
 
+@internal_router.get("/tersambung")
+def list_tersambung(x_baileys_secret: str | None = Header(default=None)):
+    """Dipanggil index.js SEKALI saat proses baileys-service baru boot --
+    lihat docstring live_chat_baileys_db.list_tenant_tersambung() untuk
+    kenapa ini perlu (socket aktif cuma hidup di memori proses Node.js,
+    hilang tiap restart/redeploy walau auth_state tersimpan aman)."""
+    _wajib_secret_internal(x_baileys_secret)
+    return {"tenant_id": live_chat_baileys_db.list_tenant_tersambung()}
+
+
 @internal_router.get("/sesi/{tenant_id}")
 def ambil_sesi(tenant_id: int, x_baileys_secret: str | None = Header(default=None)):
     _wajib_secret_internal(x_baileys_secret)

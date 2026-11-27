@@ -15,6 +15,13 @@ function _headers(extra = {}) {
   return { "X-Baileys-Secret": SECRET, "Content-Type": "application/json", ...extra };
 }
 
+async function ambilTenantTersambung() {
+  const r = await fetch(`${BACKEND_URL}/api/internal/baileys/tersambung`, { headers: _headers() });
+  if (!r.ok) throw new Error(`ambilTenantTersambung gagal (HTTP ${r.status})`);
+  const data = await r.json();
+  return data.tenant_id; // array of number
+}
+
 async function ambilSesi(tenantId) {
   const r = await fetch(`${BACKEND_URL}/api/internal/baileys/sesi/${tenantId}`, { headers: _headers() });
   if (!r.ok) throw new Error(`ambilSesi gagal (HTTP ${r.status})`);
@@ -48,4 +55,4 @@ async function laporPesan(tenantId, body) {
   if (!r.ok) throw new Error(`laporPesan gagal (HTTP ${r.status})`);
 }
 
-module.exports = { ambilSesi, simpanSesi, laporStatus, laporPesan };
+module.exports = { ambilTenantTersambung, ambilSesi, simpanSesi, laporStatus, laporPesan };

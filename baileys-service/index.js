@@ -213,3 +213,27 @@ app.post("/tenant/:tenantId/putuskan", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`baileys-service jalan di port ${PORT}`);
 });
+
+// BUGFIX (laporan Owner setelah redeploy: kirim/terima pesan error "tidak
+// bisa terhubung"): `sockets` Map di atas HANYA hidup di memori proses ini
+// -- tiap kali proses restart (redeploy, crash, dst) Map-nya kosong lagi,
+// padahal auth_state tiap tenant tersimpan AMAN di backend Python. Tanpa
+// ini, tenant yang sebelumnya 'tersambung' diam saja (tidak ada socket
+// aktif) sampai seseorang kebetulan buka halaman Live Chat & klik
+// "Hubungkan" lagi. Dipanggil SEKALI saat proses baru boot -- pakai
+// auth_state yang sudah ada, JADI TIDAK PERLU scan QR ulang.
+(async () => {
+  let tenantIds;
+  try {
+    tenantIds = await backend.ambilTenantTersambung();
+  } catch (e) {
+    console.error("Gagal ambil daftar tenant tersambung saat boot:", e.message);
+    return;
+  }
+  for (const tenantId of tenantIds) {
+    console.log(`[tenant ${tenantId}] menyambung ulang otomatis setelah restart...`);
+    mulaiSocket(tenantId).catch((e) => {
+      console.error(`[tenant ${tenantId}] gagal menyambung ulang otomatis:`, e.message);
+    });
+  }
+})();
