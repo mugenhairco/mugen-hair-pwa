@@ -130,6 +130,25 @@ def set_auth_state(tenant_id: int, auth_state_json: str):
     _upsert(tenant_id, auth_state=auth_state_json)
 
 
+def list_tenant_tersambung() -> list[int]:
+    """BUGFIX (laporan Owner: setelah baileys-service di-deploy ulang, kirim
+    & terima pesan error "tidak bisa terhubung"): proses Node.js baileys-
+    service memegang socket Baileys AKTIF cuma di memori (`sockets` Map di
+    index.js) -- begitu proses itu restart (redeploy, crash, dst), Map itu
+    kosong lagi, padahal auth_state tersimpan DI SINI tetap ada (tidak perlu
+    scan QR ulang). SEBELUM fix ini, tidak ada yang memanggil ulang
+    connect() untuk tenant yang sebelumnya sudah 'tersambung' -- socket-nya
+    diam saja sampai Owner (atau siapa pun) kebetulan membuka halaman Live
+    Chat dan klik "Hubungkan" lagi. Dipakai index.js SAAT BOOT untuk
+    menyambung ulang semua tenant 'tersambung' secara otomatis, pakai
+    auth_state yang sudah ada -- TIDAK perlu scan QR ulang."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT tenant_id FROM live_chat_baileys_sesi WHERE status = ?", (STATUS_TERSAMBUNG,)
+        ).fetchall()
+    return [r["tenant_id"] for r in rows]
+
+
 def hapus_sesi(tenant_id: int):
     """Dipanggil saat tombol "Putuskan" diklik -- hapus TOTAL (bukan cuma
     set status terputus) supaya connect berikutnya mulai dari QR baru yang
