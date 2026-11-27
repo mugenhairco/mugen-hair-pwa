@@ -27,6 +27,7 @@ lihat docstring live_chat_baileys_db.py)."""
 import logging
 import os
 import threading
+import time
 
 import requests
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -44,22 +45,49 @@ internal_router = APIRouter(prefix="/api/internal/baileys", tags=["live-chat-bai
 
 _BAILEYS_SERVICE_URL = os.environ.get("BAILEYS_SERVICE_URL", "").strip().rstrip("/")
 _INTERNAL_SECRET = os.environ.get("BAILEYS_INTERNAL_SECRET", "").strip()
-# BUGFIX (laporan Owner: baileys-service yang tertidur -- paket gratis
-# Render, lihat live_chat_baileys_db.list_tenant_tersambung() -- tidak
-# kebangun begitu Rivoir dibuka, bahkan KIRIM PESAN lewat Live Chat pun
-# gagal): 15 detik TERLALU PENDEK untuk cold start Render (container
-# "dibangunkan" lagi, proses Node boot ulang, Baileys fetchLatestBaileysVersion()
-# ke internet, baru connect ke WhatsApp) -- permintaan timeout duluan
-# sebelum service sempat bangun sepenuhnya. Dinaikkan supaya SATU klik
-# kirim tetap berhasil walau service sedang cold start. Lihat juga
-# ambil_status() di bawah -- "ping bangun" di background supaya service
-# idealnya SUDAH bangun sebelum Owner sempat klik kirim sama sekali.
-_TIMEOUT_DETIK = 45
+_TIMEOUT_DETIK = 20
+# BUGFIX (laporan Owner: kirim pesan Live Chat TETAP gagal 502 walau
+# timeout di atas sudah pernah dinaikkan): dipastikan lewat log Render --
+# 502 dari Render BUKAN soal lambat/timeout, itu jawaban SEGERA dari proxy
+# Render sendiri selama container baileys-service masih di tengah proses
+# "dibangunkan" dari tidur (belum sama sekali mulai mendengarkan port).
+# Menaikkan timeout TIDAK membantu kasus ini sama sekali -- request tidak
+# pernah menunggu, langsung ditolak instan. Satu-satunya cara: COBA LAGI
+# beberapa kali dengan jeda singkat sampai container-nya benar-benar
+# selesai bangun (lihat _request_baileys_retry() di bawah, dipakai
+# kirim_pesan_lewat_baileys() & mulai_connect()). Lihat juga ambil_status()
+# di bawah -- "ping bangun" di background supaya IDEALNYA service sudah
+# bangun sebelum Owner sempat klik kirim sama sekali; retry ini jaring
+# pengaman kalau pancingan itu belum sempat selesai.
+_PERCOBAAN_MAKS = 8
+_JEDA_RETRY_DETIK = 3
 
 
 def _wajib_secret_internal(x_baileys_secret: str | None):
     if not _INTERNAL_SECRET or x_baileys_secret != _INTERNAL_SECRET:
         raise HTTPException(status_code=403, detail="Tidak diizinkan.")
+
+
+def _request_baileys_retry(method: str, path: str, **kwargs) -> requests.Response:
+    """Lihat catatan panjang di _PERCOBAAN_MAKS di atas -- coba ulang kalau
+    kena 502/503 (container masih bangun) atau ConnectionError (belum
+    mendengarkan port sama sekali), BUKAN kalau error lain (4xx dari
+    Baileys sendiri, dst -- itu kegagalan asli, langsung dilempar)."""
+    error_terakhir = None
+    for percobaan in range(1, _PERCOBAAN_MAKS + 1):
+        try:
+            resp = requests.request(method, f"{_BAILEYS_SERVICE_URL}{path}", timeout=_TIMEOUT_DETIK, **kwargs)
+        except requests.exceptions.ConnectionError as e:
+            error_terakhir = e
+            time.sleep(_JEDA_RETRY_DETIK)
+            continue
+        if resp.status_code in (502, 503):
+            error_terakhir = requests.exceptions.HTTPError(
+                f"{resp.status_code} dari Render -- service masih bangun (percobaan {percobaan}/{_PERCOBAAN_MAKS})")
+            time.sleep(_JEDA_RETRY_DETIK)
+            continue
+        return resp
+    raise error_terakhir or RuntimeError("Gagal menghubungi service Baileys setelah beberapa percobaan.")
 
 
 def kirim_pesan_lewat_baileys(tenant_id: int, nomor_wa: str, pesan: str) -> str:
@@ -70,10 +98,8 @@ def kirim_pesan_lewat_baileys(tenant_id: int, nomor_wa: str, pesan: str) -> str:
     Exception kalau gagal, pemanggil yang menentukan pesan error ke user."""
     if not _BAILEYS_SERVICE_URL:
         raise RuntimeError("BAILEYS_SERVICE_URL belum dikonfigurasi.")
-    resp = requests.post(
-        f"{_BAILEYS_SERVICE_URL}/tenant/{tenant_id}/kirim", json={"nomor_wa": nomor_wa, "pesan": pesan},
-        timeout=_TIMEOUT_DETIK,
-    )
+    resp = _request_baileys_retry(
+        "POST", f"/tenant/{tenant_id}/kirim", json={"nomor_wa": nomor_wa, "pesan": pesan})
     resp.raise_for_status()
     hasil = resp.json()
     if not hasil.get("ok"):
@@ -119,8 +145,7 @@ def mulai_connect(user: dict = Depends(require_permission("izin_live_chat_lihat"
     if not _BAILEYS_SERVICE_URL:
         raise HTTPException(status_code=503, detail="Service Baileys belum dikonfigurasi.")
     try:
-        resp = requests.post(
-            f"{_BAILEYS_SERVICE_URL}/tenant/{user['tenant_id']}/connect", timeout=_TIMEOUT_DETIK)
+        resp = _request_baileys_retry("POST", f"/tenant/{user['tenant_id']}/connect")
         resp.raise_for_status()
     except Exception as e:
         logger.error("Gagal memulai connect Baileys tenant_id=%s: %s: %s", user["tenant_id"], type(e).__name__, e)
