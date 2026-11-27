@@ -37,9 +37,27 @@ dibuat di postgres_schema.py."""
 
 import secrets
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import r2_storage
 from database import get_conn
+
+# BUGFIX (laporan Owner: jam pesan di Live Chat ikut jam server, bukan jam
+# lokal Indonesia): SEBELUMNYA modul ini pakai datetime.now() polos (naive,
+# ikut jam sistem container Render yang UTC) -- frontend (pages/live_chat.js
+# ::_formatWaktu()) mem-parsing string TANPA offset itu seolah SUDAH jam
+# lokal browser (standar parsing JS Date), jadi tampil mundur ~7 jam dari WIB
+# sungguhan. Pola yang BENAR (dipakai konsisten modul lain: attendance_db.py/
+# booking_db.py/pos_db.py/dkk, lihat _sekarang_wib()): datetime SADAR ZONA
+# (aware, bawa offset "+07:00" di isoformat()-nya) -- begitu offset itu ada,
+# JS Date mem-parsingnya dengan BENAR sebagai instant absolut, baru dirender
+# ke zona lokal browser lewat toLocaleTimeString().
+WIB = ZoneInfo("Asia/Jakarta")
+
+
+def _sekarang_wib() -> datetime:
+    return datetime.now(WIB)
+
 
 GAMBAR_EXT_KE_CONTENT_TYPE = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
@@ -95,7 +113,7 @@ def get_or_create_webhook_token(tenant_id: int) -> str:
         token = secrets.token_urlsafe(24)
         conn.execute(
             "INSERT INTO live_chat_config (tenant_id, webhook_token, created_at) VALUES (?, ?, ?)",
-            (tenant_id, token, datetime.now().isoformat(timespec="seconds")),
+            (tenant_id, token, _sekarang_wib().isoformat(timespec="seconds")),
         )
         return token
 
@@ -109,7 +127,7 @@ def regenerate_webhook_token(tenant_id: int) -> str:
         conn.execute(
             "INSERT INTO live_chat_config (tenant_id, webhook_token, created_at) VALUES (?, ?, ?) "
             "ON CONFLICT(tenant_id) DO UPDATE SET webhook_token = excluded.webhook_token",
-            (tenant_id, token, datetime.now().isoformat(timespec="seconds")),
+            (tenant_id, token, _sekarang_wib().isoformat(timespec="seconds")),
         )
     return token
 
@@ -131,7 +149,7 @@ def simpan_pesan_teks_masuk(tenant_id: int, nomor_wa: str, nama_kontak: str, isi
         cur = conn.execute(
             "INSERT INTO live_chat_pesan (tenant_id, arah, nomor_wa, nama_kontak, jenis, isi_teks, waktu) "
             "VALUES (?, 'masuk', ?, ?, 'teks', ?, ?)",
-            (tenant_id, nomor_wa, nama_kontak, isi_teks, datetime.now().isoformat(timespec="seconds")),
+            (tenant_id, nomor_wa, nama_kontak, isi_teks, _sekarang_wib().isoformat(timespec="seconds")),
         )
         return cur.lastrowid
 
@@ -153,7 +171,7 @@ def simpan_pesan_gambar_masuk(tenant_id: int, nomor_wa: str, nama_kontak: str,
             "gambar_filename, gambar_data, gambar_r2_key, gambar_content_type, waktu) "
             "VALUES (?, 'masuk', ?, ?, 'gambar', ?, ?, ?, ?, ?)",
             (tenant_id, nomor_wa, nama_kontak, nama_file, data_kolom, r2_key, content_type,
-             datetime.now().isoformat(timespec="seconds")),
+             _sekarang_wib().isoformat(timespec="seconds")),
         )
         return cur.lastrowid
 
@@ -168,7 +186,7 @@ def simpan_pesan_teks_keluar(tenant_id: int, nomor_wa: str, isi_teks: str, baile
         cur = conn.execute(
             "INSERT INTO live_chat_pesan (tenant_id, arah, nomor_wa, jenis, isi_teks, waktu, baileys_msg_id) "
             "VALUES (?, 'keluar', ?, 'teks', ?, ?, ?)",
-            (tenant_id, nomor_wa, isi_teks, datetime.now().isoformat(timespec="seconds"), baileys_msg_id),
+            (tenant_id, nomor_wa, isi_teks, _sekarang_wib().isoformat(timespec="seconds"), baileys_msg_id),
         )
         return cur.lastrowid
 
@@ -230,7 +248,7 @@ def tandai_dibuka(tenant_id: int, nomor_wa: str):
         conn.execute(
             "UPDATE live_chat_pesan SET dibuka_di_rivoir_at = ? "
             "WHERE tenant_id = ? AND nomor_wa = ? AND dibuka_di_rivoir_at IS NULL",
-            (datetime.now().isoformat(timespec="seconds"), tenant_id, nomor_wa),
+            (_sekarang_wib().isoformat(timespec="seconds"), tenant_id, nomor_wa),
         )
 
 
@@ -262,8 +280,8 @@ def hapus_kedaluwarsa() -> dict:
     bukan per-tenant, karena dipanggil layanan penjadwal eksternal tanpa
     konteks tenant. Baris dengan dibuka_di_rivoir_at IS NULL TIDAK PERNAH
     ikut tersentuh di sini sama sekali (lihat WHERE di bawah)."""
-    batas_gambar = (datetime.now() - timedelta(hours=RETENSI_GAMBAR_JAM)).isoformat(timespec="seconds")
-    batas_teks = (datetime.now() - timedelta(days=RETENSI_TEKS_HARI)).isoformat(timespec="seconds")
+    batas_gambar = (_sekarang_wib() - timedelta(hours=RETENSI_GAMBAR_JAM)).isoformat(timespec="seconds")
+    batas_teks = (_sekarang_wib() - timedelta(days=RETENSI_TEKS_HARI)).isoformat(timespec="seconds")
     with get_conn() as conn:
         baris_gambar = conn.execute(
             "SELECT id, gambar_r2_key FROM live_chat_pesan "
