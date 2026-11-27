@@ -199,6 +199,21 @@ def lapor_pesan(tenant_id: int, body: PesanBody, x_baileys_secret: str | None = 
             # kirim) -- abaikan, JANGAN disimpan dobel.
             return {"ok": True, "disimpan": False}
         live_chat_db.simpan_pesan_teks_keluar(tenant_id, body.nomor_wa, body.isi_teks, body.baileys_msg_id)
+        # BUGFIX (laporan Owner: balasan manual dari HP toko sudah tersimpan
+        # & muncul di Live Chat, TAPI baru muncul setelah pindah menu lalu
+        # balik lagi -- tidak "disuntik" langsung ke tab yang sedang
+        # terbuka): beda dari pesan MASUK (lihat di bawah), cabang ini
+        # SEBELUMNYA tidak pernah memicu push sama sekali, padahal
+        # app.js/live_chat.js::suntikPesanMasuk() (lihat pola "suntik diam-
+        # diam" yang sudah ada) tidak peduli arah pesannya -- cukup
+        # dikirimi push jenis="live_chat_masuk" supaya tab yang terbuka
+        # langsung memuat ulang thread/kontak itu tanpa pindah menu.
+        push_service.kirim_ke_role(
+            tenant_id, ["admin", "staff"], "Live Chat",
+            f"Pesan terkirim ke {body.nomor_wa} dari HP toko",
+            url="#/live-chat", jenis="live_chat_masuk",
+            data={"nomor_wa": body.nomor_wa, "nama_kontak": None, "jenis": "teks", "isi_teks": body.isi_teks},
+        )
         return {"ok": True, "disimpan": True}
 
     # arah == 'masuk' -- SAMA seperti public_router.webhook() (Fonnte):
